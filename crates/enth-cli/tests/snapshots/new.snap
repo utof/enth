@@ -9,7 +9,8 @@ exit: 0
   "modules": [
     "osc1",
     "filter1",
-    "env1"
+    "env1",
+    "env2"
   ],
   "next": "enth step [TMP]/p.patch.json --set <address>=<value>,... --expect '<list>' --perf '<perf>'",
   "perf": {

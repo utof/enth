@@ -1,0 +1,62 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, true)"
+---
+exit: 1
+--- stdout
+{
+  "blocked": [],
+  "failed": 1,
+  "fix": {
+    "after": {
+      "loudness.clipping": "<bool>",
+      "pitch.f0_hz": "<num>"
+    },
+    "measured": true,
+    "note": "apply these ops together; every item passes after them",
+    "ops": "<ops>",
+    "pass_all": true,
+    "renders": "<num>",
+    "single_param_enough": true
+  },
+  "pass": false,
+  "passed": 1,
+  "perf": {
+    "dur_s": 3,
+    "notes": [
+      {
+        "note": "C3",
+        "off_s": 1.5,
+        "on_s": 0,
+        "vel": 100
+      }
+    ],
+    "source": "default"
+  },
+  "results": [
+    {
+      "expect": "loudness.clipping = false",
+      "got": true,
+      "margin": "<num>",
+      "noise": "<num>",
+      "pass": false,
+      "thin": "<bool>",
+      "unit": ""
+    },
+    {
+      "expect": "pitch.f0_hz = C3 ± 50ct",
+      "got": "<num>",
+      "margin": "<num>",
+      "margin_unit": "ct",
+      "noise": "<num>",
+      "note": "C3<ct>",
+      "pass": true,
+      "thin": "<bool>",
+      "unit": "Hz"
+    }
+  ],
+  "schema": "enth.check/1",
+  "source": "[TMP]/hot.patch.json",
+  "thin": "<num>"
+}
+--- stderr

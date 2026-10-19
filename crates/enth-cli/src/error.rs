@@ -356,6 +356,19 @@ pub fn from_render(e: &enth_render::RenderError) -> CliError {
     )
 }
 
+/// An evaluation of the solver's `measure` that failed: a render or an analysis failure (exit 4).
+pub fn from_eval(e: &enth_solver::EvalError) -> CliError {
+    match e {
+        enth_solver::EvalError::Render(r) => from_render(r),
+        enth_solver::EvalError::Analysis(a) => from_analysis(a),
+        other => failed(
+            other.code(),
+            other.to_string(),
+            "the CLI renders at 48 kHz; report this as a bug",
+        ),
+    }
+}
+
 /// A signal the analysis refused (exit 4).
 pub fn from_analysis(e: &enth_analysis::descriptors::AnalysisError) -> CliError {
     failed(

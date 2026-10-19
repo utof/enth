@@ -10,7 +10,7 @@ exit: 3
   ],
   "error": "unknown_module",
   "exit": 3,
-  "hint": "the modules are osc1, filter1, env1",
+  "hint": "the modules are osc1, filter1, env1, env2",
   "message": "no module 'filtr1'",
   "path": "filtr1.cutoff",
   "schema": "enth.error/1"

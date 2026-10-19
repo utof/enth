@@ -19,10 +19,11 @@ exit: 0
       "modules": [
         "osc1",
         "filter1",
-        "env1"
+        "env1",
+        "env2"
       ],
       "name": "pluck_1osc",
-      "summary": "a saw through a bright low-pass, fast attack, short decay, no sustain: a short pluck"
+      "summary": "a saw through a low-pass that a filter envelope throws open at the attack, no sustain: a short pluck"
     },
     {
       "modules": [
@@ -30,10 +31,11 @@ exit: 0
         "osc2",
         "filter1",
         "reverb1",
-        "env1"
+        "env1",
+        "lfo1"
       ],
       "name": "pad_2osc",
-      "summary": "two detuned saws, a soft low-pass, a slow swell, a long release, some reverb"
+      "summary": "two detuned saws, a soft low-pass moved by a slow LFO, a slow swell, a long release, some reverb"
     },
     {
       "modules": [
@@ -43,7 +45,7 @@ exit: 0
         "env1"
       ],
       "name": "bass_sub",
-      "summary": "a saw over a sine an octave below, a dark resonant low-pass, fast attack, full sustain"
+      "summary": "a saw over a sine an octave below, a dark resonant low-pass, mono with a short legato glide, full sustain"
     }
   ]
 }

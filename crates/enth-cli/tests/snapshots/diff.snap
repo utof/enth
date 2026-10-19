@@ -9,6 +9,16 @@ exit: 0
   "b": "[TMP]/b.patch.json",
   "changes": [
     {
+      "from": "45%",
+      "op": "unroute",
+      "target": "env2 -> filter1.cutoff"
+    },
+    {
+      "from": "adsr",
+      "op": "remove",
+      "target": "env2"
+    },
+    {
       "op": "add",
       "target": "osc2",
       "to": "osc at generators[1]"
@@ -19,16 +29,15 @@ exit: 0
       "to": "reverb at fx[0]"
     },
     {
+      "op": "add",
+      "target": "lfo1",
+      "to": "lfo at modulators[1]"
+    },
+    {
       "from": "0ct",
       "op": "set",
       "target": "osc1.fine",
       "to": "-8ct"
-    },
-    {
-      "from": "2.5kHz",
-      "op": "set",
-      "target": "filter1.cutoff",
-      "to": "1.5kHz"
     },
     {
       "from": "15%",
@@ -61,13 +70,24 @@ exit: 0
       "to": "1.5s"
     },
     {
-      "from": "name: Pluck (1 osc); description: A saw through a bright low-pass, with a fast attack, a short decay and no sustain: a short pluck to shape.; tags: pluck",
+      "op": "route",
+      "target": "lfo1 -> filter1.cutoff",
+      "to": "10%"
+    },
+    {
+      "from": "name: Pluck (1 osc); description: A saw through a low-pass that a quick envelope (env2, about +4 octaves) throws open at the attack and lets close again: bright at the start, dark by the tail. A short pluck to shape.; tags: pluck",
       "op": "meta",
       "target": "meta",
-      "to": "name: Pad (2 osc); description: Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.; tags: pad"
+      "to": "name: Pad (2 osc); description: Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.; tags: pad"
     }
   ],
   "ops": [
+    {
+      "unroute": "env2 -> filter1.cutoff"
+    },
+    {
+      "remove": "env2"
+    },
     {
       "add": "osc",
       "at": "generators[1]",
@@ -104,12 +124,22 @@ exit: 0
       }
     },
     {
-      "set": "osc1.fine",
-      "to": -8.0
+      "add": "lfo",
+      "at": "modulators[1]",
+      "id": "lfo1",
+      "params": {
+        "phase": 0.0,
+        "phase_mode": "reset",
+        "polarity": "bipolar",
+        "rate": 0.3,
+        "scope": "voice",
+        "seed": 0.0,
+        "shape": "sine"
+      }
     },
     {
-      "set": "filter1.cutoff",
-      "to": 1500.0
+      "set": "osc1.fine",
+      "to": -8.0
     },
     {
       "set": "filter1.resonance",
@@ -132,9 +162,14 @@ exit: 0
       "to": 1500.0
     },
     {
+      "depth": 10.0,
+      "index": 0,
+      "route": "lfo1 -> filter1.cutoff"
+    },
+    {
       "meta": {
         "author": "",
-        "description": "Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.",
+        "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.",
         "name": "Pad (2 osc)",
         "tags": [
           "pad"

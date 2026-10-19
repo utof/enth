@@ -1,10 +1,10 @@
 # Engine (`enth-engine`, `enth-render`)
 
-- Lanes: P1a S2a, the walking skeleton (freeze point F2), then S2b: the voice manager, smoothing, the modulation matrix and the plan swap. After F2, changes to the types below are additive only.
-- Code: `crates/enth-engine/src/` (module contract, plan compiler, segment loop, voice manager, smoothers and modulation, plan swap, stub modules), `crates/enth-render/src/lib.rs` (offline render), `crates/enth-dsp/src/util/{math,rng}.rs` (the `libm` door and seeded randomness), `tests/golden/` (cases and the patch source).
+- Lanes: P1a S2a, the walking skeleton (freeze point F2), then S2b: the voice manager, smoothing, the modulation matrix and the plan swap; then the module lanes D1 (oscillators, noise), D2 (filter, envelope, LFO) and FXW (reverb and compressor wrappers) replaced every stub. After F2, changes to the types below are additive only.
+- Code: `crates/enth-engine/src/` (module contract, plan compiler, segment loop, voice manager, smoothers and modulation, plan swap, the modules), `crates/enth-render/src/lib.rs` (offline render), `crates/enth-dsp/src/util/{math,rng}.rs` (the `libm` door and seeded randomness), `tests/golden/` (cases and the patch source).
 - Decisions behind it: [design.md §2, §3 and §5](../design.md#3-engine-and-real-time-safety), [architecture.md](../architecture.md), research report 01 §5–§7 (`_local/sessions/2026-10-19-p1a-headless-core/`).
 
-The engine turns a `Patch` into stereo `f32` the same way on every platform and for every host block size. One reference saw goes through the whole path (module, plan, segment loop, render, golden) and hashes the same on x86-64 Linux and wasm32 (Windows runs in CI). Every other module is a clearly marked stub that its lane replaces.
+The engine turns a `Patch` into stereo `f32` the same way on every platform and for every host block size. S2a ran one reference saw through the whole path (module, plan, segment loop, render, golden) so the spine could be frozen before the modules existed; every module is now its lane's real implementation, and the goldens hash the same on x86-64 Linux and wasm32 (Windows runs in CI).
 
 ## Data flow
 
@@ -43,17 +43,19 @@ Every role also has `copy_state_from` (for the plan swap; never allocates; a lan
 - **The four DSP rules**: transcendentals through `enth_dsp::util::math` (pinned `libm`); no `mul_add`; fixed summation order; flush recursive state with `enth_dsp::util::flush::flush`, at least once per segment. `voice_finished` is true past the attack and below −100 dB (`math::VOICE_END_LEVEL`).
 - `start_voice` resets the slot (it may hold a previous note) and reads `params.base`; `notes` already holds the new note.
 
-### Stubs (S2a)
+### The modules (S2a's stubs, all replaced)
 
-| Kind | File | Stub | Replaced by |
+S2a left a marked stub in each file so the spine could be built and frozen first; each lane replaced only its own files.
+
+| Kind | File | Implementation | Notes |
 | --- | --- | --- | --- |
-| `osc` | `modules/osc.rs` | Reference saw: naive saw minus a two-sample polyBLEP residual (Välimäki and Huovilainen 2007), pitch `key + semi + fine/100` per segment, level ramped per sample, the three phase modes; writes the hard-sync timing when it is the master. Other waves are silent. S0's `analog.rs` and `wavetable.rs` are merged here: one `osc` kind | D1 (Plaits port, sine, wavetables) |
-| `noise` | `modules/noise.rs` | Silent | D1 |
-| `svf` | `modules/svf.rs` | Pass-through | D2 |
-| `adsr` | `modules/adsr.rs` | Reference envelope: linear attack, exponential decay and release that fall 60 dB in the set time, evaluated per segment, flushed. Not silent: it is every patch's amplitude envelope | D2 |
-| `lfo` | `modules/lfo.rs` | Outputs 0 (both roles) | D2 |
-| `reverb` | `modules/reverb.rs` | Pass-through, `is_silent` true | FX1 phase 2 |
-| `comp` | `modules/comp.rs` | Pass-through, `is_silent` true | FX2 phase 2 |
+| `osc` | `modules/osc.rs` | Saw, triangle and pulse from the Plaits-derived polyBLEP/BLAMP core, a sine, wavetables, hard sync and the three phase modes (D1). S0's `analog.rs` and `wavetable.rs` are merged here: one `osc` kind | [osc.md](osc.md) |
+| `noise` | `modules/noise.rs` | White (xorshift32) and pink noise, one stream per voice (D1) | [noise.md](noise.md) |
+| `svf` | `modules/svf.rs` | Cytomic/Simper TPT state-variable filter, coefficients ramped from `prev` to `cur` (D2) | [svf.md](svf.md) |
+| `adsr` | `modules/adsr.rs` | RC (exponential) envelope with a 1 ms minimum segment, evaluated per segment (D2). It is every patch's amplitude envelope | [envelope.md](envelope.md) |
+| `lfo` | `modules/lfo.rs` | Seven shapes, per voice or global, with its own polarity (D2) | [lfo.md](lfo.md) |
+| `reverb` | `modules/reverb.rs` | Wrapper around `enth_dsp::reverb::Reverb`, Signalsmith Basics' FDN port (FXW; core by FX1) | [reverb.md](reverb.md) |
+| `comp` | `modules/comp.rs` | Wrapper around `enth_dsp::compressor::Compressor` (FXW; core by FX2) | [compressor.md](compressor.md) |
 
 ## Parameters and smoothing
 
@@ -155,72 +157,75 @@ render(&Patch, &Performance, &RenderSpec) -> Result<RenderOutput, RenderError>
 RenderSpec { sample_rate: u32, seed: u64 }                    // Default: 48 kHz, DEFAULT_SEED
 Performance { notes: Vec<Note>, automation: Vec<Automation>, duration_s: f64 }
 Note { key: u8, velocity: f32 /* 0–1 */, on_s: f64, off_s: f64 }
-Automation { time_s: f64, addr: ParamAddr, value: f32 }       // base value jumps, clamped to the spec
+Automation { time_s: f64, addr: ParamAddr, value: f32 }       // sets the base value (clamped to the spec); the engine smooths it
 RenderOutput { sample_rate, left: Vec<f32>, right: Vec<f32>, stats: RenderStats }   // interleaved(), mid(), peak()
 render_with_block(.., block)                                  // the same bits for any block (tests)
 ```
 
-Times become frames as `round(t · sample_rate)` in `f64`. Same-frame events: automation first, then notes in performance order, each note's on before its off. Automation sets the base value, which the engine smooths as the parameter's spec says (since S2b; `enth-render`'s own doc comment on `Automation` still says "jumps" and needs a one-line update by its owner). Automating a disabled module's parameter is not an error and changes nothing. Errors carry stable codes (`bad_spec`, `bad_performance`, `unknown_param`, and the compiler's codes, including `bad_route`).
+Times become frames as `round(t · sample_rate)` in `f64`. Same-frame events: automation first, then notes in performance order, each note's on before its off. Automation sets the base value, which the engine smooths as the parameter's spec says. Automating a disabled module's parameter is not an error and changes nothing. Errors carry stable codes (`bad_spec`, `bad_performance`, `unknown_param`, and the compiler's codes, including `bad_route`).
 
 ## Goldens
 
-A golden case (`tests/golden/cases/<name>.toml`) with `kind = "patch"` embeds the patch as a `[source.patch]` table with exactly the shape of a `*.patch.json` file, plus notes and optional automation in seconds and an optional render seed. Stereo renders hash both channels; the summary is computed on the mono mix. Until S1b's file layer lands, `tests/golden/src/patch.rs` converts the table with the catalogue's parsers; S1b's conversion replaces it without changing any case file.
+A golden case (`tests/golden/cases/<name>.toml`) with `kind = "patch"` embeds the patch as a `[source.patch]` table with exactly the shape of a `*.patch.json` file, plus notes and optional automation in seconds and an optional render seed. Stereo renders hash both channels; the summary is computed on the mono mix. `tests/golden/src/patch.rs` converts the table through `enth-patch`'s file layer.
 
 | Case | Guards |
 | --- | --- |
-| `ref-saw-gate` | The F2 reference: the reference saw through a gate envelope. D1 updates it on purpose |
-| `ref-saw-1v` | `Patch::init()` with the reference envelope, through the release. D1 and D2 update it |
-| `engine-chord` | Spine composite: two saws, every kind, chord with off-grid times, a steal (S2b; was a dropped voice), smoothed automation. Updated whenever a stub is replaced, on purpose |
+| `ref-saw-gate` | The F2 reference: one note of an oscillator through a gate envelope (the S2a reference saw, then D1's Plaits saw, which updated it on purpose) |
+| `ref-saw-1v` | `Patch::init()` through the release. D1 and D2 updated it when the real saw and envelope replaced the stubs |
+| `engine-chord` | Spine composite: two saws, every kind, chord with off-grid times, a steal (S2b; was a dropped voice), smoothed automation. Updated on purpose whenever a module changes its output |
 | `voice-poly-steal` | S2b: polyphony 2, steals with the 64-frame fade into spare slots, then a free slot |
 | `voice-mono` | S2b: the 16-key stack, retriggers, the return to the newest held key, a fresh voice after the end |
 | `voice-legato-glide` | S2b: legato with an 80 ms `always` glide, including the glide back to a held key and a detached note |
 | `voice-poly-glide-legato` | S2b: poly with a 60 ms `legato` glide (overlapping notes glide, detached ones do not), two saws |
 | `mod-routes` | S2b: routes from velocity, key and two macros; smoothed automation of a routed parameter and of `master.level` |
+| `osc-*`, `noise-*` | D1: every wave at three pitches, sync, phase modes, tables, white and pink noise |
+| `svf-*`, `adsr-*` | D2: every filter mode, drive, keytrack and a cutoff jump; envelope shapes, retrigger, velocity, zero times |
+| `lfo-*` | The integration pass (CH): every shape routed to `filter1.cutoff` through the gate envelope, unipolar, the random shapes with their seeds, a global LFO (also into `comp1.mix`), vibrato on `osc1.fine`, an LFO on an LFO's `rate` |
+| `reverb-*`, `comp-*` | FXW: the reverb's impulse, wake, chord and parameters; the compressor's steps and parallel mix |
 | `stand-in-sine` | The harness's own smoke test (no engine) |
 
-The S2b cases use only the reference saw, the gate envelope and built-in sources (velocity, key, macros), so lane D2's modules do not move them; lane D1 updates them with the other saw goldens.
+The S2b cases use only an oscillator, the gate envelope and built-in sources (velocity, key, macros), so the envelope's curves do not move them; D1 updated them with the other saw goldens when the Plaits saw replaced the reference saw.
 
-**Convention for module goldens: play them through a gate envelope** (`attack = 0, decay = 0, sustain = 100, release = 0`), so they do not move when D2 replaces the envelope. `tests/contract.rs` pins what that needs: the envelope's output is exactly 1.0 from the end of a note's first segment while held and exactly 0.0 one segment after the note-off. Composite cases (the 16-voice patch, a phrase with steals, the 40 s tail) belong to the spine lanes.
+**Convention for module goldens: play them through a gate envelope** (`attack = 0, decay = 0, sustain = 100, release = 0`), so they do not move when the envelope's curves change. `tests/contract.rs` pins what that needs, in terms of the envelope's **1 ms minimum ramp**: no envelope segment is shorter than 1 ms, rounded up to whole 32-frame segments, `n = adsr::min_ramp_steps(sample_rate)` (2 at 44.1 and 48 kHz, 3 at 96 kHz, 12 at 384 kHz, 1 at 8 kHz). A gate envelope therefore rises strictly for `n − 1` segments and is **exactly 1.0 from the end of segment `n` while the key is held**; after the note-off it falls strictly for `n − 1` segments and is **exactly 0.0 `n` segments after it**. (S2a's reference envelope had `n = 1`: exactly 1.0 after one segment and 0.0 one segment after the note-off. A 0 ms attack or release is never a jump.) Composite cases (the 16-voice patch, a phrase with steals, the 40 s tail) belong to the spine lanes.
 
 ## Benchmarks
 
-`crates/enth-engine/benches/common/mod.rs` builds a patch with one module of a kind (`patch_with`), prepares an engine with a held chord outside the measured function (`prepare`) and renders it in 512-frame calls (`render`). The `engine` bench (2026-10-19, x86-64, pinned toolchain): reference saw, 1 s at 48 kHz, 1 voice 3,660,346 instructions (76 per frame), 16 voices 40,367,014 (841 per frame); the budgets are those plus 10 %. After S2b (quiet parameter tables): 3,427,804 (71 per frame) and 37,679,499 (785 per frame), within the S2a budgets, which stay as they are. Every patch holds an `osc` and an `adsr`, so D1 and D2 re-measure these two budgets when they replace the stubs. A module bench subtracts the `engine` case with the same voice count to read its own cost.
+`crates/enth-engine/benches/common/mod.rs` builds a patch with one module of a kind (`patch_with`), prepares an engine with a held chord outside the measured function (`prepare`) and renders it in 512-frame calls (`render`). The `engine` bench (S2a and S2b, 2026-10-19, x86-64, pinned toolchain; with the reference saw and envelope, so historical, and D1 and D2 re-measured the budgets with the real modules, see [osc.md](osc.md) and [envelope.md](envelope.md)): 1 s at 48 kHz, 1 voice 3,660,346 instructions (76 per frame), 16 voices 40,367,014 (841 per frame); the budgets are those plus 10 %. After S2b (quiet parameter tables): 3,427,804 (71 per frame) and 37,679,499 (785 per frame), within the S2a budgets, which stay as they are. Every patch holds an `osc` and an `adsr`, so these two budgets move whenever either module does. A module bench subtracts the `engine` case with the same voice count to read its own cost.
 
-The **`g1` bench** (`benches/g1.rs`, S2b) is the G1 reference patch: polyphony 16, two oscillators (saw, pulse an octave down) and noise into a resonant low-pass, an amp and a filter envelope, a vibrato LFO per voice and a slow global LFO, compressor and reverb, eight routes (envelope, LFOs, velocity, key, a macro), a held 16-note chord, 2 s in 512-frame calls. Its hard limit is G1's provisional cap, 12,000 instructions per frame (1,152,000,000), so module lanes can land without editing it unless they break G1; lane E re-bases it to the first full product measurement plus 10 %. Measured 2026-10-19 with the stub modules: **122,452,870 instructions (1,276 per frame)**.
+The **`g1` bench** (`benches/g1.rs`, S2b) is the G1 reference patch: polyphony 16, two oscillators (saw, pulse an octave down) and noise into a resonant low-pass, an amp and a filter envelope, a vibrato LFO per voice and a slow global LFO, compressor and reverb, eight routes (envelope, LFOs, velocity, key, a macro), a held 16-note chord, 2 s in 512-frame calls. Its hard limit is G1's provisional cap, 12,000 instructions per frame (1,152,000,000), so module lanes can land without editing it unless they break G1; lane E re-bases it to the first full product measurement plus 10 %. Measured 2026-10-19 with the stub modules (before D1, D2 and FXW): **122,452,870 instructions (1,276 per frame)**.
 
 ## Tests
 
-- `enth-engine` unit tests: parameter tables (exact settled values, ramps, clamping), plan compiler (role lists, disabled modules, the sync master, refused S2b features, invalid patches as errors), voice manager, event queue and FIFO, seeds (pinned), the registry test (every kind builds in the role its section and rate imply; every role variant is reachable), the reference saw.
+- `enth-engine` unit tests: parameter tables (exact settled values, ramps, clamping), plan compiler (role lists, disabled modules, the sync master, refused S2b features, invalid patches as errors), voice manager, event queue and FIFO, seeds (pinned), the registry test (every kind builds in the role its section and rate imply; every role variant is reachable); each module's own white-box tests live in its file.
 - `tests/segment.rs`: event timing on the grid, block-size invariance (fixed sizes and a proptest over random block sequences), arrival order, voice end, dropped notes, the pan law, master level and value events, render-seed behaviour of the three phase modes, odd host calls.
 - `tests/noalloc.rs`: `assert_no_alloc` around every `process` call, including 16 voices with dropped notes, a full event queue and junk events, with a negative control.
 - `tests/tail.rs`: a 40 s release tail through one module of every kind: 0 subnormal output samples, 0 subnormal state, 0 voices left, every sample finite; the same bits under every FTZ/DAZ mode. The patch includes every kind, so each lane's module is covered when it lands.
-- `tests/contract.rs`: the gate-envelope contract above.
+- `tests/contract.rs`: the gate-envelope contract above, at 8, 44.1, 48, 96 and 384 kHz.
 - `tests/voices.rs` (S2b): the steal fade's shape and the stolen voice's exact silence after 64 frames, mono following the last note, mono retriggering vs legato, glide (linear, constant time, both glide modes, poly), voice-end reports, chokes, routes from velocity, key, macros and the mod wheel (with smoothing), a resting route changing nothing, block-size invariance with routes, smoothing, glide and steals in every voice mode (a proptest over random notes, macro, mod-wheel and automation events and random block sequences), 40 s tails in every mode with steals and routes: 0 voices, 0 subnormals.
 - `tests/swap.rs` (S2b, under `assert_no_alloc`): a held chord survives recompiling the same patch and unrelated structural edits (an added LFO, a removed LFO, a silent added oscillator) **bit for bit**; an added oscillator fades in; for every `ModuleKind` (both LFO scopes) copying state into a fresh module gives identical output for 360 segments; stale-epoch events are ignored and current ones apply; a full command ring (plans, values, macros) drains in one segment; a swap while the return ring is full keeps the plan (held, then handed back) and a third plan is refused while two are in flight; a plan arriving during a crossfade waits; the monitor bypass removes the reverb exactly and leaves the compressor.
 - `tests/noalloc.rs` also holds the "every voice stolen" overflow test: a 200-note burst that fills all 32 slots (steals and cuts), a stream that steals every voice again and again, and mono/legato with more keys than the stack.
-- `enth-render/tests/render.rs`: the reference saw's pitch, level and release; render-level block invariance with automation; the render seed as the only randomness; **seed stability** (every non-zero float parameter of every kind, `voice` and `master`, moved by 1e-3: the 10 ms RMS envelope moves under 0.05 dB within 30 dB of the peak, measured 0.025 dB; the negative control, a reseed, moves it 6.3 dB); finite output for random parameter values; typed errors.
+- `enth-render/tests/render.rs`: a saw's pitch, level and release; render-level block invariance with automation; the render seed as the only randomness; **seed stability** (every non-zero float parameter of every kind, `voice` and `master`, moved by 1e-3: the 10 ms RMS envelope moves under 0.05 dB within 30 dB of the peak, measured 0.025 dB; the negative control, a reseed, moves it 6.3 dB); finite output for random parameter values; typed errors.
 
 ## Seams for the lanes after F2
 
 | Lane | Files | What fills in |
 | --- | --- | --- |
 | **S2b** (done) | `voice.rs`, `modulation.rs`, `params.rs`, `swap.rs`, `engine.rs`, `plan.rs`, `benches/g1.rs` | Built as described above. Left for P1b: CLAP polyphonic modulation (per-voice macro offsets), wiring `Link` to `enth-session`, measuring compile time and crossfade CPU in the test host |
-| **D1** | `modules/osc.rs`, `modules/noise.rs`, `benches/osc.rs`, `benches/noise.rs` | Replace the stubs; hard sync reads `VoiceCx::sync_in` (the master writes `sync_out`, the reset time per frame); wavetables generated in `new`; ramp pitch from `pitch_prev` to `pitch_cur` (glide); `copy_state_from` copies all state; re-measure the `engine` bench budgets; update `ref-saw-*`, `engine-chord` and the S2b cases (`voice-*`, `mod-routes`) |
-| **D2** | `modules/svf.rs`, `modules/adsr.rs`, `modules/lfo.rs`, their benches | Replace the stubs; the SVF interpolates coefficients from `prev` to `cur` (modulated values change every segment); keep the gate-envelope contract and the voice-end rule; an envelope restarts its attack from its current level on `trigger` without `fresh` (a mono retrigger); the LFO's output range is its polarity (routes carry only a depth); re-measure the `engine` bench budgets; update `ref-saw-1v` and `engine-chord` |
-| **FX1** phase 2 | `modules/reverb.rs`, `benches/reverb.rs` | Wrap `enth_dsp::reverb::Reverb` (`set_params` once per segment with the catalogue's conversions, `process_in_place`, `is_silent` exact); if `room` or `decay` legitimately fail the seed-stability test, list them in its `EXEMPT` with the reason |
-| **FX2** phase 2 | `modules/comp.rs`, `benches/comp.rs` | Wrap `enth_dsp::compressor::Compressor` the same way |
-| **C** phase 2 | — | `enth render` maps its perf JSON (note names, velocity 0–127) onto `Performance`; `--seed` sets `RenderSpec::seed` |
-| **A**, **H** | — | Analyse `RenderOutput::mid()` (or each channel); nuisance renders change `RenderSpec::seed` only |
+| **D1** (done) | `modules/osc.rs`, `modules/noise.rs`, `benches/osc.rs`, `benches/noise.rs` | Replaced the stubs; hard sync reads `VoiceCx::sync_in` (the master writes `sync_out`, the reset time per frame); wavetables generated in `new`; ramp pitch from `pitch_prev` to `pitch_cur` (glide); `copy_state_from` copies all state; the `engine` bench budgets were re-measured; `ref-saw-*`, `engine-chord` and the S2b cases (`voice-*`, `mod-routes`) were updated |
+| **D2** (done) | `modules/svf.rs`, `modules/adsr.rs`, `modules/lfo.rs`, their benches | Replaced the stubs; the SVF interpolates coefficients from `prev` to `cur` (modulated values change every segment); the gate-envelope contract (restated for the 1 ms minimum ramp) and the voice-end rule are kept; an envelope restarts its attack from its current level on `trigger` without `fresh` (a mono retrigger); the LFO's output range is its polarity (routes carry only a depth); the `engine` bench budgets were re-measured; `ref-saw-1v` and `engine-chord` were updated |
+| **FX1** phase 2 (done, as lane FXW) | `modules/reverb.rs`, `benches/reverb.rs` | Wraps `enth_dsp::reverb::Reverb` (`set_params` once per segment with the catalogue's conversions, `process_in_place`, `is_silent` exact); the seed-stability test's `EXEMPT` list holds any parameter that legitimately fails it, with the reason |
+| **FX2** phase 2 (done, as lane FXW) | `modules/comp.rs`, `benches/comp.rs` | Wraps `enth_dsp::compressor::Compressor` the same way |
+| **C** phase 2 (done) | — | `enth render` maps its perf JSON (note names, velocity 0–127) onto `Performance`; `--seed` sets `RenderSpec::seed` |
+| **A**, **H** (done) | — | Analyse `RenderOutput::mid()` (or each channel); nuisance renders change `RenderSpec::seed` only |
 
-A lane replaces only its own files; nothing else in the engine changes when a module lands.
+A lane replaces only its own files; nothing else in the engine changes when a module lands. All the seams above are filled.
 
 ## Open points
 
 - The crossfade is equal-gain (raised cosine), not design.md §3's equal-power ramp; the reasons are under "Plan swap". design.md should follow if the owner agrees.
-- `crates/enth-dsp/src/smoothing.rs` (an S0 placeholder for S2b) stays empty: the smoother needs `ParamSpec`'s scale mapping (`enth-params`, the same layer as `enth-dsp`), so it lives in `enth-engine/src/params.rs`. Delete the placeholder or keep it for module-internal smoothers.
-- `enth-render`'s doc comments on `Automation` ("jumps") and `RenderStats::dropped_notes` ("no stealing before lane S2b") are stale since S2b; its owner updates them (S2b does not edit that crate).
-- S1b's `validate` is not merged: the compiler checks routes itself (`bad_route`); once `validate` lands, the two must agree.
+- `crates/enth-dsp/src/smoothing.rs` (an S0 placeholder) holds D2's module-internal smoothers, `LinearRamp` and `OnePole`, which settle exactly on their target. The engine's parameter smoothers (`params::Smoother`) stay in `enth-engine/src/params.rs`: they need `ParamSpec`'s scale mapping.
+- S1b's `enth_patch::validate` is merged, and the compiler still checks routes itself (`bad_route`), as a subset of it; the two must agree.
 
 - Windows: the golden hashes were produced on x86-64 Linux and match wasm32-wasip1 under wasmtime 48.0.6; the Windows leg runs in CI on the first push.
-- The golden harness's PatchFile resolver (`tests/golden/src/patch.rs`) is temporary until S1b's conversion merges.
+- The golden harness's `PatchFile` resolver (`tests/golden/src/patch.rs`) goes through `enth-patch`'s file layer, which checks every value against its `ParamSpec`.
 - Disabling the amplitude envelope: the engine runs it anyway; whether it is valid is S1b's `validate`.

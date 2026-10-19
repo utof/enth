@@ -50,7 +50,7 @@ Why: the peak of a 12 dB/octave filter at its cutoff is about `Q` for `Q ≥ 1`,
 
 `drive` (0 to 24 dB) puts a soft saturator in front of the filter: `y = x / sqrt(1 + a·x²)` with `a = 10^(dB/10) − 1`. It is odd, monotonic, has unity gain at small signals, and is bounded by `1/sqrt(a)`: a sigmoid with gain `G = 10^(dB/20)` in front, normalised back, offset so that the small-signal level does not change. At 0 dB, `a = 0` and the saturator is skipped entirely, which is bit-identical to running it (`x / sqrt(1 + 0)` is exactly `x`). The drive amount `a` is ramped per sample across the segment, like the coefficients. The cost is one `sqrt` and one `div` per sample (both correctly rounded in IEEE 754).
 
-The catalogue text calls the saturator "rational-tanh"; the shape is the algebraic sigmoid above. The wording in `catalogue/svf.rs` is lane S1a's and was not touched.
+The shape is the algebraic sigmoid above, not a tanh; the module comment in `catalogue/svf.rs` says so.
 
 ## Stability under modulation
 

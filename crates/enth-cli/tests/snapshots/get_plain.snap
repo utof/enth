@@ -8,7 +8,7 @@ exit: 0
   "schema": "enth.get/1",
   "source": "[TMP]/p.patch.json",
   "values": {
-    "filter1.cutoff": 1500,
+    "filter1.cutoff": 1000,
     "osc1.wave": "saw"
   }
 }

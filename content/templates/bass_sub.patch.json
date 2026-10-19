@@ -2,10 +2,10 @@
   "schema": 1,
   "meta": {
     "name": "Sub bass",
-    "description": "A saw over a sine an octave below through a dark resonant low-pass, with a fast attack and a full sustain.",
+    "description": "A saw over a sine an octave below through a dark resonant low-pass, with a fast attack and a full sustain. Mono, and notes played legato slide into each other over 40 ms.",
     "tags": ["bass"]
   },
-  "voice": { "amp_env": "env1" },
+  "voice": { "mode": "mono", "glide": 40, "glide_mode": "legato", "amp_env": "env1" },
   "generators": [
     { "id": "osc1", "kind": "osc", "params": { "wave": "saw", "level": 70 } },
     { "id": "osc2", "kind": "osc", "params": { "wave": "sine", "semi": -12, "level": 100 } }

@@ -92,8 +92,9 @@ impl Note {
     }
 }
 
-/// A parameter change at a point in time: the parameter's base value jumps to `value` (plain units, clamped to its
-/// spec), like host automation. Smoothing, where the spec has it, arrives with lane S2b.
+/// A parameter change at a point in time: the parameter's base value is set to `value` (plain units, clamped to its
+/// spec), like host automation. The engine then smooths it as the parameter's spec says (`Smoothing::Linear`
+/// ramps of 10 ms for most parameters, 20 ms for `master.level`), so what the voices hear is a ramp, not a jump.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Automation {
     /// Time in seconds, `>= 0`.
@@ -133,7 +134,8 @@ impl Performance {
 pub struct RenderStats {
     /// Note-ons played.
     pub notes: u64,
-    /// Note-ons dropped because polyphony was full (no stealing before lane S2b).
+    /// Note-ons dropped because no voice could be given. Always 0 in practice: when polyphony is full the engine
+    /// steals a voice (the oldest released one, else the oldest held one), counted in the engine's `stolen_voices`.
     pub dropped_notes: u64,
     /// Events dropped because the engine's event queue was full (never, for sane performances).
     pub dropped_events: u64,

@@ -1,5 +1,6 @@
-//! `svf`: the Cytomic/Simper TPT state-variable filter, per voice, with a rational-tanh drive before it and
-//! coefficients interpolated per sample across each 32-frame segment. Lane D2 owns the DSP and `docs/dsp/svf.md`.
+//! `svf`: the Cytomic/Simper TPT state-variable filter, per voice, with a soft-saturating drive before it
+//! (`x / sqrt(1 + a·x²)`, an algebraic sigmoid, not a tanh) and coefficients interpolated per sample across each
+//! 32-frame segment. Lane D2 owns the DSP and `docs/dsp/svf.md`.
 //!
 //! Envelope and LFO sweeps go through modulation routes on `cutoff` (Log scale, so a route depth is a fixed
 //! number of octaves: 10.034 % per octave).

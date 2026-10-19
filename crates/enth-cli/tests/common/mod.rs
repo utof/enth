@@ -133,7 +133,6 @@ const STABLE_NUMBERS: &[&str] = &[
     "seconds",
     "bytes",
     "depth",
-    "renders",
 ];
 
 /// Keys whose booleans depend on measurement noise or the engine (masked in snapshots).
@@ -150,23 +149,30 @@ const NOISY_BOOLS: &[&str] = &[
 ];
 
 /// Replace audio-dependent numbers with `"<num>"` and noisy booleans with `"<bool>"`, so snapshots pin the shape
-/// and the deliberate values (performance, pass/fail of robust items, units, texts) but not the DSP. The engine
-/// modules are still being replaced by other lanes.
+/// and the deliberate values (performance, pass/fail of robust items, units, texts) but not the DSP. A fix's `ops`
+/// and the number of renders it took are the solver's measurements of the current DSP, so they are masked too
+/// (`fix.ops` becomes `"<ops>"`); the ops anywhere else are patch values and stay.
 pub fn mask(v: &Value) -> Value {
-    fn go(key: &str, v: &Value) -> Value {
+    fn go(parent: &str, key: &str, v: &Value) -> Value {
         match v {
+            _ if key == "ops" && parent == "fix" => Value::from("<ops>"),
             // Op lists hold patch values, not measurements.
             _ if key == "ops" || key == "inverse" => v.clone(),
             Value::Number(_) if !STABLE_NUMBERS.contains(&key) => Value::from("<num>"),
             Value::Bool(_) if NOISY_BOOLS.contains(&key) => Value::from("<bool>"),
-            Value::Array(a) => Value::Array(a.iter().map(|x| go(key, x)).collect()),
+            // A note name with its tuning offset (`C3-1ct`): the note is pinned, the offset is the DSP's.
+            Value::String(t) if key == "note" && t.ends_with("ct") => {
+                let name_len = t[1..].find(['+', '-']).map_or(t.len(), |i| i + 1);
+                Value::from(format!("{}<ct>", &t[..name_len]))
+            }
+            Value::Array(a) => Value::Array(a.iter().map(|x| go(parent, key, x)).collect()),
             Value::Object(m) => {
-                Value::Object(m.iter().map(|(k, x)| (k.clone(), go(k, x))).collect())
+                Value::Object(m.iter().map(|(k, x)| (k.clone(), go(key, k, x))).collect())
             }
             other => other.clone(),
         }
     }
-    go("", v)
+    go("", "", v)
 }
 
 /// Pretty JSON for a snapshot.

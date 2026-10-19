@@ -80,8 +80,7 @@ Callgrind's self cost for an ADSR is about 1.5 instructions per sample per voice
 ## Behaviour other lanes must know
 
 - `adsr::min_ramp_steps(sample_rate)` is the length of the shortest segment in 32-frame segments; `tests/contract.rs` uses it.
-- docs/dsp/engine.md still says (stubs table, goldens section) that the gate envelope is exactly 1.0 after one segment and 0.0 one segment after note-off, and describes the reference envelope; update it with the next S2 change.
-- The module comment of `crates/enth-patch/src/catalogue/adsr.rs` ("the engine's shortest segment is one 32-frame step") is stale: it is 1 ms, rounded up to whole steps. That file is S1a's and was not touched.
+- docs/dsp/engine.md states the gate-envelope contract in terms of `min_ramp_steps` (updated in the CH integration pass), and the module comment of `crates/enth-patch/src/catalogue/adsr.rs` says the shortest segment is 1 ms rounded up to whole steps.
 - Modulating `attack`, `decay`, `release` or `sustain` works through `cur`: the times are read at the start of each segment, so a route changes the next segment, never one in flight.
 
 ## References
