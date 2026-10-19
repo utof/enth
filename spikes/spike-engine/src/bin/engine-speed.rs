@@ -1,7 +1,9 @@
 //! Speed driver. `engine-speed <template> <path> <reps> [stats]`
 //!
-//! templates: `simple1`, `simple16` (osc -> filter -> amp), `p1` (3 osc, 2 env, LFO, 8 voices, FDN reverb)
-//! paths: `scalar`, `x4`, `x8`; each rep renders 2 s of audio. Without `stats` it only renders (for hyperfine and
+//! templates: `simple1`, `simple16` (osc -> filter -> amp), `p1` (3 osc, 2 env, LFO, 8 voices, FDN reverb);
+//! `tail` and `tail-naive` render the 40 s release-tail performance with the fast-decay P1 patch, with
+//! flushing on and off (the denormal cost demonstration).
+//! paths: `scalar`, `x4`, `x8`; each rep renders 2 s of audio (40 s for the tail templates). Without `stats` it only renders (for hyperfine and
 //! valgrind: instructions per render = count(reps 2) - count(reps 1)); with `stats` it prints x-realtime min/median.
 #![allow(
     clippy::print_stdout,
@@ -11,7 +13,7 @@
 
 use std::time::Instant;
 
-use spike_engine::render::{frames, hash_samples, held_chord};
+use spike_engine::render::{fast_decay_patch, frames, hash_samples, held_chord, tail_notes};
 use spike_engine::{Engine, Flush, Patch, Path, SAMPLE_RATE};
 
 fn main() {
@@ -28,24 +30,24 @@ fn main() {
     };
     let reps: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(1);
     let stats = args.get(4).is_some_and(|s| s == "stats");
-    let (patch, voices) = match template {
-        "simple1" => (Patch::simple(), 1),
-        "simple16" => (Patch::simple(), 16),
-        "p1" => (Patch::p1_like(), 8),
+    let (patch, notes, seconds, flush) = match template {
+        "simple1" => (Patch::simple(), held_chord(1, 2.0), 2.0, Flush::On),
+        "simple16" => (Patch::simple(), held_chord(16, 2.0), 2.0, Flush::On),
+        "p1" => (Patch::p1_like(), held_chord(8, 2.0), 2.0, Flush::On),
+        "tail" => (fast_decay_patch(), tail_notes(), 40.0, Flush::On),
+        "tail-naive" => (fast_decay_patch(), tail_notes(), 40.0, Flush::Off),
         other => {
             eprintln!("unknown template {other:?}");
             std::process::exit(2);
         }
     };
-    let seconds = 2.0;
-    let notes = held_chord(voices, seconds);
     let n = frames(seconds);
     let mut out = vec![0.0f32; n];
     let mut times = Vec::with_capacity(reps);
     for _ in 0..reps {
         // Engine::new (allocation, libm set-up) is included in the timing on purpose: it is part of a render.
         let t0 = Instant::now();
-        let mut engine = Engine::new(&patch, &notes, 1, path, Flush::On);
+        let mut engine = Engine::new(&patch, &notes, 1, path, flush);
         for block in out.chunks_mut(spike_engine::BLOCK) {
             engine.process(block);
         }

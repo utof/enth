@@ -8,9 +8,20 @@
 
 use std::hint::black_box;
 
-use gungraun::{library_benchmark, library_benchmark_group, main};
+use gungraun::{
+    Callgrind, EventKind, LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main,
+};
 use spike_engine::render::{frames, held_chord};
 use spike_engine::{BLOCK, Engine, Flush, Patch, Path};
+
+/// Absolute instruction budget for one 2 s render: the value measured on x86_64 Linux with the pinned
+/// toolchain plus 10% (benchmarks.md: regressions over 10% fail). Re-measure when the toolchain or `wide`/`libm`
+/// pins change, together with the golden hashes. Absolute limits need no stored baseline, so they work in CI.
+fn budget(ir: u64) -> LibraryBenchmarkConfig {
+    LibraryBenchmarkConfig::default()
+        .tool(Callgrind::default().hard_limits([(EventKind::Ir, ir)]))
+        .clone()
+}
 
 fn setup(template: &str, voices: usize, path: Path) -> (Engine, Vec<f32>) {
     let patch = if template == "simple" {
@@ -33,12 +44,12 @@ fn render_2s((mut engine, mut out): (Engine, Vec<f32>)) -> f32 {
 }
 
 #[library_benchmark]
-#[bench::simple_1v_scalar(args = ("simple", 1, Path::Scalar), setup = setup)]
-#[bench::simple_16v_scalar(args = ("simple", 16, Path::Scalar), setup = setup)]
-#[bench::simple_16v_x4(args = ("simple", 16, Path::X4), setup = setup)]
-#[bench::simple_16v_x8(args = ("simple", 16, Path::X8), setup = setup)]
-#[bench::p1_8v_scalar(args = ("p1", 8, Path::Scalar), setup = setup)]
-#[bench::p1_8v_x8(args = ("p1", 8, Path::X8), setup = setup)]
+#[bench::simple_1v_scalar(args = ("simple", 1, Path::Scalar), setup = setup, config = budget(9_000_000))]
+#[bench::simple_16v_scalar(args = ("simple", 16, Path::Scalar), setup = setup, config = budget(135_000_000))]
+#[bench::simple_16v_x4(args = ("simple", 16, Path::X4), setup = setup, config = budget(72_000_000))]
+#[bench::simple_16v_x8(args = ("simple", 16, Path::X8), setup = setup, config = budget(69_500_000))]
+#[bench::p1_8v_scalar(args = ("p1", 8, Path::Scalar), setup = setup, config = budget(124_000_000))]
+#[bench::p1_8v_x8(args = ("p1", 8, Path::X8), setup = setup, config = budget(69_000_000))]
 fn render(input: (Engine, Vec<f32>)) -> f32 {
     render_2s(input)
 }

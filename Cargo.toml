@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "spikes/*", "xtask"]   # add "tools/*" when the first one exists (an empty glob is an error)
-default-members = ["crates/*", "xtask"]   # plain `cargo build/test/clippy` skip spikes and tools
+members = ["crates/*", "xtask", "spikes/*"]   # add "tools/*" when the first one exists (an empty glob is an error)
+default-members = ["crates/*", "xtask"]       # plain `cargo build/test/clippy` skip spikes and tools; CI passes --workspace
 
 [workspace.package]
 version = "0.0.0"
