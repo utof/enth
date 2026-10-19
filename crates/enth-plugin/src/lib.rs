@@ -96,6 +96,9 @@ pub struct Shared {
     /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
     /// persistent fields, which own this).
     params: OnceLock<Weak<EnthParams>>,
+    /// nice-plug's handle for host requests outside a context (lane FK2's fork patches): marking the project
+    /// dirty. Set once by the wrapper right after construction; absent in tests that do not set it.
+    host: OnceLock<HostRequests>,
     /// `process()` timings (the `rt-stats` cargo feature).
     #[cfg(feature = "rt-stats")]
     pub rt_stats: rt_stats::RtStats,
@@ -112,6 +115,7 @@ impl Shared {
             names_dirty: AtomicBool::new(false),
             editor_closed: AtomicBool::new(false),
             params: OnceLock::new(),
+            host: OnceLock::new(),
             #[cfg(feature = "rt-stats")]
             rt_stats: rt_stats::RtStats::new(),
         }
@@ -164,8 +168,13 @@ impl Shared {
         }
     }
 
-    /// After unlocking: store the monitor bypass, note renames, arm the pump flag if a compile is pending, and keep
-    /// only the host writes.
+    /// After unlocking: store the monitor bypass, note renames, mark the host project dirty after an edit the host
+    /// cannot see, arm the pump flag if a compile is pending, and keep only the host writes.
+    ///
+    /// `ShellRequest::PatchEdited` (an editor edit, undo or redo: the session pushes it once per drain) becomes
+    /// [`HostRequests::mark_dirty`]: CLAP `clap_host_state.mark_dirty`, VST3 `IComponentHandler2::setDirty(true)`, which
+    /// the fork performs on the host's main thread (queued from the GUI thread; one waiting request absorbs the next).
+    /// A slot-bound edit also moves a host parameter, which dirties the project anyway; marking it again is harmless.
     fn settle(&self, requests: Vec<ShellRequest>, compile_pending: bool) -> Vec<ShellRequest> {
         if compile_pending {
             self.pump_wanted.store(true, Ordering::Release);
@@ -176,7 +185,11 @@ impl Shared {
                 ShellRequest::MonitorBypass(on) => self.monitor_bypass.store(on, Ordering::Release),
                 ShellRequest::RenameParams => self.names_dirty.store(true, Ordering::Release),
                 ShellRequest::Host(_) => host.push(request),
-                // nice-plug never marks the host project dirty (docs/phase-1b.md, open checks).
+                ShellRequest::PatchEdited => {
+                    if let Some(requests) = self.host.get() {
+                        requests.mark_dirty();
+                    }
+                }
                 _ => {}
             }
         }
@@ -269,6 +282,12 @@ impl Plugin for Enth {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    /// The fork's host requests (marking the project dirty), kept for [`Shared::settle`]. Called once, right after
+    /// construction.
+    fn host_requests(&mut self, requests: HostRequests) {
+        let _ = self.shared.host.set(requests);
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
@@ -402,6 +421,65 @@ mod tests {
     #[test]
     fn sample_accurate_automation_is_on() {
         const { assert!(<Enth as Plugin>::SAMPLE_ACCURATE_AUTOMATION) };
+    }
+
+    /// A host that counts the fork's requests.
+    #[derive(Default)]
+    struct CountingHost {
+        dirty: std::sync::atomic::AtomicU32,
+    }
+
+    impl nice_plug::context::host::HostRequestsInner for CountingHost {
+        fn mark_dirty(&self) {
+            self.dirty.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn edits_undo_and_redo_mark_the_host_project_dirty_and_loads_and_folds_do_not() {
+        let mut plugin = Enth::default();
+        let host = Arc::new(CountingHost::default());
+        plugin.host_requests(HostRequests::new(host.clone()));
+        let dirty = || host.dirty.load(Ordering::SeqCst);
+        let shared = Arc::clone(plugin.shared());
+        let level = enth_patch::ParamAddr::module(
+            enth_patch::Patch::init().generators[0].id.clone(),
+            "level",
+        )
+        .unwrap();
+        let edit = |value: f32| {
+            let (applied, writes) = shared.with_session(|s| {
+                enth_session::SessionEdit::edit(
+                    s,
+                    vec![enth_patch::Op::SetParam {
+                        addr: level.clone(),
+                        value,
+                    }],
+                    None,
+                )
+            });
+            assert!(applied.is_ok());
+            assert!(writes.is_empty(), "an unslotted address makes no host writes");
+        };
+        edit(40.0);
+        assert_eq!(dirty(), 1, "an editor edit the host cannot see");
+        edit(30.0);
+        assert_eq!(dirty(), 2);
+        let ((), _) = shared.with_session(|s| {
+            assert_eq!(enth_session::SessionEdit::undo(s), Ok(true));
+        });
+        assert_eq!(dirty(), 3, "undo");
+        let ((), _) = shared.with_session(|s| {
+            assert_eq!(enth_session::SessionEdit::redo(s), Ok(true));
+        });
+        assert_eq!(dirty(), 4, "redo");
+        // The host loads a state and folds its values: it knows about those, so nothing is marked.
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert("patch".to_owned(), enth_patch::Patch::init().to_json());
+        plugin.host_params().deserialize_fields(&fields);
+        let values = HostValues::default();
+        let _ = shared.with_session(|s| s.fold_host(&values));
+        assert_eq!(dirty(), 4, "a host load and a fold mark nothing");
     }
 
     #[test]

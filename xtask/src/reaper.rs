@@ -38,11 +38,11 @@ const DEFAULT_REAPER: &str = "apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper
 /// Hard limit for one REAPER launch; a hung script (e.g. a modal error dialog) is killed.
 const LAUNCH_TIMEOUT_SECS: u32 = 90;
 
-/// Whether REAPER is expected to mark the project dirty after an editor-only patch edit. nice-plug never calls CLAP
-/// `mark_dirty`, so today it does not (`reaper-test` measured it: see `docs/plugin.md`), and the `dirty-flag`
-/// scenario reports that as a known gap. A sixth fork patch adds the marking; flip this to `true` then, and a clean
-/// project after an edit fails the scenario.
-const DIRTY_MARKING_EXPECTED: bool = false;
+/// Whether REAPER is expected to mark the project dirty after an editor-only patch edit. Stock nice-plug never calls
+/// CLAP `mark_dirty` or VST3 `setDirty`, so REAPER did not (lane RH measured it); the vendored fork's patch 6 (lane
+/// FK2) adds the request and the plugin makes it after every editor edit, undo and redo (`docs/plugin.md`). So a clean
+/// project after an edit fails the `dirty-flag` scenario; `false` would report it as a known gap instead.
+const DIRTY_MARKING_EXPECTED: bool = true;
 
 /// Whether CLAP ignoring a slot automation lane that never moves, in REAPER's offline render, is a known gap.
 /// `slot-automation` measures it (a lane held at 0.25 on osc1's level) and reports `info` while this is `true`. It was
@@ -733,6 +733,15 @@ fn dirty_flag(report: &mut Report, format: Format, edit: &Log, control: &Log, id
         ),
         (false, _) => report.add(&scope, "dirty-after-editor-edit", false, detail),
     }
+    // No false positive: with the editor open and nothing edited, the project stays clean (a plugin that marked it
+    // dirty on every frame, or at the editor's open, would pass the check above and fail this one).
+    let idle_now = get(idle, "dirty-after-edit");
+    report.add(
+        &scope,
+        "clean-without-an-edit",
+        idle_now == "0",
+        format!("IsProjectDirty = {idle_now} 0.5 s after saving, with the editor open and no edit"),
+    );
     report.info(
         &scope,
         "dirty-after-closing-editor",
