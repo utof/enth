@@ -1,0 +1,21 @@
+description = "S2b voice manager, mono: one voice with the 16-key last-note stack. Overlapping notes retrigger it (from the current level), releasing the sounding key returns to the newest key still held, releasing the last key releases the voice, and a note after the voice has ended starts a fresh one (a new start phase from the render seed). The reference saw through a gate envelope, so lane D2's envelope does not move it; lane D1 updates it on purpose."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+seed = 11
+notes = [
+    { key = 48, velocity = 0.8, on_s = 0.0, off_s = 0.7 },
+    { key = 55, velocity = 0.6, on_s = 0.1501, off_s = 0.3 },
+    { key = 60, velocity = 1.0, on_s = 0.2, off_s = 0.25 },
+    { key = 52, velocity = 0.7, on_s = 0.4, off_s = 0.55 },
+    { key = 64, velocity = 0.9, on_s = 0.9, off_s = 1.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", mode = "mono" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

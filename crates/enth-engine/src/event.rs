@@ -72,13 +72,32 @@ pub enum EventKind {
         /// Release velocity, 0–1 (unused in P1).
         velocity: f32,
     },
-    /// Set a parameter's base value, in plain units (clamped to its spec; NaN is ignored). This is host automation
-    /// and the offline renderer's automation; UI edits arrive through the command ring with a plan epoch (lane S2b).
+    /// Set a parameter's base value, in plain units (clamped to its spec; NaN is ignored), smoothed as its spec
+    /// says. This is host automation and the offline renderer's automation; the id must come from the
+    /// [`PlanMap`](crate::plan::PlanMap) of the plan the engine runs ([`Engine::epoch`](crate::Engine::epoch)). UI
+    /// edits arrive through the command ring with their plan's epoch ([`crate::swap::Link::send_param`]).
     Param {
         /// The parameter, from the plan's [`PlanMap`](crate::plan::PlanMap).
         id: ParamId,
         /// Plain value.
         value: f32,
+    },
+    /// Set a macro knob (a global modulation source), 0–1, clamped; smoothed over 10 ms (lane S2b).
+    Macro {
+        /// 0-based, 0–7 (`macro1` is 0); others are ignored.
+        index: u8,
+        /// Knob position, 0–1.
+        value: f32,
+    },
+    /// Set the mod wheel (a global modulation source), 0–1, clamped; smoothed over 10 ms (lane S2b).
+    ModWheel {
+        /// 0–1.
+        value: f32,
+    },
+    /// Fade out every playing voice matching `key` over 64 frames (CLAP `NOTE_CHOKE`; lane S2b).
+    Choke {
+        /// The notes to silence (wildcards allowed).
+        key: NoteKey,
     },
 }
 

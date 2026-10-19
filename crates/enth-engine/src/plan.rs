@@ -1,22 +1,29 @@
-//! `Plan`: the compiled form of a `Patch` that the audio thread runs, and [`compile`], the minimal compiler.
+//! `Plan`: the compiled form of a `Patch` that the audio thread runs, [`compile`], and the state carry of a plan
+//! swap.
 //!
 //! A plan holds every enabled module prepared ([`ModuleImpl::new`]) and sorted by role into ordered lists, the flat
-//! parameter tables ([`crate::params`]), each module's stable key (`fnv1a64` of its id, for seeds and for the state
-//! carry of the plan swap), and the modulator output slots. P1's topology is fixed (four sections), so the "graph"
-//! is just ordered lists; there is no general scheduling. Compiling allocates; running a plan never does.
+//! parameter tables and their smoothers ([`crate::params`]), the compiled routes ([`crate::modulation`]), each
+//! module's stable key (`fnv1a64` of its id, for seeds and for the state carry), the modulator output slots and the
+//! output stage's ramps. P1's topology is fixed (four sections), so the "graph" is just ordered lists; there is no
+//! general scheduling. Compiling allocates; running a plan never does.
 //!
 //! [`PlanMap`] maps parameter addresses to the plan's [`ParamId`]s. It stays on the main thread (or in the offline
 //! renderer), where an op or an automation point becomes a value event.
 //!
-//! **S2a's compiler is minimal on purpose.** It refuses what lane S2b builds, rather than ignoring it and rendering
-//! something else: modulation routes ([`CompileError::NotYet`]) and the mono and legato voice modes. Seams:
+//! **Routes** compile into one list of destinations per evaluation stage (see [`crate::modulation`]). The compiler
+//! checks what the audio thread relies on (a subset of S1b's `validate`): a module source names a modulator in the
+//! patch, the destination exists and is `modulatable`, `|depth| ≤ 100`, and a voice-rate source (velocity, key, a
+//! voice-scope modulator) never targets a global destination ([`CompileError::BadRoute`]). A route from or to a
+//! disabled module, or with depth 0, contributes nothing and is left out.
 //!
-//! - TODO(S2b): compile routes into `(source slot, destination ParamId, depth / 100)` lists in patch route order,
-//!   sorted by destination; macros and the mod wheel as global sources, velocity and key as voice sources.
-//! - TODO(S2b): mono/legato (the voice manager), glide (`voice.glide`, `voice.glide_mode`).
-//! - TODO(S2b): `Plan::carry_state_from(&old)`: for each module whose (key, kind) survives, `copy_state_from`; fresh
-//!   modules start their active voices (`start_voice`) or `reset`; the epoch tag on the plan; the 256-frame
-//!   crossfade for added or removed modules.
+//! **Macros and the mod wheel** are nine global-table parameters after `master.*` (spec `MACRO_VALUE`, smoothed over
+//! 10 ms); the macros start at the patch's values, the mod wheel at 0.
+//!
+//! **State carry** ([`Plan::carry_from`], on the audio thread at a swap): every module whose (id, kind) survives
+//! copies the old module's state (`copy_state_from`), its modulator outputs and its parameters' running values and
+//! smoothers; so do `voice.*`, `master.*`, the macros and the output ramps. Fresh voice modules start every active
+//! voice (`start_voice` with the voice's own note index, so the seeds are the ones the note would have had), fresh
+//! global modules `reset`. Whether any module was added or removed decides the crossfade.
 //!
 //! Disabled modules are left out (a disabled generator is silent, a disabled effect is bypassed); enabling one is a
 //! structural edit. The amplitude envelope always runs, even if disabled (whether disabling it is valid is S1b's
@@ -25,15 +32,25 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use enth_patch::catalogue::{MASTER_PARAMS, MasterParam, VOICE_PARAMS, VoiceMode, VoiceParam};
-use enth_patch::{ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Section};
+use enth_dsp::util::math::{constant_power_pan, db_to_gain};
+use enth_params::ParamSpec;
+use enth_patch::catalogue::{
+    MACRO_VALUE, MASTER_PARAMS, MasterParam, VOICE_PARAMS, VoiceMode, VoiceParam,
+};
+use enth_patch::{
+    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Rate, Section,
+};
 
-use crate::module::{MAX_VOICES, PrepareCfg};
+use crate::modulation::{MACRO_SOURCES, Matrix, MatrixBuilder, Src, Stage, Term};
+use crate::module::{GlobalStart, MAX_VOICES, NoteState, PrepareCfg, VoiceIdx, VoiceStart};
 use crate::modules::{
     GlobalModulatorImpl, GlobalProcessorImpl, ModuleImpl, VoiceModulatorImpl, VoiceProcessorImpl,
 };
 use crate::params::{GlobalTable, ParamId, Span, VoiceTable};
-use crate::seed::module_key;
+use crate::seed::{global_seed, module_key, voice_seed};
+
+/// The specs of the macro and mod-wheel sources in the global table.
+static MACRO_SPECS: [ParamSpec; MACRO_SOURCES] = [MACRO_VALUE; MACRO_SOURCES];
 
 /// One module in a plan, with what the engine needs to run it.
 pub(crate) struct Slot<M> {
@@ -46,14 +63,57 @@ pub(crate) struct Slot<M> {
     pub params: Span,
 }
 
+/// The output stage's per-plan ramps: the pan gains per voice and the master gain.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Output {
+    /// The pan value the cached gains belong to, per voice.
+    pub pan_value: [f32; MAX_VOICES],
+    /// This and the previous segment's pan gains, per voice.
+    pub pan_cur: [(f32, f32); MAX_VOICES],
+    pub pan_prev: [(f32, f32); MAX_VOICES],
+    /// `master.level` in dB the cached gain belongs to, the gain, and last segment's gain.
+    pub master_db: f32,
+    pub master_cur: f32,
+    pub master_prev: f32,
+}
+
+impl Output {
+    fn new(master_db: f32) -> Self {
+        let centre = constant_power_pan(0.0);
+        let g = db_to_gain(master_db);
+        Self {
+            pan_value: [0.0; MAX_VOICES],
+            pan_cur: [centre; MAX_VOICES],
+            pan_prev: [centre; MAX_VOICES],
+            master_db,
+            master_cur: g,
+            master_prev: g,
+        }
+    }
+
+    fn subnormals(&self) -> usize {
+        self.pan_cur
+            .iter()
+            .chain(&self.pan_prev)
+            .filter(|(l, r)| l.is_subnormal() || r.is_subnormal())
+            .count()
+            + usize::from(self.master_cur.is_subnormal())
+            + usize::from(self.master_prev.is_subnormal())
+    }
+}
+
 /// A compiled patch: what the audio thread runs. Build one with [`compile`].
 pub struct Plan {
     pub(crate) cfg: PrepareCfg,
+    /// Set by [`Link::send_plan`](crate::swap::Link::send_plan); 0 for a plan the engine starts with.
+    pub(crate) epoch: u64,
     pub(crate) generators: Vec<Slot<VoiceProcessorImpl>>,
     pub(crate) voice_fx: Vec<Slot<VoiceProcessorImpl>>,
     pub(crate) voice_mods: Vec<Slot<VoiceModulatorImpl>>,
     pub(crate) global_mods: Vec<Slot<GlobalModulatorImpl>>,
     pub(crate) fx: Vec<Slot<GlobalProcessorImpl>>,
+    /// Per `fx` slot: the kind is `time_based` (the monitor bypass may mute it).
+    pub(crate) fx_time_based: Vec<bool>,
     /// Index of the amplitude envelope in `voice_mods`.
     pub(crate) amp_env: usize,
     /// Index of the hard-sync master in `generators`: the first enabled `osc`.
@@ -64,13 +124,18 @@ pub struct Plan {
     pub(crate) voice_builtin: Span,
     /// `master.*` in the global table.
     pub(crate) master_builtin: Span,
+    /// The eight macros and the mod wheel in the global table.
+    pub(crate) macros: Span,
+    pub(crate) mode: VoiceMode,
     pub(crate) polyphony: usize,
+    pub(crate) matrix: Matrix,
     /// Voice modulator outputs, per modulator and voice: this segment's and the previous one's.
     pub(crate) vmod_cur: Vec<[f32; MAX_VOICES]>,
     pub(crate) vmod_prev: Vec<[f32; MAX_VOICES]>,
     /// Global modulator outputs.
     pub(crate) gmod_cur: Vec<f32>,
     pub(crate) gmod_prev: Vec<f32>,
+    pub(crate) out: Output,
 }
 
 impl fmt::Debug for Plan {
@@ -78,6 +143,7 @@ impl fmt::Debug for Plan {
         let ids = |s: &[&ModuleId]| s.iter().map(|i| i.as_str()).collect::<Vec<_>>().join(",");
         f.debug_struct("Plan")
             .field("sample_rate", &self.cfg.sample_rate)
+            .field("epoch", &self.epoch)
             .field(
                 "generators",
                 &ids(&self.generators.iter().map(|s| &s.id).collect::<Vec<_>>()),
@@ -98,6 +164,7 @@ impl fmt::Debug for Plan {
                 "fx",
                 &ids(&self.fx.iter().map(|s| &s.id).collect::<Vec<_>>()),
             )
+            .field("mode", &self.mode)
             .field("polyphony", &self.polyphony)
             .finish_non_exhaustive()
     }
@@ -108,6 +175,19 @@ impl Plan {
     #[must_use]
     pub fn cfg(&self) -> PrepareCfg {
         self.cfg
+    }
+
+    /// The plan's epoch: 0 for the plan an engine starts with, then the number
+    /// [`Link::send_plan`](crate::swap::Link::send_plan) assigned.
+    #[must_use]
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// The voice mode (`voice.mode`).
+    #[must_use]
+    pub fn mode(&self) -> VoiceMode {
+        self.mode
     }
 
     /// The polyphony limit (`voice.polyphony`).
@@ -130,7 +210,8 @@ impl Plan {
             .collect()
     }
 
-    /// The number of subnormal values in every module's state and in the modulator outputs (test support).
+    /// The number of subnormal values in every module's state, the modulator outputs and the output ramps (test
+    /// support).
     #[must_use]
     pub fn subnormals(&self) -> usize {
         let voice: usize = self
@@ -150,12 +231,240 @@ impl Plan {
             .sum::<usize>()
             + crate::module::count_subnormals(&self.gmod_cur)
             + crate::module::count_subnormals(&self.gmod_prev);
-        voice + vmods + gmods + fx + outs
+        voice + vmods + gmods + fx + outs + self.out.subnormals()
+    }
+
+    /// Reset every global module (engine start).
+    pub(crate) fn reset_globals(&mut self, render_seed: u64) {
+        let Plan {
+            global_mods,
+            fx,
+            global_table,
+            ..
+        } = self;
+        for slot in global_mods.iter_mut() {
+            slot.module.reset(&GlobalStart {
+                seed: global_seed(render_seed, slot.key),
+                module_key: slot.key,
+                params: global_table.view(slot.params),
+            });
+        }
+        for slot in fx.iter_mut() {
+            slot.module.reset(&GlobalStart {
+                seed: global_seed(render_seed, slot.key),
+                module_key: slot.key,
+                params: global_table.view(slot.params),
+            });
+        }
+    }
+
+    /// Reset the `fx` slots whose kind is `time_based` (the monitor bypass engaged: they restart from silence).
+    pub(crate) fn reset_time_based(&mut self, render_seed: u64) {
+        let Plan {
+            fx,
+            fx_time_based,
+            global_table,
+            ..
+        } = self;
+        for (slot, &tb) in fx.iter_mut().zip(fx_time_based.iter()) {
+            if tb {
+                slot.module.reset(&GlobalStart {
+                    seed: global_seed(render_seed, slot.key),
+                    module_key: slot.key,
+                    params: global_table.view(slot.params),
+                });
+            }
+        }
+    }
+
+    /// A fresh voice in slot `v` (its notes already set): every voice module starts it with its seed, and the
+    /// slot's modulator outputs restart from 0 (the amp stage ramps up from silence).
+    pub(crate) fn start_voice(&mut self, v: VoiceIdx, notes: &NoteState, render_seed: u64) {
+        for out in &mut self.vmod_cur {
+            out[v] = 0.0;
+        }
+        let Plan {
+            generators,
+            voice_fx,
+            voice_mods,
+            voice_table,
+            ..
+        } = self;
+        for slot in generators.iter_mut().chain(voice_fx.iter_mut()) {
+            slot.module
+                .start_voice(&voice_start(slot, v, notes, voice_table, render_seed));
+        }
+        for slot in voice_mods.iter_mut() {
+            slot.module
+                .start_voice(&voice_start(slot, v, notes, voice_table, render_seed));
+        }
+    }
+
+    /// Carry the running state of `old` (the plan being replaced) into this one (see the module docs). Called on the
+    /// audio thread; never allocates. Returns whether a module was added or removed (the swap then crossfades).
+    pub(crate) fn carry_from(
+        &mut self,
+        old: &Plan,
+        active: &[VoiceIdx],
+        notes: &NoteState,
+        render_seed: u64,
+    ) -> bool {
+        let mut changed = false;
+        let Plan {
+            generators,
+            voice_fx,
+            voice_mods,
+            global_mods,
+            fx,
+            voice_table,
+            global_table,
+            vmod_cur,
+            vmod_prev,
+            gmod_cur,
+            gmod_prev,
+            ..
+        } = self;
+
+        for (list, old_list) in [
+            (&mut *generators, &old.generators),
+            (&mut *voice_fx, &old.voice_fx),
+        ] {
+            let (pairs, c) = pair(list, old_list, VoiceProcessorImpl::kind);
+            changed |= c;
+            for (i, slot) in list.iter_mut().enumerate() {
+                if let Some(j) = pairs[i] {
+                    let o = &old_list[j];
+                    slot.module.copy_state(&o.module);
+                    voice_table.carry(slot.params, &old.voice_table, o.params);
+                } else {
+                    for &v in active {
+                        slot.module.start_voice(&voice_start(
+                            slot,
+                            v,
+                            notes,
+                            voice_table,
+                            render_seed,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let (pairs, c) = pair(voice_mods, &old.voice_mods, VoiceModulatorImpl::kind);
+        changed |= c;
+        for (i, slot) in voice_mods.iter_mut().enumerate() {
+            if let Some(j) = pairs[i] {
+                let o = &old.voice_mods[j];
+                slot.module.copy_state(&o.module);
+                voice_table.carry(slot.params, &old.voice_table, o.params);
+                vmod_cur[i] = old.vmod_cur[j];
+                vmod_prev[i] = old.vmod_prev[j];
+            } else {
+                for &v in active {
+                    slot.module
+                        .start_voice(&voice_start(slot, v, notes, voice_table, render_seed));
+                }
+            }
+        }
+
+        let (pairs, c) = pair(global_mods, &old.global_mods, GlobalModulatorImpl::kind);
+        changed |= c;
+        for (i, slot) in global_mods.iter_mut().enumerate() {
+            if let Some(j) = pairs[i] {
+                let o = &old.global_mods[j];
+                slot.module.copy_state(&o.module);
+                global_table.carry(slot.params, &old.global_table, o.params);
+                gmod_cur[i] = old.gmod_cur[j];
+                gmod_prev[i] = old.gmod_prev[j];
+            } else {
+                slot.module.reset(&GlobalStart {
+                    seed: global_seed(render_seed, slot.key),
+                    module_key: slot.key,
+                    params: global_table.view(slot.params),
+                });
+            }
+        }
+
+        let (pairs, c) = pair(fx, &old.fx, GlobalProcessorImpl::kind);
+        changed |= c;
+        for (i, slot) in fx.iter_mut().enumerate() {
+            if let Some(j) = pairs[i] {
+                let o = &old.fx[j];
+                slot.module.copy_state(&o.module);
+                global_table.carry(slot.params, &old.global_table, o.params);
+            } else {
+                slot.module.reset(&GlobalStart {
+                    seed: global_seed(render_seed, slot.key),
+                    module_key: slot.key,
+                    params: global_table.view(slot.params),
+                });
+            }
+        }
+
+        voice_table.carry(self.voice_builtin, &old.voice_table, old.voice_builtin);
+        global_table.carry(self.master_builtin, &old.global_table, old.master_builtin);
+        global_table.carry(self.macros, &old.global_table, old.macros);
+        self.out = old.out;
+        changed
+    }
+}
+
+/// The most modules in one role list (the modulators section's limit).
+const MAX_ROLE_SLOTS: usize = 8;
+
+/// Match the slots of a new role list to the old one by (id, kind): `pairs[i]` is the old index of new slot `i`.
+/// The flag says whether a module was added or removed.
+fn pair<M>(
+    new: &[Slot<M>],
+    old: &[Slot<M>],
+    kind: impl Fn(&M) -> ModuleKind,
+) -> ([Option<usize>; MAX_ROLE_SLOTS], bool) {
+    let mut pairs = [None; MAX_ROLE_SLOTS];
+    let mut used = [false; MAX_ROLE_SLOTS];
+    let mut changed = new.len() > MAX_ROLE_SLOTS || old.len() > MAX_ROLE_SLOTS;
+    for (i, s) in new.iter().enumerate().take(MAX_ROLE_SLOTS) {
+        let found = old
+            .iter()
+            .enumerate()
+            .take(MAX_ROLE_SLOTS)
+            .position(|(j, o)| {
+                !used[j] && o.key == s.key && o.id == s.id && kind(&o.module) == kind(&s.module)
+            });
+        match found {
+            Some(j) => {
+                used[j] = true;
+                pairs[i] = Some(j);
+            }
+            None => changed = true,
+        }
+    }
+    if used.iter().take(old.len().min(MAX_ROLE_SLOTS)).any(|u| !u) {
+        changed = true;
+    }
+    (pairs, changed)
+}
+
+fn voice_start<'a, M>(
+    slot: &Slot<M>,
+    v: VoiceIdx,
+    notes: &'a NoteState,
+    voice_table: &'a VoiceTable,
+    render_seed: u64,
+) -> VoiceStart<'a> {
+    let note_index = notes.note_index[v];
+    VoiceStart {
+        voice: v,
+        seed: voice_seed(render_seed, slot.key, note_index),
+        module_key: slot.key,
+        note_index,
+        notes,
+        params: voice_table.view(slot.params),
     }
 }
 
 /// Parameter addresses → the plan's parameter ids. Built with the plan; used off the audio thread to turn an op or
-/// an automation point into an [`EventKind::Param`](crate::event::EventKind::Param).
+/// an automation point into an [`EventKind::Param`](crate::event::EventKind::Param) (or a
+/// [`Link::send_param`](crate::swap::Link::send_param) with the plan's epoch).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanMap {
     params: BTreeMap<ParamAddr, ParamId>,
@@ -228,12 +537,22 @@ pub enum CompileError {
     },
     /// `voice.amp_env` does not name a per-voice `adsr` in `modulators`.
     BadAmpEnv(String),
-    /// A feature a later lane builds (the message names the lane).
+    /// A feature a later lane builds (the message names the lane). No longer returned since S2b; kept for
+    /// compatibility.
     NotYet {
         /// What is missing.
         feature: &'static str,
         /// The lane that builds it.
         lane: &'static str,
+    },
+    /// A modulation route the engine cannot run (lane S2b): an unknown or non-modulator source, an unknown or
+    /// non-modulatable destination, a depth outside ±100 %, or a voice-rate source on a global destination.
+    BadRoute {
+        /// The route, as text (`velocity -> osc1.level`).
+        route: String,
+        /// Why (stable wording: `unknown_source`, `not_a_modulator`, `unknown_destination`, `not_modulatable`,
+        /// `depth_out_of_range`, `route_rate_mismatch`).
+        reason: &'static str,
     },
 }
 
@@ -250,6 +569,7 @@ impl CompileError {
             CompileError::TooMany { .. } => "too_many",
             CompileError::BadAmpEnv(_) => "bad_amp_env",
             CompileError::NotYet { .. } => "not_yet",
+            CompileError::BadRoute { .. } => "bad_route",
         }
     }
 }
@@ -288,6 +608,9 @@ impl fmt::Display for CompileError {
                 f,
                 "{feature} are not implemented in the engine yet (lane {lane})"
             ),
+            CompileError::BadRoute { route, reason } => {
+                write!(f, "route '{route}' cannot run: {reason}")
+            }
         }
     }
 }
@@ -321,26 +644,22 @@ fn check_values(
 ///
 /// # Errors
 /// An invalid patch (the checks are a subset of S1b's `validate`, enough to never hand the audio thread a bad
-/// value), an unsupported sample rate, or a feature S2a does not build yet ([`CompileError::NotYet`]).
+/// value), an unsupported sample rate, or a route the engine cannot run ([`CompileError::BadRoute`]).
 pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), CompileError> {
     if !cfg.is_supported() {
         return Err(CompileError::UnsupportedSampleRate(cfg.sample_rate));
     }
     check_values("voice", &VOICE_PARAMS, &patch.voice.values)?;
     check_values("master", &MASTER_PARAMS, &patch.master)?;
-    let mode = VoiceMode::from_value(patch.voice.get(VoiceParam::Mode));
-    if mode != Some(VoiceMode::Poly) {
-        return Err(CompileError::NotYet {
-            feature: "mono and legato voice modes",
-            lane: "S2b",
-        });
+    for (i, m) in patch.macros.iter().enumerate() {
+        if !MACRO_VALUE.is_valid(m.value) {
+            return Err(CompileError::InvalidValue {
+                addr: format!("macro{}", i + 1),
+                value: m.value,
+            });
+        }
     }
-    if !patch.routes.is_empty() {
-        return Err(CompileError::NotYet {
-            feature: "modulation routes",
-            lane: "S2b",
-        });
-    }
+    let mode = VoiceMode::from_value(patch.voice.get(VoiceParam::Mode)).unwrap_or(VoiceMode::Poly);
     let mut ids: Vec<&str> = Vec::new();
     for section in Section::ALL {
         let modules = patch.section(section);
@@ -366,15 +685,16 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         }
     }
     let amp_env_id = &patch.voice.amp_env;
-    let amp_env_ok = patch.modulators.iter().any(|m| {
-        &m.id == amp_env_id && m.kind == ModuleKind::Adsr && m.rate() == enth_patch::Rate::Voice
-    });
+    let amp_env_ok = patch
+        .modulators
+        .iter()
+        .any(|m| &m.id == amp_env_id && m.kind == ModuleKind::Adsr && m.rate() == Rate::Voice);
     if !amp_env_ok {
         return Err(CompileError::BadAmpEnv(amp_env_id.to_string()));
     }
 
-    let mut voice_table = VoiceTable::new();
-    let mut global_table = GlobalTable::new();
+    let mut voice_table = VoiceTable::new(cfg.sample_rate);
+    let mut global_table = GlobalTable::new(cfg.sample_rate);
     let mut map = PlanMap::default();
     let voice_builtin = voice_table.push(&VOICE_PARAMS, &patch.voice.values);
     for p in VoiceParam::ALL {
@@ -390,25 +710,37 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
             ParamId::Global((master_builtin.start + p.index()) as u16),
         );
     }
+    let mut macro_values = [0.0; MACRO_SOURCES];
+    for (v, m) in macro_values.iter_mut().zip(&patch.macros) {
+        *v = m.value;
+    }
+    let macros = global_table.push(&MACRO_SPECS, &macro_values);
 
+    let master_db = patch.master[MasterParam::Level.index()];
     let mut plan = Plan {
         cfg: *cfg,
+        epoch: 0,
         generators: Vec::new(),
         voice_fx: Vec::new(),
         voice_mods: Vec::new(),
         global_mods: Vec::new(),
         fx: Vec::new(),
+        fx_time_based: Vec::new(),
         amp_env: 0,
         sync_master: None,
-        voice_table: VoiceTable::new(),
-        global_table: GlobalTable::new(),
+        voice_table: VoiceTable::new(cfg.sample_rate),
+        global_table: GlobalTable::new(cfg.sample_rate),
         voice_builtin,
         master_builtin,
+        macros,
+        mode,
         polyphony: patch.voice.get(VoiceParam::Polyphony) as usize,
+        matrix: Matrix::default(),
         vmod_cur: Vec::new(),
         vmod_prev: Vec::new(),
         gmod_cur: Vec::new(),
         gmod_prev: Vec::new(),
+        out: Output::new(master_db),
     };
 
     for section in Section::ALL {
@@ -434,6 +766,12 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         .generators
         .iter()
         .position(|g| matches!(g.module, VoiceProcessorImpl::Osc(_)));
+    plan.fx_time_based = plan
+        .fx
+        .iter()
+        .map(|s| s.module.kind().spec().time_based)
+        .collect();
+    plan.matrix = compile_routes(patch, &plan, &map, &mut voice_table, &mut global_table)?;
     plan.voice_table = voice_table;
     plan.global_table = global_table;
     plan.vmod_cur = vec![[0.0; MAX_VOICES]; plan.voice_mods.len()];
@@ -441,6 +779,103 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
     plan.gmod_cur = vec![0.0; plan.global_mods.len()];
     plan.gmod_prev = vec![0.0; plan.global_mods.len()];
     Ok((plan, map))
+}
+
+/// Resolve the patch's routes against the plan, in patch order, into the matrix (and mark the routed parameters).
+fn compile_routes(
+    patch: &Patch,
+    plan: &Plan,
+    map: &PlanMap,
+    voice_table: &mut VoiceTable,
+    global_table: &mut GlobalTable,
+) -> Result<Matrix, CompileError> {
+    let mut voice_stage = vec![Stage::Processors; voice_table.base.len()];
+    for (i, s) in plan.voice_mods.iter().enumerate() {
+        for p in s.params.range() {
+            voice_stage[p] = Stage::VoiceMod(i as u16);
+        }
+    }
+    let mut global_stage = vec![Stage::Processors; global_table.base.len()];
+    for (i, s) in plan.global_mods.iter().enumerate() {
+        for p in s.params.range() {
+            global_stage[p] = Stage::GlobalMod(i as u16);
+        }
+    }
+    let mut builder = MatrixBuilder::default();
+    for r in &patch.routes {
+        let bad = |reason| CompileError::BadRoute {
+            route: format!("{} -> {}", r.src, r.dst),
+            reason,
+        };
+        if !r.depth.is_finite() || r.depth.abs() > 100.0 {
+            return Err(bad("depth_out_of_range"));
+        }
+        let src = match &r.src {
+            ModSource::Velocity => Some(Src::Velocity),
+            ModSource::Key => Some(Src::Key),
+            ModSource::ModWheel => Some(Src::ModWheel),
+            ModSource::Macro(i) => Some(Src::Macro(i.get() as u8)),
+            ModSource::Module(id) => {
+                let Some((_, m)) = patch.find(id) else {
+                    return Err(bad("unknown_source"));
+                };
+                if m.kind.section() != Section::Modulators {
+                    return Err(bad("not_a_modulator"));
+                }
+                // A disabled modulator is not in the plan: the route contributes nothing.
+                plan.voice_mods
+                    .iter()
+                    .position(|s| &s.id == id)
+                    .map(|i| Src::VoiceMod(i as u16))
+                    .or_else(|| {
+                        plan.global_mods
+                            .iter()
+                            .position(|s| &s.id == id)
+                            .map(|i| Src::GlobalMod(i as u16))
+                    })
+            }
+        };
+        let Some(spec) = patch.spec(&r.dst) else {
+            return Err(bad("unknown_destination"));
+        };
+        if !spec.flags.modulatable {
+            return Err(bad("not_modulatable"));
+        }
+        if patch.source_rate(&r.src) == Some(Rate::Voice)
+            && patch.target_rate(r.dst.target()) == Some(Rate::Global)
+        {
+            return Err(bad("route_rate_mismatch"));
+        }
+        let (Some(src), Some(dst)) = (src, map.get(&r.dst)) else {
+            continue; // from or to a disabled module
+        };
+        if r.depth == 0.0 {
+            continue;
+        }
+        let term = Term {
+            src,
+            depth: r.depth / 100.0,
+        };
+        match dst {
+            ParamId::Voice(i) => {
+                let i = usize::from(i);
+                builder.add(voice_stage[i], true, i, term);
+            }
+            ParamId::Global(i) => {
+                if src.is_voice_rate() {
+                    return Err(bad("route_rate_mismatch"));
+                }
+                let i = usize::from(i);
+                builder.add(global_stage[i], false, i, term);
+            }
+        }
+    }
+    Ok(builder.build(
+        plan.voice_mods.len(),
+        plan.global_mods.len(),
+        voice_table,
+        global_table,
+    ))
 }
 
 fn add_module(
@@ -512,8 +947,8 @@ fn add_module(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use enth_patch::catalogue::{AdsrParam, LfoParam, LfoScope};
-    use enth_patch::{ModSource, Route};
+    use enth_patch::Route;
+    use enth_patch::catalogue::{AdsrParam, LfoParam, LfoScope, OscParam};
 
     fn cfg() -> PrepareCfg {
         PrepareCfg::new(48_000.0)
@@ -539,6 +974,14 @@ mod tests {
         p
     }
 
+    fn route(src: &str, dst: &str, depth: f32) -> Route {
+        Route {
+            src: src.parse().unwrap(),
+            dst: dst.parse().unwrap(),
+            depth,
+        }
+    }
+
     #[test]
     fn modules_land_in_their_role_lists_in_patch_order() {
         let (plan, map) = compile(&full_patch(), &cfg()).unwrap();
@@ -551,7 +994,14 @@ mod tests {
         );
         assert_eq!(plan.voice_mods[plan.amp_env].id.as_str(), "env1");
         assert_eq!(plan.polyphony(), 8);
+        assert_eq!(plan.mode(), VoiceMode::Poly);
+        assert_eq!(plan.epoch(), 0);
         assert_eq!(plan.sync_master, Some(0), "osc1 drives hard sync");
+        assert_eq!(
+            plan.fx_time_based,
+            [false, true],
+            "the reverb is time-based"
+        );
         // Every parameter is addressable, in the table its owner's rate implies.
         assert!(matches!(
             map.get(&"filter1.cutoff".parse().unwrap()),
@@ -580,6 +1030,12 @@ mod tests {
             + VoiceParam::COUNT
             + MasterParam::COUNT;
         assert_eq!(map.len(), expected);
+        // The macros and the mod wheel sit after master.*, not in the map.
+        assert_eq!(plan.macros.len, MACRO_SOURCES);
+        assert_eq!(
+            plan.macros.start,
+            plan.master_builtin.start + MasterParam::COUNT
+        );
     }
 
     #[test]
@@ -607,19 +1063,67 @@ mod tests {
     }
 
     #[test]
-    fn s2b_features_are_refused_not_ignored() {
-        let mut p = Patch::init();
-        p.routes.push(Route {
-            src: ModSource::Velocity,
-            dst: "osc1.level".parse().unwrap(),
-            depth: 50.0,
-        });
-        let e = compile(&p, &cfg()).unwrap_err();
-        assert_eq!(e.code(), "not_yet");
-        assert!(e.to_string().contains("S2b"), "{e}");
-        let mut p = Patch::init();
+    fn routes_and_voice_modes_compile() {
+        let mut p = full_patch();
+        p.routes.push(route("velocity", "osc1.level", 50.0));
+        p.routes.push(route("lfo1", "filter1.cutoff", -20.0));
+        p.routes.push(route("lfo2", "reverb1.wet", 10.0));
+        p.routes.push(route("macro3", "lfo1.rate", 100.0));
+        p.routes.push(route("modwheel", "voice.pan", 100.0));
+        p.routes.push(route("key", "env1.sustain", 0.0)); // depth 0: left out
         p.voice.values[VoiceParam::Mode.index()] = VoiceMode::Legato.index() as f32;
-        assert_eq!(compile(&p, &cfg()).unwrap_err().code(), "not_yet");
+        let (plan, map) = compile(&p, &cfg()).unwrap();
+        assert_eq!(plan.mode(), VoiceMode::Legato);
+        let routed = |a: &str| match map.get(&a.parse().unwrap()).unwrap() {
+            ParamId::Voice(i) => plan.voice_table.modulated[usize::from(i)],
+            ParamId::Global(i) => plan.global_table.modulated[usize::from(i)],
+        };
+        for a in [
+            "osc1.level",
+            "filter1.cutoff",
+            "reverb1.wet",
+            "lfo1.rate",
+            "voice.pan",
+        ] {
+            assert!(routed(a), "{a}");
+        }
+        assert!(!routed("env1.sustain"), "a depth-0 route is left out");
+        assert!(!routed("osc1.semi"));
+        assert!(!plan.matrix.is_empty());
+    }
+
+    #[test]
+    fn routes_the_engine_cannot_run_are_errors() {
+        let check = |r: Route, reason: &str| {
+            let mut p = full_patch();
+            p.routes.push(r);
+            let e = compile(&p, &cfg()).unwrap_err();
+            assert_eq!(e.code(), "bad_route");
+            assert!(
+                matches!(&e, CompileError::BadRoute { reason: got, .. } if *got == reason),
+                "{e}"
+            );
+        };
+        check(
+            route("velocity", "reverb1.wet", 10.0),
+            "route_rate_mismatch",
+        );
+        check(route("lfo2", "master.level", 10.0), "not_modulatable");
+        check(route("lfo2", "filter9.cutoff", 10.0), "unknown_destination");
+        check(route("env1", "comp1.mix", 10.0), "route_rate_mismatch");
+        check(route("lfo9", "osc1.level", 10.0), "unknown_source");
+        check(route("osc1", "osc1.level", 10.0), "not_a_modulator");
+        check(route("lfo1", "osc1.wave", 10.0), "not_modulatable");
+        check(route("lfo1", "osc1.level", 101.0), "depth_out_of_range");
+        check(route("lfo1", "osc1.level", f32::NAN), "depth_out_of_range");
+        // From or to a disabled module: nothing, and no error.
+        let mut p = full_patch();
+        p.modulators[1].enabled = false; // lfo1
+        p.routes.push(route("lfo1", "osc1.level", 10.0));
+        p.generators[1].enabled = false; // noise1
+        p.routes.push(route("lfo2", "noise1.level", 10.0));
+        let (plan, _) = compile(&p, &cfg()).unwrap();
+        assert!(plan.matrix.is_empty());
     }
 
     #[test]
@@ -652,11 +1156,47 @@ mod tests {
         }
         assert_eq!(compile(&p, &cfg()).unwrap_err().code(), "too_many");
 
+        let mut p = Patch::init();
+        p.macros[2].value = 1.5;
+        assert_eq!(compile(&p, &cfg()).unwrap_err().code(), "invalid_value");
+
         assert_eq!(
             compile(&Patch::init(), &PrepareCfg::new(1000.0))
                 .unwrap_err()
                 .code(),
             "unsupported_sample_rate"
         );
+    }
+
+    #[test]
+    fn state_carries_by_id_and_kind() {
+        let base = full_patch();
+        let (mut a, _) = compile(&base, &cfg()).unwrap();
+        a.voice_table.cur[a.voice_builtin.start + VoiceParam::Pan.index()][3] = 0.25;
+        a.vmod_cur[a.amp_env][3] = 0.5;
+        let notes = NoteState::new();
+        // The same patch: nothing added or removed.
+        let (mut b, _) = compile(&base, &cfg()).unwrap();
+        assert!(!b.carry_from(&a, &[3], &notes, 1));
+        assert_eq!(b.vmod_cur[b.amp_env][3], 0.5);
+        assert_eq!(
+            b.voice_table.cur[b.voice_builtin.start + VoiceParam::Pan.index()][3],
+            0.25
+        );
+        // An added LFO, a removed noise, a moved osc: changed, and the survivors still carry.
+        let mut edited = base.clone();
+        edited.generators.remove(1);
+        edited
+            .modulators
+            .push(ModuleInstance::new(id("lfo3"), ModuleKind::Lfo));
+        edited.generators[0].values[OscParam::Semi.index()] = 7.0;
+        let (mut c, _) = compile(&edited, &cfg()).unwrap();
+        assert!(c.carry_from(&a, &[3], &notes, 1));
+        assert_eq!(c.vmod_cur[c.amp_env][3], 0.5);
+        // A scope change moves an LFO between role lists: removed and added.
+        let mut scoped = base.clone();
+        scoped.modulators[1].values[LfoParam::Scope.index()] = LfoScope::Global.index() as f32;
+        let (mut d, _) = compile(&scoped, &cfg()).unwrap();
+        assert!(d.carry_from(&a, &[3], &notes, 1));
     }
 }

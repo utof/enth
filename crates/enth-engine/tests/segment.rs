@@ -151,14 +151,15 @@ fn voices_end_below_minus_100_db_after_their_release() {
 }
 
 #[test]
-fn full_polyphony_drops_notes_and_counts_them() {
+fn full_polyphony_steals_the_oldest_voice_with_a_fade() {
     let mut patch = saw_patch();
     patch.voice.values[VoiceParam::Polyphony.index()] = 2.0;
     let notes = [note(60, 0, 4800), note(62, 0, 4800), note(64, 0, 4800)];
     let (_, _, e) = render(&patch, &notes, 2048, 512, SEED);
     let s = e.stats();
-    assert_eq!((s.notes, s.dropped_notes), (3, 1));
-    assert_eq!(e.active_voices(), &[0, 1]);
+    assert_eq!((s.notes, s.dropped_notes, s.stolen_voices), (3, 0, 1));
+    // Slot 0 (the oldest) faded out; the third note took the spare slot 2.
+    assert_eq!(e.active_voices(), &[1, 2]);
 }
 
 #[test]
@@ -193,7 +194,8 @@ fn master_level_and_parameter_events() {
     for (a, b) in loud.iter().zip(&soft).skip(64) {
         assert_eq!((a * g).to_bits(), b.to_bits());
     }
-    // The same through a value event at frame 0 (it lands before the first segment).
+    // The same through a value event at frame 0: master.level is smoothed linearly over 20 ms (30 segments), then
+    // it is the exact value again.
     let (_, map) = compile(&saw_patch(), &PrepareCfg::new(48_000.0)).unwrap();
     let id = map.get(&ParamAddr::master(MasterParam::Level)).unwrap();
     assert!(matches!(id, ParamId::Global(_)));
@@ -201,7 +203,18 @@ fn master_level_and_parameter_events() {
     ev.insert(0, (0, EventKind::Param { id, value: -6.0 }));
     let mut e = engine(&saw_patch(), SEED);
     let (via_event, _) = drive(&mut e, &ev, 4096, 512, |_, _, _| {});
-    assert_eq!(bits(&via_event[64..]), bits(&soft[64..]));
+    assert_eq!(bits(&via_event[30 * SEG..]), bits(&soft[30 * SEG..]));
+    assert_ne!(
+        bits(&via_event[..30 * SEG]),
+        bits(&soft[..30 * SEG]),
+        "a ramp, not a step"
+    );
+    for (i, ((v, l), s)) in via_event.iter().zip(&loud).zip(&soft).enumerate().skip(64) {
+        assert!(
+            v.abs() <= l.abs() && v.abs() >= s.abs() - 1e-7,
+            "frame {i}: between 0 and -6 dB"
+        );
+    }
     // Unknown ids and NaN are ignored, never a panic.
     let mut e = engine(&saw_patch(), SEED);
     let junk = [

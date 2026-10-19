@@ -1,6 +1,7 @@
 //! `process()` never allocates or frees: every host call runs inside `assert_no_alloc`, including the rare paths
-//! where allocation sneaks in (AGENTS.md): a full event queue, full polyphony, every slot busy, junk events, odd
-//! block shapes. Debug builds only (`assert_no_alloc` drops its checks in release). Under nextest an abort fails
+//! where allocation sneaks in (AGENTS.md): a full event queue, full polyphony with steals, junk events, odd block
+//! shapes. The rings, every voice stolen and the plan swap have their own overflow tests in `tests/swap.rs` and
+//! `tests/voices.rs`. Debug builds only (`assert_no_alloc` drops its checks in release). Under nextest an abort fails
 //! exactly one test. A negative control shows the guard bites.
 #![cfg(debug_assertions)]
 
@@ -59,17 +60,49 @@ fn process_does_not_allocate_on_the_happy_path() {
 }
 
 #[test]
-fn sixteen_voices_and_dropped_notes_do_not_allocate() {
+fn sixteen_voices_and_steals_do_not_allocate() {
     let mut patch = every_kind_patch(2000.0);
     patch.voice.values[VoiceParam::Polyphony.index()] = 16.0;
-    // 40 overlapping notes: 16 play, the rest are dropped (S2b steals instead).
+    // 40 overlapping notes: 16 play, each of the other 24 steals the oldest voice (a 64-frame fade).
     let notes: Vec<_> = (0..40)
         .map(|i| note(36 + i as u8, i * 10, 20_000))
         .collect();
     let mut e = engine(&patch, SEED);
     guarded(&mut e, &events(&notes), 24_000, 256);
     let s = e.stats();
-    assert_eq!((s.notes, s.dropped_notes), (40, 24));
+    assert_eq!((s.notes, s.dropped_notes, s.stolen_voices), (40, 0, 24));
+}
+
+#[test]
+fn every_voice_stolen_and_every_slot_busy_do_not_allocate() {
+    use enth_patch::catalogue::VoiceMode;
+    let mut patch = every_kind_patch(2000.0);
+    patch.voice.values[VoiceParam::Polyphony.index()] = 16.0;
+    // A burst: 200 note-ons at one boundary. 16 play; each later one steals, and once the 32 slots are all busy
+    // (16 held, 16 fading) the rest cut a fading voice. Then a steady stream that steals every voice again and again.
+    let mut notes: Vec<_> = (0..200)
+        .map(|i| note(24 + (i % 96) as u8, 0, 30_000))
+        .collect();
+    notes.extend((0..400).map(|i| note(30 + (i % 60) as u8, 1000 + i * 64, 1000 + i * 64 + 3000)));
+    let mut e = engine(&patch, SEED);
+    guarded(&mut e, &events(&notes), 48_000, 512);
+    let s = e.stats();
+    assert_eq!(s.notes, 600);
+    assert_eq!(s.dropped_notes, 0);
+    assert!(s.cut_voices > 0, "the burst filled all 32 slots");
+    assert!(s.stolen_voices > 500, "{s:?}");
+    // Mono and legato: more keys than the 16-key stack, all at once and in a stream.
+    for mode in [VoiceMode::Mono, VoiceMode::Legato] {
+        let mut p = every_kind_patch(500.0);
+        p.voice.values[VoiceParam::Mode.index()] = mode.index() as f32;
+        p.voice.values[VoiceParam::Glide.index()] = 20.0;
+        let mut e = engine(&p, SEED);
+        guarded(&mut e, &events(&notes), 48_000, 333);
+        assert!(
+            e.active_voices().len() <= 2,
+            "one voice (and at most one fading)"
+        );
+    }
 }
 
 #[test]
