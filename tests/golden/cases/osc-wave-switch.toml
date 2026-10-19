@@ -1,0 +1,24 @@
+description = "D1: osc1.wave automated through sine, triangle, saw, pulse and table (formant, position 50 %) during one note; the phase carries across each switch; through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when lane D2 replaces the reference envelope."
+sample_rate = 48000
+seconds = 0.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.7 },
+]
+automation = [
+    { time_s = 0.1503, addr = "osc1.wave", value = 1 },
+    { time_s = 0.3007, addr = "osc1.wave", value = 2 },
+    { time_s = 0.4511, addr = "osc1.wave", value = 3 },
+    { time_s = 0.6013, addr = "osc1.wave", value = 4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "sine", table = "formant", position = 50, pw = 30, phase_mode = "reset", phase = 0 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

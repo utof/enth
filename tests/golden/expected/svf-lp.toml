@@ -1,6 +1,6 @@
 sample_rate = 48000
 frames = 36000
-hash = "3a2605bf85af15329418009382e82250e8a7c7a24257a2cd9a771122fea7a3c7"
+hash = "e14b7f5b403eda632653c1d72866e05936a57ce22f4a4aceb2de4f7726ecc7bb"
 
 [tolerance]
 rms_db = 0.01

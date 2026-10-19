@@ -1,50 +1,145 @@
-//! The `osc` module: S2a's **reference saw**, to be replaced by lane D1.
+//! The `osc` module (P1a lane D1): saw, triangle and pulse from the Plaits-derived polyBLEP/BLAMP core, a sine, and
+//! the wavetable mode, with hard sync and the three phase modes. The DSP is in `enth_dsp::{osc, wavetable}`; sources,
+//! deviations and measured numbers are in `docs/dsp/osc.md`.
 //!
-//! STUB (S2a). What it does, so the walking skeleton has one real sound to hash on every platform:
-//!
-//! - `wave = saw`: a naive saw with a two-sample polyBLEP correction (Välimäki and Huovilainen 2007, the textbook
-//!   form), phase in `f32`, pitch `notes.pitch_cur + semi + fine/100` evaluated once per segment, level ramped per
-//!   sample from the previous segment's value. Every other wave outputs silence.
-//! - `phase_mode`: `free` draws the start phase from the voice seed (render seed, module id, note index); `reset`
-//!   starts at `phase`; `seeded` draws it from the module's `seed` parameter (`crate::seed::seeded_voice_seed`).
-//! - As the sync master (the first enabled `osc`), it writes its phase wraps to `VoiceCx::sync_out`; as a slave it
-//!   ignores `sync`. `pw`, `table` and `position` are ignored.
-//!
-//! D1 replaces this file with the port of Plaits' `VariableShapeOscillator` (saw, pulse with PWM, triangle, hard
-//! sync with polyBLEP/BLAMP), a sine, and the wavetable mode (tables generated in `new` from the structural `table`
-//! parameter, sized from `PrepareCfg` only). Keep `Osc::new(values, cfg)` and the `VoiceProcessor` impl; the golden
-//! cases built on this saw (`tests/golden/cases/ref-saw-*`) are then updated on purpose, with the reason in the
-//! commit message.
+//! - **Wave classes.** `wave` is automatable, so a voice can change class (saw, triangle, pulse, sine, table) while a
+//!   note sounds. The phase carries over; the new class starts from it (`Shape::new` / `Phased::new`), so the only
+//!   click is the change of waveform itself. `wave` is read from `params.base` (a discrete parameter).
+//! - **The table.** `table` is structural: the plan generates the named table in `new` even while `wave` is not
+//!   `table`, so automating `wave` to `table` later finds it ready. Tables come from a process-wide cache
+//!   (`Wavetable::shared`), so a second oscillator on the same table, or a second plan, costs a refcount.
+//! - **Pitch.** `pitch_cur + semi + fine/100` semitones at the end of the segment, `pitch_prev + …` at its start
+//!   (glide and vibrato); `midi_to_hz` through the pinned `libm`; the phase increment ramps linearly between the two
+//!   over the segment. The increment is clamped to a quarter of the sample rate for saw, triangle and pulse (upstream's
+//!   `kMaxFrequency`, 12 kHz at 48 kHz) and to 0.45 of it for sine and table.
+//! - **Level** ramps per sample from the previous segment's value to this one's.
+//! - **Hard sync.** The first enabled `osc` (the *master*) writes, for every frame where its phase wraps, the
+//!   fraction of the frame that remained after the wrap into `VoiceCx::sync_out` (Plaits' `reset_time`, `[0, 1)`;
+//!   [`NO_SYNC`] elsewhere). An `osc` with `sync` on reads `VoiceCx::sync_in` and restarts there, band-limited. The
+//!   master ignores its own `sync`. Any wave can be the master; only `osc` modules take part.
+//! - **Phase modes.** `free` draws a note's start phase from the voice seed (render seed, module id, note index);
+//!   `reset` starts at `phase`; `seeded` draws it from the module's own `seed` (`crate::seed::seeded_voice_seed`).
+//!   The start phase is applied when the voice first renders, so it is the same whatever the order of parameter events
+//!   in the segment that started the note. A legato retrigger does not call `start_voice` and so keeps the phase.
+//! - **One sample of latency.** The polyBLEP core, the sine and the table all output the previous step's sum, so
+//!   this module is one sample late relative to its input timing (every wave alike, so oscillators stay aligned).
 
+use std::sync::Arc;
+
+use enth_dsp::osc::{
+    MAX_DT_ANALOG, MAX_DT_PHASED, PULSE, Phased, SAW, Shape, TRIANGLE, clamp_dt, clamp_pw, sine,
+};
 use enth_dsp::util::math::midi_to_hz;
 use enth_dsp::util::rng::Rng;
-use enth_patch::catalogue::{OscParam, PhaseMode, Wave};
+use enth_dsp::wavetable::{FRAMES, TableKind, Wavetable, alias_limit, level_for};
+use enth_patch::catalogue::{OscParam, PhaseMode, Wave, Wavetable as CatalogueTable};
 
 use crate::module::{
-    Block, MAX_VOICES, NO_SYNC, PrepareCfg, RAMP, SEG, VoiceCx, VoiceProcessor, VoiceStart,
-    count_subnormals,
+    Block, MAX_VOICES, PrepareCfg, RAMP, SEG, VoiceCx, VoiceProcessor, VoiceStart,
 };
 use crate::seed::seeded_voice_seed;
 
-/// The highest phase increment per sample (0.45 of the sample rate): the reference saw stays below Nyquist.
-const MAX_DT: f32 = 0.45;
+/// What a voice renders with: the state it keeps depends on the wave.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Class {
+    Saw,
+    Triangle,
+    Pulse,
+    Sine,
+    Table,
+}
 
-/// The oscillator (S2a reference saw).
+impl Class {
+    fn of(wave: Wave) -> Self {
+        match wave {
+            Wave::Saw => Class::Saw,
+            Wave::Triangle => Class::Triangle,
+            Wave::Pulse => Class::Pulse,
+            Wave::Sine => Class::Sine,
+            Wave::Table => Class::Table,
+        }
+    }
+}
+
+/// The oscillator.
 #[derive(Clone, Debug)]
 pub struct Osc {
     sample_rate: f32,
-    phase: [f32; MAX_VOICES],
+    alias_limit: f32,
+    table: Arc<Wavetable>,
+    /// `None` for a voice that has started but not yet rendered: the first `process` builds its state from that
+    /// segment's parameters.
+    class: [Option<Class>; MAX_VOICES],
+    /// The start phase drawn by `start_voice`, used by the first `process`.
+    phase0: [f32; MAX_VOICES],
+    shape: [Shape; MAX_VOICES],
+    phased: [Phased; MAX_VOICES],
+}
+
+/// The table the catalogue's `table` enum names.
+fn table_kind(table: CatalogueTable) -> TableKind {
+    match table {
+        CatalogueTable::Basic => TableKind::Basic,
+        CatalogueTable::Pulse => TableKind::Pulse,
+        CatalogueTable::Tilt => TableKind::Tilt,
+        CatalogueTable::Formant => TableKind::Formant,
+        CatalogueTable::Organ => TableKind::Organ,
+    }
 }
 
 impl Osc {
-    /// Prepare an oscillator. `values` are the patch values (unused by the stub; D1 generates the wavetable chosen
-    /// by `table` here).
+    /// Prepare an oscillator: generate (or fetch from the cache) the table named by the structural `table`
+    /// parameter, whatever `wave` is now.
     #[must_use]
-    pub fn new(_values: &[f32], cfg: &PrepareCfg) -> Self {
+    pub fn new(values: &[f32], cfg: &PrepareCfg) -> Self {
+        let table = values
+            .get(OscParam::Table.index())
+            .and_then(|&v| CatalogueTable::from_value(v))
+            .unwrap_or(CatalogueTable::Basic);
         Self {
             sample_rate: cfg.sample_rate,
-            phase: [0.0; MAX_VOICES],
+            alias_limit: alias_limit(cfg.sample_rate),
+            table: Wavetable::shared(table_kind(table)),
+            class: [None; MAX_VOICES],
+            phase0: [0.0; MAX_VOICES],
+            shape: [Shape::default(); MAX_VOICES],
+            phased: [Phased::default(); MAX_VOICES],
         }
+    }
+
+    /// The table this oscillator can play.
+    #[must_use]
+    pub fn table(&self) -> &Wavetable {
+        &self.table
+    }
+
+    /// Phase increment (cycles per sample) for a pitch in semitones.
+    fn dt(&self, pitch: f32, max: f32) -> f32 {
+        clamp_dt(midi_to_hz(pitch) / self.sample_rate, max)
+    }
+
+    /// The phase the voice has now, in whichever state its class keeps it.
+    fn phase_of(&self, v: usize) -> f32 {
+        match self.class[v] {
+            None => self.phase0[v],
+            Some(Class::Saw | Class::Triangle | Class::Pulse) => self.shape[v].phase(),
+            Some(Class::Sine | Class::Table) => self.phased[v].phase(),
+        }
+    }
+
+    /// Start (or switch to) `class` at `phase` with this segment's pulse width and table position.
+    fn enter(&mut self, v: usize, class: Class, phase: f32, pw: f32, pos: f32, dt: f32) {
+        match class {
+            Class::Saw => self.shape[v] = Shape::new(SAW, phase, 0.5),
+            Class::Triangle => self.shape[v] = Shape::new(TRIANGLE, phase, 0.5),
+            Class::Pulse => self.shape[v] = Shape::new(PULSE, phase, pw),
+            Class::Sine => self.phased[v] = Phased::new(phase, sine(phase)),
+            Class::Table => {
+                let level = level_for(dt, self.alias_limit);
+                self.phased[v] = Phased::new(phase, self.table.sample(level, pos, phase));
+            }
+        }
+        self.class[v] = Some(class);
     }
 }
 
@@ -64,129 +159,117 @@ fn start_phase(start: &VoiceStart<'_>) -> f32 {
     }
 }
 
-/// The two-sample polyBLEP residual at phase `t` for increment `dt`.
+/// `out[i] *= g0 + (g1 − g0)·RAMP[i]`, skipped when the gain is exactly 1 throughout.
 #[inline(always)]
-fn poly_blep(t: f32, dt: f32) -> f32 {
-    if t < dt {
-        let x = t / dt;
-        x + x - x * x - 1.0
-    } else if t > 1.0 - dt {
-        let x = (t - 1.0) / dt;
-        x * x + x + x + 1.0
-    } else {
-        0.0
+fn apply_level(out: &mut Block, g0: f32, g1: f32) {
+    if g0 == 1.0 && g1 == 1.0 {
+        return;
     }
-}
-
-/// One segment of the reference saw. When `sync` is given (this oscillator is the sync master), it records where
-/// the phase wrapped: the fraction of the frame left after the wrap, [`NO_SYNC`] elsewhere.
-fn saw(
-    phase: &mut f32,
-    dt: f32,
-    gain_prev: f32,
-    gain_cur: f32,
-    out: &mut Block,
-    mut sync: Option<&mut Block>,
-) {
-    let mut t = *phase;
-    let step = gain_cur - gain_prev;
-    for (i, (o, r)) in out.iter_mut().zip(RAMP).enumerate() {
-        let y = 2.0 * t - 1.0 - poly_blep(t, dt);
-        *o = y * (gain_prev + step * r);
-        t += dt;
-        let wrapped = t >= 1.0;
-        if wrapped {
-            t -= 1.0;
-        }
-        if let Some(s) = sync.as_deref_mut() {
-            s[i] = if wrapped && dt > 0.0 { t / dt } else { NO_SYNC };
-        }
+    let step = g1 - g0;
+    for (o, r) in out.iter_mut().zip(RAMP) {
+        *o *= g0 + step * r;
     }
-    *phase = t;
 }
 
 impl VoiceProcessor for Osc {
     fn start_voice(&mut self, start: &VoiceStart<'_>) {
-        self.phase[start.voice] = start_phase(start);
+        let v = start.voice;
+        self.phase0[v] = start_phase(start);
+        self.class[v] = None;
     }
 
     fn process(&mut self, cx: &mut VoiceCx<'_>) {
         let p = cx.params;
-        let is_saw = Wave::from_value(p.base(OscParam::Wave)) == Some(Wave::Saw);
+        let wave = Wave::from_value(p.base(OscParam::Wave)).unwrap_or(Wave::Saw);
+        let class = Class::of(wave);
+        let sync_on = p.base(OscParam::Sync) >= 0.5;
+        let analog = matches!(class, Class::Saw | Class::Triangle | Class::Pulse);
+        let max_dt = if analog { MAX_DT_ANALOG } else { MAX_DT_PHASED };
         for &v in cx.voices {
-            let out = &mut cx.io[v];
-            if !is_saw {
-                *out = [0.0; SEG];
-                continue;
-            }
-            let pitch =
+            let pitch1 =
                 cx.notes.pitch_cur[v] + p.cur(OscParam::Semi, v) + p.cur(OscParam::Fine, v) * 0.01;
-            let dt = (midi_to_hz(pitch) / self.sample_rate).clamp(0.0, MAX_DT);
-            let gain_prev = p.prev(OscParam::Level, v) * 0.01;
-            let gain_cur = p.cur(OscParam::Level, v) * 0.01;
-            let sync = cx.sync_out.as_deref_mut().map(|s| &mut s[v]);
-            saw(&mut self.phase[v], dt, gain_prev, gain_cur, out, sync);
+            let pitch0 = cx.notes.pitch_prev[v]
+                + p.prev(OscParam::Semi, v)
+                + p.prev(OscParam::Fine, v) * 0.01;
+            let dt1 = self.dt(pitch1, max_dt);
+            let dt0 = if pitch0.to_bits() == pitch1.to_bits() {
+                dt1
+            } else {
+                self.dt(pitch0, max_dt)
+            };
+            let dt = [dt0, dt1];
+            let pw = [
+                clamp_pw(p.prev(OscParam::Pw, v) * 0.01, dt0),
+                clamp_pw(p.cur(OscParam::Pw, v) * 0.01, dt1),
+            ];
+            let frame_scale = 0.01 * (FRAMES - 1) as f32;
+            let pos = [
+                p.prev(OscParam::Position, v) * frame_scale,
+                p.cur(OscParam::Position, v) * frame_scale,
+            ];
+
+            if self.class[v] != Some(class) {
+                let phase = self.phase_of(v);
+                self.enter(v, class, phase, pw[1], pos[1], dt0.max(dt1));
+            }
+
+            let out = &mut cx.io[v];
+            let sync_in = if sync_on {
+                cx.sync_in.map(|s| &s[v])
+            } else {
+                None
+            };
+            let sync_out = cx.sync_out.as_deref_mut().map(|s| &mut s[v]);
+            match class {
+                Class::Saw => self.shape[v].render::<SAW, SEG>(dt, pw, sync_in, sync_out, out),
+                Class::Triangle => {
+                    self.shape[v].render::<TRIANGLE, SEG>(dt, pw, sync_in, sync_out, out);
+                }
+                Class::Pulse => self.shape[v].render::<PULSE, SEG>(dt, pw, sync_in, sync_out, out),
+                Class::Sine => {
+                    self.phased[v].render::<SEG>(dt, sync_in, sync_out, out, |ph, _| sine(ph));
+                }
+                Class::Table => {
+                    let level = level_for(dt0.max(dt1), self.alias_limit);
+                    let table = &*self.table;
+                    let phased = &mut self.phased[v];
+                    if pos[0].to_bits() == pos[1].to_bits() {
+                        // The position holds still (the usual case): the frame rows and the cross-fade weight are
+                        // fixed for the segment, and on a frame (position 0 %, 100 %, k/12) one Hermite read does.
+                        let at = table.cursor(level, pos[1]);
+                        if at.on_frame() {
+                            phased.render::<SEG>(dt, sync_in, sync_out, out, |ph, _| {
+                                at.read_first(ph)
+                            });
+                        } else {
+                            phased.render::<SEG>(dt, sync_in, sync_out, out, |ph, _| at.read(ph));
+                        }
+                    } else {
+                        let step = pos[1] - pos[0];
+                        phased.render::<SEG>(dt, sync_in, sync_out, out, |ph, w| {
+                            table.sample(level, pos[0] + step * w, ph)
+                        });
+                    }
+                }
+            }
+            apply_level(
+                out,
+                p.prev(OscParam::Level, v) * 0.01,
+                p.cur(OscParam::Level, v) * 0.01,
+            );
         }
     }
 
     fn copy_state_from(&mut self, other: &Self) {
-        self.phase = other.phase;
+        self.class = other.class;
+        self.phase0 = other.phase0;
+        self.shape = other.shape;
+        self.phased = other.phased;
     }
 
     fn subnormals(&self) -> usize {
-        count_subnormals(&self.phase)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_saw_is_bounded_and_has_the_right_period() {
-        let mut phase = 0.25;
-        let dt = 440.0 / 48_000.0;
-        let mut out = [0.0; SEG];
-        let mut crossings = 0;
-        let mut last = 0.0f32;
-        for _ in 0..1500 {
-            saw(&mut phase, dt, 1.0, 1.0, &mut out, None);
-            for &y in &out {
-                assert!(y.abs() <= 1.0 + 1e-6, "{y}");
-                if last >= 0.0 && y < 0.0 {
-                    crossings += 1; // falling zero crossings: one per period, at the reset
-                }
-                last = y;
-            }
-        }
-        // 1500 segments = 1 s at 48 kHz: 440 periods, give or take the first.
-        assert!((439..=441).contains(&crossings), "{crossings}");
-    }
-
-    #[test]
-    fn the_sync_master_marks_each_wrap_once() {
-        let (mut phase, dt) = (0.9, 0.3);
-        let mut out = [0.0; SEG];
-        let mut sync = [0.5; SEG];
-        saw(&mut phase, dt, 1.0, 1.0, &mut out, Some(&mut sync));
-        // 0.9 -> 1.2 wraps in frame 0 with 0.2 of a phase step left: 0.2 / 0.3 of the frame.
-        assert!((sync[0] - 0.2 / 0.3).abs() < 1e-5, "{}", sync[0]);
-        assert_eq!(sync[1].to_bits(), NO_SYNC.to_bits());
-        let wraps = sync
-            .iter()
-            .filter(|x| x.to_bits() != NO_SYNC.to_bits())
-            .count();
-        assert_eq!(wraps, 10, "0.9 + 32 * 0.3 = 10.5: ten wraps");
-        assert!(
-            sync.iter()
-                .all(|x| x.to_bits() == NO_SYNC.to_bits() || (0.0..1.0).contains(x))
-        );
-    }
-
-    #[test]
-    fn poly_blep_is_zero_away_from_the_edge() {
-        assert_eq!(poly_blep(0.5, 0.01), 0.0);
-        assert!(poly_blep(0.0, 0.01) < 0.0);
-        assert!(poly_blep(0.999, 0.01) > 0.0);
+        self.shape.iter().filter(|s| s.has_subnormal()).count()
+            + self.phased.iter().filter(|s| s.has_subnormal()).count()
+            + self.phase0.iter().filter(|x| x.is_subnormal()).count()
     }
 }

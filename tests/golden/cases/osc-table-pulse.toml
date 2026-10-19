@@ -1,0 +1,21 @@
+description = "D1: the pulse wavetable on four oscillators at positions 0, 10, 55 and 100 % and semitones 0, +12, -12, +7 around A3 (key 57), level 25 % each, reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when lane D2 replaces the reference envelope."
+sample_rate = 48000
+seconds = 0.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "table", table = "pulse", position = 0, semi = 0, level = 25, phase_mode = "reset", phase = 0 } },
+    { id = "osc2", kind = "osc", params = { wave = "table", table = "pulse", position = 10, semi = 12, level = 25, phase_mode = "reset", phase = 0 } },
+    { id = "osc3", kind = "osc", params = { wave = "table", table = "pulse", position = 55, semi = -12, level = 25, phase_mode = "reset", phase = 0 } },
+    { id = "osc4", kind = "osc", params = { wave = "table", table = "pulse", position = 100, semi = 7, level = 25, phase_mode = "reset", phase = 0 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
