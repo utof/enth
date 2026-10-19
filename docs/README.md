@@ -2,7 +2,7 @@
 
 > **Working name:** `enth` (the repo folder). The final product name is still open — see [naming.md](naming.md). Crates use the `enth-` prefix; renaming later is a find-and-replace.
 >
-> **As of:** 2026-10-19 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)); the P1 research session is next. No product code yet.
+> **As of:** 2026-10-19 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). The P1a research session is done and these docs follow it; the P1a lanes ([phase-1a.md](phase-1a.md)) are next. No product code yet.
 
 `enth` is an open-source (MIT) modular synthesizer written in Rust, shipped first as a **CLAP plugin**, built for its author and friends first. It combines ideas that usually live in separate products:
 
@@ -25,7 +25,8 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [design.md](design.md) | The nine load-bearing designs: params, patch, engine, host params, determinism, scoring, knob distance, solver, randomizer |
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
-| [phase-0.md](phase-0.md) | **Start here when coding.** The Phase 0 lanes and tasks, with acceptance criteria |
+| [phase-1a.md](phase-1a.md) | **Start here when coding.** The P1a (headless core) lanes: freezes, waves, ownership, acceptance, owner gates |
+| [phase-0.md](phase-0.md) | The Phase 0 lanes and tasks, with acceptance criteria (done) |
 | [spikes/summary.md](spikes/summary.md) | What Phase 0 measured and changed, the G0 results, and the owner's [checklist](spikes/owner-checklist.md) |
 | [benchmarks.md](benchmarks.md) | How we measure UI stacks, the engine, and the agent loop — and the pass/fail thresholds |
 | [research.md](research.md) | Prior art, papers, and evidence behind the decisions, with sources |
@@ -61,4 +62,4 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 
 ## How to use these docs with a coding agent
 
-Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-0.md`, then do Phase 0 lane <name>."* Task 0 (the Phase 0 research session) and Task 1 (machine setup) are done; read the research summary before saying go. After the one-day skeleton the work runs as parallel lanes (see the lane table in `phase-0.md`). Each lane has acceptance criteria; ask the agent to stop and report at the end of its lane.
+Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-1a.md`, then do P1a lane <name>."* Phase 0 is done (its lanes are in `phase-0.md`); the P1a research summary is `_local/sessions/2026-10-19-p1a-headless-core/summary.md`, so read it before saying go. The work runs as parallel lanes behind three freezes (see the lane table in `phase-1a.md`). Each lane has acceptance criteria; ask the agent to stop and report at the end of its lane.
