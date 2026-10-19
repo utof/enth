@@ -1,0 +1,61 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "SchemaRef": {
+      "additionalProperties": false,
+      "description": "One printable schema.",
+      "properties": {
+        "describes": {
+          "description": "What it describes.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The schema id (`enth.check/1`), also its `$id`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name to pass to `enth schema`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "id",
+        "describes"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.schema/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.schema/1`: the schemas `enth schema <name>` prints.",
+  "properties": {
+    "hint": {
+      "description": "How to print one.",
+      "type": "string"
+    },
+    "schema": {
+      "const": "enth.schema/1",
+      "description": "`enth.schema/1`.",
+      "type": "string"
+    },
+    "schemas": {
+      "description": "One entry per schema.",
+      "items": {
+        "$ref": "#/$defs/SchemaRef"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "schemas",
+    "hint"
+  ],
+  "title": "SchemaListOut",
+  "type": "object"
+}

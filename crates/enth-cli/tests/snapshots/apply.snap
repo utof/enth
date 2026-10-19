@@ -1,0 +1,80 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "applied": [
+    {
+      "op": "add",
+      "target": "filter1",
+      "to": "svf at voice_fx[0]"
+    },
+    {
+      "from": "400ms",
+      "op": "set",
+      "target": "env1.release",
+      "to": "1.5s"
+    },
+    {
+      "from": "saw",
+      "op": "set",
+      "target": "osc1.wave",
+      "to": "pulse"
+    },
+    {
+      "from": "50%",
+      "op": "set",
+      "target": "osc1.pw",
+      "to": "30%"
+    }
+  ],
+  "dry_run": false,
+  "inverse": [
+    {
+      "set": "osc1.pw",
+      "to": 50.0
+    },
+    {
+      "set": "osc1.wave",
+      "to": "saw"
+    },
+    {
+      "set": "env1.release",
+      "to": 400.0
+    },
+    {
+      "remove": "filter1"
+    }
+  ],
+  "ops": [
+    {
+      "add": "svf",
+      "at": "voice_fx[0]",
+      "id": "filter1",
+      "params": {
+        "cutoff": 1200.0,
+        "drive": 0.0,
+        "keytrack": 0.0,
+        "mode": "lp",
+        "resonance": 10.0
+      }
+    },
+    {
+      "set": "env1.release",
+      "to": 1500.0
+    },
+    {
+      "set": "osc1.wave",
+      "to": "pulse"
+    },
+    {
+      "set": "osc1.pw",
+      "to": 30.0
+    }
+  ],
+  "schema": "enth.apply/1",
+  "wrote": "[TMP]/p.patch.json"
+}
+--- stderr

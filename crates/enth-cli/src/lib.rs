@@ -32,7 +32,7 @@ pub mod error;
 pub mod eval;
 pub mod fix;
 mod guide;
-mod out;
+pub mod out;
 mod patchio;
 pub mod perf;
 pub mod schema;

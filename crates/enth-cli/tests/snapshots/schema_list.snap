@@ -1,0 +1,108 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "hint": "`enth schema <name>` prints one JSON Schema (draft 2020-12)",
+  "schema": "enth.schema/1",
+  "schemas": [
+    {
+      "describes": "a patch file (*.patch.json)",
+      "id": "enth.patch/1",
+      "name": "patch"
+    },
+    {
+      "describes": "the ops JSON given to --ops (an array of ops, or one op)",
+      "id": "enth.ops/1",
+      "name": "ops"
+    },
+    {
+      "describes": "a performance given to --perf, also stored in rendered WAVs",
+      "id": "enth.perf/1",
+      "name": "perf"
+    },
+    {
+      "describes": "the JSON in the `enth` chunk of a WAV written by enth render",
+      "id": "enth.wavmeta/1",
+      "name": "wavmeta"
+    },
+    {
+      "describes": "every error (printed instead of the command's object)",
+      "id": "enth.error/1",
+      "name": "error"
+    },
+    {
+      "describes": "the output of enth schema (the list)",
+      "id": "enth.schema/1",
+      "name": "schema"
+    },
+    {
+      "describes": "the output of enth modules",
+      "id": "enth.modules/1",
+      "name": "modules"
+    },
+    {
+      "describes": "the output of enth params",
+      "id": "enth.params/1",
+      "name": "params"
+    },
+    {
+      "describes": "the output of enth new",
+      "id": "enth.new/1",
+      "name": "new"
+    },
+    {
+      "describes": "the output of enth new --list",
+      "id": "enth.templates/1",
+      "name": "templates"
+    },
+    {
+      "describes": "the output of enth apply",
+      "id": "enth.apply/1",
+      "name": "apply"
+    },
+    {
+      "describes": "the output of enth get",
+      "id": "enth.get/1",
+      "name": "get"
+    },
+    {
+      "describes": "the output of enth diff",
+      "id": "enth.diff/1",
+      "name": "diff"
+    },
+    {
+      "describes": "the output of enth render",
+      "id": "enth.render/1",
+      "name": "render"
+    },
+    {
+      "describes": "the output of enth describe",
+      "id": "enth.describe/1",
+      "name": "describe"
+    },
+    {
+      "describes": "the output of enth check",
+      "id": "enth.check/1",
+      "name": "check"
+    },
+    {
+      "describes": "the output of enth step",
+      "id": "enth.step/1",
+      "name": "step"
+    },
+    {
+      "describes": "the output of enth guide",
+      "id": "enth.guide/1",
+      "name": "guide"
+    },
+    {
+      "describes": "the output of enth bench",
+      "id": "enth.bench/1",
+      "name": "bench"
+    }
+  ]
+}
+--- stderr

@@ -1,0 +1,50 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &list, false)"
+---
+exit: 0
+--- stdout
+{
+  "schema": "enth.templates/1",
+  "templates": [
+    {
+      "modules": [
+        "osc1",
+        "env1"
+      ],
+      "name": "init",
+      "summary": "one saw through the amplitude envelope: a blank start"
+    },
+    {
+      "modules": [
+        "osc1",
+        "filter1",
+        "env1"
+      ],
+      "name": "pluck_1osc",
+      "summary": "a saw through a bright low-pass, fast attack, short decay, no sustain: a short pluck"
+    },
+    {
+      "modules": [
+        "osc1",
+        "osc2",
+        "filter1",
+        "reverb1",
+        "env1"
+      ],
+      "name": "pad_2osc",
+      "summary": "two detuned saws, a soft low-pass, a slow swell, a long release, some reverb"
+    },
+    {
+      "modules": [
+        "osc1",
+        "osc2",
+        "filter1",
+        "env1"
+      ],
+      "name": "bass_sub",
+      "summary": "a saw over a sine an octave below, a dark resonant low-pass, fast attack, full sustain"
+    }
+  ]
+}
+--- stderr

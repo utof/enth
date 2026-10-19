@@ -1,0 +1,21 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"new\"], 2, \"usage\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "usage",
+  "exit": 2,
+  "hint": "e.g. `enth new --template pluck_1osc --out p.patch.json`; `enth new --list` lists the templates",
+  "known": [
+    "init",
+    "pluck_1osc",
+    "pad_2osc",
+    "bass_sub"
+  ],
+  "message": "new needs --template <name>",
+  "schema": "enth.error/1"
+}
+--- stderr

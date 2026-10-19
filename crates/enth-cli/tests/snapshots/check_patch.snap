@@ -1,0 +1,80 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, true)"
+---
+exit: 1
+--- stdout
+{
+  "blocked": [],
+  "failed": 1,
+  "fix": null,
+  "pass": false,
+  "passed": 4,
+  "perf": {
+    "dur_s": 3,
+    "notes": [
+      {
+        "note": "C3",
+        "off_s": 1.5,
+        "on_s": 0,
+        "vel": 100
+      }
+    ],
+    "source": "default"
+  },
+  "results": [
+    {
+      "expect": "pitch.f0_hz = C3 ± 50ct",
+      "got": "<num>",
+      "margin": "<num>",
+      "margin_unit": "ct",
+      "noise": "<num>",
+      "note": "C3+0ct",
+      "pass": true,
+      "thin": "<bool>",
+      "unit": "Hz"
+    },
+    {
+      "expect": "envelope.attack_ms < 100",
+      "got": "<num>",
+      "margin": "<num>",
+      "margin_pct": "<num>",
+      "noise": "<num>",
+      "pass": true,
+      "thin": "<bool>",
+      "unit": "ms"
+    },
+    {
+      "expect": "envelope.sustain_db < -20",
+      "got": "<num>",
+      "margin": "<num>",
+      "noise": "<num>",
+      "pass": true,
+      "thin": "<bool>",
+      "unit": "dB"
+    },
+    {
+      "expect": "detune.beating_hz == null",
+      "got": null,
+      "margin": null,
+      "noise": null,
+      "pass": true,
+      "thin": "<bool>",
+      "unit": "Hz"
+    },
+    {
+      "expect": "spectrum.centroid_hz > 15000",
+      "got": "<num>",
+      "margin": "<num>",
+      "margin_pct": "<num>",
+      "noise": "<num>",
+      "pass": false,
+      "thin": "<bool>",
+      "unit": "Hz"
+    }
+  ],
+  "schema": "enth.check/1",
+  "source": "[TMP]/p.patch.json",
+  "thin": "<num>"
+}
+--- stderr

@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &wav, \"--set\", \"osc1.fine=1\"], 3, \"not_a_patch\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "not_a_patch",
+  "exit": 3,
+  "file": "[TMP]/p.wav",
+  "hint": "commands that edit or render take a *.patch.json; describe and check also take a WAV",
+  "message": "[TMP]/p.wav is a WAV file, not a patch",
+  "schema": "enth.error/1"
+}
+--- stderr

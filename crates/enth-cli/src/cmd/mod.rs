@@ -257,18 +257,29 @@ fn clap_error(e: &clap::Error, table: bool) -> Output {
             stderr: String::new(),
         };
     }
-    let message = text
-        .lines()
-        .find(|l| !l.trim().is_empty())
+    // The first line, plus the indented lines that continue it (clap lists missing arguments that way).
+    let mut lines = text.lines().skip_while(|l| l.trim().is_empty());
+    let mut message = lines
+        .next()
         .unwrap_or("bad command line")
         .trim_start_matches("error: ")
+        .trim_end_matches(':')
         .to_owned();
+    let more: Vec<&str> = lines
+        .take_while(|l| l.starts_with(' ') && !l.trim().is_empty())
+        .map(str::trim)
+        .collect();
+    if !more.is_empty() {
+        message = format!("{message}: {}", more.join(", "));
+    }
     let usage = text
         .lines()
         .find_map(|l| l.trim().strip_prefix("Usage: "))
         .map(str::to_owned);
+    let valid = context_strings(e, ContextKind::ValidValue);
     let hint = match usage {
         Some(u) => format!("usage: {u}; `--help` shows the flags, `enth guide` the workflow"),
+        None if !valid.is_empty() => format!("use one of: {}", valid.join(", ")),
         None => "`enth --help` lists the commands; `enth guide` shows the workflow".to_owned(),
     };
     let mut suggestions = context_strings(e, ContextKind::SuggestedSubcommand);
@@ -284,7 +295,6 @@ fn clap_error(e: &clap::Error, table: bool) -> Output {
     suggestions.sort_by_key(|s| strsim::damerau_levenshtein(&typed, s));
     suggestions.dedup();
     let mut err = crate::error::usage("usage", message, hint).suggest(suggestions);
-    let valid = context_strings(e, ContextKind::ValidValue);
     if !valid.is_empty() && valid.len() <= 12 {
         err = err.known(valid);
     }

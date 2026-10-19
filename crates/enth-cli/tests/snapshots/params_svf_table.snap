@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "run_tty(&[\"params\", \"svf\"]).stdout"
+---
+kind     svf
+name     Filter
+section  voice_fx
+summary  A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.
+
+params:
+  key        min  max    unit  default  values             effect                                                                                               accepts                           automatable  modulatable  moves                  name          scale   structural  tier
+  mode       -    -            lp       lp, bp, hp, notch  The filter response: lp, bp, hp or notch.                                                            lp, bp, hp, notch                 true         false        spectrum.centroid_hz   Mode          enum    false       basic
+  cutoff     20   20000  Hz    2000                        The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.  800, 800Hz, 1.2kHz, A4, C#3, Db2  true         true         spectrum.centroid_hz   Cutoff        log     false       basic
+  resonance  0    100    %     10                          Emphasis at the cutoff, from none (Q 0.5) to a sharp whistling peak (Q 25).                          30, 30%                           true         true                                Resonance     linear  false       basic
+  keytrack   0    100    %     0                           How much the cutoff follows the played note: 100 % moves it an octave per octave played.             30, 30%                           true         false                               Key tracking  linear  false       intermediate
+  drive      0    24     dB    0                           Gain into a soft saturator before the filter, normalised back after: adds grit and harmonics.        -6, -6dB                          true         true         spectrum.harmonics_db  Drive         linear  false       intermediate

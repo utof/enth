@@ -1,0 +1,35 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &some, false)"
+---
+exit: 0
+--- stdout
+{
+  "meta": {
+    "author": "",
+    "description": "Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.",
+    "name": "Pad (2 osc)",
+    "tags": [
+      "pad"
+    ]
+  },
+  "routes": [],
+  "schema": "enth.get/1",
+  "source": "[TMP]/p.patch.json",
+  "values": {
+    "filter1.cutoff": "1.5kHz",
+    "master.level": "0dB",
+    "osc1.fine": "-8ct",
+    "osc1.level": "100%",
+    "osc1.phase": "0deg",
+    "osc1.phase_mode": "free",
+    "osc1.position": "0%",
+    "osc1.pw": "50%",
+    "osc1.seed": "0",
+    "osc1.semi": "0st",
+    "osc1.sync": "off",
+    "osc1.table": "basic",
+    "osc1.wave": "saw"
+  }
+}
+--- stderr

@@ -1,0 +1,21 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"new\", \"--template\", \"pluk\", \"--out\", &s.path(\"x.patch.json\")], 3,\n\"unknown_template\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "unknown_template",
+  "exit": 3,
+  "hint": "`enth new --list` lists the templates",
+  "known": [
+    "init",
+    "pluck_1osc",
+    "pad_2osc",
+    "bass_sub"
+  ],
+  "message": "no template 'pluk'",
+  "schema": "enth.error/1"
+}
+--- stderr

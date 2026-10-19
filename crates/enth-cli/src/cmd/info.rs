@@ -97,7 +97,7 @@ pub fn modules() -> Reply {
             .collect(),
         hint: "`enth params <kind>` lists a kind's parameters with units and ranges".to_owned(),
     };
-    Reply::new(&out).columns(&["kind", "section", "id_prefix", "params", "summary"])
+    Reply::new(&out).columns(&["kind", "key", "section", "id_prefix", "params", "summary"])
 }
 
 fn builtin_summary(b: Builtin) -> &'static str {

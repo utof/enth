@@ -1,0 +1,145 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "ChangeOut": {
+      "additionalProperties": false,
+      "description": "One applied change, in words and real units.",
+      "properties": {
+        "from": {
+          "description": "The value before, in real units; absent when there was none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
+          "type": "string"
+        },
+        "target": {
+          "description": "What it changed: an address, a module id, a route `src -> dst`.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The value after, in real units; absent when there is none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "type": "object"
+    },
+    "DiffReading": {
+      "additionalProperties": false,
+      "description": "One descriptor in two renders.",
+      "properties": {
+        "a": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The reading for `a` (null when absent)."
+        },
+        "b": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The reading for `b` (null when absent)."
+        }
+      },
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    }
+  },
+  "$id": "enth.diff/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.diff/1`: how patch `b` differs from patch `a`.",
+  "properties": {
+    "a": {
+      "description": "The first patch file.",
+      "type": "string"
+    },
+    "b": {
+      "description": "The second patch file.",
+      "type": "string"
+    },
+    "changes": {
+      "description": "The differences, as the changes that turn `a` into `b`.",
+      "items": {
+        "$ref": "#/$defs/ChangeOut"
+      },
+      "type": "array"
+    },
+    "describe": {
+      "additionalProperties": {
+        "$ref": "#/$defs/DiffReading"
+      },
+      "description": "With `--describe`: descriptors that differ between the two renders, as `{a, b}`.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "ops": {
+      "description": "Ops that turn `a` into `b` (checked by applying them), exact; null if no op list could be verified.",
+      "items": true,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "same": {
+      "description": "True when the patches are identical (the engine stamp aside).",
+      "type": "boolean"
+    },
+    "schema": {
+      "const": "enth.diff/1",
+      "description": "`enth.diff/1`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "a",
+    "b",
+    "same",
+    "changes"
+  ],
+  "title": "DiffOut",
+  "type": "object"
+}

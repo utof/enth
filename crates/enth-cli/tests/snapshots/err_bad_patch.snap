@@ -1,0 +1,37 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: text
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "saw"
+  ],
+  "error": "bad_value",
+  "errors": [
+    {
+      "did_you_mean": [
+        "saw"
+      ],
+      "error": "bad_value",
+      "hint": "use one of: sine, triangle, saw, pulse, table",
+      "message": "wave: 'sawtooth' is not a valid value; use one of: sine, triangle, saw, pulse, table",
+      "path": "generators[0].params.wave"
+    },
+    {
+      "did_you_mean": [],
+      "error": "out_of_range",
+      "hint": "the range is 0..=100 percent; the nearest valid value is 100",
+      "message": "level: 150 is out of range; the range is 0..=100 percent; the nearest valid value is 100",
+      "path": "generators[0].params.level"
+    }
+  ],
+  "exit": 3,
+  "file": "[TMP]/bad.patch.json",
+  "hint": "use one of: sine, triangle, saw, pulse, table",
+  "message": "wave: 'sawtooth' is not a valid value; use one of: sine, triangle, saw, pulse, table",
+  "path": "generators[0].params.wave",
+  "schema": "enth.error/1"
+}
+--- stderr

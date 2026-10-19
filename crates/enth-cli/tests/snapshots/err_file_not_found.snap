@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s,\n&[\"check\", &s.path(\"missing.patch.json\"), \"--expect\", \"attack < 10ms\"], 5,\n\"file_not_found\")"
+---
+exit: 5
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "file_not_found",
+  "exit": 5,
+  "file": "[TMP]/missing.patch.json",
+  "hint": "check the path; start a patch with `enth new --template init --out p.patch.json`",
+  "message": "no such file: [TMP]/missing.patch.json",
+  "schema": "enth.error/1"
+}
+--- stderr

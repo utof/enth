@@ -1,0 +1,117 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "BuiltinOut": {
+      "additionalProperties": false,
+      "description": "A built-in pseudo-module.",
+      "properties": {
+        "key": {
+          "description": "`voice` or `master`.",
+          "type": "string"
+        },
+        "params": {
+          "description": "How many parameters it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "summary": {
+          "description": "One plain sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "summary",
+        "params"
+      ],
+      "type": "object"
+    },
+    "ModuleKindOut": {
+      "additionalProperties": false,
+      "description": "One module kind.",
+      "properties": {
+        "id_prefix": {
+          "description": "The prefix of new ids (`filter` gives `filter1`).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "The kind key used in ops and files (`svf`).",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name (`Filter`).",
+          "type": "string"
+        },
+        "params": {
+          "description": "How many parameters it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "section": {
+          "description": "The patch section modules of this kind live in (`generators`, `voice_fx`, `fx`, `modulators`).",
+          "type": "string"
+        },
+        "summary": {
+          "description": "One plain sentence.",
+          "type": "string"
+        },
+        "tier": {
+          "description": "`basic`, `intermediate` or `advanced`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "section",
+        "id_prefix",
+        "summary",
+        "params",
+        "tier"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.modules/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.modules/1`: the module kinds and the built-ins.",
+  "properties": {
+    "builtins": {
+      "description": "The built-in pseudo-modules `voice` and `master` (their parameters are ordinary addresses).",
+      "items": {
+        "$ref": "#/$defs/BuiltinOut"
+      },
+      "type": "array"
+    },
+    "hint": {
+      "description": "The next command.",
+      "type": "string"
+    },
+    "modules": {
+      "description": "Every module kind, in catalogue order.",
+      "items": {
+        "$ref": "#/$defs/ModuleKindOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.modules/1",
+      "description": "`enth.modules/1`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "modules",
+    "builtins",
+    "hint"
+  ],
+  "title": "ModulesOut",
+  "type": "object"
+}

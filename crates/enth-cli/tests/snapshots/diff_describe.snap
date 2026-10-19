@@ -1,0 +1,222 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &described, true)"
+---
+exit: 0
+--- stdout
+{
+  "a": "[TMP]/a.patch.json",
+  "b": "[TMP]/b.patch.json",
+  "changes": [
+    {
+      "op": "add",
+      "target": "osc2",
+      "to": "osc at generators[1]"
+    },
+    {
+      "op": "add",
+      "target": "reverb1",
+      "to": "reverb at fx[0]"
+    },
+    {
+      "from": "0ct",
+      "op": "set",
+      "target": "osc1.fine",
+      "to": "-8ct"
+    },
+    {
+      "from": "2.5kHz",
+      "op": "set",
+      "target": "filter1.cutoff",
+      "to": "1.5kHz"
+    },
+    {
+      "from": "15%",
+      "op": "set",
+      "target": "filter1.resonance",
+      "to": "10%"
+    },
+    {
+      "from": "1ms",
+      "op": "set",
+      "target": "env1.attack",
+      "to": "600ms"
+    },
+    {
+      "from": "350ms",
+      "op": "set",
+      "target": "env1.decay",
+      "to": "800ms"
+    },
+    {
+      "from": "0%",
+      "op": "set",
+      "target": "env1.sustain",
+      "to": "85%"
+    },
+    {
+      "from": "150ms",
+      "op": "set",
+      "target": "env1.release",
+      "to": "1.5s"
+    },
+    {
+      "from": "name: Pluck (1 osc); description: A saw through a bright low-pass, with a fast attack, a short decay and no sustain: a short pluck to shape.; tags: pluck",
+      "op": "meta",
+      "target": "meta",
+      "to": "name: Pad (2 osc); description: Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.; tags: pad"
+    }
+  ],
+  "describe": {
+    "detune.beating_hz": {
+      "a": null,
+      "b": "<num>"
+    },
+    "detune.depth_db": {
+      "a": null,
+      "b": "<num>"
+    },
+    "envelope.attack_ms": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "envelope.decay_ms": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "envelope.duration_ms": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "envelope.release_ms": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "envelope.ripple_db": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "envelope.sustain_db": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "loudness.clipped_pct": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "loudness.clipping": {
+      "a": false,
+      "b": true
+    },
+    "loudness.lufs_i": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "loudness.peak_dbfs": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "loudness.true_peak_dbtp": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "noise_ratio": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "pitch.cents_dev": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "pitch.f0_hz": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "pitch.stability": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "spectrum.centroid_hz": {
+      "a": "<num>",
+      "b": "<num>"
+    }
+  },
+  "ops": [
+    {
+      "add": "osc",
+      "at": "generators[1]",
+      "id": "osc2",
+      "params": {
+        "fine": 8.0,
+        "level": 80.0,
+        "phase": 0.0,
+        "phase_mode": "free",
+        "position": 0.0,
+        "pw": 50.0,
+        "seed": 0.0,
+        "semi": 0.0,
+        "sync": false,
+        "table": "basic",
+        "wave": "saw"
+      }
+    },
+    {
+      "add": "reverb",
+      "at": "fx[0]",
+      "id": "reverb1",
+      "params": {
+        "decay": 3000.0,
+        "detune": 2.0,
+        "dry": 0.0,
+        "early": 150.0,
+        "high_cut": 12000.0,
+        "high_damp": 2.5,
+        "low_cut": 80.0,
+        "low_damp": 1.5,
+        "room": 80.0,
+        "wet": -12.0
+      }
+    },
+    {
+      "set": "osc1.fine",
+      "to": -8.0
+    },
+    {
+      "set": "filter1.cutoff",
+      "to": 1500.0
+    },
+    {
+      "set": "filter1.resonance",
+      "to": 10.0
+    },
+    {
+      "set": "env1.attack",
+      "to": 600.0
+    },
+    {
+      "set": "env1.decay",
+      "to": 800.0
+    },
+    {
+      "set": "env1.sustain",
+      "to": 85.0
+    },
+    {
+      "set": "env1.release",
+      "to": 1500.0
+    },
+    {
+      "meta": {
+        "author": "",
+        "description": "Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.",
+        "name": "Pad (2 osc)",
+        "tags": [
+          "pad"
+        ]
+      }
+    }
+  ],
+  "same": false,
+  "schema": "enth.diff/1"
+}
+--- stderr

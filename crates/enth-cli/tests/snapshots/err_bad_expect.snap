@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"check\", &p, \"--expect\", \"attack << 10ms\"], 2, \"bad_expect\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_expect",
+  "exit": 2,
+  "hint": "write <feature> <op> <value>, e.g. brightness>2kHz, attack<10ms, sustain>-6dB, pitch=C3±20ct, beating in [3Hz, 9Hz], tremolo == null; ops are < <= > >= = ~ in, and != only for null or true/false",
+  "message": "cannot read expectation 'attack << 10ms': '< 10ms' is not a number with an optional unit",
+  "path": "attack << 10ms",
+  "schema": "enth.error/1"
+}
+--- stderr

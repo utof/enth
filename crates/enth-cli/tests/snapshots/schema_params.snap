@@ -1,0 +1,169 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "ParamOut": {
+      "additionalProperties": false,
+      "description": "One parameter. Values are plain numbers in `unit`; ranges are hard limits (a value outside is an error that names\nthe nearest valid one).",
+      "properties": {
+        "accepts": {
+          "description": "Example spellings a value may take (`800Hz`, `1.2kHz`, `A4`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "automatable": {
+          "description": "Host automation may drive it.",
+          "type": "boolean"
+        },
+        "default": {
+          "$ref": "#/$defs/Reading",
+          "description": "The default: a number in `unit`, an enum key, or a boolean for a toggle."
+        },
+        "effect": {
+          "description": "What it does, in one plain sentence.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The key used in addresses (`filter1.cutoff`).",
+          "type": "string"
+        },
+        "max": {
+          "description": "The highest value (null for enums and toggles).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min": {
+          "description": "The lowest value (null for enums and toggles).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "modulatable": {
+          "description": "Routes may modulate it.",
+          "type": "boolean"
+        },
+        "moves": {
+          "description": "The descriptor it mainly moves (`spectrum.centroid_hz`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "scale": {
+          "description": "`linear`, `log`, `power`, `int`, `enum` or `toggle`: how the knob maps its range.",
+          "type": "string"
+        },
+        "structural": {
+          "description": "Changing it rebuilds the voice plan.",
+          "type": "boolean"
+        },
+        "tier": {
+          "description": "`basic`, `intermediate` or `advanced`.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "The unit suffix values are stored in (`Hz`, `ms`, `dB`, `%`, `ct`, `st`, `:1`, `deg`); empty for plain\nnumbers, enums and toggles.",
+          "type": "string"
+        },
+        "values": {
+          "description": "The enum keys, for enums.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "unit",
+        "default",
+        "scale",
+        "accepts",
+        "modulatable",
+        "automatable",
+        "structural",
+        "tier",
+        "effect"
+      ],
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    }
+  },
+  "$id": "enth.params/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.params/1`: the parameters of one module kind (or `voice`, `master`), with units and ranges.",
+  "properties": {
+    "kind": {
+      "description": "The kind key (`svf`), or `voice` / `master`.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Display name.",
+      "type": "string"
+    },
+    "params": {
+      "description": "The parameters, in spec order.",
+      "items": {
+        "$ref": "#/$defs/ParamOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.params/1",
+      "description": "`enth.params/1`.",
+      "type": "string"
+    },
+    "section": {
+      "description": "The section modules of this kind live in; null for the built-ins.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary": {
+      "description": "One plain sentence.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "name",
+    "summary",
+    "params"
+  ],
+  "title": "ParamsOut",
+  "type": "object"
+}

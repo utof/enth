@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--set\", \"filter1.res=40\"], 3, \"unknown_param\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "filter1.resonance"
+  ],
+  "error": "unknown_param",
+  "exit": 3,
+  "hint": "filter1 has: mode, cutoff, resonance, keytrack, drive; units and ranges: `enth params svf`",
+  "message": "'filter1.res' names no parameter; list the keys with `enth params <kind>`",
+  "path": "filter1.res",
+  "schema": "enth.error/1"
+}
+--- stderr

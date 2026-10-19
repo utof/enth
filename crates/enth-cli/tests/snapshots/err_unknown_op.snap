@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--ops\", r#\"[{\"sett\": \"osc1.fine\", \"to\": 1}]\"#], 3,\n\"unknown_op\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "set"
+  ],
+  "error": "unknown_op",
+  "exit": 3,
+  "hint": "the verbs are set, add, remove, move, route, unroute, enable, macro, slot, amp_env, label, meta",
+  "message": "no known verb among the keys sett, to",
+  "path": "ops[0]",
+  "schema": "enth.error/1"
+}
+--- stderr

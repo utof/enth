@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--ops\", \"[{\"], 3, \"bad_json\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_json",
+  "exit": 3,
+  "hint": "check commas, quotes and brackets",
+  "message": "not valid JSON: EOF while parsing an object at line 1 column 2",
+  "path": "ops",
+  "schema": "enth.error/1"
+}
+--- stderr

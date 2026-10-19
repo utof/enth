@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--set\", \"filter1.cutoff=40ms\"], 3, \"wrong_unit\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "wrong_unit",
+  "exit": 3,
+  "hint": "write a number in hz, e.g. 800, 800Hz, 1.2kHz, A4, C#3, Db2",
+  "message": "cutoff: unit 'ms' does not fit; write a number in hz, e.g. 800, 800Hz, 1.2kHz, A4, C#3, Db2",
+  "path": "filter1.cutoff",
+  "schema": "enth.error/1"
+}
+--- stderr

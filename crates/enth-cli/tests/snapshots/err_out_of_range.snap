@@ -1,0 +1,19 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--set\", \"env1.decay=20s\"], 3, \"out_of_range\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "out_of_range",
+  "exit": 3,
+  "hint": "the range is 0..=10000 ms; the nearest valid value is 10000",
+  "max": 10000,
+  "message": "decay: 20000 is out of range; the range is 0..=10000 ms; the nearest valid value is 10000",
+  "min": 0,
+  "path": "env1.decay",
+  "schema": "enth.error/1",
+  "try": "10s"
+}
+--- stderr

@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "s.clean(&run_tty(&[\"apply\", &p, \"--set\", \"osc1.fine=7ct\",\n\"--dry-run\"]).stdout)"
+---
+dry_run  true
+wrote    -
+
+applied:
+  op   target     from  to
+  set  osc1.fine  0ct   +7ct
+
+inverse:
+  to   set
+  0.0  osc1.fine
+
+ops:
+  to   set
+  7.0  osc1.fine

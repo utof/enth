@@ -1,0 +1,98 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, true)"
+---
+exit: 0
+--- stdout
+{
+  "applied": [
+    {
+      "from": "350ms",
+      "op": "set",
+      "target": "env1.decay",
+      "to": "200ms"
+    },
+    {
+      "from": "2.5kHz",
+      "op": "set",
+      "target": "filter1.cutoff",
+      "to": "3kHz"
+    }
+  ],
+  "check": {
+    "blocked": [],
+    "failed": 0,
+    "fix": null,
+    "pass": true,
+    "passed": 3,
+    "results": [
+      {
+        "expect": "pitch.f0_hz = C3 ± 50ct",
+        "got": "<num>",
+        "margin": "<num>",
+        "margin_unit": "ct",
+        "noise": "<num>",
+        "note": "C3+0ct",
+        "pass": true,
+        "thin": "<bool>",
+        "unit": "Hz"
+      },
+      {
+        "expect": "envelope.attack_ms < 100",
+        "got": "<num>",
+        "margin": "<num>",
+        "margin_pct": "<num>",
+        "noise": "<num>",
+        "pass": true,
+        "thin": "<bool>",
+        "unit": "ms"
+      },
+      {
+        "expect": "envelope.sustain_db < -20",
+        "got": "<num>",
+        "margin": "<num>",
+        "noise": "<num>",
+        "pass": true,
+        "thin": "<bool>",
+        "unit": "dB"
+      }
+    ],
+    "thin": "<num>"
+  },
+  "describe": {
+    "envelope.attack_ms": "<num>",
+    "envelope.duration_ms": "<num>",
+    "envelope.sustain_db": "<num>",
+    "loudness.clipping": "<bool>",
+    "loudness.peak_dbfs": "<num>",
+    "pitch.f0_hz": "<num>",
+    "pitch.note": "C3",
+    "spectrum.centroid_hz": "<num>"
+  },
+  "inverse": [
+    {
+      "set": "filter1.cutoff",
+      "to": 2500.0
+    },
+    {
+      "set": "env1.decay",
+      "to": 350.0
+    }
+  ],
+  "patch": "[TMP]/p2.patch.json",
+  "perf": {
+    "dur_s": 2,
+    "notes": [
+      {
+        "note": "C3",
+        "off_s": 1,
+        "on_s": 0,
+        "vel": 100
+      }
+    ],
+    "source": "flag"
+  },
+  "schema": "enth.step/1",
+  "wav": "[TMP]/p2.wav"
+}
+--- stderr

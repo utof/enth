@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"get\", &p, \"filtr1.cutoff\"], 3, \"unknown_module\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "filter1.cutoff"
+  ],
+  "error": "unknown_module",
+  "exit": 3,
+  "hint": "the modules are osc1, filter1, env1",
+  "message": "no module 'filtr1'",
+  "path": "filtr1.cutoff",
+  "schema": "enth.error/1"
+}
+--- stderr

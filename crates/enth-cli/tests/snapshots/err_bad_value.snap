@@ -1,0 +1,20 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"render\", &p, \"--bits\", \"12\"], 2, \"usage\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "usage",
+  "exit": 2,
+  "hint": "use one of: f32, 16, 24",
+  "known": [
+    "f32",
+    "16",
+    "24"
+  ],
+  "message": "invalid value '12' for '--bits <BITS>': [possible values: f32, 16, 24]",
+  "schema": "enth.error/1"
+}
+--- stderr

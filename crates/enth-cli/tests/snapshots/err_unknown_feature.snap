@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"check\", &p, \"--expect\", \"brightnes > 2kHz\"], 3, \"unknown_feature\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "spectrum.centroid_hz"
+  ],
+  "error": "unknown_feature",
+  "exit": 3,
+  "hint": "enth guide --topic descriptors lists the descriptors",
+  "message": "no descriptor named 'brightnes'",
+  "path": "brightnes > 2kHz",
+  "schema": "enth.error/1"
+}
+--- stderr

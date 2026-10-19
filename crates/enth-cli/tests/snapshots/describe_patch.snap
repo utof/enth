@@ -1,0 +1,69 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, true)"
+---
+exit: 0
+--- stdout
+{
+  "detune": null,
+  "dur_s": 3,
+  "envelope": {
+    "attack_ms": "<num>",
+    "beat_corrected": "<bool>",
+    "decay_ms": "<num>",
+    "duration_ms": "<num>",
+    "duration_truncated": "<bool>",
+    "release_extrapolated": "<bool>",
+    "release_ms": "<num>",
+    "ripple_db": "<num>",
+    "sustain_db": "<num>"
+  },
+  "loudness": {
+    "clipped_pct": "<num>",
+    "clipping": "<bool>",
+    "lufs_i": "<num>",
+    "peak_dbfs": "<num>",
+    "true_peak_dbtp": "<num>"
+  },
+  "missing": {
+    "detune.beating_hz": "no detune beating was found: it needs detuned oscillators beating between 0.15 and 25 Hz, and at least 0.5 s of steady sound within 30 dB of the peak",
+    "detune.depth_db": "no detune beating was found: it needs detuned oscillators beating between 0.15 and 25 Hz, and at least 0.5 s of steady sound within 30 dB of the peak",
+    "modulation.amp_lfo.depth_db": "no amplitude LFO was found",
+    "modulation.amp_lfo.hz": "no amplitude LFO was found"
+  },
+  "modulation": {
+    "amp_lfo": null
+  },
+  "noise_ratio": "<num>",
+  "perf": {
+    "dur_s": 3,
+    "notes": [
+      {
+        "note": "C3",
+        "off_s": 1.5,
+        "on_s": 0,
+        "vel": 100
+      }
+    ],
+    "source": "default"
+  },
+  "pitch": {
+    "cents_dev": "<num>",
+    "f0_hz": "<num>",
+    "note": "C3",
+    "stability": "<num>"
+  },
+  "sample_rate": 48000,
+  "schema": "enth.describe/1",
+  "silent": false,
+  "source": "[TMP]/p.patch.json",
+  "spectrum": {
+    "centroid_hz": "<num>",
+    "centroid_track_hz": [
+      "<num>",
+      "<num>",
+      "<num>"
+    ]
+  }
+}
+--- stderr

@@ -1,0 +1,47 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$id": "enth.guide/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.guide/1`: the agent workflow guide, as markdown.",
+  "properties": {
+    "bytes": {
+      "description": "Its size in bytes.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.guide/1",
+      "description": "`enth.guide/1`.",
+      "type": "string"
+    },
+    "text": {
+      "description": "The page, as markdown.",
+      "type": "string"
+    },
+    "topic": {
+      "description": "`main`, `expect`, `ops` or `descriptors`.",
+      "type": "string"
+    },
+    "topics": {
+      "description": "The topics `--topic` takes.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "topic",
+    "text",
+    "bytes",
+    "topics"
+  ],
+  "title": "GuideOut",
+  "type": "object"
+}

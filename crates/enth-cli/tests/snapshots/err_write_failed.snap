@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"render\", &p, \"--out\", &s.path(\"no/such/dir/p.wav\")], 4,\n\"write_failed\")"
+---
+exit: 4
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "write_failed",
+  "exit": 4,
+  "file": "[TMP]/no/such/dir/p.wav",
+  "hint": "check that the directory exists and is writable",
+  "message": "cannot write [TMP]/no/such/dir/p.wav: No such file or directory (os error 2)",
+  "schema": "enth.error/1"
+}
+--- stderr

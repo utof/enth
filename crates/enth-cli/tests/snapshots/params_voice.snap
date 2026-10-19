@@ -1,0 +1,117 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &voice, false)"
+---
+exit: 0
+--- stdout
+{
+  "kind": "voice",
+  "name": "voice",
+  "params": [
+    {
+      "accepts": [
+        "poly",
+        "mono",
+        "legato"
+      ],
+      "automatable": false,
+      "default": "poly",
+      "effect": "poly plays chords; mono and legato play one note at a time (legato slides without retriggering).",
+      "key": "mode",
+      "max": null,
+      "min": null,
+      "modulatable": false,
+      "name": "Voice mode",
+      "scale": "enum",
+      "structural": true,
+      "tier": "basic",
+      "unit": "",
+      "values": [
+        "poly",
+        "mono",
+        "legato"
+      ]
+    },
+    {
+      "accepts": [
+        "a plain number"
+      ],
+      "automatable": false,
+      "default": 8,
+      "effect": "How many notes can sound at once in poly mode; extra notes steal the oldest voice.",
+      "key": "polyphony",
+      "max": 16,
+      "min": 1,
+      "modulatable": false,
+      "name": "Polyphony",
+      "scale": "int",
+      "structural": true,
+      "tier": "intermediate",
+      "unit": ""
+    },
+    {
+      "accepts": [
+        "40",
+        "40ms",
+        "0.5s"
+      ],
+      "automatable": true,
+      "default": 0,
+      "effect": "Time to slide from the previous note's pitch to the new one; 0 is off. Linear in semitones.",
+      "key": "glide",
+      "max": 10000,
+      "min": 0,
+      "modulatable": false,
+      "name": "Glide",
+      "scale": "power",
+      "structural": false,
+      "tier": "basic",
+      "unit": "ms"
+    },
+    {
+      "accepts": [
+        "always",
+        "legato"
+      ],
+      "automatable": true,
+      "default": "always",
+      "effect": "Glide on every note, or only on notes played legato.",
+      "key": "glide_mode",
+      "max": null,
+      "min": null,
+      "modulatable": false,
+      "name": "Glide mode",
+      "scale": "enum",
+      "structural": false,
+      "tier": "intermediate",
+      "unit": "",
+      "values": [
+        "always",
+        "legato"
+      ]
+    },
+    {
+      "accepts": [
+        "30",
+        "30%"
+      ],
+      "automatable": true,
+      "default": 0,
+      "effect": "Where each voice sits in the stereo field, -100 % left to +100 % right; route key or an LFO here to spread notes.",
+      "key": "pan",
+      "max": 100,
+      "min": -100,
+      "modulatable": true,
+      "moves": "stereo.width",
+      "name": "Pan",
+      "scale": "linear",
+      "structural": false,
+      "tier": "intermediate",
+      "unit": "%"
+    }
+  ],
+  "schema": "enth.params/1",
+  "section": null,
+  "summary": "The voice manager and amp stage: mode (poly, mono, legato), polyphony, glide, pan; voice.amp_env names the amplitude envelope."
+}
+--- stderr

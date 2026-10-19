@@ -1,0 +1,19 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "common::pretty(&masked)"
+---
+{
+  "build": {
+    "profile": "<profile>",
+    "target": "<target>"
+  },
+  "note": "wall-clock, information only; the regression gate is instruction counts (cargo xtask bench)",
+  "ns_per_voice_sample": "<num>",
+  "patch": "template:pad_2osc",
+  "realtime_x_per_core": "<num>",
+  "sample_rate": 48000,
+  "schema": "enth.bench/1",
+  "seconds": 0.25,
+  "voices": 2,
+  "wall_ms": "<num>"
+}
