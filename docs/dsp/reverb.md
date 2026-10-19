@@ -2,7 +2,7 @@
 
 A stereo feedback-delay-network (FDN) reverb, ported from Signalsmith Basics' `reverb.h`. Zero latency, deterministic, bit-exact with the upstream C++ on every platform, no allocation after `prepare`.
 
-- **Status:** the DSP core (P1a lane FX1, phase 1) is done. The `Module` wrapper, its `ParamSpec`s, the engine-level golden case and the owner's A/B come in phase 2 (after freeze F2).
+- **Status:** the DSP core (P1a lane FX1, phase 1) is done. The `Module` wrapper, the engine-level golden case and the owner's A/B come in phase 2 (after freeze F2). The `ParamSpec`s are already in the catalogue (`crates/enth-patch/src/catalogue/reverb.rs`, frozen at F1, listed in [catalogue.md](catalogue.md)); the section Parameters below says how they map onto this core.
 - **Code:** `crates/enth-dsp/src/reverb/` (`mod.rs` the network and the 20 ms parameter fade, `delay.rs`, `mix.rs`, `biquad.rs`, `table.rs`) and `crates/enth-dsp/src/util/flush.rs`.
 - **Tests:** `crates/enth-dsp/src/reverb/tests.rs` (unit), `crates/enth-dsp/tests/reverb.rs` (the C++ hashes, allocation, clicks; its own binary because it installs `assert_no_alloc`'s allocator), fixtures in `crates/enth-dsp/tests/fixtures/`.
 - **Decisions behind it:** [ADR-0006](../adr/0006-effects-strategy.md) (the 2026-10-19 note), [ADR-0004](../adr/0004-licensing.md) (BSL-1.0 for the fade), P1a research report 02 (`_local/sessions/2026-10-19-p1a-headless-core/02-dsp-modules.md`, Q5).
@@ -85,7 +85,7 @@ Full licence texts and the list of changes: `THIRD_PARTY_NOTICES.md`. Ported sou
 
 ## Parameters
 
-Real units; `ReverbParams` (`f64`) is what `set_params` takes. Dry, wet and early are percent of gain (100 is unity, i.e. 0 dB): that maps exactly onto upstream's gains (`50 / 100.0 == 0.5`), needs no exponential and has a true zero. The ranges are upstream's UI ranges and are enforced by clamping. The `ParamSpec`s themselves are lane S1a's catalogue; the wrapper should keep them inside these ranges.
+Real units; `ReverbParams` (`f64`) is what `set_params` takes. Dry, wet and early are percent of gain (100 is unity, i.e. 0 dB): that maps exactly onto upstream's gains (`50 / 100.0 == 0.5`), needs no exponential and has a true zero. The ranges are upstream's UI ranges and are enforced by clamping. The `ParamSpec`s are lane S1a's catalogue; they stay inside these ranges, but not always in these units (next paragraphs).
 
 | Field | Unit | Range | Default | Upstream | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -100,12 +100,26 @@ Real units; `ReverbParams` (`f64`) is what `set_params` takes. Dry, wet and earl
 | `low_damp_rate` | power | 1 to 10 | 1.5 | `lowDampRate` | how much faster lows die than mids |
 | `high_damp_rate` | power | 1 to 10 | 2.5 | `highDampRate` | how much faster highs die than mids |
 
-Guidance for the wrapper's `ParamSpec`s: smoothing `None` for every reverb parameter (the internal fade is the smoother; a second one adds a second ramp), `modulatable: false` for `room_ms` and `rt20_s` (a value that changes every call restarts a fade each 20 ms), and the module flagged `time_based` for the global FX bypass (ADR-0006). The cut and damping parameters need the care in the next section.
+**The catalogue's units differ from the core's in two places.** Dry and wet are gains in **dB** (−60 … +6 dB), and `decay` is the RT60 in **ms** (the core takes RT20 in seconds). The wrapper converts (their arithmetic is an engine-version matter, their meaning is the catalogue's contract):
+
+- `rt20_s = decay / 3000`, with `decay` in ms. The core's RT20 is the fall to −20 dB, and a decay that is linear in dB falls 60 dB in three times that, so the catalogue's 100 ms … 30 s becomes 0.033 … 10 s, inside the core's 0.01 … 30 s, and the default 3 s becomes the core's default of 1 s.
+- `pct = 100 · 10^(dB / 20)` for `dry` and `wet`, except that the minimum, −60 dB, is **off**: gain 0, like a fader at the bottom, so a fully wet or fully dry setting exists (the core's 0 % is a true zero). The maximum, +6 dB, is 199.5 %, inside the core's 0 … 400. The catalogue's default `wet` of −6 dB is 50.1 %, against the core's 50.
+- `room`, `early`, `detune`, the two cuts and the two damping rates are the core's values as they are.
+
+Who smooths what (`Smoothing` in the catalogue):
+
+| Catalogue key | Core field | Smoothed by | Modulatable |
+| --- | --- | --- | --- |
+| `dry`, `wet`, `early`, `detune` | `dry_pct`, `wet_pct`, `early_pct`, `detune` | the reverb: its 20 ms fade (catalogue smoothing `None`) | yes |
+| `room`, `decay` | `room_ms`, `rt20_s` | the reverb: its 20 ms fade (smoothing `None`) | no: a value that changes every call restarts a fade each 20 ms |
+| `low_cut`, `high_cut`, `low_damp`, `high_damp` | `low_cut_hz`, `high_cut_hz`, `low_damp_rate`, `high_damp_rate` | **the engine**: a linear ramp over 20 ms, the length of the reverb's own fade (next section for why) | yes |
+
+The module is flagged `time_based` for the global FX bypass (ADR-0006).
 
 ## Behaviour the wrapper must know
 
 - **Call `process` with the engine's fixed 32-frame segment** (the last one of a render included). With steady parameters, the output was bit-identical for blocks of 32 to 480 frames (measured; at most the rounding of the detune LFO's phase wrap could differ). While a parameter changes, the fade starts at the next block boundary and the filters follow the call, so 32 against 64 differs by up to -44 dB re peak (measured). Blocks of any length work; none ever allocates.
-- **The cut and damping filters are not faded.** `low_cut_hz`, `high_cut_hz` and the two damp rates change the filters at the start of the next block, as upstream does. A large jump steps the output: a 12 to 3 kHz high-cut change on a 440 Hz wet tone of amplitude 0.5 gives a second difference of 0.021 against 0.0028 steady (7x); room, decay, detune, early and wet changes, and a low-cut change to 300 Hz, stay within 1.4x for this tone (a step is larger the closer the signal is to the corner). P1a report 02 said the internal fade smooths every parameter; for these four it does not. Knob drags in small steps are fine; if the cuts are ever automated or modulated at audio-visible depth, put the engine's smoother in front of them (this does not change the C++ comparison, which sets parameters directly).
+- **The cut and damping filters are not faded.** `low_cut_hz`, `high_cut_hz` and the two damp rates change the filters at the start of the next block, as upstream does. A large jump steps the output: a 12 to 3 kHz high-cut change on a 440 Hz wet tone of amplitude 0.5 gives a second difference of 0.021 against 0.0028 steady (7x); room, decay, detune, early and wet changes, and a low-cut change to 300 Hz, stay within 1.4x for this tone (a step is larger the closer the signal is to the corner). P1a report 02 said the internal fade smooths every parameter; for these four it does not. So the catalogue gives `low_cut`, `high_cut`, `low_damp` and `high_damp` the engine's smoother, a linear ramp over 20 ms in front of the reverb (this does not change the C++ comparison, which sets parameters directly); the other six are faded inside the reverb and the engine leaves them alone, because a second ramp would only add lag.
 - **`set_params` is cheap and idempotent.** It clamps and stores; nothing happens unless a value changed. Call it per segment from the plan's current values. Parameters set between two calls take effect together at the next call.
 - **`reset()`** for a fresh start (voice-less global effect after a transport reset, or un-bypassing). It clears the six delay lines and 20 filter states and restarts the LFO; the next block uses the parameters with no fade. A bypass that fades the module out over 20 ms and then stops calling `process` should `reset()` before fading back in.
 - **State carry across plan swaps:** the struct owns everything; move the instance, do not rebuild it. It is `Send`, with no interior mutability, no clock, no I/O.
@@ -145,7 +159,7 @@ Budget from the research summary: reverb at most 3,000 instructions per frame (G
 
 ## Known limits and open items
 
-- Cut and damping filters step on a change (above). A smoothing stage in the wrapper is the fix if it matters by ear.
+- Cut and damping filters step on a change (above). The catalogue puts the engine's 20 ms smoother in front of the four; whether that is enough for a fast sweep or a modulated cut is for ears to say.
 - The C++ comparison has not been run with libc++ or MSVC, and the table holds libstdc++'s draws: upstream's own output differs on those standard libraries, ours does not.
 - The reverb is stereo-in, stereo-out only (as upstream). A mono source feeds both inputs.
 - No input sanitising (NaN poisons the feedback until `reset()`); the engine's output stage is the place to catch it.
