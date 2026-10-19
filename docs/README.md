@@ -42,7 +42,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | Language & licence | Rust, MIT; dependencies limited to permissive licences | Decided — [ADR-0004](adr/0004-licensing.md) |
 | Plugin format | CLAP first; VST3 second; AU later; standalone app deferred | Decided |
 | Plugin shell | Start on `nice-plug`; keep it thin; `clack` is the escape hatch | Proposed — shell spike passed; accept at Gate G0 — [ADR-0001](adr/0001-plugin-shell.md) |
-| UI | Native Rust UI, **no WebView**: egui by default, vizia as challenger | Proposed — confirm by the UI spike at G0 — [ADR-0002](adr/0002-ui-toolkit.md) |
+| UI | Native Rust UI, **no WebView**: egui on glow, no second toolkit; every visual value from `enth-ui` design tokens | Proposed — UI spike (first half) passed; accept at G0 — [ADR-0002](adr/0002-ui-toolkit.md), [spike](spikes/ui.md) |
 | Agent interface | CLI first (`enth`), JSON output, real units; thin MCP wrapper later if wanted | Decided — [ADR-0003](adr/0003-agent-cli.md) |
 | Patch format | JSON, plain values in real units, versioned with migrations | Decided — [ADR-0005](adr/0005-patch-format.md) |
 | Effects | Port permissive DSP into our own deterministic modules (Signalsmith reverb, in-house compressor); global FX bypass; no third-party plugin hosting | Proposed — confirm at G1 — [ADR-0006](adr/0006-effects-strategy.md) |
