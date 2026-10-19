@@ -21,7 +21,7 @@ How to read it:
 | `fine` | cents | -100ct … +100ct | linear | 0ct | mod, auto | basic | Fine tuning in cents; a few cents between two oscillators makes them beat and sound thicker. |
 | `level` | percent | 0% … 100% | linear | 100% | mod, auto | basic | Output level of this oscillator into the voice, as a linear percentage. |
 | `pw` | percent | 5% … 95% | linear | 50% | mod, auto | intermediate | Width of the pulse wave: 50 % is a square; other waves ignore it. Modulate it for PWM. |
-| `sync` | none | off, on | toggle | off | auto | intermediate | Restart this oscillator with each cycle of the first oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator. |
+| `sync` | none | off, on | toggle | off | auto | intermediate | Restart this oscillator with each cycle of the first enabled oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator. |
 | `table` | none | `basic`, `pulse`, `tilt`, `formant`, `organ` | enum | basic | structural | intermediate | Which wavetable the table wave plays; changing it rebuilds the voice plan. |
 | `position` | percent | 0% … 100% | linear | 0% | mod, auto | intermediate | Where in the wavetable to play, from its first frame to its last; only for the table wave. |
 | `phase_mode` | none | `free`, `reset`, `seeded` | enum | free | auto | advanced | How each note's start phase is chosen: free (random per render seed), reset (the phase knob) or seeded (from seed). |
@@ -71,12 +71,12 @@ How to read it:
 
 | Key | Unit | Range | Scale | Default | Flags | Tier | What it does |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `dry` | db | -60dB … 6dB | linear | 0dB | mod, auto | intermediate | Level of the untouched signal passing through. |
-| `wet` | db | -60dB … 6dB | linear | -6dB | mod, auto | basic | Level of the reverb tail: more wet sounds further away. |
+| `dry` | db | -60dB … 6dB | linear | 0dB | mod, auto | intermediate | Level of the untouched signal passing through; -60 dB is off, for a fully wet sound. |
+| `wet` | db | -60dB … 6dB | linear | -6dB | mod, auto | basic | Level of the reverb tail: more wet sounds further away; -60 dB is off. |
 | `room` | ms | 10ms … 200ms | linear | 80ms | auto | basic | Size of the space, as a delay time (1 ms is about a foot): small rooms to large halls. |
 | `decay` | ms | 100ms … 30s | log | 3s | auto | basic | How long the tail takes to fall by 60 dB (RT60). |
 | `early` | percent | 0% … 250% | linear | 150% | mod, auto | advanced | Level of the first reflections, which tell the ear the size of the room. |
-| `detune` | none | 0 … 50 | power 3 | 2 | mod, auto | advanced | Rate of the slow pitch wobble inside the tail: smears metallic ringing, chorus-like when high. |
+| `detune` | none | 0 … 50 | power 3 | 2 | mod, auto | advanced | How much the pitch wobbles inside the tail (about cents per pass at a 1 s room): smears metallic ringing, chorus-like when high. |
 | `low_cut` | hz | 10Hz … 500Hz | log | 80Hz | mod, auto | intermediate | Removes lows below this frequency from the reverb, keeping bass clean. |
 | `high_cut` | hz | 1kHz … 20kHz | log | 12kHz | mod, auto | intermediate | Removes highs above this frequency from the reverb: lower sounds darker and softer. |
 | `low_damp` | none | 1 … 10 | log | 1.5 | mod, auto | advanced | How much faster low frequencies die away than the decay time (1 = the same). |
@@ -92,6 +92,7 @@ How to read it:
 | `release` | ms | 10ms … 2s | log | 200ms | auto | intermediate | How fast the compressor lets go after the level falls. |
 | `knee` | db | 0dB … 24dB | linear | 6dB | mod, auto | advanced | Width of the soft transition around the threshold; 0 dB is a hard knee. |
 | `makeup` | db | 0dB … 24dB | linear | 0dB | mod, auto | intermediate | Gain added after compression to bring the level back up. |
+| `mix` | percent | 0% … 100% | linear | 100% | mod, auto | intermediate | How much of the compressed signal is heard: 100 % is fully compressed, lower blends in the dry signal (parallel compression). |
 
 ### `voice` (built-in)
 

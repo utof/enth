@@ -379,7 +379,7 @@ expression: catalogue_json()
         {
           "default": 0.0,
           "default_text": "off",
-          "desc": "Restart this oscillator with each cycle of the first oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator.",
+          "desc": "Restart this oscillator with each cycle of the first enabled oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator.",
           "flags": {
             "automatable": true,
             "modulatable": false,
@@ -1169,7 +1169,7 @@ expression: catalogue_json()
         {
           "default": 0.0,
           "default_text": "0dB",
-          "desc": "Level of the untouched signal passing through.",
+          "desc": "Level of the untouched signal passing through; -60 dB is off, for a fully wet sound.",
           "flags": {
             "automatable": true,
             "modulatable": true,
@@ -1193,7 +1193,7 @@ expression: catalogue_json()
         {
           "default": -6.0,
           "default_text": "-6dB",
-          "desc": "Level of the reverb tail: more wet sounds further away.",
+          "desc": "Level of the reverb tail: more wet sounds further away; -60 dB is off.",
           "flags": {
             "automatable": true,
             "modulatable": true,
@@ -1289,7 +1289,7 @@ expression: catalogue_json()
         {
           "default": 2.0,
           "default_text": "2",
-          "desc": "Rate of the slow pitch wobble inside the tail: smears metallic ringing, chorus-like when high.",
+          "desc": "How much the pitch wobbles inside the tail (about cents per pass at a 1 s room): smears metallic ringing, chorus-like when high.",
           "flags": {
             "automatable": true,
             "modulatable": true,
@@ -1330,7 +1330,9 @@ expression: catalogue_json()
           },
           "name": "Low cut",
           "perceptual": null,
-          "smoothing": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
           "tier": "intermediate",
           "unit": "hz"
         },
@@ -1354,7 +1356,9 @@ expression: catalogue_json()
           },
           "name": "High cut",
           "perceptual": null,
-          "smoothing": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
           "tier": "intermediate",
           "unit": "hz"
         },
@@ -1378,7 +1382,9 @@ expression: catalogue_json()
           },
           "name": "Low damping",
           "perceptual": null,
-          "smoothing": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
           "tier": "advanced",
           "unit": "none"
         },
@@ -1402,7 +1408,9 @@ expression: catalogue_json()
           },
           "name": "High damping",
           "perceptual": null,
-          "smoothing": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
           "tier": "advanced",
           "unit": "none"
         }
@@ -1569,6 +1577,32 @@ expression: catalogue_json()
           },
           "tier": "intermediate",
           "unit": "db"
+        },
+        {
+          "default": 100.0,
+          "default_text": "100%",
+          "desc": "How much of the compressed signal is heard: 100 % is fully compressed, lower blends in the dry signal (parallel compression).",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "mix",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Mix",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "percent"
         }
       ],
       "section": "fx",
@@ -1585,7 +1619,11 @@ expression: catalogue_json()
     "meta",
     "routes",
     "macros",
-    "slots"
+    "slots",
+    "generators",
+    "voice_fx",
+    "fx",
+    "modulators"
   ],
   "route_depth": {
     "default": 0.0,

@@ -3,7 +3,9 @@
 //! Lane FX2 owns the DSP and `docs/dsp/compressor.md`.
 //!
 //! `attack` and `release` are the detector's time constants; the effective 63 % times are longer because two
-//! smoothers are cascaded (JOS's design; FX2 documents the measured times).
+//! smoothers are cascaded (JOS's design; FX2 documents the measured times). `threshold`, `ratio` and `knee` move
+//! the target of the core's gain smoother, so they glide anyway; `makeup` and `mix` are applied directly and
+//! would click on a step, so the engine smooths them (FX2's request). `mix` maps onto the core's `mix_pct` as is.
 
 use enth_params::{ParamSpec, Scale, Unit, params};
 
@@ -34,5 +36,9 @@ params! {
             .smoothing(SMOOTH)
             .intermediate("Gain added after compression to bring the level back up.")
             .moves("loudness.lufs_i"),
+        Mix = ParamSpec::float("mix", "Mix", Unit::Percent, 0.0, 100.0, Scale::Linear, 100.0)
+            .modulatable()
+            .smoothing(SMOOTH)
+            .intermediate("How much of the compressed signal is heard: 100 % is fully compressed, lower blends in the dry signal (parallel compression)."),
     }
 }

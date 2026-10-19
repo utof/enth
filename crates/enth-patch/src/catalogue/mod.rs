@@ -20,7 +20,7 @@
 //! | `adsr` | `modulators` | `env` | voice | `attack`, `decay`, `sustain`, `release`, `velocity` |
 //! | `lfo` | `modulators` | `lfo` | voice or global (`scope`) | `shape`, `rate`, `polarity`, `scope`, `phase_mode`, `phase`, `seed` |
 //! | `reverb` | `fx` | `reverb` | global | `dry`, `wet`, `room`, `decay`, `early`, `detune`, `low_cut`, `high_cut`, `low_damp`, `high_damp` |
-//! | `comp` | `fx` | `comp` | global | `threshold`, `ratio`, `attack`, `release`, `knee`, `makeup` |
+//! | `comp` | `fx` | `comp` | global | `threshold`, `ratio`, `attack`, `release`, `knee`, `makeup`, `mix` |
 //! | `voice` (built-in) | — | — | voice | `mode`, `polyphony`, `glide`, `glide_mode`, `pan`; plus `amp_env`, a module id |
 //! | `master` (built-in) | — | — | global | `level` |
 //!

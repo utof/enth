@@ -3,6 +3,12 @@
 //! `docs/dsp/osc.md`; this file is the parameter contract (report 02, adjusted: one kind with a wave enum that
 //! includes the wavetable, a wide modulatable `semi` instead of a stepped octave switch, and a per-oscillator
 //! phase mode).
+//!
+//! Hard sync makes the order of `generators` matter: the first *enabled* `osc` is the master of every other `osc`
+//! with `sync` on. So `canonical_hash` (lane S1b), which otherwise treats generators as commutative, must keep that
+//! oscillator first whenever any oscillator has `sync` on, or two patches that sound different (a different
+//! master) would compare canonical-equal. The wavetable an `osc` can play is fixed by `table` (structural); `wave`
+//! is automatable, so the plan generates the named table even while `wave` is not `table`.
 
 use enth_params::{ParamSpec, Scale, Unit, enum_items, params};
 
@@ -67,7 +73,7 @@ params! {
             .intermediate("Width of the pulse wave: 50 % is a square; other waves ignore it. Modulate it for PWM.")
             .moves("spectrum.odd_even_ratio"),
         Sync = ParamSpec::toggle("sync", "Hard sync", false)
-            .intermediate("Restart this oscillator with each cycle of the first oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator.")
+            .intermediate("Restart this oscillator with each cycle of the first enabled oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator.")
             .moves("spectrum.centroid_hz"),
         Table = ParamSpec::enumeration("table", "Wavetable", &WAVETABLES, Wavetable::Basic.index())
             .structural()

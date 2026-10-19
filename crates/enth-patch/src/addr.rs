@@ -17,9 +17,21 @@ use crate::catalogue::{Builtin, MasterParam, VoiceParam, module_param_key};
 use crate::model::{MACROS, SLOTS, Section};
 
 /// Words that cannot be module ids: the built-ins, the built-in sources, `macro<digits>`, and the names `enth get`
-/// uses for patch parts.
+/// uses for patch parts (including the four section keys).
 pub const RESERVED_IDS: &[&str] = &[
-    "voice", "master", "velocity", "key", "modwheel", "meta", "routes", "macros", "slots",
+    "voice",
+    "master",
+    "velocity",
+    "key",
+    "modwheel",
+    "meta",
+    "routes",
+    "macros",
+    "slots",
+    "generators",
+    "voice_fx",
+    "fx",
+    "modulators",
 ];
 
 /// Whether `id` is a reserved word ([`RESERVED_IDS`] or `macro` followed only by digits).
@@ -200,6 +212,9 @@ impl core::borrow::Borrow<str> for ModuleId {
 // ---------------------------------------------------------------------------------------------------------------
 
 /// What a parameter address points into: a module, or one of the built-ins.
+///
+/// The derived order (modules, then `voice`, then `master`) is part of how `canonical_hash` sorts routes, so new
+/// variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Target {
     /// A module instance (`filter1`).
@@ -387,6 +402,8 @@ impl SlotIndex {
 ///
 /// Velocity and key are per voice; the mod wheel and macros are global; a module source follows its rate. Macros
 /// are global in P1a; with CLAP polyphonic modulation (P1b) they gain a per-voice offset.
+///
+/// The derived order is part of how `canonical_hash` sorts routes, so new variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ModSource {
     /// A modulator module (`env1`, `lfo1`).
@@ -557,6 +574,8 @@ mod tests {
         assert_eq!(ModuleId::new("voice").unwrap_err().code(), "reserved_id");
         assert_eq!(ModuleId::new("macro3").unwrap_err().code(), "reserved_id");
         assert_eq!(ModuleId::new("macro12").unwrap_err().code(), "reserved_id");
+        assert_eq!(ModuleId::new("fx").unwrap_err().code(), "reserved_id");
+        assert!(ModuleId::new("fx1").is_ok());
         assert!(ModuleId::new("macro").is_ok());
         assert!(ModuleId::new("macro_a").is_ok());
         assert_eq!(ModuleId::numbered("filter", 2).unwrap().as_str(), "filter2");
