@@ -2,7 +2,9 @@
 
 **Goal: answer the four risky questions with code and numbers before building features.** Can the plugin shell do what we need? Is the egui editor cheap and reliable on your machine? Is the engine fast and deterministic enough? Does the scoring metric agree with your ears?
 
-Time box: about 2 weeks of calendar time (2026-10-19: was 3–4 weeks in the first plan). After a one-day skeleton, the work runs as **parallel lanes**. Each lane stops at its own acceptance criteria and writes its own results into `docs/spikes/<lane>.md` (and nothing else under `docs/spikes/`). Nothing in the lanes waits for the owner; the owner's real-display and listening checks are collected in the research summary's checklist and feed the final numbers.
+Time box: about 2 weeks of calendar time (2026-10-19: was 3–4 weeks in the first plan). After a one-day skeleton, the work runs as **parallel lanes**. Each lane stops at its own acceptance criteria and writes its own results into `docs/spikes/<lane>.md` (and nothing else under `docs/spikes/`). Nothing in the lanes waits for the owner; the owner's real-display and listening checks are collected in [spikes/owner-checklist.md](spikes/owner-checklist.md) and feed the final numbers.
+
+**Status (2026-10-19): Phase 0 is done, except the owner's checks.** Every lane is merged; results, the G0 table and actual against estimated effort are in [spikes/summary.md](spikes/summary.md).
 
 Spike code lives in `spikes/` as workspace members named `spike-*`. They are exempt from the layer rules and are not shipped. Real product crates start in Phase 1, except the workspace skeleton built here.
 
@@ -13,14 +15,14 @@ Research summary: `_local/sessions/2026-10-19-phase-0-spikes/summary.md` (decisi
 | Lane | Task | What | Depends on | State (2026-10-19) |
 | --- | --- | --- | --- | --- |
 | S | 2 | Skeleton + CI | — | **Done**, merged 2026-10-19, CI green |
-| A | 3 | Shell spike: `spike-shell`, bundle/install, `reaper-test`, clap-validator CI | S | **Done**, merged 2026-10-19 |
-| B | 5 | Engine + determinism: cross-platform hashes, FTZ/lanes/subnormal tests, wasm vs native, Windows CI, instruction-count bench | S | In progress |
-| C | 6 | Metric + search: features, three distances, CMA-ES, solve/bench, `listen` CLI, ADR-0007 | S | In progress |
-| U1 | 4 | Design tokens (`enth-ui::theme`), widgets, the "Lanes" reference panel, snapshot tests, `spike-ui-plugin` | S, A | In progress |
-| H | 4 | Minimal clack-host test host for CI, leak and CPU measurement | S | Not started (after the dev-loop report is final) |
-| U2 | 4 | The panel in REAPER (Xvfb) plus owner real-display checks; decide the G0 UI thresholds | U1, H | Later |
-| P | — | Agent-loop probe: an agent tries 5 text goals through `describe`/`check` over lane C's renderer | C | Optional, later |
-| Z | 7 | Close: measured thresholds into the gates, ADR statuses, actual vs estimated effort | all | Last |
+| A | 3 | Shell spike: `spike-shell`, bundle/install, `reaper-test`, clap-validator CI | S | **Done**, merged 2026-10-19 — [spikes/shell.md](spikes/shell.md) |
+| B | 5 | Engine + determinism: cross-platform hashes, FTZ/lanes/subnormal tests, wasm vs native, Windows CI, instruction-count bench | S | **Done**, merged 2026-10-19 — [spikes/engine.md](spikes/engine.md); Windows hashes green in CI, aarch64 manual only |
+| C | 6 | Metric + search: features, three distances, CMA-ES, solve/bench, `listen` CLI, ADR-0007 | S | **Done**, merged 2026-10-19 — [spikes/metric.md](spikes/metric.md); the listening sessions are on the owner checklist |
+| U1 | 4 | Design tokens (`enth-ui::theme`), widgets, the "Lanes" reference panel, snapshot tests, `spike-ui-plugin` | S, A | **Done**, merged 2026-10-19 — [spikes/ui.md](spikes/ui.md) |
+| H | 4 | Minimal clack-host test host for CI, leak and CPU measurement | S | **Done**, merged 2026-10-19 — [spikes/test-host.md](spikes/test-host.md) |
+| U2 | 4 | The panel in REAPER (Xvfb) plus owner real-display checks; decide the G0 UI thresholds | U1, H | **Done by other lanes:** U1 and H made the REAPER and test-host measurements under Xvfb ([ui.md](spikes/ui.md), [test-host.md](spikes/test-host.md)); the real-display items moved to the [owner checklist](spikes/owner-checklist.md); lane Z set the G0 UI statuses ([benchmarks.md](benchmarks.md#ui-thresholds)) |
+| P | — | Agent-loop probe: an agent tries 5 text goals through `describe`/`check` over lane C's renderer | C | **Done** (part 1 and a 3-agent trial), merged 2026-10-19 — [spikes/agent-probe.md](spikes/agent-probe.md) |
+| Z | 7 | Close: measured thresholds into the gates, ADR statuses, actual vs estimated effort | all | **Done** 2026-10-19 — [spikes/summary.md](spikes/summary.md) |
 
 Tasks 0 and 1 are done. Rules for every lane:
 
@@ -47,7 +49,7 @@ The session also ran a dev-loop researcher (06) and a plan-risks researcher (07)
 
 ## Task 1 — Machine setup (½ day, you + agent)
 
-**Done 2026-10-19** (except `environment.md`).
+**Done 2026-10-19**; the snapshot is [spikes/environment.md](spikes/environment.md).
 
 On Linux Mint (X11, NVIDIA proprietary driver). The research found that the machine, not the code, was the biggest risk, so this task now records what was fixed and what is installed:
 
@@ -79,7 +81,7 @@ cargo install --locked cargo-deny --version 0.20.2
 - CLAP plugins on Linux are found in `~/.clap`, VST3 in `~/.vst3`. In REAPER: *Options → Preferences → Plug-ins → CLAP*, make sure `~/.clap` is scanned, then *Re-scan*.
 - Record versions in `docs/spikes/environment.md`: OS, kernel, NVIDIA driver, REAPER and Carla versions, rustup version, filesystem, free RAM and swap.
 
-**Acceptance:** `environment.md` exists; `cargo deny --version` and `wasmtime --version` work; REAPER (CLAP and VST3) and Carla (VST3) load plugins from `~/.clap` and `~/.vst3`. Status: all done except writing `environment.md`.
+**Acceptance:** `environment.md` exists; `cargo deny --version` and `wasmtime --version` work; REAPER (CLAP and VST3) and Carla (VST3) load plugins from `~/.clap` and `~/.vst3`. Status: done; [environment.md](spikes/environment.md) written by lane Z. It found that the `cargo-deny` on `PATH` is 0.19.4, not the 0.20.2 CI pins, and that `wasmtime` lives in scratch, not on `PATH`.
 
 ## Task 2 — Repo skeleton and CI (1 day)
 
@@ -163,7 +165,7 @@ Also settled here: permanent plugin IDs ([naming.md](naming.md)) and the two nic
 
 ## Task 4 — UI toolkit spike (4–5 days)
 
-**Lanes U1 (in progress), H (not started) and U2 (later).**
+**Done 2026-10-19: lanes U1 ([spikes/ui.md](spikes/ui.md)) and H ([spikes/test-host.md](spikes/test-host.md)); U2's Xvfb measurements were made by those two, and its real-display items are on the [owner checklist](spikes/owner-checklist.md).**
 
 **egui with glow is the only arm.** 2026-10-19: vizia is stale (vizia-plug last pushed 2026-06-13, issue #41 unanswered) and iced spins a core while idle and leaks a thread per editor open, so neither is a challenger; the WebView arm is cut. wgpu is out too: it creates a device per editor and adds 16–21 MB of PSS under software rendering. If egui fails a threshold after tuning, run a new research session instead of keeping a second toolkit warm ([ADR-0002](adr/0002-ui-toolkit.md)). The risk sits in shared plumbing: baseview (a small leak per editor open, a ≈30 fps cap, HiDPI clipping in REAPER) and the NVIDIA X driver bug.
 
@@ -171,7 +173,7 @@ Also settled here: permanent plugin IDs ([naming.md](naming.md)) and the two nic
 
 Follow [benchmarks.md](benchmarks.md) and build the **reference panel** once, in the "Lanes" direction of [design-system.md](design-system.md), as three lanes:
 
-1. **Lane U1 — panel and tokens.** `enth-ui::theme` (design tokens: every colour, size, spacing, radius, stroke, font and repaint rate), widgets, the reference panel as a standalone dev window, `egui_kittest` snapshot tests on lavapipe (edit → rebuild → snapshot takes about 3.5 s), and `spike-ui-plugin` (the panel inside the Task 3 shell, with repaint gating: scopes call `request_repaint_after(1/30 s)` only while visible and fed). Name the GUI thread and log CPU time per frame window.
+1. **Lane U1 — panel and tokens.** `enth-ui::theme` (design tokens: every colour, size, spacing, radius, stroke, font and repaint rate), widgets, the reference panel as a standalone dev window, `egui_kittest` snapshot tests on lavapipe (edit → rebuild → snapshot takes about 3.5 s), and `spike-ui-plugin` (the panel inside the Task 3 shell, with repaint gating: scopes request the next frame only while visible and fed; measured: a 1/60 s request (`motion.scope_hz`) gives ≈30 fps under baseview 0.4.1, a 1/30 s request ≈20 fps, so the token is 60). Name the GUI thread and log CPU time per frame window.
 2. **Lane H — test host.** Build `tools/test-host` (package `enth-test-host`): a minimal CLAP host on `clack-host` that loads a `.clap`, processes audio in a loop, opens/closes the editor N times, injects parameter changes, and logs timings, PSS and thread counts as JSON. It is the heaptrack-capable cycle runner (REAPER crashes under heaptrack) and the CI leak check.
 3. **Lane U2 — in the host.** Run the measurement protocol in headless REAPER under Xvfb and in the test host, then the owner's real-display checks. Decide the G0 UI thresholds.
 
@@ -180,11 +182,11 @@ Two more tracks fold in here:
 - **Integration-bug track (2–3 days).** Reproduce, minimise and report: the first-frame stall seen on the real display (nice-plug #95), the baseview open/close leak (≈70 KB per cycle), the HiDPI scale mismatch in REAPER (#359), a focus policy (focus only for text fields, return focus to the host), `editor_closed()` never being called, and the "X11 thread disconnected" close warning. RustAudio's AI policy rules out upstreaming agent-written patches, so these go upstream as reports, or live in our fork.
 - **NVIDIA safety track (owner-attended, about half a day).** glow vs wgpu on the real GPU (open time, VRAM, fps), first-open reliability (20 opens in REAPER), the same with `prime-select on-demand`, and a decision on whether a CPU-rendered fallback (softbuffer or tiny-skia) is needed.
 
-**Acceptance:** results table complete for both tiers in `docs/spikes/ui.md`; the numbers added to [ADR-0002](adr/0002-ui-toolkit.md) (its status changes in Task 7); the integration bugs listed with a link or a reason for each.
+**Acceptance:** results table complete for both tiers in `docs/spikes/ui.md`; the numbers added to [ADR-0002](adr/0002-ui-toolkit.md) (its status changes in Task 7); the integration bugs listed with a link or a reason for each. Status: the automated tier is complete across [ui.md](spikes/ui.md), [test-host.md](spikes/test-host.md) and the [G0 UI table](benchmarks.md#ui-thresholds); the owner tier is on the [owner checklist](spikes/owner-checklist.md); ADR-0002 is accepted; the integration bugs are listed in [spikes/summary.md](spikes/summary.md#integration-bugs-task-4-track) (the baseview leak root-caused, with a draft upstream report).
 
 ## Task 5 — Engine speed and determinism spike (2 days)
 
-**Lane B. In progress.**
+**Lane B. Done: merged 2026-10-19 — [spikes/engine.md](spikes/engine.md).**
 
 In `spikes/engine` (package `spike-engine`): osc → filter → amp with 16 voices, an offline renderer, fixed block size 64, seed passed in. The contract being tested is [design.md §5](design.md#5-determinism): renders are **bit-exact across platforms**, and the old tolerance contract stays as a fallback until the Windows (and, if available, aarch64) CI hashes are green.
 
@@ -199,11 +201,11 @@ In `spikes/engine` (package `spike-engine`): osc → filter → amp with 16 voic
   - one nightly RTSan run (the runtime ships in rust-std). RTSan misses an uncontended `std::sync::Mutex`, so `enth-engine` has no `Mutex` or `RwLock`.
 - **Bench gate.** Instruction counts plus the deterministic subnormal test. Criterion reported false "improvements" twice with no code change under load, so wall-clock stays information.
 
-**Acceptance:** numbers in `docs/spikes/engine.md`; ≥ 100× realtime per core on the 1-voice template (16 voices reported too); hashes identical across the platforms that have run, with the Windows/aarch64 status stated; any hash difference explained with its feature-summary maximum.
+**Acceptance:** numbers in `docs/spikes/engine.md`; ≥ 100× realtime per core on the 1-voice template (16 voices reported too); hashes identical across the platforms that have run, with the Windows/aarch64 status stated; any hash difference explained with its feature-summary maximum. Status: passed. 1,993× realtime on the 1-voice template (16 voices 129× scalar, 245× with lanes); 1,010 hashes identical on Linux, Windows (CI) and wasm32 under wasmtime; aarch64 runs only by manual dispatch; no hash differed.
 
 ## Task 6 — Metric and search spike (3 days)
 
-**Lane C. In progress.** (Lane P, the optional agent-loop probe, builds on its renderer.)
+**Lane C. Done: merged 2026-10-19 — [spikes/metric.md](spikes/metric.md).** (Lane P, the agent-loop probe, built on its renderer: [spikes/agent-probe.md](spikes/agent-probe.md).)
 
 In `spikes/metric` (package `spike-metric`):
 
@@ -219,11 +221,11 @@ In `spikes/metric` (package `spike-metric`):
    - 5,000 evaluations per solve.
 6. Report numbers, not impressions: evaluations to threshold and wall time at 1 and 8 workers with the load average (`uptime`), per distance, plus how many of the 20 targets are solved.
 
-**Acceptance:** `docs/spikes/metric.md` with correlations and their intervals, recovery success rate and time; a recommended `metric v1` (provisional, recalibrated by the listening sessions and again in R1); an ADR draft for the metric (ADR-0007).
+**Acceptance:** `docs/spikes/metric.md` with correlations and their intervals, recovery success rate and time; a recommended `metric v1` (provisional, recalibrated by the listening sessions and again in R1); an ADR draft for the metric (ADR-0007). Status: done except the correlations, which need the owner's two sessions (34 trials each: 30 pairs plus 4 anchors; [owner checklist](spikes/owner-checklist.md) A1–A2). Recovery: 17 of 20 at the strict proxy with distance A and a heuristic start, median 3.5 s per solve on 8 workers. Metric v1 = distance A ([ADR-0007](adr/0007-metric-v1.md), Proposed).
 
 ## Task 7 — Close Phase 0 (½ day)
 
-**Lane Z. Last.**
+**Lane Z. Done 2026-10-19 — [spikes/summary.md](spikes/summary.md).** The G0 numbers are in [roadmap.md](roadmap.md#p0--spikes-and-skeleton-done-2026-10-19-except-owner-checks) and [benchmarks.md](benchmarks.md#ui-thresholds); ADR-0001 and ADR-0002 are accepted; the owner's checks are in [spikes/owner-checklist.md](spikes/owner-checklist.md).
 
 - Fill the **G0 thresholds** in [roadmap.md](roadmap.md) and [benchmarks.md](benchmarks.md) with measured numbers.
 - Mark ADR-0001 and ADR-0002 *Accepted* (or record the change of plan).

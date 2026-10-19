@@ -29,7 +29,7 @@ The NVIDIA X driver crashed Xorg once on 2026-10-19 while GL windows were opened
 | --- | --- |
 | Repo and worktrees | `~/code/enth` and `~/code/enth-worktrees/*` on `/home`: ext4 (`rw,relatime`), NVMe, 773 GB, 64 % used |
 | Scratch | `~/code/enth-scratch/<lane>/` on the same ext4 volume |
-| Before Phase 0 | The repo lived on an NTFS/FUSE USB disk; file-metadata calls dropped from about 5 ms to about 3 µs after the move ([phase-0.md](../phase-0.md#task-1--machine-setup--day-you--agent)) |
+| Before Phase 0 | The repo lived on an NTFS/FUSE USB disk; file-metadata calls dropped from about 5 ms to about 3 µs after the move ([phase-0.md](../phase-0.md), Task 1) |
 
 ## Audio and hosts
 
