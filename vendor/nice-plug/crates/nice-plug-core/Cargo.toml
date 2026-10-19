@@ -99,3 +99,9 @@ version = "0.1"
 
 [dev-dependencies.approx]
 version = "0.5.1"
+
+# enth fork (vendor/README.md, "Lints"): cargo does not cap lints in path dependencies the way it does for registry
+# dependencies, so a warning from a newer toolchain would fail CI (CARGO_BUILD_WARNINGS=deny). This restores what a
+# crates.io dependency gets. Pristine nice-plug already warns in release builds (two unused variables in state.rs).
+[lints.rust]
+warnings = "allow"

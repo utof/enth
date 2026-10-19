@@ -29,6 +29,14 @@ Why egui-baseview is here: nice-plug-egui depends on it, and the keyboard-focus 
 - Patch lines carry the licence of the crate they edit, so a human could still send them upstream.
 - Entries in `THIRD_PARTY_NOTICES.md`: the project distributes these crates (compiled in) with local changes, so the file records them with the changes.
 
+## Lints
+
+Cargo caps lints in registry dependencies (`--cap-lints allow`) but not in path dependencies, and `[patch.crates-io]` turns these five crates into path dependencies. CI builds with `CARGO_BUILD_WARNINGS=deny`, so any warning a vendored crate produces fails the build. Pristine nice-plug 0.4.2 already warns in release builds (`param_ptr` and `param_value` in `wrapper/state.rs` are used only inside a debug assertion), and a newer toolchain adds new warnings to every crate it compiles.
+
+Each vendored `Cargo.toml` therefore ends with a `[lints.rust]` table that sets `warnings = "allow"` (the only edit to a manifest; `vendor/check-pristine.sh` shows it). That gives these crates what a crates.io dependency gets. The `[lints]` table is the per-crate form of an `#![allow(warnings, reason = "...")]`, and it needs no source edit. Hard errors a toolchain bump introduces are not covered: they need a patch.
+
+When you edit vendored code, build once with the `[lints.rust]` table removed from the crate you touched, so that your own change is warning-free; then put the table back.
+
 ## Patches
 
 Everything here is one git commit per change, after a single pristine-import commit. `git log --oneline -- vendor` is the list, and `vendor/check-pristine.sh` (`--full` for the whole diff) compares the tree with the `.crate` files in cargo's registry cache and checks their sha256 against the table above.
