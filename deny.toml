@@ -1,0 +1,61 @@
+# cargo-deny 0.20.x config. Run: cargo deny check
+# Licence policy: docs/adr/0004-licensing.md. Ask the owner before adding a licence here.
+
+[graph]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "wasm32-unknown-unknown",
+  "wasm32-wasip1",
+]
+all-features = true
+
+[advisories]
+unmaintained = "all"         # the default; the advisories CI leg may fail without blocking merges
+unsound = "all"
+yanked = "deny"
+ignore = []                  # entries: { id = "RUSTSEC-YYYY-NNNN", reason = "..." }
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+]
+# Font licences only for the crate that ships egui's default fonts (same scoping as clack's deny.toml).
+exceptions = [
+  { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+  # Needed by the nice-plug-egui GUI stack on Windows (measured 2026-10-19); uncomment once the owner approves BSL-1.0:
+  # { crate = "clipboard-win", allow = ["BSL-1.0"] },   # via egui-baseview -> copypasta
+  # { crate = "error-code", allow = ["BSL-1.0"] },      # via clipboard-win
+]
+unused-allowed-license = "allow"     # the skeleton uses few licences yet
+unused-license-exception = "allow"   # egui arrives with the UI spike
+
+[licenses.private]
+ignore = true                # our own crates are publish = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  { crate = "vst3-sys", reason = "GPL-3.0; use the MIT/Apache `vst3` crate (ADR-0004)" },
+  { crate = "openssl-sys", reason = "system C library; use rustls if networking is ever needed" },
+  { crate = "openssl", reason = "system C library; use rustls if networking is ever needed" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []               # e.g. vizia-plug (not on crates.io) for the UI spike: add its exact URL

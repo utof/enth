@@ -1,0 +1,62 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]           # add "spikes/*", "tools/*" when the first one exists (an empty glob is an error)
+default-members = ["crates/*", "xtask"]   # plain `cargo build/test/clippy` skip spikes and tools
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+# Internal crates: members write `enth-dsp.workspace = true`.
+enth-dsp = { path = "crates/enth-dsp" }
+enth-params = { path = "crates/enth-params" }
+enth-patch = { path = "crates/enth-patch" }
+enth-engine = { path = "crates/enth-engine" }
+enth-render = { path = "crates/enth-render" }
+enth-analysis = { path = "crates/enth-analysis" }
+# xtask
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.1.8"
+
+[workspace.lints.rust]
+unsafe_code = "deny"                      # FFI crates opt out at the crate root: #![allow(unsafe_code, reason = "...")]
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_numeric_casts = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints that mostly fire on DSP arithmetic, or are taste:
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"                       # exact comparisons are deliberate in determinism tests; float_cmp_const stays on
+many_single_char_names = "allow"          # x, y, a, b, q, g are normal DSP names
+unreadable_literal = "allow"              # ported coefficients keep upstream digits verbatim, so they can be checked against the source
+inline_always = "allow"                   # #[inline(always)] is deliberate in per-sample DSP code
+similar_names = "allow"
+too_many_lines = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Restriction lints worth having in an agent-written audio codebase:
+allow_attributes_without_reason = "warn"  # every #[allow] says why
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+print_stdout = "warn"                     # core crates do no I/O; CLI and xtask opt out at the crate root
+print_stderr = "warn"
+undocumented_unsafe_blocks = "warn"
+large_stack_arrays = "warn"
+mem_forget = "warn"
+exit = "warn"
+float_cmp_const = "warn"
+lossy_float_literal = "warn"
+rc_mutex = "warn"

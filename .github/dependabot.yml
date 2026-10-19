@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"   # also bumps the `# vX.Y.Z` comment next to SHA pins
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7                     # let fresh releases age a week (supply-chain hygiene)
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

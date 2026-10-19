@@ -1,0 +1,6 @@
+/target
+*.wav
+.venv/
+# Research sessions are committed; anything else under _local/ (e.g. reference screenshots) stays local.
+/_local/*
+!/_local/sessions/

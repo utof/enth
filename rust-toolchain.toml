@@ -1,0 +1,5 @@
+[toolchain]
+channel = "1.99.1"        # never 1.99.0 (x86_64 FFI bool miscompilation); bump deliberately, then rerun goldens
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown", "wasm32-wasip1"]

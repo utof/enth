@@ -1,0 +1,21 @@
+# Single source of truth for crate layers (docs/architecture.md). Package names, not directories.
+[layers]
+enth-dsp = 0
+enth-params = 0
+enth-patch = 1
+enth-engine = 2
+enth-render = 3
+enth-analysis = 3
+enth-challenge = 4
+enth-solver = 5
+enth-session = 6
+enth-ui = 7
+enth-plugin = 8
+enth-cli = 8
+
+[core]
+max_layer = 5          # layers 0..=5 must build for wasm32 and do no I/O
+
+[exempt]
+packages = ["xtask", "enth-test-host", "enth-golden"]
+prefixes = ["spike-"]
