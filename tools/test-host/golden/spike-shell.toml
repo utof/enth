@@ -1,0 +1,54 @@
+# Plugin-level golden renders of spike-shell (docs/spikes/test-host.md).
+#
+# `cargo xtask host-render` bundles the plugin, loads the .clap through the test host (a real CLAP host
+# on clack-host), renders each case offline and compares the SHA-256 of the samples with `sha256`.
+# The hash covers the interleaved little-endian f32 samples of the stereo output, for
+# ceil(duration * sample_rate / block) * block frames, with `process()` on one thread and no display.
+#
+# Notes script (tools/test-host/src/notes.rs): `key@start+duration[:velocity]` for a note, `name=value@seconds`
+# for a parameter change, `reset@seconds` for a host-side plugin reset; seconds from the start.
+#
+# A hash that changes is a change in the plugin's sound, its parameter or state handling, or the host.
+# Update it deliberately with `cargo xtask host-render --update` and say why in the commit message.
+
+sample_rate = 48000
+block = 64
+duration = 2.0
+
+# Three held notes, defaults for everything.
+[[case]]
+name = "chord"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+sha256 = "1fd6c79cfdded55bd22ea2853ef07e1e9bf7c9ba20240e7e564ba6fb09e0f9c5"
+
+# Overlapping notes of different velocities, with host automation of the gain macro and the cutoff slot.
+[[case]]
+name = "automation"
+notes = "C4@0+0.3:1.0, E4@0.25+0.3:0.6, G4@0.5+0.3:0.4, C5@0.75+0.5:0.9, Macro 1=0.9@0.4, Slot 1=0.15@0.8, Slot 1=0.9@1.4"
+sha256 = "9cf94691af319d361ada2f86230541806eda9e216caa5782b05b024168faac00"
+
+# Ten notes for eight voices: voice stealing.
+[[case]]
+name = "voice-steal"
+notes = "C3@0+1, E3@0+1, G3@0+1, C4@0+1, E4@0+1, G4@0+1, C5@0+1, E5@0+1, G5@0.1+1, C6@0.2+1"
+sha256 = "54d85267f4e7739efb86c2ede7a0dea3849814541f3de5ff2294d83c5fed340a"
+
+# The plugin state blob (macro 1 = 0.9, slot 1 = 0.1) loaded before activation, through the state extension.
+[[case]]
+name = "state-restore"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+state = "spike-shell.state"
+sha256 = "d340047cfd33f6a76d536a3f1d6a3f78650692783da9d94bb4e27070d913ebcc"
+
+# Parameters set from the command line (`--param`) before the first block.
+[[case]]
+name = "cli-params"
+notes = "C4@0+1.5:0.8, G4@0+1.5:0.8"
+params = ["Macro 1=0.3", "Slot 1=0.7"]
+sha256 = "9b5805f4a868b5af6deee7e374262c028fbd14944fa2ccd971da0adc6bcefbc8"
+
+# The host calls the plugin's reset mid-note: held voices end, later notes sound.
+[[case]]
+name = "reset"
+notes = "C4@0+1.5, G4@0+1.5, reset@0.5, E4@0.8+0.5"
+sha256 = "71cad96ded47fd7ed9e7cbe0bc4165cc9ee2046cfcd7f330a735c75721278211"

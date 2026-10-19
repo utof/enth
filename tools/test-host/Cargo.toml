@@ -1,0 +1,32 @@
+[package]
+name = "enth-test-host"
+description = "Minimal CLAP test host on clack-host: info, offline render, multi-instance determinism and editor open/close leak runs (docs/spikes/test-host.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "enth_test_host"
+
+[[bin]]
+name = "enth-test-host"
+path = "src/main.rs"
+
+[dependencies]
+# Exact pins: clack is pre-1.0 and changes its API between minor versions (0.2.0 is the current release, 2026-09-12).
+clack-host = "=0.2.0"
+clack-extensions = { version = "=0.2.0", features = ["clack-host", "audio-ports", "note-ports", "params", "gui", "state", "log"] }
+serde_json.workspace = true
+sha2 = "0.11.1"            # pure-Rust SHA-256, the same crate and version as spike-engine
+# Pure-Rust X11 client (no libxcb): the host-side parent window for embedded editors. baseview pulls the same version in.
+x11rb = "0.13.2"
+
+[dev-dependencies]
+# An in-process test plugin, so the host logic is tested without building a cdylib.
+clack-plugin = "=0.2.0"
+clack-host = { version = "=0.2.0", features = ["clack-plugin"] }   # PluginEntry::load_from_clack
+clack-extensions = { version = "=0.2.0", features = ["clack-plugin", "audio-ports", "note-ports"] }
+
+[lints]
+workspace = true

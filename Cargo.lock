@@ -379,6 +379,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "clack-common"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ca905d78f46117492bce49e64a765f8b3f5c71794486a1369242721860e2640"
+dependencies = [
+ "bitflags 2.13.2",
+ "clap-sys",
+]
+
+[[package]]
+name = "clack-extensions"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "733d43b7ebd76a65931e8de2aa077200add4902514f4bda941c99326c14937dd"
+dependencies = [
+ "bitflags 2.13.2",
+ "clack-common",
+ "clack-host",
+ "clack-plugin",
+ "clap-sys",
+]
+
+[[package]]
+name = "clack-host"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "103a00f784a6477d82dc4580ea125e875074729c2703ccb29e5e9fb40bea5308"
+dependencies = [
+ "clack-common",
+ "clack-plugin",
+ "clap-sys",
+ "libloading",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "clack-plugin"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d36954ed91d485b42f8329b12618e6ec398cc806a8e1f5ae8a50ccaba1d9b94f"
+dependencies = [
+ "clack-common",
+ "clap-sys",
+]
+
+[[package]]
 name = "clap"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -828,6 +874,18 @@ version = "0.0.0"
 [[package]]
 name = "enth-render"
 version = "0.0.0"
+
+[[package]]
+name = "enth-test-host"
+version = "0.0.0"
+dependencies = [
+ "clack-extensions",
+ "clack-host",
+ "clack-plugin",
+ "serde_json",
+ "sha2",
+ "x11rb",
+]
 
 [[package]]
 name = "epaint"
@@ -1742,6 +1800,7 @@ checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
 dependencies = [
  "bitflags 2.13.2",
  "block2 0.6.2",
+ "libc",
  "objc2 0.6.5",
  "objc2-core-foundation",
 ]
