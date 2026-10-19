@@ -1,7 +1,8 @@
 //! `PatchFile`, the serde layer of Patch v1 (design.md §2): the JSON shape of a `*.patch.json` file.
 //!
-//! **Lane S1a defines the types; lane S1b writes the conversions** (`PatchFile` ⇄ [`Patch`](crate::model::Patch):
-//! resolve, defaults, validation, migrations, dense writing). The shape:
+//! The types are lane S1a's; the conversions are lane S1b's: [`Patch::to_file`](crate::model::Patch::to_file),
+//! [`Patch::to_json`](crate::model::Patch::to_json), [`PatchFile::to_patch`] and [`load`] (parse, migrate, resolve,
+//! validate). The shape:
 //!
 //! ```json
 //! {
@@ -20,7 +21,7 @@
 //! }
 //! ```
 //!
-//! Rules the conversions implement (hooks for S1b):
+//! Rules the conversions implement:
 //!
 //! - **Sparse in, dense out.** Reading accepts any subset of a module's parameters in any order (defaults fill the
 //!   rest; a migration step supplies an *old* default where one changed). Writing is always dense, in spec order
@@ -33,11 +34,21 @@
 //! - Enums are written as item keys and toggles as `true`/`false`; numbers as `serde_json` prints `f32` with
 //!   `float_roundtrip` (shortest round-trip text, so `900.0`, not `900`; decided 2026-10-19). Non-finite numbers
 //!   are rejected (`1e39` reads as infinity; NaN and infinity would write as `null`), and `-0.0` reads as `+0.0`.
-//! - `voice.amp_env` is the module id of the amplitude envelope, stored with the voice parameters.
+//! - `voice.amp_env` is the module id of the amplitude envelope, stored with the voice parameters. A file that
+//!   omits it gets the first enabled `adsr` of `modulators`; with none, `missing_amp_env`.
+//! - **Numbers never stand for enum items** (`"wave": 2` is `bad_value` with the item list: indices change when the
+//!   catalogue grows). Toggles take `true`/`false`, `on`/`off` or `0`/`1`. A phase of 360 is read as 0 and `-0.0` as
+//!   0 (see `validate`).
+//! - **Errors are collected**: reading reports every problem it finds with a path (`generators[1].params.cutoff`),
+//!   a code and a hint, and `did_you_mean` where a near miss exists.
+//! - Duplicate keys: parameters, fields and sections of a current-schema file are rejected when repeated; a file that
+//!   needs migration is read through `serde_json::Value`, where the last duplicate wins (`migrate` notes nothing).
 //! - `macros` holds up to eight entries, in order (written: all eight). `slots` maps 1-based slot numbers to
 //!   addresses (written sparse, only assigned slots).
 //! - Unknown fields are rejected (`deny_unknown_fields`); `schema` is checked and migrated before these types are
 //!   used (`migrate` works on `serde_json::Value`).
+//! - **Write through the typed `PatchFile`** (`Patch::to_json`): `serde_json::to_value` widens an `f32` to `f64` text
+//!   (`0.1` prints as `0.10000000149011612`).
 
 use std::collections::BTreeMap;
 
@@ -45,8 +56,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::PatchMeta;
 
-/// The current patch file schema version. Bump it only with a migration step and fixtures (S1b).
+mod convert;
+mod load;
+
+pub(crate) use convert::module_values;
+pub use convert::resolve_value;
+pub use load::{Loaded, load, load_value};
+
+/// The current patch file schema version. Bump it only with a migration step and fixtures: `migrate::STEPS` must
+/// have exactly `SCHEMA` entries, which the compiler checks.
 pub const SCHEMA: u32 = 1;
+
+/// The engine version stamped on a patch written without one (`Patch::init()` has none). The engine crate will own
+/// the real constant; until then DSP changes that move goldens bump this by hand.
+pub const ENGINE_VERSION: &str = "0.1.0";
 
 /// A whole patch file. See the [module docs](self).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -193,6 +216,9 @@ pub enum RawValue {
     Text(String),
     /// A toggle (`true`/`false`).
     Bool(bool),
+    /// Anything else (`null`, an array, an object): never valid, kept so the conversion can report `bad_value` with
+    /// the parameter's name instead of serde's "did not match any variant".
+    Other(serde_json::Value),
 }
 
 /// Parameter values by key, **in order**: a JSON object that keeps its key order when read and written, so files

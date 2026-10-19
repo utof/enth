@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 37115a41ed20356c60b242ca2e208158c4a33ff17be475d311e916ff69302976 # shrinks to setup = [(160, 1, 94, 0), (3, 183, 0, 59768832)], hits = [(72, 6, 874361288)], rs = [(125, 144, 91, 269344)]
+cc f293c9024dcf08e041ebfab3d5e8126b3c56f120413ccd52f00ad19783a474f8 # shrinks to setup = [(43, 162, 0, 1048576)], hits = [(69, 0, 0)]
+cc c4927a6954f73d811356e48ec10b712498ac48cbe9e27c6a1f585ff4e5ea25aa # shrinks to setup = [(0, 0, 2, 0)], hits = [(33, 19, 100960880)], rs = [(34, 7, 26, 0)]
+cc a0c82e2e1754b55784bd66b4fb06d2817818a0299343c3c01f728075dea983bd # shrinks to setup = [(0, 0, 0, 0)], hits = [(44, 54, 402916316)], rs = [(125, 25, 10, 0)]
+cc 5ae2fe75cd85fac7ba0f068f424629b8872a73ab72eb6a4cbbda39db10767698 # shrinks to setup = [(185, 144, 32, 10831616), (189, 0, 90, 617338880), (5, 13, 130, 1769538055), (129, 10, 67, 699100579), (20, 192, 51, 1048754159), (92, 92, 0, 0), (17, 0, 151, 3032408129)], cuts = [(54210, 1013, 89)]
+cc ac1577c9f3766d029a7db0c8ebff67da7f8c70cc7d7828e714940d9ece58e900 # shrinks to setup = [(249, 0, 2, 1324920832), (100, 106, 1, 337324288)], d = [(230383428, 10766430, 133)], schema = 0

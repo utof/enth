@@ -16,8 +16,11 @@ use core::str::FromStr;
 use crate::catalogue::{Builtin, MasterParam, VoiceParam, module_param_key};
 use crate::model::{MACROS, SLOTS, Section};
 
-/// Words that cannot be module ids: the built-ins, the built-in sources, `macro<digits>`, and the names `enth get`
-/// uses for patch parts (including the four section keys).
+/// Words that cannot be module ids: the built-ins, the built-in sources, `macro<digits>`, the names `enth get`
+/// uses for patch parts (including the four section keys), and the names of **modulation sources that do not exist
+/// yet** (`aftertouch`, `pressure`, `bend`, `random`, `gate`, `timbre`). Those are reserved now so that a source
+/// added later (a new [`ModSource`] variant) cannot collide with a module somebody already gave that id in a patch
+/// that already exists.
 pub const RESERVED_IDS: &[&str] = &[
     "voice",
     "master",
@@ -32,6 +35,12 @@ pub const RESERVED_IDS: &[&str] = &[
     "voice_fx",
     "fx",
     "modulators",
+    "aftertouch",
+    "pressure",
+    "bend",
+    "random",
+    "gate",
+    "timbre",
 ];
 
 /// Whether `id` is a reserved word ([`RESERVED_IDS`] or `macro` followed only by digits).
@@ -575,6 +584,20 @@ mod tests {
         assert_eq!(ModuleId::new("macro3").unwrap_err().code(), "reserved_id");
         assert_eq!(ModuleId::new("macro12").unwrap_err().code(), "reserved_id");
         assert_eq!(ModuleId::new("fx").unwrap_err().code(), "reserved_id");
+        // Sources that do not exist yet are reserved already (S1b); their neighbours are free.
+        for id in ["aftertouch", "pressure", "bend", "random", "gate", "timbre"] {
+            assert_eq!(ModuleId::new(id).unwrap_err().code(), "reserved_id", "{id}");
+        }
+        for id in [
+            "random1",
+            "gate_2",
+            "bend2",
+            "pressure_",
+            "aftertouch1",
+            "timbres",
+        ] {
+            assert!(ModuleId::new(id).is_ok(), "{id}");
+        }
         assert!(ModuleId::new("fx1").is_ok());
         assert!(ModuleId::new("macro").is_ok());
         assert!(ModuleId::new("macro_a").is_ok());

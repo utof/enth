@@ -40,6 +40,7 @@
 pub mod addr;
 pub mod canon;
 pub mod catalogue;
+pub mod error;
 pub mod file;
 pub mod history;
 pub mod migrate;
@@ -52,4 +53,6 @@ pub use addr::{
     AddrError, MacroIndex, ModSource, ModuleId, ParamAddr, Position, RouteAddr, SlotIndex, Target,
 };
 pub use catalogue::{Builtin, CATALOGUE, ModuleKind, ModuleSpec, Rate};
+pub use error::{Invalid, OpError, PatchError, Violation};
 pub use model::{Macro, ModuleInstance, Patch, PatchMeta, Route, Section, VoiceSettings};
+pub use ops::{Op, apply, apply_all};
