@@ -233,6 +233,9 @@ pub struct Sizes {
     pub matrix: MatrixSizes,
     pub pane: PaneSizes,
     pub display: DisplaySizes,
+    /// Draggable points on a curve display (an envelope's corners).
+    #[serde(default)]
+    pub handle: HandleSizes,
     /// Height of single-line controls: buttons, segmented controls, number fields.
     pub control_height: f32,
 }
@@ -278,7 +281,7 @@ pub struct KnobSizes {
     pub cell_width: f32,
     /// Vertical drag distance that sweeps the full range.
     pub drag_travel: f32,
-    /// Drag and wheel speed while Shift is held (fine adjustment).
+    /// Drag and wheel speed while Shift is held (fine adjustment); curve handles use it too.
     pub fine_ratio: f32,
     /// Angle swept from minimum to maximum, in degrees; the gap is at the bottom.
     pub sweep_degrees: f32,
@@ -315,6 +318,23 @@ pub struct DisplaySizes {
     pub grid_rows: u8,
     /// Radius of a position marker on a curve (e.g. an LFO's phase).
     pub marker_radius: f32,
+}
+
+/// Draggable points on a curve display. Drags use the knob's `fine_ratio` with Shift.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HandleSizes {
+    /// Radius of a handle's circle, shown while the pointer is over the display.
+    pub radius: f32,
+    /// How close the pointer must be to grab a handle; also the radius of the wash behind a
+    /// hovered or dragged one.
+    pub reach: f32,
+}
+
+impl Default for HandleSizes {
+    /// The dark theme's sizes, so theme files written before this token still load.
+    fn default() -> Self {
+        super::Theme::dark().size.handle
+    }
 }
 
 /// How a control or a group of controls reads in a given state.

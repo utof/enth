@@ -213,6 +213,10 @@ impl Theme {
                     grid_rows: 2,
                     marker_radius: 3.0,
                 },
+                handle: HandleSizes {
+                    radius: 4.0,
+                    reach: 8.0,
+                },
                 control_height: 24.0,
             },
             state: States {

@@ -1,8 +1,10 @@
 //! Recessed displays: waveforms, curves (envelopes, LFO shapes, responses), scopes, spectra.
-//! Every module shows its sound; lesson figures reuse the same drawing.
+//! Every module shows its sound; lesson figures reuse the same drawing. A curve can carry
+//! draggable handles ([`super::CurveHandles`]).
 
 use egui::{Align2, Pos2, Rect, Response, Sense, Shape, Ui, Vec2, Widget, pos2};
 
+use super::handles::HandleEdit;
 use super::paint;
 use crate::theme::Theme;
 
@@ -36,6 +38,7 @@ pub struct Display<'a> {
     ink: Ink,
     caption: Option<&'a str>,
     marker: Option<f32>,
+    handles: Option<&'a HandleEdit>,
 }
 
 impl<'a> Display<'a> {
@@ -47,6 +50,7 @@ impl<'a> Display<'a> {
             ink: Ink::Value,
             caption: None,
             marker: None,
+            handles: None,
         }
     }
 
@@ -70,6 +74,13 @@ impl<'a> Display<'a> {
         self
     }
 
+    /// Draws the handles [`super::CurveHandles::interact`] moved this frame, over the trace.
+    #[must_use]
+    pub fn handles(mut self, edit: &'a HandleEdit) -> Self {
+        self.handles = Some(edit);
+        self
+    }
+
     /// Paints into `rect` without allocating space (for widgets that place displays themselves).
     pub fn paint(&self, ui: &Ui, rect: Rect) {
         let t = self.theme;
@@ -89,7 +100,7 @@ impl<'a> Display<'a> {
             Ink::Value => (t.color.accent.value, t.color.accent.value_wash),
             Ink::Modulation => (t.color.accent.modulation, t.color.accent.modulation_wash),
         };
-        let area = rect.shrink2(egui::vec2(0.0, t.space.tight));
+        let area = trace_area(t, rect);
         let stroke = t.stroke.thin(ink);
         match self.trace {
             Trace::Scope(samples) => {
@@ -125,6 +136,20 @@ impl<'a> Display<'a> {
                 t.color.text.label,
             );
         }
+        if let Some(edit) = self.handles
+            && edit.shown
+        {
+            let h = &t.size.handle;
+            for point in &edit.points {
+                let at = to_screen(area, point.at);
+                if point.lit {
+                    painter.circle_filled(at, h.reach, wash);
+                    painter.circle_filled(at, h.radius, ink);
+                } else {
+                    painter.circle(at, h.radius, t.color.surface.recessed, stroke);
+                }
+            }
+        }
     }
 }
 
@@ -136,6 +161,16 @@ impl Widget for Display<'_> {
         }
         response
     }
+}
+
+/// Where a display draws its trace inside `rect`.
+pub(crate) fn trace_area(t: &Theme, rect: Rect) -> Rect {
+    rect.shrink2(egui::vec2(0.0, t.space.tight))
+}
+
+/// Screen position of a point in a curve's space (x 0..1 to the right, y 0..1 up).
+pub(crate) fn to_screen(area: Rect, at: Vec2) -> Pos2 {
+    pos2(area.left() + at.x * area.width(), y_of(area, at.y))
 }
 
 /// `y` for a 0..1 value in `area` (1 at the top).

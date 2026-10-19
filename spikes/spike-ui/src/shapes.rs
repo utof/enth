@@ -4,6 +4,8 @@
 
 use std::f32::consts::TAU;
 
+use egui::{Vec2, vec2};
+
 /// Samples in a wave table.
 const TABLE_SIZE: usize = 256;
 
@@ -80,13 +82,20 @@ pub fn low_pass(x: f32, cutoff: f32, resonance: f32) -> f32 {
     (LEVEL + bump - fall).clamp(0.0, 1.0)
 }
 
+/// Share of the width an envelope stage takes at its shortest.
+const MIN_STAGE: f32 = 0.05;
+/// Share of the width a stage gains over its whole (normalised) range. Stages grow linearly with
+/// the knob's value, so a handle dragged across `STAGE_RANGE` of the width sweeps the knob once.
+pub const STAGE_RANGE: f32 = 0.25;
+
+/// Width share of a stage with normalised length `v`.
+fn stage(v: f32) -> f32 {
+    MIN_STAGE + v * STAGE_RANGE
+}
+
 /// An ADSR envelope over 0..1: attack, decay and release lengths (normalised) scaled into the
-/// width, sustain level `s`, the rest held.
+/// width, sustain level `s`, the rest held. The release always ends at the right edge.
 pub fn adsr(x: f32, a: f32, d: f32, s: f32, r: f32) -> f32 {
-    /// Shortest and longest share of the width one stage can take.
-    const MIN_STAGE: f32 = 0.05;
-    const STAGE_RANGE: f32 = 0.25;
-    let stage = |v: f32| MIN_STAGE + v * STAGE_RANGE;
     let (a, d, r) = (stage(a), stage(d), stage(r));
     let hold = 1.0 - a - d - r;
     match x {
@@ -95,6 +104,17 @@ pub fn adsr(x: f32, a: f32, d: f32, s: f32, r: f32) -> f32 {
         x if x < a + d + hold => s,
         x => s * (1.0 - (x - a - d - hold) / r).max(0.0),
     }
+}
+
+/// The corners of [`adsr`] the display lets you drag, in its 0..1 space (y up): the attack peak,
+/// the end of the decay at the sustain level, and the start of the release.
+pub fn adsr_corners(a: f32, d: f32, s: f32, r: f32) -> [Vec2; 3] {
+    let peak = stage(a);
+    [
+        vec2(peak, 1.0),
+        vec2(peak + stage(d), s),
+        vec2(1.0 - stage(r), s),
+    ]
 }
 
 /// A pulse wave with duty cycle `width` (0..1), drawn between two levels.

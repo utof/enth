@@ -89,7 +89,8 @@ The spike ([docs/spikes/ui.md](spikes/ui.md)) kept every proposed value above an
 ### Added after the owner's first look (2026-10-19, u3)
 
 - **State:** `state.disabled_opacity` 0.4. A disabled module card draws everything inside it (stripe, title, display, knobs, values) through one child `Ui` at this opacity, so no widget has a disabled look of its own; the card fill and the enable toggle stay at full strength, and the controls stay editable. `Theme::apply` gives egui's own disabled widgets the same value (`Visuals::disabled_alpha`).
-- It deserialises with the dark theme's value when missing, so theme files dumped before it still load.
+- **Sizes:** `size.handle.radius` 4 and `size.handle.reach` 8, for draggable points on a curve display (envelope corners): the circle shown while the pointer is over the display, and the grab distance, which is also the radius of the accent wash behind a hovered or dragged handle. Handle drags reuse `knob.fine_ratio` with Shift.
+- Both new groups deserialise with the dark theme's values when missing, so theme files dumped before them still load.
 
 ## Rules and enforcement
 

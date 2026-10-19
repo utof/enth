@@ -3,6 +3,7 @@
 
 mod bars;
 mod display;
+mod handles;
 mod knob;
 mod lesson_pane;
 mod matrix_grid;
@@ -14,6 +15,7 @@ mod source_tile;
 
 pub use bars::{ChallengeBar, Macro, MacroBar, StatusLine};
 pub use display::{Display, Ink, Trace};
+pub use handles::{CurveHandles, Drag, Handle, HandleEdit};
 pub use knob::{Emphasis, Knob, KnobLayout};
 pub use lesson_pane::{Block, LessonPane, Span};
 pub use matrix_grid::MatrixGrid;

@@ -1,5 +1,6 @@
-//! The reference panel: full-panel snapshot, repaint gating, lane reordering, host gestures.
-//! Update the snapshot after a deliberate change:
+//! The reference panel: full-panel snapshots, repaint gating, lane reordering, host gestures,
+//! envelope handles kept in sync with their knobs.
+//! Update the snapshots after a deliberate change:
 //! `UPDATE_SNAPSHOTS=1 cargo test -p spike-ui --test panel`.
 
 mod common;
@@ -7,9 +8,9 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use egui::ViewportId;
+use egui::{Role, ViewportId};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use enth_ui::Theme;
 use spike_ui::{AudioFeed, DemoChord, LocalParams, REFERENCE_SIZE, ReferencePanel, Repaint};
 
@@ -154,4 +155,104 @@ fn knob_drags_reach_the_host_as_balanced_gestures() {
     let state = h.state();
     assert!(state.params.slots[0] > before, "slot 1 (cutoff) went up");
     assert_eq!(state.params.open_gestures, 0, "every begin has an end");
+}
+
+/// Host slots of the amp envelope's attack, decay and sustain (`layout::GENERATORS`).
+const AMP_ATTACK: usize = 12;
+const AMP_DECAY: usize = 13;
+const AMP_SUSTAIN: usize = 14;
+
+/// Drags from the centre of the node labelled `label` by `delta`, in four steps.
+fn drag(h: &mut Harness<'_, State>, label: &str, delta: egui::Vec2) {
+    let start = h.get_by_label(label).rect().center();
+    h.hover_at(start);
+    h.drag_at(start);
+    h.run();
+    for step in 1..=4 {
+        h.hover_at(start + delta * step as f32 / 4.0);
+        h.run();
+    }
+    h.drop_at(start + delta);
+    h.run();
+}
+
+/// Height of a generator strip's trace area: the card less its bottom inset, header and the
+/// display's own inset above and below.
+fn strip_trace_height(t: &Theme) -> f32 {
+    t.size.card.generator_height
+        - t.space.tight
+        - t.size.card.collapsed_height
+        - 2.0 * t.space.tight
+}
+
+#[test]
+fn dragging_the_sustain_handle_changes_sustain_only() {
+    let theme = Theme::dark();
+    let feed = Arc::new(AudioFeed::new());
+    let mut h = harness(&feed);
+    h.run();
+    let before = h.state().params.slots;
+    drag(&mut h, "Amp env decay and sustain", egui::vec2(0.0, 20.0));
+    let state = h.state();
+    let expected = before[AMP_SUSTAIN] - 20.0 / strip_trace_height(&theme);
+    let sustain = state.params.slots[AMP_SUSTAIN];
+    assert!(
+        (sustain - expected).abs() < 1e-3,
+        "sustain after dragging down: {sustain}, expected {expected}"
+    );
+    assert_eq!(
+        state.params.slots[AMP_DECAY], before[AMP_DECAY],
+        "a vertical drag leaves the decay alone"
+    );
+    assert_eq!(state.params.open_gestures, 0, "every begin has an end");
+}
+
+#[test]
+fn dragging_the_attack_handle_moves_the_attack_knob() {
+    let theme = Theme::dark();
+    let feed = Arc::new(AudioFeed::new());
+    let mut h = harness(&feed);
+    h.run();
+    let before = h.state().params.slots[AMP_ATTACK];
+    let handle = h.get_by_label("Amp env attack").rect().center();
+    drag(&mut h, "Amp env attack", egui::vec2(16.0, 0.0));
+    // The curve gives a stage `STAGE_RANGE` of the display's width over the knob's range.
+    let expected = before + 16.0 / theme.size.card.display_width / spike_ui::shapes::STAGE_RANGE;
+    let attack = h.state().params.slots[AMP_ATTACK];
+    assert!(
+        (attack - expected).abs() < 1e-3,
+        "attack after dragging right: {attack}, expected {expected}"
+    );
+    let moved = h.get_by_label("Amp env attack").rect().center() - handle;
+    assert!(
+        (moved - egui::vec2(16.0, 0.0)).length() < 1.0,
+        "the peak stays under the pointer: moved {moved:?}"
+    );
+    // The generator column lists the amp envelope before the filter envelope.
+    let knob = h
+        .get_all_by_role_and_label(Role::Slider, "Attack")
+        .next()
+        .unwrap()
+        .accesskit_node()
+        .numeric_value()
+        .unwrap();
+    assert!(
+        (knob - f64::from(attack)).abs() < 1e-6,
+        "the Attack knob shows the dragged value: {knob} vs {attack}"
+    );
+    assert_eq!(h.state().params.open_gestures, 0, "every begin has an end");
+}
+
+#[test]
+fn disabled_card_and_hovered_handle_snapshot() {
+    let feed = Arc::new(AudioFeed::new());
+    publish(&feed, 4096, 0.2, true);
+    let mut h = harness(&feed);
+    h.run();
+    h.get_by_role_and_label(Role::CheckBox, "Osc 2").click();
+    h.run();
+    // The readout goes above the handle; above the release there is only empty display.
+    h.get_by_label("Amp env release").hover();
+    h.run();
+    h.snapshot("disabled_card_and_hovered_handle");
 }

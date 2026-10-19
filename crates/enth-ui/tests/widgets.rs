@@ -1,11 +1,13 @@
 //! Widget behaviour through egui's input and the AccessKit tree (no pixels).
 
-use egui::{Role, vec2};
+use egui::{Modifiers, Role, Sense, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use enth_ui::Theme;
 use enth_ui::theme::Category;
-use enth_ui::widgets::{Knob, MatrixGrid, ModuleCard, Segmented};
+use enth_ui::widgets::{
+    CurveHandles, Display, Drag, Handle, Knob, MatrixGrid, ModuleCard, Segmented, Trace,
+};
 
 fn harness<'a, S>(app: impl FnMut(&mut egui::Ui, &mut S) + 'a, state: S) -> Harness<'a, S> {
     Harness::builder()
@@ -137,4 +139,75 @@ fn a_disabled_card_keeps_its_controls_editable() {
         vec2(0.0, -theme.size.knob.drag_travel / 4.0),
     );
     assert!(*h.state() > 0.6, "value after dragging up: {}", h.state());
+}
+
+/// A point on a 200 × 100 display that drags `x` sideways and `y` up and down, each across its
+/// whole range over the display, with 0.5 as the default. Frames are 1/60 s apart, so two clicks
+/// in a row make a double-click.
+fn handle_harness(theme: &Theme) -> Harness<'_, [f32; 2]> {
+    Harness::builder()
+        .with_size(vec2(400.0, 300.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(|ctx| Theme::dark().apply(ctx))
+        .build_ui_state(
+            move |ui, values: &mut [f32; 2]| {
+                let (rect, _) = ui.allocate_exact_size(vec2(200.0, 100.0), Sense::hover());
+                let [x, y] = values;
+                let at = vec2(*x, *y);
+                let edit = CurveHandles::new(theme, "curve").interact(
+                    ui,
+                    rect,
+                    &mut [Handle::new("Point", at)
+                        .x(Drag::new("X", x, 1.0).default_value(0.5))
+                        .y(Drag::new("Y", y, 1.0).default_value(0.5))],
+                );
+                Display::new(theme, Trace::Curve(&|x| x), rect.size())
+                    .handles(&edit)
+                    .paint(ui, rect);
+            },
+            [0.5, 0.5],
+        )
+}
+
+#[test]
+fn curve_handles_follow_the_pointer_and_reset_on_double_click() {
+    let theme = Theme::dark();
+    let mut h = handle_harness(&theme);
+    h.run();
+    let before = h.get_by_label("Point").rect().center();
+    // The trace area is the display less `space.tight` above and below.
+    let height = 100.0 - 2.0 * theme.space.tight;
+    drag(&mut h, "Point", vec2(50.0, -20.0));
+    let [x, y] = *h.state();
+    assert!((x - 0.75).abs() < 1e-3, "x after dragging right: {x}");
+    assert!(
+        (y - (0.5 + 20.0 / height)).abs() < 1e-3,
+        "y after dragging up: {y}"
+    );
+    let after = h.get_by_label("Point").rect().center();
+    assert!(
+        ((after - before) - vec2(50.0, -20.0)).length() < 1.0,
+        "the point stays under the pointer: {before:?} → {after:?}"
+    );
+
+    h.get_by_label("Point").click();
+    h.run();
+    h.get_by_label("Point").click();
+    h.run();
+    assert_eq!(*h.state(), [0.5, 0.5], "double-click resets both values");
+}
+
+#[test]
+fn shift_drags_curve_handles_finely() {
+    let theme = Theme::dark();
+    let mut h = handle_harness(&theme);
+    h.run();
+    h.event(egui::Event::ModifiersChanged(Modifiers::SHIFT));
+    drag(&mut h, "Point", vec2(50.0, 0.0));
+    h.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+    let [x, y] = *h.state();
+    let expected = 0.5 + 0.25 * theme.size.knob.fine_ratio;
+    assert!((x - expected).abs() < 1e-3, "x after a fine drag: {x}");
+    assert_eq!(y, 0.5, "a sideways drag leaves y alone");
 }

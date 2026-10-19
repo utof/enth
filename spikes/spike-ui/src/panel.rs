@@ -3,11 +3,15 @@
 //! one effect lane with three draggable cards, the modulator strip (source tiles, scope,
 //! spectrum) and the status line. Every visual value comes from the theme.
 //!
+//! Envelope displays are editable: drag the curve's corners as an alternative to the knobs
+//! ([`envelope`]); both stay in sync because both read and write the same host parameters.
+//!
 //! Repaint gating: a frame is scheduled only while something animated is visible and its data
 //! changed: `motion.scope_hz` while a visible scope has fresh samples, `motion.animated_hz` while
 //! the LFO runs and a modulated knob or a source tile is visible. Otherwise the panel asks the
 //! feed to wake it on the next change and schedules nothing.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -15,12 +19,12 @@ use egui::{Align, Align2, Layout, Rect, Response, TextureHandle, Ui, UiBuilder, 
 use enth_ui::Theme;
 use enth_ui::theme::glyph;
 use enth_ui::widgets::{
-    Display, Ink, Knob, LessonPane, Macro, MacroBar, MatrixGrid, ModuleCard, Segmented, SourceTile,
-    StatusLine, Trace,
+    CurveHandles, Display, Drag, Handle, Ink, Knob, LessonPane, Macro, MacroBar, MatrixGrid,
+    ModuleCard, Segmented, SourceTile, StatusLine, Trace,
 };
 
 use crate::feed::AudioFeed;
-use crate::layout::{self, Figure, Module};
+use crate::layout::{self, Figure, Module, Param};
 use crate::lesson;
 use crate::params::{HostParams, ParamId};
 use crate::shapes::{self, Tables};
@@ -296,6 +300,9 @@ impl ReferencePanel {
                 ui.spacing_mut().item_spacing.y = t.space.gap;
                 for (index, module) in layout::GENERATORS.iter().enumerate() {
                     let values = module_values(module, params);
+                    // An envelope's handles and its knobs both act on the host, one after the
+                    // other within the card.
+                    let host = RefCell::new((&mut *params, &mut *hover));
                     ModuleCard::new(
                         t,
                         module.id,
@@ -306,10 +313,18 @@ impl ReferencePanel {
                     .kind(module.kind)
                     .show(
                         ui,
-                        |ui, rect| figure(ui, t, tables, module.figure, &values, rect),
+                        |ui, rect| {
+                            if module.figure == Figure::Envelope {
+                                let (params, hover) = &mut *host.borrow_mut();
+                                envelope(ui, t, module, rect, &mut **params, hover);
+                            } else {
+                                figure(ui, t, tables, module.figure, &values, rect);
+                            }
+                        },
                         |ui| {
+                            let (params, hover) = &mut *host.borrow_mut();
                             for i in 0..module.params.len() {
-                                animated |= knob(ui, t, module, i, params, lfo, hover);
+                                animated |= knob(ui, t, module, i, &mut **params, lfo, hover);
                             }
                         },
                     );
@@ -566,10 +581,22 @@ fn caps_header(ui: &mut Ui, t: &Theme, text: &str) {
 
 /// Host gestures for a knob response: begin/set/end around a drag, a single set otherwise.
 fn gesture(params: &mut dyn HostParams, id: ParamId, response: &Response, value: f32) {
+    gesture_if(params, id, response, response.changed(), value);
+}
+
+/// Like [`gesture`], for one of several parameters a response drives: sets the value only when
+/// `changed`.
+fn gesture_if(
+    params: &mut dyn HostParams,
+    id: ParamId,
+    response: &Response,
+    changed: bool,
+    value: f32,
+) {
     if response.drag_started() {
         params.begin(id);
     }
-    if response.changed() {
+    if changed {
         if response.dragged() || response.drag_stopped() {
             params.set(id, value);
         } else {
@@ -621,6 +648,82 @@ fn knob(
         });
     }
     modulated.is_some() && ui.is_rect_visible(response.rect)
+}
+
+/// An envelope's display, with its corners as handles: the attack peak drags the attack, the end
+/// of the decay drags the decay (sideways) and the sustain (up and down), the start of the release
+/// drags the release (the release always ends at the right edge, so dragging left lengthens it).
+/// The curve places each stage linearly in the knob's normalised value, so the drags move the
+/// values on the knobs' own scale and the point stays under the pointer; the tooltip and the
+/// status line read them in real units. Expects attack, decay, sustain and release first.
+fn envelope(
+    ui: &mut Ui,
+    t: &Theme,
+    module: &Module,
+    rect: Rect,
+    params: &mut dyn HostParams,
+    hover: &mut Option<Hover>,
+) {
+    /// Each handle and the parameters (indices into `module.params`) it drags.
+    const HANDLES: [&[usize]; 3] = [&[0], &[1, 2], &[3]];
+    let id = |i: usize| ParamId::Slot(module.first_slot + i);
+    let before: [f32; 4] = std::array::from_fn(|i| params.get(id(i)));
+    let [mut a, mut d, mut s, mut r] = before;
+    let p = module.params;
+    let format = |i: usize| move |v: f32| p[i].unit.format(v);
+    let formats = [format(0), format(1), format(2), format(3)];
+    let [peak, corner, release] = shapes::adsr_corners(a, d, s, r);
+    let stage = 1.0 / shapes::STAGE_RANGE;
+    let name = |what: &str| format!("{} {what}", module.title);
+    let edit = CurveHandles::new(t, (module.id, "envelope")).interact(
+        ui,
+        rect,
+        &mut [
+            Handle::new(name("attack"), peak).x(param_drag(&p[0], &mut a, stage, &formats[0])),
+            Handle::new(name("decay and sustain"), corner)
+                .x(param_drag(&p[1], &mut d, stage, &formats[1]))
+                .y(param_drag(&p[2], &mut s, 1.0, &formats[2])),
+            Handle::new(name("release"), release).x(param_drag(&p[3], &mut r, -stage, &formats[3])),
+        ],
+    );
+    Display::new(
+        t,
+        Trace::Curve(&|x| shapes::adsr(x, a, d, s, r)),
+        rect.size(),
+    )
+    .ink(Ink::Modulation)
+    .handles(&edit)
+    .paint(ui, rect);
+    let after = [a, d, s, r];
+    for (response, indices) in edit.responses.iter().zip(HANDLES) {
+        for &i in indices {
+            gesture_if(params, id(i), response, after[i] != before[i], after[i]);
+        }
+    }
+    if let Some(active) = edit.active() {
+        let names: Vec<&str> = HANDLES[active].iter().map(|&i| p[i].name).collect();
+        let values: Vec<String> = HANDLES[active]
+            .iter()
+            .map(|&i| p[i].unit.format(after[i]))
+            .collect();
+        *hover = Some(Hover {
+            path: format!("{} {} {}", module.title, glyph::PATH, names.join(", ")),
+            value: values.join(", "),
+            modulation: String::new(),
+        });
+    }
+}
+
+/// A handle drag bound to `param`: its name, default and units.
+fn param_drag<'a>(
+    param: &'a Param,
+    value: &'a mut f32,
+    per_span: f32,
+    format: &'a dyn Fn(f32) -> String,
+) -> Drag<'a> {
+    Drag::new(param.name, value, per_span)
+        .default_value(param.default)
+        .format(format)
 }
 
 /// The module's current parameter values (normalised), for its display.
