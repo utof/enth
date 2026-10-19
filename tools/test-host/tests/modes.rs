@@ -623,7 +623,11 @@ fn process_stats_measures_what_process_costs() {
     let n = slow_report["plugin_process"]["n"].as_u64().unwrap();
     assert!(n >= 300, "{n} blocks measured");
     assert_eq!(slow_report["real_time"], false);
-    assert_eq!(slow_report["warnings"].as_array().unwrap().len(), 1, "{slow_report}");
+    assert_eq!(
+        slow_report["warnings"].as_array().unwrap().len(),
+        1,
+        "{slow_report}"
+    );
     assert!(
         slow_report["environment"]["uptime"].is_string()
             || slow_report["environment"]["uptime"].is_null()
