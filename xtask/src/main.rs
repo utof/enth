@@ -102,8 +102,12 @@ const USAGE: &str = "usage: cargo xtask <command>
   validate [--package <pkg>] [--release] [--no-build] [-- <clap-validator options>]
                                     bundle, then run the pinned clap-validator 0.4.1 (downloaded into target/tools/,
                                     sha256-checked) on the .clap file; the debug bundle has assert_process_allocs on
-  reaper-test [--package <pkg>] [--plugin-name <name>] [--release] [--no-build] [--format clap|vst3]
-                                    local gate: load, params, automation and state in headless REAPER
+  reaper-test [--package <pkg>] [--plugin-name <name>] [--release] [--no-build] [--bundle-dir <dir>]
+              [--format clap|vst3] [--scenario <name>]...
+                                    local gate: the REAPER scenarios (state, patch-roundtrip, slot-automation,
+                                    macro-automation, undo-state-load, two-instances, editor-smoke, dirty-flag,
+                                    cross-format) on CLAP and VST3, headless under Xvfb; --bundle-dir (or
+                                    ENTH_BUNDLE_DIR) runs prebuilt bundles instead of building
   host-render [--package <pkg>] [--release] [--no-build] [--update]
                                     plugin-level golden: bundle <pkg>, render it offline through the test host (Linux)
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden

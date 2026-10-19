@@ -15,7 +15,7 @@
 | `clippy.toml` | the workspace's bans, minus I/O, plus `GuiContext::set_state`/`get_state`, `execute_gui` and `VoiceID::id_or_fallback` | SK |
 | `tests/cli-equal.profile.toml` | the engine goldens `cli-equal` renders through the plugin | SK |
 
-The plugin-level golden is `tools/test-host/golden/enth-plugin.toml` with its patch `enth-plugin.patch.json`; the REAPER scenarios' patches are `xtask/reaper/enth-state.patch.json` and `enth-automation.patch.json`.
+The plugin-level golden is `tools/test-host/golden/enth-plugin.toml` with its patch `enth-plugin.patch.json`; the REAPER scenarios' patches are the `xtask/reaper/enth-*.patch.json` files ([REAPER scenarios](#reaper-scenarios)).
 
 ## Identity
 
@@ -104,9 +104,51 @@ Measured at F2b (`enth-test-host cli-equal`, debug and release bundles): **62 of
 | clap-validator 0.4.1 | `cargo xtask validate --package enth-plugin [--release]` | 36 passed, 0 failed, 8 skipped (debug and release) |
 | CLI = plugin | `enth-test-host cli-equal target/bundled/enth-plugin.clap --profile crates/enth-plugin/tests/cli-equal.profile.toml --min-compared 60` | 62 equal, exit 0; `--inject flip-bit` fails |
 | Plugin golden | `cargo xtask host-render --package enth-plugin [--release]` | 7 cases (fresh chord, state patch, slot and macro automation, voice steal, command-line parameters, reset), the same hashes for debug and release |
-| REAPER | `cargo xtask reaper-test --package enth-plugin` (Xvfb) | 53 checks, CLAP and VST3, three consecutive runs |
+| REAPER | `cargo xtask reaper-test --package enth-plugin [--bundle-dir D]` (Xvfb) | 8 scenarios and the cross-format checks, 217 checks, CLAP and VST3, about 105 s, three consecutive runs green ([REAPER scenarios](#reaper-scenarios)) |
 
-`reaper-test` loads a patch into the product as state through REAPER's `clap_chunk`/`vst_chunk` named config parameter (`common.lua`'s `inject_state`; layouts measured on REAPER 7.82: CLAP is the plugin's stream, VST3 is a `u32` length, a `u32` 1, the JSON and 8 zero bytes). `state-create` loads `enth-state.patch.json`, sets macro 1 = 0.7 and slot 1 = 0.3, saves; the checks then require the saved patch to come back byte for byte after a reload in a new process and to hold the folded host values (macro 1 0.7, slot 1's cutoff at `from_norm(0.3)`, about 159 Hz). `automation` loads `enth-automation.patch.json` (macro 1 raises osc1's level, slot 1 is the cutoff), so automating both from 0 to 1 is heard as louder and brighter.
+## REAPER scenarios
+
+`cargo xtask reaper-test --package enth-plugin` (lane RH) runs native REAPER 7.82 headless, always inside `xvfb-run`, with Dummy Audio and a throwaway copy of the install, through the Lua scripts in `xtask/reaper/`. Each script appends `check` and `data` lines to a log; `xtask/src/reaper.rs` and its submodules (`checks.rs`, `audio.rs`, `chunk.rs`) read them and make the checks that need the saved state or the rendered audio. It never plays sound. Needs `xvfb-run`, `timeout` and `python3`; ffmpeg is not needed.
+
+```sh
+cargo xtask reaper-test --package enth-plugin                                # builds, then runs everything
+cargo xtask reaper-test --package enth-plugin --bundle-dir DIR               # a prebuilt bundle (ENTH_BUNDLE_DIR works too)
+cargo xtask reaper-test --package enth-plugin --format clap --scenario state --scenario patch-roundtrip
+```
+
+`--bundle-dir` runs `DIR/enth-plugin.clap` and `DIR/enth-plugin.vst3` without building; it is how a lane or INT reuses the coordinator's bundle cache. `--scenario` is repeatable and `state-create` and `state-reload` are one scenario (`state`). The spike shell keeps its older three scenarios (`--package spike-shell`: `state`, `automation`, `editor-smoke`, 47 checks).
+
+| Scenario | What it proves | Checks (each format) | Median time of three runs (CLAP / VST3) |
+| --- | --- | --- | --- |
+| `state` | 72 parameters with stable ids and names; `enth-state.patch.json` loaded as state, macro 1 = 0.7 and slot 1 = 0.3 set and saved; after a reload in a new process the saved patch is the same bytes and holds the folded host values (macro 1 0.7, slot 1's cutoff at `from_norm(0.3)`, about 159 Hz) | 17 | 5.7 / 5.5 s |
+| `patch-roundtrip` | a rich non-default patch (`enth-roundtrip.patch.json`, the plugin's own first save) is byte for byte the same after save, reload, save and a second reload; the instance field and the parameters survive too | 12 | 6.9 / 6.4 s |
+| `slot-automation` | slot 1 ramped 0 to 1 renders brighter and rises steadily; slot 64 held at 1 then lowered to 0.25 renders quieter and leaves the brightness alone | 15 CLAP, 16 VST3 | 4.8 / 6.3 s |
+| `macro-automation` | macro 1 ramped 0 to 1 renders more than 3 times louder and leaves the brightness; macro 8 ramped late renders more than twice as bright | 9 | 2.3 / 2.2 s |
+| `undo-state-load` | REAPER's undo and redo across plugin state loads restore the patch and the parameters (`Undo_BeginBlock2`, `DoUndo2`, `DoRedo2`) | 11 | 2.7 / 2.6 s |
+| `two-instances` | two instances on one track keep their own patch and values through a save, a reload and a deleted neighbour | 21 | 4.9 / 5.0 s |
+| `editor-smoke` | the editor opens, draws (at least 20 distinct colours read back with `XGetImage`), stays open and closes, five cycles | 5 | 10.5 / 10.9 s |
+| `dirty-flag` | reads `IsProjectDirty` after an editor-only patch edit, with a slot-bound control (below) | 16 | 14.1 / 15.6 s |
+| `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch bytes, the rendered slot and macro audio | 4, and 2 info rows (one run) | within the above |
+
+Full suite: exit 0 in three consecutive runs, 102, 105 and 123 s at a load of 8 to 15 (the old suite: about 45 s for 53 checks), 217, 217 and 218 `ok` rows, no `FAIL`; the rows have the same names in every run. The 218th is the CLAP flat lane below: it applied the lane in one run of three and the row became an `ok` instead of an `info`.
+
+**How a scenario loads a patch.** `inject_state(track, fx, var)` in `common.lua` writes a state chunk into REAPER's `clap_chunk` / `vst_chunk` named config parameter. The chunk is built by `write_state_chunk` (`xtask/src/reaper/chunk.rs`) from a fixture and handed to the script through an environment variable. Layouts measured on REAPER 7.82: CLAP is a `u64` length and then the JSON; VST3 is a `u32` length, a `u32` 1, the JSON and 8 zero bytes. The JSON is nice-plug's `{"version","params":{id:{"f32":v}},"fields":{"patch":"<text>","enth":"<text>"}}` and the `patch` field is exactly `Patch::to_json()`, so a saved state is compared with `Saved::patch_text` byte for byte. `dump_chunk` in the Lua helpers prints a chunk for debugging.
+
+**Robustness rules** (each came from a flake):
+
+- Poll, do not sleep: `wait_until(pred, timeout, step, fn)` waits for a condition. `show_editor` waits up to 15 s for the window to be viewable and to draw.
+- Raise the X window before reading pixels. Under Xvfb there is no window manager, so REAPER's main window can cover the plugin window and `XGetImage` returns the covering window's pixels. `xinput.py stats` raises it first. `xinput.py` (find, client, raise, click, drag, key, stats) refuses a real display: `DISPLAY` must be `:50` or higher, as `xvfb-run -a` gives.
+- Offline render is not sample-exact. REAPER's `-renderproject` deactivates, reactivates and resets a CLAP plugin about 30 ms in, and once dropped a note under load, so renders are 32 short notes repeated every 0.125 s and the analysis uses per-note medians over the even-pitch notes (roughness is bimodal by pitch) and allows at most two outlier notes. Audio checks are directional (brighter, louder, steadier), with margins measured on both formats.
+- Logs are named `{format}-{scenario}-{phase}` and the report scope is `{format}/{scenario}`; two renders sharing one append-mode log once mixed their lines.
+
+**The open check: does an editor-only edit mark the project dirty? No.** `dirty-flag` opens the editor, finds a knob with a click-and-drag search (first try at editor point (366, 64), then a grid; the `ENTH_EDIT_POINT` environment variable overrides it), edits the patch, and reads `IsProjectDirty` at once, about 3 s later and after the window closes: 0 each time on CLAP and VST3. The control edits a slot-bound knob, which moves a host parameter and reads 1. Closing the floating FX window marks the project dirty by itself, so the "after close" reading says nothing about the edit. nice-plug never calls CLAP `mark_dirty` or VST3 `setDirty`, so a sixth fork patch is needed; until it lands the scenario reports the 0 as an `info` row (`DIRTY_MARKING_EXPECTED = false` in `reaper.rs`). Flip it to `true` with the patch and a clean project after an edit fails the scenario.
+
+**What the renders showed** (for PL):
+
+- On CLAP a slot lane that never moves is usually ignored in the offline render (2 of 3 acceptance runs; the third applied it, so it is a race, not a rule): the plugin takes the host's values at activation as its baseline ("the patch wins at activation"), REAPER reactivates the plugin about 30 ms in with the lane already at its value, so the patch plays until the lane moves. VST3 applies the lane. The same cause makes the first note of a lane that starts at the default 0.0 differ on CLAP only. `slot-automation` measures the flat lane (slot 64 held at 0.25) and reports `info` while `CLAP_FLAT_LANE_IS_KNOWN_GAP` is `true`; set it to `false` once the plugin applies such a lane and the CLAP result becomes a check (run it three times first: the race may stay). The cross-format render check reports the first-note level as `info` for the same reason.
+- After a state load the host's macro display may differ from the patch's macro value (design.md section 4 allows it); `undo-state-load` and `patch-roundtrip` compare the patch and the slots, not the macro display.
+
+**Maintaining the fixtures.** `enth-roundtrip.patch.json` must be the plugin's own saved text (key order matters); regenerate it from a first save when the patch format or the engine version changes. `dirty.lua`'s first knob position belongs to the F2b editor; the grid search takes over by itself when the editor's layout changes, only slower. The dirty-flag control and the two automation patches (`enth-slot-automation.patch.json`, `enth-macro-automation.patch.json`) route a slot or a macro to osc1's level or the filter cutoff; keep them when the routing changes.
 
 ## Known pitfalls
 
@@ -114,7 +156,7 @@ Measured at F2b (`enth-test-host cli-equal`, debug and release bundles): **62 of
 - **Re-baseline on load.** Values the host restores with a state must not override the loaded patch. Three pieces: the session's first fold after a load only records (so the field folds the restored values right after `load_patch`, or a host change before the next save would be taken as the baseline and lost; the REAPER run found exactly that), the loaded plan forgets the engine's remembered slot values, and `process()` adopts the restored values without sending them (`rebaseline`, set before the plan goes out; `activate` clears it, since it re-baselines anyway, so a change in the first block still counts).
 - **The patch wins at activation too.** Host values set before `activate` without a state are recorded, not folded: the engine plays the patch until the host moves a value.
 - **VST3.** The same code and the same state JSON. nice-plug drops `NOTE_END` for VST3; REAPER rejects VST3 parameter renames (`restartComponent(kParamTitlesChanged)`), so VST3 keeps "Slot N" even with the fork. A parameter set from the GUI while the host processes reaches the plugin through `process()`, and REAPER applies a script-set VST3 value only at the next process cycle. `ParamSetter` calls `IComponentHandler` on baseview's thread (F1b decision 3; PL checks write and touch modes with RH's `slot-automation`). clap-validator covers CLAP only: Steinberg's VST3 validator (537 of 537 on the shell spike) has not been run on `enth-plugin` yet.
-- **No dirty marking.** nice-plug never calls CLAP `mark_dirty` or VST3 `setDirty`; an editor-only edit may leave REAPER's project clean (an open check in phase-1b.md). `ShellRequest::PatchEdited` is drained and ignored until a fork patch adds it.
+- **No dirty marking.** nice-plug never calls CLAP `mark_dirty` or VST3 `setDirty`; an editor-only edit leaves REAPER's project clean (measured by RH's `dirty-flag`, [REAPER scenarios](#reaper-scenarios)). `ShellRequest::PatchEdited` is drained and ignored until a sixth fork patch adds the marking.
 - **Editor close.** Stock nice-plug-egui 0.6.0 never calls `editor_closed`; the vendored fork does (lane FK). The shell uses it (end a drag, release auditions, forward the `End`s), still watches `is_open()` in `process()`, and treats every `build()` as a fresh open.
 - **The vendored fork** (lane FK, `vendor/`): the plugin builds against it through `[patch.crates-io]`. It also fixes nice-plug's CLAP wrapper losing events that precede a splitting parameter event on the same frame under `SAMPLE_ACCURATE_AUTOMATION`; the F2b results below were re-measured on it.
 - **Damaged fields.** Text that is not JSON never reaches a field's `set` (nice-plug refuses it, with a debug assertion that fires under `cfg(test)`); JSON that is not a patch loads the init patch and is kept as text until the first edit.
@@ -125,4 +167,4 @@ Measured at F2b (`enth-test-host cli-equal`, debug and release bundles): **62 of
 - **PL:** slot names through FK's fork (`names_dirty` → `set_display_name` on the main thread → `request_param_info_rescan`), value text, the `MidiCCs` decision (the mod wheel; then `mod-controls` can join the cli-equal profile once TH sends `controls`), voice info, VST3 parity and Steinberg's validator, `INPUT_EVENT_CAPACITY`, the `rt-stats` feature. The note tuple, `NOTE_END`, poly-mod as `MacroVoice` and the reset reports exist; review their policy.
 - **ED1:** replace `Glue::frame`'s body with the editor and its layout seam; keep the frame protocol (pump, fold, draw, apply, drain, unlock, forward) and `Glue::apply`'s intent mapping. An editor preset load is `Session::load_patch` under the lock (the next frame's fold records the host's values); never `set_state`.
 - **ED2:** a `TelemetryReader` per `build()`; repaints already come from the tap's wake flag.
-- **RH:** the scenarios (`patch-roundtrip`, `slot-automation`, `macro-automation`, `undo-state-load`, `two-instances`) can load any patch with `inject_state` and a chunk from `write_state_chunk`.
+- **RH:** done for the scenarios above; a new one loads any patch with `inject_state` and a chunk from `write_state_chunk`. After the dirty-marking fork patch, flip `DIRTY_MARKING_EXPECTED`; after a fix for flat lanes, flip `CLAP_FLAT_LANE_IS_KNOWN_GAP`.
