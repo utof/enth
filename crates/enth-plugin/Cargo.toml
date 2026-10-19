@@ -1,0 +1,35 @@
+[package]
+name = "enth-plugin"
+description = "L8: the CLAP and VST3 plugin shell (nice-plug): host parameters, notes, audio, state and the editor window around enth-ui; it translates and holds no product rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib is the plugin; lib lets `cargo test` and other crates link the same code.
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# Pre-declared by lane S0b (P1b) so Cargo.lock is resolved before the lanes fan out; lanes use what they need.
+enth-session.workspace = true
+enth-ui.workspace = true
+enth-engine.workspace = true
+enth-render.workspace = true
+enth-patch.workspace = true
+enth-params.workspace = true
+# Exact pins in the root Cargo.toml (docs/adr/0001-plugin-shell.md). `assert_process_allocs` only has an effect in debug
+# builds: nice-plug gates it on debug_assertions, and the validator's process() calls abort on any allocation.
+nice-plug = { workspace = true, features = ["vst3", "editor", "assert_process_allocs"] }
+nice-plug-egui.workspace = true
+# No `default_fonts`: Theme::apply installs Inter and nothing else (enth-ui assets/fonts).
+egui.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true

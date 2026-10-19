@@ -14,19 +14,21 @@ name = "enth-test-host"
 path = "src/main.rs"
 
 [dependencies]
-# Exact pins: clack is pre-1.0 and changes its API between minor versions (0.2.0 is the current release, 2026-09-12).
-clack-host = "=0.2.0"
-clack-extensions = { version = "=0.2.0", features = ["clack-host", "audio-ports", "note-ports", "params", "gui", "state", "log"] }
+# Exact pins live in the root Cargo.toml: clack is pre-1.0 and changes its API between minor versions (0.2.0 is the current release, 2026-09-12).
+clack-host.workspace = true
+clack-extensions = { workspace = true, features = ["clack-host", "audio-ports", "note-ports", "params", "gui", "state", "log"] }
 serde_json.workspace = true
-sha2 = "0.11.1"            # pure-Rust SHA-256, the same crate and version as spike-engine
+sha2.workspace = true      # pure-Rust SHA-256, the same crate and version as spike-engine
 # Pure-Rust X11 client (no libxcb): the host-side parent window for embedded editors. baseview pulls the same version in.
-x11rb = "0.13.2"
+x11rb.workspace = true
+# Pre-declared for lane TH (P1b): the process-stats timing and scheduling calls (clock_gettime, setrlimit, sched_setaffinity).
+libc.workspace = true
 
 [dev-dependencies]
 # An in-process test plugin, so the host logic is tested without building a cdylib.
-clack-plugin = "=0.2.0"
-clack-host = { version = "=0.2.0", features = ["clack-plugin"] }   # PluginEntry::load_from_clack
-clack-extensions = { version = "=0.2.0", features = ["clack-plugin", "audio-ports", "note-ports"] }
+clack-plugin.workspace = true
+clack-host = { workspace = true, features = ["clack-plugin"] }   # PluginEntry::load_from_clack
+clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "note-ports"] }
 
 [lints]
 workspace = true

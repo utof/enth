@@ -2,6 +2,9 @@
 resolver = "3"
 members = ["crates/*", "xtask", "tests/golden", "spikes/*", "tools/*"]
 default-members = ["crates/*", "xtask", "tests/golden"]   # plain `cargo build/test/clippy` skip spikes and tools; CI passes --workspace
+# Vendored third-party crates (P1b lane FK, `[patch.crates-io]` below) are path dependencies inside the workspace
+# directory, which cargo would otherwise adopt as members: clippy, fmt and `--workspace` would then lint them.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.0.0"
@@ -20,6 +23,8 @@ enth-analysis = { path = "crates/enth-analysis" }
 enth-solver = { path = "crates/enth-solver" }
 enth-cli = { path = "crates/enth-cli" }
 enth-ui = { path = "crates/enth-ui" }
+enth-session = { path = "crates/enth-session" }      # L6 (P1b lane S0b)
+enth-plugin = { path = "crates/enth-plugin" }        # L8 (P1b lane S0b)
 enth-golden = { path = "tests/golden" }       # tooling (exempt from layers): the golden-render harness behind `cargo xtask golden`
 # Native UI (ADR-0002). Exact pins: egui must match the version nice-plug-egui is built against.
 egui = { version = "=0.37.0", default-features = false }
@@ -56,6 +61,37 @@ schemars = "=1.2.3"                                 # MIT. JSON Schema (draft 20
 strsim = "=0.11.1"                                  # MIT. did_you_mean for unknown parameters. (Deliberately no `jsonschema` crate: its default features build C code.)
 hound = "=3.5.1"                                    # Apache-2.0. Reads external WAVs; the CLI only (our own float WAV writer is bytes-only, in enth-render)
 rayon = "=1.12.0"                                   # MIT OR Apache-2.0. The CLI hands the solver a rayon-backed, index-ordered evaluator (P1a report 03). Never in L0-L5.
+
+# P1b dependencies (lane S0b, freeze point F0b). Same rules as the P1a block above: every pin is exact, only the
+# coordinator edits this table and Cargo.lock after F0b (one commit per change), and a lane that needs a crate asks for
+# it, then writes `<crate>.workspace = true` in its own Cargo.toml. S0b already listed each crate in the Cargo.toml of
+# the crate expected to use it, so Cargo.lock is resolved up front and a lane's `--locked` build cannot fail on a
+# missing entry. All of these were already in Cargo.lock from the Phase 0 spikes; `cargo deny check` passes.
+#
+# Plugin shell (docs/adr/0001-plugin-shell.md). nice-plug breaks roughly monthly. Members add the features they need.
+# `assert_process_allocs` only has an effect in debug builds (nice-plug gates it on debug_assertions).
+nice-plug = { version = "=0.4.2", default-features = false }   # ISC. enth-plugin: features = ["vst3", "editor", "assert_process_allocs"]
+nice-plug-egui = "=0.6.0"                           # ISC. Its default feature `opengl` renders the editor with glow (ADR-0002). Must match the egui pin
+parking_lot = "=0.12.5"                             # MIT OR Apache-2.0. The one session Mutex shared by the host main thread and the GUI thread (never the audio thread)
+# Editor dev window and its snapshot tests (enth-ui; the plugin depends on the library without the dev-window feature)
+eframe = { version = "=0.37.0", default-features = false }   # MIT OR Apache-2.0. Dev window only. Members add features = ["glow", "x11", "clipboard"]; glow, not wgpu (ADR-0002)
+# CLAP test host (tools/test-host). clack is pre-1.0 and changes its API between minor versions.
+clack-host = "=0.2.0"                               # MIT OR Apache-2.0
+clack-extensions = "=0.2.0"                         # MIT OR Apache-2.0. Members add the extension features they use
+clack-plugin = "=0.2.0"                             # MIT OR Apache-2.0. dev-dependency of the test host: an in-process test plugin
+x11rb = "=0.13.2"                                   # MIT OR Apache-2.0. Pure-Rust X11 client: the host-side parent window for embedded editors. baseview pulls the same version in
+libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-host timing: clock_gettime, setrlimit(RLIMIT_RTTIME), sched_setaffinity (research 03)
+
+# The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork").
+# COMMENTED OUT until lane FK imports the crates.io sources into `vendor/` (a pristine-import commit, then one commit
+# per patch: slot rename, `editor_closed`, baseview's xkb keymap unref) and the coordinator enables this block in one
+# commit. The `=` pins above keep matching because every entry keeps its crates.io version. `exclude = ["vendor"]` in
+# `[workspace]` keeps the vendored crates out of fmt, clippy and `--workspace` (vendored crates are not lint-capped).
+# [patch.crates-io]
+# nice-plug = { path = "vendor/nice-plug/crates/nice-plug" }
+# nice-plug-core = { path = "vendor/nice-plug/crates/nice-plug-core" }
+# nice-plug-egui = { path = "vendor/nice-plug/crates/nice-plug-egui" }
+# baseview = { path = "vendor/baseview" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"                      # FFI crates opt out at the crate root: #![allow(unsafe_code, reason = "...")]

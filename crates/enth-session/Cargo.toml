@@ -1,0 +1,26 @@
+[package]
+name = "enth-session"
+description = "L6: the single-threaded Session that owns the Patch, History, engine Link and PlanMap; the editor and the plugin shell edit through it (docs/architecture.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pre-declared by lane S0b (P1b) so Cargo.lock is resolved before the lanes fan out; lanes use what they need.
+# The session stays pure: no locks, threads, clocks or I/O (the root clippy.toml bans apply), so a standalone or wasm
+# shell can reuse it. The plugin adds the Mutex.
+enth-params.workspace = true
+enth-patch.workspace = true
+enth-engine.workspace = true
+enth-render.workspace = true     # DEFAULT_SEED only: the render seed is never per instance and never the patch hash
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+insta.workspace = true
+assert_no_alloc.workspace = true
+
+[lints]
+workspace = true

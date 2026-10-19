@@ -7,10 +7,22 @@ license.workspace = true
 publish.workspace = true
 # Inter (OFL-1.1) is bundled under assets/fonts with its licence; see THIRD_PARTY_NOTICES.md.
 
+[features]
+# The standalone editor dev window (P1b lane ED1 fills src/bin or examples with `required-features`): it opens a real window,
+# so the owner runs it and agents never do. Off by default, so eframe stays out of the plugin and the gate builds.
+dev-window = ["dep:eframe"]
+
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).
 egui = { workspace = true, features = ["serde"] }
 serde.workspace = true
+# Pre-declared by lane S0b (P1b) so Cargo.lock is resolved before the lanes fan out; lanes use what they need.
+# The editor (src/editor/) builds its cards from the catalogue and edits through the session (docs/architecture.md: L7 may use L6).
+enth-params.workspace = true
+enth-patch.workspace = true
+enth-session.workspace = true
+# glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine; the clipboard for text fields.
+eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional = true }
 
 [dev-dependencies]
 # Snapshot tests render through wgpu on a CPU adapter only (Mesa lavapipe); see tests/common.
