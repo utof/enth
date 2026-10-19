@@ -369,8 +369,8 @@ impl Perf {
                     )
                 })
                 .collect(),
-            automation: Vec::new(),
             duration_s: self.dur_s,
+            ..Performance::default()
         }
     }
 

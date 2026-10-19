@@ -5,10 +5,12 @@
 //! fixed steps in the same order, which is where the determinism lives (design.md §3):
 //!
 //! 1. poll the command ring ([`crate::swap`]): plan swaps (state carried, a 256-frame crossfade when modules were
-//!    added or removed), epoch-tagged value events (stale ones dropped), macros;
+//!    added or removed; remembered host slot values re-applied), epoch-tagged value and depth events (stale ones
+//!    dropped), macros, events sent from the main thread (audition notes);
 //! 2. apply the events due at this boundary, in arrival order (notes through the voice manager, parameter values,
-//!    macros, the mod wheel, chokes), then advance glides one segment;
-//! 3. advance the smoothers (normalised domain; settled parameters deliver the exact plain value);
+//!    slot values, macros and their per-voice offsets, the mod wheel, chokes), then advance glides one segment;
+//! 3. advance the smoothers (normalised domain; settled parameters deliver the exact plain value) and the route
+//!    depth ramps;
 //! 4. global modulators, in patch order, each after its own modulated parameters;
 //! 5. voice modulators, in patch order, each after its own modulated parameters, over the active voices;
 //! 6. the remaining modulated parameters: `n = clamp(smoothed_norm + Σ depth·src, 0, 1)` in patch route order;
@@ -16,24 +18,29 @@
 //!    timing that later generators read), then `voice_fx` in order, then the amp stage (ramped per sample from the
 //!    amp envelope's previous to current value, times a steal fade) with the constant-power pan, into the stereo sum
 //!    in ascending voice order;
-//! 8. `fx` in order (a processor whose state is silent and whose input is zero is skipped; with the monitor bypass
-//!    on, `time_based` ones are skipped), then `master.level`;
+//! 8. `fx` in order (a processor whose state is silent and whose input is zero is skipped; the monitor bypass fades
+//!    `time_based` ones out over 20 ms and then skips them), then `master.level`;
 //! 9. end finished voices (past the attack and below −100 dB, or a steal fade over); modules flush their own state
 //!    below 1e-15;
 //! 10. write the FIFO.
 //!
 //! During a crossfade, steps 3–8 run for both plans (the replaced one first) over the same notes, and the output is
 //! `old + (new − old)·w` with a raised-cosine `w` over 256 frames: an equal-gain fade, exact where both plans agree.
+//! At the end of `process` an enabled telemetry tap ([`crate::tap`]) gets the block's values; it only reads.
 //!
 //! `process` never allocates, frees, locks, logs or does I/O, and it does not panic on any input: mismatched
 //! channel lengths, out-of-range event offsets, unknown parameter ids, NaN values, a full event queue, full rings
 //! and a full return ring are all handled (clamped, ignored, kept or dropped and counted).
 
+use core::sync::atomic::Ordering::Relaxed;
+use std::sync::Arc;
+
 use enth_dsp::util::math::{constant_power_pan, cos, db_to_gain};
 use enth_patch::catalogue::{GlideMode, MasterParam, VoiceParam};
+use enth_patch::model::SLOTS;
 
 use crate::event::{Event, EventKind, NoteKey};
-use crate::modulation::{MACRO_SOURCES, MOD_WHEEL, Sources};
+use crate::modulation::{MACRO_SOURCES, MOD_WHEEL, POLY_MACROS, PolyOffsets, Sources};
 use crate::module::{
     Block, GlobalCx, GlobalModCx, MAX_VOICES, NO_SYNC, NoteState, RAMP, SEG, SyncBus, VoiceBus,
     VoiceCx, VoiceIdx, VoiceModCx,
@@ -42,12 +49,17 @@ use crate::params::ParamId;
 use crate::plan::Plan;
 use crate::segment::{EVENT_CAPACITY, EventQueue, Fifo};
 use crate::swap::{AudioLink, Cmd, Link, LinkCapacity, rings};
+use crate::tap::{Tap, store_f32};
 use crate::voice::{Glide, NoteEnd, NoteOn, VoiceManager, VoiceState, glide_segments};
 
 /// Frames a plan-swap crossfade lasts (only when modules were added or removed).
 pub const CROSSFADE_FRAMES: usize = 256;
 
 const CROSSFADE_SEGMENTS: usize = CROSSFADE_FRAMES / SEG;
+
+/// How long the monitor bypass fades a `time_based` effect out (on engage) or in (on release), ADR-0006:
+/// `max(1, round(20 · sr / 1000 / 32))` segments, 30 at 48 kHz.
+pub const MONITOR_BYPASS_FADE_MS: f32 = 20.0;
 
 /// Scratch buses, boxed so the engine stays small to move.
 struct Buses {
@@ -59,8 +71,13 @@ struct Buses {
     /// The replaced plan's output during a crossfade.
     old_left: Block,
     old_right: Block,
+    /// A time-based effect's input while the monitor bypass fades it.
+    dry_left: Block,
+    dry_right: Block,
     /// The crossfade weight per frame: `0.5 − 0.5·cos(π·(i + 1)/256)`, rising to exactly 1.
     xfade: [f32; CROSSFADE_FRAMES],
+    /// Per-voice macro offsets (CLAP polyphonic modulation), `[macro][voice]`.
+    poly: PolyOffsets,
 }
 
 /// Counters for things the engine handled without failing.
@@ -78,7 +95,8 @@ pub struct EngineStats {
     pub stolen_voices: u64,
     /// Voices cut without a fade because all 32 slots were busy (a burst of more than 16 steals in 64 frames).
     pub cut_voices: u64,
-    /// Value events from the command ring dropped because they named another plan's epoch.
+    /// Value and depth events dropped because they named another plan's epoch (from the command ring, or an
+    /// `EventKind::EpochParam`).
     pub stale_events: u64,
     /// Plans swapped in.
     pub swaps: u64,
@@ -86,6 +104,17 @@ pub struct EngineStats {
     pub crossfades: u64,
     /// Voice ends that did not fit one `process` call's report.
     pub dropped_note_ends: u64,
+}
+
+/// How the monitor bypass treats the `time_based` effects in one segment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Bypass {
+    /// Not bypassed: they run as usual.
+    Off,
+    /// Fully bypassed: they are the identity and are not called.
+    On,
+    /// Fading: the output is `wet·g + dry·(1 − g)`, `g` ramping per sample from `g0` to `g1` (1 = not bypassed).
+    Fade { g0: f32, g1: f32 },
 }
 
 /// The real-time engine. Build it with [`Engine::new`] (offline: no command ring) or [`Engine::with_link`] (real
@@ -110,9 +139,19 @@ pub struct Engine {
     /// Absolute frame of the next segment's start (a multiple of `SEG`).
     next_segment: u64,
     segments: u64,
-    /// The monitor bypass as asked, and as applied at the last segment boundary.
+    /// The monitor bypass as asked.
     monitor_bypass: bool,
-    bypass_applied: bool,
+    /// Where the bypass fade is: `bypass_segments` = effects fully on, 0 = fully bypassed.
+    bypass_level: u32,
+    bypass_segments: u32,
+    /// The last host value of each automation slot (NaN: none), re-applied after a plan swap.
+    host_slots: [f32; SLOTS],
+    /// Some per-voice macro offset is non-zero, and whether that needs recomputing.
+    poly_active: bool,
+    poly_dirty: bool,
+    tap: Option<Arc<Tap>>,
+    /// Consecutive silent samples written to the tap's scope since the last sound.
+    tap_silent: usize,
     stale_events: u64,
     swaps: u64,
     crossfades: u64,
@@ -131,6 +170,9 @@ impl Engine {
             let t = (i + 1) as f64 / CROSSFADE_FRAMES as f64;
             (0.5 - 0.5 * cos(core::f64::consts::PI * t)) as f32
         });
+        let fade_frames =
+            f64::from(MONITOR_BYPASS_FADE_MS) * f64::from(plan.cfg.sample_rate) / 1000.0;
+        let bypass_segments = (fade_frames / SEG as f64).round().clamp(1.0, 1e6) as u32;
         Self {
             render_seed,
             plan,
@@ -148,7 +190,10 @@ impl Engine {
                 right: [0.0; SEG],
                 old_left: [0.0; SEG],
                 old_right: [0.0; SEG],
+                dry_left: [0.0; SEG],
+                dry_right: [0.0; SEG],
                 xfade,
+                poly: [[0.0; MAX_VOICES]; POLY_MACROS],
             }),
             fifo: Fifo::new(),
             queue: EventQueue::new(EVENT_CAPACITY),
@@ -156,7 +201,13 @@ impl Engine {
             next_segment: 0,
             segments: 0,
             monitor_bypass: false,
-            bypass_applied: false,
+            bypass_level: bypass_segments,
+            bypass_segments,
+            host_slots: [f32::NAN; SLOTS],
+            poly_active: false,
+            poly_dirty: false,
+            tap: None,
+            tap_silent: 0,
             stale_events: 0,
             swaps: 0,
             crossfades: 0,
@@ -172,6 +223,20 @@ impl Engine {
         let (audio, link) = rings(capacity, epoch);
         engine.link = Some(audio);
         (engine, link)
+    }
+
+    /// Attach a telemetry tap ([`crate::tap`]), replacing any previous one. **Main thread**, before the engine goes
+    /// to the audio thread: replacing a tap drops a reference, which must not be the audio thread's job. The engine
+    /// publishes into it at the end of every `process` call while it is enabled; it never changes the output.
+    pub fn attach_tap(&mut self, tap: Arc<Tap>) {
+        self.tap = Some(tap);
+        self.tap_silent = 0;
+    }
+
+    /// The attached telemetry tap.
+    #[must_use]
+    pub fn tap(&self) -> Option<&Arc<Tap>> {
+        self.tap.as_ref()
     }
 
     /// Render `left.len()` frames (the shorter channel's length; the rest of the longer one is zeroed) with this
@@ -195,22 +260,72 @@ impl Engine {
         }
         left[n..].fill(0.0);
         right[n..].fill(0.0);
+        self.voices.place_ends(self.position, n);
         self.position += n as u64;
+        if self.tap.as_deref().is_some_and(Tap::is_enabled) {
+            self.publish(&left[..n], &right[..n]);
+        }
     }
 
-    /// Mute the effects whose kind is flagged `time_based` in the catalogue (the reverb in P1): the plugin's global
-    /// FX bypass, a monitoring aid. It is engine state, not patch state, and `enth-render` never sets it, so renders
-    /// and scores cannot see it (design.md §5, ADR-0006). Takes effect at the next segment boundary; engaging it
-    /// resets those effects, so releasing it starts them from silence instead of resuming a stale tail. Cheap and
-    /// allocation-free: call it from the audio thread before `process`.
+    /// Back to the state of a freshly built engine with the same plan, keeping the base values (CLAP `reset`, which
+    /// the host calls on the audio thread; P1b lane E+). Every voice is freed (no `NOTE_END` is reported), every
+    /// module's state is cleared (global modules reset, parameters settled on their bases, depth ramps landed), the
+    /// FIFO and the event queue are emptied, and the position, the segment grid and the note index restart at 0, so
+    /// what follows renders exactly like [`Engine::new`] with a plan compiled from a patch holding those bases (the
+    /// determinism contract counts events from engine creation or reset). Kept: the plan, its epoch, the base values
+    /// (host and editor values), the remembered slot values, the commands queued in the ring, the monitor bypass
+    /// (snapped, no fade), the tap, and the link counters (stale events, swaps, crossfades) and dropped events. A
+    /// crossfade in progress ends: the replaced plan goes back on the return ring, or waits in the pending slot, never
+    /// freed here. Never allocates.
+    pub fn reset(&mut self) {
+        if self.old.is_some() {
+            self.xfade_seg = CROSSFADE_SEGMENTS;
+            self.retire_old();
+        }
+        self.plan.reset_state(self.render_seed);
+        self.voices = VoiceManager::with_mode(self.plan.mode, self.plan.polyphony);
+        self.notes = NoteState::new();
+        self.glide = Glide::new();
+        self.fifo = Fifo::new();
+        self.queue.clear();
+        self.position = 0;
+        self.next_segment = 0;
+        self.segments = 0;
+        self.buses.poly = [[0.0; MAX_VOICES]; POLY_MACROS];
+        self.poly_active = false;
+        self.poly_dirty = false;
+        self.bypass_level = if self.monitor_bypass {
+            0
+        } else {
+            self.bypass_segments
+        };
+        self.tap_silent = 0;
+    }
+
+    /// The monitor bypass (the plugin's global FX bypass, a monitoring aid): the effects whose kind is flagged
+    /// `time_based` in the catalogue (the reverb in P1) fade out over 20 ms ([`MONITOR_BYPASS_FADE_MS`]) to the
+    /// identity, are reset and stop processing (they cost nothing); releasing it fades them back in from silence
+    /// over 20 ms (ADR-0006). Reversing mid-fade turns the fade around. Before the first segment (and right after
+    /// [`Engine::reset`]) the switch is immediate: there is nothing to fade. It is engine state, not patch state,
+    /// and `enth-render` never sets it, so renders and scores cannot see it (design.md §5). Takes effect at the next
+    /// segment boundary. Cheap and allocation-free: call it from the audio thread before `process`.
     pub fn set_monitor_bypass(&mut self, on: bool) {
         self.monitor_bypass = on;
+        if self.segments == 0 {
+            self.bypass_level = if on { 0 } else { self.bypass_segments };
+        }
     }
 
-    /// Whether the monitor bypass is on.
+    /// Whether the monitor bypass is on (as asked; the fade may still run).
     #[must_use]
     pub fn monitor_bypass(&self) -> bool {
         self.monitor_bypass
+    }
+
+    /// Whether the monitor bypass fade is running.
+    #[must_use]
+    pub fn is_bypass_fading(&self) -> bool {
+        self.bypass_level != 0 && self.bypass_level != self.bypass_segments
     }
 
     /// The playing voices (held, releasing or fading), ascending.
@@ -219,10 +334,18 @@ impl Engine {
         self.voices.active()
     }
 
-    /// The voices that ended during the last `process` call, with the frame they went silent (for CLAP `NOTE_END`).
+    /// The voices that ended during the last `process` call, with the frame they went silent and that frame as an
+    /// offset clamped into the call's block ([`NoteEnd::offset`], the timing for CLAP `NOTE_END`).
     #[must_use]
     pub fn note_ends(&self) -> &[NoteEnd] {
         self.voices.ends()
+    }
+
+    /// The absolute frame of the next host frame: frames processed since [`Engine::new`] or [`Engine::reset`]. A
+    /// block passed to `process` starts here; its events' offsets count from it.
+    #[must_use]
+    pub fn position(&self) -> u64 {
+        self.position
     }
 
     /// The voice manager (slot states and keys).
@@ -235,6 +358,49 @@ impl Engine {
     #[must_use]
     pub fn notes(&self) -> &NoteState {
         &self.notes
+    }
+
+    /// The running plan's base value of parameter `id` (the patch value or the latest value event), before smoothing
+    /// and modulation; `None` for an unknown id.
+    #[must_use]
+    pub fn base(&self, id: ParamId) -> Option<f32> {
+        match id {
+            ParamId::Voice(i) => self.plan.voice_table.base.get(usize::from(i)).copied(),
+            ParamId::Global(i) => self.plan.global_table.base.get(usize::from(i)).copied(),
+        }
+    }
+
+    /// The running plan's value of parameter `id` in the last segment, as modules saw it (smoothed and modulated),
+    /// for voice slot `voice` (ignored for a global parameter); `None` for an unknown id or slot. A slot that is not
+    /// playing holds a stale value.
+    #[must_use]
+    pub fn value(&self, id: ParamId, voice: VoiceIdx) -> Option<f32> {
+        match id {
+            ParamId::Voice(i) => self
+                .plan
+                .voice_table
+                .cur
+                .get(usize::from(i))
+                .and_then(|row| row.get(voice))
+                .copied(),
+            ParamId::Global(i) => self.plan.global_table.cur.get(usize::from(i)).copied(),
+        }
+    }
+
+    /// The per-voice offset of macro `index` (0–7) on voice slot `voice` (CLAP polyphonic modulation).
+    #[must_use]
+    pub fn macro_offset(&self, index: usize, voice: VoiceIdx) -> Option<f32> {
+        self.buses
+            .poly
+            .get(index)
+            .and_then(|row| row.get(voice))
+            .copied()
+    }
+
+    /// The last host value of automation slot `slot` (0-based), if the engine remembers one.
+    #[must_use]
+    pub fn host_slot(&self, slot: usize) -> Option<f32> {
+        self.host_slots.get(slot).copied().filter(|v| !v.is_nan())
     }
 
     /// The counters.
@@ -266,8 +432,8 @@ impl Engine {
         &self.plan
     }
 
-    /// The epoch of the plan being run: host automation (`EventKind::Param`) must use ids from its
-    /// [`PlanMap`](crate::PlanMap).
+    /// The epoch of the plan being run. Tag `EventKind::EpochParam` with the epoch of the plan whose
+    /// [`PlanMap`](crate::PlanMap) gave the id (in a real-time engine the plan can change inside `process`).
     #[must_use]
     pub fn epoch(&self) -> u64 {
         self.plan.epoch
@@ -298,37 +464,12 @@ impl Engine {
     fn render_segment(&mut self) {
         let frame = self.next_segment;
         // 1. Commands.
-        self.poll_commands();
-        if self.monitor_bypass && !self.bypass_applied {
-            self.plan.reset_time_based(self.render_seed);
-            if let Some(old) = self.old.as_deref_mut() {
-                old.reset_time_based(self.render_seed);
-            }
-        }
-        self.bypass_applied = self.monitor_bypass;
+        self.poll_commands(frame);
 
         // 2. Events due at this boundary, in arrival order; then the glides.
         self.begin_notes();
         {
-            let Self {
-                queue,
-                plan,
-                old,
-                voices,
-                notes,
-                glide,
-                render_seed,
-                ..
-            } = self;
-            let mut cx = NoteCx {
-                plan,
-                old: old.as_deref_mut(),
-                voices,
-                notes,
-                glide,
-                render_seed: *render_seed,
-                frame,
-            };
+            let (queue, mut cx) = self.note_cx(frame);
             queue.drain_due(frame, |kind| cx.apply(kind));
         }
         let mut active_buf = [0; MAX_VOICES];
@@ -339,28 +480,60 @@ impl Engine {
         };
         let active = &active_buf[..n_active];
         self.glide.advance(active, &mut self.notes);
+        if self.poly_dirty {
+            self.poly_dirty = false;
+            self.poly_active = self
+                .buses
+                .poly
+                .iter()
+                .any(|row| active.iter().any(|&v| row[v] != 0.0));
+        }
+
+        // The monitor bypass fade moves one segment towards its target.
+        let (b0, b1) = self.advance_bypass();
+        let bypass = if b0 == self.bypass_segments && b1 == self.bypass_segments {
+            Bypass::Off
+        } else if b0 == 0 && b1 == 0 {
+            Bypass::On
+        } else {
+            let n = self.bypass_segments as f32;
+            Bypass::Fade {
+                g0: b0 as f32 / n,
+                g1: b1 as f32 / n,
+            }
+        };
 
         // 3–8, per plan: the replaced one first while it crossfades.
+        let buses = &mut *self.buses;
         let cx = SegmentCx {
             active,
             notes: &self.notes,
             voices: &self.voices,
-            bypass: self.monitor_bypass,
+            bypass,
+            poly: self.poly_active.then_some(&buses.poly),
         };
-        let buses = &mut *self.buses;
+        let mut out = Out {
+            voice: &mut buses.voice,
+            scratch: &mut buses.scratch,
+            sync: &mut buses.sync,
+            left: &mut buses.left,
+            right: &mut buses.right,
+            dry_left: &mut buses.dry_left,
+            dry_right: &mut buses.dry_right,
+        };
         let crossfading = self.old.is_some() && self.xfade_seg < CROSSFADE_SEGMENTS;
         if crossfading && let Some(old) = self.old.as_deref_mut() {
-            render_plan(old, &cx, buses);
-            buses.old_left = buses.left;
-            buses.old_right = buses.right;
+            render_plan(old, &cx, &mut out);
+            buses.old_left = *out.left;
+            buses.old_right = *out.right;
         }
-        render_plan(&mut self.plan, &cx, buses);
+        render_plan(&mut self.plan, &cx, &mut out);
         if crossfading {
             let w = &buses.xfade[self.xfade_seg * SEG..(self.xfade_seg + 1) * SEG];
-            for (((l, r), (ol, or)), w) in buses
+            for (((l, r), (ol, or)), w) in out
                 .left
                 .iter_mut()
-                .zip(&mut buses.right)
+                .zip(out.right.iter_mut())
                 .zip(buses.old_left.iter().zip(&buses.old_right))
                 .zip(w)
             {
@@ -370,9 +543,19 @@ impl Engine {
             self.xfade_seg += 1;
         }
         debug_assert!(
-            buses.left.iter().chain(&buses.right).all(|x| x.is_finite()),
+            out.left
+                .iter()
+                .chain(out.right.iter())
+                .all(|x| x.is_finite()),
             "non-finite output sample"
         );
+        if b0 > 0 && b1 == 0 {
+            // The bypass fade-out is over: the time-based effects stop here, and restart from silence when released.
+            self.plan.reset_time_based(self.render_seed);
+            if let Some(old) = self.old.as_deref_mut() {
+                old.reset_time_based(self.render_seed);
+            }
+        }
 
         // 9. End finished voices: the amp envelope of every plan that runs is done, or the steal fade is over.
         {
@@ -386,6 +569,10 @@ impl Engine {
                 for &v in active {
                     if self.voices.state(v) == VoiceState::Free {
                         self.notes.gate[v] = false;
+                        for row in &mut self.buses.poly {
+                            row[v] = 0.0;
+                        }
+                        self.poly_dirty = true;
                     }
                 }
             }
@@ -400,9 +587,60 @@ impl Engine {
         self.segments += 1;
     }
 
+    /// The bypass level at the start and at the end of this segment, after moving one step towards the target.
+    fn advance_bypass(&mut self) -> (u32, u32) {
+        let target = if self.monitor_bypass {
+            0
+        } else {
+            self.bypass_segments
+        };
+        let l0 = self.bypass_level;
+        let l1 = match l0.cmp(&target) {
+            core::cmp::Ordering::Less => l0 + 1,
+            core::cmp::Ordering::Greater => l0 - 1,
+            core::cmp::Ordering::Equal => l0,
+        };
+        self.bypass_level = l1;
+        (l0, l1)
+    }
+
+    /// What step 2 (and an event from the command ring) needs, borrowed from the engine; plus the event queue.
+    fn note_cx(&mut self, frame: u64) -> (&mut EventQueue, NoteCx<'_>) {
+        let Self {
+            queue,
+            plan,
+            old,
+            voices,
+            notes,
+            glide,
+            render_seed,
+            buses,
+            host_slots,
+            poly_dirty,
+            stale_events,
+            ..
+        } = self;
+        (
+            queue,
+            NoteCx {
+                plan,
+                old: old.as_deref_mut(),
+                voices,
+                notes,
+                glide,
+                render_seed: *render_seed,
+                frame,
+                host_slots,
+                poly: &mut buses.poly,
+                poly_dirty,
+                stale_events,
+            },
+        )
+    }
+
     /// Step 1: read commands until the ring is empty, a plan has to wait (a crossfade runs) or a replaced plan waits
     /// for room on the return ring (back-pressure: the commands behind it stay queued, in order).
-    fn poll_commands(&mut self) {
+    fn poll_commands(&mut self, frame: u64) {
         let Some(mut link) = self.link.take() else {
             return;
         };
@@ -424,6 +662,7 @@ impl Engine {
                     Cmd::Param { epoch, id, value } => {
                         if epoch == self.plan.epoch {
                             set_param(&mut self.plan, id, value);
+                            self.plan.note_patch_value(id, value);
                         } else {
                             self.stale_events += 1;
                         }
@@ -434,23 +673,46 @@ impl Engine {
                             set_macro(old, usize::from(index), value);
                         }
                     }
+                    Cmd::Depth { epoch, id, depth } => {
+                        if epoch == self.plan.epoch {
+                            self.plan.matrix.set_depth(usize::from(id.0), depth);
+                        } else {
+                            self.stale_events += 1;
+                        }
+                    }
+                    // Queued behind the host events already due here, so step 2 applies it in order (dropped
+                    // and counted if the queue is full).
+                    Cmd::Event(kind) => {
+                        self.queue.push(frame, kind);
+                    }
                 }
             }
         }
         self.link = Some(link);
     }
 
-    /// Swap `new` in at this boundary: carry the running state, adopt its voice mode, and either crossfade (a
-    /// module was added or removed) or hand the old plan back at once.
+    /// Swap `new` in at this boundary: carry the running state, re-apply the remembered host slot values, adopt its
+    /// voice mode, and either crossfade (a module was added or removed) or hand the old plan back at once.
     fn swap(&mut self, mut new: Box<Plan>, link: &mut AudioLink) {
         let changed = new.carry_from(
-            &self.plan,
+            &mut self.plan,
             self.voices.active(),
             &self.notes,
             self.render_seed,
         );
-        if self.monitor_bypass {
-            new.reset_time_based(self.render_seed);
+        // Host automation survives an edit: a slot that still names the same parameter gets its host value again
+        // (the exact patch value if the host's value is `to_norm` of it). A slot that now names another parameter,
+        // or none, forgets it: the host sends a new value when it moves.
+        for (i, h) in self.host_slots.iter_mut().enumerate() {
+            if h.is_nan() {
+                continue;
+            }
+            let key = new.slots[i].key;
+            if key != 0 && key == self.plan.slots[i].key {
+                apply_slot(&mut new, i, *h);
+            } else {
+                *h = f32::NAN;
+            }
         }
         self.voices.configure(new.mode, new.polyphony);
         let old = core::mem::replace(&mut self.plan, new);
@@ -486,6 +748,104 @@ impl Engine {
         n.release = [false; MAX_VOICES];
         n.pitch_prev = n.pitch_cur;
     }
+
+    /// End of `process`: publish this block into the enabled tap (reads engine state only).
+    fn publish(&mut self, left: &[f32], right: &[f32]) {
+        let stats = self.stats();
+        let Self {
+            tap,
+            tap_silent,
+            plan,
+            voices,
+            notes,
+            ..
+        } = self;
+        let Some(tap) = tap.as_deref() else { return };
+        let peak = |x: &[f32]| x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        let (pl, pr) = (peak(left), peak(right));
+        let active = voices.active();
+        if pl == 0.0 && pr == 0.0 && active.is_empty() {
+            if *tap_silent >= tap.scope_len() {
+                return; // silence after silence: nothing new, the editor may sleep
+            }
+            *tap_silent += left.len();
+        } else {
+            *tap_silent = 0;
+        }
+        tap.write_scope(left, right);
+
+        // The display voice: the newest held voice, else the newest releasing one, else the newest fading one.
+        let newest = |state: VoiceState| {
+            active
+                .iter()
+                .copied()
+                .filter(|&v| voices.state(v) == state)
+                .max_by_key(|&v| notes.note_index[v])
+        };
+        let display = newest(VoiceState::Held)
+            .or_else(|| newest(VoiceState::Released))
+            .or_else(|| newest(VoiceState::Stolen));
+        let held = active
+            .iter()
+            .filter(|&&v| voices.state(v) == VoiceState::Held)
+            .count();
+
+        let mut dropped = 0u64;
+        let params = plan.tap_params();
+        for (k, &id) in params.iter().enumerate() {
+            let Some(slot) = tap.params.get(k) else {
+                dropped += 1;
+                continue;
+            };
+            let value = match id {
+                ParamId::Voice(i) => {
+                    let i = usize::from(i);
+                    display.map_or(plan.voice_table.base[i], |v| plan.voice_table.cur[i][v])
+                }
+                ParamId::Global(i) => plan.global_table.cur[usize::from(i)],
+            };
+            store_f32(slot, value);
+        }
+        let mods = plan
+            .vmod_cur
+            .iter()
+            .map(|row| display.map_or(0.0, |v| row[v]))
+            .chain(plan.gmod_cur.iter().copied());
+        let mut n_mods = 0;
+        for (k, value) in mods.enumerate() {
+            match tap.modulators.get(k) {
+                Some(slot) => {
+                    store_f32(slot, value);
+                    n_mods += 1;
+                }
+                None => dropped += 1,
+            }
+        }
+        for (slot, &value) in tap
+            .macros
+            .iter()
+            .zip(&plan.global_table.cur[plan.macros.range()])
+        {
+            store_f32(slot, value);
+        }
+        store_f32(&tap.peaks[0], pl);
+        store_f32(&tap.peaks[1], pr);
+        tap.epoch.store(plan.epoch, Relaxed);
+        tap.params_len
+            .store(params.len().min(tap.params.len()) as u32, Relaxed);
+        tap.modulators_len.store(n_mods as u32, Relaxed);
+        tap.voices.store(active.len() as u32, Relaxed);
+        tap.held.store(held as u32, Relaxed);
+        tap.display_voice
+            .store(display.map_or(u32::MAX, |v| v as u32), Relaxed);
+        tap.display_note
+            .store(display.map_or(0, |v| notes.note_index[v]), Relaxed);
+        tap.store_stats(&stats);
+        if dropped > 0 {
+            tap.dropped.fetch_add(dropped, Relaxed);
+        }
+        tap.finish();
+    }
 }
 
 /// What step 2 needs to apply note and value events.
@@ -497,6 +857,10 @@ struct NoteCx<'a> {
     glide: &'a mut Glide,
     render_seed: u64,
     frame: u64,
+    host_slots: &'a mut [f32; SLOTS],
+    poly: &'a mut PolyOffsets,
+    poly_dirty: &'a mut bool,
+    stale_events: &'a mut u64,
 }
 
 impl NoteCx<'_> {
@@ -512,6 +876,17 @@ impl NoteCx<'_> {
             }
             EventKind::ModWheel { value } => self.set_macro(MOD_WHEEL, value),
             EventKind::Choke { key } => self.voices.choke(key, |_| {}),
+            EventKind::Slot { slot, value } => self.set_slot(usize::from(slot), value),
+            EventKind::EpochParam { epoch, id, value } => {
+                if epoch == self.plan.epoch {
+                    set_param(self.plan, id, value);
+                } else {
+                    *self.stale_events += 1;
+                }
+            }
+            EventKind::MacroVoice { key, index, offset } => {
+                self.set_macro_offset(key, usize::from(index), offset);
+            }
         }
     }
 
@@ -519,6 +894,32 @@ impl NoteCx<'_> {
         set_macro(self.plan, index, value);
         if let Some(old) = self.old.as_deref_mut() {
             set_macro(old, index, value);
+        }
+    }
+
+    /// Remember the host's value of slot `slot` and apply it through each running plan's slot table.
+    fn set_slot(&mut self, slot: usize, value: f32) {
+        if slot >= SLOTS || value.is_nan() {
+            return;
+        }
+        let n = value.clamp(0.0, 1.0);
+        self.host_slots[slot] = n;
+        apply_slot(self.plan, slot, n);
+        if let Some(old) = self.old.as_deref_mut() {
+            apply_slot(old, slot, n);
+        }
+    }
+
+    fn set_macro_offset(&mut self, key: NoteKey, index: usize, offset: f32) {
+        if index >= POLY_MACROS || offset.is_nan() {
+            return;
+        }
+        let offset = offset.clamp(-1.0, 1.0);
+        for &v in self.voices.active() {
+            if self.voices.state(v) != VoiceState::Free && key.matches(&self.voices.key(v)) {
+                self.poly[index][v] = offset;
+                *self.poly_dirty = true;
+            }
         }
     }
 
@@ -541,6 +942,13 @@ impl NoteCx<'_> {
         } else {
             velocity.clamp(0.0, 1.0)
         };
+        // A note landed on the voice: its polyphonic offsets belong to the note it played before.
+        for row in self.poly.iter_mut() {
+            if row[v] != 0.0 {
+                row[v] = 0.0;
+                *self.poly_dirty = true;
+            }
+        }
         let (segments, mode) = self.glide_settings();
         let from = self.glide.origin(action, mode, segments, self.notes);
         let n = &mut *self.notes;
@@ -593,6 +1001,13 @@ fn set_param(plan: &mut Plan, id: ParamId, value: f32) {
     }
 }
 
+/// Host value `n` (0–1) of slot `slot`, through the plan's slot table.
+fn apply_slot(plan: &mut Plan, slot: usize, n: f32) {
+    if let Some(t) = plan.slots.get(slot).and_then(|e| e.target) {
+        set_param(plan, t.id, t.resolve(n));
+    }
+}
+
 /// Macro `index` (0–7) or the mod wheel (8), 0–1, clamped.
 fn set_macro(plan: &mut Plan, index: usize, value: f32) {
     if index < MACRO_SOURCES {
@@ -606,11 +1021,25 @@ struct SegmentCx<'a> {
     notes: &'a NoteState,
     /// For the steal fades.
     voices: &'a VoiceManager,
-    bypass: bool,
+    /// The monitor bypass for the time-based effects.
+    bypass: Bypass,
+    /// Per-voice macro offsets, when any is non-zero.
+    poly: Option<&'a PolyOffsets>,
+}
+
+/// The buses steps 3–8 write.
+struct Out<'a> {
+    voice: &'a mut VoiceBus,
+    scratch: &'a mut VoiceBus,
+    sync: &'a mut SyncBus,
+    left: &'a mut Block,
+    right: &'a mut Block,
+    dry_left: &'a mut Block,
+    dry_right: &'a mut Block,
 }
 
 /// Steps 3–8 for one plan; the stereo result is left in `buses.left`/`buses.right`.
-fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
+fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     let (active, notes) = (cx.active, cx.notes);
     let reset = &notes.trigger;
     let Plan {
@@ -636,9 +1065,10 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
         ..
     } = plan;
 
-    // 3. Smoothers (a trigger restarts the voice's ramps).
+    // 3. Smoothers (a trigger restarts the voice's ramps) and route depth ramps.
     voice_table.advance(active, reset);
     global_table.advance();
+    matrix.advance_depths();
     let routed = !matrix.is_empty();
     let mut macro_values = [0.0; MACRO_SOURCES];
     macro_values.copy_from_slice(&global_table.cur[macros.range()]);
@@ -651,6 +1081,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
                 vmod: vmod_cur,
                 gmod: gmod_cur,
                 macros: macro_values,
+                poly: cx.poly,
             };
             matrix.eval_global_mod(i, global_table, &src);
         }
@@ -668,6 +1099,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
                 vmod: vmod_cur,
                 gmod: gmod_cur,
                 macros: macro_values,
+                poly: cx.poly,
             };
             matrix.eval_voice_mod(i, voice_table, &src, active, reset);
         }
@@ -689,6 +1121,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
             vmod: vmod_cur,
             gmod: gmod_cur,
             macros: macro_values,
+            poly: cx.poly,
         };
         matrix.eval_processors(voice_table, global_table, &src, active, reset);
     }
@@ -703,16 +1136,16 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
                 for &v in active {
                     buses.sync[v] = [NO_SYNC; SEG];
                 }
-                (Some(&mut buses.sync), None)
+                (Some(&mut *buses.sync), None)
             }
-            Some(m) if g > m => (None, Some(&buses.sync)),
+            Some(m) if g > m => (None, Some(&*buses.sync)),
             _ => (None, None),
         };
         slot.module.process(&mut VoiceCx {
             voices: active,
             notes,
             params: voice_table.view(slot.params),
-            io: &mut buses.scratch,
+            io: buses.scratch,
             sync_out,
             sync_in,
         });
@@ -727,13 +1160,13 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
             voices: active,
             notes,
             params: voice_table.view(slot.params),
-            io: &mut buses.voice,
+            io: buses.voice,
             sync_out: None,
             sync_in: None,
         });
     }
-    buses.left = [0.0; SEG];
-    buses.right = [0.0; SEG];
+    *buses.left = [0.0; SEG];
+    *buses.right = [0.0; SEG];
     let amp = *amp_env;
     let pan_index = voice_builtin.start + VoiceParam::Pan.index();
     for &v in active {
@@ -760,7 +1193,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
             for (((l, r), x), w) in buses
                 .left
                 .iter_mut()
-                .zip(&mut buses.right)
+                .zip(buses.right.iter_mut())
                 .zip(voice)
                 .zip(RAMP)
             {
@@ -772,7 +1205,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
             for (((l, r), x), w) in buses
                 .left
                 .iter_mut()
-                .zip(&mut buses.right)
+                .zip(buses.right.iter_mut())
                 .zip(voice)
                 .zip(RAMP)
             {
@@ -782,18 +1215,40 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
         }
     }
 
-    // 8. Global effects in order (time-based ones muted by the monitor bypass), then the master level.
+    // 8. Global effects in order (time-based ones faded out and skipped by the monitor bypass), then the master
+    //    level.
     for (slot, &time_based) in fx.iter_mut().zip(fx_time_based.iter()) {
-        if (cx.bypass && time_based)
-            || (slot.module.is_silent() && is_zero(&buses.left) && is_zero(&buses.right))
+        let bypass = if time_based { cx.bypass } else { Bypass::Off };
+        if bypass == Bypass::On
+            || (slot.module.is_silent() && is_zero(buses.left) && is_zero(buses.right))
         {
             continue;
         }
+        if matches!(bypass, Bypass::Fade { .. }) {
+            *buses.dry_left = *buses.left;
+            *buses.dry_right = *buses.right;
+        }
         slot.module.process(&mut GlobalCx {
             params: global_table.view(slot.params),
-            left: &mut buses.left,
-            right: &mut buses.right,
+            left: buses.left,
+            right: buses.right,
         });
+        if let Bypass::Fade { g0, g1 } = bypass {
+            // wet·g + dry·(1 − g): exactly the dry signal at g = 0 and the wet one at g = 1.
+            let dg = g1 - g0;
+            for ((((l, r), dl), dr), w) in buses
+                .left
+                .iter_mut()
+                .zip(buses.right.iter_mut())
+                .zip(buses.dry_left.iter())
+                .zip(buses.dry_right.iter())
+                .zip(RAMP)
+            {
+                let g = g0 + dg * w;
+                *l = *l * g + dl * (1.0 - g);
+                *r = *r * g + dr * (1.0 - g);
+            }
+        }
     }
     let level = global_table.cur[master_builtin.start + MasterParam::Level.index()];
     out.master_prev = out.master_cur;
@@ -804,7 +1259,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
     let (g0, g1) = (out.master_prev, out.master_cur);
     if g0 != 1.0 || g1 != 1.0 {
         let dg = g1 - g0;
-        for ((l, r), w) in buses.left.iter_mut().zip(&mut buses.right).zip(RAMP) {
+        for ((l, r), w) in buses.left.iter_mut().zip(buses.right.iter_mut()).zip(RAMP) {
             let g = g0 + dg * w;
             *l *= g;
             *r *= g;

@@ -17,6 +17,7 @@
 //! seed = 236412653                       # optional; enth_render::DEFAULT_SEED
 //! notes = [{ key = 60, velocity = 0.8, on_s = 0.0, off_s = 0.5 }]
 //! automation = [{ time_s = 0.25, addr = "osc1.level", value = 50.0 }]   # optional
+//! controls = [{ time_s = 0.5, source = "macro1", value = 1.0 }]         # optional: macro1..macro8, modwheel
 //!
 //! [source.patch]
 //! schema = 1
@@ -27,7 +28,7 @@
 //! ```
 
 use enth_patch::file::PatchFile;
-use enth_render::{Automation, Note, Performance, RenderSpec};
+use enth_render::{Automation, Control, Controller, Note, Performance, RenderSpec};
 use serde::Deserialize;
 
 /// The `[source]` table of a case file, tagged by `kind`.
@@ -44,6 +45,9 @@ pub enum Source {
         /// Parameter changes.
         #[serde(default)]
         automation: Vec<CaseAutomation>,
+        /// Macro and mod-wheel moves.
+        #[serde(default)]
+        controls: Vec<CaseControl>,
         /// The patch, as a patch file.
         patch: Box<PatchFile>,
     },
@@ -72,6 +76,15 @@ fn default_velocity() -> f32 {
 pub struct CaseAutomation {
     pub time_s: f64,
     pub addr: String,
+    pub value: f32,
+}
+
+/// A macro or mod-wheel move in a case (`source` is `macro1`…`macro8` or `modwheel`; value 0–1).
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CaseControl {
+    pub time_s: f64,
+    pub source: String,
     pub value: f32,
 }
 
@@ -114,6 +127,7 @@ impl Source {
                 seed,
                 notes,
                 automation,
+                controls,
                 patch,
             } => {
                 let patch = crate::patch::patch_from_file(patch)?;
@@ -127,12 +141,26 @@ impl Source {
                         })
                     })
                     .collect::<Result<Vec<_>, String>>()?;
+                let controls = controls
+                    .iter()
+                    .map(|c| {
+                        Ok(Control {
+                            time_s: c.time_s,
+                            controller: c
+                                .source
+                                .parse::<Controller>()
+                                .map_err(|e| format!("controls: {e}"))?,
+                            value: c.value,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
                 let perf = Performance {
                     notes: notes
                         .iter()
                         .map(|n| Note::new(n.key, n.velocity, n.on_s, n.off_s))
                         .collect(),
                     automation,
+                    controls,
                     duration_s: frames as f64 / f64::from(sample_rate),
                 };
                 let spec = RenderSpec::new(sample_rate, seed.unwrap_or(enth_render::DEFAULT_SEED));

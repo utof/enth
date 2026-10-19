@@ -4,8 +4,10 @@
 //! ```text
 //! main thread                                   audio thread (Engine::process, step 1 of each segment)
 //! Link::send_plan(plan)  ──Cmd::Plan──▶ ┐
-//! Link::send_param(e, id, v) ──Cmd────▶ ├─ command ring (ordered) ──▶ poll: swap / apply / drop stale
-//! Link::send_macro(i, v) ──Cmd────────▶ ┘
+//! Link::send_param(e, id, v) ──Cmd────▶ │
+//! Link::send_depth(e, d, pct) ──Cmd───▶ ├─ command ring (ordered) ──▶ poll: swap / apply / drop stale
+//! Link::send_macro(i, v) ──Cmd────────▶ │
+//! Link::send_event(kind) ──Cmd────────▶ ┘   (audition notes: applied like host events, at step 1)
 //! Link::collect() ◀── return ring (+ pending slot) ◀── the replaced plan, after its crossfade
 //! ```
 //!
@@ -25,8 +27,9 @@
 
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
+use crate::event::EventKind;
 use crate::params::ParamId;
-use crate::plan::Plan;
+use crate::plan::{DepthId, Plan};
 
 /// Plans that may be sent and not yet acknowledged (returned) at once.
 pub const MAX_PLANS_IN_FLIGHT: usize = 2;
@@ -39,6 +42,10 @@ pub(crate) enum Cmd {
     Param { epoch: u64, id: ParamId, value: f32 },
     /// Set a macro (0-based) or, at index 8, the mod wheel; 0–1, clamped. Plan-independent.
     Macro { index: u8, value: f32 },
+    /// Move a route's depth (percent) over 10 ms; ignored unless `epoch` is the running plan's (P1b lane E+).
+    Depth { epoch: u64, id: DepthId, depth: f32 },
+    /// An event applied at step 1 as if the host had sent it at that boundary (audition notes; P1b lane E+).
+    Event(EventKind),
 }
 
 /// Ring sizes for [`Engine::with_link`](crate::Engine::with_link).
@@ -129,6 +136,35 @@ impl Link {
     pub fn send_param(&mut self, epoch: u64, id: ParamId, value: f32) -> Result<(), SendError<()>> {
         self.cmds
             .push(Cmd::Param { epoch, id, value })
+            .map_err(|_| SendError::Full(()))
+    }
+
+    /// Move the depth of a route of the plan with `epoch` (the id comes from that plan's
+    /// [`PlanMap::depth`](crate::PlanMap::depth)) to `depth` percent (−100..100, clamped; NaN is ignored), without
+    /// a recompile (P1b lane E+): the depth ramps linearly over 10 ms and then holds exactly the value a recompiled
+    /// plan would. The engine ignores it (counted as stale) if it runs another plan by then. A change from or to 0
+    /// must be a recompile (`PlanMap::depth` has no id for a depth-0 route).
+    ///
+    /// # Errors
+    /// [`SendError::Full`] if the command ring is full.
+    pub fn send_depth(&mut self, epoch: u64, id: DepthId, depth: f32) -> Result<(), SendError<()>> {
+        self.cmds
+            .push(Cmd::Depth { epoch, id, depth })
+            .map_err(|_| SendError::Full(()))
+    }
+
+    /// Send an event from the main thread: it applies at the start of the next segment the audio thread renders, as
+    /// if the host had sent it at that boundary (P1b lane E+). For **audition notes** (the editor's keyboard,
+    /// Recreate), which play whether or not the host transport runs; give them their own `NoteKey::port` so their
+    /// `NOTE_END`s can be told apart. Offline engines have no link, so renders cannot see these by construction.
+    /// Prefer [`Link::send_param`] for values (an `EventKind::Param` here names whatever plan runs then; an
+    /// [`EventKind::EpochParam`] or [`EventKind::Slot`] is safe).
+    ///
+    /// # Errors
+    /// [`SendError::Full`] if the command ring is full.
+    pub fn send_event(&mut self, kind: EventKind) -> Result<(), SendError<()>> {
+        self.cmds
+            .push(Cmd::Event(kind))
             .map_err(|_| SendError::Full(()))
     }
 

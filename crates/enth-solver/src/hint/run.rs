@@ -128,9 +128,8 @@ impl<'a> Run<'a> {
             .filter(|s| *s > 0.0 && *s < perf.duration_s)
             .filter(|_| features.iter().all(|f| spectral(*f)))
             .map(|s| Performance {
-                notes: perf.notes.clone(),
-                automation: perf.automation.clone(),
                 duration_s: s,
+                ..perf.clone()
             });
         Self {
             patch,

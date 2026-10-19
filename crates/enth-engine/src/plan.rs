@@ -37,8 +37,9 @@ use enth_params::ParamSpec;
 use enth_patch::catalogue::{
     MACRO_VALUE, MASTER_PARAMS, MasterParam, VOICE_PARAMS, VoiceMode, VoiceParam,
 };
+use enth_patch::model::SLOTS;
 use enth_patch::{
-    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Rate, Section,
+    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Rate, RouteAddr, Section,
 };
 
 use crate::modulation::{MACRO_SOURCES, Matrix, MatrixBuilder, Src, Stage, Term};
@@ -62,6 +63,44 @@ pub(crate) struct Slot<M> {
     /// Its parameters in the voice or global table.
     pub params: Span,
 }
+
+/// The parameter a host automation slot drives in this plan (P1b lane E+).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SlotTarget {
+    pub id: ParamId,
+    pub spec: &'static ParamSpec,
+    /// The patch value (updated by value events from the command ring, so the host's echo of an editor edit
+    /// resolves exactly) and its `to_norm`.
+    pub plain: f32,
+    pub norm: f32,
+}
+
+impl SlotTarget {
+    /// The base value for the host's normalised value `n`: the exact patch value if `n` is bit-equal to its
+    /// `to_norm`, else `from_norm(n)` (`from_norm(to_norm(x))` is not `x` for most values; report 01 F3).
+    pub fn resolve(&self, n: f32) -> f32 {
+        if n.to_bits() == self.norm.to_bits() {
+            self.plain
+        } else {
+            self.spec.from_norm(n)
+        }
+    }
+}
+
+/// One host automation slot of a plan.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SlotEntry {
+    /// `fnv1a64` of the target's address text (never 0), or 0 for an empty slot: a plan swap re-applies a remembered
+    /// host value only to a slot whose key is unchanged.
+    pub key: u64,
+    /// `None` for an empty slot or a target in a disabled module.
+    pub target: Option<SlotTarget>,
+}
+
+/// A route's depth in a plan, for [`Link::send_depth`](crate::swap::Link::send_depth): from
+/// [`PlanMap::depth`]. Valid for the plan whose map gave it (tag it with that plan's epoch).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DepthId(pub(crate) u16);
 
 /// The output stage's per-plan ramps: the pan gains per voice and the master gain.
 #[derive(Clone, Copy, Debug)]
@@ -136,6 +175,10 @@ pub struct Plan {
     pub(crate) gmod_cur: Vec<f32>,
     pub(crate) gmod_prev: Vec<f32>,
     pub(crate) out: Output,
+    /// The host automation slots (P1b lane E+).
+    pub(crate) slots: [SlotEntry; SLOTS],
+    /// The routed parameters in telemetry order: the voice table's, then the global table's (P1b lane E+).
+    pub(crate) tap_params: Vec<ParamId>,
 }
 
 impl fmt::Debug for Plan {
@@ -210,6 +253,38 @@ impl Plan {
             .collect()
     }
 
+    /// The routed (modulated) parameters, in the order the telemetry tap publishes their values
+    /// ([`crate::tap::Tap`]): the voice table's routed parameters, then the global table's. Main thread: map them to
+    /// addresses with [`PlanMap::addr`].
+    #[must_use]
+    pub fn tap_params(&self) -> &[ParamId] {
+        &self.tap_params
+    }
+
+    /// The modulators, in the order the telemetry tap publishes their outputs: the voice modulators (patch order),
+    /// then the global ones.
+    #[must_use]
+    pub fn tap_modulators(&self) -> Vec<&ModuleId> {
+        self.voice_mods
+            .iter()
+            .map(|s| &s.id)
+            .chain(self.global_mods.iter().map(|s| &s.id))
+            .collect()
+    }
+
+    /// The parameter host slot `slot` (0-based) drives in this plan, if any (an empty slot, or a target in a disabled
+    /// module, has none).
+    #[must_use]
+    pub fn slot_target(&self, slot: usize) -> Option<ParamId> {
+        self.slots.get(slot).and_then(|e| e.target).map(|t| t.id)
+    }
+
+    /// A route's current depth, as a percentage (a depth event ramps it).
+    #[must_use]
+    pub fn route_depth(&self, id: DepthId) -> Option<f32> {
+        self.matrix.depth(usize::from(id.0)).map(|d| d * 100.0)
+    }
+
     /// The number of subnormal values in every module's state, the modulator outputs and the output ramps (test
     /// support).
     #[must_use]
@@ -258,6 +333,38 @@ impl Plan {
         }
     }
 
+    /// Back to the state a freshly compiled plan started by [`Engine::new`](crate::Engine::new) holds, keeping the
+    /// base values ([`crate::Engine::reset`]): parameters settled on their bases, depth ramps landed, modulator
+    /// outputs at 0, the output ramps at the current master level, every global module reset. Voice modules need
+    /// nothing: every voice is freed, and `start_voice` resets a slot. Never allocates.
+    pub(crate) fn reset_state(&mut self, render_seed: u64) {
+        self.voice_table.settle();
+        self.global_table.settle();
+        self.matrix.settle_depths();
+        for out in self.vmod_cur.iter_mut().chain(self.vmod_prev.iter_mut()) {
+            *out = [0.0; MAX_VOICES];
+        }
+        self.gmod_cur.fill(0.0);
+        self.gmod_prev.fill(0.0);
+        let level = self.global_table.base[self.master_builtin.start + MasterParam::Level.index()];
+        self.out = Output::new(level);
+        self.reset_globals(render_seed);
+    }
+
+    /// A value from the command ring set parameter `id` to `value` (already applied to the table): a slot that
+    /// targets it now holds that as its patch value, so the host's echo (`to_norm` of it) resolves exactly.
+    pub(crate) fn note_patch_value(&mut self, id: ParamId, value: f32) {
+        for entry in &mut self.slots {
+            if let Some(t) = entry.target.as_mut()
+                && t.id == id
+                && !value.is_nan()
+            {
+                t.plain = t.spec.clamp(value);
+                t.norm = t.spec.to_norm(t.plain);
+            }
+        }
+    }
+
     /// Reset the `fx` slots whose kind is `time_based` (the monitor bypass engaged: they restart from silence).
     pub(crate) fn reset_time_based(&mut self, render_seed: u64) {
         let Plan {
@@ -302,14 +409,29 @@ impl Plan {
 
     /// Carry the running state of `old` (the plan being replaced) into this one (see the module docs). Called on the
     /// audio thread; never allocates. Returns whether a module was added or removed (the swap then crossfades).
+    ///
+    /// Whether the swap crossfades is decided first (pairing the five role lists is cheap). Without a crossfade the
+    /// old plan never runs again, so each surviving effect *takes* its state ([`GlobalProcessorImpl::take_state`]:
+    /// the reverb moves its delay lines instead of copying 1.6 MB); with one, both plans run for 256 frames and the
+    /// state is copied. Either way the new plan ends up with the same state, so the output is the same bits.
     pub(crate) fn carry_from(
         &mut self,
-        old: &Plan,
+        old: &mut Plan,
         active: &[VoiceIdx],
         notes: &NoteState,
         render_seed: u64,
     ) -> bool {
-        let mut changed = false;
+        let changed = pair(&self.generators, &old.generators, VoiceProcessorImpl::kind).1
+            || pair(&self.voice_fx, &old.voice_fx, VoiceProcessorImpl::kind).1
+            || pair(&self.voice_mods, &old.voice_mods, VoiceModulatorImpl::kind).1
+            || pair(
+                &self.global_mods,
+                &old.global_mods,
+                GlobalModulatorImpl::kind,
+            )
+            .1
+            || pair(&self.fx, &old.fx, GlobalProcessorImpl::kind).1;
+        let move_fx = !changed;
         let Plan {
             generators,
             voice_fx,
@@ -329,8 +451,7 @@ impl Plan {
             (&mut *generators, &old.generators),
             (&mut *voice_fx, &old.voice_fx),
         ] {
-            let (pairs, c) = pair(list, old_list, VoiceProcessorImpl::kind);
-            changed |= c;
+            let (pairs, _) = pair(list, old_list, VoiceProcessorImpl::kind);
             for (i, slot) in list.iter_mut().enumerate() {
                 if let Some(j) = pairs[i] {
                     let o = &old_list[j];
@@ -350,8 +471,7 @@ impl Plan {
             }
         }
 
-        let (pairs, c) = pair(voice_mods, &old.voice_mods, VoiceModulatorImpl::kind);
-        changed |= c;
+        let (pairs, _) = pair(voice_mods, &old.voice_mods, VoiceModulatorImpl::kind);
         for (i, slot) in voice_mods.iter_mut().enumerate() {
             if let Some(j) = pairs[i] {
                 let o = &old.voice_mods[j];
@@ -367,8 +487,7 @@ impl Plan {
             }
         }
 
-        let (pairs, c) = pair(global_mods, &old.global_mods, GlobalModulatorImpl::kind);
-        changed |= c;
+        let (pairs, _) = pair(global_mods, &old.global_mods, GlobalModulatorImpl::kind);
         for (i, slot) in global_mods.iter_mut().enumerate() {
             if let Some(j) = pairs[i] {
                 let o = &old.global_mods[j];
@@ -385,13 +504,16 @@ impl Plan {
             }
         }
 
-        let (pairs, c) = pair(fx, &old.fx, GlobalProcessorImpl::kind);
-        changed |= c;
+        let (pairs, _) = pair(fx, &old.fx, GlobalProcessorImpl::kind);
         for (i, slot) in fx.iter_mut().enumerate() {
             if let Some(j) = pairs[i] {
-                let o = &old.fx[j];
-                slot.module.copy_state(&o.module);
-                global_table.carry(slot.params, &old.global_table, o.params);
+                let o_params = old.fx[j].params;
+                if move_fx {
+                    slot.module.take_state(&mut old.fx[j].module);
+                } else {
+                    slot.module.copy_state(&old.fx[j].module);
+                }
+                global_table.carry(slot.params, &old.global_table, o_params);
             } else {
                 slot.module.reset(&GlobalStart {
                     seed: global_seed(render_seed, slot.key),
@@ -464,10 +586,11 @@ fn voice_start<'a, M>(
 
 /// Parameter addresses → the plan's parameter ids. Built with the plan; used off the audio thread to turn an op or
 /// an automation point into an [`EventKind::Param`](crate::event::EventKind::Param) (or a
-/// [`Link::send_param`](crate::swap::Link::send_param) with the plan's epoch).
+/// [`Link::send_param`](crate::swap::Link::send_param) with the plan's epoch), and a route into a [`DepthId`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanMap {
     params: BTreeMap<ParamAddr, ParamId>,
+    routes: BTreeMap<RouteAddr, DepthId>,
 }
 
 impl PlanMap {
@@ -475,6 +598,21 @@ impl PlanMap {
     #[must_use]
     pub fn get(&self, addr: &ParamAddr) -> Option<ParamId> {
         self.params.get(addr).copied()
+    }
+
+    /// The address of parameter `id` (a linear search; main thread, e.g. to label the telemetry tap's values).
+    #[must_use]
+    pub fn addr(&self, id: ParamId) -> Option<&ParamAddr> {
+        self.params.iter().find(|(_, i)| **i == id).map(|(a, _)| a)
+    }
+
+    /// The depth of route `route` in the plan, for [`Link::send_depth`](crate::swap::Link::send_depth) (P1b lane
+    /// E+). `None` when the plan has no term for it: a route with depth 0 (left out of the plan), or from or to a
+    /// disabled module. A depth change from or to 0 is therefore a recompile, which keeps settled values exact (a
+    /// routed parameter is always `from_norm(n)`).
+    #[must_use]
+    pub fn depth(&self, route: &RouteAddr) -> Option<DepthId> {
+        self.routes.get(route).copied()
     }
 
     /// Every address in the plan with its id, in address order.
@@ -741,6 +879,8 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         gmod_cur: Vec::new(),
         gmod_prev: Vec::new(),
         out: Output::new(master_db),
+        slots: [SlotEntry::default(); SLOTS],
+        tap_params: Vec::new(),
     };
 
     for section in Section::ALL {
@@ -772,6 +912,26 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         .map(|s| s.module.kind().spec().time_based)
         .collect();
     plan.matrix = compile_routes(patch, &plan, &map, &mut voice_table, &mut global_table)?;
+    for (term, route) in plan.matrix.tags() {
+        let r = &patch.routes[route];
+        let addr = RouteAddr {
+            src: r.src.clone(),
+            dst: r.dst.clone(),
+        };
+        map.routes.insert(addr, DepthId(term as u16));
+    }
+    plan.tap_params = voice_table
+        .routed
+        .iter()
+        .map(|&p| ParamId::Voice(p as u16))
+        .chain(
+            global_table
+                .routed
+                .iter()
+                .map(|&p| ParamId::Global(p as u16)),
+        )
+        .collect();
+    plan.slots = compile_slots(patch, &map);
     plan.voice_table = voice_table;
     plan.global_table = global_table;
     plan.vmod_cur = vec![[0.0; MAX_VOICES]; plan.voice_mods.len()];
@@ -779,6 +939,31 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
     plan.gmod_cur = vec![0.0; plan.global_mods.len()];
     plan.gmod_prev = vec![0.0; plan.global_mods.len()];
     Ok((plan, map))
+}
+
+/// The slot table: each of `patch.slots` resolved against the plan's parameters. A target that is not in the plan
+/// (a disabled module) or not automatable (a structural parameter: a patch that skipped `validate`) drives nothing.
+fn compile_slots(patch: &Patch, map: &PlanMap) -> [SlotEntry; SLOTS] {
+    let mut slots = [SlotEntry::default(); SLOTS];
+    for (entry, addr) in slots.iter_mut().zip(&patch.slots) {
+        let Some(addr) = addr else { continue };
+        entry.key = enth_dsp::util::rng::fnv1a64(addr.to_string().as_bytes()).max(1);
+        let (Some(id), Some(spec), Some(plain)) =
+            (map.get(addr), patch.spec(addr), patch.value(addr))
+        else {
+            continue;
+        };
+        if !spec.flags.automatable || spec.flags.structural {
+            continue;
+        }
+        entry.target = Some(SlotTarget {
+            id,
+            spec,
+            plain,
+            norm: spec.to_norm(plain),
+        });
+    }
+    slots
 }
 
 /// Resolve the patch's routes against the plan, in patch order, into the matrix (and mark the routed parameters).
@@ -802,7 +987,7 @@ fn compile_routes(
         }
     }
     let mut builder = MatrixBuilder::default();
-    for r in &patch.routes {
+    for (route_index, r) in patch.routes.iter().enumerate() {
         let bad = |reason| CompileError::BadRoute {
             route: format!("{} -> {}", r.src, r.dst),
             reason,
@@ -859,14 +1044,14 @@ fn compile_routes(
         match dst {
             ParamId::Voice(i) => {
                 let i = usize::from(i);
-                builder.add(voice_stage[i], true, i, term);
+                builder.add_tagged(voice_stage[i], true, i, term, route_index);
             }
             ParamId::Global(i) => {
                 if src.is_voice_rate() {
                     return Err(bad("route_rate_mismatch"));
                 }
                 let i = usize::from(i);
-                builder.add(global_stage[i], false, i, term);
+                builder.add_tagged(global_stage[i], false, i, term, route_index);
             }
         }
     }
@@ -1177,7 +1362,7 @@ mod tests {
         let notes = NoteState::new();
         // The same patch: nothing added or removed.
         let (mut b, _) = compile(&base, &cfg()).unwrap();
-        assert!(!b.carry_from(&a, &[3], &notes, 1));
+        assert!(!b.carry_from(&mut a, &[3], &notes, 1));
         assert_eq!(b.vmod_cur[b.amp_env][3], 0.5);
         assert_eq!(
             b.voice_table.cur[b.voice_builtin.start + VoiceParam::Pan.index()][3],
@@ -1191,12 +1376,71 @@ mod tests {
             .push(ModuleInstance::new(id("lfo3"), ModuleKind::Lfo));
         edited.generators[0].values[OscParam::Semi.index()] = 7.0;
         let (mut c, _) = compile(&edited, &cfg()).unwrap();
-        assert!(c.carry_from(&a, &[3], &notes, 1));
+        assert!(c.carry_from(&mut a, &[3], &notes, 1));
         assert_eq!(c.vmod_cur[c.amp_env][3], 0.5);
         // A scope change moves an LFO between role lists: removed and added.
         let mut scoped = base.clone();
         scoped.modulators[1].values[LfoParam::Scope.index()] = LfoScope::Global.index() as f32;
         let (mut d, _) = compile(&scoped, &cfg()).unwrap();
-        assert!(d.carry_from(&a, &[3], &notes, 1));
+        assert!(d.carry_from(&mut a, &[3], &notes, 1));
+    }
+
+    /// Feed the plan's reverb a burst so its delay lines hold a tail.
+    fn excite_reverb(plan: &mut Plan) -> usize {
+        let i = plan
+            .fx
+            .iter()
+            .position(|s| s.module.kind() == ModuleKind::Reverb)
+            .unwrap();
+        let Plan {
+            fx, global_table, ..
+        } = plan;
+        for k in 0..20 {
+            let mut left = [0.0f32; crate::module::SEG];
+            let mut right = [0.0f32; crate::module::SEG];
+            if k < 4 {
+                left[3] = 0.5;
+                right[17] = -0.25;
+            }
+            let span = fx[i].params;
+            fx[i].module.process(&mut crate::module::GlobalCx {
+                params: global_table.view(span),
+                left: &mut left,
+                right: &mut right,
+            });
+        }
+        i
+    }
+
+    fn reverb_is_empty(plan: &Plan, i: usize) -> bool {
+        match &plan.fx[i].module {
+            GlobalProcessorImpl::Reverb(r) => r.core().is_state_zero(),
+            GlobalProcessorImpl::Comp(_) => unreachable!("index of the reverb"),
+        }
+    }
+
+    #[test]
+    fn an_instant_swap_moves_the_effect_state_and_a_crossfade_copies_it() {
+        let base = full_patch();
+        let notes = NoteState::new();
+        let (mut a, _) = compile(&base, &cfg()).unwrap();
+        let i = excite_reverb(&mut a);
+        assert!(!reverb_is_empty(&a, i));
+        // Instant (nothing added or removed): the new plan takes the lines, the old one is left with the new plan's
+        // fresh (zeroed) lines, which the main thread drops with it.
+        let (mut b, _) = compile(&base, &cfg()).unwrap();
+        assert!(!b.carry_from(&mut a, &[], &notes, 1));
+        assert!(!reverb_is_empty(&b, i), "the tail moved to the new plan");
+        assert!(reverb_is_empty(&a, i), "moved, not copied");
+        // A crossfade runs both plans: the state is copied and the old plan keeps its own.
+        let i = excite_reverb(&mut a);
+        let mut edited = base.clone();
+        edited
+            .modulators
+            .push(ModuleInstance::new(id("lfo3"), ModuleKind::Lfo));
+        let (mut c, _) = compile(&edited, &cfg()).unwrap();
+        assert!(c.carry_from(&mut a, &[], &notes, 1));
+        assert!(!reverb_is_empty(&c, i));
+        assert!(!reverb_is_empty(&a, i), "copied: the old plan still runs");
     }
 }

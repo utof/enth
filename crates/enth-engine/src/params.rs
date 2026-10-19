@@ -492,6 +492,23 @@ impl VoiceTable {
         }
     }
 
+    /// The sample rate the smoothers were built for.
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    /// Settle every parameter on its base, as a freshly compiled table holds it ([`crate::Engine::reset`]): every
+    /// smoother settled, `cur = prev = base` for every voice slot. Never allocates.
+    pub fn settle(&mut self) {
+        for p in 0..self.base.len() {
+            let b = self.base[p];
+            self.smooth[p] = Smoother::new(self.specs[p], b, self.sample_rate);
+            self.cur[p] = [b; MAX_VOICES];
+            self.prev[p] = [b; MAX_VOICES];
+        }
+        self.activity = Activity::default();
+    }
+
     /// Set a base value from a value event, clamped to the spec (NaN is ignored: it is a bug upstream). The
     /// smoother follows from the next segment.
     pub fn set(&mut self, index: usize, value: f32) {
@@ -602,6 +619,17 @@ impl GlobalTable {
             self.modulated[p] = true;
             self.routed.push(p);
         }
+    }
+
+    /// See [`VoiceTable::settle`].
+    pub fn settle(&mut self) {
+        for p in 0..self.base.len() {
+            let b = self.base[p];
+            self.smooth[p] = Smoother::new(self.specs[p], b, self.sample_rate);
+            self.cur[p] = b;
+            self.prev[p] = b;
+        }
+        self.activity = Activity::default();
     }
 
     /// Set a base value from a value event (see [`VoiceTable::set`]).
