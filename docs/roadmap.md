@@ -108,7 +108,17 @@ Lessons as **content packs** (markdown + patches + challenges) loaded on demand 
 
 "Create from sound": heuristic start + CMA-ES, then learned proposals (ONNX + `tract`) returning several candidates. Fully local. **Budget: under 5 minutes per sound on your laptop; aim for about 60 seconds.**
 
-**Gate GR3:** on held-out sounds from our own synth, model + search beats search alone at equal time; on real samples, a blind listening test prefers it; every result arrives in under 5 minutes.
+**Robust to real-world audio** (owner, 2026-10-19). Users upload degraded sounds, so training renders go through realistic augmentation:
+- codecs at low bitrates (MP3 128 kbps and below, AAC, Opus), resampling, low bit depth;
+- clipping, limiting and heavy compression;
+- room reverb, background noise and hum;
+- EQ tilts (phone or laptop speakers), stereo-to-mono;
+- trimmed, layered or mixed-in sounds;
+- varied note, velocity and length.
+
+Unlabelled real recordings train the audio side. The R3 research session covers augmentation design and its licences: codec encoders such as LAME are LGPL, which is acceptable in the never-shipped `ml/` pipeline but never in the product.
+
+**Gate GR3:** on held-out sounds from our own synth, model + search beats search alone at equal time; on real samples, **including a held-out set of degraded uploads (low-bitrate MP3, noisy, reverberant, clipped)**, a blind listening test prefers it; every result arrives in under 5 minutes.
 
 ### R4 — Ear-training games (later)
 
