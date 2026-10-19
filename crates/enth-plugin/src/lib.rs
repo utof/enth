@@ -387,6 +387,12 @@ impl ClapPlugin for Enth {
         max_voice_capacity: enth_engine::MAX_VOICES as u32,
         supports_overlapping_voices: true,
     });
+    // No restart when the host switches to offline rendering while the plugin is active (the fork's patch 9). REAPER
+    // does that at the start of every offline render and restarts the plugin about 30 ms of wall-clock time later,
+    // mid-render: a fresh engine continues from a point that depends on the render's speed, and the note sounding
+    // there is lost (the `macro-automation` flake). The engine renders the same in both modes; only the session's
+    // audition refusal reads the mode, at activation (docs/plugin.md, "Offline renders").
+    const CLAP_RESTART_ON_RENDER_MODE_CHANGE: bool = false;
 }
 
 impl Vst3Plugin for Enth {
