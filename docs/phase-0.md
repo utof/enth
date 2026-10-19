@@ -105,7 +105,7 @@ cargo install --locked wasmtime-cli
 
 ## Task 3 — Shell spike on nice-plug (3–4 days)
 
-Build `spikes/shell` (package `spike-shell`): an 8-voice synth with one saw oscillator, a one-pole low-pass, an amp envelope and smoothed gain/cutoff. Start from nice-plug's template (<https://codeberg.org/RustAudio/nice-plug-template>). Wire nice-plug's bundler into our xtask so `cargo xtask bundle spike-shell` works, and add `cargo xtask install` (copies the bundle to `~/.clap`). Build debug bundles with nice-plug's `assert_process_allocs` feature.
+Build `spikes/spike-shell` (package `spike-shell`): an 8-voice synth with one saw oscillator, a one-pole low-pass, an amp envelope and smoothed gain/cutoff. Start from nice-plug's template (<https://codeberg.org/RustAudio/nice-plug-template>). Wire nice-plug's bundler into our xtask so `cargo xtask bundle spike-shell` works, and add `cargo xtask install` (copies the bundle to `~/.clap`). Build debug bundles with nice-plug's `assert_process_allocs` feature.
 
 Check the **must-haves** for our design ([design.md §4](design.md#4-host-parameters-macros--automation-slots)):
 

@@ -72,3 +72,45 @@ jobs:
         with:
           tool: cargo-deny@0.20.2
       - run: cargo deny --locked check ${{ matrix.checks }}
+
+  # Task 3 (docs/spikes/shell.md). clap-validator 0.4.1 has no GUI tests, so no display is needed.
+  validate:
+    name: clap-validator on spike-shell
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: System libraries for plugin, GUI and audio crates
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config \
+            libasound2-dev libgl-dev libjack-jackd2-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: clap-validator 0.4.1 (release binary, sha256-checked)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CV_ZIP: clap-validator-0.4.1-127-g152b982-ubuntu-22.04.zip   # the zip's inner tarball is misnamed (clap-validator#39); the binary is 0.4.1
+          CV_SHA256: 49edadcfb407ea0dd946ce418300e853fbd2660fa4b0d00e4f19ff8eef24ad90
+        run: |
+          mkdir -p "$RUNNER_TEMP/cv"
+          gh release download 0.4.1 --repo free-audio/clap-validator --pattern "$CV_ZIP" --dir "$RUNNER_TEMP/cv"
+          echo "$CV_SHA256  $RUNNER_TEMP/cv/$CV_ZIP" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/cv/$CV_ZIP" -d "$RUNNER_TEMP/cv"
+          tar -xzf "$RUNNER_TEMP"/cv/*.tar.gz -C "$RUNNER_TEMP/cv"
+          "$RUNNER_TEMP/cv/clap-validator" --version
+      # The debug bundle has nice-plug's assert_process_allocs on (the validator's process() calls abort on any allocation).
+      - name: Validate the debug bundle
+        run: |
+          cargo xtask bundle spike-shell --locked
+          "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-shell.clap --only-failed
+      - name: Validate the release bundle
+        run: |
+          cargo xtask bundle spike-shell --release --locked
+          "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-shell.clap --only-failed
