@@ -103,6 +103,10 @@ pub fn engine_event<S>(event: &NoteEvent<S>) -> Option<Event> {
             let index = u8::try_from(poly_modulation_id)
                 .ok()
                 .filter(|&i| usize::from(i) < MACROS)?;
+            // nice-plug sends poly-mod only for a real note id; −1 would be the engine's wildcard (every voice).
+            if voice_id < 0 {
+                return None;
+            }
             (
                 timing,
                 EventKind::MacroVoice {
@@ -260,12 +264,52 @@ mod tests {
             normalized_offset: 0.5,
         };
         assert_eq!(engine_event(&other), None);
+        let wildcard: Ev = NoteEvent::PolyModulation {
+            timing: 5,
+            voice_id: -1,
+            poly_modulation_id: 0,
+            normalized_offset: 0.5,
+        };
+        assert_eq!(engine_event(&wildcard), None, "never every voice");
         let mono: Ev = NoteEvent::MonoAutomation {
             timing: 0,
             poly_modulation_id: 0,
             normalized_value: 0.5,
         };
         assert_eq!(engine_event(&mono), None);
+    }
+
+    #[test]
+    fn the_mod_wheel_comes_from_midi_cc_1_on_any_channel_and_other_ccs_are_ignored() {
+        let cc = |channel, cc, value| -> Ev {
+            NoteEvent::MidiCC {
+                timing: 9,
+                channel,
+                cc,
+                value,
+            }
+        };
+        assert_eq!(
+            engine_event(&cc(0, 1, 1.0)),
+            Some(Event {
+                offset: 9,
+                kind: EventKind::ModWheel { value: 1.0 }
+            })
+        );
+        assert_eq!(
+            engine_event(&cc(15, 1, 64.0 / 127.0)).map(|e| e.kind),
+            Some(EventKind::ModWheel {
+                value: 64.0 / 127.0
+            })
+        );
+        assert_eq!(engine_event(&cc(0, 33, 0.5)), None, "the wheel's LSB");
+        assert_eq!(engine_event(&cc(0, 7, 0.5)), None);
+        let bend: Ev = NoteEvent::MidiPitchBend {
+            timing: 0,
+            channel: 0,
+            value: 0.7,
+        };
+        assert_eq!(engine_event(&bend), None);
     }
 
     #[test]

@@ -484,6 +484,30 @@ fn the_monitor_bypass_renders_like_the_patch_without_its_time_based_effects() {
 }
 
 #[test]
+fn the_host_render_bypass_files_are_the_golden_patch_with_the_bypass_and_without_the_reverb() {
+    // tools/test-host/golden/enth-plugin.toml's `monitor-bypass` and `reverb-off` cases must hash alike; these are
+    // their inputs.
+    let envelope: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/test-host/golden/enth-plugin.bypass.state.json"
+    ))
+    .unwrap();
+    assert_eq!(envelope["fields"]["patch"], GOLDEN);
+    let enth = envelope["fields"]["enth"].as_str().unwrap();
+    let (instance, _) = enth_session::InstanceState::from_json(enth).unwrap();
+    assert!(instance.monitor.fx_bypass);
+    let mut off = golden();
+    for m in &mut off.fx {
+        if m.kind.spec().time_based {
+            m.enabled = false;
+        }
+    }
+    assert_eq!(
+        include_str!("../../../tools/test-host/golden/enth-plugin.reverb-off.patch.json"),
+        off.to_json()
+    );
+}
+
+#[test]
 fn a_zero_length_note_whose_off_comes_first_still_starts_and_ends() {
     // The test host orders a note-off before a note-on on one frame; for the same note id that is a zero-length
     // note, which `enth render` plays as on, then off.
