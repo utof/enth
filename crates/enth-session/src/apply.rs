@@ -1,5 +1,5 @@
 //! Op effects and the history glue: how an applied op reaches the engine ([`route`], [`delivery`]), and gestures
-//! (lane S1s for the types and the classification; SK for the minimal delivery, S2s for undo, redo and the rest).
+//! (lane S1s for the types and the classification; S2s for the delivery of a changed patch, undo and redo; SK for `edit`).
 //!
 //! # The delivery table
 //!
@@ -31,7 +31,10 @@
 use enth_patch::history::GestureId;
 use enth_patch::{MacroIndex, Op, ParamAddr, Patch, RouteAddr};
 
-use crate::bridge::{GestureStep, HostParam, HostWrite};
+use crate::bridge::{
+    GestureStep, HostParam, HostWrite, host_layout_changed, host_updates, slots_written,
+};
+use crate::link::{Port, Queued};
 use crate::model::{Applied, Session, SessionError, ShellRequest};
 
 /// How one applied op reaches the engine. See the [module docs](self) for the table.
@@ -170,16 +173,267 @@ impl Session {
         Err(SessionError::unsupported("edit", "SK"))
     }
 
-    /// Undo one step and deliver its inverse ops like an edit (it also clears `unloaded_patch`). Lane S2s
-    /// implements it.
+    /// Undo one step and deliver its inverse ops like an edit (it also clears `unloaded_patch`). Ends an open
+    /// gesture first: a drag in flight becomes its undo step, closed, and this call undoes it whole. `Ok(false)` if
+    /// there is nothing to undo. Lane S2s.
     pub fn undo(&mut self) -> Result<bool, SessionError> {
-        self.end_gesture();
-        Err(SessionError::unsupported("undo", "S2s"))
+        self.history_step(Step::Undo)
+            .map(|applied| applied.is_some())
     }
 
-    /// Redo one step and deliver it like an edit (it also clears `unloaded_patch`). Lane S2s implements it.
+    /// Redo one step and deliver it like an edit (it also clears `unloaded_patch`). Ends an open gesture first.
+    /// `Ok(false)` if there was nothing to redo. Lane S2s.
     pub fn redo(&mut self) -> Result<bool, SessionError> {
-        self.end_gesture();
-        Err(SessionError::unsupported("redo", "S2s"))
+        self.history_step(Step::Redo)
+            .map(|applied| applied.is_some())
     }
+
+    /// One undo or redo step with its delivery. `Ok(None)` if there was nothing to do; on `Err` (the patch was changed
+    /// behind the history's back so that the step no longer applies) nothing changed and nothing was delivered.
+    pub(crate) fn history_step(&mut self, step: Step) -> Result<Option<Applied>, SessionError> {
+        // A drag in flight ends first: its undo step is closed (or annulled, if it ended where it started) and its
+        // host gestures get their `End`s, so the step below undoes the whole drag and begins and ends stay balanced.
+        self.end_gesture();
+        self.pump();
+        let before = self.patch.clone();
+        let moved = match step {
+            Step::Undo => self.history.undo(&mut self.patch),
+            Step::Redo => self.history.redo(&mut self.patch),
+        };
+        match moved {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(e) => {
+                let err = SessionError::Edit(e);
+                self.last_error = Some(err.clone());
+                return Err(err);
+            }
+        }
+        // The ops that just changed the patch: an undone entry's inverse is the newest on the redo stack, a redone
+        // entry's forward the newest on the undo stack.
+        let ops = match step {
+            Step::Undo => self.history.redo_stack().last().map(|e| e.inverse.clone()),
+            Step::Redo => self.history.undo_stack().last().map(|e| e.forward.clone()),
+        }
+        .unwrap_or_default();
+        self.unloaded_patch = None; // the user now owns the init patch that stood in for an unreadable one
+        self.last_error = None;
+        // `end_gesture` above closed any drag, so no host gesture is open: each write is a complete begin, set, end.
+        Ok(Some(self.deliver(&before, &ops, false)))
+    }
+
+    /// Deliver a transaction that has just changed the patch from `before` ([`delivery`]): the engine's events or one
+    /// plan, the host writes of the slots and macros it moved, and the requests for the shell. The same rules as an
+    /// edit; used by undo and redo (lane S2s).
+    ///
+    /// - **Engine** (active only): a `Recompile` marks a plan pending with the slots it writes to forget
+    ///   ([`slots_written`]); events go out in op order through the latest sent plan's `PlanMap` and epoch, once per
+    ///   parameter (the final value), behind any events already waiting for room, and a full command ring queues
+    ///   them (the last per parameter; a queue that overflows becomes a plan instead). A depth the plan has no term
+    ///   for becomes a plan too. Then it pumps, so a pending plan goes out at once unless two are in flight.
+    /// - **Host**: each slotted parameter or macro the ops moved gets one write ([`host_updates`], the last value if
+    ///   several ops moved it): a complete begin, set, end, or, with `in_gesture` (an edit inside a drag), a `Begin`
+    ///   at the first write to the parameter and a `Set` for each, the `End` coming with `end_gesture`; a write to a
+    ///   parameter whose host gesture a load left open is a `Set` inside it. A `SetSlot`'s write only if its plan
+    ///   went out (a write reaching `process()` first would go through the old slot table to the previous target;
+    ///   detached there is no `process()`).
+    /// - **Shell**: [`ShellRequest::RenameParams`] when the host-visible names or targets changed
+    ///   ([`host_layout_changed`]), then the host writes, then [`ShellRequest::PatchEdited`].
+    pub(crate) fn deliver(&mut self, before: &Patch, ops: &[Op], in_gesture: bool) -> Applied {
+        let mut applied = Applied::default();
+        let mut plan_sent = true;
+        if self.port.is_some() {
+            let wants_plan = match delivery(before, ops) {
+                Delivery::Recompile => true,
+                Delivery::Events(routes) => !self.send_events(&routes, &mut applied),
+            };
+            if wants_plan {
+                applied.recompile = true;
+                if let Some(port) = &mut self.port {
+                    port.compile_pending = true;
+                    port.forget_slots |= slots_written(&self.patch, ops);
+                }
+            }
+            self.pump(); // a pending plan goes out at once if the link has room
+            plan_sent = self.port.as_ref().is_none_or(|p| !p.compile_pending);
+        }
+        if ops.iter().any(renames_params) && host_layout_changed(before, &self.patch) {
+            applied.renamed = true;
+            self.requests.push(ShellRequest::RenameParams);
+        }
+        applied.host_writes = self.push_host_writes(ops, plan_sent, in_gesture);
+        if !self.requests.contains(&ShellRequest::PatchEdited) {
+            self.requests.push(ShellRequest::PatchEdited);
+        }
+        applied
+    }
+
+    /// Hand the engine the events of a transaction that needs no plan, or report that it does after all. Returns
+    /// `false` if a plan is needed (a depth with no term in the plan, or the value queue overflowed).
+    fn send_events(&mut self, routes: &[Routing], applied: &mut Applied) -> bool {
+        let value_queue = self.config.value_queue;
+        let Some(port) = &mut self.port else {
+            return true;
+        };
+        let after = &self.patch;
+        let epoch = port.link.epoch();
+        let mut commands: Vec<Queued> = Vec::with_capacity(routes.len());
+        for route in routes {
+            match route {
+                Routing::Value(addr) => {
+                    // An address the plan does not have (a disabled module's) is carried by the next plan.
+                    if let (Some(id), Some(value)) = (port.map.get(addr), after.value(addr)) {
+                        put_latest(&mut commands, Queued::Param { epoch, id, value });
+                    }
+                }
+                Routing::Depth(route) => {
+                    let depth = after
+                        .routes
+                        .iter()
+                        .find(|r| r.src == route.src && r.dst == route.dst)
+                        .map(|r| r.depth);
+                    match (port.map.depth(route), depth) {
+                        (Some(id), Some(depth)) => {
+                            put_latest(&mut commands, Queued::Depth { epoch, id, depth });
+                        }
+                        _ => return false,
+                    }
+                }
+                Routing::Macro(index) => put_latest(
+                    &mut commands,
+                    Queued::Macro {
+                        index: *index,
+                        value: after.macros[index.get()].value,
+                    },
+                ),
+                _ => {}
+            }
+        }
+        for command in commands {
+            applied.events += 1;
+            if !send_or_queue(port, value_queue, command) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Push the host writes `ops` imply, one per parameter (the last value if several ops moved it): inside a drag a
+    /// `Begin` at the first write and a `Set` for each; outside one a complete begin, set, end, or just a `Set` for a
+    /// parameter whose host gesture a load left open. Returns how many parameters were set.
+    fn push_host_writes(&mut self, ops: &[Op], plan_sent: bool, in_gesture: bool) -> u32 {
+        let mut writes: Vec<(HostParam, f32)> = Vec::new();
+        let mut one = Vec::new();
+        for op in ops {
+            if matches!(op, Op::SetSlot { .. }) && !plan_sent {
+                continue;
+            }
+            one.clear();
+            host_updates(&self.patch, op, &mut one);
+            for &(param, norm) in &one {
+                match writes.iter_mut().find(|(p, _)| *p == param) {
+                    Some(w) => w.1 = norm,
+                    None => writes.push((param, norm)),
+                }
+            }
+        }
+        for &(param, norm) in &writes {
+            let open = self.gestures.host_open.contains(&param);
+            if in_gesture && !open {
+                self.gestures.host_open.push(param);
+                self.requests.push(ShellRequest::Host(HostWrite {
+                    param,
+                    step: GestureStep::Begin,
+                }));
+            }
+            if in_gesture || open {
+                // Inside a drag, or inside a host gesture a load interrupted (its `End` comes with the next
+                // `end_gesture`): set within it rather than nest a second begin and end.
+                self.requests.push(ShellRequest::Host(HostWrite {
+                    param,
+                    step: GestureStep::Set(norm),
+                }));
+            } else {
+                for step in [GestureStep::Begin, GestureStep::Set(norm), GestureStep::End] {
+                    self.requests
+                        .push(ShellRequest::Host(HostWrite { param, step }));
+                }
+            }
+        }
+        u32::try_from(writes.len()).unwrap_or(u32::MAX)
+    }
+}
+
+/// Which way a history step goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Step {
+    Undo,
+    Redo,
+}
+
+/// Add `command` to `list`, replacing an earlier one for the same target (the last value per parameter wins).
+pub(crate) fn put_latest(list: &mut Vec<Queued>, command: Queued) {
+    match list.iter_mut().find(|q| same_target(q, &command)) {
+        Some(slot) => *slot = command,
+        None => list.push(command),
+    }
+}
+
+/// Whether two commands set the same thing on the same plan (so the later one replaces the earlier).
+fn same_target(a: &Queued, b: &Queued) -> bool {
+    match (a, b) {
+        (
+            Queued::Param {
+                epoch: e, id: i, ..
+            },
+            Queued::Param {
+                epoch: f, id: j, ..
+            },
+        ) => e == f && i == j,
+        (
+            Queued::Depth {
+                epoch: e, id: i, ..
+            },
+            Queued::Depth {
+                epoch: f, id: j, ..
+            },
+        ) => e == f && i == j,
+        (Queued::Macro { index: i, .. }, Queued::Macro { index: j, .. }) => i == j,
+        _ => false,
+    }
+}
+
+/// Whether a queued command is a value event (audition notes are not, and are never dropped).
+fn is_value(q: &Queued) -> bool {
+    matches!(
+        q,
+        Queued::Param { .. } | Queued::Depth { .. } | Queued::Macro { .. }
+    )
+}
+
+/// Hand `command` to the engine, or hold it. Events already waiting go first (their order is kept), and a command
+/// the full ring refuses waits behind them, the last per parameter; the pump flushes the queue as the ring empties.
+/// Returns `false` if the queue of value events overflowed `cap`: it is dropped, every value of it is in the patch,
+/// and the caller marks a plan pending instead (audition events in the queue are never dropped). Never blocks.
+pub(crate) fn send_or_queue(port: &mut Port, cap: usize, command: Queued) -> bool {
+    if port.queue.is_empty() {
+        let sent = match command {
+            Queued::Param { epoch, id, value } => port.link.send_param(epoch, id, value),
+            Queued::Depth { epoch, id, depth } => port.link.send_depth(epoch, id, depth),
+            Queued::Macro { index, value } => port.link.send_macro(index.get(), value),
+            // Audition events are the pump's and the audition calls', not a transaction's.
+            Queued::NoteOn { .. } | Queued::NoteOff { .. } => return true,
+        };
+        if sent.is_ok() {
+            return true;
+        }
+    }
+    put_latest(&mut port.queue, command);
+    let values = port.queue.iter().filter(|q| is_value(q)).count();
+    if values > cap {
+        port.queue.retain(|q| !is_value(q));
+        port.forget_slots = u64::MAX;
+        return false;
+    }
+    true
 }

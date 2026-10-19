@@ -15,12 +15,13 @@
 //!    patch keeps its exact `p`; otherwise the candidate is `from_norm(n)` (canonical), written only if it differs
 //!    from `p` bit for bit. So folding the same host value twice, or after a save and reload, never moves the patch.
 //!
-//! The engine resolves slot events with the same equality rule (lane E+), so the engine and the patch agree on the
-//! exact plain value, with one known gap: the engine compares the host's value with `to_norm` of the value its plan
-//! was compiled with (or the last editor edit), the fold with the current patch, which earlier folds moved. A host
-//! that returns exactly to `to_norm` of the compiled value then plays that value in the engine while the patch takes
-//! `from_norm` of it (one rounding step, healed at the next recompile). Lane S2s may close it by folding against
-//! the plan's value (F1b review).
+//! The engine resolves slot events with the same equality rule (lane E+): the host's `n` is the exact value its slot
+//! table holds if `n == to_norm` of it, else `from_norm(n)`. That table holds the value the running plan was compiled
+//! with, or the latest editor value event, which is *not* always the patch's current value: an earlier fold moved
+//! the patch and not the plan (F1b review, issue 4). So [`Session::fold_host`] resolves against the plan's value
+//! ([`fold_against`]): it remembers, per address a fold moved, the value the engine still holds, until a plan is
+//! sent or the patch's value changes some other way. A host that returns exactly to `to_norm` of the compiled value
+//! therefore leaves the patch on that exact value, the one the engine plays.
 //!
 //! # Ids
 //!
@@ -191,17 +192,39 @@ pub enum Fold {
 
 /// The patch-wins rule for one value: `spec` is the target's spec, `host_norm` the host's normalised value,
 /// `patch_plain` the patch's plain value. Non-finite host values are ignored (nice-plug #86: NaN from a host).
+///
+/// This is [`fold_against`] for a target the engine holds at the patch's own value.
 pub fn fold_value(spec: &ParamSpec, host_norm: f32, patch_plain: f32) -> Fold {
+    fold_against(spec, host_norm, patch_plain, patch_plain)
+}
+
+/// The patch-wins rule for a slot's target against the value **the engine's slot table holds** (lane S2s, F1b review
+/// issue 4): `engine_plain` is the patch value the running plan was compiled with, or the latest editor value event
+/// since. The engine resolves a host value `n` as exactly that value if `n` is bit-equal to its `to_norm`, else as
+/// `from_norm(n)`; the fold applies the same rule, so the patch ends on the exact plain value the engine plays:
+///
+/// - `n == to_norm(engine_plain)` → the target is `engine_plain` itself (the host returned to the compiled value);
+/// - otherwise → the canonical `from_norm(n)`;
+///
+/// and it is written only if it differs from `patch_plain` bit for bit. With `engine_plain == patch_plain` (nothing
+/// moved the patch since the plan) this is the plain rule above. Non-finite host values are ignored.
+pub fn fold_against(spec: &ParamSpec, host_norm: f32, patch_plain: f32, engine_plain: f32) -> Fold {
     if !host_norm.is_finite() {
         return Fold::Keep;
     }
     let n = host_norm.clamp(0.0, 1.0);
-    if n.to_bits() == spec.to_norm(patch_plain).to_bits() {
-        return Fold::Keep;
-    }
-    match canonical_value(spec, spec.from_norm(n)) {
-        Ok(plain) if plain.to_bits() != patch_plain.to_bits() => Fold::Write(plain),
-        _ => Fold::Keep,
+    let target = if n.to_bits() == spec.to_norm(engine_plain).to_bits() {
+        engine_plain
+    } else {
+        match canonical_value(spec, spec.from_norm(n)) {
+            Ok(plain) => plain,
+            Err(_) => return Fold::Keep,
+        }
+    };
+    if target.to_bits() == patch_plain.to_bits() {
+        Fold::Keep
+    } else {
+        Fold::Write(target)
     }
 }
 
@@ -344,6 +367,29 @@ pub fn host_param_name(patch: &Patch, p: HostParam) -> String {
     }
 }
 
+/// The display names of all 72 host parameters for `patch`, in dense order ([`HostParam::index`]): what the shell
+/// sets on a [`ShellRequest::RenameParams`](crate::model::ShellRequest::RenameParams).
+pub fn host_param_names(patch: &Patch) -> Vec<String> {
+    HostParam::all()
+        .map(|p| host_param_name(patch, p))
+        .collect()
+}
+
+/// Whether the host would see a different set of parameters in `after` than in `before`: any of the 72 display names
+/// differs, or a slot drives another kind of parameter (its value text and range differ even when a name does not).
+/// The session pushes [`ShellRequest::RenameParams`](crate::model::ShellRequest::RenameParams) only when this holds
+/// (and the op could change names at all: [`crate::apply::renames_params`]), so a label on a module no slot drives
+/// never makes the host rescan.
+pub fn host_layout_changed(before: &Patch, after: &Patch) -> bool {
+    HostParam::all().any(|p| {
+        let spec = |patch: &Patch| match p {
+            HostParam::Slot(s) => slot_target(patch, s).map(|t| std::ptr::from_ref(t.spec)),
+            HostParam::Macro(_) => None,
+        };
+        host_param_name(before, p) != host_param_name(after, p) || spec(before) != spec(after)
+    })
+}
+
 /// A module's title: its label, else its catalogue name plus the number its id ends with ("filter2" → "Filter 2";
 /// an id with no number → "Filter (bass)").
 fn module_title(patch: &Patch, id: &ModuleId) -> String {
@@ -364,11 +410,27 @@ fn module_title(patch: &Patch, id: &ModuleId) -> String {
     }
 }
 
-/// What the session last saw of the host's values (rule 2 of the [module docs](self)).
+/// What the session last saw of the host's values (rule 2 of the [module docs](self)), and what the engine holds
+/// where a fold moved the patch away from it.
 #[derive(Debug, Default)]
 pub(crate) struct HostSync {
     /// `None` after construction or a load: the next fold records the host's values and writes nothing.
     pub(crate) seen: Option<HostValues>,
+    /// Addresses a fold moved off the value the engine holds ([`FoldMemo`]). Empty while detached.
+    pub(crate) memos: Vec<FoldMemo>,
+}
+
+/// A fold wrote `written` into the patch for `addr`, while the running plan still holds `engine` for it (the value it
+/// was compiled with, or the latest editor value event): the reference the next fold of that address resolves the
+/// host's value against, exactly as the engine's slot table does ([`fold_against`]). It lasts until something else
+/// settles the two: a plan sent (a new epoch: it is compiled from the patch), or any other change of the patch's
+/// value (an edit, undo or redo sent the engine an event, and the engine's value became the patch's).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FoldMemo {
+    pub(crate) addr: ParamAddr,
+    pub(crate) engine: f32,
+    pub(crate) written: f32,
+    pub(crate) epoch: u64,
 }
 
 /// What [`Session::fold_host`] did.
@@ -387,6 +449,15 @@ impl Session {
     /// writing. A written value needs no engine event: the engine already follows the host through slot and macro
     /// events from `process()`.
     pub fn fold_host(&mut self, host: &HostValues) -> FoldReport {
+        let epoch = self.port.as_ref().map(|p| p.link.epoch());
+        let patch = &self.patch;
+        // A memo lives while its plan is the latest sent and the patch still holds what the fold wrote.
+        self.host.memos.retain(|m| {
+            epoch == Some(m.epoch)
+                && patch
+                    .value(&m.addr)
+                    .is_some_and(|v| v.to_bits() == m.written.to_bits())
+        });
         let Some(seen) = self.host.seen.replace(*host) else {
             return FoldReport {
                 baseline: true,
@@ -399,10 +470,10 @@ impl Session {
             if n.to_bits() == seen.get(p).to_bits() {
                 continue;
             }
-            let op = match p {
+            let (op, memo) = match p {
                 HostParam::Macro(index) => {
                     match fold_value(&MACRO_VALUE, n, self.patch.macros[index.get()].value) {
-                        Fold::Write(value) => Op::SetMacro { index, value },
+                        Fold::Write(value) => (Op::SetMacro { index, value }, None),
                         Fold::Keep => continue,
                     }
                 }
@@ -413,11 +484,21 @@ impl Session {
                     let Some(plain) = self.patch.value(&t.addr) else {
                         continue;
                     };
-                    match fold_value(t.spec, n, plain) {
-                        Fold::Write(value) => Op::SetParam {
-                            addr: t.addr,
-                            value,
-                        },
+                    // The engine resolves the host value against the plan's value, not the patch's.
+                    let engine = self
+                        .host
+                        .memos
+                        .iter()
+                        .find(|m| m.addr == t.addr)
+                        .map_or(plain, |m| m.engine);
+                    match fold_against(t.spec, n, plain, engine) {
+                        Fold::Write(value) => (
+                            Op::SetParam {
+                                addr: t.addr.clone(),
+                                value,
+                            },
+                            Some((t.addr, engine, value)),
+                        ),
                         Fold::Keep => continue,
                     }
                 }
@@ -425,6 +506,9 @@ impl Session {
             // A canonical in-range value on an existing target always applies; a failure leaves the patch as is.
             if enth_patch::apply(&mut self.patch, op).is_ok() {
                 report.written += 1;
+                if let (Some((addr, engine, written)), Some(epoch)) = (memo, epoch) {
+                    self.host.note_fold(addr, engine, written, epoch);
+                }
             }
         }
         report
@@ -436,8 +520,33 @@ impl Session {
     }
 
     /// Forget what the host showed: the next [`Session::fold_host`] only records (the patch wins). Called by every
-    /// load.
+    /// load, which also replaces the plan (nothing is left to remember about the old one).
     pub(crate) fn reset_host_baseline(&mut self) {
         self.host.seen = None;
+        self.host.memos.clear();
+    }
+}
+
+impl HostSync {
+    /// A fold wrote `written` for `addr` while the engine holds `engine`: remember the pair, or forget it when the
+    /// two are the same value again.
+    fn note_fold(&mut self, addr: ParamAddr, engine: f32, written: f32, epoch: u64) {
+        let known = self.memos.iter().position(|m| m.addr == addr);
+        if written.to_bits() == engine.to_bits() {
+            if let Some(i) = known {
+                self.memos.swap_remove(i);
+            }
+            return;
+        }
+        let memo = FoldMemo {
+            addr,
+            engine,
+            written,
+            epoch,
+        };
+        match known {
+            Some(i) => self.memos[i] = memo,
+            None => self.memos.push(memo),
+        }
     }
 }

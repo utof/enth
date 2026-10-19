@@ -114,9 +114,14 @@ pub struct Session {
     /// The `patch` field text that did not load, while the session holds the fallback init patch in its place.
     /// [`Session::save_patch`] writes it back verbatim, so opening a project in an older build (`schema_too_new`) or
     /// hitting a damaged field never overwrites the stored patch on the next host save. Cleared by a successful
-    /// load and by the first recorded change (an edit, undo or redo: lanes SK and S2s clear it there), after which
+    /// load and by the first recorded change (an edit, undo or redo: SK's `edit` and S2s's undo and redo clear it), after which
     /// the user's own patch is saved.
     pub(crate) unloaded_patch: Option<String>,
+    /// The `enth` field text that was refused as too new for this build (`schema_too_new`), while the session holds
+    /// the default instance state in its place. [`Session::save_instance`] writes it back verbatim, so a project saved
+    /// by a newer enth keeps its newer preferences through an older build's save. Cleared by a successful
+    /// [`Session::load_instance`] and by the first change of the monitor bypass or the editor preferences (lane S2s).
+    pub(crate) unloaded_instance: Option<String>,
     /// The telemetry tap's reader side, while active.
     pub(crate) telemetry: Option<Arc<dyn TelemetrySource>>,
     /// Address maps for the epochs the tap may still be publishing (newest last).
@@ -162,6 +167,7 @@ impl Session {
             requests: Vec::new(),
             last_error: None,
             unloaded_patch: None,
+            unloaded_instance: None,
             telemetry: None,
             telemetry_maps: Vec::new(),
         }
@@ -201,6 +207,7 @@ impl Session {
         s.gesture_open = self.gestures.open.is_some();
         s.last_error.clone_from(&self.last_error);
         s.patch_unloaded = self.unloaded_patch.is_some();
+        s.instance_unloaded = self.unloaded_instance.is_some();
         s
     }
 
@@ -213,6 +220,9 @@ impl Session {
 
     /// Replace the editor preferences (persisted in the `enth` field, not in the patch; not an undo step).
     pub fn set_ui(&mut self, ui: UiState) {
+        if self.instance.ui != ui {
+            self.unloaded_instance = None; // the user's own preferences now (a newer build's text is replaced)
+        }
         self.instance.ui = ui;
     }
 
@@ -221,6 +231,7 @@ impl Session {
     /// the atomic `process()` reads. Not an undo step.
     pub fn set_monitor_bypass(&mut self, on: bool) {
         if self.instance.monitor.fx_bypass != on {
+            self.unloaded_instance = None;
             self.instance.monitor.fx_bypass = on;
             self.requests.push(ShellRequest::MonitorBypass(on));
         }
@@ -288,6 +299,10 @@ impl std::fmt::Debug for HistoryView<'_> {
 /// A snapshot of what the session is doing. Build one with `Default` and set fields (it is `non_exhaustive`).
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "a status snapshot: independent facts the editor shows, not a state machine; the F1b API keeps its fields"
+)]
 pub struct SessionStatus {
     /// `Some` while the host has the plugin active (an engine exists).
     pub active: Option<Activation>,
@@ -308,6 +323,10 @@ pub struct SessionStatus {
     /// The stored patch did not load and the session plays the init patch instead; until the first edit, a save
     /// writes the stored text back unchanged ([`crate::state::LoadReport::fell_back`]).
     pub patch_unloaded: bool,
+    /// The stored `enth` field was written by a newer build and the session uses the default preferences instead;
+    /// until the first change of the monitor bypass or the editor preferences, a save writes the stored text back
+    /// unchanged ([`crate::state::LoadReport`]).
+    pub instance_unloaded: bool,
 }
 
 /// What an applied edit did (for tests and the status line). Build one with `Default` (it is `non_exhaustive`).

@@ -9,8 +9,9 @@ use enth_patch::model::SLOTS;
 use enth_patch::ops::canonical_value;
 use enth_patch::{CATALOGUE, Op, Patch};
 use enth_session::bridge::{
-    Fold, HOST_PARAM_IDS, HOST_PARAMS, fold_value, free_slot, host_norm, host_param_name,
-    host_updates, host_values, slot_target, slots_for, slots_written,
+    Fold, HOST_PARAM_IDS, HOST_PARAMS, fold_against, fold_value, free_slot, host_layout_changed,
+    host_norm, host_param_name, host_param_names, host_updates, host_values, slot_target,
+    slots_for, slots_written,
 };
 use enth_session::{HostParam, HostValues, Session};
 
@@ -343,4 +344,172 @@ fn slots_written_by_a_transaction() {
         0
     );
     assert_eq!(slots_written(&patch, &[]), 0);
+}
+
+/// Fold against the plan's compiled value (lane S2s, F1b review issue 4): the engine's rule, on the engine's value.
+#[test]
+fn fold_against_the_plans_value_follows_the_engines_slot_rule() {
+    for spec in automatable_specs() {
+        for plain in plains(spec, 12) {
+            for other in plains(spec, 5) {
+                // The engine holds `other` (the compiled value) while the patch holds `plain` (a fold moved it).
+                let n = spec.to_norm(other);
+                match fold_against(spec, n, plain, other) {
+                    // The host returned to the plan's value: the target is exactly that value.
+                    Fold::Write(v) => assert_eq!(v.to_bits(), other.to_bits(), "{}", spec.key),
+                    Fold::Keep => assert_eq!(plain.to_bits(), other.to_bits(), "{}", spec.key),
+                }
+                // With the plan's value equal to the patch's, it is the plain rule.
+                for h in [0.0f32, 0.3, 0.5, 1.0, n] {
+                    assert_eq!(
+                        fold_against(spec, h, plain, plain),
+                        fold_value(spec, h, plain),
+                        "{} at {h}",
+                        spec.key
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fold_against_still_ignores_non_finite_host_values() {
+    let spec = &MACRO_VALUE;
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert_eq!(fold_against(spec, bad, 0.25, 0.5), Fold::Keep);
+    }
+}
+
+#[test]
+fn all_seventy_two_names_come_from_the_patch() {
+    let patch = common::custom_patch();
+    let names = host_param_names(&patch);
+    assert_eq!(names.len(), HOST_PARAMS);
+    for p in HostParam::all() {
+        assert_eq!(names[p.index()], host_param_name(&patch, p));
+        assert_ne!(names[p.index()], "");
+    }
+    // Empty slots are "Slot N", macros "Macro N" until named.
+    assert_eq!(names[8 + 5], "Slot 6");
+    assert_eq!(names[7], "Macro 8");
+    // A full patch: every slot assigned still gives a non-empty name each.
+    let mut full = common::custom_patch();
+    for i in 0..SLOTS {
+        full.slots[i] = Some(common::addr(if i % 2 == 0 {
+            "filter1.cutoff"
+        } else {
+            "voice.glide"
+        }));
+    }
+    assert!(host_param_names(&full).iter().all(|n| !n.is_empty()));
+}
+
+#[test]
+fn the_host_rescans_only_when_a_name_or_a_kind_of_target_changes() {
+    let base = common::custom_patch();
+    let with = |ops: Vec<Op>| {
+        let mut p = base.clone();
+        enth_patch::apply_all(&mut p, &ops).unwrap();
+        p
+    };
+    let label = |id: &str, text: Option<&str>| Op::SetLabel {
+        id: common::id(id),
+        label: text.map(str::to_owned),
+    };
+    // Nothing changed.
+    assert!(!host_layout_changed(&base, &base));
+    // A slot's module is renamed: its name changes.
+    assert!(host_layout_changed(
+        &base,
+        &with(vec![label("filter1", Some("Wah"))])
+    ));
+    // A module no slot drives is renamed: the host sees nothing.
+    assert!(!host_layout_changed(
+        &base,
+        &with(vec![label("lfo1", Some("Wobble"))])
+    ));
+    // A macro is named, a slot assigned, a slot cleared.
+    assert!(host_layout_changed(
+        &base,
+        &with(vec![Op::SetMacroName {
+            index: common::macro_index(2),
+            name: Some("Air".to_owned())
+        }])
+    ));
+    assert!(host_layout_changed(
+        &base,
+        &with(vec![Op::SetSlot {
+            slot: common::slot(3),
+            addr: Some(common::addr("filter1.resonance"))
+        }])
+    ));
+    assert!(host_layout_changed(
+        &base,
+        &with(vec![Op::SetSlot {
+            slot: common::slot(1),
+            addr: None
+        }])
+    ));
+    // Values, routes and metadata are not host-visible layout.
+    assert!(!host_layout_changed(
+        &base,
+        &with(vec![Op::SetParam {
+            addr: common::addr("filter1.cutoff"),
+            value: 900.0
+        }])
+    ));
+    // A slot moves to a parameter of another kind that has the same display name: the value text differs.
+    let mut a = common::init_patch();
+    enth_patch::apply_all(
+        &mut a,
+        &[
+            Op::AddModule {
+                at: enth_patch::Position {
+                    section: enth_patch::Section::Generators,
+                    index: 1,
+                },
+                module: enth_patch::ModuleInstance::new(
+                    common::id("noise1"),
+                    enth_patch::ModuleKind::Noise,
+                ),
+            },
+            label("osc1", Some("Src")),
+            label("noise1", Some("Src")),
+            Op::SetSlot {
+                slot: common::slot(1),
+                addr: Some(common::addr("osc1.level")),
+            },
+        ],
+    )
+    .unwrap();
+    let b = {
+        let mut b = a.clone();
+        enth_patch::apply(
+            &mut b,
+            Op::SetSlot {
+                slot: common::slot(1),
+                addr: Some(common::addr("noise1.level")),
+            },
+        )
+        .unwrap();
+        b
+    };
+    assert_eq!(
+        host_param_name(&a, HostParam::Slot(common::slot(1))),
+        "Src · Level"
+    );
+    assert_eq!(
+        host_param_name(&b, HostParam::Slot(common::slot(1))),
+        "Src · Level"
+    );
+    // Same name, other kind of parameter: the rescan follows the spec's identity (conservative when two kinds
+    // happen to share a spec).
+    let (osc, noise) = (
+        a.spec(&common::addr("osc1.level")).unwrap(),
+        b.spec(&common::addr("noise1.level")).unwrap(),
+    );
+    assert_eq!(host_layout_changed(&a, &b), !std::ptr::eq(osc, noise));
+    // Undo-like: the same layout twice is unchanged.
+    assert!(!host_layout_changed(&b, &b.clone()));
 }
