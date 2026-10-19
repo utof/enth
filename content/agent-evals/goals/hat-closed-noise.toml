@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "hat-closed-noise"
+added = "2026-10-19"
+difficulty = 3
+tags = ["percussion", "hat", "noise", "short", "structure"]
+brief = "a short closed hi-hat made of noise"
+template = "init"
+expect = "noisiness > 0.8, brightness > 9kHz, attack < 5ms, duration in [25ms, 120ms], sustain < -40dB, pitch == null"
+rationale = "Percussion on purpose, and the first goal that needs a different structure: the blank patch is a saw, and nothing here is pitched, so the agent has to add a noise generator and take the oscillator out (an `--ops` edit; the structural hints say so). Then a very short envelope: 25 to 120 ms, with the lower bound so that a one-sample click does not count. Pitch must be absent (`pitch == null`) and the note is held 0.3 s, long enough that the noise reading and sustain are measurable. White noise reads about 12 kHz, pink about 8 kHz, so the brightness item also picks the colour."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "C3", vel = 100, on_s = 0.0, off_s = 0.3 }], dur_s = 1.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

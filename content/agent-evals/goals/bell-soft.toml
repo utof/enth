@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "bell-soft"
+added = "2026-10-19"
+difficulty = 4
+tags = ["bell", "envelope", "detune", "long"]
+brief = "a soft bell-like tone"
+template = "init"
+expect = "pitch.note ~ C5, attack in [8ms, 40ms], brightness in [800Hz, 3kHz], decay > 600ms, sustain < -35dB, duration > 2000ms, beating in [2Hz, 8Hz], peak < -1dB"
+rationale = "The probe's g4. Struck but soft (an attack that is not a click, both sides), clear but not harsh (brightness window), rings and dies away by itself although the key is held 3 s (decay, sustain, duration all pull on one envelope: a long decay with no sustain), with the slow shimmer of slightly mistuned partials (a beat of 2 to 8 Hz, which needs two oscillators 6 to 26 cents apart and enough steady sound to measure it). The decay must be long, about 5 s, to keep the level near the top for 2 s and still be 35 dB down at note-off."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "C5", vel = 100, on_s = 0.0, off_s = 3.0 }], dur_s = 5.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

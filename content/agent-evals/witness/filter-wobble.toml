@@ -1,0 +1,13 @@
+# Hand-picked solution for the goal of the same name: what `cargo xtask agent-eval --dry-run` replays as its scripted
+# fake agent, and the proof that the goal's expectation list is reachable with the current engine. SPOILER: this is
+# the answer; the agent under test never sees this directory (it runs in an empty temp dir with only an `enth`
+# wrapper). `{perf}` and `{expect}` are filled in from the goal (or from self_expect on the self-written track).
+schema = "enth.agent-eval-witness/1"
+id = "filter-wobble"
+self_expect = "tremolo in [1Hz, 5Hz], brightness < 2kHz, duration > 3500ms, peak < -1dB"
+
+[[step]]
+args = ["new", "--template", "init", "--out", "sound.patch.json"]
+
+[[step]]
+args = ["step", "sound.patch.json", "--ops", '[{"add":"svf","at":"voice_fx[0]","params":{"mode":"lp","cutoff":"900Hz","resonance":"40%"}},{"add":"lfo","id":"lfo1","params":{"rate":"2Hz","shape":"sine"}},{"route":"lfo1 -> filter1.cutoff","depth":"+2oct"},{"set":"env1.attack","to":"10ms"},{"set":"env1.sustain","to":"100%"},{"set":"master.level","to":"-6dB"}]', "--perf", "{perf}", "--expect", "{expect}"]

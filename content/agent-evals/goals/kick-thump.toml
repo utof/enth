@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "kick-thump"
+added = "2026-10-19"
+difficulty = 2
+tags = ["percussion", "kick", "short", "low"]
+brief = "a short kick-like thump"
+template = "init"
+expect = "attack < 15ms, brightness in [70Hz, 200Hz], duration in [150ms, 450ms], sustain < -40dB, noisiness < 0.05, pitch.note ~ A1"
+rationale = "Percussion on purpose: a drum hit is a note-on, a short hold and a sound that dies by itself, so the note is held 0.3 s (long enough for sustain and the noise reading to be measurable) and the envelope does the shortening. Low and tonal (a 55 Hz fundamental), a quick onset, gone within half a second although the key is down (duration, sustain), and not noisy. The brightness window is the design: a plain sine reads about 57 Hz and a saw about 3 kHz, so it needs a few harmonics or a filtered saw. The attack reads late on a 55 Hz note (the period is 18 ms), hence the generous 15 ms."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 0.3 }], dur_s = 1.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

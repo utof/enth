@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "lead-supersaw"
+added = "2026-10-19"
+difficulty = 5
+tags = ["lead", "detune", "brightness", "envelope"]
+brief = "a detuned supersaw-ish lead"
+template = "init"
+expect = "pitch.note ~ A4, attack < 15ms, brightness in [3.5kHz, 6kHz], sustain > -4dB, beating in [4Hz, 8Hz], release < 300ms, duration in [2000ms, 2600ms], peak < -1dB"
+rationale = "The probe's g5, tightened. Bright and cutting but not fizzy (brightness window), starts fast and holds its level, with a fat chorus-like beat (a rate window: slow beating is seasick, fast is a growl, which at A4 means a spread of about 16 to 32 cents), and a release short enough that the sound ends soon after the key (duration has a ceiling too). Nine two-sided and one-sided items on a patch that needs a second oscillator; the beat, the brightness and the headroom interact (two saws add up to a loud, clipping sound)."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "A4", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
