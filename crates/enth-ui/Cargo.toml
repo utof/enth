@@ -8,9 +8,13 @@ publish.workspace = true
 # Inter (OFL-1.1) is bundled under assets/fonts with its licence; see THIRD_PARTY_NOTICES.md.
 
 [features]
-# The standalone editor dev window (P1b lane ED1 fills src/bin or examples with `required-features`): it opens a real window,
-# so the owner runs it and agents never do. Off by default, so eframe stays out of the plugin and the gate builds.
+# The standalone editor dev window (`examples/dev_window.rs`, lane ED1): it opens a real window, so it runs on the owner's
+# display or under Xvfb only (AGENTS.md). Off by default, so eframe stays out of the plugin and the gate builds.
 dev-window = ["dep:eframe"]
+# Reserved regions for Learn (the lesson pane) and Recreate (the challenge bar and the results drawer), placed by a layout
+# (docs/editor.md). P1b builds no presenters for them: a reserved region draws an empty panel.
+learn = []
+recreate = []
 
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).
@@ -21,6 +25,9 @@ serde.workspace = true
 enth-params.workspace = true
 enth-patch.workspace = true
 enth-session.workspace = true
+# Layouts are JSON (`ENTH_LAYOUT`, the built-in files under src/editor/layout/), and their size tokens resolve through the
+# theme's serde form. Already in Cargo.lock as a dev-dependency, so moving it here changes no lock entry.
+serde_json.workspace = true
 # glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine; the clipboard for text fields.
 eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional = true }
 
@@ -28,7 +35,11 @@ eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional =
 # Snapshot tests render through wgpu on a CPU adapter only (Mesa lavapipe); see tests/common.
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 egui-wgpu.workspace = true
-serde_json.workspace = true
+
+[[example]]
+# The editor against a real session and engine, with no audio output (docs/editor.md). Xvfb or the owner's display only.
+name = "dev_window"
+required-features = ["dev-window"]
 
 [lints]
 workspace = true

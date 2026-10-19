@@ -1,11 +1,12 @@
 //! The header band: the wordmark, the patch name, and the Undo and Redo buttons (keyboard undo waits for the
-//! fork's captured-shortcut hook, report 02 D6, so the buttons are the way to undo in every host).
+//! fork's captured-shortcut hook, report 02 D6, so the buttons are the way to undo in every host). Built-in cards a
+//! layout places here (layout 1: master) draw as inline knobs at the right end, with every control's menu.
 
 use egui::{Align, Align2, Button, Layout, Rect, RichText, Ui, UiBuilder, pos2};
 
 use super::region_ui;
 use crate::Theme;
-use crate::editor::cards::{Intent, Intents};
+use crate::editor::cards::{CardView, Form, Intent, Intents, control};
 
 /// What the header shows.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -24,11 +25,23 @@ pub struct HeaderView {
 pub struct Header<'a> {
     theme: &'a Theme,
     view: &'a HeaderView,
+    knobs: &'a [CardView],
 }
 
 impl<'a> Header<'a> {
     pub fn new(theme: &'a Theme, view: &'a HeaderView) -> Self {
-        Self { theme, view }
+        Self {
+            theme,
+            view,
+            knobs: &[],
+        }
+    }
+
+    /// Cards whose parameters draw as inline knobs at the right end (the built-ins a layout places in the header).
+    #[must_use]
+    pub fn knobs(mut self, cards: &'a [CardView]) -> Self {
+        self.knobs = cards;
+        self
     }
 
     /// Draws into `rect`; the buttons push [`Intent::Undo`] and [`Intent::Redo`].
@@ -64,8 +77,24 @@ impl<'a> Header<'a> {
                 .layout(Layout::right_to_left(Align::Center)),
         );
         buttons.spacing_mut().item_spacing.x = t.space.tight;
+        // Right to left: the knobs first (rightmost; the last card's last parameter at the edge), then Redo, Undo.
+        for card in self.knobs.iter().rev() {
+            for p in card.drawn().collect::<Vec<_>>().into_iter().rev() {
+                control(
+                    &mut buttons,
+                    t,
+                    card,
+                    p,
+                    Form::Inline(t.size.editor.header_knob),
+                    out,
+                );
+            }
+        }
+        if !self.knobs.is_empty() {
+            buttons.add_space(t.space.section);
+        }
         let button = |text: &str| Button::new(RichText::new(text).font(t.text.body.clone()));
-        // Right to left: Redo is drawn first.
+        // Right to left: Redo is drawn before Undo.
         let redo = buttons.add_enabled(self.view.can_redo, button("Redo"));
         let redo = match &self.view.redo {
             Some(what) => redo.on_hover_text(format!("Redo {what}")),

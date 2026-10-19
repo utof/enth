@@ -11,6 +11,8 @@
 //!   generated controls, and a "More" disclosure for the advanced tier.
 //! - [`Intent`]: what the controls ask for. Cards never edit the patch: they push intents into [`Intents`], and
 //!   the editor (lane ED1) turns them into ops through the session at the end of the frame.
+//! - `menu`: every control's right-click menu ("Type value…" with units, "Reset to default", "Automate") and its
+//!   text field (lane ED1).
 //! - [`ids`]: the stable widget ids.
 //!
 //! Colours, sizes and fonts come from `theme` tokens; the displays' shapes are content (`shapes`).
@@ -19,13 +21,16 @@ mod card;
 mod envelope;
 pub mod format;
 mod intent;
+mod menu;
 pub mod present;
 pub mod shapes;
 pub mod view;
 
 pub use card::{Card, CardOutput};
+pub(crate) use card::{Form, control};
 pub use envelope::stages as envelope_stages;
 pub use intent::{Grip, Hovered, Intent, Intents};
+pub use menu::entry_open;
 pub use present::Control;
 pub use view::{CardKey, CardKind, CardView, ParamView, RouteView};
 
@@ -77,5 +82,10 @@ pub mod ids {
     /// A region's own widgets (its scroll area, its buttons).
     pub fn region(name: &str) -> Id {
         Id::unique(("enth.region", name))
+    }
+
+    /// The open "Type value…" field (one at a time; it names the parameter it edits).
+    pub fn entry() -> Id {
+        Id::unique("enth.entry")
     }
 }

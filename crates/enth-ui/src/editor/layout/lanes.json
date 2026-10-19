@@ -1,0 +1,42 @@
+{
+  "schema": "enth.layout/1",
+  "name": "lanes",
+  "description": "Layout 1. Signal flow reads left to right along the top (sources, the filter lane, voice and effects), modulators sit together in a band under it, the overview takes what is left; master level in the header.",
+  "margin": { "token": "space.gap" },
+  "gap": { "token": "space.gap" },
+  "root": {
+    "rows": [
+      { "size": { "token": "size.bar.header" }, "region": "header" },
+      { "size": { "token": "size.bar.macros" }, "region": "macros" },
+      {
+        "size": { "share": 1 },
+        "cols": [
+          {
+            "size": { "share": 1 },
+            "rows": [
+              {
+                "size": { "token": "size.card.generator_height", "count": 3 },
+                "cols": [
+                  { "size": { "share": 1 }, "region": "sources", "arrange": "strips" },
+                  { "size": { "token": "size.card.lane_width" }, "region": "voice_fx", "arrange": "lane" }
+                ]
+              },
+              { "size": { "token": "size.editor.band_height" }, "region": "modulators", "arrange": "band" },
+              { "size": { "share": 1 }, "region": "overview" }
+            ]
+          },
+          { "size": { "token": "size.card.lane_width" }, "region": "effects", "arrange": "lane" }
+        ]
+      },
+      { "size": { "token": "size.bar.status" }, "region": "status" }
+    ]
+  },
+  "place": [
+    { "part": "generators", "region": "sources" },
+    { "part": "voice_fx", "region": "voice_fx" },
+    { "part": "voice", "region": "effects" },
+    { "part": "fx", "region": "effects" },
+    { "part": "modulators", "region": "modulators" },
+    { "part": "master", "region": "header" }
+  ]
+}
