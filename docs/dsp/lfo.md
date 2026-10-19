@@ -49,7 +49,20 @@ So a `reset` LFO is the same on every render for a given render seed, a `free` o
 - **Pinned output hashes**: FNV-1a over the bit patterns of 30,000 control-rate values per shape (rate 3.7 Hz, random start, seed `0x0E175EED`), seven hashes in `lfo.rs`. They were checked equal under wasmtime (wasm32-wasip1) when written down, and the `enth-dsp` unit tests pass there.
 - The module: a 50 Hz sine, polarity, all three phase modes, S&H seed dependence, independence of the voices, a global LFO's reset and seeded modes, a continuous phase when the rate changes, `copy_state_from`, no subnormals.
 
-There is **no patch-level golden for the LFO yet**: the S2a compiler refuses modulation routes (`CompileError::NotYet`, lane S2b), so an LFO in a patch has no audible effect. When S2b lands routes, add `tests/golden/cases/lfo-*.toml` (one per shape, an LFO on `filter1.cutoff`, a global scope one, a seeded sample & hold) in the same commit; until then the pinned hashes above are the LFO's cross-platform guard.
+**Patch-level goldens** (`tests/golden/cases/lfo-*.toml`, P1a CH, once routes landed): the reference saw at 110 Hz through a gate envelope (so the envelope does not move them) into an `svf` low-pass at 600 Hz, resonance 30 %, with `lfo1` routed to `filter1.cutoff` at 25 % (about 2.5 octaves either way). They match under wasmtime (`cargo xtask golden --wasm`).
+
+| Case | Guards |
+| --- | --- |
+| `lfo-sine`, `lfo-triangle`, `lfo-saw-up`, `lfo-saw-down`, `lfo-square` | each deterministic shape at 2 Hz through the route, the end-of-segment sampling and the filter under modulation |
+| `lfo-sample-hold`, `lfo-smooth-random` | the random shapes in `reset` mode with two notes: each note index draws its own stream from the render seed |
+| `lfo-seeded-sh` | `phase_mode = seeded` (seed 4321) with a non-default render seed: the stream comes from the module's seed, not the render seed |
+| `lfo-unipolar` | 0 to 1 polarity: the route only opens the filter |
+| `lfo-global` | global scope: one LFO free-running from the render start; a second note joins mid-cycle and hears the same phase |
+| `lfo-global-comp` | a global LFO driving a global processor (`comp1.mix`), the only scope that may modulate effects |
+| `lfo-vibrato` | a voice LFO at 5.5 Hz on `osc1.fine` (about 40 ct either way) |
+| `lfo-rate-mod` | an LFO on an LFO's `rate`: the phase stays continuous while the rate moves, and a source that ticks later is read one segment late |
+
+The pinned output hashes above remain the oscillator's own cross-platform guard.
 
 ## Cost
 
@@ -68,4 +81,4 @@ One tick is a 64-bit add, a wrap test and the shape. Callgrind's self cost for a
 
 - The output is a per-segment value; the engine does the interpolation. `voice_finished` is always false: an LFO never keeps a voice alive.
 - `copy_state_from` copies every voice's LFO and the global one, so a plan swap keeps the phases.
-- Routes are S2b's: the LFO needs nothing from them except `cx.out[v]` / the global return value.
+- Routes are S2b's: the LFO needs nothing from them except `cx.out[v]` / the global return value. A route from an LFO that ticks later in patch order reads its previous segment.

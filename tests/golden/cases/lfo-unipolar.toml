@@ -1,0 +1,24 @@
+description = "P1a CH, polarity: a unipolar sine LFO at 1.5 Hz (0 to 1, so the route only opens the filter) on filter1.cutoff at 30 % over 400 Hz. The reference voice goes through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so lane D2's envelope curves do not move it; the filter and the LFO are lane D2's modules."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 0.8, on_s = 0.0, off_s = 1.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "400Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "lfo1", kind = "lfo", params = { shape = "sine", rate = 1.5, polarity = "unipolar" } },
+]
+routes = [
+    { src = "lfo1", dst = "filter1.cutoff", depth = 30.0 },
+]

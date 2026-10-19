@@ -1,0 +1,24 @@
+description = "P1a CH, LFO shape saw_down: a per-voice bipolar saw_down LFO at 2 Hz routed to filter1.cutoff at 25 % of its range (about 2.5 octaves either way, summed in the normalised log domain) over 600 Hz, on the 110 Hz saw with the filter at resonance 30 %. Guards the shape through the route, the end-of-segment sampling and the filter under modulation. The reference voice goes through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so lane D2's envelope curves do not move it; the filter and the LFO are lane D2's modules."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 0.8, on_s = 0.0, off_s = 1.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "600Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "lfo1", kind = "lfo", params = { shape = "saw_down", rate = 2.0 } },
+]
+routes = [
+    { src = "lfo1", dst = "filter1.cutoff", depth = 25.0 },
+]
