@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &plain, false)"
+---
+exit: 0
+--- stdout
+{
+  "schema": "enth.get/1",
+  "source": "[TMP]/p.patch.json",
+  "values": {
+    "filter1.cutoff": 1500,
+    "osc1.wave": "saw"
+  }
+}
+--- stderr

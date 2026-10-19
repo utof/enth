@@ -1,0 +1,121 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &svf, false)"
+---
+exit: 0
+--- stdout
+{
+  "kind": "svf",
+  "name": "Filter",
+  "params": [
+    {
+      "accepts": [
+        "lp",
+        "bp",
+        "hp",
+        "notch"
+      ],
+      "automatable": true,
+      "default": "lp",
+      "effect": "The filter response: lp, bp, hp or notch.",
+      "key": "mode",
+      "max": null,
+      "min": null,
+      "modulatable": false,
+      "moves": "spectrum.centroid_hz",
+      "name": "Mode",
+      "scale": "enum",
+      "structural": false,
+      "tier": "basic",
+      "unit": "",
+      "values": [
+        "lp",
+        "bp",
+        "hp",
+        "notch"
+      ]
+    },
+    {
+      "accepts": [
+        "800",
+        "800Hz",
+        "1.2kHz",
+        "A4",
+        "C#3",
+        "Db2"
+      ],
+      "automatable": true,
+      "default": 2000,
+      "effect": "The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.",
+      "key": "cutoff",
+      "max": 20000,
+      "min": 20,
+      "modulatable": true,
+      "moves": "spectrum.centroid_hz",
+      "name": "Cutoff",
+      "scale": "log",
+      "structural": false,
+      "tier": "basic",
+      "unit": "Hz"
+    },
+    {
+      "accepts": [
+        "30",
+        "30%"
+      ],
+      "automatable": true,
+      "default": 10,
+      "effect": "Emphasis at the cutoff, from none (Q 0.5) to a sharp whistling peak (Q 25).",
+      "key": "resonance",
+      "max": 100,
+      "min": 0,
+      "modulatable": true,
+      "name": "Resonance",
+      "scale": "linear",
+      "structural": false,
+      "tier": "basic",
+      "unit": "%"
+    },
+    {
+      "accepts": [
+        "30",
+        "30%"
+      ],
+      "automatable": true,
+      "default": 0,
+      "effect": "How much the cutoff follows the played note: 100 % moves it an octave per octave played.",
+      "key": "keytrack",
+      "max": 100,
+      "min": 0,
+      "modulatable": false,
+      "name": "Key tracking",
+      "scale": "linear",
+      "structural": false,
+      "tier": "intermediate",
+      "unit": "%"
+    },
+    {
+      "accepts": [
+        "-6",
+        "-6dB"
+      ],
+      "automatable": true,
+      "default": 0,
+      "effect": "Gain into a soft saturator before the filter, normalised back after: adds grit and harmonics.",
+      "key": "drive",
+      "max": 24,
+      "min": 0,
+      "modulatable": true,
+      "moves": "spectrum.harmonics_db",
+      "name": "Drive",
+      "scale": "linear",
+      "structural": false,
+      "tier": "intermediate",
+      "unit": "dB"
+    }
+  ],
+  "schema": "enth.params/1",
+  "section": "voice_fx",
+  "summary": "A resonant multimode filter per voice: shapes brightness, usually swept by an envelope."
+}
+--- stderr

@@ -1,0 +1,141 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "ErrorItem": {
+      "additionalProperties": false,
+      "description": "One problem of several.",
+      "properties": {
+        "did_you_mean": {
+          "description": "Likely intended spellings; may be empty.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "error": {
+          "description": "The stable code.",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do about it.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What was wrong.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Where.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "error",
+        "message",
+        "hint",
+        "did_you_mean"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.error/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.error/1`: what went wrong and how to fix it. Printed on stdout instead of the command's object.",
+  "properties": {
+    "did_you_mean": {
+      "description": "Likely intended spellings (full addresses where the error is about one), nearest first; may be empty.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "error": {
+      "description": "A stable snake-case code (`unknown_param`, `out_of_range`, `bad_expect`, `file_not_found`, ...).",
+      "type": "string"
+    },
+    "errors": {
+      "description": "Every problem, in order, when there is more than one (the fields above describe the first).",
+      "items": {
+        "$ref": "#/$defs/ErrorItem"
+      },
+      "type": "array"
+    },
+    "exit": {
+      "description": "The exit code: 2 usage, 3 validation, 4 render or analysis, 5 file not found.",
+      "format": "int32",
+      "type": "integer"
+    },
+    "file": {
+      "description": "The file the problem is in.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hint": {
+      "description": "What to do about it: the fix or the next command to run.",
+      "type": "string"
+    },
+    "known": {
+      "description": "The names that are valid here (templates, kinds, topics, schema names), when the list is short.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "max": {
+      "description": "For `out_of_range`: the highest valid value, in the parameter's unit.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "message": {
+      "description": "What was wrong, in one line.",
+      "type": "string"
+    },
+    "min": {
+      "description": "For `out_of_range`: the lowest valid value, in the parameter's unit.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "Where: a parameter address (`filter1.cutof`), an op (`ops[2]`) or a path into a file\n(`generators[1].params.cutoff`).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema": {
+      "const": "enth.error/1",
+      "description": "`enth.error/1`.",
+      "type": "string"
+    },
+    "try": {
+      "description": "For `out_of_range`: the nearest valid value, as a unit string.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "error",
+    "message",
+    "exit",
+    "hint",
+    "did_you_mean"
+  ],
+  "title": "ErrorOut",
+  "type": "object"
+}

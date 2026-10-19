@@ -1,0 +1,36 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "run_tty(&[\"guide\", \"--topic\", \"descriptors\"]).stdout"
+---
+# enth guide: descriptors
+
+Measured on the float render (never read off the patch). Null means not measurable, and `describe` says why
+in `missing`. Short names work in expectations; the output always uses the path.
+
+| path | short names | unit | meaning |
+|---|---|---|---|
+| `pitch.f0_hz` | pitch, f0, pitch.note, note | Hz | Fundamental frequency measured from the audio (YIN, median over the loud frames); the nearest note and the offset in cents come with it |
+| `pitch.cents_dev` | cents, tuning | ct | Offset of the measured pitch from the nearest equal-tempered note (A4 = 440 Hz), in cents |
+| `pitch.stability` | stability | 0..1 | How steady the pitch is: 1 is steady, 0 means it wanders by 50 cents or more |
+| `envelope.attack_ms` | attack | ms | Time for the level to rise from near-silence (-40 dB re peak) to within 1 dB of its peak, with detune beating removed. Under 10 ms is a click; over 200 ms is a swell |
+| `envelope.decay_ms` | decay | ms | Time from the peak until the level settles near the held level (within max(1.5 dB, 20% of the sustain in dB)); 0 means no decay stage. Not the ADSR parameter |
+| `envelope.sustain_db` | sustain | dB | Level held just before note-off, in dB below the peak, with beating removed: 0 is as loud as the peak, -80 means silent |
+| `envelope.release_ms` | release | ms | Time after note-off for the level to fall 40 dB; 0 if the sound had already gone. Extrapolated when the clip ends first |
+| `envelope.duration_ms` | duration | ms | How long the sound stays within 40 dB of its peak, from its onset. A lower bound if still audible at the clip end |
+| `envelope.ripple_db` | ripple | dB | Residual level wobble over the held part after beat removal (dB, p95 - p5); a measurement-noise hint |
+| `spectrum.centroid_hz` | brightness, centroid | Hz | Average frequency of the sound's energy, weighted by magnitude (spectral centroid). Higher is brighter; a pure sine reads its own pitch |
+| `noise_ratio` | noisiness, noise | 0..1 | Share of spectral energy not in steady peaks: 0 is a clean tone, 1 is noise |
+| `detune.beating_hz` | beating, beat, detune.beating | Hz | Rate of the slow level wobble from detuned oscillators (multi-harmonic estimate, 0.15 to 25 Hz); absent when there is none, it is too slow for the clip, or it is a tremolo |
+| `detune.depth_db` | beat_depth | dB | Peak-to-trough depth of the detune beating on its deepest harmonic (dB) |
+| `modulation.amp_lfo.hz` | tremolo, amp_lfo, modulation.amp_lfo | Hz | Rate of an amplitude LFO: a level wobble that moves every harmonic at the same rate (unlike detune beating) |
+| `modulation.amp_lfo.depth_db` | tremolo_depth | dB | Peak-to-trough depth of the tremolo (dB) |
+| `loudness.lufs_i` | loudness, lufs | LUFS | Integrated loudness (EBU R128) of the float render. About -23 LUFS is a quiet broadcast level, -14 is loud |
+| `loudness.peak_dbfs` | peak | dBFS | Highest sample level of the float render in dBFS; above 0 means it clips |
+| `loudness.true_peak_dbtp` | true_peak | dBTP | Highest level between samples (4x oversampled) in dBTP; above 0 clips a converter |
+| `loudness.clipped_pct` | clipped, clipped_pct | % | Share of samples at or beyond full scale, in percent |
+| `loudness.clipping` | clipping, clips | true/false | True when any sample reaches full scale. Clipping bends brightness and levels too; lower master.level first |
+
+Also in `describe`: `pitch.note` and `pitch.cents_dev`, `spectrum.centroid_track_hz` (start, middle, end:
+a falling track is a closing filter), `envelope.beat_corrected` (false: a beat too slow to remove, sustain
+uncertain), `envelope.release_extrapolated`, `envelope.duration_truncated`, `perf.source` (`flag`,
+`default`, `wav`, `inferred`, `none`).

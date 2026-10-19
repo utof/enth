@@ -1,0 +1,421 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "DetuneOut": {
+      "additionalProperties": false,
+      "description": "Detune beating.",
+      "properties": {
+        "beating_hz": {
+          "description": "Beat rate (Hz).",
+          "format": "double",
+          "type": "number"
+        },
+        "depth_db": {
+          "description": "Peak-to-trough depth on the deepest harmonic (dB).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "beating_hz",
+        "depth_db"
+      ],
+      "type": "object"
+    },
+    "EnvelopeOut": {
+      "additionalProperties": false,
+      "description": "Envelope descriptors, read on the beat-corrected curve. Times in ms, levels in dB re the peak.",
+      "properties": {
+        "attack_ms": {
+          "description": "Onset (-40 dB re peak) to within 1 dB of the peak.",
+          "format": "double",
+          "type": "number"
+        },
+        "beat_corrected": {
+          "description": "False when a beat was found but was too slow to remove: sustain may be off by a few dB.",
+          "type": "boolean"
+        },
+        "decay_ms": {
+          "description": "Peak until the level settles near the sustain (a dB-threshold time, not the ADSR parameter).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "description": "Onset to the last time within 40 dB of the peak.",
+          "format": "double",
+          "type": "number"
+        },
+        "duration_truncated": {
+          "description": "Still audible at the clip end: `duration_ms` is a lower bound.",
+          "type": "boolean"
+        },
+        "release_extrapolated": {
+          "description": "The clip ended before the release did: `release_ms` is extrapolated.",
+          "type": "boolean"
+        },
+        "release_ms": {
+          "description": "Note-off until the level is 40 dB down.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ripple_db": {
+          "description": "Residual wobble after beat removal (dB).",
+          "format": "double",
+          "type": "number"
+        },
+        "sustain_db": {
+          "description": "Level held just before note-off, dB re the peak (-80 is silent).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attack_ms",
+        "duration_ms",
+        "ripple_db",
+        "beat_corrected",
+        "release_extrapolated",
+        "duration_truncated"
+      ],
+      "type": "object"
+    },
+    "LoudnessOut": {
+      "additionalProperties": false,
+      "description": "Level descriptors.",
+      "properties": {
+        "clipped_pct": {
+          "description": "Share of samples at or beyond full scale (percent).",
+          "format": "double",
+          "type": "number"
+        },
+        "clipping": {
+          "description": "True when any sample reaches full scale.",
+          "type": "boolean"
+        },
+        "lufs_i": {
+          "description": "Integrated loudness (LUFS); null when silent.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_dbfs": {
+          "description": "Sample peak (dBFS); above 0 clips.",
+          "format": "double",
+          "type": "number"
+        },
+        "true_peak_dbtp": {
+          "description": "Inter-sample peak (dBTP).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "peak_dbfs",
+        "true_peak_dbtp",
+        "clipped_pct",
+        "clipping"
+      ],
+      "type": "object"
+    },
+    "ModulationOut": {
+      "additionalProperties": false,
+      "description": "Amplitude modulation.",
+      "properties": {
+        "amp_lfo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TremoloOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A tremolo (every harmonic moves at one rate); null when none."
+        }
+      },
+      "type": "object"
+    },
+    "NoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a reported performance.",
+      "properties": {
+        "note": {
+          "description": "The note name; null when inferred from audio.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "off_s": {
+          "description": "Note-off time in seconds; null when unknown.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "on_s": {
+          "description": "Note-on time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "description": "MIDI velocity; null when inferred from audio.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on_s"
+      ],
+      "type": "object"
+    },
+    "PerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a command used, and where it came from.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the clip in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes (empty when unknown).",
+          "items": {
+            "$ref": "#/$defs/NoteOut"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`flag` (`--perf`, `--note`, `--hold`, `--dur`, `--vel`), `default` (the CLI's default performance), `wav` (the\n`enth` chunk of the WAV), `inferred` (a note-off found in the audio) or `none` (unknown: decay, sustain and\nrelease are null).",
+          "type": "string"
+        },
+        "why_missing": {
+          "description": "Why the performance is unknown, when it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "dur_s",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "PitchOut": {
+      "additionalProperties": false,
+      "description": "Pitch descriptors.",
+      "properties": {
+        "cents_dev": {
+          "description": "Offset from that note (cents).",
+          "format": "double",
+          "type": "number"
+        },
+        "f0_hz": {
+          "description": "Fundamental (Hz).",
+          "format": "double",
+          "type": "number"
+        },
+        "note": {
+          "description": "Nearest note (A4 = 440 Hz).",
+          "type": "string"
+        },
+        "stability": {
+          "description": "1 is a steady pitch, 0 wanders by 50 cents or more.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "f0_hz",
+        "note",
+        "cents_dev",
+        "stability"
+      ],
+      "type": "object"
+    },
+    "SpectrumOut": {
+      "additionalProperties": false,
+      "description": "Brightness.",
+      "properties": {
+        "centroid_hz": {
+          "description": "Spectral centroid (Hz): higher is brighter.",
+          "format": "double",
+          "type": "number"
+        },
+        "centroid_track_hz": {
+          "description": "Centroid over the first, middle and last third (Hz): reveals filter envelopes.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "centroid_hz"
+      ],
+      "type": "object"
+    },
+    "TremoloOut": {
+      "additionalProperties": false,
+      "description": "A tremolo.",
+      "properties": {
+        "depth_db": {
+          "description": "Peak-to-trough depth (dB).",
+          "format": "double",
+          "type": "number"
+        },
+        "hz": {
+          "description": "Rate (Hz).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hz",
+        "depth_db"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.describe/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.describe/1`: perceptual descriptors of one sound. Null means not measurable (see `missing`).",
+  "properties": {
+    "detune": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DetuneOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Detune beating; null when absent or outside 0.15-25 Hz."
+    },
+    "dur_s": {
+      "description": "Length in seconds.",
+      "format": "double",
+      "type": "number"
+    },
+    "envelope": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnvelopeOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The amplitude envelope, beat-corrected."
+    },
+    "loudness": {
+      "$ref": "#/$defs/LoudnessOut",
+      "description": "Level, measured on the float render."
+    },
+    "missing": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Why each null descriptor is null, by path.",
+      "type": "object"
+    },
+    "modulation": {
+      "$ref": "#/$defs/ModulationOut",
+      "description": "Amplitude modulation that is not detune beating."
+    },
+    "noise_ratio": {
+      "description": "Share of spectral energy not in steady peaks: 0 is a clean tone, 1 is noise.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "perf": {
+      "$ref": "#/$defs/PerfOut",
+      "description": "The performance the envelope is read against."
+    },
+    "pitch": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PitchOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Pitch."
+    },
+    "sample_rate": {
+      "description": "Frames per second.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.describe/1",
+      "description": "`enth.describe/1`.",
+      "type": "string"
+    },
+    "silent": {
+      "description": "The sample peak is below -80 dBFS: only `loudness` is measured.",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "The patch or WAV described.",
+      "type": "string"
+    },
+    "spectrum": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SpectrumOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Brightness."
+    }
+  },
+  "required": [
+    "schema",
+    "source",
+    "dur_s",
+    "sample_rate",
+    "silent",
+    "perf",
+    "modulation",
+    "loudness",
+    "missing"
+  ],
+  "title": "DescribeOut",
+  "type": "object"
+}

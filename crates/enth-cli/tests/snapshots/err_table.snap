@@ -1,0 +1,7 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: s.clean(&o.stderr)
+---
+error (unknown_param): 'osc1.detune' names no parameter of osc
+hint: osc has: wave, semi, fine, level, pw, sync, table, position, phase_mode, phase, seed; units and ranges: `enth params osc`
+did you mean: osc1.fine

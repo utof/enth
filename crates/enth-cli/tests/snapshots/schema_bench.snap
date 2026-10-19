@@ -1,0 +1,96 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "BuildOut": {
+      "additionalProperties": false,
+      "description": "The build that ran a benchmark.",
+      "properties": {
+        "profile": {
+          "description": "`debug` or `release`.",
+          "type": "string"
+        },
+        "target": {
+          "description": "`<arch>-<os>`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.bench/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.bench/1`: engine speed. Wall-clock time, information only: the regression gate is instruction counts in\n`cargo xtask bench`.",
+  "properties": {
+    "build": {
+      "$ref": "#/$defs/BuildOut",
+      "description": "How the binary was built."
+    },
+    "note": {
+      "description": "`wall-clock, information only`.",
+      "type": "string"
+    },
+    "ns_per_voice_sample": {
+      "description": "Wall-clock nanoseconds per voice per frame.",
+      "format": "double",
+      "type": "number"
+    },
+    "patch": {
+      "description": "The patch rendered (a path, or `template:<name>`).",
+      "type": "string"
+    },
+    "realtime_x_per_core": {
+      "description": "Seconds of audio per second of wall-clock time, on one core.",
+      "format": "double",
+      "type": "number"
+    },
+    "sample_rate": {
+      "description": "Frames per second.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.bench/1",
+      "description": "`enth.bench/1`.",
+      "type": "string"
+    },
+    "seconds": {
+      "description": "Seconds of audio rendered.",
+      "format": "double",
+      "type": "number"
+    },
+    "voices": {
+      "description": "Voices held at once.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "wall_ms": {
+      "description": "Wall-clock time of the render (ms).",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema",
+    "patch",
+    "voices",
+    "seconds",
+    "sample_rate",
+    "wall_ms",
+    "realtime_x_per_core",
+    "ns_per_voice_sample",
+    "build",
+    "note"
+  ],
+  "title": "BenchOut",
+  "type": "object"
+}

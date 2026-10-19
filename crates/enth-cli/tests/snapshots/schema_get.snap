@@ -1,0 +1,167 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "MetaOut": {
+      "additionalProperties": false,
+      "description": "Patch metadata.",
+      "properties": {
+        "author": {
+          "description": "Author.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Description.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name.",
+          "type": "string"
+        },
+        "tags": {
+          "description": "Tags.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "author",
+        "description",
+        "tags"
+      ],
+      "type": "object"
+    },
+    "ModuleOut": {
+      "additionalProperties": false,
+      "description": "One module of a patch.",
+      "properties": {
+        "enabled": {
+          "description": "False when bypassed.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Its kind key.",
+          "type": "string"
+        },
+        "section": {
+          "description": "Its section.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "section",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    },
+    "RouteOut": {
+      "additionalProperties": false,
+      "description": "One route.",
+      "properties": {
+        "depth": {
+          "description": "Depth in percent of the destination's range.",
+          "format": "double",
+          "type": "number"
+        },
+        "route": {
+          "description": "`src -> dst`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route",
+        "depth"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.get/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.get/1`: values read from a patch.",
+  "properties": {
+    "meta": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetaOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The metadata, when asked for (`meta`)."
+    },
+    "modules": {
+      "description": "The modules, when asked for (no addresses, or `modules`).",
+      "items": {
+        "$ref": "#/$defs/ModuleOut"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "routes": {
+      "description": "The routes in summation order, when asked for (no addresses, or `routes`).",
+      "items": {
+        "$ref": "#/$defs/RouteOut"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "schema": {
+      "const": "enth.get/1",
+      "description": "`enth.get/1`.",
+      "type": "string"
+    },
+    "source": {
+      "description": "The patch file.",
+      "type": "string"
+    },
+    "values": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Reading"
+      },
+      "description": "Parameter values by address, as unit strings (numbers with `--plain`). Without addresses: only the values\nthat differ from their defaults, plus `voice.amp_env`.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema",
+    "source",
+    "values"
+  ],
+  "title": "GetOut",
+  "type": "object"
+}

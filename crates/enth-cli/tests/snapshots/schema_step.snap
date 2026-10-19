@@ -1,0 +1,472 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "BlockedOut": {
+      "additionalProperties": false,
+      "description": "An item no move of the patch's parameters can satisfy.",
+      "properties": {
+        "at_bound": {
+          "description": "Parameters sitting at a bound.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expect": {
+          "description": "The item, in canonical form.",
+          "type": "string"
+        },
+        "why": {
+          "description": "Why: the structure or the performance is the limit.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expect",
+        "why",
+        "at_bound"
+      ],
+      "type": "object"
+    },
+    "ChangeOut": {
+      "additionalProperties": false,
+      "description": "One applied change, in words and real units.",
+      "properties": {
+        "from": {
+          "description": "The value before, in real units; absent when there was none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
+          "type": "string"
+        },
+        "target": {
+          "description": "What it changed: an address, a module id, a route `src -> dst`.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The value after, in real units; absent when there is none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "type": "object"
+    },
+    "CheckBody": {
+      "additionalProperties": false,
+      "description": "The `check` part of `enth.step/1` (the fields of `enth.check/1` without `schema`, `source` and `perf`).",
+      "properties": {
+        "blocked": {
+          "description": "Items no move can satisfy.",
+          "items": {
+            "$ref": "#/$defs/BlockedOut"
+          },
+          "type": "array"
+        },
+        "failed": {
+          "description": "Items that failed.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FixOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "One measured move for all failures, or null."
+        },
+        "pass": {
+          "description": "Every item passed.",
+          "type": "boolean"
+        },
+        "passed": {
+          "description": "Items that passed.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "results": {
+          "description": "One verdict per item.",
+          "items": {
+            "$ref": "#/$defs/ItemOut"
+          },
+          "type": "array"
+        },
+        "thin": {
+          "description": "Items within measurement noise.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pass",
+        "passed",
+        "failed",
+        "thin",
+        "results",
+        "blocked"
+      ],
+      "type": "object"
+    },
+    "FixOut": {
+      "additionalProperties": false,
+      "description": "One move for the whole expectation list, rendered and measured.",
+      "properties": {
+        "after": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "description": "The measured readings after the move, by descriptor path.",
+          "type": "object"
+        },
+        "measured": {
+          "description": "True: `after` holds real values from a render, not predictions.",
+          "type": "boolean"
+        },
+        "note": {
+          "description": "What to know about it.",
+          "type": "string"
+        },
+        "ops": {
+          "description": "Apply these together: `enth step <patch> --ops '<ops>'`. Exact.",
+          "items": true,
+          "type": "array"
+        },
+        "pass_all": {
+          "description": "The move satisfies every item.",
+          "type": "boolean"
+        },
+        "renders": {
+          "description": "Renders the search used.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "single_param_enough": {
+          "description": "One parameter would have done.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "measured",
+        "pass_all",
+        "renders",
+        "ops",
+        "after",
+        "single_param_enough",
+        "note"
+      ],
+      "type": "object"
+    },
+    "ItemHintOut": {
+      "additionalProperties": false,
+      "description": "A per-item suggestion.",
+      "properties": {
+        "measured": {
+          "description": "True when it was rendered and measured.",
+          "type": "boolean"
+        },
+        "text": {
+          "description": "The suggestion.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "measured"
+      ],
+      "type": "object"
+    },
+    "ItemOut": {
+      "additionalProperties": false,
+      "description": "The verdict on one expectation.",
+      "properties": {
+        "estimated": {
+          "description": "The reading is an estimate (an extrapolated release, or an uncorrected slow beat).",
+          "type": "boolean"
+        },
+        "expect": {
+          "description": "The item in canonical form (`envelope.attack_ms < 10`).",
+          "type": "string"
+        },
+        "got": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The reading in `unit`; null when absent or not measured (see `why`)."
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ItemHintOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A structural suggestion for this item (not a measurement)."
+        },
+        "lower_bound": {
+          "description": "The reading is a lower bound (the clip ended first): only `>` items can pass.",
+          "type": "boolean"
+        },
+        "margin": {
+          "description": "Signed distance to the nearest edge of the accepted range, positive inside; null for null tests and\nabsent readings.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "margin_pct": {
+          "description": "`margin` relative to the edge, percent (Hz and ms items).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "margin_unit": {
+          "description": "The unit of `margin` and `noise` when it differs from `unit` (`ct` for a pitch judged against a note).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "noise": {
+          "description": "Largest change of the reading over the nuisance re-renders (or re-analyses, for a WAV).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "For pitch items: the nearest note and its offset (`C3+9ct`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pass": {
+          "description": "The item passed.",
+          "type": "boolean"
+        },
+        "thin": {
+          "description": "|margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further.",
+          "type": "boolean"
+        },
+        "unit": {
+          "description": "The unit of `got` (and of `margin` and `noise`, unless `margin_unit` says otherwise).",
+          "type": "string"
+        },
+        "unstable": {
+          "description": "Present in some renders and absent in others.",
+          "type": "boolean"
+        },
+        "why": {
+          "description": "Why `got` is null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "expect",
+        "unit",
+        "pass",
+        "thin"
+      ],
+      "type": "object"
+    },
+    "NoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a reported performance.",
+      "properties": {
+        "note": {
+          "description": "The note name; null when inferred from audio.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "off_s": {
+          "description": "Note-off time in seconds; null when unknown.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "on_s": {
+          "description": "Note-on time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "description": "MIDI velocity; null when inferred from audio.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on_s"
+      ],
+      "type": "object"
+    },
+    "PerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a command used, and where it came from.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the clip in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes (empty when unknown).",
+          "items": {
+            "$ref": "#/$defs/NoteOut"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`flag` (`--perf`, `--note`, `--hold`, `--dur`, `--vel`), `default` (the CLI's default performance), `wav` (the\n`enth` chunk of the WAV), `inferred` (a note-off found in the audio) or `none` (unknown: decay, sustain and\nrelease are null).",
+          "type": "string"
+        },
+        "why_missing": {
+          "description": "Why the performance is unknown, when it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "dur_s",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    }
+  },
+  "$id": "enth.step/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.step/1`: apply, render, describe and check in one call.",
+  "properties": {
+    "applied": {
+      "description": "What changed (empty when no ops were given).",
+      "items": {
+        "$ref": "#/$defs/ChangeOut"
+      },
+      "type": "array"
+    },
+    "check": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CheckBody"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The verdict, when `--expect` was given."
+    },
+    "describe": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Reading"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "description": "Readings by descriptor path: the features named in `--expect` plus a headline (every feature with `--full`).\nNull means not measurable.",
+      "type": "object"
+    },
+    "inverse": {
+      "description": "The ops that undo this step, exact.",
+      "items": true,
+      "type": "array"
+    },
+    "patch": {
+      "description": "The patch written.",
+      "type": "string"
+    },
+    "perf": {
+      "$ref": "#/$defs/PerfOut",
+      "description": "The performance rendered and judged."
+    },
+    "schema": {
+      "const": "enth.step/1",
+      "description": "`enth.step/1`.",
+      "type": "string"
+    },
+    "wav": {
+      "description": "The WAV written.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "patch",
+    "wav",
+    "applied",
+    "inverse",
+    "perf",
+    "describe"
+  ],
+  "title": "StepOut",
+  "type": "object"
+}

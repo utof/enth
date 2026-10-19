@@ -1,0 +1,133 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "NoteRef": {
+      "anyOf": [
+        {
+          "description": "A MIDI key number, 0-127.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "description": "A note name such as `C3`.",
+          "type": "string"
+        }
+      ],
+      "description": "A note name or a MIDI key number."
+    },
+    "PerfFile": {
+      "additionalProperties": false,
+      "description": "`enth.perf/1`: what is played. Given to `--perf` as a file or inline JSON (`schema` may be left out), and stored\nin the `enth` chunk of every WAV that `enth render` writes.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the render in seconds; it should cover the release you want measured.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes, at least one.",
+          "items": {
+            "$ref": "#/$defs/PerfNote"
+          },
+          "type": "array"
+        },
+        "schema": {
+          "description": "`enth.perf/1`; optional on input.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "notes",
+        "dur_s"
+      ],
+      "type": "object"
+    },
+    "PerfNote": {
+      "additionalProperties": false,
+      "description": "One note of a performance.",
+      "properties": {
+        "note": {
+          "$ref": "#/$defs/NoteRef",
+          "description": "A note name (`C3`, `A#4`, `Db2`; A4 = 440 Hz) or a MIDI key number (60 = C4)."
+        },
+        "off_s": {
+          "description": "Note-off time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "on_s": {
+          "default": 0,
+          "description": "Note-on time in seconds (default 0).",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "default": 100,
+          "description": "MIDI velocity 1-127 (default 100).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "note",
+        "off_s"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.wavmeta/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.wavmeta/1`: the JSON in the `enth` RIFF chunk of a WAV written by `enth render`.",
+  "properties": {
+    "engine": {
+      "description": "The engine version that rendered it.",
+      "type": "string"
+    },
+    "patch_hash": {
+      "description": "The exact hash of the patch (64 hex digits).",
+      "type": "string"
+    },
+    "perf": {
+      "$ref": "#/$defs/PerfFile",
+      "description": "The performance that was rendered."
+    },
+    "sample_rate": {
+      "description": "Frames per second.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.wavmeta/1",
+      "description": "`enth.wavmeta/1`.",
+      "type": "string"
+    },
+    "seed": {
+      "description": "The render seed.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema",
+    "engine",
+    "sample_rate",
+    "seed",
+    "patch_hash",
+    "perf"
+  ],
+  "title": "WavMeta",
+  "type": "object"
+}

@@ -1,0 +1,23 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"guide\", \"--topic\", \"op\"], 3, \"unknown_topic\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "ops"
+  ],
+  "error": "unknown_topic",
+  "exit": 3,
+  "hint": "topics are main, expect, ops, descriptors",
+  "known": [
+    "main",
+    "expect",
+    "ops",
+    "descriptors"
+  ],
+  "message": "no guide topic 'op'",
+  "schema": "enth.error/1"
+}
+--- stderr

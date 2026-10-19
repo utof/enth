@@ -1,0 +1,17 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"check\", &p, \"--expct\", \"x\"], 2, \"usage\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [
+    "--expect"
+  ],
+  "error": "usage",
+  "exit": 2,
+  "hint": "usage: enth check --expect <LIST> <INPUT>; `--help` shows the flags, `enth guide` the workflow",
+  "message": "unexpected argument '--expct' found",
+  "schema": "enth.error/1"
+}
+--- stderr

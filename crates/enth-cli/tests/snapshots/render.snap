@@ -1,0 +1,33 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, true)"
+---
+exit: 0
+--- stdout
+{
+  "channels": 2,
+  "clipped_pct": "<num>",
+  "clipping": "<bool>",
+  "dur_s": 2,
+  "format": "f32",
+  "patch_hash": "034afd11605a8681",
+  "peak_dbfs": "<num>",
+  "perf": {
+    "dur_s": 2,
+    "notes": [
+      {
+        "note": "A3",
+        "off_s": 1,
+        "on_s": 0,
+        "vel": 90
+      }
+    ],
+    "source": "flag"
+  },
+  "sample_rate": 48000,
+  "schema": "enth.render/1",
+  "seed": 236412653,
+  "true_peak_dbtp": "<num>",
+  "wav": "[TMP]/p.wav"
+}
+--- stderr

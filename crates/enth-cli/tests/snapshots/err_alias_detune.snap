@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--set\", \"osc1.detune=5ct\"], 3, \"unknown_param\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "osc1.fine"
+  ],
+  "error": "unknown_param",
+  "exit": 3,
+  "hint": "osc has: wave, semi, fine, level, pw, sync, table, position, phase_mode, phase, seed; units and ranges: `enth params osc`",
+  "message": "'osc1.detune' names no parameter of osc",
+  "path": "osc1.detune",
+  "schema": "enth.error/1"
+}
+--- stderr

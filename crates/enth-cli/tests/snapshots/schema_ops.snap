@@ -1,0 +1,396 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "AddOp": {
+      "additionalProperties": false,
+      "description": "`add`.",
+      "properties": {
+        "add": {
+          "description": "The kind key.",
+          "type": "string"
+        },
+        "at": {
+          "description": "`section[index]` (default: the end of the kind's section).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "False to add it bypassed.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The id (default: the lowest free `<prefix><n>`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "description": "A display label.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Reading"
+          },
+          "description": "Parameter values by key (sparse).",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "add"
+      ],
+      "type": "object"
+    },
+    "AmpEnvOp": {
+      "additionalProperties": false,
+      "description": "`amp_env`.",
+      "properties": {
+        "amp_env": {
+          "description": "An enabled `adsr` module id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amp_env"
+      ],
+      "type": "object"
+    },
+    "EnableOp": {
+      "additionalProperties": false,
+      "description": "`enable`.",
+      "properties": {
+        "enable": {
+          "description": "The module id.",
+          "type": "string"
+        },
+        "to": {
+          "description": "Whether it runs (default true).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "enable"
+      ],
+      "type": "object"
+    },
+    "LabelOp": {
+      "additionalProperties": false,
+      "description": "`label`.",
+      "properties": {
+        "label": {
+          "description": "The module id.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The label, or null to clear.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "type": "object"
+    },
+    "MacroOp": {
+      "additionalProperties": false,
+      "description": "`macro`.",
+      "properties": {
+        "macro": {
+          "description": "The macro number, 1-8.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Display name (null clears it).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "description": "Knob position, 0-1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "macro"
+      ],
+      "type": "object"
+    },
+    "MetaOp": {
+      "additionalProperties": false,
+      "description": "`meta`.",
+      "properties": {
+        "meta": {
+          "$ref": "#/$defs/PatchMetaDoc",
+          "description": "Any of `name`, `author`, `description`, `tags`; the others keep their value."
+        }
+      },
+      "required": [
+        "meta"
+      ],
+      "type": "object"
+    },
+    "MoveOp": {
+      "additionalProperties": false,
+      "description": "`move`.",
+      "properties": {
+        "move": {
+          "description": "The module id.",
+          "type": "string"
+        },
+        "to": {
+          "description": "`section[index]`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "move",
+        "to"
+      ],
+      "type": "object"
+    },
+    "OpDoc": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SetOp",
+          "description": "`{\"set\": \"filter1.cutoff\", \"to\": \"1.2kHz\"}`: set a parameter (also `voice.*`, `master.*`)."
+        },
+        {
+          "$ref": "#/$defs/AddOp",
+          "description": "`{\"add\": \"svf\", \"id\": \"filter2\", \"at\": \"voice_fx[1]\", \"params\": {...}}`: add a module."
+        },
+        {
+          "$ref": "#/$defs/RemoveOp",
+          "description": "`{\"remove\": \"filter2\"}`: remove a module with its routes and slots."
+        },
+        {
+          "$ref": "#/$defs/MoveOp",
+          "description": "`{\"move\": \"filter2\", \"to\": \"voice_fx[0]\"}`: move a module within its section."
+        },
+        {
+          "$ref": "#/$defs/RouteOp",
+          "description": "`{\"route\": \"lfo1 -> filter1.cutoff\", \"depth\": \"30%\"}`: add a route or change its depth."
+        },
+        {
+          "$ref": "#/$defs/UnrouteOp",
+          "description": "`{\"unroute\": \"lfo1 -> filter1.cutoff\"}`: remove a route."
+        },
+        {
+          "$ref": "#/$defs/EnableOp",
+          "description": "`{\"enable\": \"reverb1\", \"to\": false}`: bypass or restore a module."
+        },
+        {
+          "$ref": "#/$defs/MacroOp",
+          "description": "`{\"macro\": 1, \"to\": 0.5, \"name\": \"Brightness\"}`: set a macro knob or its name."
+        },
+        {
+          "$ref": "#/$defs/SlotOp",
+          "description": "`{\"slot\": 7, \"to\": \"filter1.cutoff\"}`: assign (or with null, clear) an automation slot."
+        },
+        {
+          "$ref": "#/$defs/AmpEnvOp",
+          "description": "`{\"amp_env\": \"env1\"}`: name the amplitude envelope."
+        },
+        {
+          "$ref": "#/$defs/LabelOp",
+          "description": "`{\"label\": \"osc1\", \"to\": \"Bass\"}`: set or clear a module's label."
+        },
+        {
+          "$ref": "#/$defs/MetaOp",
+          "description": "`{\"meta\": {\"name\": \"Soft pluck\"}}`: change metadata fields."
+        }
+      ],
+      "description": "One op of the ops JSON (`--ops`). Values are plain numbers in the parameter's unit, unit strings (`\"1.2kHz\"`,\n`\"600ms\"`, `\"-6dB\"`), enum keys or booleans. The verb is the key that names it."
+    },
+    "PatchMetaDoc": {
+      "additionalProperties": false,
+      "description": "Patch metadata in a file.",
+      "properties": {
+        "author": {
+          "description": "Author.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Free text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "description": "Tags.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    },
+    "RemoveOp": {
+      "additionalProperties": false,
+      "description": "`remove`.",
+      "properties": {
+        "remove": {
+          "description": "The module id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "remove"
+      ],
+      "type": "object"
+    },
+    "RouteOp": {
+      "additionalProperties": false,
+      "description": "`route`.",
+      "properties": {
+        "depth": {
+          "$ref": "#/$defs/Reading",
+          "description": "Percent of the destination's range (a number or `30%`), or a musical interval converted at the\ndestination's current value (`+1oct`, `+12st`)."
+        },
+        "index": {
+          "description": "Position in the summation order (new routes only; default: the end).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "route": {
+          "description": "`src -> dst`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route",
+        "depth"
+      ],
+      "type": "object"
+    },
+    "SetOp": {
+      "additionalProperties": false,
+      "description": "`set`.",
+      "properties": {
+        "set": {
+          "description": "The address.",
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/Reading",
+          "description": "The value."
+        }
+      },
+      "required": [
+        "set",
+        "to"
+      ],
+      "type": "object"
+    },
+    "SlotOp": {
+      "additionalProperties": false,
+      "description": "`slot`.",
+      "properties": {
+        "slot": {
+          "description": "The slot number, 1-64.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "description": "An automatable address, or null to clear.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "slot"
+      ],
+      "type": "object"
+    },
+    "UnrouteOp": {
+      "additionalProperties": false,
+      "description": "`unroute`.",
+      "properties": {
+        "unroute": {
+          "description": "`src -> dst`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unroute"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.ops/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "items": {
+    "$ref": "#/$defs/OpDoc"
+  },
+  "title": "Array_of_OpDoc",
+  "type": "array"
+}

@@ -1,0 +1,59 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "TemplateOut": {
+      "additionalProperties": false,
+      "description": "One template.",
+      "properties": {
+        "modules": {
+          "description": "Its module ids, in section order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "The name to pass to `--template`.",
+          "type": "string"
+        },
+        "summary": {
+          "description": "What it is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "summary",
+        "modules"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.templates/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.templates/1`: the templates `enth new --template` takes.",
+  "properties": {
+    "schema": {
+      "const": "enth.templates/1",
+      "description": "`enth.templates/1`.",
+      "type": "string"
+    },
+    "templates": {
+      "description": "The templates.",
+      "items": {
+        "$ref": "#/$defs/TemplateOut"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "templates"
+  ],
+  "title": "TemplatesOut",
+  "type": "object"
+}

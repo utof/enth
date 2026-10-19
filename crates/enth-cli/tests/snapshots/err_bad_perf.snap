@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"check\", &p, \"--expect\", \"attack < 10ms\", \"--perf\", \"note=H9\"], 2,\n\"bad_perf\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_perf",
+  "exit": 2,
+  "hint": "--perf takes a file, inline JSON like {\"notes\":[{\"note\":\"A3\",\"vel\":100,\"on_s\":0,\"off_s\":1.5}],\"dur_s\":2.5}, or note=A3,vel=100,hold=1.5s,dur=2.5s; see `enth schema perf`",
+  "message": "'H9' is not a note name (C3, A#4, Db2) or a MIDI key",
+  "schema": "enth.error/1"
+}
+--- stderr

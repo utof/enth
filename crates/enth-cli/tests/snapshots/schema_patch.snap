@@ -1,0 +1,279 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "MacroDoc": {
+      "additionalProperties": false,
+      "description": "One macro in a file.",
+      "properties": {
+        "name": {
+          "description": "Display name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Knob position, 0-1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ModuleDoc": {
+      "additionalProperties": false,
+      "description": "One module in a file.",
+      "properties": {
+        "enabled": {
+          "description": "False when bypassed; omitted when true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Module id (`osc1`, `filter1`).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind key (`osc`, `noise`, `svf`, `adsr`, `lfo`, `reverb`, `comp`).",
+          "type": "string"
+        },
+        "label": {
+          "description": "A display label.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Reading"
+          },
+          "description": "Parameter values by key (sparse on input).",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PatchMetaDoc": {
+      "additionalProperties": false,
+      "description": "Patch metadata in a file.",
+      "properties": {
+        "author": {
+          "description": "Author.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Free text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "description": "Tags.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    },
+    "RouteDoc": {
+      "additionalProperties": false,
+      "description": "One route in a file.",
+      "properties": {
+        "depth": {
+          "description": "Percent of the destination's range, -100..100.",
+          "format": "double",
+          "type": "number"
+        },
+        "dst": {
+          "description": "Destination address (`filter1.cutoff`).",
+          "type": "string"
+        },
+        "src": {
+          "description": "Source: a modulator id, `velocity`, `key`, `modwheel` or `macro1`..`macro8`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "src",
+        "dst",
+        "depth"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.patch/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A patch file (`*.patch.json`, schema 1). Reading accepts sparse parameters (defaults fill in) and any key\norder; writing is dense, in spec order. Parameter values are plain numbers in each parameter's unit (`enth params\n<kind>`), unit strings (`\"1.2kHz\"`), enum keys or booleans.",
+  "properties": {
+    "engine": {
+      "description": "The engine version the patch was written by.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fx": {
+      "description": "Global effects (reverb, compressor), in series.",
+      "items": {
+        "$ref": "#/$defs/ModuleDoc"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "generators": {
+      "description": "Oscillators and noise, summed per voice.",
+      "items": {
+        "$ref": "#/$defs/ModuleDoc"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "macros": {
+      "description": "Macros 1-8.",
+      "items": {
+        "$ref": "#/$defs/MacroDoc"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "master": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Reading"
+      },
+      "description": "The built-in master: `level` (dB).",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "meta": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PatchMetaDoc"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Name, author, description, tags."
+    },
+    "modulators": {
+      "description": "Envelopes and LFOs.",
+      "items": {
+        "$ref": "#/$defs/ModuleDoc"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "routes": {
+      "description": "Modulation routes, in summation order.",
+      "items": {
+        "$ref": "#/$defs/RouteDoc"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "schema": {
+      "description": "The patch file schema version, 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "slots": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Host automation slots: 1-based slot number to address.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "voice": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Reading"
+      },
+      "description": "The built-in voice: its parameters plus `amp_env`, the id of the amplitude envelope.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "voice_fx": {
+      "description": "Per-voice effects (filters), in series.",
+      "items": {
+        "$ref": "#/$defs/ModuleDoc"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema"
+  ],
+  "title": "PatchDoc",
+  "type": "object"
+}

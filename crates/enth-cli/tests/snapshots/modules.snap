@@ -1,0 +1,88 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "builtins": [
+    {
+      "key": "voice",
+      "params": 5,
+      "summary": "The voice manager and amp stage: mode (poly, mono, legato), polyphony, glide, pan; voice.amp_env names the amplitude envelope."
+    },
+    {
+      "key": "master",
+      "params": 1,
+      "summary": "The output stage after the effects: level in dB."
+    }
+  ],
+  "hint": "`enth params <kind>` lists a kind's parameters with units and ranges",
+  "modules": [
+    {
+      "id_prefix": "osc",
+      "kind": "osc",
+      "name": "Oscillator",
+      "params": 11,
+      "section": "generators",
+      "summary": "A pitched tone: sine, triangle, saw, pulse with width, or a wavetable, with hard sync to the first oscillator.",
+      "tier": "basic"
+    },
+    {
+      "id_prefix": "noise",
+      "kind": "noise",
+      "name": "Noise",
+      "params": 2,
+      "section": "generators",
+      "summary": "Unpitched hiss, white or pink, for breath, attack transients and texture.",
+      "tier": "intermediate"
+    },
+    {
+      "id_prefix": "filter",
+      "kind": "svf",
+      "name": "Filter",
+      "params": 5,
+      "section": "voice_fx",
+      "summary": "A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.",
+      "tier": "basic"
+    },
+    {
+      "id_prefix": "env",
+      "kind": "adsr",
+      "name": "Envelope",
+      "params": 5,
+      "section": "modulators",
+      "summary": "An attack-decay-sustain-release envelope per note, 0 to 1; one of them is the voice's amplitude envelope.",
+      "tier": "basic"
+    },
+    {
+      "id_prefix": "lfo",
+      "kind": "lfo",
+      "name": "LFO",
+      "params": 7,
+      "section": "modulators",
+      "summary": "A slow repeating modulator for vibrato, tremolo and sweeps, per voice or shared by all voices.",
+      "tier": "intermediate"
+    },
+    {
+      "id_prefix": "reverb",
+      "kind": "reverb",
+      "name": "Reverb",
+      "params": 10,
+      "section": "fx",
+      "summary": "A stereo room or hall after the voices: adds space, width and a tail.",
+      "tier": "intermediate"
+    },
+    {
+      "id_prefix": "comp",
+      "kind": "comp",
+      "name": "Compressor",
+      "params": 7,
+      "section": "fx",
+      "summary": "Evens out loudness after the voices: turns loud parts down above a threshold, then makes up the gain.",
+      "tier": "advanced"
+    }
+  ],
+  "schema": "enth.modules/1"
+}
+--- stderr

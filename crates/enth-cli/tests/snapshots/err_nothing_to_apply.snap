@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p], 2, \"nothing_to_apply\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "nothing_to_apply",
+  "exit": 2,
+  "hint": "e.g. `enth apply p.patch.json --set filter1.cutoff=1.2kHz,env1.attack=40ms`",
+  "message": "apply needs --set or --ops",
+  "schema": "enth.error/1"
+}
+--- stderr

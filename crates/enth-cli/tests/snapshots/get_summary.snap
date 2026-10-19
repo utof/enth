@@ -1,0 +1,56 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &summary, false)"
+---
+exit: 0
+--- stdout
+{
+  "modules": [
+    {
+      "enabled": true,
+      "id": "osc1",
+      "kind": "osc",
+      "section": "generators"
+    },
+    {
+      "enabled": true,
+      "id": "osc2",
+      "kind": "osc",
+      "section": "generators"
+    },
+    {
+      "enabled": true,
+      "id": "filter1",
+      "kind": "svf",
+      "section": "voice_fx"
+    },
+    {
+      "enabled": true,
+      "id": "reverb1",
+      "kind": "reverb",
+      "section": "fx"
+    },
+    {
+      "enabled": true,
+      "id": "env1",
+      "kind": "adsr",
+      "section": "modulators"
+    }
+  ],
+  "routes": [],
+  "schema": "enth.get/1",
+  "source": "[TMP]/p.patch.json",
+  "values": {
+    "env1.attack": "600ms",
+    "env1.decay": "800ms",
+    "env1.release": "1.5s",
+    "env1.sustain": "85%",
+    "filter1.cutoff": "1.5kHz",
+    "osc1.fine": "-8ct",
+    "osc2.fine": "+8ct",
+    "osc2.level": "80%",
+    "reverb1.wet": "-12dB",
+    "voice.amp_env": "env1"
+  }
+}
+--- stderr

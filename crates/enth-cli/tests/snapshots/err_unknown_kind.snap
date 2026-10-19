@@ -1,0 +1,28 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"params\", \"filtr\"], 3, \"unknown_kind\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "filter"
+  ],
+  "error": "unknown_kind",
+  "exit": 3,
+  "hint": "`enth modules` lists the kinds; a module id like filter1 also works",
+  "known": [
+    "osc",
+    "noise",
+    "svf",
+    "adsr",
+    "lfo",
+    "reverb",
+    "comp",
+    "voice",
+    "master"
+  ],
+  "message": "'filtr' is not a module kind, a built-in or a module id",
+  "schema": "enth.error/1"
+}
+--- stderr

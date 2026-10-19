@@ -1,0 +1,132 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "NoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a reported performance.",
+      "properties": {
+        "note": {
+          "description": "The note name; null when inferred from audio.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "off_s": {
+          "description": "Note-off time in seconds; null when unknown.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "on_s": {
+          "description": "Note-on time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "description": "MIDI velocity; null when inferred from audio.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on_s"
+      ],
+      "type": "object"
+    },
+    "PerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a command used, and where it came from.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the clip in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes (empty when unknown).",
+          "items": {
+            "$ref": "#/$defs/NoteOut"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`flag` (`--perf`, `--note`, `--hold`, `--dur`, `--vel`), `default` (the CLI's default performance), `wav` (the\n`enth` chunk of the WAV), `inferred` (a note-off found in the audio) or `none` (unknown: decay, sustain and\nrelease are null).",
+          "type": "string"
+        },
+        "why_missing": {
+          "description": "Why the performance is unknown, when it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "dur_s",
+        "notes"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.new/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.new/1`: a patch written from a template.",
+  "properties": {
+    "engine": {
+      "description": "The engine version stamped into the file.",
+      "type": "string"
+    },
+    "modules": {
+      "description": "The module ids in the patch, in section order.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "next": {
+      "description": "The usual next command.",
+      "type": "string"
+    },
+    "perf": {
+      "$ref": "#/$defs/PerfOut",
+      "description": "The default performance used when a command gets no `--perf`."
+    },
+    "schema": {
+      "const": "enth.new/1",
+      "description": "`enth.new/1`.",
+      "type": "string"
+    },
+    "template": {
+      "description": "The template's name.",
+      "type": "string"
+    },
+    "wrote": {
+      "description": "The path written.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "wrote",
+    "template",
+    "engine",
+    "modules",
+    "perf",
+    "next"
+  ],
+  "title": "NewOut",
+  "type": "object"
+}

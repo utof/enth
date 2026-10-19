@@ -1,0 +1,89 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "ChangeOut": {
+      "additionalProperties": false,
+      "description": "One applied change, in words and real units.",
+      "properties": {
+        "from": {
+          "description": "The value before, in real units; absent when there was none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
+          "type": "string"
+        },
+        "target": {
+          "description": "What it changed: an address, a module id, a route `src -> dst`.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The value after, in real units; absent when there is none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.apply/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.apply/1`: ops applied to a patch.",
+  "properties": {
+    "applied": {
+      "description": "What changed, in order.",
+      "items": {
+        "$ref": "#/$defs/ChangeOut"
+      },
+      "type": "array"
+    },
+    "dry_run": {
+      "description": "True when nothing was written.",
+      "type": "boolean"
+    },
+    "inverse": {
+      "description": "The ops that undo them, in order, exact: `enth apply <patch> --ops '<inverse>'`.",
+      "items": true,
+      "type": "array"
+    },
+    "ops": {
+      "description": "The applied ops in resolved wire form (plain numbers), exact.",
+      "items": true,
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.apply/1",
+      "description": "`enth.apply/1`.",
+      "type": "string"
+    },
+    "wrote": {
+      "description": "The path written; null with `--dry-run`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "dry_run",
+    "applied",
+    "ops",
+    "inverse"
+  ],
+  "title": "ApplyOut",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"apply\", &p, \"--set\", \"amp.attack=5ms\"], 3, \"unknown_module\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "env1.attack"
+  ],
+  "error": "unknown_module",
+  "exit": 3,
+  "hint": "the modules are osc1, filter1, env1",
+  "message": "no module 'amp'",
+  "path": "amp.attack",
+  "schema": "enth.error/1"
+}
+--- stderr

@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/errors.rs
+expression: "err(&s, &[\"describe\", &not_a_wav], 4, \"unsupported_wav\")"
+---
+exit: 4
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "unsupported_wav",
+  "exit": 4,
+  "file": "[TMP]/noise.wav",
+  "hint": "describe and check read 8-32 bit integer or 32-bit float WAVs at 8-192 kHz",
+  "message": "cannot read [TMP]/noise.wav: Failed to read enough bytes.",
+  "schema": "enth.error/1"
+}
+--- stderr

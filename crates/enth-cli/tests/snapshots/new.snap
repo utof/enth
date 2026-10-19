@@ -1,0 +1,31 @@
+---
+source: crates/enth-cli/tests/commands.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "engine": "0.1.0",
+  "modules": [
+    "osc1",
+    "filter1",
+    "env1"
+  ],
+  "next": "enth step [TMP]/p.patch.json --set <address>=<value>,... --expect '<list>' --perf '<perf>'",
+  "perf": {
+    "dur_s": 3,
+    "notes": [
+      {
+        "note": "C3",
+        "off_s": 1.5,
+        "on_s": 0,
+        "vel": 100
+      }
+    ],
+    "source": "default"
+  },
+  "schema": "enth.new/1",
+  "template": "pluck_1osc",
+  "wrote": "[TMP]/p.patch.json"
+}
+--- stderr

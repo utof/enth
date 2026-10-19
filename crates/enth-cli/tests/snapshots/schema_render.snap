@@ -1,0 +1,170 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "NoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a reported performance.",
+      "properties": {
+        "note": {
+          "description": "The note name; null when inferred from audio.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "off_s": {
+          "description": "Note-off time in seconds; null when unknown.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "on_s": {
+          "description": "Note-on time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "description": "MIDI velocity; null when inferred from audio.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on_s"
+      ],
+      "type": "object"
+    },
+    "PerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a command used, and where it came from.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the clip in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes (empty when unknown).",
+          "items": {
+            "$ref": "#/$defs/NoteOut"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`flag` (`--perf`, `--note`, `--hold`, `--dur`, `--vel`), `default` (the CLI's default performance), `wav` (the\n`enth` chunk of the WAV), `inferred` (a note-off found in the audio) or `none` (unknown: decay, sustain and\nrelease are null).",
+          "type": "string"
+        },
+        "why_missing": {
+          "description": "Why the performance is unknown, when it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "dur_s",
+        "notes"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.render/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.render/1`: a WAV written, with its levels.",
+  "properties": {
+    "channels": {
+      "description": "2 (stereo).",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "clipped_pct": {
+      "description": "Share of samples at or beyond full scale, percent.",
+      "format": "double",
+      "type": "number"
+    },
+    "clipping": {
+      "description": "True when any sample reaches full scale: lower `master.level`.",
+      "type": "boolean"
+    },
+    "dur_s": {
+      "description": "Length in seconds.",
+      "format": "double",
+      "type": "number"
+    },
+    "format": {
+      "description": "`f32` (IEEE float, the default), `pcm16` or `pcm24`.",
+      "type": "string"
+    },
+    "patch_hash": {
+      "description": "The first 16 hex digits of the patch's exact hash.",
+      "type": "string"
+    },
+    "peak_dbfs": {
+      "description": "Highest sample of the float render on either channel, dBFS; above 0 means it clips.",
+      "format": "double",
+      "type": "number"
+    },
+    "perf": {
+      "$ref": "#/$defs/PerfOut",
+      "description": "The performance rendered (it is also stored in the WAV's `enth` chunk)."
+    },
+    "sample_rate": {
+      "description": "Frames per second.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.render/1",
+      "description": "`enth.render/1`.",
+      "type": "string"
+    },
+    "seed": {
+      "description": "The render seed.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "true_peak_dbtp": {
+      "description": "Highest inter-sample peak (4x oversampled) on either channel, dBTP.",
+      "format": "double",
+      "type": "number"
+    },
+    "wav": {
+      "description": "The WAV written.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "wav",
+    "format",
+    "sample_rate",
+    "channels",
+    "dur_s",
+    "peak_dbfs",
+    "true_peak_dbtp",
+    "clipped_pct",
+    "clipping",
+    "perf",
+    "patch_hash",
+    "seed"
+  ],
+  "title": "RenderOut",
+  "type": "object"
+}
