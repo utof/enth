@@ -1,0 +1,17 @@
+description = "Slow pad: attack 400 ms, decay 600 ms, sustain 60 %, release 900 ms, two saw notes (keys 48 and 55) down for 1.3 s. Guards the long RC curves and release from the sustain level. The saw is the reference stub until lane D1 lands."
+sample_rate = 48000
+seconds = 2.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 0.8, on_s = 0.0, off_s = 1.3 },
+    { key = 55, velocity = 0.8, on_s = 0.0, off_s = 1.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 400, decay = 600, sustain = 60, release = 900 } }]

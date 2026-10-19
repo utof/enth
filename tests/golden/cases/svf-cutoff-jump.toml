@@ -1,0 +1,21 @@
+description = "Cutoff automation at off-grid times with resonance 90 %: 300 Hz, up to 6 kHz at 0.2503 s, down to 150 Hz at 0.5001 s, up to 12 kHz at 0.7 s. Each event moves the coefficients over one 32-frame segment (the filter ramps them per sample); the render must stay finite and click-free. Master level -12 dB keeps the resonant peaks inside full scale. Lane S2b adds parameter smoothing to the cutoff, which moves this case on purpose. The saw is the reference stub until lane D1 lands."
+sample_rate = 48000
+seconds = 1.0
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.8, on_s = 0.0, off_s = 0.9 }]
+automation = [
+    { time_s = 0.2503, addr = "filter1.cutoff", value = 6000.0 },
+    { time_s = 0.5001, addr = "filter1.cutoff", value = 150.0 },
+    { time_s = 0.7, addr = "filter1.cutoff", value = 12000.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -12 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "300Hz", resonance = 90 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
