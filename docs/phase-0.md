@@ -29,9 +29,11 @@ Tasks 0 and 1 are done. Rules for every lane:
 - Everything that opens a window or loads a plugin editor runs under Xvfb (see [AGENTS.md](../AGENTS.md)).
 - Keep a running `notes.md` in persistent scratch storage outside the repo; a crash or reboot loses `/tmp`.
 
-## Task 0 — Research session (1 day) — done 2026-10-19
+## Task 0 — Research session (1 day)
 
-Follow [research-process.md](research-process.md). Session folder: `_local/sessions/<today>-phase-0-spikes/`. Sub-researchers, in parallel:
+**Done 2026-10-19.**
+
+Follow [research-process.md](research-process.md). Session folder: `_local/sessions/2026-10-19-phase-0-spikes/`. Sub-researchers, in parallel:
 
 1. **Plugin shell today:** nice-plug's current version, API, egui adapter (repaint behaviour, editor API changes), parameter rescan/renaming, state persistence, VST3 export; clack and clap-wrapper status; known REAPER/Bitwig/Ardour issues on Linux.
 2. **Native UI in plugins:** egui and vizia adapters (versions, open issues, repaint gating patterns, HiDPI and keyboard focus inside hosts), plus anything new since 2026-10-18.
@@ -41,15 +43,17 @@ Follow [research-process.md](research-process.md). Session folder: `_local/sessi
 
 The session also ran a dev-loop researcher (06) and a plan-risks researcher (07), seven in all. [research-process.md](research-process.md) now says to scale the number of sub-researchers to the milestone's risk.
 
-**Acceptance:** `brief.md`, one verbatim report per sub-researcher, and `summary.md` exist; you've read the summary; any doc changes it recommends are made before Task 2. Status: the summary exists; the doc changes are this pass.
+**Acceptance:** `brief.md`, one verbatim report per sub-researcher, and `summary.md` exist; you've read the summary; any doc changes it recommends are made before Task 2. Status: the summary exists and its doc changes were applied on 2026-10-19.
 
-## Task 1 — Machine setup (½ day, you + agent) — done 2026-10-19
+## Task 1 — Machine setup (½ day, you + agent)
+
+**Done 2026-10-19** (except `environment.md`).
 
 On Linux Mint (X11, NVIDIA proprietary driver). The research found that the machine, not the code, was the biggest risk, so this task now records what was fixed and what is installed:
 
 - **The repo is on ext4** (`/home`), not on the NTFS/FUSE USB disk. File-metadata calls dropped from about 5 ms to about 3 µs, which is most of why cargo, rust-analyzer and file watchers were slow.
 - **Native REAPER 7.82** is installed in portable mode under `~/apps/reaper-7.82/` (60-day full evaluation). The Wine/Windows REAPER cannot load Linux plugins.
-- **The reboot fixed the NVIDIA driver/library mismatch.** The NVIDIA 595-series X driver still has a bug that crashed Xorg on 2026-10-19 while plugin editors were opening and closing (NVIDIA bug 6205955, no fix yet). So agents never open windows on the real display (see Task 4).
+- **The reboot fixed the NVIDIA driver/library mismatch.** The NVIDIA 595-series X driver still has a bug: it crashed Xorg on 2026-10-19 after short-lived X clients ran on the real display, matching NVIDIA bug 6205955 (no fix yet). Plugin editors open and close windows constantly, so they would trigger it. So agents never open windows on the real display (see Task 4).
 - **Second hosts:** Carla 2.5.8 from apt hosts **VST3 only** (CLAP support exists only on Carla's unreleased main branch). Ardour hosts VST3 only and is not installed. Bitwig is the only CLAP host with poly-mod; it is not installed. A Bitwig trial is optional and only for the poly-mod check.
 
 ```bash
@@ -77,7 +81,9 @@ cargo install --locked cargo-deny --version 0.20.2
 
 **Acceptance:** `environment.md` exists; `cargo deny --version` and `wasmtime --version` work; REAPER (CLAP and VST3) and Carla (VST3) load plugins from `~/.clap` and `~/.vst3`. Status: all done except writing `environment.md`.
 
-## Task 2 — Repo skeleton and CI (1 day) — lane S, done 2026-10-19
+## Task 2 — Repo skeleton and CI (1 day)
+
+**Lane S. Done: merged 2026-10-19, CI green.**
 
 **Steps** (as built; the files themselves are the source of truth)
 
@@ -129,7 +135,9 @@ cargo install --locked cargo-deny --version 0.20.2
 
 **Acceptance:** all commands pass locally; `cargo xtask check-layers` fails on a deliberately added upward dependency (then remove it); CI passes after you push. Status: passed; the first CI run was green.
 
-## Task 3 — Shell spike on nice-plug (3–4 days) — lane A, done 2026-10-19
+## Task 3 — Shell spike on nice-plug (3–4 days)
+
+**Lane A. Done: merged 2026-10-19.**
 
 Build `spikes/spike-shell` (package `spike-shell`): an 8-voice synth with one saw oscillator, a one-pole low-pass, an amp envelope and smoothed gain/cutoff. Start from nice-plug's template (<https://codeberg.org/RustAudio/nice-plug-template>, a cookiecutter: `uvx cookiecutter …`), but take the crates from crates.io, pinned `nice-plug =0.4.2` and `nice-plug-egui =0.6.0`, never a git dependency. Wire nice-plug's bundler into our xtask so `cargo xtask bundle spike-shell` works, and add `cargo xtask install` (copies the bundle to `~/.clap`). Build debug bundles with nice-plug's `assert_process_allocs` feature.
 
@@ -153,7 +161,9 @@ Also settled here: permanent plugin IDs ([naming.md](naming.md)) and the two nic
 
 **Acceptance:** results table in `docs/spikes/shell.md`; ADR-0001 updated with the findings. Status: done.
 
-## Task 4 — UI toolkit spike (4–5 days) — lanes U1, H, U2
+## Task 4 — UI toolkit spike (4–5 days)
+
+**Lanes U1 (in progress), H (not started) and U2 (later).**
 
 **egui with glow is the only arm.** 2026-10-19: vizia is stale (vizia-plug last pushed 2026-06-13, issue #41 unanswered) and iced spins a core while idle and leaks a thread per editor open, so neither is a challenger; the WebView arm is cut. wgpu is out too: it creates a device per editor and adds 16–21 MB of PSS under software rendering. If egui fails a threshold after tuning, run a new research session instead of keeping a second toolkit warm ([ADR-0002](adr/0002-ui-toolkit.md)). The risk sits in shared plumbing: baseview (a small leak per editor open, a ≈30 fps cap, HiDPI clipping in REAPER) and the NVIDIA X driver bug.
 
@@ -172,7 +182,9 @@ Two more tracks fold in here:
 
 **Acceptance:** results table complete for both tiers in `docs/spikes/ui.md`; the numbers added to [ADR-0002](adr/0002-ui-toolkit.md) (its status changes in Task 7); the integration bugs listed with a link or a reason for each.
 
-## Task 5 — Engine speed and determinism spike (2 days) — lane B
+## Task 5 — Engine speed and determinism spike (2 days)
+
+**Lane B. In progress.**
 
 In `spikes/engine` (package `spike-engine`): osc → filter → amp with 16 voices, an offline renderer, fixed block size 64, seed passed in. The contract being tested is [design.md §5](design.md#5-determinism): renders are **bit-exact across platforms**, and the old tolerance contract stays as a fallback until the Windows (and, if available, aarch64) CI hashes are green.
 
@@ -189,7 +201,9 @@ In `spikes/engine` (package `spike-engine`): osc → filter → amp with 16 voic
 
 **Acceptance:** numbers in `docs/spikes/engine.md`; ≥ 100× realtime per core on the 1-voice template (16 voices reported too); hashes identical across the platforms that have run, with the Windows/aarch64 status stated; any hash difference explained with its feature-summary maximum.
 
-## Task 6 — Metric and search spike (3 days) — lane C
+## Task 6 — Metric and search spike (3 days)
+
+**Lane C. In progress.** (Lane P, the optional agent-loop probe, builds on its renderer.)
 
 In `spikes/metric` (package `spike-metric`):
 
@@ -207,7 +221,9 @@ In `spikes/metric` (package `spike-metric`):
 
 **Acceptance:** `docs/spikes/metric.md` with correlations and their intervals, recovery success rate and time; a recommended `metric v1` (provisional, recalibrated by the listening sessions and again in R1); an ADR draft for the metric (ADR-0007).
 
-## Task 7 — Close Phase 0 (½ day) — lane Z
+## Task 7 — Close Phase 0 (½ day)
+
+**Lane Z. Last.**
 
 - Fill the **G0 thresholds** in [roadmap.md](roadmap.md) and [benchmarks.md](benchmarks.md) with measured numbers.
 - Mark ADR-0001 and ADR-0002 *Accepted* (or record the change of plan).

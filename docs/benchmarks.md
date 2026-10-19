@@ -6,7 +6,7 @@ Three areas: the **UI stack** (decided in Phase 0), the **engine** (tracked fore
 
 ## Two tiers of GUI measurement
 
-2026-10-19: the NVIDIA 595-series X driver crashed Xorg (and the DAW with it) while plugin editors were opening and closing. So GUI measurements come in two tiers, and agents run only the first.
+2026-10-19: the NVIDIA 595-series X driver crashed Xorg (and the DAW with it) after short-lived X clients ran on the real display. That matches a known driver bug that plugin editors, which open and close windows constantly, would trigger. So GUI measurements come in two tiers, and agents run only the first.
 
 | Tier | Where | Who | What it measures |
 | --- | --- | --- | --- |

@@ -55,7 +55,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 - The repo lives on ext4 (`/home`), not on the NTFS/FUSE disk: file-metadata calls dropped from about 5 ms to about 3 µs.
 - Main test host: **native REAPER 7.82 on Linux** (portable install, 60-day evaluation), driven headless for automated host tests (`cargo xtask reaper-test`). The Wine/Windows REAPER cannot load Linux plugins.
 - Second hosts: **Carla 2.5.8** for VST3 (Ubuntu's build has no CLAP host); Ardour hosts VST3 only and is not installed. A **Bitwig trial** is only for the CLAP poly-mod check, which Bitwig alone supports.
-- Automated GUI work runs under Xvfb with Mesa; real-display checks are the owner's ([AGENTS.md](../AGENTS.md)). The NVIDIA 595-series X driver has crashed Xorg once during editor open/close churn.
+- Automated GUI work runs under Xvfb with Mesa; real-display checks are the owner's ([AGENTS.md](../AGENTS.md)). The NVIDIA 595-series X driver crashed Xorg once on 2026-10-19, after short-lived X clients ran on the real display.
 - Development is done largely with AI coding agents (Claude Code / Codex).
 
 ## How to use these docs with a coding agent
