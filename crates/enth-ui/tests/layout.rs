@@ -69,3 +69,43 @@ fn a_small_window_cuts_the_last_fixed_children_first() {
     let header = regions.iter().find(|p| p.region == Region::Header).unwrap();
     assert_eq!(header.rect.height(), theme.size.bar.header);
 }
+
+/// Layout 1 with a lesson pane on the left of the body and the challenge bar and results drawer under the macros:
+/// the shape of a Learn or Recreate mode layout.
+fn with_reserved_regions() -> String {
+    let mut spec: serde_json::Value = serde_json::from_str(&LayoutSpec::lanes().to_json()).unwrap();
+    let rows = spec["root"]["rows"].as_array_mut().unwrap();
+    // Layout 1's body, at three shares, between the challenge bar and the results drawer, right of the lesson pane.
+    let mut body = rows[2].clone();
+    body["size"] = serde_json::json!({"share": 3});
+    rows[2] = serde_json::json!({"size": {"share": 1}, "cols": [
+        {"size": {"token": "size.pane.lesson_width"}, "region": "lesson"},
+        {"size": {"share": 1}, "rows": [
+            {"size": {"token": "size.bar.macros"}, "region": "challenge_bar"},
+            body,
+            {"size": {"share": 1}, "region": "results"}
+        ]}
+    ]});
+    spec["name"] = "learn-and-recreate".into();
+    spec.to_string()
+}
+
+#[cfg(all(feature = "learn", feature = "recreate"))]
+#[test]
+fn a_learn_and_recreate_layout_places_the_reserved_regions() {
+    let theme = Theme::dark();
+    let spec = LayoutSpec::from_json(&with_reserved_regions()).unwrap();
+    let layout = Layout::new(spec, &theme).expect("the reserved regions are regions");
+    let window = Rect::from_min_size(pos2(0.0, 0.0), theme.size.window.default);
+    let regions: Vec<Region> = layout.regions(window).iter().map(|p| p.region).collect();
+    for r in [Region::Lesson, Region::ChallengeBar, Region::Results] {
+        assert!(regions.contains(&r), "{r:?} is placed: {regions:?}");
+    }
+}
+
+#[cfg(not(feature = "learn"))]
+#[test]
+fn without_the_learn_feature_a_lesson_region_is_refused() {
+    let err = LayoutSpec::from_json(&with_reserved_regions()).unwrap_err();
+    assert!(err.0.contains("unknown variant `lesson`"), "{err}");
+}

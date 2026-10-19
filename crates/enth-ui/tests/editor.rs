@@ -100,8 +100,7 @@ fn center_in(h: &Harness<'_, App>, card: &str, label: &str) -> Pos2 {
     h.get_all_by_label(label)
         .map(|n| n.rect())
         .find(|r| (card.left()..=card.right()).contains(&r.center().x) && r.top() >= card.top())
-        .map(|r| r.center())
-        .unwrap_or_else(|| panic!("no {label:?} in {card:?}"))
+        .map_or_else(|| panic!("no {label:?} in {card:?}"), |r| r.center())
 }
 
 /// Right-clicks the control at `at` and clicks the menu item `item`.
@@ -175,10 +174,7 @@ fn automate_assigns_a_slot_and_a_drag_is_one_host_gesture() {
     let slot = SlotIndex::new(0).unwrap();
     assert_eq!(h.state().session.patch().slots[0], Some(cutoff()));
     assert!(
-        h.state()
-            .requests
-            .iter()
-            .any(|r| *r == ShellRequest::RenameParams),
+        h.state().requests.contains(&ShellRequest::RenameParams),
         "the host is asked to rename slot 1"
     );
     h.state_mut().take_writes();
