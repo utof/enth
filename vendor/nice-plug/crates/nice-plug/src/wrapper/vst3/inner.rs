@@ -302,6 +302,24 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                     );
                 }
             }
+
+            // enth patch 7: the mapped MIDI controllers must be valid and listed once each
+            if P::MIDI_INPUT >= MidiConfig::MidiCCs {
+                let controllers = P::VST3_MIDI_CONTROLLERS;
+                crate::nice_debug_assert!(
+                    controllers
+                        .iter()
+                        .all(|&c| u32::from(c) < super::util::VST3_MIDI_CCS),
+                    "Vst3Plugin::VST3_MIDI_CONTROLLERS may only hold 0 to 129"
+                );
+                crate::nice_debug_assert!(
+                    controllers
+                        .iter()
+                        .enumerate()
+                        .all(|(i, c)| !controllers[..i].contains(c)),
+                    "Vst3Plugin::VST3_MIDI_CONTROLLERS lists a controller twice"
+                );
+            }
         }
 
         let param_hashes = param_id_hashes_ptrs_groups
