@@ -1,4 +1,4 @@
-//! Instruction budget for the analog oscillator module (P1a lane D1), via gungraun (callgrind).
+//! Instruction budget for the oscillator module (P1a lane D1; one `osc` kind with the classic waves and the wavetable mode), via gungraun (callgrind).
 //!
 //! Placeholder written by lane S0 so that `cargo xtask bench` and the CI budget job run from the start. The lane
 //! replaces `placeholder` with a render of its module (setup outside the measured function, the way
@@ -27,5 +27,5 @@ fn placeholder(x: u32) -> u32 {
     black_box(x).wrapping_add(1)
 }
 
-library_benchmark_group!(name = analog, benchmarks = [placeholder]);
-main!(library_benchmark_groups = analog);
+library_benchmark_group!(name = osc, benchmarks = [placeholder]);
+main!(library_benchmark_groups = osc);
