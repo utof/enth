@@ -6,6 +6,59 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Pre-declared by lane S0 so Cargo.lock is resolved before the lanes fan out; lanes use what they need.
+enth-dsp.workspace = true
+enth-params.workspace = true
+enth-patch.workspace = true
+libm.workspace = true
+rtrb.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+assert_no_alloc.workspace = true
+
+# gungraun (callgrind) does not build for wasm, and `cargo test --target wasm32-wasip1` builds dev-dependencies.
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+gungraun.workspace = true
+
+# One gungraun bench file per module kind, declared up front by lane S0 so that enth-engine/Cargo.toml is not a merge
+# hotspot: each module lane replaces the placeholder in its own file and sets its own instruction budget.
+# Run: cargo xtask bench (needs valgrind and a gungraun-runner of the same version as the gungraun crate).
+[[bench]]
+name = "analog"  # lane D1
+harness = false
+
+[[bench]]
+name = "wavetable"  # lane D1
+harness = false
+
+[[bench]]
+name = "noise"  # lane D1
+harness = false
+
+[[bench]]
+name = "svf"  # lane D2
+harness = false
+
+[[bench]]
+name = "adsr"  # lane D2
+harness = false
+
+[[bench]]
+name = "lfo"  # lane D2
+harness = false
+
+[[bench]]
+name = "reverb"  # lane FX1
+harness = false
+
+[[bench]]
+name = "comp"  # lane FX2
+harness = false
+
+[[bench]]
+name = "g1"  # spine (S2b/E): the 16-voice reference patch, G1 budget
+harness = false
 
 [lints]
 workspace = true

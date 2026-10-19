@@ -1,0 +1,2 @@
+# Tooling is exempt from the core-crate rules in the root clippy.toml
+# (clippy uses the nearest clippy.toml, so this empty file overrides it for tests/golden).

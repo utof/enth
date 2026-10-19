@@ -1,0 +1,8 @@
+description = "Stand-in render (a libm sine) that proves the harness end to end. Lane S2a adds real patch cases next to it; keep this one as the harness's own smoke test."
+sample_rate = 48000
+seconds = 0.5
+
+[source]
+kind = "sine"
+frequency_hz = 440.0
+amplitude = 0.5

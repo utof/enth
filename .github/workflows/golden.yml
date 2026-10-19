@@ -1,0 +1,123 @@
+name: golden
+
+# Golden renders (P1a lane S0; research report 04). One SHA-256 per case in tests/golden, the same on every platform:
+# Linux and Windows natively, wasm32-wasip1 under wasmtime, on every push to main and every pull request that touches
+# the engine. macOS runs on demand and weekly only: the repository is private, where a macOS minute costs about ten
+# times a Linux minute (GitHub billing: $0.062 against $0.006), so it must not run on every push.
+# The expected hashes are the committed tests/golden/expected files. `cargo xtask golden --update` is refused under CI:
+# a golden changes on purpose, locally, and the commit message says why. A platform that differs breaks the
+# "same patch + seed = same samples" contract. The older spike-only checks stay in engine-golden.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "crates/**"
+      - "tests/golden/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/**"
+      - ".github/workflows/golden.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * 1"   # weekly: the macOS leg, and runner-image drift for the others
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+  RUST_BACKTRACE: "1"
+
+jobs:
+  hashes:
+    name: goldens on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: windows-x86_64, os: windows-latest }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Compare every case (the report lists all mismatches at once)
+        shell: bash
+        run: cargo xtask golden
+      # Debug and release must agree: the profile is not an input of render().
+      - name: Harness and golden tests, debug
+        run: cargo test --locked -p enth-golden
+      - name: Harness and golden tests, release
+        run: cargo test --release --locked -p enth-golden
+      # Both flag sets enable FMA. Rust never contracts a * b + c, and the code never calls mul_add, so nothing may change.
+      - name: Same hashes with the runner's own CPU features and with explicit FMA/AVX2 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for flags in "-C target-cpu=native" "-C target-feature=+fma,+avx2"; do
+            echo "::group::RUSTFLAGS=$flags"
+            RUSTFLAGS="$flags" cargo test --release --locked -p enth-golden --test golden --target-dir target-flags
+            echo "::endgroup::"
+          done
+
+  wasm:
+    name: goldens on wasm32-wasip1 under wasmtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: wasmtime@48.0.6
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Every case, built for wasm32-wasip1 and run under wasmtime
+        run: cargo xtask golden --wasm
+      # The test binary reads cases/ and expected/ at the path baked in at build time, so preopen that directory.
+      - name: The harness tests inside wasmtime
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir ${{ github.workspace }}/tests/golden
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-golden
+      - name: The same with wasm simd128 (wide would use real v128 lanes)
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir ${{ github.workspace }}/tests/golden
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-golden --test golden --target-dir target-simd128
+
+  # On demand and weekly only (see the header). macos-latest is arm64: the first run shows whether aarch64 agrees
+  # with the x86-64 hashes. If it does not, the difference is a determinism bug to find, not a hash to override;
+  # a `[platform_hash]` entry in the expected file is the stop-gap (tests/golden/src/lib.rs).
+  macos:
+    name: goldens on macos-aarch64 (on demand and weekly)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo xtask golden
+      - run: cargo test --release --locked -p enth-golden

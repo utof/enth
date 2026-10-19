@@ -1,0 +1,23 @@
+[package]
+name = "enth-solver"
+description = "L5: sensitivity and hint solver over render + analysis; batch evaluation goes through a caller-supplied evaluator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pre-declared by lane S0 so Cargo.lock is resolved before the lanes fan out (docs/architecture.md: L5 may use L0-L4).
+enth-params.workspace = true
+enth-patch.workspace = true
+enth-render.workspace = true
+enth-analysis.workspace = true
+libm.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+insta.workspace = true
+
+[lints]
+workspace = true

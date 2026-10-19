@@ -1,0 +1,60 @@
+name: budget
+
+# Instruction budgets (P1a lane S0; research report 04, "Instruction budgets"). Callgrind counts through gungraun are
+# exact and independent of runner load, so they are the CPU regression gate; wall-clock time is information only
+# (docs/benchmarks.md). Each bench file in crates/enth-engine/benches/ sets absolute `hard_limits` (measured + 10 %),
+# so no stored baseline is needed. One file per module lane, so a regression names the module; g1.rs is the 16-voice
+# reference patch. Linux and valgrind only. callgrind under-reports the subnormal penalty, so the subnormal tests stay.
+# The older spike-engine budgets stay in engine-golden.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "crates/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/budget.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+  RUST_BACKTRACE: "1"
+
+jobs:
+  instruction-budget:
+    name: callgrind instruction budgets (enth-engine)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: Install valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends valgrind
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}   # also caches ~/.cargo/bin, so the runner below is built once
+      # The runner must be the same version as the gungraun crate: take it from the root Cargo.toml pin.
+      - name: Install gungraun-runner at the version pinned in Cargo.toml
+        shell: bash
+        run: |
+          version=$(sed -n 's/^gungraun = "=\([0-9][0-9.]*\)".*/\1/p' Cargo.toml)
+          test -n "$version"
+          cargo install --locked --version "$version" gungraun-runner
+      - name: Instruction budgets
+        run: cargo xtask bench

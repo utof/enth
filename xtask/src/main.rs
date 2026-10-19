@@ -5,8 +5,10 @@
     reason = "xtask is a CLI tool"
 )]
 
+mod bench;
 mod bundle;
 mod engine;
+mod golden;
 mod host_render;
 mod reaper;
 
@@ -91,7 +93,10 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     local gate: load, params, automation and state in headless REAPER
   host-render [--release] [--no-build] [--update]
                                     plugin-level golden: bundle spike-shell, render it offline through the test host (Linux)
-  wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden";
+  wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
+  golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
+                                    rewrite the expected files (refused under CI; prints the changed cases)
+  bench [-p <pkg>] [--bench <name>] gungraun instruction budgets (default package enth-engine; alias: budget)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -103,6 +108,8 @@ fn main() -> ExitCode {
         Some("reaper-test") => reaper::reaper_test(&args[1..]),
         Some("host-render") => host_render::host_render(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
+        Some("golden") => golden::golden(&args[1..]),
+        Some("bench" | "budget") => bench::bench(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
     match result {

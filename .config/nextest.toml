@@ -1,0 +1,39 @@
+# cargo-nextest configuration (P1a, research report 04: "Test layout and runners").
+#
+#   cargo nextest run -p <crate>       a lane's inner loop (add --no-tests=pass for a crate that has no tests yet)
+#   cargo nextest run --workspace      everything but doctests: nextest does not run them, so `cargo test --workspace`
+#                                      stays the Done-means gate and CI runs it
+#   --profile explore                  the nightly proptest exploration (.github/workflows/nightly.yml)
+#
+# Process per test: nextest runs every test in its own process. That is its design and not a setting, and it is the
+# reason to use it here: an `assert_no_alloc` violation aborts the process, which under `cargo test` takes the whole
+# test binary down with it, but under nextest fails exactly one named test. It also isolates global state (the
+# engine's thread-locals, panic hooks) between tests. nextest also reads the `[env]` table of .cargo/config.toml.
+#
+# Proptest seed policy. The gate runs every property test with the FIXED seed PROPTEST_RNG_SEED from .cargo/config.toml
+# `[env]` and proptest's default 256 cases, so a run is red or green identically for every agent and CI leg.
+# `proptest-regressions/` directories (one per crate, written next to the crate's sources when a property fails) are
+# committed and replayed first on every run whatever the seed; .gitattributes merges them as a union. Randomised,
+# larger runs (PROPTEST_CASES=10000, a fresh printed seed) happen only in the nightly `explore` profile, off the
+# critical path; a failure found there is replayed with `PROPTEST_RNG_SEED=<seed> cargo nextest run -p <crate>` and the
+# regression file it writes is committed together with the fix. No wall-clock assertions anywhere, and a flaky test is a
+# bug: retries stay 0.
+
+nextest-version = { required = "0.9.100", recommended = "0.9.133" }
+
+[profile.default]
+fail-fast = false                                       # report every failing test in one run, so an agent fixes them in one pass
+retries = 0                                             # a flaky test is a bug (report 04); never paper over it
+slow-timeout = { period = "60s", terminate-after = 3 }  # unit, property and golden tests take milliseconds (the slowest spike test, 30 s in debug); three minutes means a hang
+failure-output = "immediate-final"                      # the failure, then again in the summary
+
+[profile.ci]
+# GitHub Actions: the same rules, with a quiet log (only failures, and anything slow).
+status-level = "fail"
+final-status-level = "slow"
+
+[profile.explore]
+# Nightly proptest exploration: ten times the cases means longer tests.
+status-level = "fail"
+final-status-level = "slow"
+slow-timeout = { period = "120s", terminate-after = 5 }   # ten minutes
