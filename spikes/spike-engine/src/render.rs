@@ -177,7 +177,24 @@ pub fn render_cases() -> Vec<Case> {
     cases
 }
 
-/// `render/<case> <sha256>` lines for every golden case (with the engine version in the header comment).
+/// `<prefix>/<case> <sha256>` lines for every golden case, rendered with `path`.
+fn render_text(path: Path, prefix: &str) -> String {
+    let mut s = String::new();
+    for c in render_cases() {
+        let out = render(
+            &c.patch,
+            &c.notes,
+            frames(c.seconds),
+            GOLDEN_SEED,
+            path,
+            Flush::On,
+        );
+        let _ = writeln!(s, "{prefix}/{} {}", c.name, hash_samples(&out));
+    }
+    s
+}
+
+/// The render goldens: scalar path, `Flush::On`, with a header comment naming the engine and patch versions.
 #[must_use]
 pub fn render_golden_text() -> String {
     let mut s = String::new();
@@ -186,17 +203,15 @@ pub fn render_golden_text() -> String {
         "# engine {ENGINE_VERSION}, patch {}; scalar path, Flush::On, seed {GOLDEN_SEED:#x}",
         patch::PATCH_VERSION
     );
-    for c in render_cases() {
-        let out = render(
-            &c.patch,
-            &c.notes,
-            frames(c.seconds),
-            GOLDEN_SEED,
-            Path::Scalar,
-            Flush::On,
-        );
-        let _ = writeln!(s, "render/{} {}", c.name, hash_samples(&out));
-    }
+    s.push_str(&render_text(Path::Scalar, "render"));
+    s
+}
+
+/// The same cases through the SIMD-lane paths (`render-x4/...`, `render-x8/...`); each hash must equal the scalar one.
+#[must_use]
+pub fn lanes_text() -> String {
+    let mut s = render_text(Path::X4, "render-x4");
+    s.push_str(&render_text(Path::X8, "render-x8"));
     s
 }
 

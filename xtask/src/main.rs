@@ -5,6 +5,8 @@
     reason = "xtask is a CLI tool"
 )]
 
+mod engine;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -81,7 +83,8 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("check-layers") => check_layers(),
         Some("wasm-check") => wasm_check(),
-        _ => Err("usage: cargo xtask <check-layers|wasm-check>".to_owned()),
+        Some("wasm-hash") => engine::wasm_hash(&args[1..]),
+        _ => Err("usage: cargo xtask <check-layers|wasm-check|wasm-hash [--simd128]>".to_owned()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

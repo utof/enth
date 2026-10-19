@@ -33,6 +33,9 @@ wide = "=1.7.1"           # SIMD lanes (f32x4 / f32x8); never its mul_add (fused
 
 [dev-dependencies]
 assert_no_alloc = "=1.1.2"   # BSD-1-Clause: needs the allowance in deny.toml
+
+# gungraun (callgrind) does not build for wasm, and `cargo test --target wasm32-wasip1` builds dev-dependencies.
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 gungraun = "=0.20.0"
 
 [lints]
