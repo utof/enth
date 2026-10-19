@@ -1,0 +1,33 @@
+[package]
+name = "enth-golden"
+description = "Golden-render harness: cases as text, one SHA-256 per case, summary diffs on failure; driven by `cargo xtask golden`"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "enth_golden"
+
+[[bin]]
+name = "enth-golden"
+path = "src/main.rs"
+
+[dependencies]
+# Real renders and feature summaries arrive with lane S2a (enth-render) and lane A (enth-analysis); declared now so
+# Cargo.lock is resolved before the lanes fan out. enth-golden is tooling and exempt from the layer rules.
+enth-render.workspace = true
+enth-analysis.workspace = true
+enth-patch.workspace = true
+libm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+toml.workspace = true
+realfft.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

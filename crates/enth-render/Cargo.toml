@@ -6,6 +6,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Pre-declared by lane S0 so Cargo.lock is resolved before the lanes fan out; lanes use what they need.
+enth-engine.workspace = true
+enth-patch.workspace = true
+enth-params.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

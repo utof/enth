@@ -8,3 +8,12 @@ xtask = "run --quiet --package xtask --"
 # Linux path (Debian/Ubuntu `mesa-vulkan-drivers`). Only Vulkan reads it; the GL plugin and the
 # dev window don't. An explicit VK_ICD_FILENAMES in the environment wins.
 VK_ICD_FILENAMES = "/usr/share/vulkan/icd.d/lvp_icd.json"
+
+# Proptest seed policy (P1a, report 04). The gate runs every property test with this fixed seed and proptest's
+# default 256 cases, so a red or a green run is the same for every agent and every CI leg. Failures found
+# anywhere are committed under each crate's `proptest-regressions/` and replayed first on every run, whatever the seed.
+# Exploration happens off the critical path: the nightly workflow (.github/workflows/nightly.yml) sets a fresh
+# PROPTEST_RNG_SEED and PROPTEST_CASES=10000, prints the seed and uploads any new regression files as an artifact; replay a find with
+# `PROPTEST_RNG_SEED=<seed> cargo nextest run -p <crate>`. An explicit variable in the environment wins over this entry.
+# tests/golden/tests/policy.rs fails if the seed stops reaching the test processes.
+PROPTEST_RNG_SEED = "236412653"   # 0x0E175EED, the engine spike's seed

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "xtask", "spikes/*", "tools/*"]
-default-members = ["crates/*", "xtask"]       # plain `cargo build/test/clippy` skip spikes and tools; CI passes --workspace
+members = ["crates/*", "xtask", "tests/golden", "spikes/*", "tools/*"]
+default-members = ["crates/*", "xtask", "tests/golden"]   # plain `cargo build/test/clippy` skip spikes and tools; CI passes --workspace
 
 [workspace.package]
 version = "0.0.0"
@@ -17,15 +17,45 @@ enth-patch = { path = "crates/enth-patch" }
 enth-engine = { path = "crates/enth-engine" }
 enth-render = { path = "crates/enth-render" }
 enth-analysis = { path = "crates/enth-analysis" }
+enth-solver = { path = "crates/enth-solver" }
+enth-cli = { path = "crates/enth-cli" }
 enth-ui = { path = "crates/enth-ui" }
+enth-golden = { path = "tests/golden" }       # tooling (exempt from layers): the golden-render harness behind `cargo xtask golden`
 # Native UI (ADR-0002). Exact pins: egui must match the version nice-plug-egui is built against.
 egui = { version = "=0.37.0", default-features = false }
 egui_kittest = { version = "=0.37.0", default-features = false }
 egui-wgpu = { version = "=0.37.0", default-features = false }
-# xtask
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-toml = "1.1.8"
+
+# P1a dependencies (lane S0, freeze point F0). Every one is pinned with `=`: a bump is a deliberate commit.
+# After F0 only the coordinator edits this table and Cargo.lock, one commit per change. A lane that needs a crate
+# asks for it, then writes `<crate>.workspace = true` in its own Cargo.toml. S0 already listed each crate in the
+# Cargo.toml of the crate expected to use it, so Cargo.lock is resolved up front.
+# Versions and licences read from the crates.io API on 2026-10-19; `cargo deny check bans licenses sources` passes.
+#
+# Numerics and data
+libm = "=0.2.16"                                    # MIT. The only door to transcendentals in L0-L3: std maths differs per platform. A bump is an engine-version change.
+serde = { version = "=1.0.229", features = ["derive"] }   # MIT OR Apache-2.0
+serde_json = { version = "=1.0.154", features = ["float_roundtrip"] }   # MIT OR Apache-2.0. float_roundtrip: every finite f32/f64 survives text and back (patch files)
+toml = "=1.1.8"                                     # MIT OR Apache-2.0. xtask, golden cases, eval goals
+sha2 = "=0.11.1"                                    # MIT OR Apache-2.0. Pure-Rust SHA-256: patch hashes, golden hashes (no runtime CPU dispatch)
+# Real time
+rtrb = { version = "=0.4.0", default-features = false }   # MIT OR Apache-2.0. Wait-free SPSC ring buffer: plan and event rings. No `mpsc` or unbounded channels in the engine.
+assert_no_alloc = "=1.1.2"                          # BSD-1-Clause (deny.toml allows it, ADR-0004). Debug-build tests only: release builds lack AllocDisabler.
+# Analysis
+rustfft = "=6.4.1"                                  # MIT OR Apache-2.0. Picks its code path by CPU: scores that gate pass/fail need a tolerance or a scalar path (design.md section 5)
+realfft = "=3.5.0"                                  # MIT. Real-input wrapper for rustfft
+ebur128 = "=0.1.10"                                 # MIT. EBU R128 loudness (LUFS, true peak)
+# Tests and benchmarks (dev-dependencies only)
+proptest = { version = "=1.12.0", default-features = false, features = ["std", "handle-panics"] }   # MIT OR Apache-2.0. No `fork`/`timeout` (nextest isolates tests per process); `handle-panics` keeps shrinking quiet. Gate seed: .cargo/config.toml, policy in .config/nextest.toml
+insta = { version = "=1.49.0", features = ["json", "filters", "redactions"] }      # Apache-2.0. In CI (CI=true) it acts like `--check`
+insta-cmd = "=0.7.0"                                # Apache-2.0. CLI snapshots of stdout, stderr and exit code
+gungraun = "=0.20.0"                                # Apache-2.0 OR MIT. Callgrind instruction budgets; needs valgrind and a gungraun-runner of the same version. Not for wasm.
+# CLI (L8 only)
+clap = { version = "=4.6.7", features = ["derive"] }   # MIT OR Apache-2.0
+schemars = "=1.2.3"                                 # MIT. JSON Schema (draft 2020-12) for `enth schema`
+strsim = "=0.11.1"                                  # MIT. did_you_mean for unknown parameters. (Deliberately no `jsonschema` crate: its default features build C code.)
+hound = "=3.5.1"                                    # Apache-2.0. Reads external WAVs; the CLI only (our own float WAV writer is bytes-only, in enth-render)
+rayon = "=1.12.0"                                   # MIT OR Apache-2.0. The CLI hands the solver a rayon-backed, index-ordered evaluator (P1a report 03). Never in L0-L5.
 
 [workspace.lints.rust]
 unsafe_code = "deny"                      # FFI crates opt out at the crate root: #![allow(unsafe_code, reason = "...")]
@@ -33,6 +63,8 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 trivial_numeric_casts = "warn"
 unused_import_braces = "warn"
 unused_lifetimes = "warn"
+# `--cfg enth_rtsan` (nightly workflow) switches on `#[cfg_attr(enth_rtsan, sanitize(realtime = "nonblocking"))]` for RealtimeSanitizer.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(enth_rtsan)"] }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
