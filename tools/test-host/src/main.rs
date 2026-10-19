@@ -34,7 +34,8 @@ usage:
   enth-test-host instances <plugin.clap> --notes <script|file> [-n 2] [--sr 48000] [--block 64] [--dur 2]
         [--state FILE] [--param NAME=VALUE]... [--modes sequential-fresh,sequential-late,lockstep,concurrent]
   enth-test-host editor-cycles <plugin.clap> [-n 200] [--mode both|editor|baseline] [--repeat 1]
-        [--warmup 10] [--hold-ms 100] [--settle-ms 50] [--sr 48000] [--block 256] [--window 360x200]
+        [--warmup 10] [--hold-ms 100] [--settle-ms 50] [--first-frame-timeout-ms 1000] [--sr 48000] [--block 256]
+        [--window 360x200] [--plugin-id ID]
 
 Notes script: entries separated by , ; or newline, `#` comments. `C4@0+1.5:0.8` is a note (key@start+duration[:velocity],
 seconds); `Slot 1=0.2@0.5` sets a parameter (name or numeric id = value @ seconds).
