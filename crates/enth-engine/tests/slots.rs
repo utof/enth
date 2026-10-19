@@ -339,6 +339,77 @@ fn host_slot_values_survive_a_recompile_and_are_forgotten_when_the_slot_moves() 
     );
 }
 
+/// A plan marked with `Plan::forget_host_slots` (a loaded patch, or an edit that recompiles) does not inherit the
+/// remembered host value of the slots it names, even where the target is unchanged: its patch value wins, other
+/// slots keep theirs, and the host's next move applies as usual (F1b review; docs/session.md).
+#[test]
+fn a_plan_from_a_loaded_patch_forgets_the_remembered_host_values() {
+    let spec = SvfParam::Cutoff.spec();
+    let (pl, _) = plan(&cutoff_patch(2000.0));
+    let (mut e, mut link) = Engine::with_link(pl, SEED, LinkCapacity::default());
+    base_after(
+        &mut e,
+        &mut link,
+        vec![(
+            0,
+            EventKind::Slot {
+                slot: 0,
+                value: 0.3,
+            },
+        )],
+    );
+    assert_eq!(e.host_slot(0), Some(0.3));
+    // Control: an ordinary recompile of a patch with the same slot target re-applies the host's value.
+    let (p1, map1) = plan(&cutoff_patch(500.0));
+    assert_eq!(p1.forgotten_host_slots(), 0);
+    link.send_plan(p1).unwrap();
+    base_after(&mut e, &mut link, Vec::new());
+    let c1 = map1.get(&addr("filter1.cutoff")).unwrap();
+    assert_eq!(e.base(c1), Some(spec.from_norm(0.3)), "re-applied");
+    // Marking another slot forgets nothing here.
+    let (mut p1b, map1b) = plan(&cutoff_patch(500.0));
+    p1b.forget_host_slots(1 << 1);
+    link.send_plan(p1b).unwrap();
+    base_after(&mut e, &mut link, Vec::new());
+    let c1b = map1b.get(&addr("filter1.cutoff")).unwrap();
+    assert_eq!(
+        e.base(c1b),
+        Some(spec.from_norm(0.3)),
+        "slot 1 is not marked"
+    );
+    assert_eq!(e.host_slot(0), Some(0.3));
+    // The same patch, marked as loaded: its own value wins and nothing is remembered.
+    let loaded = moved_by_round_trip(500.0);
+    let (mut p2, map2) = plan(&cutoff_patch(loaded));
+    p2.forget_host_slots(1);
+    p2.forget_host_slots(u64::MAX);
+    assert_eq!(p2.forgotten_host_slots(), u64::MAX);
+    link.send_plan(p2).unwrap();
+    base_after(&mut e, &mut link, Vec::new());
+    let c2 = map2.get(&addr("filter1.cutoff")).unwrap();
+    assert_eq!(e.base(c2).map(f32::to_bits), Some(loaded.to_bits()));
+    assert_eq!(e.host_slot(0), None);
+    // A later recompile has nothing to re-apply; a host move afterwards applies and is remembered again.
+    let (p3, map3) = plan(&cutoff_patch(loaded));
+    link.send_plan(p3).unwrap();
+    base_after(&mut e, &mut link, Vec::new());
+    let c3 = map3.get(&addr("filter1.cutoff")).unwrap();
+    assert_eq!(e.base(c3).map(f32::to_bits), Some(loaded.to_bits()));
+    base_after(
+        &mut e,
+        &mut link,
+        vec![(
+            0,
+            EventKind::Slot {
+                slot: 0,
+                value: 0.7,
+            },
+        )],
+    );
+    assert_eq!(e.base(c3), Some(spec.from_norm(0.7)));
+    assert_eq!(e.host_slot(0), Some(0.7));
+}
+
 #[test]
 fn a_slot_whose_target_is_disabled_remembers_the_value_for_when_it_comes_back() {
     let spec = SvfParam::Cutoff.spec();

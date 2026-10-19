@@ -80,8 +80,10 @@ struct Buses {
     poly: PolyOffsets,
 }
 
-/// Counters for things the engine handled without failing.
+/// Counters for things the engine handled without failing. `non_exhaustive` (F1b review): counters are added
+/// without breaking readers; build one with `Default` outside the crate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EngineStats {
     /// Note-ons since the engine started (the next note index).
     pub notes: u64,
@@ -649,6 +651,13 @@ impl Engine {
                 if link.next_is_plan() && self.old.is_some() {
                     break;
                 }
+                // Back-pressure for events from the ring (audition notes; F1b review): one that finds the event
+                // queue full waits in the ring, with the commands behind it, until a segment has applied the due
+                // events. Host events are due within the block, so the queue drains; an audition note-off is never
+                // dropped (a dropped one would be a stuck note).
+                if link.next_is_event() && self.queue.len() >= self.queue.capacity() {
+                    break;
+                }
                 let Some(cmd) = link.pop() else {
                     break;
                 };
@@ -680,8 +689,8 @@ impl Engine {
                             self.stale_events += 1;
                         }
                     }
-                    // Queued behind the host events already due here, so step 2 applies it in order (dropped
-                    // and counted if the queue is full).
+                    // Queued behind the host events already due here, so step 2 applies it in order. The check
+                    // above leaves it in the ring while the queue is full, so it is never dropped.
                     Cmd::Event(kind) => {
                         self.queue.push(frame, kind);
                     }
@@ -702,13 +711,15 @@ impl Engine {
         );
         // Host automation survives an edit: a slot that still names the same parameter gets its host value again
         // (the exact patch value if the host's value is `to_norm` of it). A slot that now names another parameter,
-        // or none, forgets it: the host sends a new value when it moves.
+        // or none, forgets it: the host sends a new value when it moves. So does a slot the plan names in
+        // `Plan::forget_host_slots` (a loaded patch, an edited value): the plan's patch value wins.
+        let forget = new.forget_slots;
         for (i, h) in self.host_slots.iter_mut().enumerate() {
             if h.is_nan() {
                 continue;
             }
             let key = new.slots[i].key;
-            if key != 0 && key == self.plan.slots[i].key {
+            if forget & (1 << i) == 0 && key != 0 && key == self.plan.slots[i].key {
                 apply_slot(&mut new, i, *h);
             } else {
                 *h = f32::NAN;

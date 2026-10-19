@@ -261,7 +261,7 @@ fn a_full_command_ring_of_audition_events_drains_without_allocating() {
 }
 
 #[test]
-fn an_audition_event_that_finds_the_event_queue_full_is_dropped_and_counted() {
+fn an_audition_event_that_finds_the_event_queue_full_waits_in_the_ring() {
     let (mut e, mut link) = Engine::with_link(plan(&patch()).0, SEED, LinkCapacity::default());
     // Fill the queue with events due at frame 64, past both segments this 64-frame call renders.
     let full: Vec<Event> = (0..enth_engine::segment::EVENT_CAPACITY)
@@ -276,15 +276,31 @@ fn an_audition_event_that_finds_the_event_queue_full_is_dropped_and_counted() {
     let (mut l, mut r) = ([0.0; 64], [0.0; 64]);
     assert_no_alloc(|| e.process(&mut l, &mut r, &full));
     assert_eq!(e.stats().dropped_events, 0);
+    // The audition note-on and its note-off find the queue full: they wait in the ring (F1b review: an audition
+    // note-off is never dropped), and the macro behind them waits too, in order.
     link.send_event(audition(60, 1, true)).unwrap();
-    assert_no_alloc(|| e.process(&mut l, &mut r, &[]));
+    link.send_event(audition(60, 1, false)).unwrap();
+    link.send_macro(0, 0.25).unwrap();
+    let free = link.free_slots();
+    // One segment (frame 64): the full queue's events come due there, after the ring was read.
+    let (mut l32, mut r32) = ([0.0; 32], [0.0; 32]);
+    assert_no_alloc(|| e.process(&mut l32, &mut r32, &[]));
     assert_eq!(
         e.stats().dropped_events,
-        1,
-        "dropped, counted, nothing allocated"
+        0,
+        "nothing dropped, nothing allocated"
     );
     assert_eq!(e.stats().notes, 0);
-    link.send_event(audition(60, 1, true)).unwrap();
-    assert_no_alloc(|| e.process(&mut l, &mut r, &[]));
+    assert_eq!(link.free_slots(), free, "still waiting in the ring");
+    // The next segment finds room: all three go in, in order.
+    assert_no_alloc(|| e.process(&mut l32, &mut r32, &[]));
     assert_eq!(e.stats().notes, 1, "room again once the queue drained");
+    assert_eq!(e.stats().dropped_events, 0);
+    assert_eq!(link.free_slots(), free + 3, "the ring is empty again");
+    assert!(
+        e.active_voices()
+            .iter()
+            .all(|&v| { e.voices().state(v) != enth_engine::VoiceState::Held }),
+        "the note-off arrived: no audition note is left held"
+    );
 }

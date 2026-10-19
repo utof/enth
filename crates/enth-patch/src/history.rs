@@ -10,7 +10,9 @@
 //! of a drag ([`History::begin_gesture`] hands them out). Consecutive records of one gesture fold into one entry:
 //!
 //! - **same address:** a single `SetParam` that follows a `SetParam` on the same address replaces it: the entry
-//!   keeps the *first* inverse (the value before the drag) and takes the *last* forward;
+//!   keeps the *first* inverse (the value before the drag) and takes the *last* forward. The same holds for a
+//!   `SetDepth` on the same route (a depth drag) and a `SetMacro` on the same macro (P1b, F1b review), so a drag
+//!   costs one op pair however many frames it lasts;
 //! - **another address (or any other op):** concatenated, forward in order and inverse in reverse, so nothing is
 //!   lost. (Merging across addresses loses undo data: the history property test caught exactly that in the first
 //!   draft.)
@@ -244,8 +246,13 @@ impl History {
 }
 
 fn merge(last: &mut Entry, mut forward: Vec<Op>, mut inverse: Vec<Op>) {
+    // One value op that follows a value op on the same target: a knob (`SetParam` per address), a depth handle
+    // (`SetDepth` per route) or a macro knob (`SetMacro` per index). Each one's inverse is a single op of its own
+    // kind, so the entry's first inverse still undoes the last forward.
     let same_address = match (forward.as_slice(), last.forward.last()) {
         ([Op::SetParam { addr: a, .. }], Some(Op::SetParam { addr: b, .. })) => a == b,
+        ([Op::SetDepth { route: a, .. }], Some(Op::SetDepth { route: b, .. })) => a == b,
+        ([Op::SetMacro { index: a, .. }], Some(Op::SetMacro { index: b, .. })) => a == b,
         _ => false,
     };
     if same_address {
