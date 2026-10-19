@@ -12,5 +12,6 @@ workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+sha2.workspace = true      # `validate` checks the downloaded clap-validator against its pinned SHA-256
 # The bundler behind `cargo xtask bundle` (ISC). Exact pin, like the nice-plug it ships with.
 nice-plug-xtask = "=0.1.1"

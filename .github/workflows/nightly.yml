@@ -74,12 +74,12 @@ jobs:
           seed=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')
           echo "seed=$seed" >> "$GITHUB_OUTPUT"
           echo "::notice title=proptest seed::PROPTEST_RNG_SEED=$seed PROPTEST_CASES=10000"
-      # The P1a crates only: the spikes, the UI and the test host have no properties and need system libraries.
+      # The core and session crates only: the spikes, the UI, the plugin and the test host have no properties and need system libraries.
       - name: Property tests, 10,000 cases each
         env:
           PROPTEST_RNG_SEED: ${{ steps.seed.outputs.seed }}
           PROPTEST_CASES: "10000"
-        run: cargo nextest run --locked --profile explore --no-tests=pass --workspace --exclude 'spike-*' --exclude enth-ui --exclude enth-test-host --exclude xtask
+        run: cargo nextest run --locked --profile explore --no-tests=pass --workspace --exclude 'spike-*' --exclude enth-ui --exclude enth-plugin --exclude enth-test-host --exclude xtask
       # A new regression file is the reproduction: commit it together with the fix (it is merged as a union).
       - name: Keep new regression files
         if: failure()

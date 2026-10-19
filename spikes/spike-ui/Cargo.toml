@@ -24,7 +24,7 @@ egui.workspace = true
 serde_json = { workspace = true, optional = true }
 # glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine; the clipboard for text
 # fields. No default fonts: Theme::apply installs Inter.
-eframe = { version = "=0.37.0", default-features = false, features = ["glow", "x11", "clipboard"], optional = true }
+eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional = true }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }

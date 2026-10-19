@@ -7,13 +7,30 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// `cargo xtask bundle <pkg> [--release] [any other cargo build option]`.
+use crate::plugin;
+
+/// `cargo xtask bundle [<pkg> | --package <pkg>]... [--release] [any other cargo build option]`. Without a
+/// package it bundles [`plugin::default_package`].
 pub fn bundle(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("usage: cargo xtask bundle <package> [--release] [cargo build options]".into());
-    }
-    let nice_plug_args = std::iter::once("bundle".to_owned()).chain(args.iter().cloned());
+    let (packages, rest) = packages_and_options(args)?;
+    let nice_plug_args = std::iter::once("bundle".to_owned())
+        .chain(packages.iter().flat_map(|p| ["-p".to_owned(), p.clone()]))
+        .chain(rest);
     nice_plug_xtask::main_with_args("cargo xtask", nice_plug_args).map_err(|e| format!("{e:#}"))
+}
+
+/// The packages named in `args` (a leading `<pkg>`, `--package` or `-p`), or the default one, and the remaining
+/// options.
+fn packages_and_options(args: &[String]) -> Result<(Vec<String>, Vec<String>), String> {
+    let meta = crate::metadata()?;
+    let plugin::Split { mut packages, rest } = plugin::split_packages(args, true)?;
+    if packages.is_empty() {
+        packages.push(plugin::default_package(&meta.workspace_root));
+    }
+    for package in &packages {
+        plugin::require_member(&meta, package)?;
+    }
+    Ok((packages, rest))
 }
 
 /// Where `bundle` leaves its output.
@@ -21,14 +38,11 @@ pub fn bundled_dir() -> Result<PathBuf, String> {
     Ok(crate::metadata()?.target_directory.join("bundled"))
 }
 
-/// `cargo xtask install <pkg> [--release] [...]`: bundle, then copy the `.clap` file to
+/// `cargo xtask install [<pkg> | --package <pkg>]... [--release] [...]`: bundle, then copy the `.clap` file to
 /// `~/.clap` and the `.vst3` bundle to `~/.vst3`. `ENTH_CLAP_DIR` and `ENTH_VST3_DIR` override
 /// the destinations (for tests; hosts only look in the defaults).
 pub fn install(args: &[String]) -> Result<(), String> {
-    let package = args
-        .iter()
-        .find(|a| !a.starts_with('-'))
-        .ok_or("usage: cargo xtask install <package> [--release] [cargo build options]")?;
+    let (packages, _) = packages_and_options(args)?;
     bundle(args)?;
     let bundled = bundled_dir()?;
     let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -39,26 +53,28 @@ pub fn install(args: &[String]) -> Result<(), String> {
             (None, None) => Err(format!("neither {var} nor HOME is set")),
         }
     };
-    let mut installed = 0;
-    for (extension, dir) in [
-        ("clap", destination("ENTH_CLAP_DIR", ".clap")?),
-        ("vst3", destination("ENTH_VST3_DIR", ".vst3")?),
-    ] {
-        let source = bundled.join(format!("{package}.{extension}"));
-        if !source.exists() {
-            continue;
+    for package in &packages {
+        let mut installed = 0;
+        for (extension, dir) in [
+            ("clap", destination("ENTH_CLAP_DIR", ".clap")?),
+            ("vst3", destination("ENTH_VST3_DIR", ".vst3")?),
+        ] {
+            let source = bundled.join(format!("{package}.{extension}"));
+            if !source.exists() {
+                continue;
+            }
+            std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            let target = dir.join(source.file_name().unwrap_or_default());
+            replace_with_copy(&source, &target)?;
+            println!("installed {}", target.display());
+            installed += 1;
         }
-        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let target = dir.join(source.file_name().unwrap_or_default());
-        replace_with_copy(&source, &target)?;
-        println!("installed {}", target.display());
-        installed += 1;
-    }
-    if installed == 0 {
-        return Err(format!(
-            "nothing to install: no {package}.clap or {package}.vst3 in {}",
-            bundled.display()
-        ));
+        if installed == 0 {
+            return Err(format!(
+                "nothing to install: no {package}.clap or {package}.vst3 in {}",
+                bundled.display()
+            ));
+        }
     }
     Ok(())
 }

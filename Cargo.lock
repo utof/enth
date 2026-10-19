@@ -1281,6 +1281,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "enth-plugin"
+version = "0.0.0"
+dependencies = [
+ "egui",
+ "enth-engine",
+ "enth-params",
+ "enth-patch",
+ "enth-render",
+ "enth-session",
+ "enth-ui",
+ "insta",
+ "nice-plug",
+ "nice-plug-egui",
+ "parking_lot",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "enth-render"
 version = "0.0.0"
 dependencies = [
@@ -1289,6 +1308,21 @@ dependencies = [
  "enth-patch",
  "proptest",
  "serde",
+]
+
+[[package]]
+name = "enth-session"
+version = "0.0.0"
+dependencies = [
+ "assert_no_alloc",
+ "enth-engine",
+ "enth-params",
+ "enth-patch",
+ "enth-render",
+ "insta",
+ "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1312,6 +1346,7 @@ dependencies = [
  "clack-extensions",
  "clack-host",
  "clack-plugin",
+ "libc",
  "serde_json",
  "sha2",
  "x11rb",
@@ -1321,9 +1356,13 @@ dependencies = [
 name = "enth-ui"
 version = "0.0.0"
 dependencies = [
+ "eframe",
  "egui",
  "egui-wgpu",
  "egui_kittest",
+ "enth-params",
+ "enth-patch",
+ "enth-session",
  "serde",
  "serde_json",
 ]
@@ -4984,6 +5023,7 @@ dependencies = [
  "nice-plug-xtask",
  "serde",
  "serde_json",
+ "sha2",
  "toml",
 ]
 

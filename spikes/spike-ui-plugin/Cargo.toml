@@ -13,8 +13,8 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 # Same exact pins as spike-shell (docs/adr/0001-plugin-shell.md). nice-plug-egui's default
 # feature is `opengl`: the editor renders with glow (ADR-0002).
-nice-plug = { version = "=0.4.2", default-features = false, features = ["vst3", "editor", "assert_process_allocs"] }
-nice-plug-egui = "=0.6.0"
+nice-plug = { workspace = true, features = ["vst3", "editor", "assert_process_allocs"] }
+nice-plug-egui.workspace = true
 egui.workspace = true
 enth-ui.workspace = true
 spike-ui = { path = "../spike-ui", default-features = false }

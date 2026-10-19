@@ -1,6 +1,6 @@
 //! `cargo xtask reaper-test`: a local gate (not CI) that drives a real host.
 //!
-//! It bundles `spike-shell`, then runs native REAPER headless — always inside `xvfb-run`, with
+//! It bundles the package (`--package`, default: see `plugin::default_package`), then runs native REAPER headless — always inside `xvfb-run`, with
 //! Dummy Audio and a throwaway copy of the REAPER install — through Lua scripts in
 //! `xtask/reaper/`. Each script appends `check` and `data` lines to a log; this module runs the
 //! scripts, reads the logs, and makes the checks that need the saved state or rendered audio.
@@ -13,11 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use crate::bundle;
+use crate::{bundle, plugin};
 
-const PACKAGE: &str = "spike-shell";
-/// How REAPER lists the plugin; `TrackFX_AddByName` matches this as a substring.
-const PLUGIN_NAME: &str = "enth spike-shell";
 const DEFAULT_REAPER: &str = "apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper";
 /// Hard limit for one REAPER launch; a hung script (e.g. a modal error dialog) is killed.
 const LAUNCH_TIMEOUT_SECS: u32 = 90;
@@ -36,27 +33,34 @@ impl Format {
         }
     }
 
-    fn reaper_name(self) -> String {
+    /// How REAPER lists the plugin in this format; `TrackFX_AddByName` matches it as a substring.
+    fn reaper_name(self, plugin_name: &str) -> String {
         match self {
-            Format::Clap => format!("CLAPi: {PLUGIN_NAME}"),
-            Format::Vst3 => format!("VST3i: {PLUGIN_NAME}"),
+            Format::Clap => format!("CLAPi: {plugin_name}"),
+            Format::Vst3 => format!("VST3i: {plugin_name}"),
         }
     }
 }
 
 struct Options {
+    package: String,
+    /// How REAPER lists the plugin (`--plugin-name`, else `plugin::reaper_plugin_name`).
+    plugin_name: String,
     release: bool,
     build: bool,
     formats: Vec<Format>,
 }
 
-fn parse_options(args: &[String]) -> Result<Options, String> {
+fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
+    let (package, rest) = plugin::one_package(plugin::split_packages(args, false)?, root)?;
     let mut options = Options {
+        plugin_name: plugin::reaper_plugin_name(&package),
+        package,
         release: false,
         build: true,
         formats: Vec::new(),
     };
-    let mut args = args.iter();
+    let mut args = rest.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--release" => options.release = true,
@@ -66,6 +70,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                 Some("vst3") => options.formats.push(Format::Vst3),
                 other => return Err(format!("--format takes clap or vst3, got {other:?}")),
             },
+            "--plugin-name" => {
+                options.plugin_name = args
+                    .next()
+                    .cloned()
+                    .ok_or("--plugin-name needs a name (how REAPER lists the plugin)")?;
+            }
             other => return Err(format!("unknown option {other}")),
         }
     }
@@ -111,6 +121,8 @@ struct Log {
 }
 
 struct Sandbox {
+    /// How REAPER lists the plugin (the scripts add it with `TrackFX_AddByName`).
+    plugin_name: String,
     reaper: PathBuf,
     home: PathBuf,
     out: PathBuf,
@@ -118,8 +130,10 @@ struct Sandbox {
 }
 
 pub fn reaper_test(args: &[String]) -> Result<(), String> {
-    let options = parse_options(args)?;
     let meta = crate::metadata()?;
+    let options = parse_options(args, &meta.workspace_root)?;
+    plugin::require_member(&meta, &options.package)?;
+    let package = options.package.as_str();
     let reaper = reaper_path()?;
     require_tool(
         "xvfb-run",
@@ -128,7 +142,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     require_tool("timeout", "needed to stop a hung REAPER")?;
 
     if options.build {
-        let mut build_args = vec![PACKAGE.to_owned(), "--locked".to_owned()];
+        let mut build_args = vec![package.to_owned(), "--locked".to_owned()];
         if options.release {
             build_args.push("--release".to_owned());
         }
@@ -136,7 +150,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     }
     let bundled = bundle::bundled_dir()?;
     for format in &options.formats {
-        let artefact = bundled.join(format!("{PACKAGE}.{}", format.tag()));
+        let artefact = bundled.join(format!("{package}.{}", format.tag()));
         if !artefact.exists() {
             return Err(format!(
                 "{} is missing; run without --no-build",
@@ -147,12 +161,17 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
 
     let work = meta.target_directory.join("reaper-test");
     let sandbox = Sandbox {
+        plugin_name: options.plugin_name.clone(),
         reaper,
         home: work.join("home"),
         out: work.join("out"),
         lua: meta.workspace_root.join("xtask/reaper"),
     };
     prepare_sandbox(&sandbox, &bundled)?;
+    println!(
+        "reaper-test: package {package} (REAPER lists it as {:?})",
+        sandbox.plugin_name
+    );
     println!("reaper-test: REAPER {}", sandbox.reaper.display());
     println!("reaper-test: results in {}", sandbox.out.display());
 
@@ -334,7 +353,7 @@ fn run_script(
     let label = format!("{tag}-{script}-{phase}");
     let log_name = format!("{label}.log");
     let lua = sb.lua.join(format!("{script}.lua"));
-    let fx = format.reaper_name();
+    let fx = format.reaper_name(&sb.plugin_name);
     let empty = sb.lua.join("empty.rpp");
     let mut env: Vec<(&str, String)> = vec![
         ("ENTH_OUT", sb.out.display().to_string()),
