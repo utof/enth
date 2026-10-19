@@ -1,0 +1,1652 @@
+---
+source: crates/enth-patch/tests/catalogue.rs
+expression: catalogue_json()
+---
+{
+  "builtins": [
+    {
+      "key": "voice",
+      "params": [
+        {
+          "default": 0.0,
+          "default_text": "poly",
+          "desc": "poly plays chords; mono and legato play one note at a time (legato slides without retriggering).",
+          "flags": {
+            "automatable": false,
+            "modulatable": false,
+            "periodic": false,
+            "structural": true
+          },
+          "key": "mode",
+          "kind": {
+            "items": [
+              {
+                "desc": "Each note gets its own voice, up to the polyphony limit; chords work.",
+                "key": "poly",
+                "name": "Poly"
+              },
+              {
+                "desc": "One note at a time; each new note restarts the envelopes.",
+                "key": "mono",
+                "name": "Mono"
+              },
+              {
+                "desc": "One note at a time; overlapping notes slide the pitch without restarting the envelopes.",
+                "key": "legato",
+                "name": "Legato"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Voice mode",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "none"
+        },
+        {
+          "default": 8.0,
+          "default_text": "8",
+          "desc": "How many notes can sound at once in poly mode; extra notes steal the oldest voice.",
+          "flags": {
+            "automatable": false,
+            "modulatable": false,
+            "periodic": false,
+            "structural": true
+          },
+          "key": "polyphony",
+          "kind": {
+            "max": 16,
+            "min": 1,
+            "type": "int"
+          },
+          "name": "Polyphony",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0ms",
+          "desc": "Time to slide from the previous note's pitch to the new one; 0 is off. Linear in semitones.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "glide",
+          "kind": {
+            "k": 4.0,
+            "max": 10000.0,
+            "min": 0.0,
+            "scale": "power",
+            "type": "float"
+          },
+          "name": "Glide",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "ms"
+        },
+        {
+          "default": 0.0,
+          "default_text": "always",
+          "desc": "Glide on every note, or only on notes played legato.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "glide_mode",
+          "kind": {
+            "items": [
+              {
+                "desc": "Every new note glides from the previous note's pitch.",
+                "key": "always",
+                "name": "Always"
+              },
+              {
+                "desc": "Only notes played while another is still held glide.",
+                "key": "legato",
+                "name": "Legato"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Glide mode",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0%",
+          "desc": "Where each voice sits in the stereo field, -100 % left to +100 % right; route key or an LFO here to spread notes.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "pan",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": -100.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Pan",
+          "perceptual": "stereo.width",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "percent"
+        }
+      ]
+    },
+    {
+      "key": "master",
+      "params": [
+        {
+          "default": 0.0,
+          "default_text": "0dB",
+          "desc": "Output level after the effects; turn it down to fix clipping without retuning anything else.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "level",
+          "kind": {
+            "k": null,
+            "max": 12.0,
+            "min": -36.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Master level",
+          "perceptual": "loudness.peak_dbfs",
+          "smoothing": {
+            "linear_ms": 20.0
+          },
+          "tier": "basic",
+          "unit": "db"
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "fx": 4,
+    "generators": 4,
+    "macros": 8,
+    "modulators": 8,
+    "routes": 64,
+    "slots": 64,
+    "voice_fx": 4
+  },
+  "macro": {
+    "default": 0.0,
+    "default_text": "0",
+    "desc": "The macro knob's position, 0 to 1; routes from the macro scale it by their depth.",
+    "flags": {
+      "automatable": true,
+      "modulatable": false,
+      "periodic": false,
+      "structural": false
+    },
+    "key": "value",
+    "kind": {
+      "k": null,
+      "max": 1.0,
+      "min": 0.0,
+      "scale": "linear",
+      "type": "float"
+    },
+    "name": "Macro",
+    "perceptual": null,
+    "smoothing": {
+      "linear_ms": 10.0
+    },
+    "tier": "basic",
+    "unit": "none"
+  },
+  "modules": [
+    {
+      "desc": "A pitched tone: sine, triangle, saw, pulse with width, or a wavetable, with hard sync to the first oscillator.",
+      "id_prefix": "osc",
+      "index": 0,
+      "key": "osc",
+      "name": "Oscillator",
+      "params": [
+        {
+          "default": 2.0,
+          "default_text": "saw",
+          "desc": "The waveform: sine, triangle, saw, pulse, or the wavetable chosen by table.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "wave",
+          "kind": {
+            "items": [
+              {
+                "desc": "A pure tone with a single harmonic: soft and round.",
+                "key": "sine",
+                "name": "Sine"
+              },
+              {
+                "desc": "Odd harmonics that fade fast: mellow, flute-like.",
+                "key": "triangle",
+                "name": "Triangle"
+              },
+              {
+                "desc": "Every harmonic: bright and buzzy, the classic subtractive starting point.",
+                "key": "saw",
+                "name": "Saw"
+              },
+              {
+                "desc": "A square at 50 % width, hollow and reedy; narrower widths sound thinner.",
+                "key": "pulse",
+                "name": "Pulse"
+              },
+              {
+                "desc": "Plays the chosen wavetable; position morphs through its frames.",
+                "key": "table",
+                "name": "Wavetable"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Wave",
+          "perceptual": "spectrum.harmonics_db",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0st",
+          "desc": "Transposition in semitones from the played note (+12st is an octave up); route an envelope here for pitch sweeps.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "semi",
+          "kind": {
+            "k": null,
+            "max": 48.0,
+            "min": -48.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Semitones",
+          "perceptual": "pitch.f0_hz",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "semitones"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0ct",
+          "desc": "Fine tuning in cents; a few cents between two oscillators makes them beat and sound thicker.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "fine",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": -100.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Fine",
+          "perceptual": "detune.beating_hz",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "cents"
+        },
+        {
+          "default": 100.0,
+          "default_text": "100%",
+          "desc": "Output level of this oscillator into the voice, as a linear percentage.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "level",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Level",
+          "perceptual": "loudness.lufs_i",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "percent"
+        },
+        {
+          "default": 50.0,
+          "default_text": "50%",
+          "desc": "Width of the pulse wave: 50 % is a square; other waves ignore it. Modulate it for PWM.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "pw",
+          "kind": {
+            "k": null,
+            "max": 95.0,
+            "min": 5.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Pulse width",
+          "perceptual": "spectrum.odd_even_ratio",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "percent"
+        },
+        {
+          "default": 0.0,
+          "default_text": "off",
+          "desc": "Restart this oscillator with each cycle of the first enabled oscillator in generators: tune it higher for tearing, vocal tones. Ignored on that first oscillator.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "sync",
+          "kind": {
+            "type": "toggle"
+          },
+          "name": "Hard sync",
+          "perceptual": "spectrum.centroid_hz",
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "basic",
+          "desc": "Which wavetable the table wave plays; changing it rebuilds the voice plan.",
+          "flags": {
+            "automatable": false,
+            "modulatable": false,
+            "periodic": false,
+            "structural": true
+          },
+          "key": "table",
+          "kind": {
+            "items": [
+              {
+                "desc": "Morphs sine, triangle, saw and square.",
+                "key": "basic",
+                "name": "Basic"
+              },
+              {
+                "desc": "A pulse that narrows from square to a thin buzz.",
+                "key": "pulse",
+                "name": "Pulse"
+              },
+              {
+                "desc": "One smooth axis from very bright to nearly a sine.",
+                "key": "tilt",
+                "name": "Tilt"
+              },
+              {
+                "desc": "Vowel-like resonances, A to U.",
+                "key": "formant",
+                "name": "Formant"
+              },
+              {
+                "desc": "Drawbar organ registrations.",
+                "key": "organ",
+                "name": "Organ"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Wavetable",
+          "perceptual": "spectrum.harmonics_db",
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0%",
+          "desc": "Where in the wavetable to play, from its first frame to its last; only for the table wave.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "position",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Position",
+          "perceptual": "spectrum.centroid_hz",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "percent"
+        },
+        {
+          "default": 0.0,
+          "default_text": "free",
+          "desc": "How each note's start phase is chosen: free (random per render seed), reset (the phase knob) or seeded (from seed).",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "phase_mode",
+          "kind": {
+            "items": [
+              {
+                "desc": "Each note starts at a random phase that changes with the render seed, like a free-running analog oscillator.",
+                "key": "free",
+                "name": "Free"
+              },
+              {
+                "desc": "Every note starts at the phase knob, so attacks are identical and phase relationships are fixed.",
+                "key": "reset",
+                "name": "Reset"
+              },
+              {
+                "desc": "Each note starts at a random phase drawn from this module's seed, so the patch itself fixes it.",
+                "key": "seeded",
+                "name": "Seeded"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Phase mode",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0deg",
+          "desc": "The start phase in reset mode; between two oscillators at the same pitch it changes the timbre.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": true,
+            "structural": false
+          },
+          "key": "phase",
+          "kind": {
+            "k": null,
+            "max": 360.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Start phase",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "degrees"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0",
+          "desc": "The random seed used in seeded phase mode; part of the patch, unlike the render seed.",
+          "flags": {
+            "automatable": false,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "seed",
+          "kind": {
+            "max": 65535,
+            "min": 0,
+            "type": "int"
+          },
+          "name": "Seed",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        }
+      ],
+      "section": "generators",
+      "tier": "basic",
+      "time_based": false
+    },
+    {
+      "desc": "Unpitched hiss, white or pink, for breath, attack transients and texture.",
+      "id_prefix": "noise",
+      "index": 1,
+      "key": "noise",
+      "name": "Noise",
+      "params": [
+        {
+          "default": 0.0,
+          "default_text": "white",
+          "desc": "White is bright hiss; pink is darker and more natural.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "color",
+          "kind": {
+            "items": [
+              {
+                "desc": "Equal energy at every frequency: bright hiss.",
+                "key": "white",
+                "name": "White"
+              },
+              {
+                "desc": "Energy falls 3 dB per octave: softer, more natural, like rain.",
+                "key": "pink",
+                "name": "Pink"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Color",
+          "perceptual": "spectrum.tilt_db_oct",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "none"
+        },
+        {
+          "default": 100.0,
+          "default_text": "100%",
+          "desc": "Output level of the noise into the voice, as a linear percentage.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "level",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Level",
+          "perceptual": "noise_ratio",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "percent"
+        }
+      ],
+      "section": "generators",
+      "tier": "intermediate",
+      "time_based": false
+    },
+    {
+      "desc": "A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.",
+      "id_prefix": "filter",
+      "index": 2,
+      "key": "svf",
+      "name": "Filter",
+      "params": [
+        {
+          "default": 0.0,
+          "default_text": "lp",
+          "desc": "The filter response: lp, bp, hp or notch.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "mode",
+          "kind": {
+            "items": [
+              {
+                "desc": "Keeps frequencies below the cutoff: darker as the cutoff falls.",
+                "key": "lp",
+                "name": "Low-pass"
+              },
+              {
+                "desc": "Keeps a band around the cutoff: thin, nasal, telephone-like.",
+                "key": "bp",
+                "name": "Band-pass"
+              },
+              {
+                "desc": "Keeps frequencies above the cutoff: removes body and bass.",
+                "key": "hp",
+                "name": "High-pass"
+              },
+              {
+                "desc": "Removes a band around the cutoff: a hollow, phaser-like dip.",
+                "key": "notch",
+                "name": "Notch"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Mode",
+          "perceptual": "spectrum.centroid_hz",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "none"
+        },
+        {
+          "default": 2000.0,
+          "default_text": "2kHz",
+          "desc": "The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "cutoff",
+          "kind": {
+            "k": null,
+            "max": 20000.0,
+            "min": 20.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Cutoff",
+          "perceptual": "spectrum.centroid_hz",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "hz"
+        },
+        {
+          "default": 10.0,
+          "default_text": "10%",
+          "desc": "Emphasis at the cutoff, from none (Q 0.5) to a sharp whistling peak (Q 25).",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "resonance",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Resonance",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "percent"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0%",
+          "desc": "How much the cutoff follows the played note: 100 % moves it an octave per octave played.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "keytrack",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Key tracking",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "percent"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0dB",
+          "desc": "Gain into a soft saturator before the filter, normalised back after: adds grit and harmonics.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "drive",
+          "kind": {
+            "k": null,
+            "max": 24.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Drive",
+          "perceptual": "spectrum.harmonics_db",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "db"
+        }
+      ],
+      "section": "voice_fx",
+      "tier": "basic",
+      "time_based": false
+    },
+    {
+      "desc": "An attack-decay-sustain-release envelope per note, 0 to 1; one of them is the voice's amplitude envelope.",
+      "id_prefix": "env",
+      "index": 3,
+      "key": "adsr",
+      "name": "Envelope",
+      "params": [
+        {
+          "default": 5.0,
+          "default_text": "5ms",
+          "desc": "Time to rise from the current level to full at note-on; under 10 ms sounds plucky, over 200 ms swells.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "attack",
+          "kind": {
+            "k": 4.0,
+            "max": 10000.0,
+            "min": 0.0,
+            "scale": "power",
+            "type": "float"
+          },
+          "name": "Attack",
+          "perceptual": "envelope.attack_ms",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "ms"
+        },
+        {
+          "default": 300.0,
+          "default_text": "300ms",
+          "desc": "Time to fall from full to the sustain level.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "decay",
+          "kind": {
+            "k": 4.0,
+            "max": 10000.0,
+            "min": 0.0,
+            "scale": "power",
+            "type": "float"
+          },
+          "name": "Decay",
+          "perceptual": "envelope.decay_ms",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "ms"
+        },
+        {
+          "default": 70.0,
+          "default_text": "70%",
+          "desc": "The level held while the note is down, as a percentage of full; 0 % makes a pluck.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "sustain",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Sustain",
+          "perceptual": "envelope.sustain_db",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "percent"
+        },
+        {
+          "default": 400.0,
+          "default_text": "400ms",
+          "desc": "Time to fall to silence after note-off.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "release",
+          "kind": {
+            "k": 4.0,
+            "max": 20000.0,
+            "min": 0.0,
+            "scale": "power",
+            "type": "float"
+          },
+          "name": "Release",
+          "perceptual": "envelope.release_ms",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "ms"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0%",
+          "desc": "How much note velocity scales this envelope's output: 0 % ignores velocity, 100 % follows it fully.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "velocity",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Velocity",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "percent"
+        }
+      ],
+      "section": "modulators",
+      "tier": "basic",
+      "time_based": false
+    },
+    {
+      "desc": "A slow repeating modulator for vibrato, tremolo and sweeps, per voice or shared by all voices.",
+      "id_prefix": "lfo",
+      "index": 4,
+      "key": "lfo",
+      "name": "LFO",
+      "params": [
+        {
+          "default": 0.0,
+          "default_text": "sine",
+          "desc": "The waveform of the modulation.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "shape",
+          "kind": {
+            "items": [
+              {
+                "desc": "A smooth wave: natural vibrato and tremolo.",
+                "key": "sine",
+                "name": "Sine"
+              },
+              {
+                "desc": "Linear up and down: even sweeps.",
+                "key": "triangle",
+                "name": "Triangle"
+              },
+              {
+                "desc": "Rises then drops: repeating swells.",
+                "key": "saw_up",
+                "name": "Saw up"
+              },
+              {
+                "desc": "Drops then rises: repeating plucks.",
+                "key": "saw_down",
+                "name": "Saw down"
+              },
+              {
+                "desc": "Jumps between two values: trills and gating.",
+                "key": "square",
+                "name": "Square"
+              },
+              {
+                "desc": "A new random step every cycle: the classic computer burble.",
+                "key": "sample_hold",
+                "name": "Sample & hold"
+              },
+              {
+                "desc": "Wanders randomly and smoothly: slow drift and movement.",
+                "key": "smooth_random",
+                "name": "Smooth random"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Shape",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "none"
+        },
+        {
+          "default": 2.0,
+          "default_text": "2Hz",
+          "desc": "Cycles per second: about 5 Hz for vibrato, under 0.5 Hz for slow sweeps.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "rate",
+          "kind": {
+            "k": null,
+            "max": 50.0,
+            "min": 0.009999999776482582,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Rate",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "hz"
+        },
+        {
+          "default": 0.0,
+          "default_text": "bipolar",
+          "desc": "Bipolar swings around the destination's value; unipolar only adds to it.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "polarity",
+          "kind": {
+            "items": [
+              {
+                "desc": "Swings both above and below the destination's value.",
+                "key": "bipolar",
+                "name": "Bipolar"
+              },
+              {
+                "desc": "Moves the destination one way only, from its value up by the route depth.",
+                "key": "unipolar",
+                "name": "Unipolar"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Polarity",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "voice",
+          "desc": "One LFO per voice or one global LFO; only a global LFO can modulate effects. Changing it rebuilds the plan.",
+          "flags": {
+            "automatable": false,
+            "modulatable": false,
+            "periodic": false,
+            "structural": true
+          },
+          "key": "scope",
+          "kind": {
+            "items": [
+              {
+                "desc": "Each note gets its own LFO, started at note-on.",
+                "key": "voice",
+                "name": "Per voice"
+              },
+              {
+                "desc": "One LFO shared by every note, running from the start; the only kind that may modulate effects.",
+                "key": "global",
+                "name": "Global"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Scope",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 1.0,
+          "default_text": "reset",
+          "desc": "How each cycle start is chosen: reset (the phase knob at each note-on), free (random per render seed) or seeded (from seed).",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "phase_mode",
+          "kind": {
+            "items": [
+              {
+                "desc": "Each note starts at a random phase that changes with the render seed, like a free-running analog oscillator.",
+                "key": "free",
+                "name": "Free"
+              },
+              {
+                "desc": "Every note starts at the phase knob, so attacks are identical and phase relationships are fixed.",
+                "key": "reset",
+                "name": "Reset"
+              },
+              {
+                "desc": "Each note starts at a random phase drawn from this module's seed, so the patch itself fixes it.",
+                "key": "seeded",
+                "name": "Seeded"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Phase mode",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0deg",
+          "desc": "Where in its cycle the LFO starts in reset mode.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": true,
+            "structural": false
+          },
+          "key": "phase",
+          "kind": {
+            "k": null,
+            "max": 360.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Start phase",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "degrees"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0",
+          "desc": "The random seed used in seeded phase mode, including the random shapes.",
+          "flags": {
+            "automatable": false,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "seed",
+          "kind": {
+            "max": 65535,
+            "min": 0,
+            "type": "int"
+          },
+          "name": "Seed",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        }
+      ],
+      "section": "modulators",
+      "tier": "intermediate",
+      "time_based": false
+    },
+    {
+      "desc": "A stereo room or hall after the voices: adds space, width and a tail.",
+      "id_prefix": "reverb",
+      "index": 5,
+      "key": "reverb",
+      "name": "Reverb",
+      "params": [
+        {
+          "default": 0.0,
+          "default_text": "0dB",
+          "desc": "Level of the untouched signal passing through; -60 dB is off, for a fully wet sound.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "dry",
+          "kind": {
+            "k": null,
+            "max": 6.0,
+            "min": -60.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Dry",
+          "perceptual": "loudness.lufs_i",
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "db"
+        },
+        {
+          "default": -6.0,
+          "default_text": "-6dB",
+          "desc": "Level of the reverb tail: more wet sounds further away; -60 dB is off.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "wet",
+          "kind": {
+            "k": null,
+            "max": 6.0,
+            "min": -60.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Wet",
+          "perceptual": "stereo.width",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "db"
+        },
+        {
+          "default": 80.0,
+          "default_text": "80ms",
+          "desc": "Size of the space, as a delay time (1 ms is about a foot): small rooms to large halls.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "room",
+          "kind": {
+            "k": null,
+            "max": 200.0,
+            "min": 10.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Room size",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "ms"
+        },
+        {
+          "default": 3000.0,
+          "default_text": "3s",
+          "desc": "How long the tail takes to fall by 60 dB (RT60).",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "decay",
+          "kind": {
+            "k": null,
+            "max": 30000.0,
+            "min": 100.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Decay",
+          "perceptual": "envelope.release_ms",
+          "smoothing": null,
+          "tier": "basic",
+          "unit": "ms"
+        },
+        {
+          "default": 150.0,
+          "default_text": "150%",
+          "desc": "Level of the first reflections, which tell the ear the size of the room.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "early",
+          "kind": {
+            "k": null,
+            "max": 250.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Early reflections",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "percent"
+        },
+        {
+          "default": 2.0,
+          "default_text": "2",
+          "desc": "How much the pitch wobbles inside the tail (about cents per pass at a 1 s room): smears metallic ringing, chorus-like when high.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "detune",
+          "kind": {
+            "k": 3.0,
+            "max": 50.0,
+            "min": 0.0,
+            "scale": "power",
+            "type": "float"
+          },
+          "name": "Detune",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        },
+        {
+          "default": 80.0,
+          "default_text": "80Hz",
+          "desc": "Removes lows below this frequency from the reverb, keeping bass clean.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "low_cut",
+          "kind": {
+            "k": null,
+            "max": 500.0,
+            "min": 10.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Low cut",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
+          "tier": "intermediate",
+          "unit": "hz"
+        },
+        {
+          "default": 12000.0,
+          "default_text": "12kHz",
+          "desc": "Removes highs above this frequency from the reverb: lower sounds darker and softer.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "high_cut",
+          "kind": {
+            "k": null,
+            "max": 20000.0,
+            "min": 1000.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "High cut",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
+          "tier": "intermediate",
+          "unit": "hz"
+        },
+        {
+          "default": 1.5,
+          "default_text": "1.5",
+          "desc": "How much faster low frequencies die away than the decay time (1 = the same).",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "low_damp",
+          "kind": {
+            "k": null,
+            "max": 10.0,
+            "min": 1.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Low damping",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
+          "tier": "advanced",
+          "unit": "none"
+        },
+        {
+          "default": 2.5,
+          "default_text": "2.5",
+          "desc": "How much faster high frequencies die away than the decay time (1 = the same): higher is darker.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "high_damp",
+          "kind": {
+            "k": null,
+            "max": 10.0,
+            "min": 1.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "High damping",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 20.0
+          },
+          "tier": "advanced",
+          "unit": "none"
+        }
+      ],
+      "section": "fx",
+      "tier": "intermediate",
+      "time_based": true
+    },
+    {
+      "desc": "Evens out loudness after the voices: turns loud parts down above a threshold, then makes up the gain.",
+      "id_prefix": "comp",
+      "index": 6,
+      "key": "comp",
+      "name": "Compressor",
+      "params": [
+        {
+          "default": -18.0,
+          "default_text": "-18dB",
+          "desc": "Level above which the compressor turns the signal down; lower compresses more.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "threshold",
+          "kind": {
+            "k": null,
+            "max": 0.0,
+            "min": -60.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Threshold",
+          "perceptual": "loudness.peak_dbfs",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "db"
+        },
+        {
+          "default": 4.0,
+          "default_text": "4:1",
+          "desc": "How hard levels above the threshold are turned down: 4:1 lets 4 dB in become 1 dB out.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "ratio",
+          "kind": {
+            "k": null,
+            "max": 20.0,
+            "min": 1.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Ratio",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "basic",
+          "unit": "ratio"
+        },
+        {
+          "default": 10.0,
+          "default_text": "10ms",
+          "desc": "How fast the compressor reacts to a rise in level; slower lets transients through.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "attack",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.10000000149011612,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Attack",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "ms"
+        },
+        {
+          "default": 200.0,
+          "default_text": "200ms",
+          "desc": "How fast the compressor lets go after the level falls.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "release",
+          "kind": {
+            "k": null,
+            "max": 2000.0,
+            "min": 10.0,
+            "scale": "log",
+            "type": "float"
+          },
+          "name": "Release",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "ms"
+        },
+        {
+          "default": 6.0,
+          "default_text": "6dB",
+          "desc": "Width of the soft transition around the threshold; 0 dB is a hard knee.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "knee",
+          "kind": {
+            "k": null,
+            "max": 24.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Knee",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "advanced",
+          "unit": "db"
+        },
+        {
+          "default": 0.0,
+          "default_text": "0dB",
+          "desc": "Gain added after compression to bring the level back up.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "makeup",
+          "kind": {
+            "k": null,
+            "max": 24.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Make-up",
+          "perceptual": "loudness.lufs_i",
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "db"
+        },
+        {
+          "default": 100.0,
+          "default_text": "100%",
+          "desc": "How much of the compressed signal is heard: 100 % is fully compressed, lower blends in the dry signal (parallel compression).",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "mix",
+          "kind": {
+            "k": null,
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "linear",
+            "type": "float"
+          },
+          "name": "Mix",
+          "perceptual": null,
+          "smoothing": {
+            "linear_ms": 10.0
+          },
+          "tier": "intermediate",
+          "unit": "percent"
+        }
+      ],
+      "section": "fx",
+      "tier": "advanced",
+      "time_based": false
+    }
+  ],
+  "reserved_ids": [
+    "voice",
+    "master",
+    "velocity",
+    "key",
+    "modwheel",
+    "meta",
+    "routes",
+    "macros",
+    "slots",
+    "generators",
+    "voice_fx",
+    "fx",
+    "modulators"
+  ],
+  "route_depth": {
+    "default": 0.0,
+    "default_text": "0%",
+    "desc": "How far a route moves its destination, as a percentage of the destination's range.",
+    "flags": {
+      "automatable": false,
+      "modulatable": false,
+      "periodic": false,
+      "structural": false
+    },
+    "key": "depth",
+    "kind": {
+      "k": null,
+      "max": 100.0,
+      "min": -100.0,
+      "scale": "linear",
+      "type": "float"
+    },
+    "name": "Depth",
+    "perceptual": null,
+    "smoothing": null,
+    "tier": "intermediate",
+    "unit": "percent"
+  }
+}
