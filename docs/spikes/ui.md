@@ -72,18 +72,18 @@ A callgrind profile of the steady state (330 frames per case) puts the time in: 
 
 ### In REAPER 7.82 (Xvfb, Mesa llvmpipe, Dummy Audio 48 kHz/128, release bundle)
 
-A Lua script loads the plugin, waits 5 s, opens the editor, waits 25 s, plays a held four-note chord for 20 s, stops for 15 s and closes the editor. The plugin's frame log and a 1 s `/proc` sampler record each phase, skipping the first 3 s after each switch. Five runs (r2–r6, two of them on the final code); ranges over all five:
+A Lua script loads the plugin, waits 5 s, opens the editor, waits 25 s, plays a held four-note chord for 20 s, stops for 15 s and closes the editor. The plugin's frame log and a 1 s `/proc` sampler record each phase, skipping the first 3 s after each switch. Six runs (r2–r6, and the 60 Hz half of the paired run below, on the final code); ranges over all six:
 
 | State | Frames | Frame rate | `ui()` p50 | GUI threads CPU | GUI wake-ups | REAPER CPU | PSS |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Loaded, editor never opened | — | — | — | — | — | 7.9–8.9 % | 138–141 MB |
-| Open, idle (22 s) | **0** | 0 | — | 0.05–0.19 % | 64/s | 7.7–9.7 % | 210–211 MB |
-| Open, playing (17 s) | 487–499 | 28.6–29.4 fps | 0.55–0.67 ms | 24–31 % (software GL) | 367–385/s | 196–200 % (llvmpipe threads) | 210–212 MB |
+| Loaded, editor never opened | — | — | — | — | — | 7.9–9.9 % | 138–141 MB |
+| Open, idle (22 s) | **0** | 0 | — | 0.05–0.19 % | 64/s | 7.7–9.9 % | 210–212 MB |
+| Open, playing (17 s) | 487–503 | 28.6–29.6 fps | 0.55–0.67 ms | 24–31 % (software GL) | 367–385/s | 196–200 % (llvmpipe threads) | 210–212 MB |
 | Open, stopped (12 s) | **0** | 0 | — | 0.09–0.18 % | 64/s | 7.6–9.7 % | 211–213 MB |
-| Closed again | — | — | — | — | — | 6.9–9.9 % | 188–190 MB |
+| Closed again | — | — | — | — | — | 6.9–9.9 % | 188–191 MB |
 
 - **Idle is free:** no frame at all while the editor is open and nothing sounds; the GUI thread's only activity is egui-baseview's 64 Hz notifier poll. Opening the editor doesn't raise REAPER's CPU beyond noise.
-- **Animating hits baseview's cap:** the panel asks for 60 Hz (a fed scope) and gets 28.6–29.4 fps, the ≈30 fps ceiling of baseview 0.4.1's X11 pacing (next frame at MSC + 2) that the researcher found. Every playing frame is a "scope" frame, because fresh audio arrives every block; the 30 Hz "animated" state only occurs when the LFO runs without new audio.
+- **Animating hits baseview's cap:** the panel asks for 60 Hz (a fed scope) and gets 28.6–29.6 fps, the ≈30 fps ceiling of baseview 0.4.1's X11 pacing (next frame at MSC + 2) that the researcher found. Every playing frame is a "scope" frame, because fresh audio arrives every block; the 30 Hz "animated" state only occurs when the LFO runs without new audio.
 - **Asking for 30 Hz gives 20 fps.** benchmarks.md and phase-0.md now say scopes request `1/30 s`; the design system's `motion.scope_hz` is 60. One paired run with `ENTH_THEME` set to a theme file with `scope_hz: 30` (no rebuild): **19.5 fps**, GUI thread 23.3 %, REAPER 166 %; the next run with the default 60 Hz: **29.6 fps**, 27.9 %, 200 %. A 33 ms request lands on every third vblank. So the token stays at 60 for now: it is what gives ≤ 30 fps under baseview 0.4.1, and changing it is one token edit once baseview's pacing changes.
 - **GUI-thread CPU while playing is software rendering:** `ui()` takes 0.55–0.67 ms of the 8–10 ms the thread spends per frame; the rest is llvmpipe drawing 1100 × 768 on the CPU, plus its 12 worker threads (the 196–200 % process figure). On a GPU the frame should cost about the headless 1.2–1.4 ms plus the driver's submission.
 - **Memory:** +71 MB PSS when the editor opens, almost all Mesa's llvmpipe (the researcher measured the same jump with a much smaller panel); closing leaves about 50 MB mapped, because Mesa stays loaded. Threads go 27 → 54 → 27. The open/close leak test is lane U2's.
@@ -106,8 +106,8 @@ The rebuild peaks at 1.1 GB RSS (rustc and the linker); the test process at 150 
 
 | Item | Value |
 | --- | --- |
-| `spike-ui-plugin.clap`, release | 9,552,416 B (spike-shell: 9,114,152 B; this one has Inter instead of egui's default fonts plus the panel) |
-| `spike-ui-plugin.clap`, debug | 198,445,472 B |
+| `spike-ui-plugin.clap`, release | 9,682,928 B on the final code (spike-shell: 9,114,152 B; this one has Inter instead of egui's default fonts, the panel and the theme parser for `ENTH_THEME`) |
+| `spike-ui-plugin.clap`, debug | 55,723,088 B with main's line-tables-only dev profile (198,445,472 B before the merge) |
 | clap-validator 0.4.1, debug and release | 36 passed, 0 failed, 0 warnings, 8 skipped each (the same 8 skips as spike-shell) |
 | Release bundle, incremental | 1 min 13 s |
 | Release build of the frame benchmark (with eframe and wgpu dev-deps) | 3 min 48 s |
@@ -130,7 +130,7 @@ Only the cells this lane measured; lane U2 measures the REAPER protocol and the 
 | Frame time p99 | headless 1.4–2.3 ms; `ui()` p50 0.55–0.67 ms in REAPER | < 16.7 ms | |
 | Editor open (warm) | 44–67 ms build → first frame | 150 ms | Xvfb |
 | GPU SM % / VRAM | not measured | 5 % / 100 MB | Owner |
-| Achieved fps vs requested | 28.6–29.4 for 60 requested | report | baseview cap |
+| Achieved fps vs requested | 28.6–29.6 for 60 requested; 19.5 for 30 requested | report | baseview cap |
 | Checklist (REAPER / 2nd host) | not run | all pass | U2 and owner |
 
 ## Design-system findings and deviations

@@ -32,8 +32,8 @@ Sources: the Phase 0 research session (sub-report 02, `_local/sessions/2026-10-1
 
 | State | Result |
 | --- | --- |
-| Editor open, nothing sounding | **0 frames** in 22 s, 5 runs; GUI thread 0.05–0.19 % CPU; 64 wake-ups/s (egui-baseview's notifier poll); REAPER's CPU unchanged from editor-closed |
-| Editor open, a chord playing | 28.6–29.4 fps for a 60 Hz request (baseview's cap); `ui()` 0.55–0.67 ms p50 |
+| Editor open, nothing sounding | **0 frames** in 22 s, 6 runs; GUI thread 0.05–0.19 % CPU; 64 wake-ups/s (egui-baseview's notifier poll); REAPER's CPU unchanged from editor-closed |
+| Editor open, a chord playing | 28.6–29.6 fps for a 60 Hz request (baseview's cap; a 30 Hz request gives 19.5); `ui()` 0.55–0.67 ms p50 |
 | CPU per frame, headless (layout + tessellation, no GL) | idle frame 0.9–1.1 ms, animating 1.2–1.4 ms mean, p99 ≤ 2.3 ms: 3.5–4.2 % of a core at 30 fps |
 | Editor open time | `build()` → first frame in 44–67 ms (software GL) |
 | Memory | +71 MB PSS on open, almost all Mesa's llvmpipe; not a GPU number |
