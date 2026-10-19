@@ -1,0 +1,55 @@
+# Starter goals for the agent-loop probe (Phase 0, lane P).
+#
+# Each goal is a text brief plus the expectation list a sound designer would write for it, judged by the descriptors
+# in `spike-agent describe`. Difficulty rises with the number of constraints that pull against each other, the need
+# to choose the performance (note, clip length), and how far the answer is from the neutral `new` patch.
+#
+#   id          stable name
+#   difficulty  1 (easy) to 5 (hard)
+#   text        the brief an agent is given
+#   perf        the performance to start from:  spike-agent new --out p.json --perf "<perf>"
+#   expect      the expectation list the result is judged by:  spike-agent check p.json --expect "<expect>"
+#   rationale   why each item is there (for the experimenter; an agent that is told the list does not need it)
+#
+# Judge a result with the goal's perf forced, so the agent cannot pass by changing the performance:
+#   spike-agent check p.json --perf "<perf>" --expect "<expect>"
+
+[[goal]]
+id = "g1-pluck"
+difficulty = 1
+text = "a short bright pluck"
+perf = "note=A3,dur=2s,hold=1.5s"
+expect = "attack<10ms, brightness>2kHz, sustain<-30dB, duration<800ms, pitch=A3±30ct"
+rationale = "Pluck: the note starts at once (attack), is clearly bright, does not hold (sustain far below the peak) and is over quickly (duration). Pitch stays on the played note."
+
+[[goal]]
+id = "g2-pad"
+difficulty = 2
+text = "a slow dark pad"
+perf = "note=C3,dur=6s,hold=3.5s"
+expect = "attack>400ms, brightness<700Hz, sustain>-4dB, release>800ms, duration>4000ms, pitch=C3±30ct"
+rationale = "Pad: fades in slowly (attack), is dark (brightness), stays at its peak level while held (sustain), and fades out slowly after the note ends (release, duration). Needs a longer clip than the default to measure the tail."
+
+[[goal]]
+id = "g3-buzzy-bass"
+difficulty = 3
+text = "a buzzy bass"
+perf = "note=C2,dur=2s,hold=1.5s"
+expect = "pitch=C2±30ct, attack<15ms, brightness>1.2kHz, brightness<2.5kHz, sustain>-6dB, duration>1200ms, release<300ms"
+rationale = "Bass: low and on pitch, starts at once, holds its level while the key is down, stops soon after release. Buzzy: rich in upper harmonics (a band for brightness, neither dull nor fizzy) although the note is two octaves below the default."
+
+[[goal]]
+id = "g4-bell"
+difficulty = 4
+text = "a soft bell-like tone"
+perf = "note=C5,dur=5s,hold=3s"
+expect = "pitch=C5±40ct, attack>8ms, attack<40ms, brightness>800Hz, brightness<3kHz, decay>600ms, sustain<-35dB, duration>2000ms, beating>2Hz, beating<8Hz"
+rationale = "Bell: struck, but soft (a short attack that is not a click), clear but not harsh (brightness window), rings and dies away by itself even though the key is held (decay, sustain, duration), with the slow shimmer of slightly mistuned partials (beating window)."
+
+[[goal]]
+id = "g5-supersaw-lead"
+difficulty = 5
+text = "a detuned supersaw-ish lead"
+perf = "note=A4,dur=3s,hold=2s"
+expect = "pitch=A4±40ct, attack<20ms, brightness>3kHz, sustain>-4dB, beating>3Hz, beating<9Hz, release<400ms, duration>2000ms"
+rationale = "Lead: bright and cutting, starts quickly, holds its level, with a fat chorus-like beat (a rate window: slow beating is seasick, fast beating is a growl) at a higher register."
