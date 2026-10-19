@@ -80,7 +80,12 @@ pub fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
     let meta = std::fs::symlink_metadata(source).map_err(fail)?;
     if meta.is_symlink() {
         let link = std::fs::read_link(source).map_err(fail)?;
-        std::os::unix::fs::symlink(link, target).map_err(fail)
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(link, target);
+        // Plugin bundles are built and installed on Linux; elsewhere a symlink becomes a copy of what it points to.
+        #[cfg(not(unix))]
+        let made = std::fs::copy(source.parent().unwrap_or(source).join(link), target).map(|_| ());
+        made.map_err(fail)
     } else if meta.is_dir() {
         std::fs::create_dir_all(target).map_err(fail)?;
         let mut names: Vec<OsString> = std::fs::read_dir(source)
