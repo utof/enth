@@ -32,6 +32,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [research.md](research.md) | Prior art, papers, and evidence behind the decisions, with sources |
 | [adr/](adr/README.md) | Architecture decision records (plugin shell, UI toolkit, agent CLI, licensing, patch format, effects) |
 | [AGENTS.md](../AGENTS.md) | Rules for AI coding agents (repo root; the single copy) |
+| [listening.md](listening.md) | The owner's listening tests: metric pairs, ABX, reverb A/B — commands, timings, what each decides |
 | [design-system.md](design-system.md) | Design tokens and the minimal visual language of the editor |
 | [naming.md](naming.md) | Product name candidates and mode names |
 

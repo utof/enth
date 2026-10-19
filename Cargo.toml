@@ -118,6 +118,10 @@ opt-level = 3
 [profile.dev.package.enth-analysis]
 opt-level = 3
 
+# The listening tool's fundsp comparison reverbs run in tests; unoptimised they add ~1.5 min to the workspace tests.
+[profile.dev.package.fundsp]
+opt-level = 3
+
 # Profiling and heaptrack runs keep symbols without debug-build slowness: cargo build --profile profiling
 [profile.profiling]
 inherits = "release"

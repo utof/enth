@@ -1,0 +1,32 @@
+[package]
+name = "enth-listen"
+description = "Owner listening tools: ABX on the search gate (G0) and a blind, level-matched reverb A/B (G1); docs/listening.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "enth_listen"
+
+[[bin]]
+name = "enth-listen"
+path = "src/main.rs"
+
+[dependencies]
+enth-analysis.workspace = true
+enth-render.workspace = true
+enth-patch.workspace = true
+# Phase 0 spike used as a library: the toy synth and the CMA-ES search that make the ABX stimuli (docs/listening.md).
+spike-metric = { path = "../../spikes/spike-metric" }
+# 2-channel BS.1770 loudness for the stereo reverb stimuli (enth-analysis' meter is mono); same pin as enth-analysis.
+ebur128.workspace = true
+# ADR-0006's fallback reverb, here only as the A/B reference. Exact pin, `std` only (0.23.0 does not build without it).
+fundsp = { version = "=0.23.0", default-features = false, features = ["std"] }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libm.workspace = true
+
+[lints]
+workspace = true
