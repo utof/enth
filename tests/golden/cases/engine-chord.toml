@@ -1,4 +1,4 @@
-description = "Spine composite (S2a, then S2b): two saws (osc2 3 ct sharp at 80 %), a four-note chord with off-grid note times, a zero-length note, a dropped fifth voice (polyphony 4), automation of osc2.level, voice.pan and master.level at off-grid times, and release tails. Every module kind sits in the patch (noise, filter, both LFO scopes, comp, reverb) so the lanes' modules join it; it changes whenever a stub is replaced, on purpose."
+description = "Spine composite (S2a, then S2b): two saws (osc2 3 ct sharp at 80 %), a four-note chord with off-grid note times, a zero-length note, a fifth voice that steals the oldest (polyphony 4, since S2b), automation of osc2.level, voice.pan and master.level at off-grid times (smoothed per the catalogue since S2b), and release tails. Every module kind sits in the patch (noise, filter, both LFO scopes, comp, reverb) so the lanes' modules join it; it changes whenever a stub is replaced, on purpose."
 sample_rate = 48000
 seconds = 2.0
 
