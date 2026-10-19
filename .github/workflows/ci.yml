@@ -33,15 +33,16 @@ jobs:
       - name: Install the toolchain from rust-toolchain.toml
         run: rustup toolchain install && rustc --version
 
-      # Only needed once a crate links ALSA/JACK/X11/GL (the plugin and UI spikes). Same list as nice-plug's CI.
+      # ALSA/JACK/X11/GL for the plugin and UI spikes (same list as nice-plug's CI), plus Mesa's
+      # lavapipe: enth-ui's snapshot tests render on a CPU Vulkan adapter only (.cargo/config.toml).
       - name: System libraries for plugin, GUI and audio crates
-        if: hashFiles('spikes/**/Cargo.toml', 'tools/**/Cargo.toml') != ''
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkg-config \
             libasound2-dev libgl-dev libjack-jackd2-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
-            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            mesa-vulkan-drivers
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:

@@ -17,6 +17,11 @@ enth-patch = { path = "crates/enth-patch" }
 enth-engine = { path = "crates/enth-engine" }
 enth-render = { path = "crates/enth-render" }
 enth-analysis = { path = "crates/enth-analysis" }
+enth-ui = { path = "crates/enth-ui" }
+# Native UI (ADR-0002). Exact pins: egui must match the version nice-plug-egui is built against.
+egui = { version = "=0.37.0", default-features = false }
+egui_kittest = { version = "=0.37.0", default-features = false }
+egui-wgpu = { version = "=0.37.0", default-features = false }
 # xtask
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
