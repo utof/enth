@@ -1,0 +1,145 @@
+name: engine-golden
+
+# Determinism gate for the engine spike (docs/spikes/engine.md, risk #7 in the Phase 0 plan): the same render
+# hashes and the same 1,000 seed -> patch hashes on every platform, under wasmtime, and under different build
+# flags. The expected hashes are the committed files in spikes/spike-engine/golden/; a platform that differs
+# breaks the "same patch + seed = same samples" contract.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "spikes/spike-engine/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/engine-golden.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+  RUST_BACKTRACE: "1"
+
+jobs:
+  hashes:
+    name: hashes on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: windows-x86_64, os: windows-latest }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Debug: also runs the assert_no_alloc tests (the crate removes its guard in release builds).
+      - name: Tests, debug (determinism, lanes = scalar, FTZ, subnormals, no allocation, golden files)
+        run: cargo test --locked -p spike-engine
+      - name: Tests, release
+        run: cargo test --release --locked -p spike-engine
+      - name: Print every hash and diff against the golden files
+        shell: bash
+        run: |
+          cat spikes/spike-engine/golden/render.txt spikes/spike-engine/golden/patches.txt > want.txt
+          cargo run --release --locked -q -p spike-engine --bin engine-hash -- all > got.txt
+          diff -u --strip-trailing-cr want.txt got.txt
+      # Both flag sets enable FMA. Rust never contracts a * b + c, and the code never calls mul_add, so nothing may change.
+      - name: Same hashes with the runner's own CPU features and with explicit FMA/AVX2 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for flags in "-C target-cpu=native" "-C target-feature=+fma,+avx2"; do
+            echo "::group::RUSTFLAGS=$flags"
+            RUSTFLAGS="$flags" cargo test --release --locked -p spike-engine --test determinism --target-dir target-flags
+            echo "::endgroup::"
+          done
+
+  wasm:
+    name: wasm32-wasip1 under wasmtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: wasmtime@48.0.6
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Native == wasm == golden, lanes = scalar
+        run: cargo xtask wasm-hash
+      - name: The same with wasm simd128 (wide uses real v128 lanes)
+        run: cargo xtask wasm-hash --simd128
+      - name: The whole spike-engine test suite inside wasmtime
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p spike-engine
+
+  instruction-budget:
+    name: callgrind instruction budgets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: Install valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends valgrind
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Must match the gungraun crate version pinned in spikes/spike-engine/Cargo.toml.
+      - name: Install gungraun-runner 0.20.0
+        run: cargo install --locked --version 0.20.0 gungraun-runner
+      # Absolute budgets (measured + 10%) in benches/instr.rs: fails when a 2 s render costs more instructions.
+      # Instruction counts are exact and independent of runner load; the subnormal tests above cover what they cannot see.
+      - name: Instruction budgets
+        run: cargo bench --locked -p spike-engine --bench instr
+
+  # On demand only. Free arm64 hosted runners (ubuntu-24.04-arm, windows-11-arm, macos-latest) are for public
+  # repositories; this repository is private, where arm64 hosted runners are only available as paid larger
+  # runners. Run this by hand from the Actions tab when you have such a runner, or make the repository public.
+  # It checks the one platform whose float behaviour has not been measured yet: the render and patch hashes must
+  # equal the x86-64 golden files, and the FPCR.FZ test runs.
+  aarch64:
+    name: hashes on linux-aarch64 (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: Tests, debug
+        run: cargo test --locked -p spike-engine
+      - name: Tests, release
+        run: cargo test --release --locked -p spike-engine
+      - name: Print every hash and diff against the golden files
+        run: |
+          cat spikes/spike-engine/golden/render.txt spikes/spike-engine/golden/patches.txt > want.txt
+          cargo run --release --locked -q -p spike-engine --bin engine-hash -- all > got.txt
+          diff -u want.txt got.txt
