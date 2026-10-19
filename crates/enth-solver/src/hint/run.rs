@@ -486,7 +486,8 @@ impl<'a> Run<'a> {
             }
             // A long shot for the items the linear model calls unreachable (a dB reading driven by a linear-%
             // parameter falls much faster near zero than its slope says): one step that includes them, kept only if
-            // more items pass. A truly hopeless item then costs one render and moves nothing.
+            // it improves on the best point (fewer failing items, or as many with a smaller shortfall), and the
+            // loop then goes on from there, where the slope is steeper. A truly hopeless item costs one render.
             if !long_shot
                 && self.left() > 1
                 && (0..m).any(|i| unreachable[i] && !best.judged.pass[i])
@@ -510,8 +511,7 @@ impl<'a> Run<'a> {
                             real.iter().zip(&best.u).map(|(a, b)| a - b).collect();
                         self.learn(&mut jac, &best, &d, &real_du, None);
                         let judged = self.judge(&d);
-                        let accepted =
-                            !judged.regresses(&best.judged) && judged.fails < best.judged.fails;
+                        let accepted = judged.improves_on(&best.judged);
                         self.note(|| {
                             format!(
                                 "long shot: du {du:.3?}, fails {} shortfall {:.3}, accepted {accepted}",
