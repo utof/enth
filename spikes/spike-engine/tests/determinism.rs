@@ -185,3 +185,32 @@ fn random_patches_render_clean() {
         assert!(peak > 1e-4, "seed {seed}: silent render, peak {peak}");
     }
 }
+
+/// Blocks that are a multiple of the control rate (32) give the same render as the canonical 64-sample blocks.
+/// Other sizes restart the control grid at every block boundary and change the output: a host-driven engine
+/// must re-chunk the host's buffers onto the fixed grid (design.md §5: block size is an input of `render()`).
+#[test]
+fn block_size_is_part_of_the_render_function() {
+    let (patch, notes) = (Patch::p1_like(), phrase());
+    let n = frames(2.0);
+    let chunked = |size: usize| {
+        let mut engine = spike_engine::Engine::new(&patch, &notes, SEED, Path::Scalar, Flush::On);
+        let mut out = vec![0.0f32; n];
+        for block in out.chunks_mut(size) {
+            engine.process(block);
+        }
+        hash_samples(&out)
+    };
+    let reference = chunked(spike_engine::BLOCK);
+    assert_eq!(
+        reference,
+        chunked(spike_engine::CTRL),
+        "32-sample blocks must equal 64-sample blocks"
+    );
+    for size in [48, 50] {
+        println!(
+            "block size {size}: same as 64? {}",
+            chunked(size) == reference
+        );
+    }
+}
