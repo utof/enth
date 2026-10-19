@@ -4,7 +4,7 @@ One file per decision. When a decision changes, add a new ADR that supersedes th
 
 | ADR | Decision | Status |
 | --- | --- | --- |
-| [0001](0001-plugin-shell.md) | Plugin shell: start on nice-plug, keep it thin; clack as escape hatch | Proposed — confirm at G0 |
+| [0001](0001-plugin-shell.md) | Plugin shell: start on nice-plug, keep it thin; clack as escape hatch | Proposed — spike passed; accept at G0 |
 | [0002](0002-ui-toolkit.md) | UI: native Rust, egui default, vizia challenger; no WebView | Proposed — confirm at G0 |
 | [0003](0003-agent-cli.md) | Agent interface: CLI first, JSON, real units; MCP shim later | Accepted |
 | [0004](0004-licensing.md) | MIT; permissive dependencies only; no GPL code | Accepted |
