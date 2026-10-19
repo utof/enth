@@ -1,0 +1,90 @@
+name: nightly
+
+# Slow checks that stay off the critical path (P1a lane S0; research report 04). Scheduled runs use the default branch.
+#   rtsan:    the engine's real-time tests under the Rust nightly RealtimeSanitizer. It complements assert_no_alloc by
+#             also catching syscalls, I/O and pthread locks inside `process`. It does not see an uncontended std Mutex
+#             (measured in Phase 0), so the clippy ban on Mutex/RwLock stays.
+#   proptest: every property test with a fresh random seed and ten times the cases. The gate itself runs with a fixed
+#             seed (.cargo/config.toml, .config/nextest.toml); a find here is replayed with the printed seed.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rtsan:
+    name: RealtimeSanitizer (nightly)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      # The runtime (librustc-nightly_rt.rtsan.a) ships in the nightly rust-std for x86_64-unknown-linux-gnu: no downloads.
+      - name: Install a nightly toolchain
+        run: rustup toolchain install nightly --profile minimal
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest@0.9.133
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: rtsan
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # `--cfg enth_rtsan` switches on `#[sanitize(realtime = "nonblocking")]` on the engine's process functions (declared
+      # in the workspace lints; the attribute lives in the engine lanes). --target keeps the flags off build scripts
+      # and proc macros. A violation aborts the process, so nextest names the failing test.
+      - name: Engine and render tests under RTSan
+        env:
+          RUSTFLAGS: -Zsanitizer=realtime --cfg enth_rtsan
+        run: cargo +nightly nextest run --locked --target x86_64-unknown-linux-gnu --no-tests=pass -p enth-engine -p enth-render
+
+  proptest:
+    name: proptest exploration (random seed, 10,000 cases)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest@0.9.133
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: proptest
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Pick a seed
+        id: seed
+        shell: bash
+        run: |
+          seed=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          echo "::notice title=proptest seed::PROPTEST_RNG_SEED=$seed PROPTEST_CASES=10000"
+      # The P1a crates only: the spikes, the UI and the test host have no properties and need system libraries.
+      - name: Property tests, 10,000 cases each
+        env:
+          PROPTEST_RNG_SEED: ${{ steps.seed.outputs.seed }}
+          PROPTEST_CASES: "10000"
+        run: cargo nextest run --locked --profile explore --no-tests=pass --workspace --exclude 'spike-*' --exclude enth-ui --exclude enth-test-host --exclude xtask
+      # A new regression file is the reproduction: commit it together with the fix (it is merged as a union).
+      - name: Keep new regression files
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proptest-regressions-${{ steps.seed.outputs.seed }}
+          path: "**/proptest-regressions/**"
+          if-no-files-found: ignore

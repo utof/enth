@@ -1,0 +1,4 @@
+# Proptest appends one `cc <hash> # shrinks to ...` line per failure it finds. Two lanes adding different lines to
+# the same file must not conflict: keep the union of both sides.
+**/proptest-regressions/**/*.txt merge=union
+**/proptest-regressions/*.txt merge=union
