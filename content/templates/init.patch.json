@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "Init",
+    "description": "One saw oscillator through the amplitude envelope: a blank start.",
+    "tags": ["init"]
+  },
+  "voice": { "amp_env": "env1" },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw" } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr" }
+  ]
+}

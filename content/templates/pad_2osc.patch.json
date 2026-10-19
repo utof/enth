@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "Pad (2 osc)",
+    "description": "Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.",
+    "tags": ["pad"]
+  },
+  "voice": { "amp_env": "env1" },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw", "fine": -8 } },
+    { "id": "osc2", "kind": "osc", "params": { "wave": "saw", "fine": 8, "level": 80 } }
+  ],
+  "voice_fx": [
+    { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": 1500, "resonance": 10 } }
+  ],
+  "fx": [
+    { "id": "reverb1", "kind": "reverb", "params": { "wet": -12 } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr", "params": { "attack": 600, "decay": 800, "sustain": 85, "release": 1500 } }
+  ]
+}

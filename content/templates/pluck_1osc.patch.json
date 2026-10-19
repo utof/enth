@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "Pluck (1 osc)",
+    "description": "A saw through a bright low-pass, with a fast attack, a short decay and no sustain: a short pluck to shape.",
+    "tags": ["pluck"]
+  },
+  "voice": { "amp_env": "env1" },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw" } }
+  ],
+  "voice_fx": [
+    { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": 2500, "resonance": 15 } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr", "params": { "attack": 1, "decay": 350, "sustain": 0, "release": 150 } }
+  ]
+}
