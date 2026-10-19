@@ -1,0 +1,28 @@
+[package]
+name = "spike-ui"
+description = "Phase 0 UI spike: the reference panel (docs/benchmarks.md) as a slice of direction A, built from enth-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+# The standalone dev window, for iterating on the editor without a host. Opens a real window:
+# the owner runs it (cargo run -p spike-ui --release); agents never do.
+name = "spike-ui-dev"
+path = "src/bin/spike-ui-dev.rs"
+
+[dependencies]
+enth-ui.workspace = true
+egui.workspace = true
+serde_json.workspace = true
+# glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine. No default fonts:
+# Theme::apply installs Inter.
+eframe = { version = "=0.37.0", default-features = false, features = ["glow", "x11"] }
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+egui-wgpu.workspace = true
+
+[lints]
+workspace = true
