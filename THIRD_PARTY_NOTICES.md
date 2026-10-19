@@ -156,6 +156,34 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
+### Mutable Instruments Plaits and stmlib (variable shape oscillator, polyBLEP/BLAMP, Hermite interpolation)
+
+- Upstream: <https://github.com/pichenettes/eurorack> at commit `f4cfa7697095a28d292bff758beb51deb49b5a86`, `plaits/dsp/oscillator/variable_shape_oscillator.h`; and <https://github.com/pichenettes/stmlib> at commit `d18def816c51d1da0c108236928b2bbd25c17481`, `dsp/polyblep.h` (`ThisBlepSample`, `NextBlepSample`, `ThisIntegratedBlepSample`, `NextIntegratedBlepSample`) and `dsp/dsp.h` (`InterpolateHermite`)
+- Licence: MIT (each file header carries the text below and points to <http://creativecommons.org/licenses/MIT/>)
+- Copyright: "Copyright 2016 Emilie Gillet." (`variable_shape_oscillator.h`), "Copyright 2017 Emilie Gillet." (`polyblep.h`), "Copyright 2012 Emilie Gillet." (`dsp.h`); each file lists "Author: Emilie Gillet (emilie.o.gillet@gmail.com)"
+- Derived enth files: `crates/enth-dsp/src/osc.rs` (`Shape`: the `VariableShapeOscillator` render loop for saw, triangle and pulse, with the four band-limited step functions; `Phased`: the same one-sample-delayed loop and sync reset for the sine and the wavetable) and `crates/enth-dsp/src/wavetable.rs` (the 4-point Hermite form of `InterpolateHermite`); the module wrapper is `crates/enth-engine/src/modules/osc.rs`
+- Changes from upstream: Rust; the waveform is a compile-time constant (`SAW`, `TRIANGLE`, `PULSE`) instead of a run-time `shape` blend, and only those three shapes are ported (no slope, no variable shape, no `master`/`slave` template output); the phase increment and the pulse width ramp linearly over a fixed 32-sample block (`stmlib::ParameterInterpolator` replaced by weights computed at compile time); the hard-sync reset time arrives from the engine's sync bus instead of the oscillator's own master phase (the master writes the same value upstream would compute, bit for bit, and a test checks it); a sync reset also applies to the sine and the wavetable, band-limited with the same step functions; the transition loop is bounded to three passes; the frequency clamp is a quarter of the sample rate (upstream's `kMaxFrequency` of 0.25) for the three analog waves and 0.45 for the sine and the table; pulse width is clamped away from 0 and 1 by the phase increment; no transcendentals in the per-sample path (`+ - × ÷` and comparisons only), and the state cannot become subnormal (the frequency clamp keeps phases and residuals away from zero), which the release-tail tests check. Provenance, deviations and measurements: `docs/dsp/osc.md`.
+
+```text
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
 ## Bundled assets
 
 ### Inter (fonts)
