@@ -86,18 +86,15 @@ pub struct Shared {
     pub rebaseline: AtomicBool,
     /// The host values the last state load restored, for [`Shared::rebaseline`].
     pub restored: process::Restored,
-    /// Host parameter names changed (`ShellRequest::RenameParams`): [`Shared::with_session`] has set the new names
-    /// on the parameters (lane FK's fork, `Param::set_display_name`), and `process()` asks the host for a
-    /// parameter-info rescan (CLAP `rescan(INFO | TEXT)`; VST3 `kParamTitlesChanged`, which REAPER ignores).
-    pub names_dirty: AtomicBool,
     /// The editor window closed (seen by `process()` through `EguiEditorState::is_open`): the next pump releases
     /// audition notes.
     pub editor_closed: AtomicBool,
     /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
     /// persistent fields, which own this).
     params: OnceLock<Weak<EnthParams>>,
-    /// nice-plug's handle for host requests outside a context (lane FK2's fork patches): marking the project
-    /// dirty. Set once by the wrapper right after construction; absent in tests that do not set it.
+    /// nice-plug's handle for host requests outside a context (lane FK2's fork patches 6 and 8): marking the
+    /// project dirty and the parameter-info rescan. Set once by the wrapper right after construction, before any
+    /// state load; absent in tests that do not set it.
     host: OnceLock<HostRequests>,
     /// `process()` timings (the `rt-stats` cargo feature).
     #[cfg(feature = "rt-stats")]
@@ -112,7 +109,6 @@ impl Shared {
             monitor_bypass: AtomicBool::new(false),
             rebaseline: AtomicBool::new(false),
             restored: process::Restored::new(),
-            names_dirty: AtomicBool::new(false),
             editor_closed: AtomicBool::new(false),
             params: OnceLock::new(),
             host: OnceLock::new(),
@@ -136,7 +132,8 @@ impl Shared {
     /// On a `ShellRequest::RenameParams` it also sets the 72 display names from the patch **before** unlocking, so
     /// two threads that rename one after the other (the GUI's edit, the host's load) leave the later patch's names.
     /// `Param::set_display_name` only stores a string behind the parameter's own lock, which nothing else holds while
-    /// calling out, so this never calls the host under the session lock.
+    /// calling out, so this never calls the host under the session lock. The rescan request comes after unlocking
+    /// ([`Shared::settle`]).
     pub fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> (R, Vec<ShellRequest>) {
         let (result, requests, pending) = {
             let mut session = self.session.lock();
@@ -168,8 +165,15 @@ impl Shared {
         }
     }
 
-    /// After unlocking: store the monitor bypass, note renames, mark the host project dirty after an edit the host
-    /// cannot see, arm the pump flag if a compile is pending, and keep only the host writes.
+    /// After unlocking: store the monitor bypass, ask the host to re-read renamed parameters, mark the host project
+    /// dirty after an edit the host cannot see, arm the pump flag if a compile is pending, and keep only the host
+    /// writes.
+    ///
+    /// `ShellRequest::RenameParams` becomes [`HostRequests::request_param_info_rescan`] (CLAP `rescan(INFO | TEXT)`,
+    /// VST3 `restartComponent(kParamTitlesChanged)`, which REAPER ignores while reading titles live). This runs on the
+    /// host's main thread (a state load: the fork performs the rescan there and then, before the host processes the
+    /// loaded state) or the GUI thread (an editor rename: queued for the main thread), never in `process()`, which may
+    /// run on the host's main thread in an offline render (design.md §4).
     ///
     /// `ShellRequest::PatchEdited` (an editor edit, undo or redo: the session pushes it once per drain) becomes
     /// [`HostRequests::mark_dirty`]: CLAP `clap_host_state.mark_dirty`, VST3 `IComponentHandler2::setDirty(true)`, which
@@ -183,7 +187,11 @@ impl Shared {
         for request in requests {
             match request {
                 ShellRequest::MonitorBypass(on) => self.monitor_bypass.store(on, Ordering::Release),
-                ShellRequest::RenameParams => self.names_dirty.store(true, Ordering::Release),
+                ShellRequest::RenameParams => {
+                    if let Some(requests) = self.host.get() {
+                        requests.request_param_info_rescan();
+                    }
+                }
                 ShellRequest::Host(_) => host.push(request),
                 ShellRequest::PatchEdited => {
                     if let Some(requests) = self.host.get() {
@@ -284,8 +292,8 @@ impl Plugin for Enth {
         self.params.clone()
     }
 
-    /// The fork's host requests (marking the project dirty), kept for [`Shared::settle`]. Called once, right after
-    /// construction.
+    /// The fork's host requests (marking the project dirty, the parameter-info rescan), kept for [`Shared::settle`].
+    /// Called once, right after construction.
     fn host_requests(&mut self, requests: HostRequests) {
         let _ = self.shared.host.set(requests);
     }
@@ -438,6 +446,8 @@ mod tests {
         fn mark_dirty(&self) {
             self.dirty.fetch_add(1, Ordering::SeqCst);
         }
+
+        fn request_param_info_rescan(&self) {}
     }
 
     #[test]
@@ -464,7 +474,10 @@ mod tests {
                 )
             });
             assert!(applied.is_ok());
-            assert!(writes.is_empty(), "an unslotted address makes no host writes");
+            assert!(
+                writes.is_empty(),
+                "an unslotted address makes no host writes"
+            );
         };
         edit(40.0);
         assert_eq!(dirty(), 1, "an editor edit the host cannot see");
