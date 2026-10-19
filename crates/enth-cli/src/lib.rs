@@ -32,6 +32,7 @@ pub mod error;
 pub mod eval;
 pub mod fix;
 mod guide;
+pub mod knobs;
 pub mod out;
 mod patchio;
 pub mod perf;

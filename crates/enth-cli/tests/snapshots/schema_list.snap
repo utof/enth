@@ -45,7 +45,7 @@ exit: 0
     },
     {
       "describes": "the output of enth params",
-      "id": "enth.params/1",
+      "id": "enth.params/2",
       "name": "params"
     },
     {
@@ -60,7 +60,7 @@ exit: 0
     },
     {
       "describes": "the output of enth apply",
-      "id": "enth.apply/1",
+      "id": "enth.apply/2",
       "name": "apply"
     },
     {
@@ -70,7 +70,7 @@ exit: 0
     },
     {
       "describes": "the output of enth diff",
-      "id": "enth.diff/1",
+      "id": "enth.diff/2",
       "name": "diff"
     },
     {
@@ -80,17 +80,17 @@ exit: 0
     },
     {
       "describes": "the output of enth describe",
-      "id": "enth.describe/1",
+      "id": "enth.describe/2",
       "name": "describe"
     },
     {
       "describes": "the output of enth check",
-      "id": "enth.check/1",
+      "id": "enth.check/2",
       "name": "check"
     },
     {
       "describes": "the output of enth step",
-      "id": "enth.step/1",
+      "id": "enth.step/2",
       "name": "step"
     },
     {

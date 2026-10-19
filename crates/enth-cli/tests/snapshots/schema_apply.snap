@@ -15,6 +15,13 @@ expression: v
             "null"
           ]
         },
+        "means": {
+          "description": "For a route: what its depth does to the destination, in the destination's units, over the source's\nswing (an LFO swings both ways unless unipolar), and the range the percentage is of. A musical depth\n(`+12st`, `+1oct`) is stored as that percentage.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "op": {
           "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
           "type": "string"
@@ -38,10 +45,10 @@ expression: v
       "type": "object"
     }
   },
-  "$id": "enth.apply/1",
+  "$id": "enth.apply/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.apply/1`: ops applied to a patch.",
+  "description": "`enth.apply/2`: ops applied to a patch.",
   "properties": {
     "applied": {
       "description": "What changed, in order.",
@@ -65,8 +72,8 @@ expression: v
       "type": "array"
     },
     "schema": {
-      "const": "enth.apply/1",
-      "description": "`enth.apply/1`.",
+      "const": "enth.apply/2",
+      "description": "`enth.apply/2`.",
       "type": "string"
     },
     "wrote": {

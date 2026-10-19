@@ -7,6 +7,7 @@ use enth_params::Unit;
 use enth_patch::{Op, ParamAddr, Patch, apply};
 use enth_render::{Performance, RenderSpec};
 
+use super::culprit::culprit;
 use super::model::{self, Aim, Matrix, Problem, Role, Row};
 use super::space::{self, FreeParam};
 use super::{BlockReason, Blocked, Fix, HintCfg, HintError, HintResult, HintStats, Move};
@@ -1047,15 +1048,17 @@ impl<'a> Run<'a> {
                 }
                 b.reason = BlockReason::Absent;
                 let tried: Vec<String> = absent_tried.iter().map(ToString::to_string).collect();
+                let blame =
+                    culprit(e, &at.patch, &at.d).map_or_else(String::new, |c| format!(": {c}"));
                 b.why = if tried.is_empty() {
                     format!(
-                        "{} is absent ({}), and the patch has no free parameter to move; the patch structure is the limit",
+                        "{} is absent ({}), and the patch has no free parameter to move; the patch structure is the limit{blame}",
                         e.feature.path(),
                         e.feature.missing_reason()
                     )
                 } else {
                     format!(
-                        "{} is absent ({}); moving {} did not make it appear, so the patch structure is the limit",
+                        "{} is absent ({}); moving {} did not make it appear, so the patch structure is the limit{blame}",
                         e.feature.path(),
                         e.feature.missing_reason(),
                         tried.join(", ")
@@ -1093,12 +1096,13 @@ impl<'a> Run<'a> {
             if helpful.is_empty() {
                 b.reason = BlockReason::NoEffect;
                 b.why = format!(
-                    "no free parameter moves {} (probed: {}); the patch structure is the limit",
+                    "no free parameter moves {} (probed: {}); the patch structure is the limit{}",
                     e.feature.path(),
                     free.iter()
                         .map(|f| f.addr.to_string())
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    culprit(e, &at.patch, &at.d).map_or_else(String::new, |c| format!(": {c}"))
                 );
                 out.push(b);
                 continue;
@@ -1150,6 +1154,9 @@ impl<'a> Run<'a> {
                 1 => format!("{} would have to go past its limit", names[0]),
                 _ => format!("{} would have to go past their limits", names.join(" and ")),
             };
+            if let Some(c) = culprit(e, &at.patch, &at.d) {
+                b.why = format!("{}; {c}", b.why);
+            }
             if e.feature == Feature::Duration
                 && let (Some(hold), Test::Within(iv)) = (hold, e.test)
                 && iv.hi * 1e-3 < hold

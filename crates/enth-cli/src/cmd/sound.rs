@@ -203,7 +203,7 @@ fn item_out(r: &ItemResult, hint: Option<&fix::ItemHint>) -> ItemOut {
         noise: r.noise,
         thin: r.thin,
         note: match (r.feature, r.got) {
-            (Feature::Pitch, Some(hz)) if hz > 0.0 => {
+            (f, Some(hz)) if f.is_pitch() && hz > 0.0 => {
                 let (name, cents) = enth_analysis::units::nearest_note(hz);
                 Some(format!("{name}{:+}ct", cents.round() as i64))
             }

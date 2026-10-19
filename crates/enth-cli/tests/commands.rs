@@ -22,7 +22,7 @@ fn schema_lists_every_schema() {
     let o = run(&["schema"]);
     assert_eq!(o.code, 0);
     let out: SchemaListOut = round_trip(&o);
-    assert!(out.schemas.iter().any(|e| e.id == "enth.check/1"));
+    assert!(out.schemas.iter().any(|e| e.id == "enth.check/2"));
     s.settings()
         .bind(|| assert_snapshot!("schema_list", record(&s, &o, false)));
 }

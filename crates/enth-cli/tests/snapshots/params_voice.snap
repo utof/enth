@@ -110,7 +110,7 @@ exit: 0
       "unit": "%"
     }
   ],
-  "schema": "enth.params/1",
+  "schema": "enth.params/2",
   "section": null,
   "summary": "The voice manager and amp stage: mode (poly, mono, legato), polyphony, glide, pan; voice.amp_env names the amplitude envelope."
 }
