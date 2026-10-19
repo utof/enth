@@ -37,8 +37,9 @@ use enth_params::ParamSpec;
 use enth_patch::catalogue::{
     MACRO_VALUE, MASTER_PARAMS, MasterParam, VOICE_PARAMS, VoiceMode, VoiceParam,
 };
+use enth_patch::model::SLOTS;
 use enth_patch::{
-    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Rate, Section,
+    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Rate, RouteAddr, Section,
 };
 
 use crate::modulation::{MACRO_SOURCES, Matrix, MatrixBuilder, Src, Stage, Term};
@@ -62,6 +63,44 @@ pub(crate) struct Slot<M> {
     /// Its parameters in the voice or global table.
     pub params: Span,
 }
+
+/// The parameter a host automation slot drives in this plan (P1b lane E+).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SlotTarget {
+    pub id: ParamId,
+    pub spec: &'static ParamSpec,
+    /// The patch value (updated by value events from the command ring, so the host's echo of an editor edit
+    /// resolves exactly) and its `to_norm`.
+    pub plain: f32,
+    pub norm: f32,
+}
+
+impl SlotTarget {
+    /// The base value for the host's normalised value `n`: the exact patch value if `n` is bit-equal to its
+    /// `to_norm`, else `from_norm(n)` (`from_norm(to_norm(x))` is not `x` for most values; report 01 F3).
+    pub fn resolve(&self, n: f32) -> f32 {
+        if n.to_bits() == self.norm.to_bits() {
+            self.plain
+        } else {
+            self.spec.from_norm(n)
+        }
+    }
+}
+
+/// One host automation slot of a plan.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SlotEntry {
+    /// `fnv1a64` of the target's address text (never 0), or 0 for an empty slot: a plan swap re-applies a remembered
+    /// host value only to a slot whose key is unchanged.
+    pub key: u64,
+    /// `None` for an empty slot or a target in a disabled module.
+    pub target: Option<SlotTarget>,
+}
+
+/// A route's depth in a plan, for [`Link::send_depth`](crate::swap::Link::send_depth): from
+/// [`PlanMap::depth`]. Valid for the plan whose map gave it (tag it with that plan's epoch).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DepthId(pub(crate) u16);
 
 /// The output stage's per-plan ramps: the pan gains per voice and the master gain.
 #[derive(Clone, Copy, Debug)]
@@ -136,6 +175,10 @@ pub struct Plan {
     pub(crate) gmod_cur: Vec<f32>,
     pub(crate) gmod_prev: Vec<f32>,
     pub(crate) out: Output,
+    /// The host automation slots (P1b lane E+).
+    pub(crate) slots: [SlotEntry; SLOTS],
+    /// The routed parameters in telemetry order: the voice table's, then the global table's (P1b lane E+).
+    pub(crate) tap_params: Vec<ParamId>,
 }
 
 impl fmt::Debug for Plan {
@@ -210,6 +253,38 @@ impl Plan {
             .collect()
     }
 
+    /// The routed (modulated) parameters, in the order the telemetry tap publishes their values
+    /// ([`crate::tap::Tap`]): the voice table's routed parameters, then the global table's. Main thread: map them to
+    /// addresses with [`PlanMap::addr`].
+    #[must_use]
+    pub fn tap_params(&self) -> &[ParamId] {
+        &self.tap_params
+    }
+
+    /// The modulators, in the order the telemetry tap publishes their outputs: the voice modulators (patch order),
+    /// then the global ones.
+    #[must_use]
+    pub fn tap_modulators(&self) -> Vec<&ModuleId> {
+        self.voice_mods
+            .iter()
+            .map(|s| &s.id)
+            .chain(self.global_mods.iter().map(|s| &s.id))
+            .collect()
+    }
+
+    /// The parameter host slot `slot` (0-based) drives in this plan, if any (an empty slot, or a target in a disabled
+    /// module, has none).
+    #[must_use]
+    pub fn slot_target(&self, slot: usize) -> Option<ParamId> {
+        self.slots.get(slot).and_then(|e| e.target).map(|t| t.id)
+    }
+
+    /// A route's current depth, as a percentage (a depth event ramps it).
+    #[must_use]
+    pub fn route_depth(&self, id: DepthId) -> Option<f32> {
+        self.matrix.depth(usize::from(id.0)).map(|d| d * 100.0)
+    }
+
     /// The number of subnormal values in every module's state, the modulator outputs and the output ramps (test
     /// support).
     #[must_use]
@@ -255,6 +330,38 @@ impl Plan {
                 module_key: slot.key,
                 params: global_table.view(slot.params),
             });
+        }
+    }
+
+    /// Back to the state a freshly compiled plan started by [`Engine::new`](crate::Engine::new) holds, keeping the
+    /// base values ([`crate::Engine::reset`]): parameters settled on their bases, depth ramps landed, modulator
+    /// outputs at 0, the output ramps at the current master level, every global module reset. Voice modules need
+    /// nothing: every voice is freed, and `start_voice` resets a slot. Never allocates.
+    pub(crate) fn reset_state(&mut self, render_seed: u64) {
+        self.voice_table.settle();
+        self.global_table.settle();
+        self.matrix.settle_depths();
+        for out in self.vmod_cur.iter_mut().chain(self.vmod_prev.iter_mut()) {
+            *out = [0.0; MAX_VOICES];
+        }
+        self.gmod_cur.fill(0.0);
+        self.gmod_prev.fill(0.0);
+        let level = self.global_table.base[self.master_builtin.start + MasterParam::Level.index()];
+        self.out = Output::new(level);
+        self.reset_globals(render_seed);
+    }
+
+    /// A value from the command ring set parameter `id` to `value` (already applied to the table): a slot that
+    /// targets it now holds that as its patch value, so the host's echo (`to_norm` of it) resolves exactly.
+    pub(crate) fn note_patch_value(&mut self, id: ParamId, value: f32) {
+        for entry in &mut self.slots {
+            if let Some(t) = entry.target.as_mut()
+                && t.id == id
+                && !value.is_nan()
+            {
+                t.plain = t.spec.clamp(value);
+                t.norm = t.spec.to_norm(t.plain);
+            }
         }
     }
 
@@ -479,10 +586,11 @@ fn voice_start<'a, M>(
 
 /// Parameter addresses → the plan's parameter ids. Built with the plan; used off the audio thread to turn an op or
 /// an automation point into an [`EventKind::Param`](crate::event::EventKind::Param) (or a
-/// [`Link::send_param`](crate::swap::Link::send_param) with the plan's epoch).
+/// [`Link::send_param`](crate::swap::Link::send_param) with the plan's epoch), and a route into a [`DepthId`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanMap {
     params: BTreeMap<ParamAddr, ParamId>,
+    routes: BTreeMap<RouteAddr, DepthId>,
 }
 
 impl PlanMap {
@@ -490,6 +598,21 @@ impl PlanMap {
     #[must_use]
     pub fn get(&self, addr: &ParamAddr) -> Option<ParamId> {
         self.params.get(addr).copied()
+    }
+
+    /// The address of parameter `id` (a linear search; main thread, e.g. to label the telemetry tap's values).
+    #[must_use]
+    pub fn addr(&self, id: ParamId) -> Option<&ParamAddr> {
+        self.params.iter().find(|(_, i)| **i == id).map(|(a, _)| a)
+    }
+
+    /// The depth of route `route` in the plan, for [`Link::send_depth`](crate::swap::Link::send_depth) (P1b lane
+    /// E+). `None` when the plan has no term for it: a route with depth 0 (left out of the plan), or from or to a
+    /// disabled module. A depth change from or to 0 is therefore a recompile, which keeps settled values exact (a
+    /// routed parameter is always `from_norm(n)`).
+    #[must_use]
+    pub fn depth(&self, route: &RouteAddr) -> Option<DepthId> {
+        self.routes.get(route).copied()
     }
 
     /// Every address in the plan with its id, in address order.
@@ -756,6 +879,8 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         gmod_cur: Vec::new(),
         gmod_prev: Vec::new(),
         out: Output::new(master_db),
+        slots: [SlotEntry::default(); SLOTS],
+        tap_params: Vec::new(),
     };
 
     for section in Section::ALL {
@@ -787,6 +912,26 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         .map(|s| s.module.kind().spec().time_based)
         .collect();
     plan.matrix = compile_routes(patch, &plan, &map, &mut voice_table, &mut global_table)?;
+    for (term, route) in plan.matrix.tags() {
+        let r = &patch.routes[route];
+        let addr = RouteAddr {
+            src: r.src.clone(),
+            dst: r.dst.clone(),
+        };
+        map.routes.insert(addr, DepthId(term as u16));
+    }
+    plan.tap_params = voice_table
+        .routed
+        .iter()
+        .map(|&p| ParamId::Voice(p as u16))
+        .chain(
+            global_table
+                .routed
+                .iter()
+                .map(|&p| ParamId::Global(p as u16)),
+        )
+        .collect();
+    plan.slots = compile_slots(patch, &map);
     plan.voice_table = voice_table;
     plan.global_table = global_table;
     plan.vmod_cur = vec![[0.0; MAX_VOICES]; plan.voice_mods.len()];
@@ -794,6 +939,31 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
     plan.gmod_cur = vec![0.0; plan.global_mods.len()];
     plan.gmod_prev = vec![0.0; plan.global_mods.len()];
     Ok((plan, map))
+}
+
+/// The slot table: each of `patch.slots` resolved against the plan's parameters. A target that is not in the plan
+/// (a disabled module) or not automatable (a structural parameter: a patch that skipped `validate`) drives nothing.
+fn compile_slots(patch: &Patch, map: &PlanMap) -> [SlotEntry; SLOTS] {
+    let mut slots = [SlotEntry::default(); SLOTS];
+    for (entry, addr) in slots.iter_mut().zip(&patch.slots) {
+        let Some(addr) = addr else { continue };
+        entry.key = enth_dsp::util::rng::fnv1a64(addr.to_string().as_bytes()).max(1);
+        let (Some(id), Some(spec), Some(plain)) =
+            (map.get(addr), patch.spec(addr), patch.value(addr))
+        else {
+            continue;
+        };
+        if !spec.flags.automatable || spec.flags.structural {
+            continue;
+        }
+        entry.target = Some(SlotTarget {
+            id,
+            spec,
+            plain,
+            norm: spec.to_norm(plain),
+        });
+    }
+    slots
 }
 
 /// Resolve the patch's routes against the plan, in patch order, into the matrix (and mark the routed parameters).
@@ -817,7 +987,7 @@ fn compile_routes(
         }
     }
     let mut builder = MatrixBuilder::default();
-    for r in &patch.routes {
+    for (route_index, r) in patch.routes.iter().enumerate() {
         let bad = |reason| CompileError::BadRoute {
             route: format!("{} -> {}", r.src, r.dst),
             reason,
@@ -874,14 +1044,14 @@ fn compile_routes(
         match dst {
             ParamId::Voice(i) => {
                 let i = usize::from(i);
-                builder.add(voice_stage[i], true, i, term);
+                builder.add_tagged(voice_stage[i], true, i, term, route_index);
             }
             ParamId::Global(i) => {
                 if src.is_voice_rate() {
                     return Err(bad("route_rate_mismatch"));
                 }
                 let i = usize::from(i);
-                builder.add(global_stage[i], false, i, term);
+                builder.add_tagged(global_stage[i], false, i, term, route_index);
             }
         }
     }

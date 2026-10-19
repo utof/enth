@@ -373,6 +373,134 @@ fn the_monitor_bypass_mutes_time_based_effects_only() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// The monitor bypass fade (P1b lane E+, ADR-0006): 20 ms out, then the identity; 20 ms back in from silence.
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The saw, a compressor, then the reverb (last, so bypassing it leaves everything before it alone).
+fn fx_patches() -> (Patch, Patch) {
+    let mut with_fx = saw_patch();
+    with_fx
+        .fx
+        .push(ModuleInstance::new(id("comp1"), ModuleKind::Comp));
+    with_fx
+        .fx
+        .push(ModuleInstance::new(id("reverb1"), ModuleKind::Reverb));
+    let mut no_reverb = with_fx.clone();
+    no_reverb.fx.pop();
+    (with_fx, no_reverb)
+}
+
+/// Segments the bypass fade lasts at the test rate (30 at 48 kHz).
+const FADE: usize = 30;
+
+/// A held chord from segment 0 to 400, 500 segments; `before(k, engine, link)` runs before segment `k` and may flip
+/// the bypass or send a plan. Returns the output and, per segment, whether the fade was running after it.
+fn bypass_run(
+    patch: &Patch,
+    mut before: impl FnMut(usize, &mut Engine, &mut Link),
+) -> (Vec<f32>, Vec<bool>) {
+    let (mut e, mut link) = linked(patch, LinkCapacity::default());
+    let mut left = vec![0.0; 500 * SEG];
+    let mut fading = Vec::new();
+    for k in 0..500 {
+        before(k, &mut e, &mut link);
+        let events: Vec<Event> = match k {
+            0 => vec![on(57, 0), on(64, 1)],
+            400 => vec![off(57, 0), off(64, 1)],
+            _ => Vec::new(),
+        }
+        .into_iter()
+        .map(|kind| Event { offset: 0, kind })
+        .collect();
+        let mut right = [0.0; SEG];
+        let l = &mut left[k * SEG..(k + 1) * SEG];
+        assert_no_alloc(|| e.process(l, &mut right, &events));
+        fading.push(e.is_bypass_fading());
+        link.collect();
+    }
+    (left, fading)
+}
+
+#[test]
+fn engaging_the_monitor_bypass_fades_the_reverb_out_over_20_ms() {
+    assert_eq!(
+        (f64::from(enth_engine::MONITOR_BYPASS_FADE_MS) * f64::from(SR) / 1000.0 / SEG as f64)
+            .round(),
+        FADE as f64
+    );
+    let (with_fx, no_reverb) = fx_patches();
+    let (plain, _) = bypass_run(&with_fx, |_, _, _| {});
+    let (dry, _) = bypass_run(&no_reverb, |_, _, _| {});
+    let (out, fading) = bypass_run(&with_fx, |k, e, _| {
+        if k == 100 {
+            e.set_monitor_bypass(true);
+        }
+    });
+    let (at, settled) = (100 * SEG, (100 + FADE) * SEG);
+    assert_eq!(bits(&out[..at]), bits(&plain[..at]), "untouched before");
+    assert!(
+        fading[100..100 + FADE - 1].iter().all(|f| *f),
+        "fading for 20 ms"
+    );
+    assert!(!fading[100 + FADE - 1] && !fading[99]);
+    // A fade, not a switch: in between the reverb and the dry signal.
+    assert_ne!(bits(&out[at..settled]), bits(&plain[at..settled]));
+    assert_ne!(bits(&out[at..settled]), bits(&dry[at..settled]));
+    // ADR-0006's test: once the fade has settled, the same output as the patch without the reverb.
+    assert_eq!(bits(&out[settled..]), bits(&dry[settled..]));
+}
+
+#[test]
+fn releasing_the_monitor_bypass_fades_a_fresh_reverb_in_like_adding_it() {
+    let (with_fx, no_reverb) = fx_patches();
+    // Bypassed from the start (no fade before the first segment), released at segment 200.
+    let (out, fading) = bypass_run(&with_fx, |k, e, _| match k {
+        0 => e.set_monitor_bypass(true),
+        200 => e.set_monitor_bypass(false),
+        _ => {}
+    });
+    let (dry, _) = bypass_run(&no_reverb, |_, _, _| {});
+    assert_eq!(
+        bits(&out[..200 * SEG]),
+        bits(&dry[..200 * SEG]),
+        "no reverb while bypassed"
+    );
+    assert!(fading[200..200 + FADE - 1].iter().all(|f| *f));
+    // The reference: the reverb added by a plan swap at segment 200 (it starts fresh too, and crossfades in).
+    let mut added = Some(plan(&with_fx).0);
+    let (swapped, _) = bypass_run(&no_reverb, |k, _, link| {
+        if k == 200 {
+            link.send_plan(added.take().unwrap()).unwrap();
+        }
+    });
+    let settled = (200 + FADE) * SEG;
+    assert_ne!(
+        bits(&out[200 * SEG..settled]),
+        bits(&swapped[200 * SEG..settled])
+    );
+    assert_eq!(bits(&out[settled..]), bits(&swapped[settled..]));
+}
+
+#[test]
+fn reversing_the_monitor_bypass_mid_fade_turns_the_fade_around_without_a_reset() {
+    let (with_fx, _) = fx_patches();
+    let (plain, _) = bypass_run(&with_fx, |_, _, _| {});
+    let (out, fading) = bypass_run(&with_fx, |k, e, _| match k {
+        100 => e.set_monitor_bypass(true),
+        110 => e.set_monitor_bypass(false),
+        _ => {}
+    });
+    // Ten segments down, ten back up; the reverb kept running, so afterwards nothing remains of it.
+    assert!(fading[100..119].iter().all(|f| *f));
+    assert!(!fading[119]);
+    assert_ne!(
+        bits(&out[100 * SEG..120 * SEG]),
+        bits(&plain[100 * SEG..120 * SEG])
+    );
+    assert_eq!(bits(&out[120 * SEG..]), bits(&plain[120 * SEG..]));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // For every ModuleKind: copy the state of A into a fresh B, then both give the same bits.
 // ---------------------------------------------------------------------------------------------------------------
 

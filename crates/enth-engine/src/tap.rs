@@ -1,0 +1,332 @@
+//! The telemetry tap (P1b lane E+): a read-only, lock-free, allocation-free window from the audio thread into the
+//! engine, for the editor's knob rings, modulator tiles, voice count, statistics, scope and spectrum.
+//!
+//! ```text
+//! audio thread (end of Engine::process)              any other thread (the editor)
+//! publish: relaxed stores of f32 bits ──▶ Tap ◀── frame(): copy the latest values (pre-sized, no allocation)
+//!          the block's mono mix ────────▶ scope ring ◀── scope(out): the newest samples, oldest first
+//!          generation += 1 (Release) ────▶            ◀── generation() / sleep(seen) / take_wake()
+//! ```
+//!
+//! - **Atomics, not a queue**: the editor wants the latest value, not every value, so each value is one atomic
+//!   holding `f32` bits, overwritten by every publish. A reader may see two blocks mixed (a torn frame); for a display
+//!   that is harmless (research report 02, D7). The scope is a ring of atomic samples the writer overwrites: a reader
+//!   that falls behind loses the oldest samples. Nothing blocks and nothing allocates after [`Tap::new`].
+//! - **Overflow drops, never blocks.** Capacities are fixed at construction ([`TapCapacity`]). Routed parameters or
+//!   modulators beyond them are not published and are counted in [`TapFrame::dropped`]; a block longer than the
+//!   scope ring keeps its newest samples.
+//! - **Read-only**: publishing reads engine state and writes only the tap, so renders are the same bits with or
+//!   without a tap (tested). `enth-render` never attaches one.
+//! - **Quiet costs nothing**: the engine publishes only while the tap is enabled ([`Tap::set_enabled`]: the shell
+//!   enables it while the editor is open and shown). A silent block with no voice publishes nothing once the scope
+//!   ring holds a full ring of silence, so the generation stops and the editor can sleep.
+//! - **The wake handshake** (the UI spike's): the editor calls [`Tap::sleep`] with the last generation it drew; the
+//!   next publish that brings new data sets a wake flag, which the shell takes with [`Tap::take_wake`] after
+//!   `process` and turns into a repaint request (the engine cannot name the plugin framework's types).
+//!
+//! What is published, per `process` call (the latest segment's values):
+//! - the plan's epoch (the order of the routed values below follows that plan:
+//!   [`Plan::tap_params`](crate::Plan::tap_params) and [`Plan::tap_modulators`](crate::Plan::tap_modulators); a
+//!   reader ignores values whose epoch it has no map for);
+//! - the routed parameters' modulated values (`cur`) in plain units: voice-table ones for the *display voice*, global
+//!   ones as they are; the modulator outputs (voice modulators for the display voice, then global ones);
+//! - the display voice: the newest held voice (highest note index), else the newest releasing one, else none (then a
+//!   voice-table value is its base, and a voice modulator's output 0);
+//! - the active and held voice counts, the eight macros and the mod wheel (smoothed), the block's peaks, the engine's
+//!   counters, and the block's mono mix `(L + R) / 2` into the scope ring.
+
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
+
+use crate::engine::EngineStats;
+use crate::modulation::MACRO_SOURCES;
+
+/// Sizes of a [`Tap`], fixed at construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TapCapacity {
+    /// Routed parameters published (more are dropped and counted).
+    pub params: usize,
+    /// Modulator outputs published (more are dropped and counted).
+    pub modulators: usize,
+    /// Scope ring length in samples, rounded up to a power of two (at least 32).
+    pub scope: usize,
+}
+
+impl Default for TapCapacity {
+    /// 64 routed parameters (a patch's route limit), 16 modulators, 4,096 scope samples (85 ms at 48 kHz; the
+    /// spectrum reads the newest 2,048).
+    fn default() -> Self {
+        Self {
+            params: 64,
+            modulators: 16,
+            scope: 4096,
+        }
+    }
+}
+
+/// No display voice.
+const NO_VOICE: u32 = u32::MAX;
+
+/// The [`EngineStats`] fields, in declaration order.
+const STATS: usize = 10;
+
+/// The shared telemetry block. Build it with [`Tap::new`] (allocates), attach it to the engine with
+/// [`Engine::attach_tap`](crate::Engine::attach_tap) on the main thread, keep a clone for the reader.
+#[derive(Debug)]
+pub struct Tap {
+    enabled: AtomicBool,
+    generation: AtomicU64,
+    sleeping: AtomicBool,
+    wake: AtomicBool,
+    pub(crate) epoch: AtomicU64,
+    pub(crate) voices: AtomicU32,
+    pub(crate) held: AtomicU32,
+    pub(crate) display_voice: AtomicU32,
+    pub(crate) display_note: AtomicU64,
+    pub(crate) params: Box<[AtomicU32]>,
+    pub(crate) params_len: AtomicU32,
+    pub(crate) modulators: Box<[AtomicU32]>,
+    pub(crate) modulators_len: AtomicU32,
+    pub(crate) macros: [AtomicU32; MACRO_SOURCES],
+    pub(crate) peaks: [AtomicU32; 2],
+    pub(crate) stats: [AtomicU64; STATS],
+    pub(crate) dropped: AtomicU64,
+    scope: Box<[AtomicU32]>,
+    scope_written: AtomicU64,
+}
+
+/// One copy of the tap's values, for the reader. Build it with [`Tap::frame`] (sized to the tap; allocates once) and
+/// refill it with [`Tap::read`] (never allocates).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TapFrame {
+    /// The generation the values were read at (0: nothing published yet).
+    pub generation: u64,
+    /// The epoch of the plan whose order `params` and `modulators` follow.
+    pub epoch: u64,
+    /// Playing voices (held, releasing or fading).
+    pub voices: u32,
+    /// Voices with their key down.
+    pub held: u32,
+    /// The voice slot the per-voice values describe, if any.
+    pub display_voice: Option<u32>,
+    /// The note index of that voice's note.
+    pub display_note: u64,
+    /// Routed parameter values (plain units), in [`Plan::tap_params`](crate::Plan::tap_params) order; the first
+    /// `params_len` are valid.
+    pub params: Vec<f32>,
+    /// How many of `params` are valid.
+    pub params_len: usize,
+    /// Modulator outputs, in [`Plan::tap_modulators`](crate::Plan::tap_modulators) order; the first
+    /// `modulators_len` are valid.
+    pub modulators: Vec<f32>,
+    /// How many of `modulators` are valid.
+    pub modulators_len: usize,
+    /// The eight macros and the mod wheel (index 8), smoothed, 0–1.
+    pub macros: [f32; MACRO_SOURCES],
+    /// The last published block's peak per channel.
+    pub peaks: [f32; 2],
+    /// The engine's counters.
+    pub stats: EngineStats,
+    /// Values that did not fit the tap's capacities, summed over every publish.
+    pub dropped: u64,
+}
+
+/// Store `x`'s bits (relaxed): every value the tap holds.
+pub(crate) fn store_f32(a: &AtomicU32, x: f32) {
+    a.store(x.to_bits(), Ordering::Relaxed);
+}
+
+fn load_f32(a: &AtomicU32) -> f32 {
+    f32::from_bits(a.load(Ordering::Relaxed))
+}
+
+impl Tap {
+    /// A disabled tap with these capacities (allocates; main thread).
+    #[must_use]
+    pub fn new(capacity: TapCapacity) -> Arc<Self> {
+        let atoms = |n: usize| (0..n).map(|_| AtomicU32::new(0)).collect::<Box<[_]>>();
+        let scope = capacity.scope.max(32).next_power_of_two();
+        Arc::new(Self {
+            enabled: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
+            sleeping: AtomicBool::new(false),
+            wake: AtomicBool::new(false),
+            epoch: AtomicU64::new(0),
+            voices: AtomicU32::new(0),
+            held: AtomicU32::new(0),
+            display_voice: AtomicU32::new(NO_VOICE),
+            display_note: AtomicU64::new(0),
+            params: atoms(capacity.params),
+            params_len: AtomicU32::new(0),
+            modulators: atoms(capacity.modulators),
+            modulators_len: AtomicU32::new(0),
+            macros: core::array::from_fn(|_| AtomicU32::new(0)),
+            peaks: core::array::from_fn(|_| AtomicU32::new(0)),
+            stats: core::array::from_fn(|_| AtomicU64::new(0)),
+            dropped: AtomicU64::new(0),
+            scope: atoms(scope),
+            scope_written: AtomicU64::new(0),
+        })
+    }
+
+    /// Publish or not: the shell enables the tap while the editor is open and shown, and disables it otherwise, so a
+    /// closed editor costs the audio thread one relaxed load per `process` call.
+    pub fn set_enabled(&self, on: bool) {
+        self.enabled.store(on, Ordering::Relaxed);
+    }
+
+    /// Whether the engine publishes.
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed)
+    }
+
+    /// Bumped by every publish that brought new data; 0 before the first.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// The editor goes to sleep having drawn generation `seen`: returns `false` (stay awake, draw again) if newer data
+    /// already arrived. Otherwise the next publish with new data sets the wake flag ([`Tap::take_wake`]).
+    pub fn sleep(&self, seen: u64) -> bool {
+        self.sleeping.store(true, Ordering::SeqCst);
+        if self.generation.load(Ordering::SeqCst) != seen {
+            self.sleeping.store(false, Ordering::SeqCst);
+            return false;
+        }
+        true
+    }
+
+    /// Whether a publish found the editor asleep since the last call (and clear it): the shell calls this after
+    /// `process` and requests a repaint when it is `true`. Real-time safe.
+    pub fn take_wake(&self) -> bool {
+        self.wake.swap(false, Ordering::AcqRel)
+    }
+
+    /// The capacities this tap was built with (the scope rounded up).
+    #[must_use]
+    pub fn capacity(&self) -> TapCapacity {
+        TapCapacity {
+            params: self.params.len(),
+            modulators: self.modulators.len(),
+            scope: self.scope.len(),
+        }
+    }
+
+    /// A frame sized for this tap, for [`Tap::read`] (allocates once; reader thread).
+    #[must_use]
+    pub fn frame(&self) -> TapFrame {
+        TapFrame {
+            params: vec![0.0; self.params.len()],
+            modulators: vec![0.0; self.modulators.len()],
+            ..TapFrame::default()
+        }
+    }
+
+    /// Copy the latest values into `out` (built by [`Tap::frame`]; a smaller one gets what fits). Never allocates.
+    /// Values may mix two publishes (no lock); the generation is read first.
+    pub fn read(&self, out: &mut TapFrame) {
+        out.generation = self.generation();
+        out.epoch = self.epoch.load(Ordering::Relaxed);
+        out.voices = self.voices.load(Ordering::Relaxed);
+        out.held = self.held.load(Ordering::Relaxed);
+        let v = self.display_voice.load(Ordering::Relaxed);
+        out.display_voice = (v != NO_VOICE).then_some(v);
+        out.display_note = self.display_note.load(Ordering::Relaxed);
+        out.params_len = (self.params_len.load(Ordering::Relaxed) as usize).min(out.params.len());
+        for (o, a) in out.params.iter_mut().zip(self.params.iter()) {
+            *o = load_f32(a);
+        }
+        out.modulators_len =
+            (self.modulators_len.load(Ordering::Relaxed) as usize).min(out.modulators.len());
+        for (o, a) in out.modulators.iter_mut().zip(self.modulators.iter()) {
+            *o = load_f32(a);
+        }
+        for (o, a) in out.macros.iter_mut().zip(&self.macros) {
+            *o = load_f32(a);
+        }
+        for (o, a) in out.peaks.iter_mut().zip(&self.peaks) {
+            *o = load_f32(a);
+        }
+        let s: [u64; STATS] = core::array::from_fn(|i| self.stats[i].load(Ordering::Relaxed));
+        out.stats = EngineStats {
+            notes: s[0],
+            dropped_notes: s[1],
+            dropped_events: s[2],
+            segments: s[3],
+            stolen_voices: s[4],
+            cut_voices: s[5],
+            stale_events: s[6],
+            swaps: s[7],
+            crossfades: s[8],
+            dropped_note_ends: s[9],
+        };
+        out.dropped = self.dropped.load(Ordering::Relaxed);
+    }
+
+    /// Fill `out` with the newest scope samples, oldest first, the newest last; samples older than the ring (or
+    /// than the first publish) read 0. Returns the total number of samples ever written, so a reader can tell whether
+    /// anything new arrived. Never allocates. Samples the writer overwrote during the copy may show the newer block:
+    /// harmless for a display.
+    pub fn scope(&self, out: &mut [f32]) -> u64 {
+        let written = self.scope_written.load(Ordering::Acquire);
+        let mask = self.scope.len() as u64 - 1;
+        let available = written.min(self.scope.len() as u64);
+        let len = out.len() as u64;
+        for (k, o) in out.iter_mut().enumerate() {
+            // Sample `written − len + k`, if it is still in the ring.
+            let age = len - k as u64; // 1 for the newest
+            *o = if age <= available {
+                load_f32(&self.scope[((written - age) & mask) as usize])
+            } else {
+                0.0
+            };
+        }
+        written
+    }
+
+    /// Writer: one block's mono mix into the scope ring (only the newest ring-length samples of a longer block).
+    pub(crate) fn write_scope(&self, left: &[f32], right: &[f32]) {
+        let n = left.len().min(right.len());
+        let skip = n.saturating_sub(self.scope.len());
+        let mask = self.scope.len() as u64 - 1;
+        let mut w = self.scope_written.load(Ordering::Relaxed) + skip as u64;
+        for (l, r) in left[skip..n].iter().zip(&right[skip..n]) {
+            store_f32(&self.scope[(w & mask) as usize], 0.5 * (l + r));
+            w += 1;
+        }
+        self.scope_written.store(w, Ordering::Release);
+    }
+
+    /// The scope ring's length.
+    pub(crate) fn scope_len(&self) -> usize {
+        self.scope.len()
+    }
+
+    pub(crate) fn store_stats(&self, s: &EngineStats) {
+        let v = [
+            s.notes,
+            s.dropped_notes,
+            s.dropped_events,
+            s.segments,
+            s.stolen_voices,
+            s.cut_voices,
+            s.stale_events,
+            s.swaps,
+            s.crossfades,
+            s.dropped_note_ends,
+        ];
+        for (a, x) in self.stats.iter().zip(v) {
+            a.store(x, Ordering::Relaxed);
+        }
+    }
+
+    /// Writer: the publish is complete; bump the generation and set the wake flag if the reader sleeps.
+    pub(crate) fn finish(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        if self.sleeping.swap(false, Ordering::SeqCst) {
+            self.wake.store(true, Ordering::Release);
+        }
+    }
+}

@@ -26,7 +26,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::module::{MAX_VOICES, NoteState, VoiceIdx};
+use crate::module::{MAX_VOICES, NoteState, SEG, VoiceIdx};
 use crate::params::{GlobalTable, VoiceTable};
 
 /// Macros (`macro1`…`macro8`) and the mod wheel: global sources held in the global table as nine parameters with
@@ -35,6 +35,16 @@ pub const MACRO_SOURCES: usize = 9;
 
 /// The index of the mod wheel among [`MACRO_SOURCES`].
 pub const MOD_WHEEL: usize = 8;
+
+/// The macros that take CLAP polyphonic offsets (`macro1`…`macro8`; not the mod wheel).
+pub const POLY_MACROS: usize = 8;
+
+/// Per-voice macro offsets for CLAP polyphonic modulation, `[macro][voice]`, normalised (P1b lane E+).
+pub type PolyOffsets = [[f32; MAX_VOICES]; POLY_MACROS];
+
+/// A depth value event ramps the route's depth linearly over this long (P1b lane E+), like the 10 ms of most
+/// parameters: `max(1, round(ms · sr / 1000 / 32))` segments, the last step landing exactly on the new depth.
+pub const DEPTH_SMOOTHING_MS: f32 = 10.0;
 
 /// A route source, resolved against a plan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +96,17 @@ struct Dest {
     start: usize,
     len: usize,
     voice_rate: bool,
+    /// A route from a macro: per voice while polyphonic offsets are active.
+    from_macro: bool,
+}
+
+/// A route depth moving to a new value (a depth value event).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct DepthRamp {
+    target: f32,
+    step: f32,
+    /// Segments left; 0 when settled.
+    left: u32,
 }
 
 /// A range of `Matrix::voice` or `Matrix::global`.
@@ -105,26 +126,41 @@ pub(crate) struct Matrix {
     global_by_gmod: Vec<Run>,
     voice_final: Run,
     global_final: Run,
+    /// Per term: the caller's tag ([`MatrixBuilder::add_tagged`]; the patch route index), or `usize::MAX`.
+    tags: Vec<usize>,
+    /// Per term: its depth ramp (depth value events).
+    ramps: Vec<DepthRamp>,
+    /// Ramps in flight.
+    moving: u32,
+    /// Segments a depth ramp lasts ([`DEPTH_SMOOTHING_MS`]).
+    ramp_segments: u32,
 }
 
 /// Collects routes in patch order (compile time).
 #[derive(Debug, Default)]
 pub(crate) struct MatrixBuilder {
-    /// (stage, in the voice table, parameter index) → terms in patch order.
-    dests: BTreeMap<(Stage, bool, usize), Vec<Term>>,
+    /// (stage, in the voice table, parameter index) → terms in patch order, with their tags.
+    dests: BTreeMap<(Stage, bool, usize), Vec<(Term, usize)>>,
 }
 
 impl MatrixBuilder {
     /// Add a route into parameter `param` of the voice table (`voice`) or the global table.
+    #[cfg(test)]
     pub fn add(&mut self, stage: Stage, voice: bool, param: usize, term: Term) {
+        self.add_tagged(stage, voice, param, term, usize::MAX);
+    }
+
+    /// [`MatrixBuilder::add`] with a tag (the patch route index) that [`Matrix::tags`] reports with the term's
+    /// index, so a depth value event can address it.
+    pub fn add_tagged(&mut self, stage: Stage, voice: bool, param: usize, term: Term, tag: usize) {
         self.dests
             .entry((stage, voice, param))
             .or_default()
-            .push(term);
+            .push((term, tag));
     }
 
-    /// The matrix for a plan with `n_vmods` voice and `n_gmods` global modulators; marks the routed parameters in
-    /// the tables.
+    /// The matrix for a plan with `n_vmods` voice and `n_gmods` global modulators at `sample_rate`; marks the routed
+    /// parameters in the tables.
     pub fn build(
         self,
         n_vmods: usize,
@@ -132,9 +168,13 @@ impl MatrixBuilder {
         voice_table: &mut VoiceTable,
         global_table: &mut GlobalTable,
     ) -> Matrix {
+        let frames = f64::from(DEPTH_SMOOTHING_MS) * f64::from(voice_table.sample_rate()) / 1000.0;
         let mut m = Matrix {
             voice_by_vmod: vec![(0, 0); n_vmods],
             global_by_gmod: vec![(0, 0); n_gmods],
+            ramp_segments: (frames / SEG as f64)
+                .round()
+                .clamp(1.0, f64::from(u32::MAX)) as u32,
             ..Matrix::default()
         };
         for ((stage, voice, param), terms) in self.dests {
@@ -142,9 +182,17 @@ impl MatrixBuilder {
                 param,
                 start: m.terms.len(),
                 len: terms.len(),
-                voice_rate: terms.iter().any(|t| t.src.is_voice_rate()),
+                voice_rate: terms.iter().any(|(t, _)| t.src.is_voice_rate()),
+                from_macro: terms.iter().any(|(t, _)| matches!(t.src, Src::Macro(_))),
             };
-            m.terms.extend(terms);
+            for (term, tag) in terms {
+                m.terms.push(term);
+                m.tags.push(tag);
+                m.ramps.push(DepthRamp {
+                    target: term.depth,
+                    ..DepthRamp::default()
+                });
+            }
             let (list, run) = if voice {
                 voice_table.route(param);
                 let run = match stage {
@@ -180,6 +228,8 @@ pub(crate) struct Sources<'a> {
     pub gmod: &'a [f32],
     /// The macros and the mod wheel, this segment's smoothed values.
     pub macros: [f32; MACRO_SOURCES],
+    /// Per-voice macro offsets (CLAP polyphonic modulation), when any is non-zero.
+    pub poly: Option<&'a PolyOffsets>,
 }
 
 impl Sources<'_> {
@@ -200,7 +250,13 @@ impl Sources<'_> {
             Src::VoiceMod(i) => self.vmod[usize::from(i)][v],
             Src::Velocity => self.notes.velocity[v],
             Src::Key => (self.notes.pitch_cur[v] - 60.0) / 120.0,
-            Src::GlobalMod(_) | Src::ModWheel | Src::Macro(_) => self.global(src),
+            Src::Macro(i) => match self.poly {
+                Some(poly) if usize::from(i) < POLY_MACROS => {
+                    (self.macros[usize::from(i)] + poly[usize::from(i)][v]).clamp(0.0, 1.0)
+                }
+                _ => self.global(src),
+            },
+            Src::GlobalMod(_) | Src::ModWheel => self.global(src),
         }
     }
 }
@@ -215,6 +271,72 @@ impl Matrix {
     /// Whether the plan has no routes.
     pub fn is_empty(&self) -> bool {
         self.terms.is_empty()
+    }
+
+    /// `(term index, tag)` for every term added with a tag, in term order.
+    pub fn tags(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.tags
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| **t != usize::MAX)
+            .map(|(i, &t)| (i, t))
+    }
+
+    /// A depth value event: term `term`'s depth moves to `depth_pct / 100` (clamped to ±100 %; NaN and unknown
+    /// terms are ignored) over [`DEPTH_SMOOTHING_MS`], linearly; a new depth mid-ramp restarts the ramp from where
+    /// the depth is. `depth_pct / 100` is computed exactly as the compiler computes a route's depth, so once the
+    /// ramp is over the term holds the bits a recompile would give.
+    pub fn set_depth(&mut self, term: usize, depth_pct: f32) {
+        let (Some(t), Some(r)) = (self.terms.get_mut(term), self.ramps.get_mut(term)) else {
+            return;
+        };
+        if depth_pct.is_nan() {
+            return;
+        }
+        let target = depth_pct.clamp(-100.0, 100.0) / 100.0;
+        if r.left == 0 && t.depth.to_bits() == target.to_bits() {
+            return;
+        }
+        if r.left == 0 {
+            self.moving += 1;
+        }
+        r.target = target;
+        r.left = self.ramp_segments;
+        r.step = (target - t.depth) / self.ramp_segments as f32;
+    }
+
+    /// Advance every depth ramp one segment (step 3); nothing to do unless a depth event is in flight.
+    pub fn advance_depths(&mut self) {
+        if self.moving == 0 {
+            return;
+        }
+        for (t, r) in self.terms.iter_mut().zip(&mut self.ramps) {
+            if r.left > 0 {
+                r.left -= 1;
+                if r.left == 0 {
+                    t.depth = r.target;
+                    self.moving -= 1;
+                } else {
+                    t.depth += r.step;
+                }
+            }
+        }
+    }
+
+    /// Land every depth ramp on its target at once ([`crate::Engine::reset`]).
+    pub fn settle_depths(&mut self) {
+        for (t, r) in self.terms.iter_mut().zip(&mut self.ramps) {
+            if r.left > 0 {
+                r.left = 0;
+                t.depth = r.target;
+            }
+        }
+        self.moving = 0;
+    }
+
+    /// Term `term`'s current depth as a fraction (`depth / 100`), for tests and telemetry.
+    pub fn depth(&self, term: usize) -> Option<f32> {
+        self.terms.get(term).map(|t| t.depth)
     }
 
     /// The global destinations evaluated just before global modulator `i` ticks.
@@ -275,7 +397,7 @@ impl Matrix {
             let n0 = table.smooth[d.param].norm();
             let terms = &self.terms[d.start..d.start + d.len];
             let (cur, prev) = (&mut table.cur[d.param], &mut table.prev[d.param]);
-            if d.voice_rate {
+            if d.voice_rate || (d.from_macro && src.poly.is_some()) {
                 for &v in voices {
                     let mut n = n0;
                     for t in terms {
@@ -362,6 +484,7 @@ mod tests {
             vmod: &[],
             gmod: &[],
             macros,
+            poly: None,
         };
         let reset = [true; MAX_VOICES];
         vt.advance(&[3, 5], &reset);
@@ -410,6 +533,7 @@ mod tests {
             vmod: &out,
             gmod: &[],
             macros: [0.0; MACRO_SOURCES],
+            poly: None,
         };
         let reset = [false; MAX_VOICES];
         vt.advance(&[0, 1, 2], &reset);

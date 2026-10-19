@@ -38,14 +38,17 @@ pub mod plan;
 pub mod seed;
 pub mod segment;
 pub mod swap;
+pub mod tap;
 pub mod voice;
 
-pub use engine::{CROSSFADE_FRAMES, Engine, EngineStats};
+pub use engine::{CROSSFADE_FRAMES, Engine, EngineStats, MONITOR_BYPASS_FADE_MS};
 pub use event::{Event, EventKind, NoteKey};
+pub use modulation::{DEPTH_SMOOTHING_MS, POLY_MACROS};
 pub use module::{MAX_VOICES, PrepareCfg, SEG};
 pub use params::ParamId;
-pub use plan::{CompileError, Plan, PlanMap, compile};
+pub use plan::{CompileError, DepthId, Plan, PlanMap, compile};
 pub use swap::{Link, LinkCapacity, MAX_PLANS_IN_FLIGHT, SendError};
+pub use tap::{Tap, TapCapacity, TapFrame};
 pub use voice::{NoteEnd, VoiceState};
 
 /// The engine version stamped into patches authored on this build (`Patch::engine`) and into golden files. Bump it
