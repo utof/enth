@@ -396,6 +396,10 @@ mod tests {
         assert_eq!(Unit::Hz.parse("2e3Hz"), Ok(2000.0));
         assert_eq!(Unit::Hz.parse("1.5e1kHz"), Ok(15000.0));
         assert_eq!(Unit::Hz.parse(".5kHz"), Ok(500.0));
+        assert_eq!(Unit::Hz.parse("1.kHz"), Ok(1000.0));
+        assert_eq!(Unit::None.parse("1.e3"), Ok(1000.0));
+        assert_eq!(Unit::Ms.parse("1e3s"), Ok(1_000_000.0));
+        assert_eq!(Unit::None.parse("1e-99999"), Ok(0.0));
     }
 
     #[test]
