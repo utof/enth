@@ -194,9 +194,14 @@ fn voice_ends_and_cuts_are_reported_for_note_end() {
     drive(&mut e, &ev, 8000, 100, |e, _, _| {
         ends.extend(e.note_ends().iter().map(|n| (n.key.key, n.frame)));
     });
-    // 60: its note-off lands at 1024 (the grid) and the gate envelope is silent by the end of that segment (1056).
-    // 62 is stolen at 2528 by 64 and faded out by 2592. 64: note-off at 4000, silent by 4032.
-    assert_eq!(ends, [(60, 1056), (62, 2528 + 64), (64, 4032)]);
+    // The gate envelope's release lasts the 1 ms minimum ramp, rounded up to whole segments (lane D2).
+    let release = u64::from(enth_engine::modules::adsr::min_ramp_steps(48_000.0)) * SEG as u64;
+    // 60: its note-off lands at 1024 (the grid) and the gate envelope is silent `release` frames later.
+    // 62 is stolen at 2528 by 64 and faded out by 2592. 64: note-off at 4000 (on the grid), silent `release` later.
+    assert_eq!(
+        ends,
+        [(60, 1024 + release), (62, 2528 + 64), (64, 4000 + release)]
+    );
 }
 
 #[test]

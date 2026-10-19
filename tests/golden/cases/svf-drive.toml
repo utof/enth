@@ -1,0 +1,15 @@
+description = "Drive: low-pass at 2 kHz, resonance 30 %, 12 dB of drive into the soft saturator, a loud 110 Hz saw. Guards the saturator curve and its normalisation. The saw is the reference stub until lane D1 lands."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.6 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "2kHz", resonance = 30, drive = 12 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

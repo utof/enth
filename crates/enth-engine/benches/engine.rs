@@ -16,12 +16,16 @@ fn saw(voices: usize) -> common::Prepared {
     common::prepare(&common::base_patch(), voices, 1.0)
 }
 
-// Budgets: measured on x86_64 Linux with the pinned toolchain (2026-10-19: 3,660,346 and 40,367,014 instructions,
-// 76 and 841 per frame), plus 10 %. 1 s at 48 kHz per case. Every patch holds an `osc` and an `adsr`, so lanes D1
-// and D2 re-measure these two budgets when they replace the reference saw and envelope, in the same commit.
+// Budgets: measured on x86_64 Linux with the pinned toolchain, plus 10 %, rounded up to 1,000. 1 s at 48 kHz per case.
+// Every patch holds an `osc` and an `adsr`, so lanes D1 and D2 re-measure these two budgets when they replace the
+// reference saw and envelope, in the same commit. Lane D2 (real ADSR, S2a's reference saw still in place,
+// 2026-10-19): 3,873,015 (81 per frame) and 43,370,997 (904 per frame). S2a's reference envelope measured
+// 3,660,346 and 40,367,014 at its own commit; the same commit measures 3,984,758 and 44,866,745 on today's machine, so
+// the S2a budget of 44.4 M for 16 voices no longer held at this base. Lane D1 re-measures them with the real
+// oscillator.
 #[library_benchmark]
-#[bench::saw_1v(args = (1,), setup = saw, config = common::budget(4_030_000))]
-#[bench::saw_16v(args = (16,), setup = saw, config = common::budget(44_400_000))]
+#[bench::saw_1v(args = (1,), setup = saw, config = common::budget(4_261_000))]
+#[bench::saw_16v(args = (16,), setup = saw, config = common::budget(47_709_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }
