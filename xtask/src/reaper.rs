@@ -631,7 +631,16 @@ fn run_scenario(
                 "control",
                 &chunk_env(&chunks.dirty_control, &None),
             );
-            dirty_flag(report, format, &edit, &control);
+            let idle = run_script(
+                sb,
+                report,
+                format,
+                "dirty-flag",
+                "dirty",
+                "idle",
+                &chunk_env(&chunks.state, &None),
+            );
+            dirty_flag(report, format, &edit, &control, &idle);
         }
         Scenario::CrossFormat => {}
     }
@@ -672,9 +681,11 @@ fn render_project(
 }
 
 /// The `dirty-flag` scenario's rows. The edit must have been a patch-only edit (it moved no host parameter), and the
-/// answer to the open check is `dirty-after-editor-edit`; the control (a knob bound to a host slot) is measured, not
-/// judged.
-fn dirty_flag(report: &mut Report, format: Format, edit: &Log, control: &Log) {
+/// answer to the open check is `dirty-after-editor-edit`: the flag read at once and 3 s after the edit, with the editor
+/// still open (the case where a user quits REAPER with the editor open). The control (a knob bound to a host slot) and
+/// the editor window's closing are measured, not judged: closing a floating FX window marks the project dirty by
+/// itself (the idle phase, with no edit, reads 1 too), so it says nothing about the edit.
+fn dirty_flag(report: &mut Report, format: Format, edit: &Log, control: &Log, idle: &Log) {
     let scope = format!("{}/dirty-flag", format.tag());
     let get = |log: &Log, key: &str| log.data.get(key).cloned().unwrap_or_else(|| "?".to_owned());
     let moved = get(edit, "host-params-moved");
@@ -687,23 +698,30 @@ fn dirty_flag(report: &mut Report, format: Format, edit: &Log, control: &Log) {
             get(edit, "edit-point")
         ),
     );
-    let (dirty, changes) = (
-        get(edit, "dirty-after-edit"),
-        get(edit, "state-changes-during-edit"),
-    );
+    let (now, late) = (get(edit, "dirty-after-edit"), get(edit, "dirty-late"));
     let detail = format!(
-        "IsProjectDirty = {dirty} after an editor-only patch edit (the project was clean before: {}; project state changes: {changes})",
-        get(edit, "dirty-after-save")
+        "IsProjectDirty = {now} at once and {late} 3 s after an editor-only patch edit with the editor open (clean before: {}; project state changes: {})",
+        get(edit, "dirty-after-save"),
+        get(edit, "state-changes-during-edit")
     );
-    match (dirty.as_str(), DIRTY_MARKING_EXPECTED) {
-        ("1", _) => report.add(&scope, "dirty-after-editor-edit", true, detail),
-        ("0", false) => report.info(
+    match (now == "1" || late == "1", DIRTY_MARKING_EXPECTED) {
+        (true, _) => report.add(&scope, "dirty-after-editor-edit", true, detail),
+        (false, false) if now == "0" && late == "0" => report.info(
             &scope,
             "dirty-after-editor-edit",
             format!("{detail}: KNOWN GAP, REAPER does not mark the project dirty; a sixth fork patch adds dirty-marking"),
         ),
-        _ => report.add(&scope, "dirty-after-editor-edit", false, detail),
+        (false, _) => report.add(&scope, "dirty-after-editor-edit", false, detail),
     }
+    report.info(
+        &scope,
+        "dirty-after-closing-editor",
+        format!(
+            "IsProjectDirty = {} after the editor window closed following an edit, {} after it closed with no edit (closing the window marks the project dirty by itself)",
+            get(edit, "dirty-after-close"),
+            get(idle, "dirty-after-close")
+        ),
+    );
     report.info(
         &scope,
         "control-dirty-after-slot-edit",
@@ -960,7 +978,8 @@ fn run_script(
     extra_env: &[(&'static str, String)],
 ) -> Log {
     let tag = format.tag();
-    let label = format!("{tag}-{script}-{phase}");
+    // One log per launch: a scenario name and a phase never repeat for a format, a script name can (slot and macro).
+    let label = format!("{tag}-{scenario}-{phase}");
     let log_name = format!("{label}.log");
     let lua = sb.lua.join(format!("{script}.lua"));
     let fx = format.reaper_name(&sb.plugin_name);

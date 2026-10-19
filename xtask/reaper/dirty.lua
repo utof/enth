@@ -3,6 +3,8 @@
 --   edit:    a patch edit nothing else sees: no host parameter is bound to the dragged knob.
 --   control: the same drag on a knob that is bound to a host slot; the editor then writes the host parameter
 --            (begin, set, end gesture), which hosts treat as a change.
+--   idle:    no edit at all, only the editor opened and closed: what the project reads when nothing was edited.
+-- After the drag the flag is read at once, 3 s later, and after the editor window was closed.
 -- Each phase loads its patch, opens the editor, saves the project (so it is clean), drags a knob with real X events
 -- (xinput.py, under Xvfb only) and reads `IsProjectDirty`. The drag looks for a knob: the first point is where the F2b
 -- editor's "Level" knob sits (an offset into the plugin's window); if the saved state does not change there, a coarse
@@ -13,6 +15,10 @@ local phase = os.getenv("ENTH_PHASE")
 local tag = os.getenv("ENTH_TAG")
 local project = OUT .. "/dirty-" .. phase .. "-" .. tag .. ".rpp"
 local FIRST_POINT = { 366, 64 } -- offset of F2b's "Level" knob inside the plugin window
+do -- ENTH_EDIT_POINT=x,y overrides it (to try the search with a point that is not on a knob)
+  local x, y = (os.getenv("ENTH_EDIT_POINT") or ""):match("^(%d+),(%d+)$")
+  if x then FIRST_POINT = { tonumber(x), tonumber(y) } end
+end
 local BUDGET = 40 -- seconds for the grid search
 
 local function snapshot(track, fx)
@@ -65,9 +71,12 @@ safe(function()
     data("editor-window", string.format("%d,%d %dx%d", x, y, w, h))
 
     -- The knob search is a plain loop: each drag is a blocking call anyway. A short wait after each lets the GUI thread
-    -- draw a frame (and apply the edit) before the state is read.
+    -- draw a frame (and apply the edit) before the state is read. The idle phase makes no edit at all.
     local found
-    if try_drag(track, fx, before, x, y, FIRST_POINT[1], FIRST_POINT[2]) then
+    if phase == "idle" then
+      sleep(0.5)
+      found = false
+    elseif try_drag(track, fx, before, x, y, FIRST_POINT[1], FIRST_POINT[2]) then
       found = FIRST_POINT
     else
       local t0 = reaper.time_precise()
@@ -79,14 +88,26 @@ safe(function()
         if found or reaper.time_precise() - t0 > BUDGET then break end
       end
     end
-    check(phase .. "-edit-applied", found ~= nil, found and ("a drag at " .. found[1] .. "," .. found[2] .. " changed the saved state")
-      or "no drag changed the saved state: the editor's layout moved? update FIRST_POINT in dirty.lua")
+    if phase == "idle" then
+      check("idle-state-unchanged", state_chunk(track, fx) == before, "no edit, so the saved state is the same")
+    else
+      check(phase .. "-edit-applied", found ~= nil, found and ("a drag at " .. found[1] .. "," .. found[2] .. " changed the saved state")
+        or "no drag changed the saved state: the editor's layout moved? update FIRST_POINT in dirty.lua")
+    end
     wait(0.5, function()
       data("host-params-moved", moved(params_before, snapshot(track, fx)))
       data("dirty-after-edit", reaper.IsProjectDirty(0))
       data("state-changes-during-edit", reaper.GetProjectStateChangeCount(0) - changes_before)
-      data("edit-point", found and (found[1] .. "," .. found[2]) or "none")
-      finish()
+      data("edit-point", type(found) == "table" and (found[1] .. "," .. found[2]) or "none")
+      -- REAPER might notice a plugin's change later (a poll, or when the window closes): look again.
+      wait(2.5, function()
+        data("dirty-late", reaper.IsProjectDirty(0))
+        hide_editor(track, fx)
+        wait(1.0, function()
+          data("dirty-after-close", reaper.IsProjectDirty(0))
+          finish()
+        end)
+      end)
     end)
   end)
 end)()
