@@ -2,7 +2,7 @@
 
 > **Working name:** `enth` (the repo folder). The final product name is still open — see [naming.md](naming.md). Crates use the `enth-` prefix; renaming later is a find-and-replace.
 >
-> **As of:** 2026-10-19 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). P1a (the headless core, [phase-1a.md](phase-1a.md)) is done; its G1 table is [p1a-g1.md](p1a-g1.md). The P1b research session (plugin and editor) is done and these docs follow it; the P1b lanes ([phase-1b.md](phase-1b.md)) are next.
+> **As of:** 2026-10-19 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). P1a (the headless core, [phase-1a.md](phase-1a.md)) is done except the owner's gates (the reverb A/B and the blind listen); its G1 table is [p1a-g1.md](p1a-g1.md). P1b (the plugin and the editor, [phase-1b.md](phase-1b.md)) is in progress: the research session is done, freezes F0b and F1b are reached, and lanes S0b, E+, UI-C, S1s, TH, FK and S2s are merged.
 
 `enth` is an open-source (MIT) modular synthesizer written in Rust, shipped first as a **CLAP plugin**, built for its author and friends first. It combines ideas that usually live in separate products:
 
@@ -23,6 +23,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [research-process.md](research-process.md) | **The rule:** a deep-research session before every milestone, saved in `_local/sessions/` |
 | [architecture.md](architecture.md) | Crates, layers, folder layout, and the rules that keep it refactor-free |
 | [design.md](design.md) | The nine load-bearing designs: params, patch, engine, host params, determinism, scoring, knob distance, solver, randomizer |
+| [session.md](session.md) | `enth-session` (L6): the one `Session` that owns the live patch, its API, the threading contract, plan delivery, the host bridge, undo and the saved state |
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
 | [phase-1a.md](phase-1a.md) | The P1a (headless core) lanes: freezes, waves, ownership, acceptance, owner gates (done; the actual hours are recorded there) |

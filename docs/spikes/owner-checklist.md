@@ -1,6 +1,6 @@
 # Owner checklist: what Phase 0 left for your eyes, ears and hands
 
-- Date: 2026-10-19 (lane Z). One ordered list that replaces the separate lists in [shell.md](shell.md), [ui.md](ui.md), [metric.md](metric.md), [agent-probe.md](agent-probe.md), [test-host.md](test-host.md) and the research reports 01-final and 02-final (`_local/sessions/2026-10-19-phase-0-spikes/`).
+- Date: 2026-10-19 (lane Z). Updated the same day after P1b lane FK: decisions 1 and 4 below are settled, and 5 is now the optional upstream reports. One ordered list that replaces the separate lists in [shell.md](shell.md), [ui.md](ui.md), [metric.md](metric.md), [agent-probe.md](agent-probe.md), [test-host.md](test-host.md) and the research reports 01-final and 02-final (`_local/sessions/2026-10-19-phase-0-spikes/`).
 - Nothing in P1a waits for these. They close the G0 rows marked *pending owner* in [roadmap.md](../roadmap.md#p0--spikes-and-skeleton-done-2026-10-19-except-owner-checks) and [benchmarks.md](../benchmarks.md#ui-thresholds), and they decide whether ADR-0002 stays accepted and whether ADR-0007 can be accepted.
 - Total: about 2½ hours of checks plus the two 15-minute listening sessions, in as many sittings as you like. Sections A and B are safe; risk rises from C to D.
 
@@ -176,7 +176,7 @@ Is the editor sharp, and does REAPER clip it to its top-left quarter (seen under
 cp ~/code/enth-scratch/2026-10-19-phase-0-spikes/01/bundles/spike_np_rename.clap ~/.clap/
 ```
 
-Rescan and load "enth spike-np-rename" (CLAP; it carries the researcher's 123-line nice-plug patch). Create an automation lane for Slot 1, then set Slot 64 to its maximum. Do the FX parameter list and a new automation lane show "Osc 1 · Cutoff"? Does the lane created earlier keep its old label? See decision 1.
+Rescan and load "enth spike-np-rename" (CLAP; it carries the researcher's 123-line nice-plug patch). Create an automation lane for Slot 1, then set Slot 64 to its maximum. Do the FX parameter list and a new automation lane show "Osc 1 · Cutoff"? Does the lane created earlier keep its old label? Decision 1 is settled (the fork carries this patch: lane FK vendored it unchanged as patch 1 of 5 and checked the rename with a scratch CLAP host, `vendor/tests/rename-check/`, not with REAPER), so this step is only the REAPER confirmation.
 
 ## D. Optional, and the riskiest
 
@@ -216,8 +216,8 @@ Only if Xorg crashes again or first opens stay blank: `sudo prime-select on-dema
 
 ## Decisions only you can make
 
-1. **Slot names:** carry the 123-line rename patch in a small nice-plug fork (CLAP names follow the patch in REAPER; VST3 in REAPER stays "Slot N" whatever we do), or accept "Slot N" everywhere ([ADR-0001](../adr/0001-plugin-shell.md)). Input: C6.
+1. **Slot names: settled (2026-10-19).** A vendored fork of nice-plug and baseview under `vendor/` with five patches (slot rename, `editor_closed`, baseview's xkb unref, keyboard focus only while typing, and a lost note-on in the CLAP wrapper), behind `[patch.crates-io]` and built by lane FK ([ADR-0001](../adr/0001-plugin-shell.md), `vendor/README.md`). CLAP names follow the patch in REAPER; VST3 in REAPER stays "Slot N" whatever we do. Nothing to decide; C6 is the REAPER confirmation.
 2. **The look:** palette, density, knob size (36 px in a 56 px cell), Inter ([design-system.md](../design-system.md)). Anything to change becomes a token edit plus a new gallery snapshot. Input: B1.
 3. **Scope rate:** keep `motion.scope_hz` at 60 (about 30 fps under baseview 0.4.1) or drop it to 30 (about 20 fps, a third less drawing). Input: C2.
-4. **BSL-1.0** for the Windows-only `clipboard-win` and `error-code`: already accepted (2026-10-19 note in [ADR-0004](../adr/0004-licensing.md)); nothing to do unless you want to revisit it.
-5. **The baseview bug report:** the draft is in `_local/drafts/baseview-xkb-keymap-leak.md` (not committed, not posted). RustAudio's AI policy may require you to write it yourself or vouch for it; post it, rewrite it, or drop it.
+4. **BSL-1.0: accepted (2026-10-19)** for the Windows-only `clipboard-win` and `error-code` (scoped exceptions in `deny.toml`) and for ported source (2026-10-19 notes in [ADR-0004](../adr/0004-licensing.md)). Nothing to do unless you want to revisit it.
+5. **Upstream reports (optional).** RustAudio's AI policy rules out agent-written contributions, so anything filed has to be in your own words. Candidates, none filed (the vendored fork carries every patch either way; upstream status checked 2026-10-19, [ADR-0001](../adr/0001-plugin-shell.md) lane FK note): the baseview xkb keymap leak (the draft is in `_local/drafts/baseview-xkb-keymap-leak.md`, with the valgrind trace), `NiceEguiApp::editor_closed()` never called by nice-plug-egui, the lost note-on when `SAMPLE_ACCURATE_AUTOMATION` is on (patch 5), the warnings that pristine nice-plug 0.4.2 emits in release builds, and runtime parameter names (patch 1). Drafts for the others may live in `_local/drafts/` too (local, never committed). Post, rewrite or drop each one; the default is not to post.

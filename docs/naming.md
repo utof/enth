@@ -51,7 +51,7 @@ Hosts key saved projects, presets and automation by these ids, so **once a build
 | VST3 class id, shell spike | ASCII `EnthSpikeShell01` = `45 6E 74 68 53 70 69 6B 65 53 68 65 6C 6C 30 31` | `spikes/spike-shell`; never ships |
 | CLAP id, UI spike | `dev.enth.spike-ui` | `spikes/spike-ui-plugin` (the reference panel); throwaway, never ships |
 | VST3 class id, UI spike | ASCII `EnthSpikeUiPnl01` = `45 6E 74 68 53 70 69 6B 65 55 69 50 6E 6C 30 31` | `spikes/spike-ui-plugin`; never ships |
-| **CLAP id, product (reserved)** | `dev.enth.synth` | the real synth, `crates/plugin`, from Phase 1; not used anywhere yet |
+| **CLAP id, product (reserved)** | `dev.enth.synth` | the real synth, `crates/enth-plugin`, from Phase 1; not used anywhere yet |
 | **VST3 class id, product (reserved)** | `55555EAD-AA77-C9FA-F878-DDDDB0B9D9BD`, random, as nice-plug bytes `[0x55, 0x55, 0x5E, 0xAD, 0xAA, 0x77, 0xC9, 0xFA, 0xF8, 0x78, 0xDD, 0xDD, 0xB0, 0xB9, 0xD9, 0xBD]` | the real synth; not used anywhere yet |
 | AU manufacturer and subtype codes | not chosen | decide when the AU target starts (4 characters each; register with Apple) |
 
@@ -59,5 +59,6 @@ Rules:
 
 - The spike ids are separate from the product ids on purpose: the spike must never be mistaken for, or collide with, the real instrument in a host's plugin list or in a saved project.
 - A second plugin from the project (an effect, a standalone) gets its own CLAP id and class id; never reuse one.
-- Host parameter ids are permanent too, for the same reason. The shell spike's are the strings `macro_1`…`macro_8` and `slot_1`…`slot_64`; nice-plug hashes them to the 31-bit ids hosts see (`macro_1` is `825615486`, `slot_1` is `1248030256`, `slot_64` is `34232479`). The patch blob lives under the state field `patch`. The real synth keeps this scheme. `cargo test -p spike-shell` and `cargo xtask reaper-test` fail if any of them change.
+- Host parameter ids are permanent too, for the same reason. The shell spike's are the strings `macro_1`…`macro_8` and `slot_1`…`slot_64`; nice-plug hashes them to the 31-bit ids hosts see (`macro_1` is `825615486`, `slot_1` is `1248030256`, `slot_64` is `34232479`). The real synth keeps this scheme. `cargo test -p spike-shell` and `cargo xtask reaper-test` fail if any of them change.
+- **The plugin's saved-state field names are permanent too** (decided with the state format v1, P1b lane S1s, 2026-10-19). nice-plug stores the plugin's persistent fields under these names, so a project saved by one build is read back by the next only if they stay: `patch` is exactly `Patch::to_json()`, and `enth` is the instance blob, `{"schema":"enth.plugin-state/1",…}` (monitor bypass and editor preferences). The blob's version lives in its `schema` string and in the patch's own `schema` number, never in a field name: a new version is a new migration step, not a new field ([session.md](session.md#the-saved-state-version-1)). The fixtures under `crates/enth-session/tests/fixtures/state/` hold the contents of both fields.
 - Changing the product name later means changing the display name and the crate prefix only.
