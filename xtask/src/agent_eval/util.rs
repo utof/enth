@@ -114,6 +114,10 @@ pub fn round4(x: f64) -> f64 {
 }
 
 /// A string safe inside single quotes in `sh`.
+#[cfg_attr(
+    not(unix),
+    allow(dead_code, reason = "only the unix budget-wrapper script uses it")
+)]
 pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }

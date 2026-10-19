@@ -274,6 +274,13 @@ pub fn main(args: &[String]) -> Result<i32, String> {
 }
 
 /// The shell script written as `enth` into the trial's temp dir.
+#[cfg_attr(
+    not(unix),
+    allow(
+        dead_code,
+        reason = "the budget wrapper is a unix shell script; agent-eval runs on Linux"
+    )
+)]
 pub fn script(xtask_exe: &Path, cfg: &WrapCfg) -> String {
     let q = |p: &Path| super::util::sh_quote(&p.to_string_lossy());
     format!(
