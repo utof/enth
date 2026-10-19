@@ -1,0 +1,30 @@
+[package]
+name = "spike-metric"
+description = "Phase 0 metric and search spike: toy 10-parameter synth, audio distances, CMA-ES, listening test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "spike_metric"
+
+[[bin]]
+name = "spike-metric"
+path = "src/main.rs"
+
+[dependencies]
+# Maths modules (everything except `par` and `main`) use only these three and stay free of I/O, clocks and global RNG,
+# so they can move into `enth-analysis` / `enth-solver` later. `libm` keeps transcendentals the same on every target.
+libm = "0.2.15"
+rustfft = "6.4.1"
+realfft = "3.5.0"
+ebur128 = "0.1.10"
+serde.workspace = true
+# Spike-only: threads, CLI, JSON.
+rayon = "1.12.0"
+clap = { version = "4.6.5", features = ["derive"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true
