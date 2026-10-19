@@ -22,6 +22,23 @@ Tokens live in `crates/enth-ui/src/theme/`, in three tiers. Widgets read only th
 
 All sizes are logical px at 100 % UI scale. The UI scale (75–200 %) is applied once through egui's zoom factor, never by multiplying in widgets.
 
+### Token files
+
+Since P1b (lane S0b, 2026-10-19) the tokens are split by area, one file each, so concurrent lanes never edit the same file (the single `tokens.rs` is gone). Each file defines its tokens and builds their dark-theme values in its own `dark()`; `Theme::dark()` only composes them.
+
+| File | Tokens |
+| --- | --- |
+| `primitives.rs` (private) | The palette and the raw scales |
+| `colors.rs` | Surfaces, lines, text, the two accents and their washes, category and score hues |
+| `space.rs` | Spacing, radius, stroke widths |
+| `text.rs` | Text styles (`fonts.rs` loads the faces) |
+| `states.rs` | `disabled_opacity` |
+| `motion.rs` | Repaint rates, transition time |
+| `glyph.rs` | Symbols with a fixed meaning (✓ ~ ✗ ⊕ ▶ › → • ● ○); a test checks that Inter covers them |
+| `sizes/<area>.rs` | Per-widget dimensions, one file per UI area: `bar`, `card`, `cards`, `display`, `handle`, `knob`, `matrix`, `pane`, `tile`, `window` (and `control_height` in `sizes/mod.rs`). The areas `editor` (layout regions and popups, lane ED1) and `modulation` (drag-to-modulate and the matrix overview, lane ED2) are reserved: empty until those lanes add fields |
+
+A lane adds a token only in its own area's file; a brand-new area is a new file plus its field in `sizes/mod.rs`. Every new field has a serde default (or a `Default` that reads the dark theme), so a theme file dumped before it still loads.
+
 ## Initial values (dark theme)
 
 Starting proposals from the UI reference analysis; the G0 UI spike checks them on screen.
@@ -48,6 +65,8 @@ Starting proposals from the UI reference analysis; the G0 UI spike checks them o
 **Type:** one regular-weight sans in 2 weights (e.g. Inter, OFL-1.1) plus a face with tabular digits for values. At most 3 font files in the atlas. *Built:* Inter 4.1 Regular and SemiBold plus Inter Tabular, a 10 KB subset of Inter Regular with `tnum` frozen in (egui applies no OpenType features); text styles `label` 11 regular, `body` 12 regular, `value` 12 tabular, `title` 14 semibold, `strong` 12 semibold.
 
 **Component sizes:** window 1200×800 (minimum about 1000×680) · header 40 · macro bar 56 · modulator strip 140 · status line 22 · generator card 96 (collapsed 24) · effect lane 220 wide · knob 36 with a 3 px track · lesson pane 320. *Added by the G0 spike:* knob cell 56 wide (values in units need about 52 px), control height 24, generator display slot 128 wide, lane display 40 tall, enable toggle 12, source tile 72×56 with a 14 px badge, matrix rows 16 with a 88 px target column and 36 px source columns, display grid 4×2 with a 3 px phase marker, knob drag travel 200 px (Shift ×0.1) over a 270° sweep.
+
+**Catalogue cards (`size.cards`, added by lane UI-C, below):** switch 28×16, at most 4 segments, envelope stage 0.05 minimum and 0.25 range.
 
 **Motion:** `repaint.animated_hz` 30, `repaint.scope_hz` 60 (built as `motion.animated_hz`, `motion.scope_hz`, plus `motion.transition` 0.1 s for egui's own animations). baseview 0.4.1 caps plugin editors near 30 fps, so a 60 Hz scope gets about 30 in a host.
 
@@ -92,10 +111,22 @@ The spike ([docs/spikes/ui.md](spikes/ui.md)) kept every proposed value above an
 - **Sizes:** `size.handle.radius` 4 and `size.handle.reach` 8, for draggable points on a curve display (envelope corners): the circle shown while the pointer is over the display, and the grab distance, which is also the radius of the accent wash behind a hovered or dragged handle. Handle drags reuse `knob.fine_ratio` with Shift.
 - Both new groups deserialise with the dark theme's values when missing, so theme files dumped before them still load.
 
+### Added by lane UI-C (2026-10-19, P1b)
+
+The catalogue cards (`crates/enth-ui/src/editor/cards/`) generate a control for every `ParamSpec`, and the widgets they use grew additively (the frozen spike crates build unchanged).
+
+- **Tokens, `size.cards`** (a new area file, `theme/sizes/cards.rs`, with serde defaults): `switch` 28×16 (the on/off switch of a toggle parameter, a track two thumbs wide; the thumb is `card.toggle` square, like the enable toggle), `max_segments` 4 (the most items an enum shows as a segmented control; a longer enum, such as a wave or an LFO shape, gets a stepped knob that reads the item's name, so it fits a lane card), `envelope_min_stage` 0.05 and `envelope_stage_range` 0.25 (the share of an envelope display's width a stage takes at its shortest, and the share it gains over its whole normalised range, so a handle dragged across that share sweeps its knob once).
+- **`Toggle`** (new): an on/off parameter in the shape of a knob cell: the label above, a switch on the knob's centre line, the state text below (`texts(on, off)`, default "On" and "Off"). It reads like the card's enable toggle and is a `Switch` for accessibility.
+- **`Segmented`** gains a *cell form* (`label`: label above, the track on the knob's centre line, so it lines up with knobs and toggles in a strip) and a *row form* (`label` plus `inline(width)`: one control-height row, the label on the left and the track at the right end, for a lane card's enum rows). Both carry a radio-group node naming the control.
+- **`ModuleCard`** options: `id` (from the module id, never the position), `switchable(false)` (the built-in voice and master sections have no enable toggle), `action(text)` (a small text button at the right of the title row: the cards' "More" / "Less" disclosure for the advanced tier) and `rows(n)` (a strip with more than one row of knobs; the parameter closure starts each new row with `ui.end_row()`).
+- **Stable ids and discrete knobs.** `Knob::id`, `CurveHandles::id`, `MacroBar::id`, `SourceTile::id` and `MatrixGrid::id` (with `show_cells` for per-cell responses) interact under a global id built from what the control controls (a module id and a parameter address), so a drag survives a re-layout: 59 of 59 control ids stayed the same across two layouts. `Knob::steps(n)` makes a discrete knob snap to `n` steps while keeping the unrounded position of a running drag, so a slow drag moves Polyphony (it was stuck at 16). Curve handles closer than their reach split their grab areas at the midpoint, so the pointer picks the nearest one.
+- **Token gallery** (updated on purpose): a new row with a stepped knob, two switches, a segmented cell and a segmented row; the PNG grew from 1100×1320 to 1100×1404. One PNG per card and per region joins it in `crates/enth-ui/tests/snapshots/` (`card_*.png`, `region_*.png`).
+- `enth-params` now parses the U+2212 minus sign that the design system displays.
+
 ## Rules and enforcement
 
-- **No literals in widget code:** no `Color32::from_rgb(…)`, `Color32::WHITE`, `FontId::new(…)`, `Stroke::new(1.0, …)`, `add_space(6.0)` or similar outside `theme/`. Need a new value? Add a token (semantic or component), with a comment saying what it's for.
-- **Clippy:** `crates/enth-ui/clippy.toml` (and `spikes/spike-ui/clippy.toml`) bans egui's raw constructors: `Color32::from_*`, `gamma_multiply*`, `linear_multiply`, `Rgba::from_*`, `Hsva::new`, `FontId::new`/`proportional`/`monospace`, `RichText::size`, `Stroke::new`, `CornerRadius::same`, `Margin::same`/`symmetric`. Only files in `theme/` opt out, with a reason. Clippy can't ban associated constants such as `Color32::WHITE`; `crates/enth-ui/tests/no_raw_values.rs` scans the widget source for those, for hand-built `Shadow`s, `add_space(<literal>)` and float literals other than 0, ½, 1, 2 and 100.
+- **No literals in widget code:** no `Color32::from_rgb(…)`, `Color32::WHITE`, `FontId::new(…)`, `Stroke::new(1.0, …)`, `add_space(6.0)` or similar outside `theme/`. Need a new value? Add a token (semantic or component) in your own area's file (see Token files), with a comment saying what it's for.
+- **Clippy:** `crates/enth-ui/clippy.toml` (and `spikes/spike-ui/clippy.toml`) bans egui's raw constructors: `Color32::from_*`, `gamma_multiply*`, `linear_multiply`, `Rgba::from_*`, `Hsva::new`, `FontId::new`/`proportional`/`monospace`, `RichText::size`, `Stroke::new`, `CornerRadius::same`, `Margin::same`/`symmetric`. Only files in `theme/` opt out, with a reason. Clippy can't ban associated constants such as `Color32::WHITE`; `crates/enth-ui/tests/no_raw_values.rs` scans the widget and editor source for those, for hand-built `Shadow`s, `add_space(<literal>)` and float literals other than 0, ½, 1, 2 and 100 (the gallery and the cards' display shapes, `editor/cards/shapes.rs`, are content and skip the float rule).
 - **Token gallery:** an `egui_kittest` snapshot test renders every colour, text style and core component into one PNG. Token changes show up as a reviewable image diff, and agents can look at it.
 - Plain numbers in layout maths (e.g. `0.5` to centre something) are fine; values that set the look are tokens.
 
