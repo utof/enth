@@ -26,9 +26,13 @@
 //!   [`enth_params::ParamSpec::depth_from_text`]; routes, positions, sources and addresses through the [`addr`]
 //!   parsers (macros and slots 1-based in text). `add` without an id uses [`ModuleSpec::id_prefix`] and
 //!   [`ModuleId::numbered`].
-//! - `canon`: [`ModuleKind`] discriminants and [`Section::ALL`] order are stable; meta, labels, slots and macro
-//!   names do not change the sound.
+//! - `canon`: [`ModuleKind`] discriminants and [`Section::ALL`] order are stable, and so is the derived order of
+//!   [`ModSource`] and [`Target`] (new variants are appended); meta, labels, slots and macro names do not change
+//!   the sound. Generators are commutative **except** that the first enabled `osc` is the hard-sync master (see
+//!   the `osc` catalogue docs).
 //! - `file`: the [`PatchFile`](file::PatchFile) types and [`file::SCHEMA`] are here; the conversions are S1b's.
+//!   Write through the typed `PatchFile`, never through `serde_json::Value`, which widens an `f32` to `f64` text
+//!   (`0.1` prints as `0.10000000149011612`); reading through `Value` (migrations) is exact.
 //!
 //! Module files are pre-declared by P1a lane S0 (freeze point F0). To split a module into submodules, turn `x.rs`
 //! into `x/mod.rs`: `mod x;` still resolves.

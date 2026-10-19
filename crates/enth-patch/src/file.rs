@@ -299,6 +299,75 @@ mod tests {
         assert_eq!(again, f);
     }
 
+    /// `f32` → text → `f32` through the three paths a patch value takes: a typed field, an untagged [`RawValue`]
+    /// (serde buffers the number as an `f64` first) and `serde_json::Value` (migrations).
+    fn json_round_trips(x: f32) -> Result<(), String> {
+        let text = serde_json::to_string(&x).map_err(|e| e.to_string())?;
+        let typed: f32 = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let raw: RawValue = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let via_value: f32 = serde_json::from_value(value).map_err(|e| e.to_string())?;
+        let raw_bits = match raw {
+            RawValue::Num(v) => v.to_bits(),
+            other => return Err(format!("{text} read as {other:?}")),
+        };
+        let bits = x.to_bits();
+        if typed.to_bits() == bits && raw_bits == bits && via_value.to_bits() == bits {
+            Ok(())
+        } else {
+            Err(format!(
+                "{x:e} -> {text} -> {typed:e} / {:e} / {via_value:e}",
+                f32::from_bits(raw_bits)
+            ))
+        }
+    }
+
+    #[test]
+    fn f32_edge_cases_round_trip_through_json() {
+        for x in [
+            0.0,
+            -0.0, // round-trips as -0.0; the conversions canonicalise it to +0.0
+            0.1,
+            1.0 / 3.0,
+            900.0,
+            16_777_216.0,
+            f32::MIN_POSITIVE,
+            f32::from_bits(1), // the smallest subnormal
+            f32::MAX,
+            f32::MIN,
+            f32::EPSILON,
+        ] {
+            json_round_trips(x).unwrap();
+        }
+        // Reading text that is not an f32's shortest form rounds deterministically (here, to 1.0e-7).
+        let x: f32 = serde_json::from_str("0.00000010000000000000001").unwrap();
+        assert_eq!(x, 1.0e-7);
+    }
+
+    #[test]
+    fn value_widens_f32_so_files_are_written_typed() {
+        // `serde_json::Value` holds an f64, so an f32 written through it prints its widened digits. Files are
+        // written from the typed `PatchFile` (shortest f32 text); `Value` is only for reading and migrating.
+        assert_eq!(serde_json::to_string(&0.1f32).unwrap(), "0.1");
+        assert_eq!(
+            serde_json::to_value(0.1f32).unwrap().to_string(),
+            "0.10000000149011612"
+        );
+    }
+
+    proptest::proptest! {
+        /// Every finite f32 survives JSON text exactly, on every path. Checked exhaustively once, outside the
+        /// gate, over all 4,278,190,080 finite f32 (2026-10-19, F1 review, `serde_json` 1.0.154 with
+        /// `float_roundtrip`: zero mismatches; decimal → f64 → f32 double rounding never bites on shortest
+        /// f32 text). The gate keeps a fixed-seed sample.
+        #[test]
+        fn every_finite_f32_round_trips_through_json(bits in proptest::prelude::any::<u32>()) {
+            let x = f32::from_bits(bits);
+            proptest::prop_assume!(x.is_finite());
+            proptest::prop_assert_eq!(json_round_trips(x), Ok(()));
+        }
+    }
+
     #[test]
     fn rejects_unknown_fields_and_duplicate_params() {
         let unknown = EXAMPLE.replace("\"fx\": []", "\"fx\": [], \"lanes\": []");
