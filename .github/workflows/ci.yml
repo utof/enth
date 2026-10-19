@@ -122,3 +122,33 @@ jobs:
           "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-ui-plugin.clap --only-failed
           cargo xtask bundle spike-ui-plugin --release --locked
           "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-ui-plugin.clap --only-failed
+
+  # Phase 0 lane H (docs/spikes/test-host.md). The spike plugin goes through a real CLAP host (clack-host in
+  # tools/test-host): loaded from its .clap file, rendered offline with a fixed block size and compared with
+  # the committed SHA-256 of the samples. It opens no window, so no display is needed.
+  host-render:
+    name: plugin golden render (spike-shell via the test host)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: System libraries for plugin, GUI and audio crates
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config \
+            libasound2-dev libgl-dev libjack-jackd2-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Debug bundle: nice-plug's assert_process_allocs is on, so an allocation in process() aborts the render.
+      # The release bundle gives the same six hashes (checked locally with `--release`).
+      - run: cargo xtask host-render
+      - name: The same instances render the same samples (shared-state check)
+        run: |
+          target/debug/enth-test-host instances target/bundled/spike-shell.clap \
+            --notes "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8" -n 3

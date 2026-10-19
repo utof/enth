@@ -7,6 +7,7 @@
 
 mod bundle;
 mod engine;
+mod host_render;
 mod reaper;
 
 use std::collections::BTreeMap;
@@ -88,6 +89,8 @@ const USAGE: &str = "usage: cargo xtask <command>
   install <pkg> [--release] [...]   bundle, then copy to ~/.clap and ~/.vst3
   reaper-test [--release] [--no-build] [--format clap|vst3]
                                     local gate: load, params, automation and state in headless REAPER
+  host-render [--release] [--no-build] [--update]
+                                    plugin-level golden: bundle spike-shell, render it offline through the test host (Linux)
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden";
 
 fn main() -> ExitCode {
@@ -98,6 +101,7 @@ fn main() -> ExitCode {
         Some("bundle") => bundle::bundle(&args[1..]),
         Some("install") => bundle::install(&args[1..]),
         Some("reaper-test") => reaper::reaper_test(&args[1..]),
+        Some("host-render") => host_render::host_render(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
