@@ -1,0 +1,20 @@
+description = "FXW: a four-note chord with off-grid note times (reset-phase saw, gate envelope) through the reverb at its catalogue defaults: dry 0 dB, wet -6 dB (50.12 % against the core's 50 %), room 80 ms, decay 3 s, detune 2. The dry path and the tail together, with the detune LFO running. The oscillator is the saw: lane D1 updates this case on purpose when it replaces the reference saw."
+sample_rate = 48000
+seconds = 2.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 0.9, on_s = 0.0, off_s = 0.6 },
+    { key = 55, velocity = 0.9, on_s = 0.0103, off_s = 0.6 },
+    { key = 60, velocity = 0.9, on_s = 0.0251, off_s = 0.6001 },
+    { key = 64, velocity = 0.9, on_s = 0.04, off_s = 0.5 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 8 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "reverb1", kind = "reverb" }]

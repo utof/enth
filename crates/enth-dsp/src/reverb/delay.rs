@@ -40,6 +40,34 @@ impl MultiBuffer {
         self.buf.fill(0.0);
     }
 
+    /// Copy `other`'s samples and head. Both rings must have been built with the same capacity; returns `false`
+    /// (copying nothing) otherwise. No allocation.
+    fn copy_state_from(&mut self, other: &Self) -> bool {
+        if self.buf.len() != other.buf.len() || self.stride != other.stride {
+            return false;
+        }
+        self.buf.copy_from_slice(&other.buf);
+        self.index = other.index;
+        true
+    }
+
+    /// Whether every sample in the ring is exactly zero (`-0.0` counts). Scans 64 floats per branch with a bitwise
+    /// OR (sign bit masked off), which the compiler vectorises: the engine asks for this once per idle detection,
+    /// on a ring of up to a megabyte, and the plain `all(x == 0.0)` loop took several times longer.
+    fn is_zero(&self) -> bool {
+        let (chunks, rest) = self.buf.as_chunks::<64>();
+        for chunk in chunks {
+            if chunk
+                .iter()
+                .fold(0u32, |acc, x| acc | (x.to_bits() & 0x7FFF_FFFF))
+                != 0
+            {
+                return false;
+            }
+        }
+        rest.iter().all(|&x| x == 0.0)
+    }
+
     /// Sample of channel `ch` at `offset` from the head (offsets are zero or negative: older samples).
     #[inline(always)]
     fn at(&self, ch: usize, offset: i32) -> f32 {
@@ -149,6 +177,26 @@ impl MultiDelay {
         self.buffer.len()
     }
 
+    /// Copy `other`'s audio, head and offsets (same stage, same sample rate); `false` if the rings differ in size.
+    pub(super) fn copy_state_from(&mut self, other: &Self) -> bool {
+        if !self.buffer.copy_state_from(&other.buffer) {
+            return false;
+        }
+        self.offsets = other.offsets;
+        self.prev = other.prev;
+        true
+    }
+
+    /// Whether the ring holds nothing but zeros.
+    pub(super) fn is_zero(&self) -> bool {
+        self.buffer.is_zero()
+    }
+
+    /// The samples in the ring (for the subnormal count).
+    pub(super) fn samples(&self) -> &[f32] {
+        &self.buffer.buf
+    }
+
     /// `updateLengths`: offsets spread over `range` samples from the constant draws of one seed, optionally shifted
     /// so the shortest delay is zero (`minimise`).
     pub(super) fn update_lengths(&mut self, draws: &[Draw; CHANNELS], range: f64, minimise: bool) {
@@ -236,12 +284,6 @@ impl MultiDelay {
             };
         }
         r
-    }
-
-    /// Test access: the samples in the ring.
-    #[cfg(test)]
-    pub(super) fn samples(&self) -> &[f32] {
-        &self.buffer.buf
     }
 
     /// Test access: the current offsets.

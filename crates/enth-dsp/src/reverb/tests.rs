@@ -439,6 +439,191 @@ fn every_read_stays_inside_its_channel_for_all_rooms_and_rates() {
     }
 }
 
+// --- the engine wrapper's view of the state (lane FXW) ----------------------------------------------------------
+
+/// A reverb that has had 0.25 s of noise, then silence until its state is exactly zero (a short RT20, so a few
+/// seconds are enough).
+fn reverb_at_rest(params: &ReverbParams) -> Reverb {
+    let mut reverb = Reverb::prepare(SR);
+    reverb.set_params(params);
+    run(
+        &mut reverb,
+        &noise(61, 12_000, 0.5),
+        &noise(62, 12_000, 0.5),
+        32,
+    );
+    let silence = vec![0.0f32; 32];
+    let (mut out_l, mut out_r) = (vec![0.0f32; 32], vec![0.0f32; 32]);
+    for _ in 0..(8 * 48_000 / 32) {
+        reverb.process(&silence, &silence, &mut out_l, &mut out_r);
+    }
+    reverb
+}
+
+const SHORT: ReverbParams = ReverbParams {
+    dry_pct: 100.0,
+    wet_pct: 50.0,
+    room_ms: 80.0,
+    rt20_s: 0.1,
+    early_pct: 150.0,
+    detune: 2.0,
+    low_cut_hz: 80.0,
+    high_cut_hz: 12_000.0,
+    low_damp_rate: 1.5,
+    high_damp_rate: 2.5,
+};
+
+#[test]
+fn is_state_zero_follows_the_network_from_reset_through_a_tail_to_silence() {
+    let mut reverb = Reverb::prepare(SR);
+    assert!(reverb.is_state_zero(), "a fresh network is zero");
+    reverb.set_params(&SHORT);
+    let (l, r) = (noise(63, 3_200, 0.5), noise(64, 3_200, 0.5));
+    run(&mut reverb, &l, &r, 32);
+    assert!(!reverb.is_state_zero());
+    reverb.reset();
+    assert!(reverb.is_state_zero(), "reset clears everything");
+    run(&mut reverb, &l, &r, 32);
+    assert!(!reverb.is_state_zero());
+    // Silence until the flush has emptied it: the answer flips exactly once, and the output was zero before it.
+    let silence = vec![0.0f32; 32];
+    let (mut out_l, mut out_r) = (vec![0.0f32; 32], vec![0.0f32; 32]);
+    let mut zero_since = None;
+    for block in 0..(8 * 48_000 / 32) {
+        reverb.process(&silence, &silence, &mut out_l, &mut out_r);
+        if zero_since.is_none() && reverb.is_state_zero() {
+            zero_since = Some(block);
+        }
+        if zero_since.is_some() {
+            assert!(reverb.is_state_zero(), "block {block}: stays zero");
+        }
+    }
+    assert!(zero_since.is_some(), "the tail never reached exact zero");
+    assert!(out_l.iter().chain(&out_r).all(|x| *x == 0.0));
+}
+
+#[test]
+fn is_state_zero_sees_a_single_nonzero_value_anywhere() {
+    // One impulse sample in, then look after each block: the value sits in a delay line or a filter history until
+    // it decays below the flush, so the network is not zero until the very end.
+    let mut reverb = Reverb::prepare(SR);
+    reverb.set_params(&SHORT);
+    let mut impulse = vec![0.0f32; 32];
+    impulse[0] = 1.0;
+    let silence = vec![0.0f32; 32];
+    let (mut out_l, mut out_r) = (vec![0.0f32; 32], vec![0.0f32; 32]);
+    reverb.process(&impulse, &impulse, &mut out_l, &mut out_r);
+    for block in 0..2_000 {
+        assert!(!reverb.is_state_zero(), "block {block}");
+        reverb.process(&silence, &silence, &mut out_l, &mut out_r);
+    }
+}
+
+#[test]
+fn restart_from_silence_on_a_zero_network_is_reset() {
+    // The point of the method: the same state as reset(), without clearing 1.6 MB. Set different parameters first,
+    // so the pending-fade and LFO parts matter, then feed both the same noise.
+    let moved = ReverbParams {
+        room_ms: 33.0,
+        rt20_s: 0.4,
+        wet_pct: 70.0,
+        detune: 25.0,
+        high_cut_hz: 4_000.0,
+        ..SHORT
+    };
+    let mut restarted = reverb_at_rest(&SHORT);
+    let mut reset = reverb_at_rest(&SHORT);
+    assert!(restarted.is_state_zero() && reset.is_state_zero());
+    restarted.set_params(&moved);
+    reset.set_params(&moved);
+    restarted.restart_from_silence();
+    reset.reset();
+    let (l, r) = (noise(65, 24_000, 0.5), noise(66, 24_000, 0.5));
+    let a = run(&mut restarted, &l, &r, 32);
+    let b = run(&mut reset, &l, &r, 32);
+    assert_eq!(
+        a.0.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        b.0.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        a.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        b.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
+    // And both equal a brand-new reverb with those parameters.
+    let mut fresh = Reverb::prepare(SR);
+    fresh.set_params(&moved);
+    let c = run(&mut fresh, &l, &r, 32);
+    assert_eq!(
+        a.0.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        c.0.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn restart_from_silence_cancels_a_fade_and_the_lfo_phase() {
+    let mut reverb = Reverb::prepare(SR);
+    reverb.set_params(&SHORT);
+    run(&mut reverb, &noise(67, 640, 0.5), &noise(68, 640, 0.5), 32);
+    reverb.set_params(&ReverbParams {
+        room_ms: 120.0,
+        ..SHORT
+    });
+    run(&mut reverb, &noise(69, 320, 0.5), &noise(70, 320, 0.5), 32);
+    assert!(reverb.fade_ratio > 0.0 && reverb.lfo_phase != 0.0);
+    reverb.restart_from_silence();
+    assert_eq!(reverb.fade_ratio, 0.0);
+    assert_eq!(reverb.lfo_phase, 0.0);
+    assert!(
+        reverb.just_had_reset,
+        "the next block applies the parameters at once"
+    );
+}
+
+#[test]
+fn copy_state_from_makes_a_bit_exact_twin_even_mid_fade() {
+    let mut a = Reverb::prepare(SR);
+    let mut b = Reverb::prepare(SR);
+    a.set_params(&SHORT);
+    b.set_params(&ReverbParams {
+        detune: 40.0,
+        ..SHORT
+    });
+    run(&mut a, &noise(71, 9_600, 0.5), &noise(72, 9_600, 0.5), 32);
+    run(&mut b, &noise(73, 4_800, 0.9), &noise(74, 4_800, 0.9), 32);
+    // A fade in flight in `a`.
+    a.set_params(&ReverbParams {
+        room_ms: 150.0,
+        high_cut_hz: 5_000.0,
+        ..SHORT
+    });
+    run(&mut a, &noise(75, 320, 0.5), &noise(76, 320, 0.5), 32);
+    assert!(a.fade_ratio > 0.0);
+    assert!(b.copy_state_from(&a));
+    let (l, r) = (noise(77, 24_000, 0.5), noise(78, 24_000, 0.5));
+    let x = run(&mut a, &l, &r, 32);
+    let y = run(&mut b, &l, &r, 32);
+    assert_eq!(
+        x.0.iter()
+            .chain(&x.1)
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>(),
+        y.0.iter()
+            .chain(&y.1)
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn copy_state_from_refuses_another_sample_rate() {
+    let mut a = Reverb::prepare(48_000.0);
+    let b = Reverb::prepare(44_100.0);
+    run(&mut a, &noise(79, 640, 0.5), &noise(80, 640, 0.5), 32);
+    let before = a.is_state_zero();
+    assert!(!a.copy_state_from(&b));
+    assert_eq!(a.is_state_zero(), before, "nothing was copied");
+}
+
 // --- robustness -------------------------------------------------------------------------------------------------
 
 /// The module does not sanitise: a NaN in the input recirculates in the feedback until `reset()`. The doc says so;

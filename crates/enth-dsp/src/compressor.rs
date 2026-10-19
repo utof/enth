@@ -315,6 +315,25 @@ impl Compressor {
         peak
     }
 
+    /// Whether the follower and the gain smoother are exactly zero: silent input then gives silent output (every
+    /// frame is `0 * gain`) and leaves the whole state unchanged (the meter keeps its values), for any settings. The engine
+    /// uses it to skip an idle compressor. A tail reaches this on its own: both states are flushed to zero below
+    /// -300 dBFS.
+    #[must_use]
+    pub fn is_idle(&self) -> bool {
+        self.env == 0.0 && self.gr == 0.0
+    }
+
+    /// How many of the state values (follower, gain smoother, meter peak) are subnormal; always 0 for a healthy
+    /// compressor, because every state is flushed in code. For the engine's tail test.
+    #[must_use]
+    pub fn count_subnormals(&self) -> usize {
+        [self.env, self.gr, self.peak_gr]
+            .iter()
+            .filter(|x| x.is_subnormal())
+            .count()
+    }
+
     /// Process `min(len)` frames of a stereo signal from `l`, `r` into `out_l`, `out_r`. The caller passes four
     /// slices of equal length; a mismatch processes the shortest (never panics).
     pub fn process(&mut self, l: &[f32], r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
@@ -403,6 +422,69 @@ mod tests {
         (0..limit)
             .find(|_| value() >= target)
             .expect("target never reached")
+    }
+
+    #[test]
+    fn is_idle_from_new_through_a_signal_to_the_flushed_tail() {
+        let mut c = comp(10.0, 200.0, 48_000.0);
+        assert!(c.is_idle());
+        assert_eq!(c.count_subnormals(), 0);
+        for _ in 0..4_800 {
+            c.tick(0.5, 0.5);
+        }
+        assert!(!c.is_idle());
+        // Silence: the follower falls 8.7 dB per release time, so -300 dBFS takes about 40 release times; the
+        // gain smoother follows. Both reach exactly zero and the answer stays true.
+        let mut idle_at = None;
+        for n in 0..(48_000 * 12) {
+            c.tick(0.0, 0.0);
+            assert_eq!(c.count_subnormals(), 0, "frame {n}");
+            if idle_at.is_none() && c.is_idle() {
+                idle_at = Some(n);
+            } else if idle_at.is_some() {
+                assert!(c.is_idle(), "frame {n}: stays idle");
+            }
+        }
+        assert!(idle_at.is_some(), "never idle");
+        c.tick(0.5, 0.5);
+        assert!(!c.is_idle() || c.gain_reduction_db() == 0.0);
+        c.reset();
+        assert!(c.is_idle());
+    }
+
+    #[test]
+    fn an_idle_compressor_ignores_silence_for_any_settings() {
+        // The claim behind `is_idle`: silent input leaves the whole state unchanged, whatever the settings.
+        for &(t, ratio, knee, makeup, mix) in &[
+            (-120.0, 1000.0, 48.0, 48.0, 100.0),
+            (24.0, 1.0, 0.0, -48.0, 0.0),
+            (-60.0, 20.0, 24.0, 24.0, 50.0),
+            (0.0, 4.0, 6.0, 0.0, 100.0),
+        ] {
+            let mut c = Compressor::new();
+            c.prepare(48_000.0);
+            c.set_params(&CompressorParams {
+                threshold_db: t,
+                ratio,
+                knee_db: knee,
+                attack_ms: 0.0,
+                release_ms: 10_000.0,
+                makeup_db: makeup,
+                mix_pct: mix,
+            });
+            assert!(c.is_idle());
+            let (before_env, before_gr, before_peak) = (c.env, c.gr, c.peak_gr);
+            for _ in 0..1_000 {
+                let (l, r) = c.tick(0.0, 0.0);
+                assert_eq!((l.to_bits(), r.to_bits()), (0, 0));
+            }
+            // The meter's peak may flip the sign of a zero (`0.0.max(-0.0)`); its value stays.
+            assert_eq!(
+                (c.env.to_bits(), c.gr.to_bits()),
+                (before_env.to_bits(), before_gr.to_bits())
+            );
+            assert_eq!(c.peak_gr, before_peak);
+        }
     }
 
     #[test]

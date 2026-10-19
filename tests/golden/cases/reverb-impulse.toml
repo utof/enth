@@ -1,0 +1,15 @@
+description = "FXW: a one-millisecond saw click (reset phase, gate envelope) into the reverb with dry off and wet at 0 dB, every other parameter at its default (room 80 ms, decay 3 s). Guards the reverb module wrapper end to end: the catalogue-to-core conversions (dB to percent, RT60 ms to RT20 s), the 32-frame segments, the tail and its decay. The click is a saw, so lane D1 updates this case on purpose when the Plaits saw replaces the reference one."
+sample_rate = 48000
+seconds = 3.0
+
+[source]
+kind = "patch"
+notes = [{ key = 69, velocity = 1.0, on_s = 0.0, off_s = 0.001 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "reverb1", kind = "reverb", params = { dry = -60, wet = 0 } }]
