@@ -5,7 +5,10 @@ use enth_engine::LinkCapacity;
 use enth_patch::model::{ModuleInstance, Route, Section};
 use enth_patch::{MacroIndex, ModSource, ModuleKind, Op, Position, RouteAddr, SlotIndex};
 
-use super::kit::{addr, base, block_plans, edit, id, live, live_with, patch, port, run, send_plan};
+use super::kit::{
+    addr, base, block_plans, edit, id, live, live_with, patch, port, run, send_plan, settle,
+};
+use crate::apply::send_or_queue;
 use crate::link::Queued;
 use crate::{Applied, Session, SessionConfig, ShellRequest};
 
@@ -124,6 +127,7 @@ fn a_recompile_forgets_the_host_values_of_the_slots_it_writes_and_only_those() {
 #[test]
 fn an_edit_and_its_undo_reach_the_engine_through_the_latest_plan_and_epoch() {
     let (mut session, mut engine) = live(patch());
+    let old_id = port(&session).map.get(&addr("osc1.level")).unwrap();
     // A structural edit that moves every id: a generator ahead of osc1.
     edit(
         &mut session,
@@ -135,10 +139,7 @@ fn an_edit_and_its_undo_reach_the_engine_through_the_latest_plan_and_epoch() {
             module: ModuleInstance::new(id("osc2"), ModuleKind::Osc),
         }],
     );
-    assert!(session.status().compile_pending);
-    assert_eq!(port(&session).link.epoch(), 0);
-    let old_id = port(&session).map.get(&addr("osc1.level")).unwrap();
-    assert_eq!(send_plan(&mut session), Some(1));
+    assert_eq!(settle(&mut session), 1);
     run(&mut session, &mut engine, 20);
     assert_eq!(engine.epoch(), 1, "the engine swapped");
     assert_ne!(
@@ -183,21 +184,19 @@ fn undoing_a_structural_step_is_exactly_one_plan() {
             set("voice.glide", 40.0),
         ],
     );
-    assert_eq!(send_plan(&mut session), Some(1));
+    assert_eq!(settle(&mut session), 1);
     run(&mut session, &mut engine, 20);
 
     assert_eq!(session.undo(), Ok(true));
-    assert!(session.status().compile_pending, "one plan is needed");
-    assert_eq!(port(&session).link.epoch(), 1, "and it waits for the pump");
-    assert_eq!(send_plan(&mut session), Some(2));
+    assert_eq!(settle(&mut session), 2, "one plan, not one per op");
     assert!(!session.status().compile_pending);
-    assert_eq!(send_plan(&mut session), None, "one, not one per op");
+    assert_eq!(settle(&mut session), 2, "and nothing more is pending");
     run(&mut session, &mut engine, 20);
     assert_eq!(engine.epoch(), 2);
 
     assert_eq!(session.redo(), Ok(true));
-    assert_eq!(send_plan(&mut session), Some(3));
-    assert_eq!(send_plan(&mut session), None);
+    assert_eq!(settle(&mut session), 3);
+    assert_eq!(settle(&mut session), 3);
 }
 
 #[test]
@@ -224,7 +223,7 @@ fn a_depth_the_plan_has_no_term_for_becomes_a_plan() {
             enabled: false,
         }],
     );
-    assert_eq!(send_plan(&mut session), Some(1));
+    assert_eq!(settle(&mut session), 1);
     run(&mut session, &mut engine, 10);
     assert!(
         port(&session).map.depth(&lfo_route()).is_none(),
@@ -237,10 +236,10 @@ fn a_depth_the_plan_has_no_term_for_becomes_a_plan() {
         depth: 60.0,
     };
     enth_patch::apply(&mut session.patch, &op).unwrap();
-    let applied = session.deliver(&before, &[op]);
+    let applied = session.deliver(&before, &[op], false);
     assert!(applied.recompile);
     assert_eq!(applied.events, 0);
-    assert!(session.status().compile_pending);
+    assert_eq!(settle(&mut session), 2, "a plan carries the depth");
 }
 
 /// Never blocks, never drops (invariant I5), at this layer: a full command ring queues the last value per parameter
@@ -321,12 +320,23 @@ fn events_wait_behind_earlier_ones_so_order_is_kept() {
         ..SessionConfig::default()
     };
     let (mut session, mut engine) = live_with(patch(), config);
-    edit(&mut session, vec![set("voice.glide", 10.0)]);
-    edit(&mut session, vec![set("voice.glide", 20.0)]); // the ring is full: queued
+    // Straight at the rule (`send_or_queue`): an entry pumps first, which would empty the queue before the next
+    // command could be seen waiting behind it.
+    let cap = session.config.value_queue;
+    let param = |session: &Session, a: &str, value: f32| Queued::Param {
+        epoch: 0,
+        id: port(session).map.get(&addr(a)).unwrap(),
+        value,
+    };
+    let command = param(&session, "voice.glide", 10.0);
+    assert!(send_or_queue(session.port.as_mut().unwrap(), cap, command));
+    let command = param(&session, "voice.glide", 20.0);
+    assert!(send_or_queue(session.port.as_mut().unwrap(), cap, command)); // the ring is full: queued
     assert_eq!(session.status().queued_events, 1);
     run(&mut session, &mut engine, 5);
     // The ring has room, but an event is already waiting, so a new one goes behind it rather than past it.
-    edit(&mut session, vec![set("master.level", -1.0)]);
+    let command = param(&session, "master.level", -1.0);
+    assert!(send_or_queue(session.port.as_mut().unwrap(), cap, command));
     assert_eq!(session.status().queued_events, 2, "behind the waiting one");
     assert!(matches!(port(&session).queue[0], Queued::Param { value, .. } if value == 20.0));
 }
@@ -341,7 +351,7 @@ fn a_value_for_a_parameter_the_plan_lacks_waits_for_the_next_plan() {
             enabled: false,
         }],
     );
-    assert_eq!(send_plan(&mut session), Some(1));
+    assert_eq!(settle(&mut session), 1);
     run(&mut session, &mut engine, 10);
     assert_eq!(port(&session).map.get(&addr("lfo1.rate")), None);
     let applied = edit(&mut session, vec![set("lfo1.rate", 5.0)]);
@@ -355,7 +365,7 @@ fn a_value_for_a_parameter_the_plan_lacks_waits_for_the_next_plan() {
             enabled: true,
         }],
     );
-    assert_eq!(send_plan(&mut session), Some(2));
+    assert_eq!(settle(&mut session), 2);
     run(&mut session, &mut engine, 10);
     assert_eq!(base(&session, &engine, "lfo1.rate"), 5.0);
 }

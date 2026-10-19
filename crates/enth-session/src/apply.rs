@@ -218,7 +218,8 @@ impl Session {
         .unwrap_or_default();
         self.unloaded_patch = None; // the user now owns the init patch that stood in for an unreadable one
         self.last_error = None;
-        Ok(Some(self.deliver(&before, &ops)))
+        // `end_gesture` above closed any drag, so no host gesture is open: each write is a complete begin, set, end.
+        Ok(Some(self.deliver(&before, &ops, false)))
     }
 
     /// Deliver a transaction that has just changed the patch from `before` ([`delivery`]): the engine's events or one
@@ -230,12 +231,15 @@ impl Session {
     ///   parameter (the final value), behind any events already waiting for room, and a full command ring queues
     ///   them (the last per parameter; a queue that overflows becomes a plan instead). A depth the plan has no term
     ///   for becomes a plan too. Then it pumps, so a pending plan goes out at once unless two are in flight.
-    /// - **Host**: each slotted parameter or macro the ops moved gets one complete begin, set, end
-    ///   ([`host_updates`]); a `SetSlot`'s write only if its plan went out (a write reaching `process()` first would
-    ///   go through the old slot table to the previous target; detached there is no `process()`).
+    /// - **Host**: each slotted parameter or macro the ops moved gets one write ([`host_updates`], the last value if
+    ///   several ops moved it): a complete begin, set, end, or, with `in_gesture` (an edit inside a drag), a `Begin`
+    ///   at the first write to the parameter and a `Set` for each, the `End` coming with `end_gesture`; a write to a
+    ///   parameter whose host gesture a load left open is a `Set` inside it. A `SetSlot`'s write only if its plan
+    ///   went out (a write reaching `process()` first would go through the old slot table to the previous target;
+    ///   detached there is no `process()`).
     /// - **Shell**: [`ShellRequest::RenameParams`] when the host-visible names or targets changed
     ///   ([`host_layout_changed`]), then the host writes, then [`ShellRequest::PatchEdited`].
-    pub(crate) fn deliver(&mut self, before: &Patch, ops: &[Op]) -> Applied {
+    pub(crate) fn deliver(&mut self, before: &Patch, ops: &[Op], in_gesture: bool) -> Applied {
         let mut applied = Applied::default();
         let mut plan_sent = true;
         if self.port.is_some() {
@@ -257,8 +261,10 @@ impl Session {
             applied.renamed = true;
             self.requests.push(ShellRequest::RenameParams);
         }
-        applied.host_writes = self.push_host_writes(ops, plan_sent);
-        self.requests.push(ShellRequest::PatchEdited);
+        applied.host_writes = self.push_host_writes(ops, plan_sent, in_gesture);
+        if !self.requests.contains(&ShellRequest::PatchEdited) {
+            self.requests.push(ShellRequest::PatchEdited);
+        }
         applied
     }
 
@@ -312,9 +318,10 @@ impl Session {
         true
     }
 
-    /// Push the host writes `ops` imply, one begin, set, end per parameter (the last value if several ops moved it).
-    /// Returns how many parameters were set.
-    fn push_host_writes(&mut self, ops: &[Op], plan_sent: bool) -> u32 {
+    /// Push the host writes `ops` imply, one per parameter (the last value if several ops moved it): inside a drag a
+    /// `Begin` at the first write and a `Set` for each; outside one a complete begin, set, end, or just a `Set` for a
+    /// parameter whose host gesture a load left open. Returns how many parameters were set.
+    fn push_host_writes(&mut self, ops: &[Op], plan_sent: bool, in_gesture: bool) -> u32 {
         let mut writes: Vec<(HostParam, f32)> = Vec::new();
         let mut one = Vec::new();
         for op in ops {
@@ -331,9 +338,26 @@ impl Session {
             }
         }
         for &(param, norm) in &writes {
-            for step in [GestureStep::Begin, GestureStep::Set(norm), GestureStep::End] {
-                self.requests
-                    .push(ShellRequest::Host(HostWrite { param, step }));
+            let open = self.gestures.host_open.contains(&param);
+            if in_gesture && !open {
+                self.gestures.host_open.push(param);
+                self.requests.push(ShellRequest::Host(HostWrite {
+                    param,
+                    step: GestureStep::Begin,
+                }));
+            }
+            if in_gesture || open {
+                // Inside a drag, or inside a host gesture a load interrupted (its `End` comes with the next
+                // `end_gesture`): set within it rather than nest a second begin and end.
+                self.requests.push(ShellRequest::Host(HostWrite {
+                    param,
+                    step: GestureStep::Set(norm),
+                }));
+            } else {
+                for step in [GestureStep::Begin, GestureStep::Set(norm), GestureStep::End] {
+                    self.requests
+                        .push(ShellRequest::Host(HostWrite { param, step }));
+                }
             }
         }
         u32::try_from(writes.len()).unwrap_or(u32::MAX)

@@ -116,7 +116,7 @@ pub(crate) fn edit_in(
         .history
         .edit(&mut session.patch, ops, gesture)
         .unwrap();
-    session.deliver(&before, &delivered)
+    session.deliver(&before, &delivered, gesture.is_some())
 }
 
 /// What the pump does with a pending compile, minimally: collect returned plans, then compile the patch as it is now,
@@ -144,6 +144,20 @@ pub(crate) fn send_plan(session: &mut Session) -> Option<u64> {
         )
     });
     Some(epoch)
+}
+
+/// The epoch of the latest plan sent.
+pub(crate) fn epoch(session: &Session) -> u64 {
+    port(session).link.epoch()
+}
+
+/// Let the plan a step left pending go out, by whoever sends it: the session's own pump (lane SK's, once it is in:
+/// `Session::deliver` then sent it already) or the double above (until then). Returns the epoch of the latest plan
+/// sent, so a test says how many plans a step took without caring who sent them.
+pub(crate) fn settle(session: &mut Session) -> u64 {
+    session.pump();
+    send_plan(session);
+    epoch(session)
 }
 
 /// Run the engine for `blocks` blocks of 64 frames (collecting returned plans on the way), no host events.

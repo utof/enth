@@ -5,7 +5,7 @@ use enth_patch::Op;
 use enth_patch::model::{ModuleInstance, Section};
 use enth_patch::{ModuleKind, Patch, Position};
 
-use super::kit::{addr, base, edit, edit_in, id, live, patch, port, run, send_plan};
+use super::kit::{addr, base, edit, edit_in, id, live, patch, port, run, settle};
 use crate::state::{HistoryFate, RECONCILE_STEPS};
 use crate::{Session, ShellRequest};
 
@@ -179,18 +179,18 @@ fn whatever_the_history_does_the_engine_gets_the_loaded_patch() {
         session.drain_requests().for_each(drop);
         let report = session.load_patch(&states[target]);
         assert!(report.history.is_some());
-        assert!(session.status().compile_pending, "target {target}");
-        assert_eq!(
-            port(&session).forget_slots,
-            u64::MAX,
-            "the loaded patch wins over host values"
+        // The load marks every remembered host slot value to be forgotten, and the plan that carries the mark goes
+        // out at once (lane SK's pump) or at the next pump (before it), clearing it.
+        assert!(
+            port(&session).forget_slots == u64::MAX || !session.status().compile_pending,
+            "the loaded patch wins over host values: target {target}"
         );
         assert!(
             session
                 .drain_requests()
                 .any(|r| r == ShellRequest::RenameParams)
         );
-        assert_eq!(send_plan(&mut session), Some(1));
+        assert_eq!(settle(&mut session), 1);
         run(&mut session, &mut engine, 20);
         let glide_now = session.patch().value(&addr("voice.glide")).unwrap();
         assert_eq!(glide_now, target as f32);
