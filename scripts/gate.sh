@@ -3,7 +3,8 @@
 #
 #   scripts/gate.sh lane <worktree>   Fast, for a lane before it reports: fmt, workspace clippy (-D warnings),
 #                                     layers, wasm-check, and `cargo test` of the crates the change touches plus
-#                                     every crate that depends on them (`cargo xtask affected`).
+#                                     every crate that depends on them (`cargo xtask affected`, against the merge
+#                                     base with main; ENTH_GATE_BASE=<rev> names another base).
 #   scripts/gate.sh full <worktree>   Everything, for the coordinator before a merge: the lane checks with the
 #                                     whole workspace's tests, plus cargo-deny (bans, licenses, sources), golden,
 #                                     host-render and validate on the default plugin (`cargo xtask host-render`,
@@ -96,7 +97,11 @@ step clippy cargo clippy --workspace --all-targets --locked -- -D warnings
 step wasm-check cargo xtask wasm-check
 
 if [ "$mode" = lane ]; then
-  affected=$(cargo xtask affected)
+  if [ -n "${ENTH_GATE_BASE:-}" ]; then
+    affected=$(cargo xtask affected --base "$ENTH_GATE_BASE")
+  else
+    affected=$(cargo xtask affected)
+  fi
   if [ -z "$affected" ]; then
     echo "== [test] no Rust crate is affected by this change: nothing to test"
   else
