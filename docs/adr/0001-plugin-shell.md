@@ -48,7 +48,32 @@ Switch to **clack + clap-wrapper** if, within two days of trying, the Phase 0 sh
 
 - **Test host** ([spikes/test-host.md](../spikes/test-host.md)): a minimal clack-host host renders spike-shell bit-identically from debug and release bundles (six plugin-level goldens, CI job `host-render`), and two or three instances render identically in four driving modes. The research report's second-instance difference in REAPER does not come from plugin state; REAPER's restart during an offline render is the likely cause (not proven). So plugin-level golden renders go through the test host, never through a REAPER offline render.
 - **The reference panel inside the shell** (`spike-ui-plugin`, [spikes/ui.md](../spikes/ui.md)) passes clap-validator (36 / 0) with `assert_process_allocs` on while `process()` feeds the scopes, so the shell carries a real editor without breaking real-time rules.
-- **Open, with the owner:** the editor on the real display (shell item i), poly-mod in Bitwig (d), play and automate in a second host (h), real audio and xruns, and the slot-rename decision (carry the patch in a fork or accept "Slot N"): [owner checklist](../spikes/owner-checklist.md).
+- **Open, with the owner:** the editor on the real display (shell item i), poly-mod in Bitwig (d), play and automate in a second host (h), real audio and xruns, and the slot-rename decision (carry the patch in a fork or accept "Slot N"): [owner checklist](../spikes/owner-checklist.md). The fork decision was settled on 2026-10-19: see the P1b note below.
+
+## Note — 2026-10-19 (P1b research): the vendored fork and the nice-plug pitfalls
+
+Sources: the P1b research session (`_local/sessions/2026-10-19-p1b-plugin-editor/`, report 01 and the summary). The open fork decision of the G0 note is settled: **carry the fork, vendored privately.** This takes the default the coordinator gave the owner earlier, and no objection was raised.
+
+**The fork**
+
+- **Vendored in the repo behind `[patch.crates-io]`, not a git fork.** A public fork would expose the project name (the repo is private), CI would depend on Codeberg being up, and `deny.toml` would need `allow-git`. The layout is in [architecture.md](../architecture.md#vendored-crates-p1b). The crates come from the crates.io `.crate` files that `Cargo.lock` pinned, with a pristine-import commit and then one commit per patch.
+- **Four patches:**
+  1. **Slot rename** (13 files, +123/−4): a display-name override, a main-thread CLAP `rescan(INFO)` and a VST3 `restartComponent(kParamTitlesChanged)`. It applies cleanly to the crates.io sources. VST3 in REAPER still shows "Slot N".
+  2. **`editor_closed`** (+9, in nice-plug-egui): `Drop` for the editor's app wrapper calls it. Measured: 20 builds and 20 `editor_closed()` calls (stock: none). `EguiEditorState::is_open()` is also reliable (20 of 20 opens and closes seen from `process()`), so correctness never depended on the patch.
+  3. **baseview's xkb leak** (+4/−1): `xkb_keymap_unref` after the state is created. The editor's leak falls from 77 to about 16 KB per open/close cycle. baseview `master` still lacks it (checked 2026-10-19), and no issue mentions it.
+  4. **Keyboard focus only while typing** (egui-baseview and baseview): no `focus()` on every click, focus while a text field is edited, release afterwards. It lets Space reach REAPER's transport after a click on a knob ([ADR-0002](0002-ui-toolkit.md#note--2026-10-19-p1b-research-layout-as-data-stable-ids-keyboard-focus)).
+- **Pins are unchanged:** nice-plug `=0.4.2`, nice-plug-egui `=0.6.0`, egui-baseview 0.9.0, baseview 0.4.1, egui 0.37.0. The vendored crates keep their versions, so the `=` pins still match; keep them through P1b. nice-plug-egui 0.7 is expected together with baseview PR #357, which rewrites the X11 event loop: re-import the pristine files and rebase the patch commits (the xkb fix may need re-deriving). Budget about a day, as above.
+- **Licences and upstreaming.** The nice-plug crates declare ISC, but their crates.io packages contain no LICENSE file, so the text is copied from the Codeberg tag `v0.4.2`; baseview and egui-baseview are `MIT OR Apache-2.0` with both files present. RustAudio's AI policy rules out upstreaming code written by agents. The owner can file issues in their own words (the xkb leak with the valgrind trace, `editor_closed` never called, runtime parameter names, no dirty-marking) and write the one-line xkb PR personally. Upstream fixes then shrink the fork.
+- **Caveat:** vendored path dependencies are not lint-capped. The vendored crates build without warnings on 1.99.1 today (cold build 1 min 53 s, 544 MB peak), and `cargo deny check licenses sources` passes. But a toolchain bump that surfaces a warning fails CI under `CARGO_BUILD_WARNINGS=deny`, while clippy's `-D warnings` and `cargo fmt --check` skip the vendored directory. Pin, and add a per-crate `allow` with a reason when it happens.
+
+**Pitfalls, added to the two from the shell spike**
+
+- **Never call `GuiContext::set_state` while processing.** nice-plug would then apply that state on the audio thread, where our persisted-field `set` would lock the session and compile a plan. Patches load through state on the host's main thread.
+- **nice-plug never marks the project dirty.** It never calls CLAP `mark_dirty` and has no VST3 `setDirty`. A parameter change dirties the project implicitly, but an editor edit that changes only the patch blob may not. Check REAPER's save prompt after such an edit: `reaper-test` reads `IsProjectDirty`, and if it reads clean, a dirty-marking patch is the next fork candidate.
+- **`SAMPLE_ACCURATE_AUTOMATION = true` is required.** With `false`, a plugin render at host block 4096 differed from the CLI render from the start of the block that holds an automation change. With `true`, 20 of 20 runs were bit-identical ([design.md §5](../design.md#5-determinism)).
+- **A state load is not followed by `activate` or `reset`.** The plugin learns of it only through its persisted field's `set`, which runs on the host's main thread while audio may be running. Parameters load first, then fields in name order.
+- **FTZ:** nice-plug sets it only behind its `unsafe_flush_denormals` feature, which we leave off. The engine does not depend on FTZ either way.
+- **Open:** `MidiConfig::MidiCCs` (needed for the mod wheel and pitch bend) registers 2,080 hidden VST3 parameters. Decide it before the first build leaves the machine. The editor's size and zoom are not persisted, because `EguiEditorState` has no setter.
 
 ## Consequences
 
