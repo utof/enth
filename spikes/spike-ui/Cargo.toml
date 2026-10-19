@@ -11,14 +11,20 @@ publish.workspace = true
 # the owner runs it (cargo run -p spike-ui --release); agents never do.
 name = "spike-ui-dev"
 path = "src/bin/spike-ui-dev.rs"
+required-features = ["dev-window"]
+
+[features]
+default = ["dev-window"]
+# The plugin depends on the library without it, so eframe stays out of the plugin build.
+dev-window = ["dep:eframe", "dep:serde_json"]
 
 [dependencies]
 enth-ui.workspace = true
 egui.workspace = true
-serde_json.workspace = true
-# glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine. No default fonts:
-# Theme::apply installs Inter.
-eframe = { version = "=0.37.0", default-features = false, features = ["glow", "x11"] }
+serde_json = { workspace = true, optional = true }
+# glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine; the clipboard for text
+# fields. No default fonts: Theme::apply installs Inter.
+eframe = { version = "=0.37.0", default-features = false, features = ["glow", "x11", "clipboard"], optional = true }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }

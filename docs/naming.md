@@ -49,6 +49,8 @@ Hosts key saved projects, presets and automation by these ids, so **once a build
 | --- | --- | --- |
 | CLAP id, shell spike | `dev.enth.spike-shell` | `spikes/spike-shell`; throwaway, never ships |
 | VST3 class id, shell spike | ASCII `EnthSpikeShell01` = `45 6E 74 68 53 70 69 6B 65 53 68 65 6C 6C 30 31` | `spikes/spike-shell`; never ships |
+| CLAP id, UI spike | `dev.enth.spike-ui` | `spikes/spike-ui-plugin` (the reference panel); throwaway, never ships |
+| VST3 class id, UI spike | ASCII `EnthSpikeUiPnl01` = `45 6E 74 68 53 70 69 6B 65 55 69 50 6E 6C 30 31` | `spikes/spike-ui-plugin`; never ships |
 | **CLAP id, product (reserved)** | `dev.enth.synth` | the real synth, `crates/plugin`, from Phase 1; not used anywhere yet |
 | **VST3 class id, product (reserved)** | `55555EAD-AA77-C9FA-F878-DDDDB0B9D9BD`, random, as nice-plug bytes `[0x55, 0x55, 0x5E, 0xAD, 0xAA, 0x77, 0xC9, 0xFA, 0xF8, 0x78, 0xDD, 0xDD, 0xB0, 0xB9, 0xD9, 0xBD]` | the real synth; not used anywhere yet |
 | AU manufacturer and subtype codes | not chosen | decide when the AU target starts (4 characters each; register with Apple) |

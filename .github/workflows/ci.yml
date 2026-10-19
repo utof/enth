@@ -76,7 +76,7 @@ jobs:
 
   # Task 3 (docs/spikes/shell.md). clap-validator 0.4.1 has no GUI tests, so no display is needed.
   validate:
-    name: clap-validator on spike-shell
+    name: clap-validator on spike-shell and spike-ui-plugin
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -115,3 +115,10 @@ jobs:
         run: |
           cargo xtask bundle spike-shell --release --locked
           "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-shell.clap --only-failed
+      # Task 4: the reference panel in a copy of the shell plugin (spikes/spike-ui-plugin).
+      - name: Validate spike-ui-plugin (debug and release)
+        run: |
+          cargo xtask bundle spike-ui-plugin --locked
+          "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-ui-plugin.clap --only-failed
+          cargo xtask bundle spike-ui-plugin --release --locked
+          "$RUNNER_TEMP/cv/clap-validator" validate target/bundled/spike-ui-plugin.clap --only-failed
