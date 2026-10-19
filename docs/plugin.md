@@ -13,7 +13,7 @@
 | `src/ledger.rs` | the host notes not reported ended yet: [exactly one `NOTE_END` per host note](#note_end) | PL |
 | `src/rt_stats.rs` | with the `rt-stats` cargo feature: [a timing histogram of `process()`](#rt-stats) | PL |
 | `src/state.rs` | the persistent fields `patch` and `enth` | SK |
-| `src/editor.rs` | the `NiceEguiApp` and `Glue`, which binds UI-C's cards to `SessionView`/`SessionEdit` | SK, ED1 |
+| `src/editor.rs` | the `NiceEguiApp` (`EditorApp`) and `Glue`, the plugin's handle on `enth_ui::editor::Editor` ([editor.md](editor.md)) | SK, ED1 |
 | `src/tests_host.rs` | [in-process host tests](#tests-and-gates): the real plugin through fake nice-plug contexts, compared bit for bit with `enth_render` | PL |
 | `clippy.toml` | the workspace's bans, minus I/O, plus `GuiContext::set_state`/`get_state`, `execute_gui` and `VoiceID::id_or_fallback` | SK |
 | `tests/cli-equal.profile.toml` | the engine goldens `cli-equal` renders through the plugin (all of them since PL, `mod-controls` included) | SK, PL |
@@ -136,11 +136,7 @@ nice-plug sets the parameters first, then `enth`, then `patch`, and neither re-a
 
 ## The editor
 
-F2b's editor is one real card: UI-C's `Card` for the first sound source (`osc1` in the init patch), as a strip, with "More" for the advanced tier. `Glue` turns the frame's intents into session calls through `SessionEdit` only, so the same code runs in a test with a plain `Session`: `Begin` opens a gesture, `Set`/`SetMacro`/`SetDepth` edit inside it, `End` closes it, a release of the pointer anywhere closes it too, and clicks, toggles and enable switches are single edits. `ShowMore` is editor view state, kept in `Glue`.
-
-Each frame (GUI thread): read the host's values, then under the lock `pump`, `fold_host`, draw from `SessionView::patch` inside a `CentralPanel`, apply the intents; unlock; forward the host writes (`begin_set_parameter`, `set_parameter_normalized`, `end_set_parameter`). Every `build()` applies the theme and ends any gesture the last window left open. An editor edit that renames (the slot "Automate" menu, a label, a macro name) sets the names inside the same `with_session` call; `process()` requests the rescan.
-
-ED1 replaces the body with the full editor and its layout seam; the frame protocol stays. ED2 adds a `TelemetryReader` (create it in `build()` from `telemetry_source()`, `set_enabled(true)`; `process()` already disables the tap when the window closes and turns the tap's wake flag into repaints).
+The editor is ED1's ([editor.md](editor.md)): `src/editor.rs`'s `Glue` wraps `enth_ui::editor::Editor`. The shell keeps the frame protocol (GUI thread): read the host's values; under the lock `pump`, `fold_host`, the editor's frame, `drain_requests`; unlock; forward the host writes to `ParamSetter` (begin, set, end). Every `build()` is a fresh open. An editor edit that renames (the slot "Automate" menu, a label, a macro name) sets the display names inside that same `with_session` call, and `process()` requests the rescan ([Parameter names](#parameter-names)); the monitor bypass switch is `SessionEdit::set_monitor_bypass` ([above](#the-monitor-bypass)). ED2 adds a `TelemetryReader` per `build()`; `process()` already disables the tap when the window closes and turns the tap's wake flag into repaints.
 
 ## rt-stats
 
@@ -231,7 +227,6 @@ The test host resolves a script's parameter names against the names a fresh inst
 ## For the next lanes
 
 - **RT:** build with `--features rt-stats` and read `Shared::rt_stats` or the `ENTH_RT_STATS` report for the plugin's own share of `process()`; `process-stats` times the whole call. A block with an event flood now renders in chunks (several `Engine::process` calls, each of which renders at least the segments it needs), and the ledger sweeps once per chunk: measure a flood block, not only steady state. The rescan request and voice-info report are nice-plug task queue pushes plus `request_callback`, made only on a rename or a voice-count change. The pump's `try_send` is unchanged.
-- **ED1:** an editor rename sets the names inside `with_session` (nothing to do in the editor); the monitor bypass control is `SessionEdit::set_monitor_bypass`, already wired to the engine with its 20 ms fade.
 - **ED2:** a `TelemetryReader` per `build()`; repaints already come from the tap's wake flag.
 - **RH:** done for the scenarios above; a new one loads any patch with `inject_state` and a chunk from `write_state_chunk`. After the dirty-marking fork patch, flip `DIRTY_MARKING_EXPECTED`. PL changed `state.lua` (the patch's names accepted in `param-names` and checked in `param-renamed`; 2,155 VST3 parameters) and flipped `CLAP_FLAT_LANE_IS_KNOWN_GAP`. A mod-wheel scenario (a MIDI item with CC 1) would pin the `MidiCCs` decision; PL's experiment is in `~/code/enth-scratch/p1b/pl/modwheel/`.
 - **INT and owner build 1:** check that renamed slot names show in REAPER on a real display (CLAP after a moment, VST3 at once), the length of REAPER's VST3 parameter list with the MIDI CC entries, and the mod wheel from a hardware controller in both formats.
