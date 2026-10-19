@@ -205,11 +205,11 @@ fn run_session(dir: &Path, manifest: &Manifest, session: u8, player: &str) -> Re
                 // (it did on the owner's machine). A role of our own starts unmuted and touches no system setting.
                 cmd.arg("--media-role=Production");
             }
-            let status = cmd
-                .arg(&path)
-                .stdin(Stdio::null())
-                .status()
-                .map_err(|e| format!("cannot run {player:?}: {e} (set --player to a command that plays one WAV file)"))?;
+            let status = cmd.arg(&path).stdin(Stdio::null()).status().map_err(|e| {
+                format!(
+                    "cannot run {player:?}: {e} (set --player to a command that plays one WAV file)"
+                )
+            })?;
             if !status.success() {
                 return Err(format!("{player} exited with {status}").into());
             }
