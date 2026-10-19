@@ -30,7 +30,7 @@ A **Challenge** (target + starting patch + constraints + scoring spec + performa
 | L3 | `enth-render` | Offline deterministic render: (patch, performance, spec) → buffer | L0–L2 |
 | L3 | `enth-analysis` | STFT/mel/MFCC, loudness, pitch, envelope and modulation estimates; **descriptors**; expectation checks; versioned distance metrics | L0 |
 | L4 | `enth-challenge` | `Challenge`, `Constraints`, lessons, `ScoringSpec`; evaluates a score (render + analysis) | L0–L3 |
-| L5 | `enth-solver` | Sensitivity (`suggest`, coach hints), CMA-ES (`match`), nearest-solution search; `onnx` feature later. Batch evaluation goes through a caller-supplied evaluator, so the solver itself spawns no threads | L0–L4 |
+| L5 | `enth-solver` | Sensitivity (`suggest`, coach hints), CMA-ES (`match`), nearest-solution search; `onnx` feature later. Batch evaluation goes through a caller-supplied evaluator, so the solver itself spawns no threads. The evaluator must be **order-stable**: a work queue that writes each result by its input index, so results are identical for any worker count (measured: 1 and 8 workers give the same checksum) | L0–L4 |
 | L6 | `enth-session` | Owns the live patch on the main thread: applies ops, undo/redo, compiles plans, ships them to the audio thread, bridges host params | L0–L5 |
 | L7 | `enth-ui` | Native editor (egui by default): `theme` (design tokens, [design-system.md](design-system.md)), widgets, module lanes, modulation rings, scopes, lesson and Recreate views | L0–L6 |
 | L8 | `enth-plugin` | CLAP/VST3 shell: host params (macros + slots), state, notes, poly-mod, editor embedding | L0–L7 |
@@ -39,12 +39,12 @@ A **Challenge** (target + starting patch + constraints + scoring spec + performa
 | L8 | `enth-wasm` | *(later, maybe)* browser build | L0–L7 |
 | L8 | `enth-py` | *(later)* Python bindings for ML datasets | L0–L5 |
 
-Tooling is outside the layer system and listed as exempt in `xtask/layers.toml`: `xtask`, `enth-test-host` (`tools/test-host`) and everything named `spike-*` (`spikes/`).
+Tooling is outside the layer system and listed as exempt in `xtask/layers.toml`: `xtask`, `enth-test-host` (`tools/test-host`), `enth-golden` (`tests/golden`) and everything named `spike-*` (`spikes/`).
 
 ### Rules that keep it refactor-free
 
 1. **Dependencies point down only.** `xtask/layers.toml` is the single source of truth for layers. `cargo xtask check-layers` reads `cargo metadata` and fails on an upward or same-layer edge, or on a workspace member that is neither layered nor exempt.
-2. **Core crates (L0–L5) do no I/O**, spawn no threads, read no clocks, use no global RNG, and must build for `wasm32-unknown-unknown` (`cargo xtask wasm-check`). Parallelism and I/O are supplied by the caller.
+2. **Core crates (L0–L5) do no I/O**, spawn no threads, read no clocks, use no locks, use no global RNG, and must build for `wasm32-unknown-unknown` (`cargo xtask wasm-check`). Parallelism and I/O are supplied by the caller. `wasm-check` proves only that they *build*: a wasm32 build accepts `Instant::now`, `fs::read` and `thread::spawn`. The root `clippy.toml` (`disallowed-methods`, `disallowed-types`) is what bans them; shell crates and tooling opt out.
 3. **Only `enth-engine` runs on the audio thread.** Its `process()` never allocates, locks, logs, does I/O or panics.
 4. **Descriptors in `enth-patch`, implementations in `enth-engine`.** The UI, challenges, solver and CLI reason about modules (names, ranges, units, tiers) without linking DSP. A test asserts every descriptor has an implementation and vice versa.
 5. **Every change to a patch is an op.** The UI emits ops, the CLI applies ops, undo stores inverse ops, a future network duel would send ops. There is no second way to mutate a patch.
@@ -65,48 +65,50 @@ Tooling is outside the layer system and listed as exempt in `xtask/layers.toml`:
 
 ## Folder topology
 
-Directory names are short; package names carry the `enth-` prefix (`crates/dsp` → `enth-dsp`).
+Directory names match package names: `crates/enth-dsp` is the package `enth-dsp` (2026-10-19: the earlier short directory names, such as `crates/dsp`, were dropped).
 
 ```
 enth/
-├── Cargo.toml              # virtual workspace: members, [workspace.package], [workspace.lints]
-├── rust-toolchain.toml     # pinned stable toolchain + wasm32 targets
+├── Cargo.toml              # virtual workspace: members (crates/*, xtask, spikes/*, later tools/*), default-members, [workspace.package], [workspace.lints]
+├── rust-toolchain.toml     # pinned stable toolchain (1.99.1) + wasm32 targets
+├── clippy.toml             # lint options: bans I/O, clocks, threads and locks in core crates
 ├── .cargo/config.toml      # [alias] xtask = "run --package xtask --"
+├── .github/                # workflows/ci.yml, dependabot.yml
 ├── deny.toml               # cargo-deny: allowed licences, banned crates
 ├── LICENSE                 # MIT
 ├── THIRD_PARTY_NOTICES.md  # one entry per ported source: upstream, commit, licence, copyright
 ├── AGENTS.md               # agent rules (the single copy)
 ├── CLAUDE.md               # "Read AGENTS.md and docs/README.md before any task."
-├── _local/sessions/        # research sessions: <YYYY-MM-DD>-<slug>/{brief,NN-topic,summary}.md (see research-process.md)
+├── _local/sessions/        # research sessions: <YYYY-MM-DD>-<slug>/{brief,NN-topic,summary}.md (committed; see research-process.md)
 ├── docs/                   # these docs; docs/adr/ decisions; docs/dsp/ one note per module; docs/spikes/ results
-├── crates/
-│   ├── dsp/                # L0
-│   ├── params/             # L0
-│   ├── patch/              # L1  src/{model,catalogue,ops,units,schema,migrate,canon}.rs
-│   ├── engine/             # L2  src/modules/{generators,modulators,effects}/, voice.rs, plan.rs
-│   ├── render/             # L3
-│   ├── analysis/           # L3  src/{features,descriptors,expect,distance}.rs
-│   ├── challenge/          # L4
-│   ├── solver/             # L5  src/{sensitivity,cmaes,nearest,coach}.rs
-│   ├── session/            # L6
-│   ├── ui/                 # L7  src/{widgets,editor,scopes,learn,recreate}/
-│   ├── plugin/             # L8  CLAP (+VST3) shell
-│   ├── cli/                # L8  the `enth` binary
-│   ├── standalone/         # L8  deferred — created when needed
-│   ├── wasm/               # L8  later — created when needed
-│   └── py/                 # L8  later — created when needed
+├── crates/                 # directory name = package name
+│   ├── enth-dsp/           # L0
+│   ├── enth-params/        # L0
+│   ├── enth-patch/         # L1  src/{model,catalogue,ops,units,schema,migrate,canon}.rs
+│   ├── enth-engine/        # L2  src/modules/{generators,modulators,effects}/, voice.rs, plan.rs
+│   ├── enth-render/        # L3
+│   ├── enth-analysis/      # L3  src/{features,descriptors,expect,distance}.rs
+│   ├── enth-challenge/     # L4
+│   ├── enth-solver/        # L5  src/{sensitivity,cmaes,nearest,coach}.rs
+│   ├── enth-session/       # L6
+│   ├── enth-ui/            # L7  src/{theme,widgets,editor,scopes,learn,recreate}/
+│   ├── enth-plugin/        # L8  CLAP (+VST3) shell
+│   ├── enth-cli/           # L8  the `enth` binary
+│   ├── enth-standalone/    # L8  deferred — created when needed
+│   ├── enth-wasm/          # L8  later — created when needed
+│   └── enth-py/            # L8  later — created when needed
 ├── content/
 │   ├── presets/            # *.patch.json
 │   ├── templates/          # constrained patch templates for games, ML and agent starts
 │   ├── lessons/            # content packs: lesson.toml + markdown + patches; targets rendered on the fly
 │   └── agent-evals/        # prompts + expectations + reference sounds (agent benchmark)
-├── tests/golden/           # reference patches + expected render hashes and feature summaries
+├── tests/golden/           # the `enth-golden` crate (it needs both L3 crates and `check-layers` rejects same-layer edges, so it is exempt): reference patches, expected hashes per <arch>-<os> and feature summaries as text — no WAVs in git
 ├── spikes/                 # Phase 0 throwaway code (spike-* packages, exempt from layers)
 ├── tools/
 │   └── test-host/          # enth-test-host: tiny CLAP host (clack-host), scripted editor open/close, timings
 ├── ml/                     # later: Python (uv) training + ONNX export; never shipped
-└── xtask/                  # layers.toml; commands: check-layers, wasm-check, bundle, install,
-                            # validate, golden, bench, agent-eval (each added when first needed)
+└── xtask/                  # layers.toml; commands: check-layers, wasm-check, bundle, install, reaper-test;
+                            # later, each when first needed: validate, golden, bench, agent-eval
 ```
 
 ## Light and heavy builds: content packs and features
@@ -126,11 +128,11 @@ Kilohearts-style: an effect from the synth could also ship as its own small plug
 
 A new oscillator, for example:
 
-1. DSP primitive in `crates/dsp` with unit tests.
-2. Descriptor (params, units, ranges, lesson metadata) in `crates/patch/src/catalogue`.
-3. Implementation in `crates/engine/src/modules/generators`.
+1. DSP primitive in `crates/enth-dsp` with unit tests.
+2. Descriptor (params, units, ranges, lesson metadata) in `crates/enth-patch/src/catalogue`.
+3. Implementation in `crates/enth-engine/src/modules/generators`.
 4. Golden render test in `tests/golden`.
-5. Module card in `crates/ui`.
+5. Module card in `crates/enth-ui`.
 6. It's automatically available to the CLI (`enth modules`, `enth apply`) because the CLI reads the catalogue.
 7. At least one lesson in `content/lessons` and one agent eval in `content/agent-evals`.
 
