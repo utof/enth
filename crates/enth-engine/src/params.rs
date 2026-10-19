@@ -279,7 +279,7 @@ impl Smoother {
     }
 
     /// Whether the value equals the base exactly (no ramp in flight).
-    #[cfg(test)]
+    #[inline(always)]
     pub fn is_settled(&self) -> bool {
         self.left == 0
     }
@@ -291,7 +291,7 @@ impl Smoother {
     }
 
     /// Advance one segment towards `base` and return this segment's plain value: `base` itself when settled.
-    #[inline]
+    #[inline(always)]
     pub fn advance(&mut self, spec: &ParamSpec, base: f32) -> f32 {
         if base.to_bits() != self.base_bits {
             self.retarget(spec, base);
@@ -344,6 +344,38 @@ impl Smoother {
     }
 }
 
+/// When a table may skip its full pass: nothing written, nothing smoothing, and `prev` already level with `cur`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Activity {
+    /// A base value was written (a value event, a carry) since the last pass.
+    dirty: bool,
+    /// Smoothers in flight after the last pass.
+    moving: u32,
+    /// The last full pass changed values, so one more brings `prev` level with `cur`.
+    sync: bool,
+}
+
+impl Activity {
+    #[inline(always)]
+    fn quiet(self) -> bool {
+        !self.dirty && self.moving == 0 && !self.sync
+    }
+
+    /// Start a full pass; whether values may change in it.
+    #[inline(always)]
+    fn begin(&mut self) -> bool {
+        let changing = self.dirty || self.moving > 0;
+        self.dirty = false;
+        changing
+    }
+
+    #[inline(always)]
+    fn end(&mut self, changing: bool, moving: u32) {
+        self.sync = changing;
+        self.moving = moving;
+    }
+}
+
 /// The per-voice table. Sized at compile time; nothing here allocates afterwards.
 #[derive(Debug)]
 pub(crate) struct VoiceTable {
@@ -354,6 +386,9 @@ pub(crate) struct VoiceTable {
     pub smooth: Vec<Smoother>,
     /// The parameter has routes: steps 4–6 write its `cur`.
     pub modulated: Vec<bool>,
+    /// The routed parameters' indices.
+    pub routed: Vec<usize>,
+    activity: Activity,
     sample_rate: f32,
 }
 
@@ -366,6 +401,8 @@ impl VoiceTable {
             prev: Vec::new(),
             smooth: Vec::new(),
             modulated: Vec::new(),
+            routed: Vec::new(),
+            activity: Activity::default(),
             sample_rate,
         }
     }
@@ -399,9 +436,39 @@ impl VoiceTable {
     /// Step 3: advance every smoother one segment; for the active voices, `prev ← cur` (or this segment's value
     /// for a voice that `reset` flags: a trigger restarts its ramps) and, for parameters without routes,
     /// `cur ← value` (the exact base when settled). Routed parameters get `cur` in steps 4–6.
+    ///
+    /// When the table is quiet (no value written, no smoother moving, `prev` level with `cur`), every active voice
+    /// already holds the settled value, so only restarting voices are written (their slot may hold a value from
+    /// before a change it missed) and the routed parameters' `prev ← cur`: the same values as the full pass.
     pub fn advance(&mut self, voices: &[VoiceIdx], reset: &[bool; MAX_VOICES]) {
+        if self.activity.quiet() {
+            if voices.iter().any(|&v| reset[v]) {
+                for p in 0..self.base.len() {
+                    if !self.modulated[p] {
+                        let b = self.base[p];
+                        let (cur, prev) = (&mut self.cur[p], &mut self.prev[p]);
+                        for &v in voices {
+                            if reset[v] {
+                                cur[v] = b;
+                                prev[v] = b;
+                            }
+                        }
+                    }
+                }
+            }
+            for &p in &self.routed {
+                let (cur, prev) = (&self.cur[p], &mut self.prev[p]);
+                for &v in voices {
+                    prev[v] = cur[v];
+                }
+            }
+            return;
+        }
+        let changing = self.activity.begin();
+        let mut moving = 0;
         for p in 0..self.base.len() {
             let value = self.smooth[p].advance(self.specs[p], self.base[p]);
+            moving += u32::from(!self.smooth[p].is_settled());
             let (cur, prev) = (&mut self.cur[p], &mut self.prev[p]);
             if self.modulated[p] {
                 for &v in voices {
@@ -414,6 +481,15 @@ impl VoiceTable {
                 }
             }
         }
+        self.activity.end(changing, moving);
+    }
+
+    /// Mark parameter `p` as routed (compile time).
+    pub fn route(&mut self, p: usize) {
+        if !self.modulated[p] {
+            self.modulated[p] = true;
+            self.routed.push(p);
+        }
     }
 
     /// Set a base value from a value event, clamped to the spec (NaN is ignored: it is a bug upstream). The
@@ -423,6 +499,7 @@ impl VoiceTable {
             && !value.is_nan()
         {
             *base = spec.clamp(value);
+            self.activity.dirty = true;
         }
     }
 
@@ -436,6 +513,8 @@ impl VoiceTable {
             self.prev[d] = old.prev[s];
             self.smooth[d] = old.smooth[s];
         }
+        self.activity.dirty = true;
+        self.activity.sync = true;
     }
 }
 
@@ -449,6 +528,9 @@ pub(crate) struct GlobalTable {
     pub smooth: Vec<Smoother>,
     /// The parameter has routes: steps 4 and 6 write its `cur`.
     pub modulated: Vec<bool>,
+    /// The routed parameters' indices.
+    pub routed: Vec<usize>,
+    activity: Activity,
     sample_rate: f32,
 }
 
@@ -461,6 +543,8 @@ impl GlobalTable {
             prev: Vec::new(),
             smooth: Vec::new(),
             modulated: Vec::new(),
+            routed: Vec::new(),
+            activity: Activity::default(),
             sample_rate,
         }
     }
@@ -490,14 +574,33 @@ impl GlobalTable {
         }
     }
 
-    /// Step 3: advance every smoother; `prev ← cur`; `cur ← value` for parameters without routes.
+    /// Step 3: advance every smoother; `prev ← cur`; `cur ← value` for parameters without routes. Quiet (see
+    /// [`VoiceTable::advance`]), only the routed parameters' `prev ← cur`.
     pub fn advance(&mut self) {
+        if self.activity.quiet() {
+            for &p in &self.routed {
+                self.prev[p] = self.cur[p];
+            }
+            return;
+        }
+        let changing = self.activity.begin();
+        let mut moving = 0;
         for p in 0..self.base.len() {
             let value = self.smooth[p].advance(self.specs[p], self.base[p]);
+            moving += u32::from(!self.smooth[p].is_settled());
             self.prev[p] = self.cur[p];
             if !self.modulated[p] {
                 self.cur[p] = value;
             }
+        }
+        self.activity.end(changing, moving);
+    }
+
+    /// Mark parameter `p` as routed (compile time).
+    pub fn route(&mut self, p: usize) {
+        if !self.modulated[p] {
+            self.modulated[p] = true;
+            self.routed.push(p);
         }
     }
 
@@ -507,6 +610,7 @@ impl GlobalTable {
             && !value.is_nan()
         {
             *base = spec.clamp(value);
+            self.activity.dirty = true;
         }
     }
 
@@ -519,6 +623,8 @@ impl GlobalTable {
             self.prev[d] = old.prev[s];
             self.smooth[d] = old.smooth[s];
         }
+        self.activity.dirty = true;
+        self.activity.sync = true;
     }
 }
 

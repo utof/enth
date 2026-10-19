@@ -433,6 +433,7 @@ impl VoiceManager {
 
     /// The steal fade of voice `v` this segment as (gain at the start, gain at the end), or `None` if it is not
     /// fading.
+    #[inline]
     #[must_use]
     pub fn fade(&self, v: VoiceIdx) -> Option<(f32, f32)> {
         if self.state[v] != VoiceState::Stolen {

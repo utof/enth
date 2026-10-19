@@ -339,16 +339,12 @@ impl Engine {
         };
         let active = &active_buf[..n_active];
         self.glide.advance(active, &mut self.notes);
-        let mut fades = [None; MAX_VOICES];
-        for &v in active {
-            fades[v] = self.voices.fade(v);
-        }
 
         // 3–8, per plan: the replaced one first while it crossfades.
         let cx = SegmentCx {
             active,
             notes: &self.notes,
-            fades: &fades,
+            voices: &self.voices,
             bypass: self.monitor_bypass,
         };
         let buses = &mut *self.buses;
@@ -606,8 +602,8 @@ fn set_macro(plan: &mut Plan, index: usize, value: f32) {
 struct SegmentCx<'a> {
     active: &'a [VoiceIdx],
     notes: &'a NoteState,
-    /// Per voice: the steal fade's gains at the segment start and end.
-    fades: &'a [Option<(f32, f32)>; MAX_VOICES],
+    /// For the steal fades.
+    voices: &'a VoiceManager,
     bypass: bool,
 }
 
@@ -756,7 +752,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Buses) {
         let (l0, r0) = (a0 * ql, a0 * qr);
         let (dl, dr) = (a1 * pl - l0, a1 * pr - r0);
         let voice = &buses.voice[v];
-        if let Some((f0, f1)) = cx.fades[v] {
+        if let Some((f0, f1)) = cx.voices.fade(v) {
             // A steal fade: the amp-and-pan ramp times a linear fade to silence over 64 frames.
             let df = f1 - f0;
             for (((l, r), x), w) in buses

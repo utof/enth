@@ -146,14 +146,14 @@ impl MatrixBuilder {
             };
             m.terms.extend(terms);
             let (list, run) = if voice {
-                voice_table.modulated[param] = true;
+                voice_table.route(param);
                 let run = match stage {
                     Stage::VoiceMod(i) => &mut m.voice_by_vmod[usize::from(i)],
                     Stage::GlobalMod(_) | Stage::Processors => &mut m.voice_final,
                 };
                 (&mut m.voice, run)
             } else {
-                global_table.modulated[param] = true;
+                global_table.route(param);
                 let run = match stage {
                     Stage::GlobalMod(i) => &mut m.global_by_gmod[usize::from(i)],
                     Stage::VoiceMod(_) | Stage::Processors => &mut m.global_final,
