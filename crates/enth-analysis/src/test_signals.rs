@@ -258,6 +258,27 @@ pub fn render_toy(
     phases: (f32, f32),
     master_db: f32,
 ) -> Vec<f32> {
+    render_toy_lfo(sr, p, perf, phases, master_db, None)
+}
+
+/// A sine LFO on the toy voice's cutoff: `rate_hz`, and `depth_oct` octaves either way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CutoffLfo {
+    pub rate_hz: f64,
+    pub depth_oct: f64,
+}
+
+/// [`render_toy`] with an optional LFO on the cutoff (a filter wobble). Without one, the same bits as
+/// [`render_toy`].
+#[must_use]
+pub fn render_toy_lfo(
+    sr: f64,
+    p: &ToyPatch,
+    perf: &ToyPerf,
+    phases: (f32, f32),
+    master_db: f32,
+    lfo: Option<CutoffLfo>,
+) -> Vec<f32> {
     let sr32 = sr as f32;
     let n = (sr32 * perf.dur_s as f32) as usize;
     let note_off = perf.hold_s as f32;
@@ -308,7 +329,14 @@ pub fn render_toy(
         let t = i as f32 / sr32;
         if i % 8 == 0 {
             let fe = libm::expf(-t / (fdec * 0.25));
-            let fc = (cutoff * libm::exp2f(famt * fe)).min(0.45 * sr32);
+            let oct = match lfo {
+                None => famt * fe,
+                Some(l) => {
+                    famt * fe
+                        + (l.depth_oct * libm::sin(2.0 * PI * l.rate_hz * f64::from(t))) as f32
+                }
+            };
+            let fc = (cutoff * libm::exp2f(oct)).min(0.45 * sr32);
             let gg = libm::tanf(PI32 * fc / sr32);
             a1 = 1.0 / (1.0 + gg * (gg + k));
             a2 = gg * a1;

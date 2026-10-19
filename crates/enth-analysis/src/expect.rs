@@ -12,9 +12,10 @@
 //! tol     := ("±" | "+-") (value | number "%")      only after "=", "==" or "~"
 //! ```
 //!
-//! `=` and `~` without a tolerance use the feature's default: 25 ct for `pitch`, 50 ct for `pitch.note` (the same
-//! note), 10 % for Hz and ms features, 2 dB for dB features. A pitch compared with `=` or `~` is judged in cents
-//! from the target note, so its margin is in cents. The checker echoes every item in a canonical form with the
+//! `=` and `~` without a tolerance use the feature's default: 25 ct for `pitch` and `tonal_pitch`, 50 ct for
+//! `pitch.note` and `tonal.note` (the same note), 10 % for Hz and ms features, 2 dB for dB features. A pitch
+//! compared with `=` or `~` is judged in cents from the target note, so its margin is in cents. A true/false item
+//! has no distance to its threshold (its margin is 0): it is `thin` only when the nuisance renders disagree. The checker echoes every item in a canonical form with the
 //! canonical path, e.g. `envelope.attack_ms < 10`.
 
 use crate::descriptors::{AnalysisError, Describer, Descriptors, Feature, NoteTiming, Scale, Want};
@@ -206,12 +207,12 @@ fn num(v: f64) -> String {
 
 fn default_tol(feature: Feature, value: f64, note_alias: bool) -> f64 {
     match feature {
-        Feature::Pitch if note_alias => NOTE_TOL_CT,
-        Feature::Pitch => PITCH_TOL_CT,
+        f if f.is_pitch() && note_alias => NOTE_TOL_CT,
+        f if f.is_pitch() => PITCH_TOL_CT,
         f if f.scale() == Scale::Log => value.abs() * 0.1,
         Feature::Loudness => 1.5,
         Feature::PitchCents => 10.0,
-        Feature::ClippedPct => 0.1,
+        Feature::ClippedPct | Feature::SweepDepth => 0.1,
         Feature::Clipping => 0.0,
         f if matches!(f.unit(), Unit::Db | Unit::Dbfs | Unit::Dbtp) => 2.0,
         _ => 0.05,
@@ -237,12 +238,12 @@ pub fn parse_item(item: &str) -> Result<Expect, ExpectError> {
     })?;
     let note_alias = matches!(
         head.trim().to_ascii_lowercase().as_str(),
-        "pitch.note" | "note"
+        "pitch.note" | "note" | "tonal.note" | "tonal_note"
     );
     let path = feature.path();
     let unit = feature.unit();
     let parse_v = |text: &str| -> Result<f64, ExpectError> {
-        if feature == Feature::Pitch {
+        if feature.is_pitch() {
             note_or_hz(text).ok_or_else(|| {
                 bad(
                     item,
@@ -254,7 +255,7 @@ pub fn parse_item(item: &str) -> Result<Expect, ExpectError> {
         }
     };
     let show = |v: f64| -> String {
-        if feature == Feature::Pitch && v > 0.0 {
+        if feature.is_pitch() && v > 0.0 {
             let (name, c) = nearest_note(v);
             if c.abs() < 0.01 {
                 name
@@ -360,7 +361,7 @@ pub fn parse_item(item: &str) -> Result<Expect, ExpectError> {
                 ));
             }
             let tol = match tol_text {
-                Some(t) if feature == Feature::Pitch => {
+                Some(t) if feature.is_pitch() => {
                     parse_value(t, Unit::Cents).map_err(|m| bad(item, &m))?
                 }
                 Some(t) => match t.strip_suffix('%') {
@@ -376,7 +377,7 @@ pub fn parse_item(item: &str) -> Result<Expect, ExpectError> {
                 None => default_tol(feature, v, note_alias),
             }
             .abs();
-            if feature == Feature::Pitch {
+            if feature.is_pitch() {
                 let canon = format!("{path} = {} ± {}ct", show(v), num(tol));
                 return Ok(mk(
                     canon,
@@ -492,6 +493,11 @@ impl Expect {
             },
         };
         let thin = match self.test {
+            // A true/false reading has no distance to its threshold (its margin is always 0): it is thin only when
+            // the nuisance renders disagree with it.
+            Test::Within(_) if self.feature.unit() == Unit::Bool => {
+                nz.is_some_and(|n| n.unstable || n.max_abs_delta > 0.0)
+            }
             Test::Within(_) => is_thin(margin, nz),
             Test::IsNull | Test::NotNull => nz.is_some_and(|n| n.unstable),
         };
@@ -607,6 +613,7 @@ mod tests {
                 stability: 1.0,
                 voiced: 1.0,
             }),
+            tonal: None,
             envelope: Some(Envelope {
                 attack_ms: 9.0,
                 decay_ms: Some(15.0),
@@ -785,6 +792,68 @@ mod tests {
         assert!(!r.results[1].thin);
         assert!(r.results[2].unstable && r.results[2].thin);
         assert_eq!(r.thin, 2);
+    }
+
+    #[test]
+    fn a_boolean_is_thin_only_when_the_renders_disagree() {
+        let d = desc();
+        let items = parse_list("clipping = false, clipping != true").unwrap();
+        // every render agrees: margin 0 but nothing to flip
+        let r = check(&items, &d, &[desc(), desc()]);
+        assert!(
+            r.results
+                .iter()
+                .all(|x| x.pass && !x.thin && x.margin == Some(0.0))
+        );
+        assert_eq!(r.thin, 0);
+        // one nuisance render clips: the verdict can flip, so it is thin
+        let mut clips = desc();
+        clips.loudness.clipping = true;
+        let r = check(&items, &d, &[desc(), clips]);
+        assert!(r.results.iter().all(|x| x.pass && x.thin), "{r:?}");
+    }
+
+    #[test]
+    fn tonal_pitch_is_judged_in_cents_like_pitch() {
+        assert_eq!(
+            parse_item("tonal_pitch ~ A3").unwrap().canonical,
+            "tonal.f0_hz = A3 ± 25ct"
+        );
+        assert_eq!(
+            parse_item("tonal.note ~ A3").unwrap().canonical,
+            "tonal.f0_hz = A3 ± 50ct"
+        );
+        assert_eq!(
+            parse_item("filter_lfo in [1.5Hz, 3.5Hz]")
+                .unwrap()
+                .canonical,
+            "modulation.filter_sweep.hz in [1.5, 3.5]"
+        );
+        assert_eq!(
+            parse_item("filter_sweep > 6st").unwrap().test,
+            Test::Within(Interval::above(0.5, false))
+        );
+        assert_eq!(
+            parse_item("modulation.filter_sweep != null").unwrap().test,
+            Test::NotNull
+        );
+        let mut d = desc();
+        d.tonal = Some(crate::pitch::Tonal {
+            f0_hz: 221.0,
+            note: "A3".into(),
+            cents_dev: 7.9,
+            harmonicity: 1.0,
+            share: 0.2,
+        });
+        d.pitch = None;
+        let r = check(
+            &parse_list("tonal_pitch ~ A3, pitch == null").unwrap(),
+            &d,
+            &[],
+        );
+        assert!(r.pass, "{r:?}");
+        assert_eq!(r.results[0].unit, Unit::Cents);
+        assert!((r.results[0].compared.unwrap() - 7.85).abs() < 0.1);
     }
 
     #[test]

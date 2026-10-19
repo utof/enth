@@ -5,8 +5,8 @@ difficulty = 5
 tags = ["percussion", "snare", "noise", "short", "structure"]
 brief = "a snare-like crack: a noise burst over a short tonal body"
 template = "init"
-expect = "attack < 10ms, duration in [100ms, 300ms], noisiness in [0.4, 0.85], brightness in [1.5kHz, 5kHz], sustain < -40dB, peak < -1dB"
-rationale = "The hardest percussion goal: two sources at once. Noise for the crack and a tone for the body, so the noisiness item is a window (0.4 to 0.85: all noise is a hat, no noise is a tom), which the agent can only meet by balancing the oscillator level against the noise level, with a low-pass to put the brightness between a kick's and a hat's (1.5 to 5 kHz). A short envelope (100 to 300 ms, gone by note-off at 0.3 s). Pitch is left out on purpose: once the noise is above about 0.4 the pitch is unreadable."
+expect = "attack < 10ms, duration in [100ms, 300ms], noisiness in [0.4, 0.85], tonal_pitch ~ A3, brightness in [1.5kHz, 5kHz], sustain < -40dB, peak < -1dB"
+rationale = "The hardest percussion goal: two sources at once. Noise for the crack and a tone for the body, so the noisiness item is a window (0.4 to 0.85: all noise is a hat, no noise is a tom), which the agent can only meet by balancing the oscillator level against the noise level, with a low-pass to put the brightness between a kick's and a hat's (1.5 to 5 kHz). A short envelope (100 to 300 ms, gone by note-off at 0.3 s). The body must sit on the played note: `tonal_pitch` reads the tone under the noise (eval version 2), where `pitch` is gone once the noise is above about 0.25."
 engine_min = "0.1.0"
 perf = { notes = [{ note = "A3", vel = 100, on_s = 0.0, off_s = 0.3 }], dur_s = 1.0 }
 budget = { renders = 20, turns = 60, usd = 1.0 }

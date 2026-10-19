@@ -185,7 +185,7 @@ expression: v
           ]
         },
         "note": {
-          "description": "For pitch items: the nearest note and its offset (`C3+9ct`).",
+          "description": "For pitch items (`pitch`, `tonal_pitch`): the nearest note and its offset (`C3+9ct`).",
           "type": [
             "string",
             "null"
@@ -196,7 +196,7 @@ expression: v
           "type": "boolean"
         },
         "thin": {
-          "description": "|margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further.",
+          "description": "|margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further. A\ntrue/false item is thin only when the re-renders disagree with it.",
           "type": "boolean"
         },
         "unit": {
@@ -317,10 +317,10 @@ expression: v
       "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
     }
   },
-  "$id": "enth.check/1",
+  "$id": "enth.check/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.check/1`: pass/fail per expectation, with margins and noise.",
+  "description": "`enth.check/2`: pass/fail per expectation, with margins and noise.",
   "properties": {
     "blocked": {
       "description": "Items that no move of the patch's parameters can satisfy.",
@@ -368,8 +368,8 @@ expression: v
       "type": "array"
     },
     "schema": {
-      "const": "enth.check/1",
-      "description": "`enth.check/1`.",
+      "const": "enth.check/2",
+      "description": "`enth.check/2`.",
       "type": "string"
     },
     "source": {

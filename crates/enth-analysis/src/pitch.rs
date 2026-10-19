@@ -214,10 +214,186 @@ pub fn summarise(track: &[Option<f64>], loud: &[bool]) -> Option<Pitch> {
     })
 }
 
+/// The pitch of the steady tonal part of a sound, read from the peaks of its power spectrum. Unlike YIN, which needs
+/// the waveform itself to repeat, it still finds a tone under strong noise (a snare's body under its crack).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Tonal {
+    /// Fundamental of the harmonic series that best explains the spectral peaks (Hz).
+    pub f0_hz: f64,
+    /// Nearest note name (A4 = 440 Hz).
+    pub note: String,
+    /// Offset of `f0_hz` from that note, in cents.
+    pub cents_dev: f64,
+    /// Share of the peaks' power that the harmonic series of `f0_hz` explains, 0–1.
+    pub harmonicity: f64,
+    /// Share of the band's power (20 Hz–16 kHz) that is in the peaks, 0–1: the tonal part's weight in the sound.
+    pub share: f64,
+}
+
+/// The tonal part must hold at least this share of the band's power (−20 dB re the whole).
+pub const TONAL_MIN_SHARE: f64 = 0.01;
+/// The chosen series must explain at least this share of the peaks' power.
+pub const TONAL_MIN_HARMONICITY: f64 = 0.5;
+/// Fundamentals searched (Hz).
+pub const TONAL_F0_RANGE: (f64, f64) = (25.0, 2000.0);
+/// Highest harmonic number matched to a candidate fundamental.
+const TONAL_MAX_HARMONIC: f64 = 16.0;
+/// Peaks used: at most this many, the strongest, each within 40 dB of the strongest.
+const TONAL_MAX_PEAKS: usize = 32;
+/// Candidate fundamentals come from the strongest few peaks divided by 1..=16.
+const TONAL_SOURCE_PEAKS: usize = 8;
+/// A candidate within this share of the best score counts as tied; the highest tied candidate wins (so a series is
+/// never read an octave low just because its subharmonic explains the same peaks).
+const TONAL_TIE: f64 = 0.9;
+
+/// One spectral peak: its interpolated frequency and its power (the peak bin and 3 bins either side).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Peak {
+    pub hz: f64,
+    pub power: f64,
+}
+
+/// Matched power of the harmonic series on `f0`, and the least-squares refined fundamental of the matched peaks.
+fn series_score(peaks: &[Peak], f0: f64, bin_hz: f64) -> (f64, f64) {
+    let (mut matched, mut num, mut den) = (0.0, 0.0, 0.0);
+    for p in peaks {
+        let h = libm::round(p.hz / f0);
+        if !(1.0..=TONAL_MAX_HARMONIC).contains(&h) {
+            continue;
+        }
+        // 0.6 bin for the interpolation error, 1.2 % (about 20 ct) for detune and stretched partials; never so wide
+        // that neighbouring harmonics of a low candidate overlap.
+        let tol = (0.6 * bin_hz).max(0.012 * h * f0).min(0.25 * f0);
+        if (p.hz - h * f0).abs() <= tol {
+            matched += p.power;
+            num += p.power * h * p.hz;
+            den += p.power * h * h;
+        }
+    }
+    let refined = if den > 0.0 { num / den } else { f0 };
+    (matched, refined)
+}
+
+/// The tonal pitch of a set of spectral peaks (`share` is their share of the band's power), by harmonic matching:
+/// every strong peak divided by 1..=16 is a candidate fundamental in 25–2000 Hz; a candidate scores the power of
+/// the peaks within tolerance of its harmonics 1..=16; the highest candidate within 90 % of the best score wins,
+/// refined by a power-weighted least-squares fit through the matched peaks. `None` when the tonal part is too weak
+/// (`share` below [`TONAL_MIN_SHARE`]) or no series explains half the peaks' power. A missing fundamental is
+/// restored (harmonics 2, 3 and 4 of 100 Hz read 100 Hz), as the ear does.
+#[must_use]
+pub fn tonal_pitch(peaks: &[Peak], share: f64, bin_hz: f64) -> Option<Tonal> {
+    if peaks.is_empty() || share.is_nan() || share < TONAL_MIN_SHARE {
+        return None;
+    }
+    let mut ps: Vec<Peak> = peaks.to_vec();
+    // Strongest first; ties broken by frequency so the order never depends on the input's.
+    ps.sort_by(|a, b| b.power.total_cmp(&a.power).then(a.hz.total_cmp(&b.hz)));
+    let floor = ps[0].power * 1e-4;
+    ps.retain(|p| p.power >= floor);
+    ps.truncate(TONAL_MAX_PEAKS);
+    let total: f64 = ps.iter().map(|p| p.power).sum();
+    if total <= 0.0 {
+        return None;
+    }
+    let mut cands = Vec::new();
+    for p in ps.iter().take(TONAL_SOURCE_PEAKS) {
+        for h in 1..=TONAL_MAX_HARMONIC as usize {
+            let f = p.hz / h as f64;
+            if (TONAL_F0_RANGE.0..=TONAL_F0_RANGE.1).contains(&f) {
+                cands.push(f);
+            }
+        }
+    }
+    let scored: Vec<(f64, f64, f64)> = cands
+        .iter()
+        .map(|&f| {
+            let (m, r) = series_score(&ps, f, bin_hz);
+            (f, m, r)
+        })
+        .collect();
+    let best = scored.iter().map(|s| s.1).fold(0.0, f64::max);
+    if best <= 0.0 {
+        return None;
+    }
+    let (_, _, refined) = scored.iter().filter(|s| s.1 >= TONAL_TIE * best).fold(
+        None,
+        |acc: Option<(f64, f64, f64)>, s| match acc {
+            Some(a) if a.0 >= s.0 => Some(a),
+            _ => Some(*s),
+        },
+    )?;
+    let (matched, _) = series_score(&ps, refined, bin_hz);
+    let harmonicity = (matched / total).clamp(0.0, 1.0);
+    if harmonicity < TONAL_MIN_HARMONICITY || !refined.is_finite() || refined <= 0.0 {
+        return None;
+    }
+    let (note, cents_dev) = nearest_note(refined);
+    Some(Tonal {
+        f0_hz: refined,
+        note,
+        cents_dev,
+        harmonicity,
+        share: share.clamp(0.0, 1.0),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_signals::{SR, Wave, oscillator, sine};
+
+    fn series(f0: f64, amps: &[(usize, f64)]) -> Vec<Peak> {
+        amps.iter()
+            .map(|&(h, a)| Peak {
+                hz: f0 * h as f64,
+                power: a * a,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn tonal_pitch_reads_the_series_not_an_octave() {
+        let bin = SR / 8192.0;
+        // a saw-like series, a square-like (odd) series, a lone sine, a missing fundamental
+        let saw: Vec<(usize, f64)> = (1..=20).map(|h| (h, 1.0 / h as f64)).collect();
+        let odd: Vec<(usize, f64)> = (0..10)
+            .map(|k| (2 * k + 1, 1.0 / (2 * k + 1) as f64))
+            .collect();
+        for (peaks, want) in [
+            (series(220.0, &saw), 220.0),
+            (series(220.0, &odd), 220.0),
+            (series(440.0, &[(1, 1.0)]), 440.0),
+            (series(100.0, &[(2, 1.0), (3, 0.8), (4, 0.6)]), 100.0),
+            (
+                series(32.7, &[(1, 1.0), (2, 0.5), (4, 0.3), (6, 0.2)]),
+                32.7,
+            ),
+        ] {
+            let t = tonal_pitch(&peaks, 0.5, bin).unwrap();
+            assert!(cents(t.f0_hz, want).abs() < 1.0, "{want}: {t:?}");
+            assert!(t.harmonicity > 0.9, "{t:?}");
+        }
+        // too weak, or nothing harmonic
+        assert!(tonal_pitch(&series(220.0, &saw), 0.005, bin).is_none());
+        assert!(tonal_pitch(&[], 0.5, bin).is_none());
+    }
+
+    #[test]
+    fn a_strong_sub_octave_is_the_fundamental_and_a_weak_one_is_not() {
+        let bin = SR / 8192.0;
+        let mut strong = series(65.4, &[(1, 0.45), (2, 0.22), (3, 0.15)]);
+        strong.push(Peak {
+            hz: 32.7,
+            power: 1.0,
+        });
+        assert!(cents(tonal_pitch(&strong, 0.9, bin).unwrap().f0_hz, 32.7).abs() < 1.0);
+        let mut weak = series(65.4, &[(1, 1.0), (2, 0.5), (3, 0.33)]);
+        weak.push(Peak {
+            hz: 32.7,
+            power: 0.01,
+        });
+        assert!(cents(tonal_pitch(&weak, 0.9, bin).unwrap().f0_hz, 65.4).abs() < 1.0);
+    }
 
     fn yin(path: FftPath) -> Yin {
         Yin::new(&mut FftPlanner::new(path), SR, 2048, 50.0, 2000.0)

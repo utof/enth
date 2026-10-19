@@ -114,7 +114,7 @@ exit: 0
       "unit": "dB"
     }
   ],
-  "schema": "enth.params/1",
+  "schema": "enth.params/2",
   "section": "voice_fx",
   "summary": "A resonant multimode filter per voice: shapes brightness, usually swept by an envelope."
 }

@@ -207,7 +207,7 @@ pub struct SchemaListOut {
 pub struct SchemaRef {
     /// The name to pass to `enth schema`.
     pub name: String,
-    /// The schema id (`enth.check/1`), also its `$id`.
+    /// The schema id (`enth.check/2`), also its `$id`.
     pub id: String,
     /// What it describes.
     pub describes: String,
@@ -259,11 +259,11 @@ pub struct BuiltinOut {
     pub params: usize,
 }
 
-/// `enth.params/1`: the parameters of one module kind (or `voice`, `master`), with units and ranges.
+/// `enth.params/2`: the parameters of one module kind (or `voice`, `master`), with units and ranges.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ParamsOut {
-    /// `enth.params/1`.
+    /// `enth.params/2`.
     pub schema: String,
     /// The kind key (`svf`), or `voice` / `master`.
     pub kind: String,
@@ -319,6 +319,10 @@ pub struct ParamOut {
     /// The descriptor it mainly moves (`spectrum.centroid_hz`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<String>,
+    /// How the value shows in that descriptor, where the two differ (an envelope knob is the whole curve, its
+    /// descriptor stops at a threshold: `envelope.release_ms` reads about half the `release` knob).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reads_as: Option<String>,
 }
 
 /// `enth.guide/1`: the agent workflow guide, as markdown.
@@ -398,13 +402,18 @@ pub struct ChangeOut {
     /// The value after, in real units; absent when there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
+    /// For a route: what its depth does to the destination, in the destination's units, over the source's
+    /// swing (an LFO swings both ways unless unipolar), and the range the percentage is of. A musical depth
+    /// (`+12st`, `+1oct`) is stored as that percentage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub means: Option<String>,
 }
 
-/// `enth.apply/1`: ops applied to a patch.
+/// `enth.apply/2`: ops applied to a patch.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyOut {
-    /// `enth.apply/1`.
+    /// `enth.apply/2`.
     pub schema: String,
     /// The path written; null with `--dry-run`.
     pub wrote: Option<String>,
@@ -478,11 +487,11 @@ pub struct MetaOut {
     pub tags: Vec<String>,
 }
 
-/// `enth.diff/1`: how patch `b` differs from patch `a`.
+/// `enth.diff/2`: how patch `b` differs from patch `a`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DiffOut {
-    /// `enth.diff/1`.
+    /// `enth.diff/2`.
     pub schema: String,
     /// The first patch file.
     pub a: String,
@@ -545,11 +554,11 @@ pub struct RenderOut {
     pub seed: u64,
 }
 
-/// `enth.describe/1`: perceptual descriptors of one sound. Null means not measurable (see `missing`).
+/// `enth.describe/2`: perceptual descriptors of one sound. Null means not measurable (see `missing`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DescribeOut {
-    /// `enth.describe/1`.
+    /// `enth.describe/2`.
     pub schema: String,
     /// The patch or WAV described.
     pub source: String,
@@ -561,9 +570,11 @@ pub struct DescribeOut {
     pub silent: bool,
     /// The performance the envelope is read against.
     pub perf: PerfOut,
-    /// Pitch.
+    /// Pitch: the period of the waveform (YIN).
     pub pitch: Option<PitchOut>,
-    /// The amplitude envelope, beat-corrected.
+    /// The pitch of the tonal part, from the steady spectral peaks: found under noise where `pitch` is not.
+    pub tonal: Option<TonalOut>,
+    /// The amplitude envelope, with a detune beat (or else a tremolo) fitted out.
     pub envelope: Option<EnvelopeOut>,
     /// Brightness.
     pub spectrum: Option<SpectrumOut>,
@@ -593,6 +604,18 @@ pub struct PitchOut {
     pub stability: f64,
 }
 
+/// The pitch of the tonal part (`tonal.f0_hz`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TonalOut {
+    /// Fundamental of the harmonic series of the spectral peaks (Hz).
+    pub f0_hz: f64,
+    /// Nearest note (A4 = 440 Hz).
+    pub note: String,
+    /// Offset from that note (cents).
+    pub cents_dev: f64,
+}
+
 /// Envelope descriptors, read on the beat-corrected curve. Times in ms, levels in dB re the peak.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -613,7 +636,7 @@ pub struct EnvelopeOut {
     pub duration_ms: f64,
     /// Residual wobble after beat removal (dB).
     pub ripple_db: f64,
-    /// False when a beat was found but was too slow to remove: sustain may be off by a few dB.
+    /// False when a beat (or tremolo) was found but was too slow to remove: sustain may be off by a few dB.
     pub beat_corrected: bool,
     /// The clip ended before the release did: `release_ms` is extrapolated.
     pub release_extrapolated: bool,
@@ -641,12 +664,30 @@ pub struct DetuneOut {
     pub depth_db: f64,
 }
 
-/// Amplitude modulation.
+/// Modulation that is not detune beating.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModulationOut {
     /// A tremolo (every harmonic moves at one rate); null when none.
     pub amp_lfo: Option<TremoloOut>,
+    /// A brightness sweep (a filter envelope or a filter LFO); null when none.
+    pub filter_sweep: Option<FilterSweepOut>,
+}
+
+/// A brightness sweep, read from the spectral centroid over time. Unused fields are null.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FilterSweepOut {
+    /// `env` (one-shot: a filter envelope) or `lfo` (cyclic: a filter LFO).
+    pub kind: String,
+    /// `env` only: `up` (opening) or `down` (closing).
+    pub dir: Option<String>,
+    /// `env` only: onset until 90 % of the change is done (ms).
+    pub ms: Option<f64>,
+    /// `lfo` only: the rate (Hz).
+    pub hz: Option<f64>,
+    /// Octaves: the peak-to-trough swing of an `lfo`, the one-way change of an `env`.
+    pub depth_oct: f64,
 }
 
 /// A tremolo.
@@ -675,11 +716,11 @@ pub struct LoudnessOut {
     pub clipping: bool,
 }
 
-/// `enth.check/1`: pass/fail per expectation, with margins and noise.
+/// `enth.check/2`: pass/fail per expectation, with margins and noise.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CheckOut {
-    /// `enth.check/1`.
+    /// `enth.check/2`.
     pub schema: String,
     /// The patch or WAV judged.
     pub source: String,
@@ -729,9 +770,10 @@ pub struct ItemOut {
     pub margin_pct: Option<f64>,
     /// Largest change of the reading over the nuisance re-renders (or re-analyses, for a WAV).
     pub noise: Option<f64>,
-    /// |margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further.
+    /// |margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further. A
+    /// true/false item is thin only when the re-renders disagree with it.
     pub thin: bool,
-    /// For pitch items: the nearest note and its offset (`C3+9ct`).
+    /// For pitch items (`pitch`, `tonal_pitch`): the nearest note and its offset (`C3+9ct`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     /// Why `got` is null.
@@ -798,7 +840,7 @@ pub struct BlockedOut {
     pub conflicts_with: Vec<usize>,
 }
 
-/// The `check` part of `enth.step/1` (the fields of `enth.check/1` without `schema`, `source` and `perf`).
+/// The `check` part of `enth.step/2` (the fields of `enth.check/2` without `schema`, `source` and `perf`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CheckBody {
@@ -818,11 +860,11 @@ pub struct CheckBody {
     pub blocked: Vec<BlockedOut>,
 }
 
-/// `enth.step/1`: apply, render, describe and check in one call.
+/// `enth.step/2`: apply, render, describe and check in one call.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StepOut {
-    /// `enth.step/1`.
+    /// `enth.step/2`.
     pub schema: String,
     /// The patch written.
     pub patch: String,

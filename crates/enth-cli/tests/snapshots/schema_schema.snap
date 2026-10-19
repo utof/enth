@@ -13,7 +13,7 @@ expression: v
           "type": "string"
         },
         "id": {
-          "description": "The schema id (`enth.check/1`), also its `$id`.",
+          "description": "The schema id (`enth.check/2`), also its `$id`.",
           "type": "string"
         },
         "name": {

@@ -62,6 +62,13 @@ expression: v
           "description": "Display name.",
           "type": "string"
         },
+        "reads_as": {
+          "description": "How the value shows in that descriptor, where the two differ (an envelope knob is the whole curve, its\ndescriptor stops at a threshold: `envelope.release_ms` reads about half the `release` knob).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "scale": {
           "description": "`linear`, `log`, `power`, `int`, `enum` or `toggle`: how the knob maps its range.",
           "type": "string"
@@ -120,10 +127,10 @@ expression: v
       "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
     }
   },
-  "$id": "enth.params/1",
+  "$id": "enth.params/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.params/1`: the parameters of one module kind (or `voice`, `master`), with units and ranges.",
+  "description": "`enth.params/2`: the parameters of one module kind (or `voice`, `master`), with units and ranges.",
   "properties": {
     "kind": {
       "description": "The kind key (`svf`), or `voice` / `master`.",
@@ -141,8 +148,8 @@ expression: v
       "type": "array"
     },
     "schema": {
-      "const": "enth.params/1",
-      "description": "`enth.params/1`.",
+      "const": "enth.params/2",
+      "description": "`enth.params/2`.",
       "type": "string"
     },
     "section": {

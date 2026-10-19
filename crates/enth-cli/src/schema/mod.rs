@@ -14,32 +14,35 @@ use serde_json::Value;
 pub use types::*;
 
 /// The schema id of every object, `enth.<name>/<version>`. A shape change or a change of meaning bumps the
-/// version (AGENTS.md).
+/// version (AGENTS.md). Version 2 (2026-10-20, lane EV, the P1a G1 eval findings): `params` adds `reads_as`;
+/// `apply`, `diff` and `step` add `means` to route changes; `describe` adds `tonal` and
+/// `modulation.filter_sweep`, and its envelope fits out a tremolo; `check` and `step` no longer call a true/false
+/// item `thin` unless the nuisance renders disagree.
 pub mod ids {
     /// `enth schema`.
     pub const SCHEMA: &str = "enth.schema/1";
     /// `enth modules`.
     pub const MODULES: &str = "enth.modules/1";
     /// `enth params`.
-    pub const PARAMS: &str = "enth.params/1";
+    pub const PARAMS: &str = "enth.params/2";
     /// `enth new`.
     pub const NEW: &str = "enth.new/1";
     /// `enth new --list`.
     pub const TEMPLATES: &str = "enth.templates/1";
     /// `enth apply`.
-    pub const APPLY: &str = "enth.apply/1";
+    pub const APPLY: &str = "enth.apply/2";
     /// `enth get`.
     pub const GET: &str = "enth.get/1";
     /// `enth diff`.
-    pub const DIFF: &str = "enth.diff/1";
+    pub const DIFF: &str = "enth.diff/2";
     /// `enth render`.
     pub const RENDER: &str = "enth.render/1";
     /// `enth describe`.
-    pub const DESCRIBE: &str = "enth.describe/1";
+    pub const DESCRIBE: &str = "enth.describe/2";
     /// `enth check`.
-    pub const CHECK: &str = "enth.check/1";
+    pub const CHECK: &str = "enth.check/2";
     /// `enth step`.
-    pub const STEP: &str = "enth.step/1";
+    pub const STEP: &str = "enth.step/2";
     /// `enth guide`.
     pub const GUIDE: &str = "enth.guide/1";
     /// `enth bench`.
@@ -193,7 +196,7 @@ pub const ENTRIES: &[Entry] = &[
     },
 ];
 
-/// The entry named `name` (a name such as `check`, or an id such as `enth.check/1`).
+/// The entry named `name` (a name such as `check`, or an id such as `enth.check/2`).
 pub fn entry(name: &str) -> Option<&'static Entry> {
     let n = name.trim();
     ENTRIES.iter().find(|e| e.name == n || e.id == n)

@@ -15,6 +15,13 @@ expression: v
             "null"
           ]
         },
+        "means": {
+          "description": "For a route: what its depth does to the destination, in the destination's units, over the source's\nswing (an LFO swings both ways unless unipolar), and the range the percentage is of. A musical depth\n(`+12st`, `+1oct`) is stored as that percentage.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "op": {
           "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
           "type": "string"
@@ -85,10 +92,10 @@ expression: v
       "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
     }
   },
-  "$id": "enth.diff/1",
+  "$id": "enth.diff/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.diff/1`: how patch `b` differs from patch `a`.",
+  "description": "`enth.diff/2`: how patch `b` differs from patch `a`.",
   "properties": {
     "a": {
       "description": "The first patch file.",
@@ -128,8 +135,8 @@ expression: v
       "type": "boolean"
     },
     "schema": {
-      "const": "enth.diff/1",
-      "description": "`enth.diff/1`.",
+      "const": "enth.diff/2",
+      "description": "`enth.diff/2`.",
       "type": "string"
     }
   },

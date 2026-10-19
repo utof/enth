@@ -2,10 +2,11 @@
   "schema": 1,
   "meta": {
     "name": "Pad (2 osc)",
-    "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.",
+    "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb. The master level is -6 dB so the two saws do not clip.",
     "tags": ["pad"]
   },
   "voice": { "amp_env": "env1" },
+  "master": { "level": -6 },
   "generators": [
     { "id": "osc1", "kind": "osc", "params": { "wave": "saw", "fine": -8 } },
     { "id": "osc2", "kind": "osc", "params": { "wave": "saw", "fine": 8, "level": 80 } }

@@ -4,7 +4,7 @@
 # wrapper). `{perf}` and `{expect}` are filled in from the goal (or from self_expect on the self-written track).
 schema = "enth.agent-eval-witness/1"
 id = "filter-wobble"
-self_expect = "tremolo in [1Hz, 5Hz], brightness < 2kHz, duration > 3500ms, peak < -1dB"
+self_expect = "filter_lfo in [1Hz, 5Hz], brightness < 2kHz, duration > 3500ms, peak < -1dB"
 
 [[step]]
 args = ["new", "--template", "init", "--out", "sound.patch.json"]
