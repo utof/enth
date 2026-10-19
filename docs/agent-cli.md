@@ -25,6 +25,7 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
    `{"error":"unknown_param","path":"filter1.cutof","did_you_mean":["filter1.cutoff"],"hint":"enth params filter"}`
 7. **Small outputs.** Summaries by default; `--full` or `--fields` for more. Never dump a whole patch unless asked.
 8. **Every edit is an op** — the same ops the UI emits and undo stores ([design.md §2](design.md#2-patch-model-ops-and-versioning)).
+9. **Types are the schema.** Each output is a Rust struct (`Serialize + Deserialize + JsonSchema`, `deny_unknown_fields`) and `enth schema <name>` prints its JSON Schema (draft 2020-12, from `schemars`). Tests snapshot the output (insta), deserialize it back into the struct, and snapshot the schema itself, so code and schema cannot drift. There is no `jsonschema` crate: its default features pull in a C build. Any change to an output's shape, or to a field's meaning (like `decay_ms` between the spike and P1), bumps its version and updates the snapshots (AGENTS.md).
 
 | Exit code | Meaning |
 | --- | --- |
@@ -39,67 +40,87 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 
 | Command | Purpose |
 | --- | --- |
-| `enth guide` | Print the agent workflow guide (~1 page) |
+| `enth guide [--topic expect\|ops\|descriptors]` | Print the agent workflow guide (one markdown page, at most about 6 KB) |
 | `enth schema [patch\|ops\|describe\|check\|…]` | JSON Schemas for files and outputs |
 | `enth modules` / `enth params <module>` | Catalogue: module kinds; params with units, ranges (shown prominently: agents in the Phase 0 probe were surprised by range limits), defaults, one-line descriptions, perceptual effect |
 | `enth new --template <name> --out p.patch.json` | Start from a template (`init`, `pluck_1osc`, `pad_2osc`, `bass_sub`…) |
 | `enth random --seed 7 --difficulty 0.4 [--amounts filter=0.5,effects=0] [--musical 0.8] --out t.patch.json` | Generate a Recreate target with the same randomizer as the game ([design.md §9](design.md#9-randomizer-and-difficulty)) |
-| `enth apply p.patch.json --ops '<json>' --out p2.patch.json [--dry-run]` | Apply ops; prints a diff |
+| `enth apply p.patch.json --ops '<json>' \| --set k=v[,…] --out p2.patch.json [--dry-run]` | Apply ops (`--set` is sugar for `set` ops); prints the applied changes and the inverse ops |
 | `enth get p.patch.json [addr…]` / `enth diff a.patch.json b.patch.json` | Read values; compare patches |
-| `enth render p.patch.json [--note C3 --vel 100 --dur 2 --release 1 \| --perf perf.json] --out p.wav` | Deterministic render |
-| `enth describe <wav\|patch> [--perf perf.json]` | Perceptual descriptors (renders first if given a patch). A WAV needs its performance, `--perf` or one stored in the WAV's metadata by `render` (P1 decides which), or decay, sustain and release come back null |
-| `enth check <wav\|patch> --expect '<list>' [--perf perf.json]` | Pass/fail per expectation with its margin, and measured hints for failures |
+| `enth render p.patch.json [--note C3 --vel 100 --dur 2 --release 1 \| --perf perf.json] --out p.wav` | Deterministic render. Writes a 32-bit float WAV with an `enth` chunk holding the performance (`--bits 16\|24` for a plain file); reports `peak_dbfs`, `true_peak_dbtp` and `clipped_pct` |
+| `enth describe <wav\|patch> [--perf perf.json]` | Perceptual descriptors (renders first if given a patch). A WAV needs its performance. Precedence: `--perf`, then the `enth` chunk that `render` wrote, then an inferred note-off (`perf.source` says which); otherwise decay, sustain and release come back null with a reason |
+| `enth check <wav\|patch> --expect '<list>' [--perf perf.json] [--no-fix] [--fix-budget 16]` | Pass/fail per expectation with its margin and noise, and one measured multi-parameter `fix` for all the failures |
 | `enth compare <wav\|patch> --target t.wav` | Score 0–100, component distances, perceptual differences |
 | `enth suggest p.patch.json --target t.wav \| --expect '<list>' [--top 5]` | Ranked parameter moves from measured sensitivities |
 | `enth match p.patch.json --target t.wav --free <addrs> [--budget 300] --out p2.patch.json` | Optimiser fine-tunes only the freed params |
-| `enth step p.patch.json --ops '<json>' [--expect …\|--target …] --out p2.patch.json` | apply + render + describe + check/compare in one call (fewest round trips) |
+| `enth step p.patch.json --ops '<json>' \| --set k=v[,…] [--expect …\|--target …] --out p2.patch.json` | apply + render + describe + check/compare in one call (fewest round trips). It echoes only the features named in `--expect` plus a headline, unless `--full` |
 | `enth explain p.patch.json` | Plain-language explanation of the patch (doubles as lesson text) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
-| `enth bench` | Engine speed: ×realtime per core, per-voice CPU |
+| `enth bench` | Engine speed: ×realtime per core, per-voice CPU (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
+
+**CLI v0 (P1a) is 13 commands:** `schema`, `modules`, `params`, `new`, `apply`, `get`, `diff`, `render`, `describe`, `check`, `step`, `guide` and `bench`, each with a defined output shape. `random`, `compare`, `suggest`, `match`, `explain`, `validate` and `migrate` come later.
 
 ## Files
 
-**Patch** (`*.patch.json`, abridged). Values are plain numbers in each parameter's unit (`enth params svf` shows `cutoff` is Hz, `resonance` is %); enums are names; route depth is a percentage of the destination's range:
+**Patch** (`*.patch.json`, abridged). Values are plain numbers in each parameter's unit (`enth params svf` shows `cutoff` is Hz, `resonance` is %); enums are names; route depth is a percentage of the destination's range. Reading accepts sparse parameters (defaults fill in) and any key order; writing is always dense, in spec order. The sections are `generators` and `voice_fx` (per voice), `fx` (global) and `modulators`; `voice` and `master` are built-in, so `voice.glide` and `master.level` are ordinary addresses:
 
 ```json
 {
   "schema": 1,
   "engine": "0.1.0",
   "meta": { "name": "Soft pluck", "tags": ["pluck"] },
-  "voice": { "mode": "poly", "voices": 8, "glide": 0 },
+  "voice": { "mode": "poly", "polyphony": 8, "glide": 0, "amp_env": "env1" },
+  "master": { "level": 0 },
   "generators": [
     { "id": "osc1", "kind": "analog", "params": { "wave": "saw", "level": -6, "detune": 0 } }
   ],
   "modulators": [
     { "id": "env1", "kind": "adsr", "params": { "attack": 2, "decay": 300, "sustain": 0, "release": 200 } }
   ],
-  "lanes": [[ { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": 900, "resonance": 20 } } ]],
+  "voice_fx": [ { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": 900, "resonance": 20 } } ],
+  "fx": [],
   "routes": [ { "src": "env1", "dst": "filter1.cutoff", "depth": 40 } ]
 }
 ```
 
-**Ops**:
+**Ops**. One format, with values as plain numbers or unit strings. Every op has an inverse that is also expressible, so undo logs and future duel messages are serialisable:
 
 ```json
 [
   {"set": "env1.attack", "to": "600ms"},
-  {"add": "lfo", "id": "lfo1", "params": {"rate": "0.2Hz"}},
+  {"set": "voice.mode", "to": "legato"},
+  {"set": "master.level", "to": "-6dB"},
+  {"add": "lfo", "id": "lfo1", "at": "modulators[1]", "params": {"rate": "0.2Hz"}},
+  {"remove": "fx2"},
+  {"move": "filter2", "to": "voice_fx[0]"},
   {"route": "lfo1 -> filter1.cutoff", "depth": "30%"},
-  {"remove": "fx2"}
+  {"route": "env2 -> filter1.cutoff", "depth": "+1oct", "index": 2},
+  {"unroute": "lfo1 -> filter1.cutoff"},
+  {"enable": "fx1", "to": false},
+  {"macro": 1, "to": 0.5},
+  {"slot": 7, "to": "filter1.cutoff"},
+  {"amp_env": "env1"}
 ]
 ```
+
+- `add` without `id` takes the lowest free `<prefix><n>` (`osc1`, `filter2`). `at` is `section[index]` and defaults to the end of the kind's section.
+- `set` reaches `voice.*` and `master.*` too. `route` takes `index` to place the route in the summation order (undo uses it) and a depth in percent or musical units (`+1oct`, `+12st`), converted to a percentage at the parameter's current value.
+- Macros and slots are 1-based in text and 0-based in the engine; a macro's value is its knob position, 0–1.
+- **`--set` sugar.** `enth apply p --set filter1.cutoff=1.2kHz,env1.attack=40ms` becomes `set` ops. The agents in the Phase 0 trial wrote 3 to 10 `--set` pairs per step and none used ops JSON, so `--set` stays.
+- An unknown verb is a `unknown_op` error that lists the verbs.
 
 ## Descriptors (`enth describe`)
 
 Stable feature names with units. These names are also what expectations, hints and `compare` use. Descriptor names carry their unit (`envelope.attack_ms`) because they are measurements of audio; parameter keys don't (`env1.attack`), because a parameter's unit comes from its schema.
 
-Envelope descriptors are measured on a beat-smoothed envelope (a crest or low-passed envelope over at least one beat period). In the Phase 0 probe ([spikes/agent-probe.md](spikes/agent-probe.md)), a raw envelope on a detuned patch put the "peak" on the first beat, so `attack_ms` read about 1/(4 × beat rate) whatever the attack was, beat nulls looked like decay, and `sustain_db` moved by several dB with where the hold time fell in the beat cycle. All three agents in the trial ran into it.
+Envelope descriptors are measured on a beat-corrected envelope: the beat rate is measured first, and the periodic part of the log envelope at that rate is fitted and divided out ([design.md §6](design.md#6-challenge-and-scoring)). Smoothing over a beat period (a crest or boxcar envelope) was tried and rejected: it reaches only 23 % invariance against 64 % for the fit, and it moves attack edges. In the Phase 0 probe ([spikes/agent-probe.md](spikes/agent-probe.md)), a raw envelope on a detuned patch put the "peak" on the first beat, so `attack_ms` read about 1/(4 × beat rate) whatever the attack was, beat nulls looked like decay, and `sustain_db` moved by several dB with where the hold time fell in the beat cycle. All three agents in the trial ran into it.
 
 | Feature | Unit / type | Meaning |
 | --- | --- | --- |
 | `pitch.f0_hz`, `pitch.note`, `pitch.cents_dev` | Hz, note, cents | Fundamental and tuning |
 | `pitch.stability` | 0–1 | 1 = steady pitch |
-| `envelope.attack_ms`, `decay_ms`, `sustain_db`, `release_ms` | ms, dB | Estimated amplitude envelope |
+| `envelope.attack_ms`, `decay_ms`, `sustain_db`, `release_ms`, `duration_ms` | ms, dB | Estimated amplitude envelope on the beat-corrected curve. `decay_ms` is the time until the level settles within a dB threshold of the sustain (not the ADSR parameter, and not the spike's "90 % of the way"). `release_ms` is extrapolated when the clip ends first |
+| `envelope.beat_corrected`, `ripple_db`, `release_extrapolated` | bool, dB, bool | Honesty fields. `beat_corrected` is false when a beat was found but is too slow to remove (less than one period in the held part), so the sustain may be off by a few dB |
 | `envelope.shape` | word | `pluck`, `stab`, `pad`, `swell`, `drone`, `percussive` |
 | `spectrum.centroid_hz` | Hz | Brightness |
 | `spectrum.centroid_track_hz` | [start, mid, end] Hz | Brightness over time (reveals filter envelopes) |
@@ -108,9 +129,10 @@ Envelope descriptors are measured on a beat-smoothed envelope (a crest or low-pa
 | `noise_ratio` | 0–1 | Noise vs tone |
 | `modulation.pitch_lfo`, `modulation.amp_lfo` | `{hz, depth}` or null | Detected vibrato / tremolo (depth in cents / dB) |
 | `modulation.filter_sweep` | `{kind, dir, ms, hz}` or null | `kind`: `env` (one-shot, `dir` up/down, `ms` duration) or `lfo` (cyclic, `hz` rate); unused fields are null |
-| `detune.beating_hz`, `detune.voices_est` | Hz, count | Chorus/unison thickness |
+| `detune.beating_hz`, `detune.depth_db`, `detune.voices_est` | Hz, dB, count | Chorus/unison thickness. `beating_hz` comes from a multi-harmonic estimator (0.15–25 Hz) that tells detune from a tremolo LFO; it is null below that band |
 | `stereo.width`, `stereo.corr` | 0–1, −1–1 | Stereo image |
-| `loudness.lufs_i`, `peak_dbfs`, `clipping` | LUFS, dBFS, bool | Level. `clipping` is true when the render hits 0 dBFS; a master output level parameter (in dB) in the patch undoes it without retuning every module (agents in the probe had no way back from clipping) |
+| `loudness.lufs_i`, `peak_dbfs`, `true_peak_dbtp`, `clipped_pct`, `clipping` | LUFS, dBFS, dBTP, %, bool | Level, measured on the engine's float render, so `peak_dbfs` can be above 0. `clipped_pct` is the share of samples at or beyond full scale; `clipping` is true when it is above 0. Clipping bends brightness (a centroid read 24 % high in one case, 116 % in another), so it is reported and fixed first: the patch's `master.level` (dB) undoes it without retuning every module (agents in the probe had no way back from clipping) |
+| `perf.source` | word | Where the performance came from: `patch`, `flag`, `wav` (the `enth` chunk) or `inferred` |
 | `words` | list | Controlled vocabulary: `bright`, `dark`, `plucky`, `wide`, `detuned`, `noisy`, `hollow`… |
 
 Example output (~300 tokens):
@@ -118,12 +140,13 @@ Example output (~300 tokens):
 ```json
 {"schema":"enth.describe/1","file":"p1.wav","dur_s":3.0,
  "pitch":{"f0_hz":130.8,"note":"C3","cents_dev":-2,"stability":0.98},
- "envelope":{"attack_ms":4,"decay_ms":310,"sustain_db":-9.5,"release_ms":420,"shape":"pluck"},
+ "perf":{"note":"C3","hold_s":1.5,"source":"patch"},
+ "envelope":{"attack_ms":4,"decay_ms":310,"sustain_db":-9.5,"release_ms":420,"shape":"pluck","beat_corrected":true},
  "spectrum":{"centroid_hz":1840,"centroid_track_hz":[3100,1500,900],"rolloff85_hz":5200,"flatness":0.07,
              "tilt_db_oct":-5.1,"harmonics_db":[0,-6.1,-9.4,-12.2,-14.0,-16.3],"odd_even_ratio":1.0},
  "noise_ratio":0.04,"modulation":{"pitch_lfo":null,"amp_lfo":null,"filter_sweep":{"kind":"env","dir":"down","ms":400,"hz":null}},
  "detune":{"beating_hz":1.8,"voices_est":3},"stereo":{"width":0.18,"corr":0.91},
- "loudness":{"lufs_i":-14.2,"peak_dbfs":-1.1,"clipping":false},
+ "loudness":{"lufs_i":-14.2,"peak_dbfs":-1.1,"true_peak_dbtp":-0.9,"clipped_pct":0,"clipping":false},
  "words":["bright","plucky","slightly detuned","narrow"]}
 ```
 
@@ -136,20 +159,27 @@ enth check p1.wav --expect 'envelope.attack_ms > 200, spectrum.centroid_hz < 150
 ```
 
 ```json
-{"schema":"enth.check/1","pass":false,
+{"schema":"enth.check/1","pass":false,"passed":2,"failed":2,"thin":0,
  "results":[
-  {"expect":"envelope.attack_ms > 200","got":540,"margin":340,"pass":true},
-  {"expect":"spectrum.centroid_hz < 1500","got":2310,"margin":-810,"pass":false,
-   "hint":{"param":"filter1.cutoff","now":"3.2kHz","try":"1.2kHz","expected":"centroid ≈ -800Hz","measured":true}},
-  {"expect":"stereo.width > 0.5","got":0.18,"pass":false,
-   "hint":{"text":"No unison or stereo effect in the patch. Add osc unison with spread, or a chorus in lane 1.","measured":false}},
-  {"expect":"modulation.filter_sweep != null","got":{"kind":"lfo","dir":null,"ms":null,"hz":0.2},"pass":true}]}
+  {"expect":"envelope.attack_ms > 200","got":540,"unit":"ms","pass":true,"margin":340,"noise":3},
+  {"expect":"spectrum.centroid_hz < 1500","got":2310,"unit":"Hz","pass":false,"margin":-810,"noise":6},
+  {"expect":"stereo.width > 0.5","got":0.18,"pass":false,"margin":-0.32,"noise":0.01,
+   "hint":{"text":"No unison or stereo effect in the patch. Add osc unison with spread, or a chorus in fx.","measured":false}},
+  {"expect":"modulation.filter_sweep != null","got":{"kind":"lfo","dir":null,"ms":null,"hz":0.2},"pass":true}],
+ "fix":{"measured":true,"pass_all":false,"renders":14,
+        "ops":[{"set":"filter1.cutoff","to":"1.2kHz"}],
+        "after":{"spectrum.centroid_hz":1420,"envelope.attack_ms":540},
+        "single_param_enough":true,
+        "note":"apply these ops together; stereo.width still fails, see blocked"},
+ "blocked":[{"expect":"stereo.width > 0.5","why":"no module in the patch can widen the stereo image","at_bound":[]}]}
 ```
 
-Hints marked `"measured": true` come from rendering small parameter moves and observing the descriptor change. Others are structural suggestions from module metadata.
+The numbers are illustrative. A `fix` is one move for the whole list, rendered and measured: `after` holds real values from a render, not predictions. Structural suggestions (`"measured": false`, for example "add a second oscillator with detune") stay on the result, because no parameter of the current structure can create the missing descriptor. `check` still exits 1 when it offers a fix.
 
-- **Margins.** Every result carries `margin`: how far the measured value is inside (positive) or outside (negative) the threshold, in the feature's unit. A pass at 3,211 Hz against `> 3 kHz` is thin, and agents need to see that.
-- **Hints solve all failing items at once.** A one-parameter hint can break an item that already passes (in the probe, "lower detune" for decay pushed the beating out of its window). So `check` takes a least-squares step on the finite-difference Jacobian it already measured, across every failing item, constrained to keep passing items passing, and returns it as one multi-parameter hint. When no move of the free parameters satisfies everything, it says so instead of offering a hint that trades one failure for another.
+- **Margins and noise.** Every result carries `margin`: how far the measured value is inside (positive) or outside (negative) the threshold, in the feature's unit (`margin_pct` as well for Hz and ms features), and `noise`: the largest change of the reading over two nuisance re-renders (a common phase shift of the oscillators, plus a different inter-oscillator phase when they are detuned). A result is `thin: true` when |margin| ≤ 2 × noise. A pass at 3,211 Hz against `> 3 kHz` is thin, and agents need to see that: in the trial re-judged with the corrected descriptors, a 9 ms attack against `> 8 ms` had a noise of 1–2 ms. Two renders plus a describe cost about 50 ms on the toy synth.
+- **One hint solves all failing items at once.** A one-parameter hint can break an item that already passes (in the probe, "lower detune" for decay pushed the beating out of its window). So `check` takes a least-squares step on the finite-difference Jacobian it measures, across every failing item, constrained to keep passing items passing, and returns it as one multi-parameter `fix` ([design.md §7](design.md#7-how-far-were-your-knobs-when-many-answers-are-right)). `pass_all` says whether it satisfies the whole list, and `single_param_enough` whether one parameter would have done. The probes use the goal's performance whenever the list has an envelope or beating item. `--fix-budget` caps the renders (default 16); `--no-fix` turns it off for scripts.
+- **`blocked` says what cannot be done.** When no move of the free parameters satisfies an item, the result names the item and the parameters sitting at their bounds, and says when the performance or the structure is the limit (a held note lasts at least `perf.hold`; there is no noise source). It never offers a hint that trades one failure for another.
+- **`check` on a WAV** gives margins and noise (the noise comes from re-analysing shifted windows, not re-rendering) but no `fix`: there is no patch to move.
 
 ## Comparing to a reference (`compare`, `suggest`, `match`)
 
@@ -193,7 +223,7 @@ Hints marked `"measured": true` come from rendering small parameter moves and ob
 
 ## Evaluating the CLI like a product
 
-`content/agent-evals/` holds about 30 text goals (each with an expectation list) and about 30 reference sounds (rendered from hidden patches and from real recordings). `cargo xtask agent-eval` runs an agent against them and records:
+`content/agent-evals/` holds text goals (each with an expectation list) and, from R1, reference sounds (rendered from hidden patches and from real recordings). 2026-10-19: P1a ships the harness and the 10 starter text goals, because G1 needs them; R1 grows the set to about 30 goals and about 30 reference sounds. `cargo xtask agent-eval` runs an agent against them and records:
 
 | Metric | Why |
 | --- | --- |
@@ -206,11 +236,40 @@ These numbers are the regression test for CLI changes, following Anthropic's adv
 
 **Protocol** (2026-10-19, from the Phase 0 agent-loop probe and risk #8 of the plan-risks report; it is the G1 gate in [roadmap.md](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)):
 
-- When the expectation list is given, the loop is easy: in the probe three fresh agents (Claude Sonnet 5.5) passed 15 of 15 goals on a 10-parameter toy synth in 1–7 renders each, and a mechanical hint follower passed 4 of 5. So a solve rate on given lists measures whether descriptors and hints are consistent, not whether the sound matches the words.
+- When the expectation list is given, the loop is easy: in the probe three fresh agents (Claude Sonnet 5.5) passed 15 of 15 goals on a 10-parameter toy synth in 1–7 renders each, and a mechanical hint follower passed 4 of 5. So a solve rate on given lists measures whether descriptors and hints are consistent, not whether the sound matches the words. 2026-10-19, P1a research: part of that 15 of 15 was a descriptor bug. Re-judged with beat-corrected descriptors, 13 of the 15 final patches pass and 3 of those 13 pass within noise; and a mechanical follower using multi-parameter hints passes 5 of 5 goals in one hint step each.
 - **Given lists:** each text goal comes with its expectation list. 3 runs per goal; report the median renders, tokens and cost, and record the model name and the date.
 - **A blind listen:** you judge whether the final sounds match their text, without seeing the numbers; G1 needs at least 7 of 10.
-- **Agent-written lists:** a second, harder track where the agent writes its own expectations from the brief. Reported separately.
+- **Agent-written lists:** a second, harder track where the agent writes its own expectations from the brief. Reported separately, not gated at G1. Both are scored: does the agent's own list pass (self-consistency), and does the hidden designer list pass (the real score).
 - `cargo xtask agent-eval` runs nightly or on demand, **never as a merge gate**: it needs API access, costs money and is not deterministic.
+
+### The harness (P1a, lane E)
+
+Goals live one per file in `content/agent-evals/goals/<id>.toml`, so reviews and diffs stay small:
+
+```toml
+schema = "enth.agent-eval/1"
+id = "pluck-bright-short"
+difficulty = 1                       # 1..5
+brief = "a short bright pluck"       # the only text the agent gets on the self-written track
+perf = { notes = [{ note = "A3", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.0 }
+template = "init"                    # the starting patch (templates are part of the product)
+expect = "envelope.attack_ms < 10, spectrum.centroid_hz > 2kHz, envelope.sustain_db < -30, envelope.duration_ms < 800, pitch.note ~ A3"
+budget = { renders = 20, turns = 60, usd = 1.0 }
+```
+
+The prompt templates (`prompts/given.md`, `prompts/self.md`) are versioned; changing one is an eval-version change. Committed results are summaries only (`results/<date>-<model>.json`); transcripts, patches and WAVs go to `target/agent-eval/` and stay out of git.
+
+`cargo xtask agent-eval [--track given|self|both] [--goals …] [--trials 3] [--model …] [--runner claude-code] [--max-usd 20] [--jobs 1]` runs each trial in an empty temp dir whose only tool is a wrapper named `enth`. The wrapper logs every call and refuses the 21st render. It drives headless Claude Code:
+
+```bash
+claude --bare -p "$(render prompt)" --output-format stream-json --verbose --model <id> \
+  --max-turns 60 --max-budget-usd 1.00 --tools "Bash,Read" --allowedTools "Bash(enth *)" "Read" \
+  --permission-mode dontAsk --no-session-persistence
+```
+
+The judge is `enth check <the agent's patch> --perf <goal perf> --expect <goal list>` (exit 0 is solved), and it also records whether the patch came from `enth` rather than hand-written JSON. `--bare` needs an API key; on a subscription, drop it and set the `CLAUDE_CODE_DISABLE_*` variables and a clean `CLAUDE_CONFIG_DIR`, so personal Claude Code instructions stay out of the agent's context. Claude Code has no seed or temperature flag, so runs are not reproducible: that is why there are 3 trials.
+
+Per goal and track it records the solve rate over 3 trials (pass@3 and pass^3), median and maximum renders, tokens and cost (`total_cost_usd` is a client-side estimate), the invalid-command rate (exit 2 or 3 calls over all calls), wall time and the final margins, with the model id, Claude Code version, enth git hash and eval version in the header. For the blind listen it picks one passing trial per goal (a seeded choice, median renders), loudness-matches the 10 WAVs to −23 LUFS, shuffles the names and shows only the brief; `agent-eval listen` is run by the owner. Estimated cost: about $0.14 per trial on Sonnet 5.5, so about $9 for 10 goals × 3 trials × 2 tracks (an estimate; the first run measures it).
 
 ## Why CLI first, MCP later
 
