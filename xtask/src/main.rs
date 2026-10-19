@@ -6,6 +6,7 @@
 )]
 
 mod bundle;
+mod engine;
 mod reaper;
 
 use std::collections::BTreeMap;
@@ -86,7 +87,8 @@ const USAGE: &str = "usage: cargo xtask <command>
   bundle <pkg> [--release] [...]    build a plugin and create .clap / .vst3 bundles in target/bundled
   install <pkg> [--release] [...]   bundle, then copy to ~/.clap and ~/.vst3
   reaper-test [--release] [--no-build] [--format clap|vst3]
-                                    local gate: load, params, automation and state in headless REAPER";
+                                    local gate: load, params, automation and state in headless REAPER
+  wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -96,6 +98,7 @@ fn main() -> ExitCode {
         Some("bundle") => bundle::bundle(&args[1..]),
         Some("install") => bundle::install(&args[1..]),
         Some("reaper-test") => reaper::reaper_test(&args[1..]),
+        Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
     match result {

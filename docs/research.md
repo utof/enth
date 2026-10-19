@@ -1,6 +1,6 @@
 # Research and evidence
 
-**As of 2026-10-18.** This is the evidence behind the decisions. Claims are marked *measured* (benchmarks, papers) or *anecdotal* (forum reports) where it matters. Re-check versions before relying on them — the Rust audio ecosystem moves fast.
+**As of 2026-10-18; §3, §4 and §10 updated 2026-10-19 from the Phase 0 research.** This is the evidence behind the decisions. Claims are marked *measured* (benchmarks, papers) or *anecdotal* (forum reports) where it matters. Re-check versions before relying on them — the Rust audio ecosystem moves fast.
 
 ## 1. Products and projects to learn from
 
@@ -46,8 +46,9 @@ Name collision to remember: "CLAP" in ML papers is the audio–text embedding mo
 - **nih-plug is in maintenance mode**; its README points framework users to a community fork, now **nice-plug** on Codeberg (ISC). nice-plug describes itself as experimental with recent large changes ([README](https://codeberg.org/RustAudio/nice-plug)).
 - **VST3 SDK became MIT** with version 3.8 in Oct 2025 ([Steinberg](https://forums.steinberg.net/t/vst-3-sdk-license/201637)). The MIT/Apache `vst3` crate 0.3.0 now ships pre-generated bindings ([Micah Johnston, Dec 2025](https://micahrj.github.io/posts/vst3)). Original nih-plug still uses the GPLv3 `vst3-sys` (an [open PR](https://github.com/robbert-vdh/nih-plug/pull/263) switches it); a `cargo tree` of nice-plug 0.4.2 on 2026-10-18 shows it depends on the MIT/Apache `vst3` 0.3.0 crate, not `vst3-sys` (effects research session) — re-check at the version Phase 0 pins.
 - **clack-host** has been on crates.io since 2026-05-03 (0.2.0 on 2026-09-12): usable for our test host.
-- **clap-wrapper** wraps a CLAP as VST3/AUv2 (and AAX/AUv3 in recent versions); a Rust crate builds self-contained bundles ([lib.rs](https://lib.rs/crates/clap-wrapper)).
-- **egui-baseview** was archived in Apr 2026 and moved into BillyDM's fork, the basis of nice-plug's egui adapter. **vizia-plug** is the maintained vizia adapter (updated Jun 2026).
+- **clap-wrapper** wraps a CLAP as VST3/AUv2 (and AAX/AUv3 in recent versions); a Rust crate builds self-contained bundles ([lib.rs](https://lib.rs/crates/clap-wrapper)). *Measured 2026-10-19:* the crates.io `clap-wrapper-rs` 0.3.1 bundles clap-wrapper 0.14.0 and lacks the 0.16.0 fix for VST3 parameter sync (a reloaded plugin showed a stale parameter in REAPER), and 0.16.0 is not on crates.io yet. clack's own polysynth example fails 3 clap-validator state tests. That is why clack + clap-wrapper stays the escape hatch, not the plan.
+- **Hosts on Linux.** *Measured 2026-10-19:* the Carla 2.5.8 that Ubuntu ships hosts **VST3 only**. CLAP support exists only on Carla's unreleased main branch (it is absent at v2.5.8 and v2.5.10). Ardour hosts no CLAP either. Bitwig is the only host with CLAP poly-mod and it is paid (trial). Native REAPER 7.82 hosts CLAP and VST3 and can run headless under Xvfb.
+- **egui-baseview** was archived in Apr 2026 and now lives at `RustAudio/egui-baseview` on Codeberg, the basis of nice-plug's egui adapter (0.9.0, 2026-10-17). **vizia-plug** was last pushed 2026-06-13 and vizia 2026-08-21; the open vizia-plug issue #41 is unanswered, so it is not a challenger.
 
 ## 4. UI: WebView vs native
 
@@ -63,11 +64,13 @@ Name collision to remember: "CLAP" in ML papers is the audio–text embedding mo
 | wry on Linux | Window embedding is X11-only; you must init and pump GTK yourself | [wry docs](https://docs.rs/wry/latest/wry/struct.WebView.html) | Docs |
 | GTK in a host process | CLAP co-author argues Linux plugins shouldn't use GTK or Qt because toolkits mix badly | [gist](https://gist.github.com/abique/4c1b9b40f3413f0df1591d2a7c760db4) | Expert opinion |
 | WebKitGTK + NVIDIA proprietary driver | 2026 crash reports; env-var workarounds didn't help in one case | [magpie #1740](https://github.com/yetone/magpie/issues/1740), [tdesktop #31441](https://github.com/telegramdesktop/tdesktop/issues/31441) | Bug reports |
-| nih-plug egui adapter | Always redraws while open ("for now, just always redraw") | [source](https://nih-plug.robbertvanderhelm.nl/src/nih_plug_egui/editor.rs.html) | Code |
+| nice-plug-egui 0.6.0 + egui-baseview 0.9.0 (the old nih-plug adapter "for now, just always redraw"s; this replaces that) | Repaints reactively: **0 frames while idle**, about 26 frames/s while host automation plays; 280 of 280 opens drew in REAPER under Xvfb; an open idle editor costs +0.2 to +1.1 points of one core, 64 wake-ups/s on the GUI thread | Phase 0 shell and UI research, 2026-10-19 (old behaviour: [source](https://nih-plug.robbertvanderhelm.nl/src/nih_plug_egui/editor.rs.html)) | Measured (Xvfb, software GL) |
+| baseview 0.4.1 (what every Rust toolkit adapter sits on) | Leaks ≈70 KB per open/close cycle (≈115–160 KB with egui on Mesa; REAPER's own ReaEQ is flat); frame pacing tops out near 30 fps; REAPER sizes the FX window for scale 1 while baseview draws at scale 2, so a HiDPI editor is clipped | Phase 0 UI research, 2026-10-19 | Measured (Xvfb, software GL) |
+| nice-plug-iced 0.5.0 | The `gain_iced` editor spins one core at ≈100% while open and idle (10.6% when closed) and leaks one thread per open/close | Phase 0 UI research, 2026-10-19 | Measured (Xvfb, software GL) |
 | egui | "1–2 ms per frame" for typical UIs | [egui README](https://github.com/emilk/egui) | Author estimate |
 | Third-party WRAC user | Kept the WRAC CLAP shell but replaced the UI with a wgpu panel ("no webview, no toolkit") | [open-pitch-quant](https://github.com/samuelmarquis/open-pitch-quant) | Project choice |
 
-Native options considered: **egui** (immediate mode, custom painting easy, largest agent training corpus, also builds for the web), **vizia** (retained/reactive, CSS-like styling, accessibility via AccessKit), **Slint** (declarative, software renderer; plugin path immature), **iced** (adapter stale), **raw wgpu** (best ceiling, most work). Decision: [ADR-0002](adr/0002-ui-toolkit.md).
+Native options considered: **egui** (immediate mode, custom painting easy, largest agent training corpus, also builds for the web), **vizia** (retained/reactive, CSS-like styling, accessibility via AccessKit), **Slint** (declarative, software renderer; plugin path immature), **iced** (adapter stale; the measured idle spin and thread leak above rule it out), **raw wgpu** (best ceiling, most work). Decision: [ADR-0002](adr/0002-ui-toolkit.md).
 
 Linux desktop note: Linux Mint's Cinnamon Wayland session is announced as supported but not default, arriving with Mint 23 around Christmas 2026 ([It's FOSS](https://itsfoss.com/news/linux-mint-wayland-stable/)). Re-run the host checklist under Wayland/XWayland then.
 
@@ -124,6 +127,9 @@ Full reasoning, sources, corrections and 17 open checks: `summary.md` in the ses
 
 ## 10. Watch list
 
+- **baseview [#357](https://github.com/RustAudio/baseview/pull/357)** (open): moves X11 events onto the host's main thread. Expect nice-plug-egui 0.7 with a host timer/fd API (about a day to adopt), and re-check the per-thread CPU attribution, the 30 fps cap and the leak when it lands.
+- **NVIDIA 595-series X driver, bug 6205955** (no fix as of 2026-10-19): a SIGSEGV at `nvidia_drv.so +0x3fc5a` during X resource destruction, reported with short-lived X clients on Linux Mint 22.3 with `prime-select nvidia` ([forum thread 370339](https://forums.developer.nvidia.com/t/xorg-sigsegv-in-nvidia-drv-so-during-freepixmap-driver-595-71-05-open-rtx-5080-repeatable/370339)). Opening and closing plugin editors churns exactly those resources. The same offset crashed Xorg on the development machine on 2026-10-19, after validators and a host ran on the real display. Hence the Xvfb rule for agents. Re-check after each driver update.
+- **Carla CLAP support** reaching a release; until then Carla is a VST3-only second host.
 - **Real-time generative audio models** (e.g. Google's Magenta line) — possible future modules for sound generation or sound → patch seeding; not dependencies.
 - **Audio-native LLMs** — they can't reliably judge timbre today (§5); re-check yearly.
 - **Signalsmith `dynamics.h`** (MIT, history starts 2026-09-25) — compressor candidate once it has a few months of history (§8).

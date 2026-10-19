@@ -1,0 +1,11 @@
+# engine 1, patch 1; scalar path, Flush::On, seed 0xe175eed
+render/simple-1v-2s 356201a105993e952898e86a950247f9bc8eba97ac4f1be12b3d2d98c4fd8ad3
+render/simple-16v-2s 7f31fa709fbba15a1f68215d02d5abecf9424d18f7c3615fe735bd190d2fb092
+render/p1-8v-held-2s cbe04ce996e0274ef757d4c2d0b3fd71fa8f23e32da2998c31d291724a64e8d4
+render/p1-phrase-4s b4203e8139453f35f3b04a669cffaf80f1d345a297c92ad1514c8e315c8a98a7
+render/p1-tail-40s f9d87e2d79c1ec2a8a341a7edf89f62b7935fc4d94c46bf9cba44996904402e4
+render/fast-decay-tail-12s 5b81491e00f4c037efabd4293c5f782fdc9bb8664991bc69103d7900cd58de68
+render/random-seed-0-phrase-2s 158827c69150545b9d5d667292cc94aa41adeb647af9770e8a447961b9e7dfd3
+render/random-seed-1-phrase-2s 3d3cadbb63c6158ed224793e677e18d6cc7ff4bf61701d306f79e14a575cb941
+render/random-seed-2-phrase-2s 43b2336caac634c2a8653aa5a2c0196395a299d74d4a06314a1913de53939295
+render/random-seed-3-phrase-2s 14aaa207173a107b13a9e1e9fd8207f907b4bd856ec6584cbd3546c4f13e7b8d

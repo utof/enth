@@ -65,3 +65,24 @@ exit = "warn"
 float_cmp_const = "warn"
 lossy_float_literal = "warn"
 rc_mutex = "warn"
+
+# Dev profile measured in research report 06 (spike-shell: clean 36→27 s, incremental 0.88→0.66 s, .clap 191→54 MB).
+[profile.dev]
+debug = "line-tables-only"        # file:line in panics and backtraces; full DWARF only where you ask for it
+
+[profile.dev.package."*"]
+debug = false                     # no DWARF for nice-plug, egui, baseview and other dependencies
+
+# Real-time crates run optimised even in debug builds (debug assertions and overflow checks stay on).
+# Add each L0-L2 crate that runs per-sample code. Don't optimise all dependencies:
+# deps at opt-level 2 made clean builds 2.95x slower for about 0.4 s off each incremental build.
+[profile.dev.package.enth-dsp]
+opt-level = 3
+
+[profile.dev.package.enth-engine]
+opt-level = 3
+
+# Profiling and heaptrack runs keep symbols without debug-build slowness: cargo build --profile profiling
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
