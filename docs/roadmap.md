@@ -6,33 +6,50 @@
 
 Changes from earlier plans:
 
-- **2026-10-19:** effects are ported from permissive sources into our own deterministic modules (a reverb from Signalsmith Basics, an in-house compressor), with a global FX bypass; no third-party plugin hosting ([ADR-0006](adr/0006-effects-strategy.md)).
+- **2026-10-19 (b):** Phase 0 research (`_local/sessions/2026-10-19-phase-0-spikes/summary.md`). Phase 0 runs as parallel lanes and takes about 2 weeks. The UI spike is egui with glow only (vizia and iced are out); renders are bit-exact across platforms; Gate G0 has numeric metric and search thresholds; P1 splits into P1a (headless core) and P1b (plugin and editor); GR1 needs a survey of friends' OS and DAW and a friend build; second hosts are Carla (VST3 only) and a Bitwig trial for poly-mod.
+- **2026-10-19 (a):** effects are ported from permissive sources into our own deterministic modules (a reverb from Signalsmith Basics, an in-house compressor), with a global FX bypass; no third-party plugin hosting ([ADR-0006](adr/0006-effects-strategy.md)).
 - **2026-10-18 (b):** a minimal synth comes first, then the Recreate and Synth tracks run in parallel; a research session is mandatory before each milestone; duels are serverless; sound → patch may take up to 5 minutes; ear-training games and modules-as-own-plugins are listed for later.
 - **2026-10-18 (a):** native UI instead of WebView, so Phase 0 includes a UI-toolkit spike; the agent CLI moved earlier; the standalone app was deferred.
 
-## P0 — Spikes and skeleton (3–4 weeks)
+## P0 — Spikes and skeleton (about 2 weeks)
 
-Research session: `_local/sessions/<date>-phase-0-spikes/`. Task list: [phase-0.md](phase-0.md).
+Research session: `_local/sessions/2026-10-19-phase-0-spikes/`. Lanes and tasks: [phase-0.md](phase-0.md). After a one-day skeleton the lanes run in parallel; the skeleton and the shell spike are merged.
 
 - Workspace, CI (fmt, clippy, tests, `cargo deny`, wasm32 build of core crates, layer check), AGENTS.md at the repo root.
-- **Shell spike:** a one-oscillator synth on `nice-plug`, loaded in REAPER and a second Linux host; `clap-validator` passes; VST3 export builds.
-- **UI spike:** the same reference panel in **egui** (with repaint gating) and **vizia**, measured with the [benchmark protocol](benchmarks.md).
-- **Engine spike:** offline render speed (× realtime per core) and determinism across Linux, Windows and wasm32.
-- **Metric spike:** a 10-parameter template; three candidate distances; 30 pairs you rank by ear; CMA-ES recovers random targets.
+- **Shell spike:** a one-oscillator synth on `nice-plug`, loaded in native REAPER (CLAP and VST3) and in Carla (VST3 only; Ardour is VST3-only too); `clap-validator` passes; VST3 export builds. A Bitwig trial is only for the CLAP poly-mod check.
+- **UI spike:** the reference panel in **egui** on glow (with repaint gating), measured with the [benchmark protocol](benchmarks.md) in two tiers: automated under Xvfb, and owner-attended on the real GPU. No second toolkit.
+- **Engine spike:** offline render speed (× realtime per core) and bit-exact renders across Linux, Windows and wasm32, with golden hashes in CI.
+- **Metric spike:** a 10-parameter template; three candidate distances; two sessions of 30 pairs you rate by ear, whenever you have time; CMA-ES recovers random targets.
 
-**Gate G0:** plugin validates and runs in two hosts with no GUI-caused xruns; a UI toolkit meets the [UI thresholds](benchmarks.md#ui-thresholds) and is chosen; renders ≥ 100× realtime per core; the metric agrees with your ears on most pairs; CMA-ES reaches "sounds the same to me" on most targets in under a minute. ADR-0001 and ADR-0002 become *Accepted*.
+**Gate G0:**
+
+- The plugin validates and runs in two hosts (REAPER and Carla) with no GUI-caused xruns.
+- egui meets the [UI thresholds](benchmarks.md#ui-thresholds), including the owner's real-display checks.
+- Renders are ≥ 100× realtime per core, and the golden hashes are identical on the platforms that have run (Linux, wasm32, Windows; aarch64 if runners exist).
+- **Metric:** the best distance reaches Spearman ρ ≥ 0.7 against your mean rating of 30 pairs, with the lower 95% confidence interval ≥ 0.4.
+- **Search:** with 8 workers and at most 60 s of wall time per target, at least 14 of 20 targets are judged *same* in an ABX listen.
+- ADR-0001 and ADR-0002 become *Accepted*.
+
+Metric v1 is provisional: it is recalibrated by your listening sessions and again in R1. Nothing in P1a waits for those sessions. *(Thresholds: 2026-10-19, from the Phase 0 research; the toy-synth numbers so far suggest they are reachable.)*
 
 ## P1 — Minimal synth + CLI v0 (4–6 weeks)
 
 A Syntorial-sized instrument, complete enough to make simple basses, pads, plucks and leads — and to be a fair target for the Recreate game.
 
+2026-10-19: P1 splits in two, so the riskiest part (editor and host integration) no longer sits at the end of one long build, and the fastest feedback loops (offline, through the CLI) come first.
+
+- **P1a — headless core:** everything below except the editor bullet: schema, patch, engine, render, analysis descriptors, modules, effects and CLI v0.
+- **P1b — plugin and editor:** the shell, the 72 host params, state save/load and a functional editor (marked *(P1b)* below).
+
+The effort figures are still unvalidated guesses; Phase 0 records actual against estimated days per lane.
+
 - Parameter schema with units, Patch v1 with ops and migrations, `Module` trait, plan compiler and swap, voice manager (poly, mono, legato, glide).
 - Modules: 2–3 oscillators (classic waveforms plus a few wavetables), noise, a multimode filter (LP/HP/BP), 2 envelopes, 1–2 LFOs, a small modulation matrix, macros.
 - Effects: a reverb ported from Signalsmith Basics (MIT; fundsp is the fallback) and an in-house feed-forward compressor (after Julius O. Smith's Faust `compressor_mono`, STK-4.3), both zero-latency, deterministic modules in `enth-dsp`; a persistent global FX bypass; no third-party plugin hosting ([research.md §8](research.md#8-reusing-effects-and-hosting-plugins), [ADR-0006](adr/0006-effects-strategy.md); full reports in `_local/sessions/2026-10-18-effects-reuse-and-plugin-hosting/`).
-- A functional native editor (clear, not polished), 72 host params (8 macros + 64 slots), state save/load.
+- *(P1b)* A functional native editor (clear, not polished), 72 host params (8 macros + 64 slots), state save/load. Slot names refresh through a CLAP rescan (this needs a small carried nice-plug patch); VST3 in REAPER shows "Slot N" ([design.md §4](design.md#4-host-parameters-macros--automation-slots)).
 - **CLI v0:** `schema`, `modules`, `params`, `new`, `apply`, `get`, `diff`, `render`, `describe`, `check`, `step`, `guide`, `bench`.
 
-**Gate G1:** a 16-voice patch stays within the CPU budget *(set in P0)*; patches round-trip through JSON; golden tests pass on three OSes and wasm32, reverb and compressor included; the reverb was chosen by a blind, level-matched A/B; you can make a bass, pad, pluck and lead you like; an agent solves at least half of 10 starter text goals with `enth step` within 20 renders each.
+**Gate G1** (the headless items are checked at the end of P1a, the rest at the end of P1b): a 16-voice patch stays within the CPU budget *(set in P0)*; patches round-trip through JSON; golden tests pass on three OSes and wasm32, reverb and compressor included; the reverb was chosen by a blind, level-matched A/B; you can make a bass, pad, pluck and lead you like; an agent solves at least half of 10 starter text goals with `enth step` within 20 renders each.
 
 ## Track R — Recreate
 
@@ -44,8 +61,9 @@ The game you most want: the synth makes a random patch, you recreate it, and you
 - **Randomizer settings page** ([design.md §9](design.md#9-randomizer-and-difficulty)): how much each category is randomized, a musical/safe slider, and one difficulty knob that widens what gets randomized (oscillators → filter → envelopes → modulation → effects). Everything stays available — difficulty changes the challenge, it doesn't lock features.
 - Instant level-matched A/B, a 0–100 score with sound %, structure % and combined %, time to pass, and coach hints from measured sensitivity.
 - CLI: `compare`, `suggest`, `match`, `explain`; the `content/agent-evals` set and `cargo xtask agent-eval`.
+- **Prerequisites for the friends' round (GR1):** ask your friends now which OS and DAW they use (Ableton, Logic and Cubase had no CLAP support as of July 2026), then provide a **friend build**: a standalone app through nice-plug's wrapper and/or a Windows VST3 build. Windows and macOS builds are otherwise not planned before S1, and the standalone app not before S4. If that is too much, GR1 becomes owner-only and the friends join in S1.
 
-**Gate GR1:** you and friends play 20 rounds each, mostly agree with the score, and want more; the agent's solve rate is recorded as a baseline.
+**Gate GR1:** you and friends (on a build they can run) play 20 rounds each, mostly agree with the score, and want more; the agent's solve rate is recorded as a baseline.
 
 ### R2 — Learn (ongoing)
 
@@ -98,7 +116,7 @@ Learn content ships as data packs, not code; the Learn and Recreate views sit be
 
 | Until | Leave out | Why |
 | --- | --- | --- |
-| G0 | Any UI beyond the reference panel | The toolkit isn't chosen yet |
+| G0 | Any UI beyond the reference panel | egui is confirmed only at G0, after the real-display and in-host checks |
 | G1 | Editor polish, AU/AAX, MPE, preset cloud, standalone app | The minimal synth must work first |
 | GR1 | ML of any kind, networking, MCP server | The game and agent loop must work with plain search first |
 | GR3 | Topology search, text-to-patch models | Templates must work before structure search pays off |
