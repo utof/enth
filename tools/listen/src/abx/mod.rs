@@ -34,7 +34,7 @@ use crate::flags::Flag;
 
 pub use analyze::{Report, analyze};
 pub use design::{Designed, design};
-pub use run::{AbxArgs, SessionSel, clip_path, ensure_clips, run, synthetic_answers};
+pub use run::{AbxArgs, SessionEnd, SessionSel, clip_path, ensure_clips, run, synthetic_answers};
 
 /// Manifest schema (the hidden key to every trial).
 pub const SCHEMA_MANIFEST: &str = "enth.listen.abx-manifest/1";

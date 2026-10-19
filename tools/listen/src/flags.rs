@@ -5,7 +5,7 @@
 //!
 //! | Flag | Meaning |
 //! | --- | --- |
-//! | `click` | one isolated step between neighbouring samples of at least 10 % of the clip's peak: no other step within 50 ms is even half as big. A periodic waveform (a saw's reset, a square's edges) has steps in every window, so it is not flagged; a percussive attack is many large steps, also not flagged |
+//! | `click` | one isolated step between neighbouring samples of at least 10 % of the clip's peak: no other step within 50 ms is even a quarter as big. A periodic waveform (a saw's reset, a square's edges) has steps in every window, so it is not flagged, even when it decays fast (a plucked saw loses about half its size per period, and a band-limited saw splits its reset between two samples); a percussive attack is many large steps, also not flagged |
 //! | `starts_nonzero` | the first sample is at least 5 % of the peak: the clip starts with a step |
 //! | `ends_abruptly` | the last sample is at least 5 % of the peak: the clip is cut, not faded |
 //! | `non_finite` | a NaN or infinity |
@@ -17,8 +17,10 @@ use serde::{Deserialize, Serialize};
 
 /// A step must be at least this share of the clip's peak to count as a click.
 pub const JUMP_MIN_REL: f32 = 0.10;
-/// A click is isolated when no other step within the window is at least this share of its size.
-pub const ISOLATION_RATIO: f32 = 0.5;
+/// A click is isolated when no other step within the window is at least this share of its size. A quarter, not
+/// a half: a saw that decays fast (a pluck, a percussive hit) has resets that shrink by about half every period,
+/// and a band-limited reset is split between two samples, so the next reset can be well under half the first.
+pub const ISOLATION_RATIO: f32 = 0.25;
 /// Half-width of the isolation window.
 pub const ISOLATION_WINDOW_S: f64 = 0.05;
 /// First and last samples above this share of the peak mark a start or end step.
@@ -258,6 +260,24 @@ mod tests {
                 check(&[&x], SR)
             );
         }
+    }
+
+    #[test]
+    fn a_fast_decaying_saw_after_silence_is_not_a_click() {
+        // 220 Hz at 48 kHz (a 218-sample period) with a 300-sample time constant: each reset is about half the last.
+        // It starts mid-ramp at zero, so the first reset is the loudest step and only the next one is its neighbour.
+        let x: Vec<f32> = (0..SR / 2)
+            .map(|i| {
+                let t = i.saturating_sub(1_000);
+                if i < 1_000 {
+                    return 0.0;
+                }
+                let ph = (f64::from(t) * 220.0 / f64::from(SR) + 0.5).fract();
+                (0.9 * (2.0 * ph - 1.0) * libm::exp(-f64::from(t) / 300.0)) as f32
+            })
+            .collect();
+        let f = check(&[&x], SR);
+        assert!(!kinds(&f).contains(&FlagKind::Click), "{f:?}");
     }
 
     #[test]
