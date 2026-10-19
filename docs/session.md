@@ -211,6 +211,10 @@ SK's branch (`p1b/sk`, checked at `146d4cf`) implements `activate`, `pump`, `edi
 3. **`tests/api.rs`**: keep SK's activate half of the stub test and S2s's `undo`/`redo` assertions (`Ok(false)` with nothing recorded); the `Unsupported` value the loop at the end uses can be any.
 4. **`src/tests/kit.rs`**: add SK's `auditioned: false` to the hand-built `Port`.
 5. **`tests/engine.rs`**: remove the `#[ignore]` attributes and delete `lane_sk_has_not_landed_yet`.
+6. **Dead code after step 1**: delete SK's `Port::send_value` and `Queued::same_target` (S2s's `send_or_queue` and `same_target` in `apply.rs` replace them), and allow `dead_code` with a reason on `SessionError::unsupported` (no stub is left).
+7. **`enth-plugin/src/state.rs`, `a_damaged_field_never_panics`**: a newer `enth` field (`enth.plugin-state/99`) is now kept and saved back unchanged (S2s's policy), so assert equality with the stored text and `status().instance_unloaded`, and test the re-saved-defaults case with a damaged field that is not newer (`{"schema":"bogus"}`).
+
+The result is on the local branch `trial/s2s-plus-sk` (a merge of `p1b/sk` into `p1b/s2s`, not pushed): `scripts/gate.sh lane .` exits 0 there with 700 tests passing. Use it, or redo the seven steps.
 
 Behaviour that changed against S1s's text, for the editor and shell lanes: `ShellRequest::RenameParams` is pushed only when the host would see other names or kinds (so the shell may rescan on every one it receives), and always on a load; `Applied::renamed` follows it. `SessionStatus::instance_unloaded`, `LoadReport::history: Option<HistoryFate>` and `RECONCILE_STEPS` are additive.
 
