@@ -26,6 +26,11 @@ end
 
 local function near(a, b) return math.abs(a - b) < 0.002 end
 
+-- The names enth-state.patch.json gives (lane PL, the fork's runtime names): macro 1 is named, slots 1 and 64 drive
+-- the "Tone" filter. REAPER reads VST3 titles live, so VST3 shows them at once; CLAP shows them after the rescan the
+-- plugin asks for from its next process() call. Every other parameter keeps "Macro N" / "Slot N".
+local RENAMED = { [MACRO_1] = "Bright", [SLOT_1] = "Tone · Cutoff", [SLOT_64] = "Tone · Resonance" }
+
 if phase == "create" then
   safe(function()
     local track, fx = new_project_with_fx()
@@ -39,11 +44,11 @@ if phase == "create" then
     for i = 0, 71 do
       local expected = i < 8 and ("Macro " .. (i + 1)) or ("Slot " .. (i - 7))
       local _, name = reaper.TrackFX_GetParamName(track, fx, i)
-      if name ~= expected then bad_names[#bad_names + 1] = i .. "=" .. tostring(name) end
+      if name ~= expected and name ~= RENAMED[i] then bad_names[#bad_names + 1] = i .. "=" .. tostring(name) end
       local _, automatable = reaper.TrackFX_GetNamedConfigParm(track, fx, "param." .. i .. ".automatable")
       if automatable ~= "1" then not_automatable = not_automatable + 1 end
     end
-    check("param-names", #bad_names == 0, #bad_names == 0 and "Macro 1-8, Slot 1-64" or table.concat(bad_names, " "))
+    check("param-names", #bad_names == 0, #bad_names == 0 and "Macro 1-8, Slot 1-64 (or the patch's names)" or table.concat(bad_names, " "))
     check("param-automatable", not_automatable == 0, not_automatable .. " not automatable")
     local ids = ident_list(track, fx)
     data("idents-create", ids)
@@ -67,6 +72,12 @@ if phase == "create" then
     wait(1.5, function()
       local m, s = norm(track, fx, MACRO_1), norm(track, fx, SLOT_1)
       check("set-values", near(m, 0.7) and near(s, 0.3), string.format("macro 1 = %.4f, slot 1 = %.4f", m, s))
+      local unrenamed = {}
+      for index, want in pairs(RENAMED) do
+        local _, name = reaper.TrackFX_GetParamName(track, fx, index)
+        if name ~= want then unrenamed[#unrenamed + 1] = index .. "=" .. tostring(name) end
+      end
+      check("param-renamed", #unrenamed == 0, #unrenamed == 0 and "Bright, Tone · Cutoff, Tone · Resonance" or table.concat(unrenamed, " "))
       write_file("chunk-" .. tag .. "-create.b64", state_chunk(track, fx))
       reaper.Main_SaveProjectEx(0, project, 0)
       check("project-saved", reaper.file_exists(project), project)
