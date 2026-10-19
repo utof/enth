@@ -7,6 +7,8 @@
 
 mod common;
 
+use std::fmt::Write as _;
+
 use common::{describe, goal_list, nuisance_phases, trial_patches};
 use enth_analysis::descriptors::{Describer, Descriptors, NoteTiming};
 use enth_analysis::expect::{CheckReport, check, parse_list};
@@ -384,4 +386,50 @@ fn trial_rejudged() {
             .any(|t| t.starts_with("g4-bell-run1: envelope.attack_ms > 8")),
         "{thin:#?}"
     );
+}
+
+/// Pitch error by note and waveform, and brightness by cutoff (prints the audit table of docs/dsp/analysis.md).
+#[test]
+#[ignore = "prints the pitch and brightness audit table"]
+#[allow(clippy::print_stdout, reason = "prints a table")]
+fn pitch_and_brightness_table() {
+    let mut d = Describer::new(SR);
+    println!("\npitch error (ct) by note: saw / square / triangle, cutoff 8 kHz, detune 0");
+    let mut worst: f64 = 0.0;
+    for note in ["C2", "A2", "C3", "A3", "C4", "A4", "C5", "A5", "C6"] {
+        let f = enth_analysis::units::parse_note(note).unwrap();
+        let mut row = format!("{note:>3}");
+        for wave in Wave::ALL {
+            let r = describe(
+                &mut d,
+                &ToyPatch {
+                    wave,
+                    cutoff_hz: 8000.0,
+                    ..ToyPatch::default()
+                },
+                &ToyPerf {
+                    note_hz: f,
+                    dur_s: 1.5,
+                    hold_s: 1.2,
+                },
+            );
+            let e = r.pitch.map_or(f64::NAN, |p| cents(p.f0_hz, f));
+            worst = worst.max(e.abs());
+            write!(row, " {e:+6.2}").unwrap();
+        }
+        println!("{row}");
+    }
+    println!("worst |error| {worst:.2} ct");
+    println!("\nbrightness: cutoff -> centroid (saw A3)");
+    for c in [100.0, 200.0, 400.0, 800.0, 1600.0, 3200.0, 6400.0, 12_800.0] {
+        let r = describe(
+            &mut d,
+            &ToyPatch {
+                cutoff_hz: c,
+                ..ToyPatch::default()
+            },
+            &short(),
+        );
+        println!("  {c:>6} -> {:.0}", r.spectrum.unwrap().centroid_hz);
+    }
 }

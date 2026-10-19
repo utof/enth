@@ -867,6 +867,22 @@ mod tests {
     }
 
     #[test]
+    fn centroid_of_two_known_sines() {
+        // magnitude-weighted: equal amplitudes centre at 2 kHz, 1 : 0.5 at 1667 Hz
+        let mut d = Describer::new(SR);
+        for (b, want) in [(0.25, 2000.0), (0.125, 1666.7)] {
+            let x =
+                crate::test_signals::mix(&sine(SR, 1000.0, 0.25, 0.5), &sine(SR, 3000.0, b, 0.5));
+            let c = d
+                .describe(&x, NoteTiming::unknown_off())
+                .unwrap()
+                .get(Feature::Brightness)
+                .unwrap();
+            assert!((c - want).abs() < 30.0, "{b}: {c}");
+        }
+    }
+
+    #[test]
     fn noise_is_noisy() {
         let d = Describer::new(SR)
             .describe(&white_noise(SR, 0.3, 1.0, 9), NoteTiming::unknown_off())
