@@ -91,6 +91,14 @@ fn held_chord_with_swap(base: &Patch, edit: Option<&Patch>) -> (Vec<f32>, Vec<f3
 }
 
 #[test]
+fn the_engine_and_its_link_move_to_their_threads() {
+    fn send<T: Send>() {}
+    send::<Engine>();
+    send::<Link>();
+    send::<Plan>();
+}
+
+#[test]
 fn a_held_note_survives_recompiling_the_same_patch_bit_for_bit() {
     for base in [saw_patch(), every_kind_patch(800.0)] {
         let (l0, r0, _) = held_chord_with_swap(&base, None);

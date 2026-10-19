@@ -132,13 +132,14 @@ impl Link {
             .map_err(|_| SendError::Full(()))
     }
 
-    /// Set macro `index` (0-based, 0–7) to `value` (0–1).
+    /// Set macro `index` (0-based, 0–7) to `value` (0–1, clamped by the engine). An index outside 0–7 sends
+    /// nothing.
     ///
     /// # Errors
-    /// [`SendError::Full`] if the command ring is full, or if `index` is not 0–7 (nothing is sent).
+    /// [`SendError::Full`] if the command ring is full.
     pub fn send_macro(&mut self, index: usize, value: f32) -> Result<(), SendError<()>> {
         if index >= crate::modulation::MOD_WHEEL {
-            return Err(SendError::Full(()));
+            return Ok(());
         }
         self.push_macro(index as u8, value)
     }

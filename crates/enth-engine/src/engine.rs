@@ -468,10 +468,12 @@ impl Engine {
 
     /// The crossfade is over: hand the replaced plan back (or keep it until the pending slot frees).
     fn retire_old(&mut self) {
-        let (Some(old), Some(link)) = (self.old.take(), self.link.as_mut()) else {
-            return;
+        let Some(link) = self.link.as_mut() else {
+            return; // no ring, so no swap and no old plan; never drop one here
         };
-        if let Err(old) = link.give_back(old) {
+        if let Some(old) = self.old.take()
+            && let Err(old) = link.give_back(old)
+        {
             self.old = Some(old);
         }
     }
