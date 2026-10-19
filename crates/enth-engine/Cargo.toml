@@ -22,14 +22,15 @@ assert_no_alloc.workspace = true
 gungraun.workspace = true
 
 # One gungraun bench file per module kind, declared up front by lane S0 so that enth-engine/Cargo.toml is not a merge
-# hotspot: each module lane replaces the placeholder in its own file and sets its own instruction budget.
+# hotspot: each module lane replaces the placeholder in its own file and sets its own instruction budget, using the
+# render helpers in benches/common/mod.rs (lane S2a).
 # Run: cargo xtask bench (needs valgrind and a gungraun-runner of the same version as the gungraun crate).
 [[bench]]
-name = "analog"  # lane D1
+name = "engine"  # lane S2a: the skeleton (segment loop, FIFO, voice sum) with the reference saw; shared helpers in benches/common
 harness = false
 
 [[bench]]
-name = "wavetable"  # lane D1
+name = "osc"  # lane D1 (one `osc` kind: classic waves and the wavetable mode; S2a merged the analog and wavetable stubs)
 harness = false
 
 [[bench]]

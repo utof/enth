@@ -14,6 +14,7 @@
 //!   together with the reason. Reviewers reject golden updates that do not say why.
 //! - No WAVs in git: hashes and summaries only.
 
+pub mod patch;
 pub mod source;
 pub mod summary;
 
@@ -23,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub use source::Source;
+pub use source::{Rendered, Source};
 pub use summary::{Summary, Tolerance, hash_samples, summarise};
 
 /// `[platform_hash]` value meaning "this platform is compared on the summary only".
@@ -73,13 +74,14 @@ pub struct Measured {
 }
 
 impl Measured {
+    /// Hash every channel (interleaved) with the channel count; summarise the mono mix.
     #[must_use]
-    pub fn new(sample_rate: u32, samples: &[f32]) -> Self {
+    pub fn new(sample_rate: u32, rendered: &Rendered) -> Self {
         Self {
             sample_rate,
-            frames: samples.len(),
-            hash: hash_samples(sample_rate, 1, samples),
-            summary: summarise(sample_rate, samples),
+            frames: rendered.frames(),
+            hash: hash_samples(sample_rate, rendered.channels, &rendered.samples),
+            summary: summarise(sample_rate, &rendered.mono()),
         }
     }
 }
@@ -562,8 +564,8 @@ fn try_case(
     if !(case.seconds.is_finite() && case.seconds > 0.0 && case.seconds <= 120.0) {
         return Err(format!("seconds {} is outside (0, 120]", case.seconds));
     }
-    let samples = case.source.render(case.sample_rate, case.frames())?;
-    let got = Measured::new(case.sample_rate, &samples);
+    let rendered = case.source.render(case.sample_rate, case.frames())?;
+    let got = Measured::new(case.sample_rate, &rendered);
     let expected_path = expected_dir.join(format!("{name}.toml"));
     let old = read_expected(&expected_path)?;
     if opts.update {
