@@ -1,0 +1,21 @@
+description = "D1: two saws at the same pitch with free start phases (render seed, module id, note index), three notes in a row so each note starts at its own phases; through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when lane D2 replaces the reference envelope."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.25 },
+    { key = 57, velocity = 1.0, on_s = 0.4, off_s = 0.65 },
+    { key = 57, velocity = 1.0, on_s = 0.8, off_s = 1.05 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "saw" } },
+    { id = "osc2", kind = "osc", params = { wave = "saw" } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

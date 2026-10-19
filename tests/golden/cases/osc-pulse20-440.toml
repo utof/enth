@@ -1,0 +1,18 @@
+description = "D1: the polyBLEP pulse at 20 % at 440 Hz (key 69), reset start phase 0, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when lane D2 replaces the reference envelope."
+sample_rate = 48000
+seconds = 0.4
+
+[source]
+kind = "patch"
+notes = [
+    { key = 69, velocity = 1.0, on_s = 0.0, off_s = 0.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "pulse", phase_mode = "reset", phase = 0, pw = 20 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

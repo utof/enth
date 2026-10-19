@@ -1,0 +1,21 @@
+description = "D1: white noise (level 60 %) and pink noise (level 100 %) under three overlapping notes with polyphony 4: every voice has its own streams; through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when lane D2 replaces the reference envelope."
+sample_rate = 48000
+seconds = 0.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+    { key = 60, velocity = 1.0, on_s = 0.1, off_s = 0.6 },
+    { key = 67, velocity = 1.0, on_s = 0.3, off_s = 0.7 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [
+    { id = "noise1", kind = "noise", params = { color = "white", level = 60 } },
+    { id = "noise2", kind = "noise", params = { color = "pink" } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
