@@ -3,7 +3,7 @@
 - **Date:** 2026-10-19
 - **Reports:**
   - first reports: `01`–`07`;
-  - final reports: `01-final`, `02-final`, `03-final`, `04-final`, `05-final`, `06-final`;
+  - final reports: `01-final` through `06-final`, all in;
   - also `_local/reference/ui/README.md` (UI references, local only).
 
   01–06 were cut short for a reboot, then revived and finished. 07 finished on its own.
@@ -52,7 +52,7 @@
 | Search | Own ask–tell CMA-ES (no crate fits: `cmaes` panics on wasm, `basin` lacks ask–tell); λ ≥ workers; heuristic + random restarts side by side; waveform cycled at restarts; order-stable evaluator (results identical for 1 or N workers); 5,000 evaluations per solve | 04 | Lane C running |
 | Metric v1 | Multi-resolution log-mel L1 (MFCC worst). Provisional; recalibrated by the owner's listening sessions and again in R1. CLAP embeddings (~0.65 s per call) only to re-rank final candidates | 04 | ADR-0007 draft (lane C) |
 | Listening test | 2 sessions × 30 pairs + anchors (test–retest ceiling), Kendall τ-b with bootstrap CIs, ABX for "sounds the same"; a CLI the owner runs whenever. **Nothing blocks on it** | 04, 07 | Lane C |
-| Dev loop | lld is already rustc's default linker; lean debuginfo dev profile (−15% clean build, half the memory, 4× smaller binaries); optimise named DSP crates, not all deps; stay on stable (Cranelift and the parallel front end don't pay yet); hot reload out for Phase 0 | 06 (final pending) | To add to Cargo.toml |
+| Dev loop | Lean dev profile: line tables for workspace crates, no debug info for deps, `opt-level = 3` only for `enth-dsp`/`enth-engine`, plus a `profiling` profile (spike-shell: clean 36→27 s, incremental 0.88→0.66 s, `.clap` 191→54 MB, half the memory). No extra linker (bundled rust-lld links in 0.21 s). Stay on stable 1.99.1: nightly's parallel front end gains 6%, Cranelift is 18% slower. Hot reload out. The full "Done means" gate takes about 3 s; edit → bundle → REAPER render about 3 s, but **restart REAPER after each rebuild** (it keeps the old nice-plug module) | 06 | Done (Cargo.toml) |
 | Plugin IDs | Permanent, name-independent: CLAP `dev.enth.spike-shell` for the spike, plus a reserved product id ([naming.md](../../../docs/naming.md)) | 07, lane A | Done |
 
 ## Phase 0, re-planned as lanes
@@ -64,7 +64,7 @@
 | B | Engine + determinism (Task 5): cross-platform hashes, FTZ/lanes/subnormal tests, wasm vs native, Windows CI, instruction-count bench | S | Running |
 | C | Metric + search (Task 6): features, 3 distances, CMA-ES, solve/bench, `listen` CLI, ADR-0007 | S | Running |
 | U1 | Design tokens (`enth-ui::theme`), widgets, reference panel ("Lanes"), snapshot tests, `spike-ui-plugin` | S, A | Running |
-| H | Minimal clack-host test host for CI + leak/CPU measurement | S | After 06-final |
+| H | Minimal clack-host test host: `render` (notes in, WAV out, for CI plugin goldens; no permissive tool does this), editor open/close cycles with PSS and thread counts under Xvfb | S | Running |
 | U2 | Panel in REAPER (Xvfb) + owner real-display checks; decide G0 UI thresholds | U1, H | Later |
 | P | Agent-loop probe: an agent tries 5 text goals through `describe`/`check` over lane C's renderer | C | Optional, later |
 | Z | Close: measured thresholds into the gates, ADR statuses, actual vs estimated effort | all | Last |
@@ -80,6 +80,8 @@
 | 05 (first) | `.gitignore` draft; job-level `hashFiles()` | Both broken; fixed in 05-final |
 | 07 | Stepped ("notched") values at low difficulty, Syntorial-style | UI refs call notched values an anti-pattern, since the scorers handle continuous values. Open; decide in the R1 research session |
 | Task 1 | `libjack-dev`; `cargo install wasmtime-cli` | `libjack-jackd2-dev` (the original removes packages); prebuilt wasmtime (`cargo install` fails on 1.95) |
+| 06 (first) | NTFS file lookups take 4–7 ms; REAPER reloads a rebuilt CLAP | 4–7 ms was a contended worst case: idle it's 67–73 µs (ext4: 2–3 µs), and a build dir on NTFS still doubles incremental builds. REAPER reloads a trivial CLAP, but not spike-shell: restart it after rebuilding (06-final) |
+| 06 (first) | Optimising all deps makes clean builds 6× slower | About 3× (2× at `opt-level = 1`); the 6× was noise. Still not worth it |
 
 ## Owner checklist (when convenient; nothing waits on it)
 
@@ -105,6 +107,7 @@ Detailed commands: 01-final and 02-final (`OWNER-CHECKLIST.md` in 02's scratch),
 - Real-GPU glow vs wgpu, first-open reliability, keyboard focus, HiDPI in host (owner checklist).
 - baseview leak (~70–160 KB per editor open), ≈30 fps cap, HiDPI clipping: report or fix upstream; the leak gate compares against a host-only baseline.
 - Quiet-machine timings (every timing today ran at load 4–30).
+- **Two spike-shell instances in one REAPER process rendered differently** (06-final): likely shared or static state. Needs a test in lane H or P1b before anything relies on plugin-level determinism.
 - Effort: record actual vs estimated days per lane at close (Z).
 
 ## Docs to change
@@ -127,4 +130,4 @@ Applied in one pass after this summary, except files a running lane owns:
 | `docs/research-process.md` | Scale sub-researchers to milestone risk; cap `summary.md` at about 2 pages plus a decision table; researchers work in persistent scratch with `notes.md`; Xvfb rule |
 | `docs/README.md` | Developer environment: native REAPER (portable), Carla for VST3, Bitwig trial for poly-mod; the repo on ext4 |
 | `docs/research.md` | §3: Carla without CLAP, clap-wrapper-rs lag, egui-baseview on Codeberg. §4: measured reactive repaint replaces "always redraws". §10: baseview #357, NVIDIA bug 6205955 |
-| `Cargo.toml` | Lean dev profile (after 06-final) |
+| `Cargo.toml` | Lean dev profile (done) |
