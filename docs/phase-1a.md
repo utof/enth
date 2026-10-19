@@ -4,7 +4,7 @@
 
 Size: about **52–93 agent-hours** in total, with a critical path of about **18–35**. Your own time is about **1.5–2 h**: reading the research summary, two short listening sessions and an optional skim. In Phase 0 each lane took 0.8–2.8 agent-hours, starting from a working probe ([spikes/summary.md](spikes/summary.md)). P1a has probes for most items, but it adds migrations, integration and review, so the estimates are 2–4× that per lane. They are guesses until lane results come in; the closing summary records actual against estimated hours, as Phase 0 did.
 
-**Status (2026-10-19): the research is done, lane S0 is in progress, the rest has not started.** Research session: `_local/sessions/2026-10-19-p1a-headless-core/` (`summary.md` for the decisions, reports 01–04 for the evidence and the numbers). The docs were updated to match on the same day: [design.md](design.md), [architecture.md](architecture.md), [agent-cli.md](agent-cli.md), [roadmap.md](roadmap.md), [ADR-0004](adr/0004-licensing.md), [ADR-0006](adr/0006-effects-strategy.md) and [AGENTS.md](../AGENTS.md).
+**Status (2026-10-19): done.** All lanes are merged and the headless G1 table is [p1a-g1.md](p1a-g1.md); what is left is the owner's: the reverb A/B and the blind listen. P1b is next ([phase-1b.md](phase-1b.md)). Research session: `_local/sessions/2026-10-19-p1a-headless-core/` (`summary.md` for the decisions, reports 01–04 for the evidence and the numbers). The docs were updated to match on the same day: [design.md](design.md), [architecture.md](architecture.md), [agent-cli.md](agent-cli.md), [roadmap.md](roadmap.md), [ADR-0004](adr/0004-licensing.md), [ADR-0006](adr/0006-effects-strategy.md) and [AGENTS.md](../AGENTS.md).
 
 Product crates start here, in `crates/`. The Phase 0 spikes stay in `spikes/` as the source of working prototypes to port from (`spike-engine`, `spike-metric`, `spike-agent`); they are exempt from the layer rules and are not shipped.
 
@@ -66,6 +66,15 @@ Sizes are agent-hours (estimates). "Owner" is your time.
 | 6 | E, then the owner's gates | Everything else merged |
 
 **Critical path:** S0 (1–3) → S1a (3–5) → S2a (4–8) → D2 or FX1 (3–8) → H with C phase 2 (4–6) → E (3–5), about **18–35 agent-hours**, plus the owner's gates.
+
+## Actual against estimated hours
+
+2026-10-19, from the P1b research (report 04): commit and merge times from git, lane durations estimated from scratch-file times, coordinator time not counted.
+
+- About **18 agent-hours** in total against the plan's 52–93, and about **7.3 h of wall time** (S0 starting at about 10:36, E merging at 17:52) against a critical path estimated at 18–35. P1a ran at about a quarter of its estimate.
+- Per lane, in hours: S0 0.4, FX1 0.75, FX2 0.65, A 1.4, S1a 0.85 (plus a 0.3 review at F1), S2a 1.2, S1b 1.9, S2b 1.4, D1 1.8, D2 1.4, FXW (the effect module wrappers) 0.9, C 1.4, H 0.8, T 0.9, E 0.9, and CH 0.75.
+- **CH was not planned.** It was an integration pass that wired hints into the CLI and cleaned up stale text. P1b plans its integration lane (INT) up front.
+- The merge pain came from composite goldens (`engine-chord`, `ref-saw-*`) regenerated at three merges, bench budgets set in one worktree and broken in others, and a few ownership crossings. The lessons are in [phase-1b.md](phase-1b.md#rules-for-every-lane).
 
 ## Acceptance per lane
 
@@ -136,7 +145,7 @@ Two decisions default without you, and you can change them: `cargo-fuzz` stays o
 
 Not settled by the research; each is owned by a lane or by P1b.
 
-- Plan-compile time and crossfade cost (P1b, in the test host). During the 256-frame crossfade the CPU doubles, so the steady state must stay under about 12 % of the deadline to keep p99 under 25 %.
+- Plan-compile time and crossfade cost (P1b, in the test host). During the 256-frame crossfade the CPU doubles, so the steady state must stay under about 12 % of the deadline to keep p99 under 25 %. 2026-10-19 (P1b research): measured. Compiling the G1 patch takes about 0.9 ms on the main thread, which is fine. The crossfade does cost 1.6–2.0× a normal block, but the real outlier is the swap block's 1.6 MB state copy (0.8–1.06 ms paced). P1b moves effect state instead ([phase-1b.md](phase-1b.md), [benchmarks.md](benchmarks.md#real-time-measurement-p1b)).
 - Scalar-FFT cost for cross-platform-identical scores (lane A records it).
 - Very slow beats (5 ct below about 250 Hz) are flagged with `beat_corrected: false`, not corrected.
 - Hints that choose among waveforms or filter modes: designed, not built.
