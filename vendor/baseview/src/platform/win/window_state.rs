@@ -85,6 +85,11 @@ impl WindowState {
         Ok(())
     }
 
+    pub fn set_keyboard_input(&self, enabled: bool) -> Result<(), super::PlatformError> {
+        // Not implemented: baseview 0.4.1 consumes every key on Windows, so there is nothing to turn off.
+        if enabled { self.focus() } else { Ok(()) }
+    }
+
     pub fn resize(&self, size: Size) -> Result<(), super::PlatformError> {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call

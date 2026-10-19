@@ -11,11 +11,30 @@ use x11rb::properties::WmSizeHints;
 use x11rb::protocol::present;
 use x11rb::protocol::present::ConnectionExt;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
-    WindowClass,
+    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux,
+    EventMask, PropMode, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
+
+/// The events a window selects. Key presses and releases are selected at creation and can be turned
+/// off and on again with [`XcbWindow::select_key_events`].
+fn event_mask(keys: bool) -> EventMask {
+    let mask = EventMask::EXPOSURE
+        | EventMask::POINTER_MOTION
+        | EventMask::BUTTON_PRESS
+        | EventMask::BUTTON_RELEASE
+        | EventMask::STRUCTURE_NOTIFY
+        | EventMask::ENTER_WINDOW
+        | EventMask::LEAVE_WINDOW
+        | EventMask::FOCUS_CHANGE;
+
+    if keys {
+        mask | EventMask::KEY_PRESS | EventMask::KEY_RELEASE
+    } else {
+        mask
+    }
+}
 
 pub struct XcbWindow {
     connection: Rc<X11Connection>,
@@ -44,18 +63,7 @@ impl XcbWindow {
             WindowClass::INPUT_OUTPUT,
             visual_info.visual_id,
             &CreateWindowAux::new()
-                .event_mask(
-                    EventMask::EXPOSURE
-                        | EventMask::POINTER_MOTION
-                        | EventMask::BUTTON_PRESS
-                        | EventMask::BUTTON_RELEASE
-                        | EventMask::KEY_PRESS
-                        | EventMask::KEY_RELEASE
-                        | EventMask::STRUCTURE_NOTIFY
-                        | EventMask::ENTER_WINDOW
-                        | EventMask::LEAVE_WINDOW
-                        | EventMask::FOCUS_CHANGE,
-                )
+                .event_mask(event_mask(true))
                 // As mentioned above, these two values are needed to be able to create a window
                 // with a depth of 32-bits when the parent window has a different depth
                 .colormap(visual_info.color_map)
@@ -89,6 +97,20 @@ impl XcbWindow {
                 present::EventMask::COMPLETE_NOTIFY,
             )?
             .check_is_ok())
+    }
+
+    /// Selects (or stops selecting) key press and release events on this window.
+    ///
+    /// While they are not selected, the X server delivers keys to an ancestor of the window (the
+    /// host's) even when the pointer is over this window. The pointer window gets a key only if it
+    /// selected key events, whatever window has the input focus.
+    pub fn select_key_events(
+        &self, keys: bool,
+    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.change_window_attributes(
+            self.window_id.get(),
+            &ChangeWindowAttributesAux::new().event_mask(event_mask(keys)),
+        )
     }
 
     pub fn map_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {

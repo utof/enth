@@ -58,6 +58,28 @@ impl Default for RepaintNotifier {
     }
 }
 
+/// When an egui window that is embedded in a host window (a plugin editor) takes the keyboard from
+/// the host.
+///
+/// A host keeps shortcuts on the keyboard (Space for play, for instance). On X11 baseview does not
+/// forward a key it received, so an editor window that receives keys swallows them.
+///
+/// The setting applies to windows created with a parent or with
+/// [`wait_for_parent`](EguiWindowSettings::wait_for_parent). A standalone window always takes the
+/// keyboard on click, as it has no host to share it with.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyboardFocus {
+    /// Take the keyboard on every mouse press and keep it (the behaviour of egui-baseview 0.9.0).
+    /// Once the editor was clicked, the host's keyboard shortcuts stop working.
+    OnClick,
+    /// Take the keyboard only while a text field has egui's focus
+    /// ([`Context::text_edit_focused()`](egui::Context::text_edit_focused)), and give it back to
+    /// the host when that ends or when the window loses the focus to another window. The rest of
+    /// the time the window receives no key at all, so every key goes to the host.
+    #[default]
+    WhileTyping,
+}
+
 /// Settings used when creating a new window
 #[derive(Debug, Clone)]
 pub struct EguiWindowSettings {
@@ -125,6 +147,11 @@ pub struct EguiWindowSettings {
     ///
     /// Defaults to `1.0 / 64.0` seconds.
     pub repaint_poll_interval: Duration,
+
+    /// When an embedded window takes the keyboard from its host, see [`KeyboardFocus`].
+    ///
+    /// Defaults to [`KeyboardFocus::WhileTyping`].
+    pub keyboard_focus: KeyboardFocus,
 }
 
 impl EguiWindowSettings {
@@ -245,6 +272,15 @@ impl EguiWindowSettings {
         self.repaint_poll_interval = interval;
         self
     }
+
+    /// When an embedded window takes the keyboard from its host, see [`KeyboardFocus`].
+    ///
+    /// Defaults to [`KeyboardFocus::WhileTyping`].
+    #[inline]
+    pub fn with_keyboard_focus(mut self, keyboard_focus: KeyboardFocus) -> Self {
+        self.keyboard_focus = keyboard_focus;
+        self
+    }
 }
 
 impl Default for EguiWindowSettings {
@@ -265,6 +301,7 @@ impl Default for EguiWindowSettings {
             fallback_scale_factor: None,
             repaint_notifier: None,
             repaint_poll_interval: Duration::from_secs_f64(1.0 / 64.0),
+            keyboard_focus: KeyboardFocus::default(),
         }
     }
 }
@@ -356,6 +393,11 @@ pub struct EguiWindow<A: App> {
     modifiers: Cell<egui::Modifiers>,
     poll_repaint_timer_handle: baseview::TimerHandle,
 
+    /// The policy in force: `OnClick` for a standalone window, whatever the settings say.
+    keyboard_focus: KeyboardFocus,
+    /// Whether the window currently takes keyboard input (`WhileTyping` only).
+    typing: Cell<bool>,
+
     // Re-use the allocations from the previous output.
     full_output: RefCell<FullOutput>,
 
@@ -371,6 +413,7 @@ impl<A: App> EguiWindow<A> {
         zoom_factor: f32,
         repaint_notifier: Option<RepaintNotifier>,
         repaint_poll_interval: Duration,
+        keyboard_focus: KeyboardFocus,
     ) -> Result<EguiWindow<A>, HandlerError> {
         let renderer = Renderer::new(window.clone(), graphics_config)?;
         let egui_ctx = egui::Context::default();
@@ -432,6 +475,13 @@ impl<A: App> EguiWindow<A> {
 
         let poll_repaint_timer_handle = window.create_timer(repaint_poll_interval)?;
 
+        if keyboard_focus == KeyboardFocus::WhileTyping {
+            // No key reaches the window until a text field wants one.
+            if let Err(e) = window.set_keyboard_input(false) {
+                log_keyboard_error(&e);
+            }
+        }
+
         let start_time = Instant::now();
 
         Ok(Self {
@@ -453,6 +503,8 @@ impl<A: App> EguiWindow<A> {
             modifiers: Cell::new(egui::Modifiers::default()),
             full_output: RefCell::new(FullOutput::default()),
             poll_repaint_timer_handle,
+            keyboard_focus,
+            typing: Cell::new(false),
         })
     }
 
@@ -482,6 +534,13 @@ impl<A: App> EguiWindow<A> {
             Size::Physical(size) => Size::Physical(size),
         };
 
+        // A standalone window has no host to share the keyboard with.
+        let keyboard_focus = if settings.parent.is_some() || settings.wait_for_parent {
+            settings.keyboard_focus
+        } else {
+            KeyboardFocus::OnClick
+        };
+
         let mut options = WindowSettings::new()
             .with_title(settings.title.clone())
             .with_size(size)
@@ -507,6 +566,7 @@ impl<A: App> EguiWindow<A> {
                     settings.zoom_factor,
                     settings.repaint_notifier,
                     settings.repaint_poll_interval,
+                    keyboard_focus,
                 )
             },
             host,
@@ -520,6 +580,35 @@ impl<A: App> EguiWindow<A> {
             self.window.request_redraw();
         }
     }
+
+    /// Under [`KeyboardFocus::WhileTyping`]: makes the window take keyboard input exactly while a
+    /// text field has egui's focus. Called after every frame, when egui's focus is up to date.
+    fn sync_keyboard_focus(&self) {
+        if self.keyboard_focus != KeyboardFocus::WhileTyping {
+            return;
+        }
+
+        let typing = self.inner.borrow().egui_ctx.text_edit_focused();
+        self.set_typing(typing);
+    }
+
+    fn set_typing(&self, typing: bool) {
+        if self.typing.replace(typing) == typing {
+            return;
+        }
+
+        if let Err(e) = self.window.set_keyboard_input(typing) {
+            log_keyboard_error(&e);
+        }
+    }
+}
+
+fn log_keyboard_error(error: &baseview::Error) {
+    #[cfg(any(feature = "tracing", feature = "log"))]
+    warn!("Failed to change the keyboard focus: {}", error);
+
+    #[cfg(not(any(feature = "tracing", feature = "log")))]
+    let _ = error;
 }
 
 /// Update the pressed key modifiers when a mouse event has sent a new set of modifiers.
@@ -591,6 +680,8 @@ impl<A: App> WindowHandler for EguiWindow<A> {
 
             egui_ctx.run_ui(egui_input, |ui| user_app.ui(ui, frame))
         };
+
+        self.sync_keyboard_focus();
 
         let Some(viewport_output) = full_output.viewport_output.get(&self.viewport_id) else {
             // The main window was closed by egui.
@@ -751,12 +842,18 @@ impl<A: App> WindowHandler for EguiWindow<A> {
         // Automatically on click. Request focus explicitly before forwarding the event.
         //
         // TODO: Check if this is still necessary.
-        if matches!(
-            event,
-            baseview::Event::Mouse(baseview::MouseEvent::ButtonPressed { .. })
-        ) && !self.window.has_focus()
+        //
+        // enth fork: only under `KeyboardFocus::OnClick`. Under `WhileTyping` the focus follows the
+        // text fields (`sync_keyboard_focus`), so a click on a knob leaves the keyboard to the host.
+        if self.keyboard_focus == KeyboardFocus::OnClick
+            && matches!(
+                event,
+                baseview::Event::Mouse(baseview::MouseEvent::ButtonPressed { .. })
+            )
+            && !self.window.has_focus()
+            && let Err(e) = self.window.focus()
         {
-            self.window.focus().unwrap();
+            log_keyboard_error(&e);
         }
 
         let mut egui_input = self.egui_input.borrow_mut();
@@ -927,6 +1024,18 @@ impl<A: App> WindowHandler for EguiWindow<A> {
                         .get_mut(&self.viewport_id)
                         .unwrap()
                         .focused = Some(false);
+
+                    // enth fork: another window took the keyboard while a text field was being
+                    // edited. Cancel the edit and stop receiving keys, or they would be swallowed
+                    // for as long as the field stayed open.
+                    if self.typing.get() {
+                        self.inner.borrow().egui_ctx.memory_mut(|memory| {
+                            if let Some(id) = memory.focused() {
+                                memory.surrender_focus(id);
+                            }
+                        });
+                        self.set_typing(false);
+                    }
                 }
                 baseview::WindowEvent::WillClose => {}
                 _ => {}

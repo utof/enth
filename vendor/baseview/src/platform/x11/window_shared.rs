@@ -63,6 +63,11 @@ pub(crate) struct WindowInner {
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
+    /// Whether key press and release events are selected on the window (the default).
+    keyboard_input: Cell<bool>,
+    /// The window that had the input focus when `set_keyboard_input(true)` took it, and the
+    /// `revert_to` it had, so that turning keyboard input off can hand the focus back.
+    previous_focus: Cell<Option<(xproto::Window, InputFocus)>>,
     pub(crate) present_notify_requested: Cell<bool>,
     pub(crate) poll_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
@@ -145,6 +150,8 @@ impl WindowInner {
             loop_handle: ev_loop.handle(),
 
             is_focused: false.into(),
+            keyboard_input: true.into(),
+            previous_focus: None.into(),
             present_notify_requested: false.into(),
             poll_requested: false.into(),
             main_thread_shared: shared,
@@ -233,6 +240,73 @@ impl WindowInner {
             .set_input_focus(InputFocus::POINTER_ROOT, self.xcb_window.id(), CURRENT_TIME)?
             .check()?;
 
+        Ok(())
+    }
+
+    /// Turns keyboard input on or off, see [`crate::WindowContext::set_keyboard_input`].
+    ///
+    /// Off: key events are no longer selected, so the X server delivers keys to the host's window
+    /// instead (a window that selected them gets every key while the pointer is over it, whatever
+    /// window has the input focus), and the input focus goes back to the window that had it.
+    /// On: key events are selected and this window takes the input focus.
+    pub fn set_keyboard_input(&self, enabled: bool) -> Result<()> {
+        if self.keyboard_input.get() == enabled {
+            return Ok(());
+        }
+
+        if enabled {
+            self.xcb_window.select_key_events(true)?.check()?;
+
+            let current = self.connection.conn.get_input_focus()?.reply()?;
+            let id = self.xcb_window.id().get();
+            let previous = (current.focus != id).then_some((current.focus, current.revert_to));
+
+            if let Err(e) = self.focus() {
+                // For instance BadMatch while the window is not viewable: leave it as it was.
+                if let Ok(cookie) = self.xcb_window.select_key_events(false) {
+                    cookie.check_warn();
+                }
+                return Err(e);
+            }
+
+            self.previous_focus.set(previous);
+        } else {
+            self.xcb_window.select_key_events(false)?.check()?;
+
+            let holds_focus = self.connection.conn.get_input_focus()?.reply()?.focus
+                == self.xcb_window.id().get();
+            let previous = self.previous_focus.take();
+            if holds_focus {
+                self.give_back_focus(previous)?;
+            }
+        }
+
+        self.keyboard_input.set(enabled);
+        Ok(())
+    }
+
+    /// Hands the input focus to `previous` (the window that had it before this one took it), or,
+    /// if that is unknown or gone, to the host's window that contains this one, or, without a
+    /// parent, to whatever is under the pointer.
+    fn give_back_focus(&self, previous: Option<(xproto::Window, InputFocus)>) -> Result<()> {
+        let conn = &self.connection.conn;
+
+        if let Some((window, revert_to)) = previous {
+            if conn.set_input_focus(revert_to, window, CURRENT_TIME)?.check().is_ok() {
+                return Ok(());
+            }
+        }
+
+        if let Some(parent) = self.parent_id.get() {
+            if conn.set_input_focus(InputFocus::PARENT, parent.get(), CURRENT_TIME)?.check().is_ok()
+            {
+                return Ok(());
+            }
+        }
+
+        // The special window value PointerRoot: the focus follows the pointer.
+        conn.set_input_focus(InputFocus::POINTER_ROOT, InputFocus::POINTER_ROOT, CURRENT_TIME)?
+            .check()?;
         Ok(())
     }
 

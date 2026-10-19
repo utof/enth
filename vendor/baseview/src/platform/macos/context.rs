@@ -81,6 +81,11 @@ impl WindowContext {
         Ok(())
     }
 
+    pub fn set_keyboard_input(&self, enabled: bool) -> Result<()> {
+        // Keys the handler ignores go on to the host through the responder chain: nothing to turn off.
+        if enabled { self.focus() } else { Ok(()) }
+    }
+
     pub fn resize(&self, size: Size) -> Result<()> {
         if self.state.closed.get() {
             return Ok(());

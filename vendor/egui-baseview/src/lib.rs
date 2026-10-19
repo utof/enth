@@ -6,7 +6,9 @@ pub use baseview;
 use baseview::WindowSize;
 pub use keyboard_types::Key;
 pub use renderer::GraphicsConfig;
-pub use window::{EguiWindow, EguiWindowSettings, Frame, KeyCapture, RepaintNotifier};
+pub use window::{
+    EguiWindow, EguiWindowSettings, Frame, KeyCapture, KeyboardFocus, RepaintNotifier,
+};
 
 /// Implement this trait to run an app with egui-baseview.
 pub trait App: Send + 'static {

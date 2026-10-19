@@ -21,6 +21,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::present::CompleteKind;
+use x11rb::protocol::xproto::NotifyDetail;
 use x11rb::protocol::Event as XEvent;
 
 pub struct MainThreadCaller {
@@ -575,12 +576,16 @@ impl EventLoop {
                 self.handle_event(ev);
             }
 
-            XEvent::FocusIn(event) if event.event == self.window.raw_id() => {
+            XEvent::FocusIn(event)
+                if event.event == self.window.raw_id() && is_keyboard_focus(event.detail) =>
+            {
                 self.window.is_focused.set(true);
                 self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
-            XEvent::FocusOut(e) if e.event == self.window.raw_id() => {
+            XEvent::FocusOut(e)
+                if e.event == self.window.raw_id() && is_keyboard_focus(e.detail) =>
+            {
                 self.window.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
@@ -649,6 +654,16 @@ impl EventLoop {
     fn handle_event(&mut self, event: Event) {
         self.handler.on_event(event);
     }
+}
+
+/// Whether a focus event says that this window gained or lost the keyboard focus.
+///
+/// The X server also sends focus events with a `Pointer`, `PointerRoot` or `None` detail to the
+/// window under the pointer (and its ancestors) while the focus is elsewhere or follows the
+/// pointer. Those say nothing about this window: handling them made `has_focus()` true on hover,
+/// and a window that took the focus saw `Unfocused` for the pointer event that the move caused.
+fn is_keyboard_focus(detail: NotifyDetail) -> bool {
+    !matches!(detail, NotifyDetail::POINTER | NotifyDetail::POINTER_ROOT | NotifyDetail::NONE)
 }
 
 fn mouse_id(id: u8) -> MouseButton {

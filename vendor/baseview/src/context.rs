@@ -61,6 +61,27 @@ impl WindowContext {
         Ok(())
     }
 
+    /// Chooses whether this window takes keyboard input from the system. Windows start with it on.
+    ///
+    /// * `false`: the window receives no key events, so an embedding host keeps getting them even
+    ///   while the pointer is over this window (its shortcuts keep working). If the window holds
+    ///   the keyboard focus, it goes back to the window that had it before.
+    /// * `true`: the window receives key events and [takes the keyboard focus](Self::focus).
+    ///
+    /// # Platform compatibility notes
+    ///
+    /// On X11 baseview never forwards a key it received to the host, so a window that receives
+    /// keys swallows them: use this to receive them only while they are wanted (a text field
+    /// is being edited).
+    ///
+    /// On macOS a key the handler ignores ([`EventStatus::Ignored`]) goes on to the host, so `false`
+    /// does nothing there and `true` is [`focus`](Self::focus). Windows is the same in code, but
+    /// baseview 0.4.1 consumes every key there, so the host's shortcuts are not reachable.
+    pub fn set_keyboard_input(&self, enabled: bool) -> Result<(), Error> {
+        self.inner.set_keyboard_input(enabled)?;
+        Ok(())
+    }
+
     /// Resizes this window to the given `size`.
     ///
     /// The given `size` can either be in [physical](dpi::PhysicalSize) or
