@@ -1,0 +1,40 @@
+# Bit-exact reverb scenarios (P1a lane FX1). Read by tests/reverb.rs (Rust) and by the C++ harness that renders the
+# same scenarios with upstream's Signalsmith Basics reverb (harness.cpp, build-and-hash.sh in the FX1 scratch dir).
+# The expected hashes are in reverb-cxx-sha256.txt: SHA-256 of the interleaved little-endian float32 output (L R L R ...).
+#
+#   scenario <name> <sample_rate> <block_frames> <seconds>
+#   set <key>=<value> ...          initial parameters; everything not listed keeps upstream's default
+#   change <ms> <key>=<value> ...  applied before the first block starting at or after frame sample_rate * ms / 1000
+#
+# Keys are ReverbParams fields (dry_pct, wet_pct and early_pct are percent of gain; the C++ side divides by 100.0).
+# Input, identical on both sides: SplitMix64 noise (seed 12345) in the first 250 ms, an impulse (1.0, -0.5) at 1.5 s.
+
+# Upstream defaults, then room, decay and high cut change at 2 s (the parameter-fade path). Block 64 as in P1a report 02.
+scenario default 48000 64 4
+change 2000 room_ms=120 rt20_s=2.5 high_cut_hz=6000
+
+# Upstream's "ambient" preset, same change at 2 s.
+scenario ambient 48000 64 4
+set wet_pct=85 room_ms=80 rt20_s=8.5 early_pct=55 detune=8.5 low_cut_hz=50 low_damp_rate=1.5 high_cut_hz=7200 high_damp_rate=2
+change 2000 room_ms=120 rt20_s=2.5 high_cut_hz=6000
+
+# The engine's 32-frame segment. The second change lands 10 ms into the fade the first one started: a parameter set
+# during a fade waits for the next fade (upstream's behaviour), and a wet change alone retriggers the delay redraw.
+scenario segment32 48000 32 4
+set room_ms=60 rt20_s=3 early_pct=100 detune=12
+change 1500 room_ms=150
+change 1510 wet_pct=100
+
+# 44.1 kHz, an odd block length that does not divide the render (a short last block), other filter settings, damping
+# rates and detune; three changes, one of them a room change down to 25 ms.
+scenario cd44k 44100 48 3
+set dry_pct=70 wet_pct=30 room_ms=150 rt20_s=3 early_pct=100 detune=20 low_cut_hz=150 high_cut_hz=4000 low_damp_rate=3 high_damp_rate=4
+change 1000 detune=40 low_cut_hz=300 dry_pct=40
+change 2000 room_ms=25 rt20_s=0.4
+
+# 96 kHz, the largest room, detune and damping rates, the loudest wet, then the smallest room and a short decay (not so
+# short that anything falls below the 1e-15 flush: below that the Rust port deliberately differs from upstream, which
+# only flushes at the hardware FTZ threshold; see docs/dsp/reverb.md).
+scenario hi96k 96000 128 3
+set wet_pct=200 room_ms=200 rt20_s=12 early_pct=250 detune=50 low_cut_hz=20 high_cut_hz=18000 low_damp_rate=1 high_damp_rate=10
+change 1000 room_ms=10 rt20_s=0.5
