@@ -37,9 +37,13 @@ if phase == "create" then
     if fx < 0 then return finish() end
     inject_state(track, fx)
 
-    -- (a) 72 plugin parameters; REAPER appends its own Bypass, Wet and Delta after them.
+    -- (a) 72 plugin parameters; REAPER appends its own Bypass, Wet and Delta after them. For VST3, nice-plug's
+    -- `MidiConfig::MidiCCs` (the mod wheel; lane PL's decision in docs/plugin.md) adds 2,080 hidden MIDI CC
+    -- parameters after the 72, and REAPER lists them too.
     local count = reaper.TrackFX_GetNumParams(track, fx)
-    check("param-count", count == 75, count .. " (72 plugin + REAPER's Bypass/Wet/Delta)")
+    local midi_cc_params = tag == "vst3" and 2080 or 0
+    check("param-count", count == 75 + midi_cc_params,
+      count .. " (72 plugin + " .. midi_cc_params .. " MIDI CC + REAPER's Bypass/Wet/Delta)")
     local bad_names, not_automatable = {}, 0
     for i = 0, 71 do
       local expected = i < 8 and ("Macro " .. (i + 1)) or ("Slot " .. (i - 7))
