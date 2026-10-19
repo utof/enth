@@ -156,18 +156,175 @@ impl Session {
     }
 
     /// Apply `ops` as one recorded transaction and deliver it ([`delivery`]). See
-    /// [`crate::model::SessionEdit::edit`]. Lane SK implements it: pump first (collect), treat a `gesture` that is
-    /// not `self.gestures.open` as `None`, apply and record, clear `unloaded_patch` (the user now owns the init
-    /// patch), deliver (a recompile adds [`crate::bridge::slots_written`] to `Port::forget_slots`), push the host
-    /// writes ([`crate::bridge::host_updates`]; a `SetSlot`'s only if its plan was sent, see [`crate::link`]), and
-    /// pump again if a compile is left pending.
+    /// [`crate::model::SessionEdit::edit`]. In order: pump (collect), treat a `gesture` that is not the open one as
+    /// `None` (a drag that outlived a load, which clears the history and restarts its gesture ids), classify against
+    /// the patch before, apply (on error nothing changes and nothing is delivered), record (merged into the gesture's
+    /// step), clear the kept text of a patch that did not load (the user now owns the init patch), deliver
+    /// ([`Session::deliver`]), and push the host writes, renames and "patch edited" for the shell.
     pub fn edit(
         &mut self,
         ops: Vec<Op>,
         gesture: Option<GestureId>,
     ) -> Result<Applied, SessionError> {
-        let _ = (ops, gesture);
-        Err(SessionError::unsupported("edit", "SK"))
+        self.pump();
+        let gesture = gesture.filter(|g| self.gestures.open == Some(*g));
+        if ops.is_empty() {
+            return Ok(Applied::default());
+        }
+        let routing = delivery(&self.patch, &ops);
+        let inverse = enth_patch::apply_all(&mut self.patch, &ops)?;
+        self.unloaded_patch = None;
+        let applied = self.deliver(routing, &ops, gesture.is_some());
+        self.history.record(ops, inverse, gesture);
+        Ok(applied)
+    }
+
+    /// Deliver a transaction that has just been applied to the patch (invariant I2), the shared tail of an edit, an
+    /// undo and a redo: `routing` is [`delivery`] of `ops` against the patch **before** them, `in_gesture` whether a
+    /// valid gesture is open (host writes then join its host gestures instead of a complete begin, set, end).
+    ///
+    /// - A recompile marks a compile (adding [`crate::bridge::slots_written`] to the slots the plan forgets), and
+    ///   pumps so the plan goes out at once when the link has room; value events are skipped (the plan carries them).
+    /// - Otherwise each value, depth and macro event goes to the link with the latest sent plan's epoch and
+    ///   `PlanMap` (queued behind a full ring; an overflowing queue becomes a compile). An address missing from the
+    ///   map (a disabled module) sends nothing; a depth with no id recompiles.
+    /// - Host writes ([`crate::bridge::host_updates`]), the last per parameter: a `SetSlot`'s only if its plan went
+    ///   out in this entry (or no engine is active, so nothing can misroute it); see [`crate::link`].
+    /// - [`ShellRequest::RenameParams`] when names may change, [`ShellRequest::PatchEdited`] once.
+    ///
+    /// Clears `last_error` (a successful delivery). Detached, only the requests are pushed.
+    pub(crate) fn deliver(&mut self, routing: Delivery, ops: &[Op], in_gesture: bool) -> Applied {
+        let mut applied = Applied::default();
+        let value_queue = self.config.value_queue;
+        match routing {
+            Delivery::Recompile => {
+                applied.recompile = true;
+                let forget = crate::bridge::slots_written(&self.patch, ops);
+                if let Some(port) = &mut self.port {
+                    port.compile_pending = true;
+                    port.forget_slots |= forget;
+                }
+            }
+            Delivery::Events(routes) => {
+                for r in routes {
+                    match r {
+                        Routing::Value(addr) => {
+                            let Some(port) = &mut self.port else { continue };
+                            if let (Some(id), Some(value)) =
+                                (port.map.get(&addr), self.patch.value(&addr))
+                            {
+                                let epoch = port.link.epoch();
+                                port.send_value(
+                                    crate::link::Queued::Param { epoch, id, value },
+                                    value_queue,
+                                );
+                                applied.events += 1;
+                            }
+                        }
+                        Routing::Depth(route) => {
+                            let Some(port) = &mut self.port else { continue };
+                            let depth = self
+                                .patch
+                                .routes
+                                .iter()
+                                .find(|x| x.src == route.src && x.dst == route.dst)
+                                .map(|x| x.depth);
+                            if let (Some(id), Some(depth)) = (port.map.depth(&route), depth) {
+                                let epoch = port.link.epoch();
+                                port.send_value(
+                                    crate::link::Queued::Depth { epoch, id, depth },
+                                    value_queue,
+                                );
+                                applied.events += 1;
+                            } else {
+                                // No term for it in the plan (a disabled module): a new plan carries it.
+                                port.compile_pending = true;
+                                applied.recompile = true;
+                            }
+                        }
+                        Routing::Macro(index) => {
+                            let Some(port) = &mut self.port else { continue };
+                            let value = self.patch.macros[index.get()].value;
+                            port.send_value(
+                                crate::link::Queued::Macro { index, value },
+                                value_queue,
+                            );
+                            applied.events += 1;
+                        }
+                        // `delivery` never puts a recompile into events; treat one as a plan to be safe.
+                        Routing::Recompile => {
+                            if let Some(port) = &mut self.port {
+                                port.compile_pending = true;
+                            }
+                            applied.recompile = true;
+                        }
+                        Routing::Silent => {}
+                    }
+                }
+            }
+        }
+        // An entry that leaves a compile pending pumps again, so the plan goes out now when the link has room.
+        let plan_sent = match &self.port {
+            Some(port) if port.compile_pending => {
+                self.pump();
+                self.port.as_ref().is_some_and(|p| !p.compile_pending)
+            }
+            Some(_) => applied.recompile,
+            None => true,
+        };
+
+        let mut writes: Vec<(HostParam, f32)> = Vec::new();
+        for op in ops {
+            if matches!(op, Op::SetSlot { .. }) && !plan_sent {
+                continue;
+            }
+            crate::bridge::host_updates(&self.patch, op, &mut writes);
+        }
+        // The last write per parameter wins (a transaction may set one address twice).
+        let mut last: Vec<(HostParam, f32)> = Vec::with_capacity(writes.len());
+        for (param, norm) in writes {
+            match last.iter_mut().find(|(p, _)| *p == param) {
+                Some(entry) => entry.1 = norm,
+                None => last.push((param, norm)),
+            }
+        }
+        for (param, norm) in last {
+            applied.host_writes += 1;
+            if in_gesture {
+                if !self.gestures.host_open.contains(&param) {
+                    self.gestures.host_open.push(param);
+                    self.requests.push(ShellRequest::Host(HostWrite {
+                        param,
+                        step: GestureStep::Begin,
+                    }));
+                }
+                self.requests.push(ShellRequest::Host(HostWrite {
+                    param,
+                    step: GestureStep::Set(norm),
+                }));
+            } else if self.gestures.host_open.contains(&param) {
+                // A host gesture a load interrupted is still open (its `End` comes with the next `end_gesture`): set
+                // inside it rather than nest a second begin and end.
+                self.requests.push(ShellRequest::Host(HostWrite {
+                    param,
+                    step: GestureStep::Set(norm),
+                }));
+            } else {
+                for step in [GestureStep::Begin, GestureStep::Set(norm), GestureStep::End] {
+                    self.requests
+                        .push(ShellRequest::Host(HostWrite { param, step }));
+                }
+            }
+        }
+        if ops.iter().any(renames_params) {
+            applied.renamed = true;
+            self.requests.push(ShellRequest::RenameParams);
+        }
+        if !self.requests.contains(&ShellRequest::PatchEdited) {
+            self.requests.push(ShellRequest::PatchEdited);
+        }
+        self.last_error = None;
+        applied
     }
 
     /// Undo one step and deliver its inverse ops like an edit (it also clears `unloaded_patch`). Lane S2s
