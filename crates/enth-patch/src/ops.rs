@@ -61,7 +61,7 @@ use crate::addr::{
     MacroIndex, ModSource, ModuleId, ParamAddr, Position, RouteAddr, SlotIndex, Target,
 };
 use crate::catalogue::{Builtin, MACRO_VALUE, MASTER_PARAMS, ModuleKind, Rate, VOICE_PARAMS};
-use crate::error::{OpError, PatchError, closest};
+use crate::error::{OpError, PatchError};
 use crate::model::{MAX_ROUTES, ModuleInstance, Patch, PatchMeta, Route, Section};
 
 /// One edit to a patch. See the [module docs](self) for what each does and its inverse.
@@ -748,10 +748,5 @@ impl Patch {
             .filter_map(|n| ModuleId::numbered(prefix, n).ok())
             .find(|id| self.find(id).is_none())
             .unwrap_or_else(|| unreachable!("a patch holds at most 20 modules"))
-    }
-
-    /// The ids of modules whose names are close to `text` (for `did_you_mean`).
-    pub fn similar_ids(&self, text: &str) -> Vec<String> {
-        closest(text, self.modules().map(|(_, m)| m.id.as_str()))
     }
 }
