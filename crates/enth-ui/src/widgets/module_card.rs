@@ -9,10 +9,15 @@
 //! drawn at `state.disabled_opacity` through one child `Ui`, so widgets need no disabled look of
 //! their own. The fill and the enable toggle stay at full strength, and the controls stay
 //! editable (a module can be set up before it is switched on).
+//!
+//! Built-in sections (voice, master) can't be switched off: [`ModuleCard::switchable`] hides the
+//! toggle. A header [`action`](ModuleCard::action) is a small text button at the right of the
+//! title row (the catalogue cards' "More" disclosure). A strip can hold more than one row of
+//! knobs ([`ModuleCard::rows`]); the parameter closure starts each new row with `ui.end_row()`.
 
 use egui::{
-    Align, Align2, CornerRadius, IdSalt, Layout, Rect, Response, Role, Sense, Ui, UiBuilder, pos2,
-    vec2,
+    Align, Align2, CornerRadius, Id, IdSalt, Layout, Rect, Response, Role, Sense, Ui, UiBuilder,
+    pos2, vec2,
 };
 
 use super::paint;
@@ -29,6 +34,7 @@ pub enum CardShape {
 pub struct ModuleCard<'a> {
     theme: &'a Theme,
     salt: IdSalt,
+    id: Option<Id>,
     title: &'a str,
     kind: Option<&'a str>,
     category: Category,
@@ -36,6 +42,9 @@ pub struct ModuleCard<'a> {
     shape: CardShape,
     display_height: f32,
     lifted: bool,
+    switchable: bool,
+    action: Option<&'a str>,
+    rows: usize,
 }
 
 pub struct CardResponse {
@@ -45,6 +54,8 @@ pub struct CardResponse {
     pub rect: Rect,
     /// The enable toggle was clicked this frame.
     pub toggled: bool,
+    /// The header action, if the card has one ([`ModuleCard::action`]).
+    pub action: Option<Response>,
 }
 
 impl<'a> ModuleCard<'a> {
@@ -58,6 +69,7 @@ impl<'a> ModuleCard<'a> {
         Self {
             theme,
             salt: IdSalt::new(id_salt),
+            id: None,
             title,
             kind: None,
             category,
@@ -65,7 +77,41 @@ impl<'a> ModuleCard<'a> {
             shape: CardShape::Strip,
             display_height: 0.0,
             lifted: false,
+            switchable: true,
+            action: None,
+            rows: 1,
         }
+    }
+
+    /// Interact under this global id (header under `id.with("header")`, toggle under
+    /// `id.with("enable")`) instead of one salted within the parent `Ui`. Use the module id.
+    #[must_use]
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Whether the card has an enable toggle (default). Built-ins that can't be bypassed don't;
+    /// their title starts where the toggle would be.
+    #[must_use]
+    pub fn switchable(mut self, switchable: bool) -> Self {
+        self.switchable = switchable;
+        self
+    }
+
+    /// A small text button at the right end of the header row ("More", "Less"); its response is
+    /// in [`CardResponse::action`]. Drawn at full strength, like the toggle.
+    #[must_use]
+    pub fn action(mut self, text: &'a str) -> Self {
+        self.action = Some(text);
+        self
+    }
+
+    /// A strip with this many rows of knob cells (default 1); each extra row adds a cell's height.
+    #[must_use]
+    pub fn rows(mut self, rows: usize) -> Self {
+        self.rows = rows.max(1);
+        self
     }
 
     /// The module type shown after the title ("Saw", "Low-pass 12").
@@ -118,7 +164,9 @@ impl<'a> ModuleCard<'a> {
         params: impl FnOnce(&mut Ui),
     ) -> CardResponse {
         let t = self.theme;
-        let height = t.size.card.generator_height;
+        let extra_rows = (self.rows - 1) as f32;
+        let height = t.size.card.generator_height
+            + extra_rows * (super::Knob::cell_size(t, ui).y + t.space.tight);
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
         let stripe = t.stroke.thick;
         let r = t.radius.medium as u8;
@@ -153,14 +201,16 @@ impl<'a> ModuleCard<'a> {
         let mut child = content.new_child(
             UiBuilder::new()
                 .max_rect(knobs)
-                .layout(Layout::left_to_right(Align::Min)),
+                .layout(Layout::left_to_right(Align::Min).with_main_wrap(self.rows > 1)),
         );
         child.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
         params(&mut child);
+        let action = self.action_button(ui, header_rect);
         CardResponse {
             header,
             rect,
             toggled,
+            action,
         }
     }
 
@@ -237,11 +287,41 @@ impl<'a> ModuleCard<'a> {
                 category,
             ),
         );
+        let action = self.action_button(ui, header_rect);
         CardResponse {
             header,
             rect,
             toggled,
+            action,
         }
+    }
+
+    /// The header action: right-aligned label text, primary while hovered.
+    fn action_button(&self, ui: &mut Ui, header: Rect) -> Option<Response> {
+        let text = self.action?;
+        let t = self.theme;
+        let galley = paint::one_line(ui, text, &t.text.label, t.color.text.label, header.width());
+        let size = vec2(galley.size().x + 2.0 * t.space.tight, header.height());
+        let rect = Rect::from_min_size(pos2(header.right() - size.x, header.top()), size);
+        let response = ui.interact(rect, self.base_id(ui).with("action"), Sense::click());
+        response.widget_info(|| egui::WidgetInfo::labeled(Role::Button, true, text));
+        let ink = if response.hovered() {
+            t.color.text.primary
+        } else {
+            t.color.text.label
+        };
+        ui.painter().text(
+            pos2(rect.right() - t.space.tight, rect.center().y),
+            Align2::RIGHT_CENTER,
+            text,
+            t.text.label.clone(),
+            ink,
+        );
+        Some(response)
+    }
+
+    fn base_id(&self, ui: &Ui) -> Id {
+        self.id.unwrap_or_else(|| ui.make_persistent_id(self.salt))
     }
 
     /// A child `Ui` over `rect` for everything but the fill and the toggle. A disabled card fades
@@ -259,11 +339,14 @@ impl<'a> ModuleCard<'a> {
     fn controls(&mut self, ui: &mut Ui, rect: Rect) -> (Response, bool) {
         let t = self.theme;
         let c = &t.color;
-        let id = ui.make_persistent_id(self.salt);
+        let id = self.base_id(ui);
         let header = ui.interact(rect, id.with("header"), Sense::click_and_drag());
         header.widget_info(|| {
             egui::WidgetInfo::labeled(Role::Button, true, format!("Move {}", self.title))
         });
+        if !self.switchable {
+            return (header, false);
+        }
         let toggle_rect = self.toggle_rect(rect);
         let toggle = ui.interact(toggle_rect, id.with("enable"), Sense::click());
         let toggled = toggle.clicked();
@@ -301,7 +384,22 @@ impl<'a> ModuleCard<'a> {
         let t = self.theme;
         let c = &t.color;
         let painter = content.painter();
-        let title_left = self.toggle_rect(header).right() + t.space.gap;
+        // Leave the action's place free.
+        let right = match self.action {
+            Some(text) => {
+                let w = paint::one_line(content, text, &t.text.label, c.text.label, header.width())
+                    .size()
+                    .x;
+                header.right() - w - 2.0 * t.space.tight - t.space.gap
+            }
+            None => header.right(),
+        };
+        let header = Rect::from_min_max(header.min, pos2(right.max(header.left()), header.max.y));
+        let title_left = if self.switchable {
+            self.toggle_rect(header).right() + t.space.gap
+        } else {
+            header.left()
+        };
         let title = paint::text_in(
             content,
             painter,

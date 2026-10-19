@@ -256,7 +256,8 @@ impl ParamSpec {
     /// assert_eq!(cutoff.depth_from_text(2_000.0, "30%"), Ok(30.0));
     /// ```
     pub fn depth_from_text(&self, base: f32, text: &str) -> Result<f32, ValueError> {
-        let t = text.trim();
+        let t = crate::units::ascii_minus(text.trim());
+        let t = t.as_ref();
         let bad = |t: &str| ValueError::BadValue {
             param: DEPTH.key,
             text: t.to_owned(),
@@ -338,6 +339,8 @@ mod tests {
         assert_eq!(oct.parse("6st").unwrap_err().code(), "not_integral");
         assert_eq!(oct.parse("4").unwrap_err().code(), "out_of_range");
         assert_eq!(cutoff().parse("loud").unwrap_err().code(), "bad_value");
+        // The editor displays U+2212; text copied from it parses.
+        assert_eq!(oct.parse("\u{2212}24 st"), Ok(-2.0));
         assert_eq!(cutoff().parse("1e39").unwrap_err().code(), "non_finite");
     }
 
@@ -362,6 +365,8 @@ mod tests {
         assert!((c.depth_from_text(2_000.0, "+12st").unwrap() - one_oct).abs() < 1e-4);
         assert!((c.depth_from_text(2_000.0, "-1200ct").unwrap() + one_oct).abs() < 1e-4);
         assert_eq!(c.depth_from_text(2_000.0, "-30%"), Ok(-30.0));
+        assert_eq!(c.depth_from_text(2_000.0, "\u{2212}30 %"), Ok(-30.0));
+        assert!((c.depth_from_text(2_000.0, "\u{2212}1 oct").unwrap() + one_oct).abs() < 1e-4);
         assert_eq!(c.depth_from_text(2_000.0, "30"), Ok(30.0));
         assert_eq!(
             c.depth_from_text(2_000.0, "150%").unwrap_err().code(),

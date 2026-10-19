@@ -6,7 +6,8 @@
 //! - [`Scale`] (`Linear`, `Log`, `Power(k)`): plain ⇄ normalised, through the pinned `libm`. The scale is part of
 //!   the persisted contract (route depth, ML encoding and the randomiser live in the normalised domain).
 //! - Units: [`Unit::parse`] / [`ParamSpec::parse`] read `800Hz`, `1.2kHz`, `A4`, `40ms`, `0.5s`, `-6dB`, `+2st`,
-//!   `12ct`, `+1oct`, `30%`, `4:1`, `90deg`, enum keys and `on`/`off`; a bare number is in the spec's unit.
+//!   `12ct`, `+1oct`, `30%`, `4:1`, `90deg`, enum keys and `on`/`off`; a bare number is in the spec's unit. The
+//!   typographic minus U+2212 that the editor displays (`−12 st`) reads as `-`.
 //!   [`ParamSpec::display`] is the exact inverse; [`ParamSpec::display_rounded`] is for humans.
 //! - Route depths: [`DEPTH`] and [`ParamSpec::depth_from_text`] (`+1oct` on 20 Hz–20 kHz Log is 10.034 %).
 //!

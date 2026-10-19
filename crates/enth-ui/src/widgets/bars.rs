@@ -1,7 +1,7 @@
 //! The editor's horizontal bands: the macro bar, the challenge bar that replaces it in Recreate,
 //! and the status line.
 
-use egui::{Align, Align2, Layout, Rect, Response, Sense, Ui, UiBuilder, pos2, vec2};
+use egui::{Align, Align2, Id, Layout, Rect, Response, Sense, Ui, UiBuilder, pos2, vec2};
 
 use super::knob::Knob;
 use super::paint;
@@ -17,11 +17,20 @@ pub struct Macro<'a> {
 /// The 8 macros, always visible.
 pub struct MacroBar<'a> {
     theme: &'a Theme,
+    id: Option<Id>,
 }
 
 impl<'a> MacroBar<'a> {
     pub fn new(theme: &'a Theme) -> Self {
-        Self { theme }
+        Self { theme, id: None }
+    }
+
+    /// Give macro `i`'s knob the global id `id.with(i)` instead of an automatic one, so its drag
+    /// survives a re-layout.
+    #[must_use]
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
     }
 
     /// One response per macro, in order (drag start/stop map to host gestures).
@@ -39,12 +48,15 @@ impl<'a> MacroBar<'a> {
         child.spacing_mut().item_spacing.x = t.space.gap;
         macros
             .iter_mut()
-            .map(|m| {
-                child.add(
-                    Knob::new(t, m.value, m.name)
-                        .value_text(m.value_text.clone())
-                        .inline(slot),
-                )
+            .enumerate()
+            .map(|(i, m)| {
+                let mut knob = Knob::new(t, m.value, m.name)
+                    .value_text(m.value_text.clone())
+                    .inline(slot);
+                if let Some(id) = self.id {
+                    knob = knob.id(id.with(i));
+                }
+                child.add(knob)
             })
             .collect()
     }

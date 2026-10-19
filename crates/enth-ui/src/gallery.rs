@@ -7,11 +7,11 @@ use egui::{Align2, Rect, Sense, Ui, pos2, vec2};
 use crate::theme::{Category, Score, Theme, hex};
 use crate::widgets::{
     Block, ChallengeBar, Display, Emphasis, Ink, Knob, LessonPane, Macro, MacroBar, MatrixGrid,
-    ModuleCard, NumberField, Segmented, SourceTile, Span, StatusLine, Trace,
+    ModuleCard, NumberField, Segmented, SourceTile, Span, StatusLine, Toggle, Trace,
 };
 
 /// Window size the gallery is laid out for.
-pub const GALLERY_SIZE: egui::Vec2 = egui::vec2(1100.0, 1320.0);
+pub const GALLERY_SIZE: egui::Vec2 = egui::vec2(1100.0, 1404.0);
 
 /// Widget values shown in the gallery (they can be dragged in the dev window).
 pub struct GalleryState {
@@ -24,6 +24,11 @@ pub struct GalleryState {
     enabled: [bool; 2],
     matrix: [f32; 12],
     macros: [f32; 4],
+    /// The generated cards' controls: two switches, a stepped knob, a segmented cell and row.
+    switches: [bool; 2],
+    stepped: f32,
+    cell_choice: usize,
+    row_choice: usize,
     wave: Vec<f32>,
     scope: Vec<f32>,
     spectrum: Vec<f32>,
@@ -42,6 +47,10 @@ impl Default for GalleryState {
                 0.35, 0.0, 0.0, 0.0, -0.2, 0.0, 0.0, 0.0, 0.6, 0.15, 0.0, 0.0,
             ],
             macros: [0.7, 0.3, 0.5, 0.0],
+            switches: [true, false],
+            stepped: 7.0 / 15.0,
+            cell_choice: 0,
+            row_choice: 1,
             wave: (0..128).map(|i| saw(i as f32 / 128.0)).collect(),
             scope: (0..2048).map(|i| demo_signal(i as f32 / 2048.0)).collect(),
             spectrum: (0..512).map(|i| demo_spectrum(i as f32 / 512.0)).collect(),
@@ -101,6 +110,7 @@ pub fn token_gallery(ui: &mut Ui, theme: &Theme, state: &mut GalleryState) {
             });
             heading(ui, t, "Controls");
             controls(ui, t, state);
+            card_controls(ui, t, state);
             heading(ui, t, "Displays and cards");
             displays(ui, t, state);
             cards(ui, t, state);
@@ -288,6 +298,46 @@ fn controls(ui: &mut Ui, t: &Theme, s: &mut GalleryState) {
                 ui.add(NumberField::new(t, &mut s.voices, "Voices").range(1.0..=16.0));
                 let _ = ui.button("Button");
             });
+        });
+    });
+}
+
+/// The controls the catalogue cards generate besides plain knobs: a stepped knob (integers, long enums), switches
+/// (toggles), and a short enum as a cell (strips) and as a row (lane cards).
+fn card_controls(ui: &mut Ui, t: &Theme, s: &mut GalleryState) {
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = t.space.tight;
+        ui.add(
+            Knob::new(t, &mut s.stepped, "Stepped")
+                .steps(15)
+                .value_text("8"),
+        );
+        let [on, off] = &mut s.switches;
+        ui.add(Toggle::new(t, on, "Switch"));
+        ui.add(Toggle::new(t, off, "Off"));
+        ui.add_space(t.space.wide);
+        ui.add(
+            Segmented::new(
+                t,
+                "gallery-cell",
+                &mut s.cell_choice,
+                &["LP", "BP", "HP", "Notch"],
+            )
+            .label("Segmented cell"),
+        );
+        ui.add_space(t.space.wide);
+        ui.vertical(|ui| {
+            ui.add_space(t.space.section);
+            ui.add(
+                Segmented::new(
+                    t,
+                    "gallery-row",
+                    &mut s.row_choice,
+                    &["Bipolar", "Unipolar"],
+                )
+                .label("Segmented row")
+                .inline(t.size.card.lane_width - 2.0 * t.space.gap),
+            );
         });
     });
 }

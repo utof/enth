@@ -1,7 +1,8 @@
 //! Design-token rule (docs/design-system.md), the part clippy can't check: no associated colour
 //! constants (`Color32::WHITE`), no egui style structs built by hand, no `add_space(6.0)`, and no
-//! float literal in widget code other than 0, ½, 1, 2 (layout maths) and 100 (percent). Only
-//! `src/theme/` may.
+//! float literal in widget or editor code other than 0, ½, 1, 2 (layout maths) and 100 (percent).
+//! Only `src/theme/` may. The gallery and the cards' display shapes (`editor/cards/shapes.rs`) are
+//! content (sample signals, models of a module's sound), so the float rule skips them.
 //! Comments and string literals are ignored.
 #![allow(
     clippy::disallowed_methods,
@@ -145,8 +146,10 @@ fn widgets_use_tokens_only() {
                 ));
             }
         }
-        // The gallery is content (sample signals, example values), so only widgets get the float rule.
-        if relative.starts_with("widgets") {
+        // The gallery and the display shapes are content (sample signals, example values, models of a
+        // sound); widgets and the editor get the float rule.
+        let content = relative == Path::new("editor/cards/shapes.rs");
+        if (relative.starts_with("widgets") || relative.starts_with("editor")) && !content {
             for (n, literal) in floats(&code) {
                 if !PLAIN_FLOATS.contains(&literal.as_str()) {
                     problems.push(format!(

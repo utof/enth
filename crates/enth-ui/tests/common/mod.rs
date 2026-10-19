@@ -2,6 +2,8 @@
 //! images come from one renderer; a GPU would differ, and on this machine must not be touched.
 #![allow(dead_code, reason = "each test binary uses a different subset")]
 
+pub mod patches;
+
 use std::sync::Arc;
 
 use egui_kittest::{Harness, wgpu::WgpuTestRenderer};
