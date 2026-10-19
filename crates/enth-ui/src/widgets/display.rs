@@ -190,7 +190,8 @@ fn curve_points(f: &dyn Fn(f32) -> f32, area: Rect) -> Vec<Pos2> {
         .collect()
 }
 
-/// Bins on a log-frequency axis: column `c` covers bins `n^(c/w)..n^((c+1)/w)`.
+/// Bins on a log-frequency axis from bin 1 up. Where a column is narrower than a bin (the low
+/// end) the level is interpolated between bins; where it spans several, it is their maximum.
 fn spectrum_points(bins: &[f32], area: Rect) -> Vec<Pos2> {
     let n = bins.len();
     if n < 2 {
@@ -198,13 +199,20 @@ fn spectrum_points(bins: &[f32], area: Rect) -> Vec<Pos2> {
     }
     let columns = area.width().max(1.0) as usize;
     let top = (n - 1) as f32;
+    let bin_at = |c: usize| top.powf(c as f32 / columns as f32);
     (0..=columns)
         .map(|c| {
-            let lo = top.powf(c as f32 / columns as f32) as usize;
-            let hi = (top.powf((c + 1) as f32 / columns as f32) as usize).clamp(lo + 1, n);
-            let level = bins[lo.max(1).min(n - 1)..hi.max(2)]
-                .iter()
-                .fold(0.0_f32, |m, &b| m.max(b));
+            let (lo, hi) = (bin_at(c), bin_at(c + 1));
+            let level = if hi - lo < 1.0 {
+                let i = lo.floor() as usize;
+                let next = (i + 1).min(n - 1);
+                bins[i] + (bins[next] - bins[i]) * (lo - i as f32)
+            } else {
+                let last = (hi.floor() as usize).min(n - 1);
+                bins[lo.ceil() as usize..=last]
+                    .iter()
+                    .fold(0.0_f32, |m, &b| m.max(b))
+            };
             pos2(area.left() + c as f32, y_of(area, level))
         })
         .collect()

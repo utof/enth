@@ -263,6 +263,8 @@ pub struct CardSizes {
     pub lane_width: f32,
     /// Width of the display slot in a generator strip.
     pub display_width: f32,
+    /// Height of the display in a stacked (lane) card.
+    pub lane_display_height: f32,
     /// Side of the enable toggle square.
     pub toggle: f32,
 }

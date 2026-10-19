@@ -182,6 +182,7 @@ impl Theme {
                     collapsed_height: 24.0,
                     lane_width: 220.0,
                     display_width: 128.0,
+                    lane_display_height: 40.0,
                     toggle: 12.0,
                 },
                 knob: KnobSizes {
