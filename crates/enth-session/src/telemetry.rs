@@ -13,20 +13,24 @@
 //!   session keeps a [`TelemetryMap`] per recently sent plan, mapping that order to addresses; a
 //!   [`TelemetryReader`] hides values whose epoch has no map (one stale frame is hidden, never shown on the wrong
 //!   knob).
-//! - [`TelemetrySource`] is the seam: the session codes against it, `enth_engine::tap::Tap` implements it once E+
-//!   is merged (a few delegating lines in this file), and kittest and the dev window can fake it without an engine.
-//! - [`TelemetryFrame`] mirrors E+'s `TapFrame` field for field (branch `p1b/eplus` at `a7cb53f`), so it can become
-//!   a re-export after the merge without changing editor code.
+//! - [`TelemetrySource`] is the seam the editor codes against: [`enth_engine::Tap`] implements it (below), and
+//!   kittest and the dev window can fake it without an engine (a real `Tap`'s values can only be written by an
+//!   engine). [`TelemetryFrame`] is the engine's [`TapFrame`](enth_engine::TapFrame).
+//! - Who does what: the session creates the tap at activate and attaches it to the engine on the main thread,
+//!   before the engine goes to the audio thread (lane SK); the shell enables it while the editor is open and shown
+//!   ([`TelemetrySource::set_enabled`]) and, on the audio thread after `process()`, takes the wake flag through
+//!   `Engine::tap()` and `Tap::take_wake` to request a repaint; the editor reads through a [`TelemetryReader`].
 
 use std::sync::Arc;
 
-use enth_engine::EngineStats;
+use enth_engine::{Plan, PlanMap, Tap, TapFrame};
 use enth_patch::{ModuleId, ParamAddr};
 
 use crate::model::SessionView;
 
-/// Macro sources in a frame: the eight macros, then the mod wheel (index 8).
-pub const MACRO_SOURCES: usize = 9;
+/// One copy of the tap's values: the engine's [`TapFrame`] (epoch, voices, display voice, routed values and
+/// modulator outputs in the plan's tap order with their valid lengths, macros, peaks, stats, dropped count).
+pub type TelemetryFrame = TapFrame;
 
 /// The reader side of a telemetry tap. Every method is lock-free and allocation-free except
 /// [`TelemetrySource::frame`], and none ever waits for the audio thread.
@@ -47,39 +51,6 @@ pub trait TelemetrySource: Send + Sync {
     fn set_enabled(&self, on: bool);
 }
 
-/// One copy of the tap's values. Mirrors `enth_engine::tap::TapFrame` (lane E+).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TelemetryFrame {
-    /// The generation the values were read at (0: nothing published yet).
-    pub generation: u64,
-    /// The epoch of the plan whose order `params` and `modulators` follow.
-    pub epoch: u64,
-    /// Playing voices (held, releasing or fading).
-    pub voices: u32,
-    /// Voices with their key down.
-    pub held: u32,
-    /// The voice slot the per-voice values describe (the newest held voice, else the newest releasing one).
-    pub display_voice: Option<u32>,
-    /// The note index of that voice's note.
-    pub display_note: u64,
-    /// Routed parameter values in plain units, in the plan's tap order; the first `params_len` are valid.
-    pub params: Vec<f32>,
-    /// How many of `params` are valid.
-    pub params_len: usize,
-    /// Modulator outputs in the plan's tap order; the first `modulators_len` are valid.
-    pub modulators: Vec<f32>,
-    /// How many of `modulators` are valid.
-    pub modulators_len: usize,
-    /// The eight macros and the mod wheel (index 8), smoothed, 0–1.
-    pub macros: [f32; MACRO_SOURCES],
-    /// The last published block's peak per channel.
-    pub peaks: [f32; 2],
-    /// The engine's counters.
-    pub stats: EngineStats,
-    /// Values that did not fit the tap's capacities, summed over every publish.
-    pub dropped: u64,
-}
-
 /// Which address each published value belongs to, for one plan. Built by the session when it sends a plan (from
 /// `Plan::tap_params` through `PlanMap::addr`, and `Plan::tap_modulators`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -93,6 +64,21 @@ pub struct TelemetryMap {
 }
 
 impl TelemetryMap {
+    /// The map for a plan the session is about to send (or has sent) as `epoch`: `Plan::tap_params` through
+    /// `PlanMap::addr`, and `Plan::tap_modulators`. A routed parameter with no address (never, for a plan and the
+    /// map compiled with it) is left out, which only hides its value.
+    pub fn from_plan(epoch: u64, plan: &Plan, map: &PlanMap) -> TelemetryMap {
+        TelemetryMap {
+            epoch,
+            params: plan
+                .tap_params()
+                .iter()
+                .filter_map(|&id| map.addr(id).cloned())
+                .collect(),
+            modulators: plan.tap_modulators().into_iter().cloned().collect(),
+        }
+    }
+
     /// The tap index of a routed parameter.
     pub fn param_index(&self, addr: &ParamAddr) -> Option<usize> {
         self.params.iter().position(|a| a == addr)
@@ -186,5 +172,31 @@ impl TelemetryReader {
     /// Nothing visible is changing: sleep on the generation last read. `false` means new data arrived meanwhile.
     pub fn sleep(&self) -> bool {
         self.source.sleep(self.seen)
+    }
+}
+
+impl TelemetrySource for Tap {
+    fn frame(&self) -> TelemetryFrame {
+        Tap::frame(self)
+    }
+
+    fn read(&self, out: &mut TelemetryFrame) {
+        Tap::read(self, out);
+    }
+
+    fn scope(&self, out: &mut [f32]) -> u64 {
+        Tap::scope(self, out)
+    }
+
+    fn generation(&self) -> u64 {
+        Tap::generation(self)
+    }
+
+    fn sleep(&self, seen: u64) -> bool {
+        Tap::sleep(self, seen)
+    }
+
+    fn set_enabled(&self, on: bool) {
+        Tap::set_enabled(self, on);
     }
 }

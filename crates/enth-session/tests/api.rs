@@ -607,3 +607,46 @@ fn the_telemetry_reader_maps_tap_order_to_addresses() {
     assert_eq!(reader.modulator(&common::id("lfo1")), None);
     assert_eq!(reader.frame().epoch, 4);
 }
+
+#[test]
+fn a_real_plan_and_tap_fit_the_reader() {
+    use enth_engine::{
+        Engine, Event, EventKind, LinkCapacity, NoteKey, PrepareCfg, Tap, TapCapacity, compile,
+    };
+
+    let patch = common::custom_patch();
+    let (plan, map) = compile(&patch, &PrepareCfg::new(48_000.0)).unwrap();
+    let (mut engine, _link) =
+        Engine::with_link(plan, enth_session::RENDER_SEED, LinkCapacity::default());
+    let telemetry = TelemetryMap::from_plan(engine.epoch(), engine.plan(), &map);
+    let cutoff = common::addr("filter1.cutoff");
+    assert!(telemetry.param_index(&cutoff).is_some(), "{telemetry:?}");
+    assert!(telemetry.modulator_index(&common::id("lfo1")).is_some());
+    assert!(telemetry.modulator_index(&common::id("env1")).is_some());
+
+    let tap = Tap::new(TapCapacity::default());
+    engine.attach_tap(tap.clone());
+    let source: Arc<dyn TelemetrySource> = tap;
+    source.set_enabled(true);
+
+    let (mut left, mut right) = (vec![0.0; 256], vec![0.0; 256]);
+    let on = [Event {
+        offset: 0,
+        kind: EventKind::NoteOn {
+            key: NoteKey::new(60, 0),
+            velocity: 1.0,
+        },
+    }];
+    engine.process(&mut left, &mut right, &on);
+    engine.process(&mut left, &mut right, &[]);
+
+    let view = MapOnly(telemetry, Session::new(patch));
+    let mut reader = TelemetryReader::new(source);
+    assert!(reader.refresh(&view));
+    assert_eq!(reader.voices(), 1);
+    let live = reader
+        .live_value(&cutoff)
+        .expect("the routed cutoff is published");
+    assert!((20.0..=20_000.0).contains(&live), "{live}");
+    assert!(reader.modulator(&common::id("env1")).is_some());
+}

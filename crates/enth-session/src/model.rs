@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use enth_engine::{CompileError, LinkCapacity};
+use enth_engine::{CompileError, LinkCapacity, TapCapacity};
 use enth_patch::history::{Entry, GestureId, History};
 use enth_patch::ops::TxError;
 use enth_patch::{Op, Patch};
@@ -44,6 +44,8 @@ pub const AUDITION_PORT: i16 = 0x7F00;
 pub struct SessionConfig {
     /// The engine's command and return rings ([`enth_engine::Engine::with_link`]).
     pub link: LinkCapacity,
+    /// The telemetry tap's sizes (routed parameters, modulators, scope samples).
+    pub tap: TapCapacity,
     /// Undo steps kept ([`History::with_cap`]).
     pub history_cap: usize,
     /// Value events held back while the command ring is full (the last per parameter is kept). When this
@@ -58,6 +60,7 @@ impl Default for SessionConfig {
     fn default() -> Self {
         SessionConfig {
             link: LinkCapacity::default(),
+            tap: TapCapacity::default(),
             history_cap: History::CAP,
             value_queue: 256,
             audition_queue: 64,

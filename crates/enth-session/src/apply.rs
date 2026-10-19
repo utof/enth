@@ -9,11 +9,11 @@
 //! | `ops::effect` | [`Routing`] | The session | The engine |
 //! | --- | --- | --- | --- |
 //! | `Value(addr)` | `Value` | `PlanMap::get(addr)` → `Link::send_param(epoch, id, plain)`; nothing if the address is not in the plan (a disabled module: the next plan carries it) | base set at the next segment boundary, smoothed |
-//! | `Depth(route)`, old and new depth non-zero | `Depth` | `PlanMap::depth(route)` → `Link::send_depth(epoch, id, depth)` (lane E+) | ramps over 10 ms, then exactly the recompiled value |
+//! | `Depth(route)`, old and new depth non-zero | `Depth` | `PlanMap::depth(route)` → `Link::send_depth(epoch, id, depth)`; a recompile instead if the id is `None` | ramps over 10 ms, then exactly the recompiled value |
 //! | `Depth(route)`, from or to 0 | `Recompile` | a new plan (the compiler leaves depth-0 routes out) | swap, no crossfade |
 //! | `Macro(i)` | `Macro` | `Link::send_macro(i, v)` | smoothed over 10 ms |
 //! | `Structural` | `Recompile` | a new plan | swap with state carry (moved at an instant swap); crossfade only if modules were added or removed |
-//! | `NoAudio` from `SetSlot` | `Recompile` | a new plan: the slot table is compiled into each plan (lane E+) | slot table updated |
+//! | `NoAudio` from `SetSlot` | `Recompile` | a new plan: the slot table is compiled into each plan; plus one host write of the new target's value | slot table updated; the remembered host value is forgotten (its key changed) |
 //! | `NoAudio` from `SetLabel`, `SetMeta`, `SetMacroName` | `Silent` | names may change ([`renames_params`]) | — |
 //!
 //! A transaction with any `Recompile` op is delivered as **one** plan compiled from the patch after it, and its value

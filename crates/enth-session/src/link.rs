@@ -33,7 +33,7 @@
 //! - Audition note-offs are queued and never dropped; a note-on that does not fit is refused
 //!   ([`SessionError::Busy`]).
 
-use enth_engine::{Engine, Link, NoteKey, ParamId, PlanMap};
+use enth_engine::{DepthId, Engine, Link, NoteKey, ParamId, PlanMap};
 use enth_patch::MacroIndex;
 
 use crate::model::{Activation, Session, SessionError};
@@ -65,6 +65,8 @@ pub(crate) struct Port {
 pub(crate) enum Queued {
     /// A parameter value for the plan with `epoch`.
     Param { epoch: u64, id: ParamId, value: f32 },
+    /// A route depth (percent) for the plan with `epoch`.
+    Depth { epoch: u64, id: DepthId, depth: f32 },
     /// A macro value.
     Macro { index: MacroIndex, value: f32 },
     /// An audition note-on.
@@ -86,10 +88,20 @@ pub struct PumpReport {
 }
 
 impl Session {
-    /// Compile the current patch for `activation`, build the engine with [`RENDER_SEED`](crate::model::RENDER_SEED)
-    /// and a link ([`Engine::with_link`]), attach the telemetry tap (lane E+), and keep the link and the plan's map.
+    /// Activate: on the **host main thread** (nice-plug `initialize`/`activate`), in this order:
+    ///
+    /// 1. [`enth_engine::compile`] the current patch for `activation.sample_rate`;
+    /// 2. [`Engine::with_link`] with [`RENDER_SEED`](crate::model::RENDER_SEED) and `SessionConfig::link`;
+    /// 3. create a [`Tap`](enth_engine::Tap) with `SessionConfig::tap` and [`Engine::attach_tap`] it (before the
+    ///    engine leaves this thread); keep it as the [`TelemetrySource`](crate::telemetry::TelemetrySource), disabled;
+    /// 4. `Engine::set_monitor_bypass` with the persisted bypass: on a fresh engine the switch is immediate, so a
+    ///    project that loads with the bypass on starts without the reverb;
+    /// 5. keep the link, the plan's map and its [`TelemetryMap`](crate::telemetry::TelemetryMap) (epoch
+    ///    `link.epoch()`).
+    ///
     /// The shell moves the returned engine to the audio thread; the previous engine, if any, is dropped by the shell
-    /// on the main thread. **Host main thread** (nice-plug `initialize`/`activate`). Lane SK implements it.
+    /// on the main thread. A second activate replaces the port (deactivate first is not required). Lane SK
+    /// implements it.
     pub fn activate(&mut self, activation: Activation) -> Result<Engine, SessionError> {
         let _ = activation;
         Err(SessionError::unsupported("activate", "SK"))
@@ -115,8 +127,7 @@ impl Session {
     }
 
     /// Play an audition note: `NoteKey { port: AUDITION_PORT, channel: 0, key, note_id: fresh }`
-    /// ([`AUDITION_PORT`](crate::model::AUDITION_PORT)) through
-    /// `Link::send_event` (lane E+). Refused while inactive ([`SessionError::Inactive`]), offline
+    /// ([`AUDITION_PORT`](crate::model::AUDITION_PORT)) through `Link::send_event(EventKind::NoteOn { .. })`. Refused while inactive ([`SessionError::Inactive`]), offline
     /// ([`SessionError::Offline`]) or with a full queue ([`SessionError::Busy`]). Lane SK implements the active case.
     pub fn audition_on(&mut self, key: u8, velocity: f32) -> Result<NoteKey, SessionError> {
         let Some(port) = &self.port else {
