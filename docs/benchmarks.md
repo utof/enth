@@ -19,7 +19,7 @@ Never automate rapid editor open/close on the real NVIDIA display.
 
 | Dimension | Why it matters | Metric |
 | --- | --- | --- |
-| Worst-case audio block time | Dropouts come from spikes, not averages | p99.9 and max `process()` time vs the block deadline |
+| Worst-case audio block time | Dropouts come from spikes, not averages | p99 and p99.9 `process()` time vs the block deadline, under real-time priority (max is information; [Real-time measurement](#real-time-measurement-p1b)) |
 | Dropouts (xruns) while the GUI is busy | A UI that steals CPU or locks causes clicks | xrun count over 10 min with editors animating, attributed by an editor-open vs editor-closed A/B (never read as an absolute zero) |
 | Cost with the editor **closed** | Most instances in a project are closed | GUI-thread CPU ≈ 0, no timers |
 | Cost when **occluded or minimised** | Hidden editors shouldn't keep drawing | CPU ≤ idle value, ideally 0 |
@@ -96,8 +96,10 @@ The thresholds are the Phase 0 defaults; lane Z filled in the measured values an
 | Editor open time | < 150 ms warm, < 400 ms cold | A, O | Test host, create → show: median 53.1 ms, p95 69 ms, max 87 ms (release; debug median 70.6 ms, max 131 ms). REAPER, `build()` → first frame: 44–67 ms | Passed (A); real display pending owner |
 | First open | Draws within 1 s on 20 of 20 opens | O | Under Xvfb: 200 of 200 in the test host; 22 of 22 in REAPER (research 02) | Pending owner |
 | GPU per open editor | < 5% SM, < 100 MB VRAM | O | Not measured | Pending owner |
-| Knob → sound latency | ≤ 1 audio block + 1 frame | A | Not measured | Not measured; moves to P1b (test host) |
+| Knob → sound latency | ≤ 1 audio block + 1 frame | A | Not measured | Not measured; owned by lane TH in P1b (test host, [phase-1b.md](phase-1b.md)) |
 | Host-integration checklist | All pass in REAPER and one other Linux host (Carla, VST3) | A, O | REAPER under Xvfb: open, close and reopen without a crash; typing into a field works; at scale 2 REAPER clips the editor (baseview #359); Space no longer reaches the transport after a click in the editor. Carla: editor not tried | **Failed** (HiDPI and Space, both baseview); the rest pending owner |
+
+2026-10-19 (P1b research): a prototype of the generated editor (cards, knobs and segmented controls built from `ParamSpec`s, no macro bar, matrix or spectrum yet) costs 4.55 M instructions for an idle frame and 4.90 M for an animating one, against the spike panel's 6.69 M and 7.64 M; the real editor should land near 7–8 M. With the vendored baseview's xkb fix, the leak gate is at most 26 KB per open/close cycle (16.1 KB measured plus 10 of margin; stock baseview would need 87 KB). See the [ADR-0002 note](adr/0002-ui-toolkit.md#note--2026-10-19-p1b-research-layout-as-data-stable-ids-keyboard-focus).
 
 ### Host-integration checklist
 
@@ -130,11 +132,70 @@ The measured column is the Phase 0 engine spike (`spikes/spike-engine`, [spikes/
 | Offline render speed | `enth bench`, `hyperfine` | G0 floor ≥ 100× realtime per core (met). From P1: ≥ 1,000× for the 1-voice template and ≥ 100× for an 8-voice P1-like patch, on the scalar path; G1 adds the 16-voice budget ([roadmap](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)). Report min and median with the load average | 1 voice: 1,993× best, 1,783× median (wasmtime 1,357×). 16 voices: 129× / 122× scalar, 245× / 213× f32x8. 8-voice P1-like with reverb: 152× / 149× scalar, 231× / 217× f32x8 |
 | CPU per voice at 48 kHz | **Instruction counts** (callgrind, gungraun), per module | Regression gate: an absolute `hard_limits` budget per benchmark (measured + 10 %) that fails the run when exceeded; it needs no stored baseline, so it works in CI. Re-measure budgets with the golden hashes after a toolchain, `libm` or `wide` bump. Criterion and wall-clock time are information only: with no code change Criterion reported two false "improvements" (−13%, −36%) under load | Per 2 s render (budget in brackets): 1 voice 8.15 M (9.0 M); 16 voices scalar 122.4 M (135 M), f32x4 65.1 M (72 M), f32x8 62.9 M (69.5 M); P1-like 8 voices scalar 112.4 M (124 M), f32x8 62.3 M (69 M). That is 80–85 instructions per sample and voice for the simple voice, 146 for the P1-like one. Passes locally and on GitHub's ubuntu-24.04 runner |
 | Subnormals | A deterministic test: render a 40 s release tail and count subnormal values | 0. Instruction counts under-report the denormal penalty (4.1× more instructions against 33.5× more wall time in the spike), so this test is half of the gate | 0 subnormal output samples and state values over 40 s tails (scalar and lanes, 12 random patches). Negative control without flushing: 203,962 subnormal samples, voices never end |
-| p99.9 / max `process()` time at 64 samples | test host | < 25% of the block deadline (1.33 ms at 48 kHz) | Not measured yet (the test host exists; P1) |
-| Plan swap time | test host | Swap without audible glitch; compile off-thread | Not measured yet (P1) |
+| p99 and p99.9 `process()` time at 64 samples | test host `process-stats`, under rtkit `SCHED_RR` | p99 and p99.9 < 25% of the block deadline (333 µs of 1.33 ms at 48 kHz); max is information | Engine only, 2026-10-19 ([details](#real-time-measurement-p1b)): p99 125–146 µs, p99.9 166–186 µs (12–14 %). Plugin level: not measured yet (P1b, lane RT) |
+| Plan swap time | test host `process-stats` | Swap-block p99 < 25% of the deadline with a structural edit every 250 ms; compile off the audio thread | Engine only, 2026-10-19: with the state copy, instant-swap block p99 797 µs (max 997 µs, 75 %); with the move, p99 139 µs (max 149 µs). A crossfading swap still copies (p99 1,052 µs). Compiling the G1 patch takes about 0.9 ms on the main thread |
 | Allocations on the audio thread | `assert_no_alloc` in engine tests (debug builds only); nice-plug's `assert_process_allocs` in plugin debug builds | 0 | 0: `assert_no_alloc` around every `process()` block (scalar, x4, x8; 16 random patches), negative control caught; clap-validator's process tests pass with `assert_process_allocs` on |
 | Real-time safety | RTSan, one nightly run (nightly Rust; the runtime ships in rust-std) | No findings. It catches `malloc` but misses an uncontended `std::sync::Mutex`, so `enth-engine` also has no `Mutex` or `RwLock` | One manual run (rustc 1.101.0-nightly 2026-10-17): no findings; an injected allocation is reported, an uncontended `Mutex` is not |
 | Determinism | golden tests in CI | Hashes identical across platforms, wasm engines and build flags (Linux, wasm32 under wasmtime and node, Windows; aarch64 if runners exist); a feature summary with tolerances is only the diagnostic when a hash differs | 1,010 hashes identical on Linux x86-64, Windows x86-64 (CI) and `wasm32-wasip1` under wasmtime (with and without simd128), across debug, release, `target-cpu=native`, FMA, LTO, lanes and FTZ/DAZ. aarch64: manual CI job only. node/V8 not re-run (research 03 ran it on an earlier engine) |
+
+## Real-time measurement (P1b)
+
+2026-10-19, from the P1b research (report 03). The numbers are engine-only (`enth-engine` standing in for the plugin; there is no `enth-plugin` yet): paced 64-frame blocks at 48 kHz, one G1 instance, on this laptop at a **load average of 7 to 26** because other builds were running, so wall-clock numbers are upper bounds. Re-run the G1 numbers on a quiet machine before the gate, with the environment snapshot recorded.
+
+### Real-time priority first
+
+A normal-priority thread measures the scheduler, not the plugin. One G1 instance, 64 frames, 60 s, paced:
+
+| Thread | Deadline misses (of 45,000 blocks) | p99.9 `process()` | Wake-up lateness, max |
+| --- | --- | --- | --- |
+| `SCHED_OTHER` | 980–2,299 (2–5 %) | 179–663 µs | up to 95 ms |
+| `SCHED_RR` 10, via rtkit | **3** | **166–185 µs** (12–14 % of the 1,333 µs deadline) | 1.5–1.9 ms |
+
+The engine's own CPU time is the same in both, 152–187 µs at p99.9. The misses were scheduler noise, not plugin CPU.
+
+- **No `ulimit -r` is needed.** rtkit already grants this user `SCHED_RR` up to priority 20. Lower `RLIMIT_RTTIME` to at most 200 ms, call `org.freedesktop.RealtimeKit1.MakeThreadRealtimeWithPID`, and the thread becomes `SCHED_RR|SCHED_RESET_ON_FORK`. A runaway RR thread is then killed by the limit instead of freezing the desktop (16 G1 instances on one thread were killed this way). rtkit allows 25 real-time threads per user and PipeWire already holds four, so test runs use few threads. `SCHED_FIFO` would need a system change and is not needed.
+- **Pinning without isolation makes `SCHED_OTHER` worse** (2,299 misses). Use RR without pinning, or RR pinned for slightly tighter tails.
+- **Max is not a gate.** Max under RR (1.1–1.4 ms) is a property of this laptop: interrupts, SMIs and frequency changes charged to the thread, because `IRQ_TIME_ACCOUNTING` is off. Report max, p99.99, lateness, misses and max(wall − cpu) as information.
+
+### The G1 row
+
+The `process()` row of Gate G1 ([roadmap.md](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)) is measured like this:
+
+- **Conditions:** the real `enth-plugin` release bundle; the G1 patch with a held 16-note chord; 64 frames at 48 kHz; `enth-test-host process-stats` with rtkit RR 10; one instance; 120 s after a 10 s warm-up; the environment snapshot recorded (load, governor, quantum, kernel, preempt mode).
+- **Pass:** p99 under 25 % of the deadline (333 µs) **and** p99.9 under 25 %. With a structural edit every 250 ms, the p99 of instant-swap blocks and of the blocks during a crossfade is under 25 % too.
+- **Today** (the engine standing in): steady p99 125–146 µs and p99.9 166–186 µs pass. Swap blocks on main fail (below).
+- **Guards that need no wall clock**, because wall-clock time is information only: a test that an instant swap moves the state (the new plan's reverb buffers are the old plan's), and gungraun budgets for three spiky blocks (an instant swap, a crossfade, 16 note-ons). Instruction counts under-state a memory copy, so the move test, not the budgets, guards against a copy.
+
+### The plan swap
+
+The cause is memory bandwidth, not page faults (0 in the swap block): the reverb's six delay rings are 1.6 MB, and copying them takes 148–249 µs alone, 2–4× more when paced because caches are cold after a sleep and the cores clock down. A normal block costs 57–93 µs. Paced under RR with a plan sent every 250 ms (30 s each):
+
+| Swap | Swap block, copy (main) | Swap block, with the move (prototype) |
+| --- | --- | --- |
+| Instant (nothing added or removed) | p50 328, p99 797, **max 997 µs** (75 % of the deadline) | p50 103, p99 139, **max 149 µs** |
+| Crossfading (a module added or removed) | p50 354, p99 1,052, **max 1,057 µs** (79 %); crossfade blocks p50 174, max 294 µs | Unchanged: both plans run, so the copy stays |
+
+P1b adopts the move ([design.md §3](design.md#3-engine-and-real-time-safety)). A prototype that blends the two voice sums before one effect chain would bring the crossfading swap to p99 189, max 195 µs, but it changes the crossfade definition; it is not adopted now ([phase-1b.md](phase-1b.md#open-checks)). Compiling the G1 patch on the main thread takes about 0.9 ms (p50; the reverb's preparation dominates), which is fine.
+
+### Multiple instances
+
+One G1 instance costs about 100 µs per 64-frame block when paced, about 7.5 % of a core. That is 1.5–1.8× the offline figure of 4.3 % (taken at load 7), because of cold caches and frequency scaling. Each thread below has its own independent timer, unlike REAPER's synchronised worker pool.
+
+| Instances × threads (RR) | Callback p50 | Max | Misses |
+| --- | --- | --- | --- |
+| 8 × 1 | 788 µs (59 % of the deadline) | 1,214 µs (91 %) | 0 in 30 s |
+| 16 × 1 | — | — | Cannot keep up: killed by the `RLIMIT_RTTIME` limit |
+| 16 × 4 | 423–426 µs | 600–931 µs | 0–1 per thread |
+
+Eight instances fit on one thread. Sixteen need several threads, which hosts provide. Information gate: 16 instances on 4 RR threads, each thread's p99 under 50 % (measured 472–477 µs, 35–36 %). With 8 RT threads, some saw wake-ups 10–35 ms late (cause not isolated).
+
+### In a host, and xruns
+
+- **REAPER's anticipative FX.** `process()` runs on anticipative-FX worker threads unless the track sets `I_PERFFLAGS` bit 2 (`SetMediaTrackInfo_Value(tr, "I_PERFFLAGS", 2)`), so it is not on the device deadline. Xrun checks set that flag. REAPER exposes no per-call plugin timing, so the plugin measures itself: an `rt-stats` cargo feature, off by default, with a fixed log-bucketed atomic histogram of `process()` wall time, dumped as JSON at `deactivate()` on the main thread. The same histogram works in REAPER, Carla, Bitwig and the test host.
+- **A private PipeWire daemon for agents:** no hardware, quantum 64, its own socket, and `rtportal.enabled = false`; `pw-jack -r` then gives a silent 64-frame JACK graph without touching the owner's PipeWire. Without that setting, PipeWire 1.0.5's `module-rt` silently fails through xdg-desktop-portal on this machine and the thread stays `SCHED_OTHER`. Its Dummy-Driver overruns raise no JACK xrun callbacks: count them with `pw-top -b` (ERR) and cycles completed against expected.
+- **Headless REAPER over JACK did not connect**, so a REAPER xrun test stays owner-attended. The owner's PipeWire config forces min-quantum 1024; `pw-metadata -n settings 0 clock.force-quantum 64` bypasses the config's limits (documented), and `clock.force-quantum 0` puts it back.
+- **Editor against audio, under Xvfb** (llvmpipe is a worst-case CPU competitor). With an RR audio thread, opening an animating 1100×768 editor made no measurable difference: 0 and 2 misses closed, 4 and 3 open, per 45,000 blocks. With `SCHED_OTHER` the misses roughly doubled (1,024–1,146 closed, 1,947–2,114 open, per 22,500). So GUI-caused xruns come from the scheduling class, from locks shared with the audio thread and from GPU-driver latency, not from editor CPU as such. Only the last needs the real GPU, which is the owner tier. At 2–4 misses a minute a 60 s A/B cannot resolve a difference: use interleaved runs of 10 minutes.
+- **Allocation checks.** `assert_process_allocs` wraps nice-plug's whole process wrapper in debug builds only, so keep it on for debug bundles under the test host and clap-validator. An RTSan-built test host (nightly, date pinned, linked with `--export-dynamic`) that wraps the plugin call in `__rtsan_realtime_enter` and `__rtsan_realtime_exit` catches `malloc` in a plain stable-built plugin. It misses an uncontended `std::sync::Mutex` and a `thread::sleep`, and the entry symbol is internal, not part of Clang's public API.
 
 ## Measurement hygiene
 
