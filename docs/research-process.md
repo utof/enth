@@ -46,6 +46,7 @@ _local/sessions/<YYYY-MM-DD>-<slug>/
 
 ### Rules for sub-researchers
 
+- Never put the owner's email, name or any personal detail in a request (User-Agent or other headers, URLs, payloads). APIs that ask for contact info (e.g. crates.io) get a generic User-Agent such as `enth-research/0.1`.
 - Date every claim about versions, releases, activity or popularity; link the source.
 - Verify licences from the actual LICENSE file or source headers. In mixed-licence repos, check the licence of the specific file, function or module.
 - Mark each claim *measured*, *documented* or *anecdotal*.

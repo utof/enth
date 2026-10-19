@@ -73,6 +73,10 @@ Rules for AI coding agents working on `enth`. Read `docs/README.md` first, then 
 - Prefer loops that avoid rebuilding the plugin: test DSP through `enth render` / `enth describe` and golden tests; iterate on the editor in a standalone egui dev window.
 - Keep incremental builds fast. lld is already rustc's default linker; optimise named DSP crates, not all dependencies, and stay on stable. Hot reload is out for Phase 0 (it cannot patch a plugin loaded in a DAW): the loop is a standalone egui dev window plus a rebuild of about 1.5 s.
 
+## Privacy
+
+- Never send the owner's email, name or other personal details to any service: not in User-Agent or other headers, URLs or payloads. Use a generic User-Agent (`enth-research/0.1`) where an API asks for contact info.
+
 ## Working in parallel (Phase 0 lanes and any concurrent agents)
 
 - At most **2 heavy builds at once** (nice-plug, baseview, egui, clack-host): this laptop has little free RAM. Give each git worktree its own `CARGO_TARGET_DIR` on ext4.
