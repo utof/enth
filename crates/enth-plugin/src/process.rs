@@ -9,8 +9,9 @@
 //!    bare `EventKind::Param`, because a plan swap inside the block would misroute an id looked up before it. With
 //!    `SAMPLE_ACCURATE_AUTOMATION = true` nice-plug splits the host block at every parameter change, so offset 0 is
 //!    the change's own frame and the engine's free-running grid makes the split invisible. After a state load
-//!    ([`crate::Shared::rebaseline`]) the restored values are adopted without being sent: the loaded patch wins.
-//!    At activate the "last sent" values are the host's current ones, so nothing is echoed.
+//!    ([`crate::Shared::rebaseline`]) the values the load restored ([`Restored`]) become "last sent" without being
+//!    sent: the loaded patch wins; a value the host set after the load, even in the same block, is still sent. At
+//!    activate the "last sent" values are the host's current ones, so nothing is echoed.
 //! 2. After a CLAP `reset` (which frees the engine's voices and empties its queue without a report), report every
 //!    live host note's `NOTE_END` at frame 0 ([`crate::ledger`]).
 //! 3. Translate the block's note events ([`crate::notes::engine_event`]) into the preallocated event list and render
@@ -37,7 +38,7 @@
 //! With the `rt-stats` cargo feature, the block's duration goes into [`crate::rt_stats`]'s histogram; without it
 //! no clock is read.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering, fence};
 
 use enth_engine::{Engine, Event, EventKind, MAX_VOICES, NoteKey};
 use enth_patch::catalogue::VoiceMode;
@@ -56,6 +57,64 @@ pub const PUMP_INTERVAL_S: f64 = 0.05;
 /// The event list's capacity: nice-plug's input capacity plus all 72 parameters. A block with more events is
 /// rendered in chunks (each chunk ends at the frame of the event that did not fit), so none is dropped.
 pub const EVENT_CAPACITY: usize = <Enth as Plugin>::INPUT_EVENT_CAPACITY + HOST_PARAMS;
+
+/// The host values nice-plug restored with a state, as the `patch` field's load saw them (host main thread), for the
+/// next block to take as its "last sent" values ([`crate::Shared::rebaseline`]). Only these are adopted silently: a
+/// value the host sets after the load (REAPER sends an automation lane's value in the first block after it loads a
+/// project) differs from them and reaches the engine. A small seqlock: the main thread writes (one writer, the
+/// field's `set`), the audio thread reads; a read that overlaps a write is retried at the next block.
+pub struct Restored {
+    generation: AtomicU32,
+    values: [AtomicU32; HOST_PARAMS],
+}
+
+impl Default for Restored {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Restored {
+    /// Defaults (never read before a first `store`: [`crate::Shared::rebaseline`] is set only after one).
+    pub fn new() -> Self {
+        Restored {
+            generation: AtomicU32::new(0),
+            values: std::array::from_fn(|_| AtomicU32::new(0)),
+        }
+    }
+
+    /// The restored values (host main thread, before `rebaseline` is set with `Release`).
+    pub fn store(&self, host: &HostValues) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        fence(Ordering::Release);
+        for (slot, v) in self
+            .values
+            .iter()
+            .zip(host.macros.iter().chain(&host.slots))
+        {
+            slot.store(v.to_bits(), Ordering::Relaxed);
+        }
+        self.generation.fetch_add(1, Ordering::Release);
+    }
+
+    /// Read them into `out` (audio thread): `false` if a store overlapped the read (`out` is then partly written).
+    fn load_into(&self, out: &mut HostValues) -> bool {
+        let before = self.generation.load(Ordering::Acquire);
+        if before % 2 == 1 {
+            return false;
+        }
+        for (v, slot) in out
+            .macros
+            .iter_mut()
+            .chain(out.slots.iter_mut())
+            .zip(&self.values)
+        {
+            *v = f32::from_bits(slot.load(Ordering::Relaxed));
+        }
+        fence(Ordering::Acquire);
+        self.generation.load(Ordering::Relaxed) == before
+    }
+}
 
 /// The audio thread's own state. Allocated once (at construction); `process()` only reuses it.
 pub struct Audio {
@@ -134,32 +193,35 @@ impl Audio {
         self.reset_pending = true;
     }
 
-    /// Step 1: the changed host values as engine events, or none after a load (adopted silently).
-    fn host_events(&mut self, adopt: bool) {
-        if !adopt {
-            for i in 0..MACROS {
-                let value = self.now.macros[i];
-                if value.to_bits() != self.last.macros[i].to_bits() {
-                    self.events.push(Event {
-                        offset: 0,
-                        kind: EventKind::Macro {
-                            index: i as u8,
-                            value,
-                        },
-                    });
-                }
+    /// Step 1: the host values that changed since the last block as engine events. After a load, `restored` (the
+    /// values the load restored) replaces "last sent" first, so those are adopted silently and only a value the
+    /// host changed after the load is sent.
+    fn host_events(&mut self, restored: Option<&HostValues>) {
+        if let Some(r) = restored {
+            self.last = *r;
+        }
+        for i in 0..MACROS {
+            let value = self.now.macros[i];
+            if value.to_bits() != self.last.macros[i].to_bits() {
+                self.events.push(Event {
+                    offset: 0,
+                    kind: EventKind::Macro {
+                        index: i as u8,
+                        value,
+                    },
+                });
             }
-            for i in 0..SLOTS {
-                let value = self.now.slots[i];
-                if value.to_bits() != self.last.slots[i].to_bits() {
-                    self.events.push(Event {
-                        offset: 0,
-                        kind: EventKind::Slot {
-                            slot: i as u8,
-                            value,
-                        },
-                    });
-                }
+        }
+        for i in 0..SLOTS {
+            let value = self.now.slots[i];
+            if value.to_bits() != self.last.slots[i].to_bits() {
+                self.events.push(Event {
+                    offset: 0,
+                    kind: EventKind::Slot {
+                        slot: i as u8,
+                        value,
+                    },
+                });
             }
         }
         self.last = self.now;
@@ -238,8 +300,17 @@ impl Enth {
 
         // 1. Host values.
         self.params.read_modulated(&mut audio.now);
-        let adopt = self.shared.rebaseline.swap(false, Ordering::AcqRel);
-        audio.host_events(adopt);
+        if self.shared.rebaseline.swap(false, Ordering::AcqRel) {
+            let mut restored = HostValues::default();
+            if self.shared.restored.load_into(&mut restored) {
+                audio.host_events(Some(&restored));
+            } else {
+                // A second load is writing its values: send nothing now, adopt them next block.
+                self.shared.rebaseline.store(true, Ordering::Release);
+            }
+        } else {
+            audio.host_events(None);
+        }
 
         // 2. The notes a CLAP `reset` dropped end at frame 0, before anything this block reports.
         if audio.reset_pending {
@@ -391,7 +462,7 @@ mod tests {
         let mut audio = Audio::new();
         audio.now.macros[2] = 0.25;
         audio.now.slots[63] = 0.9;
-        audio.host_events(false);
+        audio.host_events(None);
         assert_eq!(
             audio.events(),
             [
@@ -412,12 +483,42 @@ mod tests {
             ]
         );
         audio.events.clear();
-        audio.host_events(false);
+        audio.host_events(None);
         assert_eq!(audio.events(), [], "unchanged values send nothing");
-        audio.now.slots[0] = 0.1;
-        audio.host_events(true);
-        assert_eq!(audio.events(), [], "values restored by a load are adopted");
+        // A load restored slot 1 = 0.1 and macro 1 = 0.6; the host then set macro 1 to 0.3 before this block.
+        let mut restored = audio.now;
+        restored.slots[0] = 0.1;
+        restored.macros[0] = 0.6;
+        audio.now = restored;
+        audio.now.macros[0] = 0.3;
+        audio.host_events(Some(&restored));
+        assert_eq!(
+            audio.events(),
+            [Event {
+                offset: 0,
+                kind: EventKind::Macro {
+                    index: 0,
+                    value: 0.3
+                }
+            }],
+            "the restored slot 1 is adopted, the later macro move is sent"
+        );
         assert_eq!(audio.last.slots[0], 0.1);
+    }
+
+    #[test]
+    fn the_restored_values_cross_threads_whole() {
+        let r = Restored::new();
+        let mut host = HostValues::default();
+        host.slots[63] = 0.25;
+        host.macros[7] = 0.75;
+        r.store(&host);
+        let mut out = HostValues::default();
+        assert!(r.load_into(&mut out));
+        assert_eq!(out, host);
+        // A store in progress (odd generation) is not read.
+        r.generation.fetch_add(1, Ordering::AcqRel);
+        assert!(!r.load_into(&mut out));
     }
 
     #[test]

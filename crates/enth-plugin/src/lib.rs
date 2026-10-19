@@ -80,9 +80,12 @@ pub struct Shared {
     pub pump_wanted: AtomicBool,
     /// The monitor FX bypass `process()` hands the engine (ADR-0006).
     pub monitor_bypass: AtomicBool,
-    /// A state load happened: `process()` takes the host's current values as its "last sent" without sending them,
-    /// so values restored with the state never override the loaded patch in the engine (docs/plugin.md).
+    /// A state load happened: `process()` takes the values it restored ([`Shared::restored`]) as its "last sent"
+    /// without sending them, so values restored with the state never override the loaded patch in the engine, while
+    /// a host change after the load still reaches it (docs/plugin.md).
     pub rebaseline: AtomicBool,
+    /// The host values the last state load restored, for [`Shared::rebaseline`].
+    pub restored: process::Restored,
     /// Host parameter names changed (`ShellRequest::RenameParams`): [`Shared::with_session`] has set the new names
     /// on the parameters (lane FK's fork, `Param::set_display_name`), and `process()` asks the host for a
     /// parameter-info rescan (CLAP `rescan(INFO | TEXT)`; VST3 `kParamTitlesChanged`, which REAPER ignores).
@@ -105,6 +108,7 @@ impl Shared {
             pump_wanted: AtomicBool::new(false),
             monitor_bypass: AtomicBool::new(false),
             rebaseline: AtomicBool::new(false),
+            restored: process::Restored::new(),
             names_dirty: AtomicBool::new(false),
             editor_closed: AtomicBool::new(false),
             params: OnceLock::new(),

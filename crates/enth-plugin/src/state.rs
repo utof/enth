@@ -61,13 +61,18 @@ impl PersistentField<'_, Box<RawValue>> for PatchField {
     /// A host state load of the `patch` field: the session loads it (I7; a field that does not load leaves the init
     /// patch playing and is kept as text) and sends its plan at once.
     fn set(&self, new_value: Box<RawValue>) {
-        // Before the plan goes out: a `process()` that already saw the restored values sends them to the old plan,
-        // whose remembered slot values the new plan forgets; any later one adopts them silently.
-        self.shared.rebaseline.store(true, Ordering::Release);
-        // nice-plug has set the parameters already: record them as the baseline now (the load's first fold only
-        // records), so a host change after the load and before the next fold (a save, an editor frame) is folded
-        // rather than taken as the baseline and lost.
+        // nice-plug has set the parameters already: these are the restored values.
         let restored = self.shared.host_values();
+        // Before the plan goes out: a `process()` that already saw the restored values sends them to the old plan,
+        // whose remembered slot values the new plan forgets; the next one takes exactly these values as sent, so
+        // only a value the host changes after this point (an automation lane's first value) reaches the engine.
+        if let Some(restored) = &restored {
+            self.shared.restored.store(restored);
+        }
+        self.shared.rebaseline.store(true, Ordering::Release);
+        // Record them as the session's baseline now (the load's first fold only records), so a host change after the
+        // load and before the next fold (a save, an editor frame) is folded rather than taken as the baseline and
+        // lost.
         let (_report, host) = self.shared.with_session(|s| {
             let report = s.load_patch(new_value.get());
             if let Some(restored) = &restored {

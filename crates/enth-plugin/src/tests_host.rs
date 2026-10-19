@@ -663,6 +663,67 @@ fn values_restored_with_a_load_are_adopted_not_sent() {
 }
 
 #[test]
+fn a_host_change_in_the_first_block_after_a_load_still_reaches_the_engine() {
+    // REAPER's offline render: it loads the project's state while the plugin is active, then sends an automation
+    // lane's value (a lane that never moves: once) in the very first block. Only the values the load restored are
+    // adopted; the lane's value plays.
+    let mut host = Host::new(None, None);
+    let _ = host.render(640, 64, &[]);
+    host.set_param(slot(64), 0.5); // restored with the state: the slot default
+    let mut patch = golden();
+    enth_patch::apply(
+        &mut patch,
+        enth_patch::Op::SetSlot {
+            slot: SlotIndex::from_one_based(64).unwrap(),
+            addr: Some("osc1.level".parse().unwrap()),
+        },
+    )
+    .unwrap();
+    let mut fields = BTreeMap::new();
+    fields.insert("patch".to_owned(), patch.to_json());
+    host.plugin.host_params().deserialize_fields(&fields);
+    let _ = host.render(
+        640,
+        64,
+        &[at(0, HostEvent::Param(slot(64), 0.25)), on(0, 60, 0, 0.8)],
+    );
+    let engine = host.plugin.engine.as_ref().unwrap();
+    assert_eq!(engine.host_slot(63), Some(0.25), "the lane's value");
+    assert_eq!(engine.host_slot(0), None, "slot 1 was only restored");
+    // Through the whole render path: once the engine's 10 ms level smoothing has landed, the note sounds exactly like
+    // the same load of a patch whose osc1 level is the lane's 25 %.
+    let render = |patch: &Patch, lane: bool| {
+        let mut host = Host::new(None, None);
+        let _ = host.render(640, 64, &[]);
+        host.set_param(slot(64), 0.5);
+        let mut fields = BTreeMap::new();
+        fields.insert("patch".to_owned(), patch.to_json());
+        host.plugin.host_params().deserialize_fields(&fields);
+        let mut schedule = vec![on(0, 60, 0, 0.8), off(9_600, 60, 0)];
+        if lane {
+            schedule.insert(0, at(0, HostEvent::Param(slot(64), 0.25)));
+        }
+        host.render(14_400, 64, &schedule)
+    };
+    let mut quiet = patch.clone();
+    enth_patch::apply(
+        &mut quiet,
+        enth_patch::Op::SetParam {
+            addr: "osc1.level".parse().unwrap(),
+            value: 25.0,
+        },
+    )
+    .unwrap();
+    let (lane, patched) = (render(&patch, true), render(&quiet, false));
+    let tail = |r: &(Vec<f32>, Vec<f32>)| (r.0[2_400..].to_vec(), r.1[2_400..].to_vec());
+    assert!(same(&tail(&lane), &tail(&patched)));
+    assert!(
+        !same(&tail(&lane), &tail(&render(&patch, false))),
+        "without the lane, 100 % plays"
+    );
+}
+
+#[test]
 fn poly_modulation_reaches_only_the_voice_with_the_hosts_voice_id_and_its_end_carries_that_id() {
     let mut host = Host::new(Some(GOLDEN), None);
     let poly = |frame, voice_id, offset| {
