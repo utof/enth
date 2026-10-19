@@ -7,17 +7,22 @@ exit: 0
 {
   "meta": {
     "author": "",
-    "description": "Two saws detuned against each other, a soft low-pass, a slow swell, a long release and some reverb.",
+    "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.",
     "name": "Pad (2 osc)",
     "tags": [
       "pad"
     ]
   },
-  "routes": [],
+  "routes": [
+    {
+      "depth": 10,
+      "route": "lfo1 -> filter1.cutoff"
+    }
+  ],
   "schema": "enth.get/1",
   "source": "[TMP]/p.patch.json",
   "values": {
-    "filter1.cutoff": "1.5kHz",
+    "filter1.cutoff": "1kHz",
     "master.level": "0dB",
     "osc1.fine": "-8ct",
     "osc1.level": "100%",

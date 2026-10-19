@@ -231,17 +231,12 @@ fn bad_patch_files_report_every_problem_with_a_path() {
 fn render_write_and_missing_file_errors() {
     let s = Scratch::new("err_io");
     let p = s.new_patch("init", "p.patch.json");
-    // The engine at freeze F2 cannot render modulation routes yet (lane S2b): a render error, exit 4.
+    // Modulation routes render (S2b): a patch with an LFO routed to a pitch is not an error.
     let routed = s.path("routed.patch.json");
     let add = r#"[{"add": "lfo"}, {"route": "lfo1 -> osc1.fine", "depth": 10}]"#;
     assert_eq!(run(&["apply", &p, "--ops", add, "--out", &routed]).code, 0);
     let r = run(&["render", &routed]);
-    if r.code == 4 {
-        let e: ErrorOut = round_trip(&r);
-        assert_eq!(e.error, "render_failed");
-    } else {
-        assert_eq!(r.code, 0, "routes render once S2b is merged: {}", r.stdout);
-    }
+    assert_eq!(r.code, 0, "{}", r.stdout);
     let not_a_wav = s.write("noise.wav", "RIFF\u{0}\u{0}\u{0}\u{0}WAVEjunk");
     s.settings().bind(|| {
         assert_snapshot!(

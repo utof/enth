@@ -42,7 +42,7 @@ exit: 1
       "margin": "<num>",
       "margin_unit": "ct",
       "noise": "<num>",
-      "note": "C3+0ct",
+      "note": "C3<ct>",
       "pass": true,
       "thin": "<bool>",
       "unit": "Hz"

@@ -10,7 +10,7 @@ exit: 0
   "clipping": "<bool>",
   "dur_s": 2,
   "format": "f32",
-  "patch_hash": "034afd11605a8681",
+  "patch_hash": "b7b509a851d3bbfa",
   "peak_dbfs": "<num>",
   "perf": {
     "dur_s": 2,

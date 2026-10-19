@@ -4,7 +4,8 @@ enth renders a synth patch and **measures** it. You cannot hear the result, so w
 approximate hearing. Each call prints one JSON object (`"schema": "enth.<cmd>/1"`); errors are JSON with a `hint`.
 
 ## Workflow
-1. `enth new --template pluck_1osc --out p.patch.json` (`enth new --list`: init, pluck_1osc, pad_2osc, bass_sub).
+1. `enth new --template pluck_1osc --out p.patch.json` (`enth new --list`: init; pluck_1osc, a filter envelope `env2`
+   on the cutoff; pad_2osc, a slow LFO `lfo1` on the cutoff; bass_sub, mono with a short glide).
 2. Turn the goal into expectations (below), or use the list you were given.
 3. `enth step p.patch.json --set filter1.cutoff=2kHz,env1.decay=200ms --expect '<list>' --perf '<perf>'`; repeat
    until it exits 0 (`check.pass: true`) with no `thin` item.
@@ -60,8 +61,10 @@ Comma-separated `<feature> <op> <value>`; ops `< <= > >= = ~ in [a, b] == null !
   `thin: true` means |margin| <= 2 x noise: it could flip. Aim further.
 - `got: null` with `why`: not measurable (no beating; the note not held long enough).
 - `fix`: one measured move for every failure; apply all its `ops` together with `--ops`. Its `after` values
-  were measured. It may be null.
-- `blocked`: no parameter in reach can satisfy it; change the structure, or it cannot be met with this performance.
+  were measured. It may be null (also when nothing is `blocked`: raise `--fix-budget`).
+- `blocked`: no parameter in reach can satisfy it (`reason` says why: `at_bound`, `conflict` with the items in
+  `conflicts_with`, `no_effect`, `absent`, `performance`); change the structure, or it cannot be met with this
+  performance. An item `hint` with `measured: false` says what to add.
 - `lower_bound` or `estimated`: the clip ended first; lengthen `dur`.
 
 ## Gotchas

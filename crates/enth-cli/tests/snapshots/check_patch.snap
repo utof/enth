@@ -11,12 +11,17 @@ exit: 1
         "filter1.cutoff",
         "filter1.resonance",
         "filter1.keytrack",
-        "filter1.drive"
+        "filter1.drive",
+        "env1.attack",
+        "env1.decay",
+        "env1.sustain",
+        "env2.attack",
+        "env2.decay"
       ],
       "conflicts_with": [],
-      "expect": "spectrum.centroid_hz > 15000",
+      "expect": "spectrum.centroid_hz > 40000",
       "reason": "at_bound",
-      "why": "filter1.cutoff and filter1.resonance and filter1.keytrack and filter1.drive would have to go past their limits"
+      "why": "filter1.cutoff and filter1.resonance and filter1.keytrack and filter1.drive and env1.attack and env1.decay and env1.sustain and env2.attack and env2.decay would have to go past their limits"
     }
   ],
   "failed": 1,
@@ -42,7 +47,7 @@ exit: 1
       "margin": "<num>",
       "margin_unit": "ct",
       "noise": "<num>",
-      "note": "C3+0ct",
+      "note": "C3<ct>",
       "pass": true,
       "thin": "<bool>",
       "unit": "Hz"
@@ -76,7 +81,7 @@ exit: 1
       "unit": "Hz"
     },
     {
-      "expect": "spectrum.centroid_hz > 15000",
+      "expect": "spectrum.centroid_hz > 40000",
       "got": "<num>",
       "hint": {
         "measured": false,

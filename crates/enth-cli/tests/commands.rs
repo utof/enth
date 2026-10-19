@@ -97,7 +97,7 @@ fn new_writes_a_stamped_dense_patch() {
     let o = run(&["new", "--template", "pluck_1osc", "--out", &out]);
     assert_eq!(o.code, 0);
     let n: NewOut = round_trip(&o);
-    assert_eq!(n.modules, ["osc1", "filter1", "env1"]);
+    assert_eq!(n.modules, ["osc1", "filter1", "env1", "env2"]);
     let text = std::fs::read_to_string(&out).unwrap();
     assert!(text.contains("\"engine\": \"0.1.0\""), "{text}");
     assert!(text.contains("\"keytrack\""), "written dense: {text}");
@@ -180,7 +180,7 @@ fn get_summary_addresses_and_plain() {
     let gp: GetOut = round_trip(&plain);
     assert_eq!(
         gp.values["filter1.cutoff"],
-        enth_cli::schema::Reading::Num(1500.0)
+        enth_cli::schema::Reading::Num(1000.0)
     );
     s.settings().bind(|| {
         assert_snapshot!("get_summary", record(&s, &summary, false));
@@ -301,15 +301,15 @@ fn check_a_patch_with_margins_and_noise() {
     let s = Scratch::new("check");
     let p = s.new_patch("pluck_1osc", "p.patch.json");
     let list =
-        "pitch.note ~ C3, attack < 100ms, sustain < -20dB, beating == null, brightness > 15kHz";
+        "pitch.note ~ C3, attack < 100ms, sustain < -20dB, beating == null, brightness > 40kHz";
     let o = run(&["check", &p, "--expect", list]);
     assert_eq!(o.code, 1, "one item fails on purpose: {}", o.stdout);
     let c: CheckOut = round_trip(&o);
     assert_eq!((c.passed, c.failed), (4, 1));
-    // 15 kHz is out of reach of a saw through a low-pass: no measured move, and the item says why and what to try.
+    // 40 kHz is above Nyquist: no measured move, and the item says why and what to try.
     assert!(c.fix.is_none(), "{:?}", c.fix);
     assert_eq!(c.blocked.len(), 1);
-    assert_eq!(c.blocked[0].expect, "spectrum.centroid_hz > 15000");
+    assert_eq!(c.blocked[0].expect, "spectrum.centroid_hz > 40000");
     assert_eq!(c.blocked[0].reason, "at_bound");
     assert!(c.blocked[0].at_bound.contains(&"filter1.cutoff".to_owned()));
     let hint = c.results[4].hint.as_ref().expect("a structural hint");
@@ -424,6 +424,44 @@ fn step_applies_renders_and_checks() {
     let full = run(&["step", &out, "--full"]);
     let sf: StepOut = round_trip(&full);
     assert!(sf.check.is_none() && sf.describe.contains_key("noise_ratio"));
+}
+
+/// The templates' modulation is audible to the analysis: the pluck's filter envelope darkens the note over its
+/// life, the pad's LFO moves its brightness, and the mono bass renders an overlapping (legato) pair of notes.
+#[test]
+fn the_templates_move() {
+    let s = Scratch::new("templates_move");
+    let centroids = |template: &str, perf: &str| -> (f64, [f64; 3]) {
+        let p = s.new_patch(template, &format!("{template}.patch.json"));
+        let o = run(&["describe", &p, "--perf", perf]);
+        assert_eq!(o.code, 0, "{}", o.stdout);
+        let d: DescribeOut = round_trip(&o);
+        let sp = d.spectrum.expect("a spectrum");
+        (
+            sp.centroid_hz,
+            sp.centroid_track_hz.unwrap().try_into().unwrap(),
+        )
+    };
+    let (_, pluck) = centroids("pluck_1osc", "note=A3,vel=100,hold=1s,dur=2s");
+    assert!(
+        pluck[0] > 1.5 * pluck[1],
+        "the filter envelope closes: {pluck:?}"
+    );
+    let (_, pad) = centroids("pad_2osc", "note=A3,vel=100,hold=3s,dur=4.5s");
+    let (lo, hi) = pad
+        .iter()
+        .fold((f64::MAX, 0.0f64), |(lo, hi), &c| (lo.min(c), hi.max(c)));
+    assert!(hi > 1.1 * lo, "the LFO moves the brightness: {pad:?}");
+
+    // Mono with legato glide: two overlapping notes render without a dropped note.
+    let bass = s.new_patch("bass_sub", "bass.patch.json");
+    let perf = r#"{"notes": [
+        {"note": "C2", "vel": 100, "on_s": 0.0, "off_s": 1.0},
+        {"note": "G2", "vel": 100, "on_s": 0.5, "off_s": 1.5}], "dur_s": 2.5}"#;
+    let o = run(&["render", &bass, "--perf", perf]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    let r: RenderOut = round_trip(&o);
+    assert!(r.peak_dbfs > -30.0 && !r.clipping);
 }
 
 #[test]

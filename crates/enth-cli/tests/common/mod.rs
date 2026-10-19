@@ -160,6 +160,11 @@ pub fn mask(v: &Value) -> Value {
             _ if key == "ops" || key == "inverse" => v.clone(),
             Value::Number(_) if !STABLE_NUMBERS.contains(&key) => Value::from("<num>"),
             Value::Bool(_) if NOISY_BOOLS.contains(&key) => Value::from("<bool>"),
+            // A note name with its tuning offset (`C3-1ct`): the note is pinned, the offset is the DSP's.
+            Value::String(t) if key == "note" && t.ends_with("ct") => {
+                let name_len = t[1..].find(['+', '-']).map_or(t.len(), |i| i + 1);
+                Value::from(format!("{}<ct>", &t[..name_len]))
+            }
             Value::Array(a) => Value::Array(a.iter().map(|x| go(parent, key, x)).collect()),
             Value::Object(m) => {
                 Value::Object(m.iter().map(|(k, x)| (k.clone(), go(key, k, x))).collect())
