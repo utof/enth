@@ -217,6 +217,22 @@ impl FeatureExtractor {
         f
     }
 
+    /// Every feature of `audio` as it is, without loudness normalisation (`lufs` is NaN). `ebur128` uses `std`
+    /// maths, so the normalising gain can differ in its last bits between platforms; this path depends only on
+    /// this crate's code and the FFT path, and is what the cross-platform determinism test pins.
+    pub fn extract_unnormalised(&mut self, audio: &[f32]) -> Features {
+        let mut f = Features {
+            lufs: f64::NAN,
+            ..Features::default()
+        };
+        if audio.iter().all(|v| *v == 0.0) {
+            f.silent = true;
+            return f;
+        }
+        self.extract_normalised(audio, &mut f);
+        f
+    }
+
     fn extract_normalised(&mut self, x: &[f32], f: &mut Features) {
         let sr = self.cfg.sample_rate;
         let fl = ((sr * 0.01) as usize).max(1);
