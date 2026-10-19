@@ -2,7 +2,7 @@
 
 > **Working name:** `enth` (the repo folder). The final product name is still open — see [naming.md](naming.md). Crates use the `enth-` prefix; renaming later is a find-and-replace.
 >
-> **As of:** 2026-10-19 · **Status:** pre-code. Phase 0 (research session, then spikes) is next.
+> **As of:** 2026-10-19 · **Status:** Phase 0 in progress. The research session is done; the skeleton and the shell spike are merged; the engine, metric and UI lanes are running. No product code yet.
 
 `enth` is an open-source (MIT) modular synthesizer written in Rust, shipped first as a **CLAP plugin**, built for its author and friends first. It combines ideas that usually live in separate products:
 
@@ -25,7 +25,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [design.md](design.md) | The nine load-bearing designs: params, patch, engine, host params, determinism, scoring, knob distance, solver, randomizer |
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
-| [phase-0.md](phase-0.md) | **Start here when coding.** The first tasks, in order, with acceptance criteria |
+| [phase-0.md](phase-0.md) | **Start here when coding.** The Phase 0 lanes and tasks, with acceptance criteria |
 | [benchmarks.md](benchmarks.md) | How we measure UI stacks, the engine, and the agent loop — and the pass/fail thresholds |
 | [research.md](research.md) | Prior art, papers, and evidence behind the decisions, with sources |
 | [adr/](adr/README.md) | Architecture decision records (plugin shell, UI toolkit, agent CLI, licensing, patch format, effects) |
@@ -42,7 +42,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | Language & licence | Rust, MIT; dependencies limited to permissive licences | Decided — [ADR-0004](adr/0004-licensing.md) |
 | Plugin format | CLAP first; VST3 second; AU later; standalone app deferred | Decided |
 | Plugin shell | Start on `nice-plug`; keep it thin; `clack` is the escape hatch | Proposed — shell spike passed; accept at Gate G0 — [ADR-0001](adr/0001-plugin-shell.md) |
-| UI | Native Rust UI, **no WebView**: egui by default, vizia as challenger | Proposed — confirm by the UI spike at G0 — [ADR-0002](adr/0002-ui-toolkit.md) |
+| UI | Native Rust UI, **no WebView**: egui rendered with glow, no second toolkit | Proposed — confirm by the UI spike at G0 — [ADR-0002](adr/0002-ui-toolkit.md) |
 | Agent interface | CLI first (`enth`), JSON output, real units; thin MCP wrapper later if wanted | Decided — [ADR-0003](adr/0003-agent-cli.md) |
 | Patch format | JSON, plain values in real units, versioned with migrations | Decided — [ADR-0005](adr/0005-patch-format.md) |
 | Effects | Port permissive DSP into our own deterministic modules (Signalsmith reverb, in-house compressor); global FX bypass; no third-party plugin hosting | Proposed — confirm at G1 — [ADR-0006](adr/0006-effects-strategy.md) |
@@ -52,9 +52,12 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 ## Developer environment
 
 - Laptop: Acer ConceptD 5, NVIDIA Quadro RTX 3000, Linux Mint (Cinnamon, X11).
-- Main test host: REAPER on Linux. Second hosts for checks: Bitwig and/or Ardour.
+- The repo lives on ext4 (`/home`), not on the NTFS/FUSE disk: file-metadata calls dropped from about 5 ms to about 3 µs.
+- Main test host: **native REAPER 7.82 on Linux** (portable install, 60-day evaluation), driven headless for automated host tests (`cargo xtask reaper-test`). The Wine/Windows REAPER cannot load Linux plugins.
+- Second hosts: **Carla 2.5.8** for VST3 (Ubuntu's build has no CLAP host); Ardour hosts VST3 only and is not installed. A **Bitwig trial** is only for the CLAP poly-mod check, which Bitwig alone supports.
+- Automated GUI work runs under Xvfb with Mesa; real-display checks are the owner's ([AGENTS.md](../AGENTS.md)). The NVIDIA 595-series X driver has crashed Xorg once during editor open/close churn.
 - Development is done largely with AI coding agents (Claude Code / Codex).
 
 ## How to use these docs with a coding agent
 
-Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-0.md`, then do Phase 0 Task 0."* Task 0 is the Phase 0 research session; read its summary before saying go. Task 1 is machine setup, so you'll run its `sudo` commands yourself; from Task 2 on the agent builds. Each task has acceptance criteria; ask the agent to stop and report after each one.
+Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-0.md`, then do Phase 0 lane <name>."* Task 0 (the Phase 0 research session) and Task 1 (machine setup) are done; read the research summary before saying go. After the one-day skeleton the work runs as parallel lanes (see the lane table in `phase-0.md`). Each lane has acceptance criteria; ask the agent to stop and report at the end of its lane.
