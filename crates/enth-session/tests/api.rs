@@ -97,10 +97,10 @@ impl SessionEdit for Recording {
 
 /// What an editor frame does through the trait object (stand-in for `enth-ui`'s editor).
 fn editor_frame(session: &mut dyn SessionEdit) -> Result<Applied, SessionError> {
-    let cutoff = session.patch().generators[0].id.clone();
+    let osc = session.patch().generators[0].id.clone();
     let _ = session.history().can_undo();
     let g = session.begin_gesture();
-    let addr = enth_patch::ParamAddr::module(cutoff, "level").unwrap();
+    let addr = enth_patch::ParamAddr::module(osc, "level").unwrap();
     let r = session.edit(vec![Op::SetParam { addr, value: 50.0 }], Some(g));
     session.end_gesture();
     r
