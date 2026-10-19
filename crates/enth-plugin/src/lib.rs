@@ -262,9 +262,9 @@ impl Plugin for Enth {
         main_output_channels: NonZeroU32::new(2),
         ..AudioIOLayout::const_default()
     }];
-    // `MidiCCs`: the mod wheel (MIDI CC 1) reaches the engine. For VST3 nice-plug adds 2,080 hidden MIDI CC
-    // parameters, which REAPER lists (2,155 parameters); CLAP pays nothing. Lane PL's decision, with the measurements,
-    // in docs/plugin.md ("MIDI CCs"); `Basic` turns the mod wheel off in both formats.
+    // `MidiCCs`: the mod wheel (MIDI CC 1) reaches the engine. For VST3 nice-plug maps each controller in
+    // `VST3_MIDI_CONTROLLERS` to a hidden parameter per MIDI channel, which REAPER lists; CLAP pays nothing. Lane PL's
+    // decision, with the measurements, in docs/plugin.md ("MIDI CCs"); `Basic` turns the mod wheel off in both formats.
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     // Required: without it plugin renders stop matching CLI renders at large host blocks (AGENTS.md).
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
@@ -385,6 +385,11 @@ impl Vst3Plugin for Enth {
     const VST3_CLASS_ID: [u8; 16] = VST3_CLASS_ID;
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
+    // The MIDI controllers `notes::engine_event` reads, and no others (the fork's patch 7): VST3 delivers a CC only
+    // through a parameter that `IMidiMapping` maps it to, one per controller and MIDI channel, and REAPER lists every
+    // one. CC 1 on 16 channels is 16 parameters, where nice-plug's default (all 130 controllers) is 2,080. A test keeps
+    // this list and `engine_event` in step; add pitch bend (129) here when the engine takes it.
+    const VST3_MIDI_CONTROLLERS: &'static [u8] = &[nice_plug::midi::control_change::MODULATION_MSB];
 }
 
 /// The CLAP and VST3 entry points. In a module of their own so the allow below covers only nice-plug's expansion.
@@ -480,6 +485,35 @@ mod tests {
         let values = HostValues::default();
         let _ = shared.with_session(|s| s.fold_host(&values));
         assert_eq!(dirty(), 4, "a host load and a fold mark nothing");
+    }
+
+    /// Every MIDI controller the plugin turns into an engine event is one the VST3 wrapper maps (nice-plug delivers
+    /// no other CC there), and the list holds nothing the plugin ignores.
+    #[test]
+    fn the_vst3_midi_controllers_are_exactly_the_ones_the_plugin_reads() {
+        let reads = |controller: u8| {
+            let event: NoteEvent<()> = match controller {
+                0..=127 => NoteEvent::MidiCC {
+                    timing: 0,
+                    channel: 3,
+                    cc: controller,
+                    value: 0.5,
+                },
+                128 => NoteEvent::MidiChannelPressure {
+                    timing: 0,
+                    channel: 3,
+                    pressure: 0.5,
+                },
+                _ => NoteEvent::MidiPitchBend {
+                    timing: 0,
+                    channel: 3,
+                    value: 0.5,
+                },
+            };
+            notes::engine_event(&event).is_some()
+        };
+        let read: Vec<u8> = (0..130).filter(|&c| reads(c)).collect();
+        assert_eq!(read, <Enth as Vst3Plugin>::VST3_MIDI_CONTROLLERS);
     }
 
     #[test]

@@ -38,12 +38,29 @@ if phase == "create" then
     inject_state(track, fx)
 
     -- (a) 72 plugin parameters; REAPER appends its own Bypass, Wet and Delta after them. For VST3, nice-plug's
-    -- `MidiConfig::MidiCCs` (the mod wheel; lane PL's decision in docs/plugin.md) adds 2,080 hidden MIDI CC
-    -- parameters after the 72, and REAPER lists them too.
+    -- `MidiConfig::MidiCCs` (the mod wheel; lane PL's decision in docs/plugin.md) adds a hidden, read-only parameter
+    -- per mapped MIDI controller and channel after the 72, and REAPER lists them too. The plugin maps only CC 1
+    -- (`Vst3Plugin::VST3_MIDI_CONTROLLERS`, the fork's patch 7): 16 parameters, where nice-plug's default is 2,080.
     local count = reaper.TrackFX_GetNumParams(track, fx)
-    local midi_cc_params = tag == "vst3" and 2080 or 0
+    local midi_cc_params = tag == "vst3" and 16 or 0
     check("param-count", count == 75 + midi_cc_params,
       count .. " (72 plugin + " .. midi_cc_params .. " MIDI CC + REAPER's Bypass/Wet/Delta)")
+    if tag == "vst3" then
+      -- The mapped controllers, by name: "MIDI Ch. 1 CC 1" to "MIDI Ch. 16 CC 1", none automatable.
+      local wrong, automatable, last = {}, 0, ""
+      for i = 72, count - 4 do
+        local _, name = reaper.TrackFX_GetParamName(track, fx, i)
+        local want = "MIDI Ch. " .. (i - 71) .. " CC 1"
+        if name ~= want then wrong[#wrong + 1] = i .. "=" .. tostring(name) end
+        local _, auto = reaper.TrackFX_GetNamedConfigParm(track, fx, "param." .. i .. ".automatable")
+        if auto == "1" then automatable = automatable + 1 end
+        last = name
+      end
+      data("midi-cc-params", (count - 75) .. " after the 72, the last " .. last .. ", " .. automatable .. " automatable")
+      check("midi-cc-params", #wrong == 0 and automatable == 0,
+        #wrong == 0 and ("MIDI Ch. 1-16 CC 1, " .. automatable .. " automatable")
+        or (table.concat(wrong, " ", 1, math.min(#wrong, 6)) .. (#wrong > 6 and " ..." or "")))
+    end
     local bad_names, not_automatable = {}, 0
     for i = 0, 71 do
       local expected = i < 8 and ("Macro " .. (i + 1)) or ("Slot " .. (i - 7))
