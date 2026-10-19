@@ -27,6 +27,8 @@ pub struct Theme {
     pub stroke: Strokes,
     pub text: TextStyles,
     pub size: Sizes,
+    #[serde(default)]
+    pub state: States,
     pub motion: Motion,
 }
 
@@ -213,6 +215,9 @@ impl Theme {
                 },
                 control_height: 24.0,
             },
+            state: States {
+                disabled_opacity: 0.4,
+            },
             motion: Motion {
                 animated_hz: p::RATE_ANIMATED,
                 scope_hz: p::RATE_SCOPE,
@@ -289,6 +294,7 @@ impl Theme {
         v.text_cursor.stroke = self.stroke.thin(c.accent.value);
         v.hyperlink_color = c.accent.value;
         v.weak_text_color = Some(c.text.dimmed);
+        v.disabled_alpha = self.state.disabled_opacity;
         v.faint_bg_color = c.surface.card;
         v.extreme_bg_color = c.surface.recessed;
         v.text_edit_bg_color = Some(c.surface.recessed);

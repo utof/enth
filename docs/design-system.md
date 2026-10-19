@@ -62,6 +62,7 @@ pub struct Theme {
     pub stroke: Strokes,
     pub text: TextStyles,   // label, body, value, title, strong → egui::FontId
     pub size: Sizes,        // component tokens: knob, card, bars, panes
+    pub state: States,      // how a state reads: disabled opacity
     pub motion: Motion,     // repaint rates
 }
 
@@ -84,6 +85,11 @@ The spike ([docs/spikes/ui.md](spikes/ui.md)) kept every proposed value above an
 - **Type:** the `body` and `strong` styles (running text and its bold words); still three sizes. Tabular digits come from a derived Inter subset, since egui can't switch `tnum` on.
 - **Sizes:** the component tokens listed under *Component sizes*, most importantly a 56 px knob cell.
 - **Code:** `Theme::apply` sets the same style in egui's dark and light slots and selects dark; `Strokes::thin(color)` / `thick(color)` build strokes, so `Stroke::new` stays inside `theme/`.
+
+### Added after the owner's first look (2026-10-19, u3)
+
+- **State:** `state.disabled_opacity` 0.4. A disabled module card draws everything inside it (stripe, title, display, knobs, values) through one child `Ui` at this opacity, so no widget has a disabled look of its own; the card fill and the enable toggle stay at full strength, and the controls stay editable. `Theme::apply` gives egui's own disabled widgets the same value (`Visuals::disabled_alpha`).
+- It deserialises with the dark theme's value when missing, so theme files dumped before it still load.
 
 ## Rules and enforcement
 

@@ -4,6 +4,7 @@ use egui::{Role, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use enth_ui::Theme;
+use enth_ui::theme::Category;
 use enth_ui::widgets::{Knob, MatrixGrid, ModuleCard, Segmented};
 
 fn harness<'a, S>(app: impl FnMut(&mut egui::Ui, &mut S) + 'a, state: S) -> Harness<'a, S> {
@@ -112,4 +113,28 @@ fn matrix_cells_edit_their_amount() {
     let amounts = *h.state();
     assert_eq!(amounts[..3], [0.0; 3]);
     assert!(amounts[3] > 0.3, "{amounts:?}");
+}
+
+#[test]
+fn a_disabled_card_keeps_its_controls_editable() {
+    let theme = Theme::dark();
+    let mut h = harness(
+        |ui, value: &mut f32| {
+            let mut enabled = false;
+            ModuleCard::new(&theme, "osc-2", "Osc 2", Category::Generator, &mut enabled).show(
+                ui,
+                |_, _| {},
+                |ui| {
+                    ui.add(Knob::new(&theme, value, "Level"));
+                },
+            );
+        },
+        0.5,
+    );
+    drag(
+        &mut h,
+        "Level",
+        vec2(0.0, -theme.size.knob.drag_travel / 4.0),
+    );
+    assert!(*h.state() > 0.6, "value after dragging up: {}", h.state());
 }

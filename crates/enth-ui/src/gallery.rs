@@ -16,6 +16,8 @@ pub const GALLERY_SIZE: egui::Vec2 = egui::vec2(1100.0, 1320.0);
 /// Widget values shown in the gallery (they can be dragged in the dev window).
 pub struct GalleryState {
     knobs: [f32; 8],
+    /// The disabled filter card's knobs.
+    filter: [f32; 2],
     mode: usize,
     semitones: f64,
     voices: f64,
@@ -31,6 +33,7 @@ impl Default for GalleryState {
     fn default() -> Self {
         Self {
             knobs: [0.62, 0.35, 0.7, 0.5, 0.8, 0.45, 0.25, 0.55],
+            filter: [0.6, 0.3],
             mode: 2,
             semitones: -12.0,
             voices: 8.0,
@@ -328,6 +331,8 @@ fn cards(ui: &mut Ui, t: &Theme, s: &mut GalleryState) {
                         ui.add(Knob::new(t, d, "Pan").bipolar(true));
                     },
                 );
+            // Disabled: the whole card fades, its knobs stay editable.
+            let [cutoff, reso] = &mut s.filter;
             ModuleCard::new(t, "gallery-filter", "Filter", Category::Filter, off)
                 .kind("Low-pass 12")
                 .show(
@@ -340,7 +345,10 @@ fn cards(ui: &mut Ui, t: &Theme, s: &mut GalleryState) {
                         )
                         .paint(ui, rect);
                     },
-                    |_| {},
+                    |ui| {
+                        ui.add(Knob::new(t, cutoff, "Cutoff").value_text("1.20 kHz"));
+                        ui.add(Knob::new(t, reso, "Reso").modulated(0.5));
+                    },
                 );
         });
         let [_, _, _, _, e, f, ..] = &mut s.knobs;

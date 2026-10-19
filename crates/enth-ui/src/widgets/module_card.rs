@@ -4,6 +4,11 @@
 //!
 //! The header is a drag handle: the caller reorders cards from [`CardResponse::header`]. Give
 //! every card an id from its module id, never its position, so a drag survives a reorder.
+//!
+//! A disabled card fades as a whole: stripe, title, display and every control inside it are
+//! drawn at `state.disabled_opacity` through one child `Ui`, so widgets need no disabled look of
+//! their own. The fill and the enable toggle stay at full strength, and the controls stay
+//! editable (a module can be set up before it is switched on).
 
 use egui::{
     Align, Align2, CornerRadius, IdSalt, Layout, Rect, Response, Role, Sense, Ui, UiBuilder, pos2,
@@ -118,7 +123,15 @@ impl<'a> ModuleCard<'a> {
         let stripe = t.stroke.thick;
         let r = t.radius.medium as u8;
         ui.painter().rect_filled(rect, t.radius.medium, self.fill());
-        ui.painter().rect_filled(
+        let inner = Rect::from_min_max(
+            pos2(rect.left() + stripe + t.space.gap, rect.top()),
+            pos2(rect.right() - t.space.gap, rect.bottom() - t.space.tight),
+        );
+        let header_rect =
+            Rect::from_min_size(inner.min, vec2(inner.width(), t.size.card.collapsed_height));
+        let (header, toggled) = self.controls(ui, header_rect);
+        let mut content = self.content(ui, rect);
+        content.painter().rect_filled(
             Rect::from_min_size(rect.min, vec2(stripe, height)),
             CornerRadius {
                 nw: r,
@@ -128,22 +141,16 @@ impl<'a> ModuleCard<'a> {
             },
             t.color.category.of(self.category),
         );
-        let inner = Rect::from_min_max(
-            pos2(rect.left() + stripe + t.space.gap, rect.top()),
-            pos2(rect.right() - t.space.gap, rect.bottom() - t.space.tight),
-        );
-        let header_rect =
-            Rect::from_min_size(inner.min, vec2(inner.width(), t.size.card.collapsed_height));
-        let (header, toggled) = self.header(ui, header_rect);
+        self.title(&content, header_rect);
         let body = Rect::from_min_max(pos2(inner.left(), header_rect.bottom()), inner.max);
         let display_rect =
             Rect::from_min_size(body.min, vec2(t.size.card.display_width, body.height()));
-        display(ui, display_rect);
+        display(&mut content, display_rect);
         let knobs = Rect::from_min_max(
             pos2(display_rect.right() + t.space.pad, body.top()),
             body.max,
         );
-        let mut child = ui.new_child(
+        let mut child = content.new_child(
             UiBuilder::new()
                 .max_rect(knobs)
                 .layout(Layout::left_to_right(Align::Min)),
@@ -169,7 +176,8 @@ impl<'a> ModuleCard<'a> {
         let fill = self.fill();
         let category = t.color.category.of(self.category);
         let top = ui.cursor().min;
-        // Background goes in first so it sits under the content painted below.
+        // Background and stripe go in first so they sit under the content painted below; their
+        // height is known only once the knobs are laid out.
         let background = ui.painter().add(egui::Shape::Noop);
         let inner_left = top.x + t.space.gap;
         let inner_width = width - 2.0 * t.space.gap;
@@ -177,15 +185,18 @@ impl<'a> ModuleCard<'a> {
             pos2(inner_left, top.y + stripe),
             vec2(inner_width, t.size.card.collapsed_height),
         );
-        let (header, toggled) = self.header(ui, header_rect);
+        let (header, toggled) = self.controls(ui, header_rect);
+        let mut content = self.content(ui, Rect::from_min_size(top, vec2(width, f32::INFINITY)));
+        let stripe_shape = content.painter().add(egui::Shape::Noop);
+        self.title(&content, header_rect);
         let mut y = header_rect.bottom();
         if self.display_height > 0.0 {
             let display_rect =
                 Rect::from_min_size(pos2(inner_left, y), vec2(inner_width, self.display_height));
-            display(ui, display_rect);
+            display(&mut content, display_rect);
             y = display_rect.bottom() + t.space.gap;
         }
-        let mut child = ui.new_child(
+        let mut child = content.new_child(
             UiBuilder::new()
                 .max_rect(Rect::from_min_size(
                     pos2(inner_left, y),
@@ -211,20 +222,20 @@ impl<'a> ModuleCard<'a> {
         let r = t.radius.medium as u8;
         ui.painter().set(
             background,
-            egui::Shape::Vec(vec![
-                egui::epaint::RectShape::filled(rect, t.radius.medium, fill).into(),
-                egui::epaint::RectShape::filled(
-                    Rect::from_min_size(rect.min, vec2(width, stripe)),
-                    CornerRadius {
-                        nw: r,
-                        ne: r,
-                        sw: 0,
-                        se: 0,
-                    },
-                    category,
-                )
-                .into(),
-            ]),
+            egui::epaint::RectShape::filled(rect, t.radius.medium, fill),
+        );
+        content.painter().set(
+            stripe_shape,
+            egui::epaint::RectShape::filled(
+                Rect::from_min_size(rect.min, vec2(width, stripe)),
+                CornerRadius {
+                    nw: r,
+                    ne: r,
+                    sw: 0,
+                    se: 0,
+                },
+                category,
+            ),
         );
         CardResponse {
             header,
@@ -233,20 +244,27 @@ impl<'a> ModuleCard<'a> {
         }
     }
 
-    /// Toggle square, title, module type; returns the header (drag) response.
-    fn header(&mut self, ui: &mut Ui, rect: Rect) -> (Response, bool) {
+    /// A child `Ui` over `rect` for everything but the fill and the toggle. A disabled card fades
+    /// it as a whole; nothing inside needs a disabled look of its own.
+    fn content(&self, ui: &mut Ui, rect: Rect) -> Ui {
+        let mut content = ui.new_child(UiBuilder::new().max_rect(rect));
+        if !*self.enabled {
+            content.multiply_opacity(self.theme.state.disabled_opacity);
+        }
+        content
+    }
+
+    /// The header's drag handle and the enable toggle (painted at full strength, since it is how
+    /// the card comes back). Returns the header response and whether the toggle was clicked.
+    fn controls(&mut self, ui: &mut Ui, rect: Rect) -> (Response, bool) {
         let t = self.theme;
         let c = &t.color;
-        let side = t.size.card.toggle;
-        let toggle_rect = Rect::from_center_size(
-            pos2(rect.left() + side / 2.0, rect.center().y),
-            vec2(side, side),
-        );
         let id = ui.make_persistent_id(self.salt);
         let header = ui.interact(rect, id.with("header"), Sense::click_and_drag());
         header.widget_info(|| {
             egui::WidgetInfo::labeled(Role::Button, true, format!("Move {}", self.title))
         });
+        let toggle_rect = self.toggle_rect(rect);
         let toggle = ui.interact(toggle_rect, id.with("enable"), Sense::click());
         let toggled = toggle.clicked();
         if toggled {
@@ -267,35 +285,45 @@ impl<'a> ModuleCard<'a> {
                 egui::StrokeKind::Inside,
             );
         }
-        let title_ink = if enabled {
-            c.text.primary
-        } else {
-            c.text.dimmed
-        };
-        let title_left = toggle_rect.right() + t.space.gap;
+        (header, toggled)
+    }
+
+    fn toggle_rect(&self, header: Rect) -> Rect {
+        let side = self.theme.size.card.toggle;
+        Rect::from_center_size(
+            pos2(header.left() + side / 2.0, header.center().y),
+            vec2(side, side),
+        )
+    }
+
+    /// Title and module type, right of the toggle, in the card's content `Ui`.
+    fn title(&self, content: &Ui, header: Rect) {
+        let t = self.theme;
+        let c = &t.color;
+        let painter = content.painter();
+        let title_left = self.toggle_rect(header).right() + t.space.gap;
         let title = paint::text_in(
-            ui,
+            content,
             painter,
-            pos2(title_left, rect.center().y),
+            pos2(title_left, header.center().y),
             Align2::LEFT_CENTER,
             self.title,
             &t.text.title,
-            title_ink,
-            rect.right() - title_left,
+            c.text.primary,
+            header.right() - title_left,
         );
         if let Some(kind) = self.kind {
             let left = title.right() + t.space.gap;
             paint::text_in(
-                ui,
+                content,
                 painter,
-                pos2(left, rect.center().y),
+                pos2(left, header.center().y),
                 Align2::LEFT_CENTER,
                 kind,
                 &t.text.label,
                 c.text.label,
-                (rect.right() - left).max(0.0),
+                (header.right() - left).max(0.0),
             );
         }
-        (header, toggled)
     }
 }

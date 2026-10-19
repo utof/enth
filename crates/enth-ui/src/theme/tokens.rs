@@ -317,6 +317,21 @@ pub struct DisplaySizes {
     pub marker_radius: f32,
 }
 
+/// How a control or a group of controls reads in a given state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct States {
+    /// Opacity of everything inside a disabled module card (title, display, knobs, values),
+    /// and of egui's own disabled widgets. The controls stay editable.
+    pub disabled_opacity: f32,
+}
+
+impl Default for States {
+    /// The dark theme's states, so theme files written before this token still load.
+    fn default() -> Self {
+        super::Theme::dark().state
+    }
+}
+
 /// Animation rates. Nothing animates unless it is visible and its data changed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Motion {
