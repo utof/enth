@@ -165,6 +165,15 @@ pub fn resolve_plugin_id(entry: &PluginEntry, wanted: Option<&str>) -> Result<CS
     }
 }
 
+/// The `version` the plugin's descriptor reports (nice-plug writes the same string into its saved state).
+pub fn plugin_version(entry: &PluginEntry, id: &CStr) -> String {
+    entry
+        .get_plugin_factory()
+        .and_then(|f| f.plugin_descriptors().find(|d| d.id() == Some(id)))
+        .and_then(|d| d.version().map(|v| v.to_string_lossy().into_owned()))
+        .unwrap_or_default()
+}
+
 pub fn instantiate(entry: &PluginEntry, id: &CStr) -> Result<PluginInstance<Host>, String> {
     let info = host_info()?;
     PluginInstance::<Host>::new(
