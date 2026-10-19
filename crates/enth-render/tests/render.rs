@@ -171,7 +171,14 @@ fn nudged(spec: &enth_params::ParamSpec, value: f32) -> Option<f32> {
 /// Parameters whose effect decorrelates the waveform by nature, so a 1e-3 move changes the fine structure of the
 /// output and with it a 10 ms RMS envelope, with no seed involved (a reverb's room size moves its delay taps).
 /// A lane adds `"module_kind.key"` here with the reason in a comment; reseeding bugs never belong here.
-const EXEMPT: &[&str] = &[];
+const EXEMPT: &[&str] = &[
+    // Lane FXW: the room size moves every delay tap of the reverb (a 0.1 % move is 3.8 samples of an 80 ms room), and
+    // with it the modal frequencies of the tail by 0.1 %. The reverb tail of a chord is a handful of decaying modes,
+    // whose beating over the release and after it is set by those frequencies: the 10 ms power in the tail moved by up
+    // to 1.46x (1.97 dB) in windows 0.8 to 1 s after the notes began, with no seed involved (the reverb has none: its
+    // delay draws are a constant table). `room` is not modulatable, and the other nine reverb parameters pass.
+    "reverb.room",
+];
 
 /// Seed stability (P1a acceptance): moving any continuous parameter by 1e-3 relative changes the 10 ms RMS
 /// envelope by under 0.05 dB, because no seed depends on a parameter value. Covers every non-zero float parameter
