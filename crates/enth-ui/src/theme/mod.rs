@@ -2,20 +2,42 @@
 //! repaint rate in the editor comes from [`Theme`].
 //!
 //! Three tiers: private primitives (`primitives.rs`), then the public semantic and component
-//! tokens (`tokens.rs`) that widgets read. [`Theme::apply`] hands the same tokens to egui's own
-//! style, so built-in widgets (buttons, text fields, scroll bars) match ours.
+//! tokens that widgets read, one file per area so concurrent lanes never edit the same file:
+//!
+//! | File | Tokens |
+//! | --- | --- |
+//! | `colors.rs` | surfaces, lines, text, accents, category and score hues |
+//! | `space.rs` | spacing, radius, stroke widths |
+//! | `text.rs` | text styles |
+//! | `sizes/` | per-widget dimensions, one file per UI area (`knob.rs`, `card.rs`, `editor.rs`, ...) |
+//! | `states.rs` | disabled opacity |
+//! | `motion.rs` | repaint rates, transition time |
+//! | `glyph.rs` | symbols with a fixed meaning |
+//!
+//! Each file defines its tokens and builds their dark-theme values in its own `dark()`; [`Theme::dark`] only
+//! composes them. [`Theme::apply`] hands the same tokens to egui's own style, so built-in widgets (buttons,
+//! text fields, scroll bars) match ours.
 
+mod colors;
 mod fonts;
+pub mod glyph;
 pub mod hex;
+mod motion;
 mod primitives;
-mod tokens;
+mod sizes;
+mod space;
+mod states;
+mod text;
 
 use egui::{Color32, Shadow, Style, TextStyle, ThemePreference, Visuals, style::WidgetVisuals};
 use serde::{Deserialize, Serialize};
 
-pub use tokens::*;
-
-use primitives as p;
+pub use colors::*;
+pub use motion::*;
+pub use sizes::*;
+pub use space::*;
+pub use states::*;
+pub use text::*;
 
 /// All tokens of one theme. Serialisable, so a dev-time override file or a light theme needs
 /// no widget changes.
@@ -32,77 +54,6 @@ pub struct Theme {
     pub motion: Motion,
 }
 
-/// Module categories; each has a stripe colour.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Category {
-    Generator,
-    Filter,
-    Modulator,
-    Effect,
-}
-
-/// Challenge feedback on a control.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Score {
-    Good,
-    Near,
-    Bad,
-}
-
-/// Symbols with a fixed meaning. All are covered by Inter (checked by a test).
-pub mod glyph {
-    /// Score: correct.
-    pub const GOOD: &str = "✓";
-    /// Score: close.
-    pub const NEAR: &str = "~";
-    /// Score: wrong.
-    pub const BAD: &str = "✗";
-    /// Drag handle of a modulation source.
-    pub const HANDLE: &str = "⊕";
-    /// Play / audition.
-    pub const PLAY: &str = "▶";
-    /// Separator in a parameter path ("Filter › Cutoff").
-    pub const PATH: &str = "›";
-    /// Flow to the next stage ("Send to › Master").
-    pub const SEND: &str = "→";
-    /// Bullet in lists.
-    pub const BULLET: &str = "•";
-    /// Filled and empty dots (difficulty).
-    pub const DOT_ON: &str = "●";
-    pub const DOT_OFF: &str = "○";
-}
-
-impl Categories {
-    pub fn of(&self, category: Category) -> Color32 {
-        match category {
-            Category::Generator => self.generator,
-            Category::Filter => self.filter,
-            Category::Modulator => self.modulator,
-            Category::Effect => self.effect,
-        }
-    }
-}
-
-impl Scores {
-    pub fn of(&self, score: Score) -> Color32 {
-        match score {
-            Score::Good => self.good,
-            Score::Near => self.near,
-            Score::Bad => self.bad,
-        }
-    }
-}
-
-impl Score {
-    pub fn glyph(self) -> &'static str {
-        match self {
-            Score::Good => glyph::GOOD,
-            Score::Near => glyph::NEAR,
-            Score::Bad => glyph::BAD,
-        }
-    }
-}
-
 impl Default for Theme {
     fn default() -> Self {
         Self::dark()
@@ -110,123 +61,17 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// The dark theme, built from the private primitives.
+    /// The dark theme, one area at a time: each token file builds its own values from the private primitives.
     pub fn dark() -> Self {
         Self {
-            color: Colors {
-                surface: Surfaces {
-                    background: p::GRAY_900,
-                    card: p::GRAY_850,
-                    raised: p::GRAY_800,
-                    recessed: p::GRAY_950,
-                },
-                line: Lines { grid: p::GRAY_825 },
-                text: TextColors {
-                    primary: p::GRAY_100,
-                    label: p::GRAY_300,
-                    dimmed: p::GRAY_500,
-                },
-                accent: Accents {
-                    value: p::BLUE_400,
-                    value_wash: p::BLUE_WASH,
-                    modulation: p::ORANGE_400,
-                    modulation_wash: p::ORANGE_WASH,
-                },
-                category: Categories {
-                    generator: p::TEAL_400,
-                    filter: p::YELLOW_500,
-                    modulator: p::SLATE_400,
-                    effect: p::PURPLE_400,
-                },
-                score: Scores {
-                    good: p::GREEN_400,
-                    near: p::AMBER_300,
-                    bad: p::RED_400,
-                },
-            },
-            space: Space {
-                hairline: p::SPACE_0,
-                tight: p::SPACE_1,
-                gap: p::SPACE_2,
-                pad: p::SPACE_3,
-                section: p::SPACE_4,
-                wide: p::SPACE_5,
-                band: p::SPACE_6,
-            },
-            radius: Radius {
-                small: p::RADIUS_SMALL,
-                medium: p::RADIUS_MEDIUM,
-            },
-            stroke: Strokes {
-                thin: p::STROKE_THIN,
-                thick: p::STROKE_THICK,
-            },
-            text: TextStyles {
-                label: fonts::regular(p::TEXT_SMALL),
-                body: fonts::regular(p::TEXT_MEDIUM),
-                value: fonts::tabular(p::TEXT_MEDIUM),
-                title: fonts::semibold(p::TEXT_LARGE),
-                strong: fonts::semibold(p::TEXT_MEDIUM),
-            },
-            size: Sizes {
-                window: WindowSizes {
-                    default: egui::vec2(1200.0, 800.0),
-                    min: egui::vec2(1000.0, 680.0),
-                },
-                bar: BarSizes {
-                    header: 40.0,
-                    macros: 56.0,
-                    modulator_strip: 140.0,
-                    status: 22.0,
-                },
-                card: CardSizes {
-                    generator_height: 96.0,
-                    collapsed_height: 24.0,
-                    lane_width: 220.0,
-                    display_width: 128.0,
-                    lane_display_height: 40.0,
-                    toggle: 12.0,
-                },
-                knob: KnobSizes {
-                    diameter: 36.0,
-                    track: p::STROKE_THICK,
-                    cell_width: 56.0,
-                    drag_travel: 200.0,
-                    fine_ratio: 0.1,
-                    sweep_degrees: 270.0,
-                },
-                tile: TileSizes {
-                    width: 72.0,
-                    height: 56.0,
-                    badge: 14.0,
-                },
-                matrix: MatrixSizes {
-                    row_height: 16.0,
-                    target_width: 88.0,
-                    cell_width: 36.0,
-                },
-                pane: PaneSizes {
-                    lesson_width: 320.0,
-                },
-                display: DisplaySizes {
-                    grid_columns: 4,
-                    grid_rows: 2,
-                    marker_radius: 3.0,
-                },
-                handle: HandleSizes {
-                    radius: 4.0,
-                    reach: 8.0,
-                },
-                control_height: 24.0,
-            },
-            state: States {
-                disabled_opacity: 0.4,
-            },
-            motion: Motion {
-                animated_hz: p::RATE_ANIMATED,
-                scope_hz: p::RATE_SCOPE,
-                transition: 0.1,
-            },
+            color: Colors::dark(),
+            space: Space::dark(),
+            radius: Radius::dark(),
+            stroke: Strokes::dark(),
+            text: TextStyles::dark(),
+            size: Sizes::dark(),
+            state: States::dark(),
+            motion: Motion::dark(),
         }
     }
 
