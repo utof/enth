@@ -19,7 +19,10 @@
 use enth_analysis::descriptors::{Describer, Descriptors, NoteTiming};
 use enth_analysis::features::{FeatureCfg, FeatureExtractor};
 use enth_analysis::fft::{FftPath, FftPlanner};
-use enth_analysis::test_signals::{SR, ToyPatch, ToyPerf, render_toy};
+use enth_analysis::test_signals::{
+    CutoffLfo, SR, ToyPatch, ToyPerf, Wave, mix, oscillator, render_toy, render_toy_lfo, sine,
+    tremolo, white_noise,
+};
 use realfft::num_complex::Complex32;
 
 struct Fnv(u64);
@@ -162,10 +165,98 @@ fn descriptors_hash(d: &Descriptors) -> u64 {
     h.0
 }
 
+/// The descriptors added for the G1 eval findings (2026-10-20): the tonal pitch of a tone under noise, the
+/// low-range pitch of a sub octave, a filter LFO's sweep with the tremolo-corrected envelope, and a filter
+/// envelope's one-shot sweep.
+fn findings_hash() -> u64 {
+    let mut h = Fnv::new();
+    let mut d = Describer::new(SR);
+    let tone = oscillator(SR, Wave::Triangle, 220.0, 0.8, 0.0);
+    let mut x = white_noise(SR, 0.5, 0.8, 7);
+    for (a, b) in x.iter_mut().zip(&tone) {
+        *a += 0.3 * b;
+    }
+    let t = d
+        .describe(&x, NoteTiming::held(0.6))
+        .unwrap()
+        .tonal
+        .unwrap();
+    for v in [t.f0_hz, t.cents_dev, t.harmonicity, t.share] {
+        h.f64(v);
+    }
+    let sub = mix(
+        &oscillator(SR, Wave::Saw, 65.406, 1.5, 0.0),
+        &sine(SR, 32.703, 0.5, 1.5),
+    );
+    let p = d
+        .describe(&sub, NoteTiming::held(1.0))
+        .unwrap()
+        .pitch
+        .unwrap();
+    for v in [p.f0_hz, p.stability, p.voiced] {
+        h.f64(v);
+    }
+    let patch = ToyPatch {
+        cutoff_hz: 900.0,
+        resonance_q: 1.5,
+        sustain_db: 0.0,
+        ..ToyPatch::default()
+    };
+    let perf = ToyPerf {
+        note_hz: 110.0,
+        dur_s: 3.0,
+        hold_s: 2.6,
+    };
+    let lfo = CutoffLfo {
+        rate_hz: 2.0,
+        depth_oct: 1.0,
+    };
+    let mut x = render_toy_lfo(SR, &patch, &perf, (0.0, 0.37), 0.0, Some(lfo));
+    tremolo(&mut x, SR, 3.0, 0.3);
+    let r = d.describe(&x, NoteTiming::held(perf.hold_s)).unwrap();
+    let s = r.modulation.filter_sweep.unwrap();
+    for v in [s.hz, s.ms, Some(s.depth_oct)] {
+        h.opt(v);
+    }
+    let e = r.envelope.unwrap();
+    for v in [e.attack_ms, e.duration_ms, e.ripple_db] {
+        h.f64(v);
+    }
+    for v in [e.sustain_db, e.release_ms, e.beat_periods] {
+        h.opt(v);
+    }
+    let pluck = ToyPatch {
+        cutoff_hz: 500.0,
+        env_amount_oct: 4.0,
+        env_decay_ms: 300.0,
+        sustain_db: -60.0,
+        decay_ms: 800.0,
+        ..ToyPatch::default()
+    };
+    let perf = ToyPerf {
+        note_hz: 220.0,
+        dur_s: 1.5,
+        hold_s: 1.2,
+    };
+    let x = render_toy(SR, &pluck, &perf, (0.0, 0.37), 0.0);
+    let s = d
+        .describe(&x, NoteTiming::held(perf.hold_s))
+        .unwrap()
+        .modulation
+        .filter_sweep
+        .unwrap();
+    for v in [s.hz, s.ms, Some(s.depth_oct)] {
+        h.opt(v);
+    }
+    h.0
+}
+
 /// Pinned on `x86_64` Linux (an AVX2 machine) and checked equal under wasmtime 48 (`wasm32-wasip1`) on 2026-10-19.
 const FFT_SCALAR: u64 = 0xb7c8_97c5_1e15_be08;
 const FEATURES_SCALAR: u64 = 0x7c65_ee25_fda7_f8ea;
 const DESCRIPTORS_SCALAR: u64 = 0x270e_0957_e2c3_42e9;
+/// Pinned on `x86_64` Linux on 2026-10-20; not yet compared under wasmtime (not installed on the lane machine).
+const FINDINGS_SCALAR: u64 = 0xf42d_955b_7708_91fe;
 
 #[test]
 fn scalar_fft_is_pinned() {
@@ -208,3 +299,13 @@ fn scalar_descriptors_are_pinned() {
 
 const LUFS_NATIVE: f64 = -16.492_280_478_318_243;
 const TRUE_PEAK_NATIVE: f64 = -2.238_688_230_184_584;
+
+#[test]
+fn scalar_findings_descriptors_are_pinned() {
+    let h = findings_hash();
+    println!("findings descriptors hash {h:#018x}");
+    assert_eq!(
+        h, FINDINGS_SCALAR,
+        "findings descriptor bits changed: {h:#018x}"
+    );
+}
