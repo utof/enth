@@ -48,6 +48,9 @@ struct Options {
     plugin_name: String,
     release: bool,
     build: bool,
+    /// A directory that already holds `<package>.clap` and `<package>.vst3` (`--bundle-dir`, else `ENTH_BUNDLE_DIR`):
+    /// the coordinator's release-bundle cache, so a harness lane never rebuilds the plugin. Implies `--no-build`.
+    bundle_dir: Option<PathBuf>,
     formats: Vec<Format>,
 }
 
@@ -58,6 +61,9 @@ fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
         package,
         release: false,
         build: true,
+        bundle_dir: std::env::var_os("ENTH_BUNDLE_DIR")
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from),
         formats: Vec::new(),
     };
     let mut args = rest.iter();
@@ -65,6 +71,12 @@ fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
         match arg.as_str() {
             "--release" => options.release = true,
             "--no-build" => options.build = false,
+            "--bundle-dir" => {
+                options.bundle_dir = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--bundle-dir needs a directory with the prebuilt bundles")?,
+                ));
+            }
             "--format" => match args.next().map(String::as_str) {
                 Some("clap") => options.formats.push(Format::Clap),
                 Some("vst3") => options.formats.push(Format::Vst3),
@@ -141,19 +153,24 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     )?;
     require_tool("timeout", "needed to stop a hung REAPER")?;
 
-    if options.build {
+    if options.build && options.bundle_dir.is_none() {
         let mut build_args = vec![package.to_owned(), "--locked".to_owned()];
         if options.release {
             build_args.push("--release".to_owned());
         }
         bundle::bundle(&build_args)?;
     }
-    let bundled = bundle::bundled_dir()?;
+    let bundled = match &options.bundle_dir {
+        Some(dir) => dir
+            .canonicalize()
+            .map_err(|e| format!("--bundle-dir {}: {e}", dir.display()))?,
+        None => bundle::bundled_dir()?,
+    };
     for format in &options.formats {
         let artefact = bundled.join(format!("{package}.{}", format.tag()));
         if !artefact.exists() {
             return Err(format!(
-                "{} is missing; run without --no-build",
+                "{} is missing; run without --no-build (or point --bundle-dir at a directory that holds it)",
                 artefact.display()
             ));
         }
