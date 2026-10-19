@@ -1044,6 +1044,7 @@ mod tests {
             default: 0.5,
             flags: vec!["IS_AUTOMATABLE"],
             value: Some(0.5),
+            initial_name: None,
         }
     }
 

@@ -9,7 +9,7 @@ use std::ffi::CStr;
 use std::time::Instant;
 
 use clack_extensions::state::PluginState;
-use clack_host::events::event_types::{NoteOffEvent, NoteOnEvent, ParamValueEvent};
+use clack_host::events::event_types::{MidiEvent, NoteOffEvent, NoteOnEvent, ParamValueEvent};
 use clack_host::events::spaces::CoreEventSpace;
 use clack_host::prelude::*;
 use serde_json::{Value, json};
@@ -97,6 +97,9 @@ impl Session {
         config: RenderConfig,
     ) -> Result<Self, String> {
         let mut instance = instantiate(entry, id)?;
+        // The names before the state: a plugin may rename parameters from its state (enth-plugin's slots), and
+        // scripts keep working with the names a fresh instance shows.
+        let before = state.map(|_| query::params(&mut instance));
         if let Some(state) = state {
             let handle = instance.plugin_handle();
             let ext = handle
@@ -105,7 +108,10 @@ impl Session {
             ext.load(&handle, &mut &*state)
                 .map_err(|e| format!("plugin refused the state blob: {e}"))?;
         }
-        let params = query::params(&mut instance);
+        let mut params = query::params(&mut instance);
+        if let Some(before) = &before {
+            query::note_initial_names(&mut params, before);
+        }
         let (inputs, outputs) = query::audio_ports(&mut instance);
         let layout = PortLayout {
             inputs: inputs.iter().map(|p| p.channels as usize).collect(),
@@ -402,6 +408,11 @@ impl JobRunner {
                     ClapId::new(*id),
                     Pckn::match_all(),
                     *value,
+                )),
+                Kind::MidiCc { channel, cc, value } => self.events_in.push(&MidiEvent::new(
+                    time,
+                    0,
+                    [0xB0 | (channel & 0x0F), *cc & 0x7F, *value & 0x7F],
                 )),
             }
         }

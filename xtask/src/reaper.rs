@@ -44,13 +44,12 @@ const LAUNCH_TIMEOUT_SECS: u32 = 90;
 /// project after an edit fails the scenario.
 const DIRTY_MARKING_EXPECTED: bool = false;
 
-/// Whether CLAP ignoring a slot automation lane that never moves, in REAPER's offline render, is a known gap. The
-/// plugin takes the host's values at activation as its baseline ("the patch wins at activation") and REAPER
-/// reactivates a CLAP plugin about 30 ms into an offline render with the lane's value already set, so the patch plays
-/// until the lane moves; VST3 applies the lane. `slot-automation` measures it (a lane held at 0.25 on osc1's level) and
-/// reports `info` while this is `true`; set it to `false` once the plugin applies such a lane, and the CLAP result
-/// becomes a check.
-const CLAP_FLAT_LANE_IS_KNOWN_GAP: bool = true;
+/// Whether CLAP ignoring a slot automation lane that never moves, in REAPER's offline render, is a known gap.
+/// `slot-automation` measures it (a lane held at 0.25 on osc1's level) and reports `info` while this is `true`. It was
+/// (lane RH found it): REAPER loads the project's state while the plugin is active and sends the lane's value once,
+/// in the first block, and the plugin's re-baseline after a load adopted that value with the restored ones. Lane PL
+/// fixed it (the plugin adopts only the values the load restored), so the CLAP result is a check.
+const CLAP_FLAT_LANE_IS_KNOWN_GAP: bool = false;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Format {

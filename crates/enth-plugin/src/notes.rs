@@ -8,12 +8,18 @@
 //! - Host notes are on port 0, so a host note-off never releases an editor audition note
 //!   ([`enth_session::AUDITION_PORT`]), and audition notes' `NOTE_END`s are not reported to the host.
 //! - `PolyModulation` becomes `EventKind::MacroVoice` for that voice id; `MonoAutomation` is ignored (`process()`
-//!   reads the parameters' modulated values directly, so applying it too would count it twice).
+//!   reads the parameters' modulated values directly, so applying it too would count it twice). A `PolyModulation`
+//!   for a voice id that no playing note carries changes nothing (the engine matches by note id), and a note-on
+//!   starts its voice's offsets at 0, so a host that modulates before the note starts (CLAP allows it) loses that
+//!   offset until it sends the next one.
+//! - MIDI CC 1 (the mod wheel's MSB), on any channel, becomes `EventKind::ModWheel` with nice-plug's value
+//!   (`cc / 127`). nice-plug delivers CCs only with `MidiConfig::MidiCCs` (docs/plugin.md, the `MidiCCs` decision);
+//!   other CCs, CC 33 (the wheel's LSB), pitch bend and pressure are ignored: the engine has no input for them.
 
 use enth_engine::{Event, EventKind, NoteEnd, NoteKey};
 use enth_patch::model::MACROS;
 use enth_session::AUDITION_PORT;
-use nice_plug::midi::{Channel, Key, NoteEvent, VoiceID};
+use nice_plug::midi::{Channel, Key, NoteEvent, VoiceID, control_change};
 
 /// The port of every host note (CLAP has one note input port).
 pub const HOST_PORT: i16 = 0;
@@ -97,6 +103,10 @@ pub fn engine_event<S>(event: &NoteEvent<S>) -> Option<Event> {
             let index = u8::try_from(poly_modulation_id)
                 .ok()
                 .filter(|&i| usize::from(i) < MACROS)?;
+            // nice-plug sends poly-mod only for a real note id; −1 would be the engine's wildcard (every voice).
+            if voice_id < 0 {
+                return None;
+            }
             (
                 timing,
                 EventKind::MacroVoice {
@@ -106,6 +116,12 @@ pub fn engine_event<S>(event: &NoteEvent<S>) -> Option<Event> {
                 },
             )
         }
+        NoteEvent::MidiCC {
+            timing,
+            cc: control_change::MODULATION_MSB,
+            value,
+            ..
+        } => (timing, EventKind::ModWheel { value }),
         _ => return None,
     };
     Some(Event { offset, kind })
@@ -248,12 +264,52 @@ mod tests {
             normalized_offset: 0.5,
         };
         assert_eq!(engine_event(&other), None);
+        let wildcard: Ev = NoteEvent::PolyModulation {
+            timing: 5,
+            voice_id: -1,
+            poly_modulation_id: 0,
+            normalized_offset: 0.5,
+        };
+        assert_eq!(engine_event(&wildcard), None, "never every voice");
         let mono: Ev = NoteEvent::MonoAutomation {
             timing: 0,
             poly_modulation_id: 0,
             normalized_value: 0.5,
         };
         assert_eq!(engine_event(&mono), None);
+    }
+
+    #[test]
+    fn the_mod_wheel_comes_from_midi_cc_1_on_any_channel_and_other_ccs_are_ignored() {
+        let cc = |channel, cc, value| -> Ev {
+            NoteEvent::MidiCC {
+                timing: 9,
+                channel,
+                cc,
+                value,
+            }
+        };
+        assert_eq!(
+            engine_event(&cc(0, 1, 1.0)),
+            Some(Event {
+                offset: 9,
+                kind: EventKind::ModWheel { value: 1.0 }
+            })
+        );
+        assert_eq!(
+            engine_event(&cc(15, 1, 64.0 / 127.0)).map(|e| e.kind),
+            Some(EventKind::ModWheel {
+                value: 64.0 / 127.0
+            })
+        );
+        assert_eq!(engine_event(&cc(0, 33, 0.5)), None, "the wheel's LSB");
+        assert_eq!(engine_event(&cc(0, 7, 0.5)), None);
+        let bend: Ev = NoteEvent::MidiPitchBend {
+            timing: 0,
+            channel: 0,
+            value: 0.7,
+        };
+        assert_eq!(engine_event(&bend), None);
     }
 
     #[test]
