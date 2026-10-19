@@ -1,0 +1,18 @@
+[package]
+name = "spike-shell"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+path = "../src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+nice-plug = { version = "=0.4.2", default-features = false, features = ["vst3", "editor", "assert_process_allocs"] }
+nice-plug-egui = "=0.6.0"
+egui = { version = "=0.37.0", features = ["default_fonts"] }
+serde_json = { version = "=1.0.154", features = ["float_roundtrip"] }
+
+[workspace]
