@@ -1,0 +1,39 @@
+[package]
+name = "spike-engine"
+description = "Phase 0 lane B: engine speed and determinism spike (docs/spikes/engine.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+doctest = false
+
+[[bin]]
+name = "engine-hash"      # prints one `<case> <sha256>` line per golden render / seed; native and wasm32-wasip1 must agree
+path = "src/bin/engine-hash.rs"
+
+[[bin]]
+name = "engine-speed"     # renders 2 s of a template N times: for hyperfine, valgrind and quick x-realtime numbers
+path = "src/bin/engine-speed.rs"
+
+[[bench]]
+name = "instr"            # gungraun (callgrind) instruction counts: the regression gate; needs valgrind
+harness = false
+
+[features]
+# Negative control only: route transcendentals through `std` instead of the pinned `libm`. Renders and
+# patch hashes then differ between platforms (and native vs wasm). Never enable it in the product.
+std-math = []
+
+[dependencies]
+libm = "=0.2.16"          # pinned with `=`: bumping it is an engine-version change
+sha2 = "0.11.1"           # pure Rust SHA-256 (runtime CPU dispatch cannot change a digest)
+wide = "=1.7.1"           # SIMD lanes (f32x4 / f32x8); never its mul_add (fused only where the build has FMA)
+
+[dev-dependencies]
+assert_no_alloc = "=1.1.2"   # BSD-1-Clause: needs the allowance in deny.toml
+gungraun = "=0.20.0"
+
+[lints]
+workspace = true

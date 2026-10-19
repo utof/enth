@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "xtask"]           # add "spikes/*", "tools/*" when the first one exists (an empty glob is an error)
+members = ["crates/*", "spikes/*", "xtask"]   # add "tools/*" when the first one exists (an empty glob is an error)
 default-members = ["crates/*", "xtask"]   # plain `cargo build/test/clippy` skip spikes and tools
 
 [workspace.package]
