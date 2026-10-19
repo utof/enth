@@ -1,7 +1,7 @@
-//! `cargo xtask host-render [--release] [--no-build] [--update]`: the plugin-level golden render.
+//! `cargo xtask host-render [--package <pkg>] [--release] [--no-build] [--update]`: the plugin-level golden render.
 //!
-//! Bundles `spike-shell`, builds `enth-test-host`, renders each case in
-//! `tools/test-host/golden/spike-shell.toml` through the plugin's real CLAP entry point (offline, fixed
+//! Bundles the package (default: see `plugin::default_package`), builds `enth-test-host`, renders each case in
+//! `tools/test-host/golden/<package>.toml` through the plugin's real CLAP entry point (offline, fixed
 //! block size, `process()` on one thread, no display), and compares the SHA-256 of the samples with the
 //! committed hash. A mismatch means the plugin's sound, its parameter handling, its state loading or the
 //! test host changed: update the golden deliberately with `--update` and say why in the commit message.
@@ -13,11 +13,9 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-use crate::bundle;
+use crate::{bundle, plugin};
 
-const PACKAGE: &str = "spike-shell";
 const TEST_HOST_PACKAGE: &str = "enth-test-host";
-const GOLDEN: &str = "tools/test-host/golden/spike-shell.toml";
 
 #[derive(Deserialize)]
 struct Golden {
@@ -40,27 +38,31 @@ struct Case {
     sha256: String,
 }
 
+const USAGE: &str =
+    "usage: cargo xtask host-render [--package <pkg>] [--release] [--no-build] [--update]";
+
 struct Options {
+    package: String,
     release: bool,
     build: bool,
     update: bool,
 }
 
-fn parse_options(args: &[String]) -> Result<Options, String> {
+fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
+    let (package, rest) = plugin::one_package(plugin::split_packages(args, false)?, root)?;
     let mut options = Options {
+        package,
         release: false,
         build: true,
         update: false,
     };
-    for arg in args {
+    for arg in &rest {
         match arg.as_str() {
             "--release" => options.release = true,
             "--no-build" => options.build = false,
             "--update" => options.update = true,
             other => {
-                return Err(format!(
-                    "unknown option {other:?}; usage: cargo xtask host-render [--release] [--no-build] [--update]"
-                ));
+                return Err(format!("unknown option {other:?}; {USAGE}"));
             }
         }
     }
@@ -71,14 +73,17 @@ pub fn host_render(args: &[String]) -> Result<(), String> {
     if !cfg!(target_os = "linux") {
         return Err("host-render is Linux-only".to_owned());
     }
-    let options = parse_options(args)?;
     let meta = crate::metadata()?;
+    let options = parse_options(args, &meta.workspace_root)?;
+    plugin::require_member(&meta, &options.package)?;
+    let package = options.package.as_str();
     let root = meta.workspace_root;
     let target = meta.target_directory;
     let profile = if options.release { "release" } else { "debug" };
+    println!("host-render: package {package}");
 
     if options.build {
-        let mut bundle_args = vec![PACKAGE.to_owned(), "--locked".to_owned()];
+        let mut bundle_args = vec![package.to_owned(), "--locked".to_owned()];
         let mut build = crate::cargo();
         build
             .current_dir(&root)
@@ -96,20 +101,23 @@ pub fn host_render(args: &[String]) -> Result<(), String> {
         }
     }
 
-    let clap = target.join("bundled").join(format!("{PACKAGE}.clap"));
+    let clap = plugin::clap_bundle(&target, package)?;
     let host = target.join(profile).join(TEST_HOST_PACKAGE);
-    for path in [&clap, &host] {
-        if !path.exists() {
-            return Err(format!(
-                "{} does not exist (run without --no-build)",
-                path.display()
-            ));
-        }
+    if !host.exists() {
+        return Err(format!(
+            "{} does not exist (run without --no-build)",
+            host.display()
+        ));
     }
 
-    let golden_path = root.join(GOLDEN);
-    let golden_text = std::fs::read_to_string(&golden_path)
-        .map_err(|e| format!("{}: {e}", golden_path.display()))?;
+    let golden_file = plugin::host_golden(package);
+    let golden_path = root.join(&golden_file);
+    let golden_text = std::fs::read_to_string(&golden_path).map_err(|e| {
+        format!(
+            "{}: {e} (host-render compares {package} with the committed hashes in {golden_file})",
+            golden_path.display()
+        )
+    })?;
     let golden: Golden =
         toml::from_str(&golden_text).map_err(|e| format!("{}: {e}", golden_path.display()))?;
     let golden_dir = golden_path.parent().unwrap_or(Path::new("."));
@@ -136,7 +144,7 @@ pub fn host_render(args: &[String]) -> Result<(), String> {
         std::fs::write(&golden_path, updated)
             .map_err(|e| format!("{}: {e}", golden_path.display()))?;
         println!(
-            "host-render: updated {} hashes in {GOLDEN}",
+            "host-render: updated {} hashes in {golden_file}",
             new_hashes.len()
         );
         return Ok(());

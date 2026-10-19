@@ -5,13 +5,16 @@
     reason = "xtask is a CLI tool"
 )]
 
+mod affected;
 mod agent_eval;
 mod bench;
 mod bundle;
 mod engine;
 mod golden;
 mod host_render;
+mod plugin;
 mod reaper;
+mod validate;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -51,6 +54,7 @@ struct Metadata {
 struct Package {
     id: String,
     name: String,
+    manifest_path: PathBuf,
     dependencies: Vec<Dependency>,
 }
 
@@ -88,26 +92,38 @@ impl LayersFile {
 const USAGE: &str = "usage: cargo xtask <command>
   check-layers                      workspace members only depend on lower layers
   wasm-check                        core crates build for wasm32-unknown-unknown
-  bundle <pkg> [--release] [...]    build a plugin and create .clap / .vst3 bundles in target/bundled
-  install <pkg> [--release] [...]   bundle, then copy to ~/.clap and ~/.vst3
-  reaper-test [--release] [--no-build] [--format clap|vst3]
+  affected [--base <rev>]           the workspace crates a change touches, plus their dependants (one per line;
+                                    the change is the working tree against the merge base with main; used by
+                                    `scripts/gate.sh lane`)
+  bundle [<pkg>|--package <pkg>]... [--release] [...]
+                                    build plugins and create .clap / .vst3 bundles in target/bundled
+  install [<pkg>|--package <pkg>]... [--release] [...]
+                                    bundle, then copy to ~/.clap and ~/.vst3
+  validate [--package <pkg>] [--release] [--no-build] [-- <clap-validator options>]
+                                    bundle, then run the pinned clap-validator 0.4.1 (downloaded into target/tools/,
+                                    sha256-checked) on the .clap file; the debug bundle has assert_process_allocs on
+  reaper-test [--package <pkg>] [--plugin-name <name>] [--release] [--no-build] [--format clap|vst3]
                                     local gate: load, params, automation and state in headless REAPER
-  host-render [--release] [--no-build] [--update]
-                                    plugin-level golden: bundle spike-shell, render it offline through the test host (Linux)
+  host-render [--package <pkg>] [--release] [--no-build] [--update]
+                                    plugin-level golden: bundle <pkg>, render it offline through the test host (Linux)
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
   bench [-p <pkg>] [--bench <name>] gungraun instruction budgets (default package enth-engine; alias: budget)
   agent-eval [--dry-run] [...]      the agent-eval harness: agents design sounds with `enth` (--dry-run: scripted fake
-                                    agent, no model call; a real run needs --confirm-spend); see `agent-eval --help`";
+                                    agent, no model call; a real run needs --confirm-spend); see `agent-eval --help`
+
+--package defaults to spike-shell, and to enth-plugin once it exports a CLAP entry (src/plugin.rs).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("check-layers") => check_layers(),
         Some("wasm-check") => wasm_check(),
+        Some("affected") => affected::affected(&args[1..]),
         Some("bundle") => bundle::bundle(&args[1..]),
         Some("install") => bundle::install(&args[1..]),
+        Some("validate") => validate::validate(&args[1..]),
         Some("reaper-test") => reaper::reaper_test(&args[1..]),
         Some("host-render") => host_render::host_render(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
