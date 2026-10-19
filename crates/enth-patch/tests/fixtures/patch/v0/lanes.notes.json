@@ -1,0 +1,17 @@
+[
+  {
+    "from": 0,
+    "message": "osc2.level: 3 dB is above full scale and was clamped to 100 %",
+    "path": "generators[1].params.level"
+  },
+  {
+    "from": 0,
+    "message": "the route to osc1.level was dropped: level changed from dB to percent, so its depth no longer means the same",
+    "path": "routes[1]"
+  },
+  {
+    "from": 0,
+    "message": "the route to osc2.level was dropped: level changed from dB to percent, so its depth no longer means the same",
+    "path": "routes[2]"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "from": 0,
+    "message": "osc1.level: the v0 default of -6 dB is written out as a percentage",
+    "path": "generators[0].params.level"
+  }
+]

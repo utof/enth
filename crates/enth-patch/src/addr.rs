@@ -126,6 +126,10 @@ impl AddrError {
             AddrError::ReservedId { .. } => format!("pick another id; reserved: {}, macro1..macro8", RESERVED_IDS.join(", ")),
             AddrError::BadAddress { expected, .. } => format!("write {expected}"),
             AddrError::UnknownParam { .. } => "list the keys with `enth params <kind>`".to_owned(),
+            // Macros and slots count from 1; a position (`generators[9]`) counts from 0.
+            AddrError::BadIndex { text, max } if text.contains('[') => {
+                format!("the first position is 0 and the last is {max}")
+            }
             AddrError::BadIndex { max, .. } => format!("use 1..={max}"),
             AddrError::BadSection { .. } => {
                 let keys: Vec<&str> = Section::ALL.iter().map(|s| s.key()).collect();

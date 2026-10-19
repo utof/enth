@@ -466,6 +466,15 @@ impl PatchError {
                 let param = addr.rsplit_once('.').map_or(addr.as_str(), |(_, p)| p);
                 closest(param, keys.iter().copied())
             }
+            // An address whose parameter key exists on no module kind (so no module was consulted): suggest from
+            // every key there is.
+            PatchError::Addr(AddrError::UnknownParam { text }) => {
+                let param = text.rsplit_once('.').map_or(text.as_str(), |(_, p)| p);
+                closest(param, all_param_keys())
+            }
+            PatchError::Addr(AddrError::BadSection { text }) => {
+                closest(text, Section::ALL.iter().map(|s| s.key()))
+            }
             PatchError::UnknownKind(UnknownKind(k)) => closest(k, kind_keys()),
             PatchError::Value(ValueError::BadValue {
                 text,
@@ -488,6 +497,20 @@ fn rate_name(r: Rate) -> &'static str {
     }
 }
 
+/// Every parameter key of every module kind, `voice` and `master`.
+fn all_param_keys() -> Vec<&'static str> {
+    use crate::catalogue::{CATALOGUE, MASTER_PARAMS, VOICE_PARAMS};
+    let mut keys: Vec<&'static str> = CATALOGUE
+        .iter()
+        .flat_map(|m| m.params.iter().map(|p| p.key))
+        .chain(VOICE_PARAMS.iter().map(|p| p.key))
+        .chain(MASTER_PARAMS.iter().map(|p| p.key))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
 fn kind_keys() -> Vec<&'static str> {
     ModuleKind::ALL.iter().map(|k| k.key()).collect()
 }
@@ -500,8 +523,8 @@ impl fmt::Display for PatchError {
 
 impl std::error::Error for PatchError {}
 
-/// Up to three candidates close to `input`, nearest first (ties alphabetical). "Close" is an edit distance of at
-/// most a third of the longer text (at least 2), or a prefix/containment match.
+/// Up to three candidates close to `input`, nearest first (ties alphabetical). "Close" is an edit distance of one
+/// for texts under six characters and at most a third of the longer text (at least 2) above that, or a prefix match.
 pub fn closest<'a>(input: &str, pool: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let input_lc = input.to_ascii_lowercase();
     let mut scored: Vec<(usize, &str)> = pool
@@ -509,7 +532,13 @@ pub fn closest<'a>(input: &str, pool: impl IntoIterator<Item = &'a str>) -> Vec<
         .filter_map(|c| {
             let c_lc = c.to_ascii_lowercase();
             let d = edit_distance(&input_lc, &c_lc);
-            let limit = (input.chars().count().max(c.chars().count()) / 3).max(2);
+            // Short words (`set`, `wave`) tolerate one slip, longer ones a third of their length.
+            let longest = input.chars().count().max(c.chars().count());
+            let limit = if longest >= 6 {
+                (longest / 3).max(2)
+            } else {
+                1
+            };
             let related = !input_lc.is_empty()
                 && (c_lc.starts_with(&input_lc) || input_lc.starts_with(&c_lc));
             (d <= limit || related).then_some((d, c))

@@ -1,0 +1,6 @@
+{
+  "schema": 0,
+  "voice": { "amp_env": "env1" },
+  "generators": [{ "id": "osc1", "kind": "analog" }],
+  "modulators": [{ "id": "env1", "kind": "adsr" }]
+}

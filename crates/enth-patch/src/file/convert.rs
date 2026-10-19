@@ -240,6 +240,11 @@ impl PatchFile {
             return Err(Invalid::one("schema", e));
         }
 
+        // Problems are collected per part and reported in the order of a file: voice, master, the sections, routes,
+        // macros, slots.
+        let mut voice_errs: Vec<Violation> = Vec::new();
+        let mut master_errs: Vec<Violation> = Vec::new();
+        let mut module_errs: Vec<Violation> = Vec::new();
         let mut sections: [Vec<ModuleInstance>; 4] = Default::default();
         for section in Section::ALL {
             let files = match section {
@@ -250,7 +255,7 @@ impl PatchFile {
             };
             for (i, mf) in files.iter().enumerate() {
                 let path = format!("{section}[{i}]");
-                if let Some(m) = resolve_module(mf, section, &path, &mut errs) {
+                if let Some(m) = resolve_module(mf, section, &path, &mut module_errs) {
                     sections[section as usize].push(m);
                 }
             }
@@ -264,8 +269,9 @@ impl PatchFile {
             &self.voice,
             "voice",
             Some("amp_env"),
-            &mut errs,
+            &mut voice_errs,
         );
+        let amp_env = resolve_amp_env(&self.voice, &modulators, &mut voice_errs);
         let master_values = resolve_params(
             &MASTER_PARAMS,
             "master",
@@ -273,9 +279,11 @@ impl PatchFile {
             &self.master,
             "master",
             None,
-            &mut errs,
+            &mut master_errs,
         );
-        let amp_env = resolve_amp_env(&self.voice, &modulators, &mut errs);
+        errs.extend(voice_errs);
+        errs.extend(master_errs);
+        errs.extend(module_errs);
 
         let mut routes = Vec::with_capacity(self.routes.len());
         for (i, rf) in self.routes.iter().enumerate() {

@@ -61,10 +61,22 @@ fn check_value(path: &str, label: &str, spec: &ParamSpec, value: f32, out: &mut 
     }
 }
 
-/// Every violation of the invariants, in document order (empty for a valid patch).
+/// Every violation of the invariants, in the order a patch file lists them (empty for a valid patch).
 pub fn violations(p: &Patch) -> Vec<Violation> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
+
+    // The order of a file: voice (its values, then its amplitude envelope), master, the sections, routes, macros,
+    // slots.
+    for (spec, &value) in VOICE_PARAMS.iter().zip(&p.voice.values) {
+        let label = format!("voice.{}", spec.key);
+        check_value(&label, &label, spec, value, &mut out);
+    }
+    check_amp_env(p, &mut out);
+    for (spec, &value) in MASTER_PARAMS.iter().zip(&p.master) {
+        let label = format!("master.{}", spec.key);
+        check_value(&label, &label, spec, value, &mut out);
+    }
 
     for section in Section::ALL {
         let modules = p.section(section);
@@ -122,17 +134,6 @@ pub fn violations(p: &Patch) -> Vec<Violation> {
         }
     }
 
-    for (spec, &value) in VOICE_PARAMS.iter().zip(&p.voice.values) {
-        let label = format!("voice.{}", spec.key);
-        check_value(&label, &label, spec, value, &mut out);
-    }
-    for (spec, &value) in MASTER_PARAMS.iter().zip(&p.master) {
-        let label = format!("master.{}", spec.key);
-        check_value(&label, &label, spec, value, &mut out);
-    }
-
-    check_amp_env(p, &mut out);
-
     if p.routes.len() > MAX_ROUTES {
         out.push(Violation::new(
             "routes",
@@ -166,6 +167,8 @@ pub fn violations(p: &Patch) -> Vec<Violation> {
             }
         }
         match resolve(p, &r.dst) {
+            // The module's own value count is reported where the module is; not again for every route to it.
+            Err(PatchError::WrongValueCount { .. }) => ok = false,
             Err(e) => {
                 ok = false;
                 out.push(Violation::new(format!("{at}.dst"), e));
@@ -233,6 +236,7 @@ pub fn violations(p: &Patch) -> Vec<Violation> {
             SlotIndex::new(n).map_or(n + 1, SlotIndex::one_based)
         );
         match resolve(p, addr) {
+            Err(PatchError::WrongValueCount { .. }) => {}
             Err(e) => out.push(Violation::new(at, e)),
             Ok((_, spec)) if !spec.flags.automatable => out.push(Violation::new(
                 at,

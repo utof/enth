@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "voice": { "amp_env": "env1", "pan": "-0" },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "semi": -0.0, "phase": 360, "sync": 1, "pw": "50%", "fine": "0ct", "level": "100%" } }
+  ],
+  "modulators": [{ "id": "env1", "kind": "adsr" }],
+  "macros": [{ "value": -0.0 }]
+}

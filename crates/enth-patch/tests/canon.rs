@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use enth_patch::addr::{ModSource, ModuleId, ParamAddr, Position};
 use enth_patch::canon::{LEAF_BUDGET, canonical_effort, canonical_hash, canonicalise, exact_hash};
-use enth_patch::catalogue::{LfoParam, ModuleKind, OscParam};
+use enth_patch::catalogue::{ModuleKind, OscParam};
 use enth_patch::model::{ModuleInstance, Patch, PatchMeta, Route, Section};
 use enth_patch::ops::{Op, apply, canonical_value};
 use enth_patch::validate::validate;

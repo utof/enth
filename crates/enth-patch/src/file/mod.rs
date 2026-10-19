@@ -24,7 +24,8 @@
 //! Rules the conversions implement:
 //!
 //! - **Sparse in, dense out.** Reading accepts any subset of a module's parameters in any order (defaults fill the
-//!   rest; a migration step supplies an *old* default where one changed). Writing is always dense, in spec order
+//!   rest; a migration step supplies an *old* default where one changed), and a file without `engine`, `meta`,
+//!   `voice`, `master`, sections, `macros` or `slots` (only `schema` is required). Writing is always dense, in spec order
 //!   ([`Params`] keeps order both ways), so a later default change cannot alter an old file.
 //! - **Values are parsed against their `ParamSpec`** ([`enth_params::ParamSpec::parse`] for text,
 //!   [`enth_params::ParamSpec::check`] for numbers), so errors are typed (`out_of_range`, `wrong_unit`,
@@ -77,7 +78,9 @@ pub const ENGINE_VERSION: &str = "0.1.0";
 pub struct PatchFile {
     /// Schema version ([`SCHEMA`]).
     pub schema: u32,
-    /// Engine version the patch was authored on.
+    /// Engine version the patch was authored on. A file may leave it out (a hand- or agent-written file does not
+    /// know it); the patch then has an empty stamp and writing it stamps [`ENGINE_VERSION`].
+    #[serde(default)]
     pub engine: String,
     /// Name, author, description, tags.
     #[serde(default)]

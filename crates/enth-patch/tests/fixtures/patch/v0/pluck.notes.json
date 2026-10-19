@@ -1,0 +1,12 @@
+[
+  {
+    "from": 0,
+    "message": "osc1.level: the v0 default of -6 dB is written out as a percentage",
+    "path": "generators[0].params.level"
+  },
+  {
+    "from": 0,
+    "message": "the route to osc1.level was dropped: level changed from dB to percent, so its depth no longer means the same",
+    "path": "routes[1]"
+  }
+]

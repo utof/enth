@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "meta": { "name": "Sync lead", "tags": ["lead"] },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw", "level": 70 } },
+    { "id": "osc2", "kind": "osc", "enabled": false, "params": { "wave": "sine", "sync": true } },
+    { "id": "osc3", "kind": "osc", "params": { "wave": "saw", "semi": 7, "sync": true, "level": 60 } }
+  ],
+  "voice_fx": [
+    { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": "3kHz", "resonance": 40 } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr" },
+    { "id": "lfo1", "kind": "lfo", "params": { "rate": "5Hz", "shape": "sine" } },
+    { "id": "lfo2", "kind": "lfo", "enabled": false }
+  ],
+  "routes": [
+    { "src": "lfo1", "dst": "osc3.semi", "depth": 8 },
+    { "src": "modwheel", "dst": "filter1.cutoff", "depth": 50 },
+    { "src": "lfo2", "dst": "filter1.cutoff", "depth": 10 },
+    { "src": "key", "dst": "filter1.cutoff", "depth": 0 }
+  ],
+  "macros": [{ "value": 0.5, "name": "Sync" }],
+  "voice": { "amp_env": "env1" }
+}

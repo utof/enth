@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "engine": "0.1.0",
+  "meta": {
+    "name": "Sync lead",
+    "tags": [
+      "lead"
+    ]
+  },
+  "voice": {
+    "mode": "poly",
+    "polyphony": 8.0,
+    "glide": 0.0,
+    "glide_mode": "always",
+    "pan": 0.0,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": 0.0
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "semi": 0.0,
+        "fine": 0.0,
+        "level": 70.0,
+        "pw": 50.0,
+        "sync": false,
+        "table": "basic",
+        "position": 0.0,
+        "phase_mode": "free",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "enabled": false,
+      "params": {
+        "wave": "sine",
+        "semi": 0.0,
+        "fine": 0.0,
+        "level": 100.0,
+        "pw": 50.0,
+        "sync": true,
+        "table": "basic",
+        "position": 0.0,
+        "phase_mode": "free",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    },
+    {
+      "id": "osc3",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "semi": 7.0,
+        "fine": 0.0,
+        "level": 60.0,
+        "pw": 50.0,
+        "sync": true,
+        "table": "basic",
+        "position": 0.0,
+        "phase_mode": "free",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 3000.0,
+        "resonance": 40.0,
+        "keytrack": 0.0,
+        "drive": 0.0
+      }
+    }
+  ],
+  "fx": [],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 5.0,
+        "decay": 300.0,
+        "sustain": 70.0,
+        "release": 400.0,
+        "velocity": 0.0
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "rate": 5.0,
+        "polarity": "bipolar",
+        "scope": "voice",
+        "phase_mode": "reset",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    },
+    {
+      "id": "lfo2",
+      "kind": "lfo",
+      "enabled": false,
+      "params": {
+        "shape": "sine",
+        "rate": 2.0,
+        "polarity": "bipolar",
+        "scope": "voice",
+        "phase_mode": "reset",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "lfo1",
+      "dst": "osc3.semi",
+      "depth": 8.0
+    },
+    {
+      "src": "modwheel",
+      "dst": "filter1.cutoff",
+      "depth": 50.0
+    },
+    {
+      "src": "lfo2",
+      "dst": "filter1.cutoff",
+      "depth": 10.0
+    },
+    {
+      "src": "key",
+      "dst": "filter1.cutoff",
+      "depth": 0.0
+    }
+  ],
+  "macros": [
+    {
+      "value": 0.5,
+      "name": "Sync"
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    }
+  ],
+  "slots": {}
+}

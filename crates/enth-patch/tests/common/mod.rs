@@ -9,6 +9,7 @@ use enth_patch::model::{ModuleInstance, Patch, PatchMeta, Route, Section};
 use enth_patch::ops::{Op, apply};
 use proptest::prelude::*;
 
+#[allow(unused_imports, reason = "each test binary uses a different part")]
 pub use enth_patch::canon::identical;
 
 /// Selector, two indices and 32 bits of entropy.
