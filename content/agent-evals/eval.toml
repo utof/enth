@@ -1,0 +1,8 @@
+# The agent-eval set (docs/agent-cli.md "Evaluating the CLI like a product", docs/p1a-g1.md).
+# `eval_version` changes whenever a prompt, a goal's brief, performance or expectation list, or the wrapper's
+# render accounting changes: results from different versions are not comparable.
+schema = "enth.agent-eval-set/1"
+eval_version = 1
+changelog = [
+  "1 (2026-10-19, P1a lane E): ten goals, three prompts, a 20-render budget counted by the wrapper (a call that fails before rendering gives its slot back).",
+]

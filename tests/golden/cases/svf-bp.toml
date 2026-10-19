@@ -1,4 +1,4 @@
-description = "Band-pass (unity peak) mode of the SVF: the reference saw at 110 Hz (key 45) through a gate envelope into svf bp, cutoff 1.5kHz, resonance 70 %. Guards the filter equations, the resonance to Q map and the segment grid for this mode. The saw is the reference stub until lane D1 lands, so D1 re-baselines it on purpose."
+description = "Band-pass (unity peak) mode of the SVF: the saw oscillator at 110 Hz (key 45) through a gate envelope into svf bp, cutoff 1.5kHz, resonance 70 %. Guards the filter equations, the resonance to Q map and the segment grid for this mode."
 sample_rate = 48000
 seconds = 0.75
 

@@ -1,4 +1,4 @@
-description = "Drive: low-pass at 2 kHz, resonance 30 %, 12 dB of drive into the soft saturator, a loud 110 Hz saw. Guards the saturator curve and its normalisation. The saw is the reference stub until lane D1 lands."
+description = "Drive: low-pass at 2 kHz, resonance 30 %, 12 dB of drive into the soft saturator, a loud 110 Hz saw. Guards the saturator curve and its normalisation."
 sample_rate = 48000
 seconds = 0.75
 

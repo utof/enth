@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "pad-slow-dark"
+added = "2026-10-19"
+difficulty = 2
+tags = ["pad", "envelope", "detune", "long"]
+brief = "a slow dark pad"
+template = "init"
+expect = "attack > 400ms, brightness < 700Hz, sustain > -4dB, release > 800ms, duration > 4000ms, beating in [0.5Hz, 3Hz], pitch.note ~ C3, peak < -1dB"
+rationale = "The probe's g2, with a slow shimmer added (a pad that does not move is a drone). Fades in (attack), dark (brightness), holds its level (sustain), fades out slowly (release, duration), and two oscillators a few cents apart give the beating. Needs a clip long enough to measure the tail. The pad_2osc template is close but clips (+1.9 dBFS at C3), so peak < -1dB makes the agent notice. From the blank template the agent must add a filter and a second oscillator."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "C3", vel = 100, on_s = 0.0, off_s = 3.5 }], dur_s = 6.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

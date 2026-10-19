@@ -1,0 +1,13 @@
+# Hand-picked solution for the goal of the same name: what `cargo xtask agent-eval --dry-run` replays as its scripted
+# fake agent, and the proof that the goal's expectation list is reachable with the current engine. SPOILER: this is
+# the answer; the agent under test never sees this directory (it runs in an empty temp dir with only an `enth`
+# wrapper). `{perf}` and `{expect}` are filled in from the goal (or from self_expect on the self-written track).
+schema = "enth.agent-eval-witness/1"
+id = "brass-ish"
+self_expect = "attack in [30ms, 150ms], sustain > -6dB, brightness in [1kHz, 3.5kHz], release < 500ms"
+
+[[step]]
+args = ["new", "--template", "init", "--out", "sound.patch.json"]
+
+[[step]]
+args = ["step", "sound.patch.json", "--ops", '[{"add":"osc","id":"osc2","params":{"wave":"saw","fine":"12ct"}},{"set":"osc1.fine","to":"-4ct"},{"set":"osc1.level","to":"70%"},{"set":"osc2.level","to":"70%"},{"add":"svf","at":"voice_fx[0]","params":{"mode":"lp","cutoff":"3kHz","resonance":"15%"}},{"add":"adsr","id":"env2","params":{"attack":"90ms","decay":"250ms","sustain":"60%","release":"200ms"}},{"route":"env2 -> filter1.cutoff","depth":"+1oct"},{"set":"env1.attack","to":"70ms"},{"set":"env1.decay","to":"200ms"},{"set":"env1.sustain","to":"90%"},{"set":"env1.release","to":"260ms"},{"set":"master.level","to":"-6dB"}]', "--perf", "{perf}", "--expect", "{expect}"]

@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "filter-wobble"
+added = "2026-10-19"
+difficulty = 4
+tags = ["sweep", "filter", "lfo", "modulation", "bass"]
+brief = "a low saw with a slow wobbling filter sweep"
+template = "init"
+expect = "tremolo in [1.5Hz, 3.5Hz], tremolo_depth in [4dB, 12dB], brightness in [500Hz, 1.5kHz], duration > 3800ms, release < 400ms, pitch.note ~ A2, noisiness < 0.1, peak < -1dB"
+rationale = "A swept filter: a low-pass on a held saw with an LFO on its cutoff, heard as a rhythmic wobble. The first goal that needs modulation routing (add a filter and an LFO, then route one to the other with `--ops`), and it checks that a filter wobble is read as an amplitude wobble at the LFO rate (2.0 Hz reads 2.01 Hz, 6 dB). The rate and depth are windows, the brightness window keeps the sweep low and dark, and the note is held 4 s so about 8 cycles are measured. No attack or sustain items on purpose: those descriptors are not corrected for a wobble (attack reads 300 ms, sustain reads above 0 dB)."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "A2", vel = 100, on_s = 0.0, off_s = 4.0 }], dur_s = 5.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

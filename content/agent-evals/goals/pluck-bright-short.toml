@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "pluck-bright-short"
+added = "2026-10-19"
+difficulty = 1
+tags = ["pluck", "envelope", "brightness"]
+brief = "a short bright pluck"
+template = "init"
+expect = "attack < 10ms, brightness > 2kHz, sustain < -30dB, duration < 800ms, pitch.note ~ A3"
+rationale = "The Phase 0 probe's g1. A pluck starts at once (attack), is clearly bright, does not hold (the level 30 dB down before the note ends) and is over quickly (duration), on the played note. The easy end of the set: one envelope and one filter, and the pluck_1osc template is one cutoff move away. From the blank template the amplitude sustain has to come down, which the hint solver cannot do alone (sustain and duration are blocked there)."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "A3", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

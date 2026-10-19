@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "brass-ish"
+added = "2026-10-19"
+difficulty = 4
+tags = ["brass", "envelope", "detune", "filter"]
+brief = "a brassy sustained note with a slow swell"
+template = "init"
+expect = "pitch.note ~ E3, attack in [40ms, 120ms], sustain > -6dB, brightness in [1.5kHz, 3kHz], beating in [0.7Hz, 2Hz], release in [100ms, 400ms], duration > 1800ms, peak < -1dB"
+rationale = "Brass is a swell, not a click and not a pad: the level takes 40 to 120 ms to arrive (a window on attack, both sides), it then holds, it is bright but not harsh (brightness window), and a slight ensemble drift (a beat of 0.7 to 2 Hz, so two oscillators a few cents apart) keeps it from sounding like one saw. The release has a floor as well as a ceiling. Eight items, several of them two-sided, so a move that fixes one tends to break another; a filter envelope opening on the attack is the usual route to the brightness."
+engine_min = "0.1.0"
+perf = { notes = [{ note = "E3", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

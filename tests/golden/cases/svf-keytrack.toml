@@ -1,4 +1,4 @@
-description = "Key tracking: low-pass at 500 Hz, resonance 40 %, key tracking 100 %, three saw notes an octave apart (keys 36, 48, 72) so the cutoff follows 65 Hz, 130 Hz and 523 Hz through 500 Hz, 1 kHz and 4 kHz (relative to key 60). Master level -12 dB keeps the resonant peaks inside full scale. Guards the octave-per-octave map and the cached-coefficient path. The saw is the reference stub until lane D1 lands."
+description = "Key tracking: low-pass at 500 Hz, resonance 40 %, key tracking 100 %, three saw notes an octave apart (keys 36, 48, 72) so the cutoff follows 65 Hz, 130 Hz and 523 Hz through 500 Hz, 1 kHz and 4 kHz (relative to key 60). Master level -12 dB keeps the resonant peaks inside full scale. Guards the octave-per-octave map and the cached-coefficient path."
 sample_rate = 48000
 seconds = 1.5
 
