@@ -40,6 +40,15 @@ notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
 state = "spike-shell.state"
 sha256 = "d340047cfd33f6a76d536a3f1d6a3f78650692783da9d94bb4e27070d913ebcc"
 
+# A patch document (`--state` auto-detects it) wrapped into the plugin's persisted `patch` field and loaded before
+# activation, as a host loading a project would. spike-shell's patch blob is inert, so the sound is the chord's;
+# the case fails if the plugin refuses the state, and `enth-test-host render --check-roundtrip` proves it comes back.
+[[case]]
+name = "state-patch"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+state = "spike-shell.patch.json"
+sha256 = "1fd6c79cfdded55bd22ea2853ef07e1e9bf7c9ba20240e7e564ba6fb09e0f9c5"
+
 # Parameters set from the command line (`--param`) before the first block.
 [[case]]
 name = "cli-params"
