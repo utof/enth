@@ -114,6 +114,10 @@ opt-level = 3
 [profile.dev.package.enth-engine]
 opt-level = 3
 
+# Analysis runs in every test that describes a render (about 1 s per describe unoptimised); its scalar paths are bit-identical across opt levels.
+[profile.dev.package.enth-analysis]
+opt-level = 3
+
 # Profiling and heaptrack runs keep symbols without debug-build slowness: cargo build --profile profiling
 [profile.profiling]
 inherits = "release"
