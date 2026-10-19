@@ -49,13 +49,13 @@ Never automate rapid editor open/close on the real NVIDIA display.
 - A lesson pane: ~1,500 words with headings, bold text, one image and a scrolling list.
 - Window 1100×768 logical pixels; test at scale 1.0 and 2.0.
 
-**Repaint gating (egui):** repaint only on input, on a parameter change, or when a *visible* scope has new data (scopes call `request_repaint_after(1/30 s)` only while visible and fed); stop entirely when the editor is closed. Measured 2026-10-19 under Xvfb: 0 frames while idle, about 26 frames/s while host automation plays. Name the GUI thread (`prctl(PR_SET_NAME)` inside `build()`) and log `CLOCK_THREAD_CPUTIME_ID` per window of frames, to attribute CPU per editor.
+**Repaint gating (egui):** repaint only on input, on a parameter change, or when a *visible* scope has new data; stop entirely when the editor is closed. Scopes ask for the next frame after `1 / motion.scope_hz` = 1/60 s, only while visible and fed: under baseview 0.4.1 a 60 Hz request gives about 30 fps (28.6–29.6 measured), and a 1/30 s request lands on about 20 fps (19.5), so the token stays at 60 until baseview's pacing changes ([spikes/ui.md](spikes/ui.md)). Measured 2026-10-19 under Xvfb: 0 frames while idle, about 26 frames/s while host automation plays (research 02) and 28.6–29.6 fps with a chord playing in the reference panel. Name the GUI thread (`prctl(PR_SET_NAME)` inside `build()`) and log `CLOCK_THREAD_CPUTIME_ID` per window of frames, to attribute CPU per editor.
 
 ## Procedure
 
 1. **Automated tier.** Headless REAPER under Xvfb (Dummy Audio, driven by `cargo xtask reaper-test`-style Lua scripts), 48 kHz, 64-sample buffer, 8 instances each playing a held chord. Editor states: closed → open idle → open animating (→ covered → minimised, owner tier only: under Xvfb a covering window does not stop drawing, because there is no compositor). 120 s per state. The REAPER copy used for automation is a throwaway, never your own config.
 2. Repeat with 1, 10 and 50 instances (editors closed), then 10 editors open. Scaling to 50 instances and watts move to S1.
-3. In `tools/test-host` (clack-host): 200 scripted open/close cycles, with threads and PSS recorded per cycle, under heaptrack for leak attribution (REAPER crashes under heaptrack); editor open time; knob → sound latency; process-time distribution.
+3. In `tools/test-host` (clack-host): 200 scripted open/close cycles (`enth-test-host editor-cycles`, Xvfb only; it refuses a real display), with threads and PSS recorded per cycle against a no-editor baseline; editor open time; knob → sound latency; process-time distribution. For leak attribution use `valgrind --leak-check=full` (about 100 s for 6 cycles): heaptrack segfaults as soon as the plugin opens a window, and REAPER crashes under it ([spikes/test-host.md](spikes/test-host.md)).
 4. Repeat a subset in a second host: Carla (VST3 only; the plugin's VST3 build). CLAP poly-mod needs Bitwig (trial). Ardour hosts VST3 only.
 5. Run the host-integration checklist.
 6. **Owner-attended tier.** On the real display, with work saved: first-open reliability (20 opens in REAPER), idle and animating cost on the real GPU (`nvidia-smi pmon -s um -d 1`, accounting for the compositor's own GPU and CPU use), covered and minimised, glow against wgpu, and the same again with `prime-select on-demand` if the X driver crashes.
@@ -79,25 +79,25 @@ REAPER's *Performance Meter* (View menu) shows real-time CPU and xruns per track
 
 ## UI thresholds
 
-Proposed defaults; Phase 0 adjusts them with evidence (lane U2 decides). The tier column says who measures: **A** automated (Xvfb), **O** owner-attended (real GPU).
+The thresholds are the Phase 0 defaults; lane Z filled in the measured values and the G0 status on 2026-10-19 (lane U2's measurements were made by lanes U1 and H: [spikes/ui.md](spikes/ui.md), [spikes/test-host.md](spikes/test-host.md)). The tier column says who measures: **A** automated (Xvfb), **O** owner-attended (real GPU). Automated numbers ran under Xvfb with Mesa software rendering on a shared, loaded laptop: frame counts, idle behaviour, CPU before the GPU, threads and leaks transfer to a real GPU; drawing cost and memory under llvmpipe don't. Status is *passed*, *pending owner* or *failed*.
 
-| Metric | Pass | Tier |
-| --- | --- | --- |
-| Extra xruns attributable to the GUI (10 min, 8 instances, 64-sample buffer), by editor-open vs editor-closed A/B | 0 | A, O |
-| Real-time CPU increase from opening an editor | < 1% | A |
-| GUI CPU, editor closed | ≈ 0% (no timers) | A |
-| GUI CPU, open and idle | < 1% of one core per editor; report wake-ups/s | A |
-| GUI CPU, open and animating (scopes ≤ 30 fps) | < 5% of one core per editor (borderline at 20–30 fps: about 3.5–6%) | A, O |
-| GUI CPU, occluded or minimised | ≤ idle (gate only on "closed" until the owner has checked a real window manager) | O |
-| CPU time per frame p99 | < 16.7 ms; no frame > 50 ms during a knob drag; achieved fps reported | A |
-| Marginal PSS per open editor | < 30 MB | A |
-| Marginal PSS per closed instance (above DSP state) | < 5 MB | A |
-| PSS growth after 200 open/close cycles | No growth beyond the host-only baseline; threads constant. The unfixed baseview leak is ≈70–160 KB per cycle, so the strict "< 2 MB" is a goal once it is fixed upstream | A |
-| Editor open time | < 150 ms warm, < 400 ms cold (measured: ≈100 ms to the first frame under Xvfb) | A, O |
-| First open | Draws within 1 s on 20 of 20 opens | O |
-| GPU per open editor | < 5% SM, < 100 MB VRAM | O |
-| Knob → sound latency | ≤ 1 audio block + 1 frame | A |
-| Host-integration checklist | All pass in REAPER and one other Linux host (Carla, VST3) | A, O |
+| Metric | Pass | Tier | Measured, Phase 0 | G0 status |
+| --- | --- | --- | --- | --- |
+| Extra xruns attributable to the GUI (10 min, 8 instances, 64-sample buffer), by editor-open vs editor-closed A/B | 0 | A, O | Not measured: Dummy Audio only, no 8-instance run | Pending owner (real audio device) |
+| Real-time CPU increase from opening an editor | < 1% | A | Idle: none measurable (REAPER 7.7–9.9 % with the editor open, 7.9–9.9 % never opened). Animating: dominated by llvmpipe under Xvfb | Passed when idle; animating pending owner |
+| GUI CPU, editor closed | ≈ 0% (no timers) | A | 0: no GUI thread exists while closed | Passed |
+| GUI CPU, open and idle | < 1% of one core per editor; report wake-ups/s | A | 0.05–0.19 %, 0 frames in 22 s (6 runs); 64 wake-ups/s (egui-baseview's notifier poll) | Passed |
+| GUI CPU, open and animating (scopes ≤ 30 fps) | < 5% of one core per editor (borderline at 20–30 fps: about 3.5–6%) | A, O | CPU before the GPU: 1.16–1.41 ms per frame, 3.5–4.2 % at 30 fps (headless). Under Xvfb 24–31 %, which is software GL | Pending owner (real GPU); the CPU side passes |
+| GUI CPU, occluded or minimised | ≤ idle (gate only on "closed" until the owner has checked a real window manager) | O | Not measured (no compositor under Xvfb); the panel schedules nothing when egui reports it minimised or occluded | Pending owner |
+| CPU time per frame p99 | < 16.7 ms; no frame > 50 ms during a knob drag; achieved fps reported | A | Headless p99 1.12–2.30 ms, max 4.90 ms (scale 1 and 2); `ui()` p50 0.55–0.67 ms in REAPER; 6.69 M / 7.64 M instructions per idle / animating frame (callgrind); 28.6–29.6 fps achieved for 60 requested | Passed |
+| Marginal PSS per open editor | < 30 MB | A | +71 MB under Xvfb, almost all Mesa's llvmpipe | Pending owner (real GPU); the Xvfb figure is not a GPU number |
+| Marginal PSS per closed instance (above DSP state) | < 5 MB | A | ≤ 3.2 MB: the whole test-host process with the plugin loaded and playing, editor never opened | Passed |
+| PSS growth after 200 open/close cycles | No growth beyond the host-only baseline; threads constant. The unfixed baseview leak is ≈70–160 KB per cycle, so the strict "< 2 MB" is a goal once it is fixed upstream | A | Editor minus baseline **76.9 KB per cycle** (≈15 MB per 200; baseline 0.2 KB). About 61 KB of it is one xkb keymap baseview 0.4.1 never frees; with that one line fixed, **16.1 KB per cycle** (≈3.2 MB per 200). Threads 3 closed and 30 open, constant over 200 cycles | **Failed** (baseview, fix drafted for upstream); threads passed |
+| Editor open time | < 150 ms warm, < 400 ms cold | A, O | Test host, create → show: median 53.1 ms, p95 69 ms, max 87 ms (release; debug median 70.6 ms, max 131 ms). REAPER, `build()` → first frame: 44–67 ms | Passed (A); real display pending owner |
+| First open | Draws within 1 s on 20 of 20 opens | O | Under Xvfb: 200 of 200 in the test host; 22 of 22 in REAPER (research 02) | Pending owner |
+| GPU per open editor | < 5% SM, < 100 MB VRAM | O | Not measured | Pending owner |
+| Knob → sound latency | ≤ 1 audio block + 1 frame | A | Not measured | Not measured; moves to P1b (test host) |
+| Host-integration checklist | All pass in REAPER and one other Linux host (Carla, VST3) | A, O | REAPER under Xvfb: open, close and reopen without a crash; typing into a field works; at scale 2 REAPER clips the editor (baseview #359); Space no longer reaches the transport after a click in the editor. Carla: editor not tried | **Failed** (HiDPI and Space, both baseview); the rest pending owner |
 
 ### Host-integration checklist
 
@@ -119,22 +119,26 @@ Proposed defaults; Phase 0 adjusts them with evidence (lane U2 decides). The tie
 2. Keep **glow** unless the owner-attended real-GPU run shows wgpu clearly better on open time, fps and VRAM. wgpu creates a device per editor and adds 16–21 MB of PSS under software rendering.
 3. If the real-GPU first-open test fails, or the NVIDIA crash recurs with plugin editors, decide about a CPU-rendered fallback (softbuffer or tiny-skia) before accepting the toolkit.
 
+Applied at G0 (2026-10-19): rule 1 did not trigger. There was no GUI-caused crash or hang in REAPER, and the CPU thresholds pass on the CPU side; the PSS growth fails only through baseview's keymap leak, which sits below egui and every other toolkit on baseview. Rules 2 and 3 wait for the owner's real-GPU run ([spikes/owner-checklist.md](spikes/owner-checklist.md), B2, C1 and D3). ADR-0002 is accepted on that basis, with the reopen conditions listed there.
+
 ## Engine benchmarks (tracked from Phase 1, in CI)
 
-| Metric | Tool | Target |
-| --- | --- | --- |
-| Offline render speed | `enth bench`, `hyperfine` | ≥ 100× realtime per core for a basic patch *(set in P0)*; record the 1-voice and 16-voice numbers (measured on toy voices: ≈500–2,000× per voice per core; 16 voices 50–236×), as min and median with the load average |
-| CPU per voice at 48 kHz | **Instruction counts** (callgrind, gungraun), per module | Regression gate: a change that raises the instruction count of a benchmark fails CI. Criterion and wall-clock time are information only: with no code change Criterion reported two false "improvements" (−13%, −36%) under load |
-| Subnormals | A deterministic test: render a 40 s release tail and count subnormal values | 0. Instruction counts under-report the denormal penalty by about 18×, so this test is half of the gate |
-| p99.9 / max `process()` time at 64 samples | test host | < 25% of the block deadline (1.33 ms at 48 kHz) |
-| Plan swap time | test host | Swap without audible glitch; compile off-thread |
-| Allocations on the audio thread | `assert_no_alloc` in engine tests (debug builds only); nice-plug's `assert_process_allocs` in plugin debug builds | 0 |
-| Real-time safety | RTSan, one nightly run (nightly Rust; the runtime ships in rust-std) | No findings. It catches `malloc` but misses an uncontended `std::sync::Mutex`, so `enth-engine` also has no `Mutex` or `RwLock` |
-| Determinism | golden tests in CI | Hashes identical across platforms, wasm engines and build flags (Linux, wasm32 under wasmtime and node, Windows; aarch64 if runners exist); a feature summary with tolerances is only the diagnostic when a hash differs |
+The measured column is the Phase 0 engine spike (`spikes/spike-engine`, [spikes/engine.md](spikes/engine.md)): 2 s renders at 48 kHz, block 64, one core, release, timings at load 6–10 (read wall-clock as ±20 %; instruction counts are exact).
+
+| Metric | Tool | Target | Measured, Phase 0 |
+| --- | --- | --- | --- |
+| Offline render speed | `enth bench`, `hyperfine` | G0 floor ≥ 100× realtime per core (met). From P1: ≥ 1,000× for the 1-voice template and ≥ 100× for an 8-voice P1-like patch, on the scalar path; G1 adds the 16-voice budget ([roadmap](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)). Report min and median with the load average | 1 voice: 1,993× best, 1,783× median (wasmtime 1,357×). 16 voices: 129× / 122× scalar, 245× / 213× f32x8. 8-voice P1-like with reverb: 152× / 149× scalar, 231× / 217× f32x8 |
+| CPU per voice at 48 kHz | **Instruction counts** (callgrind, gungraun), per module | Regression gate: an absolute `hard_limits` budget per benchmark (measured + 10 %) that fails the run when exceeded; it needs no stored baseline, so it works in CI. Re-measure budgets with the golden hashes after a toolchain, `libm` or `wide` bump. Criterion and wall-clock time are information only: with no code change Criterion reported two false "improvements" (−13%, −36%) under load | Per 2 s render (budget in brackets): 1 voice 8.15 M (9.0 M); 16 voices scalar 122.4 M (135 M), f32x4 65.1 M (72 M), f32x8 62.9 M (69.5 M); P1-like 8 voices scalar 112.4 M (124 M), f32x8 62.3 M (69 M). That is 80–85 instructions per sample and voice for the simple voice, 146 for the P1-like one. Passes locally and on GitHub's ubuntu-24.04 runner |
+| Subnormals | A deterministic test: render a 40 s release tail and count subnormal values | 0. Instruction counts under-report the denormal penalty (4.1× more instructions against 33.5× more wall time in the spike), so this test is half of the gate | 0 subnormal output samples and state values over 40 s tails (scalar and lanes, 12 random patches). Negative control without flushing: 203,962 subnormal samples, voices never end |
+| p99.9 / max `process()` time at 64 samples | test host | < 25% of the block deadline (1.33 ms at 48 kHz) | Not measured yet (the test host exists; P1) |
+| Plan swap time | test host | Swap without audible glitch; compile off-thread | Not measured yet (P1) |
+| Allocations on the audio thread | `assert_no_alloc` in engine tests (debug builds only); nice-plug's `assert_process_allocs` in plugin debug builds | 0 | 0: `assert_no_alloc` around every `process()` block (scalar, x4, x8; 16 random patches), negative control caught; clap-validator's process tests pass with `assert_process_allocs` on |
+| Real-time safety | RTSan, one nightly run (nightly Rust; the runtime ships in rust-std) | No findings. It catches `malloc` but misses an uncontended `std::sync::Mutex`, so `enth-engine` also has no `Mutex` or `RwLock` | One manual run (rustc 1.101.0-nightly 2026-10-17): no findings; an injected allocation is reported, an uncontended `Mutex` is not |
+| Determinism | golden tests in CI | Hashes identical across platforms, wasm engines and build flags (Linux, wasm32 under wasmtime and node, Windows; aarch64 if runners exist); a feature summary with tolerances is only the diagnostic when a hash differs | 1,010 hashes identical on Linux x86-64, Windows x86-64 (CI) and `wasm32-wasip1` under wasmtime (with and without simd128), across debug, release, `target-cpu=native`, FMA, LTO, lanes and FTZ/DAZ. aarch64: manual CI job only. node/V8 not re-run (research 03 ran it on an earlier engine) |
 
 ## Measurement hygiene
 
-Every timing taken so far in Phase 0 ran at a load average of 4–30 on a shared laptop, so treat wall-clock numbers as upper bounds and instruction counts as the reference.
+Every timing taken in Phase 0 ran at a load average of 2–30 on a shared laptop, so treat wall-clock numbers as upper bounds and instruction counts as the reference. The machine itself is described in [spikes/environment.md](spikes/environment.md).
 
 - Measure on a rebooted machine with heavy applications closed, the repo and `target/` on ext4, and nothing else building.
 - Record an **environment snapshot with every result**: `uptime` load average, free RAM and swap, the PRIME mode, the preempt mode, the PipeWire quantum, and the kernel and NVIDIA driver versions.
