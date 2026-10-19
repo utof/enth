@@ -1021,6 +1021,10 @@ impl<P: ClapPlugin> Wrapper<P> {
     /// with distinct sample values to enable sample accurate automation without modifications to the
     /// wrapped plugin.
     ///
+    /// The returned event index is that of the first event on the splitting event's frame, which may
+    /// be earlier than the splitting event itself. None of the events on that frame are handled
+    /// before the split (enth fork, see the note in the body).
+    ///
     /// # Safety
     ///
     /// `in_` must contain only pointers to valid data (Clippy insists on there being a safety
@@ -1045,17 +1049,55 @@ impl<P: ClapPlugin> Wrapper<P> {
             return None;
         }
 
-        for event_idx in (resume_from_event_idx as u32)..num_events {
-            unsafe {
-                let event: *const clap_event_header = clap_call! { in_=>get(in_, event_idx) };
-                if event.is_null() {
-                    continue;
+        let resume_from_event_idx = resume_from_event_idx as u32;
+        let get_event = |event_idx: u32| -> *const clap_event_header {
+            unsafe { clap_call! { in_=>get(in_, event_idx) } }
+        };
+
+        // enth fork: first find where this slice ends, then handle the events before that point.
+        // Upstream handled events while it looked for the splitting event, so an event on the
+        // splitting frame that the host listed before it (a note-on ahead of a parameter change)
+        // was queued with a timing equal to the slice's length, one past its last frame. The
+        // plugin never reaches that timing in this slice, and the queue is cleared for the next
+        // one: the event was lost.
+        let mut split = None;
+        for event_idx in resume_from_event_idx..num_events {
+            let event = get_event(event_idx);
+            if event.is_null() {
+                continue;
+            }
+
+            // Check the current event before applying it, including the first event in the
+            // buffer. A later event belongs to the next process slice.
+            if unsafe { (*event).time } > current_sample_idx as u32 && stop_predicate(event) {
+                split = Some((unsafe { (*event).time }, event_idx));
+                break;
+            }
+        }
+
+        // The slice ends at the first of the events that share the splitting event's frame. That
+        // frame is the first frame of the next slice, so all of them belong there (with a timing of
+        // zero), whatever order the host listed them in.
+        let handle_end = match split {
+            Some((split_time, mut split_idx)) => {
+                while split_idx > resume_from_event_idx {
+                    let previous = get_event(split_idx - 1);
+                    if !previous.is_null() && unsafe { (*previous).time } != split_time {
+                        break;
+                    }
+                    split_idx -= 1;
                 }
 
-                // Check the current event before applying it, including the first event in the
-                // buffer. A later event belongs to the next process slice.
-                if (*event).time > current_sample_idx as u32 && stop_predicate(event) {
-                    return Some(((*event).time as usize, event_idx as usize));
+                split_idx
+            }
+            None => num_events,
+        };
+
+        for event_idx in resume_from_event_idx..handle_end {
+            unsafe {
+                let event = get_event(event_idx);
+                if event.is_null() {
+                    continue;
                 }
 
                 self.handle_input_event(
@@ -1068,7 +1110,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             }
         }
 
-        None
+        split.map(|(split_time, _)| (split_time as usize, handle_end as usize))
     }
 
     /// Write the unflushed parameter changes to the host's output event queue. The sample index is
