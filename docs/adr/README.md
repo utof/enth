@@ -4,13 +4,13 @@ One file per decision. When a decision changes, add a new ADR that supersedes th
 
 | ADR | Decision | Status |
 | --- | --- | --- |
-| [0001](0001-plugin-shell.md) | Plugin shell: start on nice-plug, keep it thin; clack as escape hatch | Proposed — spike passed; accept at G0 |
-| [0002](0002-ui-toolkit.md) | UI: native Rust, egui on glow, no WebView, no second toolkit; design tokens in enth-ui | Proposed — UI spike (first half) passed; accept at G0 |
+| [0001](0001-plugin-shell.md) | Plugin shell: start on nice-plug, keep it thin; clack as escape hatch | Accepted (G0, 2026-10-19) |
+| [0002](0002-ui-toolkit.md) | UI: native Rust, egui on glow, no WebView, no second toolkit; design tokens in enth-ui | Accepted (G0, 2026-10-19); real-display checks pending with the owner |
 | [0003](0003-agent-cli.md) | Agent interface: CLI first, JSON, real units; MCP shim later | Accepted |
 | [0004](0004-licensing.md) | MIT; permissive dependencies only; no GPL code | Accepted |
 | [0005](0005-patch-format.md) | Patch: JSON, plain values with units, ops, versioned | Accepted |
 | [0006](0006-effects-strategy.md) | Effects: port permissive DSP into our own deterministic modules; global FX bypass; no plugin hosting | Proposed — confirm at G1 |
-| [0007](0007-metric-v1.md) | Scoring metric v1 (provisional): multi-resolution log-mel L1 on loudness-normalised audio, components reported separately | Proposed — recalibrate after the listening sessions and in R1 |
+| [0007](0007-metric-v1.md) | Scoring metric v1 (provisional): multi-resolution log-mel L1 on loudness-normalised audio, components reported separately | Proposed — until the owner's listening sessions; recalibrate again in R1 |
 
 Upcoming (written during Phase 0–1): determinism contract, lesson format.
 
