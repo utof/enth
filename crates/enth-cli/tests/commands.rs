@@ -267,6 +267,33 @@ fn describe_a_patch_and_a_wav() {
     let f = run(&["describe", &wav, "--perf", "note=C3,hold=1s,dur=3s"]);
     let df: DescribeOut = round_trip(&f);
     assert_eq!(df.perf.source, "flag");
+
+    // A WAV from elsewhere (no chunk): the note-off is inferred from the audio, or the envelope stages that need
+    // it come back null with a reason.
+    let held = s.new_patch("init", "held.patch.json");
+    let src = s.path("held.wav");
+    assert_eq!(run(&["render", &held, "--out", &src]).code, 0);
+    let plain = s.path("plain.wav");
+    let mut reader = hound::WavReader::open(&src).unwrap();
+    let mut writer = hound::WavWriter::create(&plain, reader.spec()).unwrap();
+    for x in reader.samples::<f32>() {
+        writer.write_sample(x.unwrap()).unwrap();
+    }
+    writer.finalize().unwrap();
+    let i = run(&["describe", &plain]);
+    let di: DescribeOut = round_trip(&i);
+    match di.perf.source.as_str() {
+        "inferred" => {
+            let off = di.perf.notes[0].off_s.unwrap();
+            assert!((off - 1.5).abs() < 0.1, "inferred note-off {off}");
+            assert!(di.envelope.as_ref().unwrap().sustain_db.is_some());
+        }
+        "none" => {
+            assert!(di.perf.why_missing.is_some());
+            assert!(di.missing.contains_key("envelope.sustain_db"));
+        }
+        other => panic!("perf.source {other}"),
+    }
 }
 
 #[test]
