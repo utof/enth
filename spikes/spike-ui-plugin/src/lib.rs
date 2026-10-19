@@ -45,8 +45,6 @@ pub const VST3_CLASS_ID: [u8; 16] = *b"EnthSpikeUiPnl01";
 const GAIN_MACRO: usize = 0;
 /// Index of the slot that drives the filter cutoff (the panel's Filter › Cutoff).
 const CUTOFF_SLOT: usize = 0;
-/// LFO 1's rate. It only drives the rings on screen; the DSP doesn't use it.
-const LFO_HZ: f32 = 0.4;
 
 #[derive(Params)]
 pub struct MacroParam {
@@ -304,7 +302,9 @@ impl Plugin for SpikeUiPlugin {
                 writer.push(mixed);
             }
         }
-        self.lfo_phase = (self.lfo_phase + LFO_HZ * samples as f32 / self.sample_rate).fract();
+        // LFO 1 only drives the rings on screen; the DSP doesn't use it.
+        self.lfo_phase =
+            (self.lfo_phase + layout::LFO1_HZ * samples as f32 / self.sample_rate).fract();
         if editor_open && writer.finish(self.lfo_phase, self.synth.is_sounding()) {
             self.repaint.request_repaint();
         }

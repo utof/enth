@@ -17,6 +17,31 @@ pub const RING_SIZE: usize = 4096;
 /// Peak below which a block counts as silent.
 const SILENCE: f32 = 1e-5;
 
+/// Sample rate of the demo signal.
+pub const DEMO_SAMPLE_RATE: f32 = 48_000.0;
+
+/// The demo signal of the dev window, the benchmark and the tests: an A major triad of naive
+/// saws (a scope wants harmonics), phase-continuous for any length.
+#[derive(Clone, Debug, Default)]
+pub struct DemoChord {
+    phases: [f32; 3],
+}
+
+impl DemoChord {
+    const HZ: [f32; 3] = [220.0, 277.18, 329.63];
+    const LEVEL: f32 = 0.25;
+
+    /// The next sample at [`DEMO_SAMPLE_RATE`].
+    pub fn next_sample(&mut self) -> f32 {
+        let mut sum = 0.0;
+        for (phase, hz) in self.phases.iter_mut().zip(Self::HZ) {
+            sum += (*phase * 2.0 - 1.0) * Self::LEVEL;
+            *phase = (*phase + hz / DEMO_SAMPLE_RATE).fract();
+        }
+        sum
+    }
+}
+
 pub struct AudioFeed {
     samples: Box<[AtomicU32]>,
     /// Total samples published (monotonic); the newest sample is at `written - 1`.

@@ -408,6 +408,10 @@ pub fn modules() -> impl Iterator<Item = &'static Module> {
     GENERATORS.iter().chain(LANE.iter())
 }
 
+/// LFO 1's rate (Hz) wherever something runs it: the plugin's audio thread, the dev window's
+/// fake one, the benchmark.
+pub const LFO1_HZ: f32 = 0.4;
+
 /// The value of LFO 1 (−1..1) at `phase`.
 pub fn lfo_wave(phase: f32) -> f32 {
     (std::f32::consts::TAU * phase).sin()

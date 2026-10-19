@@ -11,7 +11,7 @@ use egui::ViewportId;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use enth_ui::Theme;
-use spike_ui::{AudioFeed, LocalParams, REFERENCE_SIZE, ReferencePanel, Repaint};
+use spike_ui::{AudioFeed, DemoChord, LocalParams, REFERENCE_SIZE, ReferencePanel, Repaint};
 
 struct State {
     panel: ReferencePanel,
@@ -34,18 +34,13 @@ fn harness(feed: &Arc<AudioFeed>) -> Harness<'static, State> {
     )
 }
 
-/// One block of a three-note chord (deterministic), with LFO 1 at `phase`.
+/// One block of the demo chord (deterministic), with LFO 1 at `phase`.
 fn publish(feed: &AudioFeed, samples: usize, phase: f32, active: bool) -> bool {
+    let mut chord = DemoChord::default();
     let mut writer = feed.writer();
-    for i in 0..samples {
-        let t = i as f32 / 48_000.0;
-        let saw = |hz: f32| ((t * hz).fract() * 2.0 - 1.0) * 0.25;
-        let sample = if active {
-            saw(220.0) + saw(277.18) + saw(329.63)
-        } else {
-            0.0
-        };
-        writer.push(sample);
+    for _ in 0..samples {
+        let sample = chord.next_sample();
+        writer.push(if active { sample } else { 0.0 });
     }
     writer.finish(phase, active)
 }

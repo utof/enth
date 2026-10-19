@@ -23,6 +23,7 @@ use crate::feed::AudioFeed;
 use crate::layout::{self, Figure, Module};
 use crate::lesson;
 use crate::params::{HostParams, ParamId};
+use crate::shapes::{self, Tables};
 use crate::spectrum::Analyser;
 
 /// Window size of the reference panel in every UI arm (docs/benchmarks.md).
@@ -53,43 +54,6 @@ struct Hover {
     path: String,
     value: String,
     modulation: String,
-}
-
-/// Wave tables for the oscillator displays (computed once).
-struct Tables {
-    saw: Vec<f32>,
-    sine: Vec<f32>,
-    noise: Vec<f32>,
-    spread: Vec<f32>,
-}
-
-impl Tables {
-    fn new() -> Self {
-        let n = 256;
-        let x = |i: usize| i as f32 / n as f32;
-        let tau = std::f32::consts::TAU;
-        let mut seed = 0x2545_f491_u32;
-        Self {
-            saw: (0..n).map(|i| enth_ui::gallery::saw(x(i))).collect(),
-            sine: (0..n).map(|i| (tau * x(i)).sin() * 0.8).collect(),
-            noise: (0..n)
-                .map(|_| {
-                    seed ^= seed << 13;
-                    seed ^= seed >> 17;
-                    seed ^= seed << 5;
-                    (seed as f32 / u32::MAX as f32 - 0.5) * 1.4
-                })
-                .collect(),
-            spread: (0..n)
-                .map(|i| {
-                    (0..4)
-                        .map(|v| enth_ui::gallery::saw((x(i) * (1.0 + 0.03 * v as f32)).fract()))
-                        .sum::<f32>()
-                        * 0.3
-                })
-                .collect(),
-        }
-    }
 }
 
 pub struct ReferencePanel {
@@ -482,13 +446,13 @@ impl ReferencePanel {
                 phase(1.0),
                 routes(1),
             ),
-            ("LFO 2", &triangle, phase(2.0), routes(2)),
-            ("LFO 3", &ramp_down, phase(0.5), routes(3)),
+            ("LFO 2", &shapes::triangle, phase(2.0), routes(2)),
+            ("LFO 3", &shapes::ramp_down, phase(0.5), routes(3)),
             ("Env 2", &enth_ui::gallery::envelope, None, routes(0)),
-            ("Vel", &ramp_up, None, routes(4)),
-            ("Key", &ramp_up, None, routes(5)),
-            ("Wheel", &flat, None, 0),
-            ("Random", &steps, None, 0),
+            ("Vel", &shapes::ramp_up, None, routes(4)),
+            ("Key", &shapes::ramp_up, None, routes(5)),
+            ("Wheel", &shapes::flat, None, 0),
+            ("Random", &shapes::steps, None, 0),
         ];
         let mut animated = false;
         for row in shapes.chunks(4) {
@@ -676,84 +640,33 @@ fn figure(ui: &mut Ui, t: &Theme, tables: &Tables, figure: Figure, v: &[f32], re
         Figure::Noise => display(Trace::Wave(&tables.noise)).paint(ui, rect),
         Figure::Spread => display(Trace::Wave(&tables.spread)).paint(ui, rect),
         Figure::Pulse => {
-            let width = at(3).clamp(0.05, 0.95);
-            let pulse = move |x: f32| if x.fract() < width { 0.85 } else { 0.15 };
-            display(Trace::Curve(&pulse)).paint(ui, rect);
+            let width = at(3);
+            display(Trace::Curve(&move |x| shapes::pulse(x, width))).paint(ui, rect);
         }
         Figure::LowPass => {
             let (cutoff, resonance) = (at(0), at(1));
-            let response = move |x: f32| low_pass(x, cutoff, resonance);
-            display(Trace::Curve(&response)).paint(ui, rect);
+            display(Trace::Curve(&move |x| {
+                shapes::low_pass(x, cutoff, resonance)
+            }))
+            .paint(ui, rect);
         }
         Figure::Envelope => {
             let (a, d, s, r) = (at(0), at(1), at(2), at(3));
-            let env = move |x: f32| adsr(x, a, d, s, r);
-            display(Trace::Curve(&env))
+            display(Trace::Curve(&move |x| shapes::adsr(x, a, d, s, r)))
                 .ink(Ink::Modulation)
                 .paint(ui, rect);
         }
         Figure::Shaper => {
-            let drive = 1.0 + at(0) * 8.0;
-            let shape = move |x: f32| 0.5 + 0.5 * (drive * (2.0 * x - 1.0)).tanh() / drive.tanh();
-            display(Trace::Curve(&shape)).paint(ui, rect);
+            let amount = at(0);
+            display(Trace::Curve(&move |x| shapes::shaper(x, amount))).paint(ui, rect);
         }
         Figure::Echoes => {
             let feedback = at(1);
-            let echoes = move |x: f32| {
-                let tap = (x * 6.0).fract();
-                let n = (x * 6.0).floor();
-                if tap < 0.08 {
-                    0.9 * feedback.max(0.05).powf(n)
-                } else {
-                    0.0
-                }
-            };
-            display(Trace::Curve(&echoes)).paint(ui, rect);
+            display(Trace::Curve(&move |x| shapes::echoes(x, feedback))).paint(ui, rect);
         }
         Figure::Decay => {
-            let decay = 0.5 + at(1) * 4.0;
-            let tail = move |x: f32| (-(x * 8.0) / decay).exp() * 0.9;
-            display(Trace::Curve(&tail)).paint(ui, rect);
+            let amount = at(1);
+            display(Trace::Curve(&move |x| shapes::decay(x, amount))).paint(ui, rect);
         }
     }
-}
-
-/// A resonant low-pass magnitude on a log-frequency axis, 0..1.
-fn low_pass(x: f32, cutoff: f32, resonance: f32) -> f32 {
-    let d = x - cutoff;
-    let bump = resonance * 0.5 * (-(d / 0.04).powi(2)).exp();
-    let fall = if d > 0.0 { (d * 4.0).powi(2) } else { 0.0 };
-    (0.6 + bump - fall).clamp(0.0, 1.0)
-}
-
-/// An ADSR shape over 0..1 with the four stage lengths scaled into it.
-fn adsr(x: f32, a: f32, d: f32, s: f32, r: f32) -> f32 {
-    let (a, d, r) = (0.05 + a * 0.25, 0.05 + d * 0.25, 0.05 + r * 0.25);
-    let hold = 1.0 - a - d - r;
-    match x {
-        x if x < a => x / a,
-        x if x < a + d => 1.0 - (1.0 - s) * (x - a) / d,
-        x if x < a + d + hold => s,
-        x => s * (1.0 - (x - a - d - hold) / r).max(0.0),
-    }
-}
-
-fn triangle(x: f32) -> f32 {
-    1.0 - (2.0 * x - 1.0).abs()
-}
-
-fn ramp_up(x: f32) -> f32 {
-    x
-}
-
-fn ramp_down(x: f32) -> f32 {
-    1.0 - x
-}
-
-fn flat(_: f32) -> f32 {
-    0.5
-}
-
-fn steps(x: f32) -> f32 {
-    [0.3, 0.8, 0.5, 0.15, 0.65, 0.4][((x * 6.0) as usize).min(5)]
 }

@@ -7,8 +7,9 @@ pub mod layout;
 pub mod lesson;
 pub mod panel;
 pub mod params;
+pub mod shapes;
 pub mod spectrum;
 
-pub use feed::AudioFeed;
+pub use feed::{AudioFeed, DEMO_SAMPLE_RATE, DemoChord};
 pub use panel::{REFERENCE_SIZE, ReferencePanel, Repaint};
 pub use params::{HostParams, LocalParams, ParamId};

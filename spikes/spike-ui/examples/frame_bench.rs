@@ -15,9 +15,10 @@ use std::time::{Duration, Instant};
 
 use egui::{Pos2, RawInput, Rect, ViewportId, ViewportInfo};
 use enth_ui::Theme;
-use spike_ui::{AudioFeed, LocalParams, REFERENCE_SIZE, ReferencePanel};
+use spike_ui::{
+    AudioFeed, DEMO_SAMPLE_RATE, DemoChord, LocalParams, REFERENCE_SIZE, ReferencePanel, layout,
+};
 
-const SAMPLE_RATE: f32 = 48_000.0;
 const FPS: f32 = 60.0;
 const WARMUP: usize = 30;
 
@@ -37,15 +38,13 @@ fn input(frame: usize, pixels_per_point: f32) -> RawInput {
     raw
 }
 
-fn publish(feed: &AudioFeed, frame: usize) {
-    let block = (SAMPLE_RATE / FPS) as usize;
+fn publish(feed: &AudioFeed, chord: &mut DemoChord, frame: usize) {
+    let block = (DEMO_SAMPLE_RATE / FPS) as usize;
     let mut writer = feed.writer();
-    for i in 0..block {
-        let t = (frame * block + i) as f32 / SAMPLE_RATE;
-        let saw = |hz: f32| ((t * hz).fract() * 2.0 - 1.0) * 0.25;
-        writer.push(saw(220.0) + saw(277.18) + saw(329.63));
+    for _ in 0..block {
+        writer.push(chord.next_sample());
     }
-    let phase = (frame as f32 * 0.4 / FPS).fract();
+    let phase = (frame as f32 * layout::LFO1_HZ / FPS).fract();
     writer.finish(phase, true);
 }
 
@@ -76,10 +75,11 @@ fn run(theme: &Theme, animating: bool, pixels_per_point: f32, frames: usize) -> 
     let feed = Arc::new(AudioFeed::new());
     let mut panel = ReferencePanel::new(theme.clone(), Arc::clone(&feed));
     let mut params = LocalParams::default();
+    let mut chord = DemoChord::default();
     let mut times = Vec::with_capacity(frames);
     for frame in 0..WARMUP + frames {
         if animating {
-            publish(&feed, frame);
+            publish(&feed, &mut chord, frame);
         }
         let started = Instant::now();
         let output = ctx.run_ui(input(frame, pixels_per_point), |ui| {

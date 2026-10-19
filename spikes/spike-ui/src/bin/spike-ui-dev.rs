@@ -22,12 +22,11 @@ use std::time::Duration;
 
 use enth_ui::Theme;
 use enth_ui::gallery::{GALLERY_SIZE, GalleryState, token_gallery};
-use spike_ui::{AudioFeed, LocalParams, REFERENCE_SIZE, ReferencePanel};
+use spike_ui::{
+    AudioFeed, DEMO_SAMPLE_RATE, DemoChord, LocalParams, REFERENCE_SIZE, ReferencePanel, layout,
+};
 
-const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 256;
-/// LFO 1 rate of the fake audio thread.
-const LFO_HZ: f32 = 0.4;
 
 enum Page {
     Panel(Box<ReferencePanel>, LocalParams),
@@ -51,32 +50,25 @@ impl eframe::App for DevApp {
     }
 }
 
-/// The fake audio thread: a three-note saw chord while `transport` is on, silence otherwise.
+/// The fake audio thread: a chord while `transport` is on, silence otherwise.
 fn spawn_fake_audio(feed: Arc<AudioFeed>, transport: Arc<AtomicBool>, ctx: egui::Context) {
     std::thread::Builder::new()
         .name("fake-audio".to_owned())
         .spawn(move || {
-            let notes = [220.0_f32, 277.18, 329.63];
-            let mut phases = [0.0_f32; 3];
+            let mut chord = DemoChord::default();
             let mut lfo = 0.0_f32;
             loop {
                 let on = transport.load(Ordering::Relaxed);
                 let mut writer = feed.writer();
                 for _ in 0..BLOCK {
-                    let mut sample = 0.0;
-                    for (phase, hz) in phases.iter_mut().zip(notes) {
-                        if on {
-                            sample += (*phase * 2.0 - 1.0) * 0.2;
-                        }
-                        *phase = (*phase + hz / SAMPLE_RATE).fract();
-                    }
-                    writer.push(sample);
+                    let sample = chord.next_sample();
+                    writer.push(if on { sample } else { 0.0 });
                 }
-                lfo = (lfo + LFO_HZ * BLOCK as f32 / SAMPLE_RATE).fract();
+                lfo = (lfo + layout::LFO1_HZ * BLOCK as f32 / DEMO_SAMPLE_RATE).fract();
                 if writer.finish(lfo, on) {
                     ctx.request_repaint();
                 }
-                std::thread::sleep(Duration::from_secs_f32(BLOCK as f32 / SAMPLE_RATE));
+                std::thread::sleep(Duration::from_secs_f32(BLOCK as f32 / DEMO_SAMPLE_RATE));
             }
         })
         .expect("cannot start the fake audio thread");

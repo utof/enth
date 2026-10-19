@@ -5,6 +5,8 @@ use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use enth_ui::Theme;
 use enth_ui::widgets::{Block, Span};
 
+use crate::shapes;
+
 const fn t(text: &'static str) -> Span<'static> {
     Span {
         text,
@@ -251,28 +253,24 @@ pub fn blocks(figure: egui::TextureId) -> Vec<Block<'static>> {
     blocks
 }
 
-/// The lesson figure: a resonant low-pass response drawn in theme colours.
+/// The lesson figure: the filter card's own low-pass response, drawn into a texture in theme
+/// colours (a lesson figure is a module display rendered statically).
 pub fn figure_image(theme: &Theme) -> ColorImage {
+    /// The response shown: cutoff at 60 % of the axis, resonance at 60 %.
+    const CUTOFF: f32 = 0.6;
+    const RESONANCE: f32 = 0.6;
     let [w, h] = FIGURE_SIZE;
     let c = &theme.color;
     let under = c.surface.recessed.blend(c.accent.value_wash);
     let mut pixels = vec![c.surface.recessed; w * h];
     let grid_every = w / usize::from(theme.size.display.grid_columns);
+    let stroke_rows = theme.stroke.thin as usize;
     for x in 0..w {
-        let f = x as f32 / (w - 1) as f32;
-        // Flat until the corner at 60 %, a resonant bump, then a steep fall.
-        let corner = 0.6_f32;
-        let bump = 0.3 * (-((f - corner) / 0.04).powi(2)).exp();
-        let fall = if f > corner {
-            ((f - corner) * 4.0).powi(2)
-        } else {
-            0.0
-        };
-        let level = (0.6 + bump - fall).clamp(0.0, 1.0);
+        let level = shapes::low_pass(x as f32 / (w - 1) as f32, CUTOFF, RESONANCE);
         let curve_y = ((1.0 - level) * (h - 1) as f32) as usize;
         for y in 0..h {
             let ink: Color32 = match y {
-                y if y.abs_diff(curve_y) <= 1 => c.accent.value,
+                y if y.abs_diff(curve_y) <= stroke_rows => c.accent.value,
                 y if y > curve_y => under,
                 _ if x % grid_every == 0 => c.line.grid,
                 _ => continue,
