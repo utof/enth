@@ -24,11 +24,14 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use try_lock::TryLock;
 #[cfg(feature = "editor")]
 use vst3::ComWrapper;
-use vst3::Steinberg::Vst::{IComponentHandler, IComponentHandlerTrait, IEventList, RestartFlags_};
+use vst3::Steinberg::Vst::{
+    IComponentHandler, IComponentHandler2, IComponentHandler2Trait, IComponentHandlerTrait, IEventList,
+    RestartFlags_,
+};
 use vst3::Steinberg::{kInvalidArgument, kResultOk, tresult};
 use vst3::{ComPtr, ComRef};
 
-use super::context::{WrapperActivateContext, WrapperProcessContext};
+use super::context::{WrapperActivateContext, WrapperHostRequests, WrapperProcessContext};
 use super::note_expressions::NoteExpressionController;
 use super::param_units::ParamUnits;
 use super::util::{VST3_MIDI_PARAMS_END, VST3_MIDI_PARAMS_START};
@@ -70,6 +73,9 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// The host's [`IComponentHandler`] instance, if passed through
     /// [`IEditController::set_component_handler`].
     pub component_handler: AtomicRefCell<Option<ComPtr<IComponentHandler>>>,
+    /// A [`Task::MarkDirty`] is queued and not yet performed: later requests are absorbed by it.
+    /// Vendored fork, enth patch 6.
+    pub mark_dirty_pending: AtomicBool,
 
     /// Our own [`IPlugView`] instance.
     #[cfg(feature = "editor")]
@@ -195,6 +201,9 @@ pub enum Task<P: Plugin> {
     RequestResize { size: Size, scale_factor: f64 },
     #[cfg(feature = "editor")]
     CallMainThread,
+    /// Tell the host that the state changed in a way it cannot see
+    /// (`IComponentHandler2::setDirty(true)`). Vendored fork, enth patch 6.
+    MarkDirty,
 }
 
 /// VST3 makes audio processing pretty complicated. In order to support both block splitting for
@@ -339,6 +348,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             editor_window: Arc::new(AtomicRefCell::new(None)),
 
             component_handler: AtomicRefCell::new(None),
+            mark_dirty_pending: AtomicBool::new(false),
 
             #[cfg(feature = "editor")]
             plug_view: RwLock::new(None),
@@ -430,6 +440,13 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 ))
                 .map(|editor| Arc::new(Mutex::new(editor)));
         }
+
+        // Vendored fork, enth patch 6: requests the plugin makes outside a context.
+        wrapper.plugin.try_lock().unwrap().host_requests(
+            nice_plug_core::context::host::HostRequests::new(Arc::new(WrapperHostRequests {
+                inner: Arc::downgrade(&wrapper),
+            })),
+        );
 
         wrapper
     }
@@ -652,6 +669,21 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
+    /// Vendored fork, enth patch 6: tell the host the state changed in a way it cannot see.
+    /// `IComponentHandler2::setDirty()` belongs on the UI thread, so this runs it at once there and
+    /// queues it otherwise (the host's `IRunLoop` while the editor is open); a queued request absorbs
+    /// later ones.
+    pub fn request_mark_dirty(&self) {
+        if self.mark_dirty_pending.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let task_posted = self.schedule_gui(Task::MarkDirty);
+        if !task_posted {
+            self.mark_dirty_pending.store(false, Ordering::SeqCst);
+        }
+        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
+    }
+
     /// Research patch: ask the host to re-read parameter titles.
     pub fn request_param_info_rescan(&self) {
         let task_posted = self.schedule_gui(Task::TriggerRestart(RestartFlags_::kParamTitlesChanged));
@@ -750,6 +782,31 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                     }
                 } else {
                     crate::nice_debug_assert_failure!("Can't resize a closed editor");
+                }
+            }
+            Task::MarkDirty => {
+                // Cleared before the host call, so a request made while the host handles this one
+                // queues another.
+                self.mark_dirty_pending.store(false, Ordering::SeqCst);
+                match self
+                    .component_handler
+                    .borrow()
+                    .as_ref()
+                    .and_then(|handler| handler.cast::<IComponentHandler2>())
+                {
+                    Some(handler) => unsafe {
+                        crate::nice_debug_assert!(is_gui_thread);
+                        let result = handler.setDirty(1);
+                        crate::nice_debug_assert_eq!(
+                            result,
+                            kResultOk,
+                            "IComponentHandler2::setDirty(true) failed"
+                        );
+                    },
+                    None => {
+                        #[cfg(debug_assertions)]
+                        crate::nice_warn!("The host offers no IComponentHandler2 to mark it dirty");
+                    }
                 }
             }
             #[cfg(feature = "editor")]

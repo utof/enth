@@ -41,7 +41,7 @@ use clap_sys::ext::render::{
     CLAP_EXT_RENDER, CLAP_RENDER_OFFLINE, CLAP_RENDER_REALTIME, clap_plugin_render,
     clap_plugin_render_mode,
 };
-use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
+use clap_sys::ext::state::{CLAP_EXT_STATE, clap_host_state, clap_plugin_state};
 use clap_sys::ext::tail::{CLAP_EXT_TAIL, clap_plugin_tail};
 use clap_sys::ext::thread_check::{CLAP_EXT_THREAD_CHECK, clap_host_thread_check};
 use clap_sys::ext::track_info::CLAP_EXT_TRACK_INFO;
@@ -93,7 +93,7 @@ use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 use try_lock::TryLock;
 
-use super::context::{WrapperActivateContext, WrapperProcessContext};
+use super::context::{WrapperActivateContext, WrapperHostRequests, WrapperProcessContext};
 use super::descriptor::PluginDescriptor;
 use super::util::ClapPtr;
 use crate::event_loop::{BackgroundThread, EventLoop, MainThreadExecutor, TASK_QUEUE_CAPACITY};
@@ -258,6 +258,10 @@ pub struct Wrapper<P: ClapPlugin> {
     clap_plugin_render: clap_plugin_render,
 
     clap_plugin_state: clap_plugin_state,
+    /// The host's state extension, for `mark_dirty()` (vendored fork, enth patch 6).
+    host_state: AtomicRefCell<Option<ClapPtr<clap_host_state>>>,
+    /// A [`Task::MarkDirty`] is queued and not yet performed: later requests are absorbed by it.
+    mark_dirty_pending: AtomicBool,
 
     clap_plugin_tail: clap_plugin_tail,
 
@@ -317,6 +321,9 @@ pub enum Task<P: Plugin> {
     RescanParamValues,
     /// Tell the host that parameter info (names) changed. Research patch: slot renaming.
     RescanParamInfo,
+    /// Tell the host that the state changed in a way it cannot see (`clap_host_state.mark_dirty()`).
+    /// Vendored fork, enth patch 6.
+    MarkDirty,
 }
 
 /// The types of CLAP parameter updates for events.
@@ -491,6 +498,21 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                     crate::nice_warn!("Host does not support the parameter extension");
                 }
             },
+            Task::MarkDirty => {
+                // Cleared before the host call, so a request made while the host handles this one
+                // queues another.
+                self.mark_dirty_pending.store(false, Ordering::SeqCst);
+                match &*self.host_state.borrow() {
+                    Some(host_state) => {
+                        crate::nice_debug_assert!(is_gui_thread);
+                        unsafe_clap_call! { host_state=>mark_dirty(&*self.host_callback) };
+                    }
+                    None => {
+                        #[cfg(debug_assertions)]
+                        crate::nice_warn!("Host does not support the state extension");
+                    }
+                }
+            }
         };
     }
 }
@@ -738,6 +760,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                 save: Some(Self::ext_state_save),
                 load: Some(Self::ext_state_load),
             },
+            host_state: AtomicRefCell::new(None),
+            mark_dirty_pending: AtomicBool::new(false),
 
             clap_plugin_tail: clap_plugin_tail {
                 get: Some(Self::ext_tail_get),
@@ -828,6 +852,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                 ))
                 .map(Mutex::new);
         }
+
+        // Vendored fork, enth patch 6: requests the plugin makes outside a context.
+        wrapper.plugin.try_lock().unwrap().host_requests(
+            nice_plug_core::context::host::HostRequests::new(Arc::new(WrapperHostRequests {
+                wrapper: Arc::downgrade(&wrapper),
+            })),
+        );
 
         wrapper
     }
@@ -1728,6 +1759,20 @@ impl<P: ClapPlugin> Wrapper<P> {
         unsafe_clap_call! { &*self.host_callback=>request_restart(&*self.host_callback) };
     }
 
+    /// Vendored fork, enth patch 6: tell the host the state changed in a way it cannot see.
+    /// `clap_host_state.mark_dirty()` is a main-thread call, so this runs it at once on the main
+    /// thread and queues it otherwise; a queued request absorbs later ones.
+    pub fn request_mark_dirty(&self) {
+        if self.mark_dirty_pending.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let task_posted = self.schedule_gui(Task::MarkDirty);
+        if !task_posted {
+            self.mark_dirty_pending.store(false, Ordering::SeqCst);
+        }
+        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
+    }
+
     /// Research patch: ask the host (on the main thread) to re-read parameter info.
     pub fn request_param_info_rescan(&self) {
         let task_posted = self.schedule_gui(Task::RescanParamInfo);
@@ -1765,6 +1810,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                 &wrapper.host_callback,
                 CLAP_EXT_THREAD_CHECK,
             );
+            *wrapper.host_state.borrow_mut() =
+                query_host_extension::<clap_host_state>(&wrapper.host_callback, CLAP_EXT_STATE);
         }
 
         #[cfg(feature = "editor")]

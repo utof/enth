@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 pub mod activate;
+pub mod host;
 pub mod process;
 
 // Contexts for more plugin-API specific features

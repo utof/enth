@@ -5,6 +5,7 @@ use clap_sys::id::{CLAP_INVALID_ID, clap_id};
 use clap_sys::string_sizes::CLAP_NAME_SIZE;
 use nice_plug_core::context::PluginApi;
 use nice_plug_core::context::activate::ActivateContext;
+use nice_plug_core::context::host::HostRequestsInner;
 use nice_plug_core::context::process::{ProcessContext, SendEventError, Transport};
 use nice_plug_core::context::remote_controls::{
     RemoteControlsContext, RemoteControlsPage, RemoteControlsSection,
@@ -65,6 +66,12 @@ pub(crate) struct WrapperGuiContext<P: ClapPlugin> {
     #[cfg(debug_assertions)]
     pub(super) param_gesture_checker:
         atomic_refcell::AtomicRefCell<crate::wrapper::util::context_checks::ParamGestureChecker>,
+}
+
+/// A [`HostRequestsInner`] implementation for the wrapper (vendored fork, enth patch 6). Passed to the
+/// plugin once, right after it is created; may be called from any thread except the audio thread.
+pub(crate) struct WrapperHostRequests<P: ClapPlugin> {
+    pub(super) wrapper: std::sync::Weak<Wrapper<P>>,
 }
 
 /// A [`RemoteControlsContext`] implementation for the wrapper. This is used during initialization
@@ -521,6 +528,14 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
 
     fn request_param_info_rescan(&self) {
         self.wrapper.request_param_info_rescan();
+    }
+}
+
+impl<P: ClapPlugin> HostRequestsInner for WrapperHostRequests<P> {
+    fn mark_dirty(&self) {
+        if let Some(wrapper) = self.wrapper.upgrade() {
+            wrapper.request_mark_dirty();
+        }
     }
 }
 
