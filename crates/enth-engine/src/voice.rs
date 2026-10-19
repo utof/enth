@@ -64,8 +64,13 @@ pub const NOTE_END_CAPACITY: usize = 256;
 pub struct NoteEnd {
     /// The note the voice was playing.
     pub key: NoteKey,
-    /// The absolute engine frame at which it went silent (a segment boundary).
+    /// The absolute engine frame at which it went silent (a segment boundary). Because the FIFO renders a whole
+    /// segment ahead, this can lie up to 32 frames past the end of the `process` call that reports it.
     pub frame: u64,
+    /// `frame` as an offset into the `process` call that reported it, clamped into that block (`0..len`): the
+    /// timing to give the host's `NOTE_END` event (P1b lane E+). A voice that ends in the frames the FIFO has
+    /// rendered ahead is reported at the block's last frame; it is below −100 dB by then.
+    pub offset: u32,
 }
 
 /// What a note-on did, for the engine to apply to the modules and the notes.
@@ -213,6 +218,7 @@ impl VoiceManager {
             ends: [NoteEnd {
                 key: NoteKey::new(0, -1),
                 frame: 0,
+                offset: 0,
             }; NOTE_END_CAPACITY],
             ends_len: 0,
             ends_dropped: 0,
@@ -479,6 +485,7 @@ impl VoiceManager {
             *slot = NoteEnd {
                 key: self.keys[v],
                 frame,
+                offset: 0,
             };
             self.ends_len += 1;
         } else {
@@ -508,6 +515,16 @@ impl VoiceManager {
     /// Forget the reported voice ends (the engine does this at the start of each `process` call).
     pub fn clear_ends(&mut self) {
         self.ends_len = 0;
+    }
+
+    /// Set every reported end's [`NoteEnd::offset`] for a host block of `frames` frames starting at absolute frame
+    /// `block_start`: `frame − block_start`, clamped into `0..frames` (the engine does this at the end of each
+    /// `process` call).
+    pub fn place_ends(&mut self, block_start: u64, frames: usize) {
+        let last = frames.saturating_sub(1) as u64;
+        for end in &mut self.ends[..self.ends_len] {
+            end.offset = end.frame.saturating_sub(block_start).min(last) as u32;
+        }
     }
 
     /// The playing voices (held, releasing or fading), in ascending slot order: the fixed voice and summation

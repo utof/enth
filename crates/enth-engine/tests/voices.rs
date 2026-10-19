@@ -204,6 +204,40 @@ fn voice_ends_and_cuts_are_reported_for_note_end() {
     );
 }
 
+/// P1b lane E+: `NoteEnd::offset` is the end's frame as an offset into the `process` call that reported it,
+/// clamped into that block; ends rendered ahead by the FIFO (past the block) get the block's last frame.
+#[test]
+fn note_end_offsets_are_clamped_inside_the_block() {
+    let mut p = gate_patch();
+    p.voice.values[VoiceParam::Polyphony.index()] = 2.0;
+    let notes: Vec<(u8, u64, u64)> = (0..40)
+        .map(|i| (48 + (i % 24) as u8, 300 * i, 300 * i + 450))
+        .collect();
+    let ev = notes_events(&notes);
+    for block in [1, 37, 50, 64, 100, 333] {
+        let mut e = engine(&p, SEED);
+        let (mut ends, mut clamped) = (0, 0);
+        drive(&mut e, &ev, 14_000, block, |e, l, _| {
+            let len = l.len() as u64;
+            let start = e.position() - len;
+            for end in e.note_ends() {
+                assert!(u64::from(end.offset) < len, "block {block}: {end:?}");
+                assert_eq!(
+                    u64::from(end.offset),
+                    (end.frame - start).min(len - 1),
+                    "block {block}: {end:?}"
+                );
+                ends += 1;
+                clamped += usize::from(end.frame >= start + len);
+            }
+        });
+        assert_eq!(ends, 40, "block {block}: every note ends once");
+        if block % SEG != 0 && block > 1 {
+            assert!(clamped > 0, "block {block}: some ends lie past the block");
+        }
+    }
+}
+
 #[test]
 fn a_choke_fades_the_note_in_64_frames() {
     let p = gate_patch();

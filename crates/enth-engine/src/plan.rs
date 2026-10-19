@@ -302,14 +302,29 @@ impl Plan {
 
     /// Carry the running state of `old` (the plan being replaced) into this one (see the module docs). Called on the
     /// audio thread; never allocates. Returns whether a module was added or removed (the swap then crossfades).
+    ///
+    /// Whether the swap crossfades is decided first (pairing the five role lists is cheap). Without a crossfade the
+    /// old plan never runs again, so each surviving effect *takes* its state ([`GlobalProcessorImpl::take_state`]:
+    /// the reverb moves its delay lines instead of copying 1.6 MB); with one, both plans run for 256 frames and the
+    /// state is copied. Either way the new plan ends up with the same state, so the output is the same bits.
     pub(crate) fn carry_from(
         &mut self,
-        old: &Plan,
+        old: &mut Plan,
         active: &[VoiceIdx],
         notes: &NoteState,
         render_seed: u64,
     ) -> bool {
-        let mut changed = false;
+        let changed = pair(&self.generators, &old.generators, VoiceProcessorImpl::kind).1
+            || pair(&self.voice_fx, &old.voice_fx, VoiceProcessorImpl::kind).1
+            || pair(&self.voice_mods, &old.voice_mods, VoiceModulatorImpl::kind).1
+            || pair(
+                &self.global_mods,
+                &old.global_mods,
+                GlobalModulatorImpl::kind,
+            )
+            .1
+            || pair(&self.fx, &old.fx, GlobalProcessorImpl::kind).1;
+        let move_fx = !changed;
         let Plan {
             generators,
             voice_fx,
@@ -329,8 +344,7 @@ impl Plan {
             (&mut *generators, &old.generators),
             (&mut *voice_fx, &old.voice_fx),
         ] {
-            let (pairs, c) = pair(list, old_list, VoiceProcessorImpl::kind);
-            changed |= c;
+            let (pairs, _) = pair(list, old_list, VoiceProcessorImpl::kind);
             for (i, slot) in list.iter_mut().enumerate() {
                 if let Some(j) = pairs[i] {
                     let o = &old_list[j];
@@ -350,8 +364,7 @@ impl Plan {
             }
         }
 
-        let (pairs, c) = pair(voice_mods, &old.voice_mods, VoiceModulatorImpl::kind);
-        changed |= c;
+        let (pairs, _) = pair(voice_mods, &old.voice_mods, VoiceModulatorImpl::kind);
         for (i, slot) in voice_mods.iter_mut().enumerate() {
             if let Some(j) = pairs[i] {
                 let o = &old.voice_mods[j];
@@ -367,8 +380,7 @@ impl Plan {
             }
         }
 
-        let (pairs, c) = pair(global_mods, &old.global_mods, GlobalModulatorImpl::kind);
-        changed |= c;
+        let (pairs, _) = pair(global_mods, &old.global_mods, GlobalModulatorImpl::kind);
         for (i, slot) in global_mods.iter_mut().enumerate() {
             if let Some(j) = pairs[i] {
                 let o = &old.global_mods[j];
@@ -385,13 +397,16 @@ impl Plan {
             }
         }
 
-        let (pairs, c) = pair(fx, &old.fx, GlobalProcessorImpl::kind);
-        changed |= c;
+        let (pairs, _) = pair(fx, &old.fx, GlobalProcessorImpl::kind);
         for (i, slot) in fx.iter_mut().enumerate() {
             if let Some(j) = pairs[i] {
-                let o = &old.fx[j];
-                slot.module.copy_state(&o.module);
-                global_table.carry(slot.params, &old.global_table, o.params);
+                let o_params = old.fx[j].params;
+                if move_fx {
+                    slot.module.take_state(&mut old.fx[j].module);
+                } else {
+                    slot.module.copy_state(&old.fx[j].module);
+                }
+                global_table.carry(slot.params, &old.global_table, o_params);
             } else {
                 slot.module.reset(&GlobalStart {
                     seed: global_seed(render_seed, slot.key),
@@ -1177,7 +1192,7 @@ mod tests {
         let notes = NoteState::new();
         // The same patch: nothing added or removed.
         let (mut b, _) = compile(&base, &cfg()).unwrap();
-        assert!(!b.carry_from(&a, &[3], &notes, 1));
+        assert!(!b.carry_from(&mut a, &[3], &notes, 1));
         assert_eq!(b.vmod_cur[b.amp_env][3], 0.5);
         assert_eq!(
             b.voice_table.cur[b.voice_builtin.start + VoiceParam::Pan.index()][3],
@@ -1191,12 +1206,71 @@ mod tests {
             .push(ModuleInstance::new(id("lfo3"), ModuleKind::Lfo));
         edited.generators[0].values[OscParam::Semi.index()] = 7.0;
         let (mut c, _) = compile(&edited, &cfg()).unwrap();
-        assert!(c.carry_from(&a, &[3], &notes, 1));
+        assert!(c.carry_from(&mut a, &[3], &notes, 1));
         assert_eq!(c.vmod_cur[c.amp_env][3], 0.5);
         // A scope change moves an LFO between role lists: removed and added.
         let mut scoped = base.clone();
         scoped.modulators[1].values[LfoParam::Scope.index()] = LfoScope::Global.index() as f32;
         let (mut d, _) = compile(&scoped, &cfg()).unwrap();
-        assert!(d.carry_from(&a, &[3], &notes, 1));
+        assert!(d.carry_from(&mut a, &[3], &notes, 1));
+    }
+
+    /// Feed the plan's reverb a burst so its delay lines hold a tail.
+    fn excite_reverb(plan: &mut Plan) -> usize {
+        let i = plan
+            .fx
+            .iter()
+            .position(|s| s.module.kind() == ModuleKind::Reverb)
+            .unwrap();
+        let Plan {
+            fx, global_table, ..
+        } = plan;
+        for k in 0..20 {
+            let mut left = [0.0f32; crate::module::SEG];
+            let mut right = [0.0f32; crate::module::SEG];
+            if k < 4 {
+                left[3] = 0.5;
+                right[17] = -0.25;
+            }
+            let span = fx[i].params;
+            fx[i].module.process(&mut crate::module::GlobalCx {
+                params: global_table.view(span),
+                left: &mut left,
+                right: &mut right,
+            });
+        }
+        i
+    }
+
+    fn reverb_is_empty(plan: &Plan, i: usize) -> bool {
+        match &plan.fx[i].module {
+            GlobalProcessorImpl::Reverb(r) => r.core().is_state_zero(),
+            GlobalProcessorImpl::Comp(_) => unreachable!("index of the reverb"),
+        }
+    }
+
+    #[test]
+    fn an_instant_swap_moves_the_effect_state_and_a_crossfade_copies_it() {
+        let base = full_patch();
+        let notes = NoteState::new();
+        let (mut a, _) = compile(&base, &cfg()).unwrap();
+        let i = excite_reverb(&mut a);
+        assert!(!reverb_is_empty(&a, i));
+        // Instant (nothing added or removed): the new plan takes the lines, the old one is left with the new plan's
+        // fresh (zeroed) lines, which the main thread drops with it.
+        let (mut b, _) = compile(&base, &cfg()).unwrap();
+        assert!(!b.carry_from(&mut a, &[], &notes, 1));
+        assert!(!reverb_is_empty(&b, i), "the tail moved to the new plan");
+        assert!(reverb_is_empty(&a, i), "moved, not copied");
+        // A crossfade runs both plans: the state is copied and the old plan keeps its own.
+        let i = excite_reverb(&mut a);
+        let mut edited = base.clone();
+        edited
+            .modulators
+            .push(ModuleInstance::new(id("lfo3"), ModuleKind::Lfo));
+        let (mut c, _) = compile(&edited, &cfg()).unwrap();
+        assert!(c.carry_from(&mut a, &[], &notes, 1));
+        assert!(!reverb_is_empty(&c, i));
+        assert!(!reverb_is_empty(&a, i), "copied: the old plan still runs");
     }
 }

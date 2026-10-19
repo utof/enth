@@ -178,6 +178,16 @@ impl ModuleImpl {
         }
     }
 
+    /// Take `other`'s state, as an instant plan swap does (P1b lane E+): global processors move it
+    /// ([`GlobalProcessor::take_state_from`]), the other roles copy. `other` must not run again. `false` (nothing
+    /// taken) for another role or kind. No allocation.
+    pub fn take_state_from(&mut self, other: &mut ModuleImpl) -> bool {
+        match (self, other) {
+            (ModuleImpl::GlobalProcessor(a), ModuleImpl::GlobalProcessor(b)) => a.take_state(b),
+            (a, b) => a.copy_state_from(b),
+        }
+    }
+
     /// The number of subnormal values in the module's state.
     #[must_use]
     pub fn subnormals(&self) -> usize {
@@ -359,6 +369,19 @@ impl GlobalProcessorImpl {
                 a.copy_state_from(b);
             }
             (GlobalProcessorImpl::Comp(a), GlobalProcessorImpl::Comp(b)) => a.copy_state_from(b),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Take the state of the same kind from `other`, which is never run again (see
+    /// [`GlobalProcessor::take_state_from`]); `false` (and nothing taken) for another kind.
+    pub fn take_state(&mut self, other: &mut Self) -> bool {
+        match (self, other) {
+            (GlobalProcessorImpl::Reverb(a), GlobalProcessorImpl::Reverb(b)) => {
+                a.take_state_from(b);
+            }
+            (GlobalProcessorImpl::Comp(a), GlobalProcessorImpl::Comp(b)) => a.take_state_from(b),
             _ => return false,
         }
         true

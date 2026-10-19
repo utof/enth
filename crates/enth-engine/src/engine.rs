@@ -195,6 +195,7 @@ impl Engine {
         }
         left[n..].fill(0.0);
         right[n..].fill(0.0);
+        self.voices.place_ends(self.position, n);
         self.position += n as u64;
     }
 
@@ -219,10 +220,18 @@ impl Engine {
         self.voices.active()
     }
 
-    /// The voices that ended during the last `process` call, with the frame they went silent (for CLAP `NOTE_END`).
+    /// The voices that ended during the last `process` call, with the frame they went silent and that frame as an
+    /// offset clamped into the call's block ([`NoteEnd::offset`], the timing for CLAP `NOTE_END`).
     #[must_use]
     pub fn note_ends(&self) -> &[NoteEnd] {
         self.voices.ends()
+    }
+
+    /// The absolute frame of the next host frame: frames processed since [`Engine::new`] or [`Engine::reset`]. A
+    /// block passed to `process` starts here; its events' offsets count from it.
+    #[must_use]
+    pub fn position(&self) -> u64 {
+        self.position
     }
 
     /// The voice manager (slot states and keys).
@@ -444,7 +453,7 @@ impl Engine {
     /// module was added or removed) or hand the old plan back at once.
     fn swap(&mut self, mut new: Box<Plan>, link: &mut AudioLink) {
         let changed = new.carry_from(
-            &self.plan,
+            &mut self.plan,
             self.voices.active(),
             &self.notes,
             self.render_seed,

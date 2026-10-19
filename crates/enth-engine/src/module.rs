@@ -273,6 +273,14 @@ pub trait GlobalProcessor {
     fn is_silent(&self) -> bool;
     /// See [`VoiceProcessor::copy_state_from`].
     fn copy_state_from(&mut self, other: &Self);
+    /// Take all state from `other`, which is never run again (an instant plan swap, P1b lane E+): afterwards this
+    /// module produces exactly what `other` would have produced, and `other` may hold anything (for example this
+    /// module's old, freshly prepared state). The default copies. A module with a large state (the reverb's 1.6 MB of
+    /// delay lines) overrides it with an O(1) exchange: nothing is freed on the audio thread, because the old plan
+    /// goes back to the main thread with whatever `other` now holds. No allocation.
+    fn take_state_from(&mut self, other: &mut Self) {
+        self.copy_state_from(other);
+    }
     /// See [`VoiceProcessor::subnormals`].
     fn subnormals(&self) -> usize;
 }

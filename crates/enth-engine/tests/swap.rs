@@ -478,6 +478,17 @@ fn start(m: &mut ModuleImpl, values: &[f32], notes: &NoteState) {
 
 #[test]
 fn for_every_kind_copying_state_into_a_fresh_module_gives_identical_output() {
+    every_kind_carries_state(false);
+}
+
+/// The instant swap's move (P1b lane E+): taking the state out of A (which never runs again) leaves B exactly where
+/// a copy would. Compared against A's continued output rendered from a copy taken first.
+#[test]
+fn for_every_kind_taking_state_into_a_fresh_module_gives_identical_output() {
+    every_kind_carries_state(true);
+}
+
+fn every_kind_carries_state(take: bool) {
     let cfg = PrepareCfg::new(SR);
     for (kind, values) in kinds() {
         let mut notes = NoteState::new();
@@ -497,7 +508,15 @@ fn for_every_kind_copying_state_into_a_fresh_module_gives_identical_output() {
             notes.fresh = [false; MAX_VOICES];
         }
         let mut b = ModuleImpl::new(kind, &values, &cfg);
-        assert!(b.copy_state_from(&a), "{kind}");
+        if take {
+            // A runs no more once its state is taken: the copy stands in for its continued output.
+            let mut copy = ModuleImpl::new(kind, &values, &cfg);
+            assert!(copy.copy_state_from(&a), "{kind}");
+            assert!(b.take_state_from(&mut a), "{kind}");
+            a = copy;
+        } else {
+            assert!(b.copy_state_from(&a), "{kind}");
+        }
         for k in 40..400 {
             if k == 100 {
                 notes.gate[0] = false;
