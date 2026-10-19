@@ -41,6 +41,7 @@ pub struct Knob<'a> {
     value_text: Option<String>,
     default: Option<f32>,
     modulated: Option<f32>,
+    range: Option<(f32, f32)>,
     score: Option<Score>,
     bipolar: bool,
     emphasis: Emphasis,
@@ -59,6 +60,7 @@ impl<'a> Knob<'a> {
             value_text: None,
             default: None,
             modulated: None,
+            range: None,
             score: None,
             bipolar: false,
             emphasis: Emphasis::Normal,
@@ -108,6 +110,31 @@ impl<'a> Knob<'a> {
         self
     }
 
+    /// The span its modulation routes can reach (normalised `lo..=hi`, lane ED2): a thin orange arc on the modulation
+    /// ring, under the thick live arc of [`modulated`](Self::modulated).
+    #[must_use]
+    pub fn range(mut self, lo: f32, hi: f32) -> Self {
+        self.range = Some((lo, hi));
+        self
+    }
+
+    /// Where the point at normalised `value` sits on the modulation ring of a knob drawn in `rect` (`inline`: the
+    /// [`inline`](Self::inline) form), so a caller can put something on the ring: the editor's depth handle (lane ED2).
+    pub fn ring_point(theme: &Theme, ui: &Ui, rect: Rect, inline: bool, value: f32) -> Pos2 {
+        let k = &theme.size.knob;
+        let center = if inline {
+            pos2(rect.left() + k.diameter / 2.0, rect.center().y)
+        } else {
+            let label_h = paint::row_height(ui, &theme.text.label);
+            pos2(
+                rect.center().x,
+                rect.top() + label_h + theme.space.hairline + k.diameter / 2.0,
+            )
+        };
+        let angle = angle_of(theme, value);
+        center + vec2(angle.cos(), angle.sin()) * mod_radius(theme)
+    }
+
     #[must_use]
     pub fn score(mut self, score: Option<Score>) -> Self {
         self.score = score;
@@ -147,10 +174,7 @@ impl<'a> Knob<'a> {
 
     /// Angle (radians, clockwise from +x) of a normalised value.
     fn angle(&self, value: f32) -> f32 {
-        let sweep = self.theme.size.knob.sweep_degrees.to_radians();
-        // The gap is centred at the bottom (90°), so the sweep starts half a gap past it.
-        let start = PI / 2.0 + (2.0 * PI - sweep) / 2.0;
-        start + sweep * value.clamp(0.0, 1.0)
+        angle_of(self.theme, value)
     }
 
     fn interact(&self, ui: &Ui, response: &Response) -> f32 {
@@ -235,7 +259,19 @@ impl<'a> Knob<'a> {
             t.stroke.thick(value_ink),
         );
         // Modulation sits on its own ring inside the track, so it never hides the value arc.
-        let r_mod = r_track - k.track - t.space.hairline;
+        let r_mod = mod_radius(t);
+        if let Some((lo, hi)) = self.range
+            && !dimmed
+        {
+            paint::arc(
+                painter,
+                center,
+                r_mod,
+                self.angle(lo),
+                self.angle(hi),
+                t.stroke.thin(c.accent.modulation),
+            );
+        }
         if let Some(modulated) = self.modulated
             && !dimmed
         {
@@ -360,6 +396,21 @@ impl<'a> Knob<'a> {
         );
         self.paint_score_glyph(ui, pos2(rect.left() + d, rect.top()));
     }
+}
+
+/// Angle (radians, clockwise from +x) of a normalised value on a knob's sweep.
+fn angle_of(theme: &Theme, value: f32) -> f32 {
+    let sweep = theme.size.knob.sweep_degrees.to_radians();
+    // The gap is centred at the bottom (90°), so the sweep starts half a gap past it.
+    let start = PI / 2.0 + (2.0 * PI - sweep) / 2.0;
+    start + sweep * value.clamp(0.0, 1.0)
+}
+
+/// Radius of the modulation ring, inside the track.
+fn mod_radius(theme: &Theme) -> f32 {
+    let k = &theme.size.knob;
+    let r_track = k.diameter / 2.0 - k.track / 2.0;
+    r_track - k.track - theme.space.hairline
 }
 
 impl Widget for Knob<'_> {

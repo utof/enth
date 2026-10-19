@@ -16,6 +16,10 @@ use crate::addr::{ModSource, ParamAddr, Target};
 use crate::catalogue::{LfoParam, ModuleKind, Polarity};
 use crate::model::Patch;
 
+/// The depth a route made without one starts at, in percent of the destination's range: the editor's drag-to-modulate
+/// drop (P1b lane ED2). Audible at once; the knob's depth handle then sets it.
+pub const DEFAULT_ROUTE_DEPTH: f32 = 25.0;
+
 /// The span of `key` as a source: `(note − 60) / 120` over MIDI notes 0..=127.
 pub const KEY_SPAN: (f32, f32) = (-60.0 / 120.0, 67.0 / 120.0);
 

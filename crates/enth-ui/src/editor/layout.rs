@@ -50,6 +50,8 @@ pub enum Region {
     Overview,
     /// The status and help line.
     Status,
+    /// The output: a scope (or a spectrum) and the stereo meter, from the engine's telemetry (lane ED2). Optional.
+    Output,
     /// Reserved for Learn: the lesson pane (no presenter in P1b).
     #[cfg(feature = "learn")]
     Lesson,
@@ -90,6 +92,7 @@ impl Region {
             Region::Effects => "effects",
             Region::Overview => "overview",
             Region::Status => "status",
+            Region::Output => "output",
             #[cfg(feature = "learn")]
             Region::Lesson => "lesson",
             #[cfg(feature = "recreate")]

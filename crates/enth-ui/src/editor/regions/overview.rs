@@ -1,12 +1,14 @@
 //! The modulation overview (lane ED1 places it; ED2 grows it): the source tiles, whose ⊕ handles drag-to-modulate
 //! starts from, beside the matrix of routes. A wide region puts the tiles on the left, in one row if the matrix still
-//! gets its natural width beside them (else in half the region), and the matrix in the rest; a tall one stacks them. Each part scrolls on its own
-//! when it doesn't fit, and [`OverviewOutput`] says by how much.
+//! gets its natural width beside them (else in half the region), and the matrix in the rest; a tall one stacks them.
+//! The matrix is the sources × targets grid when the grid fits its panel, else the compact route list (lane ED2), so
+//! layout 1 at 1200 × 800 shows every route of the P1 default without scrolling. Each part scrolls on its own when
+//! it doesn't fit, and [`OverviewOutput`] says by how much.
 
 use egui::{Rect, Response, Ui, Vec2, pos2, vec2};
 use enth_patch::ModSource;
 
-use super::{Matrix, MatrixView, SourceTiles, SourceView};
+use super::{Matrix, MatrixView, RouteList, SourceTiles, SourceView};
 use crate::Theme;
 use crate::editor::cards::Intents;
 
@@ -83,8 +85,16 @@ impl<'a> Overview<'a> {
         let tiles_needed = vec2(tile.x + pad, tiles_height(tiles_rect.width()));
         let tiles_overflow = (tiles_needed - tiles_rect.size()).max(Vec2::ZERO);
         let matrix_overflow = if matrix_rect.width() > 0.0 && matrix_rect.height() > 0.0 {
-            Matrix::new(t, self.matrix).show(ui, matrix_rect, out);
-            (matrix_size - matrix_rect.size()).max(Vec2::ZERO)
+            let grid_overflow = (matrix_size - matrix_rect.size()).max(Vec2::ZERO);
+            if grid_overflow == Vec2::ZERO || self.matrix.targets.is_empty() {
+                Matrix::new(t, self.matrix).show(ui, matrix_rect, out);
+                grid_overflow
+            } else {
+                // The grid does not fit: the same routes as a compact list (lane ED2).
+                let needed = RouteList::needed(t, self.matrix, matrix_rect.width(), caption);
+                RouteList::new(t, self.matrix).show(ui, matrix_rect, out);
+                (needed - matrix_rect.size()).max(Vec2::ZERO)
+            }
         } else {
             matrix_size
         };

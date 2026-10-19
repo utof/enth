@@ -50,8 +50,11 @@ pub enum Intent {
     Toggle { addr: ParamAddr, on: bool },
     /// A module's enable switch.
     Enable { id: ModuleId, enabled: bool },
-    /// Remove a route (a double-click on a matrix cell).
+    /// Remove a route (a double-click on a matrix cell, the control menu's "Remove … modulation").
     Unroute(RouteAddr),
+    /// A source's ⊕ was dropped on a control (drag-to-modulate, lane ED2): insert the route at
+    /// [`NEW_ROUTE_DEPTH`](crate::editor::modulate::NEW_ROUTE_DEPTH) unless it exists. One edit, no gesture.
+    Route(RouteAddr),
     /// Expose a parameter to the host through an automation slot (the right-click "Automate" item): the slot that
     /// already drives it, else the lowest free one (`bridge::free_slot`, F1b decision 4). One edit, no gesture.
     Automate(ParamAddr),
@@ -119,6 +122,24 @@ impl Intent {
             Intent::Unroute(route) => vec![Op::RemoveRoute {
                 route: route.clone(),
             }],
+            Intent::Route(route) => {
+                let exists = patch
+                    .routes
+                    .iter()
+                    .any(|r| r.src == route.src && r.dst == route.dst);
+                if exists {
+                    Vec::new()
+                } else {
+                    vec![Op::InsertRoute {
+                        index: patch.routes.len(),
+                        route: Route {
+                            src: route.src.clone(),
+                            dst: route.dst.clone(),
+                            depth: crate::editor::modulate::NEW_ROUTE_DEPTH,
+                        },
+                    }]
+                }
+            }
             Intent::Automate(addr) => {
                 let automated = bridge::slots_for(patch, addr).next().is_some();
                 match bridge::free_slot(patch) {

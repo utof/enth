@@ -12,6 +12,7 @@ pub struct SourceTile<'a> {
     name: &'a str,
     shape: &'a dyn Fn(f32) -> f32,
     phase: Option<f32>,
+    level: Option<f32>,
     routes: usize,
     id: Option<Id>,
 }
@@ -29,6 +30,7 @@ impl<'a> SourceTile<'a> {
             name,
             shape,
             phase: None,
+            level: None,
             routes: 0,
             id: None,
         }
@@ -46,6 +48,14 @@ impl<'a> SourceTile<'a> {
     #[must_use]
     pub fn phase(mut self, phase: Option<f32>) -> Self {
         self.phase = phase;
+        self
+    }
+
+    /// The source's output now, in the graph's 0..1 (lane ED2: the engine's telemetry publishes outputs, not phases):
+    /// a level line across the graph with a dot at its right end. `None` when there is no live value.
+    #[must_use]
+    pub fn level(mut self, level: Option<f32>) -> Self {
+        self.level = level;
         self
     }
 
@@ -82,7 +92,7 @@ impl<'a> SourceTile<'a> {
             Align2::LEFT_TOP,
             self.name,
             t.text.label.clone(),
-            if self.phase.is_some() {
+            if self.phase.is_some() || self.level.is_some() {
                 c.text.primary
             } else {
                 c.text.label
@@ -112,6 +122,17 @@ impl<'a> SourceTile<'a> {
             display = display.marker(phase);
         }
         display.paint(ui, graph);
+        if let Some(level) = self.level {
+            let area = super::display::trace_area(t, graph);
+            let y = area.bottom() - level.clamp(0.0, 1.0) * area.height();
+            let painter = ui.painter_at(graph);
+            painter.hline(area.x_range(), y, t.stroke.thin(c.accent.modulation_wash));
+            painter.circle_filled(
+                egui::pos2(area.right() - t.size.display.marker_radius, y),
+                t.size.display.marker_radius,
+                c.accent.modulation,
+            );
+        }
         // The handle has its own column right of the graph.
         let handle_rect = Rect::from_center_size(
             pos2(inner.right() - side / 2.0, graph.center().y),

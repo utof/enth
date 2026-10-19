@@ -1,6 +1,6 @@
 //! Component tokens: per-widget dimensions, in logical px at 100 % UI scale. One file per UI area, so a lane adds
 //! the dimensions of its own area in its own file: `bar`, `card`, `cards` (UI-C), `display`, `editor` (ED1), `handle`,
-//! `knob`, `matrix`, `modulation` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
+//! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,7 @@ mod handle;
 mod knob;
 mod matrix;
 mod modulation;
+mod output;
 mod pane;
 mod tile;
 mod window;
@@ -26,6 +27,7 @@ pub use handle::HandleSizes;
 pub use knob::KnobSizes;
 pub use matrix::MatrixSizes;
 pub use modulation::ModulationSizes;
+pub use output::OutputSizes;
 pub use pane::PaneSizes;
 pub use tile::TileSizes;
 pub use window::WindowSizes;
@@ -53,6 +55,9 @@ pub struct Sizes {
     /// The catalogue cards' generated controls and envelope displays (lane UI-C).
     #[serde(default)]
     pub cards: CardsSizes,
+    /// The output region: scope, spectrum and meters (lane ED2).
+    #[serde(default)]
+    pub output: OutputSizes,
     /// Height of single-line controls: buttons, segmented controls, number fields.
     pub control_height: f32,
 }
@@ -73,6 +78,7 @@ impl Sizes {
             editor: EditorSizes::dark(),
             modulation: ModulationSizes::dark(),
             cards: CardsSizes::dark(),
+            output: OutputSizes::dark(),
             control_height: 24.0,
         }
     }

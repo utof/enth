@@ -12,6 +12,8 @@
 //! | [`SourceTiles`] | the modulation sources' live tiles with their ⊕ handles | [`SourceView`] per source |
 //! | [`Matrix`] | the modulation overview: targets × sources | [`MatrixView`] |
 //! | [`Overview`] | the overview region: the source tiles beside the matrix (lane ED1) | [`SourceView`]s, [`MatrixView`] |
+//! | [`RouteList`] | the modulation overview as a compact list, when the grid does not fit (lane ED2) | [`MatrixView`] |
+//! | [`Output`] | the output region: scope or spectrum, and the stereo meter (lane ED2) | [`OutputView`] |
 //! | [`Status`] | the status line: the hovered control, its value and modulation | [`Hovered`](super::cards::Hovered) |
 //!
 //! Every region runs in a child `Ui` over its rectangle, clipped to it, whose scope id comes from the region's name;
@@ -22,7 +24,9 @@ mod cards;
 mod header;
 mod macros;
 mod matrix;
+mod output;
 mod overview;
+mod routes;
 mod status;
 mod tiles;
 
@@ -30,7 +34,9 @@ pub use cards::{Arrangement, CardRegion, CardRegionOutput};
 pub use header::{Header, HeaderView};
 pub use macros::{MacroView, Macros};
 pub use matrix::{Matrix, MatrixView};
+pub use output::{Output, OutputState, OutputView};
 pub use overview::{Overview, OverviewOutput};
+pub use routes::RouteList;
 pub use status::Status;
 pub use tiles::{SourceShape, SourceTiles, SourceView};
 

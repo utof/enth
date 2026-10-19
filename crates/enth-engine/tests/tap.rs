@@ -418,7 +418,7 @@ fn until_quiet(e: &mut Engine, link: &mut Link, tap: &Tap) -> u64 {
         still = if g == last { still + 1 } else { 0 };
         last = g;
         if still == 64 {
-            assert!(e.active_voices().is_empty());
+            assert_eq!(e.active_voices().len(), 0);
             return g;
         }
     }
@@ -521,7 +521,7 @@ fn a_global_modulator_keeps_publishing_in_silence() {
     for _ in 0..200 {
         silent_block(&mut e, &mut link);
     }
-    assert!(e.active_voices().is_empty());
+    assert_eq!(e.active_voices().len(), 0);
     let mut written = [0.0; 1];
     let scope = tap.scope(&mut written);
     let mut frame = tap.frame();

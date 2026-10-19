@@ -453,9 +453,10 @@ fn every_control_keeps_its_id_across_a_relayout() {
         kept, 59,
         "every control's id is its address's, in both layouts"
     );
-    // The rest are the envelopes' handles (three each), whose ids come from their module.
+    // The rest are the envelopes' handles (three each), whose ids come from their module, and the depth handles of
+    // the seven routed parameters (lane ED2), whose ids come from their address.
     let handles = |set: &BTreeSet<u64>| set.difference(&expected).count();
-    assert_eq!((handles(&lanes), handles(&moved)), (6, 6));
+    assert_eq!((handles(&lanes), handles(&moved)), (6 + 7, 6 + 7));
 }
 
 #[test]
