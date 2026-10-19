@@ -2,7 +2,7 @@
 //! amount in percent with a bar from the centre; drag a cell to change it, double-click to clear.
 //! It is the same data the CLI prints.
 
-use egui::{Align2, IdSalt, Rect, Response, Sense, Ui, pos2, vec2};
+use egui::{Align2, Id, IdSalt, Rect, Response, Sense, Ui, pos2, vec2};
 
 use super::paint;
 use crate::theme::Theme;
@@ -10,6 +10,7 @@ use crate::theme::Theme;
 pub struct MatrixGrid<'a> {
     theme: &'a Theme,
     salt: IdSalt,
+    id: Option<Id>,
     sources: &'a [&'a str],
     targets: &'a [&'a str],
     /// Row-major, `targets.len() × sources.len()`, each −1..1.
@@ -30,17 +31,33 @@ impl<'a> MatrixGrid<'a> {
         Self {
             theme,
             salt: IdSalt::new(id_salt),
+            id: None,
             sources,
             targets,
             amounts,
         }
     }
 
+    /// Interact under this global id (cell `i` under `id.with(i)`, row-major) instead of one
+    /// salted within the parent `Ui`.
+    #[must_use]
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
+    }
+
     pub fn show(self, ui: &mut Ui) -> Response {
+        self.show_cells(ui).0
+    }
+
+    /// Like [`show`](Self::show), plus each cell's own response, row-major: a cell's drag start
+    /// and stop are the edges of one gesture.
+    pub fn show_cells(self, ui: &mut Ui) -> (Response, Vec<Response>) {
         let t = self.theme;
         let c = &t.color;
         let m = &t.size.matrix;
-        let id = ui.make_persistent_id(self.salt);
+        let id = self.id.unwrap_or_else(|| ui.make_persistent_id(self.salt));
+        let mut cells = Vec::with_capacity(self.amounts.len());
         let width = m.target_width + m.cell_width * self.sources.len() as f32;
         let height = m.row_height * (self.targets.len() + 1) as f32;
         let (rect, mut response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
@@ -127,8 +144,9 @@ impl<'a> MatrixGrid<'a> {
                         c.text.primary,
                     );
                 }
+                cells.push(hit);
             }
         }
-        response
+        (response, cells)
     }
 }

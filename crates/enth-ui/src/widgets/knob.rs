@@ -2,10 +2,15 @@
 //!
 //! Values are normalised (0..=1); the caller maps them to real units and formats the value text.
 //! Drag vertically (Shift for fine), scroll, or double-click to reset.
+//!
+//! Give a knob an [`id`](Knob::id) from what it controls (the editor uses the module id and the parameter
+//! address), never its position: a drag then survives a re-layout. A discrete knob ([`steps`](Knob::steps))
+//! snaps to its steps but keeps the unrounded position of a running drag or wheel burst in egui's temporary
+//! memory under its id, so a slow drag still moves it.
 
 use std::f32::consts::PI;
 
-use egui::{Align2, Pos2, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, pos2, vec2};
+use egui::{Align2, Id, Pos2, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, pos2, vec2};
 
 use super::paint;
 use crate::theme::{Score, Theme};
@@ -41,6 +46,8 @@ pub struct Knob<'a> {
     emphasis: Emphasis,
     layout: KnobLayout,
     inline_width: Option<f32>,
+    id: Option<Id>,
+    steps: Option<u32>,
 }
 
 impl<'a> Knob<'a> {
@@ -57,7 +64,27 @@ impl<'a> Knob<'a> {
             emphasis: Emphasis::Normal,
             layout: KnobLayout::Cell,
             inline_width: None,
+            id: None,
+            steps: None,
         }
+    }
+
+    /// Interact under this id instead of an automatic one. Use a global id derived from what the knob controls
+    /// (`Id::unique(("enth.param", addr))`), so its drag, hover and wheel state survive the knob moving to
+    /// another place in the layout.
+    #[must_use]
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// A discrete knob with `steps + 1` values (an integer parameter, a long enum): the value snaps to
+    /// `k / steps`. Sub-step motion of a drag or a wheel burst accumulates until it reaches the next step, so
+    /// a slow drag moves it. Zero steps leaves the knob continuous.
+    #[must_use]
+    pub fn steps(mut self, steps: u32) -> Self {
+        self.steps = (steps > 0).then_some(steps);
+        self
     }
 
     /// The value in real units, formatted by the caller ("1.20 kHz"). Default: a percentage.
@@ -133,24 +160,47 @@ impl<'a> Knob<'a> {
         } else {
             1.0
         };
-        let mut value = *self.value;
+        let mut travel = 0.0;
         if response.dragged() {
-            value -= response.drag_delta().y / k.drag_travel * fine;
+            travel -= response.drag_delta().y;
         }
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
-                value += scroll / k.drag_travel * fine;
+                travel += scroll;
                 // Consume it, so a scroll area around the knob doesn't scroll as well.
                 ui.ctx().input_mut(|i| i.smooth_scroll_delta.y = 0.0);
             }
         }
-        if response.double_clicked()
-            && let Some(default) = self.default
-        {
+        let id = response.id;
+        let mut value = *self.value;
+        if travel != 0.0 {
+            // A discrete knob moves from where its drag or wheel burst has got to, not from the rounded value.
+            let from = match self.steps {
+                Some(_) => ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(value),
+                None => value,
+            };
+            value = (from + travel / k.drag_travel * fine).clamp(0.0, 1.0);
+            if self.steps.is_some() {
+                ui.data_mut(|d| d.insert_temp(id, value));
+            }
+        }
+        let reset = response.double_clicked() && self.default.is_some();
+        if let Some(default) = self.default.filter(|_| reset) {
             value = default;
         }
-        value.clamp(0.0, 1.0)
+        let ended = response.drag_stopped() || !(response.dragged() || response.hovered());
+        if self.steps.is_some() && (ended || reset) {
+            ui.data_mut(|d| d.remove::<f32>(id));
+        }
+        match self.steps {
+            // Snap only what moved: the caller's value is already on a step (up to its own rounding).
+            Some(steps) if travel != 0.0 => {
+                let steps = steps as f32;
+                (value * steps).round() / steps
+            }
+            _ => value,
+        }
     }
 
     fn paint_dial(&self, ui: &Ui, center: Pos2, active: bool) {
@@ -322,13 +372,19 @@ impl Widget for Knob<'_> {
                 t.size.knob.diameter,
             ),
         };
-        let (rect, mut response) = ui.allocate_exact_size(size, Sense::click_and_drag());
+        let (auto_id, rect) = ui.allocate_space(size);
+        let mut response = ui.interact(rect, self.id.unwrap_or(auto_id), Sense::click_and_drag());
         let value = self.interact(ui, &response);
         if value != *self.value {
             *self.value = value;
             response.mark_changed();
         }
-        response.widget_info(|| WidgetInfo::slider(ui.is_enabled(), f64::from(value), self.label));
+        let value_text = self.value_text.clone();
+        response.widget_info(|| {
+            let mut info = WidgetInfo::slider(ui.is_enabled(), f64::from(value), self.label);
+            info.current_text_value.clone_from(&value_text);
+            info
+        });
         if ui.is_rect_visible(rect) {
             let active = response.hovered() || response.dragged();
             match self.layout {

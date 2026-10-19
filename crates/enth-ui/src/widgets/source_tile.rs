@@ -1,7 +1,7 @@
 //! A live modulation-source tile: name, route-count badge, a small graph of the source's shape
 //! with its current phase, and the ⊕ handle you drag onto a control.
 
-use egui::{Align2, IdSalt, Rect, Response, Role, Sense, Ui, pos2, vec2};
+use egui::{Align2, Id, IdSalt, Rect, Response, Role, Sense, Ui, pos2, vec2};
 
 use super::display::{Display, Ink, Trace};
 use crate::theme::{Theme, glyph};
@@ -13,6 +13,7 @@ pub struct SourceTile<'a> {
     shape: &'a dyn Fn(f32) -> f32,
     phase: Option<f32>,
     routes: usize,
+    id: Option<Id>,
 }
 
 impl<'a> SourceTile<'a> {
@@ -29,7 +30,16 @@ impl<'a> SourceTile<'a> {
             shape,
             phase: None,
             routes: 0,
+            id: None,
         }
+    }
+
+    /// Give the ⊕ handle this global id (from the source, never the tile's place) instead of one
+    /// salted within the parent `Ui`.
+    #[must_use]
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
     }
 
     /// Current position in the shape (0..1) while the source runs; `None` when idle.
@@ -107,7 +117,8 @@ impl<'a> SourceTile<'a> {
             pos2(inner.right() - side / 2.0, graph.center().y),
             vec2(side, side),
         );
-        let handle = ui.interact(handle_rect, ui.make_persistent_id(self.salt), Sense::drag());
+        let id = self.id.unwrap_or_else(|| ui.make_persistent_id(self.salt));
+        let handle = ui.interact(handle_rect, id, Sense::drag());
         handle.widget_info(|| egui::WidgetInfo::labeled(Role::Button, true, self.name));
         let handle_ink = if handle.hovered() || handle.dragged() {
             c.text.primary

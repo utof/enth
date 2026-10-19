@@ -10,9 +10,14 @@
 //! Values are normalised (0..=1), like the knob's; the caller says how far a drag across the
 //! display moves each one, from how its curve places the value, so the point stays under the
 //! pointer.
+//!
+//! Handles closer than their grab reach share the space between them: each takes the side of
+//! the midpoint nearest to it, so the pointer always picks the closest handle, even where two
+//! grab areas overlap (a short release next to a zero sustain). Only handles at exactly the same
+//! point overlap; then the later one is picked, as egui picks the topmost widget.
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{IdSalt, Rect, RectAlign, Response, Sense, Ui, Vec2, WidgetInfo, vec2};
+use egui::{Id, IdSalt, Pos2, Rect, RectAlign, Response, Sense, Ui, Vec2, WidgetInfo, vec2};
 
 use super::display;
 use crate::theme::Theme;
@@ -150,6 +155,7 @@ impl HandleEdit {
 pub struct CurveHandles<'a> {
     theme: &'a Theme,
     salt: IdSalt,
+    id: Option<Id>,
 }
 
 impl<'a> CurveHandles<'a> {
@@ -158,24 +164,36 @@ impl<'a> CurveHandles<'a> {
         Self {
             theme,
             salt: IdSalt::new(id_salt),
+            id: None,
         }
+    }
+
+    /// Interact under this global id (handle `i` under `id.with(i)`) instead of one salted within
+    /// the parent `Ui`, so a drag survives a re-layout.
+    #[must_use]
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
     }
 
     /// Hit-tests and drags `handles` on the display at `rect`, changing their values in place.
     pub fn interact(self, ui: &mut Ui, rect: Rect, handles: &mut [Handle<'_>]) -> HandleEdit {
         let t = self.theme;
-        let id = ui.make_persistent_id(self.salt);
+        let id = self.id.unwrap_or_else(|| ui.make_persistent_id(self.salt));
         let area = display::trace_area(t, rect);
         let fine = if ui.input(|i| i.modifiers.shift) {
             t.size.knob.fine_ratio
         } else {
             1.0
         };
-        let grab = Vec2::splat(2.0 * t.size.handle.reach);
+        let centers: Vec<Pos2> = handles
+            .iter()
+            .map(|h| display::to_screen(area, h.at))
+            .collect();
+        let hits = grab_areas(&centers, t.size.handle.reach);
         let mut points = Vec::with_capacity(handles.len());
         let mut responses = Vec::with_capacity(handles.len());
-        for (index, handle) in handles.iter_mut().enumerate() {
-            let hit = Rect::from_center_size(display::to_screen(area, handle.at), grab);
+        for (index, (handle, hit)) in handles.iter_mut().zip(hits).enumerate() {
             let mut response =
                 ui.interact(hit.intersect(rect), id.with(index), Sense::click_and_drag());
             // Pointer travel as a share of the display, right and up positive.
@@ -223,6 +241,40 @@ impl<'a> CurveHandles<'a> {
             responses,
         }
     }
+}
+
+/// The grab area of each handle: a square of `reach` around its centre, cut at the midpoint to
+/// every neighbour whose square overlaps it, along the axis on which the two are further apart.
+/// So the areas never overlap (except for handles at the very same point), and the pointer picks
+/// the nearest handle instead of whichever egui registered last.
+pub(crate) fn grab_areas(centers: &[Pos2], reach: f32) -> Vec<Rect> {
+    centers
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| {
+            let mut area = Rect::from_center_size(c, Vec2::splat(2.0 * reach));
+            for (j, &other) in centers.iter().enumerate() {
+                let d = other - c;
+                if j == i || d == Vec2::ZERO || d.x.abs() >= 2.0 * reach || d.y.abs() >= 2.0 * reach
+                {
+                    continue;
+                }
+                let mid = c + d * 0.5;
+                if d.x.abs() >= d.y.abs() {
+                    if d.x > 0.0 {
+                        area.max.x = area.max.x.min(mid.x);
+                    } else {
+                        area.min.x = area.min.x.max(mid.x);
+                    }
+                } else if d.y > 0.0 {
+                    area.max.y = area.max.y.min(mid.y);
+                } else {
+                    area.min.y = area.min.y.max(mid.y);
+                }
+            }
+            area
+        })
+        .collect()
 }
 
 /// A tooltip above the handle's `circle` with its values in real units, one row per parameter.

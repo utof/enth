@@ -12,6 +12,7 @@ mod number_field;
 mod paint;
 mod segmented;
 mod source_tile;
+mod toggle;
 
 pub use bars::{ChallengeBar, Macro, MacroBar, StatusLine};
 pub use display::{Display, Ink, Trace};
@@ -23,3 +24,4 @@ pub use module_card::{CardResponse, CardShape, ModuleCard};
 pub use number_field::NumberField;
 pub use segmented::Segmented;
 pub use source_tile::SourceTile;
+pub use toggle::Toggle;
