@@ -8,7 +8,8 @@
 //!
 //! Times in a [`Performance`] are seconds; they become frames as `round(t · sample_rate)` in `f64`, and the engine
 //! applies each event at the first 32-frame segment boundary at or after its frame. Events at the same frame apply
-//! in this order: automation first, then notes in performance order, each note's on before its off.
+//! in this order: automation first, then controls (macros and the mod wheel) in performance order, then notes in
+//! performance order, each note's on before its off.
 //!
 //! The render seed ([`RenderSpec::seed`]) is the only source of randomness: free-running oscillator phases and every
 //! other random stream derive from it, the module id and the note index, never from the patch. Re-rendering with
@@ -26,7 +27,7 @@
 use core::fmt;
 
 use enth_engine::{CompileError, Engine, Event, EventKind, NoteKey, PrepareCfg, compile};
-use enth_patch::{ParamAddr, Patch};
+use enth_patch::{MacroIndex, ModSource, ParamAddr, Patch};
 
 /// The render seed used when nothing else is given (the engine spike's, `0x0E17_5EED`). The CLI's `--seed` and a
 /// challenge's seed replace it.
@@ -105,14 +106,78 @@ pub struct Automation {
     pub value: f32,
 }
 
-/// What is played: notes, automation and the length of the render. Build with `..Default::default()` (fields may
-/// be added, with defaults), or [`Performance::note`].
+/// A performance controller that is not a patch parameter (P1b lane E+): one of the eight macro knobs, or the mod
+/// wheel. Text form as in routes: `macro1`…`macro8`, `modwheel`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Controller {
+    /// A macro knob (its patch value is where it starts).
+    Macro(MacroIndex),
+    /// The mod wheel (it starts at 0).
+    ModWheel,
+}
+
+impl Controller {
+    /// The controller a route source names, if it is one (`macro3`, `modwheel`); `None` for velocity, key or a
+    /// module.
+    #[must_use]
+    pub fn from_source(src: &ModSource) -> Option<Self> {
+        match src {
+            ModSource::Macro(i) => Some(Controller::Macro(*i)),
+            ModSource::ModWheel => Some(Controller::ModWheel),
+            ModSource::Velocity | ModSource::Key | ModSource::Module(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for Controller {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Controller::Macro(i) => write!(f, "macro{}", i.one_based()),
+            Controller::ModWheel => f.write_str("modwheel"),
+        }
+    }
+}
+
+impl core::str::FromStr for Controller {
+    type Err = RenderError;
+
+    /// `macro1`…`macro8` or `modwheel`.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<ModSource>()
+            .ok()
+            .as_ref()
+            .and_then(Controller::from_source)
+            .ok_or_else(|| {
+                RenderError::BadPerformance(format!(
+                    "'{s}' is not a controller: macro1..macro8 or modwheel"
+                ))
+            })
+    }
+}
+
+/// A controller move at a point in time (P1b lane E+): the macro or the mod wheel is set to `value` (0–1), which the
+/// engine smooths over 10 ms, as the plugin does with a host's macro automation or a MIDI mod wheel. This is what
+/// lets a CLI render express a plugin performance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Control {
+    /// Time in seconds, `>= 0`.
+    pub time_s: f64,
+    /// The macro or the mod wheel.
+    pub controller: Controller,
+    /// Position, 0–1.
+    pub value: f32,
+}
+
+/// What is played: notes, automation, controller moves and the length of the render. Build with
+/// `..Default::default()` (fields may be added, with defaults), or [`Performance::note`].
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Performance {
     /// The notes, in any order (same-frame events follow this order).
     pub notes: Vec<Note>,
     /// Parameter changes, in any order.
     pub automation: Vec<Automation>,
+    /// Macro and mod-wheel moves, in any order (P1b lane E+).
+    pub controls: Vec<Control>,
     /// Length of the render in seconds (frames = `round(duration_s · sample_rate)`).
     pub duration_s: f64,
 }
@@ -123,8 +188,8 @@ impl Performance {
     pub fn note(key: u8, velocity: f32, hold_s: f64, duration_s: f64) -> Self {
         Self {
             notes: vec![Note::new(key, velocity, 0.0, hold_s)],
-            automation: Vec::new(),
             duration_s,
+            ..Self::default()
         }
     }
 }
@@ -247,7 +312,7 @@ impl From<CompileError> for RenderError {
 /// # Errors
 /// A patch that does not compile, a sample rate outside 8–384 kHz, or a bad performance (non-finite or negative
 /// times, an off before its on, a key above 127, a velocity outside 0–1, a length over [`MAX_SECONDS`], automation
-/// of an unknown parameter or with a non-finite value).
+/// of an unknown parameter or with a non-finite value, a control value outside 0–1).
 pub fn render(
     patch: &Patch,
     perf: &Performance,
@@ -287,7 +352,7 @@ pub fn render_with_block(
 
     // (frame, event); a stable sort by frame keeps the order below for same-frame events.
     let mut events: Vec<(u64, EventKind)> =
-        Vec::with_capacity(perf.automation.len() + 2 * perf.notes.len());
+        Vec::with_capacity(perf.automation.len() + perf.controls.len() + 2 * perf.notes.len());
     for a in &perf.automation {
         if !(a.time_s.is_finite() && a.time_s >= 0.0) {
             return Err(RenderError::BadPerformance(format!(
@@ -307,6 +372,22 @@ pub fn render_with_block(
             None if patch.spec(&a.addr).is_some() => {}
             None => return Err(RenderError::UnknownParam(a.addr.to_string())),
         }
+    }
+    for c in &perf.controls {
+        if !(c.time_s.is_finite() && c.time_s >= 0.0) || !(0.0..=1.0).contains(&c.value) {
+            return Err(RenderError::BadPerformance(format!(
+                "control of {} to {} at time {}: times are finite and >= 0, values 0-1",
+                c.controller, c.value, c.time_s
+            )));
+        }
+        let kind = match c.controller {
+            Controller::Macro(i) => EventKind::Macro {
+                index: i.get() as u8,
+                value: c.value,
+            },
+            Controller::ModWheel => EventKind::ModWheel { value: c.value },
+        };
+        events.push((to_frame(c.time_s), kind));
     }
     for (i, n) in perf.notes.iter().enumerate() {
         let times_ok =

@@ -121,8 +121,8 @@ fn patch_with_fx(source: &Source, fx: Option<Value>) -> Res<Patch> {
 fn performance(source: &Source, seconds: f64) -> Performance {
     Performance {
         notes: source.notes.clone(),
-        automation: Vec::new(),
         duration_s: seconds,
+        ..Performance::default()
     }
 }
 
