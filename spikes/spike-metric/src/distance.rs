@@ -35,7 +35,7 @@ pub struct Scale {
 
 impl Scale {
     /// Median component distances over 50 seeded random pairs of the toy synth at the default settings
-    /// (measured once; use [`Scale::calibrate`] to recompute for other settings).
+    /// (`Scale::calibrate(.., 42, 50)`, measured 2026-10-19; recompute for other settings).
     pub const DEFAULT: Scale = Scale {
         logmel: 1.7,
         env: 9.0,
