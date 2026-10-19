@@ -691,3 +691,47 @@ fn invariance_failures() {
         }
     }
 }
+
+/// Note-off inference for WAVs without their performance (report 03 §F5): 200 random patches with holds of 0.8 to
+/// 2.6 s, a third of them detuned by 20 ct.
+#[test]
+#[ignore = "sweep: 200 random patches"]
+fn note_off_inference_sweep() {
+    let mut rng = Rng(0x40_1d);
+    let mut errs = Vec::new();
+    let (mut n_sus, mut none_sus, mut n_dec, mut none_dec) = (0, 0, 0, 0);
+    for i in 0..200 {
+        let (mut p, mut perf) = random_toy(&mut rng);
+        perf.hold_s = 0.8 + 1.8 * rng.next_f64();
+        perf.dur_s = perf.hold_s + 1.2;
+        if i % 3 == 0 {
+            p.detune_ct = 20.0;
+        }
+        let x = render(&p, &perf);
+        let inferred = enth_analysis::envelope::infer_note_off(&x, SR);
+        let (e, _) = enth_analysis::envelope::rms_envelope(&x, SR);
+        let peak = e.iter().copied().fold(0.0, f64::max);
+        let at_off = e[((perf.hold_s * 1000.0) as usize).min(e.len() - 1)];
+        let sustained =
+            at_off > 0.0316 * peak && p.release_ms < 0.6 * 1000.0 * (perf.dur_s - perf.hold_s);
+        if sustained {
+            n_sus += 1;
+            match inferred {
+                Some(h) => errs.push((h - perf.hold_s) * 1000.0),
+                None => none_sus += 1,
+            }
+        } else {
+            n_dec += 1;
+            none_dec += usize::from(inferred.is_none());
+        }
+    }
+    let within = errs.iter().filter(|e| e.abs() <= 30.0).count();
+    let found = errs.len();
+    println!(
+        "\nnote-off inference: {n_sus} patches still sounding at note-off: found {found} (within 30 ms: {within}), none {none_sus}; error median {:.0} ms, p10 {:.0}, p90 {:.0}",
+        quantile(&mut errs, 0.5),
+        quantile(&mut errs, 0.1),
+        quantile(&mut errs, 0.9)
+    );
+    println!("{n_dec} patches already decayed at note-off: no knee reported on {none_dec}");
+}

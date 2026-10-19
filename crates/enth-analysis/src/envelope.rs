@@ -421,6 +421,71 @@ fn ripple(e: &[f64], raw: &[f64], frames_per_ms: f64, off: Option<usize>) -> f64
     quantile(&d, 0.95) - quantile(&d, 0.05)
 }
 
+/// Infer when the note was released, for a signal without its performance (a WAV from elsewhere): the latest
+/// "knee" where a held level (a slope above −6 dB/s over at least 100 ms) turns into a fall at least 30 dB/s steeper
+/// that continues for 15 dB, both sides straight lines in dB within 1.5 dB RMS. Returns seconds from the start, or
+/// `None` (a sound that only decays has no detectable note-off, and does not need one).
+///
+/// Report 03 §F5: on 200 random toy patches, 132 of the 143 still sounding at note-off were found, 110 within
+/// 30 ms (median error 3 ms; an earlier decay knee wins about 10 % of the time).
+#[must_use]
+pub fn infer_note_off(x: &[f32], sr: f64) -> Option<f64> {
+    let (e, hop) = rms_envelope(x, sr);
+    let hop_ms = hop as f64 / sr * 1000.0;
+    let f = |m: f64| ((m / hop_ms) as usize).max(1);
+    let peak = e.iter().copied().fold(0.0, f64::max);
+    if peak <= 0.0 {
+        return None;
+    }
+    let db: Vec<f64> = e
+        .iter()
+        .map(|v| 20.0 * libm::log10((v / peak).max(1e-6)))
+        .collect();
+    let n = db.len();
+    let top = db.iter().position(|&v| v > -3.0)?;
+    // least-squares slope (dB per ms) and residual RMS (dB) over [a, b)
+    let line = |a: usize, b: usize| -> (f64, f64) {
+        let seg = &db[a..b];
+        let (slope_per_frame, end) = line_fit(seg);
+        let m = seg.len() as f64;
+        let res = seg
+            .iter()
+            .enumerate()
+            .map(|(k, v)| {
+                let fit = end + slope_per_frame * (k as f64 - (m - 1.0));
+                (v - fit) * (v - fit)
+            })
+            .sum::<f64>()
+            / m;
+        (slope_per_frame / hop_ms, res.sqrt())
+    };
+    let (before, min_fall, step) = (f(100.0), f(10.0), f(2.0));
+    let mut best: Option<(usize, f64)> = None;
+    let mut t = top + before;
+    while t + f(30.0) < n {
+        let lvl = db[t];
+        if lvl < -45.0 {
+            break;
+        }
+        if let Some(fe) = (t..n).find(|&i| db[i] < lvl - 15.0)
+            && fe - t >= min_fall
+        {
+            let (s_after, r_after) = line(t, fe);
+            let (s_before, r_before) = line(t - before, t);
+            let steeper = (s_before - s_after) * 1000.0; // dB/s
+            if s_before * 1000.0 > -6.0 && steeper > 30.0 && r_after < 1.5 && r_before < 1.5 {
+                // prefer the sharpest knee; the latest wins near-ties
+                let score = steeper / (1.0 + r_after + r_before);
+                if best.is_none_or(|(_, b)| score >= b * 0.98) {
+                    best = Some((t, score));
+                }
+            }
+        }
+        t += step;
+    }
+    best.map(|(t, _)| t as f64 * hop_ms / 1000.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,5 +608,30 @@ mod tests {
         let m = env_of(&x, Some(1.2), Some(theory_beat(130.81, 5.0)));
         assert!(!m.beat_corrected, "{m:?}");
         assert!(m.beat_periods.unwrap() < 1.0);
+    }
+
+    #[test]
+    fn note_off_is_inferred_from_the_knee() {
+        let e = Adsr {
+            attack_s: 0.01,
+            decay_s: 0.2,
+            sustain: 0.5,
+            release_s: 0.3,
+        };
+        let mut x = sine(SR, 220.0, 0.5, 2.2);
+        e.apply(&mut x, SR, 1.3);
+        let got = infer_note_off(&x, SR).expect("a held note with a release");
+        assert!((got - 1.3).abs() < 0.03, "{got}");
+        // a sound that only decays has no note-off to find
+        let mut y = sine(SR, 220.0, 0.5, 2.0);
+        Adsr {
+            attack_s: 0.005,
+            decay_s: 1.5,
+            sustain: 0.0,
+            release_s: 0.3,
+        }
+        .apply(&mut y, SR, 2.0);
+        assert_eq!(infer_note_off(&y, SR), None);
+        assert_eq!(infer_note_off(&vec![0.0; 4800], SR), None);
     }
 }

@@ -39,6 +39,8 @@ const SPECTRUM_FLOOR: f64 = 1e-5;
 const BEAT_FLOOR: f64 = 0.031_62;
 /// Silence gate: sample peak below −80 dBFS.
 const SILENT_PEAK: f32 = 1e-4;
+/// Shortest signal `describe` accepts (ms).
+pub const MIN_DURATION_MS: f64 = 20.0;
 
 /// When the note was played, in seconds from the start of the clip.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -58,6 +60,15 @@ impl NoteTiming {
         }
     }
 
+    /// A note from `on_s`, held for `hold_s`.
+    #[must_use]
+    pub fn with_hold(on_s: f64, hold_s: f64) -> Self {
+        Self {
+            on_s,
+            off_s: Some(on_s + hold_s),
+        }
+    }
+
     /// A note from time 0 whose note-off is unknown.
     #[must_use]
     pub fn unknown_off() -> Self {
@@ -70,7 +81,8 @@ impl NoteTiming {
 
 /// Which optional groups to compute. Pitch, beating and the envelope are always measured (the envelope needs the
 /// beat rate, the beat estimator needs the pitch); spectrum, noisiness and loudness can be skipped to save time in a
-/// hint search.
+/// hint search. Without `loudness`, `lufs_i` is `None` and `true_peak_dbtp` equals the sample peak; `peak_dbfs`,
+/// `clipped_pct` and `clipping` are always exact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Want {
     pub spectrum: bool,
@@ -141,6 +153,8 @@ pub struct Descriptors {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnalysisError {
     Empty,
+    /// Shorter than [`MIN_DURATION_MS`]: too short for an envelope.
+    TooShort,
     /// The first non-finite sample.
     NonFinite {
         index: usize,
@@ -152,6 +166,7 @@ impl std::fmt::Display for AnalysisError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AnalysisError::Empty => write!(f, "the signal is empty"),
+            AnalysisError::TooShort => write!(f, "the signal is shorter than {MIN_DURATION_MS} ms"),
             AnalysisError::NonFinite { index } => write!(f, "sample {index} is not finite"),
             AnalysisError::BadTiming(why) => write!(f, "bad note timing: {why}"),
         }
@@ -243,6 +258,9 @@ impl Describer {
         if let Some(index) = x.iter().position(|s| !s.is_finite()) {
             return Err(AnalysisError::NonFinite { index });
         }
+        if (x.len() as f64) < self.sr * MIN_DURATION_MS / 1000.0 {
+            return Err(AnalysisError::TooShort);
+        }
         if !timing.on_s.is_finite() || timing.on_s < 0.0 {
             return Err(AnalysisError::BadTiming(
                 "note-on must be a finite time at or after 0",
@@ -282,7 +300,7 @@ impl Describer {
         };
         let peak_sample = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         let (env, hop) = envelope::rms_envelope(x, sr);
-        if peak_sample < SILENT_PEAK || env.len() < 20 {
+        if peak_sample < SILENT_PEAK || env.len() < 2 {
             d.silent = true;
             loudness.lufs_i = None;
             d.loudness = loudness;
@@ -796,6 +814,10 @@ mod tests {
         assert_eq!(
             d.describe(&[], NoteTiming::held(1.0)),
             Err(AnalysisError::Empty)
+        );
+        assert_eq!(
+            d.describe(&[0.5; 900], NoteTiming::held(1.0)),
+            Err(AnalysisError::TooShort)
         );
         assert_eq!(
             d.describe(&[0.0, f32::NAN], NoteTiming::held(1.0)),
