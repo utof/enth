@@ -537,6 +537,12 @@ impl<P: ClapPlugin> HostRequestsInner for WrapperHostRequests<P> {
             wrapper.request_mark_dirty();
         }
     }
+
+    fn request_param_info_rescan(&self) {
+        if let Some(wrapper) = self.wrapper.upgrade() {
+            wrapper.request_param_info_rescan();
+        }
+    }
 }
 
 #[cfg(feature = "editor")]

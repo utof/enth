@@ -1,5 +1,5 @@
 //! Requests a plugin makes of the host outside the activate, process and GUI contexts (vendored fork,
-//! enth patch 6).
+//! enth patches 6 and 8).
 
 use std::sync::Arc;
 
@@ -37,6 +37,15 @@ impl HostRequests {
     pub fn mark_dirty(&self) {
         self.inner.mark_dirty();
     }
+
+    /// Ask the host to re-read parameter info (names) after `Param::set_display_name()`. CLAP:
+    /// `clap_host_params.rescan(INFO | TEXT)`; VST3: `restartComponent(kParamTitlesChanged)`. Both
+    /// are main-thread calls. Unlike the process context's request, this one can be made from the
+    /// state-load path, so a load's new names reach the host before it processes again, never
+    /// from inside `process()`. (Vendored fork, enth patch 8.)
+    pub fn request_param_info_rescan(&self) {
+        self.inner.request_param_info_rescan();
+    }
 }
 
 /// What a wrapper implements for [`HostRequests`].
@@ -48,4 +57,7 @@ impl HostRequests {
 pub trait HostRequestsInner: Send + Sync + 'static {
     /// See [`HostRequests::mark_dirty()`].
     fn mark_dirty(&self);
+
+    /// See [`HostRequests::request_param_info_rescan()`].
+    fn request_param_info_rescan(&self);
 }

@@ -94,6 +94,12 @@ impl<P: Vst3Plugin> HostRequestsInner for WrapperHostRequests<P> {
             inner.request_mark_dirty();
         }
     }
+
+    fn request_param_info_rescan(&self) {
+        if let Some(inner) = self.inner.upgrade() {
+            inner.request_param_info_rescan();
+        }
+    }
 }
 
 impl<P: Vst3Plugin> Drop for WrapperActivateContext<'_, P> {

@@ -262,6 +262,8 @@ pub struct Wrapper<P: ClapPlugin> {
     host_state: AtomicRefCell<Option<ClapPtr<clap_host_state>>>,
     /// A [`Task::MarkDirty`] is queued and not yet performed: later requests are absorbed by it.
     mark_dirty_pending: AtomicBool,
+    /// A [`Task::RescanParamInfo`] is queued and not yet performed (enth patch 8).
+    param_info_rescan_pending: AtomicBool,
 
     clap_plugin_tail: clap_plugin_tail,
 
@@ -478,16 +480,21 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                     crate::nice_warn!("Host does not support the voice-info extension");
                 }
             },
-            Task::RescanParamInfo => match &*self.host_params.borrow() {
-                Some(host_params) => {
-                    crate::nice_debug_assert!(is_gui_thread);
-                    unsafe_clap_call! { host_params=>rescan(&*self.host_callback, CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_TEXT) };
+            Task::RescanParamInfo => {
+                // enth patch 8: cleared before the host call, so a rename made while the host reads
+                // the names queues another rescan.
+                self.param_info_rescan_pending.store(false, Ordering::SeqCst);
+                match &*self.host_params.borrow() {
+                    Some(host_params) => {
+                        crate::nice_debug_assert!(is_gui_thread);
+                        unsafe_clap_call! { host_params=>rescan(&*self.host_callback, CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_TEXT) };
+                    }
+                    None => {
+                        #[cfg(debug_assertions)]
+                        crate::nice_warn!("Host does not support the parameter extension");
+                    }
                 }
-                None => {
-                    #[cfg(debug_assertions)]
-                    crate::nice_warn!("Host does not support the parameter extension");
-                }
-            },
+            }
             Task::RescanParamValues => match &*self.host_params.borrow() {
                 Some(host_params) => {
                     crate::nice_debug_assert!(is_gui_thread);
@@ -762,6 +769,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             },
             host_state: AtomicRefCell::new(None),
             mark_dirty_pending: AtomicBool::new(false),
+            param_info_rescan_pending: AtomicBool::new(false),
 
             clap_plugin_tail: clap_plugin_tail {
                 get: Some(Self::ext_tail_get),
@@ -1773,9 +1781,16 @@ impl<P: ClapPlugin> Wrapper<P> {
         crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
-    /// Research patch: ask the host (on the main thread) to re-read parameter info.
+    /// Research patch: ask the host (on the main thread) to re-read parameter info. At once on the
+    /// main thread, queued otherwise; a queued request absorbs later ones (enth patch 8).
     pub fn request_param_info_rescan(&self) {
+        if self.param_info_rescan_pending.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let task_posted = self.schedule_gui(Task::RescanParamInfo);
+        if !task_posted {
+            self.param_info_rescan_pending.store(false, Ordering::SeqCst);
+        }
         crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 

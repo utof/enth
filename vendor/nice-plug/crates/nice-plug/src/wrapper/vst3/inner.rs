@@ -76,6 +76,8 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// A [`Task::MarkDirty`] is queued and not yet performed: later requests are absorbed by it.
     /// Vendored fork, enth patch 6.
     pub mark_dirty_pending: AtomicBool,
+    /// A [`Task::RescanParamInfo`] is queued and not yet performed (enth patch 8).
+    pub param_info_rescan_pending: AtomicBool,
 
     /// Our own [`IPlugView`] instance.
     #[cfg(feature = "editor")]
@@ -204,6 +206,9 @@ pub enum Task<P: Plugin> {
     /// Tell the host that the state changed in a way it cannot see
     /// (`IComponentHandler2::setDirty(true)`). Vendored fork, enth patch 6.
     MarkDirty,
+    /// Tell the host that parameter titles changed (`restartComponent(kParamTitlesChanged)`).
+    /// Vendored fork, enth patch 8.
+    RescanParamInfo,
 }
 
 /// VST3 makes audio processing pretty complicated. In order to support both block splitting for
@@ -367,6 +372,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
 
             component_handler: AtomicRefCell::new(None),
             mark_dirty_pending: AtomicBool::new(false),
+            param_info_rescan_pending: AtomicBool::new(false),
 
             #[cfg(feature = "editor")]
             plug_view: RwLock::new(None),
@@ -702,9 +708,16 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
-    /// Research patch: ask the host to re-read parameter titles.
+    /// Research patch: ask the host to re-read parameter titles. At once on the main thread, queued
+    /// otherwise; a queued request absorbs later ones (enth patch 8).
     pub fn request_param_info_rescan(&self) {
-        let task_posted = self.schedule_gui(Task::TriggerRestart(RestartFlags_::kParamTitlesChanged));
+        if self.param_info_rescan_pending.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let task_posted = self.schedule_gui(Task::RescanParamInfo);
+        if !task_posted {
+            self.param_info_rescan_pending.store(false, Ordering::SeqCst);
+        }
         crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
@@ -800,6 +813,27 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                     }
                 } else {
                     crate::nice_debug_assert_failure!("Can't resize a closed editor");
+                }
+            }
+            Task::RescanParamInfo => {
+                // Cleared before the host call, so a rename made while the host reads the titles
+                // queues another rescan. A state load before the host set its component handler
+                // (a validator may do that) has nobody to tell.
+                self.param_info_rescan_pending.store(false, Ordering::SeqCst);
+                match &*self.component_handler.borrow() {
+                    Some(handler) => unsafe {
+                        crate::nice_debug_assert!(is_gui_thread);
+                        let result = handler.restartComponent(RestartFlags_::kParamTitlesChanged);
+                        crate::nice_debug_assert_eq!(
+                            result,
+                            kResultOk,
+                            "restartComponent(kParamTitlesChanged) failed"
+                        );
+                    },
+                    None => {
+                        #[cfg(debug_assertions)]
+                        crate::nice_warn!("No component handler yet for a parameter title rescan");
+                    }
                 }
             }
             Task::MarkDirty => {
