@@ -291,6 +291,60 @@ fn history_matches_model(setup: &[Raw], steps: &[Step]) -> Result<(), TestCaseEr
     Ok(())
 }
 
+/// A depth drag (`SetDepth` on one route) and a macro drag (`SetMacro` on one macro) merge like a knob drag: one
+/// entry holding one forward op and one inverse, and one undo returns to where the drag started (F1b review).
+#[test]
+fn depth_and_macro_drags_merge_per_target() {
+    use enth_patch::{MacroIndex, ModSource, Route, RouteAddr};
+    let mut p = Patch::init();
+    let route = RouteAddr {
+        src: ModSource::Velocity,
+        dst: "osc1.fine".parse().unwrap(),
+    };
+    let m1 = MacroIndex::from_one_based(1).unwrap();
+    let insert = Op::InsertRoute {
+        index: 0,
+        route: Route {
+            src: route.src.clone(),
+            dst: route.dst.clone(),
+            depth: 10.0,
+        },
+    };
+    apply(&mut p, &insert).unwrap();
+    let start = p.clone();
+    let mut h = History::new();
+    let g = h.begin_gesture(&p);
+    for i in 1..=40u8 {
+        let depth = 10.0 + f32::from(i);
+        h.edit(
+            &mut p,
+            vec![Op::SetDepth {
+                route: route.clone(),
+                depth,
+            }],
+            Some(g),
+        )
+        .unwrap();
+    }
+    h.end_gesture(&p);
+    let g = h.begin_gesture(&p);
+    for i in 1..=40u8 {
+        let value = f32::from(i) / 40.0;
+        h.edit(&mut p, vec![Op::SetMacro { index: m1, value }], Some(g))
+            .unwrap();
+    }
+    h.end_gesture(&p);
+    let sizes: Vec<(usize, usize)> = h
+        .undo_stack()
+        .iter()
+        .map(|e| (e.forward.len(), e.inverse.len()))
+        .collect();
+    assert_eq!(sizes, [(1, 1), (1, 1)]);
+    assert!(h.undo(&mut p).unwrap());
+    assert!(h.undo(&mut p).unwrap());
+    assert!(identical(&p, &start));
+}
+
 /// The model's end of a gesture: annul its entry if the gesture ended where it started.
 fn end_in_model(
     done: &mut Vec<(Option<GestureId>, Patch)>,
