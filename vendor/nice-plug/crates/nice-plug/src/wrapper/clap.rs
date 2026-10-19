@@ -38,6 +38,18 @@ pub trait ClapPlugin: Plugin {
     /// If set, this informs the host about the plugin's capabilities for polyphonic modulation.
     const CLAP_POLY_MODULATION_CONFIG: Option<PolyModulationConfig> = None;
 
+    /// Whether the wrapper asks the host to restart an active plugin when the host switches it
+    /// between real-time and offline rendering (`clap_plugin_render.set()`), so that
+    /// [`Plugin::activate()`] sees the new
+    /// [`ProcessMode`][nice_plug_core::audio_setup::ProcessMode]. The default (`true`) is
+    /// nice-plug's behaviour. A host may honour the request while its render is already running:
+    /// REAPER 7.82 calls `set(OFFLINE)` on the active plugin when an offline render starts and
+    /// restarts it about 30 ms of wall-clock time later, so the render continues with a fresh
+    /// instance from a point that depends on the render's speed, and the note sounding there is
+    /// lost. A plugin whose audio does not depend on the mode sets `false`; it then keeps the mode
+    /// of its last activation until the host activates it again. Vendored fork, enth patch 9.
+    const CLAP_RESTART_ON_RENDER_MODE_CHANGE: bool = true;
+
     /// This function can be implemented to define plugin-specific [remote control
     /// pages](https://github.com/free-audio/clap/blob/main/include/clap/ext/draft/remote-controls.h)
     /// that the host can use to provide better hardware mapping for a plugin. See the linked

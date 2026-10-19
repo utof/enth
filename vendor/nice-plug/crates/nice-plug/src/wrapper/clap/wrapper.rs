@@ -3499,9 +3499,11 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         if wrapper.current_process_mode.swap(mode) != mode
             && wrapper.is_activated.load(Ordering::SeqCst)
+            && P::CLAP_RESTART_ON_RENDER_MODE_CHANGE
         {
             // We may change process mode while activated. In that case, restart the audio processor
-            // so the plugin can react to the process mode change in `Plugin::activate`.
+            // so the plugin can react to the process mode change in `Plugin::activate`. A plugin can
+            // opt out (enth patch 9): hosts may restart it in the middle of a render.
             wrapper.request_restart();
         }
 
