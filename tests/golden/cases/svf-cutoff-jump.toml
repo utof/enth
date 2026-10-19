@@ -1,4 +1,4 @@
-description = "Cutoff automation at off-grid times with resonance 90 %: 300 Hz, up to 6 kHz at 0.2503 s, down to 150 Hz at 0.5001 s, up to 12 kHz at 0.7 s. Each event moves the coefficients over one 32-frame segment (the filter ramps them per sample); the render must stay finite and click-free. Master level -12 dB keeps the resonant peaks inside full scale. Lane S2b adds parameter smoothing to the cutoff, which moves this case on purpose. The saw is the reference stub until lane D1 lands."
+description = "Cutoff automation at off-grid times with resonance 90 %: 300 Hz, up to 6 kHz at 0.2503 s, down to 150 Hz at 0.5001 s, up to 12 kHz at 0.7 s. Each event moves the coefficients over one 32-frame segment (the filter ramps them per sample); the render must stay finite and click-free. Master level -12 dB keeps the resonant peaks inside full scale. The engine smooths the cutoff over 10 ms (lane S2b), so each jump is a short ramp."
 sample_rate = 48000
 seconds = 1.0
 

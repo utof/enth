@@ -1,4 +1,4 @@
-description = "Full resonance at the top of the range: low-pass, resonance 100 % (Q 25), cutoff 20 kHz at 44.1 kHz (above 0.45 of the sample rate, so it clamps to 19.8 kHz), a sustained 110 Hz saw. Guards the cutoff clamp, the Q 25 end of the map and stability right below Nyquist. The saw is the reference stub until lane D1 lands."
+description = "Full resonance at the top of the range: low-pass, resonance 100 % (Q 25), cutoff 20 kHz at 44.1 kHz (above 0.45 of the sample rate, so it clamps to 19.8 kHz), a sustained 110 Hz saw. Guards the cutoff clamp, the Q 25 end of the map and stability right below Nyquist."
 sample_rate = 44100
 seconds = 0.75
 
