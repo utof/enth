@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use clack_extensions::state::PluginState;
 use clack_host::events::event_types::{NoteOffEvent, NoteOnEvent, ParamValueEvent};
+use clack_host::events::spaces::CoreEventSpace;
 use clack_host::prelude::*;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -87,14 +88,21 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn open(entry: &PluginEntry, id: &CStr, request: &RenderRequest) -> Result<Self, String> {
+    /// Instantiates the plugin, loads `state` through the state extension (if given) and reads its parameters
+    /// and audio ports. The schedule is empty: callers set `schedule` themselves.
+    pub fn open_bare(
+        entry: &PluginEntry,
+        id: &CStr,
+        state: Option<&[u8]>,
+        config: RenderConfig,
+    ) -> Result<Self, String> {
         let mut instance = instantiate(entry, id)?;
-        if let Some(state) = &request.state {
+        if let Some(state) = state {
             let handle = instance.plugin_handle();
             let ext = handle
                 .get_extension::<PluginState>()
                 .ok_or("--state given, but the plugin has no state extension")?;
-            ext.load(&handle, &mut state.as_slice())
+            ext.load(&handle, &mut &*state)
                 .map_err(|e| format!("plugin refused the state blob: {e}"))?;
         }
         let params = query::params(&mut instance);
@@ -106,7 +114,18 @@ impl Session {
         if layout.output_channels() == 0 {
             return Err("the plugin has no audio output port".to_owned());
         }
-        let resolve = |name: &str| query::resolve_param(&params, name);
+        Ok(Self {
+            instance,
+            layout,
+            schedule: Schedule::default(),
+            config,
+            params,
+        })
+    }
+
+    pub fn open(entry: &PluginEntry, id: &CStr, request: &RenderRequest) -> Result<Self, String> {
+        let mut this = Self::open_bare(entry, id, request.state.as_deref(), request.config)?;
+        let resolve = |name: &str| query::resolve_param(&this.params, name);
         let mut schedule = notes::parse(
             &request.script,
             request.config.sample_rate,
@@ -126,13 +145,8 @@ impl Session {
         at_start.append(&mut schedule.events);
         schedule.events = at_start;
         schedule.events.sort_by_key(|e| (e.frame, e.kind.order()));
-        Ok(Self {
-            instance,
-            layout,
-            schedule,
-            config: request.config,
-            params,
-        })
+        this.schedule = schedule;
+        Ok(this)
     }
 
     /// Activates the plugin for the fixed block size.
@@ -154,6 +168,10 @@ impl Session {
             schedule: self.schedule.clone(),
             config: self.config,
             keep_samples: true,
+            capture_events: false,
+            record_timing: false,
+            inject_event_cap: None,
+            inject_busy: None,
         }
     }
 
@@ -182,6 +200,49 @@ pub struct JobSetup {
     config: RenderConfig,
     /// Keep the rendered samples (off for the endless audio loop of `editor-cycles`).
     pub keep_samples: bool,
+    /// Record the events the plugin sends back (`NOTE_END` and others) with their block and offset.
+    pub capture_events: bool,
+    /// Record the wall time of every plugin `process()` call.
+    pub record_timing: bool,
+    /// Negative-control fault: deliver only the first N events of each block, as a plugin with a smaller
+    /// input queue would see them. `None` delivers everything.
+    pub inject_event_cap: Option<usize>,
+    /// Negative-control fault: spin for this many microseconds inside the timed `process()` window of every
+    /// `every`-th block, as a plugin that is that much slower (or spikes that often) would.
+    pub inject_busy: Option<BusyFault>,
+}
+
+/// A deliberate slowdown of `process()` for the timing checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BusyFault {
+    pub us: u64,
+    /// Every block (1) or every N-th.
+    pub every: u64,
+}
+
+impl BusyFault {
+    /// `busy-us=N` with an optional `,every=K`.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let mut us = None;
+        let mut every = 1;
+        for part in text.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+            let (name, value) = part
+                .split_once('=')
+                .ok_or_else(|| format!("--inject {part:?}: expected NAME=NUMBER"))?;
+            let n: u64 = value
+                .parse()
+                .map_err(|_| format!("--inject {part:?}: {value:?} is not a number"))?;
+            match name {
+                "busy-us" => us = Some(n),
+                "every" => every = n.max(1),
+                other => return Err(format!("--inject {other:?}: use busy-us=N[,every=K]")),
+            }
+        }
+        Ok(Self {
+            us: us.ok_or("--inject needs busy-us=N")?,
+            every,
+        })
+    }
 }
 
 impl JobSetup {
@@ -220,8 +281,37 @@ impl JobSetup {
             keep_samples: self.keep_samples,
             samples,
             out_channels,
+            capture_events: self.capture_events,
+            record_timing: self.record_timing,
+            inject_event_cap: self.inject_event_cap,
+            inject_busy: self.inject_busy,
+            last_process_ns: 0,
+            process_ns: Vec::new(),
+            output_events: Vec::new(),
         }
     }
+}
+
+/// An event a plugin sent back to the host during `process()`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OutEvent {
+    /// `CLAP_EVENT_NOTE_END`: the note tuple the host gave in the note-on. `None` means the wildcard (-1).
+    NoteEnd {
+        port: Option<u16>,
+        channel: Option<u16>,
+        key: Option<u16>,
+        note_id: Option<u32>,
+    },
+    /// Anything else, by CLAP event type id.
+    Other { type_id: u16 },
+}
+
+/// One captured output event: the block it came in, its offset inside that block, and what it was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutRecord {
+    pub block: u64,
+    pub time: u32,
+    pub event: OutEvent,
 }
 
 /// Drives one plugin instance block by block. Lives on a single thread.
@@ -239,6 +329,16 @@ pub struct JobRunner {
     keep_samples: bool,
     samples: Vec<f32>,
     out_channels: usize,
+    capture_events: bool,
+    record_timing: bool,
+    inject_event_cap: Option<usize>,
+    inject_busy: Option<BusyFault>,
+    /// Wall time of the last plugin `process()` call, in ns.
+    pub last_process_ns: u64,
+    /// Wall time of every plugin `process()` call, in ns, when `record_timing` is on.
+    pub process_ns: Vec<u64>,
+    /// Events the plugin sent back, when `capture_events` is on.
+    pub output_events: Vec<OutRecord>,
 }
 
 impl JobRunner {
@@ -274,7 +374,12 @@ impl JobRunner {
         self.events_in.clear();
         self.events_out.clear();
         let mut reset = false;
-        for scheduled in self.schedule.window(start, start + block) {
+        let window = self.schedule.window(start, start + block);
+        let window = match self.inject_event_cap {
+            Some(cap) => &window[..window.len().min(cap)],
+            None => window,
+        };
+        for scheduled in window {
             let time = (scheduled.frame - start) as u32;
             match &scheduled.kind {
                 Kind::Reset => reset = true,
@@ -337,16 +442,46 @@ impl JobRunner {
         if reset {
             started.reset();
         }
-        started
-            .process(
-                &input_audio,
-                &mut output_audio,
-                &input_events,
-                &mut output_events,
-                Some(start),
-                None,
-            )
-            .map_err(|e| format!("process() failed at block {}: {e}", self.next_block))?;
+        let called = Instant::now();
+        if let Some(fault) = self.inject_busy
+            && self.next_block.is_multiple_of(fault.every)
+        {
+            while called.elapsed().as_micros() < u128::from(fault.us) {
+                std::hint::spin_loop();
+            }
+        }
+        let result = started.process(
+            &input_audio,
+            &mut output_audio,
+            &input_events,
+            &mut output_events,
+            Some(start),
+            None,
+        );
+        self.last_process_ns = called.elapsed().as_nanos() as u64;
+        result.map_err(|e| format!("process() failed at block {}: {e}", self.next_block))?;
+        if self.record_timing {
+            self.process_ns.push(self.last_process_ns);
+        }
+        if self.capture_events {
+            for event in &self.events_out {
+                self.output_events.push(OutRecord {
+                    block: self.next_block,
+                    time: event.header().time(),
+                    event: match event.as_core_event() {
+                        Some(CoreEventSpace::NoteEnd(end)) => OutEvent::NoteEnd {
+                            port: end.port_index().into_specific(),
+                            channel: end.channel().into_specific(),
+                            key: end.key().into_specific(),
+                            note_id: end.note_id().into_specific(),
+                        },
+                        _ => OutEvent::Other {
+                            type_id: event.header().type_id(),
+                        },
+                    },
+                });
+            }
+        }
 
         if self.keep_samples {
             let frames = self.config.block as usize;
@@ -382,18 +517,34 @@ pub enum ProcessThread {
     Calling,
 }
 
-/// Runs a whole job on the chosen thread.
-pub fn run_job(
-    setup: JobSetup,
-    thread: ProcessThread,
-) -> Result<(StoppedPluginAudioProcessor<Host>, Vec<f32>, usize), String> {
-    fn drive(
-        setup: JobSetup,
-    ) -> Result<(StoppedPluginAudioProcessor<Host>, Vec<f32>, usize), String> {
+/// What a finished job leaves behind.
+pub struct JobOutput {
+    pub processor: StoppedPluginAudioProcessor<Host>,
+    /// Interleaved samples (empty when the setup did not keep them).
+    pub samples: Vec<f32>,
+    pub channels: usize,
+    /// Events the plugin sent back, when the setup captured them.
+    pub output_events: Vec<OutRecord>,
+    /// Wall time of every `process()` call in ns, when the setup recorded it.
+    pub process_ns: Vec<u64>,
+}
+
+/// Runs a whole job on the chosen thread, returning everything it recorded.
+pub fn run_job_ext(setup: JobSetup, thread: ProcessThread) -> Result<JobOutput, String> {
+    fn drive(setup: JobSetup) -> Result<JobOutput, String> {
         let mut runner = setup.into_runner();
         runner.start()?;
         while runner.step()? {}
-        Ok(runner.finish())
+        let output_events = std::mem::take(&mut runner.output_events);
+        let process_ns = std::mem::take(&mut runner.process_ns);
+        let (processor, samples, channels) = runner.finish();
+        Ok(JobOutput {
+            processor,
+            samples,
+            channels,
+            output_events,
+            process_ns,
+        })
     }
     match thread {
         ProcessThread::Calling => drive(setup),
@@ -406,6 +557,15 @@ pub fn run_job(
                 .map_err(|_| "the audio thread panicked".to_owned())?
         }),
     }
+}
+
+/// Runs a whole job on the chosen thread.
+pub fn run_job(
+    setup: JobSetup,
+    thread: ProcessThread,
+) -> Result<(StoppedPluginAudioProcessor<Host>, Vec<f32>, usize), String> {
+    let out = run_job_ext(setup, thread)?;
+    Ok((out.processor, out.samples, out.channels))
 }
 
 pub fn hex(bytes: &[u8]) -> String {

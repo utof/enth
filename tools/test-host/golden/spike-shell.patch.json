@@ -1,0 +1,1 @@
+{"schema":1,"name":"test-host patch fixture","nonce":"fixture-nonce-1","generators":[{"id":"osc1","kind":"osc","params":{"wave":"saw"}}]}

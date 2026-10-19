@@ -13,15 +13,13 @@ use std::process::{Command, ExitCode};
 
 use clack_host::prelude::PluginEntry;
 use enth_test_host::editor::{self, Mode};
-use enth_test_host::host::{load_entry, resolve_plugin_id};
-use enth_test_host::instances;
-use enth_test_host::notes;
-use enth_test_host::procfs;
-use enth_test_host::query;
+use enth_test_host::host::{load_entry, plugin_version, resolve_plugin_id};
 use enth_test_host::render::{
     ProcessThread, RenderConfig, RenderOutcome, RenderRequest, render_once,
 };
-use enth_test_host::wav;
+use enth_test_host::{
+    churn, cli_equal, events, instances, latency, notes, procfs, query, state, stats, wav,
+};
 use serde_json::{Value, json};
 
 const USAGE: &str = "enth-test-host: a minimal CLAP test host (docs/spikes/test-host.md)
@@ -29,10 +27,28 @@ const USAGE: &str = "enth-test-host: a minimal CLAP test host (docs/spikes/test-
 usage:
   enth-test-host info <plugin.clap> [--plugin-id ID]
   enth-test-host render <plugin.clap> --notes <script|file> [--sr 48000] [--block 64] [--dur 2]
-        [--state FILE] [--param NAME=VALUE]... [--out out.wav] [--save-state FILE]
-        [--process-on thread|caller] [--plugin-id ID]
+        [--state FILE [--state-format auto|blob|patch|envelope] [--state-field patch]]
+        [--param NAME=VALUE]... [--out out.wav] [--save-state FILE] [--process-on thread|caller] [--plugin-id ID]
   enth-test-host instances <plugin.clap> --notes <script|file> [-n 2] [--sr 48000] [--block 64] [--dur 2]
-        [--state FILE] [--param NAME=VALUE]... [--modes sequential-fresh,sequential-late,lockstep,concurrent]
+        [--state FILE ...] [--param NAME=VALUE]... [--modes sequential-fresh,sequential-late,lockstep,concurrent]
+  enth-test-host cli-equal <plugin.clap> [--cases DIR|FILE]... [--expected DIR | --no-expected] [--only NAME]...
+        [--blocks 1,64,100,4096] [--profile FILE] [--state-field patch] [--min-compared 1]
+        [--write-expected DIR] [--inject flip-bit]
+  enth-test-host churn <plugin.clap> [-n 200] [--warmup 10] [--notes SCRIPT] [--state FILE ...] [--sr 48000]
+        [--block 64] [--blocks 64] [--settle-ms 10] [--max-kb-per-cycle 1] [--max-thread-growth 0]
+        [--max-fd-growth 0] [--process-on thread|caller] [--inject leak-kb=N|fd|thread]
+  enth-test-host bursts <plugin.clap> [--counts 16,64,256,1024,4096] [--kind mixed|notes|params] [--block 64]
+        [--capacity N] [--state FILE ...] [--sr 48000] [--warm-blocks 8] [--after-blocks 8] [--tail 1.0]
+        [--order both|notes-first|params-first] [--allow-unended] [--inject drop-after=K]
+  enth-test-host note-end <plugin.clap> [--notes SCRIPT] [--blocks 1,32,64,100,512] [--tail 2] [--state FILE ...]
+        [--sr 48000] [--allow-unended] [--inject drop-end=K,late-end=F]
+  enth-test-host process-stats <plugin.clap> [--secs 120] [--warmup 10] [--block 64] [--sr 48000] [--rt 10|none]
+        [--require-rt] [--pin CPU,CPU] [--instances 1] [--threads 1] [--editor] [--notes SCRIPT] [--state FILE ...]
+        [--gate g1|g1-multi] [--max-p99-us N] [--max-p999-us N] [--max-callback-p99-pct N]
+        [--inject busy-us=N[,every=K]]
+  enth-test-host latency <plugin.clap> --param NAME --to VALUE [--from VALUE] [--notes SCRIPT] [--at 0.5]
+        [--offsets 0,17,63] [--after 0.5] [--block 64] [--sr 48000] [--threshold-db -60] [--state FILE ...]
+        [--max-onset-ms N] [--max-audible-ms N] [--inject delay-blocks=K]
   enth-test-host editor-cycles <plugin.clap> [-n 200] [--mode both|editor|baseline] [--repeat 1]
         [--warmup 10] [--hold-ms 100] [--settle-ms 50] [--first-frame-timeout-ms 1000] [--sr 48000] [--block 256]
         [--window 360x200] [--plugin-id ID]
@@ -40,13 +56,18 @@ usage:
 Notes script: entries separated by , ; or newline, `#` comments. `C4@0+1.5:0.8` is a note (key@start+duration[:velocity],
 seconds); `Slot 1=0.2@0.5` sets a parameter (name or numeric id = value @ seconds).
 
-editor-cycles opens windows, so it refuses to run unless DISPLAY is an Xvfb server:
+`--state FILE` loads a state through the CLAP state extension before activation. FILE is a state blob the plugin saved
+(`render --save-state`), a patch document (JSON, wrapped into the plugin's `patch` persisted field with the plugin's
+version) or the envelope JSON ({\"version\",\"params\",\"fields\"}); `--state-format` forces one, the default tells them apart.
+
+editor-cycles (and process-stats --editor) open windows, so they refuse to run unless DISPLAY is an Xvfb server:
   xvfb-run -a -s \"-screen 0 1920x1080x24\" enth-test-host editor-cycles plugin.clap -n 200
+Timings (process-stats, latency's process_us) belong under `flock -x /tmp/enth-quiet.lock`.
 
 Any command takes `--json-out FILE`: the JSON is also written there. Use it under xvfb-run, which folds the
 command's stderr (plugin log lines) into its stdout.
 
-exit codes: 0 ok, 1 a check failed (instances differ), 2 error";
+exit codes: 0 ok, 1 a check failed (instances differ, a hash differs, a budget is exceeded), 2 error";
 
 /// Parsed command line: positional arguments and `--name value` options.
 struct Args {
@@ -115,6 +136,26 @@ impl Args {
         }
     }
 
+    /// A comma-separated list of numbers, or `default`.
+    fn list<T: std::str::FromStr + Clone>(
+        &self,
+        name: &str,
+        default: &[T],
+    ) -> Result<Vec<T>, String> {
+        match self.one(name) {
+            None => Ok(default.to_vec()),
+            Some(text) => text
+                .split(',')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    p.parse()
+                        .map_err(|_| format!("--{name}: {p:?} is not a valid number"))
+                })
+                .collect(),
+        }
+    }
+
     fn plugin_path(&self) -> Result<PathBuf, String> {
         match self.positional.as_slice() {
             [one] => Ok(PathBuf::from(one)),
@@ -157,6 +198,12 @@ fn main() -> ExitCode {
         "info" => cmd_info(rest),
         "render" => cmd_render(rest),
         "instances" => cmd_instances(rest),
+        "cli-equal" => cmd_cli_equal(rest),
+        "churn" => cmd_churn(rest),
+        "bursts" => cmd_bursts(rest),
+        "note-end" => cmd_note_end(rest),
+        "process-stats" => cmd_process_stats(rest),
+        "latency" => cmd_latency(rest),
         "editor-cycles" => cmd_editor_cycles(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
@@ -224,23 +271,72 @@ fn cmd_info(rest: &[String]) -> Outcome {
     ))
 }
 
+/// The `--state` options every command that plays audio takes.
+const STATE_OPTIONS: [&str; 3] = ["state", "state-format", "state-field"];
+
+/// The valued options of a command: its own plus the shared ones.
+fn valued<'a>(own: &[&'a str], shared: &[&'a str]) -> Vec<&'a str> {
+    own.iter().chain(shared).copied().collect()
+}
+
+/// A state file read and made ready for the plugin's `state.load`.
+struct LoadedState {
+    prepared: state::Prepared,
+    file: String,
+}
+
+impl LoadedState {
+    fn to_json(&self) -> Value {
+        json!({
+            "file": self.file,
+            "loaded_bytes": self.prepared.bytes.len(),
+            "loaded_as": self.prepared.kind.name(),
+            "field": self.prepared.field,
+        })
+    }
+}
+
+/// `--state FILE [--state-format F] [--state-field NAME]`, resolved against the plugin: a patch document is wrapped
+/// into the persisted field with the plugin's own version, so the plugin sees what a host's project load would give it.
+fn load_state(
+    args: &Args,
+    entry: &PluginEntry,
+    id: &std::ffi::CStr,
+) -> Result<Option<LoadedState>, String> {
+    let Some(file) = args.one("state") else {
+        if args.one("state-format").is_some() || args.one("state-field").is_some() {
+            return Err("--state-format and --state-field need --state FILE".to_owned());
+        }
+        return Ok(None);
+    };
+    let bytes = std::fs::read(file).map_err(|e| format!("--state {file}: {e}"))?;
+    let format = state::Format::parse(args.one("state-format").unwrap_or("auto"))?;
+    let field = args.one("state-field").unwrap_or(state::DEFAULT_FIELD);
+    let prepared = state::prepare(bytes, format, field, &plugin_version(entry, id))
+        .map_err(|e| format!("--state {file}: {e}"))?;
+    Ok(Some(LoadedState {
+        prepared,
+        file: file.to_owned(),
+    }))
+}
+
 /// The options `render` and `instances` share.
 struct RenderArgs {
     request: RenderRequest,
-    state_bytes: Option<usize>,
+    state: Option<LoadedState>,
 }
 
-fn render_args(args: &Args) -> Result<RenderArgs, String> {
+fn render_args(
+    args: &Args,
+    entry: &PluginEntry,
+    id: &std::ffi::CStr,
+) -> Result<RenderArgs, String> {
     let sample_rate: f64 = args.number("sr", 48_000.0)?;
     let block: u32 = args.number("block", 64)?;
     let duration: f64 = args.number("dur", 2.0)?;
     let config = RenderConfig::new(sample_rate, block, duration)?;
     let script = notes::load_script(args.one("notes").ok_or("--notes is required")?)?;
-    let state = args
-        .one("state")
-        .map(|p| std::fs::read(p).map_err(|e| format!("--state {p}: {e}")))
-        .transpose()?;
-    let state_bytes = state.as_ref().map(Vec::len);
+    let loaded = load_state(args, entry, id)?;
     let params = args
         .many("param")
         .iter()
@@ -259,10 +355,10 @@ fn render_args(args: &Args) -> Result<RenderArgs, String> {
         request: RenderRequest {
             script,
             params,
-            state,
+            state: loaded.as_ref().map(|s| s.prepared.bytes.clone()),
             config,
         },
-        state_bytes,
+        state: loaded,
     })
 }
 
@@ -276,25 +372,53 @@ fn config_json(config: &RenderConfig, channels: usize) -> Value {
     })
 }
 
+/// For a patch document loaded into a persisted field: does the plugin save the same JSON back in that field?
+/// `None` when the state was not a patch document or nothing was saved.
+fn patch_round_trip(loaded: Option<&LoadedState>, saved: Option<&[u8]>) -> Option<Value> {
+    let loaded = loaded?;
+    let field = loaded.prepared.field.as_ref()?;
+    let sent = state::fields_of(&loaded.prepared.bytes)
+        .ok()?
+        .get(field)?
+        .clone();
+    let sent_json: Value = serde_json::from_str(&sent).ok()?;
+    let back = state::fields_of(saved?).ok()?.get(field).cloned();
+    let back_json = back
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<Value>(text).ok());
+    Some(json!({
+        "field": field,
+        "saved_field_present": back.is_some(),
+        "identical_text": back.as_ref().map(|b| *b == sent),
+        "equal_json": back_json.as_ref().map(|b| *b == sent_json),
+    }))
+}
+
 fn cmd_render(rest: &[String]) -> Outcome {
     let args = Args::parse(
         rest,
-        &[
-            "notes",
-            "sr",
-            "block",
-            "dur",
-            "state",
-            "param",
-            "out",
-            "save-state",
-            "process-on",
-            "plugin-id",
-        ],
-        &[],
+        &valued(
+            &[
+                "notes",
+                "sr",
+                "block",
+                "dur",
+                "param",
+                "out",
+                "save-state",
+                "process-on",
+                "plugin-id",
+            ],
+            &STATE_OPTIONS,
+        ),
+        &["check-roundtrip"],
     )?;
     let (path, entry, id) = load(&args)?;
-    let render = render_args(&args)?;
+    let render = render_args(&args, &entry, &id)?;
+    let check_roundtrip = args.options.contains_key("check-roundtrip");
+    if check_roundtrip && args.one("save-state").is_none() {
+        return Err("--check-roundtrip needs --save-state FILE".to_owned());
+    }
     let thread = match args.one("process-on").unwrap_or("thread") {
         "thread" => ProcessThread::Dedicated,
         "caller" => ProcessThread::Calling,
@@ -329,6 +453,11 @@ fn cmd_render(rest: &[String]) -> Outcome {
         render.request.config.frames,
         &resolve,
     )?;
+    let round_trip = patch_round_trip(render.state.as_ref(), state.as_deref());
+    let round_trip_ok = round_trip.as_ref().is_some_and(|r| r["equal_json"] == true);
+    if check_roundtrip && round_trip.is_none() {
+        return Err("--check-roundtrip needs --state with a patch document (not a blob or envelope), and a plugin that saves a state".to_owned());
+    }
     Ok((
         json!({
             "schema": "enth.test-host.render/1",
@@ -343,36 +472,42 @@ fn cmd_render(rest: &[String]) -> Outcome {
             },
             "params_set": render.request.params.iter().map(|(n, v)| json!({"name": n, "value": v})).collect::<Vec<_>>(),
             "state": {
-                "loaded_bytes": render.state_bytes,
+                "loaded_bytes": render.state.as_ref().map(|s| s.prepared.bytes.len()),
+                "loaded": render.state.as_ref().map(LoadedState::to_json),
                 "saved_bytes": state.as_ref().map(Vec::len),
                 "saved_to": args.one("save-state"),
+                "patch_round_trip": round_trip,
+                "saved_fields": state.as_deref().and_then(|b| state::fields_of(b).ok())
+                    .map(|f| f.iter().map(|(k, v)| (k.clone(), json!(v.len()))).collect::<serde_json::Map<_, _>>()),
             },
             "output": rendered.to_json(&render.request.config),
             "sha256": rendered.sha256,
             "wav": args.one("out"),
         }),
-        true,
+        !check_roundtrip || round_trip_ok,
     ))
 }
 
 fn cmd_instances(rest: &[String]) -> Outcome {
     let args = Args::parse(
         rest,
-        &[
-            "notes",
-            "sr",
-            "block",
-            "dur",
-            "state",
-            "param",
-            "n",
-            "modes",
-            "plugin-id",
-        ],
+        &valued(
+            &[
+                "notes",
+                "sr",
+                "block",
+                "dur",
+                "param",
+                "n",
+                "modes",
+                "plugin-id",
+            ],
+            &STATE_OPTIONS,
+        ),
         &[],
     )?;
     let (path, entry, id) = load(&args)?;
-    let render = render_args(&args)?;
+    let render = render_args(&args, &entry, &id)?;
     let n: usize = args.number("n", 2)?;
     let modes: Vec<&str> = match args.one("modes") {
         Some(list) => list.split(',').map(str::trim).collect(),
@@ -386,11 +521,481 @@ fn cmd_instances(rest: &[String]) -> Outcome {
             "path": path.display().to_string(),
             "plugin_id": id.to_string_lossy(),
             "instances": n,
+            "state": render.state.as_ref().map(LoadedState::to_json),
             "config": config_json(&render.request.config, report.reference.channels),
             "report": report.to_json(),
             "identical": identical,
         }),
         identical,
+    ))
+}
+
+/// The directory `rel` in the working directory or the nearest parent that has it.
+fn find_up(rel: &str) -> Option<PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        let candidate = dir.join(rel);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Fills in what every report of the new commands carries and turns its `ok` into the exit status.
+fn finish(
+    mut out: Value,
+    schema: &str,
+    path: &Path,
+    id: &std::ffi::CStr,
+    loaded: Option<&LoadedState>,
+) -> (Value, bool) {
+    let ok = out["ok"] == true;
+    out["schema"] = json!(schema);
+    out["path"] = json!(path.display().to_string());
+    out["plugin_id"] = json!(id.to_string_lossy());
+    out["state"] = loaded.map_or(Value::Null, LoadedState::to_json);
+    (out, ok)
+}
+
+fn process_thread(args: &Args) -> Result<ProcessThread, String> {
+    match args.one("process-on").unwrap_or("thread") {
+        "thread" => Ok(ProcessThread::Dedicated),
+        "caller" => Ok(ProcessThread::Calling),
+        other => Err(format!("--process-on {other:?}: use `thread` or `caller`")),
+    }
+}
+
+fn state_bytes(loaded: Option<&LoadedState>) -> Option<Vec<u8>> {
+    loaded.map(|s| s.prepared.bytes.clone())
+}
+
+fn cmd_cli_equal(rest: &[String]) -> Outcome {
+    let args = Args::parse(
+        rest,
+        &[
+            "cases",
+            "expected",
+            "only",
+            "blocks",
+            "profile",
+            "state-field",
+            "min-compared",
+            "write-expected",
+            "inject",
+            "plugin-id",
+        ],
+        &["no-expected"],
+    )?;
+    let (path, entry, id) = load(&args)?;
+    let cases: Vec<PathBuf> = if args.many("cases").is_empty() {
+        vec![find_up("tests/golden/cases").ok_or(
+            "--cases is needed: tests/golden/cases was not found above the working directory",
+        )?]
+    } else {
+        args.many("cases").iter().map(PathBuf::from).collect()
+    };
+    let expected_dir = if args.options.contains_key("no-expected") {
+        None
+    } else if let Some(dir) = args.one("expected") {
+        Some(PathBuf::from(dir))
+    } else {
+        // `expected` next to the first cases directory (or next to the directory of a case file).
+        let sibling = cases
+            .first()
+            .and_then(|c| {
+                if c.is_dir() {
+                    c.parent()
+                } else {
+                    c.parent().and_then(Path::parent)
+                }
+            })
+            .map(|dir| dir.join("expected"))
+            .filter(|dir| dir.is_dir());
+        Some(
+            sibling
+                .or_else(|| find_up("tests/golden/expected"))
+                .ok_or("no expected hashes found: pass --expected DIR, or --no-expected to compare block sizes with each other only")?,
+        )
+    };
+    let profile = match args.one("profile") {
+        Some(file) => cli_equal::parse_profile(
+            &std::fs::read_to_string(file).map_err(|e| format!("--profile {file}: {e}"))?,
+        )
+        .map_err(|e| format!("--profile {file}: {e}"))?,
+        None => cli_equal::Profile::default(),
+    };
+    let blocks = match args.one("blocks") {
+        Some(_) => args.list::<u32>("blocks", &[])?,
+        None => profile
+            .blocks
+            .clone()
+            .unwrap_or_else(|| cli_equal::DEFAULT_BLOCKS.to_vec()),
+    };
+    if blocks.is_empty() || blocks.contains(&0) {
+        return Err("--blocks needs block sizes of at least 1".to_owned());
+    }
+    let state_field = args
+        .one("state-field")
+        .map(str::to_owned)
+        .or_else(|| profile.state_field.clone())
+        .unwrap_or_else(|| state::DEFAULT_FIELD.to_owned());
+    let inject = args
+        .one("inject")
+        .map(cli_equal::Inject::parse)
+        .transpose()?
+        .unwrap_or_default();
+    let opts = cli_equal::Options {
+        cases,
+        expected_dir: expected_dir.clone(),
+        only: args.many("only").to_vec(),
+        blocks: blocks.clone(),
+        profile,
+        state_field: state_field.clone(),
+        min_compared: args.number("min-compared", 1)?,
+        write_expected: args.one("write-expected").map(PathBuf::from),
+        inject,
+    };
+    let report = cli_equal::run(&entry, &id, &opts)?;
+    let mut out = report.to_json();
+    out["blocks"] = json!(blocks);
+    out["state_field"] = json!(state_field);
+    out["expected_dir"] = json!(expected_dir.map(|d| d.display().to_string()));
+    out["inject"] = json!(format!("{inject:?}"));
+    out["plugin_version"] = json!(plugin_version(&entry, &id));
+    Ok(finish(out, "enth.test-host.cli-equal/1", &path, &id, None))
+}
+
+fn cmd_churn(rest: &[String]) -> Outcome {
+    let args = Args::parse(
+        rest,
+        &valued(
+            &[
+                "n",
+                "warmup",
+                "notes",
+                "sr",
+                "block",
+                "blocks",
+                "settle-ms",
+                "max-kb-per-cycle",
+                "max-thread-growth",
+                "max-fd-growth",
+                "process-on",
+                "inject",
+                "plugin-id",
+            ],
+            &STATE_OPTIONS,
+        ),
+        &[],
+    )?;
+    let (path, entry, id) = load(&args)?;
+    let loaded = load_state(&args, &entry, &id)?;
+    let d = churn::Options::default();
+    let opts = churn::Options {
+        cycles: args.number("n", d.cycles)?,
+        warmup: args.number("warmup", d.warmup)?,
+        sample_rate: args.number("sr", d.sample_rate)?,
+        block: args.number("block", d.block)?,
+        blocks: args.number("blocks", d.blocks)?,
+        notes: match args.one("notes") {
+            Some(n) => notes::load_script(n)?,
+            None => d.notes,
+        },
+        state: state_bytes(loaded.as_ref()),
+        settle_ms: args.number("settle-ms", d.settle_ms)?,
+        max_kb_per_cycle: args.number("max-kb-per-cycle", d.max_kb_per_cycle)?,
+        max_thread_growth: args.number("max-thread-growth", d.max_thread_growth)?,
+        max_fd_growth: args.number("max-fd-growth", d.max_fd_growth)?,
+        inject: args.one("inject").map(churn::Inject::parse).transpose()?,
+        process_on: process_thread(&args)?,
+    };
+    if opts.cycles < 3 {
+        return Err("-n needs at least 3 cycles".to_owned());
+    }
+    let out = churn::run(&entry, &id, &opts)?;
+    Ok(finish(
+        out,
+        "enth.test-host.churn/1",
+        &path,
+        &id,
+        loaded.as_ref(),
+    ))
+}
+
+fn cmd_bursts(rest: &[String]) -> Outcome {
+    let args = Args::parse(
+        rest,
+        &valued(
+            &[
+                "counts",
+                "kind",
+                "block",
+                "capacity",
+                "sr",
+                "warm-blocks",
+                "after-blocks",
+                "tail",
+                "order",
+                "inject",
+                "plugin-id",
+            ],
+            &STATE_OPTIONS,
+        ),
+        &["allow-unended"],
+    )?;
+    let (path, entry, id) = load(&args)?;
+    let loaded = load_state(&args, &entry, &id)?;
+    let opts = events::BurstOptions {
+        orders: events::SameFrame::parse_list(args.one("order").unwrap_or("both"))?,
+        counts: args.list("counts", &[16usize, 64, 256, 1024, 4096])?,
+        kind: events::BurstKind::parse(args.one("kind").unwrap_or("mixed"))?,
+        block: args.number("block", 64)?,
+        sample_rate: args.number("sr", 48_000.0)?,
+        capacity: args
+            .one("capacity")
+            .map(|c| {
+                c.parse()
+                    .map_err(|_| format!("--capacity {c:?} is not a number"))
+            })
+            .transpose()?,
+        state: state_bytes(loaded.as_ref()),
+        warm_blocks: args.number("warm-blocks", 8)?,
+        after_blocks: args.number("after-blocks", 8)?,
+        tail_s: args.number("tail", 1.0)?,
+        allow_unended: args.options.contains_key("allow-unended"),
+        inject: args
+            .one("inject")
+            .map(events::Inject::parse)
+            .transpose()?
+            .unwrap_or_default(),
+    };
+    if opts.counts.is_empty() || opts.block == 0 {
+        return Err("--counts needs at least one count and --block at least 1".to_owned());
+    }
+    let out = events::run_bursts(&entry, &id, &opts)?;
+    Ok(finish(
+        out,
+        "enth.test-host.bursts/1",
+        &path,
+        &id,
+        loaded.as_ref(),
+    ))
+}
+
+/// Notes for `note-end`: ten notes for eight voices (steals), a zero-length note, notes that end inside a block
+/// and the same key twice at once.
+const NOTE_END_SCRIPT: &str = "C3@0+0.4, E3@0+0.4, G3@0+0.4, C4@0+0.4, E4@0+0.4, G4@0+0.4, C5@0+0.4, E5@0+0.4, G5@0.05+0.4, C6@0.1+0.4, D4@0.25+0.00001, A4@0.3+0.0003, F4@0.35+0.0007, B3@0.5+0.2, B3@0.5+0.2";
+
+fn cmd_note_end(rest: &[String]) -> Outcome {
+    let args = Args::parse(
+        rest,
+        &valued(
+            &["notes", "blocks", "tail", "sr", "inject", "plugin-id"],
+            &STATE_OPTIONS,
+        ),
+        &["allow-unended"],
+    )?;
+    let (path, entry, id) = load(&args)?;
+    let loaded = load_state(&args, &entry, &id)?;
+    let opts = events::NoteEndOptions {
+        script: match args.one("notes") {
+            Some(n) => notes::load_script(n)?,
+            None => NOTE_END_SCRIPT.to_owned(),
+        },
+        blocks: args.list("blocks", &[1u32, 32, 64, 100, 512])?,
+        sample_rate: args.number("sr", 48_000.0)?,
+        tail_s: args.number("tail", 2.0)?,
+        state: state_bytes(loaded.as_ref()),
+        allow_unended: args.options.contains_key("allow-unended"),
+        inject: args
+            .one("inject")
+            .map(events::Inject::parse)
+            .transpose()?
+            .unwrap_or_default(),
+    };
+    if opts.blocks.is_empty() || opts.blocks.contains(&0) {
+        return Err("--blocks needs block sizes of at least 1".to_owned());
+    }
+    let out = events::run_note_end(&entry, &id, &opts)?;
+    Ok(finish(
+        out,
+        "enth.test-host.note-end/1",
+        &path,
+        &id,
+        loaded.as_ref(),
+    ))
+}
+
+fn cmd_process_stats(rest: &[String]) -> Outcome {
+    let args = Args::parse(
+        rest,
+        &valued(
+            &[
+                "secs",
+                "warmup",
+                "block",
+                "sr",
+                "rt",
+                "pin",
+                "instances",
+                "threads",
+                "notes",
+                "gate",
+                "max-p99-us",
+                "max-p999-us",
+                "max-callback-p99-pct",
+                "inject",
+                "plugin-id",
+            ],
+            &STATE_OPTIONS,
+        ),
+        &["require-rt", "editor"],
+    )?;
+    let (path, entry, id) = load(&args)?;
+    let loaded = load_state(&args, &entry, &id)?;
+    let mut opts = stats::Options::default();
+    // A gate row sets the conditions and the budgets; any option given besides overrides it.
+    match args.one("gate") {
+        None => {}
+        Some("g1") => {
+            opts.max_p99_us = Some(333.0);
+            opts.max_p999_us = Some(333.0);
+            opts.require_rt = true;
+        }
+        Some("g1-multi") => {
+            opts.instances = 16;
+            opts.threads = 4;
+            opts.max_callback_p99_pct = Some(50.0);
+            opts.require_rt = true;
+        }
+        Some(other) => return Err(format!("--gate {other:?}: use g1 or g1-multi")),
+    }
+    opts.secs = args.number("secs", opts.secs)?;
+    opts.warmup_secs = args.number("warmup", opts.warmup_secs)?;
+    opts.sample_rate = args.number("sr", opts.sample_rate)?;
+    opts.block = args.number("block", opts.block)?;
+    if let Some(rt) = args.one("rt") {
+        opts.rt = if rt == "none" {
+            None
+        } else {
+            Some(
+                rt.parse()
+                    .map_err(|_| format!("--rt {rt:?}: a priority number or `none`"))?,
+            )
+        };
+    }
+    opts.require_rt |= args.options.contains_key("require-rt");
+    opts.pin = args.list("pin", &[])?;
+    opts.instances = args.number("instances", opts.instances)?;
+    opts.threads = args.number("threads", opts.threads)?;
+    opts.editor = args.options.contains_key("editor");
+    if let Some(n) = args.one("notes") {
+        opts.notes = notes::load_script(n)?;
+    }
+    opts.state = state_bytes(loaded.as_ref());
+    opts.inject = args
+        .one("inject")
+        .map(enth_test_host::render::BusyFault::parse)
+        .transpose()?;
+    for (name, slot) in [
+        ("max-p99-us", &mut opts.max_p99_us),
+        ("max-p999-us", &mut opts.max_p999_us),
+        ("max-callback-p99-pct", &mut opts.max_callback_p99_pct),
+    ] {
+        if let Some(text) = args.one(name) {
+            *slot = Some(
+                text.parse()
+                    .map_err(|_| format!("--{name}: {text:?} is not a number"))?,
+            );
+        }
+    }
+    if opts.block == 0 {
+        return Err("--block must be at least 1".to_owned());
+    }
+    let (mut report, _) = stats::run(&entry, &id, &opts)?;
+    report["gate"] = json!(args.one("gate"));
+    Ok(finish(
+        report,
+        "enth.test-host.process-stats/1",
+        &path,
+        &id,
+        loaded.as_ref(),
+    ))
+}
+
+fn cmd_latency(rest: &[String]) -> Outcome {
+    let args = Args::parse(
+        rest,
+        &valued(
+            &[
+                "param",
+                "to",
+                "from",
+                "notes",
+                "at",
+                "offsets",
+                "after",
+                "block",
+                "sr",
+                "threshold-db",
+                "max-onset-ms",
+                "max-audible-ms",
+                "inject",
+                "plugin-id",
+            ],
+            &STATE_OPTIONS,
+        ),
+        &[],
+    )?;
+    let (path, entry, id) = load(&args)?;
+    let loaded = load_state(&args, &entry, &id)?;
+    let optional = |name: &str| -> Result<Option<f64>, String> {
+        args.one(name)
+            .map(|t| {
+                t.parse()
+                    .map_err(|_| format!("--{name}: {t:?} is not a number"))
+            })
+            .transpose()
+    };
+    let inject_delay_blocks = match args.one("inject") {
+        None => 0,
+        Some(text) => text
+            .strip_prefix("delay-blocks=")
+            .and_then(|n| n.parse().ok())
+            .ok_or_else(|| format!("--inject {text:?}: latency knows `delay-blocks=K`"))?,
+    };
+    let opts = latency::Options {
+        param: args.one("param").ok_or("--param is required")?.to_owned(),
+        value: optional("to")?.ok_or("--to VALUE is required")?,
+        from: optional("from")?,
+        notes: match args.one("notes") {
+            Some(n) => notes::load_script(n)?,
+            None => "C4@0+3600:0.8, G4@0+3600:0.8".to_owned(),
+        },
+        sample_rate: args.number("sr", 48_000.0)?,
+        block: args.number("block", 64)?,
+        at_s: args.number("at", 0.5)?,
+        offsets: args.list("offsets", &[0u32, 17, 63])?,
+        after_s: args.number("after", 0.5)?,
+        threshold_db: args.number("threshold-db", -60.0)?,
+        state: state_bytes(loaded.as_ref()),
+        inject_delay_blocks,
+        max_onset_ms: optional("max-onset-ms")?,
+        max_audible_ms: optional("max-audible-ms")?,
+    };
+    if opts.block == 0 || opts.offsets.is_empty() {
+        return Err("--block must be at least 1 and --offsets needs a position".to_owned());
+    }
+    let out = latency::run(&entry, &id, &opts)?;
+    Ok(finish(
+        out,
+        "enth.test-host.latency/1",
+        &path,
+        &id,
+        loaded.as_ref(),
     ))
 }
 

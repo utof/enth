@@ -7,12 +7,19 @@
     reason = "a host loads a plugin library and hands it a window handle; both are unsafe in clack-host"
 )]
 
+pub mod churn;
+pub mod cli_equal;
 pub mod editor;
+pub mod events;
 pub mod host;
 pub mod instances;
+pub mod latency;
 pub mod notes;
 pub mod procfs;
 pub mod query;
 pub mod render;
+pub mod state;
+pub mod stats;
+pub mod toml_lite;
 pub mod wav;
 pub mod xvfb;

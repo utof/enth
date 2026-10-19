@@ -120,7 +120,7 @@ pub fn parse_key(text: &str) -> Result<u16, String> {
         .ok_or_else(|| format!("{t:?} is out of the MIDI range"))
 }
 
-fn seconds_to_frame(seconds: f64, sample_rate: f64) -> Result<u64, String> {
+pub fn seconds_to_frame(seconds: f64, sample_rate: f64) -> Result<u64, String> {
     if !(seconds.is_finite() && seconds >= 0.0) {
         return Err(format!("time {seconds} must be a finite number >= 0"));
     }

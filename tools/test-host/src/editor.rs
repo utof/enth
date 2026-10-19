@@ -373,6 +373,77 @@ pub fn run_cycles(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Valu
     }))
 }
 
+/// Keeps the plugin's editor open in a host-made X11 window until `done()` says stop, servicing the plugin's main
+/// thread requests meanwhile (`process-stats --editor`: the audio thread's cost with a GUI alive). Only under Xvfb.
+pub fn run_open_until(
+    instance: &mut PluginInstance<Host>,
+    first_frame_timeout_ms: u64,
+    done: &dyn Fn() -> bool,
+) -> Result<Value, String> {
+    let xvfb = crate::xvfb::require_xvfb()?;
+    let x = XServer::connect()?;
+    let gui = instance
+        .plugin_handle()
+        .get_extension::<PluginGui>()
+        .ok_or("the plugin has no gui extension")?;
+    let config = GuiConfiguration {
+        api_type: GuiApiType::X11,
+        is_floating: false,
+    };
+    if !gui.is_api_supported(&instance.plugin_handle(), config) {
+        return Err("the plugin does not support an embedded X11 editor".to_owned());
+    }
+    let started = Instant::now();
+    gui.create(&instance.plugin_handle(), config)
+        .map_err(|e| format!("gui.create failed: {e}"))?;
+    let size = {
+        let handle = instance.plugin_handle();
+        let _ = gui.set_scale(&handle, 1.0);
+        gui.get_size(&handle).unwrap_or(GuiSize {
+            width: 360,
+            height: 200,
+        })
+    };
+    let (w, h) = (size.width as u16, size.height as u16);
+    let parent = x.create_parent(w, h)?;
+    {
+        let handle = instance.plugin_handle();
+        // SAFETY: `parent` is a live X11 window until we destroy it after `gui.destroy`.
+        unsafe { gui.set_parent(&handle, Window::from_x11_handle(c_ulong::from(parent))) }
+            .map_err(|e| format!("gui.set_parent failed: {e}"))?;
+        gui.show(&handle)
+            .map_err(|e| format!("gui.show failed: {e}"))?;
+    }
+    let deadline = started + Duration::from_millis(first_frame_timeout_ms);
+    let mut first_frame_ms = None;
+    while !done() {
+        service(instance, &x, Some(parent));
+        if first_frame_ms.is_none() {
+            if x.probe(parent, w, h)?.non_background > 0 {
+                first_frame_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            } else if Instant::now() > deadline {
+                first_frame_ms = Some(f64::NAN);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let colors = x.distinct_colors(parent, w, h).ok();
+    {
+        let handle = instance.plugin_handle();
+        let _ = gui.hide(&handle);
+        gui.destroy(&handle);
+    }
+    x.destroy(parent)?;
+    Ok(json!({
+        "display": xvfb.display,
+        "size": [w, h],
+        "first_frame_ms": first_frame_ms.filter(|v| v.is_finite()),
+        "drawn": first_frame_ms.is_some_and(f64::is_finite),
+        "distinct_colors": colors,
+        "open_seconds": started.elapsed().as_secs_f64(),
+    }))
+}
+
 #[derive(Default)]
 struct Extras {
     thread_names_open_first: BTreeMap<String, usize>,
