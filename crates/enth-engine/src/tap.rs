@@ -23,9 +23,12 @@
 //!   scope ring keeps its newest samples.
 //! - **Read-only**: publishing reads engine state and writes only the tap, so renders are the same bits with or
 //!   without a tap (tested). `enth-render` never attaches one.
-//! - **Quiet costs nothing**: the engine publishes only while the tap is enabled ([`Tap::set_enabled`]: the shell
-//!   enables it while the editor is open and shown). A silent block with no voice publishes nothing once the scope
-//!   ring holds a full ring of silence, so the generation stops and the editor can sleep.
+//! - **Quiet costs almost nothing**: the engine publishes only while the tap is enabled ([`Tap::set_enabled`]: the
+//!   shell enables it while the editor is open and shown). Once the scope ring holds a full ring of silence and no
+//!   voice plays, a block publishes only if a value the editor shows differs from the one the tap holds (the quiet
+//!   rule, P1b lane ED2): a new plan's epoch, a global modulator still running, a macro or a parameter moved in
+//!   silence, a value that changed while the tap was disabled. Such a publish leaves the silent scope ring alone.
+//!   Otherwise the generation stops and the editor can sleep; the check is one pass over the tap's own last stores.
 //! - **The wake handshake** (the UI spike's): the editor calls [`Tap::sleep`] with the last generation it drew; the
 //!   next publish that brings new data sets a wake flag, which the shell takes with [`Tap::take_wake`] after
 //!   `process` and turns into a repaint request (the engine cannot name the plugin framework's types).

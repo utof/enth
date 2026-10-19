@@ -391,3 +391,199 @@ fn a_reader_never_pairs_an_epoch_with_another_plans_layout() {
     });
     eprintln!("{checked} frames checked across the swaps");
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// The quiet rule (P1b lane ED2): in silence after silence the tap publishes only what changed.
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Plays one short note, then renders silent 64-frame blocks under `assert_no_alloc` until the generation has stood
+/// still for 64 blocks (the scope ring is full of silence and nothing else moves). Returns the generation.
+fn until_quiet(e: &mut Engine, link: &mut Link, tap: &Tap) -> u64 {
+    let (mut l, mut r) = ([0.0; 64], [0.0; 64]);
+    let note = [Event {
+        offset: 0,
+        kind: on(60, 7),
+    }];
+    let release = [Event {
+        offset: 0,
+        kind: off(60, 7),
+    }];
+    assert_no_alloc(|| e.process(&mut l, &mut r, &note));
+    assert_no_alloc(|| e.process(&mut l, &mut r, &release));
+    let (mut last, mut still) = (tap.generation(), 0);
+    for _ in 0..20_000 {
+        assert_no_alloc(|| e.process(&mut l, &mut r, &[]));
+        link.collect();
+        let g = tap.generation();
+        still = if g == last { still + 1 } else { 0 };
+        last = g;
+        if still == 64 {
+            assert!(e.active_voices().is_empty());
+            return g;
+        }
+    }
+    panic!("the tap never went quiet");
+}
+
+/// One silent 64-frame block under `assert_no_alloc`.
+fn silent_block(e: &mut Engine, link: &mut Link) {
+    let (mut l, mut r) = ([0.0; 64], [0.0; 64]);
+    assert_no_alloc(|| e.process(&mut l, &mut r, &[]));
+    link.collect();
+}
+
+/// A short release, so silence comes soon after the note.
+fn short_patch() -> Patch {
+    let mut p = common::saw_patch();
+    p.modulators[0].values[enth_patch::catalogue::AdsrParam::Release.index()] = 5.0;
+    p
+}
+
+#[test]
+fn an_editor_opened_in_silence_sees_the_plan_sent_while_it_was_closed() {
+    let tap = Tap::new(TapCapacity::default());
+    tap.set_enabled(true);
+    let (mut e, mut link) =
+        Engine::with_link(plan(&short_patch()).0, SEED, LinkCapacity::default());
+    e.attach_tap(Arc::clone(&tap));
+    let quiet = until_quiet(&mut e, &mut link, &tap);
+    let mut written = [0.0; 1];
+    let scope_before = tap.scope(&mut written);
+
+    // The editor closes; a structural edit swaps in a plan with a routed parameter while nobody watches.
+    tap.set_enabled(false);
+    let mut edited = short_patch();
+    route(&mut edited, "macro1", "osc1.level", 30.0);
+    let epoch = link.send_plan(plan(&edited).0).unwrap();
+    for _ in 0..8 {
+        silent_block(&mut e, &mut link);
+    }
+    assert_eq!(e.epoch(), epoch, "the plan swapped in");
+    assert_eq!(tap.generation(), quiet, "disabled: nothing published");
+
+    // The editor opens in silence: the first block publishes the new epoch and its order, once.
+    tap.set_enabled(true);
+    silent_block(&mut e, &mut link);
+    assert_eq!(
+        tap.generation(),
+        quiet + 1,
+        "one publish for the changed frame"
+    );
+    let mut frame = tap.frame();
+    tap.read(&mut frame);
+    assert_eq!((frame.epoch, frame.params_len), (epoch, 1));
+    assert_eq!(frame.voices, 0);
+    for _ in 0..64 {
+        silent_block(&mut e, &mut link);
+    }
+    assert_eq!(tap.generation(), quiet + 1, "then quiet again");
+    assert_eq!(
+        tap.scope(&mut written),
+        scope_before,
+        "a quiet publish leaves the silent scope ring alone"
+    );
+}
+
+#[test]
+fn a_global_modulator_keeps_publishing_in_silence() {
+    let tap = Tap::new(TapCapacity::default());
+    tap.set_enabled(true);
+    let mut p = short_patch();
+    let mut lfo = ModuleInstance::new(id("lfo1"), ModuleKind::Lfo);
+    lfo.values[enth_patch::catalogue::LfoParam::Scope.index()] =
+        enth_patch::catalogue::LfoScope::Global.index() as f32;
+    lfo.values[enth_patch::catalogue::LfoParam::Rate.index()] = 5.0;
+    p.modulators.push(lfo);
+    let (mut e, mut link) = Engine::with_link(plan(&p).0, SEED, LinkCapacity::default());
+    e.attach_tap(Arc::clone(&tap));
+    // Play a note and let the scope fill with silence: the LFO never stops, so neither does the tap.
+    let (mut l, mut r) = ([0.0; 64], [0.0; 64]);
+    assert_no_alloc(|| {
+        e.process(
+            &mut l,
+            &mut r,
+            &[Event {
+                offset: 0,
+                kind: on(60, 1),
+            }],
+        );
+    });
+    assert_no_alloc(|| {
+        e.process(
+            &mut l,
+            &mut r,
+            &[Event {
+                offset: 0,
+                kind: off(60, 1),
+            }],
+        );
+    });
+    for _ in 0..200 {
+        silent_block(&mut e, &mut link);
+    }
+    assert!(e.active_voices().is_empty());
+    let mut written = [0.0; 1];
+    let scope = tap.scope(&mut written);
+    let mut frame = tap.frame();
+    let mut outputs = Vec::new();
+    let g0 = tap.generation();
+    for _ in 0..50 {
+        silent_block(&mut e, &mut link);
+        tap.read(&mut frame);
+        // The global LFO is the second modulator (voice modulators first: env1).
+        outputs.push(frame.modulators[1]);
+    }
+    assert_eq!(
+        tap.generation(),
+        g0 + 50,
+        "every block publishes the moving LFO"
+    );
+    outputs.dedup();
+    assert_eq!(outputs.len(), 50, "and each publish carries a new output");
+    assert_eq!(
+        tap.scope(&mut written),
+        scope,
+        "the silent scope is not rewritten"
+    );
+}
+
+#[test]
+fn a_macro_or_a_value_moved_in_silence_publishes_until_it_settles() {
+    let tap = Tap::new(TapCapacity::default());
+    tap.set_enabled(true);
+    let mut p = short_patch();
+    route(&mut p, "velocity", "osc1.level", 20.0);
+    let (pl, map) = plan(&p);
+    let level = map.get(&"osc1.level".parse().unwrap()).unwrap();
+    let (mut e, mut link) = Engine::with_link(pl, SEED, LinkCapacity::default());
+    e.attach_tap(Arc::clone(&tap));
+    let quiet = until_quiet(&mut e, &mut link, &tap);
+
+    // A macro the host moves in silence: published while its 10 ms smoothing runs, then quiet on the settled value.
+    link.send_macro(0, 0.8).unwrap();
+    let mut frame = tap.frame();
+    for _ in 0..64 {
+        silent_block(&mut e, &mut link);
+    }
+    let after_macro = tap.generation();
+    assert!(after_macro > quiet, "the macro's ramp was published");
+    tap.read(&mut frame);
+    assert!((frame.macros[0] - 0.8).abs() < 1e-6, "{}", frame.macros[0]);
+    for _ in 0..64 {
+        silent_block(&mut e, &mut link);
+    }
+    assert_eq!(tap.generation(), after_macro, "settled: quiet again");
+
+    // A routed value edited in silence (no voice: its base is what the knob's ring shows).
+    link.send_param(e.epoch(), level, 50.0).unwrap();
+    silent_block(&mut e, &mut link);
+    assert!(tap.generation() > after_macro);
+    tap.read(&mut frame);
+    assert_eq!(frame.params[0], 50.0);
+    for _ in 0..64 {
+        silent_block(&mut e, &mut link);
+    }
+    let settled = tap.generation();
+    silent_block(&mut e, &mut link);
+    assert_eq!(tap.generation(), settled, "quiet once nothing moves");
+}
