@@ -1,29 +1,31 @@
-//! enth-plugin (L8, see docs/architecture.md): the CLAP and VST3 shell around `enth-session`, `enth-engine` and
-//! `enth-ui`, built on nice-plug (docs/adr/0001-plugin-shell.md). It translates between the host and the product
-//! and holds no product rules: parameters, notes, audio blocks, state and the editor window.
+//! enth-plugin (L8, see docs/architecture.md and docs/plugin.md): the CLAP and VST3 shell around `enth-session`,
+//! `enth-engine` and `enth-ui`, built on nice-plug (docs/adr/0001-plugin-shell.md). It translates between the host
+//! and the product and holds no product rules: parameters, notes, audio blocks, state and the editor window.
 //!
-//! Threads: the audio thread owns the `Engine` and never locks; the host main thread and baseview's GUI thread
-//! share the `Session` behind one `Mutex`. Never call `GuiContext::set_state` (nice-plug would load the state on
-//! the audio thread) and never schedule GUI work from `process()`.
+//! Threads (the full contract is in docs/session.md, the shell's side in docs/plugin.md):
 //!
-//! The modules are declared up front (P1b lane S0b) so the lanes that fill them never edit this file or each
-//! other's:
+//! - **Audio thread** (`process`, `reset`): owns the [`Engine`](enth_engine::Engine), a preallocated event list and
+//!   the host values it last sent. It never locks and never touches the session. Host automation goes to the
+//!   engine as `EventKind::Slot` and `EventKind::Macro` (never a bare `Param`); the one thing it schedules is the
+//!   rate-limited background pump.
+//! - **Host main thread** (`activate`, `deactivate`, state save and load through the persistent fields) and
+//!   **baseview's GUI thread** (the editor) share the `Session` behind one `parking_lot::Mutex` in [`Shared`].
+//!   Whoever locks drains the session's requests before unlocking and acts on them only after unlocking.
+//! - **nice-plug's background worker** runs [`Task::Pump`]: lock, pump, unlock.
+//!
+//! Never call `GuiContext::set_state` (nice-plug would load the state on the audio thread) and never schedule GUI
+//! work from `process()`; `clippy.toml` bans both.
 //!
 //! | Module | Holds | Lane |
 //! | --- | --- | --- |
-//! | [`params`] | the 72 host parameters (8 macros, 64 automation slots), stable ids, value text | SK |
-//! | [`process`] | the audio block: events and notes in, the engine, audio out | SK, PL |
-//! | [`notes`] | the note tuple, `NOTE_END`, voice info, polyphonic modulation with host voice ids | PL |
+//! | [`params`] | the 72 host parameters (8 macros, 64 automation slots), stable ids | SK |
+//! | [`process`] | the audio block: events and notes in, the engine, audio and `NOTE_END` out, the pump flag | SK, PL |
+//! | [`notes`] | the note tuple, `NOTE_END`, polyphonic modulation with host voice ids | SK, PL |
 //! | [`state`] | the persistent fields bridging nice-plug's state and the session blob | SK |
 //! | [`editor`] | the `NiceEguiApp` window around the `enth-ui` editor | SK, ED1 |
 #![allow(
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
-)]
-#![allow(
-    clippy::disallowed_methods,
-    clippy::disallowed_types,
-    reason = "shell crate: it owns the plugin's threads, locks, clocks and I/O (docs/architecture.md rule 2 binds the core crates, L0-L5)"
 )]
 
 pub mod editor;
@@ -31,3 +33,329 @@ pub mod notes;
 pub mod params;
 pub mod process;
 pub mod state;
+
+use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock, Weak};
+
+use enth_engine::Engine;
+use enth_session::{Activation, HostValues, Session, ShellRequest};
+use nice_plug::editor::dpi::LogicalSize;
+use nice_plug::prelude::*;
+use nice_plug_egui::{EguiEditor, EguiEditorState, RepaintNotifier};
+use parking_lot::Mutex;
+
+use crate::params::EnthParams;
+use crate::process::Audio;
+
+/// Permanent CLAP id (docs/naming.md). Hosts key saved projects and presets by it: never change it.
+pub const CLAP_ID: &str = "dev.enth.synth";
+
+/// Permanent VST3 class id `55555EAD-AA77-C9FA-F878-DDDDB0B9D9BD` (docs/naming.md): never change it.
+pub const VST3_CLASS_ID: [u8; 16] = [
+    0x55, 0x55, 0x5E, 0xAD, 0xAA, 0x77, 0xC9, 0xFA, 0xF8, 0x78, 0xDD, 0xDD, 0xB0, 0xB9, 0xD9, 0xBD,
+];
+
+/// The background tasks `process()` and the shell schedule on nice-plug's worker (never inline).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Task {
+    /// Lock the session and pump it: a compile left pending while nobody else enters the session (docs/session.md,
+    /// "Plan delivery"), and the editor-closed duties.
+    Pump,
+}
+
+/// What the host main thread, the GUI thread and the background worker share. The audio thread reads only the
+/// atomics.
+pub struct Shared {
+    /// The one lock: host main thread, GUI thread, background worker; never the audio thread.
+    pub session: Mutex<Session>,
+    /// A compile is pending: `process()` schedules [`Task::Pump`] at most every [`process::PUMP_INTERVAL_S`].
+    pub pump_wanted: AtomicBool,
+    /// The monitor FX bypass `process()` hands the engine (ADR-0006).
+    pub monitor_bypass: AtomicBool,
+    /// A state load happened: `process()` takes the host's current values as its "last sent" without sending them,
+    /// so values restored with the state never override the loaded patch in the engine (docs/plugin.md).
+    pub rebaseline: AtomicBool,
+    /// Host parameter names may have changed. Stock nice-plug cannot rename parameters; with lane FK's fork the
+    /// shell sets the names and asks for an info rescan (lane PL).
+    pub names_dirty: AtomicBool,
+    /// The editor window closed (seen by `process()` through `EguiEditorState::is_open`): the next pump releases
+    /// audition notes.
+    pub editor_closed: AtomicBool,
+    /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
+    /// persistent fields, which own this).
+    params: OnceLock<Weak<EnthParams>>,
+}
+
+impl Shared {
+    fn new(session: Session) -> Self {
+        Shared {
+            session: Mutex::new(session),
+            pump_wanted: AtomicBool::new(false),
+            monitor_bypass: AtomicBool::new(false),
+            rebaseline: AtomicBool::new(false),
+            names_dirty: AtomicBool::new(false),
+            editor_closed: AtomicBool::new(false),
+            params: OnceLock::new(),
+        }
+    }
+
+    /// The host's 72 unmodulated values, if the parameters still exist.
+    pub fn host_values(&self) -> Option<HostValues> {
+        self.params
+            .get()
+            .and_then(Weak::upgrade)
+            .map(|p| p.host_values())
+    }
+
+    /// Lock the session, run `f`, drain its requests and note whether a compile is left pending, unlock; then act
+    /// on the requests that need no host call ([`Shared::settle`]) and return the host writes for the caller to
+    /// forward (only the editor produces them, on the GUI thread).
+    pub fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> (R, Vec<ShellRequest>) {
+        let (result, requests, pending) = {
+            let mut session = self.session.lock();
+            let result = f(&mut session);
+            let requests: Vec<ShellRequest> = session.drain_requests().collect();
+            (result, requests, session.status().compile_pending)
+        };
+        let host = self.settle(requests, pending);
+        (result, host)
+    }
+
+    /// After unlocking: store the monitor bypass, note renames, arm the pump flag if a compile is pending, and keep
+    /// only the host writes.
+    fn settle(&self, requests: Vec<ShellRequest>, compile_pending: bool) -> Vec<ShellRequest> {
+        if compile_pending {
+            self.pump_wanted.store(true, Ordering::Release);
+        }
+        let mut host = Vec::new();
+        for request in requests {
+            match request {
+                ShellRequest::MonitorBypass(on) => self.monitor_bypass.store(on, Ordering::Release),
+                ShellRequest::RenameParams => self.names_dirty.store(true, Ordering::Release),
+                ShellRequest::Host(_) => host.push(request),
+                // nice-plug never marks the host project dirty (docs/phase-1b.md, open checks).
+                _ => {}
+            }
+        }
+        host
+    }
+
+    /// The background pump ([`Task::Pump`]): editor-closed duties, then a pump; re-arms the flag while a compile is
+    /// still pending. Host writes cannot come out of it (only editor edits make them).
+    fn background_pump(&self) {
+        let closed = self.editor_closed.swap(false, Ordering::AcqRel);
+        let ((), host) = self.with_session(|s| {
+            if closed {
+                let _ = s.audition_all_off();
+            }
+            s.pump();
+        });
+        debug_assert!(host.is_empty(), "only editor edits make host writes");
+    }
+}
+
+/// The plugin: the audio thread's state, plus the shared session.
+pub struct Enth {
+    params: Arc<EnthParams>,
+    shared: Arc<Shared>,
+    editor_state: Arc<EguiEditorState>,
+    repaint: RepaintNotifier,
+    engine: Option<Engine>,
+    audio: Audio,
+}
+
+impl Default for Enth {
+    fn default() -> Self {
+        let shared = Arc::new(Shared::new(Session::default()));
+        let params = Arc::new(EnthParams::new(&shared));
+        // Set once, here: nothing else can have set it.
+        let _ = shared.params.set(Arc::downgrade(&params));
+        let size = enth_ui::Theme::dark().size.window.default;
+        Enth {
+            params,
+            shared,
+            editor_state: EguiEditorState::from_size(LogicalSize::new(size.x, size.y), 1.0),
+            repaint: RepaintNotifier::new(),
+            engine: None,
+            audio: Audio::new(),
+        }
+    }
+}
+
+impl Enth {
+    /// The shared session (tests and the editor).
+    pub fn shared(&self) -> &Arc<Shared> {
+        &self.shared
+    }
+
+    /// The host parameters.
+    pub fn host_params(&self) -> &Arc<EnthParams> {
+        &self.params
+    }
+}
+
+impl Plugin for Enth {
+    const NAME: &'static str = "enth";
+    const VENDOR: &'static str = "enth";
+    const URL: &'static str = "";
+    const EMAIL: &'static str = "";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
+        main_input_channels: None,
+        main_output_channels: NonZeroU32::new(2),
+        ..AudioIOLayout::const_default()
+    }];
+    // `MidiCCs` (the mod wheel) adds 2,080 hidden VST3 parameters: an open decision (docs/phase-1b.md), lane PL.
+    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    // Required: without it plugin renders stop matching CLI renders at large host blocks (AGENTS.md).
+    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
+
+    type Editor = EguiEditor<editor::EditorApp>;
+    type SysExMessage = ();
+    type BackgroundTask = Task;
+
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        let shared = Arc::clone(&self.shared);
+        Box::new(move |task| match task {
+            Task::Pump => shared.background_pump(),
+        })
+    }
+
+    fn params(&self) -> Arc<dyn Params> {
+        self.params.clone()
+    }
+
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        editor::create(
+            Arc::clone(&self.shared),
+            Arc::clone(&self.params),
+            Arc::clone(&self.editor_state),
+            self.repaint.clone(),
+        )
+    }
+
+    fn activate(
+        &mut self,
+        _audio_io_layout: &AudioIOLayout,
+        buffer_config: &BufferConfig,
+        _context: &mut impl ActivateContext<Self>,
+    ) -> bool {
+        let activation = Activation {
+            sample_rate: buffer_config.sample_rate,
+            offline: buffer_config.process_mode == ProcessMode::Offline,
+        };
+        let host = self.params.host_values();
+        let (result, writes) = self.shared.with_session(|s| {
+            // Fold first, so the engine starts from the patch the host sees (rule 1: the first fold after a load
+            // only records).
+            s.fold_host(&host);
+            let bypass = s.instance().monitor.fx_bypass;
+            s.activate(activation).map(|engine| (engine, bypass))
+        });
+        debug_assert_eq!(writes.len(), 0, "only editor edits make host writes");
+        // Only a sample rate outside the engine's range (8–384 kHz) fails: a valid patch always compiles. Then the
+        // plugin plays silence rather than refuse to activate (clap-validator sweeps 1 kHz to 768 kHz); the session
+        // stays detached and edits still work. The previous engine, if any, is dropped here on the main thread.
+        self.engine = result.ok().map(|(engine, bypass)| {
+            self.shared.monitor_bypass.store(bypass, Ordering::Release);
+            engine
+        });
+        // Nothing is echoed: the engine starts from the patch and hears only later host changes. That is also the
+        // re-baseline a state load before activation asked for, so a change the host makes in the first block (a
+        // `PARAM_VALUE` at frame 0) still reaches the engine.
+        self.audio.activate(&self.params, buffer_config.sample_rate);
+        self.shared.rebaseline.store(false, Ordering::Release);
+        true
+    }
+
+    fn deactivate(&mut self) {
+        let ((), writes) = self.shared.with_session(Session::deactivate);
+        debug_assert_eq!(writes.len(), 0, "only editor edits make host writes");
+        self.engine = None;
+    }
+
+    fn reset(&mut self) {
+        if let Some(engine) = self.engine.as_mut() {
+            // CLAP reset: the engine frees its voices without reporting them, so the next block reports them.
+            self.audio.note_reset(engine);
+            engine.reset();
+        }
+    }
+
+    fn process(
+        &mut self,
+        buffer: &mut Buffer<'_>,
+        _aux: &mut AuxiliaryBuffers<'_>,
+        context: &mut impl ProcessContext<Self>,
+    ) -> ProcessStatus {
+        self.process_block(buffer, context)
+    }
+}
+
+impl ClapPlugin for Enth {
+    const CLAP_ID: &'static str = CLAP_ID;
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("A synthesizer");
+    const CLAP_MANUAL_URL: Option<&'static str> = None;
+    const CLAP_SUPPORT_URL: Option<&'static str> = None;
+    const CLAP_FEATURES: &'static [ClapFeature] = &[
+        ClapFeature::Instrument,
+        ClapFeature::Synthesizer,
+        ClapFeature::Stereo,
+    ];
+    const CLAP_POLY_MODULATION_CONFIG: Option<PolyModulationConfig> = Some(PolyModulationConfig {
+        max_voice_capacity: enth_engine::MAX_VOICES as u32,
+        supports_overlapping_voices: true,
+    });
+}
+
+impl Vst3Plugin for Enth {
+    const VST3_CLASS_ID: [u8; 16] = VST3_CLASS_ID;
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
+}
+
+/// The CLAP and VST3 entry points. In a module of their own so the allow below covers only nice-plug's expansion.
+#[allow(
+    clippy::disallowed_types,
+    reason = "nice-plug's export macros use std's HashSet internally; nothing here iterates it"
+)]
+mod export {
+    use super::Enth;
+    use nice_plug::prelude::*;
+
+    nice_export_clap!(Enth);
+    nice_export_vst3!(Enth);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plugin_ids_are_permanent() {
+        assert_eq!(<Enth as ClapPlugin>::CLAP_ID, "dev.enth.synth");
+        // docs/naming.md: 55555EAD-AA77-C9FA-F878-DDDDB0B9D9BD.
+        let hex = <Enth as Vst3Plugin>::VST3_CLASS_ID
+            .iter()
+            .fold(String::new(), |mut s, b| {
+                use std::fmt::Write;
+                let _ = write!(s, "{b:02X}");
+                s
+            });
+        assert_eq!(hex, "55555EADAA77C9FAF878DDDDB0B9D9BD");
+    }
+
+    #[test]
+    fn sample_accurate_automation_is_on() {
+        const { assert!(<Enth as Plugin>::SAMPLE_ACCURATE_AUTOMATION) };
+    }
+
+    #[test]
+    fn the_session_is_shared_with_the_params() {
+        let plugin = Enth::default();
+        let host = plugin.shared().host_values().expect("params are alive");
+        assert_eq!(host, HostValues::default());
+    }
+}

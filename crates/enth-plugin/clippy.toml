@@ -1,0 +1,111 @@
+# enth-plugin's clippy options. A crate-level clippy.toml *replaces* the root one, so this file repeats the
+# workspace's lists (copied from the root clippy.toml; keep them in sync) and adds the plugin shell's own bans
+# (AGENTS.md, "Plugin shell"). The shell may do I/O, own threads and lock (it is L8), so instead of a crate-wide
+# `allow(clippy::disallowed_methods)` (which would switch the nice-plug bans off too) the I/O, clock and thread
+# entries are left out below; the determinism, channel and lock bans stay.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+  # --- The plugin shell (AGENTS.md, docs/session.md, docs/plugin.md) ---
+  { path = "nice_plug_core::context::gui::GuiContext::set_state", reason = "while the plugin processes, nice-plug loads that state on the audio thread, where the patch field would lock the session and compile: load patches with Session::load_patch on the GUI thread" },
+  { path = "nice_plug_core::context::gui::GuiContext::get_state", reason = "serialises the fields, which lock the session: deadlocks inside an editor frame" },
+  { path = "nice_plug_core::context::gui::AsyncExecutor::execute_gui", reason = "may run the task inline inside process() (CLAP request_callback on the main thread): use execute_background" },
+  { path = "nice_plug_core::context::process::ProcessContext::execute_gui", reason = "may run the task inline inside process(): use execute_background (Task::Pump)" },
+  { path = "nice_plug_core::midi::VoiceID::id_or_fallback", reason = "ignores the host's voice id: read VoiceID::id()" },
+  # --- Bit-exact renders on every platform (docs/design.md section 5; moved here from spikes/spike-engine) ---
+  # Transcendentals only through the pinned `libm` crate (or our own approximations built from + - * / sqrt),
+  # no fused multiply-add, no algebraic_* (reassociation allowed). sqrt, floor, round, abs and the like are exact in
+  # IEEE 754 and stay allowed. f32 and f64 are listed alike.
+  { path = "f32::sin", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::cos", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::tan", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::sin_cos", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::asin", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::acos", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::atan", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::atan2", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::sinh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::cosh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::tanh", reason = "use `libm::tanh`/`tanhf` or the `tanh_approx` in enth_dsp::util::math" },
+  { path = "f32::asinh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::acosh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::atanh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::exp", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::exp2", reason = "LLVM rewrites powf(2, x) into exp2, so it is not portable either: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::exp_m1", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::ln", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::ln_1p", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::log", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::log2", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::log10", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::powf", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::cbrt", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::hypot", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f32::powi", reason = "compiler-rt `__powisf2` and LLVM's expansion are not specified: multiply explicitly or use `libm`" },
+  { path = "f32::mul_add", reason = "fused only where the target has FMA (or through libm's software fma): hashes differ between platforms and build flags" },
+  { path = "f32::algebraic_add", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f32::algebraic_sub", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f32::algebraic_mul", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f32::algebraic_div", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f32::algebraic_rem", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f64::sin", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::cos", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::tan", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::sin_cos", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::asin", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::acos", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::atan", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::atan2", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::sinh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::cosh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::tanh", reason = "use `libm::tanh`/`tanhf` or the `tanh_approx` in enth_dsp::util::math" },
+  { path = "f64::asinh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::acosh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::atanh", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::exp", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::exp2", reason = "LLVM rewrites powf(2, x) into exp2, so it is not portable either: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::exp_m1", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::ln", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::ln_1p", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::log", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::log2", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::log10", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::powf", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::cbrt", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::hypot", reason = "std maths differs between libm, glibc, musl and wasm: use the pinned `libm` crate (enth_dsp::util::math)" },
+  { path = "f64::powi", reason = "compiler-rt `__powisf2` and LLVM's expansion are not specified: multiply explicitly or use `libm`" },
+  { path = "f64::mul_add", reason = "fused only where the target has FMA (or through libm's software fma): hashes differ between platforms and build flags" },
+  { path = "f64::algebraic_add", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f64::algebraic_sub", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f64::algebraic_mul", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f64::algebraic_div", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  { path = "f64::algebraic_rem", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
+  # wide's fused operations (`wide` joins enth-dsp/enth-engine later; the vector types are not otherwise banned).
+  { path = "wide::f32x4::mul_add", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x4::mul_sub", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x4::mul_neg_add", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x4::mul_neg_sub", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x8::mul_add", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x8::mul_sub", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x8::mul_neg_add", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f32x8::mul_neg_sub", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+
+  # --- Real time (docs/architecture.md, rule 3): no channels in core crates ---
+  # std's mpsc allocates a block as senders outrun the receiver and blocks in recv; sync_channel blocks in send. Use
+  # an `rtrb` ring. Core crates spawn no threads, so they have no use for channels; shells opt out at the crate root.
+  { path = "std::sync::mpsc::channel", reason = "unbounded: it allocates on send and has no overflow policy; use an `rtrb` ring (enth-engine rule)" },
+  { path = "std::sync::mpsc::sync_channel", reason = "blocks in send and allocates; use an `rtrb` ring with an overflow policy" },
+  { path = "crossbeam_channel::unbounded", reason = "unbounded: it allocates on send; use an `rtrb` ring" },
+  { path = "crossbeam::channel::unbounded", reason = "unbounded: it allocates on send; use an `rtrb` ring" },
+  { path = "flume::unbounded", reason = "unbounded: it allocates on send; use an `rtrb` ring" },
+]
+disallowed-types = [
+  { path = "std::sync::Mutex", reason = "no locks in core crates; the audio path is lock-free" },
+  { path = "std::sync::RwLock", reason = "no locks in core crates; the audio path is lock-free" },
+  { path = "std::collections::HashMap", reason = "RandomState iteration order changes per process; use BTreeMap or Vec for deterministic output" },
+  { path = "std::collections::HashSet", reason = "RandomState iteration order changes per process; use BTreeSet" },
+  { path = "std::sync::mpsc::Sender", reason = "unbounded channel: allocates on send; use an `rtrb` ring" },
+  { path = "std::sync::mpsc::SyncSender", reason = "blocks in send; use an `rtrb` ring" },
+  { path = "std::sync::mpsc::Receiver", reason = "blocks in recv; use an `rtrb` ring" },
+]
