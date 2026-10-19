@@ -773,8 +773,8 @@ pub struct FixOut {
     pub renders: u32,
     /// Apply these together: `enth step <patch> --ops '<ops>'`. Exact.
     pub ops: Vec<serde_json::Value>,
-    /// The measured readings after the move, by descriptor path.
-    pub after: BTreeMap<String, f64>,
+    /// The measured readings after the move, by descriptor path (booleans as booleans, like `got`).
+    pub after: BTreeMap<String, Reading>,
     /// One parameter would have done.
     pub single_param_enough: bool,
     /// What to know about it.
@@ -787,10 +787,15 @@ pub struct FixOut {
 pub struct BlockedOut {
     /// The item, in canonical form.
     pub expect: String,
-    /// Why: the structure or the performance is the limit.
+    /// Why, in one plain sentence: the structure or the performance is the limit.
     pub why: String,
+    /// A stable code for the reason: `performance`, `at_bound`, `conflict`, `no_effect`, `absent` or
+    /// `unmodelled`.
+    pub reason: String,
     /// Parameters sitting at a bound.
     pub at_bound: Vec<String>,
+    /// Indices (into `results`) of the items this one conflicts with: passing it would push them out.
+    pub conflicts_with: Vec<usize>,
 }
 
 /// The `check` part of `enth.step/1` (the fields of `enth.check/1` without `schema`, `source` and `perf`).

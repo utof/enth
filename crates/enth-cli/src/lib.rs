@@ -3,7 +3,7 @@
 //! A thin binary over [`run`]`(args, stdin) -> `[`Output`]` { code, stdout, stderr }`, so snapshot tests run in
 //! process; a handful of end-to-end tests spawn the built binary for TTY detection and exit codes.
 //! Shells translate; they never decide (architecture rule 6): renders come from `enth-render`, measurements and
-//! expectations from `enth-analysis`, edits and errors from `enth-patch`, and hints (later) from `enth-solver`
+//! expectations from `enth-analysis`, edits and errors from `enth-patch`, and hints from `enth-solver`
 //! through the seam in [`fix`].
 //!
 //! Conventions every command follows (docs/agent-cli.md):

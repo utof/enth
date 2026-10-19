@@ -15,19 +15,34 @@ expression: v
           },
           "type": "array"
         },
+        "conflicts_with": {
+          "description": "Indices (into `results`) of the items this one conflicts with: passing it would push them out.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
         "expect": {
           "description": "The item, in canonical form.",
           "type": "string"
         },
+        "reason": {
+          "description": "A stable code for the reason: `performance`, `at_bound`, `conflict`, `no_effect`, `absent` or\n`unmodelled`.",
+          "type": "string"
+        },
         "why": {
-          "description": "Why: the structure or the performance is the limit.",
+          "description": "Why, in one plain sentence: the structure or the performance is the limit.",
           "type": "string"
         }
       },
       "required": [
         "expect",
         "why",
-        "at_bound"
+        "reason",
+        "at_bound",
+        "conflicts_with"
       ],
       "type": "object"
     },
@@ -132,10 +147,9 @@ expression: v
       "properties": {
         "after": {
           "additionalProperties": {
-            "format": "double",
-            "type": "number"
+            "$ref": "#/$defs/Reading"
           },
-          "description": "The measured readings after the move, by descriptor path.",
+          "description": "The measured readings after the move, by descriptor path (booleans as booleans, like `got`).",
           "type": "object"
         },
         "measured": {

@@ -374,23 +374,23 @@ impl Perf {
         }
     }
 
-    /// The note timing the analysis reads the envelope against: the first note-on and the last note-off.
+    /// The note timing the analysis reads the envelope against: the first note (the earliest note-on, ties in
+    /// order) and its note-off, `None` when that is unknown. It is the rule of [`enth_solver::note_timing`], which
+    /// `measure` applies to a patch, so a WAV that `render` wrote is analysed like the patch it came from.
     pub fn timing(&self) -> NoteTiming {
-        let on_s = self
+        let first = self
             .notes
             .iter()
-            .map(|n| n.on_s)
-            .fold(f64::INFINITY, f64::min);
-        let on_s = if on_s.is_finite() { on_s } else { 0.0 };
-        let off_s = if self.notes.is_empty() || self.notes.iter().any(|n| n.off_s.is_none()) {
-            None
-        } else {
-            self.notes
-                .iter()
-                .filter_map(|n| n.off_s)
-                .fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.max(x))))
-        };
-        NoteTiming { on_s, off_s }
+            .enumerate()
+            .min_by(|(i, a), (j, b)| a.on_s.total_cmp(&b.on_s).then(i.cmp(j)))
+            .map(|(_, n)| n);
+        match first {
+            Some(n) => NoteTiming {
+                on_s: n.on_s,
+                off_s: n.off_s,
+            },
+            None => NoteTiming::unknown_off(),
+        }
     }
 }
 
@@ -504,6 +504,35 @@ mod tests {
         assert_eq!(p.notes[0].off_s, Some(3.0));
         assert_eq!(p.dur_s, 4.5);
         assert_eq!(p.timing(), NoteTiming::held(3.0));
+    }
+
+    #[test]
+    fn timing_is_the_solvers_rule_for_the_first_note() {
+        let note = |key, on_s, off_s| Note {
+            key: Some(key),
+            vel: Some(100),
+            on_s,
+            off_s,
+        };
+        let p = Perf {
+            notes: vec![
+                note(60, 0.5, Some(1.0)),
+                note(62, 0.25, Some(2.0)),
+                note(64, 0.25, Some(3.0)),
+            ],
+            dur_s: 3.0,
+            source: Source::Flag,
+        };
+        // The earliest note-on (ties in order) and its own note-off, not the last one.
+        assert_eq!(
+            p.timing(),
+            NoteTiming {
+                on_s: 0.25,
+                off_s: Some(2.0)
+            }
+        );
+        assert_eq!(p.timing(), enth_solver::note_timing(&p.to_render()));
+        assert_eq!(Perf::unknown(2.0).timing(), NoteTiming::unknown_off());
     }
 
     #[test]

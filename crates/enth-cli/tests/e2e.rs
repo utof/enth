@@ -173,3 +173,75 @@ fn new_step_check_on_a_template() {
     assert!(failed.results[0].why.is_some(), "no beating: why");
     assert!(failed.results[1].margin.is_some_and(|m| m < 0.0));
 }
+
+/// The loop the hints exist for, through the real binary: a `step` that fails on a goal returns a measured `fix`;
+/// applying exactly its ops passes, reads what the fix said it would, and the judge agrees.
+#[test]
+fn a_failing_step_returns_a_fix_that_passes_when_applied() {
+    let s = Scratch::new("e2e_fix");
+    let patch = s.new_patch("pluck_1osc", "pluck.patch.json");
+    let perf = r#"{"notes": [{"note": "A3", "vel": 100, "on_s": 0, "off_s": 1.0}], "dur_s": 2.0}"#;
+    let goal = "pitch.note ~ A3, attack < 30ms, brightness < 900Hz, duration > 900ms";
+
+    // An edit that does not reach the goal: the step fails, exit 1, and says how to get there.
+    let tried = s.path("tried.patch.json");
+    let (code, out) = spawn(
+        &[
+            "step",
+            &patch,
+            "--set",
+            "filter1.resonance=30%",
+            "--expect",
+            goal,
+            "--perf",
+            perf,
+            "--out",
+            &tried,
+        ],
+        None,
+    );
+    assert_eq!(code, 1, "{out}");
+    let st: StepOut = serde_json::from_str(&out).unwrap();
+    let c = st.check.unwrap();
+    assert!(!c.pass && c.failed == 2, "{:?}", c.results);
+    let fix = c.fix.expect("the failing step returns a fix");
+    assert!(fix.measured && fix.pass_all, "{fix:?}");
+    assert_eq!(c.blocked.len(), 0, "{:?}", c.blocked);
+    assert!(fix.renders <= 16, "inside the default budget");
+
+    // Apply exactly those ops: the goal passes.
+    let ops = serde_json::to_string(&fix.ops).unwrap();
+    let fixed = s.path("fixed.patch.json");
+    let (code, out) = spawn(
+        &[
+            "step", &tried, "--ops", &ops, "--expect", goal, "--perf", perf, "--out", &fixed,
+        ],
+        None,
+    );
+    assert_eq!(code, 0, "the fix passes when applied: {out}");
+    let applied: StepOut = serde_json::from_str(&out).unwrap();
+    let after = applied.check.unwrap();
+    assert!(after.pass && after.fix.is_none() && after.blocked.is_empty());
+    // `after` is a real render: the readings the fix promised are the ones the step measured.
+    for r in &after.results {
+        if let Some(promised) = fix.after.get(feature_path(&r.expect)) {
+            let got = match r.got.as_ref().unwrap() {
+                enth_cli::schema::Reading::Num(n) => *n,
+                other => panic!("{other:?}"),
+            };
+            let enth_cli::schema::Reading::Num(promised) = promised else {
+                panic!("{promised:?}");
+            };
+            assert_eq!(got, *promised, "{}", r.expect);
+        }
+    }
+
+    // The judge: the same list and performance on the written patch.
+    let (code, out) = spawn(&["check", &fixed, "--expect", goal, "--perf", perf], None);
+    assert_eq!(code, 0, "{out}");
+}
+
+/// The canonical form starts with the feature's path (`spectrum.centroid_hz < 900`).
+fn feature_path(canonical: &str) -> &str {
+    canonical.split_whitespace().next().unwrap()
+}

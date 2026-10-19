@@ -1,12 +1,15 @@
 //! The evaluator: render a patch with a performance and describe the result, many at once on rayon, results in
-//! input order (so they are identical for any worker count). `check` uses it for the judged render and its nuisance
-//! re-renders; the hint solver (lane H, through [`crate::fix`]) uses it for its probes. Core crates spawn no
-//! threads: this is where the parallelism comes from (AGENTS.md).
+//! input order (so they are identical for any worker count). `describe`, `check` and `step` use it for the judged
+//! render and the nuisance re-renders; the hint solver (through [`crate::fix`]) uses [`Parallel`] for its probes.
+//! Both go through [`enth_solver::measure`] (render, then describe the mid signal with the first note's timing on
+//! the scalar FFT path), so a hint's `before` is the CLI's own reading. Core crates spawn no threads: this is where
+//! the parallelism comes from (AGENTS.md).
 
 use enth_analysis::descriptors::Want;
-use enth_analysis::{Describer, Descriptors, NoteTiming};
+use enth_analysis::{Descriptors, NoteTiming};
 use enth_patch::Patch;
 use enth_render::{DEFAULT_SAMPLE_RATE, Performance, RenderOutput, RenderSpec, render};
+use enth_solver::{EvalError, Job, measure, note_timing};
 use rayon::prelude::*;
 
 use crate::error::{self, CliError};
@@ -21,7 +24,6 @@ const NUISANCE_OFFSETS: [u64; 2] = [0x9E37_79B9_7F4A_7C15, 0xC2B2_AE3D_27D4_EB4F
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     perf: Performance,
-    timing: NoteTiming,
     seed: u64,
     want: Want,
 }
@@ -32,7 +34,6 @@ impl Evaluator {
     pub fn new(perf: &Perf, seed: u64, want: Want) -> Self {
         Evaluator {
             perf: perf.to_render(),
-            timing: perf.timing(),
             seed,
             want,
         }
@@ -53,9 +54,10 @@ impl Evaluator {
         &self.perf
     }
 
-    /// The note timing the envelope is read against.
+    /// The note timing the envelope is read against: the first note and its note-off
+    /// ([`enth_solver::note_timing`], the one `measure` uses).
     pub fn timing(&self) -> NoteTiming {
-        self.timing
+        note_timing(&self.perf)
     }
 
     /// The sample rate of every render (48 kHz).
@@ -73,34 +75,53 @@ impl Evaluator {
         .map_err(|e| error::from_render(&e))
     }
 
-    fn describe_with(
-        &self,
-        d: &mut Describer,
-        patch: &Patch,
-        seed: u64,
-        want: Want,
-    ) -> Result<Descriptors, CliError> {
-        let out = self.render(patch, seed)?;
-        d.describe_some(&out.mid(), self.timing, want)
-            .map_err(|e| error::from_analysis(&e))
+    /// The solver's job for one render: `patch` at `seed`, describing at least the groups in `want`.
+    fn job(&self, patch: &Patch, seed: u64, want: Want) -> Job<'_> {
+        Job {
+            patch: patch.clone(),
+            perf: &self.perf,
+            spec: RenderSpec::new(DEFAULT_SAMPLE_RATE, seed),
+            want,
+        }
     }
 
     /// Render and describe each `(patch, seed)` job in parallel; results in input order.
     pub fn describe_jobs(&self, jobs: &[(&Patch, u64)]) -> Vec<Result<Descriptors, CliError>> {
-        let want = self.want;
-        jobs.par_iter()
-            .map_init(
-                || Describer::new(f64::from(DEFAULT_SAMPLE_RATE)),
-                |d, (patch, seed)| self.describe_with(d, patch, *seed, want),
-            )
-            .collect()
+        self.describe_jobs_with(jobs, self.want)
     }
 
-    /// Render and describe each patch at the judged seed, in parallel; results in input order. The probe batch of
-    /// the hint solver.
-    pub fn describe_patches(&self, patches: &[Patch]) -> Vec<Result<Descriptors, CliError>> {
-        let jobs: Vec<(&Patch, u64)> = patches.iter().map(|p| (p, self.seed)).collect();
-        self.describe_jobs(&jobs)
+    /// [`Evaluator::describe_jobs`] computing the descriptor groups in `want` instead of the evaluator's own.
+    pub fn describe_jobs_with(
+        &self,
+        jobs: &[(&Patch, u64)],
+        want: Want,
+    ) -> Vec<Result<Descriptors, CliError>> {
+        let jobs: Vec<Job<'_>> = jobs
+            .iter()
+            .map(|(patch, seed)| self.job(patch, *seed, want))
+            .collect();
+        measure_all(&jobs)
+            .into_iter()
+            .map(|r| r.map_err(|e| error::from_eval(&e)))
+            .collect()
+    }
+}
+
+/// The solver's [`enth_solver::Evaluator`]: [`measure`] for every job on rayon, results in job order. A hint is
+/// identical for any worker count because each result is a pure function of its job and `collect` keeps order.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Parallel;
+
+/// [`measure`] for every job on rayon, results in job order.
+fn measure_all(jobs: &[Job<'_>]) -> Vec<Result<Descriptors, EvalError>> {
+    jobs.par_iter()
+        .map_init(|| None, |d, job| measure(job, d))
+        .collect()
+}
+
+impl enth_solver::Evaluator for Parallel {
+    fn evaluate(&mut self, jobs: &[Job<'_>]) -> Vec<Result<Descriptors, EvalError>> {
+        measure_all(jobs)
     }
 }
 

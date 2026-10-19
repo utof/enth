@@ -237,11 +237,11 @@ fn check_body(
             measured: f.measured,
             pass_all: f.pass_all,
             renders: f.renders,
-            ops: common::as_array(enth_patch::wire::to_json(p, &f.ops)),
+            ops: fix::ops_json(p, &f.ops),
             after: f
                 .after
                 .iter()
-                .map(|(feat, v)| (feat.path().to_owned(), *v))
+                .map(|(feat, v)| (feat.path().to_owned(), reading(*feat, *v)))
                 .collect(),
             single_param_enough: f.single_param_enough,
             note: f.note.clone(),
@@ -256,7 +256,9 @@ fn check_body(
                 .get(b.item)
                 .map_or_else(String::new, |e| e.canonical.clone()),
             why: b.why.clone(),
+            reason: b.reason.to_owned(),
             at_bound: b.at_bound.iter().map(ToString::to_string).collect(),
+            conflicts_with: b.conflicts_with.clone(),
         })
         .collect();
     CheckBody {
@@ -303,7 +305,7 @@ fn judge_patch(
             base: &main,
             evaluator: ev,
             budget: fix_args.fix_budget,
-        })
+        })?
     };
     Ok(check_body(&report, items, &outcome, Some(patch)))
 }
@@ -424,9 +426,8 @@ pub fn step(a: &StepArgs<'_>) -> Res {
         Bits::F32,
         &wav_meta(&ed.after, &perf, seed, r.sample_rate),
     )?;
-    let main = Describer::new(f64::from(r.sample_rate))
-        .describe(&r.mid(), perf.timing())
-        .map_err(|e| error::from_analysis(&e))?;
+    // The judged reading is the solver's `measure` (the render above is the same bits: it only feeds the WAV).
+    let main = one(ev.describe_jobs_with(&[(&ed.after, seed)], Want::ALL))?;
 
     let check = match &items {
         Some(items) => Some(judge_patch(

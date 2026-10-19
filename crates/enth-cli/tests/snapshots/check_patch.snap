@@ -5,7 +5,20 @@ expression: "record(&s, &o, true)"
 exit: 1
 --- stdout
 {
-  "blocked": [],
+  "blocked": [
+    {
+      "at_bound": [
+        "filter1.cutoff",
+        "filter1.resonance",
+        "filter1.keytrack",
+        "filter1.drive"
+      ],
+      "conflicts_with": [],
+      "expect": "spectrum.centroid_hz > 15000",
+      "reason": "at_bound",
+      "why": "filter1.cutoff and filter1.resonance and filter1.keytrack and filter1.drive would have to go past their limits"
+    }
+  ],
   "failed": 1,
   "fix": null,
   "pass": false,
@@ -65,6 +78,10 @@ exit: 1
     {
       "expect": "spectrum.centroid_hz > 15000",
       "got": "<num>",
+      "hint": {
+        "measured": false,
+        "text": "No setting of the filter reaches this. The oscillator waveform sets the harmonics the filter can shape: saw and pulse are bright, triangle and sine are dark (osc.wave)."
+      },
       "margin": "<num>",
       "margin_pct": "<num>",
       "noise": "<num>",
