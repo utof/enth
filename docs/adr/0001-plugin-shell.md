@@ -1,7 +1,7 @@
 # ADR-0001: Plugin shell — start on nice-plug, keep it thin
 
-- Status: **Proposed — to be Accepted at G0.** The Task 3 shell spike passed every hard must-have ([results](../spikes/shell.md)); the owner confirms at Gate G0 ([phase-0.md, Task 3](../phase-0.md#task-3--shell-spike-on-nice-plug-34-days)) after the editor is checked on the real display.
-- Date: 2026-10-18 (supersedes the 2026-10-17 plan to start on clack + WebView); updated 2026-10-19 with the shell spike results
+- Status: **Accepted (G0, 2026-10-19).** The Task 3 shell spike passed every hard must-have ([results](../spikes/shell.md)), and the test host and the UI spike found nothing against it. The editor on the real display, poly-mod in Bitwig and real audio are on the [owner checklist](../spikes/owner-checklist.md); a failure there that we can't fix in a day reopens this ADR (see the last section).
+- Date: 2026-10-18 (supersedes the 2026-10-17 plan to start on clack + WebView); updated 2026-10-19 with the shell spike results; accepted at G0 on 2026-10-19
 
 ## Context
 
@@ -43,6 +43,12 @@ Switch to **clack + clap-wrapper** if, within two days of trying, the Phase 0 sh
   - REAPER's offline render restarts (deactivates, reactivates, resets) CLAP plugins about 30 ms after it starts, dropping a held note. Real-time playback isn't affected. Host-driven render tests must not depend on one long note.
   - A VST3 parameter set from a script takes effect only after a process cycle, so a script must wait before reading or saving.
 - **Licences:** the dependency tree needed `BSD-1-Clause` (nice-assert-no-alloc), `Ubuntu-font-1.0` (egui's default fonts, scoped to one crate) and two `BSL-1.0` exceptions for Windows-only crates; see the 2026-10-19 note in [ADR-0004](0004-licensing.md).
+
+## Note — 2026-10-19: accepted at G0
+
+- **Test host** ([spikes/test-host.md](../spikes/test-host.md)): a minimal clack-host host renders spike-shell bit-identically from debug and release bundles (six plugin-level goldens, CI job `host-render`), and two or three instances render identically in four driving modes. The research report's second-instance difference in REAPER does not come from plugin state; REAPER's restart during an offline render is the likely cause (not proven). So plugin-level golden renders go through the test host, never through a REAPER offline render.
+- **The reference panel inside the shell** (`spike-ui-plugin`, [spikes/ui.md](../spikes/ui.md)) passes clap-validator (36 / 0) with `assert_process_allocs` on while `process()` feeds the scopes, so the shell carries a real editor without breaking real-time rules.
+- **Open, with the owner:** the editor on the real display (shell item i), poly-mod in Bitwig (d), play and automate in a second host (h), real audio and xruns, and the slot-rename decision (carry the patch in a fork or accept "Slot N"): [owner checklist](../spikes/owner-checklist.md).
 
 ## Consequences
 

@@ -1,19 +1,20 @@
 # Roadmap
 
-**A minimal, Syntorial-sized synth first; then two tracks in parallel — Recreate (the game, learning, sound → patch) and Synth (depth and polish).** Every milestone starts with a deep-research session ([research-process.md](research-process.md)) before any code. Durations are rough guesses for one developer working with coding agents; the gates matter more than the dates. Thresholds marked *(set in P0)* are placeholders until the spikes produce real numbers.
+**A minimal, Syntorial-sized synth first; then two tracks in parallel — Recreate (the game, learning, sound → patch) and Synth (depth and polish).** Every milestone starts with a deep-research session ([research-process.md](research-process.md)) before any code. Durations are rough guesses for one developer working with coding agents; the gates matter more than the dates. On 2026-10-19 Phase 0 replaced the *(set in P0)* placeholders with measured numbers (the G0 result below; derivations in [spikes/summary.md](spikes/summary.md)).
 
 ![Roadmap: a minimal synth, then the Recreate and Synth tracks in parallel](media/roadmap.svg)
 
 Changes from earlier plans:
 
+- **2026-10-19 (c):** Phase 0 closed ([spikes/summary.md](spikes/summary.md)). G0 passes on the automated tier; the owner's real-display and listening checks are pending ([spikes/owner-checklist.md](spikes/owner-checklist.md)). ADR-0001 and ADR-0002 are accepted. The editor's PSS growth per open fails its gate until baseview's keymap leak is fixed upstream. G1 gets a proposed 16-voice CPU budget and an agent-eval protocol from the agent-loop probe.
 - **2026-10-19 (b):** Phase 0 research (`_local/sessions/2026-10-19-phase-0-spikes/summary.md`). Phase 0 runs as parallel lanes and takes about 2 weeks. The UI spike is egui with glow only (vizia and iced are out); renders are bit-exact across platforms; Gate G0 has numeric metric and search thresholds; P1 splits into P1a (headless core) and P1b (plugin and editor); GR1 needs a survey of friends' OS and DAW and a friend build; second hosts are Carla (VST3 only) and a Bitwig trial for poly-mod.
 - **2026-10-19 (a):** effects are ported from permissive sources into our own deterministic modules (a reverb from Signalsmith Basics, an in-house compressor), with a global FX bypass; no third-party plugin hosting ([ADR-0006](adr/0006-effects-strategy.md)).
 - **2026-10-18 (b):** a minimal synth comes first, then the Recreate and Synth tracks run in parallel; a research session is mandatory before each milestone; duels are serverless; sound → patch may take up to 5 minutes; ear-training games and modules-as-own-plugins are listed for later.
 - **2026-10-18 (a):** native UI instead of WebView, so Phase 0 includes a UI-toolkit spike; the agent CLI moved earlier; the standalone app was deferred.
 
-## P0 — Spikes and skeleton (about 2 weeks)
+## P0 — Spikes and skeleton (done 2026-10-19, except owner checks)
 
-Research session: `_local/sessions/2026-10-19-phase-0-spikes/`. Lanes and tasks: [phase-0.md](phase-0.md). After a one-day skeleton the lanes run in parallel; the skeleton and the shell spike are merged.
+Research session: `_local/sessions/2026-10-19-phase-0-spikes/`. Lanes and tasks: [phase-0.md](phase-0.md). Planned at about 2 weeks; the lanes ran in parallel and were all merged on 2026-10-19. Results: [spikes/summary.md](spikes/summary.md); what waits for the owner: [spikes/owner-checklist.md](spikes/owner-checklist.md).
 
 - Workspace, CI (fmt, clippy, tests, `cargo deny`, wasm32 build of core crates, layer check), AGENTS.md at the repo root.
 - **Shell spike:** a one-oscillator synth on `nice-plug`, loaded in native REAPER (CLAP and VST3) and in Carla (VST3 only; Ardour is VST3-only too); `clap-validator` passes; VST3 export builds. A Bitwig trial is only for the CLAP poly-mod check.
@@ -32,6 +33,21 @@ Research session: `_local/sessions/2026-10-19-phase-0-spikes/`. Lanes and tasks:
 
 Metric v1 is provisional: it is recalibrated by your listening sessions and again in R1. Nothing in P1a waits for those sessions. *(Thresholds: 2026-10-19, from the Phase 0 research; the toy-synth numbers so far suggest they are reachable.)*
 
+**G0 result (2026-10-19).** Status is *passed*, *pending owner* (real display, listening, Bitwig) or *failed*. Automated GUI numbers ran under Xvfb with Mesa software rendering; the per-threshold UI table is in [benchmarks.md](benchmarks.md#ui-thresholds).
+
+| Gate | Measured | Status | Source |
+| --- | --- | --- | --- |
+| The plugin validates | clap-validator 0.4.1: 36 passed, 0 failed, 8 skipped, for spike-shell and spike-ui-plugin, debug and release, locally and in CI. Steinberg's VST3 validator: 537 of 537 | Passed | [shell.md](spikes/shell.md), [ui.md](spikes/ui.md) |
+| Runs in REAPER | REAPER 7.82, CLAP and VST3: 45 `reaper-test` checks (params, automation, save and reload, offline render, 5 editor opens), 7 of 7 runs | Passed | [shell.md](spikes/shell.md) |
+| Runs in Carla | Carla 2.5.8 (VST3 only): loads, 72 params, values and a byte-identical state chunk after save and reload. Playing, automating and the editor not tried | Passed for load and state; play and automate pending owner | [shell.md](spikes/shell.md) |
+| No GUI-caused xruns | Not measured: Dummy Audio only | Pending owner (real audio, [owner checklist](spikes/owner-checklist.md) C3) | [ui.md](spikes/ui.md) |
+| egui meets the UI thresholds | Idle editor: 0 frames in 22 s, GUI thread 0.05–0.19 % of a core. Animating: 1.16–1.41 ms CPU per frame before the GPU (3.5–4.2 % at 30 fps), 28.6–29.6 fps for a 60 Hz request. Open: 53 ms median (test host), 44–67 ms (REAPER). Threads constant over 200 cycles. PSS growth per open/close: 76.9 KB above baseline (16.1 KB with a one-line baseview fix). HiDPI clipped and Space lost after a click in REAPER | Automated tier passed except the PSS growth and the host checklist (both baseview, **failed**); real-display rows pending owner | [benchmarks.md](benchmarks.md#ui-thresholds), [ui.md](spikes/ui.md), [test-host.md](spikes/test-host.md) |
+| Renders ≥ 100× realtime per core | 1-voice template 1,993× best, 1,783× median; 8-voice P1-like patch with reverb 152× / 149× scalar, 231× / 217× with f32x8 lanes; 16 voices 129× / 122× scalar (load 6–10) | Passed | [engine.md](spikes/engine.md) |
+| Golden hashes identical across platforms | 1,010 hashes (10 renders, 1,000 seed → patch) identical on Linux x86-64 (local and CI), Windows x86-64 (CI `engine-golden`, first green run 2026-10-19), and `wasm32-wasip1` under wasmtime 48.0.6 with and without simd128 (local and CI); also across debug, release, `target-cpu=native`, FMA, LTO, lanes and FTZ/DAZ | Passed; aarch64 pending (manual CI job: no free arm runners for a private repo) | [engine.md](spikes/engine.md) |
+| Metric: ρ ≥ 0.7, lower 95 % CI ≥ 0.4 | No ratings yet; the `listen` tool is built and dry-run tested | Pending owner (2 × 15 min) | [metric.md](spikes/metric.md) |
+| Search: ≥ 14 of 20 judged *same* by ABX, ≤ 60 s on 8 workers | Proxy only: distance A with a heuristic start reaches the strict proxy threshold on 17 of 20 (19 loose), median 3.5 s and worst 10.9 s per solve; 17 / 14 / 15 on three search seeds. No ABX tool yet | Pending owner (and an ABX tool) | [metric.md](spikes/metric.md) |
+| ADR-0001 and ADR-0002 accepted | Accepted 2026-10-19; their real-display checks are on the owner checklist | Passed | [ADR-0001](adr/0001-plugin-shell.md), [ADR-0002](adr/0002-ui-toolkit.md) |
+
 ## P1 — Minimal synth + CLI v0 (4–6 weeks)
 
 A Syntorial-sized instrument, complete enough to make simple basses, pads, plucks and leads — and to be a fair target for the Recreate game.
@@ -49,7 +65,15 @@ The effort figures are still unvalidated guesses; Phase 0 records actual against
 - *(P1b)* A functional native editor (clear, not polished), 72 host params (8 macros + 64 slots), state save/load. Slot names refresh through a CLAP rescan (this needs a small carried nice-plug patch); VST3 in REAPER shows "Slot N" ([design.md §4](design.md#4-host-parameters-macros--automation-slots)).
 - **CLI v0:** `schema`, `modules`, `params`, `new`, `apply`, `get`, `diff`, `render`, `describe`, `check`, `step`, `guide`, `bench`.
 
-**Gate G1** (the headless items are checked at the end of P1a, the rest at the end of P1b): a 16-voice patch stays within the CPU budget *(set in P0)*; patches round-trip through JSON; golden tests pass on three OSes and wasm32, reverb and compressor included; the reverb was chosen by a blind, level-matched A/B; you can make a bass, pad, pluck and lead you like; an agent solves at least half of 10 starter text goals with `enth step` within 20 renders each.
+**Gate G1** (the headless items are checked at the end of P1a, the rest at the end of P1b): a 16-voice patch stays within the CPU budget; patches round-trip through JSON; golden tests pass on three OSes and wasm32, reverb and compressor included; the reverb was chosen by a blind, level-matched A/B; you can make a bass, pad, pluck and lead you like; an agent passes the text-goal evaluation below.
+
+- **16-voice CPU budget** *(proposed 2026-10-19 from the engine spike; derivation in [spikes/summary.md](spikes/summary.md#the-16-voice-cpu-budget-for-g1))*: a 16-voice P1 patch with every P1 module in use, reverb and compressor on, costs at most **340 M instructions per 2 s render** on the scalar path (about 220 instructions per sample and voice), which is about **50× realtime on one core** of this laptop (2 % of a core at 48 kHz); and its p99.9 `process()` time stays under 25 % of the 64-sample block deadline in the test host.
+- **Agent evaluation** (the Phase 0 probe showed the old wording, "half of 10 goals within 20 renders", passes trivially when the expectation list is given: 15 of 15 in 1–7 renders, [agent-probe.md](spikes/agent-probe.md#trial-2026-10-19)). Protocol, from the probe and risk #8 of the plan-risks report:
+  - 10 starter text goals with their expectation lists given; an agent passes a goal when `enth check` passes within 20 renders;
+  - 3 runs per goal; report the median renders, tokens and cost; name the model and the date;
+  - **the gate:** at least half of the goals pass, and in a blind listen you judge at least 7 of the 10 final sounds to match their text;
+  - a second, harder track where the agent writes its own expectations from the brief; reported, not gated, at G1;
+  - `cargo xtask agent-eval` runs nightly or on demand, never as a merge gate (it needs API access, costs money and is not deterministic).
 
 ## Track R — Recreate
 

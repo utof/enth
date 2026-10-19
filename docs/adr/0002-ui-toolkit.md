@@ -1,7 +1,7 @@
 # ADR-0002: UI — native Rust, egui by default, no WebView
 
-- Status: **Proposed — to be Accepted at G0** (proposed wording below). The first half of the Task 4 UI spike passed ([results](../spikes/ui.md)); the owner confirms at Gate G0 after checking the editor on the real display, and lane U2 adds the REAPER protocol numbers.
-- Date: 2026-10-18 (supersedes the 2026-10-17 WebView/Svelte proposal); updated 2026-10-19 with the Phase 0 research (sub-report 02) and the UI spike
+- Status: **Accepted (G0, 2026-10-19)** on the automated tier ([UI spike](../spikes/ui.md), [test host](../spikes/test-host.md), [G0 table](../benchmarks.md#ui-thresholds)). **The real-display checks are still pending with the owner** ([owner checklist](../spikes/owner-checklist.md), sections B and C); a failure there reopens this ADR as listed in the last section.
+- Date: 2026-10-18 (supersedes the 2026-10-17 WebView/Svelte proposal); updated 2026-10-19 with the Phase 0 research (sub-report 02) and the UI spike; accepted at G0 on 2026-10-19
 
 ## Context
 
@@ -50,7 +50,15 @@ Gating as built: the panel schedules the next frame only while something animate
 - **`NiceEguiApp::editor_closed()` is never called;** the spike rebuilds its state in `build()`.
 - **The NVIDIA 595 X driver crashed Xorg** on this machine while GL windows were opened and closed (`nvidia_drv.so +0x3fc5a`, matching NVIDIA bug 6205955). Editor open/close churns exactly those resources, so real-display GUI testing is owner-attended and automated GUI tests run under Xvfb.
 
-**Proposed wording for G0:** *"Accepted at G0 (2026-10-__): native Rust UI on egui 0.37 with the glow renderer, no WebView and no second toolkit; every visual value from `enth-ui` theme tokens; repaint gated on visible, changing data (0 frames while idle, measured). Open: baseview's open/close leak, ≈30 fps cap, HiDPI clipping in REAPER and the NVIDIA first-frame and X-driver issues, tracked upstream and in the owner checklist."*
+**Accepted at G0 (2026-10-19):** native Rust UI on egui 0.37 with the glow renderer, no WebView and no second toolkit; every visual value from `enth-ui` theme tokens; repaint gated on visible, changing data (0 frames while idle, measured). Open: baseview's open/close leak, ≈30 fps cap, HiDPI clipping in REAPER and the NVIDIA first-frame and X-driver issues, tracked upstream and in the owner checklist.
+
+## Note — 2026-10-19: G0 numbers from the test host and the final UI runs
+
+- **Leak, attributed** ([spikes/test-host.md](../spikes/test-host.md); Xvfb, Mesa llvmpipe, spike-shell's editor, 200 cycles × 2): PSS grows 76.9 KB per open/close cycle above a no-editor baseline of 0.2 KB. About 61 KB of it is one xkb keymap that baseview 0.4.1 never frees (`XkbcommonState::new` in `src/wrappers/xkbcommon.rs` lacks an `xkb_keymap_unref`; still so on baseview's master on 2026-10-19); with that line added in a scratch copy the growth is 16.1 KB per cycle. Threads stay constant (3 closed, 30 open). The "PSS growth" threshold fails until this is fixed upstream; a draft report waits for the owner (RustAudio's AI policy). We don't carry a patched baseview until we decide how we depend on it.
+- **Open and first frame:** create → show median 53.1 ms (p95 69 ms) in the test host, 200 of 200 first frames drawn within 1 s, no "X11 thread disconnected" warnings in 400 cycles.
+- **Scope rate:** a 60 Hz request (`motion.scope_hz`) gives 28.6–29.6 fps under baseview 0.4.1; a 30 Hz request gives 19.5 fps. The token stays at 60; whether 20 fps looks smooth enough is the owner's call on the real display.
+- **Instructions per frame** (callgrind, the before/after number for UI changes): 6.69 M for an idle frame, 7.64 M for an animating one, at scale 1.
+- **Snapshots** render only on Mesa's CPU Vulkan driver (lavapipe), so tests never load the NVIDIA driver.
 
 ## Consequences
 
@@ -72,3 +80,5 @@ Gating as built: the panel schedules the next frame only while something animate
 The chosen arm fails a [UI threshold](../benchmarks.md#ui-thresholds) with the real editor in S1 (Instrument 0.1), or the lesson views prove unusable for real lessons.
 
 Added 2026-10-19: the real-GPU first-open test fails (the editor doesn't draw on first open in REAPER on the NVIDIA display), the NVIDIA X-driver crash recurs with plugin editors, or the animating editor costs more than 5 % of a core on the GPU at baseview's ≈30 fps (the CPU side alone is 3.5–4.2 %).
+
+Added at G0 (2026-10-19), from the owner checklist: the open editor costs 30 MB of PSS or more on the real GPU; wgpu beats glow clearly on open time, fps and VRAM (switch the renderer, not the toolkit); HiDPI in REAPER or keyboard focus under Cinnamon is broken in a way we can't fix or work around in a day; or the 50-cycle open/close run on the real display crashes Xorg, which brings the CPU-rendered fallback decision ([benchmarks.md](../benchmarks.md#decision-rules-for-the-ui-toolkit-gate-g0), rule 3). The baseview leak alone does not reopen it: every Rust plugin toolkit sits on baseview.

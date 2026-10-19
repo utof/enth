@@ -41,14 +41,14 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 | --- | --- |
 | `enth guide` | Print the agent workflow guide (~1 page) |
 | `enth schema [patch\|ops\|describe\|check\|…]` | JSON Schemas for files and outputs |
-| `enth modules` / `enth params <module>` | Catalogue: module kinds; params with units, ranges, defaults, one-line descriptions, perceptual effect |
+| `enth modules` / `enth params <module>` | Catalogue: module kinds; params with units, ranges (shown prominently: agents in the Phase 0 probe were surprised by range limits), defaults, one-line descriptions, perceptual effect |
 | `enth new --template <name> --out p.patch.json` | Start from a template (`init`, `pluck_1osc`, `pad_2osc`, `bass_sub`…) |
 | `enth random --seed 7 --difficulty 0.4 [--amounts filter=0.5,effects=0] [--musical 0.8] --out t.patch.json` | Generate a Recreate target with the same randomizer as the game ([design.md §9](design.md#9-randomizer-and-difficulty)) |
 | `enth apply p.patch.json --ops '<json>' --out p2.patch.json [--dry-run]` | Apply ops; prints a diff |
 | `enth get p.patch.json [addr…]` / `enth diff a.patch.json b.patch.json` | Read values; compare patches |
 | `enth render p.patch.json [--note C3 --vel 100 --dur 2 --release 1 \| --perf perf.json] --out p.wav` | Deterministic render |
-| `enth describe <wav\|patch>` | Perceptual descriptors (renders first if given a patch) |
-| `enth check <wav\|patch> --expect '<list>'` | Pass/fail per expectation, with measured hints for failures |
+| `enth describe <wav\|patch> [--perf perf.json]` | Perceptual descriptors (renders first if given a patch). A WAV needs its performance, `--perf` or one stored in the WAV's metadata by `render` (P1 decides which), or decay, sustain and release come back null |
+| `enth check <wav\|patch> --expect '<list>' [--perf perf.json]` | Pass/fail per expectation with its margin, and measured hints for failures |
 | `enth compare <wav\|patch> --target t.wav` | Score 0–100, component distances, perceptual differences |
 | `enth suggest p.patch.json --target t.wav \| --expect '<list>' [--top 5]` | Ranked parameter moves from measured sensitivities |
 | `enth match p.patch.json --target t.wav --free <addrs> [--budget 300] --out p2.patch.json` | Optimiser fine-tunes only the freed params |
@@ -93,6 +93,8 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 
 Stable feature names with units. These names are also what expectations, hints and `compare` use. Descriptor names carry their unit (`envelope.attack_ms`) because they are measurements of audio; parameter keys don't (`env1.attack`), because a parameter's unit comes from its schema.
 
+Envelope descriptors are measured on a beat-smoothed envelope (a crest or low-passed envelope over at least one beat period). In the Phase 0 probe ([spikes/agent-probe.md](spikes/agent-probe.md)), a raw envelope on a detuned patch put the "peak" on the first beat, so `attack_ms` read about 1/(4 × beat rate) whatever the attack was, beat nulls looked like decay, and `sustain_db` moved by several dB with where the hold time fell in the beat cycle. All three agents in the trial ran into it.
+
 | Feature | Unit / type | Meaning |
 | --- | --- | --- |
 | `pitch.f0_hz`, `pitch.note`, `pitch.cents_dev` | Hz, note, cents | Fundamental and tuning |
@@ -108,7 +110,7 @@ Stable feature names with units. These names are also what expectations, hints a
 | `modulation.filter_sweep` | `{kind, dir, ms, hz}` or null | `kind`: `env` (one-shot, `dir` up/down, `ms` duration) or `lfo` (cyclic, `hz` rate); unused fields are null |
 | `detune.beating_hz`, `detune.voices_est` | Hz, count | Chorus/unison thickness |
 | `stereo.width`, `stereo.corr` | 0–1, −1–1 | Stereo image |
-| `loudness.lufs_i`, `peak_dbfs`, `clipping` | LUFS, dBFS, bool | Level |
+| `loudness.lufs_i`, `peak_dbfs`, `clipping` | LUFS, dBFS, bool | Level. `clipping` is true when the render hits 0 dBFS; a master output level parameter (in dB) in the patch undoes it without retuning every module (agents in the probe had no way back from clipping) |
 | `words` | list | Controlled vocabulary: `bright`, `dark`, `plucky`, `wide`, `detuned`, `noisy`, `hollow`… |
 
 Example output (~300 tokens):
@@ -136,8 +138,8 @@ enth check p1.wav --expect 'envelope.attack_ms > 200, spectrum.centroid_hz < 150
 ```json
 {"schema":"enth.check/1","pass":false,
  "results":[
-  {"expect":"envelope.attack_ms > 200","got":540,"pass":true},
-  {"expect":"spectrum.centroid_hz < 1500","got":2310,"pass":false,
+  {"expect":"envelope.attack_ms > 200","got":540,"margin":340,"pass":true},
+  {"expect":"spectrum.centroid_hz < 1500","got":2310,"margin":-810,"pass":false,
    "hint":{"param":"filter1.cutoff","now":"3.2kHz","try":"1.2kHz","expected":"centroid ≈ -800Hz","measured":true}},
   {"expect":"stereo.width > 0.5","got":0.18,"pass":false,
    "hint":{"text":"No unison or stereo effect in the patch. Add osc unison with spread, or a chorus in lane 1.","measured":false}},
@@ -145,6 +147,9 @@ enth check p1.wav --expect 'envelope.attack_ms > 200, spectrum.centroid_hz < 150
 ```
 
 Hints marked `"measured": true` come from rendering small parameter moves and observing the descriptor change. Others are structural suggestions from module metadata.
+
+- **Margins.** Every result carries `margin`: how far the measured value is inside (positive) or outside (negative) the threshold, in the feature's unit. A pass at 3,211 Hz against `> 3 kHz` is thin, and agents need to see that.
+- **Hints solve all failing items at once.** A one-parameter hint can break an item that already passes (in the probe, "lower detune" for decay pushed the beating out of its window). So `check` takes a least-squares step on the finite-difference Jacobian it already measured, across every failing item, constrained to keep passing items passing, and returns it as one multi-parameter hint. When no move of the free parameters satisfies everything, it says so instead of offering a hint that trades one failure for another.
 
 ## Comparing to a reference (`compare`, `suggest`, `match`)
 
@@ -198,6 +203,14 @@ Hints marked `"measured": true` come from rendering small parameter moves and ob
 | Invalid-command rate | Are the CLI and its errors learnable? |
 
 These numbers are the regression test for CLI changes, following Anthropic's advice to evaluate tools with real agent transcripts ([Writing effective tools for agents, Sep 2025](https://www.anthropic.com/engineering/writing-tools-for-agents)).
+
+**Protocol** (2026-10-19, from the Phase 0 agent-loop probe and risk #8 of the plan-risks report; it is the G1 gate in [roadmap.md](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)):
+
+- When the expectation list is given, the loop is easy: in the probe three fresh agents (Claude Sonnet 5.5) passed 15 of 15 goals on a 10-parameter toy synth in 1–7 renders each, and a mechanical hint follower passed 4 of 5. So a solve rate on given lists measures whether descriptors and hints are consistent, not whether the sound matches the words.
+- **Given lists:** each text goal comes with its expectation list. 3 runs per goal; report the median renders, tokens and cost, and record the model name and the date.
+- **A blind listen:** you judge whether the final sounds match their text, without seeing the numbers; G1 needs at least 7 of 10.
+- **Agent-written lists:** a second, harder track where the agent writes its own expectations from the brief. Reported separately.
+- `cargo xtask agent-eval` runs nightly or on demand, **never as a merge gate**: it needs API access, costs money and is not deterministic.
 
 ## Why CLI first, MCP later
 

@@ -1,6 +1,6 @@
 # ADR-0007: Provisional metric v1 — multi-resolution log-mel L1
 
-- Status: **Proposed** — recalibrate after the owner's listening sessions, and again with friends' ratings in R1
+- Status: **Proposed** — stays so until the owner's two listening sessions ([owner checklist](../spikes/owner-checklist.md), A1–A2; the G0 metric gate is pending them as of 2026-10-19), then recalibrate again with friends' ratings in R1
 - Date: 2026-10-19
 
 ## Context

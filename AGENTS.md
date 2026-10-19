@@ -13,7 +13,9 @@ Rules for AI coding agents working on `enth`. Read `docs/README.md` first, then 
   - no `mul_add` and no `algebraic_*` operations (including `wide`'s `mul_add`/`mul_sub`);
   - a fixed voice order and a fixed summation order; no runtime CPU dispatch between numerically different kernels;
   - flush denormals in code and **end voices below −100 dB**; never depend on, or set, FTZ/DAZ (no `no_denormals` crate: it does not build for wasm32);
-  - scores that decide pass/fail use a scalar FFT path or a tolerance (`docs/design.md` §5), because `rustfft` picks its code path by CPU.
+  - scores that decide pass/fail use a scalar FFT path or a tolerance (`docs/design.md` §5), because `rustfft` picks its code path by CPU;
+  - block size and the 32-sample control grid are inputs of `render()`: blocks of 32 and 64 give the same hash, 48 does not. A host-driven engine re-chunks the host's buffers onto a fixed internal block, and notes start and end on the grid.
+- The numeric bans (`std` transcendentals, `mul_add`, `algebraic_*`, `wide`'s fused ops) are clippy `disallowed-methods`. When `enth-dsp`/`enth-engine` get code they go in the root `clippy.toml` next to the I/O bans. A crate-level `clippy.toml` *replaces* the root one rather than extending it, so a crate that adds one repeats the workspace bans.
 - Every `#[allow(...)]` carries `reason = "…"` (the workspace enables `clippy::allow_attributes_without_reason`). Crates that need `unsafe` or I/O opt out at the crate root, with a reason.
 - Every patch mutation is an `Op` from `enth-patch`. No other way to change a patch.
 - Patches store **plain values in real units** (Hz, ms, dB, cents, %, octaves). Normalised 0–1 values exist only at host automation, UI gesture and ML boundaries.
@@ -27,7 +29,9 @@ Rules for AI coding agents working on `enth`. Read `docs/README.md` first, then 
 
 - Native Rust UI: egui rendered with glow (see `docs/adr/0002-ui-toolkit.md`). No WebView, no second toolkit. egui's bundled fonts are opt-in through its `default_fonts` feature; their licence is `Ubuntu-font-1.0`.
 - **Never open a GUI window on the real display.** Anything that creates a window or loads a plugin editor (the plugin in REAPER, an egui binary, a validator or host that opens editors, Carla) runs under `xvfb-run -a -s "-screen 0 1920x1080x24"` with Mesa software rendering. Why: the NVIDIA 595-series X driver crashed Xorg on 2026-10-19 after short-lived X clients ran on the real display (a known driver bug that plugin editors would trigger), which takes the whole desktop session and the DAW down. Real-GPU checks are owner-attended, with work saved (`docs/benchmarks.md`, two tiers).
-- Repaint only on input, parameter change, or new data for a *visible* scope. No timers or work when the editor is closed or hidden.
+- Repaint only on input, parameter change, or new data for a *visible* scope. No timers or work when the editor is closed or hidden. Scopes request their next frame at `motion.scope_hz` = 60 Hz: under baseview 0.4.1 that gives about 30 fps, while a 30 Hz request gives about 20.
+- Snapshot tests (`egui_kittest`) render only on Mesa's CPU Vulkan driver (lavapipe): `.cargo/config.toml` points the Vulkan loader at its ICD, so tests never load the NVIDIA driver; CI installs `mesa-vulkan-drivers`.
+- Editor leak checks run in the test host (`enth-test-host editor-cycles`, which refuses to run outside Xvfb) against its no-editor baseline. baseview 0.4.1 leaks one xkb keymap per editor open (about 61 of the 77 KB per cycle, `docs/spikes/test-host.md`); the fix goes upstream; don't carry a patched baseview until we decide how we depend on it (record that in ADR-0002). heaptrack segfaults once a plugin opens a window: attribute editor leaks with `valgrind --leak-check=full`.
 - The UI never blocks on the audio thread and never shares a lock with it; use atomics and lock-free rings.
 - **Design tokens only** (`docs/design-system.md`): every colour, size, spacing, radius, stroke, font and repaint rate comes from `enth-ui`'s `theme` module. No raw values in widget code; need a new one, add a token. Keep the look minimal: flat, two accents, small scales.
 
@@ -48,6 +52,7 @@ Rules for AI coding agents working on `enth`. Read `docs/README.md` first, then 
 
 - `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo deny check`, `cargo xtask check-layers`, `cargo xtask wasm-check` all pass. CI sets `CARGO_BUILD_WARNINGS=deny`, so any warning (including a linker warning) fails the build. The toolchain is the pinned stable 1.99.1 in `rust-toolchain.toml`; never 1.99.0, which miscompiles x86_64 FFI `bool` returns.
 - Once they exist: `cargo xtask golden` passes (DSP changes that alter output update goldens deliberately with `cargo xtask golden --update`, and the commit message says why), and plugin changes pass `cargo xtask validate` (clap-validator) and, locally, `cargo xtask reaper-test` (headless REAPER under Xvfb; a local gate, not CI).
+- Plugin changes pass `cargo xtask host-render` (plugin-level golden renders through the test host; CI job `host-render`; `--update` only on purpose, and the commit says why). Plugin-level goldens never come from a REAPER offline render: REAPER deactivates, reactivates and resets CLAP plugins about 30 ms into an offline render and drops held notes.
 - Performance-sensitive changes include before/after numbers from `enth bench` or the relevant benchmark: instruction counts (callgrind/gungraun), not wall-clock time, which is information only (`docs/benchmarks.md`).
 
 ## Research before every milestone (mandatory)
