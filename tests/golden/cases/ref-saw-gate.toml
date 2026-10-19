@@ -1,0 +1,14 @@
+description = "F2 reference: one note of the reference saw through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), free start phase from the render seed, centre pan. Guards the engine skeleton (segment grid, FIFO, seeds, amp stage, constant-power pan) and the osc stub; lane D1 updates it on purpose when the Plaits saw replaces the stub. The gate envelope keeps it independent of lane D2's envelope."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 69, velocity = 1.0, on_s = 0.0, off_s = 0.5 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
