@@ -1,4 +1,4 @@
-//! Seeded randomness: `SplitMix64`, [`derive`] and [`fnv1a64`], the pieces of the engine's seed rule.
+//! Seeded randomness: `SplitMix64`, [`derive()`] and [`fnv1a64`], the pieces of the engine's seed rule.
 //!
 //! All randomness in enth is seeded and passed in (AGENTS.md, design.md §5). There is no global RNG, no system time
 //! and no thread-local state here: a module gets a `u64` seed from the engine and draws from its own [`Rng`]. The
