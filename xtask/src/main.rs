@@ -5,6 +5,7 @@
     reason = "xtask is a CLI tool"
 )]
 
+mod agent_eval;
 mod bench;
 mod bundle;
 mod engine;
@@ -96,7 +97,9 @@ const USAGE: &str = "usage: cargo xtask <command>
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
-  bench [-p <pkg>] [--bench <name>] gungraun instruction budgets (default package enth-engine; alias: budget)";
+  bench [-p <pkg>] [--bench <name>] gungraun instruction budgets (default package enth-engine; alias: budget)
+  agent-eval [--dry-run] [...]      the agent-eval harness: agents design sounds with `enth` (--dry-run: scripted fake
+                                    agent, no model call; a real run needs --confirm-spend); see `agent-eval --help`";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -110,6 +113,7 @@ fn main() -> ExitCode {
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         Some("golden") => golden::golden(&args[1..]),
         Some("bench" | "budget") => bench::bench(&args[1..]),
+        Some("agent-eval") => agent_eval::agent_eval(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
     match result {
