@@ -91,19 +91,21 @@ impl<'a> SourceTile<'a> {
             );
         }
         let graph_top = top + t.size.tile.badge + t.space.hairline;
-        let graph = Rect::from_min_max(pos2(inner.left(), graph_top), inner.max);
+        let side = t.size.tile.badge;
+        let graph = Rect::from_min_max(
+            pos2(inner.left(), graph_top),
+            pos2(inner.right() - side - t.space.tight, inner.bottom()),
+        );
         let mut display =
             Display::new(t, Trace::Curve(self.shape), graph.size()).ink(Ink::Modulation);
         if let Some(phase) = self.phase {
             display = display.marker(phase);
         }
         display.paint(ui, graph);
-        let handle_rect = Rect::from_min_size(
-            pos2(
-                graph.right() - t.size.tile.badge,
-                graph.bottom() - t.size.tile.badge,
-            ),
-            vec2(t.size.tile.badge, t.size.tile.badge),
+        // The handle has its own column right of the graph.
+        let handle_rect = Rect::from_center_size(
+            pos2(inner.right() - side / 2.0, graph.center().y),
+            vec2(side, side),
         );
         let handle = ui.interact(handle_rect, ui.make_persistent_id(self.salt), Sense::drag());
         handle.widget_info(|| egui::WidgetInfo::labeled(Role::Button, true, self.name));

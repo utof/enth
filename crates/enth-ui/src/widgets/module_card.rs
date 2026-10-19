@@ -193,7 +193,17 @@ impl<'a> ModuleCard<'a> {
                 ))
                 .layout(Layout::left_to_right(Align::Min).with_main_wrap(true)),
         );
-        child.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
+        // Spread whole knob cells across the card's width.
+        let cell = t.size.knob.cell_width;
+        let per_row = ((inner_width + t.space.tight) / (cell + t.space.tight))
+            .floor()
+            .max(1.0);
+        let spread = if per_row > 1.0 {
+            (inner_width - per_row * cell) / (per_row - 1.0)
+        } else {
+            0.0
+        };
+        child.spacing_mut().item_spacing = vec2(spread, t.space.tight);
         params(&mut child);
         let bottom = child.min_rect().bottom().max(y) + t.space.gap;
         let rect = Rect::from_min_max(top, pos2(top.x + width, bottom));

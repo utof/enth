@@ -113,6 +113,13 @@ pub struct ReferencePanel {
 
 impl ReferencePanel {
     pub fn new(theme: Theme, feed: Arc<AudioFeed>) -> Self {
+        // Start from what the feed holds now, so the first frame counts as fresh only if
+        // something new arrives.
+        let seen = feed.generation();
+        let mut scope = vec![0.0; SCOPE_SAMPLES];
+        feed.copy_latest(&mut scope);
+        let mut analyser = Analyser::new();
+        analyser.analyse(&scope);
         Self {
             theme: Arc::new(theme),
             feed,
@@ -122,10 +129,10 @@ impl ReferencePanel {
             lane_rects: [Rect::NOTHING; 3],
             enabled: [true; layout::GENERATORS.len() + layout::LANE.len()],
             matrix: layout::matrix(),
-            scope: vec![0.0; SCOPE_SAMPLES],
-            analyser: Analyser::new(),
+            scope,
+            analyser,
             tables: Tables::new(),
-            seen: u64::MAX,
+            seen,
             figure: None,
             hover: None,
         }
