@@ -113,7 +113,7 @@ Each lane stops at its own criteria and reports against them.
 
 Total: about 2.5–3.5 h, plus 45 min if you do Bitwig. P1a's pending owner items (reverb A/B, the agent-eval blind listen, the metric sessions) are separate.
 
-Two decisions defaulted without you. **The fork is on, vendored privately** (this takes the default the coordinator gave you earlier; no objection was raised). **Layout stays "Lanes"** until you pick another.
+Two defaults apply until you say otherwise. **The fork is on, vendored privately** (this takes the default the coordinator gave you earlier; no objection was raised). **The layout stays "Lanes"** until you pick another.
 
 ## The plugin-side G1 checks
 
