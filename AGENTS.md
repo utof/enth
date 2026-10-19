@@ -20,6 +20,7 @@ Rules for AI coding agents working on `enth`. Read `docs/README.md` first, then 
 - Native Rust UI (egui by default; see `docs/adr/0002-ui-toolkit.md`). No WebView.
 - Repaint only on input, parameter change, or new data for a *visible* scope. No timers or work when the editor is closed or hidden.
 - The UI never blocks on the audio thread and never shares a lock with it; use atomics and lock-free rings.
+- **Design tokens only** (`docs/design-system.md`): every colour, size, spacing, radius, stroke, font and repaint rate comes from `enth-ui`'s `theme` module. No raw values in widget code; need a new one, add a token. Keep the look minimal: flat, two accents, small scales.
 
 ## CLI
 

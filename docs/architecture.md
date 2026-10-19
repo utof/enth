@@ -32,7 +32,7 @@ A **Challenge** (target + starting patch + constraints + scoring spec + performa
 | L4 | `enth-challenge` | `Challenge`, `Constraints`, lessons, `ScoringSpec`; evaluates a score (render + analysis) | L0–L3 |
 | L5 | `enth-solver` | Sensitivity (`suggest`, coach hints), CMA-ES (`match`), nearest-solution search; `onnx` feature later. Batch evaluation goes through a caller-supplied evaluator, so the solver itself spawns no threads | L0–L4 |
 | L6 | `enth-session` | Owns the live patch on the main thread: applies ops, undo/redo, compiles plans, ships them to the audio thread, bridges host params | L0–L5 |
-| L7 | `enth-ui` | Native editor (egui by default): widgets, module lanes, modulation rings, scopes, lesson and Recreate views | L0–L6 |
+| L7 | `enth-ui` | Native editor (egui by default): `theme` (design tokens, [design-system.md](design-system.md)), widgets, module lanes, modulation rings, scopes, lesson and Recreate views | L0–L6 |
 | L8 | `enth-plugin` | CLAP/VST3 shell: host params (macros + slots), state, notes, poly-mod, editor embedding | L0–L7 |
 | L8 | `enth-cli` | The `enth` binary for humans, scripts and agents; supplies parallelism (e.g. rayon) to the solver | L0–L5 |
 | L8 | `enth-standalone` | *(deferred)* desktop app | L0–L7 |
@@ -75,7 +75,7 @@ enth/
 ├── deny.toml               # cargo-deny: allowed licences, banned crates
 ├── LICENSE                 # MIT
 ├── THIRD_PARTY_NOTICES.md  # one entry per ported source: upstream, commit, licence, copyright
-├── AGENTS.md               # agent rules (copied from docs/AGENTS.md in Phase 0)
+├── AGENTS.md               # agent rules (the single copy)
 ├── CLAUDE.md               # "Read AGENTS.md and docs/README.md before any task."
 ├── _local/sessions/        # research sessions: <YYYY-MM-DD>-<slug>/{brief,NN-topic,summary}.md (see research-process.md)
 ├── docs/                   # these docs; docs/adr/ decisions; docs/dsp/ one note per module; docs/spikes/ results

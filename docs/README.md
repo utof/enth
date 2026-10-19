@@ -29,7 +29,8 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [benchmarks.md](benchmarks.md) | How we measure UI stacks, the engine, and the agent loop — and the pass/fail thresholds |
 | [research.md](research.md) | Prior art, papers, and evidence behind the decisions, with sources |
 | [adr/](adr/README.md) | Architecture decision records (plugin shell, UI toolkit, agent CLI, licensing, patch format, effects) |
-| [AGENTS.md](AGENTS.md) | Rules for AI coding agents. Phase 0, Task 2 copies it to the repo root |
+| [AGENTS.md](../AGENTS.md) | Rules for AI coding agents (repo root; the single copy) |
+| [design-system.md](design-system.md) | Design tokens and the minimal visual language of the editor |
 | [naming.md](naming.md) | Product name candidates and mode names |
 
 ## Decisions at a glance
@@ -56,4 +57,4 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 
 ## How to use these docs with a coding agent
 
-Start a session in the repo root and say: *"Read `docs/README.md`, `docs/AGENTS.md`, `docs/research-process.md` and `docs/phase-0.md`, then do Phase 0 Task 0."* Task 0 is the Phase 0 research session; read its summary before saying go. Task 1 is machine setup, so you'll run its `sudo` commands yourself; from Task 2 on the agent builds. Each task has acceptance criteria; ask the agent to stop and report after each one.
+Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-0.md`, then do Phase 0 Task 0."* Task 0 is the Phase 0 research session; read its summary before saying go. Task 1 is machine setup, so you'll run its `sudo` commands yourself; from Task 2 on the agent builds. Each task has acceptance criteria; ask the agent to stop and report after each one.
