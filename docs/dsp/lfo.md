@@ -49,7 +49,7 @@ So a `reset` LFO is the same on every render for a given render seed, a `free` o
 - **Pinned output hashes**: FNV-1a over the bit patterns of 30,000 control-rate values per shape (rate 3.7 Hz, random start, seed `0x0E175EED`), seven hashes in `lfo.rs`. They were checked equal under wasmtime (wasm32-wasip1) when written down, and the `enth-dsp` unit tests pass there.
 - The module: a 50 Hz sine, polarity, all three phase modes, S&H seed dependence, independence of the voices, a global LFO's reset and seeded modes, a continuous phase when the rate changes, `copy_state_from`, no subnormals.
 
-**Patch-level goldens** (`tests/golden/cases/lfo-*.toml`, P1a CH, once routes landed): the reference saw at 110 Hz through a gate envelope (so the envelope does not move them) into an `svf` low-pass at 600 Hz, resonance 30 %, with `lfo1` routed to `filter1.cutoff` at 25 % (about 2.5 octaves either way). They match under wasmtime (`cargo xtask golden --wasm`).
+**Patch-level goldens** (`tests/golden/cases/lfo-*.toml`, P1a CH, once routes landed): a saw at 110 Hz through a gate envelope (so the envelope does not move them) into an `svf` low-pass at 600 Hz, resonance 30 %, with `lfo1` routed to `filter1.cutoff` at 25 % (about 2.5 octaves either way). They match under wasmtime (`cargo xtask golden --wasm`).
 
 | Case | Guards |
 | --- | --- |

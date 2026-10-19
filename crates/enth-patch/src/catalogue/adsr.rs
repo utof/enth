@@ -3,8 +3,9 @@
 //! Lane D2 owns the DSP and `docs/dsp/envelope.md`.
 //!
 //! Output runs 0–1 (envelopes are unipolar sources). One ADSR is the voice's amplitude envelope (`voice.amp_env`);
-//! the others are routed like any modulator. Times start at 0 (the engine's shortest segment is one 32-frame step,
-//! 0.67 ms at 48 kHz) and use `Power(4)`, which puts 625 ms at the middle of a 0–10 s knob.
+//! the others are routed like any modulator. Times start at 0 (the engine's shortest segment is 1 ms, rounded up to
+//! whole 32-frame steps: `min_ramp_steps`, 2 steps = 1.33 ms at 48 kHz, so a time of 0 is a ramp, never a jump) and
+//! use `Power(4)`, which puts 625 ms at the middle of a 0–10 s knob.
 
 use enth_params::{ParamSpec, Scale, Unit, params};
 

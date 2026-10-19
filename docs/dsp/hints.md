@@ -67,7 +67,7 @@ jobs.par_iter().map_init(|| None, |d, job| enth_solver::measure(job, d)).collect
 | `performance` | The release of a note never released inside the clip; a reading that is only a lower bound because the sound outlasts the clip; a `duration <` bound below the hold that the parameters cannot reach | The performance, and any parameter at its bound (a held note sounds for at least its hold unless its sustain is near silence) |
 | `at_bound` | The parameters that would move it the right way reach their bounds before it passes (`at_bound`) | Those parameters |
 | `conflict` | It could pass alone, but the move pushes other items out (`conflicts_with`) | Those items |
-| `no_effect` | No free parameter moves it (a module it needs is missing, or is still a stub) | The probed parameters |
+| `no_effect` | No free parameter moves it (a module it needs is missing) | The probed parameters |
 | `absent` | Its descriptor never appeared | The parameters moved to look for it; the structure is the limit |
 | `unmodelled` | `== null` items: judged by renders, never aimed at (`!= null` is handled as an absent descriptor) | — |
 
