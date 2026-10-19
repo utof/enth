@@ -96,18 +96,56 @@ pub fn roughness(x: &[f32]) -> f64 {
     }
 }
 
-/// The largest absolute difference between two renders, or `None` if their lengths differ.
-pub fn max_difference(a: &Wav, b: &Wav) -> Option<f64> {
-    if a.left.len() != b.left.len() || a.right.len() != b.right.len() {
-        return None;
+/// The measures of every note of a render, in order: the scenarios play notes of 0.11 s every 0.125 s from time 0, and a
+/// note is measured over its body (0.01 to 0.10 s after its start: past the attack, before the release). Comparing
+/// medians of a few notes of one pitch, not windows of seconds, keeps one note that REAPER's offline render dropped (it restarts the
+/// plugin shortly after a render starts, and under load at other times too) from failing a scenario.
+pub struct Notes {
+    pub rms: Vec<f64>,
+    pub roughness: Vec<f64>,
+}
+
+/// The note period and body of the scenarios' MIDI (see `render.lua`).
+const NOTE_PERIOD: f64 = 0.125;
+const BODY: (f64, f64) = (0.01, 0.10);
+
+impl Notes {
+    pub fn measure(wav: &Wav, count: usize) -> Notes {
+        let body = |i: usize| {
+            let start = NOTE_PERIOD * i as f64;
+            wav.window(start + BODY.0, start + BODY.1)
+        };
+        Notes {
+            rms: (0..count).map(|i| rms(body(i))).collect(),
+            roughness: (0..count).map(|i| roughness(body(i))).collect(),
+        }
     }
-    let diff = |x: &[f32], y: &[f32]| {
-        x.iter()
-            .zip(y)
-            .map(|(p, q)| f64::from((p - q).abs()))
-            .fold(0.0, f64::max)
-    };
-    Some(diff(&a.left, &b.left).max(diff(&a.right, &b.right)))
+}
+
+/// The median of the values at the indices `at` (the mean of the middle two for an even count).
+pub fn median_at(values: &[f64], at: &[usize]) -> f64 {
+    let mut part: Vec<f64> = at.iter().filter_map(|&i| values.get(i).copied()).collect();
+    part.sort_by(f64::total_cmp);
+    match part.len() {
+        0 => 0.0,
+        n if n % 2 == 1 => part[n / 2],
+        n => (part[n / 2 - 1] + part[n / 2]) / 2.0,
+    }
+}
+
+/// How the notes of two renders compare from note `from` on: the median relative difference of their levels and the
+/// number of notes that differ by more than `tolerance` (a dropped note is one).
+pub fn compare_levels(a: &Notes, b: &Notes, from: usize, tolerance: f64) -> (f64, usize) {
+    let relative: Vec<f64> = a
+        .rms
+        .iter()
+        .zip(&b.rms)
+        .skip(from)
+        .map(|(x, y)| (x - y).abs() / x.max(*y).max(1e-9))
+        .collect();
+    let outliers = relative.iter().filter(|r| **r > tolerance).count();
+    let all: Vec<usize> = (0..relative.len()).collect();
+    (median_at(&relative, &all), outliers)
 }
 
 #[cfg(test)]
@@ -144,6 +182,42 @@ mod tests {
         assert_eq!(wav.window(0.0, 100.0).len(), 2);
         assert!(wav.window(50.0, 60.0).is_empty());
         assert!((wav.seconds() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn medians_ignore_one_outlier() {
+        let values = [1.0, 1.1, 0.0, 1.05, 1.0];
+        assert!((median_at(&values, &[0, 1, 2, 3, 4]) - 1.0).abs() < 1e-12);
+        assert!((median_at(&values, &[1, 2]) - 0.55).abs() < 1e-12);
+        assert_eq!(median_at(&values, &[]), 0.0);
+        assert_eq!(median_at(&values, &[9]), 0.0);
+    }
+
+    #[test]
+    fn notes_are_measured_over_their_bodies_and_compared_by_level() {
+        // Two notes a period apart, the second twice as loud; each note is a square wave over its body.
+        let rate = 48_000_usize;
+        let mut left = vec![0.0_f32; rate / 4];
+        for (i, level) in [(0usize, 0.25_f32), (1, 0.5)] {
+            let start = (NOTE_PERIOD * i as f64 * rate as f64) as usize;
+            for n in 0..(0.11 * rate as f64) as usize {
+                left[start + n] = if n % 20 < 10 { level } else { -level };
+            }
+        }
+        let wav = Wav {
+            rate: rate as u32,
+            right: left.clone(),
+            left,
+        };
+        let notes = Notes::measure(&wav, 2);
+        assert!((notes.rms[0] - 0.25).abs() < 0.01 && (notes.rms[1] - 0.5).abs() < 0.01);
+        let (median_difference, outliers) = compare_levels(&notes, &notes, 0, 0.05);
+        assert_eq!((median_difference, outliers), (0.0, 0));
+        let quiet = Notes {
+            rms: vec![0.25, 0.25],
+            roughness: vec![0.0; 2],
+        };
+        assert_eq!(compare_levels(&notes, &quiet, 0, 0.05).1, 1);
     }
 
     #[test]

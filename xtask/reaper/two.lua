@@ -35,8 +35,11 @@ if phase == "create" then
     reaper.TrackFX_SetParamNormalized(ta, fa, SLOT_1, WANT.a.slot)
     reaper.TrackFX_SetParamNormalized(tb, fb, MACRO_1, WANT.b.macro)
     reaper.TrackFX_SetParamNormalized(tb, fb, SLOT_1, WANT.b.slot)
-    -- VST3 only applies a host-set value on the next process() call, so wait before reading it back.
-    wait(1.5, function()
+    -- VST3 only applies a host-set value on the next process() call, so wait for the values before reading them.
+    wait_until(function()
+      return near(norm(ta, fa, MACRO_1), WANT.a.macro) and near(norm(ta, fa, SLOT_1), WANT.a.slot)
+        and near(norm(tb, fb, MACRO_1), WANT.b.macro) and near(norm(tb, fb, SLOT_1), WANT.b.slot)
+    end, 4, 0.1, function()
       report("values-a", ta, fa, WANT.a)
       report("values-b", tb, fb, WANT.b)
       dump_chunk("two-a-create", ta, fa)
@@ -46,7 +49,7 @@ if phase == "create" then
       -- Moving B must not move A: its parameters and its saved state stay as they were.
       local before = state_chunk(ta, fa)
       reaper.TrackFX_SetParamNormalized(tb, fb, MACRO_1, 0.5)
-      wait(1.0, function()
+      wait_until(function() return near(norm(tb, fb, MACRO_1), 0.5) end, 4, 0.1, function()
         check("b-moved", near(norm(tb, fb, MACRO_1), 0.5), string.format("macro 1 of B = %.4f", norm(tb, fb, MACRO_1)))
         check("a-unmoved", near(norm(ta, fa, MACRO_1), WANT.a.macro) and state_chunk(ta, fa) == before,
           "A's macro 1 and its saved state are unchanged after B moved")
@@ -58,7 +61,9 @@ else
   safe(function()
     reaper.Main_openProject("noprompt:" .. project)
     local ta, tb = reaper.GetTrack(0, 0), reaper.GetTrack(0, 1)
-    wait(1.5, function()
+    wait_until(function()
+      return ta ~= nil and tb ~= nil and near(norm(ta, 0, MACRO_1), WANT.a.macro) and near(norm(tb, 0, MACRO_1), WANT.b.macro)
+    end, 4, 0.1, function()
       check("reload-fx", ta ~= nil and tb ~= nil and reaper.TrackFX_GetCount(ta) == 1 and reaper.TrackFX_GetCount(tb) == 1,
         "one plugin on each of two tracks")
       if not (ta and tb) then return finish() end
@@ -76,7 +81,7 @@ else
             -- Deleting A leaves B alone.
             local before = state_chunk(tb, 0)
             reaper.DeleteTrack(ta)
-            wait(1.0, function()
+            wait(0.5, function()
               local survivor = reaper.GetTrack(0, 0)
               check("b-survives-delete",
                 survivor ~= nil and reaper.TrackFX_GetCount(survivor) == 1 and state_chunk(survivor, 0) == before

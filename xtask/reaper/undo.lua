@@ -28,46 +28,61 @@ safe(function()
   local track, fx = new_project_with_fx()
   if fx < 0 then return finish() end
 
-  local function state_is(step, patch, macro)
-    local got, m = which_patch(track, fx), norm(track, fx, MACRO_1)
-    local ok = got == patch and (macro == nil or near(m, macro))
-    check(step, ok, string.format("patch %s (want %s), macro 1 = %.4f%s", got, patch, m,
-      macro and string.format(" (want %.2f)", macro) or ""))
-  end
   local function noop() end
 
-  -- Each step runs, then the script waits `delay` seconds before the next: REAPER needs a moment to restore a state, and
-  -- a VST3 only applies a host-set value on its next process() call.
+  -- A step is a function that takes `next` and calls it when done. `act` runs and waits `delay` seconds; `expect` polls
+  -- (up to 4 s) until the plugin holds the patch (and macro 1, if given), then records the outcome: REAPER needs a
+  -- moment to restore a state, and a VST3 only applies a host-set value on its next process() call.
+  local function act(f, delay)
+    return function(next)
+      f()
+      wait(delay or 0.1, next)
+    end
+  end
+  local function expect(step, patch, macro)
+    return function(next)
+      local function holds() return which_patch(track, fx) == patch and (macro == nil or near(norm(track, fx, MACRO_1), macro)) end
+      wait_until(holds, 4, 0.1, function(ok)
+        local m = norm(track, fx, MACRO_1)
+        check(step, ok, string.format("patch %s (want %s), macro 1 = %.4f%s", which_patch(track, fx), patch, m,
+          macro and string.format(" (want %.2f)", macro) or ""))
+        next()
+      end)
+    end
+  end
+
   local steps = {
-    { function() undoable("enth: add", noop) end, 0.1 },
-    { function() undoable("enth: load A", function() inject_state(track, fx) end) end, 0.3 },
-    { function() undoable("enth: load B", function() inject_state(track, fx, "ENTH_STATE_CHUNK_FILE_B") end) end, 0.3 },
-    { function() reaper.TrackFX_SetParamNormalized(track, fx, MACRO_1, 0.6) end, 1.0 },
-    { function() undoable("enth: macro 1", noop) end, 0.1 },
-    { function() state_is("before-undo", "B", 0.6) end, 0 },
-    { function() reaper.Undo_DoUndo2(0) end, 1.0 },
-    { function() state_is("undo-macro", "B", 0.0) end, 0 },
-    { function() reaper.Undo_DoUndo2(0) end, 1.0 },
-    { function() state_is("undo-load-b", "A") end, 0 },
-    { function() reaper.Undo_DoUndo2(0) end, 1.0 },
-    { function() state_is("undo-load-a", "init") end, 0 },
-    { function() reaper.Undo_DoRedo2(0) end, 1.0 },
-    { function() state_is("redo-load-a", "A") end, 0 },
-    { function() reaper.Undo_DoRedo2(0) end, 1.0 },
-    { function() state_is("redo-load-b", "B") end, 0 },
-    { function() reaper.Undo_DoRedo2(0) end, 1.0 },
-    { function() state_is("redo-macro", "B", 0.6) end, 0 },
+    act(function() undoable("enth: add", noop) end),
+    act(function() undoable("enth: load A", function() inject_state(track, fx) end) end),
+    act(function() undoable("enth: load B", function() inject_state(track, fx, "ENTH_STATE_CHUNK_FILE_B") end) end),
+    act(function() reaper.TrackFX_SetParamNormalized(track, fx, MACRO_1, 0.6) end),
+    expect("before-undo", "B", 0.6),
+    act(function() undoable("enth: macro 1", noop) end),
+    act(function() reaper.Undo_DoUndo2(0) end),
+    expect("undo-macro", "B", 0.0),
+    act(function() reaper.Undo_DoUndo2(0) end),
+    expect("undo-load-b", "A"),
+    act(function() reaper.Undo_DoUndo2(0) end),
+    expect("undo-load-a", "init"),
+    act(function() reaper.Undo_DoRedo2(0) end),
+    expect("redo-load-a", "A"),
+    act(function() reaper.Undo_DoRedo2(0) end),
+    expect("redo-load-b", "B"),
+    act(function() reaper.Undo_DoRedo2(0) end),
+    expect("redo-macro", "B", 0.6),
     -- The plugin still takes a parameter and saves it.
-    { function() reaper.TrackFX_SetParamNormalized(track, fx, MACRO_2, 0.4) end, 1.0 },
-    { function()
-      check("works-after-undo", near(norm(track, fx, MACRO_2), 0.4) and which_patch(track, fx) == "B",
-        string.format("macro 2 = %.4f, patch %s", norm(track, fx, MACRO_2), which_patch(track, fx)))
-    end, 0 },
+    act(function() reaper.TrackFX_SetParamNormalized(track, fx, MACRO_2, 0.4) end),
+    function(next)
+      wait_until(function() return near(norm(track, fx, MACRO_2), 0.4) end, 4, 0.1, function(ok)
+        check("works-after-undo", ok and which_patch(track, fx) == "B",
+          string.format("macro 2 = %.4f, patch %s", norm(track, fx, MACRO_2), which_patch(track, fx)))
+        next()
+      end)
+    end,
   }
   local function run(i)
     if i > #steps then return finish() end
-    steps[i][1]()
-    wait(steps[i][2], function() run(i + 1) end)
+    steps[i](function() run(i + 1) end)
   end
   run(1)
 end)()

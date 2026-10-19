@@ -99,11 +99,12 @@ safe(function()
       data("dirty-after-edit", reaper.IsProjectDirty(0))
       data("state-changes-during-edit", reaper.GetProjectStateChangeCount(0) - changes_before)
       data("edit-point", type(found) == "table" and (found[1] .. "," .. found[2]) or "none")
-      -- REAPER might notice a plugin's change later (a poll, or when the window closes): look again.
-      wait(2.5, function()
+      -- REAPER might notice a plugin's change later (a poll, or when the window closes): look again, 2.5 s later (the
+      -- phases that only compare the flag after closing the window skip that wait).
+      wait(phase == "edit" and 2.5 or 0, function()
         data("dirty-late", reaper.IsProjectDirty(0))
         hide_editor(track, fx)
-        wait(1.0, function()
+        wait(0.7, function()
           data("dirty-after-close", reaper.IsProjectDirty(0))
           finish()
         end)

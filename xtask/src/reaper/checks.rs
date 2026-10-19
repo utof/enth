@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::audio::{Wav, rms, roughness};
+use super::audio::{Notes, Wav, compare_levels, median_at, rms, roughness};
 use super::chunk::Saved;
 use super::{Format, Report, Sandbox};
 
@@ -346,17 +346,21 @@ fn load_render(
     Some(wav)
 }
 
-/// The windows the two ramps are measured in: whole numbers of the notes' 0.125 s period, so each holds the same share
-/// of note bodies and gaps. `early` and `late` are in the first ramp (0-2 s), `mid` between them; `before` and `after`
-/// are in the second (2-4 s).
-const EARLY: (f64, f64) = (0.25, 0.5);
-const MID: (f64, f64) = (1.0, 1.25);
-const LATE: (f64, f64) = (1.75, 2.0);
-const BEFORE: (f64, f64) = (2.25, 2.5);
-const AFTER: (f64, f64) = (3.75, 4.0);
+/// How many notes `render.lua` plays, and the groups the ramps are measured over. The notes alternate between two
+/// pitches (48 and 55), which differ in brightness, so a group is made of the even notes (pitch 48) only: three of them,
+/// so its median survives one note that REAPER's offline render dropped. `EARLY` and `LATE` are in the first ramp
+/// (0-2 s) with `MID` between them; `BEFORE` and `AFTER` are in the second (2-4 s). The first two notes are never
+/// measured: the offline render restarts the plugin about 30 ms in. Note n starts at n/8 s.
+pub const NOTES: usize = 32;
+const EARLY: [usize; 3] = [2, 4, 6];
+const MID: [usize; 3] = [8, 10, 12];
+const LATE: [usize; 3] = [14, 16, 18];
+const BEFORE: [usize; 3] = [18, 20, 22];
+const RAMP_START: [usize; 3] = [16, 18, 20];
+const AFTER: [usize; 3] = [26, 28, 30];
 
 /// `slot-automation`: slot 1 (the cutoff) ramped 0 to 1 over 0-2 s and made the sound brighter; slot 64 (osc1's level)
-/// ramped 0.5 to 1 over 2-4 s and made it louder, with the brightness unchanged.
+/// ramped 1 to 0.25 over 2-4 s and made it quieter, with the brightness unchanged.
 pub fn slot_automation(out: &Path, report: &mut Report, format: Format) {
     let scope = format!("{}/slot-automation", format.tag());
     let Some(wav) = load_render(
@@ -368,27 +372,28 @@ pub fn slot_automation(out: &Path, report: &mut Report, format: Format) {
     ) else {
         return;
     };
-    let r = |w: (f64, f64)| roughness(wav.window(w.0, w.1));
-    let l = |w: (f64, f64)| rms(wav.window(w.0, w.1));
+    let notes = Notes::measure(&wav, NOTES);
+    let r = |g: [usize; 3]| median_at(&notes.roughness, &g);
+    let l = |g: [usize; 3]| median_at(&notes.rms, &g);
     let (early, mid, late) = (r(EARLY), r(MID), r(LATE));
     report.add(
         &scope,
         "slot-1-gets-brighter",
         early > 0.0 && late > 2.0 * early,
-        format!("brightness {early:.4} at 0.25-0.5 s -> {late:.4} at 1.75-2.0 s"),
+        format!("brightness {early:.4} at notes 2-6 (0.25-0.75 s) -> {late:.4} at notes 14-18 (1.75-2.25 s)"),
     );
     report.add(
         &scope,
         "slot-1-rises-steadily",
         early < mid && mid < late,
-        format!("brightness {early:.4} -> {mid:.4} at 1.0-1.25 s -> {late:.4}"),
+        format!("brightness {early:.4} -> {mid:.4} at notes 8-12 (1.0-1.5 s) -> {late:.4}"),
     );
     let (loud_before, loud_after) = (l(BEFORE), l(AFTER));
     report.add(
         &scope,
-        "slot-64-gets-louder",
-        loud_before > 0.0 && loud_after > 1.3 * loud_before,
-        format!("rms {loud_before:.4} at 2.25-2.5 s -> {loud_after:.4} at 3.75-4.0 s"),
+        "slot-64-gets-quieter",
+        loud_before > 0.0 && loud_after < 0.75 * loud_before,
+        format!("level {loud_before:.4} at notes 18-22 (2.25-2.75 s) -> {loud_after:.4} at notes 26-30 (3.25-3.75 s)"),
     );
     let (bright_before, bright_after) = (r(BEFORE), r(AFTER));
     report.add(
@@ -397,6 +402,46 @@ pub fn slot_automation(out: &Path, report: &mut Report, format: Format) {
         bright_before > 0.0 && (0.8..1.25).contains(&(bright_after / bright_before)),
         format!("brightness {bright_before:.4} -> {bright_after:.4} while the level ramps"),
     );
+}
+
+/// A lane on slot 64 that never moves (0.25 for the whole render, where the patch says 1): is it applied? The plugin
+/// takes the host's values at activation as its baseline and plays the patch until the host moves one, and REAPER's
+/// offline render reactivates a CLAP plugin early with the lane's value already set, so CLAP plays the patch's level
+/// (about 0.41) and VST3 the lane's (about 0.10). `known_gap` turns the CLAP result into an `info` row instead of a
+/// failure; `reaper.rs` holds the switch.
+pub fn flat_lane(out: &Path, report: &mut Report, format: Format, known_gap: bool) {
+    let scope = format!("{}/slot-automation", format.tag());
+    let Some(wav) = load_render(
+        out,
+        report,
+        &scope,
+        &format!("render-flat-{}.wav", format.tag()),
+        4.0,
+    ) else {
+        return;
+    };
+    let notes = Notes::measure(&wav, NOTES);
+    let level = median_at(&notes.rms, &[8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28]);
+    let applied = level < 0.25;
+    let detail = format!(
+        "a lane held at 0.25 on slot 64 (osc1's level) sounds at level {level:.3}; {}",
+        if applied {
+            "the lane's 25 % plays (the patch's 100 % would be about 0.41)"
+        } else {
+            "the patch's 100 % plays instead of the lane's 25 % (the lane would be about 0.10)"
+        }
+    );
+    if applied {
+        report.add(&scope, "slot-flat-lane-applied", true, detail);
+    } else if known_gap && format == Format::Clap {
+        report.info(
+            &scope,
+            "slot-flat-lane-applied",
+            format!("{detail}: KNOWN GAP in an offline render, a lane that never moves is ignored by CLAP until it moves"),
+        );
+    } else {
+        report.add(&scope, "slot-flat-lane-applied", false, detail);
+    }
 }
 
 /// `macro-automation`: macro 1 (osc1's level) ramped 0 to 1 over 0-2 s and made the sound louder, with the brightness
@@ -412,14 +457,17 @@ pub fn macro_automation(out: &Path, report: &mut Report, format: Format) {
     ) else {
         return;
     };
-    let r = |w: (f64, f64)| roughness(wav.window(w.0, w.1));
-    let l = |w: (f64, f64)| rms(wav.window(w.0, w.1));
+    let notes = Notes::measure(&wav, NOTES);
+    let r = |g: [usize; 3]| median_at(&notes.roughness, &g);
+    let l = |g: [usize; 3]| median_at(&notes.rms, &g);
     let (loud_early, loud_late) = (l(EARLY), l(LATE));
     report.add(
         &scope,
         "macro-1-gets-louder",
         loud_early > 0.0 && loud_late > 3.0 * loud_early,
-        format!("rms {loud_early:.4} at 0.25-0.5 s -> {loud_late:.4} at 1.75-2.0 s"),
+        format!(
+            "level {loud_early:.4} at notes 2-6 (0.25-0.75 s) -> {loud_late:.4} at notes 14-18 (1.75-2.25 s)"
+        ),
     );
     let (bright_early, bright_late) = (r(EARLY), r(LATE));
     report.add(
@@ -428,12 +476,58 @@ pub fn macro_automation(out: &Path, report: &mut Report, format: Format) {
         bright_early > 0.0 && (0.75..1.33).contains(&(bright_late / bright_early)),
         format!("brightness {bright_early:.4} -> {bright_late:.4} while the level ramps"),
     );
-    let (before, after) = (r(BEFORE), r(AFTER));
+    let (before, after) = (r(RAMP_START), r(AFTER));
     report.add(
         &scope,
         "macro-8-gets-brighter",
         before > 0.0 && after > 2.0 * before,
-        format!("brightness {before:.4} at 2.25-2.5 s -> {after:.4} at 3.75-4.0 s"),
+        format!(
+            "brightness {before:.4} at notes 16-20 (2.0-2.5 s) -> {after:.4} at notes 26-30 (3.25-3.75 s)"
+        ),
+    );
+}
+
+/// CLAP and VST3 sound the same: the notes' levels agree from the third note on (a dropped note is tolerated, up to
+/// two). The first notes are reported, not judged: see the `info` row.
+pub fn renders_agree(out: &Path, report: &mut Report, kind: &str, first: Format, second: Format) {
+    let scope = "clap+vst3";
+    let name = format!("{kind}-render-same-in-both-formats");
+    let read = |format: Format| {
+        Wav::read(&out.join(format!("render-{kind}-{}.wav", format.tag())))
+            .map(|wav| Notes::measure(&wav, NOTES))
+    };
+    let (a, b) = match (read(first), read(second)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (a, b) => {
+            report.add(scope, &name, false, a.err().or(b.err()).unwrap_or_default());
+            return;
+        }
+    };
+    let (median_difference, outliers) = compare_levels(&a, &b, 2, 0.05);
+    report.add(
+        scope,
+        &name,
+        median_difference < 0.02 && outliers <= 2,
+        format!(
+            "the {kind}-automation notes 3-32 differ in level by {:.2} % (median), {outliers} notes by more than 5 %",
+            median_difference * 100.0
+        ),
+    );
+    report.info(
+        scope,
+        &format!("{kind}-first-note-level"),
+        format!(
+            "the first note's level is {:.3} in {} and {:.3} in {}{}",
+            a.rms[0],
+            first.tag(),
+            b.rms[0],
+            second.tag(),
+            if kind == "slot" && (a.rms[0] - b.rms[0]).abs() > 0.5 * a.rms[0].max(b.rms[0]) {
+                ": a lane that starts at the slot's default 0.0 is not applied until it moves (the patch plays meanwhile), by CLAP only"
+            } else {
+                ""
+            }
+        ),
     );
 }
 

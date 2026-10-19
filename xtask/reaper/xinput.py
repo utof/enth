@@ -195,7 +195,7 @@ def main():
         stride, bpp = im.bytes_per_line, im.bits_per_pixel // 8
         raw = ctypes.string_at(im.data, stride * h)
         colours, counts = {}, 0
-        step = 3
+        step = 4
         for row in range(0, h, step):
             line = raw[row * stride:row * stride + w * bpp]
             for col in range(0, w, step):

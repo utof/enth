@@ -43,6 +43,14 @@ const LAUNCH_TIMEOUT_SECS: u32 = 90;
 /// project after an edit fails the scenario.
 const DIRTY_MARKING_EXPECTED: bool = false;
 
+/// Whether CLAP ignoring a slot automation lane that never moves, in REAPER's offline render, is a known gap. The
+/// plugin takes the host's values at activation as its baseline ("the patch wins at activation") and REAPER
+/// reactivates a CLAP plugin about 30 ms into an offline render with the lane's value already set, so the patch plays
+/// until the lane moves; VST3 applies the lane. `slot-automation` measures it (a lane held at 0.25 on osc1's level) and
+/// reports `info` while this is `true`; set it to `false` once the plugin applies such a lane, and the CLAP result
+/// becomes a check.
+const CLAP_FLAT_LANE_IS_KNOWN_GAP: bool = true;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Format {
     Clap,
@@ -574,6 +582,18 @@ fn run_scenario(
             )?;
             if scenario == Scenario::SlotAutomation {
                 checks::slot_automation(&sb.out, report, format);
+                // A lane that never moves, built and rendered on its own.
+                let mut extra = chunk_env(&chunks.slot, &None);
+                extra.push(("ENTH_SCENARIO", "flat".to_owned()));
+                run_script(sb, report, format, name, "render", "build-flat", &extra);
+                render_project(
+                    sb,
+                    report,
+                    format,
+                    name,
+                    &format!("flat-automation-{tag}.rpp"),
+                )?;
+                checks::flat_lane(&sb.out, report, format, CLAP_FLAT_LANE_IS_KNOWN_GAP);
             } else {
                 checks::macro_automation(&sb.out, report, format);
             }
@@ -763,32 +783,7 @@ fn cross_format(
         "the same patch loaded as state is saved as the same text by CLAP and VST3",
     );
     for kind in ["slot", "macro"] {
-        let render = |format: Format| {
-            audio::Wav::read(&sb.out.join(format!("render-{kind}-{}.wav", format.tag())))
-        };
-        let (a, b) = (render(*first), render(*second));
-        let name = format!("{kind}-render-same-in-both-formats");
-        match (a, b) {
-            (Ok(a), Ok(b)) => match audio::max_difference(&a, &b) {
-                Some(diff) => report.add(
-                    scope,
-                    &name,
-                    diff <= 1e-4,
-                    format!("the {kind}-automation renders differ by at most {diff:.2e}"),
-                ),
-                None => report.add(
-                    scope,
-                    &name,
-                    false,
-                    format!(
-                        "lengths differ: {} against {} frames",
-                        a.left.len(),
-                        b.left.len()
-                    ),
-                ),
-            },
-            (a, b) => report.add(scope, &name, false, a.err().or(b.err()).unwrap_or_default()),
-        }
+        checks::renders_agree(&sb.out, report, kind, *first, *second);
     }
 }
 
