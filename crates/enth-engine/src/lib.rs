@@ -15,9 +15,10 @@
 //!
 //! The module contract (roles, contexts, parameter views) is [`module`]; each module kind has its own file in
 //! [`modules`]. S2a built the walking skeleton with stub modules (a reference saw, a reference envelope,
-//! pass-throughs and silence); lanes D1, D2, FX1 and FX2 replace the stubs, and lane S2b adds the voice manager's
-//! remaining modes, the modulation matrix and smoothing ([`modulation`]) and the plan swap ([`swap`]). Seams are
-//! marked `TODO(S2b)`.
+//! pass-throughs and silence); lanes D1, D2, FX1 and FX2 replace the stubs. Lane S2b added the voice manager's
+//! modes ([`voice`]: stealing, mono, legato, glide, choke, voice-end reports), smoothing ([`params`]), the
+//! modulation matrix with macros and the mod wheel ([`modulation`]) and the plan swap with state carry ([`swap`],
+//! [`Engine::with_link`]).
 //!
 //! Real-time rules (AGENTS.md): `process` and everything it calls never allocate, free, lock, log, do I/O or panic;
 //! no `std::sync::mpsc`, no unbounded channels, no `Mutex`/`RwLock` (clippy bans); every ring and queue has an
@@ -39,11 +40,13 @@ pub mod segment;
 pub mod swap;
 pub mod voice;
 
-pub use engine::{Engine, EngineStats};
+pub use engine::{CROSSFADE_FRAMES, Engine, EngineStats};
 pub use event::{Event, EventKind, NoteKey};
 pub use module::{MAX_VOICES, PrepareCfg, SEG};
 pub use params::ParamId;
 pub use plan::{CompileError, Plan, PlanMap, compile};
+pub use swap::{Link, LinkCapacity, MAX_PLANS_IN_FLIGHT, SendError};
+pub use voice::{NoteEnd, VoiceState};
 
 /// The engine version stamped into patches authored on this build (`Patch::engine`) and into golden files. Bump it
 /// when a DSP change alters output on purpose (the goldens change in the same commit).
