@@ -181,9 +181,44 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         let tag = format.tag();
         let started = Instant::now();
 
+        // The product plugin plays a patch, so each scenario that needs one loads it as state first (P1b lane SK).
+        let product = package == plugin::PRODUCT_PACKAGE;
+        let state_chunk = if product {
+            Some(write_state_chunk(
+                &sandbox.out,
+                "state",
+                format,
+                PRODUCT_STATE_PATCH,
+            )?)
+        } else {
+            None
+        };
+        let automation_chunk = if product {
+            Some(write_state_chunk(
+                &sandbox.out,
+                "automation",
+                format,
+                PRODUCT_AUTOMATION_PATCH,
+            )?)
+        } else {
+            None
+        };
+        let chunk_env = |chunk: &Option<String>| -> Vec<(&'static str, String)> {
+            chunk
+                .iter()
+                .map(|c| ("ENTH_STATE_CHUNK_FILE", c.clone()))
+                .collect()
+        };
+
         // (a) and (c): parameters, ids, automation lane, state; then reload in a new process.
         for phase in ["create", "reload"] {
-            let log = run_script(&sandbox, &mut report, format, "state", phase, &[]);
+            let env = if phase == "create" {
+                chunk_env(&state_chunk)
+            } else {
+                Vec::new()
+            };
+            let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let log = run_script(&sandbox, &mut report, format, "state", phase, &env);
             if phase == "create" {
                 if let Some(ids) = log.data.get("idents-create") {
                     idents.insert(format, ids.clone());
@@ -199,10 +234,12 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
                 );
             }
         }
-        check_saved_state(&sandbox, &mut report, format);
+        check_saved_state(&sandbox, &mut report, format, product);
 
         // (a): automation reaches the plugin, heard in an offline render.
-        run_script(&sandbox, &mut report, format, "automation", "build", &[]);
+        let env = chunk_env(&automation_chunk);
+        let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        run_script(&sandbox, &mut report, format, "automation", "build", &env);
         let project = sandbox.out.join(format!("auto-{tag}.rpp"));
         if project.exists() {
             run_reaper(
@@ -443,7 +480,7 @@ fn run_reaper(
 
 /// Decodes the plugin state REAPER saved before and after the reload and compares the values and
 /// the patch blob (which carries a nonce stamped by the plugin on first activation).
-fn check_saved_state(sb: &Sandbox, report: &mut Report, format: Format) {
+fn check_saved_state(sb: &Sandbox, report: &mut Report, format: Format, product: bool) {
     let scope = format!("{}/state", format.tag());
     let load = |phase: &str| -> Result<serde_json::Value, String> {
         let path = sb.out.join(format!("chunk-{}-{phase}.b64", format.tag()));
@@ -470,6 +507,10 @@ fn check_saved_state(sb: &Sandbox, report: &mut Report, format: Format) {
             format!("macro_1 = {m:?}, slot_1 = {s:?}"),
         );
     }
+    if product {
+        check_product_patch(report, &scope, &created, &reloaded);
+        return;
+    }
     // The blob is stored as a string holding JSON; the nonce proves it came from the saved state.
     let nonce = |state: &serde_json::Value| -> Option<String> {
         let blob: serde_json::Value =
@@ -486,6 +527,121 @@ fn check_saved_state(sb: &Sandbox, report: &mut Report, format: Format) {
             before.as_deref().unwrap_or("missing")
         ),
     );
+}
+
+/// The product plugin's patch for `state-create` (lane SK, F2b): a non-default patch (a label, a route, a named
+/// macro, slots 1 and 64) loaded as state, so the saved and the reloaded project can be told from a fresh instance.
+const PRODUCT_STATE_PATCH: &str = include_str!("../reaper/enth-state.patch.json");
+
+/// The product plugin's patch for `automation`: macro 1 raises osc1's level and slot 1 is the filter cutoff, so the
+/// automation from 0 to 1 is heard as louder and brighter (the init patch gives neither a target).
+const PRODUCT_AUTOMATION_PATCH: &str = include_str!("../reaper/enth-automation.patch.json");
+
+/// Writes `patch` as a nice-plug state chunk that REAPER sets through its `clap_chunk` / `vst_chunk` named config
+/// parameter (`common.lua`'s `inject_state`), base64, and returns the file's path. The layouts are the ones REAPER
+/// 7.82 saves for nice-plug 0.4.2 (measured): CLAP is the plugin's own stream, a `u64` length then the state JSON;
+/// VST3 is a `u32` length, a `u32` 1, the JSON and 8 zero bytes. The state holds no parameters, only the `patch`
+/// field (the parameters keep their values; the patch wins).
+fn write_state_chunk(
+    out: &Path,
+    name: &str,
+    format: Format,
+    patch: &str,
+) -> Result<String, String> {
+    let state =
+        serde_json::json!({ "version": "0.0.0", "params": {}, "fields": { "patch": patch } });
+    let json = serde_json::to_vec(&state).map_err(|e| format!("state chunk: {e}"))?;
+    let mut bytes = Vec::with_capacity(json.len() + 16);
+    match format {
+        Format::Clap => bytes.extend_from_slice(&(json.len() as u64).to_le_bytes()),
+        Format::Vst3 => {
+            let len = u32::try_from(json.len()).map_err(|_| "state chunk too large")?;
+            bytes.extend_from_slice(&len.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&json);
+    if format == Format::Vst3 {
+        bytes.extend_from_slice(&[0; 8]);
+    }
+    let path = out.join(format!("chunk-{}-{name}-in.b64", format.tag()));
+    std::fs::write(&path, base64_encode(&bytes)).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path.display().to_string())
+}
+
+/// The product's saved state: the patch loaded in `state-create` came back byte for byte after the reload in a new
+/// process, and the host's values set before the save were folded into it (macro 1 = 0.7; slot 1's target,
+/// `filter1.cutoff`, at `from_norm(0.3)` = about 159 Hz on its 20 Hz to 20 kHz log scale).
+fn check_product_patch(
+    report: &mut Report,
+    scope: &str,
+    created: &serde_json::Value,
+    reloaded: &serde_json::Value,
+) {
+    let patch = |state: &serde_json::Value| -> Option<(String, serde_json::Value)> {
+        let text = state["fields"]["patch"].as_str()?.to_owned();
+        let value = serde_json::from_str(&text).ok()?;
+        Some((text, value))
+    };
+    let (Some((before, p)), Some((after, _))) = (patch(created), patch(reloaded)) else {
+        report.add(
+            scope,
+            "patch-blob-restored",
+            false,
+            "no enth patch in the saved state",
+        );
+        return;
+    };
+    let name = p["meta"]["name"].as_str().unwrap_or_default();
+    report.add(
+        scope,
+        "patch-blob-restored",
+        before == after && name == "reaper-test state" && p["slots"]["64"] == "filter1.resonance",
+        format!(
+            "{name:?}, {} bytes, identical after reload: {}",
+            before.len(),
+            before == after
+        ),
+    );
+    let macro1 = p["macros"][0]["value"].as_f64();
+    let cutoff = p["voice_fx"][0]["params"]["cutoff"].as_f64();
+    report.add(
+        scope,
+        "patch-folds-host-values",
+        macro1.is_some_and(|m| (m - 0.7).abs() < 0.002)
+            && cutoff.is_some_and(|c| (150.0..170.0).contains(&c)),
+        format!(
+            "in the saved patch: macro 1 = {macro1:?}, filter1.cutoff (slot 1) = {cutoff:?} Hz"
+        ),
+    );
+    let instance = created["fields"]["enth"].as_str().unwrap_or_default();
+    report.add(
+        scope,
+        "instance-state-saved",
+        instance.starts_with(r#"{"schema":"enth.plugin-state/1""#),
+        instance.to_owned(),
+    );
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            if i <= chunk.len() {
+                out.push(char::from(TABLE[((n >> shift) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 /// Finds nice-plug's JSON state (`{"version":…`) inside the host's chunk, which wraps it in a

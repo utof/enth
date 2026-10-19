@@ -14,6 +14,7 @@ local MACRO_1, SLOT_1 = 0, 8
 safe(function()
   local track, fx = new_project_with_fx()
   if fx < 0 then return finish() end
+  inject_state(track, fx)
   for _, index in ipairs({ MACRO_1, SLOT_1 }) do
     local envelope = reaper.GetFXEnvelope(track, fx, index, true)
     reaper.InsertEnvelopePoint(envelope, 0.0, 0.0, 0, 0, false, true)

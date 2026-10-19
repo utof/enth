@@ -64,7 +64,17 @@ impl PersistentField<'_, Box<RawValue>> for PatchField {
         // Before the plan goes out: a `process()` that already saw the restored values sends them to the old plan,
         // whose remembered slot values the new plan forgets; any later one adopts them silently.
         self.shared.rebaseline.store(true, Ordering::Release);
-        let (_report, host) = self.shared.with_session(|s| s.load_patch(new_value.get()));
+        // nice-plug has set the parameters already: record them as the baseline now (the load's first fold only
+        // records), so a host change after the load and before the next fold (a save, an editor frame) is folded
+        // rather than taken as the baseline and lost.
+        let restored = self.shared.host_values();
+        let (_report, host) = self.shared.with_session(|s| {
+            let report = s.load_patch(new_value.get());
+            if let Some(restored) = &restored {
+                s.fold_host(restored);
+            }
+            report
+        });
         debug_assert_eq!(host.len(), 0, "a load makes no host writes");
     }
 
@@ -108,7 +118,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use enth_patch::Patch;
-    use nice_plug::prelude::Params;
+    use nice_plug::prelude::{Param, Params};
 
     use crate::Enth;
 
@@ -180,6 +190,44 @@ mod tests {
         let b = second.shared().session.lock().patch().clone();
         assert!(enth_patch::canon::identical(&a, &b));
         assert_eq!(a.slots, b.slots);
+    }
+
+    /// Sets a host parameter as nice-plug does when the host changes it.
+    fn host_set(plugin: &Enth, p: enth_session::HostParam, norm: f32) {
+        // SAFETY: the pointer points into the plugin's params, which outlive the call.
+        unsafe {
+            plugin
+                .host_params()
+                .param(p)
+                .as_ptr()
+                ._internal_set_normalized_value(norm);
+        }
+    }
+
+    #[test]
+    fn host_values_restored_with_a_load_never_move_the_patch_but_later_changes_fold_at_save() {
+        let text = custom_patch_json();
+        let plugin = Enth::default();
+        let macro1 = enth_session::HostParam::Macro(enth_patch::MacroIndex::new(0).unwrap());
+        let slot1 = enth_session::HostParam::Slot(enth_patch::SlotIndex::new(0).unwrap());
+        // Restored with the state, before the fields: stale against the patch, and the patch wins.
+        host_set(&plugin, slot1, 0.9);
+        let mut fields = BTreeMap::new();
+        fields.insert("patch".to_owned(), text.clone());
+        plugin.host_params().deserialize_fields(&fields);
+        assert_eq!(plugin.host_params().serialize_fields()["patch"], text);
+        // The host moves macro 1 after the load: the next save folds it.
+        host_set(&plugin, macro1, 0.7);
+        let saved = plugin.host_params().serialize_fields();
+        let patch = enth_patch::file::load(&saved["patch"]).unwrap().patch;
+        assert_eq!(patch.macros[0].value.to_bits(), 0.7f32.to_bits());
+        let osc_level =
+            enth_patch::ParamAddr::module(patch.generators[0].id.clone(), "level").unwrap();
+        assert_eq!(
+            patch.value(&osc_level),
+            Some(37.5),
+            "slot 1's stale value stayed out"
+        );
     }
 
     #[test]
