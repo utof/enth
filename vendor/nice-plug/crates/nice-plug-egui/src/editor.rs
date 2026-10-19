@@ -143,6 +143,15 @@ impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
     }
 }
 
+// enth fork: nice-plug-egui 0.6.0 never calls `NiceEguiApp::editor_closed()`. The wrapper is owned by the
+// baseview window and dropped when the window closes, so call it here.
+impl<A: NiceEguiApp> Drop for UserAppWrapper<A> {
+    fn drop(&mut self) {
+        self.egui_ctx.lock().take();
+        self.user_app.lock().editor_closed();
+    }
+}
+
 /// An [`Editor`] implementation that calls an egui draw loop.
 pub struct EguiEditor<A: NiceEguiApp> {
     pub(crate) egui_state: Arc<EguiEditorState>,
