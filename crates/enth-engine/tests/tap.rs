@@ -318,3 +318,76 @@ fn a_plan_swap_changes_the_layout_with_the_epoch() {
     assert_eq!(seen[10], (1, n1, 4), "published with the new plan's order");
     assert_eq!(n1, 8);
 }
+
+/// F1b review, issue 1: a reader on another thread, while the engine swaps plans of different layouts back and forth,
+/// never pairs one plan's epoch with another plan's lengths. (The seqlock in `Tap::read`; the unit tests in `tap.rs`
+/// run the same contract against a synthetic writer.)
+#[test]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test of the concurrent contract: the audio thread publishes while the editor thread reads"
+)]
+fn a_reader_never_pairs_an_epoch_with_another_plans_layout() {
+    let base = routed_patch();
+    let mut wide = base.clone();
+    wide.modulators
+        .push(ModuleInstance::new(id("lfo3"), ModuleKind::Lfo));
+    route(&mut wide, "lfo3", "osc1.level", 10.0);
+    let (narrow_plan, _) = plan(&base);
+    let layouts = [
+        (
+            narrow_plan.tap_params().len(),
+            narrow_plan.tap_modulators().len(),
+        ),
+        {
+            let (p, _) = plan(&wide);
+            (p.tap_params().len(), p.tap_modulators().len())
+        },
+    ];
+    assert_ne!(
+        layouts[0], layouts[1],
+        "the two plans publish different layouts"
+    );
+
+    let tap = Tap::new(TapCapacity::default());
+    tap.set_enabled(true);
+    let (mut e, mut link) = Engine::with_link(narrow_plan, SEED, LinkCapacity::default());
+    e.attach_tap(Arc::clone(&tap));
+    let done = std::sync::atomic::AtomicBool::new(false);
+    let mut checked = 0u64;
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            // Epoch 0 is the narrow plan; every plan sent flips the layout, so epoch k has layout k % 2.
+            for k in 0..400usize {
+                if k % 4 == 0 {
+                    let source = if (k / 4) % 2 == 0 { &wide } else { &base };
+                    let _ = link.send_plan(plan(source).0);
+                }
+                let ev: Vec<Event> = events(k * 64 / SEG)
+                    .into_iter()
+                    .map(|kind| Event { offset: 0, kind })
+                    .collect();
+                let (mut l, mut r) = ([0.0f32; 64], [0.0f32; 64]);
+                assert_no_alloc(|| e.process(&mut l, &mut r, &ev));
+                link.collect();
+            }
+            done.store(true, std::sync::atomic::Ordering::Release);
+        });
+        let mut frame = tap.frame();
+        while !done.load(std::sync::atomic::Ordering::Acquire) {
+            tap.read(&mut frame);
+            if frame.params_len == 0 && frame.modulators_len == 0 {
+                continue; // nothing published yet, or the writer was busy for every try
+            }
+            let want = layouts[(frame.epoch % 2) as usize];
+            assert_eq!(
+                (frame.params_len, frame.modulators_len),
+                want,
+                "epoch {} with another plan's layout",
+                frame.epoch
+            );
+            checked += 1;
+        }
+    });
+    eprintln!("{checked} frames checked across the swaps");
+}
