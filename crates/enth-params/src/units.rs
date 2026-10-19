@@ -160,9 +160,11 @@ impl Unit {
     /// assert_eq!(Unit::Semitones.parse("+1oct"), Ok(12.0));
     /// assert_eq!(Unit::Percent.parse("30"), Ok(30.0));
     /// assert!(Unit::Hz.parse("40ms").is_err());
+    /// assert_eq!(Unit::Semitones.parse("\u{2212}12 st"), Ok(-12.0)); // the display's minus sign
     /// ```
     pub fn parse(self, text: &str) -> Result<f32, UnitError> {
-        let t = text.trim();
+        let t = ascii_minus(text.trim());
+        let t = t.as_ref();
         if self == Unit::Hz
             && let Some(hz) = parse_note(t)
         {
@@ -239,6 +241,16 @@ impl fmt::Display for UnitError {
 }
 
 impl std::error::Error for UnitError {}
+
+/// The display's typographic minus, U+2212 ("−12 st", docs/design-system.md), read as an ASCII `-`, so text copied
+/// from the editor parses. Every other character is unchanged; ASCII text is borrowed, not copied.
+pub(crate) fn ascii_minus(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains('\u{2212}') {
+        std::borrow::Cow::Owned(text.replace('\u{2212}', "-"))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
 
 /// `-0.0` becomes `+0.0`; everything else is unchanged. Patches never hold `-0.0` (design.md §2).
 pub(crate) const fn canonical_zero(v: f32) -> f32 {
@@ -487,6 +499,31 @@ mod tests {
             Unit::None.parse("2e"),
             Err(UnitError::WrongUnit { .. })
         ));
+    }
+
+    #[test]
+    fn the_typographic_minus_reads_as_minus() {
+        // U+2212, which the editor displays ("−12 st", "−6 dB"), with or without a space before the unit.
+        assert_eq!(Unit::Semitones.parse("\u{2212}12 st"), Ok(-12.0));
+        assert_eq!(Unit::Semitones.parse("\u{2212}12st"), Ok(-12.0));
+        assert_eq!(Unit::Db.parse("\u{2212}6 dB"), Ok(-6.0));
+        assert_eq!(Unit::Db.parse(" \u{2212}0.5 "), Ok(-0.5));
+        assert_eq!(Unit::Cents.parse("\u{2212}1oct"), Ok(-1200.0));
+        assert_eq!(Unit::None.parse("1e\u{2212}3"), Ok(0.001));
+        assert_eq!(
+            Unit::Db.parse("\u{2212}0").unwrap().to_bits(),
+            0.0f32.to_bits()
+        );
+        // Still one sign at most, and only a minus: an en dash is not one.
+        assert!(matches!(
+            Unit::Db.parse("\u{2212}\u{2212}6"),
+            Err(UnitError::NotANumber { .. })
+        ));
+        assert!(matches!(
+            Unit::Db.parse("\u{2013}6"),
+            Err(UnitError::NotANumber { .. })
+        ));
+        assert!(matches!(ascii_minus("12st"), std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]
