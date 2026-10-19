@@ -141,7 +141,7 @@ fn what_a_fold_remembers_ends_with_the_plan_or_with_any_other_change() {
     session.port.as_mut().unwrap().compile_pending = true;
     assert_eq!(send_plan(&mut session), Some(1));
     session.fold_host(&host);
-    assert!(session.host.memos.is_empty());
+    assert!(session.host.memos.is_empty(), "no memo is left");
 
     // An edit of that value: the engine got an event, so its value is the patch's.
     let (mut session, mut engine, mut host) = with_cutoff(p0);
@@ -154,21 +154,21 @@ fn what_a_fold_remembers_ends_with_the_plan_or_with_any_other_change() {
         }],
     );
     session.fold_host(&host);
-    assert!(session.host.memos.is_empty());
+    assert!(session.host.memos.is_empty(), "no memo is left");
 
     // A load replaces both.
     let (mut session, mut engine, mut host) = with_cutoff(p0);
     moved(&mut session, &mut engine, &mut host);
     let text = session.patch().to_json();
     session.load_patch(&text);
-    assert!(session.host.memos.is_empty());
+    assert!(session.host.memos.is_empty(), "no memo is left");
 
     // A deactivation: nothing to remember.
     let (mut session, mut engine, mut host) = with_cutoff(p0);
     moved(&mut session, &mut engine, &mut host);
     session.deactivate();
     session.fold_host(&host);
-    assert!(session.host.memos.is_empty());
+    assert!(session.host.memos.is_empty(), "no memo is left");
 }
 
 #[derive(Clone, Debug)]

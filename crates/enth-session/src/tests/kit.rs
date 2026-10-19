@@ -3,10 +3,7 @@
 //! record-and-deliver, and the pump's "send the pending plan"). After lane SK lands, the doubles stay: they are
 //! three lines each on top of `Session::deliver` and the `Port`.
 
-use enth_engine::{
-    Engine, Event, EventKind, LinkCapacity, MAX_PLANS_IN_FLIGHT, NoteKey, ParamId, PlanMap,
-    PrepareCfg, compile,
-};
+use enth_engine::{Engine, Event, MAX_PLANS_IN_FLIGHT, ParamId, PrepareCfg, compile};
 use enth_patch::history::GestureId;
 use enth_patch::{ModuleId, Op, ParamAddr, Patch, apply_all};
 
@@ -114,11 +111,12 @@ pub(crate) fn edit_in(
     gesture: Option<GestureId>,
 ) -> crate::Applied {
     let before = session.patch.clone();
+    let delivered = ops.clone();
     session
         .history
-        .edit(&mut session.patch, ops.clone(), gesture)
+        .edit(&mut session.patch, ops, gesture)
         .unwrap();
-    session.deliver(&before, &ops)
+    session.deliver(&before, &delivered)
 }
 
 /// What the pump does with a pending compile, minimally: collect returned plans, then compile the patch as it is now,
@@ -168,24 +166,10 @@ pub(crate) fn run_events(
     }
 }
 
-pub(crate) fn note_on(key: u8) -> Event {
-    Event {
-        offset: 0,
-        kind: EventKind::NoteOn {
-            key: NoteKey::new(key, 1),
-            velocity: 0.8,
-        },
-    }
-}
-
 /// The engine's base value of the parameter at `a`, through the session's current map.
 pub(crate) fn base(session: &Session, engine: &Engine, a: &str) -> f32 {
     let id: ParamId = port(session).map.get(&addr(a)).unwrap();
     engine.base(id).unwrap()
-}
-
-pub(crate) fn map(session: &Session) -> &PlanMap {
-    &port(session).map
 }
 
 /// Two plans in flight and none collected: the link cannot take a third, so a compile stays pending whatever the

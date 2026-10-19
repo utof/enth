@@ -1,5 +1,5 @@
 //! Op effects and the history glue: how an applied op reaches the engine ([`route`], [`delivery`]), and gestures
-//! (lane S1s for the types and the classification; SK for the minimal delivery, S2s for undo, redo and the rest).
+//! (lane S1s for the types and the classification; S2s for the delivery of a changed patch, undo and redo; SK for `edit`).
 //!
 //! # The delivery table
 //!

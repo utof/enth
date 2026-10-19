@@ -42,7 +42,13 @@ fn add_filter2() -> Op {
 }
 
 /// What a delivery did, as a comparable tuple: (events, recompile, host parameters set, rename requested).
-fn summary(applied: Applied, session: &mut Session) -> (u32, bool, u32, bool) {
+type Summary = (u32, bool, u32, bool);
+
+/// A row of the delivery table: a name, the transaction, and what it must do.
+type Row = (&'static str, Vec<Op>, Summary);
+
+/// Reduce an [`Applied`] and the requests it left to a [`Summary`].
+fn summary(applied: Applied, session: &mut Session) -> Summary {
     let renamed = session
         .drain_requests()
         .any(|r| r == ShellRequest::RenameParams);
@@ -59,7 +65,7 @@ fn summary(applied: Applied, session: &mut Session) -> (u32, bool, u32, bool) {
 #[test]
 fn every_op_kind_reaches_the_engine_the_host_and_the_shell_as_documented() {
     #[rustfmt::skip]
-    let table: Vec<(&str, Vec<Op>, (u32, bool, u32, bool))> = vec![
+    let table: Vec<Row> = vec![
         // (name, ops, (events, recompile, host params set, rename))
         ("SetParam, slotted", vec![set("filter1.cutoff", 3000.0)], (1, false, 1, false)),
         ("SetParam, unslotted", vec![set("voice.glide", 50.0)], (1, false, 0, false)),
@@ -112,7 +118,7 @@ fn a_recompile_forgets_the_host_values_of_the_slots_it_writes_and_only_those() {
     );
     assert_eq!(port(&session).forget_slots, 0b011);
     assert!(port(&session).compile_pending);
-    assert!(port(&session).queue.is_empty());
+    assert!(port(&session).queue.is_empty(), "nothing waits");
 }
 
 #[test]
@@ -257,7 +263,7 @@ fn a_full_ring_queues_values_and_an_overflow_becomes_a_plan() {
     assert_eq!(one(&mut session, "filter1.cutoff", 1000.0).events, 1);
     assert_eq!(one(&mut session, "filter1.resonance", 20.0).events, 1);
     assert_eq!(port(&session).link.free_slots(), 0);
-    assert!(port(&session).queue.is_empty());
+    assert!(port(&session).queue.is_empty(), "nothing waits");
     // Held back, not lost, not blocking: the last value per parameter wins.
     one(&mut session, "voice.glide", 10.0);
     one(&mut session, "voice.glide", 30.0);

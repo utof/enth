@@ -114,7 +114,7 @@ pub struct Session {
     /// The `patch` field text that did not load, while the session holds the fallback init patch in its place.
     /// [`Session::save_patch`] writes it back verbatim, so opening a project in an older build (`schema_too_new`) or
     /// hitting a damaged field never overwrites the stored patch on the next host save. Cleared by a successful
-    /// load and by the first recorded change (an edit, undo or redo: lanes SK and S2s clear it there), after which
+    /// load and by the first recorded change (an edit, undo or redo: SK's `edit` and S2s's undo and redo clear it), after which
     /// the user's own patch is saved.
     pub(crate) unloaded_patch: Option<String>,
     /// The `enth` field text that was refused as too new for this build (`schema_too_new`), while the session holds
@@ -299,6 +299,10 @@ impl std::fmt::Debug for HistoryView<'_> {
 /// A snapshot of what the session is doing. Build one with `Default` and set fields (it is `non_exhaustive`).
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "a status snapshot: independent facts the editor shows, not a state machine; the F1b API keeps its fields"
+)]
 pub struct SessionStatus {
     /// `Some` while the host has the plugin active (an engine exists).
     pub active: Option<Activation>,
