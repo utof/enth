@@ -1,6 +1,6 @@
 # Analysis (`enth-analysis`)
 
-- Date: 2026-10-19. P1a lane A. Crate: `crates/enth-analysis` (L3; depends on `libm`, `rustfft`, `realfft`, `ebur128`, `serde`; no I/O, clocks, threads or global RNG; builds for wasm32).
+- Date: 2026-10-19. P1a lane A; 2026-10-20, P1b lane EV (the G1 eval findings: tonal pitch, the low-range pitch fallback, filter sweeps, the tremolo-corrected envelope, boolean thinness, the filter-LFO check in the beat estimator). Crate: `crates/enth-analysis` (L3; depends on `libm`, `rustfft`, `realfft`, `ebur128`, `serde`; no I/O, clocks, threads or global RNG; builds for wasm32).
 - What it is: every number that `enth describe`, `enth check`, the hint solver (`enth-solver::hint`) and the sound score read. A descriptor bug lets agents "pass" for the wrong reasons (the Phase 0 trial's 15 of 15 was 13 of 15 under correct descriptors), so each measurement below is a plain, documented definition with a measured accuracy.
 - Ported from in-repo MIT code and our own research prototype, no third-party source: `spikes/spike-metric` (features, YIN, loudness, distances), `spikes/spike-agent` (descriptors, expectation parser, units) and the P1a research prototype `proto03` (report 03 §4: fitted beat removal, the multi-harmonic beating estimator, clipping fields, margins and noise, note-off inference; `~/code/enth-scratch/2026-10-19-p1a/03/proto/`). Nothing needs a `THIRD_PARTY_NOTICES.md` entry.
 
@@ -13,12 +13,13 @@
 | `margin` | `Interval`, signed margins, `margin_pct`, nuisance `noise`, `is_thin` (`THIN_FACTOR` = 2) |
 | `envelope` | 8 ms RMS envelope, fitted beat removal, stage measurements (`Envelope`), `infer_note_off` |
 | `beat` | Multi-harmonic beating estimator and tremolo detection |
-| `pitch` | YIN tracker and its summary (`Pitch`) |
+| `pitch` | YIN tracker and its summary (`Pitch`); the tonal pitch of spectral peaks (`Tonal`, `tonal_pitch`) |
+| `sweep` | Brightness sweeps from the centroid over time: filter envelopes and filter LFOs (`FilterSweep`) |
 | `loudness` | `LoudnessMeter`: LUFS, sample peak, true peak, clipping (`Level`) |
 | `features`, `distance` | Multi-resolution log-mel, envelope, centroid track, MFCC, f0 track (`FeatureExtractor`); metric v1 and its components |
 | `fft` | `FftPath::{Scalar, Dispatched}` and the real-FFT planner |
 | `units` | Descriptor units and note names |
-| `test_signals` | Signals with known answers: sines, polyBLEP oscillators, detuned pairs, ADSR, tremolo, noise, the 10-parameter toy voice |
+| `test_signals` | Signals with known answers: sines, polyBLEP oscillators, detuned pairs, ADSR, tremolo, noise, the 10-parameter toy voice (with an optional cutoff LFO, `render_toy_lfo`) |
 
 ## Descriptors
 
@@ -26,7 +27,8 @@ All on the float render (never a clamped or quantised file), at any sample rate 
 
 | Path (alias) | Unit | Meaning (the one-line `Feature::meaning`, abridged) | How |
 | --- | --- | --- | --- |
-| `pitch.f0_hz` (`pitch`, `pitch.note`) | Hz | Fundamental measured from the audio | YIN, frame 2048, hop 512, 50–2000 Hz, threshold 0.15; median over voiced frames whose centre is within 40 dB of the envelope peak |
+| `pitch.f0_hz` (`pitch`, `pitch.note`) | Hz | Fundamental measured from the audio: the period of the waveform | YIN, frame 2048, hop 512, 50–2000 Hz, threshold 0.15; median over voiced frames whose centre is within 40 dB of the envelope peak. **When that finds no pitch**, the same with a 4096-sample frame and a 25 Hz floor (below) |
+| `tonal.f0_hz` (`tonal_pitch`, `tonal.note`) | Hz | Pitch of the tonal part, found under noise | Harmonic matching of the steady peaks of the noisiness spectrum (below) |
 | `pitch.cents_dev` | ct | Offset from the nearest note (A4 = 440 Hz) | From `f0_hz` |
 | `pitch.stability` | 0–1 | 1 = steady | 1 − (std of voiced frames in cents)/50, clamped |
 | `envelope.attack_ms` | ms | Onset (−40 dB re peak) to within 1 dB of the peak | On the beat-corrected envelope (below) |
@@ -39,17 +41,18 @@ All on the float render (never a clamped or quantised file), at any sample rate 
 | `noise_ratio` (`noisiness`) | 0–1 | Energy not in steady peaks | 8192-point Welch spectrum of the held part; a peak is a local maximum 15 dB over the median of its ±64 bins (±3 bins count as tonal); share of 40 Hz–16 kHz power outside peaks |
 | `detune.beating_hz` (`beating`), `detune.depth_db` | Hz, dB | Detune beating | Multi-harmonic estimator (below), 0.15–25 Hz |
 | `modulation.amp_lfo.hz` (`tremolo`), `.depth_db` | Hz, dB | An amplitude LFO: every harmonic moves at the same rate | The same estimator's same-rate search |
+| `modulation.filter_sweep.hz` (`filter_lfo`), `.depth_oct` (`filter_sweep`), `.ms` (`sweep_ms`) | Hz, oct, ms | A brightness sweep: a filter LFO (`kind: lfo`, `hz`) or a filter envelope (`kind: env`, `dir`, `ms`) | The brightness STFT's centroid over time ([`sweep`](#brightness-sweeps-2026-10-20)) |
 | `loudness.lufs_i` | LUFS | Integrated loudness | `ebur128` (BS.1770-4); ungated whole-clip fallback for very short sounds; `None` below −70 LUFS |
 | `loudness.peak_dbfs` | dBFS | Highest sample | May exceed 0 |
 | `loudness.true_peak_dbtp` | dBTP | Highest inter-sample level | `ebur128` true peak (4× polyphase below 96 kHz), never below `peak_dbfs` |
 | `loudness.clipped_pct`, `loudness.clipping` | %, bool | Samples at or beyond full scale | Share with \|x\| ≥ 1.0; `clipping` = share > 0 |
 
-`envelope.beat_corrected` is false only when a beat was found but could not be removed (fewer than one period in the held part); `envelope.beat_periods` says how many periods were fitted.
+`envelope.beat_corrected` is false only when a beat (or, without one, a tremolo) was found but could not be removed (fewer than one period in the held part); `envelope.beat_periods` says how many periods were fitted.
 
 ### Beat-corrected envelope (report 03 §4.1)
 
 1. `E` = RMS over 8 ms every 1 ms. Fit region: from the first time `E ≥ 0.3·max E` (+20 ms) to note-off − 15 ms (or the end).
-2. Beat rate r from the estimator below. With no beat, use `E` as it is. With fewer than 1.0 periods in the region, use `E` and set `beat_corrected = false`.
+2. Beat rate r from the estimator below; **with no beat, the tremolo rate** (2026-10-20: a tremolo is a periodic level wobble like a beat, and read raw it put the attack on its first crest and the sustain wherever note-off fell in its cycle; the `filter-wobble` witness read attack 307 ms and sustain +4.9 dB, now 15 ms and −0.8 dB). With neither, use `E` as it is. With fewer than 1.0 periods in the region, use `E` and set `beat_corrected = false`. The rate never depends on `Want` (the tremolo is always measured), so `describe_some` and `describe` read the same envelope.
 3. Least squares over the region, every 2nd ms, points within 30 dB of the peak: `ln E(t) ≈ Σ_{p≤deg} c_p x^p + Σ_{k≤K} (a_k cos 2πkrt + b_k sin 2πkrt)`, x in −1..1; deg = 3 with ≥ 3 periods, 2 with ≥ 1.5, else 1; K = 6 with ≥ 2 periods, else 2. **Then 4 Huber refits** (weights `min(1, k/|residual|)` with k = 1.5 × the residuals' MAD × 1.4826; Huber 1964): a sharp decay knee that the polynomial trend cannot follow stops steering the beat pattern. This is new in this port (see the accuracy table).
 4. Divide the periodic part `P(t)` out of the whole envelope (it is phase-locked to note-on, so it extends to attack and release), at most 20 dB; where `P < −0.7` (a null deeper than 6 dB) drop the point and bridge by linear interpolation of the log level.
 5. Read the stages above on the corrected curve. The peak is the maximum of a 5 ms moving average (robust to a single spike).
@@ -62,8 +65,36 @@ Smoothing over a beat period was measured and rejected in the research: a boxcar
 2. For harmonics h = 1…12 with h·f0 < min(0.45·sr, 10 kHz): demodulate at h·f0 with a phasor recurrence (renormalised every 1,024 samples), boxcar of 4 periods of f0 (nulls the other harmonics), decimate to 500 Hz. Drop harmonics more than 30 dB below the strongest.
 3. Per harmonic: divide out a cubic fit of the log magnitude; Hann, zero-pad ×8, real FFT; scale to the relative wobble amplitude `M_h(f)`.
 4. `S(r)` = weight-averaged `M_h(h·r)` over usable harmonics (h·r·T ≥ 2.5 cycles, h·r < f0/8, h·r ≤ 60 Hz), r from 0.15 to 25 Hz in 0.2 % steps; take the maximum, prefer 2r or 3r if they score ≥ 0.85 of it, refine on a ±2 % grid.
-5. Accept only if the best harmonic's wobble is ≥ 0.35, `S(r)` ≥ 6× its median over the band, at least one usable harmonic peaks within 3 % of h·r (two when r·T < 1), and it is not a tremolo: on harmonics ≥ 2 the reading at r itself is weaker than at h·r. **New here:** when h·r is outside the demodulator band for every harmonic ≥ 2 (a fast rate on a low note), the same-rate reading of those harmonics is compared with harmonic 1's instead (half of it or more means tremolo).
+5. Accept only if the best harmonic's wobble is ≥ 0.35, `S(r)` ≥ 6× its median over the band, at least one usable harmonic peaks within 3 % of h·r (two when r·T < 1), **the harmonics with a real wobble at h·r (at least 0.3 of the best one's) hold at least half of the usable harmonics' weight** (2026-10-20: detune moves every harmonic; a filter LFO at f moves only the harmonics near its cutoff, at f and its multiples, which line up with h·r for r = f/k on every k-th harmonic, so a 3 Hz filter LFO read as 1 Hz "beating" through harmonics 3, 6 and 9; the beat grid below is unchanged by the check), and it is not a tremolo: on harmonics ≥ 2 the reading at r itself is weaker than at h·r. **New here:** when h·r is outside the demodulator band for every harmonic ≥ 2 (a fast rate on a low note), the same-rate reading of those harmonics is compared with harmonic 1's instead (half of it or more means tremolo).
 6. Tremolo (new here; report 03 only rejected it): the same-rate score `Σ w·M_h(r)`, accepted when it is ≥ 0.1 (about 1.7 dB peak to trough), ≥ 6× its median, every harmonic (at least two) peaks within 3 % of r, and the same-rate reading on harmonics ≥ 2 beats the h-scaled one. Reported only when no beating was accepted.
+
+### The low-range pitch fallback (2026-10-20)
+
+The main YIN's lag range stops at half its 2048-sample frame, 46.9 Hz. A sub oscillator an octave below a C2 is at 32.7 Hz: the waveform's period is then outside the range, the difference function has no dip below the threshold at the C2 lag (the sub sine is inverted there), and pitch read as nothing (`bass_sub` at C2, eval finding 3). When the main tracker finds no pitch, the same YIN runs again on a 4096-sample frame, 25–2000 Hz (lag up to 1,920 samples, integration window 2,176), with the same loud-frame mask and summary. It searches from the shortest lag, so a tone above 47 Hz that the main frame missed (noise, a short sound) is not read at a subharmonic; it only adds periods the main frame could not hold. `bass_sub` at C2 now reads C1 (32.70 Hz), the period of its waveform and the note a tuner shows; a weak sub would leave the C2 series to the tonal pitch (below). Every reading the main frame finds is unchanged (the pinned descriptor hash holds). Cost: one more YIN pass, only on sounds without a main pitch.
+
+### Tonal pitch (2026-10-20)
+
+YIN needs the waveform to repeat: with white noise added to a tone, the difference function's dip at the period stays above the 0.15 threshold once the noise is a fifth or so of the power, and pitch goes (eval finding 7: noisiness above 0.2–0.4). The tonal pitch reads the steady part of the spectrum instead, so a snare-like goal can ask for `noisiness in [0.4, 0.85], tonal_pitch ~ A3`.
+
+1. The Welch spectrum of the held part that `noise_ratio` uses (8192 points, Hann, 50 % overlap). Peaks by the same rule: local maxima at least 15 dB above the median of their ±64 bins, over 20 Hz–16 kHz (the noisiness band starts at 40 Hz; the sub of a C1 is at 32.7 Hz). Each peak's frequency is the log-parabolic (Gaussian) interpolation of its bin and neighbours; its power is the peak bin and 3 bins either side, each bin counted once.
+2. `share` = the peaks' power over the band's. Under 1 % (−20 dB), there is no tonal part: `None`.
+3. The strongest 32 peaks within 40 dB of the strongest. Candidates: each of the 8 strongest divided by 1..16, inside 25–2000 Hz. A candidate scores the power of the peaks within tolerance of its harmonics 1..16 (tolerance max(0.6 bin, 1.2 % of the harmonic), at most a quarter of the candidate).
+4. The **highest** candidate within 90 % of the best score wins (a series and its subharmonic explain the same peaks; the subharmonic never wins a tie), refined by a power-weighted least-squares fit through its matched peaks (`f0 = Σ P·h·f / Σ P·h²`). `harmonicity` = the matched share of the peaks' power; under 0.5, `None`.
+
+A missing fundamental is restored (harmonics 2, 3, 4 of 100 Hz read 100 Hz), as the ear does; a strong sub an octave down is the fundamental, a sub under 10 % of the peaks' power is not. Judged in cents like `pitch` (`tonal_pitch ~ A3` is ±25 ct, `tonal.note ~ A3` ±50 ct). Needs `Want::noise`.
+
+### Brightness sweeps (2026-10-20)
+
+`modulation.filter_sweep` (module `sweep`) reads the brightness STFT (Hann 2048, hop 512, 93.75 frames per second at 48 kHz) as a track of `log2` centroid, in octaves, over frames within 40 dB of the loudest (quieter frames bridged). A level change does not move the centroid, so a tremolo never reads as a sweep, and a filter LFO reads as one whether or not it moves the level enough to be a tremolo (before, a filter wobble showed only as a tremolo, and only when deep: eval finding 6).
+
+- **LFO** (`kind: lfo`, `hz`, `depth_oct` the peak-to-trough swing), over the held part (end of the attack to note-off), at least 0.5 s: remove a cubic trend, take the spectrum (Hann, zero-padded ×8, scaled to a sinusoid's amplitude) between max(0.1 Hz, 2 cycles in the stretch) and min(20 Hz, a quarter of the frame rate); the peak must be interior and 6× the band's median. Rate and swing are refined by fitting the cubic trend and a sinusoid jointly on a grid within one bin of the peak (the spectrum alone read 0.75 Hz LFOs 4 % low with 2.5 cycles). Accepted with a swing of at least 0.2 octave and a rate not within 3 % (or one cycle over the stretch) of 1–4 times the detune beat rate: beating swings the centroid at its rate and first multiples.
+- **Env** (`kind: env`, `dir` up or down, `ms`, `depth_oct` the one-way change), over the audible part of the held note, when no LFO was found: the start level (mean of the first 5 frames, about 53 ms; over one beat period when the oscillators beat) against the end level (median of the last quarter); a change of at least 0.5 octave is a sweep, and `ms` is the time from the onset until 90 % of it is done.
+
+Features: `modulation.filter_sweep.hz` (`filter_lfo`, `sweep_rate`), `.depth_oct` (`filter_sweep`, `modulation.filter_sweep`, `sweep_depth`; unit `oct`, which also takes `st`), `.ms` (`sweep_ms`). Needs `Want::spectrum`.
+
+### Booleans and `thin` (2026-10-20)
+
+A true/false item (`clipping = false`) has a margin of 0 by construction, so the rule |margin| ≤ 2 × noise made every such item thin even when every render agreed (eval finding 5). A boolean is now thin only when a nuisance render disagrees with it (noise 1) or the reading comes and goes; its margin is still printed as 0.
 
 ### Note-off inference (report 03 §F5)
 
@@ -116,6 +147,8 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER=/path/to/wasmtime cargo test -p enth-analysis 
 | Features of a 2 s clip (loudness + 3 log-mel resolutions + MFCC) | 62.6 M instr, 8.3 ms | 43.3 M instr, 6.2 ms | 1.45× (1.33×) |
 | `describe` of a 3 s clip (all descriptors) | 312.7 M instr, 45.5 ms | 206.5 M instr, 31.8 ms | 1.51× (1.43×) |
 
+2026-10-20 additions, not re-measured: the tonal pitch reuses the noisiness spectrum and the filter sweep the brightness STFT (a few hundred candidate scores and one small FFT plus a 41-point least-squares grid on a few hundred centroid frames); the low-range YIN is a second pass on a 4096 frame, run only on sounds where the main YIN finds no pitch (noise, sub-bass), which roughly doubles YIN's share for those.
+
 Inside the scalar `describe`: YIN 38 %, the beating estimator 24 %, the envelope fit 12 % (its least squares 9 %), the centroid STFT 11 %, `ebur128` 8 % (true peak 4 %), noisiness 5 %. A hint call of 16 evaluations therefore spends about 0.7 s single-threaded in `describe` on 3 s clips; `Describer::describe_some(.., Want::for_features(..))` skips spectrum, noisiness and loudness when the list does not need them. YIN on loud frames only, or a hop of 1024, are the obvious savings if that ever matters.
 
 ## Measured accuracy
@@ -124,13 +157,16 @@ Synthetic signals and the toy voice of `test_signals` (as in the research); rele
 
 | Descriptor | Result | Where |
 | --- | --- | --- |
-| Pitch | Sines 65–1047 Hz within 3 ct; toy saw, square and triangle C2–C6, worst error 0.33 ct (spike: 0.4) | `pitch` unit tests, `audit::pitch_and_brightness_table` |
+| Pitch | Sines 65–1047 Hz within 3 ct; toy saw, square and triangle C2–C6, worst error 0.33 ct (spike: 0.4). A saw at C2 over a sine at C1 reads C1 (−0.05 ct); a C1 saw reads 32.70 Hz; white noise reads none | `pitch` unit tests, `audit::pitch_and_brightness_table`, `findings::a_sub_octave_reads_as_the_sub` |
+| Tonal pitch | A3 triangle, saw and square under white noise (6 levels each): within 0.2 ct up to noisiness 0.96, where YIN's pitch went at about 0.23 (gone in all 9+ cases at 0.4 and above); `share` within 0.1 of 1 − noisiness. Series tests: saw, odd-harmonic, lone sine, missing fundamental and a strong sub all read their fundamental within 1 ct, a weak sub does not win. The snare-crack witness reads A3 (−0.7 ct, noise 2.2 ct) at noisiness 0.62 | `findings::the_tonal_pitch_survives_noise_that_hides_pitch`, `pitch` unit tests |
+| Filter sweep | Filter LFO grid (notes 110–880 Hz × cutoff 600/2000 Hz × 0.75–12 Hz × ±0.25–4 oct, 240 cases, 3.5 s held): 221 found, 217 within 3 %. Misses: a cutoff below the fundamental (880 Hz note, 600 Hz cutoff: every harmonic is above the cutoff, so the sweep only scales the level), and deep 0.75 Hz sweeps (2.5 cycles, a 5 % low reading or none). Swing read for a ±0.25/0.5/1 octave cutoff LFO: median 0.31/0.62/1.21 octaves of centroid. **No** sweep on the 72 tremolo cases, **no** filter LFO on the 378 detuned grid cells or the 400 detune-0 random patches (28 of those read a one-shot sweep, from their filter envelopes). A one-shot toy pluck (cutoff 500 Hz + 4 oct, 300 ms) reads `env down`; without the envelope, nothing | `sweeps::filter_lfo_sweep`, `sweeps::beat_accuracy_sweep`, `sweeps::false_positive_sweep`, `sweeps::tremolo_sweep`, `findings` |
+| Envelope under tremolo | A 30 ms attack to full sustain under a 4 Hz, 6 dB tremolo starting and ending in a trough: attack within 5 ms and sustain within 1.5 dB of the twin without tremolo; read raw, the attack ran on to the first crest (more than 50 ms late) and the sustain read the trough (4 dB and more low) | `findings::tremolo_no_longer_bends_attack_and_sustain` |
 | Brightness | A sine reads its own frequency within 25 Hz; 1 kHz + 3 kHz at 1:1 and 1:0.5 read 2,000 and 1,667 Hz within 30 Hz; cutoff 100→12,800 Hz reads 333, 355, 457, 650, 975, 1,470, 2,161, 3,056 Hz (monotone; spike 375/655/1,471/3,057 at 200/800/3,200/12,800); saw > square > triangle | unit tests, `audit` |
 | Attack | A linear ramp of 30, 100 or 200 ms reads 0.90× its length (1 % → −1 dB of a ramp is 0.88×; the 8 ms window adds the rest); toy 2/10/100/500/1000 ms reads 4/10/88/426/846 ms | `envelope` tests, calibration table |
 | Sustain | Toy 0/−3/−6/−12/−20/−45 dB read −0.1/−2.9/−5.7/−11.6/−19.5/−44.5 (decay 300 ms). After a decay spike with a time constant under 30 ms the 8 ms window and 5 ms robust peak blunt the peak, so the sustain reads up to 1.2 dB high (−20 → −18.8) | calibration table, `audit` |
 | Release | 1.15 × the toy's release time (its −40 dB point) within 5 %; an ADSR sine's −40 dB time within 25 ms (461 ms for 460); an extrapolated release of a pure exponential within 0.1 % (2,301 ms for 2,303) | `audit`, `envelope` tests |
-| Beating | Within 3 % of theory on **333 of 378** grid cells (C2…C6 × 3–50 ct × saw/square/triangle × held/bell/filter-envelope), wrong on 4 (all within 3.3 %), absent on 41 (beats below 0.25 Hz, or the 30 Hz of 50 ct at C6). The spike's estimator: 198 / 4 / 176. **0 of 400** detune-0 random patches report beating or tremolo | `sweeps::beat_accuracy_sweep`, `false_positive_sweep` |
-| Tremolo | 72 of 72 grid cases (110–880 Hz × 2–8 Hz × depth 0.3–0.8) read within 3 %, none as beating; the 4 tremolo cases of report 03 read 5.0/2.99/5.98/4.03 Hz with no beat, and its 20 ct control reads 2.54 Hz beating, no tremolo; 0 tremolo reports on the 378 detuned grid cells | `sweeps::tremolo_sweep` |
+| Beating | (Unchanged by the 2026-10-20 filter-LFO check.) Within 3 % of theory on **333 of 378** grid cells (C2…C6 × 3–50 ct × saw/square/triangle × held/bell/filter-envelope), wrong on 4 (all within 3.3 %), absent on 41 (beats below 0.25 Hz, or the 30 Hz of 50 ct at C6). The spike's estimator: 198 / 4 / 176. **0 of 400** detune-0 random patches report beating or tremolo | `sweeps::beat_accuracy_sweep`, `false_positive_sweep` |
+| Tremolo | 72 of 72 grid cases (110–880 Hz × 2–8 Hz × depth 0.3–0.8) read within 3 %, none as beating; the 4 tremolo cases of report 03 read 5.0/2.99/5.98/4.03 Hz with no beat, and its 20 ct control reads 2.54 Hz beating, no tremolo; 0 tremolo reports on the 378 detuned grid cells (all unchanged on 2026-10-20) | `sweeps::tremolo_sweep` |
 | Clipping | `clipped_pct` exact; a +6 dB sine reads +6.02 dBFS; a fs/4 sine sampled at 45° reads 3.01 dB more true peak than sample peak (within 0.3 dB); report 03's g5 step-2 patch reads +6.73 dBFS with 3,192 samples over full scale (both as in the research); its centroid reads 2,994 Hz at 0 dB and at −12 dB master on the float render, and 3,712 Hz once clamped as a 16-bit file would be (the research: 2,995 and 3,712) | `loudness` tests, `sweeps::clipping_bends_brightness_and_master_gain_undoes_it` |
 | Loudness | 997 Hz sine at amplitude 0.1 reads −23.01 ± 0.05 LUFS | `loudness` tests |
 | Noisiness | Sine < 0.01; white noise > 0.9 | unit tests |
@@ -155,7 +191,11 @@ A beat was found on 242 of the 300 detuned patches; 14 were flagged `beat_correc
 - **Remaining envelope failures** (26 % of the invariance sweep): decays that settle within the residual ripple of a shallow sustain (decay is ill-conditioned when the sustain is within a few dB of the peak), triangle waves (near-sinusoidal partials beat to deep nulls), filter envelopes that change the spectral balance during the beat (the pattern is then not periodic), and short decaying sounds where no beat can be measured (attack then reads on the raw envelope).
 - **Quiet sustains** below −30 dB re peak are not used for the beat estimate, so a beat there is not removed (calibration: −45 dB reads −46.0 at 25 ct against −44.5 at 0 ct).
 - **Fast decay spikes** read the sustain up to about 1.2 dB high (the 8 ms window and the 5 ms robust peak blunt the peak). Definitional, not beat-induced.
-- **Toy voice only.** Two equal oscillators, one voice, mono. Untested: unequal oscillator levels, three or more oscillators or unison (several beat rates, a non-periodic pattern), stereo, LFO-modulated sounds, noise, effects, and detune combined with tremolo. **Rerun the sweeps on the real engine once S2a lands** (`docs/phase-1a.md`, lane A).
+- **Attack on low notes** (a goal-design note, 2026-10-19, still open): a 3 ms attack knob reads 15 ms at A1, 12 ms at C2, 5 ms at C3 and above, with 12/10/5 ms of nuisance noise (measured through the CLI on the real engine, 2026-10-20). A level envelope cannot resolve an onset much shorter than one period of the note (18 ms at A1), and the 8 ms window's ripple at the period moves the reading with the start phase. A period-length RMS window would remove the ripple (less noise) but not the period's worth of rise (about 0.8 of a period), and would change every envelope reading below 125 Hz; not done. Goals on low notes keep wide attack limits (`bass-buzzy` < 40 ms, `kick-thump` < 15 ms).
+- **Pitch is the waveform's period.** A strong sub oscillator an octave down reads the octave below (a tuner's answer, and the eval's `bass_sub` case); `tonal_pitch` agrees, and only drops a sub under 10 % of the peaks' power. Below 25 Hz there is no pitch.
+- **Tonal pitch** needs about 171 ms of held sound (the Welch frame), peaks 15 dB above their neighbourhood, and a mostly harmonic series: an inharmonic body (a drum membrane's modes) reads its strongest harmonic-looking series or nothing.
+- **Filter sweeps:** a cyclic sweep needs two cycles in the held part (a 0.3 Hz LFO needs a 7 s hold) and is read 4–5 % low with 2.5 cycles; with fewer, it can read as a one-shot sweep. A filter LFO at the rate of a detune beat (or 2–4 times it) is not reported. A cutoff below every harmonic moves the level, not the balance: that is a tremolo, not a sweep. The one-shot start level is the mean of the first 53 ms, so a sweep faster than that reads smaller than the cutoff move.
+- **Toy voice only.** Two equal oscillators, one voice, mono. Untested: unequal oscillator levels, three or more oscillators or unison (several beat rates, a non-periodic pattern), stereo, noise, effects, and detune combined with tremolo. (LFO-modulated sounds: the tremolo and filter-LFO grids above, 2026-10-20.) **Rerun the sweeps on the real engine once S2a lands** (`docs/phase-1a.md`, lane A).
 - **Monophonic descriptors.** One note per analysis; chords and overlapping notes are out of scope for P1a.
 - `ebur128`'s LUFS and true peak are tolerance-equal across platforms (see Determinism). Margins plus `noise` cover this for pass/fail.
 - Debug-build cost: `describe` of a 3 s clip takes about 1 s unoptimised (the root profile optimises only `enth-dsp` and `enth-engine`), so the gate's fast tests use short clips and the sweeps run in release.

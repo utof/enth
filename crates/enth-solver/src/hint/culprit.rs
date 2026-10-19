@@ -79,7 +79,7 @@ pub(super) fn culprit(e: &Expect, patch: &Patch, d: &Descriptors) -> Option<Stri
                 ))
             } else {
                 Some(format!(
-                    "the brightness follows {}: its depth or the source's rate is the lever, and the fix does not move route depths",
+                    "the brightness follows {}: the route depth sets the swing (the fix does not move route depths), the source's rate the speed",
                     names(&routed)
                 ))
             }
