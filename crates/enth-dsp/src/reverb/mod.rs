@@ -393,12 +393,74 @@ impl Reverb {
         for f in filters {
             f.reset();
         }
+        self.restart_from_silence();
+    }
+
+    /// `reset()` without clearing the audio, for a caller that has just seen [`Reverb::is_state_zero`]: apply the
+    /// pending parameters at once (cancelling a fade), restart the detune LFO at phase 0, and let the next block
+    /// start with no fade. On a network that holds only zeros this leaves exactly the state `reset()` does, without
+    /// its 1.6 MB of stores (which the engine would otherwise pay on the first note after a long silence).
+    pub fn restart_from_silence(&mut self) {
         for p in &mut self.params {
             p.snap();
         }
         self.fade_ratio = 0.0;
         self.lfo_phase = 0.0;
         self.just_had_reset = true;
+    }
+
+    /// Whether every delay line and every filter history holds exactly zero (`-0.0` counts), i.e. whether silent
+    /// input would give silent output with nothing left to decay. Reads the whole network (about 1.6 MB), so call
+    /// it rarely: the engine wrapper asks once the output has been silent for a while. Parameters, the fade state
+    /// and the LFO phase are not part of the answer: [`Reverb::restart_from_silence`] puts them at rest.
+    #[must_use]
+    pub fn is_state_zero(&self) -> bool {
+        self.filters().all(|f| f.state() == [0.0; 4]) && self.delays().iter().all(|d| d.is_zero())
+    }
+
+    /// Copy `other`'s whole state (delay lines, filter histories, the parameters, the fade and the LFO phase) so
+    /// that both then produce identical output for identical input; for the engine's plan swap. Both must have
+    /// been prepared for the same sample rate: returns `false`, copying nothing, if not. Never allocates (a
+    /// 1.6 MB `memcpy`).
+    pub fn copy_state_from(&mut self, other: &Self) -> bool {
+        if self.sample_rate != other.sample_rate {
+            return false;
+        }
+        let copied = self.delay1.copy_state_from(&other.delay1)
+            & self.delay2.copy_state_from(&other.delay2)
+            & self.delay3.copy_state_from(&other.delay3)
+            & self.delay4.copy_state_from(&other.delay4)
+            & self.delay_feedback.copy_state_from(&other.delay_feedback)
+            & self.delay_early.copy_state_from(&other.delay_early);
+        if !copied {
+            return false;
+        }
+        self.params = other.params;
+        self.just_had_reset = other.just_had_reset;
+        self.fade_ratio = other.fade_ratio;
+        self.lfo_phase = other.lfo_phase;
+        self.low_cut = other.low_cut;
+        self.high_cut = other.high_cut;
+        self.low_damp = other.low_damp;
+        self.high_damp = other.high_damp;
+        self.filter_key = other.filter_key;
+        true
+    }
+
+    /// How many subnormal values sit in the delay lines and filter histories (for the engine's tail test; a
+    /// healthy network, with its flushes, always answers 0). Reads the whole network: not for the audio thread.
+    #[must_use]
+    pub fn count_subnormals(&self) -> usize {
+        let in_delays: usize = self
+            .delays()
+            .iter()
+            .map(|d| d.samples().iter().filter(|x| x.is_subnormal()).count())
+            .sum();
+        let in_filters: usize = self
+            .filters()
+            .map(|f| f.state().iter().filter(|x| x.is_subnormal()).count())
+            .sum();
+        in_delays + in_filters
     }
 
     /// Set the parameters (clamped, see [`ReverbParams`]). They take effect in the next [`Reverb::process`]
@@ -448,6 +510,15 @@ impl Reverb {
             right[i] = out[1];
         }
         self.end_block(&plan);
+    }
+
+    /// The 20 filter sections, in a fixed order.
+    fn filters(&self) -> impl Iterator<Item = &Biquad> {
+        self.low_cut
+            .iter()
+            .chain(&self.high_cut)
+            .chain(&self.low_damp)
+            .chain(&self.high_damp)
     }
 
     fn delays(&self) -> [&MultiDelay; 6] {
@@ -695,25 +766,6 @@ impl Reverb {
             input[0] * dry_gain + wet_out[0] * wet_gain,
             input[1] * dry_gain + wet_out[1] * wet_gain,
         ]
-    }
-
-    /// Test access: how many subnormal values sit in the delay lines and filter histories.
-    #[cfg(test)]
-    fn count_subnormals(&self) -> usize {
-        let in_delays: usize = self
-            .delays()
-            .iter()
-            .map(|d| d.samples().iter().filter(|x| x.is_subnormal()).count())
-            .sum();
-        let in_filters: usize = self
-            .low_cut
-            .iter()
-            .chain(&self.high_cut)
-            .chain(&self.low_damp)
-            .chain(&self.high_damp)
-            .map(|f| f.state().iter().filter(|x| x.is_subnormal()).count())
-            .sum();
-        in_delays + in_filters
     }
 }
 

@@ -216,8 +216,7 @@ impl Biquad {
         y0
     }
 
-    /// Test access: the four history values.
-    #[cfg(test)]
+    /// The four history values (`x1`, `x2`, `y1`, `y2`).
     pub(super) fn state(&self) -> [f32; 4] {
         [self.x1, self.x2, self.y1, self.y2]
     }
