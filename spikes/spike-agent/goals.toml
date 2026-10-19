@@ -43,7 +43,7 @@ id = "g4-bell"
 difficulty = 4
 text = "a soft bell-like tone"
 perf = "note=C5,dur=5s,hold=3s"
-expect = "pitch=C5±40ct, attack>8ms, attack<40ms, brightness>800Hz, brightness<3kHz, decay>600ms, sustain<-35dB, duration>2000ms, beating>1Hz, beating<8Hz"
+expect = "pitch=C5±40ct, attack>8ms, attack<40ms, brightness>800Hz, brightness<3kHz, decay>600ms, sustain<-35dB, duration>2000ms, beating>2Hz, beating<8Hz"
 rationale = "Bell: struck, but soft (a short attack that is not a click), clear but not harsh (brightness window), rings and dies away by itself even though the key is held (decay, sustain, duration), with the slow shimmer of slightly mistuned partials (beating window)."
 
 [[goal]]

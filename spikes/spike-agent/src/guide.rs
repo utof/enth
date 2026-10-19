@@ -87,7 +87,7 @@ pub fn guide() -> Value {
             "Output is one JSON object per call; errors are JSON too, with a hint.",
             "Change one to three parameters per step. Filter cutoff mostly sets brightness, amp.attack the attack, amp.sustain the held level.",
             "perf.note sets the pitch, perf.dur the clip length, perf.hold when the note ends. sustain, decay and release are read around perf.hold, and a release longer than the rest of the clip is reported as a lower bound.",
-            "Descriptors are measurements of this render; they approximate what a listener hears. Strong detune makes the level wobble, which blurs attack and sustain readings by a few dB."
+            "Descriptors are measurements of this render; they approximate what a listener hears. Strong detune makes the level wobble: sustain can read a few dB off, and a loud beat peak after the onset can make a fast attack read slow, so check attack and sustain again after you add detune."
         ],
     })
 }

@@ -217,7 +217,7 @@ impl Feature {
                 "it needs a note held for at least 80 ms after the attack: raise perf.hold or shorten amp.attack"
             }
             Feature::Beating => {
-                "no beating was found: it needs two detuned oscillators (osc.detune of a few cents or more) and at least 0.5 s of steady sound within 30 dB of the peak"
+                "no beating was found: it needs two detuned oscillators beating at 1 Hz or faster (osc.detune of roughly 10 ct or more at A3) and at least 0.5 s of steady sound within 30 dB of the peak"
             }
             Feature::Pitch => "no steady pitch was found",
             Feature::Brightness => "the sound is too short or too quiet to analyse",

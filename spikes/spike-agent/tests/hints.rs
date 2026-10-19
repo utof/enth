@@ -214,9 +214,10 @@ fn descriptors_move_with_the_parameters_the_hints_blame() {
             && get(&["amp.release=150ms"], r) < get(&["amp.release=250ms"], r)
     );
     let b = |d: &spike_agent::descriptors::Descriptors| d.beating_hz;
-    let fast = get(&["osc.detune=30ct"], b);
-    let slow = get(&["osc.detune=10ct"], b);
+    let fast = get(&["osc.detune=50ct"], b);
+    let slow = get(&["osc.detune=30ct"], b);
     assert!(fast > slow, "{fast} {slow}");
-    // two oscillators 30 ct apart at 220 Hz beat at 220 * (2^(30/1200) - 1) = 3.9 Hz
-    assert!((fast - 3.85).abs() < 0.5, "{fast}");
+    // two oscillators 30 ct apart at 220 Hz beat at 220 * (2^(30/1200) - 1) = 3.85 Hz, 50 ct apart at 6.45 Hz
+    assert!((slow - 3.85).abs() < 0.5, "{slow}");
+    assert!((fast - 6.45).abs() < 0.6, "{fast}");
 }

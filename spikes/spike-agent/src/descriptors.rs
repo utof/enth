@@ -13,7 +13,7 @@
 //! | `centroid_hz` | magnitude-weighted mean frequency of a 2048-point Hann STFT, over frames within 50 dB of the loudest |
 //! | `f0_hz` | median YIN estimate over frames within 40 dB of the peak |
 //! | `noise_ratio` | share of 40 Hz to 16 kHz power (8192-point Welch, held part of the note) outside spectral peaks |
-//! | `beating_hz` | dominant rate (0.5 to 25 Hz) of the amplitude wobble of the fundamental, found by quadrature demodulation at `f0` |
+//! | `beating_hz` | dominant rate (1 to 25 Hz, at least 2.5 cycles in the stretch) of the 9.5 dB deep or deeper amplitude wobble of the fundamental, found by quadrature demodulation at `f0` |
 //! | `lufs_i` | EBU R128 integrated loudness (`ebur128`, via `spike_metric`) |
 //!
 //! Limits are in `docs/spikes/agent-probe.md`. Pure functions of the samples: no I/O, clocks or RNG.
@@ -40,9 +40,10 @@ const SPECTRUM_FLOOR: f64 = 1e-5;
 const BEAT_FLOOR: f64 = 0.031_62;
 /// Silence gate: peak below -80 dBFS.
 const SILENT_PEAK: f32 = 1e-4;
-/// Smallest modulation of the fundamental that counts as beating (relative amplitude of the wobble), 2.6 dB deep.
-/// Two equal oscillators beat much deeper than this; envelope shapes that survive the detrend stay below it.
-const BEAT_MIN_DEPTH: f64 = 0.15;
+/// Smallest modulation of the fundamental that counts as beating (relative amplitude of the wobble), 9.5 dB deep.
+/// Two equal oscillators beat 13 to 16 dB deep; envelope shapes and slow beats the detrend only partly removes stay
+/// below this (the audit in docs/spikes/agent-probe.md shows both).
+const BEAT_MIN_DEPTH: f64 = 0.5;
 const BEAT_MIN_SECONDS: f64 = 0.5;
 /// How many times the median of the wobble spectrum the strongest line must be.
 const BEAT_PROMINENCE: f64 = 6.0;
@@ -485,7 +486,7 @@ impl Describer {
     ///
     /// Mix the held part down by `f0`, average over four periods (which removes the other harmonics), take the
     /// magnitude at 500 Hz, divide out the overall fade (a log-linear fit), and find the strongest component
-    /// between 0.5 and 25 Hz. `None` when the stretch is shorter than 0.5 s or the wobble is under about 2.6 dB deep.
+    /// between 1 and 25 Hz. `None` when the stretch is shorter than 0.5 s or the wobble is under 9.5 dB deep.
     fn beating(&mut self, x: &[f32], f0: f64, start: usize, end: usize) -> Option<(f64, f64)> {
         let sr = f64::from(self.sr);
         let end = end.min(x.len());
@@ -549,12 +550,16 @@ impl Describer {
         let mag: Vec<f64> = out.iter().map(|c| f64::from(c.norm())).collect();
         let f_res = rate / nfft as f64;
         let seconds = ratio.len() as f64 / rate;
-        let k_lo = ((0.5f64.max(2.0 / seconds) / f_res).ceil() as usize).max(1);
+        let k_lo = ((1.0f64.max(2.5 / seconds) / f_res).ceil() as usize).max(1);
         let k_hi = ((25.0 / f_res) as usize).min(mag.len() - 2);
         if k_lo >= k_hi {
             return None;
         }
         let k_pk = (k_lo..=k_hi).max_by(|&a, &b| mag[a].total_cmp(&mag[b]))?;
+        // A peak on the edge of the band is the slope of something slower (or faster) than can be measured here.
+        if k_pk == k_lo || k_pk == k_hi {
+            return None;
+        }
         let (l, c, r) = (
             mag[k_pk - 1].max(1e-12).ln(),
             mag[k_pk].max(1e-12).ln(),
