@@ -92,7 +92,7 @@ exit: 0
     ],
     "source": "flag"
   },
-  "schema": "enth.step/1",
+  "schema": "enth.step/2",
   "wav": "[TMP]/p2.wav"
 }
 --- stderr

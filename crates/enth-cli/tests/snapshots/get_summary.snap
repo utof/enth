@@ -58,6 +58,7 @@ exit: 0
     "env1.sustain": "85%",
     "filter1.cutoff": "1kHz",
     "lfo1.rate": "0.3Hz",
+    "master.level": "-6dB",
     "osc1.fine": "-8ct",
     "osc2.fine": "+8ct",
     "osc2.level": "80%",

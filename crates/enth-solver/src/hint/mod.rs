@@ -35,6 +35,7 @@
 //! results by job index. Every loop runs in a fixed order and the maths is `f64` with `libm`, so the result is
 //! identical for any worker count and on every platform.
 
+mod culprit;
 mod model;
 mod run;
 mod space;

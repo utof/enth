@@ -22,6 +22,10 @@ pub struct ParamDesc {
     pub default: f64,
     pub flags: Vec<&'static str>,
     pub value: Option<f64>,
+    /// The name the plugin gave before a state was loaded, when the state renamed the parameter (lane PL:
+    /// `enth-plugin` names an automation slot after its target, "Slot 1" becomes "Filter 1 · Cutoff"). Scripts may
+    /// use either name.
+    pub initial_name: Option<String>,
 }
 
 impl ParamDesc {
@@ -88,16 +92,34 @@ pub fn params(instance: &mut PluginInstance<Host>) -> Vec<ParamDesc> {
             default: info.default_value,
             flags: info.flags.iter_names().map(|(n, _)| n).collect(),
             value: ext.get_value(&handle, info.id),
+            initial_name: None,
         });
     }
     out
 }
 
-/// Finds a parameter by exact name or by numeric id.
+/// Remembers, for each parameter a state load renamed, the name it had before (`before` was read from the same
+/// instance before the load).
+pub fn note_initial_names(params: &mut [ParamDesc], before: &[ParamDesc]) {
+    for p in params {
+        if let Some(b) = before.iter().find(|b| b.id == p.id)
+            && b.name != p.name
+        {
+            p.initial_name = Some(b.name.clone());
+        }
+    }
+}
+
+/// Finds a parameter by exact name, then by the name it had before a state renamed it, then by numeric id.
 pub fn resolve_param(params: &[ParamDesc], key: &str) -> Option<u32> {
     params
         .iter()
         .find(|p| p.name == key)
+        .or_else(|| {
+            params
+                .iter()
+                .find(|p| p.initial_name.as_deref() == Some(key))
+        })
         .map(|p| p.id)
         .or_else(|| {
             let id = key.parse::<u32>().ok()?;
@@ -208,4 +230,42 @@ pub fn plugin_report(entry: &PluginEntry, id: &std::ffi::CStr) -> Result<Value, 
         "note_ports": { "inputs": note_in, "outputs": note_out },
         "extensions": ext,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn desc(id: u32, name: &str) -> ParamDesc {
+        ParamDesc {
+            index: id,
+            id,
+            name: name.to_owned(),
+            module: String::new(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.5,
+            flags: Vec::new(),
+            value: None,
+            initial_name: None,
+        }
+    }
+
+    #[test]
+    fn a_parameter_renamed_by_a_state_resolves_by_either_name() {
+        let before = [desc(7, "Slot 1"), desc(8, "Slot 2")];
+        let mut after = [desc(7, "Filter 1 · Cutoff"), desc(8, "Slot 2")];
+        note_initial_names(&mut after, &before);
+        assert_eq!(after[0].initial_name.as_deref(), Some("Slot 1"));
+        assert_eq!(after[1].initial_name, None);
+        assert_eq!(resolve_param(&after, "Filter 1 · Cutoff"), Some(7));
+        assert_eq!(resolve_param(&after, "Slot 1"), Some(7));
+        assert_eq!(resolve_param(&after, "Slot 2"), Some(8));
+        assert_eq!(resolve_param(&after, "8"), Some(8));
+        assert_eq!(resolve_param(&after, "Slot 3"), None);
+        // A current name wins over another parameter's old one.
+        let mut swapped = [desc(7, "Slot 2"), desc(8, "Slot 1")];
+        note_initial_names(&mut swapped, &before);
+        assert_eq!(resolve_param(&swapped, "Slot 1"), Some(8));
+    }
 }

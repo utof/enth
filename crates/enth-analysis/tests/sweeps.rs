@@ -19,7 +19,8 @@ use common::{describe, describe_with, pct, quantile, raw_envelope, render};
 use enth_analysis::descriptors::{Describer, Descriptors, NoteTiming};
 use enth_analysis::envelope::Envelope;
 use enth_analysis::test_signals::{
-    Rng, SR, ToyPatch, ToyPerf, Wave, random_toy, render_toy, theory_beat, tremolo,
+    CutoffLfo, Rng, SR, ToyPatch, ToyPerf, Wave, random_toy, render_toy, render_toy_lfo,
+    theory_beat, tremolo,
 };
 
 /// Per-descriptor agreement of a detuned patch's envelope with its detune-0 twin (report 03 §F2 tolerances).
@@ -180,8 +181,9 @@ fn beat_accuracy_sweep() {
         ("C6", 1046.5),
     ];
     let dets = [3.0, 5.0, 8.0, 12.0, 20.0, 30.0, 50.0];
-    let (mut within, mut wrong, mut absent, mut tremolo_fp) = (0, 0, 0, 0);
+    let (mut within, mut wrong, mut absent, mut tremolo_fp, mut lfo_fp) = (0, 0, 0, 0, 0);
     let mut wrong_cells = Vec::new();
+    let mut lfo_cells = Vec::new();
     println!("\nbeating accuracy, % error vs f0·(2^(d/2400) − 2^(−d/2400)); '-' = absent");
     println!("cells: notes C2 C3 A3 C5 A4 C6 × detune 3 5 8 12 20 30 50 ct");
     for shape in ["held", "bell", "fenv"] {
@@ -197,6 +199,15 @@ fn beat_accuracy_sweep() {
                     };
                     let r = describe(&mut d, &p, &perf);
                     tremolo_fp += usize::from(r.modulation.amp_lfo.is_some());
+                    // No cell has a filter LFO: a cyclic sweep here would be the beat read as a filter.
+                    if let Some(s) = r.modulation.filter_sweep.filter(|s| s.hz.is_some()) {
+                        lfo_fp += 1;
+                        lfo_cells.push(format!(
+                            "{shape} {} {name} {det} ct: {s:?}, beat {:?}",
+                            wave.name(),
+                            r.detune.map(|b| b.beating_hz)
+                        ));
+                    }
                     let th = theory_beat(f0, det);
                     match r.detune {
                         None => {
@@ -224,10 +235,14 @@ fn beat_accuracy_sweep() {
         }
     }
     println!(
-        "within 3 %: {within}, wrong: {wrong}, absent: {absent}; tremolo reported on a detuned cell: {tremolo_fp}"
+        "within 3 %: {within}, wrong: {wrong}, absent: {absent}; tremolo reported on a detuned cell: {tremolo_fp}; \
+         filter LFO reported: {lfo_fp}"
     );
     for c in wrong_cells {
         println!("  wrong: {c}");
+    }
+    for c in lfo_cells {
+        println!("  filter LFO: {c}");
     }
 }
 
@@ -264,7 +279,7 @@ fn grid_patch(shape: &str, wave: Wave, det: f64) -> ToyPatch {
 fn false_positive_sweep() {
     let mut d = Describer::new(SR);
     let mut rng = Rng(0x000f_a15e_0003);
-    let (mut total, mut beats, mut trem) = (0, 0, 0);
+    let (mut total, mut beats, mut trem, mut lfo, mut env) = (0, 0, 0, 0, 0);
     for _ in 0..400 {
         let (p, perf) = random_toy(&mut rng);
         let r = describe(&mut d, &p, &perf);
@@ -286,9 +301,20 @@ fn false_positive_sweep() {
                 t.hz, t.depth_db
             );
         }
+        // The toy has no LFO: a cyclic sweep is false. A one-shot sweep is real when the filter envelope moves the
+        // brightness by half an octave (counted, not judged).
+        if let Some(s) = r.modulation.filter_sweep {
+            if s.hz.is_some() {
+                lfo += 1;
+                println!("false filter LFO: {s:?} | {p:?} {perf:?}");
+            } else {
+                env += 1;
+            }
+        }
     }
     println!(
-        "\ndetune-0 random patches: {total}; beating reported: {beats}; tremolo reported: {trem}"
+        "\ndetune-0 random patches: {total}; beating reported: {beats}; tremolo reported: {trem}; filter LFO \
+         reported: {lfo}; one-shot sweeps: {env}"
     );
 }
 
@@ -334,13 +360,15 @@ fn tremolo_sweep() {
             ))
         );
     }
-    let (mut n, mut beat_fp, mut found, mut accurate) = (0, 0, 0, 0);
+    let (mut n, mut beat_fp, mut found, mut accurate, mut sweep_fp) = (0, 0, 0, 0, 0);
     for note in [110.0, 220.0, 440.0, 880.0] {
         for rate in [2.0, 3.0, 4.0, 5.0, 6.0, 8.0] {
             for depth in [0.3, 0.5, 0.8] {
                 let r = tremolo_case(&mut d, note, 0.0, rate, depth);
                 n += 1;
                 beat_fp += usize::from(r.detune.is_some());
+                // An amplitude LFO moves no brightness.
+                sweep_fp += usize::from(r.modulation.filter_sweep.is_some());
                 if let Some(t) = r.modulation.amp_lfo {
                     found += 1;
                     accurate += usize::from((t.hz / rate - 1.0).abs() <= 0.03);
@@ -351,8 +379,81 @@ fn tremolo_sweep() {
         }
     }
     println!(
-        "grid (notes 110/220/440/880 × rates 2-8 Hz × depths 0.3/0.5/0.8): {n} cases; reported as beating {beat_fp}; tremolo found {found}, within 3 % {accurate}"
+        "grid (notes 110/220/440/880 × rates 2-8 Hz × depths 0.3/0.5/0.8): {n} cases; reported as beating {beat_fp}; tremolo found {found}, within 3 % {accurate}; filter sweep reported {sweep_fp}"
     );
+}
+
+/// Filter LFOs (a sine on the toy's cutoff) of every rate, depth and brightness: found, and at the right rate.
+#[test]
+#[ignore = "sweep: 240 filter-LFO cases"]
+fn filter_lfo_sweep() {
+    let mut d = Describer::new(SR);
+    let (mut n, mut found, mut accurate) = (0, 0, 0);
+    let mut depths: Vec<(f64, f64)> = Vec::new();
+    for note in [110.0, 220.0, 440.0, 880.0] {
+        for cutoff in [600.0, 2000.0] {
+            for rate in [0.75, 1.5, 3.0, 6.0, 12.0] {
+                for oct in [0.25, 0.5, 1.0, 2.0, 3.0, 4.0] {
+                    let p = ToyPatch {
+                        cutoff_hz: cutoff,
+                        resonance_q: 1.2,
+                        sustain_db: 0.0,
+                        ..ToyPatch::default()
+                    };
+                    let perf = ToyPerf {
+                        note_hz: note,
+                        dur_s: 4.0,
+                        hold_s: 3.5,
+                    };
+                    let lfo = CutoffLfo {
+                        rate_hz: rate,
+                        depth_oct: oct,
+                    };
+                    let x = render_toy_lfo(SR, &p, &perf, common::PHASES, 0.0, Some(lfo));
+                    let r = d.describe(&x, NoteTiming::held(perf.hold_s)).unwrap();
+                    n += 1;
+                    match r
+                        .modulation
+                        .filter_sweep
+                        .and_then(|s| s.hz.map(|h| (h, s.depth_oct)))
+                    {
+                        Some((hz, depth)) => {
+                            found += 1;
+                            if (hz / rate - 1.0).abs() <= 0.03 {
+                                accurate += 1;
+                            } else {
+                                println!(
+                                    "  wrong: note {note} cutoff {cutoff} rate {rate} +-{oct} oct: {hz:.3} Hz"
+                                );
+                            }
+                            depths.push((oct, depth));
+                        }
+                        None => println!(
+                            "  missed: note {note} cutoff {cutoff} rate {rate} +-{oct} oct: {:?}",
+                            r.modulation.filter_sweep
+                        ),
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "filter LFO grid (notes 110/220/440/880 × cutoff 600/2000 Hz × rates 0.75-12 Hz × +-0.25-4 oct): {n} \
+         cases; found {found}, within 3 % {accurate}"
+    );
+    for oct in [0.25, 0.5, 1.0, 2.0, 3.0, 4.0] {
+        let mut v: Vec<f64> = depths.iter().filter(|d| d.0 == oct).map(|d| d.1).collect();
+        if !v.is_empty() {
+            let (p10, p50, p90) = (
+                quantile(&mut v, 0.1),
+                quantile(&mut v, 0.5),
+                quantile(&mut v, 0.9),
+            );
+            println!(
+                "  cutoff +-{oct} oct: centroid swing p10 {p10:.2}, p50 {p50:.2}, p90 {p90:.2} oct"
+            );
+        }
+    }
 }
 
 /// Calibration on clean and on beating sounds (report 03's audit table): the 25 ct column must match the 0 ct one.

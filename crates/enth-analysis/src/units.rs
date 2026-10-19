@@ -1,7 +1,7 @@
 //! Units of the descriptor vocabulary, and note names.
 //!
 //! Small on purpose: only the units descriptors are measured in (Hz, ms, dB, dBFS, dBTP, LUFS, cents, percent,
-//! ratios) and note names (`A4` = 440 Hz). Parameter units live in `enth-params`. A value with no suffix is read in
+//! ratios, octaves) and note names (`A4` = 440 Hz). Parameter units live in `enth-params`. A value with no suffix is read in
 //! the descriptor's own unit; a suffix that does not fit the quantity is an error that lists what is accepted.
 //! Ported from `spikes/spike-agent/src/units.rs` (in-repo, MIT), with `libm` for the logarithms.
 
@@ -24,6 +24,8 @@ pub enum Unit {
     Ratio,
     /// true or false (`loudness.clipping`).
     Bool,
+    /// Octaves (`modulation.filter_sweep.depth_oct`).
+    Octaves,
 }
 
 impl Unit {
@@ -39,6 +41,7 @@ impl Unit {
             Unit::Lufs => "LUFS",
             Unit::Cents => "ct",
             Unit::Percent => "%",
+            Unit::Octaves => "oct",
             Unit::Ratio | Unit::Bool => "",
         }
     }
@@ -57,6 +60,7 @@ impl Unit {
             Unit::Percent => "% or a plain number of percent",
             Unit::Ratio => "% or a plain 0..1 number",
             Unit::Bool => "true, false",
+            Unit::Octaves => "oct, st (1/12 oct)",
         }
     }
 
@@ -71,7 +75,9 @@ impl Unit {
             | (Unit::Dbtp, "dbtp" | "db")
             | (Unit::Lufs, "lufs" | "lu" | "db")
             | (Unit::Cents, "ct" | "cent" | "cents")
-            | (Unit::Percent, "%") => Some(1.0),
+            | (Unit::Percent, "%")
+            | (Unit::Octaves, "oct" | "octave" | "octaves") => Some(1.0),
+            (Unit::Octaves, "st" | "semitone" | "semitones") => Some(1.0 / 12.0),
             (Unit::Hz, "khz") | (Unit::Ms, "s") => Some(1000.0),
             (Unit::Cents, "st" | "semitone" | "semitones") => Some(100.0),
             (Unit::Ratio, "%") => Some(0.01),

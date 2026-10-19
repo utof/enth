@@ -442,6 +442,81 @@ pub(crate) fn structural_hint(feature: Feature, patch: &Patch) -> Option<String>
         Feature::Noisiness if count_enabled(patch, ModuleKind::Noise) == 0 => Some(
             "There is no noise source. Add one and raise its level: --ops '[{\"add\":\"noise\",\"params\":{\"level\":\"20%\"}}]'.".to_owned(),
         ),
+        Feature::Pitch | Feature::PitchCents | Feature::PitchStability | Feature::TonalPitch => {
+            pitch_hint(feature, patch, first_osc.as_deref())
+        }
+        Feature::SweepRate | Feature::SweepDepth | Feature::SweepTime => {
+            let lfo = if feature == Feature::SweepTime {
+                // a one-shot sweep: an envelope on the cutoff
+                let env = free_id(patch, "env");
+                format!(
+                    "{{\"add\":\"adsr\",\"id\":\"{env}\",\"params\":{{\"attack\":\"1ms\",\"decay\":\"300ms\",\"sustain\":\"0%\"}}}},{{\"route\":\"{env} -> filter1.cutoff\",\"depth\":\"+3oct\"}}"
+                )
+            } else {
+                let lfo = free_id(patch, "lfo");
+                format!(
+                    "{{\"add\":\"lfo\",\"id\":\"{lfo}\",\"params\":{{\"rate\":\"2Hz\"}}}},{{\"route\":\"{lfo} -> filter1.cutoff\",\"depth\":\"+1oct\"}}"
+                )
+            };
+            let routed = patch.routes.iter().any(|r| r.dst.param() == "cutoff" && r.depth != 0.0);
+            if count_enabled(patch, ModuleKind::Svf) == 0 {
+                Some(format!(
+                    "A brightness sweep needs a filter and a source routed to its cutoff: --ops '[{{\"add\":\"svf\",\"id\":\"filter1\",\"params\":{{\"mode\":\"lp\",\"cutoff\":\"800Hz\"}}}},{lfo}]'."
+                ))
+            } else if !routed && patch.find(&enth_patch::ModuleId::new("filter1").ok()?).is_some() {
+                Some(format!(
+                    "Route a source to the filter's cutoff (an LFO for a cyclic sweep, an envelope for a one-shot one): --ops '[{lfo}]'."
+                ))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The lowest free id with `prefix` (`lfo1`, `env3`). A patch holds at most a few dozen modules, so one of the
+/// first hundred is free.
+fn free_id(patch: &Patch, prefix: &str) -> String {
+    (1..=100u32)
+        .map(|n| format!("{prefix}{n}"))
+        .find(|id| enth_patch::ModuleId::new(id).is_ok_and(|m| patch.find(&m).is_none()))
+        .unwrap_or_else(|| format!("{prefix}101"))
+}
+
+/// Pitch items: a transposed oscillator sets the period (the hint solver never moves `semi`), noise hides it, or
+/// there is no oscillator at all.
+fn pitch_hint(feature: Feature, patch: &Patch, first_osc: Option<&str>) -> Option<String> {
+    let transposed = patch
+        .modules()
+        .filter(|(_, m)| m.kind == ModuleKind::Osc && m.enabled)
+        .find_map(|(_, m)| {
+            m.get("semi")
+                .filter(|s| *s != 0.0)
+                .map(|s| (m.id.to_string(), s))
+        });
+    let noise = patch
+        .modules()
+        .find(|(_, m)| m.kind == ModuleKind::Noise && m.enabled)
+        .map(|(_, m)| m.id.to_string());
+    if first_osc.is_none() {
+        return Some(
+            "There is no oscillator to give a pitch. Add one: --ops '[{\"add\":\"osc\",\"params\":{\"wave\":\"saw\"}}]'."
+                .to_owned(),
+        );
+    }
+    if let Some((id, semi)) = transposed {
+        return Some(format!(
+            "{id} is transposed {semi:+} st, and the pitch follows the lowest strong oscillator; the fix never moves semi. Play the note with --ops '[{{\"set\":\"{id}.semi\",\"to\":\"0st\"}}]', or lower {id}.level."
+        ));
+    }
+    match (noise, feature) {
+        (Some(n), Feature::TonalPitch) => Some(format!(
+            "The tone is too weak next to {n}: raise the oscillator's level or lower the noise, --ops '[{{\"set\":\"{n}.level\",\"to\":\"30%\"}}]'."
+        )),
+        (Some(n), _) => Some(format!(
+            "{n} hides the pitch (the waveform no longer repeats). Judge the tone under the noise with tonal_pitch instead, or lower the noise: --ops '[{{\"set\":\"{n}.level\",\"to\":\"20%\"}}]'."
+        )),
         _ => None,
     }
 }
@@ -455,25 +530,45 @@ mod tests {
     #[test]
     fn structural_examples_parse_and_apply() {
         let patch = Patch::init();
-        for feature in [
-            Feature::Beating,
-            Feature::Tremolo,
-            Feature::Brightness,
-            Feature::Noisiness,
+        let with = |ops: &str| {
+            let mut p = Patch::init();
+            let ops = wire::resolve_str(&p, ops).unwrap();
+            enth_patch::apply_all(&mut p, &ops).unwrap();
+            p
+        };
+        let sub = with(r#"[{"add":"osc","params":{"wave":"sine","semi":"-12st"}}]"#);
+        let noisy = with(r#"[{"add":"noise","id":"noise1"}]"#);
+        let filtered = with(r#"[{"add":"svf","id":"filter1"}]"#);
+        let no_osc = with(r#"[{"remove":"osc1"}]"#);
+        for (feature, patch) in [
+            (Feature::Beating, &patch),
+            (Feature::Tremolo, &patch),
+            (Feature::Brightness, &patch),
+            (Feature::Noisiness, &patch),
+            (Feature::Pitch, &sub),
+            (Feature::Pitch, &noisy),
+            (Feature::TonalPitch, &noisy),
+            (Feature::Pitch, &no_osc),
+            (Feature::SweepRate, &patch),
+            (Feature::SweepTime, &patch),
+            (Feature::SweepDepth, &filtered),
         ] {
-            let text = structural_hint(feature, &patch)
+            let text = structural_hint(feature, patch)
                 .unwrap_or_else(|| panic!("{feature:?} has a hint on the init patch"));
             let start = text.find("--ops '").expect("an example") + "--ops '".len();
             let end = start + text[start..].find("]'").unwrap();
             let json = &text[start..=end];
-            let ops = wire::resolve_str(&patch, json)
+            let ops = wire::resolve_str(patch, json)
                 .unwrap_or_else(|e| panic!("{feature:?}: {json}: {e:?}"));
             let mut p = patch.clone();
             enth_patch::apply_all(&mut p, &ops)
                 .unwrap_or_else(|e| panic!("{feature:?}: {json}: {e:?}"));
         }
-        // Nothing to say for features a parameter can reach.
+        // Nothing to say for features a parameter can reach, or a pitch with nothing structural in the way.
         assert!(structural_hint(Feature::Attack, &patch).is_none());
+        assert!(structural_hint(Feature::Pitch, &patch).is_none());
+        let sub_text = structural_hint(Feature::Pitch, &sub).unwrap();
+        assert!(sub_text.contains("osc2 is transposed -12 st"), "{sub_text}");
     }
 
     #[test]

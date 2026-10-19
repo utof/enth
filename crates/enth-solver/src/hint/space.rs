@@ -134,14 +134,15 @@ pub(crate) fn free_params(
 /// The family of a descriptor: features that the same parameters tend to move.
 pub(crate) fn family(f: Feature) -> u8 {
     match f {
-        Feature::Pitch | Feature::PitchCents | Feature::PitchStability => 0,
+        Feature::Pitch | Feature::PitchCents | Feature::PitchStability | Feature::TonalPitch => 0,
         Feature::Attack
         | Feature::Decay
         | Feature::Sustain
         | Feature::Release
         | Feature::Duration
         | Feature::Ripple => 1,
-        Feature::Brightness => 2,
+        // A brightness sweep is moved by the filter (cutoff, resonance) and the source routed to it.
+        Feature::Brightness | Feature::SweepRate | Feature::SweepDepth | Feature::SweepTime => 2,
         Feature::Noisiness => 3,
         Feature::Beating | Feature::BeatDepth => 4,
         Feature::Tremolo | Feature::TremoloDepth => 5,

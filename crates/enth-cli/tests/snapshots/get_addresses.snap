@@ -7,7 +7,7 @@ exit: 0
 {
   "meta": {
     "author": "",
-    "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.",
+    "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb. The master level is -6 dB so the two saws do not clip.",
     "name": "Pad (2 osc)",
     "tags": [
       "pad"
@@ -23,7 +23,7 @@ exit: 0
   "source": "[TMP]/p.patch.json",
   "values": {
     "filter1.cutoff": "1kHz",
-    "master.level": "0dB",
+    "master.level": "-6dB",
     "osc1.fine": "-8ct",
     "osc1.level": "100%",
     "osc1.phase": "0deg",

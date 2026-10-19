@@ -57,6 +57,13 @@ expression: v
             "null"
           ]
         },
+        "means": {
+          "description": "For a route: what its depth does to the destination, in the destination's units, over the source's\nswing (an LFO swings both ways unless unipolar), and the range the percentage is of. A musical depth\n(`+12st`, `+1oct`) is stored as that percentage.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "op": {
           "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
           "type": "string"
@@ -81,7 +88,7 @@ expression: v
     },
     "CheckBody": {
       "additionalProperties": false,
-      "description": "The `check` part of `enth.step/1` (the fields of `enth.check/1` without `schema`, `source` and `perf`).",
+      "description": "The `check` part of `enth.step/2` (the fields of `enth.check/2` without `schema`, `source` and `perf`).",
       "properties": {
         "blocked": {
           "description": "Items no move can satisfy.",
@@ -280,7 +287,7 @@ expression: v
           ]
         },
         "note": {
-          "description": "For pitch items: the nearest note and its offset (`C3+9ct`).",
+          "description": "For pitch items (`pitch`, `tonal_pitch`): the nearest note and its offset (`C3+9ct`).",
           "type": [
             "string",
             "null"
@@ -291,7 +298,7 @@ expression: v
           "type": "boolean"
         },
         "thin": {
-          "description": "|margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further.",
+          "description": "|margin| <= 2 x noise, or the reading comes and goes: an inaudible change could flip it. Aim further. A\ntrue/false item is thin only when the re-renders disagree with it.",
           "type": "boolean"
         },
         "unit": {
@@ -412,10 +419,10 @@ expression: v
       "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
     }
   },
-  "$id": "enth.step/1",
+  "$id": "enth.step/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.step/1`: apply, render, describe and check in one call.",
+  "description": "`enth.step/2`: apply, render, describe and check in one call.",
   "properties": {
     "applied": {
       "description": "What changed (empty when no ops were given).",
@@ -463,8 +470,8 @@ expression: v
       "description": "The performance rendered and judged."
     },
     "schema": {
-      "const": "enth.step/1",
-      "description": "`enth.step/1`.",
+      "const": "enth.step/2",
+      "description": "`enth.step/2`.",
       "type": "string"
     },
     "wav": {

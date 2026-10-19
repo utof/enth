@@ -35,7 +35,7 @@ expression: v
           "type": "number"
         },
         "beat_corrected": {
-          "description": "False when a beat was found but was too slow to remove: sustain may be off by a few dB.",
+          "description": "False when a beat (or tremolo) was found but was too slow to remove: sustain may be off by a few dB.",
           "type": "boolean"
         },
         "decay_ms": {
@@ -91,6 +91,49 @@ expression: v
       ],
       "type": "object"
     },
+    "FilterSweepOut": {
+      "additionalProperties": false,
+      "description": "A brightness sweep, read from the spectral centroid over time. Unused fields are null.",
+      "properties": {
+        "depth_oct": {
+          "description": "Octaves: the peak-to-trough swing of an `lfo`, the one-way change of an `env`.",
+          "format": "double",
+          "type": "number"
+        },
+        "dir": {
+          "description": "`env` only: `up` (opening) or `down` (closing).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hz": {
+          "description": "`lfo` only: the rate (Hz).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`env` (one-shot: a filter envelope) or `lfo` (cyclic: a filter LFO).",
+          "type": "string"
+        },
+        "ms": {
+          "description": "`env` only: onset until 90 % of the change is done (ms).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "depth_oct"
+      ],
+      "type": "object"
+    },
     "LoudnessOut": {
       "additionalProperties": false,
       "description": "Level descriptors.",
@@ -133,7 +176,7 @@ expression: v
     },
     "ModulationOut": {
       "additionalProperties": false,
-      "description": "Amplitude modulation.",
+      "description": "Modulation that is not detune beating.",
       "properties": {
         "amp_lfo": {
           "anyOf": [
@@ -145,6 +188,17 @@ expression: v
             }
           ],
           "description": "A tremolo (every harmonic moves at one rate); null when none."
+        },
+        "filter_sweep": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilterSweepOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A brightness sweep (a filter envelope or a filter LFO); null when none."
         }
       },
       "type": "object"
@@ -282,6 +336,32 @@ expression: v
       ],
       "type": "object"
     },
+    "TonalOut": {
+      "additionalProperties": false,
+      "description": "The pitch of the tonal part (`tonal.f0_hz`).",
+      "properties": {
+        "cents_dev": {
+          "description": "Offset from that note (cents).",
+          "format": "double",
+          "type": "number"
+        },
+        "f0_hz": {
+          "description": "Fundamental of the harmonic series of the spectral peaks (Hz).",
+          "format": "double",
+          "type": "number"
+        },
+        "note": {
+          "description": "Nearest note (A4 = 440 Hz).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "f0_hz",
+        "note",
+        "cents_dev"
+      ],
+      "type": "object"
+    },
     "TremoloOut": {
       "additionalProperties": false,
       "description": "A tremolo.",
@@ -304,10 +384,10 @@ expression: v
       "type": "object"
     }
   },
-  "$id": "enth.describe/1",
+  "$id": "enth.describe/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.describe/1`: perceptual descriptors of one sound. Null means not measurable (see `missing`).",
+  "description": "`enth.describe/2`: perceptual descriptors of one sound. Null means not measurable (see `missing`).",
   "properties": {
     "detune": {
       "anyOf": [
@@ -334,7 +414,7 @@ expression: v
           "type": "null"
         }
       ],
-      "description": "The amplitude envelope, beat-corrected."
+      "description": "The amplitude envelope, with a detune beat (or else a tremolo) fitted out."
     },
     "loudness": {
       "$ref": "#/$defs/LoudnessOut",
@@ -372,7 +452,7 @@ expression: v
           "type": "null"
         }
       ],
-      "description": "Pitch."
+      "description": "Pitch: the period of the waveform (YIN)."
     },
     "sample_rate": {
       "description": "Frames per second.",
@@ -381,8 +461,8 @@ expression: v
       "type": "integer"
     },
     "schema": {
-      "const": "enth.describe/1",
-      "description": "`enth.describe/1`.",
+      "const": "enth.describe/2",
+      "description": "`enth.describe/2`.",
       "type": "string"
     },
     "silent": {
@@ -403,6 +483,17 @@ expression: v
         }
       ],
       "description": "Brightness."
+    },
+    "tonal": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TonalOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The pitch of the tonal part, from the steady spectral peaks: found under noise where `pitch` is not."
     }
   },
   "required": [

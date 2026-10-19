@@ -2,12 +2,14 @@
 //! hint solver's objective and the sound score all come from here (`docs/dsp/analysis.md`).
 //!
 //! - [`descriptors`]: the descriptor vocabulary ([`Feature`]) and [`Describer`], which measures pitch, a
-//!   beat-corrected envelope (attack, decay, sustain, release, duration), brightness, noisiness, beating and
-//!   tremolo, and level (loudness, sample and true peak, clipping) on the float render.
+//!   beat-corrected envelope (attack, decay, sustain, release, duration), brightness, noisiness, beating,
+//!   tremolo, tonal pitch under noise, brightness sweeps, and level (loudness, sample and true peak, clipping) on
+//!   the float render.
 //! - [`expect`]: the expectation parser (`brightness>2kHz`, `pitch=C3±20ct`, `beating in [3Hz, 9Hz]`) and the
 //!   checker (pass, value, signed margin, nuisance noise, `thin`); [`margin`] holds the margin rules.
 //! - [`features`] and [`distance`]: multi-resolution log-mel and friends, and metric v1 (log-mel L1, provisional).
-//! - [`beat`] and [`envelope`]: the multi-harmonic beating estimator and fitted beat removal.
+//! - [`beat`] and [`envelope`]: the multi-harmonic beating estimator and fitted beat removal; [`sweep`]: filter
+//!   envelopes and filter LFOs from the centroid over time.
 //! - [`fft`]: the scalar (identical everywhere) and dispatched FFT paths; [`loudness`], [`pitch`] (YIN), [`units`].
 //! - [`test_signals`]: synthetic signals with known answers, for tests and sweeps.
 //!
@@ -25,6 +27,7 @@ mod linalg;
 pub mod loudness;
 pub mod margin;
 pub mod pitch;
+pub mod sweep;
 pub mod test_signals;
 pub mod units;
 

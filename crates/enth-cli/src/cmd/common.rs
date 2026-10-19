@@ -4,16 +4,18 @@
 use std::collections::BTreeMap;
 
 use enth_analysis::{Descriptors, Feature};
-use enth_params::ParamSpec;
-use enth_patch::{Op, Patch, apply, apply_all, wire};
+use enth_params::{ParamSpec, Scale, Unit};
+use enth_patch::addr::ModSource;
+use enth_patch::catalogue::ModuleKind;
+use enth_patch::{Op, ParamAddr, Patch, apply, apply_all, wire};
 use serde_json::Value;
 
 use crate::cli::Edits;
 use crate::error::{self, CliError, Ctx};
 use crate::out::round4;
 use crate::schema::{
-    ChangeOut, DescribeOut, DetuneOut, EnvelopeOut, LoudnessOut, ModulationOut, PerfOut, PitchOut,
-    Reading, SpectrumOut, TremoloOut, ids,
+    ChangeOut, DescribeOut, DetuneOut, EnvelopeOut, FilterSweepOut, LoudnessOut, ModulationOut,
+    PerfOut, PitchOut, Reading, SpectrumOut, TonalOut, TremoloOut, ids,
 };
 
 /// A parameter value as a unit string with 4 significant digits (`1.2kHz`, `40ms`, `saw`, `on`).
@@ -130,12 +132,108 @@ pub fn changes(before: &Patch, ops: &[Op]) -> Vec<ChangeOut> {
     out
 }
 
+/// The range a source swings over, and how to say "at its full swing": envelopes, velocity, the mod wheel and
+/// macros run 0 to 1, an LFO -1 to 1 unless it is unipolar, `key` is `(note - 60) / 120`.
+fn source_swing(p: &Patch, src: &ModSource) -> (f64, String) {
+    match src {
+        ModSource::Module(id) => match p.find(id) {
+            Some((_, m)) if m.kind == ModuleKind::Lfo => {
+                let spec = m
+                    .kind
+                    .spec()
+                    .params
+                    .iter()
+                    .position(|s| s.key == "polarity")
+                    .map(|i| &m.kind.spec().params[i]);
+                let unipolar = spec
+                    .zip(m.get("polarity"))
+                    .and_then(|(s, v)| s.enum_item(v))
+                    .is_some_and(|item| item.key == "unipolar");
+                if unipolar {
+                    (0.0, format!("at the top of {id} (unipolar, 0 to 1)"))
+                } else {
+                    (-1.0, format!("as {id} swings -1 to 1 (bipolar)"))
+                }
+            }
+            _ => (0.0, format!("at full {id} (0 to 1)")),
+        },
+        ModSource::Key => (
+            0.0,
+            "at key 1.0, ten octaves above C4 (key is (note - 60) / 120)".to_owned(),
+        ),
+        other => (0.0, format!("at full {other} (0 to 1)")),
+    }
+}
+
+/// The change from `a` to `b` of a parameter, as a musical interval where that is what it is.
+fn interval(spec: &ParamSpec, a: f32, b: f32) -> String {
+    let (a, b) = (f64::from(a), f64::from(b));
+    match (spec.unit, spec.scale()) {
+        (_, Some(Scale::Log)) if a > 0.0 && b > 0.0 => {
+            format!(
+                "{:+} oct",
+                round4(enth_analysis::units::cents(b, a) / 1200.0)
+            )
+        }
+        (Unit::Semitones | Unit::Cents | Unit::Octaves, _) => {
+            format!("{:+} {}", round4(b - a), spec.unit.suffix())
+        }
+        _ => format!("{:+}{}", round4(b - a), spec.unit.suffix()),
+    }
+}
+
+/// What a route's depth does to its destination (eval finding 2: `+12st` became 12.5 % silently): the value at
+/// the source's full swing, as an interval, and the range the percentage is of. Routes move the destination's
+/// normalised position by depth/100 times the source, clamped to the range (design.md §1).
+pub fn route_means(p: &Patch, src: &ModSource, dst: &ParamAddr, depth: f32) -> Option<String> {
+    let spec = p.spec(dst)?;
+    let base = p.value(dst)?;
+    let (min, max) = (spec.min(), spec.max());
+    let n0 = f64::from(spec.to_norm(base));
+    let d = f64::from(depth) / 100.0;
+    let at = |s: f64| spec.from_norm((n0 + d * s) as f32);
+    let clamped = |s: f64| !(0.0..=1.0).contains(&(n0 + d * s));
+    let (lo_src, how) = source_swing(p, src);
+    let hi = at(1.0);
+    let range = format!(
+        "{}% of {dst}'s {}..{} {} range",
+        round4(f64::from(depth)),
+        show(Some(spec), min),
+        show(Some(spec), max),
+        spec.scale().map_or("linear", Scale::name)
+    );
+    let clip = if clamped(1.0) || (lo_src < 0.0 && clamped(lo_src)) {
+        ", clamped at the end of the range"
+    } else {
+        ""
+    };
+    Some(if lo_src < 0.0 {
+        let lo = at(lo_src);
+        format!(
+            "{dst} swings {}..{} around {} ({} / {}) {how}{clip}; {range}",
+            show(Some(spec), lo),
+            show(Some(spec), hi),
+            show(Some(spec), base),
+            interval(spec, base, lo),
+            interval(spec, base, hi),
+        )
+    } else {
+        format!(
+            "{dst} goes {} -> {} ({}) {how}{clip}; {range}",
+            show(Some(spec), base),
+            show(Some(spec), hi),
+            interval(spec, base, hi),
+        )
+    })
+}
+
 fn change(p: &Patch, op: &Op) -> ChangeOut {
     let c = |op: &str, target: String, from: Option<String>, to: Option<String>| ChangeOut {
         op: op.to_owned(),
         target,
         from,
         to,
+        means: None,
     };
     let on_off = |b: bool| if b { "on" } else { "off" }.to_owned();
     let route_depth = |src: &str, dst: &str| {
@@ -172,24 +270,30 @@ fn change(p: &Patch, op: &Op) -> ChangeOut {
             p.find(id).map(|(pos, _)| pos.to_string()),
             Some(to.to_string()),
         ),
-        Op::InsertRoute { route, .. } => c(
-            "route",
-            format!("{} -> {}", route.src, route.dst),
-            None,
-            Some(depth_text(route.depth)),
-        ),
+        Op::InsertRoute { route, .. } => ChangeOut {
+            means: route_means(p, &route.src, &route.dst, route.depth),
+            ..c(
+                "route",
+                format!("{} -> {}", route.src, route.dst),
+                None,
+                Some(depth_text(route.depth)),
+            )
+        },
         Op::RemoveRoute { route } => c(
             "unroute",
             route.to_string(),
             route_depth(&route.src.to_string(), &route.dst.to_string()),
             None,
         ),
-        Op::SetDepth { route, depth } => c(
-            "route",
-            route.to_string(),
-            route_depth(&route.src.to_string(), &route.dst.to_string()),
-            Some(depth_text(*depth)),
-        ),
+        Op::SetDepth { route, depth } => ChangeOut {
+            means: route_means(p, &route.src, &route.dst, *depth),
+            ..c(
+                "route",
+                route.to_string(),
+                route_depth(&route.src.to_string(), &route.dst.to_string()),
+                Some(depth_text(*depth)),
+            )
+        },
         Op::SetEnabled { id, enabled } => c(
             "enable",
             id.to_string(),
@@ -285,7 +389,7 @@ pub const HEADLINE: &[&str] = &[
     "loudness.clipping",
 ];
 
-/// Every reading by path, plus `pitch.note`; null when not measured.
+/// Every reading by path, plus `pitch.note` and `tonal.note`; null when not measured.
 pub fn readings(d: &Descriptors) -> BTreeMap<String, Option<Reading>> {
     let mut m: BTreeMap<String, Option<Reading>> = Feature::ALL
         .iter()
@@ -294,6 +398,10 @@ pub fn readings(d: &Descriptors) -> BTreeMap<String, Option<Reading>> {
     m.insert(
         "pitch.note".to_owned(),
         d.pitch.as_ref().map(|p| Reading::Text(p.note.clone())),
+    );
+    m.insert(
+        "tonal.note".to_owned(),
+        d.tonal.as_ref().map(|t| Reading::Text(t.note.clone())),
     );
     m
 }
@@ -314,7 +422,7 @@ pub fn missing(d: &Descriptors) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The `enth.describe/1` object.
+/// The `enth.describe/2` object.
 pub fn describe_out(source: &str, sample_rate: u32, perf: PerfOut, d: &Descriptors) -> DescribeOut {
     let lv = &d.loudness;
     DescribeOut {
@@ -329,6 +437,11 @@ pub fn describe_out(source: &str, sample_rate: u32, perf: PerfOut, d: &Descripto
             note: p.note.clone(),
             cents_dev: p.cents_dev,
             stability: p.stability,
+        }),
+        tonal: d.tonal.as_ref().map(|t| TonalOut {
+            f0_hz: t.f0_hz,
+            note: t.note.clone(),
+            cents_dev: t.cents_dev,
         }),
         envelope: d.envelope.map(|e| EnvelopeOut {
             attack_ms: e.attack_ms,
@@ -354,6 +467,13 @@ pub fn describe_out(source: &str, sample_rate: u32, perf: PerfOut, d: &Descripto
             amp_lfo: d.modulation.amp_lfo.map(|t| TremoloOut {
                 hz: t.hz,
                 depth_db: t.depth_db,
+            }),
+            filter_sweep: d.modulation.filter_sweep.map(|s| FilterSweepOut {
+                kind: s.kind.name().to_owned(),
+                dir: s.dir.map(|d| d.name().to_owned()),
+                ms: s.ms,
+                hz: s.hz,
+                depth_oct: s.depth_oct,
             }),
         },
         loudness: LoudnessOut {

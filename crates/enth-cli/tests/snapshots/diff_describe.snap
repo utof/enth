@@ -70,6 +70,13 @@ exit: 0
       "to": "1.5s"
     },
     {
+      "from": "0dB",
+      "op": "set",
+      "target": "master.level",
+      "to": "-6dB"
+    },
+    {
+      "means": "filter1.cutoff swings 501.2Hz..1.995kHz around 1kHz (-0.9966 oct / +0.9966 oct) as lfo1 swings -1 to 1 (bipolar); 10% of filter1.cutoff's 20Hz..20kHz log range",
       "op": "route",
       "target": "lfo1 -> filter1.cutoff",
       "to": "10%"
@@ -78,7 +85,7 @@ exit: 0
       "from": "name: Pluck (1 osc); description: A saw through a low-pass that a quick envelope (env2, about +4 octaves) throws open at the attack and lets close again: bright at the start, dark by the tail. A short pluck to shape.; tags: pluck",
       "op": "meta",
       "target": "meta",
-      "to": "name: Pad (2 osc); description: Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.; tags: pad"
+      "to": "name: Pad (2 osc); description: Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb. The master level is -6 dB so the two saws do not clip.; tags: pad"
     }
   ],
   "describe": {
@@ -114,14 +121,6 @@ exit: 0
       "a": "<num>",
       "b": "<num>"
     },
-    "loudness.clipped_pct": {
-      "a": "<num>",
-      "b": "<num>"
-    },
-    "loudness.clipping": {
-      "a": false,
-      "b": true
-    },
     "loudness.lufs_i": {
       "a": "<num>",
       "b": "<num>"
@@ -131,6 +130,14 @@ exit: 0
       "b": "<num>"
     },
     "loudness.true_peak_dbtp": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "modulation.filter_sweep.depth_oct": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "modulation.filter_sweep.ms": {
       "a": "<num>",
       "b": "<num>"
     },
@@ -151,6 +158,10 @@ exit: 0
       "b": "<num>"
     },
     "spectrum.centroid_hz": {
+      "a": "<num>",
+      "b": "<num>"
+    },
+    "tonal.f0_hz": {
       "a": "<num>",
       "b": "<num>"
     }
@@ -236,6 +247,10 @@ exit: 0
       "to": 1500.0
     },
     {
+      "set": "master.level",
+      "to": -6.0
+    },
+    {
       "depth": 10.0,
       "index": 0,
       "route": "lfo1 -> filter1.cutoff"
@@ -243,7 +258,7 @@ exit: 0
     {
       "meta": {
         "author": "",
-        "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb.",
+        "description": "Two saws detuned against each other, a soft low-pass that a slow LFO (lfo1, 0.3 Hz) opens and closes by an octave either way, a slow swell, a long release and some reverb. The master level is -6 dB so the two saws do not clip.",
         "name": "Pad (2 osc)",
         "tags": [
           "pad"
@@ -252,6 +267,6 @@ exit: 0
     }
   ],
   "same": false,
-  "schema": "enth.diff/1"
+  "schema": "enth.diff/2"
 }
 --- stderr

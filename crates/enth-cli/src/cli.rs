@@ -65,7 +65,7 @@ pub enum Cmd {
     },
     /// List the JSON Schemas, or print one (draft 2020-12).
     Schema {
-        /// A schema name (patch, ops, perf, check, ...) or id (enth.check/1).
+        /// A schema name (patch, ops, perf, check, ...) or id (enth.check/2).
         name: Option<String>,
     },
     /// List the module kinds.

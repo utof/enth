@@ -16,9 +16,10 @@ use enth_patch::file;
 use enth_render::RenderSpec;
 use enth_solver::{HintCfg, hint};
 
-/// The pluck, in the loop's own form, and a list with two failing items.
-fn pluck() -> (enth_patch::Patch, Perf) {
-    let s = Scratch::new("hints_pluck");
+/// The pluck, in the loop's own form, and a list with two failing items. Each test passes its own scratch name:
+/// tests run in parallel, and two of them sharing a directory raced (one cleared it while the other read).
+fn pluck(scratch: &str) -> (enth_patch::Patch, Perf) {
+    let s = Scratch::new(scratch);
     let p = s.new_patch("pluck_1osc", "p.patch.json");
     let text = std::fs::read_to_string(p).unwrap();
     let patch = file::load(&text).unwrap().patch;
@@ -38,7 +39,7 @@ const LIST: &str = "pitch.note ~ A3, attack < 30ms, brightness < 900Hz, duration
 
 #[test]
 fn a_hints_before_is_what_check_reads() {
-    let (patch, perf) = pluck();
+    let (patch, perf) = pluck("hints_pluck_before");
     let items = parse_list(LIST).unwrap();
     let ev = Evaluator::new(&perf, enth_render::DEFAULT_SEED, Want::ALL);
     let main = ev
@@ -84,7 +85,7 @@ fn a_hints_before_is_what_check_reads() {
 
 #[test]
 fn a_hint_is_the_same_for_any_number_of_workers() {
-    let (patch, perf) = pluck();
+    let (patch, perf) = pluck("hints_pluck_workers");
     let items = parse_list(LIST).unwrap();
     let ev = Evaluator::new(&perf, enth_render::DEFAULT_SEED, Want::ALL);
     let spec = RenderSpec::new(ev.sample_rate(), ev.seed());

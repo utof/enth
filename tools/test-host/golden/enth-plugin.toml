@@ -75,3 +75,31 @@ name = "reset"
 notes = "C4@0+1.5, G4@0+1.5, reset@0.5, E4@0.8+0.5"
 state = "enth-plugin.patch.json"
 sha256 = "ff93c84087e5a35dc79d77b403f9fc6253e428257ce64aadb81da545ad247231"
+
+# Plugin-only behaviour (lane PL). Each case's equivalent `enth render` comparison is in enth-plugin's in-process
+# host tests (crates/enth-plugin/src/tests_host.rs), bit for bit; these cases pin it through a real CLAP host.
+
+# The monitor bypass on from the saved state (`enth-plugin.bypass.state.json`: the golden patch and an `enth` field
+# with `fx_bypass: true`). On a fresh engine the switch is immediate, so the whole render is the patch without its
+# time-based effect: the hash must equal `reverb-off`'s.
+[[case]]
+name = "monitor-bypass"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+state = "enth-plugin.bypass.state.json"
+sha256 = "37ff003407210dc0ef5a0793984fb5b56d8af117575f1a21e75563850bfb2555"
+
+# The golden patch with reverb1 disabled in the patch (`enth-plugin.reverb-off.patch.json`): what the bypass equals.
+[[case]]
+name = "reverb-off"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+state = "enth-plugin.reverb-off.patch.json"
+sha256 = "37ff003407210dc0ef5a0793984fb5b56d8af117575f1a21e75563850bfb2555"
+
+# Voice stealing while the host moves slot 1, slot 2 and macro 1 and the mod wheel (MIDI CC 1): twelve notes for
+# eight voices, automation on the frames of note-ons, a zero-length note (its note-off, listed first, is moved behind
+# its note-on) and a reset with notes held.
+[[case]]
+name = "steal-automation"
+notes = "C3@0+1, E3@0.05+1, G3@0.1+1, C4@0.15+1, E4@0.2+1, G4@0.25+1, C5@0.3+1, E5@0.35+1, G5@0.4+0.8, C6@0.4+0.8, D6@0.45+0.7, E6@0.5+0.00001, Slot 1=0.2@0.4, Macro 1=0.6@0.4, Slot 2=0.8@0.45, CC1=127@0.5, Slot 1=0.9@0.7, CC1=0@0.9, reset@1.2, A4@1.3+0.5"
+state = "enth-plugin.patch.json"
+sha256 = "cf13385221f858bcce454339339f883ff5fc6d696a9c062b4ea2b4cfbe9d8174"

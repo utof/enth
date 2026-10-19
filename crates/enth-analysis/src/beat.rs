@@ -21,6 +21,11 @@ use realfft::num_complex::Complex32;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
+/// A harmonic counts as beating when its wobble at h·r is at least this share of the best harmonic's.
+const BEAT_SHARE_WOBBLE: f64 = 0.3;
+/// The beating harmonics must hold at least this share of the usable harmonics' weight.
+const BEAT_SHARE_WEIGHT: f64 = 0.5;
+
 /// Settings of the estimator. The defaults are report 03's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BeatCfg {
@@ -351,6 +356,20 @@ fn beat_search(
         return None;
     }
     if agree == 0 || (rb * seconds < 1.0 && agree < 2) {
+        return None;
+    }
+    // Detune moves every harmonic, each at its own multiple h·r. A filter LFO at f moves the harmonics near its
+    // cutoff at f and its multiples, which line up with h·r for r = f/k on every k-th harmonic only (a 3 Hz filter
+    // LFO read as 1 Hz "beating" through harmonics 3, 6 and 9). So the harmonics that carry a real wobble at h·r
+    // (at least 0.3 of the best one's) must hold at least half of the usable harmonics' weight.
+    let (mut w_all, mut w_beating) = (0.0, 0.0);
+    for t in tracks.iter().filter(|t| usable(t.h as f64 * rb)) {
+        w_all += t.weight;
+        if t.at(t.h as f64 * rb) >= BEAT_SHARE_WOBBLE * sb.2 {
+            w_beating += t.weight;
+        }
+    }
+    if w_all > 0.0 && w_beating < BEAT_SHARE_WEIGHT * w_all {
         return None;
     }
     let band: Vec<f64> = scores.iter().map(|s| s.0).filter(|v| *v > 0.0).collect();

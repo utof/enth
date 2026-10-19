@@ -55,7 +55,7 @@ exit: 1
       "unit": "Hz"
     }
   ],
-  "schema": "enth.check/1",
+  "schema": "enth.check/2",
   "source": "[TMP]/hot.patch.json",
   "thin": "<num>"
 }

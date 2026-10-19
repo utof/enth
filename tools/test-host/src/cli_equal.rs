@@ -10,9 +10,12 @@
 //! 1. The `[source.patch]` table becomes JSON and goes into the plugin's persisted `patch` field through the
 //!    state extension ([`crate::state`]), before activation, as a host loading a project would.
 //! 2. The notes become CLAP note events and the automation host parameter events, at `round(t * sample_rate)`
-//!    frames, in the engine's own order for events on the same frame (automation first, then each note's on and
-//!    off in performance order; `enth_render::render`), with the note's index as its note id. Velocities go
-//!    over as the exact `f64` of the case's `f32`.
+//!    frames, in the engine's own order for events on the same frame (automation first, then the controls in
+//!    performance order, then each note's on and off in performance order; `enth_render::render`), with the
+//!    note's index as its note id. Velocities go over as the exact `f64` of the case's `f32`. A case's `controls`
+//!    (lane PL) go over as a host would play them: `macroN` as the host parameter named `Macro N` (the value is
+//!    already the normalised 0–1 position), `modwheel` as MIDI CC 1 on channel 0 with `round(value * 127)`. A mod
+//!    wheel value that is not exactly `k / 127` in `f32` (the plugin receives `cc / 127`) skips the case.
 //! 3. It renders `round(seconds * sample_rate)` frames at each host block size (default 1, 64, 100 and 4096: a
 //!    block of 1 and one that does not divide the length are where block-quantised event handling shows), dropping
 //!    the part of the last block past the end.
@@ -66,12 +69,21 @@ pub struct CaseAutomation {
     pub value: f32,
 }
 
+/// A macro or mod-wheel move (`source` is `macro1`…`macro8` or `modwheel`; value 0–1).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CaseControl {
+    pub time_s: f64,
+    pub source: String,
+    pub value: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Source {
     Patch {
         seed: Option<u64>,
         notes: Vec<CaseNote>,
         automation: Vec<CaseAutomation>,
+        controls: Vec<CaseControl>,
         /// The `[source.patch]` table as JSON.
         patch: Value,
     },
@@ -148,10 +160,27 @@ pub fn parse_case(name: &str, text: &str) -> Result<Case, String> {
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
+        let controls = source["controls"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                Ok(CaseControl {
+                    time_s: number(&c["time_s"], &format!("control {i}: `time_s`"))?,
+                    source: c["source"]
+                        .as_str()
+                        .ok_or_else(|| format!("control {i}: `source` is missing"))?
+                        .to_owned(),
+                    value: number(&c["value"], &format!("control {i}: `value`"))? as f32,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         Source::Patch {
             seed: source["seed"].as_u64(),
             notes,
             automation,
+            controls,
             patch: source["patch"].clone(),
         }
     } else {
@@ -283,24 +312,28 @@ pub fn parse_profile(text: &str) -> Result<Profile, String> {
     })
 }
 
-/// The events of a case in the order the engine applies them: automation first, then each note's on and off,
-/// stably sorted by frame. Events at or after `frames` are dropped.
+/// The events of a case in the order the engine applies them: automation first, then the controls, then each
+/// note's on and off, stably sorted by frame. Events at or after `frames` are dropped.
 ///
-/// `automation` is already resolved to host parameter events (`frame`, parameter id, value).
+/// `automation` is already resolved to host parameter events (`frame`, parameter id, value), and `controls` to host
+/// events ([`controls_as_host_events`]).
 pub fn schedule(
     notes: &[CaseNote],
     automation: &[(u64, u32, f64)],
+    controls: &[Scheduled],
     sample_rate: u32,
     frames: u64,
 ) -> Schedule {
     let sr = f64::from(sample_rate);
-    let mut events: Vec<Scheduled> = Vec::with_capacity(automation.len() + 2 * notes.len());
+    let mut events: Vec<Scheduled> =
+        Vec::with_capacity(automation.len() + controls.len() + 2 * notes.len());
     for &(frame, id, value) in automation {
         events.push(Scheduled {
             frame,
             kind: Kind::Param { id, value },
         });
     }
+    events.extend_from_slice(controls);
     for (i, n) in notes.iter().enumerate() {
         let note_id = u32::try_from(i).unwrap_or(u32::MAX);
         let key = u16::from(n.key);
@@ -321,6 +354,52 @@ pub fn schedule(
     // Stable, and by frame only: the engine's order for events on one frame is the push order above.
     events.sort_by_key(|e| e.frame);
     Schedule { events }
+}
+
+/// A case's controls as the host events a host would send (see the module docs): `macroN` → the parameter named
+/// `Macro N`, `modwheel` → MIDI CC 1. `Err` names why the case cannot go through the plugin (a skip, not a failure).
+pub fn controls_as_host_events(
+    controls: &[CaseControl],
+    sample_rate: u32,
+    resolve: &dyn Fn(&str) -> Option<u32>,
+) -> Result<Vec<Scheduled>, String> {
+    let sr = f64::from(sample_rate);
+    controls
+        .iter()
+        .map(|c| {
+            let frame = seconds_to_frame(c.time_s, sr)?;
+            let kind = if c.source == "modwheel" {
+                let k = (f64::from(c.value) * 127.0).round();
+                if !(0.0..=127.0).contains(&k) || (k as f32 / 127.0) != c.value {
+                    return Err(format!(
+                        "mod wheel value {} is not k/127: MIDI CC 1 cannot carry it exactly",
+                        c.value
+                    ));
+                }
+                Kind::MidiCc {
+                    channel: 0,
+                    cc: 1,
+                    value: k as u8,
+                }
+            } else {
+                let n = c
+                    .source
+                    .strip_prefix("macro")
+                    .and_then(|n| n.parse::<u8>().ok())
+                    .filter(|n| (1..=8).contains(n))
+                    .ok_or_else(|| {
+                        format!("control source {:?}: macro1..macro8 or modwheel", c.source)
+                    })?;
+                let id = resolve(&format!("Macro {n}"))
+                    .ok_or_else(|| format!("the plugin has no parameter named \"Macro {n}\""))?;
+                Kind::Param {
+                    id,
+                    value: f64::from(c.value),
+                }
+            };
+            Ok(Scheduled { frame, kind })
+        })
+        .collect()
 }
 
 /// A fault the host makes on purpose, so a run can show that the check is able to fail.
@@ -613,6 +692,7 @@ fn run_one(
         seed,
         notes,
         automation,
+        controls,
         patch,
     } = &case.source
     else {
@@ -660,7 +740,17 @@ fn run_one(
         );
     }
 
-    let events = schedule(notes, &host_automation, case.sample_rate, frames as u64);
+    let controls = match controls_as_host_events(controls, case.sample_rate, resolve) {
+        Ok(c) => c,
+        Err(reason) => return CaseReport::skipped(name, reason),
+    };
+    let events = schedule(
+        notes,
+        &host_automation,
+        &controls,
+        case.sample_rate,
+        frames as u64,
+    );
     let patch_text = patch.to_string();
     let state_bytes = match state::wrap_patch(&patch_text, &opts.state_field, version) {
         Ok(b) => b,
@@ -763,6 +853,7 @@ notes = [
     { key = 64, on_s = 0.25, off_s = 0.25 },
 ]
 automation = [{ time_s = 0.1, addr = "osc1.level", value = 20.0 }]
+controls = [{ time_s = 0.3, source = "modwheel", value = 1.0 }]
 
 [source.patch]
 schema = 1
@@ -777,11 +868,20 @@ voice = { amp_env = "env1" }
             seed,
             notes,
             automation,
+            controls,
             patch,
         } = &case.source
         else {
             panic!("a patch source");
         };
+        assert_eq!(
+            controls,
+            &[CaseControl {
+                time_s: 0.3,
+                source: "modwheel".to_owned(),
+                value: 1.0
+            }]
+        );
         assert_eq!(*seed, Some(7));
         assert_eq!(notes.len(), 2);
         assert_eq!(notes[1].velocity, 0.8, "the default velocity");
@@ -820,7 +920,7 @@ voice = { amp_env = "env1" }
             },
         ];
         let auto = [(12_000u64, 7u32, 0.5f64)];
-        let s = schedule(&notes, &auto, 48_000, 28_800);
+        let s = schedule(&notes, &auto, &[], 48_000, 28_800);
         let frames: Vec<u64> = s.events.iter().map(|e| e.frame).collect();
         assert_eq!(
             frames,
@@ -845,11 +945,89 @@ voice = { amp_env = "env1" }
                 off_s: 1.0,
             }],
             &[],
+            &[],
             48_000,
             48_000,
         );
         assert!(
             matches!(tenth.events[0].kind, Kind::NoteOn { velocity, .. } if velocity as f32 == 0.9f32)
+        );
+    }
+
+    #[test]
+    fn controls_go_over_as_a_host_plays_them_after_automation_and_before_notes() {
+        let names = |n: &str| match n {
+            "Macro 1" => Some(101),
+            "Macro 3" => Some(103),
+            _ => None,
+        };
+        let control = |time_s, source: &str, value| CaseControl {
+            time_s,
+            source: source.to_owned(),
+            value,
+        };
+        let controls = controls_as_host_events(
+            &[
+                control(0.1, "macro3", 0.5),
+                control(0.25, "modwheel", 1.0),
+                control(0.25, "macro1", 0.3),
+                control(0.5, "modwheel", 0.0),
+            ],
+            48_000,
+            &names,
+        )
+        .unwrap();
+        assert_eq!(controls[0].frame, 4_800);
+        assert_eq!(
+            controls[0].kind,
+            Kind::Param {
+                id: 103,
+                value: 0.5
+            }
+        );
+        assert_eq!(
+            controls[1].kind,
+            Kind::MidiCc {
+                channel: 0,
+                cc: 1,
+                value: 127
+            }
+        );
+        assert!(matches!(controls[3].kind, Kind::MidiCc { value: 0, .. }));
+        let notes = [CaseNote {
+            key: 60,
+            velocity: 1.0,
+            on_s: 0.25,
+            off_s: 0.5,
+        }];
+        let s = schedule(&notes, &[(12_000, 7, 0.5)], &controls, 48_000, 48_000);
+        let at_12000: Vec<&Kind> = s
+            .events
+            .iter()
+            .filter(|e| e.frame == 12_000)
+            .map(|e| &e.kind)
+            .collect();
+        assert!(
+            matches!(at_12000[0], Kind::Param { id: 7, .. }),
+            "automation"
+        );
+        assert!(
+            matches!(at_12000[1], Kind::MidiCc { .. }),
+            "controls, in order"
+        );
+        assert!(matches!(at_12000[2], Kind::Param { id: 101, .. }));
+        assert!(matches!(at_12000[3], Kind::NoteOn { .. }), "then notes");
+        // A wheel value MIDI cannot carry exactly, and an unknown source, skip the case.
+        let err = controls_as_host_events(&[control(0.0, "modwheel", 0.5)], 48_000, &names);
+        assert!(err.unwrap_err().contains("k/127"));
+        assert!(controls_as_host_events(&[control(0.0, "macro9", 0.5)], 48_000, &names).is_err());
+        assert!(
+            controls_as_host_events(&[control(0.0, "macro2", 0.5)], 48_000, &names).is_err(),
+            "no such parameter"
+        );
+        let exact = 64.0f32 / 127.0;
+        assert!(
+            controls_as_host_events(&[control(0.0, "modwheel", exact)], 48_000, &names).is_ok()
         );
     }
 

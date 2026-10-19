@@ -46,9 +46,10 @@ fn descriptors() -> String {
         );
     }
     s.push_str(
-        "\nAlso in `describe`: `pitch.note` and `pitch.cents_dev`, `spectrum.centroid_track_hz` (start, middle, end:\n\
-         a falling track is a closing filter), `envelope.beat_corrected` (false: a beat too slow to remove, sustain\n\
-         uncertain), `envelope.release_extrapolated`, `envelope.duration_truncated`, `perf.source` (`flag`,\n\
+        "\nAlso in `describe`: `pitch.note` and `pitch.cents_dev`, `tonal.note`, `spectrum.centroid_track_hz` (start,\n\
+         middle, end: a falling track is a closing filter), `modulation.filter_sweep.kind` (`env` one-shot, `lfo`\n\
+         cyclic) and `.dir` (`up`, `down`), `envelope.beat_corrected` (false: a beat or tremolo too slow to remove,\n\
+         sustain uncertain), `envelope.release_extrapolated`, `envelope.duration_truncated`, `perf.source` (`flag`,\n\
          `default`, `wav`, `inferred`, `none`).\n",
     );
     s

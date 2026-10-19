@@ -5,8 +5,8 @@ difficulty = 4
 tags = ["sweep", "filter", "lfo", "modulation", "bass"]
 brief = "a low saw with a slow wobbling filter sweep"
 template = "init"
-expect = "tremolo in [1.5Hz, 3.5Hz], tremolo_depth in [4dB, 12dB], brightness in [500Hz, 1.5kHz], duration > 3800ms, release < 400ms, pitch.note ~ A2, noisiness < 0.1, peak < -1dB"
-rationale = "A swept filter: a low-pass on a held saw with an LFO on its cutoff, heard as a rhythmic wobble. The first goal that needs modulation routing (add a filter and an LFO, then route one to the other with `--ops`), and it checks that a filter wobble is read as an amplitude wobble at the LFO rate (2.0 Hz reads 2.01 Hz, 6 dB). The rate and depth are windows, the brightness window keeps the sweep low and dark, and the note is held 4 s so about 8 cycles are measured. No attack or sustain items on purpose: those descriptors are not corrected for a wobble (attack reads 300 ms, sustain reads above 0 dB)."
+expect = "filter_lfo in [1.5Hz, 3.5Hz], filter_sweep > 1oct, brightness in [500Hz, 1.5kHz], duration > 3800ms, release < 400ms, pitch.note ~ A2, noisiness < 0.1, peak < -1dB"
+rationale = "A swept filter: a low-pass on a held saw with an LFO on its cutoff, heard as a rhythmic wobble. The first goal that needs modulation routing (add a filter and an LFO, then route one to the other with `--ops`), and it reads the wobble as what it is, a brightness sweep: `filter_lfo` is the rate of the swing of the spectral centroid (2.0 Hz reads 2.00 Hz), `filter_sweep` its size in octaves (the witness swings about 3 octaves; at least one is clearly a sweep). Eval version 1 asked for a tremolo instead, which only a deep sweep produces. The rate is a window, the brightness window keeps the sweep low and dark, and the note is held 4 s so about 8 cycles are measured. Attack and sustain are now read with the wobble fitted out (15 ms and -0.8 dB on the witness, against 307 ms and +4.9 dB in version 1), but stay off the list."
 engine_min = "0.1.0"
 perf = { notes = [{ note = "A2", vel = 100, on_s = 0.0, off_s = 4.0 }], dur_s = 5.0 }
 budget = { renders = 20, turns = 60, usd = 1.0 }

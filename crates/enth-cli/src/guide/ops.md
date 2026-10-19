@@ -43,6 +43,9 @@ nothing. `apply` and `step` print the `inverse` ops that undo the edit.
   modulatable (`modulatable: true` in `enth params`). A per-voice source (an envelope, a voice LFO, velocity, key)
   can only drive per-voice destinations (generators, filters, `voice.pan`).
 - Depth is percent of the destination's range (`30`, `30%`), or a musical interval converted at the destination's
-  current value (`+1oct`, `+12st`, `-500ct`). On a cutoff (20 Hz to 20 kHz, log) 10 % is about one octave.
+  current value (`+1oct`, `+12st`, `-500ct`). On a cutoff (20 Hz to 20 kHz, log) 10 % is about one octave. The
+  patch stores the percentage; `apply` and `step` print a route's `means`: what the depth does at the source's full
+  swing. An LFO is bipolar unless its `polarity` is `unipolar`, so `+12st` on a bipolar LFO swings -12..+12 st;
+  envelopes, velocity, the mod wheel and macros run 0 to 1.
 - A number never stands for an enum item: write `"wave": "saw"`, not `2`.
 - An unknown verb is `unknown_op`, with the verbs listed.

@@ -1,6 +1,6 @@
-# The engine golden cases `enth-test-host cli-equal` renders through enth-plugin for F2b (docs/plugin.md):
-# every case but `mod-controls`, whose mod-wheel moves no plugin build can take yet (nice-plug `MidiConfig::Basic`
-# delivers no MIDI CC, an open decision for lane PL) and whose `controls` the test host does not send (lane TH).
+# The engine golden cases `enth-test-host cli-equal` renders through enth-plugin (docs/plugin.md): every case. Since
+# lane PL, `mod-controls` is in too: the test host plays a case's `controls` (macros as the host parameters
+# "Macro N", the mod wheel as MIDI CC 1) and the plugin takes MIDI CCs (`MidiConfig::MidiCCs`).
 # The cases the test host skips itself (seeds other than the default, the stand-in sine, engine-address automation)
 # are listed too: they are reported as skipped, never compared. Run with --min-compared 60.
 cases = [
@@ -26,6 +26,7 @@ cases = [
     "lfo-triangle",
     "lfo-unipolar",
     "lfo-vibrato",
+    "mod-controls",
     "mod-routes",
     "noise-notes",
     "noise-pink-1v",

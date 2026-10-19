@@ -29,10 +29,18 @@ exit: 0
     "detune.beating_hz": "no detune beating was found: it needs detuned oscillators beating between 0.15 and 25 Hz, and at least 0.5 s of steady sound within 30 dB of the peak",
     "detune.depth_db": "no detune beating was found: it needs detuned oscillators beating between 0.15 and 25 Hz, and at least 0.5 s of steady sound within 30 dB of the peak",
     "modulation.amp_lfo.depth_db": "no amplitude LFO was found",
-    "modulation.amp_lfo.hz": "no amplitude LFO was found"
+    "modulation.amp_lfo.hz": "no amplitude LFO was found",
+    "modulation.filter_sweep.hz": "no filter LFO was found: it needs the brightness to swing by at least 0.2 octave, two cycles or more in the held part, and 0.5 s of held sound; a one-shot sweep reports ms instead"
   },
   "modulation": {
-    "amp_lfo": null
+    "amp_lfo": null,
+    "filter_sweep": {
+      "depth_oct": "<num>",
+      "dir": "down",
+      "hz": null,
+      "kind": "env",
+      "ms": "<num>"
+    }
   },
   "noise_ratio": "<num>",
   "perf": {
@@ -54,7 +62,7 @@ exit: 0
     "stability": "<num>"
   },
   "sample_rate": 48000,
-  "schema": "enth.describe/1",
+  "schema": "enth.describe/2",
   "silent": false,
   "source": "[TMP]/p.patch.json",
   "spectrum": {
@@ -64,6 +72,11 @@ exit: 0
       "<num>",
       "<num>"
     ]
+  },
+  "tonal": {
+    "cents_dev": "<num>",
+    "f0_hz": "<num>",
+    "note": "C3"
   }
 }
 --- stderr

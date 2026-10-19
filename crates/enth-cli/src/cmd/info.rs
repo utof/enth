@@ -12,7 +12,7 @@ use crate::schema::{
     self, BuiltinOut, GuideOut, ModuleKindOut, ModulesOut, ParamOut, ParamsOut, Reading,
     SchemaListOut, SchemaRef, ids,
 };
-use crate::{aliases, guide as guide_text, patchio};
+use crate::{aliases, guide as guide_text, knobs, patchio};
 
 pub fn guide(topic: Option<&str>) -> Res {
     let topic = topic.unwrap_or("main");
@@ -157,7 +157,7 @@ pub fn params(name: &str, patch: Option<&Path>) -> Res {
                 name: spec.name.to_owned(),
                 section: Some(spec.section.key().to_owned()),
                 summary: spec.learn.desc.to_owned(),
-                params: spec.params.iter().map(param_out).collect(),
+                params: spec.params.iter().map(|p| param_out(spec.key, p)).collect(),
             }
         }
         Target::Builtin(b) => ParamsOut {
@@ -166,13 +166,13 @@ pub fn params(name: &str, patch: Option<&Path>) -> Res {
             name: b.key().to_owned(),
             section: None,
             summary: builtin_summary(b).to_owned(),
-            params: b.params().iter().map(param_out).collect(),
+            params: b.params().iter().map(|p| param_out(b.key(), p)).collect(),
         },
     };
     Ok(Reply::new(&out).columns(&["key", "min", "max", "unit", "default", "values", "effect"]))
 }
 
-fn param_out(s: &ParamSpec) -> ParamOut {
+fn param_out(kind: &str, s: &ParamSpec) -> ParamOut {
     let (min, max, scale) = match s.kind {
         Kind::Float { min, max, scale } => (
             Some(f64::from(min)),
@@ -219,5 +219,6 @@ fn param_out(s: &ParamSpec) -> ParamOut {
         tier: s.learn.tier.name().to_owned(),
         effect: s.learn.desc.to_owned(),
         moves: s.perceptual.map(str::to_owned),
+        reads_as: knobs::reads_as(kind, s.key).map(str::to_owned),
     }
 }

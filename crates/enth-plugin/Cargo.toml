@@ -29,6 +29,11 @@ serde.workspace = true
 # `raw_value`: the `patch` field carries `Patch::to_json()` verbatim (docs/session.md); no extra crates.
 serde_json = { workspace = true, features = ["raw_value"] }
 
+[features]
+# A timing histogram of `process()` inside the plugin (src/rt_stats.rs, docs/plugin.md "rt-stats"): off by default;
+# without it `process()` reads no clock and the module is not compiled.
+rt-stats = []
+
 [dev-dependencies]
 insta.workspace = true
 

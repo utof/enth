@@ -12,6 +12,7 @@ in `missing`. Short names work in expectations; the output always uses the path.
 | `pitch.f0_hz` | pitch, f0, pitch.note, note | Hz | Fundamental frequency measured from the audio (YIN, median over the loud frames); the nearest note and the offset in cents come with it |
 | `pitch.cents_dev` | cents, tuning | ct | Offset of the measured pitch from the nearest equal-tempered note (A4 = 440 Hz), in cents |
 | `pitch.stability` | stability | 0..1 | How steady the pitch is: 1 is steady, 0 means it wanders by 50 cents or more |
+| `tonal.f0_hz` | tonal_pitch, tonal, tonal.note, tonal_note | Hz | Pitch of the tonal part, read from the steady spectral peaks, so it is found under noise where pitch is not (a snare's body). Compared with a note like pitch |
 | `envelope.attack_ms` | attack | ms | Time for the level to rise from near-silence (-40 dB re peak) to within 1 dB of its peak, with detune beating removed. Under 10 ms is a click; over 200 ms is a swell |
 | `envelope.decay_ms` | decay | ms | Time from the peak until the level settles near the held level (within max(1.5 dB, 20% of the sustain in dB)); 0 means no decay stage. Not the ADSR parameter |
 | `envelope.sustain_db` | sustain | dB | Level held just before note-off, in dB below the peak, with beating removed: 0 is as loud as the peak, -80 means silent |
@@ -24,13 +25,17 @@ in `missing`. Short names work in expectations; the output always uses the path.
 | `detune.depth_db` | beat_depth | dB | Peak-to-trough depth of the detune beating on its deepest harmonic (dB) |
 | `modulation.amp_lfo.hz` | tremolo, amp_lfo, modulation.amp_lfo | Hz | Rate of an amplitude LFO: a level wobble that moves every harmonic at the same rate (unlike detune beating) |
 | `modulation.amp_lfo.depth_db` | tremolo_depth | dB | Peak-to-trough depth of the tremolo (dB) |
+| `modulation.filter_sweep.hz` | filter_lfo, sweep_rate | Hz | Rate of a filter LFO: the brightness (spectral centroid) swings back and forth, whatever the level does |
+| `modulation.filter_sweep.depth_oct` | filter_sweep, modulation.filter_sweep, sweep_depth | oct | Size of a brightness sweep in octaves: the peak-to-trough swing of a filter LFO, or the one-way change of a filter envelope |
+| `modulation.filter_sweep.ms` | sweep_ms, sweep_time | ms | Time of a one-shot brightness sweep (a filter envelope): from the onset until 90% of the change is done |
 | `loudness.lufs_i` | loudness, lufs | LUFS | Integrated loudness (EBU R128) of the float render. About -23 LUFS is a quiet broadcast level, -14 is loud |
 | `loudness.peak_dbfs` | peak | dBFS | Highest sample level of the float render in dBFS; above 0 means it clips |
 | `loudness.true_peak_dbtp` | true_peak | dBTP | Highest level between samples (4x oversampled) in dBTP; above 0 clips a converter |
 | `loudness.clipped_pct` | clipped, clipped_pct | % | Share of samples at or beyond full scale, in percent |
 | `loudness.clipping` | clipping, clips | true/false | True when any sample reaches full scale. Clipping bends brightness and levels too; lower master.level first |
 
-Also in `describe`: `pitch.note` and `pitch.cents_dev`, `spectrum.centroid_track_hz` (start, middle, end:
-a falling track is a closing filter), `envelope.beat_corrected` (false: a beat too slow to remove, sustain
-uncertain), `envelope.release_extrapolated`, `envelope.duration_truncated`, `perf.source` (`flag`,
+Also in `describe`: `pitch.note` and `pitch.cents_dev`, `tonal.note`, `spectrum.centroid_track_hz` (start,
+middle, end: a falling track is a closing filter), `modulation.filter_sweep.kind` (`env` one-shot, `lfo`
+cyclic) and `.dir` (`up`, `down`), `envelope.beat_corrected` (false: a beat or tremolo too slow to remove,
+sustain uncertain), `envelope.release_extrapolated`, `envelope.duration_truncated`, `perf.source` (`flag`,
 `default`, `wav`, `inferred`, `none`).
