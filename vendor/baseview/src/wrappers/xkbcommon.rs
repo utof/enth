@@ -30,7 +30,10 @@ impl XkbcommonState {
                 xkbc::xkb_keymap_compile_flags::XKB_KEYMAP_COMPILE_NO_FLAGS,
             );
             // state will be unref on drop
-            (xkb_x11.xkb_x11_state_new_from_device)(keymap, conn, device_id)
+            let state = (xkb_x11.xkb_x11_state_new_from_device)(keymap, conn, device_id);
+            // enth fork: the state holds its own reference to the keymap, so release ours (upstream leaks one keymap per window).
+            (xkb_common.xkb_keymap_unref)(keymap);
+            state
         };
 
         // free the context, it's no longer needed
