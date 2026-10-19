@@ -57,6 +57,15 @@ The machine was shared with other agents; timings ran under an exclusive lock wi
 | Idle frame | 2.0 | 0.89–1.01 ms | 0.96–1.80 ms | 1.09–3.44 ms | 0.92–1.07 ms | 2.7–3.2 % | 5.5–6.4 % |
 | Animating | 2.0 | 1.03–1.17 ms | 1.42–1.99 ms | 1.69–4.90 ms | 1.06–1.25 ms | 3.2–3.8 % | 6.3–7.5 % |
 
+**Instructions per frame** (callgrind, steady state: the difference between 250 and 50 frames of one case, divided by 200), the number to compare before and after a change (AGENTS.md):
+
+| Case | Scale 1.0 | Scale 2.0 |
+| --- | --- | --- |
+| Idle frame | 6.69 M | 6.64 M |
+| Animating | 7.64 M | 7.58 M |
+
+`valgrind --tool=callgrind target/release/examples/frame_bench <frames> <idle1|animating1|idle2|animating2>` reproduces them.
+
 A truly idle panel runs no frames, so its cost is zero; "idle frame" is what an input event costs. The researcher's stand-in panel measured 0.73–0.88 ms p50; this one is richer (lesson text, 72 knobs with labels and values, 11 displays, 96 matrix cells) at 0.9–1.3 ms.
 
 A callgrind profile of the steady state (330 frames per case) puts the time in: the lesson pane's text, about a quarter (all 1,500 words are laid out and hashed every frame, visible or not); the 72 knobs, about a quarter; the displays (module figures resampled every frame, scope, spectrum), about a sixth; one-line text layout and galley-cache lookups for labels and values, about a tenth.

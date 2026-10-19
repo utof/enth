@@ -2,7 +2,11 @@
 //! plus tessellation, as the GUI thread does before handing triangles to the GPU. No GL and no
 //! GPU, so it measures exactly the part that doesn't depend on the renderer.
 //!
-//! `cargo run -p spike-ui --release --example frame_bench [frames]`
+//! `cargo run -p spike-ui --release --example frame_bench [frames] [case]`
+//!
+//! `case` (`idle1`, `animating1`, `idle2`, `animating2`; default all four) runs one case only, for
+//! instruction counts: `valgrind --tool=callgrind` at two frame counts, and the difference in
+//! instructions divided by the difference in frames is the steady-state cost of one frame.
 //!
 //! - idle: frames with nothing changing (what a mouse move costs while the panel is idle; a truly
 //!   idle panel runs no frames at all);
@@ -102,11 +106,18 @@ fn main() {
         .nth(1)
         .and_then(|a| a.parse().ok())
         .unwrap_or(600);
+    let only = std::env::args().nth(2);
     let theme = Theme::dark();
     println!("frames per case: {frames} (after {WARMUP} warm-up), window {REFERENCE_SIZE:?}");
     println!("case,scale,p50_ms,p95_ms,p99_ms,max_ms,mean_ms,cpu_pct_at_30fps,cpu_pct_at_60fps");
     for pixels_per_point in [1.0, 2.0] {
         for (name, animating) in [("idle", false), ("animating", true)] {
+            if only
+                .as_deref()
+                .is_some_and(|case| case != format!("{name}{pixels_per_point}"))
+            {
+                continue;
+            }
             let s = run(&theme, animating, pixels_per_point, frames);
             println!(
                 "{name},{pixels_per_point},{:.3},{:.3},{:.3},{:.3},{:.3},{:.1},{:.1}",
