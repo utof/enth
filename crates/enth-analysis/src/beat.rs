@@ -327,11 +327,17 @@ fn beat_search(
         })
         .filter(|q| (q - 1.0).abs() <= 0.03)
         .count();
-    // Tremolo test: on harmonics >= 2, the reading at r itself must be weaker than at h·r.
+    // Tremolo test: on harmonics >= 2, the reading at r itself must be weaker than at h·r. Where h·r is outside the
+    // demodulator's passband (a fast rate on a low note), compare the same-rate reading with harmonic 1's instead:
+    // a tremolo moves harmonic h at r as deeply as harmonic 1, detune moves it at h·r and leaves r nearly empty.
+    let first = tracks.iter().find(|t| t.h == 1).map_or(0.0, |t| t.at(rb));
     let (mut same, mut scaled, mut ws) = (0.0, 0.0, 0.0);
+    let (mut same_out, mut ws_out) = (0.0, 0.0);
     for t in tracks.iter().filter(|t| t.h >= 2) {
         let fh = t.h as f64 * rb;
         if fh > f0 / 8.0 || fh > 60.0 {
+            same_out += t.weight * t.at(rb);
+            ws_out += t.weight;
             continue;
         }
         same += t.weight * t.at(rb);
@@ -339,6 +345,9 @@ fn beat_search(
         ws += t.weight;
     }
     if ws > 0.0 && same >= scaled {
+        return None;
+    }
+    if ws == 0.0 && ws_out > 0.0 && same_out / ws_out >= 0.5 * first {
         return None;
     }
     if agree == 0 || (rb * seconds < 1.0 && agree < 2) {

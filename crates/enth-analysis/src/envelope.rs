@@ -36,6 +36,9 @@ const AT_PEAK: f64 = 0.891_25;
 const PEAK_WINDOW_MS: usize = 5;
 /// Shortest sustain window (ms).
 const SUSTAIN_MIN_MS: usize = 70;
+/// Huber refits of the beat-pattern fit, and the Huber threshold in robust standard deviations.
+const ROBUST_PASSES: usize = 4;
+const HUBER_K: f64 = 1.5;
 /// Fewest beat periods in the fit region for a correction.
 pub const MIN_BEAT_PERIODS: f64 = 1.0;
 
@@ -190,7 +193,34 @@ fn fit(raw: &[f64], hop_ms: f64, off: Option<usize>, beat_hz: f64) -> Option<(Ve
     if rows.len() < 4 * (deg + 1 + 2 * kmax) {
         return None;
     }
-    let c = lstsq(&rows, &y)?;
+    let mut c = lstsq(&rows, &y)?;
+    // Robust refits (Huber weights): points the trend cannot follow (a sharp decay knee) stop steering the pattern.
+    for _ in 0..ROBUST_PASSES {
+        let res: Vec<f64> = rows
+            .iter()
+            .zip(&y)
+            .map(|(r, v)| v - r.iter().zip(&c).map(|(a, b)| a * b).sum::<f64>())
+            .collect();
+        let abs: Vec<f64> = res.iter().map(|r| r.abs()).collect();
+        let k = HUBER_K * 1.4826 * median(&abs);
+        if k <= 1e-9 {
+            break;
+        }
+        let (mut rw, mut yw) = (
+            Vec::with_capacity(rows.len()),
+            Vec::with_capacity(rows.len()),
+        );
+        for ((r, v), e) in rows.iter().zip(&y).zip(&res) {
+            let w = if e.abs() <= k {
+                1.0
+            } else {
+                (k / e.abs()).sqrt()
+            };
+            rw.push(r.iter().map(|a| a * w).collect::<Vec<f64>>());
+            yw.push(v * w);
+        }
+        c = lstsq(&rw, &yw)?;
+    }
     let corr: Vec<f64> = raw
         .iter()
         .enumerate()
