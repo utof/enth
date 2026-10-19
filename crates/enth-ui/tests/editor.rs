@@ -418,10 +418,8 @@ fn control_ids_stay_the_same_across_two_layouts() {
     let mut h = p1();
     let patch = h.state().session.patch().clone();
     let controls = addresses(&patch);
-    assert!(
-        controls.len() >= 59,
-        "the G1 patch has 59 basic and intermediate controls"
-    );
+    // Every basic and intermediate control of the G1 patch, the built-ins' included: research 02's 59.
+    assert_eq!(controls.len(), 59);
     let ctx = h.ctx.clone();
     let rects = |ctx: &egui::Context| -> Vec<Option<egui::Rect>> {
         controls
