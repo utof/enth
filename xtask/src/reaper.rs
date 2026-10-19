@@ -23,6 +23,7 @@
 //! The spike shell (`--package spike-shell`) keeps its older three: `state`, `automation` and `editor-smoke`.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -328,7 +329,7 @@ impl Chunks {
 use chunk::write_state_chunk;
 
 /// Environment for a script that loads a chunk (`ENTH_STATE_CHUNK_FILE`, and `ENTH_STATE_CHUNK_FILE_B` for a second).
-fn chunk_env(first: &Option<String>, second: &Option<String>) -> Vec<(&'static str, String)> {
+fn chunk_env(first: Option<&String>, second: Option<&String>) -> Vec<(&'static str, String)> {
     let mut env = Vec::new();
     if let Some(chunk) = first {
         env.push(("ENTH_STATE_CHUNK_FILE", chunk.clone()));
@@ -517,7 +518,7 @@ fn run_scenario(
             // (a) and (c): parameters, ids, automation lane, state; then reload in a new process.
             for phase in ["create", "reload"] {
                 let extra = if phase == "create" {
-                    chunk_env(&chunks.state, &None)
+                    chunk_env(chunks.state.as_ref(), None)
                 } else {
                     Vec::new()
                 };
@@ -543,7 +544,7 @@ fn run_scenario(
         Scenario::PatchRoundtrip => {
             for phase in ["create", "reload1", "reload2"] {
                 let extra = if phase == "create" {
-                    chunk_env(&chunks.roundtrip, &None)
+                    chunk_env(chunks.roundtrip.as_ref(), None)
                 } else {
                     Vec::new()
                 };
@@ -558,10 +559,10 @@ fn run_scenario(
                 );
             }
             checks::roundtrip(&sb.out, report, format, PRODUCT_ROUNDTRIP_PATCH);
-            if let Ok(saved) = chunk::Saved::read(&sb.out, format, "roundtrip-create") {
-                if let Some(text) = saved.patch_text() {
-                    shared.patch_text.insert(format, text.to_owned());
-                }
+            if let Ok(saved) = chunk::Saved::read(&sb.out, format, "roundtrip-create")
+                && let Some(text) = saved.patch_text()
+            {
+                shared.patch_text.insert(format, text.to_owned());
             }
         }
         Scenario::SlotAutomation | Scenario::MacroAutomation => {
@@ -570,7 +571,7 @@ fn run_scenario(
             } else {
                 ("macro-automation", "macro", &chunks.macros)
             };
-            let mut extra = chunk_env(chunk, &None);
+            let mut extra = chunk_env(chunk.as_ref(), None);
             extra.push(("ENTH_SCENARIO", kind.to_owned()));
             run_script(sb, report, format, name, "render", "build", &extra);
             render_project(
@@ -583,7 +584,7 @@ fn run_scenario(
             if scenario == Scenario::SlotAutomation {
                 checks::slot_automation(&sb.out, report, format);
                 // A lane that never moves, built and rendered on its own.
-                let mut extra = chunk_env(&chunks.slot, &None);
+                let mut extra = chunk_env(chunks.slot.as_ref(), None);
                 extra.push(("ENTH_SCENARIO", "flat".to_owned()));
                 run_script(sb, report, format, name, "render", "build-flat", &extra);
                 render_project(
@@ -605,13 +606,13 @@ fn run_scenario(
             checks::automation_legacy(&sb.out, report, format);
         }
         Scenario::UndoStateLoad => {
-            let extra = chunk_env(&chunks.state, &chunks.roundtrip);
+            let extra = chunk_env(chunks.state.as_ref(), chunks.roundtrip.as_ref());
             run_script(sb, report, format, "undo-state-load", "undo", "run", &extra);
         }
         Scenario::TwoInstances => {
             for phase in ["create", "reload"] {
                 let extra = if phase == "create" {
-                    chunk_env(&chunks.state, &chunks.roundtrip)
+                    chunk_env(chunks.state.as_ref(), chunks.roundtrip.as_ref())
                 } else {
                     Vec::new()
                 };
@@ -621,7 +622,7 @@ fn run_scenario(
         }
         Scenario::EditorSmoke => {
             // The richest patch, so a bigger editor has every section to draw.
-            let extra = chunk_env(&chunks.roundtrip, &None);
+            let extra = chunk_env(chunks.roundtrip.as_ref(), None);
             run_script(
                 sb,
                 report,
@@ -640,7 +641,7 @@ fn run_scenario(
                 "dirty-flag",
                 "dirty",
                 "edit",
-                &chunk_env(&chunks.state, &None),
+                &chunk_env(chunks.state.as_ref(), None),
             );
             let control = run_script(
                 sb,
@@ -649,7 +650,7 @@ fn run_scenario(
                 "dirty-flag",
                 "dirty",
                 "control",
-                &chunk_env(&chunks.dirty_control, &None),
+                &chunk_env(chunks.dirty_control.as_ref(), None),
             );
             let idle = run_script(
                 sb,
@@ -658,7 +659,7 @@ fn run_scenario(
                 "dirty-flag",
                 "dirty",
                 "idle",
-                &chunk_env(&chunks.state, &None),
+                &chunk_env(chunks.state.as_ref(), None),
             );
             dirty_flag(report, format, &edit, &control, &idle);
         }
@@ -807,7 +808,7 @@ fn print_report(report: &Report) {
 fn print_table(report: &Report, timing: &Timing, formats: &[Format]) {
     let mut header = format!("  {:<18}", "scenario");
     for format in formats {
-        header.push_str(&format!(" {:>18}", format.tag()));
+        let _ = write!(header, " {:>18}", format.tag());
     }
     println!("\n{header}");
     for name in &timing.order {
@@ -836,10 +837,7 @@ fn print_table(report: &Report, timing: &Timing, formats: &[Format]) {
                 .get(&(name.clone(), format))
                 .copied()
                 .unwrap_or(0.0);
-            line.push_str(&format!(
-                " {:>18}",
-                format!("{ok}/{total} in {seconds:.1} s")
-            ));
+            let _ = write!(line, " {:>18}", format!("{ok}/{total} in {seconds:.1} s"));
         }
         println!("{line}");
     }

@@ -204,7 +204,9 @@ pub fn roundtrip(out: &Path, report: &mut Report, format: Format, fixture: &str)
     let params_same = states
         .iter()
         .all(|s| s.0["params"] == states[0].0["params"]);
-    let count = states[0].0["params"].as_object().map_or(0, |m| m.len());
+    let count = states[0].0["params"]
+        .as_object()
+        .map_or(0, serde_json::Map::len);
     report.add(
         &scope,
         "params-survive",

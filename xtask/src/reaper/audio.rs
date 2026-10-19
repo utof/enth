@@ -129,7 +129,7 @@ pub fn median_at(values: &[f64], at: &[usize]) -> f64 {
     match part.len() {
         0 => 0.0,
         n if n % 2 == 1 => part[n / 2],
-        n => (part[n / 2 - 1] + part[n / 2]) / 2.0,
+        n => f64::midpoint(part[n / 2 - 1], part[n / 2]),
     }
 }
 
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(wav.left, vec![0.5, 0.0]);
         assert_eq!(wav.right, vec![-0.5, 0.25]);
         assert_eq!(wav.window(0.0, 100.0).len(), 2);
-        assert!(wav.window(50.0, 60.0).is_empty());
+        assert_eq!(wav.window(50.0, 60.0).len(), 0);
         assert!((wav.seconds() - 0.5).abs() < 1e-12);
     }
 

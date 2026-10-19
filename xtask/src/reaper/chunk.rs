@@ -138,21 +138,53 @@ mod tests {
         }
     }
 
+    fn written(format: Format, patch: &str) -> Vec<u8> {
+        let dir = std::env::temp_dir().join(format!(
+            "enth-reaper-chunk-test-{}-{}",
+            std::process::id(),
+            format.tag()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = write_state_chunk(&dir, "t", format, patch).unwrap();
+        let text = std::fs::read_to_string(path).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        base64_decode(&text)
+    }
+
     #[test]
-    fn state_json_is_found_after_either_header() {
+    fn written_chunks_have_the_layouts_reaper_saves() {
         let patch = r#"{"schema":1}"#;
-        for format in [Format::Clap, Format::Vst3] {
-            let dir = std::env::temp_dir().join(format!(
-                "enth-reaper-chunk-test-{}-{}",
-                std::process::id(),
-                format.tag()
-            ));
-            std::fs::create_dir_all(&dir).unwrap();
-            let path = write_state_chunk(&dir, "t", format, patch).unwrap();
-            let text = std::fs::read_to_string(path).unwrap();
-            let state = nice_plug_state(&base64_decode(&text)).unwrap();
-            assert_eq!(state["fields"]["patch"], patch);
-            std::fs::remove_dir_all(&dir).unwrap();
+        let clap = written(Format::Clap, patch);
+        let json_len = clap.len() - 8;
+        assert_eq!(clap[..8], (json_len as u64).to_le_bytes());
+        let state: serde_json::Value = serde_json::from_slice(&clap[8..]).unwrap();
+        assert_eq!(state["fields"]["patch"], patch);
+
+        let vst3 = written(Format::Vst3, patch);
+        let json_len = vst3.len() - 16;
+        assert_eq!(vst3[..4], (json_len as u32).to_le_bytes());
+        assert_eq!(vst3[4..8], 1u32.to_le_bytes());
+        assert_eq!(vst3[vst3.len() - 8..], [0; 8]);
+        let state: serde_json::Value = serde_json::from_slice(&vst3[8..vst3.len() - 8]).unwrap();
+        assert_eq!(state["fields"]["patch"], patch);
+    }
+
+    #[test]
+    fn the_plugins_state_is_found_after_either_header() {
+        // What the plugin saves: nice-plug writes `version` first.
+        let json =
+            br#"{"version":"0.0.0","params":{"macro_1":{"f32":0.5}},"fields":{"patch":"x"}}"#;
+        let mut clap = (json.len() as u64).to_le_bytes().to_vec();
+        clap.extend_from_slice(json);
+        let mut vst3 = (json.len() as u32).to_le_bytes().to_vec();
+        vst3.extend_from_slice(&1u32.to_le_bytes());
+        vst3.extend_from_slice(json);
+        vst3.extend_from_slice(&[0; 8]);
+        for bytes in [clap, vst3] {
+            let saved = Saved(nice_plug_state(&bytes).unwrap());
+            assert_eq!(saved.param("macro_1"), Some(0.5));
+            assert_eq!(saved.patch_text(), Some("x"));
         }
+        assert!(nice_plug_state(b"no json here").is_err());
     }
 }
