@@ -10,13 +10,13 @@
 
 ## What Phase 0 learned
 
-- **Shell (lane A).** nice-plug 0.4.2 passed every hard must-have on the first build: clap-validator 36 / 0, Steinberg 537 / 537, 45 REAPER checks for CLAP and VST3, state round trips in REAPER and Carla. Slot renaming needs a 123-line nice-plug patch for CLAP; VST3 in REAPER stays "Slot N". REAPER restarts CLAP plugins about 30 ms into an offline render, so REAPER renders can't be goldens.
-- **UI (lanes U1 and H).** The full reference panel draws 0 frames while idle and costs 1.2–1.4 ms of CPU per animating frame (7.6 M instructions). The design-token system is enforced by clippy (26 banned egui constructors) and a source scan. Every remaining UI risk sits in baseview, below egui: the keymap leak, a ≈30 fps pacing cap (a 60 Hz request gives 29 fps, a 30 Hz request 20 fps), HiDPI clipping in REAPER, and Space lost to the host after a click in the editor. All of it was measured under Xvfb; nothing has run on the real display.
-- **Engine (lane B).** 1,010 hashes (10 renders, 1,000 seed → patch) are identical on Linux, on Windows (CI) and in wasm32 under wasmtime, across build flags, SIMD lanes and FTZ/DAZ, once DSP follows the four rules (pinned `libm`, no fused ops, fixed summation order, denormals flushed in code). Clippy enforces the rules. Without them, `std` maths changes 13 of 1,000 seeded *patches*, not just renders. Speed: 1,993× realtime for one voice, 152× for an 8-voice patch with reverb, on one core with the scalar path. Instruction budgets (measured + 10 %) are the regression gate, and they also pass on GitHub's runner. **Block size is part of the render function** (32 = 64, 48 differs), so a host-driven engine re-chunks onto a fixed internal block.
-- **Metric and search (lane C).** Search is cheap and reliable: one evaluation costs 7.4–7.8 ms, 8 workers give 4.3–4.7× with bit-identical results, and distance A with a heuristic start reaches the strict proxy on 17 of 20 targets in a median 3.5 s. Two research claims didn't reproduce: running the heuristic and random searches side by side gained nothing (17 against 17), and λ = 16 was no better than 10. The metric itself is unvalidated: nobody has listened yet.
-- **Test host (lane H).** A 3,300-line clack-host host gives plugin-level goldens (25 ms per 2 s render, debug = release, in CI) and a leak harness that refuses a real display. It found no cross-instance state in the plugin, and it attributed the editor leak with valgrind.
-- **Agent loop (lane P).** When the expectation list is given, the loop is too easy to be a gate: three fresh agents passed 15 of 15 goals in 1–7 renders. Their trouble pointed at descriptor fixes: beat-smoothed envelopes, multi-parameter hints, a master level against clipping, `describe` on a WAV with its performance, margins in `check`. G1 now needs a blind listen ([agent-cli.md](../agent-cli.md#evaluating-the-cli-like-a-product)).
-- **Process.** Seven agent lanes ran in about 5 hours of wall clock on one shared laptop (load 2–30), at most two heavy builds at once. The no-real-display rule held (no Xorg crash since the first), at the price of software-GL numbers for every GUI measurement.
+- **Shell (A).** nice-plug 0.4.2 passed every hard must-have on the first build (clap-validator 36 / 0, Steinberg 537 / 537, 45 REAPER checks for CLAP and VST3, state round trips in REAPER and Carla). CLAP slot renaming needs a 123-line nice-plug patch; VST3 in REAPER stays "Slot N". REAPER restarts CLAP plugins about 30 ms into an offline render, so its renders can't be goldens.
+- **UI (U1, H).** The full reference panel draws 0 frames while idle and costs 1.2–1.4 ms of CPU per animating frame; clippy and a source scan enforce the design tokens. Every remaining UI risk sits in baseview, below egui: the keymap leak, ≈30 fps pacing (60 Hz requested gives 29 fps, 30 Hz gives 20), HiDPI clipping in REAPER, and Space lost to the host after a click in the editor. All measured under Xvfb; nothing has run on the real display.
+- **Engine (B).** 1,010 hashes are identical on Linux, Windows (CI) and wasm32, across build flags, SIMD lanes and FTZ/DAZ, as long as DSP follows the four rules, which clippy enforces. Without them `std` maths changes 13 of 1,000 seeded *patches*. 1,993× realtime for one voice, 152× for 8 P1-like voices with reverb (one core, scalar). Instruction budgets are the regression gate and also hold on GitHub's runner. **Block size is part of the render function** (32 = 64, 48 differs).
+- **Metric and search (C).** An evaluation costs 7.4–7.8 ms; 8 workers give 4.3–4.7× with bit-identical results; distance A with a heuristic start reaches the strict proxy on 17 of 20 targets, median 3.5 s. The research's portfolio and λ = 16 gains didn't reproduce. Nobody has listened, so the metric is unvalidated.
+- **Test host (H).** Plugin-level goldens (25 ms per 2 s render, in CI) and a leak harness that refuses a real display. No cross-instance state in the plugin; the editor leak attributed with valgrind.
+- **Agent loop (P).** With the expectation list given, three fresh agents passed 15 of 15 goals in 1–7 renders, so that alone can't be the G1 gate. Their trouble pointed at descriptor fixes (beat-smoothed envelopes, multi-parameter hints, a master level, `describe` on a WAV with its performance, margins in `check`).
+- **Process.** Seven agent lanes in about 5 hours of wall clock on one shared laptop (load 2–30). The no-real-display rule held, at the price of software-GL numbers for every GUI measurement.
 
 ## G0 at a glance
 
@@ -44,11 +44,11 @@ Full tables: [roadmap.md](../roadmap.md#p0--spikes-and-skeleton-done-2026-10-19-
 
 ## What changed in the plan
 
-- **ADRs:** 0001 and 0002 accepted at G0; 0002 lists what would reopen it. 0007 stays Proposed until the listening sessions. 0006 is unchanged.
-- **design.md:** §5's contract is bit-exact across platforms (Windows proven; aarch64 on the old fallback). It adds block size as a render input with host re-chunking, the enforcement and tests of the four rules, and plugin goldens through the test host. §6 gets beat-aware descriptors, metric v1, the listening protocol and margins with multi-parameter hints. §7–§8 take lane C's numbers and drop the portfolio and λ claims. §9 gets the 13-in-1,000 seed result.
-- **benchmarks.md:** every UI threshold has its measured value and G0 status; the engine table has numbers, absolute instruction budgets and P1 speed targets (≥ 1,000× for 1 voice, ≥ 100× for 8 P1-like voices, scalar); scopes request 60 Hz; editor leaks are attributed with valgrind, not heaptrack.
-- **roadmap.md:** G0 result table; G1 gets the 16-voice budget below and the agent-eval protocol (given lists, 3 runs, model and date, a blind listen ≥ 7 / 10, agent-written lists as a second track, nightly and never a merge gate).
-- **AGENTS.md:** block size and re-chunking; where the numeric clippy bans go (a crate `clippy.toml` replaces the root one); the 60 Hz scope request; lavapipe-only snapshots; editor leak checks in the test host; `cargo xtask host-render` for plugin goldens.
+- **ADRs:** 0001 and 0002 accepted at G0 (0002 lists what would reopen it); 0007 stays Proposed until the listening sessions; 0006 unchanged.
+- **design.md:** §5 bit-exact across platforms (Windows proven, aarch64 on the old fallback), block size as a render input with host re-chunking, how the four rules are enforced and tested, plugin goldens through the test host; §6 beat-aware descriptors, metric v1, the listening protocol, margins and multi-parameter hints; §7–§8 lane C's numbers, without the portfolio and λ claims; §9 the 13-in-1,000 seed result.
+- **benchmarks.md:** measured value and G0 status per UI threshold; engine numbers, absolute instruction budgets and P1 speed targets (≥ 1,000× for 1 voice, ≥ 100× for 8 P1-like voices, scalar); 60 Hz scope requests; valgrind, not heaptrack, for editor leaks.
+- **roadmap.md:** the G0 result table; G1's 16-voice budget (below) and agent-eval protocol.
+- **AGENTS.md:** re-chunking, where the numeric clippy bans go, the scope rate, lavapipe-only snapshots, editor leak checks and `cargo xtask host-render`.
 
 ### The 16-voice CPU budget for G1
 
@@ -105,10 +105,10 @@ All lanes ran on 2026-10-19 (times +03:00). Start = the lane's worktree or scrat
 
 The lanes A–P took about 9.5 agent-hours in all and about 5 hours of wall clock (04:23 → 09:19). The plan for the same work was 14.5 developer-days (S, A, B, C, Task 4, Z), "about 2 weeks" of calendar time. Read the gap with care:
 
-- **Parallelism:** up to three lanes ran at once (A, B and C 06:09–06:20; B, C and U1 06:24–07:43; U1, P and H 08:07–08:49), next to the last research report.
-- **Head start:** every lane began from a research probe that already worked. 01 had built `spike_np`; 03 an engine probe; 04 a metric probe whose numbers `heurcheck` reproduces exactly; 05 the verified skeleton; 02 the UI measurements. Part of the research hours belongs to the lanes.
-- **Left out of the hours:** the owner (about 3 hours of checks are still to come and are now the critical path), the orchestrator's reviews and merges, and scope cut before or during the lanes (vizia and WebView arms, U2, the ABX tool, most of the integration-bug track).
-- **Spike code:** throwaway, single-author, without migrations or cross-lane integration. Product code in P1 will not move at this rate.
+- **Parallelism:** up to three lanes at once (A, B, C 06:09–06:20; B, C, U1 06:24–07:43; U1, P, H 08:07–08:49).
+- **Head start:** each lane began from a working research probe (01's `spike_np`, 03's engine probe, 04's metric probe, 05's verified skeleton, 02's UI measurements), so part of the research hours belongs to the lanes.
+- **Left out:** the owner's time (about 3 hours of checks to come, now the critical path), the orchestrator's reviews and merges, and scope cut before or during the lanes (vizia and WebView, U2, the ABX tool, most of the integration-bug track).
+- **Spike code:** throwaway and single-author, with no migrations or cross-lane integration; P1 product code will not move at this rate.
 
 **Calibration for P1:** for well-specified agent spikes with a working probe, budget hours per lane, not days. Human-day estimates overstated wall clock by about an order of magnitude and said nothing about owner time. The P1 research session should re-estimate P1a and P1b as agent-hours per lane plus owner-hours per gate.
 
