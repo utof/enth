@@ -74,6 +74,15 @@ impl EventQueue {
         self.len = kept;
     }
 
+    /// Forget every waiting event, keeping the capacity and the dropped count ([`crate::Engine::reset`]). Never
+    /// allocates.
+    pub fn clear(&mut self) {
+        for slot in &mut self.buf[..self.len] {
+            *slot = None;
+        }
+        self.len = 0;
+    }
+
     /// Events waiting.
     #[must_use]
     pub fn len(&self) -> usize {

@@ -211,6 +211,20 @@ impl GlobalProcessor for Reverb {
         }
     }
 
+    /// An instant plan swap (P1b lane E+): exchange the whole core, an O(1) move of the 1.6 MB of delay lines
+    /// instead of `copy_state_from`'s copy (research report 03: a swap block went from up to 997 µs to 149 µs).
+    /// Every field the copy leaves alone (the ring sizes and masks, the detune depth, the mixer and interpolator
+    /// tables) is a constant of the sample rate, so for the same sample rate the exchange is exactly the copy.
+    /// `other` is left with this module's old core, which the main thread drops with the old plan.
+    fn take_state_from(&mut self, other: &mut Self) {
+        if self.core.sample_rate().to_bits() == other.core.sample_rate().to_bits() {
+            core::mem::swap(&mut self.core, &mut other.core);
+            self.idle = other.idle;
+            self.quiet = other.quiet;
+            self.scan_at = other.scan_at;
+        }
+    }
+
     fn subnormals(&self) -> usize {
         self.core.count_subnormals()
     }

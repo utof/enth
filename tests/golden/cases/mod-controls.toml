@@ -1,0 +1,29 @@
+description = "P1b lane E+: macro and mod-wheel moves in a Performance (`controls`), so a CLI render can express a plugin performance: macro3 to 0.5 at 0.1 s (osc1.fine, +20 %), macro1 to 1.0 at 0.25 s and back to 0.3 at 0.75 s (osc1.level, -60 %), the mod wheel to 1.0 at 0.4 s and back to 0 at 0.6 s (voice.pan, +50 %), each smoothed over 10 ms by the engine. Two notes, the reference saw through a gate envelope, so lane D2's envelope does not move it; an oscillator change updates it on purpose."
+sample_rate = 48000
+seconds = 1.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+    { key = 60, velocity = 0.6, on_s = 0.05, off_s = 0.9 },
+]
+controls = [
+    { time_s = 0.1, source = "macro3", value = 0.5 },
+    { time_s = 0.25, source = "macro1", value = 1.0 },
+    { time_s = 0.4, source = "modwheel", value = 1.0 },
+    { time_s = 0.6, source = "modwheel", value = 0.0 },
+    { time_s = 0.75, source = "macro1", value = 0.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.2.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", phase = 90 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+routes = [
+    { src = "macro1", dst = "osc1.level", depth = -60.0 },
+    { src = "modwheel", dst = "voice.pan", depth = 50.0 },
+    { src = "macro3", dst = "osc1.fine", depth = 20.0 },
+]

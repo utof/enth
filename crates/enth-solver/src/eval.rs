@@ -164,8 +164,8 @@ mod tests {
                 Note::new(62, 0.8, 0.25, 2.0),
                 Note::new(64, 0.8, 0.25, 3.0),
             ],
-            automation: Vec::new(),
             duration_s: 3.0,
+            ..Performance::default()
         };
         let t = note_timing(&perf);
         assert_eq!((t.on_s, t.off_s), (0.25, Some(2.0)));
