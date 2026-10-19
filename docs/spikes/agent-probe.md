@@ -194,3 +194,32 @@ flock -s /tmp/enth-quiet.lock cargo test --release -p spike-agent --locked -- --
 ```
 
 No audio is played anywhere; the tool writes WAV files and reads numbers.
+
+## Trial, 2026-10-19
+
+**Setup.** Three independent agents (Claude Sonnet 5.5, `claude-sonnet-5-5`), each in an empty folder with only the `spike-agent` binary. Each was given the five goals from `goals.toml` (brief, performance and expectation list) and a budget of 20 renders per goal. They had no access to the source, this doc or `tests/e2e.rs`, and nobody listened.
+
+**Result: 15 of 15 goals passed.** The orchestrator re-checked every final patch with the goal's performance forced.
+
+| Goal | Run 1 | Run 2 | Run 3 | Renders (median) |
+| --- | --- | --- | --- | --- |
+| g1 short bright pluck | 3 | 3 | 2 | 3 |
+| g2 slow dark pad | 3 | 2 | 1 | 2 |
+| g3 buzzy bass | 3 | 3 | 2 | 3 |
+| g4 soft bell-like tone | 4 | 4 | 5 | 4 |
+| g5 detuned supersaw-ish lead | 5 | 5 | 7 | 5 |
+
+Render counts include the final confirming `check`. The 20-render budget never bound.
+
+**What this shows, and what it doesn't.**
+- When the expectation list is given, the loop is easy: measured hints plus basic sound-design knowledge reach every list in 1–7 renders. The G1 gate as written ("half of 10 goals within 20 renders") would pass trivially. That confirms 07's risk #8: the gate measures descriptor and hint consistency, not whether the sound matches the words.
+- Nobody has listened. The 15 renders are in `~/enth-listen/agent-trial/` (`<goal>-run<N>.wav`) for a blind owner check.
+
+**Descriptor and hint problems all three agents hit** (fix before P1's real `describe`/`check`):
+1. **Detune beating corrupts envelope descriptors.** The first beat peak sets the "peak" level, so measured attack ≈ 1/(4 × beat rate) whatever `amp.attack` is; beat nulls look like decay; sustain moves several dB with where the hold time falls in the beat cycle. **Fix:** measure attack, decay and sustain on a beat-smoothed envelope (a crest or low-passed envelope over at least one beat period), as 04-final recommends.
+2. **Hints are one parameter at a time**, so they can break another expectation (e.g. "lower detune" for decay pushes beating out of its window). **Fix:** multi-parameter hints that solve all failing items at once, a least-squares step on the finite-difference Jacobian that respects passing items, and say when no single move works.
+3. **Clipping** at 0 dBFS shifted reference levels, and there's no master gain to undo it. **Fix:** a master level parameter and a `clipping` descriptor.
+4. **`describe` on a WAV loses the hold time**, so decay, sustain and release come back null. **Fix:** accept `--perf` with a WAV, or store it in the WAV's metadata.
+5. **Range surprises** (`amp.decay` max 2000 ms) and **thin margins** (passes at 3211 Hz against > 3 kHz). **Fix:** `params` shows ranges prominently, and `check` reports the margin.
+
+**For the G1 gate (P1):** given lists, 3 runs per goal with the model named and dated, a blind owner check that at least 7 of 10 final sounds match their text, and a harder second track where the agent writes its own expectations from the brief.
