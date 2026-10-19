@@ -8,7 +8,8 @@
 //! `RepaintNotifier` (an atomic store), so an idle editor draws nothing.
 //!
 //! `ENTH_UI_LOG=<file>` (read when the editor opens) logs every frame and a once-a-second
-//! summary with the GUI thread's CPU time, for measurements.
+//! summary with the GUI thread's CPU time, for measurements. `ENTH_THEME=<file.json>` replaces the
+//! dark theme's tokens (the format of `spike-ui-dev --dump-theme`).
 #![allow(
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
@@ -347,6 +348,16 @@ pub struct Editor {
     log: Option<FrameLog>,
 }
 
+/// The dark theme, or the tokens in the JSON file named by `ENTH_THEME` (read when the editor
+/// opens; for trying token values, e.g. repaint rates, without rebuilding). A file that doesn't
+/// parse falls back to the dark theme.
+fn theme_from_env() -> enth_ui::Theme {
+    std::env::var_os("ENTH_THEME")
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(enth_ui::Theme::dark)
+}
+
 /// The panel's view of the host: normalised values and gestures through nice-plug.
 struct Host<'a> {
     params: &'a ShellParams,
@@ -382,7 +393,7 @@ impl NiceEguiApp for Editor {
         // nice-plug-egui 0.6.0 never calls editor_closed(), so every open starts afresh here: the
         // panel's textures belong to the previous window's context.
         frame_log::name_this_thread();
-        let theme = enth_ui::Theme::dark();
+        let theme = theme_from_env();
         theme.apply(&egui_ctx);
         self.panel = Some(ReferencePanel::new(theme, self.feed.clone()));
         self.gui = Some(gui);
