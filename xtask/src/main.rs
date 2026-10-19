@@ -5,6 +5,9 @@
     reason = "xtask is a CLI tool"
 )]
 
+mod bundle;
+mod reaper;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -36,6 +39,7 @@ struct Metadata {
     packages: Vec<Package>,
     workspace_members: Vec<String>,
     workspace_root: PathBuf,
+    target_directory: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -76,12 +80,23 @@ impl LayersFile {
     }
 }
 
+const USAGE: &str = "usage: cargo xtask <command>
+  check-layers                      workspace members only depend on lower layers
+  wasm-check                        core crates build for wasm32-unknown-unknown
+  bundle <pkg> [--release] [...]    build a plugin and create .clap / .vst3 bundles in target/bundled
+  install <pkg> [--release] [...]   bundle, then copy to ~/.clap and ~/.vst3
+  reaper-test [--release] [--no-build] [--format clap|vst3]
+                                    local gate: load, params, automation and state in headless REAPER";
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("check-layers") => check_layers(),
         Some("wasm-check") => wasm_check(),
-        _ => Err("usage: cargo xtask <check-layers|wasm-check>".to_owned()),
+        Some("bundle") => bundle::bundle(&args[1..]),
+        Some("install") => bundle::install(&args[1..]),
+        Some("reaper-test") => reaper::reaper_test(&args[1..]),
+        _ => Err(USAGE.to_owned()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
