@@ -75,6 +75,19 @@ Sources: the P1b research session (`_local/sessions/2026-10-19-p1b-plugin-editor
 - **Room for Recreate and Learn:** a no-op `Overlay` (emphasis normal, dimmed or hidden, plus scores) and reserved lesson, challenge-bar and results regions behind cargo features. P1b builds no presenters for them.
 - The reopen conditions below are unchanged.
 
+## Note — 2026-10-19 (P1b lane FK): keyboard focus, measured
+
+The keyboard-focus patch ([ADR-0001](0001-plugin-shell.md), patch 4) is in `vendor/`. What the work found about X11, all by driving a stand-in host window with XTest under Xvfb (`vendor/tests/focus-probe/`):
+
+- **Not taking the focus on click is not enough.** A child window that selects `KeyPress` gets the key even while the host's toplevel holds the input focus and the pointer is over the child. So the stock editor swallowed Space as soon as the pointer was over it, before any click, and kept the focus after one. A child that does not select `KeyPress` leaves the key to the host. The patch therefore deselects `KEY_PRESS` and `KEY_RELEASE` on the editor window except while typing.
+- **While typing**, the window selects keys again, takes the input focus (remembering who held it) and gives it back when egui's text edit ends (`Context::text_edit_focused()`, checked after every frame, so a click on a knob does not count) or when another window takes the focus, which cancels the edit. Hand-back order: the previous holder, the parent window, `PointerRoot`.
+- **Pointer-detail focus events are not keyboard focus.** Moving the focus from the host to the editor while the pointer is over the editor sends `FocusOut(editor, Pointer)` first. baseview reported it as "unfocused", which cancelled the edit that had just begun. baseview now ignores the pointer, pointer-root and none details.
+- **Policy per window**, `KeyboardFocus::{OnClick, WhileTyping}` in `EguiWindowSettings`; embedded windows default to `WhileTyping`, a standalone window always uses `OnClick`.
+
+**Results.** 11 of 11 checks pass, in both layouts (a direct child, and created without a parent and reparented, which is how the CLAP wrapper does it): the host holds the focus at the start; Space reaches the host while hovering; a click on a button leaves the focus with the host; Space still reaches it; a click on the text field gives the editor the focus; typing goes to the field and not to the host; clicking away returns the focus; Space reaches the host again; Enter and Escape end the edit and return the keyboard; another window taking the focus cancels the edit. Control: the same program with `on-click` shows the upstream behaviour, Space swallowed on hover and the focus kept after a click (6 of 6 expectations of the bad behaviour hold, for both layouts).
+
+**Not shown.** REAPER's SWELL windows on a real display (they may reassign the X focus themselves; the owner check is in ADR-0001), Windows and macOS. On Windows baseview consumes every key, so the editor keeps the keyboard after a click there. The cost stays as noted above: no keyboard shortcuts in the editor outside text fields, which is why P1b has Undo and Redo buttons.
+
 ## Consequences
 
 - Smaller memory floor, no system-WebKit dependency on Linux, no second toolkit's event loop inside the host.
