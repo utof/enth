@@ -14,7 +14,7 @@ use gungraun::{
 use spike_engine::render::{frames, held_chord};
 use spike_engine::{BLOCK, Engine, Flush, Patch, Path};
 
-/// Absolute instruction budget for one 2 s render: the value measured on x86_64 Linux with the pinned
+/// Absolute instruction budget for one 2 s render: the value measured on `x86_64` Linux with the pinned
 /// toolchain plus 10% (benchmarks.md: regressions over 10% fail). Re-measure when the toolchain or `wide`/`libm`
 /// pins change, together with the golden hashes. Absolute limits need no stored baseline, so they work in CI.
 fn budget(ir: u64) -> LibraryBenchmarkConfig {
