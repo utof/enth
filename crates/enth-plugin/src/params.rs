@@ -6,8 +6,9 @@
 //!
 //! Every parameter is a linear 0–1 `FloatParam` with no smoothing: the value is normalised, plain values live only
 //! in the patch and the engine, and the engine smooths. Macros take CLAP polyphonic modulation (id = macro index);
-//! slots do not. Names are "Macro N" and "Slot N": stock nice-plug fixes names at construction (lane FK's fork adds
-//! renaming, lane PL wires it). Defaults: a macro 0, a slot 0.5 ([`enth_session::bridge::SLOT_DEFAULT_NORM`]).
+//! slots do not. Names are "Macro N" and "Slot N" (nice-plug fixes them at construction; lane FK's vendored fork can
+//! rename them at run time, and lane PL wires that). Defaults: a macro 0, a slot 0.5
+//! ([`enth_session::bridge::SLOT_DEFAULT_NORM`]).
 
 use std::sync::Arc;
 

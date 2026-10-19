@@ -76,8 +76,8 @@ pub struct Shared {
     /// A state load happened: `process()` takes the host's current values as its "last sent" without sending them,
     /// so values restored with the state never override the loaded patch in the engine (docs/plugin.md).
     pub rebaseline: AtomicBool,
-    /// Host parameter names may have changed. Stock nice-plug cannot rename parameters; with lane FK's fork the
-    /// shell sets the names and asks for an info rescan (lane PL).
+    /// Host parameter names may have changed (`ShellRequest::RenameParams`). Lane PL sets the names through lane FK's
+    /// vendored fork and asks for an info rescan; until then the host shows "Slot N".
     pub names_dirty: AtomicBool,
     /// The editor window closed (seen by `process()` through `EguiEditorState::is_open`): the next pump releases
     /// audition notes.

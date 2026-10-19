@@ -8,9 +8,10 @@
 //! Per frame, on baseview's GUI thread (docs/session.md, "Who calls what"): lock the session, `pump`, `fold_host`
 //! with the host's values, draw from `SessionView::patch`, apply the frame's intents through `SessionEdit`, drain
 //! the requests, **unlock**, then forward the host writes to nice-plug's `ParamSetter` (begin, set, end), so the host
-//! records automation and never sees a call made under the lock. Every `build()` is a fresh open (stock
-//! nice-plug-egui never calls `editor_closed`): it applies the theme and ends any gesture the last window left
-//! open. Never `GuiContext::set_state`: an editor preset load calls `Session::load_patch` under the lock.
+//! records automation and never sees a call made under the lock. Every `build()` is a fresh open: it applies the
+//! theme and ends any gesture the last window left open; `editor_closed` (called by lane FK's vendored
+//! nice-plug-egui) ends it too and releases audition notes. Never `GuiContext::set_state`: an editor preset load
+//! calls `Session::load_patch` under the lock.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -134,8 +135,8 @@ impl Glue {
         }
     }
 
-    /// Every `build()` is a fresh open: close any gesture the last window left open.
-    pub fn reopen(&mut self, session: &mut dyn SessionEdit) {
+    /// Close any drag's gesture: at every `build()` (a fresh open) and when the window closes.
+    pub fn end_drag(&mut self, session: &mut dyn SessionEdit) {
         session.end_gesture();
         self.gesture = None;
     }
@@ -180,10 +181,23 @@ impl NiceEguiApp for EditorApp {
     ) -> Result<(), HandlerError> {
         self.theme.apply(&egui_ctx);
         let glue = &mut self.glue;
-        let ((), writes) = self.shared.with_session(|s| glue.reopen(s));
+        let ((), writes) = self.shared.with_session(|s| glue.end_drag(s));
         forward(&nice_gui_ctx, &self.params, writes);
         self.gui = Some(nice_gui_ctx);
         Ok(())
+    }
+
+    /// The window closed (called by the vendored nice-plug-egui, lane FK; `process()` also watches
+    /// `EguiEditorState::is_open()`): end a drag, release audition notes, forward the `End`s, drop the context.
+    fn editor_closed(&mut self) {
+        let glue = &mut self.glue;
+        let ((), writes) = self.shared.with_session(|s| {
+            glue.end_drag(s);
+            let _ = s.audition_all_off();
+        });
+        if let Some(gui) = self.gui.take() {
+            forward(&gui, &self.params, writes);
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {

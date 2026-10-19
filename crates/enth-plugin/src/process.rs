@@ -17,8 +17,8 @@
 //! 4. Report `NOTE_END`: first the voices a CLAP `reset` freed (the engine reports none for them), then the block's
 //!    own ends at `NoteEnd::offset`; audition notes are not the host's and are skipped.
 //! 5. Take the telemetry tap's wake flag and request a repaint (lock-free).
-//! 6. Watch `EguiEditorState::is_open()` fall (stock nice-plug-egui never calls `editor_closed`): disable the tap
-//!    and leave the editor-closed duties to the next pump.
+//! 6. Watch `EguiEditorState::is_open()` fall (the editor's `editor_closed` does the session side on the GUI thread;
+//!    this covers a build without that hook): disable the tap and leave the editor-closed duties to the next pump.
 //! 7. While [`crate::Shared::pump_wanted`] is set, at most once per [`PUMP_INTERVAL_S`] of audio: clear it and
 //!    `execute_background(Task::Pump)` (one bounded `try_send`, only while a compile is pending; never
 //!    `execute_gui`, which can run inline here).

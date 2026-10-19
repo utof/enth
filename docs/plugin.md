@@ -21,7 +21,7 @@ The plugin-level golden is `tools/test-host/golden/enth-plugin.toml` with its pa
 
 - CLAP id `dev.enth.synth`, VST3 class id `55555EAD-AA77-C9FA-F878-DDDDB0B9D9BD`, name "enth", vendor "enth" ([naming.md](naming.md); a test pins both ids). REAPER lists it as `CLAPi: enth (enth)` and `VST3i: enth (enth)`.
 - 72 parameters in host order: `macro_1`…`macro_8`, then `slot_1`…`slot_64` (`#[nested(array)]`, the order of `enth_session::bridge::HOST_PARAM_IDS`). nice-plug hashes them to the ids hosts store: `macro_1` 825615486, `slot_1` 1248030256, `slot_64` 34232479, the same as the shell spike's (tests pin them, and `reaper-test` checks REAPER's idents).
-- Each is a linear 0–1 `FloatParam` with no smoothing (the engine smooths). Macros default to 0 and take CLAP poly-mod (id = macro index); slots default to 0.5. Names are "Macro N" and "Slot N": stock nice-plug fixes names at construction. Lane FK's fork adds renaming; PL then sets `host_param_name` and asks for an info rescan when [`Shared::names_dirty`](#threads) is set.
+- Each is a linear 0–1 `FloatParam` with no smoothing (the engine smooths). Macros default to 0 and take CLAP poly-mod (id = macro index); slots default to 0.5. Names are "Macro N" and "Slot N", fixed at construction. Lane FK's vendored fork (on main since `7447f2f`) can rename them at run time; PL sets `host_param_name` and asks for an info rescan when [`Shared::names_dirty`](#threads) is set.
 - Stereo out, no audio in. `MIDI_INPUT = Basic`: `MidiCCs` (the mod wheel) adds 2,080 hidden VST3 parameters, an open decision for PL. `SAMPLE_ACCURATE_AUTOMATION = true` (required, [Determinism](#determinism)). `CLAP_POLY_MODULATION_CONFIG` is 32 voices, overlapping.
 
 ## Threads
@@ -51,7 +51,7 @@ The plugin-level golden is `tools/test-host/golden/enth-plugin.toml` with its pa
 3. **Render**, after handing the engine the monitor bypass.
 4. **`NOTE_END`**: the voices a reset freed (at offset 0), then the block's own ends at `NoteEnd::offset` (clamped into the block by the engine). Audition notes are not the host's and are skipped.
 5. **Telemetry**: the tap's wake flag becomes a repaint request (lock-free).
-6. **Editor closed**: `EguiEditorState::is_open()` falling (stock nice-plug-egui never calls `editor_closed`) disables the tap and sets `editor_closed` and `pump_wanted`; the next background pump releases audition notes.
+6. **Editor closed**: `EguiEditorState::is_open()` falling disables the tap and sets `editor_closed` and `pump_wanted`; the next background pump releases audition notes. (The vendored nice-plug-egui also calls the editor's `editor_closed`, which does the session side on the GUI thread; both are idempotent.)
 7. **The pump flag** (below).
 
 ### Notes
@@ -115,7 +115,8 @@ Measured at F2b (`enth-test-host cli-equal`, debug and release bundles): **62 of
 - **The patch wins at activation too.** Host values set before `activate` without a state are recorded, not folded: the engine plays the patch until the host moves a value.
 - **VST3.** The same code and the same state JSON. nice-plug drops `NOTE_END` for VST3; REAPER rejects VST3 parameter renames (`restartComponent(kParamTitlesChanged)`), so VST3 keeps "Slot N" even with the fork. A parameter set from the GUI while the host processes reaches the plugin through `process()`, and REAPER applies a script-set VST3 value only at the next process cycle. `ParamSetter` calls `IComponentHandler` on baseview's thread (F1b decision 3; PL checks write and touch modes with RH's `slot-automation`). clap-validator covers CLAP only: Steinberg's VST3 validator (537 of 537 on the shell spike) has not been run on `enth-plugin` yet.
 - **No dirty marking.** nice-plug never calls CLAP `mark_dirty` or VST3 `setDirty`; an editor-only edit may leave REAPER's project clean (an open check in phase-1b.md). `ShellRequest::PatchEdited` is drained and ignored until a fork patch adds it.
-- **No editor close hook.** nice-plug-egui 0.6.0 never calls `editor_closed`; `process()` watches `is_open()`, and every `build()` is a fresh open.
+- **Editor close.** Stock nice-plug-egui 0.6.0 never calls `editor_closed`; the vendored fork does (lane FK). The shell uses it (end a drag, release auditions, forward the `End`s), still watches `is_open()` in `process()`, and treats every `build()` as a fresh open.
+- **The vendored fork** (lane FK, `vendor/`): the plugin builds against it through `[patch.crates-io]`. It also fixes nice-plug's CLAP wrapper losing events that precede a splitting parameter event on the same frame under `SAMPLE_ACCURATE_AUTOMATION`; the F2b results below were re-measured on it.
 - **Damaged fields.** Text that is not JSON never reaches a field's `set` (nice-plug refuses it, with a debug assertion that fires under `cfg(test)`); JSON that is not a patch loads the init patch and is kept as text until the first edit.
 - **Unsupported sample rates** activate silent (above).
 
