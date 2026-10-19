@@ -18,8 +18,8 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 
 1. **JSON by default when stdout is not a TTY**; tables for humans. One JSON object per call (JSONL for streams). Every object carries `"schema": "enth.<command>/<version>"`.
 2. **Real units everywhere.** `filter1.cutoff=800Hz`, `env1.attack=40ms`, `osc2.fine=12ct`, `comp1.mix=30%`. The CLI parses unit strings into the parameter's plain value using the parameter schema ([design.md §1](design.md#1-one-parameter-schema-eight-consumers)); normalised 0–1 values never appear in the CLI.
-3. **Stateless files.** Every command reads a patch file and, if it changes it, writes a new one (`--out`). History is files: agents can branch, diff and roll back. An optional daemon may come later purely for speed.
-4. **Deterministic.** Fixed default seed, sample rate (48 kHz) and render length; sorted keys; numbers rounded to 4 significant digits.
+3. **Stateless files.** Every command reads a patch file and, if it changes it, writes it back, or a new one with `--out`. History is files: agents can branch, diff and roll back. An optional daemon may come later purely for speed.
+4. **Deterministic.** Fixed default seed, sample rate (48 kHz) and render length; sorted keys; numbers rounded to 4 significant digits (2026-10-19, as built: an integral number prints exactly, so `65535` and `48000` survive; the `ops` and `inverse` arrays stay exact so they can be replayed).
 5. **Self-describing.** `enth schema`, `enth modules`, `enth params <module>` and `enth guide` (a one-page workflow guide for agents) mean no outside docs are needed.
 6. **Errors teach.** Exit codes are stable; error JSON says what was wrong and how to fix it:
    `{"error":"unknown_param","path":"filter1.cutof","did_you_mean":["filter1.cutoff"],"hint":"enth params svf"}`
@@ -28,28 +28,30 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 8. **Every edit is an op** — the same ops the UI emits and undo stores ([design.md §2](design.md#2-patch-model-ops-and-versioning)).
 9. **Types are the schema.** Each output is a Rust struct (`Serialize + Deserialize + JsonSchema`, `deny_unknown_fields`) and `enth schema <name>` prints its JSON Schema (draft 2020-12, from `schemars`). Tests snapshot the output (insta), deserialize it back into the struct, and snapshot the schema itself, so code and schema cannot drift. There is no `jsonschema` crate: its default features pull in a C build. Any change to an output's shape, or to a field's meaning (like `decay_ms` between the spike and P1), bumps its version and updates the snapshots (AGENTS.md).
 
-| Exit code | Meaning |
-| --- | --- |
-| 0 | OK (for `check`: all expectations passed) |
-| 1 | Ran fine, but `check` had failures |
-| 2 | Usage error (bad flags) |
-| 3 | Validation error (bad patch, unknown param, value out of range) |
-| 4 | Render or analysis failure |
-| 5 | File not found |
+| Exit code | Meaning | Error codes (`enth.error/1`, as built in P1a) |
+| --- | --- | --- |
+| 0 | OK (for `check`: all expectations passed) | |
+| 1 | Ran fine, but `check` had failures | |
+| 2 | Usage error (bad flags) | `usage` (clap, with the usage line in `hint`), `bad_expect`, `bad_perf`, `nothing_to_apply` |
+| 3 | Validation error (bad patch, unknown param, value out of range) | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range` with `try`, `min`, `max`, `bad_value`, `wrong_unit`, `bad_json`, `unknown_op`, …), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema`, `not_a_patch` |
+| 4 | Render or analysis failure | `render_failed`, `analysis_failed`, `unsupported_wav`, `write_failed` |
+| 5 | File not found | `file_not_found` |
+
+Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (possibly empty), and where it applies `path` (an address such as `filter1.cutof`, an op such as `ops[2]`, or a path into a file such as `generators[1].params.cutoff`), `file`, `known` (the valid names, when the list is short) and `errors` (every problem, when a file has several). On a terminal the error is plain text on stderr instead.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `enth guide [--topic expect\|ops\|descriptors]` | Print the agent workflow guide (one markdown page, at most about 6 KB) |
-| `enth schema [patch\|ops\|describe\|check\|…]` | JSON Schemas for files and outputs |
-| `enth modules` / `enth params <module>` | Catalogue: module kinds; params with units, ranges (shown prominently: agents in the Phase 0 probe were surprised by range limits), defaults, one-line descriptions, perceptual effect |
-| `enth new --template <name> --out p.patch.json` | Start from a template (`init`, `pluck_1osc`, `pad_2osc`, `bass_sub`…) |
+| `enth schema [patch\|ops\|perf\|describe\|check\|…]` | JSON Schemas for files and outputs (the list without a name) |
+| `enth modules` / `enth params <kind\|voice\|master\|id> [--patch p]` | Catalogue: module kinds; params with units, ranges (shown prominently: agents in the Phase 0 probe were surprised by range limits), defaults, accepted spellings, one-line descriptions, perceptual effect. A module id (`filter1`) resolves to its kind |
+| `enth new --template <name> --out p.patch.json` / `enth new --list` | Start from a template (`init`, `pluck_1osc`, `pad_2osc`, `bass_sub`); the file is written dense and stamped with the engine version |
 | `enth random --seed 7 --difficulty 0.4 [--amounts filter=0.5,effects=0] [--musical 0.8] --out t.patch.json` | Generate a Recreate target with the same randomizer as the game ([design.md §9](design.md#9-randomizer-and-difficulty)) |
-| `enth apply p.patch.json --ops '<json>' \| --set k=v[,…] --out p2.patch.json [--dry-run]` | Apply ops (`--set` is sugar for `set` ops); prints the applied changes and the inverse ops |
-| `enth get p.patch.json [addr…]` / `enth diff a.patch.json b.patch.json` | Read values; compare patches |
-| `enth render p.patch.json [--note C3 --vel 100 --dur 2 --release 1 \| --perf perf.json] --out p.wav` | Deterministic render. Writes a 32-bit float WAV with an `enth` chunk holding the performance (`--bits 16\|24` for a plain file); reports `peak_dbfs`, `true_peak_dbtp` and `clipped_pct` |
-| `enth describe <wav\|patch> [--perf perf.json]` | Perceptual descriptors (renders first if given a patch). A WAV needs its performance. Precedence: `--perf`, then the `enth` chunk that `render` wrote, then an inferred note-off (`perf.source` says which); otherwise decay, sustain and release come back null with a reason |
+| `enth apply p.patch.json --ops '<json>' \| --set k=v[,…] [--out p2.patch.json] [--dry-run]` | Apply ops (`--set` is sugar for `set` ops; both may be given, ops first); in place without `--out`. Prints the applied changes in real units, the resolved ops and the inverse ops (exact). `--ops` takes inline JSON, `@file.json` or `-` (stdin) |
+| `enth get p.patch.json [addr…] [--plain]` / `enth diff a.patch.json b.patch.json [--describe]` | Read values (unit strings; numbers with `--plain`; `filter1`, `voice`, `master`, `routes`, `modules`, `meta` as well as addresses; no address gives a summary of what differs from the defaults); compare patches (the changes, and ops that turn `a` into `b`, verified by applying them) |
+| `enth render p.patch.json [--note C3 --vel 100 --hold 1.5 --dur 3 \| --perf perf.json] [--out p.wav] [--bits f32\|16\|24] [--seed n]` | Deterministic render. Writes a stereo 32-bit float WAV with an `enth` chunk holding the performance (`--bits 16\|24` for integer PCM, same chunk); reports `peak_dbfs`, `true_peak_dbtp`, `clipped_pct` and `clipping` over both channels |
+| `enth describe <wav\|patch> [--perf perf.json]` | Perceptual descriptors (renders first if given a patch). A WAV needs its performance. Precedence: `--perf`, then the `enth` chunk that `render` wrote, then an inferred note-off (`perf.source` says which: `flag`, `default`, `wav`, `inferred`, `none`); otherwise decay, sustain and release come back null, and `missing` says why for every null descriptor |
 | `enth check <wav\|patch> --expect '<list>' [--perf perf.json] [--no-fix] [--fix-budget 16]` | Pass/fail per expectation with its margin and noise, and one measured multi-parameter `fix` for all the failures |
 | `enth compare <wav\|patch> --target t.wav` | Score 0–100, component distances, perceptual differences |
 | `enth suggest p.patch.json --target t.wav \| --expect '<list>' [--top 5]` | Ranked parameter moves from measured sensitivities |
@@ -57,9 +59,32 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 | `enth step p.patch.json --ops '<json>' \| --set k=v[,…] [--expect …\|--target …] --out p2.patch.json` | apply + render + describe + check/compare in one call (fewest round trips). It echoes only the features named in `--expect` plus a headline, unless `--full` |
 | `enth explain p.patch.json` | Plain-language explanation of the patch (doubles as lesson text) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
-| `enth bench` | Engine speed: ×realtime per core, per-voice CPU (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
+| `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
 **CLI v0 (P1a) is 13 commands:** `schema`, `modules`, `params`, `new`, `apply`, `get`, `diff`, `render`, `describe`, `check`, `step`, `guide` and `bench`, each with a defined output shape. `random`, `compare`, `suggest`, `match`, `explain`, `validate` and `migrate` come later.
+
+### CLI v0 as built (2026-10-19, P1a lane C)
+
+`crates/enth-cli` is a thin binary over `enth_cli::run(args, stdin) -> Output { code, stdout, stderr }`; snapshot tests run in process.
+
+| Schema id | Printed by |
+| --- | --- |
+| `enth.schema/1`, `enth.modules/1`, `enth.params/1`, `enth.guide/1` | `schema` (the list), `modules`, `params`, `guide` |
+| `enth.new/1`, `enth.templates/1` | `new`, `new --list` |
+| `enth.apply/1`, `enth.get/1`, `enth.diff/1` | `apply`, `get`, `diff` |
+| `enth.render/1`, `enth.describe/1`, `enth.check/1`, `enth.step/1`, `enth.bench/1` | `render`, `describe`, `check`, `step`, `bench` |
+| `enth.error/1` | every error |
+| `enth.patch/1`, `enth.ops/1`, `enth.perf/1`, `enth.wavmeta/1` | input documents: a patch file, the ops JSON, a performance, the WAV chunk |
+
+`enth schema <name>` prints the JSON Schema itself (draft 2020-12, `$id` set to the schema id, the `schema` field pinned with `const`).
+
+- **Performance.** Patch files (schema 1) carry no performance. Without flags every command plays the default: C3, velocity 100, held 1.5 s, in a 3 s clip (`perf.source: "default"`). `--perf` takes inline JSON (`enth.perf/1`; `schema` may be left out, so an eval goal's `perf` table works as is), a file, `-` (stdin) or the short form `note=A3,vel=100,hold=1.5s,dur=2.5s`; `--note`, `--vel`, `--hold`, `--dur` change one field of a single-note performance (`--hold` alone sets the clip to hold + 1.5 s). The judge passes the goal's performance, so agents must pass it on every `step` too. `perf.source` is `flag`, `default`, `wav`, `inferred` or `none` (there is no `patch` source while patches store no performance).
+- **The WAV.** Stereo IEEE float (format 3, an 18-byte `fmt ` chunk and a `fact` chunk), then an `enth` chunk with `enth.wavmeta/1` JSON (`engine`, `sample_rate`, `seed`, `patch_hash`, `perf`), padded with spaces to an even length so no pad byte follows it (hound skips unknown chunks but not their pad byte), then `data`. `describe` and `check` on a WAV analyse the mean of its channels.
+- **`check`.** The judged render uses the default seed (or `--seed`); the two nuisance re-renders use seeds derived from it, which move only the start phases of oscillators in `free` phase mode (the default). On a WAV the noise comes from re-analysing the signal delayed by 137 and 311 samples. Per item: `expect` (canonical), `got` (in `unit`), `pass`, `margin`, `margin_unit` (only when it differs from `unit`: `ct` for a pitch judged against a note), `margin_pct` (Hz and ms items), `noise`, `thin`, `note` (pitch items: `C3+9ct`), `why` (when `got` is null), and `lower_bound`, `estimated`, `unstable` when true. `check` and `step` judge identically.
+- **`fix` and `blocked`.** The CLI side is wired (`--no-fix`, `--fix-budget`, the call only for a patch with failures, ops printed in exact wire form), but the search is lane H's `enth-solver::hint`: until it merges, `fix` is `null` and `blocked` is `[]`. The seam is `enth_cli::fix::propose(&FixRequest) -> FixOutcome`, with `enth_cli::eval::Evaluator` (render and describe with the goal's performance, rayon-parallel, results in input order) for the probes.
+- **`step`.** Writes the patch (in place without `--out`) and a WAV beside it (`--wav` to choose), echoes a flat `describe` map of the features named in `--expect` plus a headline (`pitch.note`, `spectrum.centroid_hz`, `envelope.attack_ms`, `envelope.sustain_db`, `envelope.duration_ms`, `loudness.peak_dbfs`, `loudness.clipping`; everything with `--full`), the applied changes and the inverse ops.
+- **Templates** live in `content/templates/*.patch.json` (sparse files, embedded in the binary). The engine at freeze F2 refuses modulation routes and the mono and legato modes (`not_yet`, lane S2b), so the P1a templates use neither; a filter envelope on `pluck_1osc` is one `add` and one `route` op once S2b is merged.
+- **The guide** is `enth guide` (5.5 KB of markdown in `enth.guide/1`'s `text`, raw markdown on a terminal) with topic pages `expect`, `ops` and `descriptors` (the last generated from `enth-analysis`'s vocabulary).
 
 ## Files
 
@@ -133,7 +158,7 @@ Envelope descriptors are measured on a beat-corrected envelope: the beat rate is
 | `detune.beating_hz`, `detune.depth_db`, `detune.voices_est` | Hz, dB, count | Chorus/unison thickness. `beating_hz` comes from a multi-harmonic estimator (0.15–25 Hz) that tells detune from a tremolo LFO; it is null below that band |
 | `stereo.width`, `stereo.corr` | 0–1, −1–1 | Stereo image |
 | `loudness.lufs_i`, `peak_dbfs`, `true_peak_dbtp`, `clipped_pct`, `clipping` | LUFS, dBFS, dBTP, %, bool | Level, measured on the engine's float render, so `peak_dbfs` can be above 0. `clipped_pct` is the share of samples at or beyond full scale; `clipping` is true when it is above 0. Clipping bends brightness (a centroid read 24 % high in one case, 116 % in another), so it is reported and fixed first: the patch's `master.level` (dB) undoes it without retuning every module (agents in the probe had no way back from clipping) |
-| `perf.source` | word | Where the performance came from: `patch`, `flag`, `wav` (the `enth` chunk) or `inferred` |
+| `perf.source` | word | Where the performance came from: `flag`, `default` (the CLI's default performance; patches store none), `wav` (the `enth` chunk), `inferred` or `none` |
 | `words` | list | Controlled vocabulary: `bright`, `dark`, `plucky`, `wide`, `detuned`, `noisy`, `hollow`… |
 
 Example output (~300 tokens):
@@ -141,7 +166,7 @@ Example output (~300 tokens):
 ```json
 {"schema":"enth.describe/1","file":"p1.wav","dur_s":3.0,
  "pitch":{"f0_hz":130.8,"note":"C3","cents_dev":-2,"stability":0.98},
- "perf":{"note":"C3","hold_s":1.5,"source":"patch"},
+ "perf":{"source":"default","dur_s":3,"notes":[{"note":"C3","vel":100,"on_s":0,"off_s":1.5}]},
  "envelope":{"attack_ms":4,"decay_ms":310,"sustain_db":-9.5,"release_ms":420,"shape":"pluck","beat_corrected":true},
  "spectrum":{"centroid_hz":1840,"centroid_track_hz":[3100,1500,900],"rolloff85_hz":5200,"flatness":0.07,
              "tilt_db_oct":-5.1,"harmonics_db":[0,-6.1,-9.4,-12.2,-14.0,-16.3],"odd_even_ratio":1.0},
