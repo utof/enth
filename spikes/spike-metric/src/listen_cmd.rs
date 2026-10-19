@@ -199,7 +199,13 @@ fn run_session(dir: &Path, manifest: &Manifest, session: u8, player: &str) -> Re
         loop {
             println!();
             println!("[{}/{}] playing ...", t.n, trials.len());
-            let status = Command::new(player)
+            let mut cmd = Command::new(player);
+            if player == "pw-play" {
+                // pw-play defaults to media.role "Music", and PipeWire's stream-restore may keep that role muted
+                // (it did on the owner's machine). A role of our own starts unmuted and touches no system setting.
+                cmd.arg("--media-role=Production");
+            }
+            let status = cmd
                 .arg(&path)
                 .stdin(Stdio::null())
                 .status()
