@@ -87,6 +87,14 @@ impl Param for IntParam {
         &self.info.name
     }
 
+    fn display_name(&self) -> String {
+        self.info.display_name()
+    }
+
+    fn set_display_name(&self, name: Option<String>) {
+        self.info.set_display_name(name)
+    }
+
     fn unit(&self) -> &'static str {
         self.info.unit
     }

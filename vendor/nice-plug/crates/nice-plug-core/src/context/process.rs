@@ -92,6 +92,11 @@ pub trait ProcessContext<P: Plugin> {
     /// Request the plugin to be restarted.
     fn request_restart(&self);
 
+    /// Ask the host to re-read parameter info (names) after `Param::set_display_name()`.
+    /// Realtime-safe. CLAP: `clap_host_params.rescan(INFO | TEXT)`; VST3:
+    /// `restartComponent(kParamTitlesChanged)`. Default: no-op.
+    fn request_param_info_rescan(&self) {}
+
     /// Set the current voice **capacity** for this plugin (so not the number of currently active
     /// voices). This may only be called if `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` is set.
     /// `capacity` must be between 1 and the configured maximum capacity. Changing this at runtime

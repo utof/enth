@@ -375,6 +375,10 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     fn request_restart(&self) {
         self.inner.request_restart();
     }
+
+    fn request_param_info_rescan(&self) {
+        self.inner.request_param_info_rescan();
+    }
 }
 
 #[cfg(feature = "editor")]
@@ -495,5 +499,9 @@ impl<P: Vst3Plugin + Send> GuiContextInner for WrapperGuiContext<P> {
 
     fn request_restart(&self) {
         self.inner.upgrade().unwrap().request_restart();
+    }
+
+    fn request_param_info_rescan(&self) {
+        self.inner.upgrade().unwrap().request_param_info_rescan();
     }
 }

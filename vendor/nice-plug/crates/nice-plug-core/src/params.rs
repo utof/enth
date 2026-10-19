@@ -37,6 +37,8 @@ struct ParamInfo<T> {
     flags: ParamFlags,
     /// The parameter's human-readable display name.
     name: String,
+    /// A runtime override for the name shown to the host (research patch: slot renaming).
+    name_override: std::sync::Mutex<Option<String>>,
     /// The parameter value's unit. This is appended after `value_to_string`, when set, without
     /// automatically inserting a space.
     unit: &'static str,
@@ -48,10 +50,24 @@ struct ParamInfo<T> {
 }
 
 impl<T> ParamInfo<T> {
+    fn display_name(&self) -> String {
+        match self.name_override.lock() {
+            Ok(o) => o.clone().unwrap_or_else(|| self.name.clone()),
+            Err(_) => self.name.clone(),
+        }
+    }
+
+    fn set_display_name(&self, name: Option<String>) {
+        if let Ok(mut o) = self.name_override.lock() {
+            *o = name;
+        }
+    }
+
     fn new(name: impl Into<String>) -> Self {
         Self {
             flags: ParamFlags::default(),
             name: name.into(),
+            name_override: std::sync::Mutex::new(None),
             unit: "",
             value_to_string: None,
             string_to_value: None,
@@ -109,6 +125,14 @@ pub trait Param: Display + Debug + sealed::Sealed {
 
     /// Get the human readable name for this parameter.
     fn name(&self) -> &str;
+
+    /// The name reported to the host: the runtime override if one is set, otherwise
+    /// [`name()`][Self::name()]. Not realtime-safe (locks and allocates).
+    fn display_name(&self) -> String;
+
+    /// Set or clear a runtime display name. Main thread only. Afterwards, call
+    /// `request_param_info_rescan()` on the process or GUI context so the host re-reads it.
+    fn set_display_name(&self, name: Option<String>);
 
     /// Get the unit label for this parameter, if any.
     fn unit(&self) -> &'static str;

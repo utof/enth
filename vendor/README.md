@@ -43,4 +43,4 @@ Everything here is one git commit per change, after a single pristine-import com
 
 | # | Crate | Change | Size | Upstream status (2026-10-19) |
 | --- | --- | --- | --- | --- |
-| | | None yet | | |
+| 1 | nice-plug, nice-plug-core | **Slot rename.** `Param::display_name()` / `set_display_name(Option<String>)` (a `Mutex<Option<String>>` override in every `ParamInfo`; main thread only) and `request_param_info_rescan()` on `ProcessContext` and `GuiContext`. CLAP then calls `clap_host_params.rescan(INFO \| TEXT)` on the main thread; VST3 calls `restartComponent(kParamTitlesChanged)`. The CLAP and VST3 parameter-info calls report the override. Add-only apart from three edited lines | 13 files, +123 / −4 | Not upstream (nice-plug `main` `7197104c0d`, 2026-10-18, has no runtime parameter names). From the Phase 0 spike (`scripts/nice-plug-0.4.2-rename.patch`, applied unchanged, zero fuzz). REAPER 7.82 shows CLAP renames within 50 ms and ignores the VST3 ones |

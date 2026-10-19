@@ -518,6 +518,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     fn request_restart(&self) {
         self.wrapper.request_restart();
     }
+
+    fn request_param_info_rescan(&self) {
+        self.wrapper.request_param_info_rescan();
+    }
 }
 
 #[cfg(feature = "editor")]
@@ -647,6 +651,10 @@ impl<P: ClapPlugin> nice_plug_core::context::gui::GuiContextInner for WrapperGui
 
     fn request_restart(&self) {
         self.wrapper.upgrade().unwrap().request_restart();
+    }
+
+    fn request_param_info_rescan(&self) {
+        self.wrapper.upgrade().unwrap().request_param_info_rescan();
     }
 }
 

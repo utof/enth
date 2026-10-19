@@ -137,6 +137,14 @@ impl<T: Enum + PartialEq> Param for EnumParam<T> {
         self.inner.name()
     }
 
+    fn display_name(&self) -> String {
+        self.inner.display_name()
+    }
+
+    fn set_display_name(&self, name: Option<String>) {
+        self.inner.set_display_name(name)
+    }
+
     fn unit(&self) -> &'static str {
         self.inner.unit()
     }
@@ -218,6 +226,14 @@ impl Param for EnumParamInner {
 
     fn name(&self) -> &str {
         self.inner.name()
+    }
+
+    fn display_name(&self) -> String {
+        self.inner.display_name()
+    }
+
+    fn set_display_name(&self, name: Option<String>) {
+        self.inner.set_display_name(name)
     }
 
     fn unit(&self) -> &'static str {

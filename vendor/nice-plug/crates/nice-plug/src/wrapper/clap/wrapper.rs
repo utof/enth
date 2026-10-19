@@ -31,7 +31,7 @@ use clap_sys::ext::note_ports::{
 use clap_sys::ext::params::{
     CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE, CLAP_PARAM_IS_BYPASS, CLAP_PARAM_IS_HIDDEN,
     CLAP_PARAM_IS_MODULATABLE, CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID, CLAP_PARAM_IS_READONLY,
-    CLAP_PARAM_IS_STEPPED, CLAP_PARAM_RESCAN_VALUES, clap_host_params, clap_param_info,
+    CLAP_PARAM_IS_STEPPED, CLAP_PARAM_RESCAN_INFO, CLAP_PARAM_RESCAN_TEXT, CLAP_PARAM_RESCAN_VALUES, clap_host_params, clap_param_info,
     clap_plugin_params,
 };
 use clap_sys::ext::remote_controls::{
@@ -315,6 +315,8 @@ pub enum Task<P: Plugin> {
     VoiceInfoChanged,
     /// Tell the host that it should rescan the current parameter values.
     RescanParamValues,
+    /// Tell the host that parameter info (names) changed. Research patch: slot renaming.
+    RescanParamInfo,
 }
 
 /// The types of CLAP parameter updates for events.
@@ -467,6 +469,16 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                 None => {
                     #[cfg(debug_assertions)]
                     crate::nice_warn!("Host does not support the voice-info extension");
+                }
+            },
+            Task::RescanParamInfo => match &*self.host_params.borrow() {
+                Some(host_params) => {
+                    crate::nice_debug_assert!(is_gui_thread);
+                    unsafe_clap_call! { host_params=>rescan(&*self.host_callback, CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_TEXT) };
+                }
+                None => {
+                    #[cfg(debug_assertions)]
+                    crate::nice_warn!("Host does not support the parameter extension");
                 }
             },
             Task::RescanParamValues => match &*self.host_params.borrow() {
@@ -1672,6 +1684,12 @@ impl<P: ClapPlugin> Wrapper<P> {
 
     pub fn request_restart(&self) {
         unsafe_clap_call! { &*self.host_callback=>request_restart(&*self.host_callback) };
+    }
+
+    /// Research patch: ask the host (on the main thread) to re-read parameter info.
+    pub fn request_param_info_rescan(&self) {
+        let task_posted = self.schedule_gui(Task::RescanParamInfo);
+        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     unsafe extern "C" fn init(plugin: *const clap_plugin) -> bool {
@@ -3200,7 +3218,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             param_info.flags |= CLAP_PARAM_IS_STEPPED
         }
         param_info.cookie = std::ptr::null_mut();
-        strlcpy(&mut param_info.name, unsafe { param_ptr.name() });
+        strlcpy(&mut param_info.name, &unsafe { param_ptr.display_name() });
         strlcpy(&mut param_info.module, param_group);
         // We don't use the actual minimum and maximum values here because that would not scale
         // with skewed integer ranges. Instead, just treat all parameters as `[0, 1]` normalized

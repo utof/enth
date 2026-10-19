@@ -92,6 +92,11 @@ impl GuiContext {
     pub fn request_restart(&self) {
         self.inner.request_restart();
     }
+
+    /// Ask the host to re-read parameter info (names) after `Param::set_display_name()`.
+    pub fn request_param_info_rescan(&self) {
+        self.inner.request_param_info_rescan();
+    }
 }
 
 /// Callbacks the plugin can make when the user interacts with its GUI such as updating parameter
@@ -147,6 +152,9 @@ pub trait GuiContextInner: Send + Sync + 'static {
 
     /// Request the plugin to be restarted.
     fn request_restart(&self);
+
+    /// See `ProcessContext::request_param_info_rescan()`. Default: no-op.
+    fn request_param_info_rescan(&self) {}
 }
 
 /// An way to run background tasks from the plugin's GUI, equivalent to the
