@@ -3,7 +3,7 @@
 - Date: 2026-10-19
 - Code: `crates/enth-ui` (the design system), `spikes/spike-ui` (the reference panel, dev window, benchmark), `spikes/spike-ui-plugin` (the panel inside a copy of the shell plugin); branch `lane-u1/ui-panel`
 - Decision it feeds: [ADR-0002](../adr/0002-ui-toolkit.md), [design-system.md](../design-system.md)
-- Verdict: **egui on glow holds up.** The full reference panel costs about 1.2 ms of CPU per animating frame before the GPU (about 3.6 % of a core at 30 fps) and draws **nothing while idle**: 0 frames in 22 s with the editor open in REAPER. The design system works as specified: tokens in one module, widgets that can't use raw values (clippy plus a source scan), and a token gallery snapshot. What can't be measured here is how it looks and costs on the real NVIDIA display; that is the owner checklist below.
+- Verdict: **egui on glow holds up.** The full reference panel costs 1.2–1.4 ms of CPU per animating frame before the GPU (3.5–4.2 % of a core at 30 fps) and draws **nothing while idle**: 0 frames in 22 s with the editor open in REAPER. The design system works as specified: tokens in one module, widgets that can't use raw values (clippy plus a source scan), and a token gallery snapshot. What can't be measured here is how it looks and costs on the real NVIDIA display; that is the owner checklist below.
 
 Every host measurement here ran **under Xvfb with Mesa's software GL (llvmpipe)**, never on the real display. Software GL rasterises on the CPU, so GUI-thread CPU while drawing is far higher than on a GPU; frame counts, idle behaviour, `ui()` time and memory deltas transfer, absolute drawing cost doesn't. Headless numbers are CPU only (egui pass plus tessellation, no GL at all).
 
@@ -48,16 +48,16 @@ The machine was shared with other agents; timings ran under an exclusive lock wi
 
 ### CPU per frame, headless (egui pass + tessellation, release, no GL)
 
-`cargo run -p spike-ui --release --example frame_bench 1000`, 3 runs of 600–1000 frames per case, load 4–6.
+`cargo run -p spike-ui --release --example frame_bench 1000`, 8 runs of 600–1000 frames per case, load 4–6. The 5 runs on the final code read 0.1–0.2 ms higher for animating frames than the 3 runs before the last layout changes (source tiles, lane spacing); I didn't isolate whether that is the code or the machine, so the ranges cover both.
 
 | Case | Scale | p50 | p99 | max | mean | At 30 fps | At 60 fps |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Idle frame (nothing changes, e.g. a mouse move) | 1.0 | 0.88–0.95 ms | 1.12–1.58 ms | 1.28–1.76 ms | 0.89–0.98 ms | 2.7–2.9 % | 5.3–5.9 % |
-| Animating (new audio block, new LFO phase) | 1.0 | 1.15–1.21 ms | 1.36–1.70 ms | 1.77–2.22 ms | 1.16–1.23 ms | 3.5–3.7 % | 7.0–7.4 % |
-| Idle frame | 2.0 | 0.89–0.94 ms | 0.96–1.54 ms | 1.09–1.76 ms | 0.92–0.98 ms | 2.7–2.9 % | 5.5–5.9 % |
-| Animating | 2.0 | 1.03–1.04 ms | 1.42–1.72 ms | 1.69–1.79 ms | 1.06–1.09 ms | 3.2–3.3 % | 6.3–6.5 % |
+| Idle frame (nothing changes, e.g. a mouse move) | 1.0 | 0.88–1.04 ms | 1.12–1.58 ms | 1.28–1.89 ms | 0.89–1.06 ms | 2.7–3.2 % | 5.3–6.4 % |
+| Animating (new audio block, new LFO phase) | 1.0 | 1.15–1.33 ms | 1.36–2.30 ms | 1.77–2.53 ms | 1.16–1.41 ms | 3.5–4.2 % | 7.0–8.5 % |
+| Idle frame | 2.0 | 0.89–1.01 ms | 0.96–1.80 ms | 1.09–3.44 ms | 0.92–1.07 ms | 2.7–3.2 % | 5.5–6.4 % |
+| Animating | 2.0 | 1.03–1.17 ms | 1.42–1.99 ms | 1.69–4.90 ms | 1.06–1.25 ms | 3.2–3.8 % | 6.3–7.5 % |
 
-A truly idle panel runs no frames, so its cost is zero; "idle frame" is what an input event costs. The researcher's stand-in panel measured 0.73–0.88 ms p50; this one is richer (lesson text, 72 knobs with labels and values, 11 displays, 96 matrix cells) at 0.9–1.2 ms.
+A truly idle panel runs no frames, so its cost is zero; "idle frame" is what an input event costs. The researcher's stand-in panel measured 0.73–0.88 ms p50; this one is richer (lesson text, 72 knobs with labels and values, 11 displays, 96 matrix cells) at 0.9–1.3 ms.
 
 A callgrind profile of the steady state (330 frames per case) puts the time in: the lesson pane's text, about a quarter (all 1,500 words are laid out and hashed every frame, visible or not); the 72 knobs, about a quarter; the displays (module figures resampled every frame, scope, spectrum), about a sixth; one-line text layout and galley-cache lookups for labels and values, about a tenth.
 
@@ -75,7 +75,7 @@ A Lua script loads the plugin, waits 5 s, opens the editor, waits 25 s, plays a 
 
 - **Idle is free:** no frame at all while the editor is open and nothing sounds; the GUI thread's only activity is egui-baseview's 64 Hz notifier poll. Opening the editor doesn't raise REAPER's CPU beyond noise.
 - **Animating hits baseview's cap:** the panel asks for 60 Hz (a fed scope) and gets 28.6–29.4 fps, the ≈30 fps ceiling of baseview 0.4.1's X11 pacing (next frame at MSC + 2) that the researcher found. Every playing frame is a "scope" frame, because fresh audio arrives every block; the 30 Hz "animated" state only occurs when the LFO runs without new audio.
-- **GUI-thread CPU while playing is software rendering:** `ui()` takes 0.55–0.67 ms of the 8–10 ms the thread spends per frame; the rest is llvmpipe drawing 1100 × 768 on the CPU, plus its 12 worker threads (the 196–200 % process figure). On a GPU the frame should cost about the headless 1.2 ms plus the driver's submission.
+- **GUI-thread CPU while playing is software rendering:** `ui()` takes 0.55–0.67 ms of the 8–10 ms the thread spends per frame; the rest is llvmpipe drawing 1100 × 768 on the CPU, plus its 12 worker threads (the 196–200 % process figure). On a GPU the frame should cost about the headless 1.2–1.4 ms plus the driver's submission.
 - **Memory:** +71 MB PSS when the editor opens, almost all Mesa's llvmpipe (the researcher measured the same jump with a much smaller panel); closing leaves about 50 MB mapped, because Mesa stays loaded. Threads go 27 → 54 → 27. The open/close leak test is lane U2's.
 - **Open time:** `build()` → first frame drawn in 44–67 ms. The first `ui()` alone takes 32–53 ms (rasterising the glyphs, laying out the lesson, uploading the figure); later ones about 0.5 ms.
 
@@ -112,12 +112,12 @@ Only the cells this lane measured; lane U2 measures the REAPER protocol and the 
 | --- | --- | --- | --- |
 | GUI CPU, closed | 0 (no GUI thread) | ≈ 0 % | REAPER 7.9–8.9 % with the editor never opened; that is REAPER itself |
 | GUI CPU, open idle | 0.05–0.19 % (64 wake-ups/s, 0 frames) | < 1 % | Xvfb |
-| GUI CPU, open animating | 24–31 % software GL; ≈ 3.6 % expected CPU side at 30 fps (headless 1.2 ms/frame) | < 5 % | Xvfb numbers don't transfer; owner checklist 2 |
+| GUI CPU, open animating | 24–31 % software GL; 3.5–4.2 % expected CPU side at 30 fps (headless 1.2–1.4 ms/frame) | < 5 % | Xvfb numbers don't transfer; owner checklist 2 |
 | GUI CPU, occluded | not measured | ≤ idle | Xvfb has no compositor (researcher: still draws); the panel stops when egui reports minimised or occluded |
 | xruns (10 min) | not measured | 0 | Dummy Audio; U2 and owner |
 | PSS per open editor | +71 MB (Mesa llvmpipe) | < 30 MB | Software GL inflates this; owner checklist 2 |
 | PSS growth, 200 cycles | not measured | < 2 MB | U2 (researcher: baseview leaks ≈ 70 KB/cycle) |
-| Frame time p99 | headless 1.4–1.7 ms; `ui()` p50 0.55–0.67 ms in REAPER | < 16.7 ms | |
+| Frame time p99 | headless 1.4–2.3 ms; `ui()` p50 0.55–0.67 ms in REAPER | < 16.7 ms | |
 | Editor open (warm) | 44–67 ms build → first frame | 150 ms | Xvfb |
 | GPU SM % / VRAM | not measured | 5 % / 100 MB | Owner |
 | Achieved fps vs requested | 28.6–29.4 for 60 requested | report | baseview cap |

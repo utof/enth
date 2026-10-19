@@ -34,7 +34,7 @@ Sources: the Phase 0 research session (sub-report 02, `_local/sessions/2026-10-1
 | --- | --- |
 | Editor open, nothing sounding | **0 frames** in 22 s, 5 runs; GUI thread 0.05–0.19 % CPU; 64 wake-ups/s (egui-baseview's notifier poll); REAPER's CPU unchanged from editor-closed |
 | Editor open, a chord playing | 28.6–29.4 fps for a 60 Hz request (baseview's cap); `ui()` 0.55–0.67 ms p50 |
-| CPU per frame, headless (layout + tessellation, no GL) | idle frame 0.9–1.0 ms, animating 1.2 ms mean, p99 ≤ 1.7 ms: about 3.6 % of a core at 30 fps |
+| CPU per frame, headless (layout + tessellation, no GL) | idle frame 0.9–1.1 ms, animating 1.2–1.4 ms mean, p99 ≤ 2.3 ms: 3.5–4.2 % of a core at 30 fps |
 | Editor open time | `build()` → first frame in 44–67 ms (software GL) |
 | Memory | +71 MB PSS on open, almost all Mesa's llvmpipe; not a GPU number |
 
@@ -71,4 +71,4 @@ Gating as built: the panel schedules the next frame only while something animate
 
 The chosen arm fails a [UI threshold](../benchmarks.md#ui-thresholds) with the real editor in S1 (Instrument 0.1), or the lesson views prove unusable for real lessons.
 
-Added 2026-10-19: the real-GPU first-open test fails (the editor doesn't draw on first open in REAPER on the NVIDIA display), the NVIDIA X-driver crash recurs with plugin editors, or the animating editor costs more than 5 % of a core on the GPU at baseview's ≈30 fps (the CPU side alone is ≈3.6 %).
+Added 2026-10-19: the real-GPU first-open test fails (the editor doesn't draw on first open in REAPER on the NVIDIA display), the NVIDIA X-driver crash recurs with plugin editors, or the animating editor costs more than 5 % of a core on the GPU at baseview's ≈30 fps (the CPU side alone is 3.5–4.2 %).
