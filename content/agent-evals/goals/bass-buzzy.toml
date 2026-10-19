@@ -6,7 +6,7 @@ tags = ["bass", "brightness", "low"]
 brief = "a buzzy bass"
 template = "init"
 expect = "pitch.note ~ C2, attack < 40ms, brightness in [1.2kHz, 2.5kHz], sustain > -6dB, duration > 1200ms, release < 300ms, peak < -1dB"
-rationale = "The probe's g3. Low and on pitch, starts at once, holds while the key is down, stops soon after release. Buzzy is a brightness window: neither dull nor fizzy, for a note two octaves below the default (a saw at C2 reads about 3 kHz unfiltered). The attack limit is wide (40 ms) because the attack descriptor on C2 is inflated by the 15 ms period and moves with the start phase (noise about 10 ms). The bass_sub template is a trap worth keeping: its sub sine an octave below C2 leaves no readable pitch, so the agent has to find that (`osc2.semi` to 0) or build from the blank patch."
+rationale = "The probe's g3. Low and on pitch, starts at once, holds while the key is down, stops soon after release. Buzzy is a brightness window: neither dull nor fizzy, for a note two octaves below the default (a saw at C2 reads about 3 kHz unfiltered). The attack limit is wide (40 ms) because the attack descriptor on C2 is inflated by the 15 ms period and moves with the start phase (noise about 10 ms). The bass_sub template is a trap worth keeping: its sub sine an octave below C2 sets the period, so pitch reads C1 and `blocked` names `osc2.semi` (eval version 2; version 1 read no pitch at all), and the agent has to move it (`osc2.semi` to 0) or build from the blank patch."
 engine_min = "0.1.0"
 perf = { notes = [{ note = "C2", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.0 }
 budget = { renders = 20, turns = 60, usd = 1.0 }
