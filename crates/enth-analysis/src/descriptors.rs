@@ -10,10 +10,12 @@
 //! | descriptor | how |
 //! | --- | --- |
 //! | level | `peak_dbfs`, `true_peak_dbtp`, `clipped_pct`, `clipping`, LUFS ([`crate::loudness`]) |
-//! | pitch | YIN, frame 2048, hop 512, median over voiced frames within 40 dB of the envelope peak |
+//! | pitch | YIN, frame 2048, hop 512, median over voiced frames within 40 dB of the envelope peak; when that finds nothing, again with a 4096 frame that reaches down to 25 Hz |
+//! | tonal pitch | harmonic matching of the steady spectral peaks of the held part (the noisiness spectrum): a tone under noise |
 //! | beating, tremolo | the multi-harmonic estimator ([`crate::beat`]) over the held part |
-//! | envelope | 8 ms RMS at 1 ms with the beat fitted out ([`crate::envelope`]) |
+//! | envelope | 8 ms RMS at 1 ms with the beat (or, without one, the tremolo) fitted out ([`crate::envelope`]) |
 //! | brightness | magnitude-weighted spectral centroid, STFT 2048 / hop 512, frames within 50 dB of the loudest |
+//! | filter sweep | the same STFT's centroid over time: a one-shot change or a cyclic swing ([`crate::sweep`]) |
 //! | noisiness | 8192-point Welch spectrum of the held part; share of 40 Hz–16 kHz power outside spectral peaks |
 
 use crate::beat::{self, BeatCfg, Beating, Tremolo};
@@ -21,7 +23,8 @@ use crate::envelope::{self, Envelope};
 use crate::fft::{FftPath, FftPlanner, hann};
 use crate::linalg::median;
 use crate::loudness::{Level, LoudnessMeter};
-use crate::pitch::{self, Pitch, Yin};
+use crate::pitch::{self, Peak, Pitch, Tonal, Yin};
+use crate::sweep::{self, FilterSweep, Frames};
 use crate::units::Unit;
 use realfft::num_complex::Complex32;
 use serde::{Deserialize, Serialize};
@@ -31,6 +34,12 @@ const STFT_HOP: usize = 512;
 const WELCH_N: usize = 8192;
 const YIN_FRAME: usize = 2048;
 const YIN_HOP: usize = 512;
+/// The low-range YIN, tried only when the main one finds no pitch: a frame long enough for a 25 Hz period (a sub
+/// oscillator an octave below a C2 is at 32.7 Hz, below the main frame's 46.9 Hz floor).
+const YIN_LOW_FRAME: usize = 4096;
+const YIN_LOW_MIN_HZ: f64 = 25.0;
+/// Lowest frequency of the tonal-pitch band (Hz); the noisiness band starts at 40 Hz.
+const TONAL_LOW_HZ: f64 = 20.0;
 /// Envelope level that counts as audible relative to the peak (amplitude), 40 dB.
 const AUDIBLE: f64 = 0.01;
 /// Frames this far below the loudest are ignored in the centroid (power), 50 dB.
@@ -108,8 +117,13 @@ impl Want {
         let mut w = Want::CORE;
         for f in features {
             match f {
-                Feature::Brightness => w.spectrum = true,
-                Feature::Noisiness => w.noise = true,
+                Feature::Brightness
+                | Feature::SweepRate
+                | Feature::SweepDepth
+                | Feature::SweepTime => {
+                    w.spectrum = true;
+                }
+                Feature::Noisiness | Feature::TonalPitch => w.noise = true,
                 Feature::Loudness | Feature::TruePeak => w.loudness = true,
                 _ => {}
             }
@@ -126,11 +140,13 @@ pub struct Spectrum {
     pub centroid_track_hz: Option<[f64; 3]>,
 }
 
-/// Amplitude modulation that is not detune beating.
+/// Modulation that is not detune beating.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModulationDesc {
     /// A tremolo: every harmonic's level moves at the same rate.
     pub amp_lfo: Option<Tremolo>,
+    /// A brightness sweep: a filter envelope or a filter LFO (needs `Want::spectrum`).
+    pub filter_sweep: Option<FilterSweep>,
 }
 
 /// All descriptors of one render.
@@ -140,6 +156,8 @@ pub struct Descriptors {
     /// Sample peak below −80 dBFS: only `loudness` is filled.
     pub silent: bool,
     pub pitch: Option<Pitch>,
+    /// The pitch of the tonal part under noise (needs `Want::noise`).
+    pub tonal: Option<Tonal>,
     pub envelope: Option<Envelope>,
     pub spectrum: Option<Spectrum>,
     pub noise_ratio: Option<f64>,
@@ -180,6 +198,7 @@ pub struct Describer {
     sr: f64,
     planner: FftPlanner,
     yin: Yin,
+    yin_low: Yin,
     meter: LoudnessMeter,
     win_stft: Vec<f32>,
     win_welch: Vec<f32>,
@@ -215,10 +234,18 @@ impl Describer {
         );
         let mut planner = FftPlanner::new(path);
         let yin = Yin::new(&mut planner, sample_rate, YIN_FRAME, 50.0, 2000.0);
+        let yin_low = Yin::new(
+            &mut planner,
+            sample_rate,
+            YIN_LOW_FRAME,
+            YIN_LOW_MIN_HZ,
+            2000.0,
+        );
         Self {
             sr: sample_rate,
             planner,
             yin,
+            yin_low,
             meter: LoudnessMeter::new(sample_rate as u32),
             win_stft: hann(STFT_N),
             win_welch: hann(WELCH_N),
@@ -291,6 +318,7 @@ impl Describer {
             dur_s: x.len() as f64 / sr,
             silent: false,
             pitch: None,
+            tonal: None,
             envelope: None,
             spectrum: None,
             noise_ratio: None,
@@ -343,7 +371,12 @@ impl Describer {
             d.detune = m.beating;
             d.modulation.amp_lfo = m.tremolo;
         }
-        let e = envelope::measure(&env, hop_ms, on, off, d.detune.map(|b| b.beating_hz));
+        // The fit divides out any periodic level wobble of a known rate: the detune beat, or else the tremolo.
+        let wobble_hz = d
+            .detune
+            .map(|b| b.beating_hz)
+            .or(d.modulation.amp_lfo.map(|t| t.hz));
+        let e = envelope::measure(&env, hop_ms, on, off, wobble_hz);
         d.envelope = Some(e);
 
         // Spectrum over the audible span, noisiness over the held part.
@@ -357,32 +390,66 @@ impl Describer {
             .rposition(|&v| v >= AUDIBLE * peak)
             .unwrap_or(onset)
             .max(onset);
+        let t_top = onset + (e.attack_ms / hop_ms) as usize;
+        let held_end = off.map_or((last + 1) * hop, |o| o * hop).min(x.len());
         if want.spectrum {
-            d.spectrum = self.spectrum(x, (onset * hop, ((last + 1) * hop).min(x.len())));
+            let audible = (onset * hop, ((last + 1) * hop).min(x.len()));
+            if let Some((s, frames)) = self.spectrum(x, audible) {
+                d.spectrum = Some(s);
+                let f = Frames {
+                    centroid_hz: &frames.0,
+                    power: &frames.1,
+                    hop: STFT_HOP,
+                    len: STFT_N,
+                    sample_rate: sr,
+                };
+                d.modulation.filter_sweep = sweep::detect(
+                    &mut self.planner,
+                    &f,
+                    (audible.0, audible.1.min(held_end)),
+                    (t_top * hop, held_end),
+                    d.detune.map(|b| b.beating_hz),
+                );
+            }
         }
-        if want.noise {
-            let t_top = onset + (e.attack_ms / hop_ms) as usize;
-            let held_end = off.map_or((last + 1) * hop, |o| o * hop).min(x.len());
-            d.noise_ratio = self.noise_ratio(x, (t_top * hop, held_end));
+        if want.noise
+            && let Some(pw) = self.welch(x, (t_top * hop, held_end))
+        {
+            d.noise_ratio = self.noise_ratio(&pw);
+            d.tonal = self.tonal(&pw);
         }
         Ok(d)
     }
 
+    /// YIN on the main frame; when that finds no pitch, on the long frame (down to 25 Hz).
     fn pitch(&mut self, x: &[f32], env: &[f64], peak: f64, hop: usize) -> Option<Pitch> {
-        if x.len() < YIN_FRAME {
-            return None;
-        }
-        let track = self.yin.track(x, YIN_HOP);
-        let loud: Vec<bool> = (0..track.len())
-            .map(|i| {
-                let centre = (i * YIN_HOP + YIN_FRAME / 2) / hop;
-                env.get(centre).is_some_and(|&e| e >= AUDIBLE * peak)
-            })
-            .collect();
-        pitch::summarise(&track, &loud)
+        let summary = |yin: &mut Yin| {
+            let frame = yin.frame();
+            if x.len() < frame {
+                return None;
+            }
+            let track = yin.track(x, YIN_HOP);
+            let loud: Vec<bool> = (0..track.len())
+                .map(|i| {
+                    let centre = (i * YIN_HOP + frame / 2) / hop;
+                    env.get(centre).is_some_and(|&e| e >= AUDIBLE * peak)
+                })
+                .collect();
+            pitch::summarise(&track, &loud)
+        };
+        summary(&mut self.yin).or_else(|| summary(&mut self.yin_low))
     }
 
-    fn spectrum(&mut self, x: &[f32], span: (usize, usize)) -> Option<Spectrum> {
+    /// The centroid, and per STFT frame the centroid (Hz, 0 when silent) and the power for the sweep detector.
+    #[allow(
+        clippy::type_complexity,
+        reason = "a private pair of per-frame tracks, named at the one call site"
+    )]
+    fn spectrum(
+        &mut self,
+        x: &[f32],
+        span: (usize, usize),
+    ) -> Option<(Spectrum, (Vec<f64>, Vec<f64>))> {
         if x.len() < STFT_N {
             return None;
         }
@@ -426,6 +493,13 @@ impl Describer {
             (sum > 0.0).then(|| moment / sum * bin_hz)
         };
         let centroid_hz = centroid(0, usize::MAX)?;
+        let frames = (
+            stats
+                .iter()
+                .map(|s| if s.0 > 0.0 { s.1 / s.0 * bin_hz } else { 0.0 })
+                .collect(),
+            stats.iter().map(|s| s.2).collect(),
+        );
         let third = span.1.saturating_sub(span.0) / 3;
         let centroid_track_hz = (third > STFT_HOP)
             .then(|| {
@@ -439,15 +513,18 @@ impl Describer {
                 }
             })
             .flatten();
-        Some(Spectrum {
-            centroid_hz,
-            centroid_track_hz,
-        })
+        Some((
+            Spectrum {
+                centroid_hz,
+                centroid_track_hz,
+            },
+            frames,
+        ))
     }
 
-    /// Share of power outside spectral peaks. A peak is a local maximum 15 dB above the median of its ±64 bins; the
-    /// peak and 3 bins either side count as tonal.
-    fn noise_ratio(&mut self, x: &[f32], seg: (usize, usize)) -> Option<f64> {
+    /// The 8192-point Welch power spectrum (Hann, 50 % overlap) of `x[seg]`, or of the first 8192 samples from
+    /// `seg.0` when the segment is shorter; `None` when the signal itself is shorter.
+    fn welch(&mut self, x: &[f32], seg: (usize, usize)) -> Option<Vec<f64>> {
         let end = seg.1.min(x.len());
         if end < WELCH_N {
             return None;
@@ -474,28 +551,89 @@ impl Describer {
             }
             pos += WELCH_N / 2;
         }
+        Some(pw)
+    }
+
+    /// The top bin of the analysed band: 16 kHz, or 0.45 of the sample rate below 35.6 kHz.
+    fn k_hi(&self, nb: usize) -> usize {
+        let bin_hz = self.sr / WELCH_N as f64;
+        ((16_000.0f64.min(0.45 * self.sr) / bin_hz) as usize).min(nb - 5)
+    }
+
+    /// Share of 40 Hz–16 kHz power outside spectral peaks ([`peak_bins`]; the peak and 3 bins either side count as
+    /// tonal).
+    fn noise_ratio(&self, pw: &[f64]) -> Option<f64> {
+        let nb = pw.len();
         let bin_hz = self.sr / WELCH_N as f64;
         let k_lo = (libm::ceil(40.0 / bin_hz) as usize).max(4);
-        let k_hi = ((16_000.0f64.min(0.45 * self.sr) / bin_hz) as usize).min(nb - 5);
+        let k_hi = self.k_hi(nb);
         let total: f64 = pw[k_lo..=k_hi].iter().sum();
         if total <= 0.0 {
             return None;
         }
-        let pmax = pw[k_lo..=k_hi].iter().copied().fold(0.0, f64::max);
         let mut tonal = vec![false; nb];
-        for k in k_lo..=k_hi {
-            if pw[k] > pw[k - 1] && pw[k] >= pw[k + 1] && pw[k] > 1e-9 * pmax {
-                let around = &pw[k.saturating_sub(64)..=(k + 64).min(nb - 1)];
-                if pw[k] >= 31.6 * median(around) {
-                    for t in &mut tonal[k - 3..=k + 3] {
-                        *t = true;
-                    }
-                }
+        for k in peak_bins(pw, k_lo, k_hi) {
+            for t in &mut tonal[k - 3..=k + 3] {
+                *t = true;
             }
         }
         let noise: f64 = (k_lo..=k_hi).filter(|&k| !tonal[k]).map(|k| pw[k]).sum();
         Some((noise / total).clamp(0.0, 1.0))
     }
+
+    /// The pitch of the peaks of the 20 Hz–16 kHz band ([`pitch::tonal_pitch`]). Each peak's frequency is the
+    /// log-parabolic (Gaussian) interpolation of its bin and neighbours; its power is the peak bin and 3 bins either
+    /// side, each bin counted once.
+    fn tonal(&self, pw: &[f64]) -> Option<Tonal> {
+        let nb = pw.len();
+        let bin_hz = self.sr / WELCH_N as f64;
+        let k_lo = (libm::ceil(TONAL_LOW_HZ / bin_hz) as usize).max(4);
+        let k_hi = self.k_hi(nb);
+        let total: f64 = pw[k_lo..=k_hi].iter().sum();
+        if total <= 0.0 {
+            return None;
+        }
+        let mut claimed = vec![false; nb];
+        let mut peaks = Vec::new();
+        for k in peak_bins(pw, k_lo, k_hi) {
+            let mut power = 0.0;
+            for (j, c) in claimed.iter_mut().enumerate().take(k + 4).skip(k - 3) {
+                if !*c {
+                    *c = true;
+                    power += pw[j];
+                }
+            }
+            let ln = |v: f64| libm::log(v.max(1e-300));
+            let (a, b, c) = (ln(pw[k - 1]), ln(pw[k]), ln(pw[k + 1]));
+            let denom = a - 2.0 * b + c;
+            let delta = if denom.abs() > 1e-12 {
+                (0.5 * (a - c) / denom).clamp(-0.5, 0.5)
+            } else {
+                0.0
+            };
+            peaks.push(Peak {
+                hz: (k as f64 + delta) * bin_hz,
+                power,
+            });
+        }
+        let share = peaks.iter().map(|p| p.power).sum::<f64>() / total;
+        pitch::tonal_pitch(&peaks, share, bin_hz)
+    }
+}
+
+/// Spectral peaks of `pw` in `k_lo..=k_hi`, ascending: local maxima at least 15 dB above the median of their ±64
+/// bins (and above 1e-9 of the band's maximum).
+fn peak_bins(pw: &[f64], k_lo: usize, k_hi: usize) -> Vec<usize> {
+    let nb = pw.len();
+    let pmax = pw[k_lo..=k_hi].iter().copied().fold(0.0, f64::max);
+    (k_lo..=k_hi)
+        .filter(|&k| {
+            pw[k] > pw[k - 1] && pw[k] >= pw[k + 1] && pw[k] > 1e-9 * pmax && {
+                let around = &pw[k.saturating_sub(64)..=(k + 64).min(nb - 1)];
+                pw[k] >= 31.6 * median(around)
+            }
+        })
+        .collect()
 }
 
 /// Is a feature measured on a log scale (Hz, ms: it moves by ratios), or on a linear one (dB, cents, ratios)?
@@ -512,6 +650,7 @@ pub enum Feature {
     Pitch,
     PitchCents,
     PitchStability,
+    TonalPitch,
     Attack,
     Decay,
     Sustain,
@@ -524,6 +663,9 @@ pub enum Feature {
     BeatDepth,
     Tremolo,
     TremoloDepth,
+    SweepRate,
+    SweepDepth,
+    SweepTime,
     Loudness,
     Peak,
     TruePeak,
@@ -532,10 +674,11 @@ pub enum Feature {
 }
 
 impl Feature {
-    pub const ALL: [Feature; 20] = [
+    pub const ALL: [Feature; 24] = [
         Feature::Pitch,
         Feature::PitchCents,
         Feature::PitchStability,
+        Feature::TonalPitch,
         Feature::Attack,
         Feature::Decay,
         Feature::Sustain,
@@ -548,6 +691,9 @@ impl Feature {
         Feature::BeatDepth,
         Feature::Tremolo,
         Feature::TremoloDepth,
+        Feature::SweepRate,
+        Feature::SweepDepth,
+        Feature::SweepTime,
         Feature::Loudness,
         Feature::Peak,
         Feature::TruePeak,
@@ -562,6 +708,7 @@ impl Feature {
             Feature::Pitch => "pitch.f0_hz",
             Feature::PitchCents => "pitch.cents_dev",
             Feature::PitchStability => "pitch.stability",
+            Feature::TonalPitch => "tonal.f0_hz",
             Feature::Attack => "envelope.attack_ms",
             Feature::Decay => "envelope.decay_ms",
             Feature::Sustain => "envelope.sustain_db",
@@ -574,6 +721,9 @@ impl Feature {
             Feature::BeatDepth => "detune.depth_db",
             Feature::Tremolo => "modulation.amp_lfo.hz",
             Feature::TremoloDepth => "modulation.amp_lfo.depth_db",
+            Feature::SweepRate => "modulation.filter_sweep.hz",
+            Feature::SweepDepth => "modulation.filter_sweep.depth_oct",
+            Feature::SweepTime => "modulation.filter_sweep.ms",
             Feature::Loudness => "loudness.lufs_i",
             Feature::Peak => "loudness.peak_dbfs",
             Feature::TruePeak => "loudness.true_peak_dbtp",
@@ -589,6 +739,7 @@ impl Feature {
             Feature::Pitch => &["pitch", "f0", "pitch.note", "note"],
             Feature::PitchCents => &["cents", "tuning"],
             Feature::PitchStability => &["stability"],
+            Feature::TonalPitch => &["tonal_pitch", "tonal", "tonal.note", "tonal_note"],
             Feature::Attack => &["attack"],
             Feature::Decay => &["decay"],
             Feature::Sustain => &["sustain"],
@@ -601,6 +752,9 @@ impl Feature {
             Feature::BeatDepth => &["beat_depth"],
             Feature::Tremolo => &["tremolo", "amp_lfo", "modulation.amp_lfo"],
             Feature::TremoloDepth => &["tremolo_depth"],
+            Feature::SweepRate => &["filter_lfo", "sweep_rate"],
+            Feature::SweepDepth => &["filter_sweep", "modulation.filter_sweep", "sweep_depth"],
+            Feature::SweepTime => &["sweep_ms", "sweep_time"],
             Feature::Loudness => &["loudness", "lufs"],
             Feature::Peak => &["peak"],
             Feature::TruePeak => &["true_peak"],
@@ -621,10 +775,20 @@ impl Feature {
     #[must_use]
     pub fn unit(self) -> Unit {
         match self {
-            Feature::Pitch | Feature::Brightness | Feature::Beating | Feature::Tremolo => Unit::Hz,
+            Feature::Pitch
+            | Feature::TonalPitch
+            | Feature::Brightness
+            | Feature::Beating
+            | Feature::Tremolo
+            | Feature::SweepRate => Unit::Hz,
             Feature::PitchCents => Unit::Cents,
             Feature::PitchStability | Feature::Noisiness => Unit::Ratio,
-            Feature::Attack | Feature::Decay | Feature::Release | Feature::Duration => Unit::Ms,
+            Feature::Attack
+            | Feature::Decay
+            | Feature::Release
+            | Feature::Duration
+            | Feature::SweepTime => Unit::Ms,
+            Feature::SweepDepth => Unit::Octaves,
             Feature::Sustain | Feature::Ripple | Feature::BeatDepth | Feature::TremoloDepth => {
                 Unit::Db
             }
@@ -634,6 +798,12 @@ impl Feature {
             Feature::ClippedPct => Unit::Percent,
             Feature::Clipping => Unit::Bool,
         }
+    }
+
+    /// Pitch features compared with a note in cents (`pitch ~ C3`, `tonal_pitch ~ A3`).
+    #[must_use]
+    pub fn is_pitch(self) -> bool {
+        matches!(self, Feature::Pitch | Feature::TonalPitch)
     }
 
     /// Scale quantities (Hz, ms) move by ratios: searches and margins in percent use their logarithm.
@@ -658,6 +828,7 @@ impl Feature {
             | Feature::TremoloDepth => 1.5,
             Feature::Loudness => 1.0,
             Feature::Noisiness | Feature::PitchStability => 0.03,
+            Feature::SweepDepth => 0.1,
             Feature::ClippedPct => 0.05,
             _ => 3.0,
         }
@@ -674,6 +845,9 @@ impl Feature {
             }
             Feature::PitchStability => {
                 "How steady the pitch is: 1 is steady, 0 means it wanders by 50 cents or more"
+            }
+            Feature::TonalPitch => {
+                "Pitch of the tonal part, read from the steady spectral peaks, so it is found under noise where pitch is not (a snare's body). Compared with a note like pitch"
             }
             Feature::Attack => {
                 "Time for the level to rise from near-silence (-40 dB re peak) to within 1 dB of its peak, with detune beating removed. Under 10 ms is a click; over 200 ms is a swell"
@@ -709,6 +883,15 @@ impl Feature {
                 "Rate of an amplitude LFO: a level wobble that moves every harmonic at the same rate (unlike detune beating)"
             }
             Feature::TremoloDepth => "Peak-to-trough depth of the tremolo (dB)",
+            Feature::SweepRate => {
+                "Rate of a filter LFO: the brightness (spectral centroid) swings back and forth, whatever the level does"
+            }
+            Feature::SweepDepth => {
+                "Size of a brightness sweep in octaves: the peak-to-trough swing of a filter LFO, or the one-way change of a filter envelope"
+            }
+            Feature::SweepTime => {
+                "Time of a one-shot brightness sweep (a filter envelope): from the onset until 90% of the change is done"
+            }
             Feature::Loudness => {
                 "Integrated loudness (EBU R128) of the float render. About -23 LUFS is a quiet broadcast level, -14 is loud"
             }
@@ -738,7 +921,19 @@ impl Feature {
             }
             Feature::Tremolo | Feature::TremoloDepth => "no amplitude LFO was found",
             Feature::Pitch | Feature::PitchCents | Feature::PitchStability => {
-                "no steady pitch was found"
+                "no steady pitch was found (the waveform does not repeat between 25 Hz and 2 kHz: noise, or a sound shorter than about 100 ms); under noise, tonal.f0_hz reads the tone"
+            }
+            Feature::TonalPitch => {
+                "no steady tonal part was found: it needs spectral peaks holding at least 1% of the power, a harmonic series explaining half of them, and about 171 ms of held sound"
+            }
+            Feature::SweepRate => {
+                "no filter LFO was found: it needs the brightness to swing by at least 0.2 octave, two cycles or more in the held part, and 0.5 s of held sound; a one-shot sweep reports ms instead"
+            }
+            Feature::SweepDepth => {
+                "no brightness sweep was found: the spectral centroid neither swings at an LFO rate by 0.2 octave nor moves one way by 0.5 octave"
+            }
+            Feature::SweepTime => {
+                "no one-shot brightness sweep (filter envelope) was found; a cyclic one reports hz instead"
             }
             Feature::Brightness => "the sound is too short (under 43 ms) or silent",
             Feature::Noisiness => "the held part is too short (under 171 ms) or silent",
@@ -758,6 +953,7 @@ impl Descriptors {
             Feature::Pitch => self.pitch.as_ref().map(|p| p.f0_hz),
             Feature::PitchCents => self.pitch.as_ref().map(|p| p.cents_dev),
             Feature::PitchStability => self.pitch.as_ref().map(|p| p.stability),
+            Feature::TonalPitch => self.tonal.as_ref().map(|t| t.f0_hz),
             Feature::Attack => e.map(|e| e.attack_ms),
             Feature::Decay => e.and_then(|e| e.decay_ms),
             Feature::Sustain => e.and_then(|e| e.sustain_db),
@@ -770,6 +966,9 @@ impl Descriptors {
             Feature::BeatDepth => self.detune.map(|b| b.depth_db),
             Feature::Tremolo => self.modulation.amp_lfo.map(|t| t.hz),
             Feature::TremoloDepth => self.modulation.amp_lfo.map(|t| t.depth_db),
+            Feature::SweepRate => self.modulation.filter_sweep.and_then(|s| s.hz),
+            Feature::SweepDepth => self.modulation.filter_sweep.map(|s| s.depth_oct),
+            Feature::SweepTime => self.modulation.filter_sweep.and_then(|s| s.ms),
             Feature::Loudness => lv.lufs_i,
             Feature::Peak => Some(lv.peak_dbfs),
             Feature::TruePeak => Some(lv.true_peak_dbtp),

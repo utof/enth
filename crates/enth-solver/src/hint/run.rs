@@ -19,6 +19,7 @@ fn spectral(f: Feature) -> bool {
         Feature::Pitch
             | Feature::PitchCents
             | Feature::PitchStability
+            | Feature::TonalPitch
             | Feature::Brightness
             | Feature::Noisiness
     )

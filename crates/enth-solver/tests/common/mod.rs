@@ -221,6 +221,7 @@ fn synth(job: &Job<'_>) -> Descriptors {
             stability: 1.0,
             voiced: 1.0,
         }),
+        tonal: None,
         envelope: Some(Envelope {
             attack_ms: libm::round(attack.max(1.0)),
             decay_ms: Some(libm::round(decay * 0.5 * (1.0 - sustain))),
