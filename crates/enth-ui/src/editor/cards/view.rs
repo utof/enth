@@ -5,11 +5,12 @@
 use enth_params::{ParamSpec, Tier};
 use enth_patch::catalogue::Builtin;
 use enth_patch::{
-    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Section, Target,
+    ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, Section, SlotIndex, Target,
 };
 
 use super::present;
-use crate::theme::Category;
+use crate::editor::overlay::Emphasis;
+use crate::theme::{Category, Score};
 
 /// Which card: a module by its id, or one of the built-ins. Stable across moves, relabels and layouts.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,6 +55,12 @@ pub struct ParamView {
     pub live: Option<f32>,
     /// The routes into this parameter, in summation order.
     pub routes: Vec<RouteView>,
+    /// The host automation slots that drive it, in slot order (the "Automate" menu and the status line).
+    pub slots: Vec<SlotIndex>,
+    /// How strongly it is shown (the editor's [`Overlay`](crate::editor::overlay::Overlay); normal in P1b).
+    pub emphasis: Emphasis,
+    /// A score ring from a challenge's results (none in P1b).
+    pub score: Option<Score>,
 }
 
 impl ParamView {
@@ -215,12 +222,16 @@ fn param_view(patch: &Patch, addr: ParamAddr, spec: &'static ParamSpec, value: f
             depth: r.depth,
         })
         .collect();
+    let slots = enth_session::bridge::slots_for(patch, &addr).collect();
     ParamView {
         addr,
         spec,
         value,
         live: None,
         routes,
+        slots,
+        emphasis: Emphasis::Normal,
+        score: None,
     }
 }
 

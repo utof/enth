@@ -12,9 +12,12 @@ use super::format::{signed_percent, value_text};
 use super::intent::{Grip, Hovered, Intent, Intents};
 use super::present::{self, Control};
 use super::view::{CardKey, CardKind, CardView, ParamView};
-use super::{envelope, ids, shapes};
+use super::{envelope, ids, menu, shapes};
 use crate::Theme;
-use crate::widgets::{CardShape, Display, Ink, Knob, ModuleCard, Segmented, Toggle, Trace};
+use crate::editor::overlay::Emphasis;
+use crate::widgets::{
+    CardShape, Display, Emphasis as KnobEmphasis, Ink, Knob, ModuleCard, Segmented, Toggle, Trace,
+};
 
 /// What a card did this frame, besides its intents.
 pub struct CardOutput {
@@ -185,13 +188,16 @@ fn display(ui: &mut Ui, t: &Theme, view: &CardView, rect: Rect, out: &mut Intent
     }
 }
 
-/// How a control is shaped in its card.
+/// How a control is shaped where it is drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Form {
+pub(crate) enum Form {
     /// A knob cell: label above, the control on the knob's centre line, the value below.
     Cell,
     /// A row this wide (a lane card's enum): label on the left, the control at the right end.
     Row(f32),
+    /// A knob with its label and value to its right, in a cell this wide (the header's built-ins). A card with one
+    /// parameter (master) shows its title as the label.
+    Inline(f32),
 }
 
 /// The controls: the shown tiers, then (with "More" open) a thin rule and the rest. A strip puts each group in one
@@ -269,12 +275,29 @@ fn rule(ui: &mut Ui, t: &Theme) {
     );
 }
 
-/// One parameter's control, and its intents.
-fn control(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, form: Form, out: &mut Intents) {
+/// One parameter's control, and its intents: the control the spec asks for, its right-click menu ("Type value…",
+/// "Reset to default", "Automate"), the "Type value…" field while it is open, and the status line's reading while
+/// it is hovered. The overlay's emphasis applies: a hidden parameter is not drawn, a dimmed one is drawn in the
+/// dimmed ink and stays editable.
+pub(crate) fn control(
+    ui: &mut Ui,
+    t: &Theme,
+    view: &CardView,
+    p: &ParamView,
+    form: Form,
+    out: &mut Intents,
+) {
+    if p.emphasis == Emphasis::Hidden {
+        return;
+    }
     let id = ids::param(&p.addr);
-    let label = present::label(view.kind, p.spec);
+    let label = match form {
+        Form::Inline(_) if view.params.len() == 1 => view.title.as_str(),
+        _ => present::label(view.kind, p.spec),
+    };
+    let dimmed = p.emphasis == Emphasis::Dimmed;
     let response = match present::control(t, p.spec) {
-        Control::Knob | Control::Stepped(_) => knob(ui, t, view, p, out),
+        Control::Knob | Control::Stepped(_) => knob(ui, t, view, p, label, form, out),
         Control::Segmented => {
             let items = p.spec.enum_items().unwrap_or(&[]);
             let labels: Vec<&str> = items
@@ -285,10 +308,17 @@ fn control(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, form: Form, o
             let mut segmented = Segmented::new(t, "segmented", &mut selected, &labels)
                 .id(id)
                 .label(label);
-            if let Form::Row(width) = form {
+            if let Form::Row(width) | Form::Inline(width) = form {
                 segmented = segmented.inline(width);
             }
-            let response = ui.add(segmented);
+            let response = ui
+                .scope(|ui| {
+                    if dimmed {
+                        ui.multiply_opacity(t.state.disabled_opacity);
+                    }
+                    ui.add(segmented)
+                })
+                .inner;
             if response.changed() {
                 out.push(Intent::Select {
                     addr: p.addr.clone(),
@@ -299,7 +329,14 @@ fn control(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, form: Form, o
         }
         Control::Toggle => {
             let mut on = p.value >= 0.5;
-            let response = ui.add(Toggle::new(t, &mut on, label).id(id));
+            let response = ui
+                .scope(|ui| {
+                    if dimmed {
+                        ui.multiply_opacity(t.state.disabled_opacity);
+                    }
+                    ui.add(Toggle::new(t, &mut on, label).id(id))
+                })
+                .inner;
             if response.changed() {
                 out.push(Intent::Toggle {
                     addr: p.addr.clone(),
@@ -309,6 +346,8 @@ fn control(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, form: Form, o
             response
         }
     };
+    menu::attach(t, view.kind, p, &response, out);
+    menu::entry(ui, t, p, response.rect, out);
     if response.hovered() || response.dragged() {
         out.hovered = Some(hovered(view, p));
     }
@@ -316,7 +355,15 @@ fn control(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, form: Form, o
 
 /// A knob (stepped for integers and long enums): `Begin` when a drag starts, `Set` when the value it writes
 /// changes, `End` when the drag stops. A double-click reset is a lone `Set`.
-fn knob(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, out: &mut Intents) -> Response {
+fn knob(
+    ui: &mut Ui,
+    t: &Theme,
+    view: &CardView,
+    p: &ParamView,
+    label: &str,
+    form: Form,
+    out: &mut Intents,
+) -> Response {
     let spec = p.spec;
     let mut norm = p.norm();
     let text = match spec.enum_item(p.value) {
@@ -325,11 +372,18 @@ fn knob(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, out: &mut Intent
         }
         _ => value_text(spec, p.value),
     };
-    let mut knob = Knob::new(t, &mut norm, present::label(view.kind, spec))
+    let mut knob = Knob::new(t, &mut norm, label)
         .id(ids::param(&p.addr))
         .value_text(text)
         .default_value(spec.to_norm(spec.default))
-        .bipolar(present::bipolar(spec));
+        .bipolar(present::bipolar(spec))
+        .score(p.score);
+    if p.emphasis == Emphasis::Dimmed {
+        knob = knob.emphasis(KnobEmphasis::Dimmed);
+    }
+    if let Form::Inline(width) = form {
+        knob = knob.inline(width);
+    }
     if let Control::Stepped(steps) = present::control(t, spec) {
         knob = knob.steps(steps);
     }
@@ -356,13 +410,19 @@ fn knob(ui: &mut Ui, t: &Theme, view: &CardView, p: &ParamView, out: &mut Intent
     response
 }
 
-/// The status line's reading of a control.
+/// The status line's reading of a control: its path, its value, the routes into it with their depths, and the
+/// automation slots that drive it.
 fn hovered(view: &CardView, p: &ParamView) -> Hovered {
-    let modulation: Vec<String> = p
+    let mut modulation: Vec<String> = p
         .routes
         .iter()
         .map(|r| format!("{} {}", r.name, signed_percent(r.depth)))
         .collect();
+    modulation.extend(
+        p.slots
+            .iter()
+            .map(|s| format!("automation slot {}", s.one_based())),
+    );
     Hovered {
         path: view.path(p.spec),
         value: value_text(p.spec, p.value),

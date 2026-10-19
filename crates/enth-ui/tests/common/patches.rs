@@ -119,3 +119,61 @@ pub fn g1() -> Patch {
     p.macros[2].value = 0.5;
     p
 }
+
+/// The P1 default patch the editor's layouts are judged at (the layout handoff's inventory, section 5): two
+/// oscillators, noise, a filter, two envelopes, two LFOs, a compressor and a reverb. It is the G1 reference patch.
+pub fn p1_default() -> Patch {
+    g1()
+}
+
+/// The maximum patch (lane ED1's second whole-editor snapshot): 4 generators, 4 voice effects, 4 effects and 8
+/// modulators, the patch model's limits, with the G1 patch's routes and macros.
+pub fn maximum() -> Patch {
+    let mut p = g1();
+    "Maximum".clone_into(&mut p.meta.name);
+    p.generators.push(module(
+        "osc3",
+        ModuleKind::Osc,
+        &[
+            (OscParam::Wave.index(), Wave::Triangle.index() as f32),
+            (OscParam::Semi.index(), 12.0),
+        ],
+    ));
+    for (name, mode, cutoff) in [
+        ("filter2", FilterMode::Hp, 200.0),
+        ("filter3", FilterMode::Bp, 900.0),
+        ("filter4", FilterMode::Lp, 5000.0),
+    ] {
+        p.voice_fx.push(module(
+            name,
+            ModuleKind::Svf,
+            &[
+                (SvfParam::Mode.index(), mode.index() as f32),
+                (SvfParam::Cutoff.index(), cutoff),
+            ],
+        ));
+    }
+    p.fx.push(ModuleInstance::new(id("comp2"), ModuleKind::Comp));
+    p.fx.push(ModuleInstance::new(id("reverb2"), ModuleKind::Reverb));
+    p.modulators.push(module(
+        "env3",
+        ModuleKind::Adsr,
+        &[(AdsrParam::Attack.index(), 300.0)],
+    ));
+    p.modulators.push(module(
+        "env4",
+        ModuleKind::Adsr,
+        &[(AdsrParam::Release.index(), 2000.0)],
+    ));
+    p.modulators.push(module(
+        "lfo3",
+        ModuleKind::Lfo,
+        &[(LfoParam::Shape.index(), LfoShape::Square.index() as f32)],
+    ));
+    p.modulators.push(module(
+        "lfo4",
+        ModuleKind::Lfo,
+        &[(LfoParam::Rate.index(), 0.1)],
+    ));
+    p
+}

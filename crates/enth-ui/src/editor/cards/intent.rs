@@ -10,6 +10,7 @@
 
 use enth_params::DEPTH;
 use enth_patch::{MacroIndex, ModuleId, Op, ParamAddr, Patch, Route, RouteAddr};
+use enth_session::bridge;
 
 use super::view::CardKey;
 
@@ -51,6 +52,11 @@ pub enum Intent {
     Enable { id: ModuleId, enabled: bool },
     /// Remove a route (a double-click on a matrix cell).
     Unroute(RouteAddr),
+    /// Expose a parameter to the host through an automation slot (the right-click "Automate" item): the slot that
+    /// already drives it, else the lowest free one (`bridge::free_slot`, F1b decision 4). One edit, no gesture.
+    Automate(ParamAddr),
+    /// Clear every automation slot that drives a parameter ("Stop automating"). One edit, no gesture.
+    StopAutomating(ParamAddr),
     /// A card's "More" disclosure was opened or closed. Editor view state, not an edit: the editor keeps it outside
     /// the patch (it survives the editor closing, so it belongs to the session's editor state, not to egui).
     ShowMore { card: CardKey, open: bool },
@@ -113,6 +119,19 @@ impl Intent {
             Intent::Unroute(route) => vec![Op::RemoveRoute {
                 route: route.clone(),
             }],
+            Intent::Automate(addr) => {
+                let automated = bridge::slots_for(patch, addr).next().is_some();
+                match bridge::free_slot(patch) {
+                    Some(slot) if !automated => vec![Op::SetSlot {
+                        slot,
+                        addr: Some(addr.clone()),
+                    }],
+                    _ => Vec::new(),
+                }
+            }
+            Intent::StopAutomating(addr) => bridge::slots_for(patch, addr)
+                .map(|slot| Op::SetSlot { slot, addr: None })
+                .collect(),
             Intent::Begin(_)
             | Intent::End(_)
             | Intent::ShowMore { .. }

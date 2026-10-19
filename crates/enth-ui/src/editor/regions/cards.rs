@@ -1,15 +1,17 @@
 //! A region of cards: the sound sources (generators), the voice effects, the effects or the modulators. The region
 //! arranges its cards one way ([`Arrangement`]) inside its rectangle and scrolls on its own when they don't fit, so
-//! a layout needs no minimum sizes.
+//! a layout needs no minimum sizes; [`CardRegionOutput::overflow`] says by how much they didn't.
 
-use egui::{Rect, ScrollArea, Ui};
+use egui::{Rect, ScrollArea, Ui, Vec2};
+use serde::{Deserialize, Serialize};
 
 use super::region_ui;
 use crate::Theme;
 use crate::editor::cards::{Card, CardKey, CardOutput, CardView, Intents};
 
-/// How a region lays out its cards.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How a region lays out its cards (a layout file names it: `"strips"`, `"lane"`, `"band"`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Arrangement {
     /// Strips the full width of the region, top to bottom (generators: display beside one row of knobs).
     Strips,
@@ -63,8 +65,9 @@ impl<'a> CardRegion<'a> {
         Self::new(theme, "modulators", cards, Arrangement::Band)
     }
 
-    /// Draws the cards into `rect`. Returns each card's rect and header, for ED1's drag-to-reorder.
-    pub fn show(self, ui: &mut Ui, rect: Rect, out: &mut Intents) -> Vec<(CardKey, CardOutput)> {
+    /// Draws the cards into `rect`. Returns each card's rect and header (for a later drag-to-reorder) and how far
+    /// the cards overflow the rectangle.
+    pub fn show(self, ui: &mut Ui, rect: Rect, out: &mut Intents) -> CardRegionOutput {
         let t = self.theme;
         let mut ui = region_ui(ui, rect, self.name);
         let scroll = match self.arrangement {
@@ -72,7 +75,7 @@ impl<'a> CardRegion<'a> {
             Arrangement::Band => ScrollArea::both(),
         };
         let mut shown = Vec::with_capacity(self.cards.len());
-        scroll
+        let output = scroll
             .id_salt("scroll")
             .auto_shrink(false)
             .max_height(rect.height())
@@ -98,6 +101,18 @@ impl<'a> CardRegion<'a> {
                     }
                 }
             });
-        shown
+        let overflow = (output.content_size - output.inner_rect.size()).max(Vec2::ZERO);
+        CardRegionOutput {
+            cards: shown,
+            overflow,
+        }
     }
+}
+
+/// What a card region drew.
+pub struct CardRegionOutput {
+    /// Each card's key, rect and header, in drawing order.
+    pub cards: Vec<(CardKey, CardOutput)>,
+    /// How far the cards reach past the region, per axis (zero when they fit and nothing scrolls).
+    pub overflow: Vec2,
 }
