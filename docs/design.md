@@ -10,7 +10,7 @@ Every module parameter is declared once. That declaration drives UI knobs, host 
 pub struct ParamSpec {
     pub key: &'static str,        // stable within a module type: "cutoff"
     pub name: &'static str,       // "Cutoff"
-    pub unit: Unit,               // Hz | Ms | Cents | Semitones | Octaves | Db | Percent | Ratio | None
+    pub unit: Unit,               // Hz | Ms | Cents | Semitones | Octaves | Db | Percent | Ratio | Degrees | None
     pub kind: Kind,               // Float{min,max,scale} | Int{min,max} | Enum(&[EnumItem]) | Toggle — min/max in plain units: 20.0..=20_000.0
     pub default: f32,             // plain units
     pub smoothing: Smoothing,     // None | Linear{ms} | OnePole{ms}
@@ -23,13 +23,13 @@ pub enum Scale { Linear, Log, Power(f32) } // plain ⇄ normalised; Log needs mi
 
 2026-10-19 (P1a research): the first draft had `range` and `mapping` fields and a `modulatable` bool. `Stepped` and `Enum` are value kinds, not scales, so they moved into `kind`.
 
-- **Keys are short and unit-free** (`cutoff`, `attack`, `detune`); the unit lives in the spec, so a patch stores `"cutoff": 900` meaning 900 Hz. `enth params <module>` lists every key with its unit.
+- **Keys are short and unit-free** (`cutoff`, `attack`, `fine`); the unit lives in the spec, so a patch stores `"cutoff": 900` meaning 900 Hz. `enth params <module>` lists every key with its unit.
 - **Plain values** (Hz, ms, dB…) are what patches store, what the CLI reads and writes, and what humans and LLMs see.
 - **Normalised 0–1 values** exist only at the host-automation, UI-gesture and ML boundaries.
 - **Flags.** `modulatable` and `automatable` say who may drive the parameter. `structural` marks parameters that change the render plan (`voice.mode`, polyphony, an LFO's voice/global scope), so an op that sets one recompiles instead of sending a value event. `periodic` makes phase knobs wrap instead of clamp (the CLAP flag of the same name).
 - **The scale is part of the persisted contract.** Route depth is a percentage of the destination's range in the normalised domain (§2), and ML encoding and the randomiser use that domain too. So changing a scale, range, unit or default needs a patch migration. An insta snapshot of the whole catalogue makes such a change show up in review. All scale maths (`to_norm`, `from_norm`) goes through the pinned `libm`, never `std`, because the engine uses it for modulation (§5).
 - **Declared as `const` tables** in plain Rust, with a small `macro_rules!` that emits the index enum and the table from one list, so their order cannot drift. A `const fn` check makes a bad spec a compile error (default out of range, `min >= max`, a Log scale with `min <= 0`, duplicate keys); measured on 1.99.1, where an out-of-range default stops the build with `error[E0080]`. No proc macro, no `build.rs`; docs and JSON Schemas are generated from the tables at runtime (`enth params`, `enth schema`).
-- Parsing accepts units and converts them to the spec's unit: `800Hz`, `1.2kHz`, `40ms`, `0.5s`, `12ct`, `+2st`, `+1oct`, `-6dB`, `30%`, and names for enums (`saw`, `lp`, case-insensitive). Hz parameters also take note names (`A4`, `C#3`; A4 = 440). A bare number for a percent parameter is a percent (`30`, never `0.3`). An error names the parameter, the unit it expects and the suffixes it accepts. The unit tables and parser live in `enth-params`.
+- Parsing accepts units and converts them to the spec's unit: `800Hz`, `1.2kHz`, `40ms`, `0.5s`, `12ct`, `+2st`, `+1oct`, `-6dB`, `30%`, `4:1`, `90deg`, and names for enums (`saw`, `lp`, case-insensitive). Hz parameters also take note names (`A4`, `C#3`; A4 = 440). A bare number for a percent parameter is a percent (`30`, never `0.3`). An error names the parameter, the unit it expects and the suffixes it accepts. The unit tables and parser live in `enth-params`.
 
 ## 2. Patch model, ops and versioning
 
@@ -41,26 +41,26 @@ A patch is plain data with stable IDs. It never contains engine state.
 pub struct Patch {
     pub engine: Version,                      // engine the patch was authored on (the schema number lives in PatchFile)
     pub meta: PatchMeta,                      // name, author, tags, description; not hashed
-    pub voice: VoiceSettings,                 // built-in `voice`: mode (poly/mono/legato), polyphony ≤ 16, glide, glide_mode; amp_env names an ADSR in `modulators`
-    pub master: Vec<f32>,                     // built-in `master`: level (dB), applied after the effects
+    pub voice: VoiceSettings,                 // built-in `voice`: mode (poly/mono/legato), polyphony ≤ 16, glide, glide_mode, pan; amp_env names an ADSR in `modulators`
+    pub master: [f32; MasterParam::COUNT],    // built-in `master`, a fixed table: level (dB), applied after the effects
     pub generators: Vec<ModuleInstance>,      // per voice, parallel, summed in this order
     pub voice_fx: Vec<ModuleInstance>,        // per voice, serial, after the generator sum and before the amp stage
     pub fx: Vec<ModuleInstance>,              // global, serial, after the voice sum
     pub modulators: Vec<ModuleInstance>,      // evaluated in this order
-    pub routes: Vec<ModRoute>,                // source → (module, param), depth; the order is the summation order
+    pub routes: Vec<Route>,                   // source → (module, param), depth; the order is the summation order
     pub macros: [Macro; 8],
     pub slots: [Option<ParamAddr>; 64],       // host-exposed automation slots (§4)
 }
 pub struct ModuleInstance { pub id: ModuleId, pub kind: ModuleKind, pub label: Option<String> /* UI only, not hashed */,
                             pub enabled: bool, pub values: Vec<f32> /* dense, in the kind's ParamSpec order; never NaN, never -0.0 */ }
-pub struct ModRoute { pub src: ModSource, pub dst: ParamAddr,
-                      pub depth: f32 /* percent of the destination's range, -100..=100 */ }
+pub struct Route { pub src: ModSource, pub dst: ParamAddr,
+                   pub depth: f32 /* percent of the destination's range, -100..=100 */ }
 ```
 
 - **Sections, not lanes.** The first draft's `lanes: Vec<Vec<ModuleInstance>>` was ambiguous: a filter must run per voice (its envelope is per note) and a reverb must be global. P1 has two explicit serial chains, `voice_fx` and `fx`. A later `lanes: Vec<Lane { poly, modules }>` is a pure migration from them, in the way Phase Plant's per-lane Poly switch works.
-- **`voice` and `master` are built-in pseudo-modules**, so `voice.glide` and `master.level` are ordinary addresses that `set` and the solver can reach. `master.level` (dB) is the way back from clipping (§6).
+- **`voice` and `master` are built-in pseudo-modules**: fixed parts of every patch, with no id, that cannot be added, removed or disabled. So `voice.glide`, `voice.pan` and `master.level` are ordinary addresses that `set` and the solver can reach. `master.level` (dB) is the way back from clipping (§6).
 - **Oscillator phase mode.** Each oscillator has a start-phase parameter (free, reset or seeded). At 0 ct a phase *difference* between two oscillators is a timbre change, so it must be explicit, and the descriptors' noise estimate (§6) needs a nuisance seed that is separate from the patch.
-- **Files.** Parameters are parsed from the JSON value against their `ParamSpec`, so errors are typed (`out_of_range`, `wrong_unit`, `not_integral`), not serde's "did not match any variant". `serde_json` runs with `float_roundtrip`; non-finite numbers are rejected (serde turns `1e39` into `inf`, and NaN and infinity serialise as `null`); `-0.0` is canonicalised to `+0.0`.
+- **Files.** Parameters are parsed from the JSON value against their `ParamSpec`, so errors are typed (`out_of_range`, `wrong_unit`, `not_integral`), not serde's "did not match any variant". Enum values are written as item names (`"saw"`, `"lp"`) and toggles as `true`/`false`; a number for an enum is rejected. `serde_json` runs with `float_roundtrip`; non-finite numbers are rejected (serde turns `1e39` into `inf`, and NaN and infinity serialise as `null`); `-0.0` is canonicalised to `+0.0`.
 - **Migrations** are pure `serde_json::Value → Value` steps, one per schema version, each with fixtures; no versioning crate fits (they keep one Rust struct per version, which suits neither catalogue-driven parameters nor agent-written files). A catalogue change is a migration: a renamed key, a rescaled range (which also rescales the depths of routes that target it), a split module, a changed default (the step writes the old default where a file omits the key). DSP changes bump the engine version and the goldens, not the schema.
 
 **Modulation depth** is relative by nature, so it is stored as a percentage of the destination's range, measured in the destination's normalised (scale) domain:
@@ -77,15 +77,15 @@ Every mutation is an **op**:
 ```rust
 pub enum Op {
     SetParam     { addr: ParamAddr, value: f32 },                // plain units; also voice.* and master.*
-    AddModule    { at: Slot, module: ModuleInstance },           // the full instance, so an inverse can re-add it
+    AddModule    { at: Position, module: ModuleInstance },       // the full instance, so an inverse can re-add it
     RemoveModule { id: ModuleId },
-    MoveModule   { id: ModuleId, to: Slot },
+    MoveModule   { id: ModuleId, to: Position },
     SetRoute     { src: ModSource, dst: ParamAddr, depth: f32 }, // append, or update the depth (percent)
     Unroute      { src: ModSource, dst: ParamAddr },
-    InsertRoute  { index: usize, route: ModRoute },              // the inverse of Unroute; keeps the summation order
+    InsertRoute  { index: usize, route: Route },                 // the inverse of Unroute; keeps the summation order
     SetEnabled   { id: ModuleId, enabled: bool },
-    SetMacro     { index: u8, value: f32 },
-    AssignSlot   { slot: u8, addr: Option<ParamAddr> },
+    SetMacro     { index: MacroIndex, value: f32 },
+    AssignSlot   { slot: SlotIndex, addr: Option<ParamAddr> },
     SetAmpEnv    { id: ModuleId },
     SetLabel     { id: ModuleId, label: Option<String> },
     SetMeta      { meta: PatchMeta },
@@ -94,7 +94,7 @@ impl Op { fn apply(&self, p: &mut Patch) -> Result<Vec<Op> /* the inverse, in or
 fn apply_all(p: &mut Patch, ops: &[Op]) -> Result<Vec<Op>, (usize, OpError)>; // atomic: a failed transaction leaves p bit-identical
 ```
 
-- Addresses are human-readable: `osc1.detune`, `filter1.cutoff`, `voice.glide`, `master.level`, `lfo1 -> filter1.cutoff`.
+- Addresses are human-readable: `osc1.fine`, `filter1.cutoff`, `voice.glide`, `master.level`, `lfo1 -> filter1.cutoff`.
 - **An op returns its inverse as a list.** `RemoveModule`'s inverse re-adds the module and restores its routes (at their original indices) and its slot assignments. `apply_all` replays the collected inverses on the first error, so transactions are atomic. Errors have stable snake-case codes (`unknown_param`, `out_of_range`, `duplicate_id`, `route_rate_mismatch`, `in_use_as_amp_env`, …) that the CLI maps to exit 3, each with a hint.
 - **Undo merges only edits to the same address.** During a knob drag, "keep the first inverse, take the last forward" is correct for `SetParam`s on one address. Across addresses it loses undo data (the history property test caught exactly that bug in the first draft), so edits to other addresses in the same gesture are concatenated. A gesture that ends where it started is dropped.
 - **Host automation applies `SetParam` without a history entry**, and so do migration on load and the solver's moves inside a search. The "every mutation is an op" rule still holds; only the undo stack skips them.
@@ -122,7 +122,7 @@ pub trait VoiceProcessor {                                        // VoiceModula
     fn process(&mut self, cx: &mut VoiceCx<'_>);                  // never allocates, locks or blocks
     fn copy_state_from(&mut self, old: &Self);                    // for the plan swap, no allocation
 }
-pub enum ModuleImpl { Analog(Analog), Wavetable(Wavetable), Noise(Noise), Svf(Svf), Adsr(Adsr), Lfo(Lfo), Reverb(Reverb), Comp(Comp) }
+pub enum ModuleImpl { Osc(Osc), Noise(Noise), Svf(Svf), Adsr(Adsr), Lfo(Lfo), Reverb(Reverb), Comp(Comp) }
 impl ModuleImpl { pub fn new(kind: ModuleKind, cfg: &PrepareCfg) -> Self { /* an exhaustive match */ } }
 ```
 
@@ -136,7 +136,7 @@ Every segment runs in the same fixed order, which is where the determinism lives
 4. global modulators, in patch order;
 5. per active voice in ascending index, voice modulators in patch order (a route from a modulator later in the order reads its previous-segment value: a one-segment delay that is deterministic and makes cycles harmless);
 6. modulated parameter values, `n = clamp(base_norm + Σ depth · source)` in patch route order (§2);
-7. voices: generators sum into the voice bus, then `voice_fx`, then the amp stage ramped from the amp envelope's previous to current value, then into the stereo sum in ascending voice index;
+7. voices: generators sum into the voice bus, then `voice_fx`, then the amp stage ramped from the amp envelope's previous to current value, then `voice.pan` (a constant-power law: −3 dB in each channel at centre) into the stereo sum in ascending voice index;
 8. `fx` in order (a processor whose tail is silent and whose input is zero is skipped);
 9. flush state below about 1e-15, end finished voices;
 10. write the FIFO.

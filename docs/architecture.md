@@ -84,7 +84,7 @@ enth/
 ├── crates/                 # directory name = package name
 │   ├── enth-dsp/           # L0  src/{math,rng,…}.rs: the only libm door; one file per DSP core (osc, svf, reverb, …)
 │   ├── enth-params/        # L0  src/{unit,scale,spec,parse,format,depth,presets,macros}.rs (units live here)
-│   ├── enth-patch/         # L1  src/{model,catalogue/,addr,validate,ops,wire,history,file,schema,migrate,canon}.rs
+│   ├── enth-patch/         # L1  src/{model,catalogue/,addr,validate,ops,wire,history,file,migrate,canon}.rs (the files today; S1b may add more)
 │   ├── enth-engine/        # L2  src/{module,params,plan,voice,engine,link}.rs, modules/{generators,modulators,effects}/
 │   ├── enth-render/        # L3
 │   ├── enth-analysis/      # L3  src/{features,descriptors,expect,distance}.rs

@@ -17,12 +17,13 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 ## Design rules
 
 1. **JSON by default when stdout is not a TTY**; tables for humans. One JSON object per call (JSONL for streams). Every object carries `"schema": "enth.<command>/<version>"`.
-2. **Real units everywhere.** `filter1.cutoff=800Hz`, `env1.attack=40ms`, `osc2.detune=12ct`, `fx1.mix=30%`. The CLI parses unit strings into the parameter's plain value using the parameter schema ([design.md §1](design.md#1-one-parameter-schema-eight-consumers)); normalised 0–1 values never appear in the CLI.
+2. **Real units everywhere.** `filter1.cutoff=800Hz`, `env1.attack=40ms`, `osc2.fine=12ct`, `comp1.mix=30%`. The CLI parses unit strings into the parameter's plain value using the parameter schema ([design.md §1](design.md#1-one-parameter-schema-eight-consumers)); normalised 0–1 values never appear in the CLI.
 3. **Stateless files.** Every command reads a patch file and, if it changes it, writes a new one (`--out`). History is files: agents can branch, diff and roll back. An optional daemon may come later purely for speed.
 4. **Deterministic.** Fixed default seed, sample rate (48 kHz) and render length; sorted keys; numbers rounded to 4 significant digits.
 5. **Self-describing.** `enth schema`, `enth modules`, `enth params <module>` and `enth guide` (a one-page workflow guide for agents) mean no outside docs are needed.
 6. **Errors teach.** Exit codes are stable; error JSON says what was wrong and how to fix it:
    `{"error":"unknown_param","path":"filter1.cutof","did_you_mean":["filter1.cutoff"],"hint":"enth params filter"}`
+   `did_you_mean` also draws on the CLI's alias table: names an agent is likely to guess, mapped to the catalogue's keys (`detune` → `fine`, `res` → `resonance`). So `osc1.detune` gets `"did_you_mean":["osc1.fine"]` where edit distance alone would find nothing. The table lives in the CLI and only feeds suggestions; the catalogue keys, which patches store, have no aliases.
 7. **Small outputs.** Summaries by default; `--full` or `--fields` for more. Never dump a whole patch unless asked.
 8. **Every edit is an op** — the same ops the UI emits and undo stores ([design.md §2](design.md#2-patch-model-ops-and-versioning)).
 9. **Types are the schema.** Each output is a Rust struct (`Serialize + Deserialize + JsonSchema`, `deny_unknown_fields`) and `enth schema <name>` prints its JSON Schema (draft 2020-12, from `schemars`). Tests snapshot the output (insta), deserialize it back into the struct, and snapshot the schema itself, so code and schema cannot drift. There is no `jsonschema` crate: its default features pull in a C build. Any change to an output's shape, or to a field's meaning (like `decay_ms` between the spike and P1), bumps its version and updates the snapshots (AGENTS.md).
@@ -72,7 +73,7 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
   "voice": { "mode": "poly", "polyphony": 8, "glide": 0, "amp_env": "env1" },
   "master": { "level": 0 },
   "generators": [
-    { "id": "osc1", "kind": "analog", "params": { "wave": "saw", "level": -6, "detune": 0 } }
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw", "level": 100, "fine": 0 } }
   ],
   "modulators": [
     { "id": "env1", "kind": "adsr", "params": { "attack": 2, "decay": 300, "sustain": 0, "release": 200 } }
@@ -91,19 +92,19 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
   {"set": "voice.mode", "to": "legato"},
   {"set": "master.level", "to": "-6dB"},
   {"add": "lfo", "id": "lfo1", "at": "modulators[1]", "params": {"rate": "0.2Hz"}},
-  {"remove": "fx2"},
+  {"remove": "comp1"},
   {"move": "filter2", "to": "voice_fx[0]"},
   {"route": "lfo1 -> filter1.cutoff", "depth": "30%"},
   {"route": "env2 -> filter1.cutoff", "depth": "+1oct", "index": 2},
   {"unroute": "lfo1 -> filter1.cutoff"},
-  {"enable": "fx1", "to": false},
+  {"enable": "reverb1", "to": false},
   {"macro": 1, "to": 0.5},
   {"slot": 7, "to": "filter1.cutoff"},
   {"amp_env": "env1"}
 ]
 ```
 
-- `add` without `id` takes the lowest free `<prefix><n>` (`osc1`, `filter2`). `at` is `section[index]` and defaults to the end of the kind's section.
+- `add` without `id` takes the lowest free `<prefix><n>` (`osc1`, `filter2`, `reverb1`, `comp1`; the prefix belongs to the kind: an `svf` is a `filter`, an `adsr` an `env`). `at` is `section[index]` and defaults to the end of the kind's section.
 - `set` reaches `voice.*` and `master.*` too. `route` takes `index` to place the route in the summation order (undo uses it) and a depth in percent or musical units (`+1oct`, `+12st`), converted to a percentage at the parameter's current value.
 - Macros and slots are 1-based in text and 0-based in the engine; a macro's value is its knob position, 0–1.
 - **`--set` sugar.** `enth apply p --set filter1.cutoff=1.2kHz,env1.attack=40ms` becomes `set` ops. The agents in the Phase 0 trial wrote 3 to 10 `--set` pairs per step and none used ops JSON, so `--set` stays.
@@ -197,7 +198,7 @@ The numbers are illustrative. A `fix` is one move for the whole list, rendered a
  "moves":[
   {"param":"filter1.cutoff","from":"3.2kHz","to":"1.4kHz","score_after":80,"moves_feature":"spectrum.centroid_hz -690Hz"},
   {"param":"env1.attack","from":"2ms","to":"40ms","score_after":78,"moves_feature":"envelope.attack_ms +38ms"},
-  {"param":"osc1.detune","from":"18ct","to":"6ct","score_after":74,"moves_feature":"detune.beating_hz -1.2Hz"}]}
+  {"param":"osc1.fine","from":"18ct","to":"6ct","score_after":74,"moves_feature":"detune.beating_hz -1.2Hz"}]}
 ```
 
 `suggest` renders ± small moves for each editable parameter (cheap: the engine renders hundreds of short clips per second), so its numbers are measured, not guessed. `match` hands the fine-tuning to CMA-ES, restricted to the parameters the agent frees, so structure stays the agent's choice.

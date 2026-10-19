@@ -1,6 +1,6 @@
 # Compressor (`enth-dsp::compressor`)
 
-- Lane: P1a FX2, phase 1 (the DSP core). The `Module` wrapper, the catalogue entry and the golden render case come in phase 2, after freeze F2.
+- Lane: P1a FX2, phase 1 (the DSP core). The `Module` wrapper and the golden render case come in phase 2, after freeze F2. The catalogue entry is done (`crates/enth-patch/src/catalogue/comp.rs`, frozen at F1, listed in [catalogue.md](catalogue.md)).
 - Code: `crates/enth-dsp/src/compressor.rs`. Tests: the same file (white-box), `crates/enth-dsp/tests/compressor.rs` and `compressor_props.rs`.
 - Decisions behind it: [ADR-0006](../adr/0006-effects-strategy.md) (in-house, zero latency, and the 2026-10-19 note that corrects its wording), research report 02 Q6 (`_local/sessions/2026-10-19-p1a-headless-core/02-dsp-modules.md`).
 
@@ -37,17 +37,17 @@ Implementation details that matter for bit-exactness:
 
 ## Parameters
 
-Real units, `CompressorParams`. `set_params` clamps every field into the core range below and replaces a NaN or infinity by the default. The range the patch catalogue offers is `enth-patch`'s business (lane S1a); the third column is report 02's proposal for it.
+Real units, `CompressorParams`. `set_params` clamps every field into the core range below and replaces a NaN or infinity by the default. The range the patch catalogue offers is `enth-patch`'s business (lane S1a); the fourth and fifth columns are what it declared at F1 (the ranges are report 02's proposal).
 
-| Field | Unit | Core accepts | Proposed catalogue range / default | Notes |
-| --- | --- | --- | --- | --- |
-| `threshold_db` | dBFS | −120 … 24 | −60 … 0, −18 | The knee is centred on it |
-| `ratio` | :1 | 1 … 1000 | 1 … 20, 4 | 1 never reduces; 1000 is a near-limiter |
-| `knee_db` | dB | 0 … 48 | 0 … 24, 6 | 0 is JOS's hard knee |
-| `attack_ms` | ms | 0 … 2000 | 0.1 … 100 (log), 10 | Time constant of the follower; also sets the gain smoother (attack/2) |
-| `release_ms` | ms | 0 … 10000 | 10 … 2000 (log), 200 | Time constant of the follower |
-| `makeup_db` | dB | −48 … 48 | 0 … 24, 0 | Wet path only |
-| `mix_pct` | % | 0 … 100 | 0 … 100, 100 | 100 = fully compressed; between = parallel compression |
+| Field | Unit | Core accepts | Catalogue range / default | Catalogue smoothing | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `threshold_db` | dBFS | −120 … 24 | −60 … 0, −18 | 10 ms | The knee is centred on it |
+| `ratio` | :1 | 1 … 1000 | 1 … 20, 4 | 10 ms | 1 never reduces; 1000 is a near-limiter |
+| `knee_db` | dB | 0 … 48 | 0 … 24, 6 | 10 ms | 0 is JOS's hard knee |
+| `attack_ms` | ms | 0 … 2000 | 0.1 … 100 (log), 10 | none | Time constant of the follower; also sets the gain smoother (attack/2) |
+| `release_ms` | ms | 0 … 10000 | 10 … 2000 (log), 200 | none | Time constant of the follower |
+| `makeup_db` | dB | −48 … 48 | 0 … 24, 0 | 10 ms | Wet path only |
+| `mix_pct` | % | 0 … 100 | 0 … 100 (`mix`), 100 | 10 ms | 100 = fully compressed; between = parallel compression. The catalogue's `mix` is this field as it is, in percent |
 
 ## Attack and release: what the numbers mean
 
@@ -152,7 +152,7 @@ The static-curve comparison is the one place where the choice of `f64` matters. 
 
 - **API:** `Compressor::new()`, `prepare(sample_rate)` (also resets), `set_params(&CompressorParams)`, `process(l, r, out_l, out_r)` or `process_in_place(l, r)` (`min` of the four lengths, never panics), `tick(l, r)`, `reset()`, `gain_reduction_db()` (current, ≥ 0, make-up excluded), `take_peak_gain_reduction_db()` (largest since the last call, for a meter polled by the UI), `latency_samples()` (0), `params()`. `StaticCurve::new(T, R, W).gain_db(level)` and `output_db(level)` draw the transfer curve in the editor from the same code.
 - **One compressor per stereo bus**, after the voice sum. `Compressor` is `Clone` and owns no heap memory, so carrying state across a plan swap is a `clone_from` and a `set_params`.
-- **Smoothing in the catalogue.** Changes to threshold, ratio and knee already glide: they move the target of the gain smoother (time constant attack/2). `makeup` and `mix` are applied directly, so a step in either clicks; give them a short parameter smoothing and call `set_params` once per 32-frame segment with the ramped value (only the changed fields are recomputed). `attack` and `release` jump their coefficients, which is inaudible except at extremes.
+- **Smoothing in the catalogue.** Changes to threshold, ratio and knee already glide: they move the target of the gain smoother (time constant attack/2); the catalogue smooths them too (linear, 10 ms). `makeup` and `mix` are applied directly, so a step in either would click: the catalogue gives both the engine's smoother (linear, 10 ms), and the wrapper calls `set_params` once per 32-frame segment with the ramped value (only the changed fields are recomputed). `attack` and `release` have no smoothing: they jump their coefficients, which is inaudible except at extremes.
 - **Metering.** Read `gain_reduction_db` or `take_peak_gain_reduction_db` after `process` and publish it to the UI through an atomic `f32`. The module itself holds no channel.
 - **Bypass.** The compressor is not `time_based`, so the global FX bypass leaves it on (ADR-0006 note). When the patch disables the module, make it the identity and `reset()` it, so it does not resume with a stale reduction.
 - **Denormals.** The module has a private `flush` with the same rule as `enth_dsp::util::flush::flush` (lane FX1: magnitudes below 1e-15 become `+0.0`). The two give identical results, so replacing the private one with the shared one after FX1 merges leaves the hash unchanged.
