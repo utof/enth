@@ -28,6 +28,9 @@ pub mod model;
 pub mod state;
 pub mod telemetry;
 
+#[cfg(test)]
+mod tests;
+
 pub use apply::{Delivery, Routing};
 pub use bridge::{FoldReport, GestureStep, HostParam, HostValues, HostWrite, SlotTarget};
 pub use enth_patch::history::GestureId;

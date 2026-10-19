@@ -173,14 +173,9 @@ fn the_stubs_answer_with_typed_errors() {
         }
     ));
     assert_eq!(session.pump(), PumpReport::default());
-    assert!(matches!(
-        session.undo(),
-        Err(SessionError::Unsupported { lane: "S2s", .. })
-    ));
-    assert!(matches!(
-        session.redo(),
-        Err(SessionError::Unsupported { lane: "S2s", .. })
-    ));
+    // Undo and redo are lane S2s's and implemented: with nothing recorded there is nothing to do.
+    assert_eq!(session.undo(), Ok(false));
+    assert_eq!(session.redo(), Ok(false));
     assert_eq!(session.audition_on(60, 1.0), Err(SessionError::Inactive));
     assert_eq!(
         session.audition_off(NoteKey::new(60, 0)),
