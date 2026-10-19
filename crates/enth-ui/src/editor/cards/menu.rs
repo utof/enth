@@ -195,8 +195,3 @@ pub(super) fn entry(ui: &Ui, t: &Theme, p: &ParamView, anchor: Rect, out: &mut I
         }
     });
 }
-
-/// Whether a "Type value…" field is open (the editor keeps the window's keyboard while it is).
-pub fn entry_open(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<Entry>(ids::entry()).is_some())
-}

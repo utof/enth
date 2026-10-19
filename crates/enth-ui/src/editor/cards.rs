@@ -30,7 +30,6 @@ pub use card::{Card, CardOutput};
 pub(crate) use card::{Form, control};
 pub use envelope::stages as envelope_stages;
 pub use intent::{Grip, Hovered, Intent, Intents};
-pub use menu::entry_open;
 pub use present::Control;
 pub use view::{CardKey, CardKind, CardView, ParamView, RouteView};
 
