@@ -1,0 +1,23 @@
+[package]
+name = "spike-shell"
+description = "Phase 0 shell spike: an 8-voice synth on nice-plug with 72 host params, a JSON patch blob and a placeholder egui editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib is the plugin; lib lets `cargo test` and other crates link the same code.
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# Exact pins: nice-plug breaks roughly monthly (docs/adr/0001-plugin-shell.md).
+# `assert_process_allocs` only has an effect in debug builds (nice-plug gates it on debug_assertions).
+nice-plug = { version = "=0.4.2", default-features = false, features = ["vst3", "editor", "assert_process_allocs"] }
+nice-plug-egui = "=0.6.0"
+# default_fonts is required: without it egui has no font and cannot lay out text. It brings in Ubuntu-font-1.0 (deny.toml).
+egui = { version = "0.37.0", features = ["default_fonts"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true
