@@ -628,15 +628,12 @@ impl Report {
                 r.mean_abs_diff
             );
         }
+        let avg = |v: Option<f64>| v.map_or("n/a".to_string(), |v| format!("{v:.2}"));
         let _ = writeln!(
             s,
-            "anchors: identical pairs mean {:?}, obviously different mean {:?} -> {}",
-            self.anchors
-                .same_mean_rating
-                .map(|v| (v * 100.0).round() / 100.0),
-            self.anchors
-                .different_mean_rating
-                .map(|v| (v * 100.0).round() / 100.0),
+            "anchors: identical pairs mean {}, obviously different mean {} -> {}",
+            avg(self.anchors.same_mean_rating),
+            avg(self.anchors.different_mean_rating),
             if self.anchors.ok {
                 "ok"
             } else {
