@@ -9,7 +9,7 @@ use std::ffi::CStr;
 use std::time::Instant;
 
 use clack_extensions::state::PluginState;
-use clack_host::events::event_types::{NoteOffEvent, NoteOnEvent, ParamValueEvent};
+use clack_host::events::event_types::{MidiEvent, NoteOffEvent, NoteOnEvent, ParamValueEvent};
 use clack_host::events::spaces::CoreEventSpace;
 use clack_host::prelude::*;
 use serde_json::{Value, json};
@@ -408,6 +408,11 @@ impl JobRunner {
                     ClapId::new(*id),
                     Pckn::match_all(),
                     *value,
+                )),
+                Kind::MidiCc { channel, cc, value } => self.events_in.push(&MidiEvent::new(
+                    time,
+                    0,
+                    [0xB0 | (channel & 0x0F), *cc & 0x7F, *value & 0x7F],
                 )),
             }
         }

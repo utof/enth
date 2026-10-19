@@ -7,13 +7,16 @@
 //! C4@0+1.5:0.8          note C4 (MIDI 60) from 0 s, held 1.5 s, velocity 0.8 (velocity is optional, default 0.8)
 //! 64@0.5+1              MIDI key 64 from 0.5 s, held 1 s
 //! Slot 1=0.2@0.5        set the parameter named "Slot 1" to the plain value 0.2 at 0.5 s (a numeric id works too)
+//! CC1=127@0.4           MIDI control change 1 (the mod wheel) to 127 at 0.4 s, on channel 0 (a CLAP MIDI event; only
+//!                       when no parameter has that name)
 //! reset@0.03            call the plugin's `reset` at the start of the block that contains 0.03 s (it drops
 //!                       every sounding voice, like a host that restarts its plugins mid-render)
 //! ```
 //!
 //! Every note gets its own note id (its index in the script), so note-offs find their note the way a
 //! host that tracks voices would. Events that fall on the same sample run in this order: resets, parameter
-//! changes, note-offs, note-ons, then script order. Events at or after the end of the render are dropped.
+//! changes and MIDI control changes, note-offs, note-ons, then script order. Events at or after the end of the
+//! render are dropped.
 
 use std::fmt::Write as _;
 
@@ -26,6 +29,12 @@ pub enum Kind {
     Param {
         id: u32,
         value: f64,
+    },
+    /// A MIDI control change (`CLAP_EVENT_MIDI`, port 0): `cc` 0–127 to `value` 0–127 on `channel` 0–15.
+    MidiCc {
+        channel: u8,
+        cc: u8,
+        value: u8,
     },
     NoteOff {
         key: u16,
@@ -43,7 +52,7 @@ impl Kind {
     pub fn order(&self) -> u8 {
         match self {
             Kind::Reset => 0,
-            Kind::Param { .. } => 1,
+            Kind::Param { .. } | Kind::MidiCc { .. } => 1,
             Kind::NoteOff { .. } => 2,
             Kind::NoteOn { .. } => 3,
         }
@@ -144,14 +153,32 @@ fn parse_entry(
         let (value, at) = rest
             .split_once('@')
             .ok_or_else(|| format!("{entry:?}: a parameter entry is `name=value@seconds`"))?;
-        let id = resolve(name.trim()).ok_or_else(|| {
-            format!(
+        let frame = seconds_to_frame(parse_f64(at, entry)?, sample_rate)?;
+        let Some(id) = resolve(name.trim()) else {
+            if let Some(cc) = midi_cc(name) {
+                let value = value
+                    .trim()
+                    .parse::<u8>()
+                    .ok()
+                    .filter(|v| *v <= 127)
+                    .ok_or_else(|| format!("{entry:?}: a MIDI CC value is 0..=127"))?;
+                out.push(Scheduled {
+                    frame,
+                    kind: Kind::MidiCc {
+                        channel: 0,
+                        cc,
+                        value,
+                    },
+                });
+                return Ok(());
+            }
+            return Err(format!(
                 "{entry:?}: no parameter named or numbered {:?}",
                 name.trim()
-            )
-        })?;
+            ));
+        };
         out.push(Scheduled {
-            frame: seconds_to_frame(parse_f64(at, entry)?, sample_rate)?,
+            frame,
             kind: Kind::Param {
                 id,
                 value: parse_f64(value, entry)?,
@@ -202,6 +229,15 @@ fn parse_entry(
     Ok(())
 }
 
+/// `CC<n>` (n 0–127): a MIDI control change number.
+fn midi_cc(name: &str) -> Option<u8> {
+    name.trim()
+        .strip_prefix("CC")?
+        .parse::<u8>()
+        .ok()
+        .filter(|n| *n <= 127)
+}
+
 /// Parses a script into a sorted schedule. `total_frames` drops events that would fall outside the render.
 pub fn parse(
     script: &str,
@@ -244,6 +280,9 @@ pub fn describe(schedule: &Schedule) -> String {
             Kind::NoteOn { key, velocity, .. } => write!(s, "{}:on({key},{velocity}) ", e.frame),
             Kind::NoteOff { key, .. } => write!(s, "{}:off({key}) ", e.frame),
             Kind::Param { id, value } => write!(s, "{}:param({id}={value}) ", e.frame),
+            Kind::MidiCc { channel, cc, value } => {
+                write!(s, "{}:cc({channel}:{cc}={value}) ", e.frame)
+            }
             Kind::Reset => write!(s, "{}:reset ", e.frame),
         };
     }
@@ -301,6 +340,26 @@ mod tests {
         assert!(matches!(at_1000[0], Kind::Param { id: 7, .. }));
         assert!(matches!(at_1000[1], Kind::NoteOff { key: 60, .. }));
         assert!(matches!(at_1000[2], Kind::NoteOn { key: 62, .. }));
+    }
+
+    #[test]
+    fn a_cc_entry_is_a_midi_control_change_unless_a_parameter_has_that_name() {
+        let s = parse("CC1=127@0.5; 7=0.5@0.5", 1000.0, 5000, &no_params).unwrap();
+        assert_eq!(
+            s.events[0].kind,
+            Kind::MidiCc {
+                channel: 0,
+                cc: 1,
+                value: 127
+            }
+        );
+        assert!(matches!(s.events[1].kind, Kind::Param { id: 7, .. }));
+        let named = |n: &str| (n == "CC1").then_some(3);
+        let s = parse("CC1=0.25@0", 1000.0, 5000, &named).unwrap();
+        assert!(matches!(s.events[0].kind, Kind::Param { id: 3, .. }));
+        for bad in ["CC1=128@0", "CC1=0.5@0", "CC128=1@0"] {
+            assert!(parse(bad, 1000.0, 5000, &no_params).is_err(), "{bad}");
+        }
     }
 
     #[test]
