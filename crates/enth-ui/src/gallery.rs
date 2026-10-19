@@ -11,7 +11,7 @@ use crate::widgets::{
 };
 
 /// Window size the gallery is laid out for.
-pub const GALLERY_SIZE: egui::Vec2 = egui::vec2(1100.0, 1240.0);
+pub const GALLERY_SIZE: egui::Vec2 = egui::vec2(1100.0, 1320.0);
 
 /// Widget values shown in the gallery (they can be dragged in the dev window).
 pub struct GalleryState {
