@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9dd89afb9195286c4863fd99a311b32ec50cbaceeaef38240c36f0a580b1ece1 # shrinks to setup = [], steps = [GestureEdit((64, 0, 0, 0)), Redo, GestureEdit((109, 0, 19, 0)), Edit((0, 0, 0, 0))]
+cc 7da7e87d174d30451b1645e082ff9bcfc85b0d07ab3dc282bbe84365fd733680 # shrinks to setup = [], steps = [Edit((0, 0, 0, 0)), Edit((0, 0, 0, 0)), Edit((0, 0, 0, 0)), Undo]

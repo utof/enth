@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "engine": "0.1.0",
+  "meta": {
+    "name": "Soft pluck",
+    "author": "fixture",
+    "description": "A short plucked saw with a closing filter.",
+    "tags": ["pluck", "soft"]
+  },
+  "voice": { "mode": "poly", "polyphony": 6, "glide": "20ms", "amp_env": "env1" },
+  "master": { "level": "-3dB" },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "label": "Main", "params": { "wave": "saw", "fine": "7ct", "level": 50.119 } },
+    { "id": "osc2", "kind": "osc", "params": { "wave": "pulse", "semi": "+12st", "pw": 35, "level": 30, "sync": "on" } }
+  ],
+  "voice_fx": [
+    { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": "1.2kHz", "resonance": 35 } }
+  ],
+  "fx": [
+    { "id": "reverb1", "kind": "reverb", "params": { "wet": "-12dB", "decay": "1.8s" } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr", "params": { "attack": "2ms", "decay": "250ms", "sustain": 0, "release": "180ms" } },
+    { "id": "env2", "kind": "adsr", "params": { "attack": 1, "decay": "120ms", "sustain": 0, "release": "120ms" } }
+  ],
+  "routes": [
+    { "src": "env2", "dst": "filter1.cutoff", "depth": 45 },
+    { "src": "velocity", "dst": "filter1.cutoff", "depth": 15 },
+    { "src": "macro1", "dst": "filter1.resonance", "depth": -20 }
+  ],
+  "macros": [{ "value": 0.3, "name": "Brightness" }],
+  "slots": { "1": "filter1.cutoff", "2": "master.level" }
+}

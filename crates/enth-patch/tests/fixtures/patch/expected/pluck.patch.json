@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "engine": "0.1.0",
+  "meta": {
+    "name": "Soft pluck",
+    "author": "fixture",
+    "description": "A short plucked saw with a closing filter.",
+    "tags": [
+      "pluck",
+      "soft"
+    ]
+  },
+  "voice": {
+    "mode": "poly",
+    "polyphony": 6.0,
+    "glide": 20.0,
+    "glide_mode": "always",
+    "pan": 0.0,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -3.0
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "label": "Main",
+      "params": {
+        "wave": "saw",
+        "semi": 0.0,
+        "fine": 7.0,
+        "level": 50.119,
+        "pw": 50.0,
+        "sync": false,
+        "table": "basic",
+        "position": 0.0,
+        "phase_mode": "free",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "pulse",
+        "semi": 12.0,
+        "fine": 0.0,
+        "level": 30.0,
+        "pw": 35.0,
+        "sync": true,
+        "table": "basic",
+        "position": 0.0,
+        "phase_mode": "free",
+        "phase": 0.0,
+        "seed": 0.0
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 1200.0,
+        "resonance": 35.0,
+        "keytrack": 0.0,
+        "drive": 0.0
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "reverb1",
+      "kind": "reverb",
+      "params": {
+        "dry": 0.0,
+        "wet": -12.0,
+        "room": 80.0,
+        "decay": 1800.0,
+        "early": 150.0,
+        "detune": 2.0,
+        "low_cut": 80.0,
+        "high_cut": 12000.0,
+        "low_damp": 1.5,
+        "high_damp": 2.5
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2.0,
+        "decay": 250.0,
+        "sustain": 0.0,
+        "release": 180.0,
+        "velocity": 0.0
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 1.0,
+        "decay": 120.0,
+        "sustain": 0.0,
+        "release": 120.0,
+        "velocity": 0.0
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "env2",
+      "dst": "filter1.cutoff",
+      "depth": 45.0
+    },
+    {
+      "src": "velocity",
+      "dst": "filter1.cutoff",
+      "depth": 15.0
+    },
+    {
+      "src": "macro1",
+      "dst": "filter1.resonance",
+      "depth": -20.0
+    }
+  ],
+  "macros": [
+    {
+      "value": 0.3,
+      "name": "Brightness"
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    },
+    {
+      "value": 0.0
+    }
+  ],
+  "slots": {
+    "1": "filter1.cutoff",
+    "2": "master.level"
+  }
+}

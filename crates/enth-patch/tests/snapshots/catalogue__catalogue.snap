@@ -1623,7 +1623,13 @@ expression: catalogue_json()
     "generators",
     "voice_fx",
     "fx",
-    "modulators"
+    "modulators",
+    "aftertouch",
+    "pressure",
+    "bend",
+    "random",
+    "gate",
+    "timbre"
   ],
   "route_depth": {
     "default": 0.0,
