@@ -98,6 +98,22 @@ Sources: the P1b research session (`_local/sessions/2026-10-19-p1b-plugin-editor
 
 **Upstream status** (checked 2026-10-19): nice-plug `main` is `7197104c0d`, baseview `master` `4c79df39b`, egui-baseview `main` `1f645a35d2` (the 0.9.0 commit). None of the five changes is upstream, and none was filed. Candidates for the owner's own issues: the xkb leak (with the Phase 0 valgrind trace), `editor_closed` never called, the lost note-on, the release-build warnings, and runtime parameter names.
 
+## Note — 2026-10-19 (P1b F1b review): no `request_callback` patch; a rate-limited background pump instead
+
+Sources: [session.md](../session.md#plan-delivery-and-who-drains-the-return-ring) (F1b review decision 1), checked against the vendored nice-plug 0.4.2 sources. Lane FK's note above does not cover this; it adds no patch.
+
+**The question.** The session sends a plan only from its own entries (an edit, undo, redo, a state save or load, `activate`, the editor's frame). If a compile is still pending when nobody calls the session (two plans in flight because the host had stopped calling `process()`, and then the editor closed or went idle; or a host load arrived), the engine keeps playing an older plan until the next entry. Something has to wake a thread that may lock the session. The alternative named in the review was a fork patch that exposes CLAP `request_callback` as a plain "call me on the main thread", without nice-plug's inline execution; it would be real-time clean for CLAP only.
+
+**The decision: no fork patch.**
+
+- nice-plug's `execute_background` already does the job. In the CLAP and VST3 wrappers `ProcessContext::execute_background` is `schedule_background`: a bounded `try_send` to nice-plug's `bg-worker` thread, which never runs the task inline. (`execute_gui` is `schedule_gui`: when the calling thread is the one nice-plug treats as main it runs the task inline, and otherwise it queues the task and calls the host's `request_callback`.)
+- The shell keeps an atomic "pump wanted" flag and sets it, after unlocking, whenever `status().compile_pending`. While the flag is set, `process()` clears it at most once per 50 ms of audio and calls `execute_background` with a pump task. The task locks the session, calls `Session::pump` and sets the flag again if a compile is still pending. nice-plug's documentation warns that duplicate scheduled tasks pile up; the flag and the rate limit prevent it.
+- Cost on the audio thread: one bounded crossbeam `try_send` (it wakes the parked worker, which takes crossbeam's internal lock briefly, so the nightly RTSan run will see it), only while a compile is pending and never in steady state. The task itself runs on the worker, which may allocate and lock.
+
+**What stays banned.** `execute_gui` from `process()`, for the reason in pitfall 1 above: it is `request_callback` underneath, but it runs inline when the host calls `process()` on the main thread (Steinberg's validator does). The one thing `process()` may schedule is the pump. [AGENTS.md](../../AGENTS.md#plugin-shell-nice-plug) carries the rule.
+
+**Revisit if** the RTSan run flags the `try_send`, or a host starves nice-plug's worker thread. The patch that exposes `request_callback` is then the clean alternative for CLAP (VST3 would still need the worker). It is not built, so the fork keeps its five patches.
+
 ## Consequences
 
 - Fastest path to a working CLAP/VST3 synth with an egui editor in REAPER. The spike's shell is about 800 lines for 72 params, poly-mod ids, state and an 8-voice synth, and incremental rebuilds take 1–7 s.
