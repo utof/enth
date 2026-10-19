@@ -21,25 +21,32 @@
 //! | [`params`] | the 72 host parameters (8 macros, 64 automation slots), stable ids | SK |
 //! | [`process`] | the audio block: events and notes in, the engine, audio and `NOTE_END` out, the pump flag | SK, PL |
 //! | [`notes`] | the note tuple, `NOTE_END`, polyphonic modulation with host voice ids | SK, PL |
+//! | [`ledger`] | the host notes not reported ended yet: exactly one `NOTE_END` per host note | PL |
 //! | [`state`] | the persistent fields bridging nice-plug's state and the session blob | SK |
 //! | [`editor`] | the `NiceEguiApp` window around the `enth-ui` editor | SK, ED1 |
+//! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
 #![allow(
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
 )]
 
 pub mod editor;
+pub mod ledger;
 pub mod notes;
 pub mod params;
 pub mod process;
+#[cfg(feature = "rt-stats")]
+pub mod rt_stats;
 pub mod state;
+#[cfg(test)]
+mod tests_host;
 
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 
 use enth_engine::Engine;
-use enth_session::{Activation, HostValues, Session, ShellRequest};
+use enth_session::{Activation, HostParam, HostValues, Session, ShellRequest};
 use nice_plug::editor::dpi::LogicalSize;
 use nice_plug::prelude::*;
 use nice_plug_egui::{EguiEditor, EguiEditorState, RepaintNotifier};
@@ -76,8 +83,9 @@ pub struct Shared {
     /// A state load happened: `process()` takes the host's current values as its "last sent" without sending them,
     /// so values restored with the state never override the loaded patch in the engine (docs/plugin.md).
     pub rebaseline: AtomicBool,
-    /// Host parameter names may have changed (`ShellRequest::RenameParams`). Lane PL sets the names through lane FK's
-    /// vendored fork and asks for an info rescan; until then the host shows "Slot N".
+    /// Host parameter names changed (`ShellRequest::RenameParams`): [`Shared::with_session`] has set the new names
+    /// on the parameters (lane FK's fork, `Param::set_display_name`), and `process()` asks the host for a
+    /// parameter-info rescan (CLAP `rescan(INFO | TEXT)`; VST3 `kParamTitlesChanged`, which REAPER ignores).
     pub names_dirty: AtomicBool,
     /// The editor window closed (seen by `process()` through `EguiEditorState::is_open`): the next pump releases
     /// audition notes.
@@ -85,6 +93,9 @@ pub struct Shared {
     /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
     /// persistent fields, which own this).
     params: OnceLock<Weak<EnthParams>>,
+    /// `process()` timings (the `rt-stats` cargo feature).
+    #[cfg(feature = "rt-stats")]
+    pub rt_stats: rt_stats::RtStats,
 }
 
 impl Shared {
@@ -97,6 +108,8 @@ impl Shared {
             names_dirty: AtomicBool::new(false),
             editor_closed: AtomicBool::new(false),
             params: OnceLock::new(),
+            #[cfg(feature = "rt-stats")]
+            rt_stats: rt_stats::RtStats::new(),
         }
     }
 
@@ -111,15 +124,40 @@ impl Shared {
     /// Lock the session, run `f`, drain its requests and note whether a compile is left pending, unlock; then act
     /// on the requests that need no host call ([`Shared::settle`]) and return the host writes for the caller to
     /// forward (only the editor produces them, on the GUI thread).
+    ///
+    /// On a `ShellRequest::RenameParams` it also sets the 72 display names from the patch **before** unlocking, so
+    /// two threads that rename one after the other (the GUI's edit, the host's load) leave the later patch's names.
+    /// `Param::set_display_name` only stores a string behind the parameter's own lock, which nothing else holds while
+    /// calling out, so this never calls the host under the session lock.
     pub fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> (R, Vec<ShellRequest>) {
         let (result, requests, pending) = {
             let mut session = self.session.lock();
             let result = f(&mut session);
             let requests: Vec<ShellRequest> = session.drain_requests().collect();
+            if requests
+                .iter()
+                .any(|r| matches!(r, ShellRequest::RenameParams))
+            {
+                self.set_names(session.patch());
+            }
             (result, requests, session.status().compile_pending)
         };
         let host = self.settle(requests, pending);
         (result, host)
+    }
+
+    /// The host parameters' display names for `patch` (`enth_session::bridge::host_param_name`: "Osc 1 · Cutoff" for
+    /// a slot with a target, a macro's own name), set through the fork; a name equal to the one fixed at construction
+    /// ("Slot 7", "Macro 2") clears the override. Never on the audio thread (it allocates and locks).
+    fn set_names(&self, patch: &enth_patch::Patch) {
+        let Some(params) = self.params.get().and_then(Weak::upgrade) else {
+            return;
+        };
+        for p in HostParam::all() {
+            let param = params.param(p);
+            let name = enth_session::bridge::host_param_name(patch, p);
+            param.set_display_name((name != param.name()).then_some(name));
+        }
     }
 
     /// After unlocking: store the monitor bypass, note renames, arm the pump flag if a compile is pending, and keep
@@ -240,7 +278,7 @@ impl Plugin for Enth {
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        _context: &mut impl ActivateContext<Self>,
+        context: &mut impl ActivateContext<Self>,
     ) -> bool {
         let activation = Activation {
             sample_rate: buffer_config.sample_rate,
@@ -262,10 +300,16 @@ impl Plugin for Enth {
             self.shared.monitor_bypass.store(bypass, Ordering::Release);
             engine
         });
+        // CLAP voice info: the patch's voice count (its polyphony, or one in mono and legato), on the main thread.
+        let voices = self.engine.as_ref().map_or(0, process::voice_count);
+        if voices > 0 {
+            context.set_current_voice_capacity(voices);
+        }
         // Nothing is echoed: the engine starts from the patch and hears only later host changes. That is also the
         // re-baseline a state load before activation asked for, so a change the host makes in the first block (a
         // `PARAM_VALUE` at frame 0) still reaches the engine.
-        self.audio.activate(&self.params, buffer_config.sample_rate);
+        self.audio
+            .activate(&self.params, buffer_config.sample_rate, voices);
         self.shared.rebaseline.store(false, Ordering::Release);
         true
     }
@@ -274,12 +318,14 @@ impl Plugin for Enth {
         let ((), writes) = self.shared.with_session(Session::deactivate);
         debug_assert_eq!(writes.len(), 0, "only editor edits make host writes");
         self.engine = None;
+        #[cfg(feature = "rt-stats")]
+        self.shared.rt_stats.write_report();
     }
 
     fn reset(&mut self) {
         if let Some(engine) = self.engine.as_mut() {
             // CLAP reset: the engine frees its voices without reporting them, so the next block reports them.
-            self.audio.note_reset(engine);
+            self.audio.note_reset();
             engine.reset();
         }
     }

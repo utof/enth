@@ -8,12 +8,18 @@
 //! - Host notes are on port 0, so a host note-off never releases an editor audition note
 //!   ([`enth_session::AUDITION_PORT`]), and audition notes' `NOTE_END`s are not reported to the host.
 //! - `PolyModulation` becomes `EventKind::MacroVoice` for that voice id; `MonoAutomation` is ignored (`process()`
-//!   reads the parameters' modulated values directly, so applying it too would count it twice).
+//!   reads the parameters' modulated values directly, so applying it too would count it twice). A `PolyModulation`
+//!   for a voice id that no playing note carries changes nothing (the engine matches by note id), and a note-on
+//!   starts its voice's offsets at 0, so a host that modulates before the note starts (CLAP allows it) loses that
+//!   offset until it sends the next one.
+//! - MIDI CC 1 (the mod wheel's MSB), on any channel, becomes `EventKind::ModWheel` with nice-plug's value
+//!   (`cc / 127`). nice-plug delivers CCs only with `MidiConfig::MidiCCs` (docs/plugin.md, the `MidiCCs` decision);
+//!   other CCs, CC 33 (the wheel's LSB), pitch bend and pressure are ignored: the engine has no input for them.
 
 use enth_engine::{Event, EventKind, NoteEnd, NoteKey};
 use enth_patch::model::MACROS;
 use enth_session::AUDITION_PORT;
-use nice_plug::midi::{Channel, Key, NoteEvent, VoiceID};
+use nice_plug::midi::{Channel, Key, NoteEvent, VoiceID, control_change};
 
 /// The port of every host note (CLAP has one note input port).
 pub const HOST_PORT: i16 = 0;
@@ -106,6 +112,12 @@ pub fn engine_event<S>(event: &NoteEvent<S>) -> Option<Event> {
                 },
             )
         }
+        NoteEvent::MidiCC {
+            timing,
+            cc: control_change::MODULATION_MSB,
+            value,
+            ..
+        } => (timing, EventKind::ModWheel { value }),
         _ => return None,
     };
     Some(Event { offset, kind })
