@@ -1,0 +1,22 @@
+[package]
+name = "enth-ui"
+description = "The editor's design system: theme tokens (docs/design-system.md) and the widgets built only from them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+# Inter (OFL-1.1) is bundled under assets/fonts with its licence; see THIRD_PARTY_NOTICES.md.
+
+[dependencies]
+# No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).
+egui = { workspace = true, features = ["serde"] }
+serde.workspace = true
+
+[dev-dependencies]
+# Snapshot tests render through wgpu on a CPU adapter only (Mesa lavapipe); see tests/common.
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+egui-wgpu.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

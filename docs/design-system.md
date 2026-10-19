@@ -45,11 +45,11 @@ Starting proposals from the UI reference analysis; the G0 UI spike checks them o
 
 **Scales:** space 2, 4, 8, 12, 16, 24, 32 · radius `small` 2, `medium` 4 · stroke `thin` 1, `thick` 3 · text `label` 11, `value` 12 (tabular digits), `title` 14 semibold.
 
-**Type:** one regular-weight sans in 2 weights (e.g. Inter, OFL-1.1) plus a face with tabular digits for values. At most 3 font files in the atlas.
+**Type:** one regular-weight sans in 2 weights (e.g. Inter, OFL-1.1) plus a face with tabular digits for values. At most 3 font files in the atlas. *Built:* Inter 4.1 Regular and SemiBold plus Inter Tabular, a 10 KB subset of Inter Regular with `tnum` frozen in (egui applies no OpenType features); text styles `label` 11 regular, `body` 12 regular, `value` 12 tabular, `title` 14 semibold, `strong` 12 semibold.
 
-**Component sizes:** window 1200×800 (minimum about 1000×680) · header 40 · macro bar 56 · modulator strip 140 · status line 22 · generator card 96 (collapsed 24) · effect lane 220 wide · knob 36 with a 3 px track · lesson pane 320.
+**Component sizes:** window 1200×800 (minimum about 1000×680) · header 40 · macro bar 56 · modulator strip 140 · status line 22 · generator card 96 (collapsed 24) · effect lane 220 wide · knob 36 with a 3 px track · lesson pane 320. *Added by the G0 spike:* knob cell 56 wide (values in units need about 52 px), control height 24, generator display slot 128 wide, lane display 40 tall, enable toggle 12, source tile 72×56 with a 14 px badge, matrix rows 16 with a 88 px target column and 36 px source columns, display grid 4×2 with a 3 px phase marker, knob drag travel 200 px (Shift ×0.1) over a 270° sweep.
 
-**Motion:** `repaint.animated_hz` 30, `repaint.scope_hz` 60.
+**Motion:** `repaint.animated_hz` 30, `repaint.scope_hz` 60 (built as `motion.animated_hz`, `motion.scope_hz`, plus `motion.transition` 0.1 s for egui's own animations). baseview 0.4.1 caps plugin editors near 30 fps, so a 60 Hz scope gets about 30 in a host.
 
 ## Code shape
 
@@ -60,7 +60,7 @@ pub struct Theme {
     pub space: Space,       // gap, pad, section
     pub radius: Radius,
     pub stroke: Strokes,
-    pub text: TextStyles,   // label, value, title → egui::FontId
+    pub text: TextStyles,   // label, body, value, title, strong → egui::FontId
     pub size: Sizes,        // component tokens: knob, card, bars, panes
     pub motion: Motion,     // repaint rates
 }
@@ -76,10 +76,19 @@ impl Theme {
 - `Theme` derives `serde::Serialize`/`Deserialize`. That keeps a light theme or a dev-time override file (for live tweaking in the standalone dev window) possible without changing widgets.
 - Components (`Knob`, `ModuleCard`, `SourceTile`, `MatrixGrid`, …) live in `widgets/` and never define their own colours or sizes.
 
+### Changed by the G0 UI spike (2026-10-19)
+
+The spike ([docs/spikes/ui.md](spikes/ui.md)) kept every proposed value above and added what the widgets needed:
+
+- **Colour:** `accent.value_wash` and `accent.modulation_wash`, the accents at alpha 40, for selection and the area under a curve (flat translucent fills, not gradients). Washes serialise as `#rrggbbaa`; egui stores colours premultiplied, so their hex digits may read back one step off while the colour itself round-trips.
+- **Type:** the `body` and `strong` styles (running text and its bold words); still three sizes. Tabular digits come from a derived Inter subset, since egui can't switch `tnum` on.
+- **Sizes:** the component tokens listed under *Component sizes*, most importantly a 56 px knob cell.
+- **Code:** `Theme::apply` sets the same style in egui's dark and light slots and selects dark; `Strokes::thin(color)` / `thick(color)` build strokes, so `Stroke::new` stays inside `theme/`.
+
 ## Rules and enforcement
 
 - **No literals in widget code:** no `Color32::from_rgb(…)`, `Color32::WHITE`, `FontId::new(…)`, `Stroke::new(1.0, …)`, `add_space(6.0)` or similar outside `theme/`. Need a new value? Add a token (semantic or component), with a comment saying what it's for.
-- **Clippy:** when `enth-ui` is created, `disallowed-methods` entries for egui's raw constructors (`Color32::from_rgb`, `from_rgba_*`, `from_gray`, `from_hex`, `FontId::new`/`proportional`/`monospace`, `Stroke::new`, `CornerRadius::same`, `Margin::same`/`symmetric`) apply to the crate; only `theme/` opts out, with a reason. Clippy can't ban associated constants such as `Color32::WHITE`; review catches those, and an `ast-grep` rule gets added if they creep in.
+- **Clippy:** `crates/enth-ui/clippy.toml` (and `spikes/spike-ui/clippy.toml`) bans egui's raw constructors: `Color32::from_*`, `gamma_multiply*`, `linear_multiply`, `Rgba::from_*`, `Hsva::new`, `FontId::new`/`proportional`/`monospace`, `RichText::size`, `Stroke::new`, `CornerRadius::same`, `Margin::same`/`symmetric`. Only files in `theme/` opt out, with a reason. Clippy can't ban associated constants such as `Color32::WHITE`; `crates/enth-ui/tests/no_raw_values.rs` scans the widget source for those, for hand-built `Shadow`s, `add_space(<literal>)` and float literals other than 0, ½, 1, 2 and 100.
 - **Token gallery:** an `egui_kittest` snapshot test renders every colour, text style and core component into one PNG. Token changes show up as a reviewable image diff, and agents can look at it.
 - Plain numbers in layout maths (e.g. `0.5` to centre something) are fine; values that set the look are tokens.
 

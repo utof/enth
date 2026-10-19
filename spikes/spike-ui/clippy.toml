@@ -1,0 +1,31 @@
+# Spikes are tooling: the workspace's core-crate rules (no I/O, threads, clocks) don't apply, as in
+# spikes/clippy.toml. The design-token rule does: the panel is built from enth-ui tokens only, so
+# egui's raw constructors are banned here too (same list as crates/enth-ui/clippy.toml).
+disallowed-methods = [
+  { path = "egui::Color32::from_rgb", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_rgb_additive", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_rgba_premultiplied", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_rgba_unmultiplied", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_rgba_unmultiplied_const", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_gray", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_black_alpha", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_white_alpha", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_additive_luminance", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::from_hex", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Color32::gamma_multiply", reason = "derived colours are tokens too" },
+  { path = "egui::Color32::gamma_multiply_u8", reason = "derived colours are tokens too" },
+  { path = "egui::Color32::linear_multiply", reason = "derived colours are tokens too" },
+  { path = "egui::Rgba::from_rgb", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Rgba::from_rgba_premultiplied", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Rgba::from_rgba_unmultiplied", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::Rgba::from_gray", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::ecolor::Hsva::new", reason = "use a colour token from enth_ui::Theme" },
+  { path = "egui::FontId::new", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::FontId::proportional", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::FontId::monospace", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::RichText::size", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::Stroke::new", reason = "use theme.stroke.thin(color) or theme.stroke.thick(color)" },
+  { path = "egui::CornerRadius::same", reason = "use theme.radius.small or theme.radius.medium" },
+  { path = "egui::Margin::same", reason = "use a spacing token (theme.space.*)" },
+  { path = "egui::Margin::symmetric", reason = "use spacing tokens (theme.space.*)" },
+]

@@ -20,7 +20,17 @@ Rules: [docs/adr/0004-licensing.md](docs/adr/0004-licensing.md) (which licences 
 
 ## Entries
 
-None yet: no third-party source has been ported.
+No third-party source has been ported yet.
+
+## Bundled assets
+
+### Inter (fonts)
+
+- Upstream: <https://github.com/rsms/inter>, release v4.1 (`Inter-4.1.zip`, sha256 `9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e`)
+- Licence: OFL-1.1 (no Reserved Font Name)
+- Copyright: Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
+- enth files: `crates/enth-ui/assets/fonts/Inter-Regular.ttf` and `Inter-SemiBold.ttf` (unmodified, from `extras/ttf/`), `InterTabular-Regular.ttf` (derived), licence in `crates/enth-ui/assets/fonts/OFL.txt`
+- Changes from upstream: `InterTabular-Regular.ttf` is Inter Regular with its `tnum` substitutions frozen into the cmap and subset to digits, `. , : + - −`, space and figure space, renamed "Inter Tabular"; `crates/enth-ui/assets/fonts/freeze_tabular.py` rebuilds it byte for byte. The derived font stays under OFL-1.1.
 
 Expected in P1, each added in the commit that lands its port:
 

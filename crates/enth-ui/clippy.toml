@@ -1,0 +1,62 @@
+# Clippy uses the nearest clippy.toml, so this file replaces the workspace one for enth-ui. It
+# repeats the workspace rules and adds the design-system rule (docs/design-system.md): egui's raw
+# constructors for colours, fonts, strokes, radii and margins are banned here. Only `src/theme/`
+# opts out, with `#[allow(clippy::disallowed_methods, reason = "...")]`; widgets read tokens.
+#
+# Of the workspace's core-crate rules, all still apply: the UI reads time from egui's input (never
+# a clock), spawns no threads, does no file or environment I/O (fonts are compiled in), and shares
+# no lock with anything. Shells (plugin, standalone) own those.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+  # Workspace rules (copied from the root clippy.toml).
+  { path = "std::time::Instant::now", reason = "no clocks in the UI crate: use egui's input time" },
+  { path = "std::time::SystemTime::now", reason = "no clocks in the UI crate: use egui's input time" },
+  { path = "std::thread::spawn", reason = "the UI crate spawns no threads" },
+  { path = "std::thread::scope", reason = "the UI crate spawns no threads" },
+  { path = "std::env::var", reason = "no I/O in the UI crate; configuration is passed in" },
+  { path = "std::env::var_os", reason = "no I/O in the UI crate; configuration is passed in" },
+  { path = "std::fs::read", reason = "no I/O in the UI crate; assets are compiled in" },
+  { path = "std::fs::read_to_string", reason = "no I/O in the UI crate" },
+  { path = "std::fs::write", reason = "no I/O in the UI crate" },
+  { path = "std::fs::File::open", reason = "no I/O in the UI crate" },
+  { path = "std::fs::File::create", reason = "no I/O in the UI crate" },
+  { path = "std::fs::OpenOptions::open", reason = "no I/O in the UI crate" },
+  { path = "std::process::Command::new", reason = "no I/O in the UI crate" },
+  # Design tokens only (docs/design-system.md). Colours:
+  { path = "egui::Color32::from_rgb", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_rgb_additive", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_rgba_premultiplied", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_rgba_unmultiplied", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_rgba_unmultiplied_const", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_gray", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_black_alpha", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_white_alpha", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_additive_luminance", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::from_hex", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Color32::gamma_multiply", reason = "derived colours are tokens too (e.g. accent washes)" },
+  { path = "egui::Color32::gamma_multiply_u8", reason = "derived colours are tokens too (e.g. accent washes)" },
+  { path = "egui::Color32::linear_multiply", reason = "derived colours are tokens too (e.g. accent washes)" },
+  { path = "egui::Rgba::from_rgb", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Rgba::from_rgba_premultiplied", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Rgba::from_rgba_unmultiplied", reason = "use a colour token from theme::Theme" },
+  { path = "egui::Rgba::from_gray", reason = "use a colour token from theme::Theme" },
+  { path = "egui::ecolor::Hsva::new", reason = "use a colour token from theme::Theme" },
+  # Fonts:
+  { path = "egui::FontId::new", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::FontId::proportional", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::FontId::monospace", reason = "use a text style token (theme.text.*)" },
+  { path = "egui::RichText::size", reason = "use a text style token (theme.text.*) with RichText::font" },
+  # Strokes, radii, margins:
+  { path = "egui::Stroke::new", reason = "use theme.stroke.thin(color) or theme.stroke.thick(color)" },
+  { path = "egui::CornerRadius::same", reason = "use theme.radius.small or theme.radius.medium" },
+  { path = "egui::Margin::same", reason = "use a spacing token (theme.space.*), e.g. Frame::inner_margin(theme.space.gap)" },
+  { path = "egui::Margin::symmetric", reason = "use spacing tokens (theme.space.*)" },
+]
+disallowed-types = [
+  { path = "std::sync::Mutex", reason = "no locks in core crates; the audio path is lock-free" },
+  { path = "std::sync::RwLock", reason = "no locks in core crates; the audio path is lock-free" },
+  { path = "std::collections::HashMap", reason = "RandomState iteration order changes per process; use BTreeMap or Vec for deterministic output" },
+  { path = "std::collections::HashSet", reason = "RandomState iteration order changes per process; use BTreeSet" },
+]

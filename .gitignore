@@ -4,3 +4,7 @@
 # Research sessions are committed; anything else under _local/ (e.g. reference screenshots) stays local.
 /_local/*
 !/_local/sessions/
+# egui_kittest leaves these next to a snapshot on failure or update; only <name>.png is committed.
+**/tests/snapshots/*.new.png
+**/tests/snapshots/*.diff.png
+**/tests/snapshots/*.old.png

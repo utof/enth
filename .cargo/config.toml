@@ -1,2 +1,10 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+
+[env]
+# Snapshot tests (egui_kittest) render on the CPU with Mesa's lavapipe. Pointing the Vulkan
+# loader at lavapipe alone keeps tests from loading the GPU driver at all (the NVIDIA X driver
+# crashed this machine on 2026-10-19); the test renderer also refuses any non-CPU adapter.
+# Linux path (Debian/Ubuntu `mesa-vulkan-drivers`). Only Vulkan reads it; the GL plugin and the
+# dev window don't. An explicit VK_ICD_FILENAMES in the environment wins.
+VK_ICD_FILENAMES = "/usr/share/vulkan/icd.d/lvp_icd.json"

@@ -1,0 +1,24 @@
+[package]
+name = "spike-ui-plugin"
+description = "Phase 0 UI spike: the reference panel (spike-ui) in a copy of the shell spike's plugin, for measuring in a host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib is the plugin; lib lets `cargo test` link the same code.
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# Same exact pins as spike-shell (docs/adr/0001-plugin-shell.md). nice-plug-egui's default
+# feature is `opengl`: the editor renders with glow (ADR-0002).
+nice-plug = { version = "=0.4.2", default-features = false, features = ["vst3", "editor", "assert_process_allocs"] }
+nice-plug-egui = "=0.6.0"
+egui.workspace = true
+enth-ui.workspace = true
+spike-ui = { path = "../spike-ui", default-features = false }
+serde_json.workspace = true
+
+[lints]
+workspace = true
