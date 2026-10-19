@@ -44,3 +44,11 @@ The Phase 0 shell spike (nice-plug 0.4.2, nice-plug-egui 0.6.0, egui 0.37) put t
 | `BSL-1.0` (Boost) | `clipboard-win`, `error-code` | `exceptions` entries for those two crates only; they are Windows-only dependencies of the egui editor stack (`egui-baseview` → `copypasta` → `clipboard-win` → `error-code`) | Accepted. Permissive and OSI-approved |
 
 The Decision section's list of allowed licences is read with these additions. Anything else new still needs an explicit decision.
+
+## Note — 2026-10-19: BSL-1.0 is allowed for ported source (P1a research)
+
+The P1a research (`_local/sessions/2026-10-19-p1a-headless-core/`, report 02) found that Signalsmith Basics' `stfx-library.h` still carries a Boost Software License header, although the repo's `LICENSE.txt` and the effect headers (`reverb.h`) are MIT. The reverb port needs that file's 20 ms parameter fade to match upstream bit for bit ([ADR-0006](0006-effects-strategy.md)). The owner delegated licence calls; accepted:
+
+- **Ported source may carry BSL-1.0.** It is permissive and OSI-approved, and `deny.toml` already allows it as a scoped exception for two Windows-only crates (the note above). This extends the list in the 2026-10-19 ported-source note; the other rules there (check the actual file, keep the notice) are unchanged.
+- The reverb's fade is re-implemented from the file's arithmetic, not copied. It still gets its own `THIRD_PARTY_NOTICES.md` entry with the BSL-1.0 text, to be safe.
+- Asking upstream to correct the header is the owner's call; nothing here depends on it.
