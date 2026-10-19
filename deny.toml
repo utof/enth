@@ -30,16 +30,18 @@ allow = [
   "Zlib",
   "Unicode-3.0",
   "CC0-1.0",
+  "BSD-1-Clause",   # nice-assert-no-alloc (nice-plug's assert_process_allocs) and assert_no_alloc; accepted 2026-10-19, ADR-0004
 ]
 # Font licences only for the crate that ships egui's default fonts (same scoping as clack's deny.toml).
 exceptions = [
   { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
-  # Needed by the nice-plug-egui GUI stack on Windows (measured 2026-10-19); uncomment once the owner approves BSL-1.0:
-  # { crate = "clipboard-win", allow = ["BSL-1.0"] },   # via egui-baseview -> copypasta
-  # { crate = "error-code", allow = ["BSL-1.0"] },      # via clipboard-win
+  # Boost Software Licence 1.0 (permissive, OSI-approved), only through the nice-plug-egui GUI stack on Windows
+  # (egui-baseview -> copypasta -> clipboard-win -> error-code). Accepted 2026-10-19, ADR-0004.
+  { crate = "clipboard-win", allow = ["BSL-1.0"] },
+  { crate = "error-code", allow = ["BSL-1.0"] },
 ]
 unused-allowed-license = "allow"     # the skeleton uses few licences yet
-unused-license-exception = "allow"   # egui arrives with the UI spike
+unused-license-exception = "allow"   # keep: exceptions for platform-specific crates vary with the graph
 
 [licenses.private]
 ignore = true                # our own crates are publish = false
