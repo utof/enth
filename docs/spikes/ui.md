@@ -48,7 +48,7 @@ The machine was shared with other agents; timings ran under an exclusive lock wi
 
 ### CPU per frame, headless (egui pass + tessellation, release, no GL)
 
-`cargo run -p spike-ui --release --example frame_bench 1000`, 8 runs of 600–1000 frames per case, load 4–6. The 5 runs on the final code read 0.1–0.2 ms higher for animating frames than the 3 runs before the last layout changes (source tiles, lane spacing); I didn't isolate whether that is the code or the machine, so the ranges cover both.
+`cargo run -p spike-ui --release --example frame_bench 1000`, 8 runs of 600–1000 frames per case, load 4–6. The 5 runs on the final code first read 0.1–0.2 ms higher for animating frames than the 3 earlier ones; three interleaved old/new pairs under one lock (load 3) then gave 1.14–1.28 ms (code before the last layout changes) against 1.19–1.31 ms (final), so that cluster was the machine, and the ranges below cover all runs.
 
 | Case | Scale | p50 | p99 | max | mean | At 30 fps | At 60 fps |
 | --- | --- | --- | --- | --- | --- | --- | --- |
