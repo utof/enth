@@ -65,15 +65,16 @@ pub struct TelemetryMap {
 
 impl TelemetryMap {
     /// The map for a plan the session is about to send (or has sent) as `epoch`: `Plan::tap_params` through
-    /// `PlanMap::addr`, and `Plan::tap_modulators`. A routed parameter with no address (never, for a plan and the
-    /// map compiled with it) is left out, which only hides its value.
+    /// `PlanMap::addr`, and `Plan::tap_modulators`. Index `i` must stay tap index `i`, so a routed parameter with no
+    /// address (never, for a plan and the map compiled with it) ends the list there: it and the values after it are
+    /// hidden rather than shown on the wrong knob.
     pub fn from_plan(epoch: u64, plan: &Plan, map: &PlanMap) -> TelemetryMap {
         TelemetryMap {
             epoch,
             params: plan
                 .tap_params()
                 .iter()
-                .filter_map(|&id| map.addr(id).cloned())
+                .map_while(|&id| map.addr(id).cloned())
                 .collect(),
             modulators: plan.tap_modulators().into_iter().cloned().collect(),
         }
@@ -91,11 +92,17 @@ impl TelemetryMap {
 }
 
 /// The editor's telemetry reader: one per editor open, refreshed once per frame under the session lock.
+///
+/// It follows the session's source: when the host re-activates the plugin while the editor is open (a sample-rate
+/// change, REAPER's restart at the start of an offline render), the session builds a new engine and a new tap, and
+/// [`TelemetryReader::refresh`] switches to it, drops the old plan's map (a new engine counts epochs from 0 again,
+/// so an epoch alone cannot tell two engines' plans apart) and re-applies [`TelemetryReader::set_enabled`].
 pub struct TelemetryReader {
     source: Arc<dyn TelemetrySource>,
     frame: TelemetryFrame,
     map: Option<TelemetryMap>,
     seen: u64,
+    enabled: bool,
 }
 
 impl std::fmt::Debug for TelemetryReader {
@@ -108,7 +115,8 @@ impl std::fmt::Debug for TelemetryReader {
 }
 
 impl TelemetryReader {
-    /// A reader over `source` (allocates its frame once).
+    /// A reader over `source` (allocates its frame once). It does not enable the source: call
+    /// [`TelemetryReader::set_enabled`] while the editor is shown.
     pub fn new(source: Arc<dyn TelemetrySource>) -> Self {
         let frame = source.frame();
         TelemetryReader {
@@ -116,13 +124,34 @@ impl TelemetryReader {
             frame,
             map: None,
             seen: 0,
+            enabled: false,
         }
     }
 
+    /// Publish only while the editor is open and shown: forwarded to the source, and re-applied to a new source
+    /// after a re-activation. Call it with `false` when the editor closes or hides.
+    pub fn set_enabled(&mut self, on: bool) {
+        self.enabled = on;
+        self.source.set_enabled(on);
+    }
+
     /// Read the latest values; when the frame's epoch differs from the cached map's, fetch that epoch's map from the
-    /// session (cloned: allocates only when the plan changed). Returns whether the generation moved since the last
-    /// refresh (new data to draw).
+    /// session (cloned: allocates only when the plan changed). Switches to the session's source first if it has a
+    /// new one (allocating a new frame once). Returns whether the generation moved since the last refresh (new data
+    /// to draw).
     pub fn refresh(&mut self, session: &dyn SessionView) -> bool {
+        if let Some(source) = session.telemetry_source()
+            && !same_source(&source, &self.source)
+        {
+            self.frame = source.frame();
+            self.map = None;
+            self.seen = 0;
+            if self.enabled {
+                self.source.set_enabled(false);
+                source.set_enabled(true);
+            }
+            self.source = source;
+        }
         self.source.read(&mut self.frame);
         if self.map.as_ref().map(|m| m.epoch) != Some(self.frame.epoch) {
             self.map = session.telemetry_map(self.frame.epoch).cloned();
@@ -173,6 +202,12 @@ impl TelemetryReader {
     pub fn sleep(&self) -> bool {
         self.source.sleep(self.seen)
     }
+}
+
+/// Whether two sources are the same object (data pointers only: the vtable half of a `dyn` pointer may differ
+/// between codegen units for one object).
+fn same_source(a: &Arc<dyn TelemetrySource>, b: &Arc<dyn TelemetrySource>) -> bool {
+    std::ptr::eq(Arc::as_ptr(a).cast::<()>(), Arc::as_ptr(b).cast::<()>())
 }
 
 impl TelemetrySource for Tap {

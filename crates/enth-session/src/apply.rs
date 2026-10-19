@@ -156,7 +156,11 @@ impl Session {
     }
 
     /// Apply `ops` as one recorded transaction and deliver it ([`delivery`]). See
-    /// [`crate::model::SessionEdit::edit`]. Lane SK implements it.
+    /// [`crate::model::SessionEdit::edit`]. Lane SK implements it: pump first (collect), treat a `gesture` that is
+    /// not `self.gestures.open` as `None`, apply and record, clear `unloaded_patch` (the user now owns the init
+    /// patch), deliver (a recompile adds [`crate::bridge::slots_written`] to `Port::forget_slots`), push the host
+    /// writes ([`crate::bridge::host_updates`]; a `SetSlot`'s only if its plan was sent, see [`crate::link`]), and
+    /// pump again if a compile is left pending.
     pub fn edit(
         &mut self,
         ops: Vec<Op>,
@@ -166,13 +170,14 @@ impl Session {
         Err(SessionError::unsupported("edit", "SK"))
     }
 
-    /// Undo one step and deliver its inverse ops like an edit. Lane S2s implements it.
+    /// Undo one step and deliver its inverse ops like an edit (it also clears `unloaded_patch`). Lane S2s
+    /// implements it.
     pub fn undo(&mut self) -> Result<bool, SessionError> {
         self.end_gesture();
         Err(SessionError::unsupported("undo", "S2s"))
     }
 
-    /// Redo one step and deliver it like an edit. Lane S2s implements it.
+    /// Redo one step and deliver it like an edit (it also clears `unloaded_patch`). Lane S2s implements it.
     pub fn redo(&mut self) -> Result<bool, SessionError> {
         self.end_gesture();
         Err(SessionError::unsupported("redo", "S2s"))

@@ -16,7 +16,11 @@
 //!    from `p` bit for bit. So folding the same host value twice, or after a save and reload, never moves the patch.
 //!
 //! The engine resolves slot events with the same equality rule (lane E+), so the engine and the patch agree on the
-//! exact plain value.
+//! exact plain value, with one known gap: the engine compares the host's value with `to_norm` of the value its plan
+//! was compiled with (or the last editor edit), the fold with the current patch, which earlier folds moved. A host
+//! that returns exactly to `to_norm` of the compiled value then plays that value in the engine while the patch takes
+//! `from_norm` of it (one rounding step, healed at the next recompile). Lane S2s may close it by folding against
+//! the plan's value (F1b review).
 //!
 //! # Ids
 //!
@@ -299,6 +303,22 @@ pub fn host_updates(after: &Patch, op: &Op, out: &mut Vec<(HostParam, f32)>) {
         }
         _ => {}
     }
+}
+
+/// The slots (bit `i` = slot index `i`) assigned, in `after`, to an address that `ops` set with `SetParam`: the
+/// slots whose remembered host value the plan that delivers a recompiling transaction must forget
+/// ([`enth_engine::Plan::forget_host_slots`]), so the engine plays the edited value rather than re-applying the old
+/// host value at the swap. Read against the patch after the transaction.
+pub fn slots_written(after: &Patch, ops: &[Op]) -> u64 {
+    let mut mask = 0u64;
+    for op in ops {
+        if let Op::SetParam { addr, .. } = op {
+            for s in slots_for(after, addr) {
+                mask |= 1 << s.get();
+            }
+        }
+    }
+    mask
 }
 
 /// The display name of a host parameter: a macro's name or "Macro N"; a slot's target as "Osc 1 · Cutoff" (the

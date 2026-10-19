@@ -154,7 +154,8 @@ impl Link {
     }
 
     /// Send an event from the main thread: it applies at the start of the next segment the audio thread renders, as
-    /// if the host had sent it at that boundary (P1b lane E+). For **audition notes** (the editor's keyboard,
+    /// if the host had sent it at that boundary (P1b lane E+); if the engine's event queue is full then, it waits in
+    /// the ring until there is room (never dropped). For **audition notes** (the editor's keyboard,
     /// Recreate), which play whether or not the host transport runs; give them their own `NoteKey::port` so their
     /// `NOTE_END`s can be told apart. Offline engines have no link, so renders cannot see these by construction.
     /// Prefer [`Link::send_param`] for values (an `EventKind::Param` here names whatever plan runs then; an
@@ -284,6 +285,11 @@ impl AudioLink {
     /// Whether the next command is a plan.
     pub fn next_is_plan(&self) -> bool {
         matches!(self.cmds.peek(), Ok(Cmd::Plan(_)))
+    }
+
+    /// Whether the next command is an event (`Link::send_event`).
+    pub fn next_is_event(&self) -> bool {
+        matches!(self.cmds.peek(), Ok(Cmd::Event(_)))
     }
 
     /// The next command, if any.

@@ -502,11 +502,11 @@ struct FakeTap {
 
 impl TelemetrySource for FakeTap {
     fn frame(&self) -> TelemetryFrame {
-        TelemetryFrame {
-            params: vec![0.0; 4],
-            modulators: vec![0.0; 2],
-            ..TelemetryFrame::default()
-        }
+        // `TapFrame` is `non_exhaustive`: a fake builds one from `Default` and sets fields.
+        let mut f = TelemetryFrame::default();
+        f.params = vec![0.0; 4];
+        f.modulators = vec![0.0; 2];
+        f
     }
     fn read(&self, out: &mut TelemetryFrame) {
         out.clone_from(&self.frame);
@@ -555,16 +555,14 @@ impl SessionView for MapOnly {
 fn the_telemetry_reader_maps_tap_order_to_addresses() {
     let cutoff = common::addr("filter1.cutoff");
     let level = common::addr("osc1.level");
-    let mut frame = TelemetryFrame {
-        epoch: 3,
-        voices: 2,
-        params: vec![1500.0, 80.0, 0.0, 0.0],
-        params_len: 2,
-        modulators: vec![0.5, 0.0],
-        modulators_len: 1,
-        peaks: [0.25, 0.5],
-        ..TelemetryFrame::default()
-    };
+    let mut frame = TelemetryFrame::default();
+    frame.epoch = 3;
+    frame.voices = 2;
+    frame.params = vec![1500.0, 80.0, 0.0, 0.0];
+    frame.params_len = 2;
+    frame.modulators = vec![0.5, 0.0];
+    frame.modulators_len = 1;
+    frame.peaks = [0.25, 0.5];
     let tap = Arc::new(FakeTap {
         generation: AtomicU64::new(7),
         enabled: AtomicBool::new(false),
@@ -606,6 +604,85 @@ fn the_telemetry_reader_maps_tap_order_to_addresses() {
     assert_eq!(reader.live_value(&cutoff), None);
     assert_eq!(reader.modulator(&common::id("lfo1")), None);
     assert_eq!(reader.frame().epoch, 4);
+}
+
+/// A view that hands out whatever source it holds (the session after a re-activation: a new engine, a new tap).
+struct Following {
+    map: TelemetryMap,
+    source: Option<Arc<dyn TelemetrySource>>,
+    session: Session,
+}
+
+impl SessionView for Following {
+    fn patch(&self) -> &Patch {
+        self.session.patch()
+    }
+    fn history(&self) -> HistoryView<'_> {
+        self.session.history()
+    }
+    fn status(&self) -> SessionStatus {
+        self.session.status()
+    }
+    fn instance(&self) -> &InstanceState {
+        self.session.instance()
+    }
+    fn telemetry_map(&self, epoch: u64) -> Option<&TelemetryMap> {
+        (epoch == self.map.epoch).then_some(&self.map)
+    }
+    fn telemetry_source(&self) -> Option<Arc<dyn TelemetrySource>> {
+        self.source.clone()
+    }
+}
+
+fn fake_tap(epoch: u64, cutoff: f32, generation: u64) -> Arc<FakeTap> {
+    let mut frame = TelemetryFrame::default();
+    frame.epoch = epoch;
+    frame.params = vec![cutoff, 0.0, 0.0, 0.0];
+    frame.params_len = 1;
+    Arc::new(FakeTap {
+        generation: AtomicU64::new(generation),
+        enabled: AtomicBool::new(false),
+        frame,
+    })
+}
+
+/// A re-activation while the editor is open (REAPER restarts the plugin at the start of an offline render): the
+/// reader switches to the new tap, moves the enabled flag to it, and drops the old plan's map, even though the new
+/// engine reuses the epoch number (F1b review).
+#[test]
+fn the_telemetry_reader_follows_a_reactivation() {
+    let cutoff = common::addr("filter1.cutoff");
+    let old = fake_tap(3, 1500.0, 7);
+    let mut view = Following {
+        map: TelemetryMap {
+            epoch: 3,
+            params: vec![cutoff.clone()],
+            modulators: Vec::new(),
+        },
+        source: Some(old.clone()),
+        session: Session::default(),
+    };
+    let mut reader = TelemetryReader::new(old.clone());
+    reader.set_enabled(true);
+    assert!(old.enabled.load(Ordering::Relaxed));
+    assert!(reader.refresh(&view));
+    assert_eq!(reader.live_value(&cutoff), Some(1500.0));
+    // The same source again: nothing switches.
+    assert!(!reader.refresh(&view));
+    assert!(old.enabled.load(Ordering::Relaxed));
+
+    let new = fake_tap(3, 440.0, 2);
+    view.source = Some(new.clone());
+    assert!(reader.refresh(&view), "a new source is new data");
+    assert!(!old.enabled.load(Ordering::Relaxed), "the old tap stops");
+    assert!(new.enabled.load(Ordering::Relaxed), "the new tap publishes");
+    assert_eq!(reader.live_value(&cutoff), Some(440.0));
+    // Detached (between deactivate and activate): the reader keeps the last source.
+    view.source = None;
+    assert!(!reader.refresh(&view));
+    assert_eq!(reader.live_value(&cutoff), Some(440.0));
+    reader.set_enabled(false);
+    assert!(!new.enabled.load(Ordering::Relaxed));
 }
 
 #[test]

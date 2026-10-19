@@ -175,6 +175,48 @@ fn a_bad_patch_falls_back_to_the_init_patch() {
     }
 }
 
+/// A patch this build cannot read (saved by a newer enth, or damaged) is written back unchanged by every save until
+/// the first edit, so opening a project in an older build never destroys it (F1b review). A good load clears it;
+/// an oversized field is not kept.
+#[test]
+fn a_patch_that_does_not_load_is_saved_back_unchanged() {
+    let newer = r#"{"schema": 99, "from": "a newer enth"}"#;
+    let mut session = Session::new(common::custom_patch());
+    let report = session.load_patch(newer);
+    assert!(report.fell_back);
+    assert!(identical(session.patch(), &Patch::init()));
+    let status = session.status();
+    assert!(status.patch_unloaded);
+    assert_eq!(
+        status
+            .last_error
+            .as_ref()
+            .map(enth_session::SessionError::code),
+        Some("bad_patch"),
+        "the status line shows why"
+    );
+    assert_eq!(session.save_patch(None), newer);
+    assert_eq!(
+        session.save(None).patch,
+        newer,
+        "every save, not just the first"
+    );
+
+    let good = encode_patch(&common::custom_patch());
+    assert!(!session.load_patch(&good).fell_back);
+    assert!(!session.status().patch_unloaded);
+    assert_eq!(session.save_patch(None), good);
+
+    let mut session = Session::default();
+    assert!(
+        session
+            .load_patch(&" ".repeat(MAX_FIELD_BYTES + 1))
+            .fell_back
+    );
+    assert!(!session.status().patch_unloaded);
+    assert_eq!(session.save_patch(None), encode_patch(&Patch::init()));
+}
+
 #[test]
 fn a_bad_instance_state_gives_the_defaults_and_keeps_the_patch() {
     let cases: &[(&str, &str)] = &[

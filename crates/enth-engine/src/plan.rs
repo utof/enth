@@ -179,6 +179,9 @@ pub struct Plan {
     pub(crate) slots: [SlotEntry; SLOTS],
     /// The routed parameters in telemetry order: the voice table's, then the global table's (P1b lane E+).
     pub(crate) tap_params: Vec<ParamId>,
+    /// Slots (bit `i` = slot index `i`) whose remembered host value this plan forgets instead of re-applying when
+    /// it swaps in ([`Plan::forget_host_slots`]; F1b review).
+    pub(crate) forget_slots: u64,
 }
 
 impl fmt::Debug for Plan {
@@ -277,6 +280,23 @@ impl Plan {
     #[must_use]
     pub fn slot_target(&self, slot: usize) -> Option<ParamId> {
         self.slots.get(slot).and_then(|e| e.target).map(|t| t.id)
+    }
+
+    /// When this plan swaps in, **forget** the remembered host value
+    /// ([`Engine::host_slot`](crate::Engine::host_slot)) of every slot in `slots` (bit `i` = slot index `i`; bits
+    /// accumulate) instead of re-applying it, so the plan's own patch value wins even where the slot keeps its
+    /// target (F1b review; docs/session.md). The session passes `u64::MAX` for a plan compiled from a loaded patch,
+    /// and the slots of the addresses a recompiling transaction sets, so the old host value neither carries into a
+    /// loaded patch nor undoes an editor edit until the host's echo arrives. Host automation that moves afterwards
+    /// applies and is remembered as usual. A plan an engine starts with has nothing to forget.
+    pub fn forget_host_slots(&mut self, slots: u64) {
+        self.forget_slots |= slots;
+    }
+
+    /// The slots this plan forgets when it swaps in ([`Plan::forget_host_slots`]).
+    #[must_use]
+    pub fn forgotten_host_slots(&self) -> u64 {
+        self.forget_slots
     }
 
     /// A route's current depth, as a percentage (a depth event ramps it).
@@ -881,6 +901,7 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         out: Output::new(master_db),
         slots: [SlotEntry::default(); SLOTS],
         tap_params: Vec::new(),
+        forget_slots: 0,
     };
 
     for section in Section::ALL {

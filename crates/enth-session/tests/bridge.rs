@@ -10,7 +10,7 @@ use enth_patch::ops::canonical_value;
 use enth_patch::{CATALOGUE, Op, Patch};
 use enth_session::bridge::{
     Fold, HOST_PARAM_IDS, HOST_PARAMS, fold_value, free_slot, host_norm, host_param_name,
-    host_updates, host_values, slot_target, slots_for,
+    host_updates, host_values, slot_target, slots_for, slots_written,
 };
 use enth_session::{HostParam, HostValues, Session};
 
@@ -308,4 +308,39 @@ fn slot_lookups() {
         full.slots[i] = Some(common::addr("master.level"));
     }
     assert_eq!(free_slot(&full), None);
+}
+
+/// The slots a recompiling transaction's value ops write: what its plan must forget of the host's remembered values.
+#[test]
+fn slots_written_by_a_transaction() {
+    let mut patch = common::custom_patch();
+    let cutoff = common::addr("filter1.cutoff");
+    // A second slot on the cutoff (the last one): both are written.
+    patch.slots[SLOTS - 1] = Some(cutoff.clone());
+    let set = |addr: &str, value: f32| Op::SetParam {
+        addr: common::addr(addr),
+        value,
+    };
+    let slotted: Vec<usize> = slots_for(&patch, &cutoff)
+        .map(enth_patch::SlotIndex::get)
+        .collect();
+    let expected = slotted.iter().fold(0u64, |m, &i| m | 1 << i);
+    assert_eq!(slotted.len(), 2);
+    assert_eq!(
+        slots_written(&patch, &[set("filter1.cutoff", 900.0)]),
+        expected
+    );
+    // An unslotted value and a non-value op write none.
+    assert_eq!(slots_written(&patch, &[set("osc1.level", 50.0)]), 0);
+    assert_eq!(
+        slots_written(
+            &patch,
+            &[Op::SetMacro {
+                index: common::macro_index(1),
+                value: 0.5
+            }]
+        ),
+        0
+    );
+    assert_eq!(slots_written(&patch, &[]), 0);
 }

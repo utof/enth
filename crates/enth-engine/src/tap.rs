@@ -97,7 +97,11 @@ pub struct Tap {
 
 /// One copy of the tap's values, for the reader. Build it with [`Tap::frame`] (sized to the tap; allocates once) and
 /// refill it with [`Tap::read`] (never allocates).
+///
+/// `non_exhaustive` (F1b review): fields are added without breaking readers. A fake telemetry source outside the
+/// crate builds one with `TapFrame::default()` and sets the fields it needs.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct TapFrame {
     /// The generation the values were read at (0: nothing published yet).
     pub generation: u64,

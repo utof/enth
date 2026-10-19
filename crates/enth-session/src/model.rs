@@ -14,9 +14,12 @@
 //!   then forward [`ShellRequest::Host`] writes to nice-plug's `ParamSetter` (a host may call back into the plugin
 //!   synchronously, for example to read state, which would deadlock on a held lock).
 //! - The return ring is drained by the session itself at every entry that can send ([`Session::pump`] runs at the
-//!   top of each of them). At most [`MAX_PLANS_IN_FLIGHT`](enth_engine::MAX_PLANS_IN_FLIGHT) plans are ever
-//!   outstanding and the ring holds more than that, so an idle session (editor closed, no host calls) never stalls
-//!   the audio thread; it only holds up to two retired plans' memory until its next entry.
+//!   top of each of them, and again before one returns with a compile pending). At most
+//!   [`MAX_PLANS_IN_FLIGHT`](enth_engine::MAX_PLANS_IN_FLIGHT) plans are ever outstanding and the ring holds more
+//!   than that, so an idle session (editor closed, no host calls) never stalls the audio thread; it only holds up to
+//!   two retired plans' memory until its next entry. A compile left pending is pumped by the shell's background
+//!   task (nice-plug's `execute_background`, armed from `process()`; see [`crate::link`]).
+//! - nice-plug's background worker may also lock the session, only to call [`Session::pump`].
 
 use std::sync::Arc;
 
@@ -106,8 +109,14 @@ pub struct Session {
     pub(crate) host: HostSync,
     /// The outbox the shell drains.
     pub(crate) requests: Vec<ShellRequest>,
-    /// The last error a delivery hit (shown in the status line), cleared by the next success.
+    /// The last error a delivery or a load hit (shown in the status line), cleared by the next successful delivery.
     pub(crate) last_error: Option<SessionError>,
+    /// The `patch` field text that did not load, while the session holds the fallback init patch in its place.
+    /// [`Session::save_patch`] writes it back verbatim, so opening a project in an older build (`schema_too_new`) or
+    /// hitting a damaged field never overwrites the stored patch on the next host save. Cleared by a successful
+    /// load and by the first recorded change (an edit, undo or redo: lanes SK and S2s clear it there), after which
+    /// the user's own patch is saved.
+    pub(crate) unloaded_patch: Option<String>,
     /// The telemetry tap's reader side, while active.
     pub(crate) telemetry: Option<Arc<dyn TelemetrySource>>,
     /// Address maps for the epochs the tap may still be publishing (newest last).
@@ -152,6 +161,7 @@ impl Session {
             host: HostSync::default(),
             requests: Vec::new(),
             last_error: None,
+            unloaded_patch: None,
             telemetry: None,
             telemetry_maps: Vec::new(),
         }
@@ -190,6 +200,7 @@ impl Session {
         s.requests = self.requests.len();
         s.gesture_open = self.gestures.open.is_some();
         s.last_error.clone_from(&self.last_error);
+        s.patch_unloaded = self.unloaded_patch.is_some();
         s
     }
 
@@ -292,8 +303,11 @@ pub struct SessionStatus {
     pub requests: usize,
     /// Whether a gesture (a drag) is open.
     pub gesture_open: bool,
-    /// The last delivery error, until the next success.
+    /// The last delivery or load error, until the next successful delivery.
     pub last_error: Option<SessionError>,
+    /// The stored patch did not load and the session plays the init patch instead; until the first edit, a save
+    /// writes the stored text back unchanged ([`crate::state::LoadReport::fell_back`]).
+    pub patch_unloaded: bool,
 }
 
 /// What an applied edit did (for tests and the status line). Build one with `Default` (it is `non_exhaustive`).
@@ -367,7 +381,8 @@ pub trait SessionEdit: SessionView {
     /// every host gesture it opened. Idempotent.
     fn end_gesture(&mut self);
     /// Apply `ops` as one transaction, record it in the history (merged into `gesture`'s step when given), and
-    /// deliver it. On error nothing changes and nothing is delivered.
+    /// deliver it. On error nothing changes and nothing is delivered. A `gesture` that is not the open one (a drag
+    /// that outlived a load, which clears the history and restarts its gesture ids) counts as no gesture.
     fn edit(&mut self, ops: Vec<Op>, gesture: Option<GestureId>) -> Result<Applied, SessionError>;
     /// Undo one step and deliver it. `Ok(false)` if there was nothing to undo. Ends any open gesture.
     fn undo(&mut self) -> Result<bool, SessionError>;

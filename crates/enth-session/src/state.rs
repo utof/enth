@@ -38,7 +38,7 @@ use enth_patch::migrate::MigrationNote;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::model::{Session, ShellRequest};
+use crate::model::{Session, SessionError, ShellRequest};
 
 /// The nice-plug field that holds the patch.
 pub const PATCH_FIELD: &str = "patch";
@@ -373,7 +373,8 @@ impl std::error::Error for StateError {}
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 pub struct LoadReport {
-    /// The patch did not load, so the session now holds [`Patch::init`].
+    /// The patch did not load, so the session now holds [`Patch::init`]. The stored text is kept and written back
+    /// unchanged by every save until the first edit (unless it was over [`MAX_FIELD_BYTES`]).
     pub fell_back: bool,
     /// The schema the patch had (`None` if it did not load).
     pub patch_schema: Option<u32>,
@@ -389,11 +390,20 @@ impl Session {
     /// The `patch` field for a save: folds `host` first when given (docs/design.md §4: the session folds host values
     /// before every save), then [`Patch::to_json`]. A host project save does not touch the undo history or the dirty
     /// flag (only an editor preset save would mark it saved).
+    ///
+    /// While the stored patch did not load (the session plays the fallback init patch and nothing was edited
+    /// since), it returns the stored text unchanged instead, so a save never destroys a patch this build could not
+    /// read (a newer schema, a damaged field). Also pumps (collects returned plans, sends a pending compile): a host
+    /// save is one of the session's entries.
     pub fn save_patch(&mut self, host: Option<&crate::bridge::HostValues>) -> String {
+        self.pump();
         if let Some(h) = host {
             self.fold_host(h);
         }
-        encode_patch(&self.patch)
+        match &self.unloaded_patch {
+            Some(text) => text.clone(),
+            None => encode_patch(&self.patch),
+        }
     }
 
     /// The `enth` field for a save.
@@ -435,7 +445,14 @@ impl Session {
     /// until the editor's next `end_gesture`, because host writes are only produced and forwarded on the GUI
     /// thread), the host baseline is reset (the next fold only records), audition notes are released, host
     /// parameter names are refreshed ([`ShellRequest::RenameParams`]), and, while active, a recompile is marked
-    /// pending for the next pump.
+    /// pending and the session pumps before returning: the plan goes out at once unless two are in flight (then the
+    /// next entry, or the shell's background pump, sends it). That plan is marked to forget the host slot values
+    /// the engine remembers ([`enth_engine::Plan::forget_host_slots`]), so the old patch's host values never carry
+    /// into the new one. nice-plug 0.4.2 keeps the engine across a host state load (it does not re-run
+    /// `initialize`), so this is the path for host loads as well as editor preset loads.
+    ///
+    /// A patch that does not load is reported, shown in the status line (`last_error`), and kept as text: until the
+    /// first edit, [`Session::save_patch`] writes it back unchanged.
     ///
     /// **Host main thread** for a host state load (nice-plug's field `set`), or the GUI thread for an editor preset
     /// load, under the session lock; never the audio thread. The history policy for a host load mid-session (REAPER
@@ -446,10 +463,15 @@ impl Session {
             Ok(loaded) => {
                 report.patch_schema = Some(loaded.from_schema);
                 report.notes = loaded.notes;
+                self.unloaded_patch = None;
                 loaded.patch
             }
             Err(e) => {
                 report.fell_back = true;
+                // A field over the size cap is not an enth state: nothing worth keeping.
+                self.unloaded_patch =
+                    (!matches!(e, StateError::TooLarge { .. })).then(|| text.to_owned());
+                self.last_error = Some(SessionError::State(e.clone()));
                 report.errors.push(e);
                 Patch::init()
             }
@@ -461,8 +483,10 @@ impl Session {
         let _ = self.audition_all_off();
         if let Some(port) = &mut self.port {
             port.compile_pending = true;
+            port.forget_slots = u64::MAX;
         }
         self.requests.push(ShellRequest::RenameParams);
+        self.pump();
         report
     }
 

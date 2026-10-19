@@ -9,8 +9,23 @@
 //! 1. `Link::collect()`: take back replaced plans and drop them **here**, on the main or GUI thread, never on the
 //!    audio thread;
 //! 2. if a compile is pending and `Link::in_flight() < MAX_PLANS_IN_FLIGHT`: compile the patch *as it is now*
-//!    (invariant I3), send it, record its epoch and `PlanMap`, and drop queued value events (the plan carries them);
+//!    (invariant I3), mark it with `Plan::forget_host_slots(port.forget_slots)` (a load since the last send, or a
+//!    recompiling edit of slotted values), send it, record its epoch, `PlanMap` and `TelemetryMap` (keep the maps of the
+//!    last `MAX_PLANS_IN_FLIGHT + 1` epochs; the tap may still publish an older one), and drop queued value events
+//!    (the plan carries them);
 //! 3. otherwise flush queued value and audition events into the ring while it has room.
+//!
+//! An entry that leaves a compile pending pumps **again before it returns** (a load marks one, then pumps), so a
+//! plan goes out at once whenever the link has room; the pump at the top only collects first, so `in_flight` is
+//! fresh.
+//!
+//! **A `SetSlot`'s host write needs its plan sent.** The edit pushes the write of the new target's value only if
+//! the plan that carries the new slot table went out in the same entry. If the compile stays pending, it pushes
+//! none: a write reaching `process()` first would go through the old plan's slot table to the slot's *previous*
+//! target, while a host left showing the old value is harmless (rule 2 of [`crate::bridge`] keeps a stale host
+//! value out of the patch). So host writes still come only from editor edits on the GUI thread. (A sent plan can
+//! still wait a few segments in the ring during a crossfade; the previous target then moves for that long and
+//! ramps back at the swap. Rare and short; accepted.)
 //!
 //! # Who drains the return ring when the editor is closed
 //!
@@ -21,9 +36,12 @@
 //! plans' memory (about 1.6 MB each with a reverb) until the next entry (a state save, a load, activate,
 //! deactivate, or the editor's next frame). No timer is needed, and none runs while the editor is closed.
 //!
-//! The residual case: a compile that is still pending when the editor closes (the audio thread had not returned a
-//! plan, for example because the host stopped calling `process()`) waits for the next entry, and until then the
-//! engine plays the previous plan. See "open questions" in `docs/session.md`.
+//! The residual case: a compile that is still pending when the entry returns (two plans in flight: the host had
+//! stopped calling `process()`) waits for the next entry, and until then the engine plays the previous plan. The
+//! shell closes it without a fork patch: after unlocking it sets an atomic "pump wanted" flag when
+//! `status().compile_pending`, and `process()`, once the engine has swapped since the flag was set
+//! (`EngineStats::swaps` moved), schedules one nice-plug background task (`execute_background`, never inline)
+//! that locks the session and calls [`Session::pump`]. See "Plan delivery" in `docs/session.md`.
 //!
 //! # Never blocks, never drops (invariant I5)
 //!
@@ -53,6 +71,13 @@ pub(crate) struct Port {
     pub(crate) activation: Activation,
     /// A new plan is needed and has not been sent yet.
     pub(crate) compile_pending: bool,
+    /// Slots (bit `i` = slot index `i`) whose remembered host value the next plan sent must forget
+    /// ([`Plan::forget_host_slots`](enth_engine::Plan::forget_host_slots)), accumulated until a plan goes out; the
+    /// pump passes it to that plan and clears it. [`Session::load_patch`] sets every bit (the loaded patch wins over
+    /// the old patch's host values); a recompiling edit, undo or redo adds
+    /// [`slots_written`](crate::bridge::slots_written) of its ops (the edited value wins until the host's echo of it
+    /// arrives, instead of the old host value being re-applied at the swap).
+    pub(crate) forget_slots: u64,
     /// Events held back while the command ring is full, in order.
     pub(crate) queue: Vec<Queued>,
     /// The next audition note id (fresh per note, so overlapping auditions of one key stay distinct).
@@ -121,7 +146,11 @@ impl Session {
     }
 
     /// Collect replaced plans, send a pending compile, flush queued events (see the [module docs](self)). Never
-    /// blocks. Detached, there is nothing to do. Lane SK implements the active case.
+    /// blocks. Detached, there is nothing to do. Lane SK implements the active case. Callers: every session entry
+    /// that can send (an edit, undo, redo, a load, a save, activate), once per editor frame, and the shell's
+    /// background "pump wanted" task while the editor is closed. It pushes no
+    /// [`ShellRequest`](crate::model::ShellRequest), so a pump on the main or a background thread has nothing to
+    /// forward.
     pub fn pump(&mut self) -> PumpReport {
         PumpReport::default()
     }

@@ -59,8 +59,9 @@ pub const NOTE_STACK: usize = 16;
 /// Voice ends one `process` call can report; more are counted in `EngineStats::dropped_note_ends`.
 pub const NOTE_END_CAPACITY: usize = 256;
 
-/// A voice that ended, for CLAP `NOTE_END`.
+/// A voice that ended, for CLAP `NOTE_END` (`non_exhaustive`: fields may be added; F1b review).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct NoteEnd {
     /// The note the voice was playing.
     pub key: NoteKey,
