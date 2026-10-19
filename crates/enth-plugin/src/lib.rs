@@ -245,8 +245,10 @@ impl Plugin for Enth {
         main_output_channels: NonZeroU32::new(2),
         ..AudioIOLayout::const_default()
     }];
-    // `MidiCCs` (the mod wheel) adds 2,080 hidden VST3 parameters: an open decision (docs/phase-1b.md), lane PL.
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    // `MidiCCs`: the mod wheel (MIDI CC 1) reaches the engine. For VST3 nice-plug adds 2,080 hidden MIDI CC
+    // parameters, which REAPER lists (2,155 parameters); CLAP pays nothing. Lane PL's decision, with the measurements,
+    // in docs/plugin.md ("MIDI CCs"); `Basic` turns the mod wheel off in both formats.
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     // Required: without it plugin renders stop matching CLI renders at large host blocks (AGENTS.md).
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
