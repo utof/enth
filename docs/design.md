@@ -89,16 +89,31 @@ pub trait Module: Send {
 
 ## 4. Host parameters: macros + automation slots
 
-The modular parameter set changes whenever the patch changes, so it is never exposed directly to the DAW. Copy Phase Plant: **8 macros + a fixed pool of 64 automation slots**, each pointing at any `ParamAddr`. The host sees a fixed list of 72 parameters. Where the host supports it (CLAP parameter rescan), slot names are refreshed to "Osc 1 · Cutoff"; otherwise they read "Slot 7". Macros also receive CLAP polyphonic modulation.
+The modular parameter set changes whenever the patch changes, so it is never exposed directly to the DAW. Copy Phase Plant: **8 macros + a fixed pool of 64 automation slots**, each pointing at any `ParamAddr`. The host sees a fixed list of 72 parameters. Slot names are refreshed to "Osc 1 · Cutoff" where the host allows it; otherwise they read "Slot 7". Macros also receive CLAP polyphonic modulation.
+
+Measured in Phase 0 (2026-10-19, [spikes/shell.md](spikes/shell.md)):
+
+- **CLAP:** a rescan (`RESCAN_INFO`) renames a slot in REAPER within 50 ms. Stock nice-plug 0.4.2 cannot do it; a 123-line add-only patch can. We carry it in a fork when P1 needs names.
+- **VST3:** hosts may reject the title-change message (`kParamTitlesChanged`). REAPER 7.82 does, so VST3 in REAPER shows "Slot N". Carla's VST3 host accepts it.
+- An automation lane that already exists keeps its old label but stays bound to the parameter by ID.
+- Names are derived from the patch on the main thread only, and a rescan is requested after a slot assignment and after a state load.
 
 ## 5. Determinism
 
 `render()` is a pure function of (patch, performance, sample rate, block size, seed, engine version). That one property buys reproducible ML datasets, trustworthy scores, DSP regression tests and lesson targets that need no audio files.
 
 - All randomness is seeded: per voice from the patch hash and note index; per effect from the patch hash and module id. No system time, no global RNG; ported DSP has its upstream RNG replaced.
-- Flush denormals; fixed block size for offline renders; one canonical scoring rate (48 kHz).
-- Bit-exact on the same build and platform; across platforms and wasm32, equal within a tolerance on a feature summary.
-- Golden tests render every reference patch and compare a hash (same platform) and a feature summary (across platforms).
+- Fixed block size for offline renders; one canonical scoring rate (48 kHz).
+- **Renders are bit-exact across platforms**, wasm32 engines and build flags, and independent of the host's FTZ setting. Golden hashes in CI enforce it. A feature summary with tolerances is only the diagnostic when a hash breaks. Measured so far: native x86-64, wasm under V8 and wasmtime, debug/release, `opt-level` s and 1, fat LTO, `target-cpu=native`, `+fma`, and scalar vs `wide` f32x4/f32x8 lanes all give the same hash. Windows is checked in CI (lane B); aarch64 only if the private repo gets arm runners.
+- **The four DSP rules** that make this hold (measured traps: `std` and `libm` results differ on up to 14% of inputs, and `std` maths differs between glibc and wasm; LLVM rewrote `powf(2,x)` into `exp2`; `wide::mul_add` changes its output once the build enables FMA):
+  1. Transcendentals only through the `libm` crate, pinned with `=` (bumping it is an engine-version change), or our own approximations built from `+ − × ÷ sqrt`.
+  2. No `mul_add` and no `algebraic_*` operations.
+  3. A fixed voice order and a fixed summation order. No runtime CPU dispatch between numerically different kernels.
+  4. Denormals are flushed in code: recursive state below about 1e-15 is set to zero (at control rate, or per write in feedback paths), and **voices end below −100 dB**. Never depend on, or set, FTZ/DAZ: nice-plug sets FTZ around `process()` anyway, and setting MXCSR/FPCR from Rust is documented undefined behaviour. A flushed engine gives the same hash with FTZ off, FTZ only and FTZ+DAZ; a naive one does not, and over a 40 s release tail its render takes 36× longer.
+  NaN is a bug.
+- **Scores across platforms.** Analysis is not covered by the renders' guarantee: `rustfft` picks its code path by CPU (AVX, SSE or scalar), and the three give different bits, so native and wasm distances differ by up to 2.7e-6 relative. For identical pass/fail decisions in duels, scoring uses a **scalar FFT path** (about 5× slower than AVX), or a tolerance ≥ 1e-5 with a deterministic tie rule. Lanes B and C confirm the cost.
+- Golden tests render every reference patch and compare a hash on every platform, keyed by `<arch>-<os>` until the cross-platform hashes are proven equal.
+- **Fallback until Windows (and aarch64, if runners exist) CI hashes are green:** the older contract applies: bit-exact on the same build and platform; across platforms and wasm32, equal within a tolerance on a feature summary.
 - Lessons pin an engine version. When DSP must change, keep a compatibility mode for old patches.
 - Only effects enth owns sit in the scored path. The global FX bypass is per-instance monitoring state outside the `Patch`; scoring and CLI renders ignore it ([ADR-0006](adr/0006-effects-strategy.md)).
 
@@ -127,10 +142,16 @@ Scores are pluggable `Scorer`s, each with a stable id and version, so adding a n
 
 | Scorer | Measures | Notes |
 | --- | --- | --- |
-| `sound` | How close the audio is | Render both → loudness-normalise → features (multi-resolution log-mel, amplitude envelope, pitch, spectral centroid/tilt, modulation, stereo) → per-component distances → weighted sum |
+| `sound` | How close the audio is | Render both → loudness-normalise (EBU R128 / BS.1770) → features (multi-resolution log-mel, amplitude envelope, pitch, spectral centroid/tilt, modulation, stereo) → per-component distances → weighted sum |
 | `structure` | How close the patch is | Symmetry-aware, sensitivity-weighted parameter distance to the target, or to the nearest passing solution (§7) — so a different valid route isn't punished |
 | `combined` | One headline number | A documented weighted formula of `sound` and `structure`; default weights favour `sound` |
 | `time` | Speed | Time to reach the pass threshold; used for duels and speed runs |
+
+Details measured in Phase 0 (2026-10-19):
+
+- Loudness uses EBU R128 / BS.1770 (`ebur128`), with short-term loudness over windows under about 1 s.
+- A categorical mismatch (the oscillator waveform, say) is its own component, not folded into a distance.
+- Envelope features are beat-aware (a crest envelope), because detuned oscillators make raw RMS beat.
 
 Each score is shown 0–100. Calibrate per challenge: the starting patch scores 0, the pass threshold scores 100. Always report the components ("brighter than target", "attack too fast") — they double as coaching text and as the agent's `compare` output. Trust comes from: loudness normalisation (no "louder sounds closer"), shown components, versioned scorers, and periodic checks against your own blind ratings.
 
@@ -140,16 +161,19 @@ Each score is shown 0–100. Calibrate per challenge: the starting patch scores 
 
 Three layers, cheapest first:
 
-1. **Symmetry-aware parameter distance**, when the target is a patch in the same template. Canonicalise both, compare only editable and perceptually critical parameters, weight each by its audio sensitivity at that point.
+1. **Symmetry-aware parameter distance**, when the target is a patch in the same template. Canonicalise both, compare only editable and perceptually critical parameters, weight each by its audio sensitivity at that point (Δθᵀ JᵀJ Δθ, with the Jacobian J from the same finite-difference renders as layer 2).
 2. **Sensitivity hints.** For each editable parameter, render a small move both ways and measure how descriptors and score change. The move that helps most becomes the hint ("lower `filter1.cutoff` toward 1.2 kHz"). The same Jacobian powers the CLI's `suggest`.
 3. **Nearest solution.** Run CMA-ES starting *from the player's patch*, penalising distance from it, until it finds the closest patch that passes. Show its per-parameter deltas. Different valid approaches get different, both-correct feedback.
 
-Budget check (confirm in Phase 0): at the G0 minimum of 100× realtime per core, one 2 s render takes ~20 ms, so a 1,000-render search takes ~20 s on one core or ~3 s on 8 cores. The solver stays single-threaded and pure; the caller (CLI, plugin worker) supplies the parallel evaluator. Hints and `suggest` use shorter clips (~0.5 s) to stay interactive.
+Budget check (measured in Phase 0, 2026-10-19, on a loaded laptop, so upper bounds): budget per **evaluation**, meaning render plus analysis. On the toy 10-parameter template a 2 s render takes 2.2–2.5 ms and the features 2.5 ms (hop n/2) to 5.1 ms (hop n/4), so one evaluation costs about 8 ms on one thread. Eight workers speed a search up 4.4–5.4× on this 6-core laptop, about 4× per solve, not 8×. A search is capped at **5,000 evaluations**: the median solve took 2.6 s (maximum 10.6 s) on 8 workers with the heuristic start. At the G0 minimum of 100× realtime per core a render alone takes ~20 ms, so size the cap against the real engine once it exists. The solver stays single-threaded and pure; the caller (CLI, plugin worker) supplies the parallel evaluator, and that evaluator must be order-stable (a work queue writing results by index) so results are identical for any worker count. Hints and `suggest` use shorter clips (~0.5 s) to stay interactive.
 
 ## 8. Solver pipeline (sound → patch)
 
 1. **Heuristic start:** pitch → tuning; spectral centroid and tilt → filter; amplitude envelope → ADSR; noisiness → noise level.
-2. **Search:** CMA-ES over a template's parameters with the composite score.
+2. **Search:** CMA-ES over a template's parameters with the composite score. Our own ask–tell implementation (no crate fits: `cmaes` panics on wasm32, `basin` has no ask–tell), Hansen 2016 defaults, IPOP restarts, bounds by clamping plus a penalty.
+   - **Portfolio:** run a heuristic start and random restarts side by side. Measured on the toy synth, 20 targets: 18/20 solved, against 15/20 for the heuristic start alone and 14/20 for random starts alone. The heuristic start cut the median evaluations to the looser threshold 2–5×.
+   - **Population:** λ ≥ the number of workers (16 for 8 workers beats the default 10 on both success and parallel efficiency).
+   - **Categorical parameters** (the waveform) cycle through their values at restarts; CatCMAwM later.
 3. **Learned proposals (later):** a model maps audio to K candidate patches (generative, symmetry-aware); each is refined by step 2 and shown as a branch, Synplant-style.
 4. **Structure (later):** pick a template by embedding retrieval, then evolutionary topology search for hard cases.
 
@@ -180,11 +204,13 @@ pub enum Category { Oscillators, Filter, Envelopes, Modulation, Effects, Structu
 | High | + LFOs and modulation routes |
 | Highest | + effects and structure (which modules exist) |
 
+**Target generation works in parameter space only.** A seed must give the same target on every machine, and a render-dependent accept/reject step (is it audible, does it differ from the start) can flip on a one-bit difference. So every rule below is a test on parameter values, never on a render. If a render-based check is ever added, the challenge code carries the accepted attempt index, so every machine regenerates the same target without repeating the check.
+
 **Musical / safe** means the generator only accepts targets that:
 
-- sample parameter values from distributions fitted to good presets, not uniform noise;
-- are audible, not clipping, and loudness-normalised;
-- differ audibly from the starting patch (a minimum `sound` distance), and are reachable within the challenge's constraints;
+- sample parameter values from per-parameter priors, not uniform noise: hand-written ranges, log scales and forbidden combinations at first, fitted to enth's own presets once they exist;
+- stay audible and unclipped by construction (level and gain ranges), with scoring loudness-normalised;
+- differ from the starting patch by a minimum step in the editable parameters, and are reachable within the challenge's constraints;
 - avoid extreme ranges (ear-piercing resonance, sub-audible pitch) unless `musical` is low.
 
 The same `RandomSpec` drives solo Recreate rounds, agent evals, ML dataset sampling and duel codes.
