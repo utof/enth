@@ -374,7 +374,8 @@ pub fn render_with_block(
         }
     }
     for c in &perf.controls {
-        if !(c.time_s.is_finite() && c.time_s >= 0.0) || !(0.0..=1.0).contains(&c.value) {
+        let ok = c.time_s.is_finite() && c.time_s >= 0.0 && (0.0..=1.0).contains(&c.value);
+        if !ok {
             return Err(RenderError::BadPerformance(format!(
                 "control of {} to {} at time {}: times are finite and >= 0, values 0-1",
                 c.controller, c.value, c.time_s
