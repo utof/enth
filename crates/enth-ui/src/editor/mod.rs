@@ -9,11 +9,25 @@
 //! | --- | --- | --- |
 //! | `regions.rs` | the named layout regions (header, macros, voice, effects, modulators, status, ...) | UI-C, ED1 |
 //! | `layout.rs` | `LayoutSpec`: rows and columns sized by tokens, the section-to-region table, layout 1 ("Lanes") | ED1 |
-//! | `cards.rs` | module card presenters built from the catalogue's `ParamSpec`s, with stable widget ids | UI-C |
+//! | `cards.rs` | module card presenters built from the catalogue's `ParamSpec`s, with stable widget ids | UI-C, ED1 |
+//! | `frame.rs` | [`Editor`]: one frame from the session through a layout, intents applied at frame end | ED1 |
+//! | `overlay.rs` | the no-op [`Overlay`](overlay::Overlay) Learn and Recreate will fill (emphasis, scores) | ED1 |
+//! | `describe.rs` | undo steps in the editor's words, for the Undo and Redo tooltips | ED1 |
+//! | `reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features | ED1 |
+//!
+//! docs/editor.md describes the whole editor.
 //!
 //! Colours, sizes, spacing, radii, strokes, fonts and rates come from `theme` tokens only; a new value is a new
 //! token in the file of its area (`theme/`), never a literal here.
 
 pub mod cards;
+mod describe;
+mod frame;
 pub mod layout;
+pub mod overlay;
 pub mod regions;
+#[cfg(any(feature = "learn", feature = "recreate"))]
+mod reserved;
+
+pub use frame::{Editor, FrameReport};
+pub use layout::{Layout, LayoutError, LayoutSpec, Region};

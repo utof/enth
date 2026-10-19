@@ -6,11 +6,12 @@
 //!
 //! | Component | Region | Data |
 //! | --- | --- | --- |
-//! | [`Header`] | the top band: wordmark, patch name, Undo and Redo | [`HeaderView`] |
+//! | [`Header`] | the top band: wordmark, patch name, Undo and Redo, inline knobs of built-ins placed there | [`HeaderView`], [`CardView`](super::cards::CardView)s |
 //! | [`Macros`] | the macro bar | [`MacroView`] per macro |
 //! | [`CardRegion`] | the sound sources (generators), voice effects, effects, modulators | [`CardView`](super::cards::CardView)s |
 //! | [`SourceTiles`] | the modulation sources' live tiles with their ⊕ handles | [`SourceView`] per source |
 //! | [`Matrix`] | the modulation overview: targets × sources | [`MatrixView`] |
+//! | [`Overview`] | the overview region: the source tiles beside the matrix (lane ED1) | [`SourceView`]s, [`MatrixView`] |
 //! | [`Status`] | the status line: the hovered control, its value and modulation | [`Hovered`](super::cards::Hovered) |
 //!
 //! Every region runs in a child `Ui` over its rectangle, clipped to it, whose scope id comes from the region's name;
@@ -21,13 +22,15 @@ mod cards;
 mod header;
 mod macros;
 mod matrix;
+mod overview;
 mod status;
 mod tiles;
 
-pub use cards::{Arrangement, CardRegion};
+pub use cards::{Arrangement, CardRegion, CardRegionOutput};
 pub use header::{Header, HeaderView};
 pub use macros::{MacroView, Macros};
 pub use matrix::{Matrix, MatrixView};
+pub use overview::{Overview, OverviewOutput};
 pub use status::Status;
 pub use tiles::{SourceShape, SourceTiles, SourceView};
 

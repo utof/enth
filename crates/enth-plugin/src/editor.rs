@@ -1,25 +1,25 @@
 //! The `NiceEguiApp` that hosts the `enth-ui` editor in the plugin window: a translation, with no product rules
-//! (lane SK for the first card; lane ED1 replaces the body with the full editor and its layout seam).
+//! (lane SK for the walking skeleton; lane ED1 for the full editor and its layout seam, docs/editor.md).
 //!
-//! F2b's editor is one real card: the first sound source's (`osc1` in the init patch), built by UI-C's
-//! [`Card`] from the catalogue's `ParamSpec`s and bound to the session through [`SessionView`] and
-//! [`SessionEdit`] only ([`Glue`]), so the same code runs in a test with a plain `Session`.
+//! The editor itself is [`enth_ui::editor::Editor`]: every region of a layout, drawn from the session through
+//! [`SessionView`](enth_session::SessionView) and edited through [`SessionEdit`] only, so the same code runs here, in
+//! the dev window and in kittest with a plain `Session`. [`Glue`] is the plugin's handle on it.
 //!
-//! Per frame, on baseview's GUI thread (docs/session.md, "Who calls what"): lock the session, `pump`, `fold_host`
-//! with the host's values, draw from `SessionView::patch`, apply the frame's intents through `SessionEdit`, drain
-//! the requests, **unlock**, then forward the host writes to nice-plug's `ParamSetter` (begin, set, end), so the host
-//! records automation and never sees a call made under the lock. Every `build()` is a fresh open: it applies the
-//! theme and ends any gesture the last window left open; `editor_closed` (called by lane FK's vendored
-//! nice-plug-egui) ends it too and releases audition notes. Never `GuiContext::set_state`: an editor preset load
-//! calls `Session::load_patch` under the lock.
+//! Per frame, on baseview's GUI thread (docs/session.md, "Who calls what"): read the host's values, lock the
+//! session, `pump`, `fold_host`, draw and apply the frame's intents ([`Glue::frame`]), drain the requests, **unlock**,
+//! then forward the host writes to nice-plug's `ParamSetter` (begin, set, end), so the host records automation and
+//! never sees a call made under the lock. Every `build()` is a fresh open: it applies the theme, picks the layout
+//! (`ENTH_LAYOUT`, else the one saved in the `enth` field, else layout 1) and ends any gesture the last window left
+//! open; `editor_closed` (called by lane FK's vendored nice-plug-egui) ends it too and releases audition notes.
+//! Never `GuiContext::set_state`: an editor preset load calls `Session::load_patch` under the lock.
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use enth_patch::history::GestureId;
 use enth_session::{GestureStep, HostWrite, SessionEdit, ShellRequest};
 use enth_ui::Theme;
-use enth_ui::editor::cards::{Card, CardKey, CardView, Intent, Intents};
+use enth_ui::editor::Editor;
+use enth_ui::editor::cards::{CardKey, Intent};
+use enth_ui::editor::layout::LayoutSpec;
 use nice_plug::context::gui::GuiContext;
 use nice_plug_egui::baseview::HandlerError;
 use nice_plug_egui::{
@@ -37,6 +37,7 @@ pub fn create(
     state: Arc<EguiEditorState>,
     repaint: RepaintNotifier,
 ) -> Option<EguiEditor<EditorApp>> {
+    let theme = Theme::dark();
     create_egui_editor(
         state,
         repaint,
@@ -44,26 +45,31 @@ pub fn create(
         EditorApp {
             shared,
             params,
-            theme: Theme::dark(),
+            glue: Glue::new(&theme),
+            theme,
             gui: None,
-            glue: Glue::default(),
         },
     )
 }
 
-/// The editor's view state and gesture bookkeeping, and the code that turns intents into session calls. It knows
-/// the session only through [`SessionEdit`].
+/// The plugin's handle on the editor: its view state (the open drag's gesture, "More" disclosures, the layout) and
+/// the code that turns a frame's intents into session calls. It knows the session only through [`SessionEdit`].
 #[derive(Debug, Default)]
 pub struct Glue {
-    /// The gesture a drag opened, until its `End` (or the pointer's release anywhere).
-    gesture: Option<GestureId>,
-    /// Cards whose "More" disclosure is open (editor view state, not in the patch).
-    more: BTreeSet<CardKey>,
+    editor: Editor,
 }
 
 impl Glue {
-    /// One frame: draw the first sound source's card from `session`'s patch, then apply its intents.
-    /// `pointer_down`: whether any pointer button is held this frame (a drag released anywhere ends its gesture).
+    /// The editor with layout 1 for `theme`.
+    pub fn new(theme: &Theme) -> Self {
+        Glue {
+            editor: Editor::new(theme),
+        }
+    }
+
+    /// One frame: every region of the layout drawn from `session`'s patch into `ui`'s rectangle, then the intents
+    /// applied. `pointer_down`: whether any pointer button is held this frame (a drag released anywhere ends its
+    /// gesture).
     pub fn frame(
         &mut self,
         ui: &mut egui::Ui,
@@ -71,80 +77,77 @@ impl Glue {
         session: &mut dyn SessionEdit,
         pointer_down: bool,
     ) {
-        let view = session
-            .patch()
-            .generators
-            .first()
-            .map(|m| CardView::module(session.patch(), m));
-        let mut intents = Intents::default();
-        if let Some(view) = view {
-            let open = self.more.contains(&view.key);
-            let view = view.with_more(open);
-            Card::new(theme, &view).strip().show(ui, &mut intents);
-        }
-        self.apply(session, intents.take(), pointer_down);
+        self.editor.frame(ui, theme, session, pointer_down);
     }
 
-    /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
-    /// host gesture per parameter, `End` closes it; clicks, toggles and menu items are one edit each. An edit the
-    /// session refuses changes nothing (its error is the session's `last_error` for the status line).
+    /// Apply a frame's intents in order (see [`Editor::apply`]).
     pub fn apply(
         &mut self,
         session: &mut dyn SessionEdit,
         intents: Vec<Intent>,
         pointer_down: bool,
     ) {
-        for intent in intents {
-            match &intent {
-                Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
-                Intent::End(_) => {
-                    session.end_gesture();
-                    self.gesture = None;
-                }
-                Intent::ShowMore { card, open } => {
-                    if *open {
-                        self.more.insert(card.clone());
-                    } else {
-                        self.more.remove(card);
-                    }
-                }
-                Intent::Undo => {
-                    let _ = session.undo();
-                }
-                Intent::Redo => {
-                    let _ = session.redo();
-                }
-                Intent::Set { .. } | Intent::SetMacro { .. } | Intent::SetDepth { .. } => {
-                    let ops = intent.ops(session.patch());
-                    if !ops.is_empty() {
-                        let _ = session.edit(ops, self.gesture);
-                    }
-                }
-                _ => {
-                    let ops = intent.ops(session.patch());
-                    if !ops.is_empty() {
-                        let _ = session.edit(ops, None);
-                    }
-                }
-            }
-        }
-        if self.gesture.is_some() && !pointer_down {
-            // The control that opened the drag vanished or the pointer left it: close the gesture anyway.
-            session.end_gesture();
-            self.gesture = None;
-        }
+        self.editor.apply(session, intents, pointer_down);
     }
 
     /// Close any drag's gesture: at every `build()` (a fresh open) and when the window closes.
     pub fn end_drag(&mut self, session: &mut dyn SessionEdit) {
-        session.end_gesture();
-        self.gesture = None;
+        self.editor.end_drag(session);
     }
 
     /// Whether a drag's gesture is open.
     pub fn gesture_open(&self) -> bool {
-        self.gesture.is_some()
+        self.editor.gesture_open()
     }
+
+    /// Whether `card`'s "More" disclosure is open.
+    pub fn more_open(&self, card: &CardKey) -> bool {
+        self.editor.more_open(card)
+    }
+
+    /// Pick the layout for a fresh open: `env` (what `ENTH_LAYOUT` named, already read), else the built-in `saved`
+    /// in the `enth` field, else layout 1. A refused `ENTH_LAYOUT` is named on the status line.
+    pub fn choose_layout(
+        &mut self,
+        theme: &Theme,
+        env: Option<Result<LayoutSpec, String>>,
+        saved: &str,
+    ) {
+        let saved = LayoutSpec::builtin(saved).unwrap_or_else(LayoutSpec::lanes);
+        let (spec, mut notice) = match env {
+            Some(Ok(spec)) => (spec, String::new()),
+            Some(Err(e)) => (saved, format!("{e}; using the saved layout")),
+            None => (saved, String::new()),
+        };
+        let name = spec.name.clone();
+        if let Err(e) = self.editor.set_layout(spec, theme) {
+            notice = format!("ENTH_LAYOUT {name}: {e}; using lanes");
+            let _ = self.editor.set_layout(LayoutSpec::lanes(), theme);
+        }
+        self.editor.set_notice(notice);
+    }
+
+    /// The editor, for tests.
+    pub fn editor(&self) -> &Editor {
+        &self.editor
+    }
+}
+
+/// The layout `ENTH_LAYOUT` names, if it is set: a built-in's name ("lanes") or a layout file (JSON, schema
+/// `enth.layout/1`). Read at every open of the window, so the owner can compare layouts in a host without a rebuild.
+fn layout_from_env() -> Option<Result<LayoutSpec, String>> {
+    let value = std::env::var_os("ENTH_LAYOUT")?;
+    let shown = value.to_string_lossy().into_owned();
+    if let Some(spec) = LayoutSpec::builtin(&shown) {
+        return Some(Ok(spec));
+    }
+    Some(
+        std::fs::read_to_string(&value)
+            .map_err(|e| format!("ENTH_LAYOUT: cannot read {shown}: {e}"))
+            .and_then(|text| {
+                LayoutSpec::from_json(&text).map_err(|e| format!("ENTH_LAYOUT {shown}: {e}"))
+            }),
+    )
 }
 
 /// The plugin window's app.
@@ -180,8 +183,13 @@ impl NiceEguiApp for EditorApp {
         _frame: &mut Frame,
     ) -> Result<(), HandlerError> {
         self.theme.apply(&egui_ctx);
+        let env = layout_from_env();
         let glue = &mut self.glue;
-        let ((), writes) = self.shared.with_session(|s| glue.end_drag(s));
+        let (saved, writes) = self.shared.with_session(|s| {
+            glue.end_drag(s);
+            s.instance().ui.layout.clone()
+        });
+        self.glue.choose_layout(&self.theme, env, &saved);
         forward(&nice_gui_ctx, &self.params, writes);
         self.gui = Some(nice_gui_ctx);
         Ok(())
@@ -212,9 +220,8 @@ impl NiceEguiApp for EditorApp {
         let ((), writes) = shared.with_session(|s| {
             s.pump();
             s.fold_host(&host);
-            egui::CentralPanel::default().show(ui, |ui| {
-                glue.frame(ui, theme, s, pointer_down);
-            });
+            // The root Ui covers the whole window; the editor paints its own background.
+            glue.frame(ui, theme, s, pointer_down);
         });
         if let Some(gui) = &self.gui {
             forward(gui, &self.params, writes);
@@ -303,7 +310,7 @@ mod tests {
             }],
             false,
         );
-        assert!(glue.more.contains(&key));
+        assert!(glue.more_open(&key));
         assert!(!session.history().can_undo());
     }
 
@@ -329,6 +336,33 @@ mod tests {
         });
         // Headless: nothing uploads textures.
         output.textures_delta.clear();
+    }
+
+    #[test]
+    fn the_layout_comes_from_enth_layout_then_the_saved_name_then_lanes() {
+        let theme = Theme::dark();
+        let mut glue = Glue::new(&theme);
+        glue.choose_layout(&theme, None, "lanes");
+        assert_eq!(glue.editor().layout().name(), "lanes");
+        // A saved name this build does not know falls back to layout 1.
+        glue.choose_layout(&theme, None, "from-a-newer-build");
+        assert_eq!(glue.editor().layout().name(), "lanes");
+        // A file that names a layout wins.
+        let mut spec = LayoutSpec::lanes();
+        "mine".clone_into(&mut spec.name);
+        glue.choose_layout(&theme, Some(Ok(spec)), "lanes");
+        assert_eq!(glue.editor().layout().name(), "mine");
+        // A file that does not check leaves layout 1 and says why on the status line.
+        let mut broken = LayoutSpec::lanes();
+        broken.place.clear();
+        glue.choose_layout(&theme, Some(Ok(broken)), "lanes");
+        assert_eq!(glue.editor().layout().name(), "lanes");
+        glue.choose_layout(
+            &theme,
+            Some(Err("ENTH_LAYOUT: cannot read x".into())),
+            "lanes",
+        );
+        assert_eq!(glue.editor().layout().name(), "lanes");
     }
 
     #[test]

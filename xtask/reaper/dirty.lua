@@ -6,15 +6,15 @@
 --   idle:    no edit at all, only the editor opened and closed: what the project reads when nothing was edited.
 -- After the drag the flag is read at once, 3 s later, and after the editor window was closed.
 -- Each phase loads its patch, opens the editor, saves the project (so it is clean), drags a knob with real X events
--- (xinput.py, under Xvfb only) and reads `IsProjectDirty`. The drag looks for a knob: the first point is where the F2b
--- editor's "Level" knob sits (an offset into the plugin's window); if the saved state does not change there, a coarse
+-- (xinput.py, under Xvfb only) and reads `IsProjectDirty`. The drag looks for a knob: the first point is where the
+-- editor's osc1 "Level" knob sits (an offset into the plugin's window); if the saved state does not change there, a coarse
 -- grid over the window is tried until a drag changes it, so a new layout is found, not failed.
 dofile(os.getenv("ENTH_LUA_DIR") .. "/common.lua")
 
 local phase = os.getenv("ENTH_PHASE")
 local tag = os.getenv("ENTH_TAG")
 local project = OUT .. "/dirty-" .. phase .. "-" .. tag .. ".rpp"
-local FIRST_POINT = { 366, 64 } -- offset of F2b's "Level" knob inside the plugin window
+local FIRST_POINT = { 366, 178 } -- offset of osc1's "Level" knob inside the plugin window (ED1's "lanes" layout, 1200x800)
 do -- ENTH_EDIT_POINT=x,y overrides it (to try the search with a point that is not on a knob)
   local x, y = (os.getenv("ENTH_EDIT_POINT") or ""):match("^(%d+),(%d+)$")
   if x then FIRST_POINT = { tonumber(x), tonumber(y) } end
