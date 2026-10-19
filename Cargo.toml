@@ -82,16 +82,19 @@ clack-plugin = "=0.2.0"                             # MIT OR Apache-2.0. dev-dep
 x11rb = "=0.13.2"                                   # MIT OR Apache-2.0. Pure-Rust X11 client: the host-side parent window for embedded editors. baseview pulls the same version in
 libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-host timing: clock_gettime, setrlimit(RLIMIT_RTTIME), sched_setaffinity (research 03)
 
-# The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork").
-# COMMENTED OUT until lane FK imports the crates.io sources into `vendor/` (a pristine-import commit, then one commit
-# per patch: slot rename, `editor_closed`, baseview's xkb keymap unref) and the coordinator enables this block in one
-# commit. The `=` pins above keep matching because every entry keeps its crates.io version. `exclude = ["vendor"]` in
-# `[workspace]` keeps the vendored crates out of fmt, clippy and `--workspace` (vendored crates are not lint-capped).
-# [patch.crates-io]
-# nice-plug = { path = "vendor/nice-plug/crates/nice-plug" }
-# nice-plug-core = { path = "vendor/nice-plug/crates/nice-plug-core" }
-# nice-plug-egui = { path = "vendor/nice-plug/crates/nice-plug-egui" }
-# baseview = { path = "vendor/baseview" }
+# The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork";
+# lane FK). `vendor/` holds the crates.io sources (a pristine-import commit, then one commit per patch: slot rename,
+# `editor_closed`, baseview's xkb unref, keyboard focus only while typing; see vendor/README.md). Every entry keeps its
+# crates.io version, so the `=` pins above still match. `exclude = ["vendor"]` in `[workspace]` keeps the vendored
+# crates out of fmt, clippy and `--workspace`. Vendored path dependencies are not lint-capped by cargo, so each vendored
+# crate's own Cargo.toml caps its lints (vendor/README.md, "Lints"). egui-baseview is vendored because nice-plug-egui
+# depends on it and the focus patch edits it; the patched baseview sits under it too.
+[patch.crates-io]
+nice-plug = { path = "vendor/nice-plug/crates/nice-plug" }
+nice-plug-core = { path = "vendor/nice-plug/crates/nice-plug-core" }
+nice-plug-egui = { path = "vendor/nice-plug/crates/nice-plug-egui" }
+baseview = { path = "vendor/baseview" }
+egui-baseview = { path = "vendor/egui-baseview" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"                      # FFI crates opt out at the crate root: #![allow(unsafe_code, reason = "...")]

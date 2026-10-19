@@ -801,6 +801,7 @@ impl Engine {
             .filter(|&&v| voices.state(v) == VoiceState::Held)
             .count();
 
+        tap.begin(); // the frame's seqlock opens: the stores below are one publish (`Tap::finish` closes it)
         let mut dropped = 0u64;
         let params = plan.tap_params();
         for (k, &id) in params.iter().enumerate() {

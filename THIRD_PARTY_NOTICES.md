@@ -1,6 +1,6 @@
 # Third-party notices
 
-enth is MIT-licensed. This file lists source code **ported or copied** into enth from other projects, with the notices their licences require. Crate dependencies are not listed here: `cargo deny` checks their licences against `deny.toml`, and their list is generated from `Cargo.lock`.
+enth is MIT-licensed. This file lists source code **ported or copied** into enth from other projects, with the notices their licences require. Crate dependencies are not listed here: `cargo deny` checks their licences against `deny.toml`, and their list is generated from `Cargo.lock`. The exception is the crates under `vendor/`: enth carries them in its own tree with local changes, so they are listed with the changes.
 
 Rules: [docs/adr/0004-licensing.md](docs/adr/0004-licensing.md) (which licences ported source may carry) and [docs/adr/0006-effects-strategy.md](docs/adr/0006-effects-strategy.md). Each port also has a provenance note in `docs/dsp/<module>.md`.
 
@@ -182,6 +182,94 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+### nice-plug, nice-plug-core and nice-plug-egui (plugin framework; vendored with local changes)
+
+- Upstream: <https://codeberg.org/RustAudio/nice-plug>; the crates.io packages nice-plug 0.4.2 and nice-plug-core 0.4.2 (built from commit `91ba75d20c43ca0cd21afa802d0ae8c0511f48ed`) and nice-plug-egui 0.6.0 (commit `faa0cd61d249bf7c5103f3072be0c65cf72e9f4e`); sha256 of each `.crate` in `vendor/README.md`
+- Licence: ISC. The packages carry no licence file; the text below is the repository's `LICENSE` at the tag `v0.4.2` and sits in each of the three vendored directories
+- Copyright: Copyright (c) 2022-2024 Robbert van der Helm
+- Derived enth files: `vendor/nice-plug/crates/nice-plug/`, `vendor/nice-plug/crates/nice-plug-core/`, `vendor/nice-plug/crates/nice-plug-egui/` (compiled into the plugin through `[patch.crates-io]`)
+- Changes from upstream (one git commit each, `vendor/README.md` lists them): runtime parameter names and `request_param_info_rescan()` (nice-plug, nice-plug-core); `NiceEguiApp::editor_closed()` is called when the editor window is destroyed (nice-plug-egui); in the CLAP wrapper, a note that precedes a splitting parameter or transport event on the same frame is no longer lost under `SAMPLE_ACCURATE_AUTOMATION` (nice-plug); each manifest caps lints with `[lints.rust] warnings = "allow"`
+
+```text
+ISC License
+
+Copyright (c) 2022-2024 Robbert van der Helm
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+```
+
+### baseview and egui-baseview (window and egui integration; vendored with local changes)
+
+- Upstream: baseview 0.4.1, <https://github.com/RustAudio/baseview> (commit `8c6e6bab4b3c10f34b23dc12e878814349578777`); egui-baseview 0.9.0, <https://codeberg.org/RustAudio/egui-baseview> (commit `1f645a35d25fd63784dcf2f91c6d72d467c6036b`); sha256 of each `.crate` in `vendor/README.md`
+- Licence: MIT OR Apache-2.0, used under the MIT licence; both licence files stay in the vendored directories
+- Copyright: baseview's `LICENSE-MIT` states no copyright line (the package lists its authors in `vendor/baseview/Cargo.toml`); egui-baseview: Copyright (c) 2021 Billy Messenger
+- Derived enth files: `vendor/baseview/`, `vendor/egui-baseview/` (compiled into the plugin through `[patch.crates-io]`)
+- Changes from upstream (one git commit each, `vendor/README.md` lists them): baseview releases the xkb keymap reference after creating the state; baseview and egui-baseview take the keyboard only while a text field is edited (`WindowContext::set_keyboard_input`, `KeyboardFocus`); each manifest caps lints with `[lints.rust] warnings = "allow"`
+
+baseview's `LICENSE-MIT`:
+
+```text
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+egui-baseview's `LICENSE-MIT`:
+
+```text
+MIT License
+
+Copyright (c) 2021 Billy Messenger
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## Bundled assets

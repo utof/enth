@@ -258,6 +258,17 @@ mod tests {
             saved["patch"], "[1,2,3]",
             "kept as text until the first edit"
         );
+        // A newer build's instance state is kept like a newer patch (lane S2s): saved back unchanged.
+        assert_eq!(saved["enth"], "{\"schema\":\"enth.plugin-state/99\"}");
+        assert!(plugin.shared().session.lock().status().instance_unloaded);
+
+        // One that is damaged rather than newer is not worth keeping: the defaults are saved in its place.
+        let plugin = Enth::default();
+        let mut fields = BTreeMap::new();
+        fields.insert("enth".to_owned(), "{\"schema\":\"bogus\"}".to_owned());
+        plugin.host_params().deserialize_fields(&fields);
+        let saved = plugin.host_params().serialize_fields();
         assert!(saved["enth"].starts_with(r#"{"schema":"enth.plugin-state/1""#));
+        assert!(!plugin.shared().session.lock().status().instance_unloaded);
     }
 }

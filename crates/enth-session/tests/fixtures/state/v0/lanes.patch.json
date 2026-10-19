@@ -1,0 +1,24 @@
+{
+  "schema": 0,
+  "name": "Old lanes",
+  "master_level": -6,
+  "voice": { "amp_env": "env1" },
+  "generators": [
+    { "id": "osc1", "kind": "analog", "params": { "level": -3, "detune": 12 } },
+    { "id": "osc2", "kind": "analog", "params": { "level": 3 } }
+  ],
+  "lanes": [
+    [{ "id": "filter1", "kind": "svf", "params": { "cutoff": 800 } }],
+    [
+      { "id": "reverb1", "kind": "reverb" },
+      { "id": "comp1", "kind": "comp", "params": { "ratio": 3 } },
+      { "id": "filter2", "kind": "svf" }
+    ]
+  ],
+  "modulators": [{ "id": "env1", "kind": "adsr" }],
+  "routes": [
+    { "src": "env1", "dst": "filter1.cutoff", "depth": 30 },
+    { "src": "env1", "dst": "osc1.level", "depth": 10 },
+    { "src": "env1", "dst": "osc2.level", "depth": 5 }
+  ]
+}

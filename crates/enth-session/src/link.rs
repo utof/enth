@@ -114,30 +114,6 @@ impl Queued {
             Queued::Param { .. } | Queued::Depth { .. } | Queued::Macro { .. }
         )
     }
-
-    /// Whether `other` sets the same target as this value event (so only the later one needs to be sent).
-    fn same_target(&self, other: &Queued) -> bool {
-        match (self, other) {
-            (
-                Queued::Param {
-                    epoch: a, id: x, ..
-                },
-                Queued::Param {
-                    epoch: b, id: y, ..
-                },
-            ) => a == b && x == y,
-            (
-                Queued::Depth {
-                    epoch: a, id: x, ..
-                },
-                Queued::Depth {
-                    epoch: b, id: y, ..
-                },
-            ) => a == b && x == y,
-            (Queued::Macro { index: x, .. }, Queued::Macro { index: y, .. }) => x == y,
-            _ => false,
-        }
-    }
 }
 
 /// What one [`Session::pump`] did.
@@ -165,22 +141,6 @@ impl Port {
             Queued::NoteOff { key } => self
                 .link
                 .send_event(EventKind::NoteOff { key, velocity: 0.0 }),
-        }
-    }
-
-    /// Send a value event, or queue it behind the ones already waiting (order is kept). A queue that overflows
-    /// `value_queue` is dropped and a compile is marked instead: the plan carries every value (invariant I5).
-    pub(crate) fn send_value(&mut self, event: Queued, value_queue: usize) {
-        if self.queue.is_empty() && self.try_send(event).is_ok() {
-            return;
-        }
-        // The last value per target wins: an older queued one for the same target is not needed.
-        self.queue
-            .retain(|q| !(q.is_value() && q.same_target(&event)));
-        self.queue.push(event);
-        if self.queue.iter().filter(|q| q.is_value()).count() > value_queue {
-            self.queue.retain(|q| !q.is_value());
-            self.compile_pending = true;
         }
     }
 
@@ -236,6 +196,7 @@ impl Session {
         let tap = Tap::new(self.config.tap);
         engine.attach_tap(Arc::clone(&tap));
         engine.set_monitor_bypass(self.instance.monitor.fx_bypass);
+        self.host.memos.clear(); // a new engine starts its epochs at 0 again (the fold's memos are keyed by epoch)
         self.telemetry_maps.clear();
         self.telemetry_maps
             .push(TelemetryMap::from_plan(engine.epoch(), engine.plan(), &map));

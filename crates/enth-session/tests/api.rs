@@ -163,24 +163,18 @@ fn the_stubs_answer_with_typed_errors() {
         offline: false,
     };
     assert_eq!(session.pump(), PumpReport::default());
-    assert_eq!(session.audition_on(60, 1.0), Err(SessionError::Inactive));
-    // activate, the active pump, edit and audition are lane SK's (tests/link.rs); undo and redo stay S2s's stubs.
+    // activate, the active pump, edit and audition are lane SK's (tests/link.rs).
     let engine = session.activate(activation).expect("lane SK: activate");
     assert!(session.is_active());
     drop(engine);
     session.deactivate();
+    // Undo and redo are lane S2s's and implemented: with nothing recorded there is nothing to do.
+    assert_eq!(session.undo(), Ok(false));
+    assert_eq!(session.redo(), Ok(false));
     let err = SessionError::Unsupported {
-        what: "undo",
-        lane: "S2s",
+        what: "a stub",
+        lane: "SK",
     };
-    assert!(matches!(
-        session.undo(),
-        Err(SessionError::Unsupported { lane: "S2s", .. })
-    ));
-    assert!(matches!(
-        session.redo(),
-        Err(SessionError::Unsupported { lane: "S2s", .. })
-    ));
     assert_eq!(session.audition_on(60, 1.0), Err(SessionError::Inactive));
     assert_eq!(
         session.audition_off(NoteKey::new(60, 0)),
