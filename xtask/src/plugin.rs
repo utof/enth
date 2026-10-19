@@ -128,11 +128,13 @@ pub fn host_golden(package: &str) -> String {
 }
 
 /// How REAPER lists the plugin: `TrackFX_AddByName` matches this as a substring of the plugin's display name.
-/// `--plugin-name` overrides it. The product's name is a placeholder until lane RH sets it.
+/// `--plugin-name` overrides it. REAPER lists the product as `CLAPi: enth (enth)` (name, then vendor); the vendor
+/// keeps "enth" from also matching `enth spike-shell (enth)` when both are bundled (lane SK).
 pub fn reaper_plugin_name(package: &str) -> String {
     match package {
         "spike-shell" => "enth spike-shell".to_owned(),
         "spike-ui-plugin" => "enth spike-ui".to_owned(),
+        PRODUCT_PACKAGE => "enth (enth)".to_owned(),
         _ => "enth".to_owned(),
     }
 }

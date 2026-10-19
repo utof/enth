@@ -72,3 +72,15 @@ end
 function norm(track, fx, index)
   return reaper.TrackFX_GetParamNormalized(track, fx, index)
 end
+
+-- Loads a plugin state (base64, as REAPER's `clap_chunk` / `vst_chunk` hold it) from ENTH_STATE_CHUNK_FILE, if the
+-- xtask gave one: the product plugin's patch for a scenario (P1b lane SK). Nothing happens without it.
+function inject_state(track, fx)
+  local path = os.getenv("ENTH_STATE_CHUNK_FILE")
+  if not path or path == "" then return end
+  local f = assert(io.open(path, "r"))
+  local chunk = f:read("*a")
+  f:close()
+  local key = os.getenv("ENTH_TAG") == "clap" and "clap_chunk" or "vst_chunk"
+  check("state-loaded", reaper.TrackFX_SetNamedConfigParm(track, fx, key, chunk), key .. " from " .. path)
+end

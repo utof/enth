@@ -39,9 +39,10 @@
 //! The residual case: a compile that is still pending when the entry returns (two plans in flight: the host had
 //! stopped calling `process()`) waits for the next entry, and until then the engine plays the previous plan. The
 //! shell closes it without a fork patch: after unlocking it sets an atomic "pump wanted" flag when
-//! `status().compile_pending`, and `process()`, once the engine has swapped since the flag was set
-//! (`EngineStats::swaps` moved), schedules one nice-plug background task (`execute_background`, never inline)
-//! that locks the session and calls [`Session::pump`]. See "Plan delivery" in `docs/session.md`.
+//! `status().compile_pending`, and `process()`, while the flag is set and at most once per 50 ms of audio, clears
+//! it and schedules one nice-plug background task (`execute_background`, never inline) that locks the session,
+//! calls [`Session::pump`] and sets the flag again if a compile is still pending (F1b decision 1). See "Plan
+//! delivery" in `docs/session.md` and `docs/plugin.md`.
 //!
 //! # Never blocks, never drops (invariant I5)
 //!
@@ -51,17 +52,21 @@
 //! - Audition note-offs are queued and never dropped; a note-on that does not fit is refused
 //!   ([`SessionError::Busy`]).
 
-use enth_engine::{DepthId, Engine, Link, NoteKey, ParamId, PlanMap};
-use enth_patch::MacroIndex;
+use std::sync::Arc;
 
-use crate::model::{Activation, Session, SessionError};
+use enth_engine::{
+    DepthId, Engine, EventKind, Link, MAX_PLANS_IN_FLIGHT, NoteKey, ParamId, PlanMap, PrepareCfg,
+    SendError, Tap, compile,
+};
+use enth_patch::{MacroIndex, Patch};
+
+use crate::model::{AUDITION_PORT, Activation, RENDER_SEED, Session, SessionError};
+use crate::telemetry::{TelemetryMap, TelemetrySource};
+
+/// Telemetry maps kept: the latest sent plan's and the ones the tap may still publish for a few blocks.
+const TELEMETRY_MAPS: usize = MAX_PLANS_IN_FLIGHT + 1;
 
 /// The engine side of an active session.
-// Lane SK constructs it in `Session::activate`; until then only `status()` and `deactivate()` read it.
-#[expect(
-    dead_code,
-    reason = "constructed by lane SK's Session::activate (P1b stub)"
-)]
 pub(crate) struct Port {
     /// The main thread's end of the engine's rings.
     pub(crate) link: Link,
@@ -82,10 +87,11 @@ pub(crate) struct Port {
     pub(crate) queue: Vec<Queued>,
     /// The next audition note id (fresh per note, so overlapping auditions of one key stay distinct).
     pub(crate) next_audition_id: i32,
+    /// An audition note-on was sent since the last [`Session::audition_all_off`], so a release has something to do.
+    pub(crate) auditioned: bool,
 }
 
 /// An event waiting for room in the command ring.
-#[expect(dead_code, reason = "queued by lane SK's delivery (P1b stub)")]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Queued {
     /// A parameter value for the plan with `epoch`.
@@ -100,6 +106,16 @@ pub(crate) enum Queued {
     NoteOff { key: NoteKey },
 }
 
+impl Queued {
+    /// A value event (the last per target is kept; a plan carries it), as opposed to an audition note.
+    fn is_value(&self) -> bool {
+        matches!(
+            self,
+            Queued::Param { .. } | Queued::Depth { .. } | Queued::Macro { .. }
+        )
+    }
+}
+
 /// What one [`Session::pump`] did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -110,6 +126,50 @@ pub struct PumpReport {
     pub sent_plan: Option<u64>,
     /// Queued events moved into the command ring.
     pub flushed: usize,
+}
+
+impl Port {
+    /// Try to put one event into the command ring.
+    fn try_send(&mut self, event: Queued) -> Result<(), SendError<()>> {
+        match event {
+            Queued::Param { epoch, id, value } => self.link.send_param(epoch, id, value),
+            Queued::Depth { epoch, id, depth } => self.link.send_depth(epoch, id, depth),
+            Queued::Macro { index, value } => self.link.send_macro(index.get(), value),
+            Queued::NoteOn { key, velocity } => {
+                self.link.send_event(EventKind::NoteOn { key, velocity })
+            }
+            Queued::NoteOff { key } => self
+                .link
+                .send_event(EventKind::NoteOff { key, velocity: 0.0 }),
+        }
+    }
+
+    /// Send an audition event, or queue it. A note-on that does not fit the audition queue is refused
+    /// ([`SessionError::Busy`]); a note-off is always queued (never dropped).
+    fn send_audition(&mut self, event: Queued, audition_queue: usize) -> Result<(), SessionError> {
+        if self.queue.is_empty() && self.try_send(event).is_ok() {
+            return Ok(());
+        }
+        let notes = self.queue.iter().filter(|q| !q.is_value()).count();
+        if matches!(event, Queued::NoteOn { .. }) && notes >= audition_queue {
+            return Err(SessionError::Busy);
+        }
+        self.queue.push(event);
+        Ok(())
+    }
+
+    /// Move queued events into the ring, in order, while it has room. Returns how many moved.
+    fn flush(&mut self) -> usize {
+        let mut sent = 0;
+        while let Some(&event) = self.queue.first() {
+            if self.try_send(event).is_err() {
+                break;
+            }
+            self.queue.remove(0);
+            sent += 1;
+        }
+        sent
+    }
 }
 
 impl Session {
@@ -125,11 +185,34 @@ impl Session {
     ///    `link.epoch()`).
     ///
     /// The shell moves the returned engine to the audio thread; the previous engine, if any, is dropped by the shell
-    /// on the main thread. A second activate replaces the port (deactivate first is not required). Lane SK
-    /// implements it.
+    /// on the main thread. A second activate replaces the port (deactivate first is not required): audition notes
+    /// and queued events of the old engine go with it. The shell folds the host's values first
+    /// ([`Session::fold_host`]), so the engine starts from the patch the host sees, and records its own "last seen"
+    /// host values right after, so nothing is echoed. On error the session stays as it was (detached if it was).
     pub fn activate(&mut self, activation: Activation) -> Result<Engine, SessionError> {
-        let _ = activation;
-        Err(SessionError::unsupported("activate", "SK"))
+        let cfg = PrepareCfg::new(activation.sample_rate);
+        let (plan, map) = compile(&self.patch, &cfg)?;
+        let (mut engine, link) = Engine::with_link(plan, RENDER_SEED, self.config.link);
+        let tap = Tap::new(self.config.tap);
+        engine.attach_tap(Arc::clone(&tap));
+        engine.set_monitor_bypass(self.instance.monitor.fx_bypass);
+        self.host.memos.clear(); // a new engine starts its epochs at 0 again (the fold's memos are keyed by epoch)
+        self.telemetry_maps.clear();
+        self.telemetry_maps
+            .push(TelemetryMap::from_plan(engine.epoch(), engine.plan(), &map));
+        let source: Arc<dyn TelemetrySource> = tap;
+        self.telemetry = Some(source);
+        self.port = Some(Port {
+            link,
+            map,
+            activation,
+            compile_pending: false,
+            forget_slots: 0,
+            queue: Vec::with_capacity(self.config.value_queue + self.config.audition_queue),
+            next_audition_id: 0,
+            auditioned: false,
+        });
+        Ok(engine)
     }
 
     /// Drop the link, the plan map and the telemetry reader (plans still in the return ring are dropped here). The
@@ -146,43 +229,143 @@ impl Session {
     }
 
     /// Collect replaced plans, send a pending compile, flush queued events (see the [module docs](self)). Never
-    /// blocks. Detached, there is nothing to do. Lane SK implements the active case. Callers: every session entry
-    /// that can send (an edit, undo, redo, a load, a save, activate), once per editor frame, and the shell's
-    /// background "pump wanted" task while the editor is closed. It pushes no
-    /// [`ShellRequest`](crate::model::ShellRequest), so a pump on the main or a background thread has nothing to
-    /// forward.
+    /// blocks. Detached, there is nothing to do. Callers: every session entry that can send (an edit, undo, redo, a
+    /// load, a save, activate), once per editor frame, and the shell's background "pump wanted" task while the
+    /// editor is closed. It pushes no [`ShellRequest`](crate::model::ShellRequest), so a pump on the main or a
+    /// background thread has nothing to forward.
+    ///
+    /// A compile is sent only when fewer than [`MAX_PLANS_IN_FLIGHT`] plans are outstanding and the command ring has
+    /// room; the plan is compiled from the patch **as it is now** (I3), so queued value events are dropped (the plan
+    /// carries them) and audition events stay queued behind it.
     pub fn pump(&mut self) -> PumpReport {
-        PumpReport::default()
+        let mut report = PumpReport::default();
+        let Session {
+            port,
+            patch,
+            telemetry_maps,
+            last_error,
+            ..
+        } = self;
+        let Some(port) = port.as_mut() else {
+            return report;
+        };
+        report.collected = port.link.collect();
+        if port.compile_pending
+            && port.link.in_flight() < MAX_PLANS_IN_FLIGHT
+            && port.link.free_slots() > 0
+        {
+            match send_compiled(port, patch) {
+                Ok(Some((epoch, map))) => {
+                    telemetry_maps.push(map);
+                    if telemetry_maps.len() > TELEMETRY_MAPS {
+                        let excess = telemetry_maps.len() - TELEMETRY_MAPS;
+                        telemetry_maps.drain(..excess);
+                    }
+                    report.sent_plan = Some(epoch);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    // A valid patch always compiles; retrying every pump would not help. The next edit marks a
+                    // new compile.
+                    port.compile_pending = false;
+                    *last_error = Some(e);
+                }
+            }
+        }
+        report.flushed = port.flush();
+        report
     }
 
     /// Play an audition note: `NoteKey { port: AUDITION_PORT, channel: 0, key, note_id: fresh }`
-    /// ([`AUDITION_PORT`](crate::model::AUDITION_PORT)) through `Link::send_event(EventKind::NoteOn { .. })`. Refused while inactive ([`SessionError::Inactive`]), offline
-    /// ([`SessionError::Offline`]) or with a full queue ([`SessionError::Busy`]). Lane SK implements the active case.
+    /// ([`AUDITION_PORT`](crate::model::AUDITION_PORT)) through `Link::send_event(EventKind::NoteOn { .. })`, queued
+    /// behind earlier events when the ring is full. Refused while inactive ([`SessionError::Inactive`]), offline
+    /// ([`SessionError::Offline`]) or with a full audition queue ([`SessionError::Busy`]). `key` is clamped to
+    /// 0–127 and `velocity` to 0–1 (NaN is 0).
     pub fn audition_on(&mut self, key: u8, velocity: f32) -> Result<NoteKey, SessionError> {
-        let Some(port) = &self.port else {
+        let audition_queue = self.config.audition_queue;
+        let Some(port) = &mut self.port else {
             return Err(SessionError::Inactive);
         };
         if port.activation.offline {
             return Err(SessionError::Offline);
         }
-        let _ = (key, velocity);
-        Err(SessionError::unsupported("audition_on", "SK"))
+        let note = NoteKey {
+            port: AUDITION_PORT,
+            channel: 0,
+            key: i16::from(key.min(127)),
+            note_id: port.next_audition_id,
+        };
+        let velocity = if velocity.is_nan() {
+            0.0
+        } else {
+            velocity.clamp(0.0, 1.0)
+        };
+        port.send_audition(
+            Queued::NoteOn {
+                key: note,
+                velocity,
+            },
+            audition_queue,
+        )?;
+        // Note ids stay non-negative (−1 is the wildcard).
+        port.next_audition_id = port.next_audition_id.wrapping_add(1) & i32::MAX;
+        port.auditioned = true;
+        Ok(note)
     }
 
     /// Release an audition note (queued if the ring is full; never dropped).
     pub fn audition_off(&mut self, note: NoteKey) -> Result<(), SessionError> {
-        if self.port.is_none() {
+        let audition_queue = self.config.audition_queue;
+        let Some(port) = &mut self.port else {
             return Err(SessionError::Inactive);
-        }
-        let _ = note;
-        Err(SessionError::unsupported("audition_off", "SK"))
+        };
+        port.send_audition(Queued::NoteOff { key: note }, audition_queue)
     }
 
-    /// Release every audition note (a wildcard note-off on [`AUDITION_PORT`](crate::model::AUDITION_PORT)).
+    /// Release every audition note (a wildcard note-off on [`AUDITION_PORT`](crate::model::AUDITION_PORT)), if any
+    /// was played since the last release.
     pub fn audition_all_off(&mut self) -> Result<(), SessionError> {
-        if self.port.is_none() {
+        let audition_queue = self.config.audition_queue;
+        let Some(port) = &mut self.port else {
             return Err(SessionError::Inactive);
+        };
+        if !port.auditioned {
+            return Ok(());
         }
-        Err(SessionError::unsupported("audition_all_off", "SK"))
+        let all = NoteKey {
+            port: AUDITION_PORT,
+            channel: -1,
+            key: -1,
+            note_id: -1,
+        };
+        port.send_audition(Queued::NoteOff { key: all }, audition_queue)?;
+        port.auditioned = false;
+        Ok(())
+    }
+}
+
+/// Compile `patch` for the port's sample rate, mark it with the slots to forget, and send it. `Ok(None)` when the
+/// link refused it (the compile stays pending). On success the port takes the plan's map, the pending flags clear,
+/// and queued value events are dropped (the plan carries them); returns the epoch and the plan's telemetry map.
+fn send_compiled(
+    port: &mut Port,
+    patch: &Patch,
+) -> Result<Option<(u64, TelemetryMap)>, SessionError> {
+    let cfg = PrepareCfg::new(port.activation.sample_rate);
+    let (mut plan, map) = compile(patch, &cfg)?;
+    plan.forget_host_slots(port.forget_slots);
+    let next = port.link.epoch() + 1;
+    let telemetry = TelemetryMap::from_plan(next, &plan, &map);
+    match port.link.send_plan(plan) {
+        Ok(epoch) => {
+            debug_assert_eq!(epoch, next, "Link numbers plans consecutively");
+            port.map = map;
+            port.compile_pending = false;
+            port.forget_slots = 0;
+            port.queue.retain(|q| !q.is_value());
+            Ok(Some((epoch, telemetry)))
+        }
+        // The plan comes back and is dropped here, on the calling thread; the next pump compiles afresh.
+        Err(SendError::InFlight(_) | SendError::Full(_)) => Ok(None),
     }
 }

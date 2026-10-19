@@ -26,7 +26,8 @@ nice-plug-egui.workspace = true
 egui.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+# `raw_value`: the `patch` field carries `Patch::to_json()` verbatim (docs/session.md); no extra crates.
+serde_json = { workspace = true, features = ["raw_value"] }
 
 [dev-dependencies]
 insta.workspace = true

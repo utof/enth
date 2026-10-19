@@ -1,0 +1,77 @@
+# Plugin-level golden renders of enth-plugin (lane SK, docs/plugin.md; the harness is docs/spikes/test-host.md).
+#
+# `cargo xtask host-render --package enth-plugin` (and `scripts/gate.sh full`, which renders the default plugin) bundles
+# the plugin, loads the .clap through the test host (a real CLAP host on clack-host), renders each case offline and
+# compares the SHA-256 of the samples with `sha256`. The hash covers the interleaved little-endian f32 samples of the
+# stereo output, for ceil(duration * sample_rate / block) * block frames, with `process()` on one thread and no
+# display.
+#
+# These cases cover what only a plugin does: the 72 host parameters, the saved state and the CLAP lifecycle. That the
+# plugin renders exactly like the CLI is checked separately, case by case, against the engine's own goldens:
+# `enth-test-host cli-equal target/bundled/enth-plugin.clap --profile crates/enth-plugin/tests/cli-equal.profile.toml
+# --min-compared 60`.
+#
+# `enth-plugin.patch.json` is exactly `Patch::to_json()` of a patch with two oscillators into a filter with an LFO, a
+# reverb, a route from macro 1 to osc1's level (-60 %), slot 1 on filter1.cutoff and slot 2 on filter1.resonance. The
+# test host puts it into the plugin's persisted `patch` field before activation, as a host loading a project does;
+# the plugin saves it back byte for byte (`enth-test-host render --save-state F --check-roundtrip`).
+#
+# Notes script (tools/test-host/src/notes.rs): `key@start+duration[:velocity]` for a note, `name=value@seconds`
+# for a parameter change, `reset@seconds` for a host-side plugin reset; seconds from the start.
+#
+# A hash that changes is a change in the plugin's sound, its parameter or state handling, the engine, or the host.
+# Update it deliberately with `cargo xtask host-render --package enth-plugin --update` and say why in the commit.
+
+sample_rate = 48000
+block = 64
+duration = 2.0
+
+# A fresh instance: the init patch (one saw through the amp envelope), three held notes.
+[[case]]
+name = "chord"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+sha256 = "5463f1a1eedd4f7214c431b7b089240f0bed3378901726f793d92efde621648f"
+
+# The golden patch loaded as state before activation: the patch is the sound.
+[[case]]
+name = "state-patch"
+notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
+state = "enth-plugin.patch.json"
+sha256 = "3ca1c752bef0b8eafdc531da24f5f8214983449f88de174916835a9727115ab7"
+
+# Host automation of slot 1 (filter1.cutoff) and slot 2 (filter1.resonance), as `EventKind::Slot` resolved by the
+# engine through the running plan's slot table.
+[[case]]
+name = "slot-automation"
+notes = "C3@0+1.8:0.9, G3@0.5+1.2:0.7, Slot 1=0.15@0.6, Slot 2=0.6@0.9, Slot 1=0.85@1.2"
+state = "enth-plugin.patch.json"
+sha256 = "0ee357abb74d2c747bc896fdfef1a47871d87ad30ae1c1c945812ab43dcc3f68"
+
+# Host automation of macro 1, which the patch routes to osc1's level.
+[[case]]
+name = "macro-automation"
+notes = "C4@0+1.6:1.0, E4@0.3+1.0:0.6, Macro 1=0.9@0.4, Macro 1=0.2@1.0"
+state = "enth-plugin.patch.json"
+sha256 = "ec0392e5567e514744615483065e3e4f58c16988f39fbedabd56dbb55ea4bbe6"
+
+# Ten notes for eight voices (the patch's polyphony): voice stealing.
+[[case]]
+name = "voice-steal"
+notes = "C3@0+1, E3@0+1, G3@0+1, C4@0+1, E4@0+1, G4@0+1, C5@0+1, E5@0+1, G5@0.1+1, C6@0.2+1"
+state = "enth-plugin.patch.json"
+sha256 = "4ec7c058f4cede2f96ac20c2db0b76db41a70eb5baa487606d66102a01b182d9"
+
+# Parameters set from the command line (`--param`) before the first block, over the golden patch.
+[[case]]
+name = "cli-params"
+notes = "C4@0+1.5:0.8, G4@0+1.5:0.8"
+state = "enth-plugin.patch.json"
+params = ["Macro 1=0.5", "Slot 1=0.3"]
+sha256 = "d7dc0101c0c02396477dba693229712680976479002defa18e61942843cc0247"
+
+# The host calls the plugin's reset mid-note: held voices end, later notes sound.
+[[case]]
+name = "reset"
+notes = "C4@0+1.5, G4@0+1.5, reset@0.5, E4@0.8+0.5"
+state = "enth-plugin.patch.json"
+sha256 = "ff93c84087e5a35dc79d77b403f9fc6253e428257ce64aadb81da545ad247231"

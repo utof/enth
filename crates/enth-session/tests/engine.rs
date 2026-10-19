@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use enth_engine::{Engine, Event, EventKind, PrepareCfg, compile};
 use enth_patch::model::{ModuleInstance, Section};
 use enth_patch::{ModuleKind, Op, ParamAddr, Patch, Position};
-use enth_session::{Activation, HostValues, Session, SessionConfig, SessionError};
+use enth_session::{Activation, HostValues, Session, SessionConfig};
 
 use common::{addr, custom_patch, id};
 
@@ -95,26 +95,7 @@ fn assert_in_step(session: &Session, engine: &Engine, addrs: &[&str]) {
     }
 }
 
-/// When lane SK lands this test fails: that is the signal to run the rest of this file (see the module docs).
 #[test]
-fn lane_sk_has_not_landed_yet() {
-    let mut session = Session::default();
-    let Err(err) = session.activate(ACTIVATION) else {
-        panic!(
-            "lane SK landed: remove the #[ignore] attributes in tests/engine.rs, run them, and delete this test"
-        )
-    };
-    assert!(matches!(
-        err,
-        SessionError::Unsupported {
-            what: "activate",
-            lane: "SK"
-        }
-    ));
-}
-
-#[test]
-#[ignore = "needs lane SK"]
 fn undo_and_redo_reach_the_running_engine() {
     let (mut session, mut engine) = active(custom_patch());
     let start = value(&session, CUTOFF);
@@ -137,7 +118,6 @@ fn undo_and_redo_reach_the_running_engine() {
 }
 
 #[test]
-#[ignore = "needs lane SK"]
 fn a_structural_undo_and_redo_swap_plans_in_order_with_nothing_stale() {
     let (mut session, mut engine) = active(custom_patch());
     run(&mut engine, 4, &[]);
@@ -172,7 +152,6 @@ fn a_structural_undo_and_redo_swap_plans_in_order_with_nothing_stale() {
 }
 
 #[test]
-#[ignore = "needs lane SK"]
 fn a_drag_is_one_step_and_the_engine_follows_every_event_of_it() {
     let (mut session, mut engine) = active(custom_patch());
     let start = value(&session, CUTOFF);
@@ -202,7 +181,6 @@ fn a_drag_is_one_step_and_the_engine_follows_every_event_of_it() {
 /// blocks nor drops: values wait in a bounded queue, the overflow becomes a recompile, and when the audio thread
 /// comes back the engine ends where the patch is.
 #[test]
-#[ignore = "needs lane SK"]
 fn a_full_ring_never_blocks_and_never_drops() {
     for value_queue in [256, 2] {
         let mut config = SessionConfig::default();
@@ -259,7 +237,6 @@ fn a_full_ring_never_blocks_and_never_drops() {
 /// edits. The audio thread never takes a lock the session holds (it only owns the engine), so it keeps rendering:
 /// the block counter moves while the main thread works, and at the end both sides agree.
 #[test]
-#[ignore = "needs lane SK"]
 #[allow(
     clippy::disallowed_methods,
     reason = "a test thread stands in for the host's audio thread"
@@ -380,7 +357,6 @@ fn the_session_never_stops_the_audio_thread() {
 /// F1b review issue 4, end to end: after the host moved the slot away and back to `to_norm` of the value the plan
 /// holds, the patch ends on the exact value the engine plays.
 #[test]
-#[ignore = "needs lane SK"]
 fn a_host_returning_to_the_compiled_value_leaves_the_patch_on_what_the_engine_plays() {
     let probe = custom_patch();
     let spec = probe.spec(&addr(CUTOFF)).unwrap();
@@ -421,7 +397,6 @@ fn a_host_returning_to_the_compiled_value_leaves_the_patch_on_what_the_engine_pl
 /// must not survive: the new plan is compiled from the patch, so it holds the value the fold wrote. (`activate` has
 /// to drop `host.memos`; the fold's memo is keyed by epoch, and epoch 0 of the new engine equals epoch 0 of the old.)
 #[test]
-#[ignore = "needs lane SK"]
 fn a_reactivation_forgets_what_the_fold_remembered_about_the_old_engine() {
     let probe = custom_patch();
     let spec = probe.spec(&addr(CUTOFF)).unwrap();
@@ -464,7 +439,6 @@ fn a_reactivation_forgets_what_the_fold_remembered_about_the_old_engine() {
 
 /// Rescan requests follow the assignments through undo and redo, with a real engine behind the session.
 #[test]
-#[ignore = "needs lane SK"]
 fn undoing_a_slot_assignment_asks_the_shell_to_rename_and_the_engine_follows() {
     let (mut session, mut engine) = active(custom_patch());
     let _ = session.drain_requests().count();

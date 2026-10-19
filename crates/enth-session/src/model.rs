@@ -550,6 +550,10 @@ impl SessionError {
         }
     }
 
+    #[allow(
+        dead_code,
+        reason = "no stub is left once lane SK lands; the next one to appear uses it"
+    )]
     pub(crate) const fn unsupported(what: &'static str, lane: &'static str) -> Self {
         SessionError::Unsupported { what, lane }
     }

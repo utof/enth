@@ -30,6 +30,7 @@ if phase == "create" then
   safe(function()
     local track, fx = new_project_with_fx()
     if fx < 0 then return finish() end
+    inject_state(track, fx)
 
     -- (a) 72 plugin parameters; REAPER appends its own Bypass, Wet and Delta after them.
     local count = reaper.TrackFX_GetNumParams(track, fx)

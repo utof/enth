@@ -90,6 +90,7 @@ pub(crate) fn live_with(patch: Patch, config: SessionConfig) -> (Session, Engine
         forget_slots: 0,
         queue: Vec::new(),
         next_audition_id: 0,
+        auditioned: false,
     });
     (session, engine)
 }

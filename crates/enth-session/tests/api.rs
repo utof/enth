@@ -122,10 +122,10 @@ fn the_editor_traits_are_object_safe_and_implementable_elsewhere() {
     let mut session = Session::default();
     let views: Vec<Box<dyn SessionView>> = vec![Box::new(Session::default())];
     assert!(!views[0].history().can_undo());
-    // The real session's edit is lane SK's: until then it answers with a typed stub error.
-    let err = editor_frame(&mut session).unwrap_err();
-    assert_eq!(err.code(), "unsupported");
-    assert!(matches!(err, SessionError::Unsupported { lane: "SK", .. }));
+    // The real session edits through the same trait object (lane SK); detached, it changes the patch only.
+    let applied = editor_frame(&mut session).unwrap();
+    assert_eq!(applied.events, 0);
+    assert!(session.history().can_undo());
 }
 
 #[test]
@@ -162,20 +162,19 @@ fn the_stubs_answer_with_typed_errors() {
         sample_rate: 48_000.0,
         offline: false,
     };
-    let Err(err) = session.activate(activation) else {
-        panic!("activate is a stub until lane SK")
-    };
-    assert!(matches!(
-        err,
-        SessionError::Unsupported {
-            what: "activate",
-            lane: "SK"
-        }
-    ));
     assert_eq!(session.pump(), PumpReport::default());
+    // activate, the active pump, edit and audition are lane SK's (tests/link.rs).
+    let engine = session.activate(activation).expect("lane SK: activate");
+    assert!(session.is_active());
+    drop(engine);
+    session.deactivate();
     // Undo and redo are lane S2s's and implemented: with nothing recorded there is nothing to do.
     assert_eq!(session.undo(), Ok(false));
     assert_eq!(session.redo(), Ok(false));
+    let err = SessionError::Unsupported {
+        what: "a stub",
+        lane: "SK",
+    };
     assert_eq!(session.audition_on(60, 1.0), Err(SessionError::Inactive));
     assert_eq!(
         session.audition_off(NoteKey::new(60, 0)),

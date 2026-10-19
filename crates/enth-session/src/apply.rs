@@ -159,18 +159,25 @@ impl Session {
     }
 
     /// Apply `ops` as one recorded transaction and deliver it ([`delivery`]). See
-    /// [`crate::model::SessionEdit::edit`]. Lane SK implements it: pump first (collect), treat a `gesture` that is
-    /// not `self.gestures.open` as `None`, apply and record, clear `unloaded_patch` (the user now owns the init
-    /// patch), deliver (a recompile adds [`crate::bridge::slots_written`] to `Port::forget_slots`), push the host
-    /// writes ([`crate::bridge::host_updates`]; a `SetSlot`'s only if its plan was sent, see [`crate::link`]), and
-    /// pump again if a compile is left pending.
+    /// [`crate::model::SessionEdit::edit`].
     pub fn edit(
         &mut self,
         ops: Vec<Op>,
         gesture: Option<GestureId>,
     ) -> Result<Applied, SessionError> {
-        let _ = (ops, gesture);
-        Err(SessionError::unsupported("edit", "SK"))
+        self.pump();
+        let gesture = gesture.filter(|g| self.gestures.open == Some(*g));
+        if ops.is_empty() {
+            return Ok(Applied::default());
+        }
+        let before = self.patch.clone();
+        let delivered = ops.clone();
+        self.history
+            .edit(&mut self.patch, ops, gesture)
+            .map_err(SessionError::Edit)?;
+        self.unloaded_patch = None;
+        self.last_error = None;
+        Ok(self.deliver(&before, &delivered, gesture.is_some()))
     }
 
     /// Undo one step and deliver its inverse ops like an edit (it also clears `unloaded_patch`). Ends an open
