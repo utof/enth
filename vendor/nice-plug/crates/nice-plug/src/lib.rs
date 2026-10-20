@@ -82,6 +82,10 @@
 //! There's a whole lot more to discuss, but once you understand the above you should be able to
 //! figure out the rest by reading through the examples and the API documentation. Good luck!
 
+// Vendored fork, enth patch 10: with `--cfg enth_rtsan` (nightly, `cargo xtask rtsan` in enth) the CLAP
+// wrapper's `process()` is a RealtimeSanitizer real-time context, the wrapper's own event handling included.
+#![cfg_attr(enth_rtsan, feature(sanitize))]
+
 pub use nice_plug_core::*;
 
 /// Everything you'll need to use nice-plug. Import this with `use nice_plug::prelude::*;`.

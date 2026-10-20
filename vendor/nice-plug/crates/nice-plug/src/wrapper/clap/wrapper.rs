@@ -2035,6 +2035,10 @@ impl<P: ClapPlugin> Wrapper<P> {
         });
     }
 
+    // Enth patch 10: under `--cfg enth_rtsan` (RealtimeSanitizer, nightly) everything below is a
+    // real-time context: the event handling before `Plugin::process()` too, where parameter changes
+    // schedule GUI tasks (`schedule_gui()` -> `is_main_thread()`).
+    #[cfg_attr(enth_rtsan, sanitize(realtime = "nonblocking"))]
     unsafe extern "C" fn process(
         plugin: *const clap_plugin,
         process: *const clap_process,
