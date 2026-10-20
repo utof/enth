@@ -97,8 +97,9 @@ const USAGE: &str = "usage: cargo xtask <command>
   affected [--base <rev>]           the workspace crates a change touches, plus their dependants (one per line;
                                     the change is the working tree against the merge base with main; used by
                                     `scripts/gate.sh lane`)
-  bundle [<pkg>|--package <pkg>]... [--release] [...]
+  bundle [<pkg>|--package <pkg>]... [--release] [--universal] [...]
                                     build plugins and create .clap / .vst3 bundles in target/bundled
+                                    (--universal, macOS only: both Apple targets merged with lipo; release.yml)
   install [<pkg>|--package <pkg>]... [--release] [...]
                                     bundle, then copy to ~/.clap and ~/.vst3
   validate [--package <pkg>] [--release] [--no-build] [-- <clap-validator options>]

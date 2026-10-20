@@ -9,14 +9,41 @@ use std::path::{Path, PathBuf};
 
 use crate::plugin;
 
-/// `cargo xtask bundle [<pkg> | --package <pkg>]... [--release] [any other cargo build option]`. Without a
-/// package it bundles [`plugin::default_package`].
+/// `cargo xtask bundle [<pkg> | --package <pkg>]... [--release] [--universal] [any other cargo build option]`.
+/// Without a package it bundles [`plugin::default_package`]. `--universal` (macOS only) builds `x86_64-apple-darwin`
+/// and `aarch64-apple-darwin` and merges them with `lipo` (nice-plug-xtask's `bundle-universal`; `release.yml` uses
+/// it for the friend build); it cannot be combined with `--target`.
 pub fn bundle(args: &[String]) -> Result<(), String> {
     let (packages, rest) = packages_and_options(args)?;
-    let nice_plug_args = std::iter::once("bundle".to_owned())
+    let (universal, rest) = take_flag(rest, UNIVERSAL);
+    if universal && !cfg!(target_os = "macos") {
+        return Err(format!(
+            "{UNIVERSAL} is macOS only: it builds both Apple targets and merges them with lipo"
+        ));
+    }
+    let nice_plug_args = std::iter::once(bundle_command(universal).to_owned())
         .chain(packages.iter().flat_map(|p| ["-p".to_owned(), p.clone()]))
         .chain(rest);
     nice_plug_xtask::main_with_args("cargo xtask", nice_plug_args).map_err(|e| format!("{e:#}"))
+}
+
+/// The option that asks for a macOS universal bundle.
+const UNIVERSAL: &str = "--universal";
+
+/// The nice-plug-xtask command behind `bundle`: a plain build for this machine, or the universal macOS one.
+fn bundle_command(universal: bool) -> &'static str {
+    if universal {
+        "bundle-universal"
+    } else {
+        "bundle"
+    }
+}
+
+/// Takes every occurrence of `flag` out of `args`; the bool says whether there was one.
+fn take_flag(args: Vec<String>, flag: &str) -> (bool, Vec<String>) {
+    let before = args.len();
+    let rest: Vec<String> = args.into_iter().filter(|a| a != flag).collect();
+    (rest.len() != before, rest)
 }
 
 /// The packages named in `args` (a leading `<pkg>`, `--package` or `-p`), or the default one, and the remaining
@@ -116,5 +143,34 @@ pub fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
         Ok(())
     } else {
         std::fs::copy(source, target).map(|_| ()).map_err(fail)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strings(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn universal_comes_out_of_the_cargo_options_and_picks_the_universal_command() {
+        let (universal, rest) = take_flag(
+            strings(&["--release", "--universal", "--locked"]),
+            UNIVERSAL,
+        );
+        assert!(universal);
+        assert_eq!(rest, strings(&["--release", "--locked"]));
+        assert_eq!(bundle_command(universal), "bundle-universal");
+    }
+
+    #[test]
+    fn without_universal_the_options_are_untouched_and_the_command_is_bundle() {
+        let args = strings(&["--release", "--target", "x86_64-pc-windows-msvc"]);
+        let (universal, rest) = take_flag(args.clone(), UNIVERSAL);
+        assert!(!universal);
+        assert_eq!(rest, args);
+        assert_eq!(bundle_command(universal), "bundle");
     }
 }
