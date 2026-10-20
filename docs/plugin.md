@@ -182,7 +182,7 @@ A fresh instance plays **Init** (lane AM, R1/S1; `src/init.rs`): the starter pat
 | `Score` | `score_round(&round, &patch)` with the round kept from its `Prepare` (rebuilt from the job's challenge with `prepare_challenge` if the worker lost it) |
 | `Rings` | `score_structure(&round, &patch)` |
 | `Loudness` | the phrase rendered through the player's patch at 48 kHz and measured |
-| `Hint` | lane SN's coach: one `CoachTarget::for_round` per round, one `CoachPlan` per patch (levels 2–4 of an unchanged patch cost nothing), the hint's text only (`CoachHint`); the plan's verified fix is never shown. The evaluator is `enth_solver::Serial` (a parallel one needs `enth-analysis` in the plugin's dependencies) |
+| `Hint` | lane SN's coach: one `CoachTarget::for_round` per round, one `CoachPlan` per patch (levels 2–4 of an unchanged patch cost nothing), the hint's text only (`CoachHint`); the plan's verified fix is never shown. The evaluator is `hint_eval::Workers` (lane HINT, FU1; [below](#the-hint-evaluator-lane-hint-fu1)): `enth_solver::measure` on up to four scoped threads, results by job index, so a hint is the same for any worker count |
 
 **Loudness and gains.** Both sides of the A/B are measured with lane SS's `enth_challenge::loudness::integrated_lufs` on the 48 kHz render's mid channel (`game::integrated_lufs`); the session turns the two readings into gains with the scorer's own `gain_db` (`game::ab_gains`, P11), and the shell converts the dB values with `loudness::db_to_amp` on the thread that drained them. The louder side is turned down; the quieter one is never boosted.
 

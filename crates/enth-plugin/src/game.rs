@@ -58,7 +58,6 @@ use enth_session::game::{
     AbState, CoachHint, GameRequest, Job, JobId, JobKind, JobResult, Listen, Prepared, RoundId,
     RoundLogEntry,
 };
-use enth_solver::Serial;
 use enth_solver::coach::{CoachCfg, CoachPlan, CoachTarget};
 use parking_lot::{Condvar, Mutex};
 
@@ -375,6 +374,8 @@ pub struct Runner {
     /// Lane SN's coach for the round: its target measured once (`CoachTarget::for_round`), and the last patch's plan,
     /// so levels 2–4 of an unchanged patch cost nothing.
     coach: Option<Coach>,
+    /// The coach's evaluator (lane HINT, FU1): [`crate::hint_eval::Workers`], half the logical CPUs within 1 to 4.
+    eval: crate::hint_eval::Workers,
 }
 
 /// The coach's state for one round.
@@ -390,6 +391,7 @@ impl std::fmt::Debug for Runner {
         f.debug_struct("Runner")
             .field("round", &self.round.as_ref().map(|r| r.0))
             .field("coach", &self.coach.as_ref().map(|c| c.round))
+            .field("hint_workers", &self.eval.count())
             .finish()
     }
 }
@@ -402,6 +404,15 @@ fn failed(what: &str, e: impl std::fmt::Display) -> JobResult {
 }
 
 impl Runner {
+    /// A runner whose hints use `n` worker threads (tests and the latency measurement; the shell's default is
+    /// [`crate::hint_eval::hint_workers`] for the machine).
+    pub fn with_hint_workers(n: usize) -> Runner {
+        Runner {
+            eval: crate::hint_eval::Workers::new(n),
+            ..Runner::default()
+        }
+    }
+
     /// Run `job`. A `Prepare` also returns the target's loop, rendered at `host_rate` (the scored rate when 0).
     pub fn run(&mut self, job: Job, host_rate: u32) -> (JobResult, Option<Box<TargetLoop>>) {
         match job.kind {
@@ -527,9 +538,9 @@ impl Runner {
 
     /// Lane SN's coach at `level` for `patch` (docs/dsp/hints.md): the target measured once per round, one plan per
     /// patch, then that plan's hint at the level. Only the hint's text reaches the session (`CoachHint`); the plan's
-    /// verified fix holds exact values and is never shown. The evaluator is `enth_solver::Serial`: a parallel one
-    /// needs `enth-analysis`'s `Descriptors` in the plugin's dependencies (a coordinator edit); the job runs on the
-    /// worker either way, so the editor never waits for it.
+    /// verified fix holds exact values and is never shown. The renders go through [`crate::hint_eval::Workers`] (lane
+    /// HINT, FU1): parallel, results by job index, so the hint is the same for any worker count; the job runs on the
+    /// game worker either way, so the editor never waits for it.
     fn hint(
         &mut self,
         id: RoundId,
@@ -542,9 +553,9 @@ impl Runner {
             Err(e) => return e,
         };
         let cfg = CoachCfg::default();
-        let mut eval = Serial::default();
+        let eval = &mut self.eval;
         if self.coach.as_ref().is_none_or(|c| c.round != id) {
-            match CoachTarget::for_round(&round, &mut eval, &cfg) {
+            match CoachTarget::for_round(&round, eval, &cfg) {
                 Ok(target) => {
                     self.coach = Some(Coach {
                         round: id,
@@ -559,7 +570,7 @@ impl Runner {
             return failed("hints", "no coach");
         };
         if coach.plan.as_ref().is_none_or(|(p, _)| p != patch) {
-            match coach.target.plan(patch, &mut eval, &cfg) {
+            match coach.target.plan(patch, eval, &cfg) {
                 Ok(plan) => coach.plan = Some((patch.clone(), plan)),
                 Err(e) => return failed("the hint", e),
             }
@@ -1747,6 +1758,69 @@ mod tests {
             planned,
             "the same patch reuses its plan"
         );
+    }
+
+    /// Lane HINT (FU1): the hint job's parallel evaluator gives the same hints, every level, for one worker and for
+    /// several, on the start patch and on a patch the player moved (the coach's sensitivity batch and the solver's
+    /// probe batch both run in parallel).
+    #[test]
+    fn the_worker_count_never_changes_the_hint() {
+        let spec = SpecPreset::by_id(2).unwrap().spec(LATEST_GENERATOR, 11);
+        let id = round_id(5);
+        let hints = |workers: usize| {
+            let mut runner = Runner::with_hint_workers(workers);
+            let (result, _) = runner.run(
+                Job {
+                    id: JobId(1),
+                    round: id,
+                    kind: JobKind::Prepare { spec },
+                },
+                48_000,
+            );
+            let JobResult::Prepared(prepared) = result else {
+                panic!("{result:?}")
+            };
+            let challenge = Arc::new(prepared.challenge.clone());
+            let mut moved = prepared.start.clone();
+            if let Some(addr) = prepared.params.first() {
+                let spec = moved.spec(addr).unwrap();
+                let value = spec.from_norm((spec.to_norm(moved.value(addr).unwrap()) + 0.3) % 1.0);
+                enth_patch::apply(
+                    &mut moved,
+                    &enth_patch::Op::SetParam {
+                        addr: addr.clone(),
+                        value,
+                    },
+                )
+                .unwrap();
+            }
+            let mut out = Vec::new();
+            for patch in [&prepared.start, &moved] {
+                for level in 1..=4 {
+                    let (r, _) = runner.run(
+                        Job {
+                            id: JobId(2),
+                            round: id,
+                            kind: JobKind::Hint {
+                                challenge: Arc::clone(&challenge),
+                                target: Arc::new(prepared.target.clone()),
+                                patch: Box::new(patch.clone()),
+                                level,
+                            },
+                        },
+                        48_000,
+                    );
+                    let JobResult::Hint(h) = r else {
+                        panic!("{r:?}")
+                    };
+                    out.push(h);
+                }
+            }
+            out
+        };
+        let serial = hints(1);
+        assert_eq!(serial.len(), 8);
+        assert_eq!(hints(3), serial, "3 workers");
     }
 
     #[test]
