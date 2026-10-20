@@ -1,0 +1,377 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "ChangeOut": {
+      "additionalProperties": false,
+      "description": "One applied change, in words and real units.",
+      "properties": {
+        "from": {
+          "description": "The value before, in real units; absent when there was none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "means": {
+          "description": "For a route: what its depth does to the destination, in the destination's units, over the source's\nswing (an LFO swings both ways unless unipolar), and the range the percentage is of. A musical depth\n(`+12st`, `+1oct`) is stored as that percentage.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "The verb (`set`, `add`, `remove`, `move`, `route`, `unroute`, `enable`, `amp_env`, `macro`, `slot`, `label`,\n`meta`).",
+          "type": "string"
+        },
+        "target": {
+          "description": "What it changed: an address, a module id, a route `src -> dst`.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The value after, in real units; absent when there is none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "type": "object"
+    },
+    "FreeOut": {
+      "additionalProperties": false,
+      "description": "The parameters the search could move.",
+      "properties": {
+        "addrs": {
+          "description": "The addresses, in address order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "categorical": {
+          "description": "How many are categorical (a waveform, a mode, a switch: chosen per run).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "continuous": {
+          "description": "How many are continuous axes (searched by CMA-ES).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "count": {
+          "description": "How many parameters.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "how": {
+          "description": "How the set was chosen: `listed` (`--free` addresses and modules), `observable`, `drawn` (the parameters the\nrandomizer drew; a code target only) or `level N`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "how",
+        "count",
+        "continuous",
+        "categorical",
+        "addrs"
+      ],
+      "type": "object"
+    },
+    "MatchSettingsOut": {
+      "additionalProperties": false,
+      "description": "The settings of a search that shape its result.",
+      "properties": {
+        "budget": {
+          "description": "The most renders, the probe included. Hard.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_seconds": {
+          "description": "A wall-clock cap in seconds. With a cap the result depends on the machine's speed; without one it is\nidentical for any `--workers`.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "seed": {
+          "description": "The search seed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stop_at": {
+          "description": "Stop as soon as the distance is at or below this.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "budget",
+        "seed"
+      ],
+      "type": "object"
+    },
+    "MatchTargetOut": {
+      "additionalProperties": false,
+      "description": "What was matched.",
+      "properties": {
+        "fingerprint": {
+          "description": "For a code: the target's fingerprint (64 hex digits), so a log can tell drift from another target.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`code` (a challenge's target), `patch` or `wav`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The code, or the file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ScoreOut": {
+      "additionalProperties": false,
+      "description": "The three percentages of a round's score and its pass decision.",
+      "properties": {
+        "combined": {
+          "description": "Combined %: the challenge's weighted mix of the two.",
+          "format": "double",
+          "type": "number"
+        },
+        "pass_mark": {
+          "description": "The pass mark, in sound %.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "description": "Whether sound % is at or above the pass mark.",
+          "type": "boolean"
+        },
+        "sound": {
+          "description": "Sound %, 0 to 100: how close it sounds. It alone decides `passed`.",
+          "format": "double",
+          "type": "number"
+        },
+        "structure": {
+          "description": "Structure %, 0 to 100: how close the randomized parameters are.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sound",
+        "structure",
+        "combined",
+        "pass_mark",
+        "passed"
+      ],
+      "type": "object"
+    },
+    "TraceOut": {
+      "additionalProperties": false,
+      "description": "How the search went: the points where the best distance improved (thinned to a dozen), or every batch with\n`--full`.",
+      "properties": {
+        "batches": {
+          "description": "How many batches were evaluated.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "description": "The points, in order, ending at the last improvement.",
+          "items": {
+            "$ref": "#/$defs/TraceStepOut"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "batches",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "TraceStepOut": {
+      "additionalProperties": false,
+      "description": "One point of the search's progress.",
+      "properties": {
+        "best": {
+          "description": "The best distance so far.",
+          "format": "double",
+          "type": "number"
+        },
+        "renders": {
+          "description": "Renders used so far.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stage": {
+          "description": "`probe`, or `run N` (a CMA-ES run, counted from 0).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "renders",
+        "stage",
+        "best"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.match/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.match/1`: the best patch a search found for a target.\n\n`distance` is metric v1 (`logmel-l1/1`, ADR-0007) between the target and the best patch, both played with the\ntarget's performance: 0 is identical, around 0.06 is a pitch a few cents off, over 1 is a different sound.\n`score` is the game's own score of the best patch for a **code** target (the scorers the challenge names); for a\npatch or WAV target only the distance is defined. The output is identical for any `--workers`.",
+  "properties": {
+    "changes": {
+      "description": "What the best patch changes from the start, in real units.",
+      "items": {
+        "$ref": "#/$defs/ChangeOut"
+      },
+      "type": "array"
+    },
+    "distance": {
+      "description": "The best patch's distance to the target.",
+      "format": "double",
+      "type": "number"
+    },
+    "free": {
+      "$ref": "#/$defs/FreeOut",
+      "description": "The parameters that could move."
+    },
+    "heuristic_distance": {
+      "description": "The distance of the heuristic start (the descriptors' guess for envelope times, pitch and cutoff), when it\nchanged anything.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "hint": {
+      "description": "The next command to try.",
+      "type": "string"
+    },
+    "ops": {
+      "description": "The same changes as exact ops: `enth apply <start> --ops '<ops>'` writes the best patch.",
+      "items": true,
+      "type": "array"
+    },
+    "renders": {
+      "description": "Renders used, the probe included (at most the budget).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "runs": {
+      "description": "CMA-ES runs begun.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.match/1",
+      "description": "`enth.match/1`.",
+      "type": "string"
+    },
+    "score": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScoreOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The game's score of the best patch (a code target only)."
+    },
+    "settings": {
+      "$ref": "#/$defs/MatchSettingsOut",
+      "description": "The settings that shaped the result."
+    },
+    "start": {
+      "description": "Where the search started: `challenge start`, `init`, or the `--start` file.",
+      "type": "string"
+    },
+    "start_distance": {
+      "description": "The start patch's own distance (absent when the budget ended before it was measured).",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "start_score": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScoreOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The game's score of the start patch (a code target only)."
+    },
+    "stop": {
+      "description": "Why it ended: `goal` (`--stop-at` reached), `budget`, `time` (`--max-seconds`) or `exhausted` (nothing more\nto try).",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/MatchTargetOut",
+      "description": "What was matched."
+    },
+    "trace": {
+      "$ref": "#/$defs/TraceOut",
+      "description": "How the search went."
+    },
+    "wrote": {
+      "description": "The file the best patch was written to (`--out`); null when none was.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "target",
+    "start",
+    "free",
+    "distance",
+    "renders",
+    "runs",
+    "stop",
+    "settings",
+    "changes",
+    "ops",
+    "trace",
+    "hint"
+  ],
+  "title": "MatchOut",
+  "type": "object"
+}

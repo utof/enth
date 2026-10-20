@@ -99,6 +99,21 @@ exit: 0
       "name": "guide"
     },
     {
+      "describes": "the output of enth suggest",
+      "id": "enth.suggest/1",
+      "name": "suggest"
+    },
+    {
+      "describes": "the output of enth match",
+      "id": "enth.match/1",
+      "name": "match"
+    },
+    {
+      "describes": "the output of enth explain",
+      "id": "enth.explain/1",
+      "name": "explain"
+    },
+    {
       "describes": "the output of enth bench",
       "id": "enth.bench/1",
       "name": "bench"

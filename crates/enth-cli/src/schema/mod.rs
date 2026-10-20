@@ -5,12 +5,14 @@
 //! another version. There is no `jsonschema` crate: its default features build C code. The typed round trip in the
 //! tests keeps the schemas honest instead.
 
+pub mod game;
 pub mod types;
 
 use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::Value;
 
+pub use game::*;
 pub use types::*;
 
 /// The schema id of every object, `enth.<name>/<version>`. A shape change or a change of meaning bumps the
@@ -45,6 +47,12 @@ pub mod ids {
     pub const STEP: &str = "enth.step/2";
     /// `enth guide`.
     pub const GUIDE: &str = "enth.guide/1";
+    /// `enth suggest` (lane CL).
+    pub const SUGGEST: &str = "enth.suggest/1";
+    /// `enth match` (lane CL).
+    pub const MATCH: &str = "enth.match/1";
+    /// `enth explain` (lane CL).
+    pub const EXPLAIN: &str = "enth.explain/1";
     /// `enth bench`.
     pub const BENCH: &str = "enth.bench/1";
     /// Every error.
@@ -187,6 +195,24 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::GUIDE,
         describes: "the output of enth guide",
         generate: gen_schema::<GuideOut>,
+    },
+    Entry {
+        name: "suggest",
+        id: ids::SUGGEST,
+        describes: "the output of enth suggest",
+        generate: gen_schema::<SuggestOut>,
+    },
+    Entry {
+        name: "match",
+        id: ids::MATCH,
+        describes: "the output of enth match",
+        generate: gen_schema::<MatchOut>,
+    },
+    Entry {
+        name: "explain",
+        id: ids::EXPLAIN,
+        describes: "the output of enth explain",
+        generate: gen_schema::<ExplainOut>,
     },
     Entry {
         name: "bench",

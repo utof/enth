@@ -1,5 +1,5 @@
 //! **Owner: lane CL** (SKR may drop the `compare` and `challenge` rows first). The R1 commands lane S0r pre-declared
-//! (`compare`, `suggest`, `match`, `explain`, `challenge`): hidden from `--help`, and each answers `not_built_yet`
+//! that are still to come (`compare`, `challenge`; CL built `suggest`, `match` and `explain`): hidden from `--help`, and each answers `not_built_yet`
 //! (exit 2, `enth.error/1` with a hint) whatever follows it. The lane that builds a command (SKR, CL) removes its row
 //! here and gives it real tests.
 
@@ -8,7 +8,7 @@ mod common;
 use common::{round_trip, run};
 use enth_cli::schema::ErrorOut;
 
-const STUBS: [&str; 5] = ["compare", "suggest", "match", "explain", "challenge"];
+const STUBS: [&str; 2] = ["compare", "challenge"];
 
 #[test]
 fn every_r1_stub_answers_not_built_yet() {

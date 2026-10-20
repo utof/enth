@@ -1,0 +1,44 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 0
+--- stdout
+{
+  "hint": "add --patch <patch> to measure what it does in your patch; `enth params <kind>` lists units and ranges",
+  "kind": "svf",
+  "name": "Mode",
+  "param": {
+    "accepts": [
+      "lp",
+      "bp",
+      "hp",
+      "notch"
+    ],
+    "automatable": true,
+    "default": "lp",
+    "key": "mode",
+    "max": null,
+    "min": null,
+    "modulatable": false,
+    "moves": {
+      "feature": "spectrum.centroid_hz",
+      "meaning": "Average frequency of the sound's energy, weighted by magnitude (spectral centroid). Higher is brighter; a pure sine reads its own pitch"
+    },
+    "scale": "enum",
+    "tier": "basic",
+    "unit": "",
+    "values": [
+      "lp",
+      "bp",
+      "hp",
+      "notch"
+    ]
+  },
+  "schema": "enth.explain/1",
+  "subject": "filter1.mode",
+  "summary": "The filter response: lp, bp, hp or notch.",
+  "text": "filter1.mode (Mode) is a parameter of the filter (svf).\nThe filter response: lp, bp, hp or notch.\nA choice of lp, bp, hp, notch; the default is lp.\nIt mainly moves spectrum.centroid_hz: Average frequency of the sound's energy, weighted by magnitude (spectral centroid). Higher is brighter; a pure sine reads its own pitch.\nHost automation can drive it; routes cannot.",
+  "what": "param"
+}
+--- stderr

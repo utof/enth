@@ -6,6 +6,7 @@ mod common;
 pub(crate) mod compare;
 mod edit;
 pub(crate) mod explain;
+mod game;
 mod info;
 pub(crate) mod matching;
 mod sound;
@@ -172,8 +173,8 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
         } => sound::bench(patch.as_deref(), voices, seconds),
         Cmd::Compare(args) => compare::run(&args),
         Cmd::Suggest(args) => suggest::run(&args),
-        Cmd::Match(args) => matching::run(&args),
-        Cmd::Explain(args) => explain::run(&args),
+        Cmd::Match(args) => matching::run(&args, stdin),
+        Cmd::Explain(args) => explain::run(&args, stdin),
         Cmd::Challenge(args) => challenge::run(&args),
     }
 }
