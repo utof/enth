@@ -18,10 +18,10 @@ use std::path::{Path, PathBuf};
 use enth_challenge::model::DEFAULT_PASS_MARK;
 use enth_challenge::score::{ModuleStatus, ModuleTerm, ParamScore};
 use enth_challenge::{
-    Agreement, AssistsUsed, Category, Challenge, ChallengeCode, Closeness, CodeForm, Combined,
-    Component, ComponentKind, Direction, EngineVersion, Outcome, PhraseId, RandomSpec, RoundResult,
-    ScoreReport, ScorerId, ScoringSpec, SoundScore, SpecPreset, StructureScore, TargetPrefix,
-    Verdict,
+    Agreement, AssistsUsed, Category, Challenge, ChallengeCode, ChallengeMeta, Closeness, CodeForm,
+    Combined, Component, ComponentKind, Direction, EngineVersion, Outcome, PhraseId, RandomSpec,
+    RoundResult, ScoreReport, ScorerId, ScoringSpec, SoundScore, SpecPreset, StructureScore,
+    TargetPrefix, Verdict,
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,8 +63,10 @@ fn challenges() -> Vec<(&'static str, Challenge)> {
     assisted.assists.live_meter = true;
     assisted.assists.dim_unused = true;
     assisted.assists.hint_budget = Some(2);
-    assisted.meta.title = "Custom, with assists".to_owned();
-    assisted.meta.tags = vec!["fixture".to_owned(), "r1".to_owned()];
+    assisted.meta = ChallengeMeta {
+        title: "Custom, with assists".to_owned(),
+        tags: vec!["fixture".to_owned(), "r1".to_owned()],
+    };
     vec![
         ("level1", Challenge::recreate(level(1, 42), PhraseId(1))),
         (
