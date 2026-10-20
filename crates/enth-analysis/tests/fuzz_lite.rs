@@ -29,37 +29,86 @@ proptest! {
     #[test]
     fn items_round_trip_through_their_canonical_text(
         fi in 0usize..Feature::ALL.len(),
-        op in 0usize..7,
+        op in 0usize..9,
         v in -1000.0f64..20_000.0,
         w in 0.1f64..500.0,
     ) {
-        let f = Feature::ALL[fi];
-        let unit = f.unit().label();
-        let text = match (f, op) {
-            (Feature::Clipping, _) => format!("{} = {}", f.path(), if v > 0.0 { "true" } else { "false" }),
-            (Feature::Pitch, 4) => format!("pitch = A3 ± {:.1}ct", w.min(100.0)),
-            (Feature::Pitch, _) => format!("{} > {:.3}Hz", f.path(), v.abs() + 20.0),
-            (_, 0) => format!("{} < {v:.4}{unit}", f.path()),
-            (_, 1) => format!("{} >= {v:.4}{unit}", f.path()),
-            (_, 2) => format!("{} in [{v:.3}, {:.3}]", f.path(), v + w),
-            (_, 3) => format!("{} == null", f.aliases()[0]),
-            (_, 4) => format!("{} = {v:.3} ± {w:.3}", f.aliases()[0]),
-            (_, 5) => format!("{}~{v:.2}", f.aliases()[0]),
-            _ => format!("{} != null", f.path()),
-        };
-        let a = parse_item(&text).map_err(|e| TestCaseError::fail(format!("{text}: {e:?}")))?;
-        let b = parse_item(&a.canonical).map_err(|e| TestCaseError::fail(format!("{}: {e:?}", a.canonical)))?;
-        prop_assert_eq!(a.feature, b.feature);
-        prop_assert_eq!(a.canonical.clone(), b.canonical.clone());
-        let close = |x: f64, y: f64| x == y || (x - y).abs() <= 1e-8 * x.abs().max(y.abs()).max(1.0);
-        match (a.test, b.test) {
-            (Test::Within(p), Test::Within(q)) => {
-                prop_assert!(close(p.lo, q.lo) && close(p.hi, q.hi), "{} -> {}: {p:?} vs {q:?}", text, a.canonical);
-                prop_assert_eq!((p.lo_inclusive, p.hi_inclusive), (q.lo_inclusive, q.hi_inclusive));
-            }
-            (x, y) => prop_assert_eq!(x, y),
+        round_trip(&item_text(fi, op, v, w))?;
+    }
+}
+
+/// A grammatical item for feature `Feature::ALL[fi]`, form `op`, value `v` and width `w`.
+fn item_text(fi: usize, op: usize, v: f64, w: f64) -> String {
+    let f = Feature::ALL[fi];
+    let unit = f.unit().label();
+    // A pitch is a note or a positive frequency (docs/dsp/analysis.md, "Expectations"), for `pitch` and `tonal_pitch`
+    // alike (`Feature::is_pitch`). Only `pitch` was mapped to one, so the nightly of 2026-10-20 (run 39506542786)
+    // generated `tonal.f0_hz < 0.0000Hz`, which the parser rightly refuses.
+    let v = if f.is_pitch() { v.abs() + 20.0 } else { v };
+    match (f, op) {
+        (Feature::Clipping, _) => {
+            format!("{} = {}", f.path(), if v > 0.0 { "true" } else { "false" })
         }
-        prop_assert_eq!(a.reference_hz.map(f64::to_bits), b.reference_hz.map(f64::to_bits));
+        (f, 4) if f.is_pitch() => format!("{} = A3 ± {:.1}ct", f.aliases()[0], w.min(100.0)),
+        (_, 0) => format!("{} < {v:.4}{unit}", f.path()),
+        (_, 1) => format!("{} >= {v:.4}{unit}", f.path()),
+        (_, 2) => format!("{} in [{v:.3}, {:.3}]", f.path(), v + w),
+        (_, 3) => format!("{} == null", f.aliases()[0]),
+        (_, 4) => format!("{} = {v:.3} ± {w:.3}", f.aliases()[0]),
+        (_, 5) => format!("{}~{v:.2}", f.aliases()[0]),
+        (_, 7) => format!("{} > {v:.3}{unit}", f.path()),
+        (_, 8) => format!("{} <= {v:.4}", f.aliases()[0]),
+        _ => format!("{} != null", f.path()),
+    }
+}
+
+/// `text` parses, and its canonical text parses to the same item.
+fn round_trip(text: &str) -> Result<(), TestCaseError> {
+    let a = parse_item(text).map_err(|e| TestCaseError::fail(format!("{text}: {e:?}")))?;
+    let b = parse_item(&a.canonical)
+        .map_err(|e| TestCaseError::fail(format!("{}: {e:?}", a.canonical)))?;
+    prop_assert_eq!(a.feature, b.feature);
+    prop_assert_eq!(a.canonical.clone(), b.canonical.clone());
+    let close = |x: f64, y: f64| x == y || (x - y).abs() <= 1e-8 * x.abs().max(y.abs()).max(1.0);
+    match (a.test, b.test) {
+        (Test::Within(p), Test::Within(q)) => {
+            prop_assert!(
+                close(p.lo, q.lo) && close(p.hi, q.hi),
+                "{} -> {}: {p:?} vs {q:?}",
+                text,
+                a.canonical
+            );
+            prop_assert_eq!(
+                (p.lo_inclusive, p.hi_inclusive),
+                (q.lo_inclusive, q.hi_inclusive)
+            );
+        }
+        (x, y) => prop_assert_eq!(x, y),
+    }
+    prop_assert_eq!(
+        a.reference_hz.map(f64::to_bits),
+        b.reference_hz.map(f64::to_bits)
+    );
+    Ok(())
+}
+
+/// The nightly's minimal failing input (run 39506542786, `fi = 3, op = 0, v = 0.0, w = 0.1`: `tonal_pitch` below
+/// 0 Hz), and frequencies within 0.01 ct of a note, which printed as the note's name and parsed back as another item
+/// (13289.827 Hz as `G#9`: found by this property once pitch items took every form, `fi = 0, op = 0`).
+#[test]
+fn fixed_round_trip_regressions() {
+    assert_eq!(Feature::ALL[3], Feature::TonalPitch);
+    assert_eq!(item_text(3, 0, 0.0, 0.1), "tonal.f0_hz < 20.0000Hz");
+    for text in [
+        item_text(3, 0, 0.0, 0.1),
+        "pitch.f0_hz < 440.0010Hz".to_owned(),
+        item_text(0, 0, 13_269.827_008_841_49, 0.1),
+        "tonal.f0_hz in [439.999, 440.001]".to_owned(),
+        "tonal_pitch ~ 440.001".to_owned(),
+    ] {
+        if let Err(e) = round_trip(&text) {
+            panic!("{text}: {e}");
+        }
     }
 }
 

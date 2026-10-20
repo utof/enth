@@ -27,6 +27,9 @@ use serde::{Deserialize, Serialize};
 pub const PITCH_TOL_CT: f64 = 25.0;
 /// Default tolerance for `pitch.note = C3`: the same note (cents).
 pub const NOTE_TOL_CT: f64 = 50.0;
+/// The canonical text names a note only for a frequency this close to it (cents): the note itself, up to float
+/// noise, and well inside the 9 significant digits a frequency prints with.
+const NOTE_NAME_MAX_CT: f64 = 1e-6;
 
 /// What an item tests.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -257,7 +260,9 @@ pub fn parse_item(item: &str) -> Result<Expect, ExpectError> {
     let show = |v: f64| -> String {
         if feature.is_pitch() && v > 0.0 {
             let (name, c) = nearest_note(v);
-            if c.abs() < 0.01 {
+            // A note's name only for that note's frequency (to float noise, about 1e-12 ct), so the canonical text
+            // parses back to the same item: within 0.01 ct, 440.001 Hz printed as `A4` and came back as 440 Hz.
+            if c.abs() < NOTE_NAME_MAX_CT {
                 name
             } else {
                 format!("{}Hz", num(v))
@@ -854,6 +859,22 @@ mod tests {
         assert!(r.pass, "{r:?}");
         assert_eq!(r.results[0].unit, Unit::Cents);
         assert!((r.results[0].compared.unwrap() - 7.85).abs() < 0.1);
+    }
+
+    #[test]
+    fn a_frequency_near_a_note_keeps_its_digits() {
+        // 440.001 Hz is 0.004 ct above A4: printed as `A4` it parsed back as 440 Hz, another item (lane NTF, FU1).
+        let near = parse_item("pitch.f0_hz < 440.001Hz").unwrap();
+        assert_eq!(near.canonical, "pitch.f0_hz < 440.001Hz");
+        assert_eq!(parse_item(&near.canonical).unwrap().test, near.test);
+        // A note, written as a name or reached through its exact frequency, still prints as its name.
+        assert_eq!(
+            parse_item("tonal_pitch in [A3, 440Hz]").unwrap().canonical,
+            "tonal.f0_hz in [A3, A4]"
+        );
+        // A pitch is a positive frequency: the canonical text of a generated `< 0Hz` item never existed to parse.
+        let zero = parse_item("tonal.f0_hz < 0.0000Hz").unwrap_err();
+        assert_eq!(zero.code, "bad_expect");
     }
 
     #[test]
