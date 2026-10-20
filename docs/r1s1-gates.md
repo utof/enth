@@ -39,7 +39,7 @@ What is left of GR1: R1 (cut the friend build), R2–R4 (the rounds) and R5's ag
 | S1 | **Ten presets you'd actually use**: your four G1 sounds plus six you keep | **pending owner**. Ready: 22 candidates (`content/presets-candidates/`, each at or below −1.5 dBFS on a note and a four-note chord, macros Bright, Pluck, Space, Drive), `PICKS.md` and `cargo xtask preset-add --picks`; your G1 sounds become presets with `cargo xtask extract-presets`, which now names each after its track instead of "Init" (fixed by INT, below). The kick and snare candidates now carry the new `perc` type | PR (`6f16e44`), INT (`4334b36`, `af4c49b`) |
 | S2 | **clap-validator: no crash or allocation** | **passed** locally: 0.4.1, 36 passed, 0 failed, 8 skipped on the debug bundle (`assert_process_allocs` on) and the release bundle (built with `CARGO_BUILD_WARNINGS=deny`). **Pending owner** on Windows and macOS: each `release.yml` leg validates its own bundles on its first run | INT's runs on `r1s1/int`; FB (`release.yml`) |
 | S3 | **Steinberg's VST3 validator** | **passed**: 47 of 47, debug and release bundles, under Xvfb | INT's runs (the Phase 0 SDK 3.8.1 build) |
-| S4 | **The one-hour REAPER soak** (`cargo xtask reaper-soak --minutes 60`) | **passed once** on SOAK's branch (`08ebb00`, before the Recreate UI): 60.1 min, 4 instances, 62,192 notes, 822,944 parameter sets, 54 state loads, 11 churns, 60 editor cycles, no allocation abort, crash or hang, memory +1.7 MB/h (limit 5), threads 27 throughout. INT's run on the integrated tree: see "Gates on INT's branch" below | SOAK (`2c5afc7`; [plugin.md](plugin.md#soak)), INT |
+| S4 | **The one-hour REAPER soak** (`cargo xtask reaper-soak --minutes 60`) | **passed twice**, on two trees: SOAK's branch (`08ebb00`, before the Recreate UI: 60.1 min, 62,192 notes, 54 state loads, 60 editor cycles, +1.7 MB/h) and INT's integrated tree (`b2fe7ad`, every lane in: 60.1 min, 62,308 notes, 809,488 parameter sets, 54 state loads, 11 churns, 60 editor cycles, **+1.1 MB/h** against a limit of 5, threads 27 throughout). No allocation abort, crash, hang or mute in either. Not two runs in a row on one tree, as SOAK's acceptance asked; the second one is on the tree that ships | SOAK (`2c5afc7`; [plugin.md](plugin.md#soak)), INT |
 | S5 | **The leak gate**: editor open/close at most 26 KB per cycle with threads constant, instance churn flat | **passed**: see "Gates on INT's branch" (LK made the gate repeatable: one malloc arena, `Pss_Anon + SwapPss`; five consecutive passes at 12.86–13.71 KB per cycle, and injected leaks of 16 and 26 KB per open fail) | LK (`1c1ae0f`; [plugin.md](plugin.md#leak-gates)), INT |
 | S6 | **No allocation, lock or blocking call in `process()`**, RealtimeSanitizer (`cargo xtask rtsan`, new) | **passed**: the plugin and the test host built under RTSan (nightly 1.101.0, 2026-10-17); renders at host blocks 1, 64 and 4096, state-load swaps (crossfade and instant), parameter floods, a Recreate A/B, event bursts up to 4,096 and note ends: all clean; a deliberate allocation is caught (the positive control). Two findings: the test host's own output buffer grew inside `process()` (fixed), and in a host without CLAP's thread-check extension nice-plug allocates once per audio thread at the first voice-count change (REAPER and Bitwig have the extension; a fork patch for lane FK) | INT (`1a03f4e`; [plugin.md](plugin.md#realtimesanitizer-lane-int-r1s1)) |
 | S7 | **The editor still meets the UI thresholds** (automated tier, under Xvfb) | **passed**: 0 frames while idle with a scored round live, the drawer up and the rings drawn (`an_idle_editor_with_a_scored_round_asks_for_no_frames`; the exact-delay tests of P1b still hold); frame cost 9.70 M instructions at the worst case (maximum patch, live, spectrum; 9.41 M in a round), under the proposed 10 M; 26–28 live fps for the 1/60 s request (23 at the old 1/30 s); the leak gate (S5); the minimum window raised to 1200 × 800 (layout 1 needs it; small screens use the UI scale) | AM (`c6c4ff6`), PBU (`35aaa81`), RUI (`8b27977`; [editor.md](editor.md)) |
@@ -54,18 +54,22 @@ What is left of GS1: S1 (your pick and your four sounds), S8 (the real display),
 
 ### Gates on INT's branch
 
-Filled in at the end of the lane; each judged by its exit status.
+Each judged by its exit status, on `r1s1/int` at `b2fe7ad` (main `e47543f` merged), 2026-10-20.
 
 | Gate | Result |
 | --- | --- |
-| `scripts/gate.sh lane .` | see the lane report |
-| Full workspace tests | see the lane report |
-| `cargo xtask leak-test` | see the lane report |
-| `xvfb-run -a cargo xtask reaper-test --package enth-plugin` | see the lane report |
-| `cargo xtask reaper-soak --minutes 60` | see the lane report |
-| `cargo xtask validate` (debug, release) | exit 0: 36 passed, 0 failed, 8 skipped each |
-| Steinberg's VST3 validator | 47 of 47, debug and release |
-| `cargo xtask rtsan` | exit 0, 11 checks |
+| `scripts/gate.sh lane .` | **exit 0**: fmt, workspace clippy, layers, wasm-check, and the tests of all 19 workspace crates (the branch touches every one), **1,883 passed, 0 failed**, 933 s. So it is also the full workspace test run |
+| `cargo deny check bans licenses sources` | exit 0 |
+| `cargo xtask golden` | exit 0 (engine goldens unchanged) |
+| `cargo xtask golden --challenges` | exit 0: 25 cases, 0 failed, 0 stale (bits `e77917db…`) |
+| `cargo xtask host-render --package enth-plugin` | exit 0: 10 cases (debug bundle), cli-equal 63 of 63 equal, 10 skipped by design |
+| `cargo xtask validate` (debug; release built with `CARGO_BUILD_WARNINGS=deny`) | exit 0: 36 passed, 0 failed, 8 skipped each |
+| Steinberg's VST3 validator (SDK 3.8.1), under Xvfb | 47 of 47, debug and release |
+| `cargo xtask leak-test` | **exit 0**: editor 14.03 and 13.10 KB per cycle (limit 26; baseline 0.0), 3 threads after every close, 200 of 200 drawn, (200, 200) builds and `editor_closed`; churn 0.45 KB per cycle (0.01 in the second half), +0 threads, +0 descriptors |
+| `xvfb-run -a cargo xtask reaper-test --package enth-plugin` | **exit 0: 291 checks**, CLAP and VST3, every scenario green (`starter-project` and `patch-roundtrip` now check the extracted presets' names and metadata) |
+| `cargo xtask rtsan` | exit 0, 11 checks (the control caught, nine clean, one information) |
+| `cargo xtask reaper-soak --minutes 60` | **exit 0**: 60.1 min, debug bundle (allocation guard armed), 4 instances: 62,308 notes, 809,488 parameter sets (0 refused), 54 state loads, 11 churns, 60 editor cycles (60 drew and closed); no allocation abort, crash, hang or mute; every instance sounded in 59 of 59 minutes; anonymous memory 83 → 140 MB, **trend +1.1 MB/h** (limit 5); threads 27 throughout, descriptors 9 → 9; editor cycles +19 KB each (information) |
+| Cross-target clippy (`enth-plugin`, `xtask`; Windows and macOS targets, CI's command) | exit 0 both |
 
 ### Follow-ups found during the phase
 
