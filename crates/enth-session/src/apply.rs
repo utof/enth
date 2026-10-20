@@ -247,6 +247,7 @@ impl Session {
     /// - **Shell**: [`ShellRequest::RenameParams`] when the host-visible names or targets changed
     ///   ([`host_layout_changed`]), then the host writes, then [`ShellRequest::PatchEdited`].
     pub(crate) fn deliver(&mut self, before: &Patch, ops: &[Op], in_gesture: bool) -> Applied {
+        self.game_note_edit(before, ops, in_gesture); // a live Recreate round logs it (lane SG, crate::game)
         let mut applied = Applied::default();
         let mut plan_sent = true;
         if self.port.is_some() {

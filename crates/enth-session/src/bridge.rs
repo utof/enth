@@ -504,8 +504,9 @@ impl Session {
                 }
             };
             // A canonical in-range value on an existing target always applies; a failure leaves the patch as is.
-            if enth_patch::apply(&mut self.patch, op).is_ok() {
+            if enth_patch::apply(&mut self.patch, &op).is_ok() {
                 report.written += 1;
+                self.game_note_fold(&op); // a live Recreate round logs it (lane SG, crate::game)
                 if let (Some((addr, engine, written)), Some(epoch)) = (memo, epoch) {
                     self.host.note_fold(addr, engine, written, epoch);
                 }
