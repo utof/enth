@@ -231,3 +231,42 @@ fn a_live_round_snapshot() {
     h.run_steps(3);
     h.snapshot("recreate_round_live");
 }
+
+/// The click points `xtask/reaper/round.lua` uses (offsets into the plugin window, layout "lanes" at 1200 × 800): each
+/// lands on its control, so a layout change fails here before it fails in REAPER.
+#[test]
+fn reaper_points_hit_their_controls() {
+    const START: (f32, f32) = (640.0, 28.0);
+    const TARGET: (f32, f32) = (510.0, 28.0);
+    const MINE: (f32, f32) = (576.0, 28.0);
+    const ROUND: (f32, f32) = (636.0, 28.0);
+    const SUBMIT: (f32, f32) = (640.0, 61.0);
+    const END: (f32, f32) = (640.0, 145.0);
+    const RATE: (f32, f32) = (624.0, 28.0);
+    const SKIP: (f32, f32) = (650.0, 218.0);
+    let hits = |h: &Harness<'_, App>, label: &str, (x, y): (f32, f32)| {
+        let rect = h.get_by_label(label).rect();
+        assert!(
+            rect.contains(egui::pos2(x, y)),
+            "{label} is at {rect:?}, not under ({x}, {y}): update round.lua's POINTS and these"
+        );
+    };
+    let mut h = harness();
+    h.run_steps(2);
+    hits(&h, "Start", START);
+    h.get_by_label("Start").click();
+    h.run_steps(3);
+    hits(&h, "Target ▶", TARGET);
+    hits(&h, "Mine ▶", MINE);
+    hits(&h, "Round", ROUND);
+    h.get_by_label("Round").click();
+    h.run_steps(2);
+    hits(&h, "Submit", SUBMIT);
+    hits(&h, "End", END);
+    h.get_by_label("Submit").click();
+    h.run_steps(3);
+    hits(&h, "Rate yours", RATE);
+    h.get_by_label("Rate yours").click();
+    h.run_steps(2);
+    hits(&h, "Skip", SKIP);
+}

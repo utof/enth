@@ -5,7 +5,7 @@
 //!
 //! What is checked: start → the target prepared on the worker → Target ▶ plays exactly the scored render of the
 //! target (`enth render` of the target with its phrase at 48 kHz) → Mine ▶ plays the phrase live through the
-//! player's patch at the same position → a stub-scored submit that does not pass → the target rebuilt by edits → a
+//! player's patch at the same position → a scored submit that does not pass → the target rebuilt by edits → a
 //! passing submit → End restores the player's patch, the round log has the round's line, and every drain marked the
 //! project dirty at most once. A plugin that never starts a round renders as before (the in-process host tests,
 //! `host-render` and `cli-equal` cover that bit for bit).
@@ -280,7 +280,7 @@ fn a_full_round_through_the_real_plugin_with_the_worker_and_real_jobs() {
     host.frame(|s| s.game_listen(Listen::Off).unwrap());
     let _ = host.render(SR as usize, 512);
 
-    // A stub-scored submit of the start patch: recorded, not passed (level 1's start is audibly away).
+    // A scored submit of the start patch: recorded, not passed (level 1's start is audibly away).
     let dirty_before = host.dirty();
     host.frame(|s| s.game_submit().unwrap());
     host.until("the first score", |s| {
@@ -289,7 +289,11 @@ fn a_full_round_through_the_real_plugin_with_the_worker_and_real_jobs() {
     let first = host.frame(|s| s.round().unwrap());
     assert_eq!(first.phase, Phase::Submitted, "{first:?}");
     let report = first.report.clone().unwrap();
-    assert_eq!(report.sound.scorer.to_string(), "sound-stub/1");
+    assert_eq!(
+        report.sound.scorer,
+        round.challenge().scoring.sound,
+        "scored by the scorer the challenge names (sound/1 since lane SS)"
+    );
     assert!(!report.passed);
     assert!(
         host.dirty() > dirty_before,

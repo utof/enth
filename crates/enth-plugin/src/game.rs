@@ -26,10 +26,10 @@
 //! `enth_challenge::model::SCORING_SAMPLE_RATE`); at another rate the worker renders the same patch and phrase at the
 //! host's rate (the engine's output differs only by the rate), and re-renders when the rate changes mid-round.
 //!
-//! **Loudness** (`Prepared::target_lufs`, Mine's `Loudness` job): ITU-R BS.1770-4 integrated loudness of the phrase
-//! rendered at the scored rate ([`integrated_lufs`]). Provisional: lane SS writes the shared, `libm`-only
-//! `enth_challenge::loudness` (P11: the A/B level match and the scorer share one gain function); swap
-//! [`integrated_lufs`]'s body for it when it lands. Both sides are measured by the same function either way.
+//! **Loudness** (`Prepared::target_lufs`, Mine's `Loudness` job): lane SS's in-house BS.1770 loudness
+//! (`enth_challenge::loudness::integrated_lufs`, `libm` only) of the phrase rendered at the scored rate, on the mid
+//! channel ([`integrated_lufs`]); the session turns both readings into the A/B gains with the scorer's own
+//! `gain_db` (P11: the level match and the scorer share one gain function).
 //!
 //! **The round log** is JSONL, one [`RoundLogEntry`] per line (`enth.round-log/1`, lane GK's exporter reads it),
 //! appended after unlocking on the thread that drained it (never the audio thread): `$ENTH_ROUNDS_DIR/round-log.jsonl`
@@ -316,10 +316,11 @@ impl Default for AbShared {
     }
 }
 
-/// dB (≤ 0; the session never boosts) to a linear factor in 0..=1; a value that is not finite is 0 dB.
+/// dB (≤ 0; the session never boosts) to a linear factor in 0..=1 (`enth_challenge::loudness::db_to_amp`, the
+/// scorer's own conversion); a value that is not finite is 0 dB.
 fn gain(db: f32) -> f32 {
     if db.is_finite() {
-        nice_plug::util::db_to_gain(db.min(0.0))
+        enth_challenge::loudness::db_to_amp(f64::from(db.min(0.0))) as f32
     } else {
         1.0
     }
@@ -575,72 +576,12 @@ fn render_phrase(
     )
 }
 
-/// ITU-R BS.1770-4 integrated loudness (LUFS) of a stereo render at the scored rate: the 48 kHz K-weighting filters
-/// of the standard's tables, 400 ms blocks with 75 % overlap, the −70 LUFS absolute and −10 LU relative gates.
-/// `None` for silence (no block above the absolute gate), a render shorter than one block, or another rate.
-///
-/// Provisional (see the module docs): lane SS's `enth_challenge::loudness` replaces this body.
+/// The integrated loudness (LUFS) of a render, the way the sound scorer measures it (P11): lane SS's in-house
+/// BS.1770 loudness, `enth_challenge::loudness::integrated_lufs`, on the mid channel `(L + R) / 2`. Both sides of the
+/// A/B are 48 kHz renders (`SCORING_SAMPLE_RATE`), and the session turns the two readings into gains with the shared
+/// `enth_challenge::loudness::gain_db` (`game::ab_gains`). `None` for silence.
 pub fn integrated_lufs(out: &RenderOutput) -> Option<f32> {
-    if out.sample_rate != 48_000 {
-        return None;
-    }
-    let n = out.left.len().min(out.right.len());
-    let block = 19_200; // 400 ms at 48 kHz
-    let hop = 4_800; // 100 ms
-    if n < block {
-        return None;
-    }
-    // K-weighting at 48 kHz (BS.1770-4, tables 1 and 2): the head's high shelf, then the RLB high-pass.
-    let shelf = (
-        [1.53512485958697, -2.69169618940638, 1.19839281085285],
-        [-1.69065929318241, 0.73248077421585],
-    );
-    let rlb = ([1.0, -2.0, 1.0], [-1.99004745483398, 0.99007225036621]);
-    let weighted = |x: &[f32]| -> Vec<f64> {
-        let mut s = [0.0f64; 4];
-        let mut r = [0.0f64; 4];
-        x[..n]
-            .iter()
-            .map(|&v| {
-                let v = f64::from(v);
-                let y = shelf.0[0] * v + shelf.0[1] * s[0] + shelf.0[2] * s[1]
-                    - shelf.1[0] * s[2]
-                    - shelf.1[1] * s[3];
-                s = [v, s[0], y, s[2]];
-                let z = rlb.0[0] * y + rlb.0[1] * r[0] + rlb.0[2] * r[1]
-                    - rlb.1[0] * r[2]
-                    - rlb.1[1] * r[3];
-                r = [y, r[0], z, r[2]];
-                z * z
-            })
-            .collect()
-    };
-    let (l, r) = (weighted(&out.left), weighted(&out.right));
-    // Prefix sums of the channel sum, so each block's mean square is one subtraction.
-    let mut prefix = Vec::with_capacity(n + 1);
-    prefix.push(0.0f64);
-    let mut acc = 0.0f64;
-    for i in 0..n {
-        acc += l[i] + r[i];
-        prefix.push(acc);
-    }
-    let blocks: Vec<f64> = (0..=(n - block) / hop)
-        .map(|j| (prefix[j * hop + block] - prefix[j * hop]) / block as f64)
-        .collect();
-    let loudness = |z: f64| -0.691 + f64::from(nice_plug::util::gain_to_db(z.sqrt() as f32));
-    let above = |gate: f64| -> (f64, usize) {
-        blocks
-            .iter()
-            .filter(|&&z| z > 0.0 && loudness(z) > gate)
-            .fold((0.0, 0), |(s, c), &z| (s + z, c + 1))
-    };
-    let (sum, count) = above(-70.0);
-    if count == 0 {
-        return None;
-    }
-    let relative = loudness(sum / count as f64) - 10.0;
-    let (sum, count) = above(relative.max(-70.0));
-    (count > 0).then(|| loudness(sum / count as f64) as f32)
+    enth_challenge::loudness::integrated_lufs(&out.mid(), out.sample_rate).map(|l| l as f32)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1594,32 +1535,31 @@ mod tests {
     }
 
     #[test]
-    fn the_loudness_of_a_full_scale_997_hz_sine_in_one_channel_is_minus_3_01_lufs() {
-        // BS.1770-4's calibration: 0 dBFS at 997 Hz in the left channel reads −3.01 LUFS.
+    fn the_loudness_is_the_scorers_on_the_mid_channel() {
+        // BS.1770's calibration: a 0 dBFS sine at 997 Hz reads -3.01 LUFS; here it is in both channels, so the mid
+        // channel holds it at full scale.
         let n = 48_000 * 3;
-        let left: Vec<f32> = (0..n)
+        let sine: Vec<f32> = (0..n)
             .map(|i| sine(2.0 * std::f64::consts::PI * 997.0 * i as f64 / 48_000.0) as f32)
             .collect();
         let out = RenderOutput {
             sample_rate: 48_000,
-            right: vec![0.0; n],
-            left,
+            left: sine.clone(),
+            right: sine,
             stats: enth_render::RenderStats::default(),
         };
         let lufs = integrated_lufs(&out).unwrap();
         assert!((lufs + 3.01).abs() < 0.02, "{lufs}");
+        assert_eq!(
+            Some(lufs),
+            enth_challenge::loudness::integrated_lufs(&out.mid(), 48_000).map(|l| l as f32)
+        );
         let silent = RenderOutput {
             left: vec![0.0; n],
             right: vec![0.0; n],
-            ..out.clone()
-        };
-        assert_eq!(integrated_lufs(&silent), None);
-        let short = RenderOutput {
-            left: vec![0.5; 100],
-            right: vec![0.5; 100],
             ..out
         };
-        assert_eq!(integrated_lufs(&short), None);
+        assert_eq!(integrated_lufs(&silent), None);
     }
 
     fn level1(seed: u64) -> enth_challenge::RandomSpec {
