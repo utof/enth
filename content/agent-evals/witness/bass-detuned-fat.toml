@@ -1,0 +1,13 @@
+# Hand-picked solution for the goal of the same name: what `cargo xtask agent-eval --dry-run` replays as its scripted
+# fake agent, and the proof that the goal's expectation list is reachable with the current engine. SPOILER: this is
+# the answer; the agent under test never sees this directory (it runs in an empty temp dir with only an `enth`
+# wrapper). `{perf}` and `{expect}` are filled in from the goal (or from self_expect on the self-written track).
+schema = "enth.agent-eval-witness/1"
+id = "bass-detuned-fat"
+self_expect = "pitch.note ~ E2, beating in [0.3Hz, 3Hz], brightness < 1.5kHz, sustain > -6dB"
+
+[[step]]
+args = ["new", "--template", "init", "--out", "sound.patch.json"]
+
+[[step]]
+args = ["step", "sound.patch.json", "--ops", '[{"add":"osc","id":"osc2","params":{"wave":"saw","fine":"11ct"}},{"set":"osc1.fine","to":"-11ct"},{"add":"svf","at":"voice_fx[0]","params":{"mode":"lp","cutoff":"1.2kHz","resonance":"10%"}},{"set":"env1.attack","to":"3ms"},{"set":"env1.sustain","to":"90%"},{"set":"env1.release","to":"150ms"},{"set":"master.level","to":"-6dB"}]', "--perf", "{perf}", "--expect", "{expect}"]

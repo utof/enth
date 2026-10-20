@@ -26,6 +26,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [session.md](session.md) | `enth-session` (L6): the one `Session` that owns the live patch, its API, the threading contract, plan delivery, the host bridge, undo and the saved state |
 | [editor.md](editor.md) | The plugin editor (`enth-ui` `editor::Editor`): how it binds to the session, layouts as data (`ENTH_LAYOUT`, layout 1 "lanes"), the right-click menu, the dev window, and how to add a layout |
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
+| [agent-evals.md](agent-evals.md) | The agent eval set (30 text goals, eval version 3): families, witnesses, the audit (`cargo xtask agent-eval audit`), the paid-run cost, and the analysis findings it surfaced |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
 | [phase-1a.md](phase-1a.md) | The P1a (headless core) lanes: freezes, waves, ownership, acceptance, owner gates (done; the actual hours are recorded there) |
 | [phase-2.md](phase-2.md) | **Start here when coding.** The R1 + S1 (Recreate and Instrument 0.1) lanes: freezes, waves, ownership, acceptance, owner gates, the test strategy for the game logic |
