@@ -273,7 +273,7 @@ pub struct TargetContext<'a> {
 | `submits` | how many times the player submitted |
 | `time_to_pass_ms` | editor-visible time to the first passing submit; `null` without a pass |
 | `active_ms` | editor-visible time of the whole round |
-| `assists` | `AssistsUsed`: `hints` revealed, `live_meter`, `revealed`; `any()` marks the round as assisted |
+| `assists` | `AssistsUsed`: `hints` revealed, `live_meter`, `revealed`, `dim_unused` (the `dim_unused` assist was on at any time while the round could be played; lane HINT, FU1); `any()` marks the round as assisted. `dim_unused` is additive: written only when true, so a round without it keeps its bytes, and a result written before it existed reads with it false |
 | `agreement` | the player's vote: `too_low`, `about_right`, `too_high`, or `null` (a newer build's value reads as `unknown`) |
 | `rating` | the player's **blind rating** of the first submit, 1–5, given before its score showed (ADR-0007's note, review point (a); F1r review S9), or `null`: GR1 refits the curve with it |
 
@@ -286,7 +286,7 @@ Reading one refuses a pass without a time (and a time without a pass; not checke
 | Challenge | `enth.challenge/1` | `challenge/v1/{level1,level5,custom}.json` |
 | Code | code v1 (in the first symbol) | `code/v1/codes.json`: ten specs, both forms, every preset; **frozen**: a promise to every player who has a code. Its SHA-256 is pinned (`code_v1_fixture_bytes_are_pinned`) and the regenerate test writes it only when it is missing. Re-frozen once, at the F1r review, before any code was shared (the GF(32) check, 53-bit seeds, template 0) |
 | Score report | `enth.score-report/1` | `score/v1/report.json` (with the S6 fields: answer addresses, directions, a moved-but-not-randomized row, the harmonics and sustain kinds, the engine) |
-| Round result | `enth.round-result/1` | `round/v1/{passed,gave-up}.json` |
+| Round result | `enth.round-result/1` | `round/v1/{passed,gave-up,dimmed}.json` (`passed` and `gave-up` predate `dim_unused` and keep their bytes; `dimmed` is a round assisted by the dimming alone) |
 
 `tests/fixtures.rs` checks that each fixture is what this build writes and that it reads back to its case (the challenge fixtures pin the v1 scorer ids, whatever this build's default is). A format change on purpose adds `v<N+1>/` beside the old fixtures (kept as migration inputs) and regenerates the current ones with `cargo test -p enth-challenge --test fixtures -- --ignored regenerate`; read the diff.
 
