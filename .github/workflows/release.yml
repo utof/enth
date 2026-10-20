@@ -1,0 +1,400 @@
+name: release
+
+# Friend and release builds (lane FB; research report 04 of the R1/S1 session; docs/distribution.md says how to run this and
+# what to hand to friends). It runs ONLY on a version tag (`v*`) or by hand (Actions > release > Run workflow), NEVER on
+# a push to main: this repository is private, a macOS minute costs ten times a Linux one ($0.062 against $0.006), and one
+# full run is about $1 to $1.8 (the estimates are in docs/distribution.md; the first run replaces them with numbers).
+#
+# Three legs, each a native build on its own OS, each: clap-validator 0.4.1 on the DEBUG bundle (nice-plug's
+# assert_process_allocs aborts the validator's process() calls on any allocation), then the RELEASE CLAP + VST3
+# bundles, clap-validator once more on the release bundle (the file that ships), and one zip uploaded as an artefact.
+#   linux    ubuntu-24.04    x86-64.   `cargo xtask validate` is the existing pinned validator (Linux x86-64 only).
+#   windows  windows-latest  x86-64 MSVC with a static C runtime (-C target-feature=+crt-static), so a clean Windows
+#                            without the Visual C++ redistributable loads it; the step "no Visual C++ runtime" checks.
+#   macos    macos-latest    arm64 runner (macOS 26); one UNIVERSAL bundle (x86-64 + arm64, `cargo xtask bundle
+#                            --universal` = nice-plug-xtask's bundle-universal, lipo), ad-hoc signed (`codesign -s -`).
+# The two non-Linux validators are the 0.4.1 release assets, pinned by SHA-256 (the digests are the ones GitHub lists for
+# the assets; the Linux asset's digest equals the pin in xtask/src/validate.rs). No signing certificate exists: friends
+# unzip, and on macOS clear the quarantine flag (docs/friends-install.md).
+#
+# Artefacts: one zip per OS, uploaded as-is (archive: false, so there is no zip inside a zip), kept for 14 days. Nothing is
+# published and no release is created (permissions stay read-only); the owner downloads the zips and forwards them.
+# `CARGO_BUILD_WARNINGS` is not set here, unlike ci.yml: ci.yml's per-push cross-target guard already fails a warning in
+# our code, and a new linker warning on a runner image (macOS 26's ld warns when a C object is built for a newer macOS
+# than the one linked) must not block a friend build.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      linux:
+        description: "Build the Linux x86-64 leg (about $0.07)"
+        type: boolean
+        default: true
+      windows:
+        description: "Build the Windows x86-64 leg (about $0.2)"
+        type: boolean
+        default: true
+      macos:
+        description: "Build the macOS universal leg (about $1.4, most of the cost)"
+        type: boolean
+        default: true
+      validate:
+        description: "Run clap-validator (turn off only to get a build while a validator problem is investigated)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  linux:
+    name: Linux x86-64 (CLAP + VST3)
+    if: github.event_name == 'push' || inputs.linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A tag's name is chosen by a person: reduce it to file-name characters before it reaches a path.
+      - name: Name the build
+        id: name
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=$GITHUB_REF_NAME; else version="dev-${GITHUB_SHA::7}"; fi
+          echo "version=${version//[^A-Za-z0-9._-]/_}" >> "$GITHUB_OUTPUT"
+
+      - name: Install the toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustc --version
+          # AGENTS.md: never 1.99.0, which miscompiles x86-64 FFI bool returns; the runner images ship it.
+          if rustc --version | grep -q ' 1\.99\.0 '; then echo "::error::rustc 1.99.0 is banned (AGENTS.md)"; exit 1; fi
+
+      # The same list as ci.yml's plugin jobs.
+      - name: System libraries for plugin, GUI and audio crates
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config \
+            libasound2-dev libgl-dev libjack-jackd2-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-linux   # a tag run reads main's caches but cannot write one; a run by hand on main does
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Debug and release bundles share target/bundled, so the debug one is validated first and the release one built after.
+      - name: clap-validator on the debug bundle
+        if: github.event_name == 'push' || inputs.validate
+        run: cargo xtask validate --package enth-plugin
+
+      - name: Release bundles (CLAP + VST3)
+        run: |
+          rm -rf target/bundled
+          cargo xtask bundle --package enth-plugin --release --locked
+
+      - name: clap-validator on the release bundle
+        if: github.event_name == 'push' || inputs.validate
+        run: cargo xtask validate --package enth-plugin --release --no-build
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+        run: |
+          name="enth-${VERSION}-linux-x86_64"
+          mkdir -p "stage/${name}"
+          cp -R target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3 "stage/${name}/"
+          cp docs/friends-install.md "stage/${name}/INSTALL.md"
+          cp LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
+          (cd stage && zip -q -r -y -X "../${name}.zip" "${name}")
+          unzip -l "${name}.zip"
+          {
+            echo "### ${name}.zip"
+            echo
+            echo "- size: $(du -h "${name}.zip" | cut -f1)"
+            echo "- sha256: \`$(sha256sum "${name}.zip" | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: enth-${{ steps.name.outputs.version }}-linux-x86_64.zip
+          archive: false   # the file is already a zip; the artefact is named after it
+          retention-days: 14
+          if-no-files-found: error
+
+  windows:
+    name: Windows x86-64 (MSVC, static runtime)
+    if: github.event_name == 'push' || inputs.windows
+    runs-on: windows-latest
+    timeout-minutes: 50
+    env:
+      # Statically link the C runtime: no vcruntime140.dll / msvcp140.dll imports. It also reaches build scripts and
+      # proc macros (no --target is given), which MSVC links the same way.
+      RUSTFLAGS: -C target-feature=+crt-static
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the build
+        id: name
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=$GITHUB_REF_NAME; else version="dev-${GITHUB_SHA::7}"; fi
+          echo "version=${version//[^A-Za-z0-9._-]/_}" >> "$GITHUB_OUTPUT"
+
+      - name: Install the toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustc --version
+          if rustc --version | grep -q ' 1\.99\.0 '; then echo "::error::rustc 1.99.0 is banned (AGENTS.md)"; exit 1; fi
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # `cargo xtask validate` is Linux-only, so the debug bundle is built with `bundle` and the validator is fetched here.
+      - name: Debug bundle (for clap-validator)
+        if: github.event_name == 'push' || inputs.validate
+        run: cargo xtask bundle --package enth-plugin --locked
+
+      - name: Fetch clap-validator 0.4.1 (SHA-256 pinned)
+        if: github.event_name == 'push' || inputs.validate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '0.4.1'
+          $asset = 'clap-validator-0.4.1-127-g152b982-windows.zip'
+          $sha256 = 'd935c3af0a45c3911ea2e900f4aa5d6709dac82bb485f0c4ce28648ab2cd0c10'   # GitHub's digest of the release asset
+          $dir = Join-Path $env:RUNNER_TEMP 'clap-validator'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $zip = Join-Path $dir $asset
+          # A generic User-Agent: nothing about the owner or the machine is sent.
+          Invoke-WebRequest -Uri "https://github.com/free-audio/clap-validator/releases/download/$version/$asset" -OutFile $zip -UserAgent 'enth-research/0.1'
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $sha256) { throw "$asset has SHA-256 $actual, expected $sha256; not unpacking" }
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          # The Linux asset wraps the binary in a tarball; if this one does too, unpack it.
+          Get-ChildItem $dir -Recurse -Filter '*.tar.gz' | ForEach-Object { tar -xzf $_.FullName -C $dir; if ($LASTEXITCODE -ne 0) { throw "tar failed on $($_.Name)" } }
+          $exe = Get-ChildItem $dir -Recurse -Filter 'clap-validator.exe' | Select-Object -First 1
+          if (-not $exe) { throw "clap-validator.exe is not in $asset" }
+          & $exe.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw 'clap-validator --version failed' }
+          "CLAP_VALIDATOR=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: clap-validator on the debug bundle
+        if: github.event_name == 'push' || inputs.validate
+        shell: pwsh
+        run: |
+          & $env:CLAP_VALIDATOR validate 'target\bundled\enth-plugin.clap' --only-failed
+          if ($LASTEXITCODE -ne 0) { throw 'clap-validator reported failures on the debug bundle' }
+
+      - name: Release bundles (CLAP + VST3)
+        run: |
+          rm -rf target/bundled
+          cargo xtask bundle --package enth-plugin --release --locked
+
+      # The research could not link on Windows, so this is the first check that +crt-static took effect. dumpbin comes
+      # with the Visual Studio build tools on the runner image; if it cannot be found the check is skipped with a warning.
+      - name: No Visual C++ runtime import
+        shell: pwsh
+        run: |
+          $deps = $null
+          try {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $dumpbin = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction Stop |
+              Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+            $deps = & $dumpbin.FullName /nologo /dependents 'target\bundled\enth-plugin.clap'
+          } catch {
+            Write-Host "::warning::dumpbin could not be run ($($_.Exception.Message)); the static-runtime check was skipped"
+          }
+          if ($deps) {
+            $deps | ForEach-Object { Write-Host $_ }
+            if ($deps -match '(?i)vcruntime|msvcp|concrt|vcomp') { throw 'enth-plugin.clap imports the Visual C++ runtime DLLs: +crt-static did not take effect' }
+          }
+
+      - name: clap-validator on the release bundle
+        if: github.event_name == 'push' || inputs.validate
+        shell: pwsh
+        run: |
+          & $env:CLAP_VALIDATOR validate 'target\bundled\enth-plugin.clap' --only-failed
+          if ($LASTEXITCODE -ne 0) { throw 'clap-validator reported failures on the release bundle' }
+
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = "enth-$($env:VERSION)-windows-x86_64"
+          $stage = Join-Path 'stage' $name
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item 'target\bundled\enth-plugin.clap' $stage
+          Copy-Item -Recurse 'target\bundled\enth-plugin.vst3' $stage
+          Copy-Item 'docs\friends-install.md' (Join-Path $stage 'INSTALL.md')
+          Copy-Item 'LICENSE', 'THIRD_PARTY_NOTICES.md' $stage
+          "enth $($env:VERSION)`ncommit $($env:GITHUB_SHA)`n$(rustc --version)`nrunner $($env:RUNNER_OS) $($env:RUNNER_ARCH)" | Set-Content (Join-Path $stage 'BUILD.txt')
+          $zip = "$name.zip"
+          # Zipped from inside stage/, so the zip's one top-level folder is enth-<version>-windows-x86_64. 7-Zip is on the
+          # runner image and writes forward slashes; Compress-Archive is the fallback.
+          Push-Location 'stage'
+          try {
+            if (Get-Command 7z -ErrorAction SilentlyContinue) {
+              7z a -tzip -bso0 -bsp0 "..\$zip" $name
+              if ($LASTEXITCODE -ne 0) { throw '7z failed' }
+            } else {
+              Compress-Archive -Path $name -DestinationPath "..\$zip"
+            }
+          } finally {
+            Pop-Location
+          }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = '{0:N1} MB' -f ((Get-Item $zip).Length / 1MB)
+          Add-Content $env:GITHUB_STEP_SUMMARY "### $zip`n`n- size: $size`n- sha256: ``$hash``"
+          Write-Host "$zip $size sha256 $hash"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: enth-${{ steps.name.outputs.version }}-windows-x86_64.zip
+          archive: false
+          retention-days: 14
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal (x86-64 + arm64, ad-hoc signed)
+    if: github.event_name == 'push' || inputs.macos
+    runs-on: macos-latest   # macOS 26 on arm64 (actions/runner-images); the x86-64 slice is cross-built on it
+    timeout-minutes: 50
+    env:
+      # One floor for rustc and for the C objects the `cc` crate builds, so ld has nothing to warn about. Big Sur is the
+      # first macOS for Apple silicon; older Intel systems are not supported by this build (docs/distribution.md).
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the build
+        id: name
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=$GITHUB_REF_NAME; else version="dev-${GITHUB_SHA::7}"; fi
+          echo "version=${version//[^A-Za-z0-9._-]/_}" >> "$GITHUB_OUTPUT"
+
+      - name: Install the toolchain and both Apple targets
+        run: |
+          rustup toolchain install
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          rustc --version
+          if rustc --version | grep -q ' 1\.99\.0 '; then echo "::error::rustc 1.99.0 is banned (AGENTS.md)"; exit 1; fi
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Debug bundle (for clap-validator; native arm64)
+        if: github.event_name == 'push' || inputs.validate
+        run: cargo xtask bundle --package enth-plugin --locked
+
+      - name: Fetch clap-validator 0.4.1 (SHA-256 pinned)
+        if: github.event_name == 'push' || inputs.validate
+        run: |
+          version=0.4.1
+          asset=clap-validator-0.4.1-127-g152b982-macos-universal.zip
+          sha256=bbec8cd7d18274e549d5d8c12ece3cec54be966129388dd2e742b9957f2ba9f1   # GitHub's digest of the release asset
+          dir="$RUNNER_TEMP/clap-validator"
+          mkdir -p "$dir"
+          # curl sets no quarantine flag, so the binary runs. A generic User-Agent: nothing about the owner or the machine is sent.
+          curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
+            --user-agent enth-research/0.1 --output "$dir/$asset" \
+            "https://github.com/free-audio/clap-validator/releases/download/$version/$asset"
+          echo "$sha256  $dir/$asset" | shasum -a 256 -c -
+          unzip -q "$dir/$asset" -d "$dir"
+          # The asset wraps the binary in a tarball (binaries/clap-validator inside); unpack it, then find the binary.
+          find "$dir" -name '*.tar.gz' -exec tar -xzf {} -C "$dir" \;
+          bin=$(find "$dir" -type f -name clap-validator | head -n 1)
+          if [ -z "$bin" ]; then echo "::error::clap-validator is not in $asset"; exit 1; fi
+          chmod +x "$bin"
+          "$bin" --version
+          echo "CLAP_VALIDATOR=$bin" >> "$GITHUB_ENV"
+
+      - name: clap-validator on the debug bundle
+        if: github.event_name == 'push' || inputs.validate
+        run: '"$CLAP_VALIDATOR" validate target/bundled/enth-plugin.clap --only-failed'
+
+      # Builds x86_64-apple-darwin and aarch64-apple-darwin one after the other and merges them with lipo; nice-plug-xtask
+      # ad-hoc signs each bundle too, but ignores codesign's exit status, so the next step signs and verifies for real.
+      - name: Release bundles (universal CLAP + VST3)
+        run: |
+          rm -rf target/bundled   # the debug bundle above: lipo writes over its output, so start from nothing
+          cargo xtask bundle --package enth-plugin --release --locked --universal
+
+      - name: Ad-hoc sign and verify
+        run: |
+          for bundle in target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3; do
+            codesign --force --deep --sign - "$bundle"
+            codesign --verify --deep --verbose=2 "$bundle"
+            archs=$(lipo -archs "$bundle/Contents/MacOS/enth-plugin")
+            echo "$bundle: $archs"
+            case "$archs" in *x86_64*arm64* | *arm64*x86_64*) ;; *) echo "::error::$bundle is not universal ($archs)"; exit 1 ;; esac
+          done
+
+      - name: clap-validator on the release bundle
+        if: github.event_name == 'push' || inputs.validate
+        run: '"$CLAP_VALIDATOR" validate target/bundled/enth-plugin.clap --only-failed'
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+        run: |
+          name="enth-${VERSION}-macos-universal"
+          mkdir -p "stage/${name}"
+          cp -R target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3 "stage/${name}/"
+          cp docs/friends-install.md "stage/${name}/INSTALL.md"
+          cp LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
+          # Apple's own way to zip a bundle: ditto keeps the symlinks, permissions and the signature intact.
+          ditto -c -k --keepParent "stage/${name}" "${name}.zip"
+          # The signature must survive the zip: unpack a copy and verify it.
+          check=$(mktemp -d)
+          ditto -x -k "${name}.zip" "$check"
+          for bundle in "$check/${name}"/enth-plugin.clap "$check/${name}"/enth-plugin.vst3; do
+            codesign --verify --deep --verbose=2 "$bundle"
+          done
+          unzip -l "${name}.zip"
+          {
+            echo "### ${name}.zip"
+            echo
+            echo "- size: $(du -h "${name}.zip" | cut -f1)"
+            echo "- sha256: \`$(shasum -a 256 "${name}.zip" | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: enth-${{ steps.name.outputs.version }}-macos-universal.zip
+          archive: false
+          retention-days: 14
+          if-no-files-found: error
