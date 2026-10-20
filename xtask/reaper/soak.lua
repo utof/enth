@@ -30,6 +30,8 @@ local BEAT = num("ENTH_SOAK_BEAT_SECS", 2)
 local SETTLE = num("ENTH_SOAK_SETTLE_SECS", 3) -- after a close, before the memory is read
 local SWEEP_STEP = num("ENTH_SOAK_SWEEP_STEP", 0.05)
 local INPUT_DEVICE = num("ENTH_SOAK_INPUT_DEVICE", 63) -- 63: all MIDI inputs (the virtual keyboard is among them)
+local PATTERN_OFFSET = math.floor(num("ENTH_SOAK_PATTERN_OFFSET", 0)) -- instance i plays pattern i + offset (diagnosis)
+local DIAG = num("ENTH_SOAK_DIAG", 0) == 1 -- try to bring a silent instance back, step by step, and log what worked
 local CONTROL = os.getenv("ENTH_SOAK_CONTROL_FX") or ""
 local IS_CONTROL = CONTROL ~= ""
 local FX_NAME = IS_CONTROL and CONTROL or os.getenv("ENTH_FX")
@@ -76,13 +78,13 @@ end
 local function event(kind, detail) data("event", kind .. " " .. (detail or "")) end
 
 -- ---- state ----------------------------------------------------------------------------------------------------------
-local tracks, fxs, held = {}, {}, {}
+local tracks, fxs, held, muted = {}, {}, {}, {}
 local counts = { note_on = 0, note_off = 0, cc = 0, sets = 0, loads = 0, load_fail = 0, churns = 0, churn_fail = 0,
   churn_open = 0, cycles = 0, cycles_drew = 0, cycles_closed = 0, edits = 0, edits_applied = 0, silent_minutes = 0,
   param_fail = 0 }
 local editor_open, editor_busy, editor_inst = false, false, 0
 local editor_changed = reaper.time_precise() -- when the editor last opened or closed
-local peak_win = {}
+local peak_win, peak_beat, diag_peak, last_sound, diag_active, sweep_off, nan_peaks = {}, {}, {}, {}, {}, {}, {}
 local T0
 
 -- The editor's state, written to the log at every change so the xtask can tell a settled, editor-closed memory
@@ -108,22 +110,35 @@ local function at(due, fn)
   end
 end
 
+-- The last MIDI messages sent, kept for the report of a track that gets muted behind the script's back.
+local sent, sent_at = {}, 0
+local function stuff(status, d1, d2)
+  sent_at = sent_at % 48 + 1
+  sent[sent_at] = string.format("%.2f:%02X/%d/%d", reaper.time_precise() - (T0 or 0), status, d1, d2)
+  reaper.StuffMIDIMessage(0, status, d1, d2)
+end
+local function recent_sent()
+  local out = {}
+  for k = 1, #sent do out[#out + 1] = sent[(sent_at + k - 1) % #sent + 1] end
+  return table.concat(out, " ")
+end
+
 local function note_on(i, pitch, vel)
-  reaper.StuffMIDIMessage(0, 0x90 | (i - 1), pitch, vel)
+  stuff(0x90 | (i - 1), pitch, vel)
   held[i][pitch] = true
   counts.note_on = counts.note_on + 1
 end
 local function note_off(i, pitch)
-  reaper.StuffMIDIMessage(0, 0x80 | (i - 1), pitch, 0)
+  stuff(0x80 | (i - 1), pitch, 0)
   held[i][pitch] = nil
   counts.note_off = counts.note_off + 1
 end
 local function cc(i, number, value)
-  reaper.StuffMIDIMessage(0, 0xB0 | (i - 1), number, value)
+  stuff(0xB0 | (i - 1), number, value)
   counts.cc = counts.cc + 1
 end
 local function bend(i, value) -- 0..16383, 8192 is centre
-  reaper.StuffMIDIMessage(0, 0xE0 | (i - 1), value & 127, (value >> 7) & 127)
+  stuff(0xE0 | (i - 1), value & 127, (value >> 7) & 127)
   counts.cc = counts.cc + 1
 end
 local function release_all(i)
@@ -206,7 +221,7 @@ local function sweep(now)
   local t = now - T0
   for i = 1, N do
     local l, c = lfo[i], cursor[i]
-    for k = 1, 4 do
+    for k = 1, sweep_off[i] and 0 or 4 do
       local p
       if k <= 2 then
         p = c[1] % math.min(8, NPARAMS)
@@ -231,7 +246,7 @@ local function sweep(now)
 end
 
 -- ---- structural edits ------------------------------------------------------------------------------------------------
-local next_chunk, next_load_inst, next_churn_inst = 1, 1, 1
+local next_chunk, next_load_inst, next_churn_inst = math.floor(num("ENTH_SOAK_FIRST_CHUNK", 1)), 1, 1
 
 local function load_chunk(i, label)
   if IS_CONTROL or #CHUNKS == 0 then return end
@@ -345,6 +360,102 @@ local function editor_cycle(i, fn)
   end
 end
 
+-- ---- diagnosis of a silent instance (ENTH_SOAK_DIAG=1) --------------------------------------------------------------------
+-- An instance that makes no sound for DIAG_SILENT seconds while notes are played is tried in steps, 10 s of listening
+-- after each: sweeps stopped, every parameter at 0.5, a plain note, another patch, the instance deleted and added. The
+-- peak after each step says which one brought it back. Everything is logged as `event diag ...`.
+local DIAG_SILENT = 25
+local function observe(i, secs, fn)
+  diag_peak[i] = 0
+  wait(secs, function() fn(diag_peak[i]) end)
+end
+
+local function diagnose(i)
+  diag_active[i] = true
+  local params = {}
+  for p = 0, NPARAMS - 1 do params[#params + 1] = string.format("%.3f", reaper.TrackFX_GetParamNormalized(tracks[i], fxs[i], p)) end
+  event("diag-start", string.format("inst=%d held=%d enabled=%s offline=%s", i, (function() local n = 0 for _ in pairs(held[i]) do n = n + 1 end return n end)(),
+    tostring(reaper.TrackFX_GetEnabled(tracks[i], fxs[i])), tostring(reaper.TrackFX_GetOffline(tracks[i], fxs[i]))))
+  event("diag-params", "inst=" .. i .. " " .. table.concat(params, ","))
+  write_file("diag-state-" .. i .. ".b64", state_chunk(tracks[i], fxs[i]))
+  local function step(name, pk) event("diag", string.format("inst=%d step=%s peak=%.4f", i, name, pk)) end
+  local function track_props(tr)
+    local out = {}
+    for _, k in ipairs({ "I_RECARM", "I_RECINPUT", "I_RECMON", "I_RECMODE", "B_MUTE", "I_SOLO", "I_FXEN", "D_VOL", "I_PERFFLAGS", "I_NCHAN", "B_MAINSEND" }) do
+      out[#out + 1] = k .. "=" .. tostring(reaper.GetMediaTrackInfo_Value(tr, k))
+    end
+    return table.concat(out, " ")
+  end
+  event("diag-track", "inst=" .. i .. " " .. track_props(tracks[i]) .. " | other track 1: " .. track_props(tracks[1]))
+  -- Is the track's MIDI input what is broken? Re-arm it and give it the channel again, with a plain note each time.
+  reaper.SetMediaTrackInfo_Value(tracks[i], "I_RECARM", 0)
+  reaper.SetMediaTrackInfo_Value(tracks[i], "I_RECARM", 1)
+  reaper.StuffMIDIMessage(0, 0x90 | (i - 1), 62, 100)
+  observe(i, 3, function(pkr)
+    reaper.StuffMIDIMessage(0, 0x80 | (i - 1), 62, 0)
+    step("rearmed-note", pkr)
+    reaper.SetMediaTrackInfo_Value(tracks[i], "I_RECINPUT", 4096 + (INPUT_DEVICE << 5) + 16)
+    reaper.StuffMIDIMessage(0, 0x9F, 62, 100)
+    observe(i, 3, function(pkc)
+      reaper.StuffMIDIMessage(0, 0x8F, 62, 0)
+      step("track-on-channel-16-note", pkc)
+      reaper.SetMediaTrackInfo_Value(tracks[i], "I_RECINPUT", 4096 + (INPUT_DEVICE << 5) + i)
+  sweep_off[i] = true
+  observe(i, 10, function(pk)
+    step("sweeps-stopped", pk)
+    for p = 0, NPARAMS - 1 do reaper.TrackFX_SetParamNormalized(tracks[i], fxs[i], p, 0.5) end
+    observe(i, 10, function(pk2)
+      step("params-at-0.5", pk2)
+      reaper.StuffMIDIMessage(0, 0x90 | (i - 1), 60, 100)
+      observe(i, 4, function(pk3)
+        step("plain-note-held", pk3)
+        reaper.StuffMIDIMessage(0, 0x80 | (i - 1), 60, 0)
+        local saved = next_chunk
+        load_chunk(i, "diag-load")
+        observe(i, 10, function(pk4)
+          step("other-patch", pk4)
+          churn(i)
+          observe(i, 10, function(pk5)
+            step("instance-readded", pk5)
+            -- A plain note on the new instance with its macros up, held 3 s.
+            for p = 0, 7 do reaper.TrackFX_SetParamNormalized(tracks[i], fxs[i], p, 0.8) end
+            reaper.StuffMIDIMessage(0, 0x90 | (i - 1), 64, 100)
+            observe(i, 3, function(pk6)
+              reaper.StuffMIDIMessage(0, 0x80 | (i - 1), 64, 0)
+              step("readded-macros-0.8-note", pk6)
+              -- A brand-new track with a brand-new instance, on MIDI channel 16, a plain note, held 3 s.
+              local idx = reaper.CountTracks(0)
+              reaper.InsertTrackAtIndex(idx, true)
+              local tr = reaper.GetTrack(0, idx)
+              local fx = reaper.TrackFX_AddByName(tr, FX_NAME, false, -1)
+              reaper.SetMediaTrackInfo_Value(tr, "I_PERFFLAGS", 2)
+              reaper.SetMediaTrackInfo_Value(tr, "I_RECINPUT", 4096 + (INPUT_DEVICE << 5) + 16)
+              reaper.SetMediaTrackInfo_Value(tr, "I_RECMON", 1)
+              reaper.SetMediaTrackInfo_Value(tr, "I_RECARM", 1)
+              wait(1.0, function()
+                diag_peak[i] = 0
+                local fresh = 0
+                reaper.StuffMIDIMessage(0, 0x9F, 60, 100)
+                wait(3, function()
+                  fresh = reaper.Track_GetPeakInfo(tr, 0)
+                  reaper.StuffMIDIMessage(0, 0x8F, 60, 0)
+                  step("fresh-track-fresh-instance-note", fresh)
+                  reaper.DeleteTrack(tr)
+                  sweep_off[i] = false
+                  diag_active[i] = false
+                  last_sound[i] = reaper.time_precise()
+                end)
+              end)
+            end)
+          end)
+        end)
+      end)
+    end)
+  end)
+    end)
+  end)
+end
+
 -- ---- the run ----------------------------------------------------------------------------------------------------------
 local function setup()
   reaper.Main_OnCommand(40023, 0) -- File: New project
@@ -353,9 +464,10 @@ local function setup()
     local tr = reaper.GetTrack(0, i - 1)
     tracks[i] = tr
     held[i] = {}
+    muted[i] = 0
     lfo[i] = {}
     cursor[i] = { 0, 0 }
-    peak_win[i] = 0
+    peak_win[i], peak_beat[i], diag_peak[i], last_sound[i], nan_peaks[i] = 0, 0, 0, 0, 0
     fxs[i] = reaper.TrackFX_AddByName(tr, FX_NAME, false, -1)
     check("load-" .. i, fxs[i] >= 0, FX_NAME)
     if fxs[i] < 0 then return false end
@@ -372,7 +484,7 @@ end
 local function run()
   if not setup() then return finish() end
   local nparams = reaper.TrackFX_GetNumParams(tracks[1], fxs[1])
-  if IS_CONTROL then NPARAMS = math.max(1, nparams) end
+  if IS_CONTROL then NPARAMS = math.max(1, nparams - 3) end -- not REAPER's own Bypass, Wet and Delta
   local count0 = counts.loads
   if reaper.Audio_IsRunning() == 0 then reaper.Audio_Init() end
   T0 = reaper.time_precise()
@@ -386,7 +498,7 @@ local function run()
   if NOTES then
     for i = 1, N do
       -- Spread the instances' first notes so they do not all start on the same tick.
-      at(T0 + 0.5 + 0.1 * i, function() PATTERNS[((i - 1) % #PATTERNS) + 1](i, 0) end)
+      at(T0 + 0.5 + 0.1 * i, function() PATTERNS[((i - 1 + PATTERN_OFFSET) % #PATTERNS) + 1](i, 0) end)
     end
   end
 
@@ -444,7 +556,19 @@ local function run()
     if NOTES then
       for i = 1, N do
         local pk = reaper.Track_GetPeakInfo(tracks[i], 0)
+        if pk ~= pk then nan_peaks[i] = nan_peaks[i] + 1 end
         if pk > peak_win[i] then peak_win[i] = pk end
+        if pk > peak_beat[i] then peak_beat[i] = pk end
+        if pk > diag_peak[i] then diag_peak[i] = pk end
+        if pk > 1e-6 then last_sound[i] = now end
+        if DIAG and not diag_active[i] and now - T0 > 40 and now - last_sound[i] > DIAG_SILENT then diagnose(i) end
+      end
+    end
+    for i = 1, N do -- a track muted (or un-muted) by something other than this script
+      local m = reaper.GetMediaTrackInfo_Value(tracks[i], "B_MUTE")
+      if m ~= muted[i] then
+        muted[i] = m
+        event("mute-changed", string.format("inst=%d B_MUTE=%s t=%.2f recent=%s", i, tostring(m), now - T0, recent_sent()))
       end
     end
     local a = reaper.GetUnderrunTime()
@@ -493,9 +617,15 @@ local function run()
     end
     if now >= next_beat then
       next_beat = now + BEAT
-      data("beat", kv({ t = string.format("%.1f", now - T0), editor = editor_open and 1 or 0, busy = editor_busy and 1 or 0,
+      local beat = { t = string.format("%.1f", now - T0), editor = editor_open and 1 or 0, busy = editor_busy and 1 or 0,
         since = string.format("%.1f", now - editor_changed), notes = counts.note_on, sets = counts.sets,
-        loads = counts.loads, churns = counts.churns, cycles = counts.cycles }))
+        loads = counts.loads, churns = counts.churns, cycles = counts.cycles }
+      for i = 1, N do
+        beat["k" .. i] = string.format("%.3f", peak_beat[i]) -- the loudest peak of instance i since the last heartbeat
+        if nan_peaks[i] > 0 then beat["nan" .. i] = nan_peaks[i] end
+        peak_beat[i] = 0
+      end
+      data("beat", kv(beat))
     end
     if now - last_minute_at >= 60 then
       last_minute_at = now

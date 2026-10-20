@@ -31,6 +31,9 @@ use crate::{bundle, plugin};
 /// The script ends REAPER itself; this much extra wall time is allowed for its start and its quit.
 const OVERRUN_GRACE_SECS: u64 = 300;
 /// Settled samples a trend is fitted to (fewer: reported, not judged, unless the run is long).
+/// An instance that makes no sound for this many whole minutes in a row, with notes played into it, fails the run.
+const MAX_SILENT_MINUTES: usize = 5;
+
 const MIN_TREND_SAMPLES: usize = 8;
 /// REAPER scans the bundles, makes a project and adds the instances before the script's first log line.
 const STARTUP_SECS: f64 = 240.0;
@@ -638,6 +641,7 @@ pub fn reaper_soak(args: &[String]) -> Result<(), String> {
         lua: meta.workspace_root.join("xtask/reaper"),
     };
     prepare_sandbox(&sandbox, &bundled)?;
+    disable_automute(&sandbox)?;
     let chunks = write_chunks(&sandbox.out, o.format)?;
     println!(
         "reaper-soak: {} min, {} x {} {}, bundle {} (allocation guard {})",
@@ -715,6 +719,21 @@ fn write_chunks(out: &Path, format: Format) -> Result<Vec<String>, String> {
         .iter()
         .map(|(name, patch)| chunk::write_state_chunk(out, name, format, patch))
         .collect()
+}
+
+/// REAPER's "circuit breaker" mutes a track whose output goes past a level (Preferences > Audio > Mute/Solo, the
+/// `automute` setting, 2 by default, with the level in `automuteval`, 8.0 = +18 dB). The soak plays chords and 24-note bursts through patches with no limiter, so the
+/// breaker trips within seconds and the muted track stops being processed: the instance goes silent for the rest of
+/// the run and is no longer exercised. The soak is about the plugin not crashing, so the breaker is off.
+fn disable_automute(sb: &Sandbox) -> Result<(), String> {
+    use std::io::Write;
+    let path = sb.home.join("reaper.ini");
+    let mut ini = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    ini.write_all(b"automute=0\n")
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 fn script_env(sb: &Sandbox, o: &Options, chunks: &[String]) -> Vec<(String, String)> {
@@ -921,8 +940,20 @@ fn supervise(sb: &Sandbox, o: &Options, chunks: &[String]) -> Result<Outcome, St
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    // Whatever is left (an Xvfb or a REAPER that outlived a kill) goes too.
+    // Whatever is left (an Xvfb or a REAPER that outlived a kill) goes too. An Xvfb left behind would also keep the
+    // shared build/run lock (it inherits it) and block every exclusive timing run of the other lanes.
     kill_leftovers(&exe, group);
+    if let Some(x) = xvfb {
+        let is_xvfb = std::fs::read_to_string(format!("/proc/{x}/comm"))
+            .is_ok_and(|c| c.trim() == "Xvfb");
+        if is_xvfb {
+            signal(i64::from(x), "TERM");
+            std::thread::sleep(Duration::from_millis(500));
+            if std::path::Path::new(&format!("/proc/{x}")).exists() {
+                signal(i64::from(x), "KILL");
+            }
+        }
+    }
     Ok(Outcome {
         ending,
         samples,
@@ -1167,6 +1198,26 @@ fn evaluate(
     } else {
         checks.add("script-summary", false, "the script wrote no summary line");
     }
+    // REAPER's circuit breaker, a user, or anything else muting a track behind the script's back makes the instance
+    // silent and unprocessed for the rest of the run: that is a harness failure, not a pass.
+    let mutes: Vec<&str> = log
+        .data
+        .iter()
+        .filter(|(k, v)| k == "event" && v.starts_with("mute-changed") && v.contains("B_MUTE=1"))
+        .map(|(_, v)| v.as_str())
+        .collect();
+    checks.add(
+        "tracks-stay-unmuted",
+        mutes.is_empty(),
+        match mutes.first() {
+            None => "no track was muted during the run".to_owned(),
+            Some(first) => format!(
+                "{} track mute(s); first: {}",
+                mutes.len(),
+                first.split(" recent=").next().unwrap_or(first)
+            ),
+        },
+    );
     if completed && o.notes && o.control_fx.is_none() {
         let peaks = log.all("peaks");
         let silent_minutes = summary
@@ -1200,6 +1251,31 @@ fn evaluate(
         checks.info(
             "audio-coverage",
             format!("minutes with sound, per instance: {}", sounding.join(" ")),
+        );
+        // The longest stretch of whole minutes in which an instance made no sound while notes were played into it.
+        let longest_silence: Vec<usize> = (0..o.instances)
+            .map(|i| {
+                let key = format!("p{}", i + 1);
+                let (mut best, mut run) = (0usize, 0usize);
+                for r in &whole {
+                    if num(r, &key).unwrap_or(0.0) > 1e-6 {
+                        run = 0;
+                    } else {
+                        run += 1;
+                        best = best.max(run);
+                    }
+                }
+                best
+            })
+            .collect();
+        let worst = longest_silence.iter().copied().max().unwrap_or(0);
+        checks.add(
+            "instances-keep-sounding",
+            worst < MAX_SILENT_MINUTES,
+            format!(
+                "longest run of minutes without a sound, per instance: {} (limit: fewer than {MAX_SILENT_MINUTES} in a row)",
+                longest_silence.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")
+            ),
         );
         checks.add(
             "audio-flows",
