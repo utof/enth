@@ -26,7 +26,7 @@ What is left of G1's plugin half: RT's two rows (2, 3) and the owner's three (10
 
 ## Integration (lane INT)
 
-- **Gates.** `scripts/gate.sh lane` on INT's branch: see the lane's report. The spike retirement touched `Cargo.toml` and `Cargo.lock`, so it tested every crate.
+- **Gates on INT's branch (2026-10-20).** `scripts/gate.sh lane` exit 0: 1,253 tests passed, 0 failed, every crate (the spike retirement touched `Cargo.toml` and `Cargo.lock`), 253 s. Also exit 0: `cargo deny check bans licenses sources`, `cargo xtask golden`, `cargo xtask validate` (36 / 0 / 8), `cargo xtask host-render` (10 cases and cli-equal 63 / 63), `cargo xtask leak-test`, and `reaper-test` twice in a row (249 checks each).
 - **The shell and UI spikes left the workspace** (`spike-shell`, `spike-ui`, `spike-ui-plugin`): `cargo xtask` acts on `enth-plugin` by default, `reaper-test` runs the product only, and CI validates and renders `enth-plugin` only. Their source stays under `spikes/` as the Phase 0 evidence the docs link to; it no longer builds. `spike-metric` (the listening tools), `spike-engine` (`wasm-hash`, the engine-golden workflow) and `spike-agent` (the probe CLI) stay members.
 - **Found while integrating** (each is fixed on INT's branch or listed as open in [phase-1b.md](phase-1b.md#open-checks)):
   - `cli-equal` was in no gate (fixed: `host-render` runs it);
