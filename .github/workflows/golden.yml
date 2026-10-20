@@ -130,3 +130,16 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask golden
       - run: cargo test --release --locked -p enth-golden
+
+  # R1/S1 lane GC, pre-declared by lane S0r and disabled: the golden challenges (tests/golden/challenges/: generator
+  # hashes, scores and their margins) and RG's 1,000-hash generator golden, on Linux, Windows and wasm32-wasip1, with
+  # macOS weekly in the job above. GC removes the `if:` and writes the steps; until then the job never starts and
+  # costs no minutes.
+  challenges:
+    name: golden challenges (lane GC; disabled)
+    if: vars.ENTH_JOB_CHALLENGES == 'on'   # disabled: an unset repository variable skips the job
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Not built yet
+        run: echo "lane GC writes the golden-challenge steps here" && false
