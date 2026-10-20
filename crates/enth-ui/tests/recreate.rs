@@ -1108,7 +1108,10 @@ fn reaper_points_hit_their_controls() {
     const MINE: (f32, f32) = (240.0, 28.0);
     const SUBMIT: (f32, f32) = (402.0, 28.0);
     const SKIP: (f32, f32) = (380.0, 708.0);
+    const HINT_AT: (f32, f32) = (454.0, 28.0);
     const END: (f32, f32) = (554.0, 28.0);
+    // After a hint the levels used ("1/4") stand beside Hint, so Reveal and End move right (lane HINT).
+    const END_HINTED: (f32, f32) = (574.0, 28.0);
     const RESTORE: (f32, f32) = (620.0, 61.0);
     let hits = |h: &Harness<'_, App>, label: &str, (x, y): (f32, f32)| {
         let rect = h.get_by_label(label).rect();
@@ -1133,6 +1136,11 @@ fn reaper_points_hit_their_controls() {
     hits(&h, "Skip", SKIP);
     click(&mut h, "Skip");
     h.run_steps(2);
+    hits(&h, "Hint", HINT_AT);
+    click(&mut h, "Hint");
+    h.run_steps(2);
+    hits(&h, "Hint", HINT_AT);
+    hits(&h, "End", END_HINTED);
     click(&mut h, "End");
     hits(&h, "End and restore my patch", RESTORE);
 }

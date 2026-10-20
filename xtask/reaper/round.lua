@@ -8,6 +8,9 @@
 --   mine-sounds:    Mine ▶ on (the phrase live through the start patch), the same;
 --   submit-scored:  Submit, then Skip on the blind rating (in the results drawer): the saved round records a scored
 --                   submit;
+--   hint-asked:     Hint (lane HINT, FU1): the saved round records hint level 1, and the coach's job runs on the game
+--                   worker's parallel evaluator (scoped threads inside the host) while the round goes on;
+--   hint-no-crash:  a few seconds later the crash folder is still empty (a panicking render would write a file);
 --   round-ended:    End › End and restore my patch: the round is gone from the saved state and the round log has its
 --                   `end` line.
 -- Data: both peaks, the scored submit's text, the log line count. Audio is measured, never listened to.
@@ -23,10 +26,22 @@ local POINTS = {
   mine = { 240, 28 },
   submit = { 402, 28 },
   skip = { 380, 708 },
+  hint = { 454, 28 },
   ["end"] = { 554, 28 },
+  -- After a hint, "1/4" stands beside Hint and End moves right.
+  end_hinted = { 574, 28 },
   restore = { 620, 61 },
 }
 local LOG = os.getenv("ENTH_ROUNDS_DIR") .. "/round-log.jsonl"
+local CRASHES = os.getenv("ENTH_CRASH_DIR")
+
+-- How many files the crash folder holds (the plugin's panic hook writes one per crash).
+local function crash_files()
+  local n = 0
+  if not CRASHES then return 0 end
+  while reaper.EnumerateFiles(CRASHES, n) do n = n + 1 end
+  return n
+end
 
 local function window()
   local ok, text = xinput("client " .. string.format("%q", editor_title()))
@@ -120,16 +135,32 @@ safe(function()
               local at = s:find("submits", 1, true)
               data("submit", at and s:sub(at, at + 160):gsub("[\t\n]", " ") or "")
               sleep(0.3)
-              click("end")
-              sleep(0.4)
-              click("restore")
-              wait_until(function() return not has_round(track, fx) end, 10, 0.2, function(ended)
-                local n, text = log_lines()
-                data("log-lines", n)
-                check("round-ended", ended and n >= 1 and contains(text, '"enth.round-log/1"') and contains(text, '"event":"end"'),
-                  string.format("round gone from the state: %s; %d line(s) in %s", tostring(ended), n, LOG))
-                hide_editor(track, fx)
-                wait(0.5, finish)
+              click("hint")
+              local t_hint = reaper.time_precise()
+              wait_until(function()
+                local st = state_bytes(track, fx)
+                return contains(st, '"hints\\":1') or contains(st, '"hints":1')
+              end, 10, 0.2, function(asked)
+                check("hint-asked", asked, asked and string.format("the saved round records hint level 1 after %.1f s", reaper.time_precise() - t_hint)
+                  or "no hint in the saved round: the click point moved? see reaper_points_hit_their_controls")
+                -- Give the coach's job time to run on the worker's threads (debug bundle), then look for a crash file.
+                wait(6, function()
+                  local crashes = crash_files()
+                  data("crash-files", crashes)
+                  check("hint-no-crash", crashes == 0, string.format("%d crash file(s) in %s after the hint", crashes, tostring(CRASHES)))
+                  click("end_hinted")
+                  sleep(0.4)
+                  click("restore")
+                  wait_until(function() return not has_round(track, fx) end, 10, 0.2, function(ended)
+                    local n, text = log_lines()
+                    data("log-lines", n)
+                    check("round-ended", ended and n >= 1 and contains(text, '"enth.round-log/1"') and contains(text, '"event":"end"'),
+                      string.format("round gone from the state: %s; %d line(s) in %s", tostring(ended), n, LOG))
+                    check("hint-in-log", contains(text, '"hints":1'), "the end line's assists count the hint")
+                    hide_editor(track, fx)
+                    wait(0.5, finish)
+                  end)
+                end)
               end)
             end)
           end)
