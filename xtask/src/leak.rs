@@ -5,14 +5,21 @@
 //!
 //! - **`editor-cycles`**: 200 open/close cycles of the editor of a release bundle built with the plugin's
 //!   `editor-counts` feature, twice, against the test host's no-editor baseline (each in its own process). It passes
-//!   when the anonymous PSS growth after close (the worst editor run's least-squares slope after the warm-up, minus
-//!   the baseline runs' mean) is at most 26 KB per cycle (docs/benchmarks.md; lane FK measured 14.8 to 18.3 KB with
-//!   the vendored baseview's xkb fix, about 84 without it), the thread count after every close is one value, every
-//!   open drew its first frame in time, and the plugin counted exactly one `editor_closed` call per `build()`, one per
-//!   cycle (the vendored nice-plug-egui's patch 2; the counts come from `$ENTH_EDITOR_COUNTS`, which the plugin
-//!   appends to when it is dropped). The anonymous part is what a leak adds: the test host's headline `pss_kb` also
-//!   counts the shared libraries' pages (Mesa, llvmpipe), which a loaded machine reclaims and re-faults (lane FK saw
-//!   108 KB per cycle in `pss_kb` against 17.8 in the anonymous part in one run). Both are printed.
+//!   when the anonymous footprint's growth after close (the worst editor run's least-squares slope after the warm-up,
+//!   minus the baseline runs' mean) is at most 26 KB per cycle (docs/benchmarks.md; lane FK measured 14.8 to 18.3 KB
+//!   with the vendored baseview's xkb fix, about 84 without it), the thread count after every close is one value,
+//!   every open drew its first frame in time, and the plugin counted exactly one `editor_closed` call per `build()`,
+//!   one per cycle (the vendored nice-plug-egui's patch 2; the counts come from `$ENTH_EDITOR_COUNTS`, which the
+//!   plugin appends to when it is dropped). The anonymous part is what a leak adds: the test host's headline `pss_kb`
+//!   also counts the shared libraries' pages (Mesa, llvmpipe), which a loaded machine reclaims and re-faults (lane FK
+//!   saw 108 KB per cycle in `pss_kb` against 17.8 in the anonymous part in one run). Both are printed.
+//!
+//!   **Footprint** is `Pss_Anon + SwapPss` per sample (lane LK, R1/S1): `Pss_Anon` alone drops when the kernel swaps
+//!   part of the process out (-130 and -63 KB per cycle in two runs on a box with 11 GiB of swap in use), which would
+//!   hide a leak, and rises when it swaps back in. The test host also makes glibc's allocator deterministic in each
+//!   measurement process and lets threads that are still exiting go before it counts them (tools/test-host
+//!   `editor.rs`); without that the gate failed at random: 53 and 405 KB per cycle from malloc arenas, and a fourth
+//!   thread that was Mesa's `disk$0` queue thread finishing its exit (docs/plugin.md, "Leak gates").
 //! - **`churn`**: 200 whole instance lives (instantiate, load a patch, activate, play, deactivate, drop) must leave
 //!   PSS flat (at most 1 KB per cycle, the test host's default) and no thread or descriptor behind. The test host's
 //!   exit status is the verdict.
@@ -361,14 +368,45 @@ fn numbers(v: &Value) -> Vec<f64> {
         .unwrap_or_default()
 }
 
+/// A run's anonymous footprint after each close: `pss_anon_kb + swap_pss_kb`, or `pss_anon_kb` alone from a test host
+/// that records no `swap_pss_kb`.
+fn footprint(run: &Value) -> Vec<f64> {
+    let anon = numbers(&run["series"]["pss_anon_kb"]);
+    let swap = numbers(&run["series"]["swap_pss_kb"]);
+    if swap.len() == anon.len() {
+        anon.iter().zip(&swap).map(|(a, s)| a + s).collect()
+    } else {
+        anon
+    }
+}
+
 /// The editor gate's checks from the test host's report and the plugin's counts.
 fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Vec<Check>, Value) {
     let runs = report["runs"].as_array().cloned().unwrap_or_default();
     let of = |mode: &str| -> Vec<&Value> { runs.iter().filter(|r| r["mode"] == mode).collect() };
     let (editor, baseline) = (of("editor"), of("baseline"));
+    let foot = |r: &Value| slope_after(&footprint(r), WARMUP);
     let anon = |r: &Value| slope_after(&numbers(&r["series"]["pss_anon_kb"]), WARMUP);
-    let editor_slopes: Vec<f64> = editor.iter().filter_map(|r| anon(r)).collect();
-    let baseline_slopes: Vec<f64> = baseline.iter().filter_map(|r| anon(r)).collect();
+    let editor_slopes: Vec<f64> = editor.iter().filter_map(|r| foot(r)).collect();
+    let baseline_slopes: Vec<f64> = baseline.iter().filter_map(|r| foot(r)).collect();
+    let anon_slopes: Vec<f64> = editor.iter().filter_map(|r| anon(r)).collect();
+    let swap_max: Vec<f64> = editor
+        .iter()
+        .map(|r| {
+            numbers(&r["series"]["swap_pss_kb"])
+                .into_iter()
+                .fold(0.0, f64::max)
+        })
+        .collect();
+    let late_exits: Vec<u64> = editor
+        .iter()
+        .map(|r| {
+            r["summary"]["late_thread_exit_cycles"]
+                .as_u64()
+                .unwrap_or(0)
+        })
+        .collect();
+    let malloc = editor.first().map_or(Value::Null, |r| r["malloc"].clone());
     let base_mean = (!baseline_slopes.is_empty())
         .then(|| baseline_slopes.iter().sum::<f64>() / baseline_slopes.len() as f64);
     let worst = editor_slopes.iter().copied().reduce(f64::max);
@@ -422,15 +460,19 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
             ),
         },
         Check {
-            name: "editor: anonymous PSS growth per cycle",
+            name: "editor: anonymous footprint growth per cycle",
             ok: growth.is_some_and(|g| g <= options.max_kb),
             detail: format!(
-                "worst editor run minus baseline {} KB per cycle, limit {} (anonymous slopes: editor {:?}, baseline {:?}; \
-                 the test host's pss_kb slopes: editor {}, baseline {})",
+                "worst editor run minus baseline {} KB per cycle, limit {} (Pss_Anon + SwapPss slopes: editor {:?}, \
+                 baseline {:?}; Pss_Anon alone: editor {:?}; most swapped: {:?} KB; malloc {}; the test host's pss_kb \
+                 slopes: editor {}, baseline {})",
                 growth.map_or("n/a".to_owned(), |g| format!("{g:.2}")),
                 options.max_kb,
                 round(&editor_slopes),
                 round(&baseline_slopes),
+                round(&anon_slopes),
+                swap_max,
+                malloc,
                 host_pss["editor_pss_growth_kb_per_cycle"],
                 host_pss["baseline_pss_growth_kb_per_cycle"],
             ),
@@ -438,7 +480,10 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         Check {
             name: "editor: threads constant after close",
             ok: threads.len() == 1 && threads_steady,
-            detail: format!("thread counts after a close: {threads:?}"),
+            detail: format!(
+                "thread counts after a close: {threads:?} (closes that waited for an exiting thread, per editor run: \
+                 {late_exits:?})"
+            ),
         },
         Check {
             name: "editor: every open drew its first frame in time",
@@ -450,7 +495,11 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         "cycles": cycles,
         "repeat": options.repeat,
         "warmup": WARMUP,
-        "anon_kb_per_cycle": { "editor": editor_slopes, "baseline": baseline_slopes, "worst_minus_baseline": growth },
+        "footprint_kb_per_cycle": { "editor": editor_slopes, "baseline": baseline_slopes, "worst_minus_baseline": growth },
+        "anon_kb_per_cycle": { "editor": anon_slopes },
+        "swap_pss_kb_max": swap_max,
+        "late_thread_exit_cycles": late_exits,
+        "malloc": malloc,
         "pss_kb_per_cycle_test_host": host_pss,
         "threads_after_close": threads,
         "drawn_in_time": drawn,
@@ -546,6 +595,17 @@ mod tests {
         })
     }
 
+    fn swapping(mode: &str, anon: &[f64], swap: &[f64], n: usize) -> Value {
+        let mut r = run(
+            mode,
+            anon,
+            &vec![3; n],
+            if mode == "editor" { n as u64 } else { 0 },
+        );
+        r["series"]["swap_pss_kb"] = json!(swap);
+        r
+    }
+
     fn options(cycles: usize) -> Options {
         Options {
             package: "enth-plugin".to_owned(),
@@ -590,5 +650,36 @@ mod tests {
         let thread_leak = json!({ "runs": [run("baseline", &flat, &threads, 0), run("editor", &flat, &changing, n as u64)] });
         let (checks, _) = judge_editor(&thread_leak, &[(0, 0), (n as u64, n as u64)], &options(n));
         assert!(!checks[2].ok);
+    }
+
+    #[test]
+    fn the_footprint_counts_what_the_kernel_swapped_out() {
+        let n = 60;
+        let counts = [(0, 0), (n as u64, n as u64)];
+        let flat = vec![60_000.0; n];
+        let none = vec![0.0; n];
+        let base = swapping("baseline", &flat, &none, n);
+        // A 30 KB per cycle leak while the kernel swaps 10 MB out at cycle 30: Pss_Anon alone falls about 120 KB per
+        // cycle and would pass; the footprint still grows 30 KB per cycle.
+        let out = |i: usize| if i >= 30 { 10_000.0 } else { 0.0 };
+        let anon: Vec<f64> = (0..n)
+            .map(|i| 60_000.0 + 30.0 * i as f64 - out(i))
+            .collect();
+        let swap: Vec<f64> = (0..n).map(out).collect();
+        let leak = json!({ "runs": [base.clone(), swapping("editor", &anon, &swap, n)] });
+        let (checks, facts) = judge_editor(&leak, &counts, &options(n));
+        assert!(!checks[1].ok, "{}", checks[1].detail);
+        let foot = facts["footprint_kb_per_cycle"]["editor"][0]
+            .as_f64()
+            .unwrap();
+        assert!((foot - 30.0).abs() < 1e-6, "{foot}");
+        assert!(facts["anon_kb_per_cycle"]["editor"][0].as_f64().unwrap() < -50.0);
+
+        // Pages coming back from swap are not growth: Pss_Anon rises 10 MB, the footprint stays flat.
+        let anon: Vec<f64> = (0..n).map(|i| 50_000.0 + out(i)).collect();
+        let swap: Vec<f64> = (0..n).map(|i| 10_000.0 - out(i)).collect();
+        let back = json!({ "runs": [base, swapping("editor", &anon, &swap, n)] });
+        let (checks, _) = judge_editor(&back, &counts, &options(n));
+        assert!(checks[1].ok, "{}", checks[1].detail);
     }
 }
