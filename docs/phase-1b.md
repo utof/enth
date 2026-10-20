@@ -4,9 +4,9 @@
 
 Size: about **27–51 agent-hours** in total, with a critical path of about **13.5–24**, plus 2–4 per layout variant later. Your own time is about **2.5–3.5 h**, plus 45 min if you try Bitwig. These are sized from what P1a actually took, about 18 agent-hours against an estimate of 52–93, and 7.3 h of wall time against a critical path estimated at 18–35 ([phase-1a.md](phase-1a.md#actual-against-estimated-hours)). They come out at 1.5–2.8× P1a's actual hours, because host and editor loops are slower and two heavy builds at a time serialise the work.
 
-**Status (2026-10-20): freezes F0b, F1b and F2b are reached, and waves 4 and 5 are merged except RT.** Lanes S0b (`29ed7b0`, F0b), E+ (`6e505b8`), UI-C (`d6fdabe`), S1s (`d9c4ed1`, F1b), TH (`9c185b3`), FK (on main through `7447f2f`, with no merge commit), S2s (`4bfffdb`), SK (`5a0186a`, F2b), RH, ED1, PL, ED2 and FK2 (fork patches 6–9, `6521f6c`) are merged; RT is next, then INT. Research session: `_local/sessions/2026-10-19-p1b-plugin-editor/` (`summary.md` for the decisions, reports 01–04 for the evidence and the numbers). The docs were updated to match on the same day: [design.md](design.md), [architecture.md](architecture.md), [benchmarks.md](benchmarks.md), [roadmap.md](roadmap.md), [ADR-0001](adr/0001-plugin-shell.md), [ADR-0002](adr/0002-ui-toolkit.md) and [AGENTS.md](../AGENTS.md). `docs/dsp/engine.md` followed with lane E+, and `docs/session.md` with S1s and S2s.
+**Status (2026-10-20): freezes F0b, F1b and F2b are reached, and waves 4 and 5 are merged except RT.** Lanes S0b (`29ed7b0`, F0b), E+ (`6e505b8`), UI-C (`d6fdabe`), S1s (`d9c4ed1`, F1b), TH (`9c185b3`), FK (on main through `7447f2f`, with no merge commit), S2s (`4bfffdb`), SK (`5a0186a`, F2b), RH, ED1, PL, ED2 and FK2 (fork patches 6–9, `6521f6c`) are merged; RT is measuring. **INT is done on its branch (`p1b/int`):** the leak gates (`cargo xtask leak-test`), CLI = plugin inside `host-render`, the preset pipeline and the starter project for owner build 2, the shell and UI spikes out of the workspace, the [owner sheet](p1b-owner.md) and the [G1 table](p1b-g1.md) (everything automated passes; RT's two rows and the owner's three are pending). Research session: `_local/sessions/2026-10-19-p1b-plugin-editor/` (`summary.md` for the decisions, reports 01–04 for the evidence and the numbers). The docs were updated to match on the same day: [design.md](design.md), [architecture.md](architecture.md), [benchmarks.md](benchmarks.md), [roadmap.md](roadmap.md), [ADR-0001](adr/0001-plugin-shell.md), [ADR-0002](adr/0002-ui-toolkit.md) and [AGENTS.md](../AGENTS.md). `docs/dsp/engine.md` followed with lane E+, and `docs/session.md` with S1s and S2s.
 
-New in P1b: `enth-session` (L6) and `enth-plugin` (L8) are created, `enth-ui` (L7) grows its editor, and `vendor/` holds the fork of nice-plug and baseview. The Phase 0 spike crates (`spike-shell`, `spike-ui`, `spike-ui-plugin`) stay frozen as references until lane INT removes them from the workspace.
+New in P1b: `enth-session` (L6) and `enth-plugin` (L8) are created, `enth-ui` (L7) grows its editor, and `vendor/` holds the fork of nice-plug and baseview. Lane INT removed the Phase 0 shell and UI spikes (`spike-shell`, `spike-ui`, `spike-ui-plugin`) from the workspace; their source stays under `spikes/`, frozen, and no longer builds. `spike-metric`, `spike-engine` and `spike-agent` stay members (the listening tools, `wasm-hash` and the engine-golden workflow, the probe CLI).
 
 ## What the research changed
 
@@ -42,7 +42,7 @@ The coordinator alone edits `[workspace.dependencies]`, `Cargo.lock` and `[patch
 
 Sizes are agent-hours (estimates). H = heavy build (nice-plug, egui or clack-host), L = light. "Owner" is your time.
 
-| Lane | Owns | Depends on | Size | Owner | State (2026-10-19) |
+| Lane | Owns | Depends on | Size | Owner | State (2026-10-20) |
 | --- | --- | --- | --- | --- | --- |
 | **S0b** Workspace prep (→ F0b; H once) | Root `Cargo.toml` and `Cargo.lock` with every P1b dependency pinned (nice-plug `=0.4.2`, nice-plug-egui `=0.6.0`, egui `=0.37.0`, the clack crates the test host already uses); the fork's `[patch.crates-io]` block, commented out; empty `enth-session` (L6) and `enth-plugin` (L8, `cdylib` + `lib`); pre-declared module files (`enth-session`: model, apply, bridge, state, link, telemetry; `enth-plugin`: params, process, notes, state, editor; `enth-ui/src/editor/`: regions, layout, cards); theme tokens split into per-area files; `--package` for `bundle`, `host-render` and `reaper-test`; `validate` (pinned clap-validator 0.4.1, sha256-checked); CI jobs; `gate.sh lane` and `gate.sh full` | P1a main | 1–2 | No | Merged (`29ed7b0`, F0b) |
 | **E+** Engine seams (L) | `enth-engine` link, command and telemetry additions; `enth-render` `Performance` macro and mod-wheel events. The list is under "What the research changed". No other P1b lane edits `enth-engine` or `enth-render` | P1a main (beside S0b) | 2–4 | No | Merged (`6e505b8`) |
@@ -56,8 +56,8 @@ Sizes are agent-hours (estimates). H = heavy build (nice-plug, egui or clack-hos
 | **ED1** Editor wiring (H) | The editor from UI-C components bound to the session: macro bar, voice and master, header Undo and Redo buttons, the slot "Automate" menu, right-click "Type value…" with units, the status line, envelope sculpting, disabled dimming; **the layout seam** with "Lanes" as layout 1; a no-op `Overlay` and the reserved lesson, challenge-bar and results regions behind cargo features; the dev window | F2b, UI-C | 3–6 | No | Merged (`7580ba8`) |
 | **ED2** Modulation and feedback (H) | Drag-to-modulate on egui drag-and-drop, depth arcs, the matrix overview, scopes, meters and LFO tiles from telemetry, repaint gating | ED1, S2s, E+ | 3–5 | No | Merged (`1db8ae9`) |
 | **RH** REAPER harness (L, uses the bundle cache) | `xtask/reaper/*.lua`, `xtask/src/reaper.rs` scenarios | F2b | 1.5–3 | No | Merged (`7f77ed6`) |
-| **RT** Real time in host (H) | The p99 and p99.9 measurement, the swap-block condition and multi-instance CPU on the G1 patch; if time allows, the private PipeWire daemon harness for xruns | PL, E+ | 1–3 | No | Not started |
-| **INT** Integration and G1 (H) | Stale docs, this page's status, owner builds and sheet, `editor-cycles` and churn gates on `enth-plugin`, retiring the spike crates from the workspace, `content/presets/`, the P1b G1 rows | Everything | 2–3 | Owner builds | Not started |
+| **RT** Real time in host (H) | The p99 and p99.9 measurement, the swap-block condition and multi-instance CPU on the G1 patch; if time allows, the private PipeWire daemon harness for xruns | PL, E+ | 1–3 | No | Measuring |
+| **INT** Integration and G1 (H) | Stale docs, this page's status, owner builds and sheet, `editor-cycles` and churn gates on `enth-plugin`, retiring the spike crates from the workspace, `content/presets/`, the P1b G1 rows | Everything | 2–3 | Owner builds | Done on `p1b/int` (the owner builds wait for you: [p1b-owner.md](p1b-owner.md)) |
 | **LV** Layout variant (H; later, one per variant) | `enth-ui/src/editor/layout/<variant>.rs` and its snapshots | ED1's seam, the owner's pick | 2–4 each | The pick | Not started |
 
 **Total: about 27–51 agent-hours**, plus 2–4 per layout variant.
@@ -105,9 +105,9 @@ Each lane stops at its own criteria and reports against them.
 | Gate | What you do | Time | When | Default if you don't answer |
 | --- | --- | --- | --- | --- |
 | Upstream issues (optional) | Post, rewrite or drop the drafted baseview xkb report, and file other issues in your own words (RustAudio's AI policy rules out agent-written contributions upstream) | 10 min | Any time | Not posted |
-| Owner build 1: real display | Insert `enth-plugin` (CLAP, then VST3) 10× each; idle CPU; resize; Space after clicking the editor; HiDPI at `Xft.dpi: 192`. This replaces checklist C1, C4, C5 and C6 on the spike plugins | 40 min | After F2b | — (the G0 real-display rows stay pending) |
+| Owner build 1: real display | Insert `enth-plugin` (CLAP, then VST3) 10× each; idle CPU; resize; Space after clicking the editor; HiDPI at `Xft.dpi: 192`; and what the lanes asked for: the save prompt after an editor edit, renamed slot names, the hidden MIDI CC entries, the mod wheel from a controller, a CLAP bounce of short notes, drag-to-modulate. This replaces checklist C1, C4, C5 and C6 on the spike plugins. Steps: [p1b-owner.md](p1b-owner.md) | 45 min | After F2b | — (the G0 real-display rows stay pending) |
 | Layout pick | Read the Claude Design variants; pick one, or "keep Lanes, fixed" | 20–30 min | When the variants arrive | Lanes, with the handoff's signal-flow fixes |
-| Owner build 2: G1 | Make a bass, pad, pluck and lead you like in REAPER, and save them (an agent commits them to `content/presets/`) | 60–90 min, one or two sittings | After ED2, during INT | — (G1 waits) |
+| Owner build 2: G1 | Make a bass, pad, pluck and lead you like in REAPER, starting from the project `cargo xtask starter-project` writes, and save it (an agent runs `cargo xtask extract-presets` and commits the four to `content/presets/`). Steps: [p1b-owner.md](p1b-owner.md) | 60–90 min, one or two sittings | After ED2, during INT | — (G1 waits) |
 | Real audio (C3) | 8 instances at a 64-sample quantum, editors closed, then open. Your PipeWire config forces min-quantum 1024, so set `clock.force-quantum 64` and put it back to 0 afterwards | 30 min | With owner build 2 | — (the G0 xrun row stays pending) |
 | Bitwig poly-mod (optional) | Start the 30-day trial (it needs an account); per-voice modulation of Macro 1; save and reload | 45 min | After PL | Deferred to S1 (roadmap) |
 
@@ -117,13 +117,15 @@ Two defaults apply until you say otherwise. **The fork is on, vendored privately
 
 ## The plugin-side G1 checks
 
+Their status, with the evidence, is [p1b-g1.md](p1b-g1.md) (lane INT, 2026-10-20).
+
 | Check | How | Who | When |
 | --- | --- | --- | --- |
-| CLI = plugin: the engine's golden cases, rendered through the plugin, give the engine's hashes | `cargo xtask host-render --package enth-plugin` | SK, PL | F2b, then every plugin edit |
+| CLI = plugin: the engine's golden cases, rendered through the plugin, give the engine's hashes | `cargo xtask host-render --package enth-plugin` (the plugin golden, then `enth-test-host cli-equal --min-compared 60`, since INT) | SK, PL | F2b, then every plugin edit |
 | `process()` p99 and p99.9 under 25 % of the 64-sample deadline (333 µs), under `SCHED_RR`; with a structural edit every 250 ms, the p99 of instant-swap blocks and of the blocks during a crossfade under 25 % | `enth-test-host process-stats` on the release bundle, [conditions](benchmarks.md#real-time-measurement-p1b). A crossfading swap is reported; see the open check on the pre-effects crossfade | RT | After PL |
 | clap-validator: 0 failures | `cargo xtask validate`, debug and release bundles | SK, PL | F2b |
 | State round trip: an identical patch and a byte-identical second save | Properties, test host, REAPER `patch-roundtrip` | S2s, SK, RH | F2b |
-| Editor leak at most 26 KB per open/close cycle, threads constant, instance churn flat | `editor-cycles` (200 cycles), instance churn | FK, INT | Before merging editor lanes; nightly |
+| Editor leak at most 26 KB per open/close cycle, threads constant, instance churn flat | `cargo xtask leak-test`: `editor-cycles` (200 cycles, twice) and instance churn (200 lives), under its own Xvfb | FK, INT | Before merging editor lanes; nightly (CI job `leak`) |
 | 0 editor frames while idle, at most 30 fps while visible data changes | kittest exact-delay tests | ED2 | ED2 |
 | 8 instances on one thread: 59 % (p50) and 91 % (max) of the deadline; 16 spread over 4 threads, each thread's p99 under 50 % (information) | `process-stats --instances N --threads T` | RT | After PL |
 | First open, focus, HiDPI, GPU cost | The real display | **You** | Owner build 1 |
@@ -140,11 +142,11 @@ Layers, by cost of signal, fastest first. Costs were measured in Phase 0 and P1a
 4. `cargo test -p enth-plugin` (incremental 1.3–2.9 s).
 5. `cargo xtask host-render --package enth-plugin` and `cargo xtask validate`, on the debug bundle.
 6. `cargo xtask reaper-test --package enth-plugin` (about 45 s) before merging plugin lanes.
-7. `editor-cycles` and instance churn (minutes), before merging editor lanes and nightly.
+7. `cargo xtask leak-test`: `editor-cycles` and instance churn (about 3 minutes), before merging editor lanes and nightly.
 8. Owner builds.
 
 - **Plugin goldens are engine goldens.** A plugin-level case is an engine golden case played through the plugin, asserting the engine's hash, so a DSP change never churns plugin goldens. Plugin-only behaviour (slot automation, `reset()`, voice steal under host events, the monitor bypass) is compared with `enth render` of an equivalent performance, or gets its own one-file case. Traps: use velocities that are exactly `k/127` (or convert in one place), compute absolute event frames, use `DEFAULT_SEED`, test host blocks of 1, 64, 100 and 4096.
-- **REAPER scenarios** (RH): `state-create` and `state-reload` (existing, retargeted), `patch-roundtrip` (a non-default patch survives a save and a reload in a new process), `slot-automation`, `macro-automation`, `undo-state-load`, `two-instances`, `editor-smoke` and `cross-format` (existing). Focus, Space, HiDPI and xruns are not in the harness: they are yours.
+- **REAPER scenarios** (RH): `state-create` and `state-reload` (existing, retargeted), `patch-roundtrip` (a non-default patch survives a save and a reload in a new process), `slot-automation`, `macro-automation`, `undo-state-load`, `two-instances`, `editor-smoke` and `cross-format` (existing); since then `mod-wheel` and `dirty-flag` (FK2), `preset-extracted` and `starter-project` (INT). Focus, Space, HiDPI and xruns are not in the harness: they are yours.
 - **Interaction tests drive the real editor with a real session** over a narrow session trait, so the same code runs in kittest, the dev window and the plugin. A pixel snapshot is never the only assertion for an interaction.
 - **Snapshots** are one PNG per component or region, plus per layout the whole editor at the P1 default and at the maximum patch (4 generators, 4 voice effects, 4 effects, 8 modulators). `kittest.toml` at the root with threshold 0.6 and 0 failed pixels; updated only on purpose, with the changed PNGs listed in the commit message.
 - **Allocation and leak checks:** `assert_process_allocs` on debug bundles under clap-validator; 10,000-event bursts; `render --process-on caller` with the editor open; a plan swap while the editor animates; an RTSan-built test host (nightly pinned) can catch `malloc` in a stable-built plugin.
@@ -170,7 +172,7 @@ Reliability rules carry over from P1a: no wall-clock assertions in the gate, no 
   | Theme tokens, the token gallery snapshot | Per-area token files from S0b; UI-C owns the gallery. A lane adds tokens only in its own area file |
   | `enth-ui` widgets | UI-C. ED lanes compose; widget signature changes are additive until F2b |
   | Snapshot PNGs (binary, about 300 KB) | One per component or region, owned by its lane; whole-editor snapshots per layout belong to that layout's lane. A lane that moves another lane's snapshot updates it in the same commit after rebasing |
-  | Spike crates | Frozen. INT removes them from the workspace once xtask targets `enth-plugin` |
+  | Spike crates | The shell and UI spikes were removed from the workspace by INT (2026-10-20); the rest are frozen |
   | `xtask/src/main.rs`, CI workflows | S0b stubs every P1b command and job; lanes fill their own modules |
   | `tools/test-host` | TH only; a case file per plugin |
 
@@ -207,3 +209,6 @@ Not settled by the research; each is owned by a lane or by a later milestone.
 - baseview PR #357 moves the X11 work off its own thread. Re-check at each nice-plug-egui release; the session mutex stays correct either way.
 - All engine timings were taken at load 7–26 on a shared laptop. Re-run the G1 numbers on a quiet machine before the gate.
 - Audition while the host has put a stopped plugin to sleep (nice-plug never calls `request_process`); editor size persistence (`EguiEditorState` has no setter).
+- **Found by INT (2026-10-20): the editor cannot add or remove modules, and a fresh instance plays `Patch::init()`** (one oscillator, one envelope; the editor has no add-module intent, and the session's ops exist for it). So owner build 2 starts from `cargo xtask starter-project` (four named tracks with every P1 module, the extra ones switched off). Open: an "add module" control in the editor, or a richer default patch; either is a product decision.
+- **Found by INT: the editor's frame rate on the real display.** ED2 schedules every live frame at `motion.animated_hz` (1/30 s), the scope included; `motion.scope_hz` (60) is unused by the editor. In Phase 0 baseview 0.4.1 delivered a 1/30 s request as about 20 fps and a 1/60 s request as about 30. Owner build 1 (check 1.3) says whether that looks smooth; if not, the output region can ask for `scope_interval` while its data changes.
+- **Found by INT: `enth_patch::file::ENGINE_VERSION` is `"0.1.0"`, `enth_engine::ENGINE_VERSION` `"0.2.0"`.** A patch with no `engine` stamp (`Patch::init()`, so a fresh instance) is saved by the plugin as engine 0.1.0. For the patch model's owner.

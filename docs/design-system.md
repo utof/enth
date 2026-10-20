@@ -68,7 +68,7 @@ Starting proposals from the UI reference analysis; the G0 UI spike checks them o
 
 **Catalogue cards (`size.cards`, added by lane UI-C, below):** switch 28×16, at most 4 segments, envelope stage 0.05 minimum and 0.25 range.
 
-**Motion:** `repaint.animated_hz` 30, `repaint.scope_hz` 60 (built as `motion.animated_hz`, `motion.scope_hz`, plus `motion.transition` 0.1 s for egui's own animations). baseview 0.4.1 caps plugin editors near 30 fps, so a 60 Hz scope gets about 30 in a host.
+**Motion:** `repaint.animated_hz` 30, `repaint.scope_hz` 60 (built as `motion.animated_hz`, `motion.scope_hz`, plus `motion.transition` 0.1 s for egui's own animations). baseview 0.4.1 caps plugin editors near 30 fps, so a 60 Hz scope gets about 30 in a host. (2026-10-20: the editor's repaint gating, lane ED2, schedules every live frame at `animated_hz`, the scope included, and does not use `scope_hz`; see the open check in [phase-1b.md](phase-1b.md#open-checks).)
 
 ## Code shape
 

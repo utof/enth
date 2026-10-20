@@ -4,7 +4,7 @@ Sounds made in the plugin's editor, one patch document per file (`<name>.patch.j
 
 ## How a sound becomes a file
 
-1. In REAPER, put enth on a track and name the track after the sound (`bass`, `pad`, `pluck`, `lead`). Several tracks in one project are fine.
+1. Start from `cargo xtask starter-project --out ~/enth-g1/g1-sounds.rpp`: a REAPER project with four tracks, `bass`, `pad`, `pluck` and `lead`, each holding enth with the starter patch (every P1 module, the extra ones switched off; a fresh instance has only one oscillator and one envelope, and the editor cannot add modules yet). Any project works: name each track after its sound.
 2. Make the sound in the editor, then save the project (Ctrl+S). The plugin folds the host's parameter values into the patch when REAPER saves, so the project holds what you heard.
 3. An agent runs, from the repo root:
 

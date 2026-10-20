@@ -1,5 +1,6 @@
 # Owner checklist: what Phase 0 left for your eyes, ears and hands
 
+- **2026-10-20 (P1b lane INT): the REAPER checks moved to the [P1b owner sheet](../p1b-owner.md),** on the product plugin: C1, C3, C4, C5 and C6 are its owner build 1 and its real-audio check, and owner build 2 is G1's "bass, pad, pluck and lead". The shell and UI spikes left the workspace and no longer build, so this page keeps only what does not need them: the listening (A), the dev window and the GPU probes (B), the scope rate (C2, now in the dev window) and section D.
 - Date: 2026-10-19 (lane Z). Updated the same day after P1b lane FK: decisions 1 and 4 below are settled, and 5 is now the optional upstream reports. One ordered list that replaces the separate lists in [shell.md](shell.md), [ui.md](ui.md), [metric.md](metric.md), [agent-probe.md](agent-probe.md), [test-host.md](test-host.md) and the research reports 01-final and 02-final (`_local/sessions/2026-10-19-phase-0-spikes/`).
 - Nothing in P1a waits for these. They close the G0 rows marked *pending owner* in [roadmap.md](../roadmap.md#p0--spikes-and-skeleton-done-2026-10-19-except-owner-checks) and [benchmarks.md](../benchmarks.md#ui-thresholds), and they decide whether ADR-0002 stays accepted and whether ADR-0007 can be accepted.
 - Total: about 2½ hours of checks plus the two 15-minute listening sessions, in as many sittings as you like. Sections A and B are safe; risk rises from C to D.
@@ -17,10 +18,11 @@
 From the repo root (`~/code/enth`), after merging lane Z:
 
 ```bash
-cargo build --release -p spike-metric                 # the listening tool
-cargo build --release -p spike-ui                     # the standalone dev window (spike-ui-dev)
-cargo xtask install spike-ui-plugin --release         # the reference panel as a plugin, into ~/.clap and ~/.vst3
+cargo build --release -p spike-metric                                  # the listening tool
+cargo build --release -p enth-ui --example dev_window --features dev-window   # the editor's dev window (replaces spike-ui-dev, 2026-10-20)
 ```
+
+The plugin is installed by the [P1b owner sheet](../p1b-owner.md#install-about-10-minutes-no-windows) (`cargo xtask install --package enth-plugin --release`); `spike-ui` and `spike-ui-plugin` no longer build.
 
 ## A. Listening (no windows, headphones)
 
@@ -74,22 +76,24 @@ This is the dry run of the G1 check ("at least 7 of 10 final sounds match their 
 
 ### B1. Dev window: look, feel and cost (about 15 minutes)
 
+2026-10-20: the spike's dev window is retired; the real editor's dev window takes its place (the real editor over a real session, an engine rendering into buffers nobody hears; [editor.md](../editor.md#the-dev-window)). It has no gallery and no "Audio on" button: F3 holds a note (middle C) instead, and the process is `dev_window`.
+
 ```bash
-./target/release/spike-ui-dev            # then, after closing it and waiting 10 s: ./target/release/spike-ui-dev --gallery
+./target/release/examples/dev_window --patch content/templates/pad_2osc.patch.json
 ```
 
 - Is the first frame drawn, or does the window stay blank (the researcher saw blank standalone windows on this GPU)?
 - Do type, contrast and spacing read well at 100 %? Drag knobs (and with Shift), use the wheel, double-click to reset, drag a lane card by its header, scroll the generator column and the lesson.
-- Click "Audio on" in the header, then in a second terminal:
+- Hold F3 (a note plays into the engine; the rings, tiles, scope and meters move), then in a second terminal:
 
   ```bash
-  pidstat -t -p "$(pgrep -x spike-ui-dev)" 1 20
+  pidstat -t -p "$(pgrep -f examples/dev_window)" 1 20
   nvidia-smi pmon -s um -c 20
   ```
 
   The CPU side was 3.5–4.2 % of a core at 30 fps headless; the gate is < 5 % per editor and < 5 % SM.
 - With audio on and `pidstat` running, cover the window completely with another window for 10 s, then minimise it for 10 s. The GUI thread should drop to about the idle value (gate: occluded ≤ idle).
-- Click "Audio off": the CPU should fall to about zero (the panel stops drawing).
+- Release F3 and let the note end: the CPU should fall to about zero (the editor draws nothing while nothing changes).
 
 ### B2. glow vs wgpu on the real GPU (about 5 minutes)
 
@@ -110,6 +114,8 @@ Per run, note whether the window drew. The JSON gives launch → first frame, fp
 
 Start your own REAPER with `~/apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper`. Once: *Options → Preferences → Plug-ins → CLAP*, make sure `~/.clap` is scanned and press *Re-scan*; the same for VST3 with `~/.vst3`. Quitting REAPER between steps is fine.
 
+**2026-10-20: C1, C3, C4, C5 and C6 are replaced by the [P1b owner sheet](../p1b-owner.md) on `enth-plugin`; the spike steps below are kept as the record and no longer run (the spikes do not build).**
+
 ### C1. First open, idle cost, close and reopen (about 20 minutes)
 
 The plugin is "enth spike-ui": the shell from [shell.md](shell.md) with the full reference panel, so this covers shell item (i) too.
@@ -127,13 +133,14 @@ The plugin is "enth spike-ui": the shell from [shell.md](shell.md) with the full
 
 ### C2. Scope rate (about 5 minutes)
 
-Quit REAPER, then start it with the scope token at 30 Hz (no rebuild; the plugin reads the file when the editor opens):
+2026-10-20: `enth-plugin` does not read `ENTH_THEME`; the dev window does. Make a theme with the scope token at 30 Hz and compare it with the default:
 
 ```bash
-ENTH_THEME=~/code/enth-scratch/lane-u1/theme-scope30.json ~/apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper
+./target/release/examples/dev_window --dump-theme > /tmp/theme-scope30.json   # set motion.scope_hz to 30 in it
+./target/release/examples/dev_window --theme /tmp/theme-scope30.json --patch content/templates/pad_2osc.patch.json
 ```
 
-Play the same notes. Under baseview 0.4.1 a 30 Hz request gives about 20 fps (a 60 Hz request, the default, about 30). Do 20 fps scopes look smooth enough? See decision 3.
+Hold F3. Under baseview 0.4.1 a 30 Hz request gives about 20 fps (a 60 Hz request, the default, about 30). Do 20 fps scopes look smooth enough? See decision 3.
 
 ### C3. Real audio and xruns (about 30 minutes)
 
@@ -182,7 +189,7 @@ Rescan and load "enth spike-np-rename" (CLAP; it carries the researcher's 123-li
 
 ### D1. Bitwig trial: poly-mod (about 45 minutes including the install)
 
-Installing the trial and accepting its licence is your call. Then `cargo xtask install spike-shell --release`, load "enth spike-shell" (CLAP), add a per-voice modulator on Macro 1 and check that held voices modulate independently; save and reload the project. If Ardour is around, do the plain load, play, automate and save checks with the VST3. This settles shell items (d) and (h); the real poly-mod check is in S1 anyway.
+Installing the trial and accepting its licence is your call. Then `cargo xtask install --package enth-plugin --release` (2026-10-20; it was the shell spike), load "enth" (CLAP), add a per-voice modulator on Macro 1 and check that held voices modulate independently; save and reload the project. If Ardour is around, do the plain load, play, automate and save checks with the VST3. This settles shell items (d) and (h); the real poly-mod check is in S1 anyway.
 
 ### D2. iced busy loop (2 minutes, low value)
 
@@ -216,7 +223,7 @@ Only if Xorg crashes again or first opens stay blank: `sudo prime-select on-dema
 
 ## Decisions only you can make
 
-1. **Slot names: settled (2026-10-19).** A vendored fork of nice-plug and baseview under `vendor/` with five patches (slot rename, `editor_closed`, baseview's xkb unref, keyboard focus only while typing, and a lost note-on in the CLAP wrapper), behind `[patch.crates-io]` and built by lane FK ([ADR-0001](../adr/0001-plugin-shell.md), `vendor/README.md`). CLAP names follow the patch in REAPER; VST3 in REAPER stays "Slot N" whatever we do. Nothing to decide; C6 is the REAPER confirmation.
+1. **Slot names: settled (2026-10-19).** A vendored fork of nice-plug and baseview under `vendor/` with five patches (slot rename, `editor_closed`, baseview's xkb unref, keyboard focus only while typing, and a lost note-on in the CLAP wrapper), behind `[patch.crates-io]` and built by lane FK ([ADR-0001](../adr/0001-plugin-shell.md), `vendor/README.md`). CLAP names follow the patch in REAPER, and so do VST3 names: REAPER ignores the title-change message but reads VST3 titles live (lane PL measured both, 2026-10-20). Nothing to decide; check 1.8 of the [P1b owner sheet](../p1b-owner.md) is the real-display confirmation.
 2. **The look:** palette, density, knob size (36 px in a 56 px cell), Inter ([design-system.md](../design-system.md)). Anything to change becomes a token edit plus a new gallery snapshot. Input: B1.
 3. **Scope rate:** keep `motion.scope_hz` at 60 (about 30 fps under baseview 0.4.1) or drop it to 30 (about 20 fps, a third less drawing). Input: C2.
 4. **BSL-1.0: accepted (2026-10-19)** for the Windows-only `clipboard-win` and `error-code` (scoped exceptions in `deny.toml`) and for ported source (2026-10-19 notes in [ADR-0004](../adr/0004-licensing.md)). Nothing to do unless you want to revisit it.
