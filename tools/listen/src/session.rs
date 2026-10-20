@@ -1,4 +1,4 @@
-//! The interactive trial loop and the answer files, shared by both tools.
+//! The interactive trial loop and the answer files, shared by the tools.
 //!
 //! One trial is a few labelled clips played in order (`A`, `B`, and for ABX `X`) with a gap between them, then a
 //! prompt. The owner can replay everything (`r`) or one clip (`ra`, `rb`, `rx`), answer, or quit (`q`); progress is
@@ -185,10 +185,29 @@ pub fn ask(
     let io = |e: std::io::Error| e.to_string();
     let all: Vec<&Wav> = spec.clips.iter().map(|(_, w)| *w).collect();
     let started = Instant::now();
-    let mut replays = 0u32;
     writeln!(out).map_err(io)?;
     writeln!(out, "{} playing ...", spec.header).map_err(io)?;
     play_clips(&all, spec.gap_s, player, scratch)?;
+    prompt(spec, started, player, scratch, lines, out)
+}
+
+/// The command loop of [`ask`] without the first playback: for a second question about clips already heard (the
+/// pairs test asks which one X is, then how similar A and B are). `started` is when the clips first played; the
+/// reply's `replays` counts only this prompt's replays.
+///
+/// # Errors
+/// The player failed or the scratch file could not be written.
+pub fn prompt(
+    spec: &AskSpec<'_>,
+    started: Instant,
+    player: &mut dyn Player,
+    scratch: &Path,
+    lines: &mut dyn LineSource,
+    out: &mut dyn Write,
+) -> Result<Reply, String> {
+    let io = |e: std::io::Error| e.to_string();
+    let all: Vec<&Wav> = spec.clips.iter().map(|(_, w)| *w).collect();
+    let mut replays = 0u32;
     loop {
         write!(out, "{}", spec.prompt).map_err(io)?;
         out.flush().map_err(io)?;
