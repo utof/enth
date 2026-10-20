@@ -4,7 +4,7 @@
 //! | --- | --- | --- |
 //! | 0 | OK (`check`: every item passed) | |
 //! | 1 | Ran fine, but `check` had failures | |
-//! | 2 | Usage error | `usage`, `bad_expect`, `bad_perf`, `bad_ops_source`, `nothing_to_apply` |
+//! | 2 | Usage error | `usage`, `bad_expect`, `bad_perf`, `bad_ops_source`, `nothing_to_apply`, `not_built_yet` (an R1 command whose lane has not built it) |
 //! | 3 | Validation error | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range`, `bad_json`, ...), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema` |
 //! | 4 | Render or analysis failure | `render_failed` (and the render's own codes), `analysis_failed`, `unsupported_wav`, `write_failed` |
 //! | 5 | File not found | `file_not_found` |
