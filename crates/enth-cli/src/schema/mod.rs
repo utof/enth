@@ -55,6 +55,12 @@ pub mod ids {
     pub const EXPLAIN: &str = "enth.explain/1";
     /// `enth bench`.
     pub const BENCH: &str = "enth.bench/1";
+    /// `enth challenge new` (lane SKR).
+    pub const CHALLENGE_NEW: &str = "enth.challenge-new/1";
+    /// `enth challenge show` (lane SKR).
+    pub const CHALLENGE_SHOW: &str = "enth.challenge-show/1";
+    /// `enth compare` (lane SKR, then CL).
+    pub const COMPARE: &str = "enth.compare/1";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -219,6 +225,24 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::BENCH,
         describes: "the output of enth bench",
         generate: gen_schema::<BenchOut>,
+    },
+    Entry {
+        name: "challenge-new",
+        id: ids::CHALLENGE_NEW,
+        describes: "the output of enth challenge new",
+        generate: gen_schema::<ChallengeNewOut>,
+    },
+    Entry {
+        name: "challenge-show",
+        id: ids::CHALLENGE_SHOW,
+        describes: "the output of enth challenge show",
+        generate: gen_schema::<ChallengeShowOut>,
+    },
+    Entry {
+        name: "compare",
+        id: ids::COMPARE,
+        describes: "the output of enth compare",
+        generate: gen_schema::<CompareOut>,
     },
 ];
 

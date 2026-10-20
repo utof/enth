@@ -233,6 +233,18 @@ The numbers are illustrative. A `fix` is one move for the whole list, rendered a
 
 `suggest` renders ± small moves for each editable parameter (cheap: the engine renders hundreds of short clips per second), so its numbers are measured, not guessed. `match` hands the fine-tuning to CMA-ES, restricted to the parameters the agent frees, so structure stays the agent's choice.
 
+### `enth challenge` and `enth compare` as built (lane SKR, F2r; lane CL finishes them)
+
+A first version for the round skeleton: the same functions the game's worker and the golden challenges call, so the CLI scores exactly what the plugin scores.
+
+| Command | Output | Does |
+| --- | --- | --- |
+| `enth challenge new [--level N \| --code X] [--seed S]` | `enth.challenge-new/1` | A challenge from a level's preset (1–5, default 1) and a seed (default a fresh 40-bit one, so the code stays short; from 2^40 the long code), or the challenge a code names: the code and its form, the settings, the phrase, the target's fingerprint and its 8-digit prefix, the engine, and the `enth.challenge/1` JSON |
+| `enth challenge show <code> [--reveal] [--out T.patch.json]` | `enth.challenge-show/1` | Decodes the code (case, hyphens, spaces and Crockford's aliases ignored), regenerates the target, checks a long code's fingerprint prefix (`target_mismatch`) and engine (`engine_differs`, a warning on stderr), and shows the phrase, the scoring, the randomized parameters' addresses and the draw count; **no target value** unless `--reveal`, which adds every randomized value beside the start's and the target patch (`--out` writes it) |
+| `enth compare <patch> --code <code> \| --challenge FILE` | `enth.compare/1` | Scores the patch with `enth_challenge::score_round` and the scorers the challenge names (`sound/1` since lane SS; ST's structure and combined scores switch in by themselves): sound, structure and combined %, the pass mark, `passed`, the margin, the scorer ids and the full `enth.score-report/1`. **Exit 1 when it does not pass**, like `check` |
+
+Errors carry the code's or the round's own reason and hint (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, `out_of_range`, exit 3). Not yet: a WAV or patch reference (`--target`, the planned shape above), custom settings for `new` (amounts, `musical`, template), and `decode`; lane CL owns those and versions the schemas when the shapes change.
+
 ## Three typical workflows
 
 **Text goal** ("make a warm evolving pad"):

@@ -22,6 +22,12 @@
 //!    the [`crate::ledger`], so every host note ends exactly once (audition notes are not the host's and never
 //!    reported). A note-off the host lists ahead of its own note-on on one frame (a zero-length note) is moved
 //!    behind it ([`Audio`]'s `push_note`).
+//!
+//!    A Recreate round (lane SKR, [`crate::game::Player`]) adds two steps around the render: before it, the A/B
+//!    atomics are read, a new target loop is taken from its lock-free hand-off and Mine ▶'s phrase notes for this
+//!    block join the event list (on [`crate::game::GAME_PORT`]); after it, Target ▶'s loop and the engine's output
+//!    are mixed at one shared position with a 10 ms crossfade and the loudness-match gains. With no round the
+//!    player touches nothing.
 //! 4. Take the telemetry tap's wake flag and request a repaint (lock-free).
 //! 5. Watch `EguiEditorState::is_open()` fall (the editor's `editor_closed` does the session side on the GUI thread;
 //!    this covers a build without that hook): disable the tap and leave the editor-closed duties to the next pump.
@@ -301,6 +307,11 @@ impl Enth {
             audio.host_events(None);
         }
 
+        // 1b. A Recreate round (lane SKR): the A/B switch, a new target loop, and Mine ▶'s phrase notes for this block
+        //     (on their own port, so the ledger never reports them). Nothing at all while no round plays.
+        self.player
+            .begin(self.shared.game.ab.load(), frames, &mut audio.events);
+
         // 2. The notes a CLAP `reset` dropped end at frame 0, before anything this block reports.
         if audio.reset_pending {
             audio.reset_pending = false;
@@ -348,6 +359,10 @@ impl Enth {
             start,
             context,
         );
+
+        // 3b. The A/B mix (lane SKR): Target ▶'s loop and Mine ▶'s engine output, crossfaded at one position; the
+        //     block is left untouched while no round plays, so renders still equal `enth render`.
+        self.player.mix(left, right);
 
         // 4. Telemetry wake.
         if let Some(tap) = engine.tap()

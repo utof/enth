@@ -1,0 +1,69 @@
+---
+source: crates/enth-cli/tests/challenge.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "code": "10C0-1000-0000-79",
+  "draws": 12,
+  "engine": null,
+  "fingerprint": "acb53ebf10d6e623b23141046015e9c91330b7b893d56a97fe074e876311e434",
+  "fingerprint_prefix": "acb53ebf",
+  "form": "short",
+  "hint": "`enth compare <patch> --code 10C0-1000-0000-79` scores a patch against it; --reveal shows the answer",
+  "level": 3,
+  "phrase": {
+    "id": 1,
+    "length_ms": 3000,
+    "name": "held",
+    "notes": [
+      {
+        "hold_ms": 1500,
+        "key": 48,
+        "start_ms": 0,
+        "velocity": 100
+      }
+    ]
+  },
+  "randomized": [
+    "env1.attack",
+    "env1.decay",
+    "env1.release",
+    "env1.sustain",
+    "env2.decay",
+    "env2.sustain",
+    "filter1.cutoff",
+    "filter1.mode",
+    "filter1.resonance",
+    "osc1.semi",
+    "osc1.wave"
+  ],
+  "reveal": null,
+  "schema": "enth.challenge-show/1",
+  "scoring": {
+    "combined": "[scorer]",
+    "pass_mark": 90,
+    "sound": "[scorer]",
+    "sound_weight": 65,
+    "structure": "[scorer]",
+    "time": "time/1"
+  },
+  "spec": {
+    "amounts": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "difficulty": 50,
+    "generator": 1,
+    "musical": 100,
+    "seed": 7,
+    "template": 0
+  },
+  "warnings": []
+}
+--- stderr
