@@ -21,7 +21,7 @@
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
 //! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
 //! | `round` | (lane SKR) a Recreate round through the editor's Recreate bar (real clicks), the transport stopped: Start prepares the target, Target ▶ and Mine ▶ sound on the track's meter, a submit is scored, End removes the round and writes the round log |
-//! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save |
+//! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save, each sound named and typed after its track (not "Init") |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
 //! It runs the product plugin only (`enth-plugin`, the default package). The Phase 0 shell spike's three scenarios went
@@ -763,7 +763,8 @@ fn round(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String
 
 /// `starter-project` (lane INT, CLAP only: the project holds the CLAP): the project `cargo xtask starter-project` writes
 /// opens in REAPER with the starter patch loaded on each of its four named tracks, and `extract-presets` on REAPER's
-/// save of it gives the four tracks' patches back by name, so owner build 2 can start there.
+/// save of it gives the four tracks' patches back by name, each named and typed after its track rather than "Init"
+/// (R1/S1 lane INT), so owner build 2 can start there.
 fn starter_project(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
     let scope = format!("{}/starter-project", format.tag());
     if format != Format::Clap {
@@ -826,10 +827,43 @@ fn starter_project(sb: &Sandbox, report: &mut Report, format: Format) -> Result<
             let same = found
                 .iter()
                 .all(|f| f.patch == crate::preset::STARTER_PATCH);
+            // What `extract-presets` writes (lane INT, R1/S1): each sound named after its track, typed by it, without
+            // Init's name, tag and description, and otherwise the starter patch.
+            let presets: Vec<Result<(String, Vec<String>), String>> = found
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    crate::preset::preset_text(
+                        &f.patch,
+                        &crate::preset::preset_title(f, "starter", i),
+                    )
+                })
+                .collect();
+            let titles: Vec<String> = presets
+                .iter()
+                .map(|p| {
+                    p.as_ref()
+                        .ok()
+                        .and_then(|(text, _)| enth_patch::file::load(text).ok())
+                        .map_or_else(String::new, |l| {
+                            format!("{} {:?}", l.patch.meta.name, l.patch.meta.tags)
+                        })
+                })
+                .collect();
+            let want: Vec<String> = crate::preset::STARTER_TRACKS
+                .iter()
+                .map(|t| format!("{} [{t:?}]", crate::preset::title(t)))
+                .collect();
+            let factory_ready = presets.iter().all(|p| {
+                p.as_ref().is_ok_and(|(text, problems)| {
+                    problems.is_empty() && same_apart_from_meta(text, crate::preset::STARTER_PATCH)
+                })
+            });
             (
-                got.join(",") == names && same,
+                got.join(",") == names && same && titles == want && factory_ready,
                 format!(
-                    "extract-presets on REAPER's save: {got:?}, every patch the starter's: {same}"
+                    "extract-presets on REAPER's save: files {got:?}, every saved patch the starter's: {same}; presets \
+                     {titles:?}, factory-ready and otherwise the starter: {factory_ready}"
                 ),
             )
         }
@@ -839,9 +873,24 @@ fn starter_project(sb: &Sandbox, report: &mut Report, format: Format) -> Result<
     Ok(())
 }
 
+/// Two patch documents that differ at most in their `meta` (name, author, description, tags).
+fn same_apart_from_meta(a: &str, b: &str) -> bool {
+    let strip = |text: &str| {
+        serde_json::from_str::<serde_json::Value>(text)
+            .ok()
+            .map(|mut v| {
+                if let Some(o) = v.as_object_mut() {
+                    o.remove("meta");
+                }
+                v
+            })
+    };
+    matches!((strip(a), strip(b)), (Some(x), Some(y)) if x == y)
+}
+
 /// `cargo xtask extract-presets` on the project `patch-roundtrip` saved first (lane INT): the one enth instance in it
 /// gives back the patch the scenario loaded, byte for byte, so a sound the owner saves in REAPER becomes a preset file
-/// unchanged.
+/// that differs from it only in its metadata (the name and tags, R1/S1 lane INT).
 fn preset_extracted(out: &Path, report: &mut Report, format: Format) {
     let project = out.join(format!("roundtrip-{}-a.rpp", format.tag()));
     let want = PRODUCT_ROUNDTRIP_PATCH.trim_end();
@@ -849,19 +898,31 @@ fn preset_extracted(out: &Path, report: &mut Report, format: Format) {
         .map_err(|e| format!("{}: {e}", project.display()))
         .and_then(|text| crate::preset::instances(&text))
     {
-        Ok(found) => (
-            found.len() == 1 && found[0].patch == want,
-            format!(
-                "{} enth instance(s) in the saved project; the extracted patch is {} bytes, {}",
-                found.len(),
-                found.first().map_or(0, |f| f.patch.len()),
-                if found.first().is_some_and(|f| f.patch == want) {
-                    "identical to the patch loaded"
-                } else {
-                    "NOT the patch loaded"
-                }
-            ),
-        ),
+        Ok(found) => {
+            // The preset file `extract-presets` writes: the saved patch with only its metadata changed.
+            let preset_same = found.first().is_some_and(|f| {
+                crate::preset::preset_text(&f.patch, "roundtrip")
+                    .is_ok_and(|(text, _)| same_apart_from_meta(&text, want))
+            });
+            (
+                found.len() == 1 && found[0].patch == want && preset_same,
+                format!(
+                    "{} enth instance(s) in the saved project; the saved patch is {} bytes, {}; the preset file {}",
+                    found.len(),
+                    found.first().map_or(0, |f| f.patch.len()),
+                    if found.first().is_some_and(|f| f.patch == want) {
+                        "identical to the patch loaded"
+                    } else {
+                        "NOT the patch loaded"
+                    },
+                    if preset_same {
+                        "differs only in its metadata"
+                    } else {
+                        "DIFFERS beyond its metadata"
+                    }
+                ),
+            )
+        }
         Err(e) => (false, e),
     };
     report.add(

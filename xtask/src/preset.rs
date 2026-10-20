@@ -4,14 +4,20 @@
 //! or an FX chain `.RfxChain`, which uses the same blocks) carries the plugin's saved state: base64 around nice-plug's
 //! JSON (`{"version","params","fields"}`), whose `patch` field is exactly `Patch::to_json()` (docs/plugin.md,
 //! "State"). This command finds those instances (CLAP id `dev.enth.synth`, VST3 class id `55555EAD…`), decodes the
-//! state with the REAPER harness's chunk code ([`crate::reaper`]'s `chunk.rs`) and writes each `patch` field, byte for
-//! byte, to `<out>/<name>.patch.json`. Such a file is a patch document like any other: `enth describe`, `enth render`
-//! and the test host's `--state` read it, and the plugin loads it and saves it back unchanged.
+//! state with the REAPER harness's chunk code ([`crate::reaper`]'s `chunk.rs`) and writes each `patch` field to
+//! `<out>/<name>.patch.json`, as `Patch::to_json()` with only its metadata changed ([`preset_text`]). Such a file is a
+//! patch document like any other: `enth describe`, `enth render` and the test host's `--state` read it, and the plugin
+//! loads it and saves it back unchanged.
 //!
 //! The name is the FX's own name if the owner renamed the instance in REAPER, else the track's name, else the
-//! project file's name with the instance's number; it is lower-cased to `[a-z0-9-]`. `--name` names a single
-//! instance. Host parameter values are not in a preset: the plugin folds them into the patch when it saves
-//! (docs/session.md), so the `patch` field already holds what was heard.
+//! project file's name with the instance's number; the file name is it lower-cased to `[a-z0-9-]`, and the preset's
+//! `meta.name` is it as written, with a capital first letter (track `bass` gives `bass.patch.json` named "Bass").
+//! `--name` names a single instance. A sound made from Init (the patch a fresh instance and the starter project
+//! load) would otherwise be named "Init" and tagged `init`, so four G1 sounds would collide with each other and with
+//! the factory Init (R1/S1 lane INT): the `init` tag and Init's description are dropped, and when the name is a type
+//! of the tag vocabulary (`bass`, `pad`, `pluck`, `lead`, …) and the patch has no type tag, that type is added.
+//! Every other byte is the plugin's. Host parameter values are not in a preset: the plugin folds them into the patch
+//! when it saves (docs/session.md), so the `patch` field already holds what was heard.
 //!
 //! ```text
 //! cargo xtask extract-presets ~/enth-g1/sounds.rpp                     # writes content/presets/<track>.patch.json
@@ -236,21 +242,74 @@ pub fn slug(text: &str) -> String {
     out.trim_matches('-').to_owned()
 }
 
-/// The preset name of an instance: its FX name, else its track's, else `<stem>-<n>` (n from 1).
+/// The file name of an instance's preset (without the suffix): [`preset_title`] as a [`slug`].
 pub fn preset_name(instance: &Instance, stem: &str, index: usize) -> String {
-    [&instance.fx_name, &instance.track]
+    slug(&preset_title(instance, stem, index))
+}
+
+/// The preset's own name (`meta.name`) for an instance: its FX name, else its track's, else `<stem> <n>` (n from 1),
+/// trimmed, with a capital first letter. A name with no letter or digit in it is passed over.
+pub fn preset_title(instance: &Instance, stem: &str, index: usize) -> String {
+    let text = [&instance.fx_name, &instance.track]
         .into_iter()
-        .map(|s| slug(s))
-        .find(|s| !s.is_empty())
-        .unwrap_or_else(|| {
-            let stem = slug(stem);
-            let stem = if stem.is_empty() {
-                "preset".to_owned()
-            } else {
-                stem
-            };
-            format!("{stem}-{}", index + 1)
-        })
+        .map(|s| s.trim())
+        .find(|s| !slug(s).is_empty())
+        .map_or_else(
+            || {
+                let stem = stem.trim();
+                let stem = if slug(stem).is_empty() {
+                    "preset"
+                } else {
+                    stem
+                };
+                format!("{stem} {}", index + 1)
+            },
+            str::to_owned,
+        );
+    title(&text)
+}
+
+/// `text` trimmed, with its first character in upper case ("bass" gives "Bass").
+pub fn title(text: &str) -> String {
+    let text = text.trim();
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
+/// Init's tag: a sound made from Init must not keep it.
+const INIT_TAG: &str = "init";
+
+/// The preset file of an extracted sound: the saved `patch` (a patch document, migrated if it is older) named `name`,
+/// without the `init` tag or Init's description, and with the type tag `name` spells when it has none
+/// ([module docs](self)); everything else as saved. Returns the text, exactly `Patch::to_json()`, and what would still
+/// keep it out of the factory folder (the factory test's rules, in words; empty when it passes them).
+pub fn preset_text(patch: &str, name: &str) -> Result<(String, Vec<String>), String> {
+    use crate::preset_add::vocab;
+    let loaded = enth_patch::file::load(patch).map_err(|e| format!("not a valid patch: {e}"))?;
+    let mut patch = loaded.patch;
+    let init = enth_patch::file::load(STARTER_PATCH)
+        .map_err(|e| format!("Init does not load: {e}"))?
+        .patch;
+    let meta = &mut patch.meta;
+    meta.name = title(name);
+    meta.tags.retain(|t| !t.eq_ignore_ascii_case(INIT_TAG));
+    if meta.description == init.meta.description {
+        meta.description.clear();
+    }
+    let has_type = meta.tags.iter().any(|t| vocab::TYPES.contains(&t.as_str()));
+    if !has_type {
+        let slugged = slug(name);
+        let mut spelled = slugged
+            .split('-')
+            .filter(|w| *w != INIT_TAG && vocab::TYPES.contains(w));
+        if let (Some(kind), None) = (spelled.next(), spelled.next()) {
+            meta.tags.insert(0, kind.to_owned());
+        }
+    }
+    let problems = vocab::check(&patch.meta);
+    Ok((patch.to_json(), problems))
 }
 
 struct Options {
@@ -296,7 +355,8 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
         Some(dir) => dir.clone(),
         None => crate::metadata()?.workspace_root.join(PRESET_DIR),
     };
-    let mut planned: Vec<(String, PathBuf, Instance)> = Vec::new();
+    // (file name, preset name, project, instance)
+    let mut planned: Vec<(String, String, PathBuf, Instance)> = Vec::new();
     for file in &options.files {
         let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
         let found = instances(&text).map_err(|e| format!("{}: {e}", file.display()))?;
@@ -313,7 +373,8 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
             .unwrap_or("preset");
         for (i, instance) in found.into_iter().enumerate() {
             let name = preset_name(&instance, stem, i);
-            planned.push((name, file.clone(), instance));
+            let title = preset_title(&instance, stem, i);
+            planned.push((name, title, file.clone(), instance));
         }
     }
     if let Some(name) = &options.name {
@@ -323,11 +384,12 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
                 planned.len()
             ));
         }
-        let name = slug(name);
-        if name.is_empty() {
+        let file_name = slug(name);
+        if file_name.is_empty() {
             return Err("--name needs at least one letter or digit".to_owned());
         }
-        planned[0].0 = name;
+        planned[0].0 = file_name;
+        planned[0].1 = title(name);
     }
     let mut names: Vec<&str> = planned.iter().map(|(n, ..)| n.as_str()).collect();
     names.sort_unstable();
@@ -336,24 +398,26 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
             "two instances would both be {twice:?}: name the tracks (or the FX) apart"
         ));
     }
-    for (name, _, instance) in &planned {
-        if serde_json::from_str::<serde_json::Value>(&instance.patch)
-            .ok()
-            .and_then(|v| v.get("schema").cloned())
-            .is_none()
-        {
-            return Err(format!(
-                "{name}: the saved `patch` field is not a patch document"
-            ));
-        }
+    let mut texts = Vec::with_capacity(planned.len());
+    for (name, title, _, instance) in &planned {
+        let (text, problems) = preset_text(&instance.patch, title).map_err(|e| {
+            format!("{name}: the saved `patch` field is not a patch document ({e})")
+        })?;
+        texts.push((text, problems));
     }
+    let paths: Vec<PathBuf> = planned
+        .iter()
+        .map(|(name, ..)| out.join(format!("{name}.patch.json")))
+        .collect();
+    check_names_free(&out, &planned, &paths)?;
     if !options.dry_run {
         std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     }
-    for (name, file, instance) in &planned {
-        let path = out.join(format!("{name}.patch.json"));
-        let state = match std::fs::read_to_string(&path) {
-            Ok(old) if old == instance.patch => "unchanged",
+    for (((name, title, file, instance), (text, problems)), path) in
+        planned.iter().zip(&texts).zip(&paths)
+    {
+        let state = match std::fs::read_to_string(path) {
+            Ok(old) if old == *text => "unchanged",
             Ok(_) if !options.force => {
                 return Err(format!(
                     "{} exists with other content (--force replaces it)",
@@ -364,15 +428,14 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
             Err(_) => "new",
         };
         if !options.dry_run && state != "unchanged" {
-            std::fs::write(&path, &instance.patch)
-                .map_err(|e| format!("{}: {e}", path.display()))?;
+            std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
         }
         println!(
-            "{}{}: {} ({state}, {} bytes; {} instance, track {:?}{} in {})",
+            "{}{}: {} named {title:?} ({state}, {} bytes; {} instance, track {:?}{} in {})",
             if options.dry_run { "(dry run) " } else { "" },
             name,
-            display(&path),
-            instance.patch.len(),
+            display(path),
+            text.len(),
             instance.kind.tag(),
             instance.track,
             if instance.fx_name.is_empty() {
@@ -382,6 +445,46 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
             },
             file.display()
         );
+        if !problems.is_empty() {
+            println!(
+                "  note: not yet a factory preset: {}. Fix with `cargo xtask preset-add {} --tags TYPE,... --out {} \
+                 --folder . --force` (docs/presets.md, the tag vocabulary)",
+                problems.join("; "),
+                display(path),
+                display(&out)
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Refuses a preset name another preset under `out` already has, ignoring case (the factory test's rule: no two
+/// factory presets share a name). The files this run replaces do not count, and a file that does not load is skipped.
+fn check_names_free(
+    out: &Path,
+    planned: &[(String, String, PathBuf, Instance)],
+    paths: &[PathBuf],
+) -> Result<(), String> {
+    let mut taken = std::collections::BTreeMap::new();
+    for path in crate::preset_add::preset_files(out)? {
+        if paths.contains(&path) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Ok(loaded) = enth_patch::file::load(&text) {
+            taken.insert(loaded.patch.meta.name.to_lowercase(), path);
+        }
+    }
+    for (name, title, ..) in planned {
+        if let Some(other) = taken.get(&title.to_lowercase()) {
+            return Err(format!(
+                "{name}: the name {title:?} is taken by {} (presets need names of their own, ignoring case): rename \
+                 the track or the FX in REAPER, or use --name",
+                display(other)
+            ));
+        }
     }
     Ok(())
 }
@@ -507,6 +610,9 @@ mod tests {
     /// format, unedited.
     const SAVED_CLAP: &str = include_str!("preset/roundtrip-clap.rpp");
     const SAVED_VST3: &str = include_str!("preset/roundtrip-vst3.rpp");
+    /// The project `cargo xtask starter-project` writes, as REAPER 7.82 saved it in `reaper-test`'s `starter-project`
+    /// (R1/S1 lane INT's run, under Xvfb), unedited: four tracks holding Init.
+    const SAVED_STARTER: &str = include_str!("preset/starter-clap-saved.rpp");
 
     #[test]
     fn reaper_projects_give_back_the_patch_byte_for_byte() {
@@ -605,6 +711,177 @@ mod tests {
         for section in ["generators", "voice_fx", "fx", "modulators", "routes"] {
             assert_eq!(starter[section], superset[section], "{section}");
         }
+    }
+
+    /// A fresh, empty temporary folder, removed when dropped.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(what: &str) -> Scratch {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let dir = std::env::temp_dir().join(format!(
+                "enth-xtask-extract-{what}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A patch document without its `meta`, for "the same sound".
+    fn without_meta(text: &str) -> serde_json::Value {
+        let mut value: serde_json::Value = serde_json::from_str(text).unwrap();
+        value.as_object_mut().unwrap().remove("meta");
+        value
+    }
+
+    fn meta(text: &str) -> enth_patch::PatchMeta {
+        enth_patch::file::load(text).unwrap().patch.meta
+    }
+
+    #[test]
+    fn a_sound_made_from_init_is_named_after_its_track_not_init() {
+        let (text, problems) = preset_text(STARTER_PATCH, "bass").unwrap();
+        let got = meta(&text);
+        assert_eq!(got.name, "Bass");
+        assert_eq!(
+            got.tags,
+            ["bass"],
+            "the init tag goes, the track's type comes"
+        );
+        assert_eq!(got.description, "", "Init's description is not the sound's");
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(without_meta(&text), without_meta(STARTER_PATCH));
+        crate::preset_add::check_text(&text).unwrap();
+        // A name that is no type: named, untagged, and the factory rules say what is missing.
+        let (text, problems) = preset_text(STARTER_PATCH, "  wobble thing ").unwrap();
+        let got = meta(&text);
+        assert_eq!((got.name.as_str(), got.tags.len()), ("Wobble thing", 0));
+        assert!(
+            problems.iter().any(|p| p.contains("type tag")),
+            "{problems:?}"
+        );
+        // Two types in the name: no guess.
+        let (text, _) = preset_text(STARTER_PATCH, "pad pluck").unwrap();
+        assert_eq!(meta(&text).tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_sound_with_its_own_meta_keeps_its_tags_and_description() {
+        let mut patch = enth_patch::file::load(STARTER_PATCH).unwrap().patch;
+        patch.meta.tags = vec!["lead".to_owned(), "bright".to_owned(), "init".to_owned()];
+        "A bright lead.".clone_into(&mut patch.meta.description);
+        "Mine".clone_into(&mut patch.meta.author);
+        let (text, problems) = preset_text(&patch.to_json(), "bass").unwrap();
+        let got = meta(&text);
+        assert_eq!(got.name, "Bass");
+        assert_eq!(got.tags, ["lead", "bright"], "a type tag of its own wins");
+        assert_eq!(
+            (got.description.as_str(), got.author.as_str()),
+            ("A bright lead.", "Mine")
+        );
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn titles_follow_the_file_names() {
+        let instance = |track: &str, fx: &str| Instance {
+            kind: Kind::Clap,
+            track: track.to_owned(),
+            fx_name: fx.to_owned(),
+            patch: String::new(),
+        };
+        assert_eq!(preset_title(&instance("bass", ""), "x", 0), "Bass");
+        assert_eq!(
+            preset_title(&instance("bass", "  my Pad 2 "), "x", 0),
+            "My Pad 2"
+        );
+        assert_eq!(
+            preset_title(&instance("—", ""), "G1 sounds", 2),
+            "G1 sounds 3"
+        );
+        assert_eq!(preset_title(&instance("", ""), "—", 0), "Preset 1");
+        assert_eq!(preset_name(&instance("", ""), "—", 0), "preset-1");
+        assert_eq!(title("élan"), "Élan");
+    }
+
+    /// What owner build 2 extracts: REAPER's own save of a starter project gives four presets named and typed after
+    /// their tracks, each Init's sound with none of Init's metadata, all ready for the factory folder.
+    #[test]
+    fn a_reaper_saved_starter_project_gives_four_sounds_of_their_own() {
+        let found = instances(SAVED_STARTER).unwrap();
+        assert_eq!(found.len(), 4);
+        let mut presets = Vec::new();
+        for (i, instance) in found.iter().enumerate() {
+            assert_eq!(
+                instance.patch, STARTER_PATCH,
+                "REAPER kept Init byte for byte"
+            );
+            let (text, problems) =
+                preset_text(&instance.patch, &preset_title(instance, "g1", i)).unwrap();
+            assert!(problems.is_empty(), "{problems:?}");
+            assert_eq!(without_meta(&text), without_meta(STARTER_PATCH));
+            let got = meta(&text);
+            assert_eq!(got.description, "");
+            presets.push((preset_name(instance, "g1", i), got.name, got.tags));
+        }
+        let want: Vec<(String, String, Vec<String>)> = STARTER_TRACKS
+            .iter()
+            .map(|t| ((*t).to_owned(), title(t), vec![(*t).to_owned()]))
+            .collect();
+        assert_eq!(presets, want);
+    }
+
+    /// The owner's case: the four tracks of a starter project, extracted beside the factory Init, give four presets of
+    /// their own (before lane INT's fix every one was "Init", which the factory test refuses).
+    #[test]
+    fn a_starter_project_extracts_beside_init_without_a_collision() {
+        let dir = Scratch::new("starter");
+        let presets = dir.0.join("presets");
+        std::fs::create_dir_all(&presets).unwrap();
+        std::fs::write(presets.join("init.patch.json"), STARTER_PATCH).unwrap();
+        let project = dir.0.join("g1 sounds.rpp");
+        std::fs::write(&project, starter_project(&STARTER_TRACKS, STARTER_PATCH)).unwrap();
+        let args = |extra: &[&str]| -> Vec<String> {
+            [
+                project.to_str().unwrap(),
+                "--out",
+                presets.to_str().unwrap(),
+            ]
+            .iter()
+            .chain(extra)
+            .map(|s| (*s).to_owned())
+            .collect()
+        };
+        extract_presets(&args(&[])).unwrap();
+        let mut names = Vec::new();
+        for track in STARTER_TRACKS {
+            let text =
+                std::fs::read_to_string(presets.join(format!("{track}.patch.json"))).unwrap();
+            let got = meta(&text);
+            assert_eq!(got.tags, [track]);
+            assert_eq!(without_meta(&text), without_meta(STARTER_PATCH));
+            crate::preset_add::check_text(&text).unwrap();
+            names.push(got.name);
+        }
+        assert_eq!(names, ["Bass", "Pad", "Pluck", "Lead"]);
+        // Again: unchanged, no error.
+        extract_presets(&args(&[])).unwrap();
+        // A preset elsewhere in the folder already named "Pad" stops it, before anything is written.
+        std::fs::create_dir_all(presets.join("pad")).unwrap();
+        let (taken, _) = preset_text(STARTER_PATCH, "Pad").unwrap();
+        std::fs::write(presets.join("pad/other.patch.json"), taken).unwrap();
+        let err = extract_presets(&args(&[])).unwrap_err();
+        assert!(err.contains("\"Pad\" is taken"), "{err}");
     }
 
     #[test]
