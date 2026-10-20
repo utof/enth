@@ -8,8 +8,9 @@
 //! attempt)`), never taken in sequence, and target generation works in parameter space only (design.md §9), so a
 //! seed gives the same target on every machine. Time comes from the shell: the session's `game` module passes it in.
 //!
-//! Lane S0r (R1/S1, freeze point F0r) created the crate and declared every file up front, so the lanes that fill them
-//! never edit this one. Each file names its owner at the top.
+//! **Owner: lane CT** after F0r (re-exports at F1r). Lane S0r (R1/S1, freeze point F0r) created the crate and declared
+//! every file up front, so the lanes that fill them never edit this one: RG, SS and ST name their items by module path
+//! (`enth_challenge::random::…`) rather than adding re-exports here. Each file names its owner at the top.
 //!
 //! | File | Holds | Lane |
 //! | --- | --- | --- |

@@ -1,6 +1,7 @@
-//! The R1 commands lane S0r pre-declared (`compare`, `suggest`, `match`, `explain`, `challenge`): hidden from
-//! `--help`, and each answers `not_built_yet` (exit 2, `enth.error/1` with a hint) whatever follows it. The lane that
-//! builds a command (SKR, CL) removes its row here and gives it real tests.
+//! **Owner: lane CL** (SKR may drop the `compare` and `challenge` rows first). The R1 commands lane S0r pre-declared
+//! (`compare`, `suggest`, `match`, `explain`, `challenge`): hidden from `--help`, and each answers `not_built_yet`
+//! (exit 2, `enth.error/1` with a hint) whatever follows it. The lane that builds a command (SKR, CL) removes its row
+//! here and gives it real tests.
 
 mod common;
 
