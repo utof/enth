@@ -111,6 +111,12 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     dirty-flag, starter-project, cross-format) on CLAP and VST3, headless under Xvfb;
                                     --bundle-dir (or
                                     ENTH_BUNDLE_DIR) runs prebuilt bundles instead of building
+  reaper-soak [--minutes N] [--bundle-dir <dir>] [--no-build] [--format clap|vst3] [--instances N] [--report FILE]
+              [--editor-secs S] [--load-secs S] [--churn-secs S] [--max-pss-mb-per-hour MB] [...]
+                                    local gate: the long REAPER soak on the debug bundle (assert_process_allocs on), headless
+                                    under Xvfb: virtual-keyboard notes, parameter sweeps, state loads, instance churn and
+                                    editor open/close for N minutes (default 60); samples PSS, threads and descriptors; fails
+                                    on a crash, an allocation abort, a hang or growth past the limits; writes soak-report.json
   host-render [--package <pkg>] [--release] [--no-build] [--update]
                                     plugin-level golden: bundle <pkg>, render it offline through the test host (Linux)
   leak-test [--package <pkg>] [--cycles 200] [--repeat 2] [--churn-cycles 200] [--only editor|churn] [--no-build]
@@ -143,6 +149,7 @@ fn main() -> ExitCode {
         Some("install") => bundle::install(&args[1..]),
         Some("validate") => validate::validate(&args[1..]),
         Some("reaper-test") => reaper::reaper_test(&args[1..]),
+        Some("reaper-soak") => reaper::reaper_soak(&args[1..]),
         Some("host-render") => host_render::host_render(&args[1..]),
         Some("leak-test") => leak::leak_test(&args[1..]),
         Some("extract-presets") => preset::extract_presets(&args[1..]),
