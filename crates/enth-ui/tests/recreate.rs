@@ -613,6 +613,41 @@ fn the_settings_page_makes_a_custom_spec_and_the_dim_assist_dims() {
     }
 }
 
+/// Lane HINT (FU1): the dim assist counts as an assist. A round played with it is assisted as soon as the dimming
+/// shows (no hint, no reveal), and the round log's result says so; without it, the same start is not assisted.
+#[test]
+fn the_dim_assist_marks_the_round_assisted_and_the_log_says_so() {
+    for dim in [false, true] {
+        let mut h = harness();
+        h.run_steps(2);
+        click(&mut h, "Recreate");
+        click(&mut h, "Settings…");
+        if dim {
+            click(&mut h, "Dim unused modules");
+        }
+        click(&mut h, "Start round");
+        h.run_steps(3);
+        let r = round(&h).unwrap();
+        assert_eq!(r.phase, Phase::Playing);
+        assert!(!r.params.is_empty(), "the target's parameters are known");
+        assert_eq!((r.dim_unused, r.assisted), (dim, dim), "dim {dim}");
+        assert_eq!((r.hints, r.revealed), (0, false));
+        click(&mut h, "End");
+        click(&mut h, "End and restore my patch");
+        assert_eq!(phase(&h), None);
+        let end = h
+            .state()
+            .log
+            .iter()
+            .find(|l| l.event == LogEvent::End)
+            .expect("the end line");
+        let assists = end.result.as_ref().unwrap().assists;
+        assert_eq!((assists.dim_unused, assists.any()), (dim, dim), "dim {dim}");
+        let line = serde_json::to_string(end).unwrap();
+        assert_eq!(line.contains(r#""dim_unused":true"#), dim, "{line}");
+    }
+}
+
 #[test]
 fn nothing_scrolls_at_1200_by_800_in_recreate() {
     let mut h = harness();

@@ -19,7 +19,8 @@
 //!
 //! From any phase: [`GameEdit::game_end`] ([`EndChoice::Restore`] brings back the stashed patch and its undo
 //! history, [`EndChoice::Keep`] keeps the round's patch), or `game_start` again (a new round keeps the original
-//! stash). Hints ([`GameEdit::game_hint`]) and a reveal mark the round assisted. The agreement vote
+//! stash). Hints ([`GameEdit::game_hint`]), a reveal and the editor's dim assist ([`GameEdit::game_dim_unused`]) mark
+//! the round assisted. The agreement vote
 //! ([`GameEdit::game_vote`]) and a dispute ([`GameEdit::game_dispute`]) need a scored submit. Each round that was
 //! played ends with one [`RoundLogEntry`] in the outbox ([`GameRequest::Log`]); lane GK writes the exporter.
 //!
@@ -307,6 +308,11 @@ pub struct RoundRecord {
     pub hints: u8,
     /// The target was revealed (gave up). Marks the round assisted.
     pub revealed: bool,
+    /// The editor's `dim_unused` assist (Challenge v1's: the modules the target leaves alone are dimmed) was on at
+    /// some time while the round could be played ([`GameEdit::game_dim_unused`]; lane HINT, FU1). Marks the round
+    /// assisted. Omitted when false, so a round without it keeps its bytes and an older record reads with it off.
+    #[serde(skip_serializing_if = "is_false")]
+    pub dim_unused: bool,
     /// The blind rating (1–5) of the first submit, given before its score showed (F1r review S9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rating: Option<u8>,
@@ -333,6 +339,15 @@ pub struct RoundRecord {
     pub edits_dropped: u32,
 }
 
+/// `skip_serializing_if` for a flag the record writes only when set.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes the field by reference"
+)]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 impl RoundRecord {
     /// The help used, in CT's terms (R1 has no live meter yet).
     pub fn assists(&self) -> AssistsUsed {
@@ -340,10 +355,11 @@ impl RoundRecord {
             hints: self.hints,
             live_meter: false,
             revealed: self.revealed,
+            dim_unused: self.dim_unused,
         }
     }
 
-    /// Hints or a reveal were used.
+    /// Hints, a reveal or the dim assist were used.
     pub fn assisted(&self) -> bool {
         self.assists().any()
     }
@@ -995,10 +1011,13 @@ pub struct RoundView {
     pub hints: u8,
     /// The latest hint.
     pub hint: Option<CoachHint>,
-    /// Hints or a reveal were used.
+    /// Hints, a reveal or the dim assist were used.
     pub assisted: bool,
     /// The target was revealed.
     pub revealed: bool,
+    /// The `dim_unused` assist is recorded for this round ([`GameEdit::game_dim_unused`]; lane HINT, FU1): the editor
+    /// reports it once, when the dimming first shows.
+    pub dim_unused: bool,
     /// The blind rating (1–5), once given.
     pub rating: Option<u8>,
     /// The agreement vote.
@@ -1035,6 +1054,11 @@ pub trait GameEdit {
     fn game_hint(&mut self) -> Result<u8, GameError>;
     /// Give up: load the target (marks the round assisted; no more submits).
     fn game_reveal(&mut self) -> Result<(), GameError>;
+    /// The editor's `dim_unused` assist is showing (Challenge v1's: the modules the target leaves alone are dimmed;
+    /// lane HINT, FU1): marks the round assisted ([`AssistsUsed::dim_unused`]), for good. Turning the assist off later
+    /// does not unmark it. Needs the target ready (the dimming reads its randomized parameters): `not_ready` while
+    /// preparing, `broken` for a broken round.
+    fn game_dim_unused(&mut self) -> Result<(), GameError>;
     /// The blind rating of the first submit, 1–5 ("nothing like it" to "can't tell them apart"), asked **before its
     /// score shows** so the score cannot anchor it (ADR-0007's note, review point (a); GR1 refits the curve with it).
     /// Accepted from the start of play until the first score is recorded; a later rating replaces an earlier one.
@@ -2047,6 +2071,7 @@ impl GameEdit for Session {
             hint: self.game.hint.clone(),
             assisted: record.assisted(),
             revealed: record.revealed,
+            dim_unused: record.dim_unused,
             rating: record.rating,
             agreement: record.agreement,
             difficulty: self.game.spec.map(|s| s.difficulty),
@@ -2197,6 +2222,27 @@ impl GameEdit for Session {
             record.phase = Phase::Revealed;
         }
         self.game_log(EditSource::Reveal, Value::Array(Vec::new()), None);
+        self.game.dirty();
+        Ok(())
+    }
+
+    fn game_dim_unused(&mut self) -> Result<(), GameError> {
+        let record = self.game_record().ok_or(GameError::NoRound)?;
+        match record.phase {
+            Phase::Preparing => return Err(GameError::NotReady),
+            Phase::Broken | Phase::Unknown => return Err(GameError::Broken),
+            Phase::Playing | Phase::Submitted | Phase::Passed | Phase::Revealed => {}
+        }
+        // The dimming reads the target's randomized parameters: nothing is dimmed before the target is ready.
+        if self.game.target.is_none() {
+            return Err(GameError::NotReady);
+        }
+        if record.dim_unused {
+            return Ok(());
+        }
+        if let Some(record) = self.record_mut() {
+            record.dim_unused = true;
+        }
         self.game.dirty();
         Ok(())
     }

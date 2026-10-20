@@ -54,6 +54,9 @@ pub enum GameIntent {
     Hint,
     /// Give up and load the target.
     Reveal,
+    /// The `dim_unused` assist is showing in this round: the session marks the round assisted (lane HINT, FU1). The
+    /// editor queues it itself ([`Recreate::set_round`]), once, when the dimming first shows.
+    DimUnused,
     /// The agreement vote: the score felt too low, about right or too high.
     Vote(Agreement),
     /// "Disagree…": the dispute with its note (logged at once).
@@ -119,6 +122,7 @@ pub fn apply_game(
             GameIntent::Rate(None) | GameIntent::View(_) => Ok(()),
             GameIntent::Hint => game.game_hint().map(drop),
             GameIntent::Reveal => game.game_reveal(),
+            GameIntent::DimUnused => game.game_dim_unused(),
             GameIntent::Vote(agreement) => game.game_vote(agreement),
             GameIntent::Dispute(note) => game.game_dispute(&note),
             GameIntent::End(choice) => game.game_end(choice),
@@ -296,7 +300,29 @@ impl Recreate {
             .as_ref()
             .map(|r| RoundOverlay::of(r, self.dim_unused))
             .unwrap_or_default();
+        self.report_dim(round.as_ref());
         self.round = round;
+    }
+
+    /// The `dim_unused` assist counts as an assist (lane HINT, FU1): once the dimming shows in a round (the assist is
+    /// on and the target's randomized parameters are known), tell the session, once. A round the session already
+    /// marked asks nothing; the phases are the ones the session accepts, so the report is never refused.
+    fn report_dim(&mut self, round: Option<&RoundView>) {
+        let Some(r) = round else {
+            return;
+        };
+        let playable = matches!(
+            r.phase,
+            Phase::Playing | Phase::Submitted | Phase::Passed | Phase::Revealed
+        );
+        if self.dim_unused
+            && playable
+            && !r.params.is_empty()
+            && !r.dim_unused
+            && !self.queued.contains(&GameIntent::DimUnused)
+        {
+            self.queued.push(GameIntent::DimUnused);
+        }
     }
 
     /// Deal a silent target's settings again (see the [module docs](self)): once per broken round, and only for a
@@ -455,7 +481,7 @@ impl Recreate {
                 self.note = None;
                 self.thanked = Some("Thanks: your disagreement is in the round log".to_owned());
             }
-            GameIntent::Listen(_) | GameIntent::Reveal => {}
+            GameIntent::Listen(_) | GameIntent::Reveal | GameIntent::DimUnused => {}
         }
         if matches!(intent, GameIntent::Rate(_)) {
             self.asking = false;
@@ -779,6 +805,31 @@ mod tests {
             "{}",
             recreate.view().readout
         );
+    }
+
+    /// Lane HINT (FU1): with the assist on, the editor reports the dimming once it shows (the target's parameters are
+    /// known), once per round; without the assist, or before the target, nothing.
+    #[test]
+    fn the_dim_assist_is_reported_once_when_the_dimming_shows() {
+        let mut recreate = Recreate::default();
+        let mut r = round(Phase::Playing);
+        recreate.set_round(Some(r.clone()));
+        assert_eq!(recreate.queued(), [], "no assist, nothing to report");
+        recreate.dim_unused = true;
+        recreate.set_round(Some(r.clone()));
+        assert_eq!(recreate.queued(), [], "no randomized parameters yet: nothing dims");
+        r.params = vec!["filter1.cutoff".parse().unwrap()];
+        let mut preparing = r.clone();
+        preparing.phase = Phase::Preparing;
+        recreate.set_round(Some(preparing));
+        assert_eq!(recreate.queued(), [], "the session refuses it while preparing");
+        recreate.set_round(Some(r.clone()));
+        recreate.set_round(Some(r.clone()));
+        assert_eq!(recreate.queued(), [GameIntent::DimUnused], "queued once");
+        recreate.queued.clear();
+        r.dim_unused = true;
+        recreate.set_round(Some(r));
+        assert_eq!(recreate.queued(), [], "the session has it");
     }
 
     #[test]
