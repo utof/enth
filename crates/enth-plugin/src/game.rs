@@ -48,7 +48,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use enth_challenge::model::{Phrase, SCORING_SAMPLE_RATE, SCORING_SEED};
 use enth_challenge::{
-    PreparedRound, phrases, prepare_challenge, prepare_round, score_round, score_structure,
+    PreparedRound, RoundError, phrases, prepare_challenge, prepare_round, score_round,
+    score_structure,
 };
 use enth_engine::{Event, EventKind, NoteKey};
 use enth_patch::Patch;
@@ -459,14 +460,18 @@ impl Runner {
         }
     }
 
-    /// `prepare_round`, the scored render and its loudness, and the loop at the host's rate.
+    /// `prepare_round`, the scored render and its loudness, and the loop at the host's rate. A silent target is
+    /// [`JobResult::SilentTarget`] (R1/S1 lane INT), which the editor answers with another seed.
     fn prepare(
         &mut self,
         id: RoundId,
         spec: &enth_challenge::RandomSpec,
         host_rate: u32,
     ) -> Result<(JobResult, Box<TargetLoop>), JobResult> {
-        let round = prepare_round(spec).map_err(|e| failed("preparing the target", e))?;
+        let round = prepare_round(spec).map_err(|e| match e {
+            RoundError::SilentTarget => JobResult::SilentTarget,
+            e => failed("preparing the target", e),
+        })?;
         let scored = render_phrase(round.target(), round.phrase(), SCORING_SAMPLE_RATE)
             .map_err(|e| failed("rendering the target", e))?;
         let lufs = integrated_lufs(&scored);
@@ -1654,6 +1659,20 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(l.unwrap().sample_rate(), 44_100);
+        // A silent target (lane GC's `silent-l2-s23`, custom settings) is answered as such, with no loop and no
+        // round kept (R1/S1 lane INT).
+        let silent =
+            enth_challenge::ChallengeCode::decode("H000-G000-0000-0000-Q680-0000-804X-2T92-M0S")
+                .unwrap();
+        let mut quiet = Runner::default();
+        let (result, l) = quiet.run(
+            job(JobKind::Prepare {
+                spec: *silent.spec(),
+            }),
+            48_000,
+        );
+        assert_eq!(result, JobResult::SilentTarget);
+        assert!(l.is_none() && quiet.round.is_none());
         // A runner that lost the round rebuilds it from the job's challenge.
         let (scored, _) = Runner::default().run(
             job(JobKind::Score {

@@ -11,6 +11,13 @@
 //!    the round's intents for the shell;
 //! 3. the shell applies the queue to its `GameEdit` ([`Recreate::apply`], [`apply_game`]) with a fresh seed;
 //! 4. worker results go through [`Recreate::hold_scores`] first: a score waits while the blind rating is asked.
+//!
+//! **A silent target is dealt again** (R1/S1 lane INT, a finding of lane GC): `enth_challenge::prepare_round` refuses
+//! a target nobody can hear (`silent_target`; any silent answer would score 100 %), and the round breaks with
+//! [`GameError::SilentTarget`] before anything loads. When the editor dealt that round (a level's Start, the settings
+//! page's Start or "New round"), it queues the same settings again with a fresh seed, up to [`MAX_REDEALS`] times in a
+//! row; the broken round closes unlogged. A pasted code (or "Try again") stays broken with its hint: its seed is
+//! not the editor's to change.
 
 use enth_challenge::spec::{LATEST_GENERATOR, SpecPreset};
 use enth_challenge::{Agreement, ChallengeCode, RandomSpec};
@@ -76,6 +83,14 @@ pub enum ViewIntent {
     /// Open the dispute note (`Some`, with its text), edit it, or close it (`None`).
     Note(Option<String>),
 }
+
+/// How many silent targets in a row the editor deals again before it leaves the round broken and asks for other
+/// settings. Musical settings were never silent in 1,000 measured targets; `musical` 0 was silent in up to 3 % of a
+/// level's targets (docs/challenge.md, "Measured audibility"), so eight in a row means the settings, not bad luck.
+pub const MAX_REDEALS: u8 = 8;
+
+/// The readout while a silent target is dealt again.
+const REDEALING: &str = "That target was silent: dealing another…";
 
 /// Apply queued round intents in order. A refused one changes nothing; the last refusal is returned (the bar shows
 /// its hint). `seed` draws a round's seed (the shell's; 40 bits keep a preset's code short).
@@ -252,6 +267,12 @@ pub struct Recreate {
     refused: Option<String>,
     /// The round's overlay, rebuilt with each round view.
     overlay: RoundOverlay,
+    /// The settings of the round the editor dealt last (their seed is replaced at each deal); `None` after a code.
+    dealt: Option<RandomSpec>,
+    /// Silent targets dealt again in a row ([`MAX_REDEALS`]).
+    redeals: u8,
+    /// A deal for a silent target is queued and its round not seen yet.
+    redealing: bool,
     /// A view change at the frame's end asks for one more pass.
     changed: bool,
 }
@@ -260,6 +281,7 @@ impl Recreate {
     /// This frame's round (the shell's `GameEdit::round()`).
     pub fn set_round(&mut self, round: Option<RoundView>) {
         self.available = true;
+        self.redeal_silent(round.as_ref());
         // The question ends with the round, once the rating is given, or once a score was recorded anyway.
         if round
             .as_ref()
@@ -275,6 +297,29 @@ impl Recreate {
             .map(|r| RoundOverlay::of(r, self.dim_unused))
             .unwrap_or_default();
         self.round = round;
+    }
+
+    /// Deal a silent target's settings again (see the [module docs](self)): once per broken round, and only for a
+    /// round the editor dealt.
+    fn redeal_silent(&mut self, round: Option<&RoundView>) {
+        let silent = round
+            .is_some_and(|r| r.phase == Phase::Broken && r.error == Some(GameError::SilentTarget));
+        if !silent {
+            self.redealing = false;
+            if round.is_some_and(|r| r.phase != Phase::Preparing) {
+                self.redeals = 0;
+            }
+            return;
+        }
+        if self.redealing || self.redeals >= MAX_REDEALS {
+            return;
+        }
+        if let Some(spec) = self.dealt {
+            self.redeals += 1;
+            self.redealing = true;
+            self.changed = true;
+            self.queued.push(GameIntent::New(spec));
+        }
     }
 
     /// The round view of this frame, if a round is live.
@@ -307,7 +352,20 @@ impl Recreate {
         if !self.available {
             return BarView::default();
         }
-        let refused = self.refused.as_deref();
+        let exhausted = format!(
+            "{MAX_REDEALS} silent targets in a row: nothing to recreate. Raise Musical on the settings page, then Start"
+        );
+        let refused = if self.redealing {
+            Some(REDEALING)
+        } else if self.redeals >= MAX_REDEALS
+            && self.round.as_ref().is_some_and(|r| {
+                r.phase == Phase::Broken && r.error == Some(GameError::SilentTarget)
+            })
+        {
+            Some(exhausted.as_str())
+        } else {
+            self.refused.as_deref()
+        };
         let next_level = self.settings.current_level();
         let Some(r) = self.round.as_ref() else {
             return BarView {
@@ -373,6 +431,16 @@ impl Recreate {
             | GameIntent::New(_)
             | GameIntent::Code(_)
             | GameIntent::End(_) => {
+                // The player's own start or end: a silent target is dealt again only for a round the editor deals.
+                self.dealt = match &intent {
+                    GameIntent::Start { level } => {
+                        SpecPreset::by_id(*level).map(|p| p.spec(LATEST_GENERATOR, 0))
+                    }
+                    GameIntent::New(spec) => Some(*spec),
+                    _ => None,
+                };
+                self.redeals = 0;
+                self.redealing = false;
                 self.asking = false;
                 self.results_hidden = false;
                 self.note = None;
@@ -634,6 +702,82 @@ mod tests {
             recreate.view().code_text,
             "",
             "the field empties once the code is taken"
+        );
+    }
+
+    fn silent(mut r: RoundView) -> RoundView {
+        r.phase = Phase::Broken;
+        r.error = Some(GameError::SilentTarget);
+        r.ab = AbState::default();
+        r
+    }
+
+    #[test]
+    fn a_silent_target_the_editor_dealt_is_dealt_again_and_a_pasted_one_is_not() {
+        let mut recreate = Recreate::default();
+        recreate.set_round(None);
+        recreate.push(GameIntent::View(ViewIntent::Level(4)));
+        recreate.push(GameIntent::View(ViewIntent::Start));
+        let spec = Settings::level(4).spec(0);
+        assert_eq!(recreate.queued(), [GameIntent::New(spec)]);
+        recreate.queued.clear();
+        // The worker found it silent: the same settings again (the shell draws a fresh seed), once per broken round.
+        let broken = silent(round(Phase::Preparing));
+        recreate.set_round(Some(broken.clone()));
+        recreate.set_round(Some(broken.clone()));
+        assert_eq!(recreate.queued(), [GameIntent::New(spec)]);
+        assert_eq!(recreate.view().readout, REDEALING);
+        recreate.queued.clear();
+        // The new deal is being prepared, then it is silent again: dealt again, up to MAX_REDEALS in a row.
+        for _ in 1..MAX_REDEALS {
+            recreate.set_round(Some(round(Phase::Preparing)));
+            recreate.set_round(Some(broken.clone()));
+        }
+        assert_eq!(recreate.queued().len(), usize::from(MAX_REDEALS) - 1);
+        recreate.queued.clear();
+        recreate.set_round(Some(round(Phase::Preparing)));
+        recreate.set_round(Some(broken.clone()));
+        assert_eq!(
+            recreate.queued(),
+            [],
+            "eight in a row: the settings, not bad luck"
+        );
+        assert!(
+            recreate
+                .view()
+                .readout
+                .starts_with("8 silent targets in a row")
+        );
+        // A round that plays resets the count.
+        recreate.push(GameIntent::New(spec));
+        recreate.queued.clear();
+        recreate.set_round(Some(round(Phase::Playing)));
+        recreate.set_round(Some(broken.clone()));
+        assert_eq!(recreate.queued(), [GameIntent::New(spec)]);
+        // A level's Start deals that level's preset again.
+        let mut recreate = Recreate::default();
+        recreate.set_round(None);
+        recreate.push(GameIntent::Start { level: 2 });
+        recreate.queued.clear();
+        recreate.set_round(Some(broken.clone()));
+        assert_eq!(
+            recreate.queued(),
+            [GameIntent::New(
+                SpecPreset::by_id(2).unwrap().spec(LATEST_GENERATOR, 0)
+            )]
+        );
+        // A pasted code is not the editor's to change: it stays broken, with the hint.
+        let mut recreate = Recreate::default();
+        recreate.set_round(None);
+        let code = ChallengeCode::short(Settings::level(2).spec(99)).unwrap();
+        recreate.push(GameIntent::Code(code));
+        recreate.queued.clear();
+        recreate.set_round(Some(broken));
+        assert_eq!(recreate.queued(), []);
+        assert!(
+            recreate.view().readout.contains("nobody can hear"),
+            "{}",
+            recreate.view().readout
         );
     }
 

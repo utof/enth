@@ -168,7 +168,7 @@ Two nice-plug persistent fields, both permanent names ([naming.md](naming.md)):
 | `Submitted` | a scored submit that did not pass | the player's | a passing submit |
 | `Passed` | the first passing submit, which sets the time to pass | the player's | — (keep tweaking, vote, end) |
 | `Revealed` | `game_reveal`: gives up, assisted, no more submits | the target | — (vote, end) |
-| `Broken` | the target could not be prepared or regenerated (a failed job, a code that does not decode, `target_mismatch`, another saved hash, a challenge for other settings) | unchanged | `game_end` only; the stash is kept |
+| `Broken` | the target could not be prepared or regenerated (a failed job, a code that does not decode, `target_mismatch`, another saved hash, a challenge for other settings), or the prepare job answered `JobResult::SilentTarget` (`GameError::SilentTarget`, `silent_target`: nobody can hear the target; R1/S1 lane INT) | unchanged | `game_end` only; the stash is kept. A round that broke before its target existed was never played, so ending it or starting another logs nothing |
 
 From any phase, `game_end(Restore)` brings back the stashed patch and its undo history, and `game_end(Keep)` keeps the round's patch and history. `game_start` from a live round is a new round: the old one is logged and the **original** stash carries over, so "your patch" is always the one from before the first round. Only sound decides a pass (lane ST's combined score is reported beside it).
 
@@ -194,7 +194,7 @@ Each job is a pure function of its payload (patches are owned or `Arc`-shared), 
 
 | Job | When | The worker | Result |
 | --- | --- | --- | --- |
-| `Prepare { spec }` | `game_start`, and on restoring a saved round (the spec from its code) | `enth_challenge::prepare_round(&spec)` (the target, phrase, randomized addresses and fingerprint; `Challenge::recreate(spec, phrase)`; every scorer it names, prepared), kept under the round; renders the target's loop of the scored phrase **and keeps the buffer** for Target ▶ (the session never sees audio), measures its loudness | `Prepared(Prepared::from_round(&round, target_lufs))`: challenge, start, target, `params`, `fingerprint`, `target_lufs` (a `non_exhaustive` struct, so a field added later breaks no shell) |
+| `Prepare { spec }` | `game_start`, and on restoring a saved round (the spec from its code) | `enth_challenge::prepare_round(&spec)` (the target, phrase, randomized addresses and fingerprint; `Challenge::recreate(spec, phrase)`; every scorer it names, prepared), kept under the round; renders the target's loop of the scored phrase **and keeps the buffer** for Target ▶ (the session never sees audio), measures its loudness | `Prepared(Prepared::from_round(&round, target_lufs))`: challenge, start, target, `params`, `fingerprint`, `target_lufs` (a `non_exhaustive` struct, so a field added later breaks no shell); `SilentTarget` when `prepare_round` refuses a silent target (R1/S1 lane INT) |
 | `Score { challenge, target, patch, submit }` | `game_submit` (the patch at the moment of Submit) | `score_round(&round, &patch)` | `Scored(ScoreReport)` |
 | `Loudness { challenge, patch }` | The patch has settled (`SETTLE_MS`, 300 ms, after the last change) | Renders the phrase through the player's patch and measures it, for Mine ▶'s gain | `Loudness { lufs }` |
 | `Rings { challenge, target, patch }` | Settled, after the first submit | `score_structure(&round, &patch)`: the per-knob Good / Near / Bad (no render) | `Rings(StructureScore)` |

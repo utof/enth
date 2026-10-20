@@ -247,8 +247,9 @@ pub struct TargetContext<'a> {
 
 | Function | Does |
 | --- | --- |
-| `prepare_round(&spec) -> Result<PreparedRound, RoundError>` | Validates the spec, regenerates the target from its template's start, builds `Challenge::recreate(spec, phrase)` with this build's default scorers, prepares each |
-| `prepare_challenge(challenge)` | The same for a given challenge (a golden challenge, `compare`, a file): validates it, regenerates its target, refuses another phrase than the generator's pick (`phrase_mismatch`), prepares the scorers it names |
+| `prepare_round(&spec) -> Result<PreparedRound, RoundError>` | Validates the spec, regenerates the target from its template's start, **refuses a silent target** (`silent_target`: its scored render reads no loudness, at or below −70 LUFS, so any silent answer would score 100 %; R1/S1 lane INT), builds `Challenge::recreate(spec, phrase)` with this build's default scorers, prepares each |
+| `prepare_challenge(challenge)` | The same for a given challenge (a golden challenge, `compare --challenge`, a file): validates it, regenerates its target, refuses another phrase than the generator's pick (`phrase_mismatch`), prepares the scorers it names; a silent target is scored as given (the golden `silent-l2-s23` pins it) |
+| `target_lufs(&target, phrase)` | The target's loudness as `sound/1` measures it before its gain (`None` when silent): the check `prepare_round` makes |
 | `score_round(&round, &patch) -> Result<ScoreReport, ScoreError>` | Sound, structure, combined and the pass from sound alone; refuses a scorer that answers under another id |
 | `score_structure(&round, &patch)` | The structure score alone: the live rings, no render |
 
@@ -760,7 +761,7 @@ Costs: the check takes about 40 s natively in debug, 37 s for all eight tests in
 
 - `sound/1` steps by a few thousandths where a pitch offset crosses a decision in the analysis (level 1 seed 1: 90.0019 just below an offset of 0.17550 semitones, 89.9988 just above), so a pitch bisection can straddle the pass mark without landing in the margin band. Pulse width is smooth; the too-close test uses it.
 - A start can be close to a pass: `l1-s11`'s starts at 87.8 % (2.2 under the mark) and `l2-s11`'s at 75.1 %. The pins hold the exact numbers, and the invariant test requires only that no start passes.
-- A silent target gives every silent answer 100 % (`silent-l2-s23`); its start is silent too, and the near miss passes.
+- A silent target gives every silent answer 100 % (`silent-l2-s23`); its start is silent too, and the near miss passes. **Fixed for play** (R1/S1 lane INT): `prepare_round` refuses such a target (`silent_target`), so the plugin, the Recreate UI and the CLI never play one; the editor deals a round it dealt again with a fresh seed (up to 8 in a row), and a pasted code says why. Generator v1 stays frozen (a render-based redraw would need an attempt index in the code). The golden case stays: `prepare_challenge` scores it as given.
 - Envelope parameters barely move `sound/1`; the near misses are pitch, pulse width, cutoff and rate offsets.
 
 ### Joining lane SKR's five

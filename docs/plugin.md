@@ -178,7 +178,7 @@ A fresh instance plays **Init** (lane AM, R1/S1; `src/init.rs`): the starter pat
 
 | Job | Runs |
 | --- | --- |
-| `Prepare` | `prepare_round(&spec)` (lane SS's `sound/1` renders here, 0.25–2 s); the target rendered through its phrase at the scored rate and seed (`SCORING_SAMPLE_RATE`, `SCORING_SEED`) and measured; at the host's rate when it differs (rendered again); the loop handed to the audio thread; `Prepared::from_round(&round, lufs)` posted |
+| `Prepare` | `prepare_round(&spec)` (lane SS's `sound/1` renders here, 0.25–2 s); the target rendered through its phrase at the scored rate and seed (`SCORING_SAMPLE_RATE`, `SCORING_SEED`) and measured; at the host's rate when it differs (rendered again); the loop handed to the audio thread; `Prepared::from_round(&round, lufs)` posted. A silent target (`RoundError::SilentTarget`) posts `JobResult::SilentTarget`, no loop (R1/S1 lane INT) |
 | `Score` | `score_round(&round, &patch)` with the round kept from its `Prepare` (rebuilt from the job's challenge with `prepare_challenge` if the worker lost it) |
 | `Rings` | `score_structure(&round, &patch)` |
 | `Loudness` | the phrase rendered through the player's patch at 48 kHz and measured |
