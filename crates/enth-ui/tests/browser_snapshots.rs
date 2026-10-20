@@ -30,10 +30,27 @@ fn preset(name: &str, folder_tags: &[&str], author: &str, description: &str) -> 
 /// A small library: four factory presets in three folders, two of the user's, and a damaged file.
 fn store() -> MemStore {
     let factory = [
-        ("bass/Sub One", preset("Sub One", &["bass", "dark", "mono"], "", "A round sine-ish sub")),
-        ("bass/Grit Bass", preset("Grit Bass", &["bass", "gritty"], "", "")),
-        ("pad/Glass Pad", preset("Glass Pad", &["pad", "bright", "wide", "evolving"], "", "")),
-        ("pluck/Soft Pluck", preset("Soft Pluck", &["pluck", "soft"], "", "")),
+        (
+            "bass/Sub One",
+            preset(
+                "Sub One",
+                &["bass", "dark", "mono"],
+                "",
+                "A round sine-ish sub",
+            ),
+        ),
+        (
+            "bass/Grit Bass",
+            preset("Grit Bass", &["bass", "gritty"], "", ""),
+        ),
+        (
+            "pad/Glass Pad",
+            preset("Glass Pad", &["pad", "bright", "wide", "evolving"], "", ""),
+        ),
+        (
+            "pluck/Soft Pluck",
+            preset("Soft Pluck", &["pluck", "soft"], "", ""),
+        ),
     ]
     .into_iter()
     .map(|(path, patch)| RawPreset {
@@ -46,7 +63,10 @@ fn store() -> MemStore {
         "Mine/Wobble",
         &preset("Wobble", &["lead", "rhythmic"], "Ada", "").to_json(),
     );
-    store.put_user("Night Keys", &preset("Night Keys", &["keys", "warm"], "Ada", "").to_json());
+    store.put_user(
+        "Night Keys",
+        &preset("Night Keys", &["keys", "warm"], "Ada", "").to_json(),
+    );
     store.put_user("Broken", "{ not a patch");
     store
 }
@@ -65,17 +85,21 @@ fn editor_snapshot(results: &mut SnapshotResults, name: &str, intents: Vec<Prese
             false,
         );
     };
-    apply(&mut editor, &mut session, vec![
-        PresetIntent::Browse(true),
-        PresetIntent::Load {
-            key: PresetKey::factory("pad/Glass Pad"),
-            close: true,
-        },
-        PresetIntent::Favorite {
-            key: PresetKey::factory("bass/Sub One"),
-            on: true,
-        },
-    ]);
+    apply(
+        &mut editor,
+        &mut session,
+        vec![
+            PresetIntent::Browse(true),
+            PresetIntent::Load {
+                key: PresetKey::factory("pad/Glass Pad"),
+                close: true,
+            },
+            PresetIntent::Favorite {
+                key: PresetKey::factory("bass/Sub One"),
+                on: true,
+            },
+        ],
+    );
     let level = ParamAddr::module(Patch::init().generators[0].id.clone(), "level").unwrap();
     let _ = enth_session::SessionEdit::edit(
         &mut session,
@@ -140,7 +164,11 @@ fn browser_snapshots() {
     h.snapshot("browser_header");
     results.extend_harness(&mut h);
 
-    editor_snapshot(&mut results, "browser_panel", vec![PresetIntent::Browse(true)]);
+    editor_snapshot(
+        &mut results,
+        "browser_panel",
+        vec![PresetIntent::Browse(true)],
+    );
     editor_snapshot(&mut results, "browser_save", vec![PresetIntent::OpenSave]);
     results.unwrap();
 }
