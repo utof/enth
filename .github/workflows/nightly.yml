@@ -103,6 +103,10 @@ jobs:
       - run: rustup toolchain install
       # The plugin's build libraries (as in ci.yml), plus Xvfb and Mesa's software OpenGL: the editor opens only on a
       # virtual display, never a GPU (`leak-test` starts xvfb-run itself and passes no display on).
+      # libegl1 and libegl-mesa0 are not optional (lane NTF, FU1): the editor's baseview opens its GL context through
+      # EGL, else through GLX with an sRGB framebuffer config, and Xvfb (21.1.12 with Mesa 25.2.8) offers sRGB GLX
+      # configs only when it can load Mesa's EGL vendor itself. Nothing else here pulls the two in; without them every
+      # `gui.create` fails, as in the first nightly (run 39506542786: no frame drawn in 200 cycles, no build counted).
       - name: System libraries for the plugin, Xvfb and software OpenGL
         run: |
           sudo apt-get update
@@ -110,16 +114,23 @@ jobs:
             libasound2-dev libgl-dev libjack-jackd2-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            xvfb xauth libgl1-mesa-dri libglx-mesa0
+            xvfb xauth libgl1-mesa-dri libglx-mesa0 libegl1 libegl-mesa0 mesa-utils
+      # What the editor will find under Xvfb, in the log: the EGL platform it tries first and the GLX fallback.
+      - name: Software OpenGL under Xvfb
+        run: |
+          xvfb-run -a -s "-screen 0 1920x1080x24" sh -c 'eglinfo -B -p x11; glxinfo -B' 2>&1 | head -60
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: leak
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask leak-test
+      # The JSON reports and the test host's logs (the plugin bundle stays out: 16 MB).
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: leak-test
-          path: target/leak-test/*.json*
+          path: |
+            target/leak-test/*.json*
+            target/leak-test/*.log
           if-no-files-found: ignore
