@@ -36,6 +36,11 @@ mod audio;
 mod checks;
 mod chunk;
 
+#[cfg(test)]
+pub(crate) use chunk::base64_encode;
+/// The state-chunk decoding `cargo xtask extract-presets` shares with the scenarios (`crate::preset`).
+pub(crate) use chunk::{base64_decode, nice_plug_state};
+
 const DEFAULT_REAPER: &str = "apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper";
 /// Hard limit for one REAPER launch; a hung script (e.g. a modal error dialog) is killed.
 const LAUNCH_TIMEOUT_SECS: u32 = 90;
@@ -536,6 +541,7 @@ fn run_scenario(
                 );
             }
             checks::roundtrip(&sb.out, report, format, PRODUCT_ROUNDTRIP_PATCH);
+            preset_extracted(&sb.out, report, format);
             if let Ok(saved) = chunk::Saved::read(&sb.out, format, "roundtrip-create")
                 && let Some(text) = saved.patch_text()
             {
@@ -665,6 +671,39 @@ fn run_scenario(
         Scenario::CrossFormat => {}
     }
     Ok(())
+}
+
+/// `cargo xtask extract-presets` on the project `patch-roundtrip` saved first (lane INT): the one enth instance in it
+/// gives back the patch the scenario loaded, byte for byte, so a sound the owner saves in REAPER becomes a preset file
+/// unchanged.
+fn preset_extracted(out: &Path, report: &mut Report, format: Format) {
+    let project = out.join(format!("roundtrip-{}-a.rpp", format.tag()));
+    let want = PRODUCT_ROUNDTRIP_PATCH.trim_end();
+    let (ok, detail) = match std::fs::read_to_string(&project)
+        .map_err(|e| format!("{}: {e}", project.display()))
+        .and_then(|text| crate::preset::instances(&text))
+    {
+        Ok(found) => (
+            found.len() == 1 && found[0].patch == want,
+            format!(
+                "{} enth instance(s) in the saved project; the extracted patch is {} bytes, {}",
+                found.len(),
+                found.first().map_or(0, |f| f.patch.len()),
+                if found.first().is_some_and(|f| f.patch == want) {
+                    "identical to the patch loaded"
+                } else {
+                    "NOT the patch loaded"
+                }
+            ),
+        ),
+        Err(e) => (false, e),
+    };
+    report.add(
+        &format!("{}/patch-roundtrip", format.tag()),
+        "preset-extracted",
+        ok,
+        detail,
+    );
 }
 
 /// Renders a project the script saved, offline (`reaper -renderproject`), into the output directory.
