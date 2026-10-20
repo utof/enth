@@ -21,6 +21,7 @@
 | `examples/dev_window.rs` | the dev window (feature `dev-window`) |
 | `examples/frame_bench.rs` | instructions per editor frame, headless (ED2 added the live cases) |
 | `crates/enth-plugin/src/editor.rs` | the plugin window: `EditorApp` and `Glue`, the plugin's handle on `Editor` |
+| `editor/recreate/` | the Recreate UI (lane RUI): the challenge bar in the header row (`bar.rs`), the results drawer in the overview slot (`results.rs`), the randomizer settings page (`settings.rs`), the score overlay (`overlay.rs`), the editor's Recreate state and round intents (`state.rs`); tokens in `theme/sizes/recreate.rs` ([below](#the-recreate-ui-lane-rui)) |
 | `editor/browser.rs`, `editor/browser/` | the preset browser (lane PBU): `Presets` (the editor's preset state), the header's Presets hook (`header.rs`), the browse panel (`panel.rs`), the Save dialog (`save.rs`), the crash notice and report (`crash.rs`); tokens in `theme/sizes/browser.rs` ([below](#the-preset-browser-lane-pbu)) |
 
 ## The frame
@@ -197,7 +198,7 @@ Decided by the R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-
 | Lesson pane (320) in the effects column, or as a left column | the band (732 or 276 px), tiles and routes | the band (932 or 476 px); effects 98 in the left-column one |
 | Both lesson layouts with a small patch (`init` or `pluck_1osc`, standing in for a lesson that hides unused modules) | none (`pad_2osc`: the band by 48 px in one of them) | not run |
 
-So Recreate's bar shares the header row (the patch name hides; the target is unknown anyway), and after Submit the results drawer (scores, time, Retry, New, Show target) replaces the overview, while the per-control rings draw on the knobs through `Overlay`. A Learn step names its layout and its overlay, and hides what it doesn't use. Lane SKR's skeleton bar (F2r) plays a round in the meantime: [The Recreate hook](#the-recreate-hook-lane-skr).
+So Recreate's bar shares the header row (the patch name hides; the target is unknown anyway), and after Submit the results drawer (scores, time, Retry, New, Show target) replaces the overview, while the per-control rings draw on the knobs through `Overlay`. A Learn step names its layout and its overlay, and hides what it doesn't use. Lane SKR's skeleton bar (F2r) played the first rounds ([The Recreate hook](#the-recreate-hook-lane-skr)); lane RUI's UI replaced it: [The Recreate UI](#the-recreate-ui-lane-rui).
 
 **The minimum window.** Decided by lane AM: `size.window.min` rose to 1200 × 800 ([below](#the-minimum-window)). Every layout variant still gets its snapshots and an overflow report, at 1200 × 800 and at whatever smaller size it promises to handle; Claude Design gets the `enth.layout/1` vocabulary (regions, parts, `arrange` values, token names with their values).
 
@@ -275,11 +276,77 @@ Rows, buttons and fields are `size.control_height` high. Glyphs (`theme/glyph.rs
 **Lane SKR's skeleton plays a round through the header's Recreate hook; lane RUI replaces the bar with the real challenge bar, results drawer and settings (wave 4).** The `recreate` feature is on by default in `enth-ui` and `enth-plugin` since SKR; the hook draws nothing until a shell hands the editor a round view, so kittest, the dev window and every snapshot that never does are unchanged.
 
 - **The seam** (what a shell does each frame, and what RUI builds on): `Editor::set_round(GameEdit::round())` before the frame; the bar pushes `Intent::Game(GameIntent)`, which the editor queues (`Recreate::push`) instead of applying, since it holds only a `SessionEdit`; `Editor::apply_game(&mut dyn GameEdit, seed)` after the frame applies them (`recreate::bar::apply_game`; the shell supplies a 40-bit seed for a round from settings); `Editor::hold_scores(results)` before the shell hands worker results to `Session::game_job_done`. The plugin's glue is `Glue::round_frame` ([plugin.md](plugin.md#the-recreate-round-lane-skr)).
-- **The bar** (`editor/recreate/bar.rs`), in the header's right-hand row, left of Add (the Presets group starts right after the wordmark): **Start** (level 1) while no round is live; then **Target ▶** and **Mine ▶** (toggles: a second click turns the side off) and a **Round** menu with **Submit**, **Hint**, **Reveal** and **End** (End restores the player's own patch). The readout (the code, the phase, sound and structure %, the time, the latest hint, or why an intent was refused) is the status line's right end while a round is live (`Recreate::readout`), so the header row stays short.
-- **The blind rating** (docs/session.md, "Time, submits and feedback"): the first Submit of a round without a rating turns the Round menu into **Rate yours** ("Rate 1" … "Rate 5", "Skip"), and `hold_scores` keeps the `Scored` result back until the player answers, so the session records the rating before the score (it refuses a rating after the first score is recorded).
-- **Accessibility labels**: "Start", "Target ▶", "Mine ▶", "Round", "Submit", "Hint", "Reveal", "End", "Rate yours", "Rate 1" … "Rate 5", "Skip".
+- **The skeleton bar** (replaced by lane RUI's challenge bar and results drawer, [below](#the-recreate-ui-lane-rui)): **Start** (level 1), then **Target ▶**, **Mine ▶** and a **Round** menu (Submit, Hint, Reveal, End), which became **Rate yours** while the blind rating was asked, and a one-line readout on the status line (`Recreate::readout`, kept by RUI). `hold_scores` keeps the `Scored` result back until the player answers, so the session records the rating before the score (it refuses a rating after the first score is recorded); RUI kept that too.
 - **Tests**: `tests/recreate.rs` drives Start → Target ▶ → Mine ▶ → Submit → the rating (the score held back) → Hint → Reveal → End over a real `Session`, the worker's jobs run between frames with the same `enth-challenge` functions; `recreate_round_live.png` shows the bar beside the Presets group and the readout on the status line at 1200 × 800; `bar.rs` unit tests cover the view, the rating hold and the readout.
 - **For RUI**: the bar uses no size token of its own (default buttons and menus in `text.body`), so `theme/sizes/recreate.rs` is still empty; the reserved `challenge_bar` and `results` regions are untouched; the no-peek check (no label or tooltip shows a target value) is RUI's. `RoundView::params` (the randomized addresses) and `knobs` (the rings) are not drawn yet.
+
+## The Recreate UI (lane RUI)
+
+**A round is played in the header row and the overview slot; the cards stay where they are.** Lane RUI replaced SKR's skeleton bar with the challenge bar, the results drawer, the randomizer settings page and the score overlay (`editor/recreate/`, feature `recreate`). Everything draws through SKR's seam and nothing at all until a shell hands the editor a round view, so every snapshot of a shell that never does is unchanged.
+
+**The header row.** In Recreate mode the challenge bar takes the Presets group's place, from the wordmark to the right-hand row's leftmost control ("+ Add"); Add, Undo, Redo and the master knob stay.
+
+| When | The header row shows |
+| --- | --- |
+| Play | **Recreate** in the right-hand row, left of "+ Add": enters Recreate mode |
+| Recreate mode, no round | **Level** and five dots (a click picks level 1–5: code v1's presets; "custom" after the settings page changed them), a code field ("Paste a code"; Enter or **Start** decodes it, and a code that does not decode says why on the status line), **Start**, **Settings…**, and × at the right end (back to Play, the Presets group returns) |
+| A round | the level's dots, **Target ▶** / **Mine ▶** (a second click turns the side off) / **A/B** (flips at the same position), the timer (active time, "Preparing…" while the target is prepared), **Submit**, **Hint** with the levels used ("1/4"), **Reveal**, and **End** (a menu: **End and restore my patch**, **End and keep this patch**) |
+
+Measured at 1200 × 800 (layout 1): every control of both rows sits inside the header and left of "+ Add" (the round's row ends at 573 px of 660), and the frame reports no overflow, the drawer included (`tests/recreate.rs::nothing_scrolls_at_1200_by_800_in_recreate`).
+
+**The results drawer** takes the overview slot (956 × 98 px at 1200 × 800) once the round has something to show: a submit (from the rating on), a hint or a reveal. **Modulation** (named "Show modulation") gives the slot back to the source tiles and routes, and **Results** ("Show results", over the overview's top right corner) brings the drawer back; a new submit or hint brings it back too.
+
+1. **Submit asks first.** "How close is yours to the target?" with **1**…**5** ("Rate 1"…"Rate 5"; "Nothing like it" to "I can't tell them apart") and **Skip**. `hold_scores` keeps the score back until the answer, so the rating is blind (`game_rate`).
+2. **Then the score**, in three columns: **sound %** against the pass mark ("✗ Not yet • pass mark 90 %" or "✓ Passed …", the glyph and the words in the score ink, never colour alone), structure % and combined %, the time (or "Passed at m:ss"), the submits and "assisted"; the **components** in lane SS's order, a badge each (✓ close, ~ a bit off, ✗ far off) and `component_text`'s words (a line cut short shows the whole text as its tooltip); then the latest **hint** ("Hint 2/4: …", two lines), the **vote** beside "Score felt" (**Too low**, **About right**, **Too high**: `game_vote`, the chosen one stays selected), **Disagree…** (a note card over the editor: "What did the score get wrong? (optional)", **Send** logs it at once with `game_dispute`, **Cancel** or Escape closes it), and the next actions: **Try again** (the same code from its start patch: a new round, so the old one ends `new_round`), **Reveal** ("Reveal the target", while the round is open), **New round** (the round's settings with a fresh seed; GR1's "want more").
+
+The drawer never reads a component's `target` or `answer` readings, nor SS's `jnd`, `floor` and `scale`.
+
+**The score overlay** (`recreate/overlay.rs`, `RoundOverlay`, built from each frame's round view): after the first score, a Good / Near / Bad ring with its glyph on every row of the structure score that has a control in the player's patch (`RoundView::rings`, `answer_addr`), live after that (the session's `Rings` jobs). A knob draws its own ring; a switch, a segmented control, a route's matrix cell or route-list row and a module's enable toggle get `overlay::paint_score` (a thin outline and the glyph at the top right). Route rows (`lfo1 -> filter1.cutoff`) and enable rows (`osc2.enabled`) are read with `RingAt::parse` (the session's `rings()`, added beside `knobs()`). A row whose control the player lacks (a missing route) has nothing to ring. The `dim_unused` assist (the settings page's "Dim the modules the target leaves alone") dims every module none of whose parameters the target randomized (`RoundView::params`), and the built-ins' unrandomized parameters; nothing is ever hidden.
+
+**The settings page** (**Settings…**) is a sheet over the body, like the preset browser's: the level (1–5, a preset's settings) and the difficulty (0–100), an amount per category (Oscillators, Filter, Envelopes, Modulation, Effects, Structure: "Auto" follows the level, else 0–100 %), Musical (0–100 %), the template (this build has the starter superset only) and the assist; **Start round** starts from them. It makes a `RandomSpec` and nothing else (`Settings`, integers only, the generator and the seed left to the shell); a level's settings give a short code, any other a long one, and the page says which.
+
+**No peeking** (`tests/recreate.rs::no_target_value_or_reading_is_visible_or_reachable_until_reveal`): during a level-3 round, scored and hinted, no text the editor shows contains a randomized target value as the editor writes it ("989 ms", "587 Hz", "+12 st") or a component reading (whole tokens, three significant digits or more). It reads every painted galley (tooltips, menus and popups included) and every accessible label, value and description, while hovering each of the 50-odd controls with the drawer up and again with the overview up, with the End menu open and with each randomized control's right-click menu open. Values the start patch shows anyway are the player's own and are left out. After Reveal the same check finds the target's values on the knobs, so it can see them.
+
+**The seam**, unchanged from SKR (`set_round`, `apply_game`, `hold_scores`, `Intent::Game`): `Recreate::push` keeps view changes (`GameIntent::View`: the mode, the level, the code field's text, Start, the settings page, the drawer, the note) and queues the round's intents for the shell: `Start { level }`, `New(spec)` (the seed replaced by the shell's), `Code(code)`, `Listen`, `Submit`, `Rate`, `Hint`, `Reveal`, `Vote`, `Dispute(note)`, `End`. A pushed intent asks egui for one more pass, so the change shows without waiting for input.
+
+**Repaint.** The Recreate UI asks for no frames of its own: with a scored round live, the drawer up and the rings drawn, an idle editor's frames ask for `Duration::MAX` (`an_idle_editor_with_a_scored_round_asks_for_no_frames`); the timer's next second and settled jobs are the shell's `RoundView::wake_at_ms`, as before.
+
+**Accessibility labels** (kittest finds the controls by them): "Recreate", "Level 1"…"Level 5", "Challenge code", "Start", "Settings…", "Leave Recreate"; "Level n of 5", "Target ▶", "Mine ▶", "A/B", "Time m:ss", "Submit", "Hint", "Hint level n of 4", "Reveal", "End", "End and restore my patch", "End and keep this patch"; "How close is yours to the target?", "Rate 1"…"Rate 5", "Skip"; "Sound n %", "✓ Passed • pass mark 90 %" or "✗ Not yet • …", "Structure n %", "Combined n %", each component as "<badge> <words>", "Hint n/4: <text>", "Too low", "About right", "Too high", "Disagree…", "Dispute note", "Send", "Cancel", "Try again", "Reveal the target", "New round", "Show modulation", "Show results"; the settings page's "Recreate settings", "Close settings", "Settings level 1"…"5", "<Category> follows the level", "<Category> amount", "Template", "Dim unused modules", "Start round".
+
+| Token (`theme/sizes/recreate.rs`) | Value | For |
+| --- | --- | --- |
+| `size.recreate.level_dot` | 14 | one level dot (a click target before a round); also a component row's badge column |
+| `size.recreate.code_field` | 132 | the code field |
+| `size.recreate.timer` | 40 | the timer, fixed so the bar does not shift |
+| `size.recreate.drawer_score` | 180 | the drawer's score column |
+| `size.recreate.drawer_component` | 188 | one of the two component columns |
+| `size.recreate.drawer_row` | 16 | a component row, a line of the drawer's text |
+| `size.recreate.settings_width` | 560 | the settings page's card |
+| `size.recreate.settings_label` | 120 | its label column |
+| `size.recreate.settings_slider` | 220 | its sliders |
+| `size.recreate.dispute_width` | 320 | the "Disagree…" note's card |
+| `size.recreate.dispute_rows` | 3 | the note field's rows |
+
+Glyphs: `DOT_ON` ●, `DOT_OFF` ○, `PLAY` ▶, `GOOD` ✓, `NEAR` ~, `BAD` ✗, `CLOSE` ×, `BULLET` •; colours `score.good`, `score.near`, `score.bad` with their glyphs.
+
+**Frame cost** (`examples/frame_bench.rs`, a fourth argument `recreate`: every case inside a level-5 round whose patch is the case's, scored once and hinted; callgrind on release, (I(250) − I(50)) / 200, measured on the same machine and build):
+
+| Case | No round | In a round |
+| --- | --- | --- |
+| P1 default, idle | 6.83 M | 7.03 M |
+| Maximum patch, idle | 9.10 M | 8.95 M |
+| Maximum patch, live with the spectrum, minus `engine` (10.43 M) (the worst case) | 9.70 M | 9.41 M |
+
+The drawer costs less than the overview it replaces at the maximum patch (eleven tiles and a scrolling route list), so a round's worst case keeps 5.9 % of the proposed 10 M limit. Without a round the worst case is 9.70 M on this build (AM measured 9.58 M before PBU's header and the later merges).
+
+**Tests** (`crates/enth-ui/tests/recreate.rs`, through a real `Session`, the real `sound/1` and `structure/1` scorers on the test's worker, by label): a round from Recreate to End through the bar and the drawer (the A/B switch, the rating held before the score, the drawer's numbers and components against the report, the rings against the rings, a hint, the vote, a dispute line with its note, Reveal, End and restore, the round log's lines as JSONL); Skip; the rings following the player's edits without a submit; a level-5 round's route and enable-toggle rings, and the overview switch; Try again and New round (`new_round` log lines); a pasted code and a bad one; the settings page's custom spec (a long code) and the dim assist; nothing scrolling at 1200 × 800; no bar without a shell that plays rounds; no peeking; no idle frames; snapshots; REAPER's click points. Snapshots (lavapipe, 1200 × 800): `recreate_before.png` (the bar before a round), `recreate_round_live.png` (a round, Target ▶ on), `recreate_rating.png` (the blind rating), `recreate_results.png` (the drawer and the rings), `recreate_settings.png`. Unit tests: `state.rs` (the hold, Start from the code field or the settings, the drawer's rules), `settings.rs` (presets give short codes, custom settings are integers and valid), `overlay.rs` (rings on params, routes and toggles; the dim assist). The plugin's `tests_game.rs::the_vote_and_the_dispute_reach_the_round_log_file`: through the real worker, the dispute line is in the file at once and the `end` line carries the vote and the rating.
+
+**Left for later:**
+
+- The `dim_unused` assist is an editor setting: `AssistsUsed` has no field for it, so a dimmed round is not marked assisted. A `dim_unused` field in `AssistsUsed` (CT, additive) and the session recording it (SG) would close that.
+- The coach's structured fields (`aspect`, `module`, `param`) could highlight a module or knob, but `CoachHint` carries only the level and the text; adding them (SG's `CoachHint` is `non_exhaustive`) and filling them in the plugin's hint job would let the overlay mark the hinted control.
+- No "Daily" seed yet (the code field takes a daily's code when one exists).
+- Route rings show only while the overview is up (the drawer takes its slot); a route the player lacks has no ring anywhere, only its share of structure %.
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 

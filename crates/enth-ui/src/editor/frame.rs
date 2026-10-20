@@ -441,7 +441,7 @@ impl Editor {
         }
         if let Some(r) = status {
             let error = session.status().last_error.map(|e| e.hint());
-            // A live Recreate round's readout (lane SKR's skeleton bar) takes the notice's place.
+            // A live Recreate round's readout (lane SKR; kept by lane RUI's bar) takes the notice's place.
             #[cfg(feature = "recreate")]
             let round = self.recreate.readout();
             #[cfg(not(feature = "recreate"))]
