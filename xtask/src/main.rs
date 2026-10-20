@@ -127,9 +127,12 @@ const USAGE: &str = "usage: cargo xtask <command>
   starter-project --out FILE.rpp [--tracks bass,pad,pluck,lead] [--patch FILE] [--force]
                                     a REAPER project with one enth (CLAP) per named track, loaded with the starter patch
                                     (every P1 module; the editor cannot add modules yet): where owner build 2 starts
-  preset-add FILE --name NAME --tags T1,T2
-                                    (not built yet: R1/S1 lane PR) normalise a drafted patch into content/presets/
-                                    as exactly Patch::to_json(), with its meta and the engine stamp
+  preset-add FILE [--name NAME] [--tags TYPE,WORD,...] [--out DIR] [--folder SUB] [--force] [--move]
+  preset-add --promote NAME[,NAME...] | --picks PICKS.md [--to DIR] [--force] [--move]
+                                    normalise a CLI-drafted patch into a preset (exactly Patch::to_json(), name,
+                                    tags from the factory vocabulary, engine stamp, unique name) under
+                                    content/presets-candidates/<type>/; promote a picked candidate into
+                                    content/presets/<type>/ (`preset-add --help`; R1/S1 lane PR)
   gr1-report <round log>...         (not built yet: R1/S1 lane GK) the GR1 numbers from the friends' round logs
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
