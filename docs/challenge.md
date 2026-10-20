@@ -262,7 +262,85 @@ Property tests run 256 cases with the gate's fixed seed, and 10,000 nightly ([AG
 
 ## Randomizer (lane RG)
 
-*To be written by lane RG:* the generator versions and what each randomizes per level, keyed draws, the observability mask, the minimum step, quantization, templates, the phrase table, and the spec → target-hash golden.
+Generator v1 (`enth_challenge::random`, `priors`, `phrases`; lane RG, 2026-10-20). It works in parameter space only and never reaches `enth-render` (`tests/rg_render_free.rs` reads its sources to check).
+
+### Entry points
+
+| Item | What it does |
+| --- | --- |
+| `random::target(&spec)` | `generate(&spec, &start(spec.template)?)` |
+| `random::generate(&spec, &start) -> Result<Generated, GenError>` | Calls `spec.validate()` first (a failing spec is `GenError::Spec`, with the spec's code), then runs the spec's generator version |
+| `random::start(template)` | The start patch of a template: `0` is the starter superset, frozen as it was at F0r (a byte copy in `src/random/starter-v1.patch.json`, its exact hash pinned), so editing the editor's starter or Init never moves a target. Ids 1–5 (pluck, pad, bass, lead, keys) are reserved; template ids are append-only |
+| `Generated` | `patch`; `phrase` (the `PhraseId` it picked); `params` (the randomized parameters in address order, for `TargetContext::randomized`); `randomized` (everything drawn, in draw order, with its category and whether it counted for the minimum step: parameters, routes, enable flags); `steps` (the minimum step per category); `level` |
+| `random::observable(&patch, &phrase) -> Mask` | The observability mask (below), shared with ST and the overlay; `Generated::mask()` is the target's |
+| `priors::jnd(&spec)` and `priors::ROUTE_JND` | The just-noticeable steps (below), for "audibly different" tests |
+| `phrases::{TABLE, phrase(id), HELD, OCTAVE_PAIR, LEGATO_PAIR}` | The phrase table |
+
+### Levels and what each randomizes
+
+`difficulty` picks the level: 0–20 → 1, 21–40 → 2, 41–60 → 3, 61–80 → 4, 81–100 → 5 (the presets sit at 0, 25, 50, 75 and 100). Each level adds categories; an unlocked category with `amounts = None` draws its default set:
+
+| Level | Adds | Default set |
+| --- | --- | --- |
+| 1 | Oscillators | `osc1.wave`, `osc1.semi`, and `osc1.pw` when the wave is pulse (`position` when it is the wavetable). Once structure enables them: osc 2's wave, semi, fine, level (pw, position) and the noise's color and level |
+| 2 | Filter | `filter1.mode`, `cutoff`, `resonance`; `keytrack` under the octave pair |
+| 3 | Envelopes | env 1's attack, decay, sustain, release (one pluck / pad / keys archetype for all four); the route env 2 → `filter1.cutoff` and env 2's decay and sustain; `env1.velocity` under the octave pair |
+| 4 | Modulation | An lfo 1 route (vibrato on `osc1.fine`, wah on the cutoff, tremolo on `osc1.level`, or PWM on a pulse) with its rate and shape; a second, on lfo 2, 35 % of the time |
+| 5 | Effects, Structure | Effects: the reverb (60 %) and the compressor (30 %) switched on, with wet, decay, room and threshold, ratio. Structure: osc 2 (50 %) and the noise (30 %) switched on, the phrase (held 50 %, octave pair 30 %, legato pair 20 %), legato mode and glide under the legato pair, and a velocity → cutoff route under the octave pair |
+
+`amounts[c] = Some(0)` switches a category off at any level; `Some(a)` switches it on and draws the first ⌈n·a/100⌉ entries of its full list (the default set first, then extras such as filter drive, env 2's attack and release, the reverb's high cut and the compressor's times), with continuous values pulled towards the start by `a/100`. These counts are "beta" for GR1: level 3 already draws 12–13 parameters where design.md §9 estimated 6–10, and GR1's pass rates calibrate it.
+
+### Keyed draws and priors
+
+- Every value comes from `derive(derive(seed, fnv1a64(key)), attempt)`. Keys are addresses (`filter1.cutoff`), `<id>.enabled` and `<src>->*` (a route's depth and destination). Shared choices (an envelope archetype, an LFO destination, the phrase) are drawn at attempt 0 from their own keys. Adding a parameter never moves another draw (P6), and a higher level keeps every lower draw and value (P3).
+- With probability `musical` % (from `<key>/musical`) a value comes from its prior, otherwise uniformly over its observable range in its normalised scale. Above `musical` 20 that range is the safe one: resonance at most 80 %, semitones within ±24, the cutoff relative to the note.
+- The priors are relative to the phrase's note through osc 1's transposition (f0 = C3 · 2^(semi/12)): LP cutoff log-uniform from 1.5 f0 to 12 kHz, band-pass f0 to 8 f0, high-pass f0/2 to 4 f0; resonance `60·u^1.5` %; octaves for osc 1 and intervals for osc 2; envelope times capped at the phrases' 1.5 s hold and tail; deterministic LFO shapes only (sample & hold and smooth random follow the render seed).
+- Reachable values: continuous values to 3 significant digits, route depths in 5 % steps (never 0), discrete values exact.
+- Headroom: when the enabled sources sum above 100 %, `master.level` (a gauge, never drawn) drops by their sum in 0.5 dB steps, at most 12 dB.
+
+### The observability mask
+
+`observable` gives every parameter, route and enable flag one `Visibility`. Only `Observable` is drawn, and only it should be compared.
+
+| Visibility | What |
+| --- | --- |
+| `Gauge` | the first enabled generator's level, `master.level`, `voice.pan`, `comp.makeup`, `reverb.dry` |
+| `Nuisance` | phase modes, start phases, seeds |
+| `Disabled` | anything in a disabled module, and routes from or to one |
+| `Dead(NotPulse, NotTable, SyncMaster, Silent)` | `pw` without the pulse wave; `position` and `table` without the wavetable; `sync` on the sync master; a generator at level 0 |
+| `Dead(Unrouted)` | a modulator that drives nothing heard (env 2 and both LFOs in the starter) |
+| `Dead(NeedsOctave, OneVelocity, OneKey, NoGlide, OneNote)` | keytrack without two notes an octave apart; velocity amounts and routes without two velocities; key routes without two keys; glide without a gliding phrase; voice mode, polyphony and LFO scope without notes that tell them apart |
+| `Dead(BeyondHold, BeyondTail)` | an attack longer than the shortest hold; a release longer than the tail |
+| `Dead(NoControls, ZeroDepth, HiddenEnd)` | routes from the mod wheel or a macro; depth 0; a route onto a hidden parameter |
+
+### The minimum step
+
+Each active category must move at least one counted draw by its step: cutoffs and other frequencies 2 semitones, LFO rates and times × 1.5 (times with 1 ms added), percentage levels 3 dB, dB values 3 dB, semitones 1, cents 3, other percentages 10 points, route depths 5 points, a discrete value or an enable flag any change. Otherwise the failing keys' attempt goes up by one and the category is drawn again; after 16 rounds its first counted parameter is set 1.1 steps from the start. Draws that depend on a level-5 choice (osc 2 and the noise, keytrack, velocity, voice mode) do not count, so they never change a lower category's attempts. In the 2,000 targets measured below, no step had to be forced.
+
+### Phrases
+
+| Id | Name | Notes (key, velocity, start–end ms) | Length |
+| --- | --- | --- | --- |
+| 1 | `held` | C3 100, 0–1500 | 3000 ms |
+| 2 | `octave_pair` | C3 100, 0–1500; C4 50, 1750–3250 | 4750 ms |
+| 3 | `legato_pair` | C3 100, 0–1750; G3 100, 1500–3250 | 4750 ms |
+
+Levels 1–4 always use `held`. Every phrase's lowest key is C3 and every note is held at least 1.5 s with at least 1.5 s of tail, so the priors are the same under every phrase. The generator reads phrases through the `PhraseFacts` trait (octave pair, two velocities, overlaps, holds, tails), never their `Performance`.
+
+### The golden
+
+`tests/golden/tests/rg_generator.rs`, in `enth-golden`, so `golden.yml` runs it on Linux and Windows (debug and release) and under wasmtime on every push, and on macOS weekly: 1,000 specs (every fourth a code v1 preset with a 40-bit seed, the rest spread over difficulty, `musical` 0–100 and amounts), each line with the phrase and the first 16 hex digits of the target's canonical and exact hashes, and a last line with the SHA-256 of all 1,000 exact hashes (`8416a9ec…`). Native x86-64 and `wasm32-wasip1` under wasmtime 48 give the same file (2026-10-20). A v1 target never changes: a new rule is generator v2, with its own file.
+
+### Measured audibility
+
+`tests/rg_levels.rs` (ignored; run by hand in release) renders 200 targets per cell through their phrase, the way report 01 measured its prototype:
+
+| `musical` | Level | Silent (no LUFS) | Below −40 LUFS | Float peak above 0 dBFS | Median LUFS |
+| --- | --- | --- | --- | --- | --- |
+| 100 | 1 / 2 / 3 / 4 / 5 | 0 / 0 / 0 / 0 / 0 | 0 / 0 / 7 / 6 / 8 | 0 / 64 / 49 / 51 / 22 | −12.1 / −11.4 / −16.3 / −16.3 / −24.0 |
+| 0 | 1 / 2 / 3 / 4 / 5 | 0 / 6 / 5 / 4 / 0 | 0 / 26 / 32 / 28 / 50 | 0 / 39 / 25 / 41 / 13 | −12.6 / −15.0 / −19.7 / −18.9 / −30.6 |
+
+Musical targets are never silent (report 01's prototype: 0–1 in 200) and rarely quiet (0–8, against 0–12). Float peaks above 0 dBFS are more common than the prototype's 11–15 % (up to 32 % at level 2, where resonance and the band-pass peak), which loudness-matched playback absorbs; the starter's own gain staging is lane AM's.
 
 ## Sound score (lane SS)
 

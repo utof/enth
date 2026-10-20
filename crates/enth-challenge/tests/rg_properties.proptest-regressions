@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7e0b1ae3b1ccd71c179fd9d3e3476a6a8c0e41113c6a09dbfaef08ad15a3e6e0 # shrinks to spec = RandomSpec { generator: 1, seed: 9470198871928386672, difficulty: 0, amounts: [None, Some(1), None, None, None, None], musical: 21, template: 0 }
