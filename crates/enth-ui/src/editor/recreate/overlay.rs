@@ -11,14 +11,27 @@
 //! The `dim_unused` assist (Challenge v1's, offered on the settings page) dims every module none of whose
 //! parameters the target randomized ([`RoundView::params`](enth_session::game::RoundView)), and the built-ins'
 //! parameters it did not randomize. Recreate never hides anything: "difficulty never locks features".
+//!
+//! **The latest hint points at what its text names** (lane HINT, FU1; [`RoundView::hint`](enth_session::game::RoundView),
+//! the session's [`CoachHint`] kept on the coach's ladder, docs/dsp/hints.md): an outline in the value accent, never a
+//! value. It follows the level ladder:
+//!
+//! | Level | The text says | Marked |
+//! | --- | --- | --- |
+//! | 1 | which aspect is off, and how | nothing (an aspect is not a control) |
+//! | 2 | which module (or region) | the module's card; nothing for a region (the voice settings, the modulation routes, general advice) |
+//! | 3 | which parameter, and which way | the parameter's control, with ↑ or ↓ when the text says raise or lower (a categorical parameter or a route's destination gets the outline alone); the card instead while "More" hides the control |
+//! | 4 | a value range (a route: its source too) | as level 3; a route hint also outlines its source module's card |
+//!
+//! The mark clears when the next hint replaces it, at a reveal, and when the round ends (no round view, no overlay).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use enth_challenge::Verdict;
-use enth_patch::{ModuleId, ParamAddr, RouteAddr, Target};
-use enth_session::game::{RingAt, RoundView};
+use enth_patch::{ModSource, ModuleId, ParamAddr, RouteAddr, Target};
+use enth_session::game::{CoachHint, HintTurn, RingAt, RoundView};
 
-use crate::editor::overlay::{Emphasis, Overlay, ParamOverlay};
+use crate::editor::overlay::{Emphasis, Overlay, ParamOverlay, Pointer};
 use crate::theme::Score;
 
 /// The ring a verdict draws; `None` for a verdict from a newer build.
@@ -39,6 +52,19 @@ pub struct RoundOverlay {
     routes: BTreeMap<RouteAddr, Score>,
     /// With the `dim_unused` assist: the randomized parameters and the modules they belong to.
     dim: Option<(BTreeSet<ParamAddr>, BTreeSet<ModuleId>)>,
+    /// The control the latest hint points at (lane HINT), and how.
+    hint_param: Option<(ParamAddr, Pointer)>,
+    /// The modules the latest hint outlines whole (lane HINT).
+    hint_modules: BTreeSet<ModuleId>,
+}
+
+/// The pointer for a hint's turn: ↑ or ↓ when the text says raise or lower, else the outline alone.
+fn pointer(turn: Option<HintTurn>) -> Pointer {
+    match turn {
+        Some(HintTurn::Raise) => Pointer::Raise,
+        Some(HintTurn::Lower) => Pointer::Lower,
+        Some(HintTurn::Unknown) | None => Pointer::Here,
+    }
 }
 
 impl RoundOverlay {
@@ -79,7 +105,32 @@ impl RoundOverlay {
                 .collect();
             o.dim = Some((params, modules));
         }
+        // The latest hint, while the round can still be played (a reveal shows the answer instead).
+        if round.phase.is_open()
+            && let Some(hint) = &round.hint
+        {
+            o.point(hint);
+        }
         o
+    }
+
+    /// Mark what `hint` names, on the level ladder (see the [module docs](self)).
+    fn point(&mut self, hint: &CoachHint) {
+        let hint = hint.clone().laddered();
+        match (&hint.param, &hint.module) {
+            (Some(param), _) => self.hint_param = Some((param.clone(), pointer(hint.turn))),
+            (None, Some(module)) => {
+                self.hint_modules.insert(module.clone());
+            }
+            (None, None) => {}
+        }
+        if let Some(RouteAddr {
+            src: ModSource::Module(id),
+            ..
+        }) = &hint.route
+        {
+            self.hint_modules.insert(id.clone());
+        }
     }
 
     /// Whether it shows anything at all.
@@ -88,6 +139,8 @@ impl RoundOverlay {
             && self.enables.is_empty()
             && self.routes.is_empty()
             && self.dim.is_none()
+            && self.hint_param.is_none()
+            && self.hint_modules.is_empty()
     }
 }
 
@@ -102,6 +155,11 @@ impl Overlay for RoundOverlay {
         ParamOverlay {
             emphasis,
             score: self.params.get(addr).copied(),
+            hint: self
+                .hint_param
+                .as_ref()
+                .filter(|(a, _)| a == addr)
+                .map(|(_, p)| *p),
         }
     }
 
@@ -118,6 +176,10 @@ impl Overlay for RoundOverlay {
 
     fn route(&self, route: &RouteAddr) -> Option<Score> {
         self.routes.get(route).copied()
+    }
+
+    fn module_hint(&self, id: &ModuleId) -> bool {
+        self.hint_modules.contains(id)
     }
 }
 
@@ -162,6 +224,63 @@ mod tests {
             Emphasis::Normal,
             "no dimming without the assist"
         );
+    }
+
+    fn hinted(level: u8) -> RoundView {
+        let mut round = RoundView::default();
+        round.phase = enth_session::game::Phase::Playing;
+        round.hint = Some(
+            CoachHint::new(level, "a hint")
+                .with_aspect("sweep", None)
+                .with_module(ModuleId::new("filter1").unwrap())
+                .with_param("filter1.cutoff".parse().unwrap(), Some(HintTurn::Raise))
+                .with_route("lfo1 -> filter1.cutoff".parse().unwrap()),
+        );
+        round
+    }
+
+    /// Lane HINT (FU1): each level marks what its text names, and never more, even from an over-filled hint.
+    #[test]
+    fn a_hint_marks_what_its_level_names() {
+        let cutoff: ParamAddr = "filter1.cutoff".parse().unwrap();
+        let filter = ModuleId::new("filter1").unwrap();
+        let lfo = ModuleId::new("lfo1").unwrap();
+        let o = RoundOverlay::of(&hinted(1), false);
+        assert!(o.is_empty(), "level 1 names an aspect, not a control");
+        let o = RoundOverlay::of(&hinted(2), false);
+        assert!(o.module_hint(&filter) && !o.module_hint(&lfo));
+        assert_eq!(o.param(&cutoff).hint, None);
+        let o = RoundOverlay::of(&hinted(3), false);
+        assert_eq!(o.param(&cutoff).hint, Some(Pointer::Raise));
+        assert_eq!(o.param(&"filter1.resonance".parse().unwrap()).hint, None);
+        assert!(
+            !o.module_hint(&filter),
+            "the control, not its card, once the text names it"
+        );
+        let o = RoundOverlay::of(&hinted(4), false);
+        assert_eq!(o.param(&cutoff).hint, Some(Pointer::Raise));
+        assert!(o.module_hint(&lfo), "a route's source at level 4");
+        // A categorical parameter (no turn) gets the outline alone.
+        let mut round = hinted(3);
+        round.hint = Some(
+            CoachHint::new(3, "change Wave")
+                .with_param("osc1.wave".parse().unwrap(), None),
+        );
+        let o = RoundOverlay::of(&round, false);
+        assert_eq!(
+            o.param(&"osc1.wave".parse().unwrap()).hint,
+            Some(Pointer::Here)
+        );
+        // A reveal, or no round in play, marks nothing.
+        for phase in [
+            enth_session::game::Phase::Revealed,
+            enth_session::game::Phase::Preparing,
+            enth_session::game::Phase::Broken,
+        ] {
+            let mut round = hinted(4);
+            round.phase = phase;
+            assert!(RoundOverlay::of(&round, false).is_empty(), "{phase:?}");
+        }
     }
 
     #[test]

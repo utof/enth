@@ -537,10 +537,10 @@ impl Runner {
     }
 
     /// Lane SN's coach at `level` for `patch` (docs/dsp/hints.md): the target measured once per round, one plan per
-    /// patch, then that plan's hint at the level. Only the hint's text reaches the session (`CoachHint`); the plan's
-    /// verified fix holds exact values and is never shown. The renders go through [`crate::hint_eval::Workers`] (lane
-    /// HINT, FU1): parallel, results by job index, so the hint is the same for any worker count; the job runs on the
-    /// game worker either way, so the editor never waits for it.
+    /// patch, then that plan's hint at the level. Only the hint's text and what it points at reach the session
+    /// (`CoachHint`, [`coach_hint`]); the plan's verified fix holds exact values and is never shown. The renders go
+    /// through [`crate::hint_eval::Workers`] (lane HINT, FU1): parallel, results by job index, so the hint is the
+    /// same for any worker count; the job runs on the game worker either way, so the editor never waits for it.
     fn hint(
         &mut self,
         id: RoundId,
@@ -578,9 +578,41 @@ impl Runner {
         let Some((_, plan)) = coach.plan.as_ref() else {
             return failed("hints", "no plan");
         };
-        let h = plan.hint(level);
-        JobResult::Hint(CoachHint::new(h.level, h.text.clone()))
+        JobResult::Hint(coach_hint(plan.hint(level)))
     }
+}
+
+/// The session's `CoachHint` for one of the coach's hints (lane HINT, FU1): the text, and what it is about (the
+/// aspect, the module, the parameter and its turn, a route), each as the coach filled it for the hint's level. Never
+/// the level-4 range or any value: the plan's verified fix stays in the worker.
+fn coach_hint(h: &enth_solver::coach::Hint) -> CoachHint {
+    use enth_session::game::{Direction, HintTurn};
+    use enth_solver::coach::{Difference, Turn};
+    let mut c = CoachHint::new(h.level, h.text.clone());
+    if let Some(aspect) = h.aspect {
+        let difference = h.difference.map(|d| match d {
+            Difference::Higher => Direction::Higher,
+            Difference::Lower => Direction::Lower,
+            Difference::Missing => Direction::Missing,
+            Difference::Extra => Direction::Extra,
+            _ => Direction::Unknown,
+        });
+        c = c.with_aspect(aspect.code(), difference);
+    }
+    if let Some(module) = &h.module {
+        c = c.with_module(module.clone());
+    }
+    if let Some(param) = &h.param {
+        let turn = h.turn.map(|t| match t {
+            Turn::Raise => HintTurn::Raise,
+            Turn::Lower => HintTurn::Lower,
+        });
+        c = c.with_param(param.clone(), turn);
+    }
+    if let Some(route) = &h.route {
+        c = c.with_route(route.clone());
+    }
+    c
 }
 
 /// `patch` playing `phrase` at `sample_rate` with the scored seed: what the scorer hears at the scored rate.
@@ -1821,6 +1853,121 @@ mod tests {
         let serial = hints(1);
         assert_eq!(serial.len(), 8);
         assert_eq!(hints(3), serial, "3 workers");
+        // What each hint points at follows the coach's ladder, and the session keeps it as it came.
+        for h in &serial {
+            assert!(h.aspect.is_some(), "level {}: the aspect from level 1", h.level);
+            assert!(h.level >= 2 || h.module.is_none(), "{h:?}");
+            assert!(
+                h.level >= 3 || (h.param.is_none() && h.turn.is_none()),
+                "{h:?}"
+            );
+            assert!(h.level >= 4 || h.route.is_none(), "{h:?}");
+            assert_eq!(&h.clone().laddered(), h, "already on the ladder");
+        }
+    }
+
+    /// Lane HINT (FU1): hint latency, serial against parallel, printed as a Markdown table (docs/plugin.md, "The hint
+    /// evaluator"). Run on purpose, in release, with nothing else timing or building:
+    /// `flock -x /tmp/enth-quiet.lock cargo test --release -p enth-plugin --lib -- --ignored hint_latency --nocapture`.
+    /// For each round (preset levels 1–4, a few seeds) and each worker count: hint 1 on the start patch (the target's
+    /// sensitivity and a plan), hint 2 on the same patch (the cached plan), hint 3 after the player moved a randomized
+    /// knob (a new plan), hint 4 on that patch (cached). Every worker count must give the same hints.
+    #[test]
+    #[ignore = "a timing run: release build, nothing else running"]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a timing measurement reads the clock and prints its table"
+    )]
+    fn hint_latency() {
+        use std::time::Instant;
+        let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
+        let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let workers = [1, 2, crate::hint_eval::hint_workers(cpus)];
+        println!("cpus {cpus}, shell default {} workers", workers[2]);
+        println!(
+            "| Round | Workers | Hint 1: target + plan (ms) | Hint 2: cached (ms) | Hint 3: after an edit (ms) | Hint 4: cached (ms) | Renders (target, plan 1, plan 3) |"
+        );
+        println!("| --- | --- | --- | --- | --- | --- | --- |");
+        for level in 1..=4_u8 {
+            for seed in [3_u64, 11, 29] {
+                let spec = SpecPreset::by_id(level).unwrap().spec(LATEST_GENERATOR, seed);
+                let id = round_id(u32::from(level) * 100 + seed as u32);
+                let mut reference: Option<Vec<CoachHint>> = None;
+                for &n in &workers {
+                    let mut runner = Runner::with_hint_workers(n);
+                    let (result, _) = runner.run(
+                        Job {
+                            id: JobId(1),
+                            round: id,
+                            kind: JobKind::Prepare { spec },
+                        },
+                        48_000,
+                    );
+                    let JobResult::Prepared(prepared) = result else {
+                        panic!("{result:?}")
+                    };
+                    let challenge = Arc::new(prepared.challenge.clone());
+                    let target = Arc::new(prepared.target.clone());
+                    let mut moved = prepared.start.clone();
+                    if let Some(addr) = prepared.params.first() {
+                        let spec = moved.spec(addr).unwrap();
+                        let u = spec.to_norm(moved.value(addr).unwrap());
+                        enth_patch::apply(
+                            &mut moved,
+                            &enth_patch::Op::SetParam {
+                                addr: addr.clone(),
+                                value: spec.from_norm((u + 0.3) % 1.0),
+                            },
+                        )
+                        .unwrap();
+                    }
+                    let mut times = Vec::new();
+                    let mut hints = Vec::new();
+                    let mut renders = Vec::new();
+                    for (level, patch) in [
+                        (1, &prepared.start),
+                        (2, &prepared.start),
+                        (3, &moved),
+                        (4, &moved),
+                    ] {
+                        let t = Instant::now();
+                        let (r, _) = runner.run(
+                            Job {
+                                id: JobId(2),
+                                round: id,
+                                kind: JobKind::Hint {
+                                    challenge: Arc::clone(&challenge),
+                                    target: Arc::clone(&target),
+                                    patch: Box::new(patch.clone()),
+                                    level,
+                                },
+                            },
+                            48_000,
+                        );
+                        times.push(ms(t));
+                        let JobResult::Hint(h) = r else {
+                            panic!("{r:?}")
+                        };
+                        hints.push(h);
+                        let coach = runner.coach.as_ref().unwrap();
+                        if level == 1 {
+                            renders.push(coach.target.sensitivity().renders);
+                        }
+                        if level % 2 == 1 {
+                            renders.push(coach.plan.as_ref().map_or(0, |p| p.1.renders()));
+                        }
+                    }
+                    match &reference {
+                        Some(r) => assert_eq!(&hints, r, "level {level} seed {seed}: {n} workers"),
+                        None => reference = Some(hints),
+                    }
+                    println!(
+                        "| L{level} seed {seed} | {n} | {:.0} | {:.1} | {:.0} | {:.1} | {}, {}, {} |",
+                        times[0], times[1], times[2], times[3], renders[0], renders[1], renders[2]
+                    );
+                }
+            }
+        }
     }
 
     #[test]

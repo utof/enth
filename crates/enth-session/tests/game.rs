@@ -462,6 +462,39 @@ fn hints_are_levels_that_mark_the_round_assisted() {
     assert_eq!(s.game_hint(), Err(GameError::NoMoreHints));
 }
 
+/// Lane HINT (FU1): the session keeps each hint on the coach's ladder. A shell that fills every structured field at
+/// every level still shows the editor only what the level's text names: the aspect from 1, the module from 2, the
+/// parameter and its turn from 3, the route at 4. The next hint replaces the last; ending the round clears it.
+#[test]
+fn hints_keep_only_the_fields_their_level_names() {
+    use enth_session::game::{CoachHint, HintTurn};
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    drain(&mut s);
+    let full = |level: u8| {
+        CoachHint::new(level, format!("level {level}"))
+            .with_aspect("brightness", Some(enth_session::game::Direction::Lower))
+            .with_module(enth_patch::ModuleId::new("filter1").unwrap())
+            .with_param(addr(CUTOFF), Some(HintTurn::Raise))
+            .with_route("lfo1 -> filter1.cutoff".parse().unwrap())
+    };
+    for level in 1..=4u8 {
+        s.game_hint().unwrap();
+        let hint = job(&drain(&mut s), "hint");
+        s.game_job_done(hint.id, JobResult::Hint(full(level)))
+            .unwrap();
+        let h = view(&s).hint.unwrap();
+        assert_eq!(h.text, format!("level {level}"), "the next hint replaces the last");
+        assert_eq!(h.aspect.as_deref(), Some("brightness"));
+        assert_eq!(h.module.is_some(), level >= 2, "level {level}");
+        assert_eq!(h.param.is_some(), level >= 3, "level {level}");
+        assert_eq!(h.turn, (level >= 3).then_some(HintTurn::Raise), "level {level}");
+        assert_eq!(h.route.is_some(), level == 4, "level {level}");
+    }
+    s.game_end(EndChoice::Keep).unwrap();
+    assert_eq!(s.round(), None, "no round, no hint to mark");
+}
+
 #[test]
 fn a_new_round_keeps_the_original_stash_and_logs_the_old_one() {
     let mut s = Session::new(custom_patch());

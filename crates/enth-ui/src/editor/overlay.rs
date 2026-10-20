@@ -4,7 +4,8 @@
 //! (✓ ~ ✗) on each control. Both are data an [`Overlay`] gives per parameter and per module; the editor applies it to
 //! the read model before drawing ([`apply`]), so no component knows about lessons or challenges. P1b ships
 //! [`NoOverlay`], which leaves everything as it is. Recreate never hides ("difficulty never locks features"), it
-//! dims and scores; only a lesson hides.
+//! dims and scores; only a lesson hides. A Recreate round's revealed hint also points at a control or a module
+//! ([`Pointer`], [`Overlay::module_hint`]; lane HINT, FU1): an outline in the value accent, never a value.
 
 use enth_patch::{ModuleId, ParamAddr, RouteAddr};
 
@@ -23,12 +24,37 @@ pub enum Emphasis {
     Hidden,
 }
 
+/// Where a revealed hint points on a control (a Recreate round, lane HINT): an outline in the value accent, with the
+/// way to turn the control when the hint's text says so (↑ raise, ↓ lower). Never a value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pointer {
+    /// Look here (a categorical parameter, a route's destination, or a hint that names no direction).
+    Here,
+    /// Turn it up.
+    Raise,
+    /// Turn it down.
+    Lower,
+}
+
+impl Pointer {
+    /// The glyph drawn at the outline's corner, if any.
+    pub fn glyph(self) -> Option<&'static str> {
+        match self {
+            Pointer::Here => None,
+            Pointer::Raise => Some(crate::theme::glyph::RAISE),
+            Pointer::Lower => Some(crate::theme::glyph::LOWER),
+        }
+    }
+}
+
 /// What an overlay says about one parameter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ParamOverlay {
     pub emphasis: Emphasis,
     /// A score ring on the control, always drawn with its glyph.
     pub score: Option<Score>,
+    /// A revealed hint points at the control (a Recreate round, lane HINT).
+    pub hint: Option<Pointer>,
 }
 
 /// Emphasis and scores laid over the editor by a lesson or a challenge.
@@ -44,6 +70,39 @@ pub trait Overlay {
     /// A score ring on a modulation route's cell or row (a Recreate round's route row; lane RUI). None by default.
     fn route(&self, _route: &RouteAddr) -> Option<Score> {
         None
+    }
+    /// A revealed hint points at this module as a whole (a Recreate round's hint, lane HINT): its card is outlined.
+    /// False by default.
+    fn module_hint(&self, _id: &ModuleId) -> bool {
+        false
+    }
+}
+
+/// Outlines the control or card a revealed hint points at (lane HINT): a thick stroke in the value accent a tight gap
+/// outside `rect`, and the [`Pointer`]'s glyph (↑ or ↓) inside its top left corner when it has one. Never colour
+/// alone for a direction: the glyph says it.
+pub fn paint_hint(
+    painter: &egui::Painter,
+    t: &crate::Theme,
+    rect: egui::Rect,
+    pointer: Pointer,
+) {
+    let ink = t.color.accent.value;
+    painter.rect_stroke(
+        rect.expand(t.space.tight),
+        t.radius.small,
+        t.stroke.thick(ink),
+        egui::StrokeKind::Outside,
+    );
+    // Inside the outline's top left corner (the score glyph takes the top right), clear of the stroke.
+    if let Some(glyph) = pointer.glyph() {
+        painter.text(
+            egui::pos2(rect.left() + t.space.hairline, rect.top() + t.space.hairline),
+            egui::Align2::LEFT_TOP,
+            glyph,
+            t.text.label.clone(),
+            ink,
+        );
     }
 }
 
@@ -99,6 +158,10 @@ pub fn apply(overlay: &dyn Overlay, cards: &mut Vec<CardView>) {
             CardKey::Module(id) => overlay.enable(id),
             CardKey::Voice | CardKey::Master => None,
         };
+        card.hinted = match &card.key {
+            CardKey::Module(id) => overlay.module_hint(id),
+            CardKey::Voice | CardKey::Master => false,
+        };
         for p in &mut card.params {
             let o = overlay.param(&p.addr);
             p.emphasis = match (module, o.emphasis) {
@@ -107,6 +170,7 @@ pub fn apply(overlay: &dyn Overlay, cards: &mut Vec<CardView>) {
                 _ => Emphasis::Normal,
             };
             p.score = o.score;
+            p.hint = o.hint;
         }
     }
 }
@@ -129,6 +193,7 @@ mod tests {
                     Emphasis::Normal
                 },
                 score: (addr.param() == "wave").then_some(Score::Good),
+                hint: None,
             }
         }
 

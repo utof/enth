@@ -198,9 +198,22 @@ Each job is a pure function of its payload (patches are owned or `Arc`-shared), 
 | `Score { challenge, target, patch, submit }` | `game_submit` (the patch at the moment of Submit) | `score_round(&round, &patch)` | `Scored(ScoreReport)` |
 | `Loudness { challenge, patch }` | The patch has settled (`SETTLE_MS`, 300 ms, after the last change) | Renders the phrase through the player's patch and measures it, for Mine ▶'s gain | `Loudness { lufs }` |
 | `Rings { challenge, target, patch }` | Settled, after the first submit | `score_structure(&round, &patch)`: the per-knob Good / Near / Bad (no render) | `Rings(StructureScore)` |
-| `Hint { challenge, target, patch, level }` | `game_hint` | The coach at that level (lane SN) | `Hint(CoachHint)` |
+| `Hint { challenge, target, patch, level }` | `game_hint` | The coach at that level (lane SN) | `Hint(CoachHint)`: the text and, since FU1 (lane HINT), what it points at ([below](#what-a-hint-points-at-lane-hint-fu1)) |
 
 Any job may answer `Failed { message }`: a failed `Prepare` breaks the round, a failed score records no submit. **A report is checked before it counts** (F1r review S10): its scorer ids and pass mark must be the challenge's, every percentage finite and within 0–100, and its `passed` exactly what the challenge's `passes(sound %)` gives (`ScoreReport::check_against`); otherwise it is refused (`wrong_result`), no submit is recorded and Submit is free again. Rings from another structure scorer are refused the same way. A settled job that measured an older revision of the patch is asked again at the next tick. The game worker is SKR's own thread, not nice-plug's background worker (a one-second calibration would hold up the plan pump).
+
+### What a hint points at (lane HINT, FU1)
+
+`CoachHint` (`non_exhaustive`) carries the text and structured fields from the coach, each filled only from the level whose text already says it, and **none ever holds a value**: no target value, no fix, no level-4 range (the plan's verified fix stays in the worker). All are additive and serde-default (`skip_serializing_if` none), so a hint without them reads and writes as before. Shells build one with `CoachHint::new(level, text)` and the `with_aspect`, `with_module`, `with_param` and `with_route` builders.
+
+| Field | From level | What |
+| --- | --- | --- |
+| `aspect`, `difference` | 1 | the coach's aspect code (`brightness`, `attack`, …; text, so a newer aspect never fails the hint) and how the player's sound differs (CT's `Direction`: `higher`, `lower`, `missing`, `extra`; a newer value reads `unknown`) |
+| `module` | 2 | the module to look at; none for a region (the voice settings, the routes, general advice) |
+| `param`, `turn` | 3 | the parameter (a route hint's destination) and which way (`HintTurn::{Raise, Lower}`; none for a categorical parameter or a route) |
+| `route` | 4 | a route hint's route, source and destination (never its depth) |
+
+**The session keeps each hint on that ladder** (`CoachHint::laddered`, applied when the `Hint` result arrives): a shell that fills too much can never make the editor mark a control before the text names it (`tests/game.rs::hints_keep_only_the_fields_their_level_names`). The latest hint is `RoundView::hint`; the next hint replaces it, and it goes with the round.
 
 ### A/B
 

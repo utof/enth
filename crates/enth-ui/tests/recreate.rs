@@ -4,7 +4,9 @@
 //! `Editor::hold_scores`, the round view handed over (`Editor::set_round`), the frame, then the round intents applied
 //! to the session's `GameEdit` (`Editor::apply_game`). The game worker is played by the test between frames, running
 //! the real `enth-challenge` functions (`prepare_round`, `score_round` with lane SS's `sound/1`, `score_structure`
-//! with lane ST's `structure/1`); the coach's hint job answers with a fixed text (lane SN's coach is the plugin's).
+//! with lane ST's `structure/1`); the coach's hint job answers with a fixed text (lane SN's coach is the plugin's), and,
+//! when a test names a control (`App::hint_at`), with what the hint points at, filled at every level as no coach would:
+//! the session keeps it on the level ladder (lane HINT, FU1).
 //!
 //! Recreate → Start → Target ▶ → Mine ▶ → A/B → Submit → the blind rating (the score held back until it is given) →
 //! the results drawer and the rings → Hint → the vote → Disagree… → Reveal → End, and the round log's lines.
@@ -25,7 +27,7 @@ use enth_session::game::{
     Prepared, RingAt, RoundLogEntry, RoundView,
 };
 use enth_ui::Theme;
-use enth_ui::editor::overlay::{Emphasis, Overlay};
+use enth_ui::editor::overlay::{Emphasis, Overlay, Pointer};
 use enth_ui::editor::{Editor, Region};
 use enth_ui::theme::Score;
 
@@ -50,10 +52,12 @@ struct App {
     log: Vec<RoundLogEntry>,
     /// The shell plays rounds (calls `set_round` every frame), as the plugin does.
     plays: bool,
+    /// The control the worker's hints point at (lane HINT): `None` answers with the text alone.
+    hint_at: Option<enth_patch::ParamAddr>,
 }
 
 /// The worker's part, synchronously: the same functions the plugin's worker calls.
-fn run(job: &Job, silent: &[u64]) -> JobResult {
+fn run(job: &Job, silent: &[u64], hint_at: Option<&enth_patch::ParamAddr>) -> JobResult {
     match &job.kind {
         JobKind::Prepare { spec } if silent.contains(&spec.seed) => JobResult::SilentTarget,
         JobKind::Prepare { spec } => {
@@ -73,7 +77,18 @@ fn run(job: &Job, silent: &[u64]) -> JobResult {
             JobResult::Rings(Box::new(score_structure(&round, patch).unwrap()))
         }
         JobKind::Loudness { .. } => JobResult::Loudness { lufs: None },
-        JobKind::Hint { level, .. } => JobResult::Hint(CoachHint::new(*level, HINT)),
+        JobKind::Hint { level, .. } => {
+            let mut hint = CoachHint::new(*level, HINT);
+            if let Some(at) = hint_at {
+                hint = hint
+                    .with_aspect("brightness", Some(enth_session::game::Direction::Lower))
+                    .with_param(at.clone(), Some(enth_session::game::HintTurn::Raise));
+                if let Some(module) = at.module_id() {
+                    hint = hint.with_module(module.clone());
+                }
+            }
+            JobResult::Hint(hint)
+        }
         _ => JobResult::Failed {
             message: "not in this test".to_owned(),
         },
@@ -94,6 +109,7 @@ fn app(patch: Patch, plays: bool) -> App {
         silent: Vec::new(),
         log: Vec::new(),
         plays,
+        hint_at: None,
     }
 }
 
@@ -155,7 +171,7 @@ fn harness_with(app: App, render: bool) -> Harness<'static, App> {
             }
             // The worker, between frames.
             for job in std::mem::take(&mut app.jobs) {
-                let result = run(&job, &app.silent);
+                let result = run(&job, &app.silent, app.hint_at.as_ref());
                 app.results.push((job.id, result));
             }
         },
@@ -648,6 +664,60 @@ fn the_dim_assist_marks_the_round_assisted_and_the_log_says_so() {
     }
 }
 
+/// The control a test's hints point at: the round's filter cutoff if it was randomized (shown on its card without
+/// "More"), else the first randomized module parameter.
+fn hint_control(r: &RoundView) -> enth_patch::ParamAddr {
+    r.params
+        .iter()
+        .find(|a| a.to_string() == "filter1.cutoff")
+        .or_else(|| r.params.iter().find(|a| a.module_id().is_some()))
+        .cloned()
+        .expect("a randomized module parameter")
+}
+
+/// Lane HINT (FU1): a revealed hint marks what its level names on the player's controls: level 1 nothing (an aspect),
+/// level 2 the module's card, level 3 the control with ↑ (raise). The worker fills every field at every level; the
+/// session keeps each hint on the ladder, so nothing is marked early. The next hint replaces the mark, a reveal clears
+/// it, and so does the end of the round.
+#[test]
+fn a_hint_highlights_its_control() {
+    let mut h = harness();
+    start(&mut h, 3);
+    let at = hint_control(&round(&h).unwrap());
+    let module = at.module_id().cloned().unwrap();
+    h.state_mut().hint_at = Some(at.clone());
+    let marks = |h: &Harness<'_, App>| {
+        let o = h.state().editor.recreate().overlay().cloned().unwrap();
+        (o.module_hint(&module), o.param(&at).hint)
+    };
+    assert_eq!(marks(&h), (false, None), "no hint, no mark");
+    click(&mut h, "Hint");
+    h.run_steps(2);
+    assert_eq!(round(&h).unwrap().hints, 1);
+    assert_eq!(marks(&h), (false, None), "level 1 names an aspect, not a control");
+    click(&mut h, "Hint");
+    h.run_steps(2);
+    assert_eq!(marks(&h), (true, None), "level 2: the module's card");
+    click(&mut h, "Hint");
+    h.run_steps(2);
+    assert_eq!(
+        marks(&h),
+        (false, Some(Pointer::Raise)),
+        "level 3: the control, and which way"
+    );
+    let _ = h.get_by_label(&format!("Hint 3/4: {HINT}"));
+    click(&mut h, "Reveal");
+    assert_eq!(phase(&h), Some(Phase::Revealed));
+    assert_eq!(marks(&h), (false, None), "a reveal clears the mark");
+    click(&mut h, "End");
+    click(&mut h, "End and restore my patch");
+    assert_eq!(phase(&h), None);
+    assert!(
+        h.state().editor.recreate().overlay().is_none(),
+        "no round, no mark"
+    );
+}
+
 #[test]
 fn nothing_scrolls_at_1200_by_800_in_recreate() {
     let mut h = harness();
@@ -1011,6 +1081,17 @@ fn recreate_snapshots() {
     h.remove_cursor();
     h.run_steps(2);
     h.snapshot("recreate_results");
+    // Lane HINT (FU1): a level-3 hint marks its control (an outline in the value accent, ↑ raise).
+    let at = hint_control(&round(&h).unwrap());
+    h.state_mut().hint_at = Some(at);
+    click(&mut h, "Hint");
+    h.run_steps(3);
+    click(&mut h, "Hint");
+    h.run_steps(3);
+    let _ = h.get_by_label(&format!("Hint 3/4: {HINT}"));
+    h.remove_cursor();
+    h.run_steps(2);
+    h.snapshot("recreate_hint");
 }
 
 /// The click points `xtask/reaper/round.lua` uses (offsets into the plugin window, layout "lanes" at 1200 × 800): each
