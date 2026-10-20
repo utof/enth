@@ -735,8 +735,9 @@ pub(super) fn ensure_enth(root: &Path, target: &Path, opts: &Opts) -> Result<Pat
 /// `agent-eval run`.
 pub fn run(opts: &Opts) -> Result<(), String> {
     if !opts.dry_run && !opts.confirm_spend {
-        return Err("a real run calls a model and spends the owner's money (about $9 for 10 goals x 3 trials x 2 \
-tracks on Sonnet 5.5, an estimate). Start with --dry-run, which calls none. When the owner has approved the \
+        return Err("a real run calls a model and spends the owner's money (about $0.14 per trial on Sonnet 5.5, an \
+estimate: about $25 for the 30 goals x 3 trials x 2 tracks, more than the default --max-usd of 20, which stops \
+starting trials at that estimate). Start with --dry-run, which calls none. When the owner has approved the \
 spend, add --confirm-spend"
             .to_owned());
     }
