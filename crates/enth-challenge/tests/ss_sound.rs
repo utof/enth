@@ -4,7 +4,8 @@
 //! - **P7** scores stay in 0–100 and the target itself scores 100; equivalent patches (module ids relabelled, an
 //!   extra module that is off, generators reordered) score as the target does.
 //! - **P10** sound stability: a 1e-3 relative move of a parameter changes the score by under 0.5 point;
-//!   a nuisance parameter (phase mode, start phase, seed) gives at least 99. These render, so 32 cases each.
+//!   a nuisance parameter (phase mode, start phase, seed) gives at least 99. These render, so 32 cases each, and at
+//!   most 1,000 in an exploration run (`render_property`).
 //! - The score is monotone in an injected error, and the start of a round never passes.
 //! - **P11** (with `ss_loudness.rs`): the A/B level match and the scored comparison share one gain function.
 //!
@@ -406,56 +407,106 @@ fn near_miss(level: usize) -> &'static (Patch, f64) {
     })
 }
 
+/// The gate's cases for a property that renders per case.
+const RENDER_CASES: u32 = 32;
+/// At most this many cases for such a property in an exploration run (`PROPTEST_CASES`, the nightly's 10,000): about
+/// the nightly's ratio to the gate for the other properties (10,000 to 256, so 1,250 to 32), rounded down. Every case
+/// renders and scores a patch, and at 10,000 cases both P10 properties hit the nightly's ten-minute limit (nightly
+/// 39506542786); 1,000 took 187 and 200 s on the dev box at a load of 24 (lane NTF, FU1).
+const RENDER_CASES_MAX: u32 = 1_000;
+
+/// Runs a property that renders per case, as `proptest!` would (`PROPTEST_RNG_SEED`, failure persistence next to this
+/// file), with [`RENDER_CASES`] cases, or `PROPTEST_CASES` capped at [`RENDER_CASES_MAX`] when that is set. The macro
+/// cannot cap: it applies `PROPTEST_CASES` over any configured count.
+fn render_property<S: Strategy>(
+    name: &'static str,
+    strategy: S,
+    test: impl Fn(S::Value) -> Result<(), TestCaseError>,
+) {
+    let mut config =
+        proptest::test_runner::contextualize_config(ProptestConfig::with_cases(RENDER_CASES));
+    config.cases = config.cases.min(RENDER_CASES_MAX);
+    config.source_file = Some(file!());
+    config.test_name = Some(name);
+    let mut runner = proptest::test_runner::TestRunner::new(config);
+    if let Err(e) = runner.run(&strategy, test) {
+        panic!("{e}\n{runner}");
+    }
+}
+
+/// P10: a 1e-3 relative move of one parameter (its plain value × (1 ± 1e-3), or ± 1e-3 of its unit at 0), from the
+/// target or from a near miss, moves the score by under 0.5 point.
+#[test]
+fn p10_a_tiny_move_barely_moves_the_score() {
+    render_property(
+        "p10_a_tiny_move_barely_moves_the_score",
+        (
+            1usize..=5,
+            any::<prop::sample::Index>(),
+            any::<bool>(),
+            any::<bool>(),
+        ),
+        |(level, pick, up, from_near)| {
+            let (base, base_score) = if from_near {
+                let (p, s) = near_miss(level);
+                (p.clone(), *s)
+            } else {
+                (round(level).generated.patch.clone(), 100.0)
+            };
+            let params = continuous(level);
+            let addr = &params[pick.index(params.len())];
+            let spec = base.spec(addr).unwrap();
+            let v0 = base.value(addr).unwrap();
+            let d = if v0 == 0.0 { 1e-3 } else { 1e-3 * v0.abs() };
+            let v = if up { v0 + d } else { v0 - d }.clamp(spec.min(), spec.max());
+            let s = score(level, &set(&base, addr, v));
+            prop_assert!(
+                (s.percent - base_score).abs() < 0.5,
+                "level {}, {} {} -> {}: {} -> {}",
+                level,
+                addr,
+                base.value(addr).unwrap(),
+                v,
+                base_score,
+                s.percent
+            );
+            Ok(())
+        },
+    );
+}
+
+/// P10: a nuisance parameter set to another value scores at least 99.
+#[test]
+fn p10_a_nuisance_change_scores_at_least_99() {
+    render_property(
+        "p10_a_nuisance_change_scores_at_least_99",
+        (1usize..=5, any::<prop::sample::Index>(), 0.0f32..1.0),
+        |(level, pick, u)| {
+            let params = nuisance(level);
+            prop_assume!(!params.is_empty());
+            let target = &round(level).generated.patch;
+            let addr = &params[pick.index(params.len())];
+            let spec = target.spec(addr).unwrap();
+            let mut v = spec.from_norm(u).clamp(spec.min(), spec.max());
+            if spec.is_discrete() {
+                v = libm::roundf(v);
+            }
+            let s = score(level, &set(target, addr, v));
+            prop_assert!(
+                s.percent >= 99.0,
+                "level {}, {} -> {}: {:?}",
+                level,
+                addr,
+                v,
+                s
+            );
+            Ok(())
+        },
+    );
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
-
-    /// P10: a 1e-3 relative move of one parameter (its plain value × (1 ± 1e-3), or ± 1e-3 of its unit at 0), from
-    /// the target or from a near miss, moves the score by under 0.5 point.
-    #[test]
-    fn p10_a_tiny_move_barely_moves_the_score(
-        level in 1usize..=5,
-        pick in any::<prop::sample::Index>(),
-        up in any::<bool>(),
-        from_near in any::<bool>(),
-    ) {
-        let (base, base_score) = if from_near {
-            let (p, s) = near_miss(level);
-            (p.clone(), *s)
-        } else {
-            (round(level).generated.patch.clone(), 100.0)
-        };
-        let params = continuous(level);
-        let addr = &params[pick.index(params.len())];
-        let spec = base.spec(addr).unwrap();
-        let v0 = base.value(addr).unwrap();
-        let d = if v0 == 0.0 { 1e-3 } else { 1e-3 * v0.abs() };
-        let v = if up { v0 + d } else { v0 - d }.clamp(spec.min(), spec.max());
-        let s = score(level, &set(&base, addr, v));
-        prop_assert!(
-            (s.percent - base_score).abs() < 0.5,
-            "level {}, {} {} -> {}: {} -> {}", level, addr, base.value(addr).unwrap(), v, base_score, s.percent
-        );
-    }
-
-    /// P10: a nuisance parameter set to another value scores at least 99.
-    #[test]
-    fn p10_a_nuisance_change_scores_at_least_99(
-        level in 1usize..=5,
-        pick in any::<prop::sample::Index>(),
-        u in 0.0f32..1.0,
-    ) {
-        let params = nuisance(level);
-        prop_assume!(!params.is_empty());
-        let target = &round(level).generated.patch;
-        let addr = &params[pick.index(params.len())];
-        let spec = target.spec(addr).unwrap();
-        let mut v = spec.from_norm(u).clamp(spec.min(), spec.max());
-        if spec.is_discrete() {
-            v = libm::roundf(v);
-        }
-        let s = score(level, &set(target, addr, v));
-        prop_assert!(s.percent >= 99.0, "level {}, {} -> {}: {:?}", level, addr, v, s);
-    }
 
     /// P11: the A/B gains are symmetric, never boost, match the two sides, and differ from the scorer's gains by one
     /// common offset (one gain function).
