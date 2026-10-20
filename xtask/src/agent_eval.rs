@@ -213,9 +213,10 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_set_has_ten_goals_covering_the_brief() {
+    fn the_shipped_set_has_thirty_goals_covering_the_brief() {
+        // Eval version 3 (R1/S1 lane EV2): 30 goals, from P1a's 10, across the sound families.
         let set = set();
-        assert_eq!(set.goals.len(), 10);
+        assert_eq!(set.goals.len(), 30);
         let tags: Vec<&str> = set
             .goals
             .iter()
@@ -233,6 +234,14 @@ mod tests {
             "kick",
             "hat",
             "snare",
+            "tom",
+            "keys",
+            "organ",
+            "fx",
+            "texture",
+            "reverb",
+            "tremolo",
+            "vibrato",
         ] {
             assert!(tags.contains(&want), "no goal is tagged `{want}`");
         }

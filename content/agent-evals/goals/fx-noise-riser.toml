@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "fx-noise-riser"
+added = "2026-10-20"
+difficulty = 4
+tags = ["fx", "riser", "noise", "sweep", "envelope", "structure"]
+brief = "a noise riser: a whoosh that builds up and brightens over the whole note"
+template = "init"
+expect = "noisiness > 0.8, pitch == null, attack > 1200ms, filter_sweep > 2oct, sweep_ms > 1000ms, brightness > 3kHz, release < 300ms, peak < -1dB"
+rationale = "A build-up: noise that swells over the 3 s hold (attack over 1.2 s) while a filter opens (a one-shot sweep of over 2 octaves taking over 1 s), cut at note-off. The sweep direction is not in the expectation vocabulary, so the brightness floor carries it: a rising sweep is brightest where it is loudest (the witness reads 8.1 kHz), a falling one under a swell read 1.1 kHz and fails, and a swell without the filter fails the sweep items (both measured). Structural: noise instead of the oscillator, a filter, a second envelope routed to the cutoff. Witness: white noise, 300 Hz low-pass, env2 attack 3 s at +6 oct, amp attack 3 s (sweep 3.9 oct, 2060 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C3", vel = 100, on_s = 0.0, off_s = 3.0 }], dur_s = 4.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

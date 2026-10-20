@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "bass-808-boom"
+added = "2026-10-20"
+difficulty = 2
+tags = ["percussion", "kick", "bass", "low", "sine"]
+brief = "a booming 808-style sub kick that rings for about a second"
+template = "init"
+expect = "pitch.note ~ A1, attack < 40ms, brightness < 120Hz, duration in [600ms, 1400ms], sustain < -30dB, noisiness < 0.05, peak < -1dB"
+rationale = "A long sub kick: a pure low tone that dies by itself in about a second although the key is held 1.2 s. Against kick-thump (a 150-450 ms thump with a few harmonics) this one is a sine (brightness under 120 Hz) and rings 600-1400 ms (the 1.5 s clip of a drum hit holds it); against bass-sub-sine it does not hold (sustain under -30 dB). The attack limit is wide (40 ms) for the 55 Hz period. A 55 Hz sine that dies in under about 200 ms reads no pitch (p1a-g1.md), so the duration floor also keeps the pitch item measurable. Witness: sine, 0 ms attack, 2 s decay to 0 % (duration 979 ms, sustain -48.8 dB, centroid 56.5 Hz). No pitch drop: a pitch envelope on a kick is not measured by any item here."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 1.2 }], dur_s = 1.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

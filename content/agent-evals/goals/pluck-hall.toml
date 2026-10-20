@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "pluck-hall"
+added = "2026-10-20"
+difficulty = 4
+tags = ["pluck", "reverb", "effects", "long"]
+brief = "a plucked note ringing out in a big reverberant hall"
+template = "init"
+expect = "pitch.note ~ E4, attack < 10ms, sustain in [-45dB, -10dB], release > 1000ms, duration > 1800ms, brightness in [800Hz, 3kHz], noisiness > 0.02, peak < -1dB"
+rationale = "The effect-heavy pluck: the dry pluck has died by note-off (sustain -45 to -10 dB re the peak, the tail of the reverb) and the tail rings on (release over 1 s, duration over 1.8 s, with the key held 1 s). The reverb is what makes `noisiness > 0.02` true: a diffuse tail smears the spectral peaks, and the ten reverb settings tried read 0.05-0.16 while a long envelope release on the same pluck reads 0.0002 (measured), so the list cannot be met by an envelope alone (a little added noise would also do). The release is extrapolated when the tail outlasts the 4 s clip (`estimated`). Witness: 2.5 kHz low-pass, 300 ms decay to 0 %, reverb wet -3 dB, decay 8 s, room 120 ms (sustain -28.8 dB, duration 3317 ms, noisiness 0.14). The compressor, the other global effect, has no goal: on one note its result is an envelope shape an ADSR makes."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "E4", vel = 100, on_s = 0.0, off_s = 1.0 }], dur_s = 4.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "fx-laser-zap"
+added = "2026-10-20"
+difficulty = 5
+tags = ["fx", "pitch", "envelope", "modulation", "short"]
+brief = "a laser zap: a short tone whose pitch dives fast"
+template = "init"
+expect = "filter_sweep > 0.8oct, sweep_ms < 300ms, stability < 0.5, attack < 10ms, duration in [100ms, 600ms], sustain < -30dB, peak < -1dB"
+rationale = "A pitch dive: an envelope on the oscillator's pitch, the first goal whose route goes to `semi`. Measured three ways: the brightness follows the pitch down (a one-shot sweep of over 0.8 octave, under 300 ms), the pitch is not steady (`stability` under 0.5; the witness reads 0), and it is short. A filter envelope on a steady tone (control, measured) passes the sweep items and fails stability. A gliding pitch has no steady spectral peaks, so the zap reads as noise (noisiness 0.33-1) and the list has no noisiness item. The direction is not measured (an upward zap would pass). Witness: triangle, env2 0/300 ms/0 % routed to osc1.semi at +36 st (sweep 1.13 oct, 181 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C4", vel = 100, on_s = 0.0, off_s = 0.5 }], dur_s = 1.2 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

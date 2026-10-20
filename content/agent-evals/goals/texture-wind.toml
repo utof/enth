@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "texture-wind"
+added = "2026-10-20"
+difficulty = 4
+tags = ["texture", "noise", "lfo", "filter", "modulation", "long"]
+brief = "wind: white noise swept slowly up and down by a filter"
+template = "init"
+expect = "noisiness > 0.8, pitch == null, filter_lfo in [0.3Hz, 1.5Hz], filter_sweep > 0.5oct, brightness in [400Hz, 4kHz], attack > 150ms, release > 400ms, peak < -1dB"
+rationale = "A noise texture that moves: white noise through a filter whose cutoff an LFO sweeps (filter LFO 0.3-1.5 Hz, swing over 0.5 octave), fading in and out. The brief names white noise because the filter-sweep reading depends on it: with pink noise through a low-pass no filter LFO was found at ±1 or ±2 octaves, while white noise through a low-pass and either colour through a band-pass were (measured 2026-10-20; reported for docs/dsp/analysis.md). A tremolo cannot be read on noise (it needs harmonics), so the sweep is the only movement item. Witness: white noise, 1.2 kHz low-pass, lfo1 0.8 Hz at +1 oct (filter_lfo 0.80 Hz, swing 1.31 oct)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C3", vel = 100, on_s = 0.0, off_s = 5.0 }], dur_s = 7.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

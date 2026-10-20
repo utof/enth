@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "lead-flute-breathy"
+added = "2026-10-20"
+difficulty = 5
+tags = ["lead", "flute", "noise", "envelope", "structure"]
+brief = "a breathy flute-like tone"
+template = "init"
+expect = "tonal_pitch ~ A4, noisiness in [0.04, 0.3], attack in [40ms, 250ms], brightness in [500Hz, 1.6kHz], sustain > -8dB, release < 300ms, beating == null, peak < -1dB"
+rationale = "Two sources balanced again, this time quietly: a soft tone with breath in it. A pure, low-passed tone (brightness 500 Hz to 1.6 kHz at A4) with a noise share of 0.04-0.3, a soft start (attack 40-250 ms, both sides), held, released soon. `tonal_pitch` because noise hides YIN's pitch quickly (in design, YIN's pitch wavered at noisiness 0.19 and was gone at 0.32, and `stability` read 0 at both), and noise makes the peak, so the sustain floor is generous (-8 dB; the witness reads -2.7 dB with noise 1.3 dB at a 90 % sustain). No vibrato item: under breath noise `stability` is not reliable. Witness: triangle at 70 %, pink noise at 100 %, a 2.5 kHz low-pass, 150 ms attack (noisiness 0.10, attack 137 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "A4", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

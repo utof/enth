@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "keys-organ"
+added = "2026-10-20"
+difficulty = 2
+tags = ["keys", "organ", "wavetable", "envelope"]
+brief = "a clean organ tone that starts and stops instantly"
+template = "init"
+expect = "pitch.note ~ C4, attack < 10ms, sustain > -1.5dB, release < 60ms, brightness in [500Hz, 1.5kHz], beating == null, noisiness < 0.05, peak < -1dB"
+rationale = "An organ: instant on, flat while held, instant off (release under 60 ms), clean, with a few harmonics (brightness 500 Hz to 1.5 kHz at C4, where a saw reads 4.2 kHz). The `organ` wavetable reads 261/656/1082 Hz at position 0/50/100 %; a triangle (581 Hz) also passes, which is fine: the list asks for the organ's behaviour. The blank patch fails sustain, release and brightness. Witness: wave table, table organ, position 75 %, 2 ms attack, 40 ms release (centroid 865 Hz, release 22 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C4", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
