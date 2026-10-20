@@ -4,12 +4,12 @@
 
 use clap::{Parser, Subcommand};
 use enth_listen::session::StdinLines;
-use enth_listen::{abx, reverb};
+use enth_listen::{abx, pairs, reverb};
 
 #[derive(Parser)]
 #[command(
     name = "enth-listen",
-    about = "Blind listening tests for the owner: ABX on search results (G0) and a reverb A/B (G1)",
+    about = "Blind listening tests for the owner: ABX on search results (G0), a reverb A/B (G1) and real-engine pairs (sound/2)",
     version
 )]
 struct Cli {
@@ -23,6 +23,8 @@ enum Cmd {
     Abx(abx::AbxArgs),
     /// Reverb A/B: our Signalsmith port against fundsp's reverb2 and reverb4, blind and level-matched (G1)
     ReverbAb(reverb::ReverbArgs),
+    /// Real-engine pairs: rate about 40 pairs at planned sound/1 distances (A, B, X, then 1-5); `pairs report` reads them
+    Pairs(pairs::PairsArgs),
 }
 
 fn main() {
@@ -32,6 +34,7 @@ fn main() {
     let result = match cli.cmd {
         Cmd::Abx(a) => abx::run(&a, &mut out, &mut lines, None),
         Cmd::ReverbAb(a) => reverb::run(&a, &mut out, &mut lines, None),
+        Cmd::Pairs(a) => pairs::run(&a, &mut out, &mut lines, None),
     };
     if let Err(e) = result {
         eprintln!("error: {e}");

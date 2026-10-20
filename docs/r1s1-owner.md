@@ -1,14 +1,14 @@
 # Owner sheet 3: R1 and S1 (the Recreate game and Instrument 0.1)
 
 - Date: 2026-10-20 (R1/S1 lane INT). Every R1/S1 lane is merged and every automated check passes ([r1s1-gates.md](r1s1-gates.md)). What is left needs you, your ears and your friends.
-- **Order:** do the steps top to bottom. Each says how long it takes. Your new time is about **3 to 4 hours**, spread over a few days. Your friends' rounds set the end date, so step 1 comes first.
+- **Order:** do the steps top to bottom. Each says how long it takes. Your new time is about **3½ to 4½ hours**, spread over a few days. Your friends' rounds set the end date, so step 1 comes first.
 - Windows open on your real display in steps 3, 4 and 6. Before those, read P1b's [Before each sitting](p1b-owner.md#before-each-sitting): save your work, wait 10 s between windows, and stop and write down the step if Xorg crashes.
 - Keep notes as you go in `~/code/enth-scratch/owner/r1s1-notes.md` (template [at the end](#how-to-report)), then give the file to an agent.
 
 | Step | What | Time | Unblocks |
 | --- | --- | --- | --- |
 | 1 | [Friend survey](#1-friend-survey-5-min) | 5 min | which builds to make; GR1's players |
-| 2 | [Listening: metric session 2](#2-listening-15-min) | 15 min | the sound score's curve (`sound/2`) |
+| 2 | [Listening: metric session 2 and the real-engine pairs](#2-listening-3540-min) | 35–40 min, in one or two sittings | the sound score's curve (`sound/2`) |
 | 3 | [Owner build 3: the real display and five rounds](#3-owner-build-3-45-min) | 45 min | GS1's real-display row; a smoke test of the game |
 | 4 | [Pick 6 of the 22 presets](#4-pick-6-presets-3060-min) | 30–60 min | GS1's ten presets (with your four G1 sounds) |
 | 5 | [Cut the friend build and send it](#5-cut-the-friend-build-15-min-plus-runner-time) | 15 min, plus 20–55 min of runner time | GR1's first row; the friends' rounds |
@@ -26,7 +26,7 @@ Send each friend something like this (no build yet):
 
 Write down, per friend: an id (`p2`, `p3`, …; you are `p1`), OS, DAW, yes or no. Logic and GarageBand cannot load enth yet (they only take Audio Units), and Linux needs Ubuntu 24.04 or newer. The OSes decide which legs to build in step 5.
 
-## 2. Listening (15 min)
+## 2. Listening (35–40 min)
 
 **Metric session 2** (headphones, no windows): the test–retest of the pairs you rated in session 1 ([listening.md](listening.md#3-metric-pairs-spike-metric)).
 
@@ -39,7 +39,17 @@ cargo build --release -p spike-metric                                 # once, a 
 
 Send back the printed report. It tells whether your ratings repeat, which the sound score's curve is fitted to.
 
-**The real-engine pairs session** (planned, 15–20 min): **not built yet**. No lane owned its tool (about 40 pairs rendered by the real engine and rated like session 2). Until it exists, the curve stays the one bridged from the toy synth, and GR1 can start without it. An agent can build it in about 1–2 hours (phase-2's [open checks](phase-2.md#open-checks)).
+**The real-engine pairs session** (15–20 min, plus a 1–2 min design; headphones, no windows): 40 pairs rendered by the real engine at planned sound-score distances, plus four checks ([listening.md](listening.md#4-real-engine-pairs-how-similar-do-two-sounds-seem-at-a-given-sound1-distance)). Each trial plays A, B, then X: type `a` or `b` for which one X is, then rate how similar A and B sound, 1 (very different) to 5 (indistinguishable). Some trials play the same sound twice: guess X and rate what you hear.
+
+```bash
+cd ~/code/enth
+cargo build --release -p enth-listen                                  # once, a few minutes
+./target/release/enth-listen pairs --dir ~/enth-listen                # designs once (1-2 min, all cores; close other work), then the status
+./target/release/enth-listen pairs --dir ~/enth-listen --session 1    # about 15-20 min; q quits, the same command resumes
+./target/release/enth-listen pairs report --dir ~/enth-listen
+```
+
+Send back the printed report and `~/enth-listen/pairs-fit.json`: an agent fits `sound/2`'s curve to them. Until then the curve stays the one bridged from the toy synth, and GR1 can start without it. A retest on another day (`--session 2`, the same pairs reshuffled) is optional and makes the fit firmer.
 
 ## 3. Owner build 3 (45 min)
 
@@ -125,6 +135,7 @@ Poly-mod passes in the test host (P1b lane PL); this is the real-host check. In 
 date: 2026-10-__   commit: _______   REAPER 7.82
 1    friends: p2 os/daw yes|no, p3 …
 2    metric session 2: done (report attached) | skipped
+2b   real-engine pairs: session 1 done (report + pairs-fit.json attached) | skipped; session 2: done | skipped
 3.1  add/remove: ok | what went wrong
 3.2  browser: ok | …
 3.3  recreate bar: ok | …
