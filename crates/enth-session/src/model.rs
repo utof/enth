@@ -31,6 +31,7 @@ use enth_patch::{Op, Patch};
 use crate::apply::Gestures;
 use crate::bridge::{HostSync, HostWrite};
 use crate::link::Port;
+use crate::presets::{PresetError, PresetKey, PresetLoad, PresetStore, SaveRequest};
 use crate::state::{InstanceState, StateError, UiState};
 use crate::telemetry::{TelemetryMap, TelemetrySource};
 
@@ -419,6 +420,28 @@ pub trait SessionEdit: SessionView {
     fn audition_off(&mut self, note: enth_engine::NoteKey) -> Result<(), SessionError>;
     /// Release every audition note: the editor calls it when it closes; the session calls it on deactivate and load.
     fn audition_all_off(&mut self) -> Result<(), SessionError>;
+    /// The editor's preset load ([`Session::load_preset`]): one undo step, delivered like a host state load with no
+    /// host writes, marking the project dirty. `key` is the preset's key when a store gave it. A fake that does not
+    /// support presets keeps this default (lane PBC; the default keeps older fakes compiling).
+    fn load_preset(
+        &mut self,
+        preset: &Patch,
+        key: Option<&PresetKey>,
+    ) -> Result<PresetLoad, SessionError> {
+        let _ = (preset, key);
+        Err(SessionError::unsupported("load_preset", "PBC"))
+    }
+    /// Save the patch as a user preset through `store` ([`Session::save_preset`]).
+    fn save_preset(
+        &mut self,
+        store: &mut dyn PresetStore,
+        request: &SaveRequest,
+    ) -> Result<PresetKey, PresetError> {
+        let _ = (store, request);
+        Err(PresetError::Unsupported {
+            what: "save_preset",
+        })
+    }
 }
 
 impl SessionView for Session {
@@ -491,6 +514,22 @@ impl SessionEdit for Session {
     fn audition_all_off(&mut self) -> Result<(), SessionError> {
         Session::audition_all_off(self)
     }
+
+    fn load_preset(
+        &mut self,
+        preset: &Patch,
+        key: Option<&PresetKey>,
+    ) -> Result<PresetLoad, SessionError> {
+        Session::load_preset(self, preset, key)
+    }
+
+    fn save_preset(
+        &mut self,
+        store: &mut dyn PresetStore,
+        request: &SaveRequest,
+    ) -> Result<PresetKey, PresetError> {
+        Session::save_preset(self, store, request)
+    }
 }
 
 /// Why a session call failed. Every variant has a stable snake-case [`code`](SessionError::code) and a one-line
@@ -550,10 +589,6 @@ impl SessionError {
         }
     }
 
-    #[allow(
-        dead_code,
-        reason = "no stub is left once lane SK lands; the next one to appear uses it"
-    )]
     pub(crate) const fn unsupported(what: &'static str, lane: &'static str) -> Self {
         SessionError::Unsupported { what, lane }
     }

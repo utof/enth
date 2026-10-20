@@ -45,7 +45,10 @@ pub use model::{
     AUDITION_PORT, Activation, Applied, HistoryView, RENDER_SEED, Session, SessionConfig,
     SessionEdit, SessionError, SessionStatus, SessionView, ShellRequest,
 };
-pub use presets::PresetState;
+pub use presets::{
+    Favorites, Library, MemStore, PresetEntry, PresetError, PresetKey, PresetLoad, PresetState,
+    PresetStore, Query, RawPreset, SaveRequest, Source,
+};
 pub use state::{
     InstanceState, LoadReport, MonitorState, STATE_SCHEMA, SavedState, StateError, UiState,
 };

@@ -218,13 +218,23 @@ impl Session {
         }
         // The ops that just changed the patch: an undone entry's inverse is the newest on the redo stack, a redone
         // entry's forward the newest on the undo stack.
-        let ops = match step {
-            Step::Undo => self.history.redo_stack().last().map(|e| e.inverse.clone()),
-            Step::Redo => self.history.undo_stack().last().map(|e| e.forward.clone()),
-        }
-        .unwrap_or_default();
+        let entry = match step {
+            Step::Undo => self.history.redo_stack().last(),
+            Step::Redo => self.history.undo_stack().last(),
+        };
+        let load = entry.is_some_and(|e| e.load.is_some());
+        let ops = entry
+            .map(|e| match step {
+                Step::Undo => e.inverse.clone(),
+                Step::Redo => e.forward.clone(),
+            })
+            .unwrap_or_default();
         self.unloaded_patch = None; // the user now owns the init patch that stood in for an unreadable one
         self.last_error = None;
+        if load {
+            // An editor preset load's step goes out like the load it was: one plan, no host writes (lane PBC).
+            return Ok(Some(self.deliver_load(&before)));
+        }
         // `end_gesture` above closed any drag, so no host gesture is open: each write is a complete begin, set, end.
         Ok(Some(self.deliver(&before, &ops, false)))
     }
