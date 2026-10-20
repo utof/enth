@@ -20,20 +20,26 @@ fn spec(seed: u64, difficulty: u8, musical: u8) -> RandomSpec {
 fn levels_follow_the_difficulty() {
     let cases = [
         (0, 1),
-        (19, 1),
-        (20, 2),
-        (39, 2),
-        (40, 3),
-        (59, 3),
-        (60, 4),
-        (79, 4),
-        (80, 5),
+        (20, 1),
+        (21, 2),
+        (40, 2),
+        (41, 3),
+        (60, 3),
+        (61, 4),
+        (80, 4),
+        (81, 5),
         (100, 5),
         (255, 5),
     ];
     for (d, l) in cases {
         assert_eq!(level(d), l, "difficulty {d}");
     }
+    // CT's presets sit one per level, in order.
+    let levels: Vec<u8> = crate::spec::PRESETS
+        .iter()
+        .map(|p| level(p.difficulty))
+        .collect();
+    assert_eq!(levels, [1, 2, 3, 4, 5]);
     let unlocked: Vec<u8> = Category::ALL.iter().map(|c| unlock_level(*c)).collect();
     assert_eq!(unlocked, [1, 2, 3, 4, 5, 5]);
 }
@@ -68,20 +74,22 @@ fn the_frozen_starter_is_pinned() {
 
 #[test]
 fn bad_specs_are_refused() {
+    // The spec's own check runs first: refused, never clamped.
     let mut s = spec(1, 50, 100);
-    s.generator = 2;
-    assert_eq!(target(&s).unwrap_err().code(), "generator_too_new");
+    s.generator = LATEST_GENERATOR + 1;
+    assert_eq!(target(&s).unwrap_err().code(), "code_too_new");
     s.generator = 0;
-    assert_eq!(target(&s).unwrap_err().code(), "unknown_generator");
+    assert_eq!(target(&s).unwrap_err().code(), "no_generator");
     let mut s = spec(1, 101, 100);
-    assert_eq!(target(&s).unwrap_err().code(), "out_of_range");
+    assert_eq!(
+        target(&s).unwrap_err(),
+        GenError::Spec(s.validate().unwrap_err())
+    );
     s.difficulty = 50;
     s.amounts[3] = Some(200);
     let e = target(&s).unwrap_err();
-    assert_eq!(
-        (e.code(), e.to_string().as_str()),
-        ("out_of_range", "amounts[3] = 200 is above 100")
-    );
+    assert_eq!(e.code(), "out_of_range");
+    assert!(e.to_string().contains("amounts.modulation"), "{e}");
     assert!(!e.hint().is_empty());
     let mut s = spec(1, 50, 101);
     assert_eq!(target(&s).unwrap_err().code(), "out_of_range");
@@ -145,7 +153,7 @@ fn level_one_draws_osc1_wave_and_octave() {
         let params: Vec<String> = g.randomized_params().map(ToString::to_string).collect();
         assert!(params.len() >= 2 && params.len() <= 3, "{params:?}");
         assert_eq!(&params[..2], ["osc1.wave", "osc1.semi"]);
-        assert_eq!(g.phrase, PhraseId::Held);
+        assert_eq!(g.phrase, phrases::HELD);
         let differs = ["osc1.wave", "osc1.semi", "osc1.pw"].iter().any(|a| {
             let a: ParamAddr = a.parse().unwrap();
             base.value(&a) != g.patch.value(&a)

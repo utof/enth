@@ -30,7 +30,8 @@ use enth_patch::{
     ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, RouteAddr, Section, Target,
 };
 
-use crate::phrases::Phrase;
+use crate::model::Phrase;
+use crate::phrases::PhraseFacts;
 
 /// How a phrase reveals one parameter, route or enable flag. See the [module docs](self).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

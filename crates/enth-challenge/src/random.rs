@@ -37,7 +37,8 @@
 //! 8. **Headroom.** When the enabled sources sum above 100 %, `master.level` (a gauge, never drawn) is lowered by
 //!    their sum in 0.5 dB steps, at most 12 dB.
 //!
-//! Old generator versions stay frozen: v1's 1,000-spec hash golden is `tests/rg_generator_golden.rs`, and any change
+//! Old generator versions stay frozen: v1's 1,000-spec hash golden is `tests/golden/tests/rg_generator.rs` (in
+//! `enth-golden`, so `golden.yml` runs it on every platform), and any change
 //! to a prior, a rule or the table is a new generator version.
 
 mod mask;
@@ -52,15 +53,19 @@ use enth_patch::{
     ModSource, ModuleId, Op, ParamAddr, Patch, PatchMeta, Rate, Route, RouteAddr, apply,
 };
 
-use crate::phrases::{Phrase, PhraseId, REFERENCE_KEY};
+use crate::model::{Phrase, PhraseId};
+use crate::phrases::{self, REFERENCE_KEY};
 use crate::priors::{self, Jnd};
-use crate::spec::{Category, RandomSpec};
+use crate::spec::{Category, LATEST_GENERATOR, RandomSpec, SpecError};
 
-/// Generator v1: this module's rules and [`priors::v1`](crate::priors).
+/// Generator v1: this module's rules and [`priors::v1`](crate::priors). The versions this build runs are
+/// `1..=`[`LATEST_GENERATOR`]; a spec naming another is refused by [`RandomSpec::validate`], never guessed.
 pub const GENERATOR_V1: u16 = 1;
 
-/// The newest generator this build knows. A spec naming a newer one is refused, never guessed.
-pub const NEWEST_GENERATOR: u16 = GENERATOR_V1;
+const _: () = assert!(
+    LATEST_GENERATOR == GENERATOR_V1,
+    "a new generator version needs its own table and golden"
+);
 
 /// Template 0: the starter superset patch (every P1 module; osc 2, the noise, the compressor and the reverb off; env 2
 /// and both LFOs unrouted), frozen as it was at F0r. Templates 1-5 (pluck, pad, bass, lead, keys) are reserved.
@@ -84,10 +89,11 @@ const DRAW_ORDER: [Category; 6] = [
     Category::Effects,
 ];
 
-/// The level a difficulty picks: 0-19 → 1, 20-39 → 2, 40-59 → 3, 60-79 → 4, 80-100 → 5.
+/// The level a difficulty picks: 0-20 → 1, 21-40 → 2, 41-60 → 3, 61-80 → 4, 81-100 → 5 (the presets sit at 0,
+/// 25, 50, 75 and 100).
 pub const fn level(difficulty: u8) -> u8 {
     let d = if difficulty > 100 { 100 } else { difficulty };
-    let l = d / 20;
+    let l = d.saturating_sub(1) / 20;
     1 + if l > 4 { 4 } else { l }
 }
 
@@ -104,23 +110,15 @@ pub const fn unlock_level(category: Category) -> u8 {
 
 /// Why a target could not be generated.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GenError {
-    /// The spec names a generator this build does not have (0, or newer than [`NEWEST_GENERATOR`]).
-    UnknownGenerator {
-        /// The generator the spec names.
-        generator: u16,
-    },
+    /// The spec fails [`RandomSpec::validate`] (a percentage above 100, generator 0, or a generator newer than
+    /// [`LATEST_GENERATOR`]). The generator refuses it; it never clamps.
+    Spec(SpecError),
     /// The spec names a template this build does not have.
     UnknownTemplate {
         /// The template the spec names.
         template: u8,
-    },
-    /// A percentage field is above 100.
-    OutOfRange {
-        /// The field (`difficulty`, `musical`, `amounts[2]`).
-        field: String,
-        /// Its value.
-        value: u8,
     },
     /// An op on the start patch failed (the start is not a valid patch, or not one the generator can work on).
     BadStart {
@@ -130,15 +128,12 @@ pub enum GenError {
 }
 
 impl GenError {
-    /// A stable code (`generator_too_new`, `unknown_generator`, `unknown_template`, `out_of_range`, `bad_start`).
+    /// A stable code: the spec's (`out_of_range`, `no_generator`, `code_too_new`), `unknown_template` or
+    /// `bad_start`.
     pub fn code(&self) -> &'static str {
         match self {
-            GenError::UnknownGenerator { generator } if *generator > NEWEST_GENERATOR => {
-                "generator_too_new"
-            }
-            GenError::UnknownGenerator { .. } => "unknown_generator",
+            GenError::Spec(e) => e.code(),
             GenError::UnknownTemplate { .. } => "unknown_template",
-            GenError::OutOfRange { .. } => "out_of_range",
             GenError::BadStart { .. } => "bad_start",
         }
     }
@@ -146,16 +141,10 @@ impl GenError {
     /// What to do about it.
     pub fn hint(&self) -> String {
         match self {
-            GenError::UnknownGenerator { generator } if *generator > NEWEST_GENERATOR => format!(
-                "this challenge needs generator {generator}; this build has 1..={NEWEST_GENERATOR}: update enth"
-            ),
-            GenError::UnknownGenerator { .. } => {
-                format!("generators are numbered from 1 to {NEWEST_GENERATOR}")
-            }
+            GenError::Spec(e) => e.hint(),
             GenError::UnknownTemplate { template } => format!(
-                "template {template} does not exist; template {TEMPLATE_STARTER} is the starter patch"
+                "template {template} does not exist in this build; template {TEMPLATE_STARTER} is the starter patch"
             ),
-            GenError::OutOfRange { field, .. } => format!("{field} is a percentage, 0-100"),
             GenError::BadStart { .. } => {
                 "start from a valid patch, e.g. random::start(0), the starter patch".to_owned()
             }
@@ -166,9 +155,8 @@ impl GenError {
 impl core::fmt::Display for GenError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            GenError::UnknownGenerator { generator } => write!(f, "unknown generator {generator}"),
+            GenError::Spec(e) => e.fmt(f),
             GenError::UnknownTemplate { template } => write!(f, "unknown template {template}"),
-            GenError::OutOfRange { field, value } => write!(f, "{field} = {value} is above 100"),
             GenError::BadStart { message } => {
                 write!(f, "cannot generate from this start: {message}")
             }
@@ -222,23 +210,31 @@ pub struct Step {
 pub struct Generated {
     /// The target patch (the start, changed through ops only).
     pub patch: Patch,
-    /// The phrase the challenge plays.
+    /// The phrase the challenge plays (an id in [`phrases::TABLE`]).
     pub phrase: PhraseId,
     /// The level the difficulty picked (1-5).
     pub level: u8,
-    /// Everything drawn, in draw order.
+    /// Everything drawn, in draw order, with its category.
     pub randomized: Vec<Randomized>,
+    /// The randomized parameters, in address order, each once: what `score::TargetContext::randomized` takes (all
+    /// observable through the phrase, P4). Routes and enable flags are in [`Generated::randomized`].
+    pub params: Vec<ParamAddr>,
     /// The minimum step of each active category, in draw order.
     pub steps: Vec<Step>,
 }
 
 impl Generated {
-    /// The target's observability mask under its phrase (what ST and the overlay reuse).
-    pub fn mask(&self) -> Mask {
-        observable(&self.patch, self.phrase.phrase())
+    /// The phrase itself.
+    pub fn phrase(&self) -> &'static Phrase {
+        phrases::phrase(self.phrase).expect("the generator picks phrases from the table")
     }
 
-    /// The randomized parameters, in draw order.
+    /// The target's observability mask under its phrase (what ST and the overlay reuse).
+    pub fn mask(&self) -> Mask {
+        observable(&self.patch, self.phrase())
+    }
+
+    /// The randomized parameters, in draw order (see [`Generated::params`] for address order).
     pub fn randomized_params(&self) -> impl Iterator<Item = &ParamAddr> {
         self.randomized.iter().filter_map(|r| match &r.drawn {
             Drawn::Param(a) => Some(a),
@@ -270,7 +266,15 @@ pub fn target(spec: &RandomSpec) -> Result<Generated, GenError> {
 /// Generate the target of `spec` from `start` (see the [module docs](self)). Pure and deterministic: the same spec
 /// and start give the same target, bit for bit, on every machine.
 pub fn generate(spec: &RandomSpec, start: &Patch) -> Result<Generated, GenError> {
-    generate_with(spec, start, priors::v1::SLOTS)
+    spec.validate().map_err(GenError::Spec)?;
+    match spec.generator {
+        GENERATOR_V1 => generate_with(spec, start, priors::v1::SLOTS),
+        // `validate` admits only 1..=LATEST_GENERATOR, which the const assertion above keeps at 1.
+        generator => Err(GenError::Spec(SpecError::GeneratorTooNew {
+            generator,
+            latest: LATEST_GENERATOR,
+        })),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -342,6 +346,7 @@ impl Draws<'_> {
 /// What a slot's functions see: the target so far, the phrase, and whether the safety bounds are on.
 pub(crate) struct Ctx<'a> {
     pub(crate) patch: &'a Patch,
+    pub(crate) phrase_id: PhraseId,
     pub(crate) phrase: &'static Phrase,
     /// `musical > 20`: uniform draws keep to the safe ranges.
     pub(crate) safe: bool,
@@ -444,27 +449,6 @@ enum Amount {
     First { n: usize, width: f32 },
 }
 
-fn check(spec: &RandomSpec) -> Result<(), GenError> {
-    if spec.generator != GENERATOR_V1 {
-        return Err(GenError::UnknownGenerator {
-            generator: spec.generator,
-        });
-    }
-    let mut fields = vec![
-        ("difficulty".to_owned(), spec.difficulty),
-        ("musical".to_owned(), spec.musical),
-    ];
-    for (i, a) in spec.amounts.iter().enumerate() {
-        if let Some(a) = a {
-            fields.push((format!("amounts[{i}]"), *a));
-        }
-    }
-    match fields.into_iter().find(|(_, v)| *v > 100) {
-        Some((field, value)) => Err(GenError::OutOfRange { field, value }),
-        None => Ok(()),
-    }
-}
-
 fn amount(spec: &RandomSpec, level: u8, category: Category, list_len: usize) -> Option<Amount> {
     match spec.amounts[category.index()] {
         None if level >= unlock_level(category) => Some(Amount::Default),
@@ -486,9 +470,9 @@ fn choose_phrase(seed: u64, musical: u8) -> PhraseId {
     let items: &[(f32, u32)] = if d.from_prior(musical) {
         &priors::v1::PHRASE_WEIGHTS
     } else {
-        &[(0.0, 1), (1.0, 1), (2.0, 1)]
+        &[(1.0, 1), (2.0, 1), (3.0, 1)]
     };
-    PhraseId::from_u8(d.pick(items) as u8).unwrap_or(PhraseId::Held)
+    PhraseId(d.pick(items) as u16)
 }
 
 fn op(patch: &mut Patch, op: Op) -> Result<(), GenError> {
@@ -571,6 +555,7 @@ struct Outcome {
 struct Gen<'a> {
     seed: u64,
     musical: u8,
+    phrase_id: PhraseId,
     phrase: &'static Phrase,
     start: &'a Patch,
     patch: Patch,
@@ -625,6 +610,7 @@ impl Gen<'_> {
         };
         let ctx = Ctx {
             patch: &self.patch,
+            phrase_id: self.phrase_id,
             phrase: self.phrase,
             safe: self.musical > 20,
         };
@@ -800,6 +786,7 @@ impl Gen<'_> {
                 let from = self.start.value(&addr)?;
                 let ctx = Ctx {
                     patch: &self.patch,
+                    phrase_id: self.phrase_id,
                     phrase: self.phrase,
                     safe: self.musical > 20,
                 };
@@ -817,7 +804,7 @@ pub(crate) fn generate_with(
     start: &Patch,
     slots: &[Slot],
 ) -> Result<Generated, GenError> {
-    check(spec)?;
+    spec.validate().map_err(GenError::Spec)?;
     let level = level(spec.difficulty);
     let lists: Vec<(Category, Vec<&Slot>)> = DRAW_ORDER
         .iter()
@@ -830,15 +817,16 @@ pub(crate) fn generate_with(
     let structure = plans
         .iter()
         .any(|(c, a)| *c == Category::Structure && a.is_some());
-    let phrase = if structure {
+    let phrase_id = if structure {
         choose_phrase(spec.seed, spec.musical)
     } else {
-        PhraseId::Held
+        phrases::HELD
     };
     let mut g = Gen {
         seed: spec.seed,
         musical: spec.musical,
-        phrase: phrase.phrase(),
+        phrase_id,
+        phrase: phrases::phrase(phrase_id).expect("the phrase weights name table ids (tested)"),
         start,
         patch: start.clone(),
         mask: None,
@@ -908,11 +896,21 @@ pub(crate) fn generate_with(
     }
 
     headroom(&mut g)?;
+    let mut params: Vec<ParamAddr> = randomized
+        .iter()
+        .filter_map(|r| match &r.drawn {
+            Drawn::Param(a) => Some(a.clone()),
+            _ => None,
+        })
+        .collect();
+    params.sort();
+    params.dedup();
     Ok(Generated {
         patch: g.patch,
-        phrase,
+        phrase: phrase_id,
         level,
         randomized,
+        params,
         steps,
     })
 }

@@ -133,14 +133,14 @@ pub(crate) fn log_uniform(u: f32, lo: f64, hi: f64) -> f32 {
 /// its uniform range, whether the category's default set draws it, and whether it counts towards the minimum step.
 pub mod v1 {
     use super::log_uniform;
-    use crate::phrases::{MIN_HOLD_MS, PhraseId};
+    use crate::phrases::{LEGATO_PAIR, MIN_HOLD_MS, PhraseFacts};
     use crate::random::{Ctx, Domain, Draws, Slot, What, always};
     use crate::spec::Category::{
         self, Effects, Envelopes, Filter, Modulation, Oscillators, Structure,
     };
 
     /// The phrase's prior: the held note, the octave pair or the legato pair (when structure is randomized).
-    pub(crate) const PHRASE_WEIGHTS: [(f32, u32); 3] = [(0.0, 50), (1.0, 30), (2.0, 20)];
+    pub(crate) const PHRASE_WEIGHTS: [(f32, u32); 3] = [(1.0, 50), (2.0, 30), (3.0, 20)];
 
     /// The longest envelope time drawn: every v1 phrase holds and tails at least this long.
     const TIME_MAX: f32 = MIN_HOLD_MS as f32;
@@ -199,7 +199,7 @@ pub mod v1 {
     }
 
     fn legato_phrase(c: &Ctx<'_>) -> bool {
-        c.phrase.id == PhraseId::LegatoPair
+        c.phrase_id == LEGATO_PAIR
     }
 
     fn semi_range(c: &Ctx<'_>) -> Domain {
@@ -246,7 +246,7 @@ pub mod v1 {
         let f0 = c.f0();
         let (lo, hi) = match c.value("filter1.mode").map_or(0, |m| m as u8) {
             0 => (1.5 * f0, 12_000.0), // low-pass: above the fundamental
-            1 => (1.5 * f0, 4_000.0),  // band-pass
+            1 => (f0, 8.0 * f0),       // band-pass: within the strong harmonics
             2 => (0.5 * f0, 4.0 * f0), // high-pass: around the fundamental
             _ => (1.5 * f0, 8_000.0),  // notch
         };
