@@ -1000,7 +1000,12 @@ impl Player {
 
     /// Whether the player leaves the block untouched: off, with every ramp settled.
     pub fn idle(&self) -> bool {
-        !self.running && self.w == 0.0 && self.engine_gain == 1.0 && self.want == (0.0, 1.0, 1.0)
+        // The loop's gain does not matter while the loop is neither heard nor wanted.
+        !self.running
+            && self.w == 0.0
+            && self.engine_gain == 1.0
+            && self.want.0 == 0.0
+            && self.want.1 == 1.0
     }
 
     /// The loop the player plays (tests).
@@ -1426,7 +1431,13 @@ mod tests {
         left[4] = f32::MIN_POSITIVE / 4.0;
         let mut right = left.clone();
         let before: Vec<u32> = left.iter().map(|x| x.to_bits()).collect();
-        player.begin(ab(Listen::Off), 64, &mut events);
+        // A live round's level-match gains do not matter while the A/B is off.
+        let off = AbFrame {
+            target_gain: 0.5,
+            mine_gain: 0.7,
+            ..ab(Listen::Off)
+        };
+        player.begin(off, 64, &mut events);
         player.mix(&mut left, &mut right);
         assert!(player.idle());
         assert_eq!(left.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), before);
