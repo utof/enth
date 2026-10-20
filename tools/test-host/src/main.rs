@@ -35,7 +35,7 @@ usage:
         [--blocks 1,64,100,4096] [--profile FILE] [--state-field patch] [--min-compared 1]
         [--write-expected DIR] [--inject flip-bit]
   enth-test-host churn <plugin.clap> [-n 200] [--warmup 10] [--notes SCRIPT] [--state FILE ...] [--sr 48000]
-        [--block 64] [--blocks 64] [--settle-ms 10] [--max-kb-per-cycle 1] [--max-thread-growth 0]
+        [--block 64] [--blocks 64] [--settle-ms 10] [--max-kb-per-cycle 1] [--max-thread-growth 0] [--system-malloc]
         [--max-fd-growth 0] [--process-on thread|caller] [--inject leak-kb=N|fd|thread]
   enth-test-host bursts <plugin.clap> [--counts 16,64,256,1024,4096] [--kind mixed|notes|params] [--block 64]
         [--capacity N] [--state FILE ...] [--sr 48000] [--warm-blocks 8] [--after-blocks 8] [--tail 1.0]
@@ -53,7 +53,7 @@ usage:
         [--max-onset-ms N] [--max-audible-ms N] [--inject delay-blocks=K]
   enth-test-host editor-cycles <plugin.clap> [-n 200] [--mode both|editor|baseline] [--repeat 1]
         [--warmup 10] [--hold-ms 100] [--settle-ms 50] [--first-frame-timeout-ms 1000] [--sr 48000] [--block 256]
-        [--window 360x200] [--plugin-id ID]
+        [--window 360x200] [--plugin-id ID] [--system-malloc]
 
 Notes script: entries separated by , ; or newline, `#` comments. `C4@0+1.5:0.8` is a note (key@start+duration[:velocity],
 seconds); `Slot 1=0.2@0.5` sets a parameter (name or numeric id = value @ seconds).
@@ -64,6 +64,12 @@ version) or the envelope JSON ({\"version\",\"params\",\"fields\"}); `--state-fo
 
 editor-cycles (and process-stats --editor) open windows, so they refuse to run unless DISPLAY is an Xvfb server:
   xvfb-run -a -s \"-screen 0 1920x1080x24\" enth-test-host editor-cycles plugin.clap -n 200
+editor-cycles and churn set glibc's allocator to one arena with fixed 128 KiB mmap and trim thresholds before they
+load the plugin, so a run's memory never depends on which arena a new thread gets, and churn gives every free page
+back (malloc_trim) before each sample; --system-malloc keeps glibc's defaults and skips the trim. editor-cycles also
+records SwapPss beside Pss_Anon, and lets threads that are still exiting go (up to 1 s) before it counts them.
+ENTH_LEAK_DIAG=1 adds a `diag` object per run: thread names when the count changes, and the smaps mappings behind
+every jump of more than 2 MB in Pss_Anon.
 Timings (process-stats, latency's process_us) belong under `flock -x /tmp/enth-quiet.lock`.
 
 Any command takes `--json-out FILE`: the JSON is also written there. Use it under xvfb-run, which folds the
@@ -691,8 +697,15 @@ fn cmd_churn(rest: &[String]) -> Outcome {
             ],
             &STATE_OPTIONS,
         ),
-        &[],
+        &["system-malloc"],
     )?;
+    // Before the plugin is loaded and before any thread starts: each cycle's audio thread is a new thread, which with
+    // glibc's defaults can bring its own arena (lane LK; procfs::deterministic_malloc).
+    let malloc = if args.options.contains_key("system-malloc") {
+        json!("system (--system-malloc)")
+    } else {
+        procfs::deterministic_malloc()
+    };
     let (path, entry, id) = load(&args)?;
     let loaded = load_state(&args, &entry, &id)?;
     let d = churn::Options::default();
@@ -713,11 +726,13 @@ fn cmd_churn(rest: &[String]) -> Outcome {
         max_fd_growth: args.number("max-fd-growth", d.max_fd_growth)?,
         inject: args.one("inject").map(churn::Inject::parse).transpose()?,
         process_on: process_thread(&args)?,
+        trim: !args.options.contains_key("system-malloc"),
     };
     if opts.cycles < 3 {
         return Err("-n needs at least 3 cycles".to_owned());
     }
-    let out = churn::run(&entry, &id, &opts)?;
+    let mut out = churn::run(&entry, &id, &opts)?;
+    out["malloc"] = malloc;
     Ok(finish(
         out,
         "enth.test-host.churn/1",
@@ -1116,7 +1131,7 @@ fn cmd_editor_cycles(rest: &[String]) -> Outcome {
             "window",
             "plugin-id",
         ],
-        &[],
+        &["system-malloc"],
     )?;
     match args.one("mode").unwrap_or("both") {
         "editor" | "baseline" => {
@@ -1129,9 +1144,16 @@ fn cmd_editor_cycles(rest: &[String]) -> Outcome {
             // The guard comes before the plugin library is even loaded.
             enth_test_host::xvfb::require_xvfb()?;
             let opts = editor_options(&args, mode)?;
+            // Before the plugin is loaded and before any thread starts (lane LK; editor.rs, "repeatable").
+            let malloc = if args.options.contains_key("system-malloc") {
+                json!("system (--system-malloc)")
+            } else {
+                procfs::deterministic_malloc()
+            };
             let (_, entry, id) = load(&args)?;
             let mut run = editor::run_cycles(&entry, &id, &opts)?;
             run["schema"] = json!("enth.test-host.editor-run/1");
+            run["malloc"] = malloc;
             Ok((run, true))
         }
         "both" => editor_both(&args),
@@ -1170,6 +1192,9 @@ fn editor_both(args: &Args) -> Outcome {
                 if let Some(v) = args.one(name) {
                     cmd.arg(format!("--{name}")).arg(v);
                 }
+            }
+            if args.options.contains_key("system-malloc") {
+                cmd.arg("--system-malloc");
             }
             let output = cmd
                 .output()

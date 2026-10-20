@@ -11,6 +11,17 @@
 //!
 //! "Drawn" means a pixel in the parent window differs from the colour the host painted it, read back
 //! with `GetImage`: a first open that never paints stays that colour (the nice-plug #95 symptom).
+//!
+//! **What makes the numbers repeatable** (lane LK, R1/S1; `docs/plugin.md`, "Leak gates"):
+//!
+//! - A measurement process sets glibc's allocator to one arena with blocks of 128 KiB or more mapped on their own and
+//!   trimmed at once ([`procfs::deterministic_malloc`], before the plugin is loaded; `--system-malloc` leaves the defaults).
+//!   With the defaults, each editor's window thread can get another arena, and the freed ~55 MB of the last one stays
+//!   resident: one run read 405 KB per cycle that way, and a 9 MB block that stayed or went at random read 53 KB.
+//! - Each sample records `SwapPss` beside `Pss_Anon`; their sum is the anonymous footprint whether or not the kernel
+//!   swapped part of it out (lane SOAK's metric: `Pss_Anon` alone fell 130 KB per cycle in a run that swapped).
+//! - The thread count after a close is read once the threads that are still exiting are gone ([`settled_threads`]):
+//!   under load, Mesa's `disk$0` queue thread was sometimes still listed 50 ms after a close and gone by the next.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{CStr, c_ulong};
@@ -26,6 +37,7 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::host::Host;
+use crate::leak_diag::Diag;
 use crate::procfs;
 use crate::render::{RenderConfig, RenderRequest, Session};
 
@@ -62,6 +74,34 @@ pub struct Options {
     /// Size of the host window in baseline mode (editor mode uses the size the plugin reports).
     pub window: (u16, u16),
     pub mode: Mode,
+}
+
+/// How long a close gets for its exiting threads to go before the count is recorded, and how often it looks.
+pub const THREAD_SETTLE_MS: u64 = 1000;
+const THREAD_POLL_MS: u64 = 10;
+/// After this many closes whose threads outlived [`THREAD_SETTLE_MS`], a run stops waiting: those threads are not
+/// exiting, and a thread left behind by every close would otherwise cost a second per cycle.
+const THREAD_SETTLE_GIVE_UP: usize = 5;
+
+/// The thread count after a close, given time for threads that are still exiting to go: starting from the `first`
+/// read, it waits (`wait`, then `count` again) while the count is above `ceiling` (the count after the previous close,
+/// or before the first open), at most `polls` times. A thread that stays is counted. Returns the count and the number
+/// of waits.
+pub fn settled_threads(
+    first: usize,
+    ceiling: usize,
+    polls: usize,
+    mut count: impl FnMut() -> usize,
+    mut wait: impl FnMut(),
+) -> (usize, usize) {
+    let mut n = first;
+    let mut waits = 0;
+    while n > ceiling && waits < polls {
+        wait();
+        waits += 1;
+        n = count();
+    }
+    (n, waits)
 }
 
 impl Default for Options {
@@ -215,6 +255,7 @@ fn pause(instance: &mut PluginInstance<Host>, x: &XServer, parent: Option<u32>, 
 struct Series {
     pss_kb: Vec<u64>,
     pss_anon_kb: Vec<u64>,
+    swap_pss_kb: Vec<u64>,
     threads_closed: Vec<usize>,
     threads_open: Vec<usize>,
     open_ms: Vec<Option<f64>>,
@@ -223,6 +264,8 @@ struct Series {
     /// Whether the host's parent window read back as all background colour before the plugin drew
     /// (proves the "drawn" probe can tell a blank window from a drawn one).
     blank_before_show: Vec<bool>,
+    /// The closes whose thread count had to settle: cycle, first and settled count, time waited, names at first.
+    late_thread_exits: Vec<Value>,
 }
 
 fn median(values: &[f64]) -> Option<f64> {
@@ -332,9 +375,11 @@ pub fn run_cycles(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Valu
         "sample_rate": opts.sample_rate,
         "loadavg": procfs::loadavg(),
         "before_cycles": { "pss_kb": before.pss_kb, "pss_anon_kb": before.pss_anon_kb, "threads": threads_before },
+        "thread_settle_ms": THREAD_SETTLE_MS,
         "series": {
             "pss_kb": series.pss_kb,
             "pss_anon_kb": series.pss_anon_kb,
+            "swap_pss_kb": series.swap_pss_kb,
             "threads_closed": series.threads_closed,
             "threads_open": series.threads_open,
             "open_ms": series.open_ms,
@@ -353,6 +398,7 @@ pub fn run_cycles(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Valu
             "threads_max": series.threads_closed.iter().max(),
             "threads_constant_after_warmup": threads_tail.iter().all(|t| *t == threads_tail[0]),
             "threads_open_max": series.threads_open.iter().max(),
+            "late_thread_exit_cycles": series.late_thread_exits.len(),
             "opens_drawn_in_time": drawn,
             "first_open_drawn_in_time": series.drawn_in_time.first(),
             "open_ms": {
@@ -370,6 +416,8 @@ pub fn run_cycles(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Valu
         "resize_requests": extras.resize_requests,
         "create_failures": extras.create_failures,
         "plugin_log": extras.plugin_log,
+        "late_thread_exits": series.late_thread_exits,
+        "diag": extras.diag.report(),
     }))
 }
 
@@ -452,6 +500,7 @@ struct Extras {
     resize_requests: u32,
     create_failures: u32,
     plugin_log: Vec<String>,
+    diag: Diag,
 }
 
 fn cycle_loop(
@@ -461,7 +510,11 @@ fn cycle_loop(
     opts: &Options,
 ) -> Result<(Series, Extras), String> {
     let mut series = Series::default();
-    let mut extras = Extras::default();
+    let mut extras = Extras {
+        diag: Diag::from_env(),
+        ..Extras::default()
+    };
+    let threads_idle = procfs::thread_count();
     let config = GuiConfiguration {
         api_type: GuiApiType::X11,
         is_floating: false,
@@ -494,7 +547,8 @@ fn cycle_loop(
                     series.final_colors.push(None);
                     series.blank_before_show.push(true);
                     series.threads_open.push(procfs::thread_count());
-                    sample(&mut series)?;
+                    let threads = settle_threads(instance, x, &mut series, threads_idle);
+                    sample(&mut series, &mut extras.diag, threads)?;
                     continue;
                 }
                 let size = {
@@ -556,7 +610,11 @@ fn cycle_loop(
         series.blank_before_show.push(blank_before_show);
         series.threads_open.push(threads_open);
         pause(instance, x, None, opts.settle_ms);
-        sample(&mut series)?;
+        let threads = settle_threads(instance, x, &mut series, threads_idle);
+        sample(&mut series, &mut extras.diag, threads)?;
+        extras
+            .diag
+            .follow_up(&mut |ms| pause(instance, x, None, ms));
     }
     extras.thread_names_closed_last = procfs::thread_names();
     extras.gui_closed = instance.access_shared_handler(|s| s.gui_closed.load(Ordering::SeqCst));
@@ -568,10 +626,71 @@ fn cycle_loop(
     Ok((series, extras))
 }
 
-fn sample(series: &mut Series) -> Result<(), String> {
+/// The thread count after this cycle's close ([`settled_threads`]), noting a close that needed the wait.
+fn settle_threads(
+    instance: &mut PluginInstance<Host>,
+    x: &XServer,
+    series: &mut Series,
+    threads_idle: usize,
+) -> usize {
+    let ceiling = series
+        .threads_closed
+        .last()
+        .copied()
+        .unwrap_or(threads_idle);
+    let first = procfs::thread_count();
+    let stayed = series
+        .late_thread_exits
+        .iter()
+        .filter(|e| e["settled"].as_u64() > e["ceiling"].as_u64())
+        .count();
+    if first <= ceiling || stayed >= THREAD_SETTLE_GIVE_UP {
+        return first;
+    }
+    let names = procfs::thread_names();
+    let started = Instant::now();
+    let (threads, waits) = settled_threads(
+        first,
+        ceiling,
+        (THREAD_SETTLE_MS / THREAD_POLL_MS) as usize,
+        procfs::thread_count,
+        || pause(instance, x, None, THREAD_POLL_MS),
+    );
+    series.late_thread_exits.push(json!({
+        "cycle": series.threads_closed.len(), "ceiling": ceiling, "first": first, "settled": threads, "waits": waits,
+        "waited_ms": started.elapsed().as_secs_f64() * 1000.0, "names_at_first": names,
+    }));
+    threads
+}
+
+fn sample(series: &mut Series, diag: &mut Diag, threads: usize) -> Result<(), String> {
     let memory = procfs::memory()?;
+    diag.observe(series.pss_kb.len(), memory, threads);
     series.pss_kb.push(memory.pss_kb);
     series.pss_anon_kb.push(memory.pss_anon_kb);
-    series.threads_closed.push(procfs::thread_count());
+    series.swap_pss_kb.push(memory.swap_pss_kb);
+    series.threads_closed.push(threads);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_thread_that_is_still_exiting_is_let_go_and_one_that_stays_is_counted() {
+        // Mesa's disk$0 thread under load: listed at the first read, gone two polls later.
+        let mut reads = [4, 4, 3].into_iter();
+        let mut waits = 0;
+        let (n, polls) = settled_threads(4, 3, 100, || reads.next().unwrap_or(3), || waits += 1);
+        assert_eq!((n, polls, waits), (3, 3, 3));
+
+        // A thread left behind by every close never goes: counted after the last poll.
+        let (n, polls) = settled_threads(4, 3, 100, || 4, || {});
+        assert_eq!((n, polls), (4, 100));
+
+        // Nothing above the ceiling: no wait at all.
+        let (n, polls) = settled_threads(3, 3, 100, || unreachable!(), || unreachable!());
+        assert_eq!((n, polls), (3, 0));
+    }
 }
