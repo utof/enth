@@ -88,7 +88,7 @@ jobs:
         with:
           key: cross-${{ matrix.target }}   # both legs share a job id; without a key they would overwrite each other's cache
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo clippy -p enth-plugin --all-targets --all-features --locked --target ${{ matrix.target }} -- -D warnings
+      - run: cargo clippy -p enth-plugin -p xtask --all-targets --all-features --locked --target ${{ matrix.target }} -- -D warnings
 
   # R1/S1, pre-declared by lane S0r: the editor and the plugin with every editor feature on (`learn`, `recreate`,
   # `presets`, `add-module`). The `check` job builds default features only, so it never compiles the Presets and

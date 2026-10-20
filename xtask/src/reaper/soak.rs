@@ -798,9 +798,11 @@ fn supervise(sb: &Sandbox, o: &Options, chunks: &[String]) -> Result<Outcome, St
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr);
+    // Its own process group, so a hung run can be killed whole (REAPER, timeout, Xvfb). The soak runs on Linux only;
+    // the `cfg` keeps xtask building on Windows.
+    #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt as _;
-        // Its own process group, so a hung run can be killed whole (REAPER, timeout, Xvfb).
         command.process_group(0);
     }
     for (key, value) in script_env(sb, o, chunks) {
@@ -832,8 +834,14 @@ fn supervise(sb: &Sandbox, o: &Options, chunks: &[String]) -> Result<Outcome, St
 
     loop {
         if let Some(status) = child.try_wait().map_err(|e| format!("wait: {e}"))? {
-            use std::os::unix::process::ExitStatusExt as _;
-            exit = describe_exit(status.code(), status.signal());
+            #[cfg(unix)]
+            let signal = {
+                use std::os::unix::process::ExitStatusExt as _;
+                status.signal()
+            };
+            #[cfg(not(unix))]
+            let signal = None;
+            exit = describe_exit(status.code(), signal);
             let finished =
                 std::fs::read_to_string(&log_path).is_ok_and(|t| t.contains("\tfinished\t"));
             ending = if finished {
