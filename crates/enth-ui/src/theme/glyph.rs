@@ -20,3 +20,7 @@ pub const BULLET: &str = "•";
 /// Filled and empty dots (difficulty).
 pub const DOT_ON: &str = "●";
 pub const DOT_OFF: &str = "○";
+/// A card's module menu button (lane AM). The horizontal ellipsis U+2026: Inter has no midline ellipsis (U+22EF).
+pub const MENU: &str = "…";
+/// The dashed slot and the header button that add a module (lane AM).
+pub const ADD: &str = "+";

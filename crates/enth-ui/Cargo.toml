@@ -19,7 +19,10 @@ recreate = []
 # lane fills it: `recreate` (lane RUI, editor/recreate/), `presets` (lane PBU, editor/browser.rs), `add-module` (lane AM,
 # editor/add_module.rs). The lanes decide whether a feature stays, becomes a default, or goes.
 presets = []
+# Lane AM: the header's "+ Add" menu. On by default, since S1 ships adding and removing modules (the cards' "…" menus,
+# the region menus and the "+ Add" slots are always built); `default-features = false` drops the header button only.
 add-module = []
+default = ["add-module"]
 
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).
