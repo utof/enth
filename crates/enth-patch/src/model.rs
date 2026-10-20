@@ -220,7 +220,8 @@ pub struct PatchMeta {
 /// A patch in memory (design.md §2). See the [module docs](self) for the invariants of a valid patch.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Patch {
-    /// The engine version the patch was authored on (`"0.1.0"`); the schema number lives in the file layer.
+    /// The engine version the patch was authored on (`"0.2.0"`; empty on a patch not yet written, the file layer stamps
+    /// [`ENGINE_VERSION`](crate::file::ENGINE_VERSION)); the schema number lives in the file layer.
     pub engine: String,
     /// Name, author, tags, description.
     pub meta: PatchMeta,

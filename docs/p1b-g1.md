@@ -31,4 +31,4 @@ What is left of G1's plugin half: the owner's three rows (10, 11, 12). The headl
 - **Found while integrating** (each is fixed on INT's branch or listed as open in [phase-1b.md](phase-1b.md#open-checks)):
   - `cli-equal` was in no gate (fixed: `host-render` runs it);
   - a fresh instance plays `Patch::init()` and the editor has no add-module intent, so G1's sounds could not have been made from a fresh instance (worked around: the starter project; open: an "add module" control, or a richer default patch);
-  - `enth_patch::file::ENGINE_VERSION` is `"0.1.0"` while `enth_engine::ENGINE_VERSION` is `"0.2.0"`, so a patch with no `engine` stamp (`Patch::init()`) is saved by the plugin as engine 0.1.0 (open, for the patch model's owner).
+  - `enth_patch::file::ENGINE_VERSION` was `"0.1.0"` while `enth_engine::ENGINE_VERSION` is `"0.2.0"`, so a patch with no `engine` stamp (`Patch::init()`) was saved by the plugin as engine 0.1.0 (fixed by lane VER: both are `"0.2.0"` and a test in `enth-engine` keeps them equal; presets saved before the fix keep their `0.1.0` stamp, which loads as before).

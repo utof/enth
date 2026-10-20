@@ -13,7 +13,7 @@ use enth_patch::addr::{MacroIndex, ModSource, ModuleId, Position, RouteAddr, Slo
 use enth_patch::canon::exact_hash;
 use enth_patch::catalogue::{ModuleKind, OscParam};
 use enth_patch::error::CODES;
-use enth_patch::file::{ENGINE_VERSION, load};
+use enth_patch::file::load;
 use enth_patch::model::{ModuleInstance, Patch, Route, Section};
 use enth_patch::ops::{Op, apply};
 use enth_patch::validate::{validate, violations};
@@ -1469,7 +1469,6 @@ fn the_amplitude_envelope_cannot_be_lost() {
     .unwrap();
     apply(&mut q, Op::RemoveModule { id: m("env1") }).unwrap();
     validate(&q).unwrap();
-    assert_eq!(ENGINE_VERSION, "0.1.0");
 }
 
 /// The rate rule holds for ops that add routes and for ops that change an LFO's scope: a per-voice source never

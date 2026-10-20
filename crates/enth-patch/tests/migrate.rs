@@ -364,6 +364,35 @@ fn a_file_that_does_not_look_like_its_schema_fails_cleanly() {
     assert!(migrate(json!([1])).is_err());
 }
 
+/// The engine stamp records where a patch was authored, and nothing branches on it: a file stamped with an older
+/// engine version loads, keeps its stamp when written back, and has the same hashes as the same patch stamped with
+/// the current version (they leave the stamp out). A patch with no stamp is written with `ENGINE_VERSION`;
+/// `enth-engine`'s `tests/engine_version.rs` pins that to the engine's own version.
+#[test]
+fn an_older_engine_stamp_loads_and_is_kept() {
+    // The dense expected file is a fixed point of the writer, so an edit of its stamp alone must round-trip.
+    let current = fs::read_to_string(expected_path("pluck")).unwrap();
+    let stamp = format!(r#""engine": "{}""#, enth_patch::file::ENGINE_VERSION);
+    assert!(
+        current.contains(&stamp),
+        "the expected file carries the current stamp"
+    );
+    let older = current.replace(&stamp, r#""engine": "0.1.0""#);
+
+    let loaded = load(&older).expect("an older engine stamp keeps loading");
+    assert!(loaded.notes.is_empty(), "no migration, no warning");
+    assert_eq!(loaded.patch.engine, "0.1.0");
+    assert_eq!(
+        pretty(&loaded.patch),
+        older,
+        "writing it back changes nothing"
+    );
+
+    let now = load(&current).unwrap().patch;
+    assert_eq!(canonical_hash(&loaded.patch), canonical_hash(&now));
+    assert_eq!(exact_hash(&loaded.patch), exact_hash(&now));
+}
+
 /// Writes `expected/` and the notes files from the fixtures. Run by hand when a fixture or a step changes, then
 /// review the diff:
 /// `cargo test -p enth-patch --test migrate -- --ignored regenerate`.
