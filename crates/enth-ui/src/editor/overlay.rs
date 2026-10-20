@@ -6,7 +6,7 @@
 //! [`NoOverlay`], which leaves everything as it is. Recreate never hides ("difficulty never locks features"), it
 //! dims and scores; only a lesson hides.
 
-use enth_patch::{ModuleId, ParamAddr};
+use enth_patch::{ModuleId, ParamAddr, RouteAddr};
 
 use super::cards::{CardKey, CardView};
 use crate::theme::Score;
@@ -37,6 +37,36 @@ pub trait Overlay {
     fn param(&self, addr: &ParamAddr) -> ParamOverlay;
     /// A whole module's emphasis (a module the lesson doesn't use).
     fn module(&self, id: &ModuleId) -> Emphasis;
+    /// A score ring on a module's enable toggle (a Recreate round's enable-flag row; lane RUI). None by default.
+    fn enable(&self, _id: &ModuleId) -> Option<Score> {
+        None
+    }
+    /// A score ring on a modulation route's cell or row (a Recreate round's route row; lane RUI). None by default.
+    fn route(&self, _route: &RouteAddr) -> Option<Score> {
+        None
+    }
+}
+
+/// Paints a score ring around a control's `rect` with its glyph at the top right corner: the ring of a switch, a
+/// segmented control, an enable toggle or a route (lane RUI; a knob draws its own on its dial). Never colour alone.
+pub fn paint_score(painter: &egui::Painter, t: &crate::Theme, rect: egui::Rect, score: Score) {
+    let ink = t.color.score.of(score);
+    painter.rect_stroke(
+        rect.expand(t.space.hairline),
+        t.radius.small,
+        t.stroke.thin(ink),
+        egui::StrokeKind::Outside,
+    );
+    painter.text(
+        egui::pos2(
+            rect.right() + t.space.hairline,
+            rect.top() - t.space.hairline,
+        ),
+        egui::Align2::CENTER_CENTER,
+        score.glyph(),
+        t.text.label.clone(),
+        ink,
+    );
 }
 
 /// The P1b overlay: everything normal, no scores.
@@ -64,6 +94,10 @@ pub fn apply(overlay: &dyn Overlay, cards: &mut Vec<CardView>) {
         let module = match &card.key {
             CardKey::Module(id) => overlay.module(id),
             CardKey::Voice | CardKey::Master => Emphasis::Normal,
+        };
+        card.enable_score = match &card.key {
+            CardKey::Module(id) => overlay.enable(id),
+            CardKey::Voice | CardKey::Master => None,
         };
         for p in &mut card.params {
             let o = overlay.param(&p.addr);

@@ -1,12 +1,15 @@
 -- round (lane SKR, F2r): a Recreate round played through the plugin's own Recreate bar, with real X events
 -- (xinput.py, under Xvfb only), the transport stopped. The project starts from Init (a fresh instance).
 -- Checks:
---   round-prepared: Start, then the worker prepares the target: the saved state's round reaches `playing`;
+--   round-prepared: Recreate, then Start (lane RUI's challenge bar), then the worker prepares the target: the saved
+--                   state's round reaches `playing`;
 --   target-sounds:  Target ▶ on, the track's peak meter read for 1.5 s is above silence (REAPER keeps calling
 --                   process() while stopped: the loop plays);
 --   mine-sounds:    Mine ▶ on (the phrase live through the start patch), the same;
---   submit-scored:  Round › Submit, then Skip on the blind rating: the saved round records a scored submit;
---   round-ended:    Round › End: the round is gone from the saved state and the round log has its `end` line.
+--   submit-scored:  Submit, then Skip on the blind rating (in the results drawer): the saved round records a scored
+--                   submit;
+--   round-ended:    End › End and restore my patch: the round is gone from the saved state and the round log has its
+--                   `end` line.
 -- Data: both peaks, the scored submit's text, the log line count. Audio is measured, never listened to.
 --
 -- The click points are offsets into the plugin's window (layout "lanes" at 1200 x 800). `reaper_points_hit_their_controls`
@@ -14,14 +17,14 @@
 dofile(os.getenv("ENTH_LUA_DIR") .. "/common.lua")
 
 local POINTS = {
-  start = { 640, 28 },
-  target = { 510, 28 },
-  mine = { 576, 28 },
-  round = { 636, 28 },
-  submit = { 640, 61 },
-  rate = { 624, 28 },
-  skip = { 650, 218 },
-  ["end"] = { 640, 145 },
+  recreate = { 628, 28 },
+  start = { 353, 28 },
+  target = { 174, 28 },
+  mine = { 240, 28 },
+  submit = { 402, 28 },
+  skip = { 380, 708 },
+  ["end"] = { 554, 28 },
+  restore = { 620, 61 },
 }
 local LOG = os.getenv("ENTH_ROUNDS_DIR") .. "/round-log.jsonl"
 
@@ -84,6 +87,8 @@ safe(function()
       xinput(string.format("click %d %d", x + p[1], y + p[2]))
     end
 
+    click("recreate")
+    sleep(0.4)
     click("start")
     local t_start = reaper.time_precise()
     wait_until(function() return phase_is(track, fx, "playing") end, 30, 0.2, function(ready)
@@ -102,12 +107,8 @@ safe(function()
             data("mine-peak", string.format("%.6f", mine_peak))
             check("mine-sounds", mine_peak > 0.001, string.format("Mine ▶ peaked at %.4f", mine_peak))
             click("mine") -- off again
-            click("round")
-            sleep(0.4)
             click("submit")
             sleep(0.6)
-            click("rate")
-            sleep(0.4)
             click("skip")
             wait_until(function()
               local s = state_bytes(track, fx)
@@ -119,9 +120,9 @@ safe(function()
               local at = s:find("submits", 1, true)
               data("submit", at and s:sub(at, at + 160):gsub("[\t\n]", " ") or "")
               sleep(0.3)
-              click("round")
-              sleep(0.4)
               click("end")
+              sleep(0.4)
+              click("restore")
               wait_until(function() return not has_round(track, fx) end, 10, 0.2, function(ended)
                 local n, text = log_lines()
                 data("log-lines", n)
