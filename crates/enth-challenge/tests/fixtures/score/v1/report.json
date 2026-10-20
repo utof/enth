@@ -1,0 +1,64 @@
+{
+  "schema": "enth.score-report/1",
+  "sound": {
+    "scorer": "sound/1",
+    "percent": 91.25,
+    "distance": 0.3125,
+    "floor": 0.0625,
+    "scale": 0.5,
+    "jnd": 0.5,
+    "components": [
+      {
+        "kind": "pitch",
+        "direction": "same",
+        "closeness": "close",
+        "target": -2100.0,
+        "answer": -2098.5
+      },
+      {
+        "kind": "brightness",
+        "direction": "higher",
+        "closeness": "a_bit",
+        "target": 1200.0,
+        "answer": 1530.5
+      },
+      {
+        "kind": "movement",
+        "direction": "missing",
+        "closeness": "far",
+        "target": 4.5,
+        "answer": null
+      }
+    ]
+  },
+  "structure": {
+    "scorer": "structure/1",
+    "percent": 75.5,
+    "params": [
+      {
+        "addr": "filter1.cutoff",
+        "score": 0.5,
+        "verdict": "near"
+      },
+      {
+        "addr": "osc1.wave",
+        "score": 1.0,
+        "verdict": "good"
+      }
+    ],
+    "modules": [
+      {
+        "id": "lfo1",
+        "kind": "lfo",
+        "status": "missing"
+      }
+    ]
+  },
+  "combined": {
+    "scorer": "combined/1",
+    "percent": 85.7375,
+    "sound_weight": 65
+  },
+  "pass_mark": 90,
+  "passed": true
+}
