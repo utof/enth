@@ -61,5 +61,9 @@ harness = false
 name = "g1"  # spine (S2b/E): the 16-voice reference patch, G1 budget
 harness = false
 
+[[bench]]
+name = "swap"  # P1b lane RT: the plan swap's spiky blocks on the G1 patch (instant swap, crossfading swap, crossfade)
+harness = false
+
 [lints]
 workspace = true
