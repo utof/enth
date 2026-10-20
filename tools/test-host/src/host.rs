@@ -11,6 +11,7 @@ use clack_extensions::params::{
     HostParams, HostParamsImplMainThread, HostParamsImplShared, ParamClearFlags, ParamRescanFlags,
 };
 use clack_extensions::state::{HostState, HostStateImpl};
+use clack_extensions::thread_check::{HostThreadCheck, HostThreadCheckImpl};
 use clack_host::prelude::*;
 
 /// Thread-safe host state, shared with the plugin. Requests are recorded here and serviced by
@@ -30,6 +31,35 @@ pub struct Shared {
     pub pending_resize: Mutex<Option<(u32, u32)>>,
     /// Lines the plugin sent through the host's log extension.
     pub log: Mutex<Vec<String>>,
+    /// The thread that created the instance: the main thread for the thread-check extension.
+    pub main_thread: MainThreadId,
+}
+
+/// The id of the thread that made it (`Default` captures the current thread).
+pub struct MainThreadId(std::thread::ThreadId);
+
+impl Default for MainThreadId {
+    fn default() -> Self {
+        Self(std::thread::current().id())
+    }
+}
+
+/// `ENTH_TEST_HOST_THREAD_CHECK=1` makes the host offer CLAP's thread-check extension, as REAPER and Bitwig do
+/// (R1/S1 lane INT, `cargo xtask rtsan`). Off by default, so the other gates keep the host they were measured with.
+/// Without it, nice-plug's `is_main_thread` falls back to `std::thread::current()` in the plugin's own std, which
+/// allocates the first time it runs on a thread, the audio thread included (a `permit_alloc`, its FIXME).
+pub fn thread_check_offered() -> bool {
+    std::env::var_os("ENTH_TEST_HOST_THREAD_CHECK").is_some_and(|v| v == "1")
+}
+
+impl HostThreadCheckImpl for Shared {
+    fn is_main_thread(&self) -> bool {
+        std::thread::current().id() == self.main_thread.0
+    }
+
+    fn is_audio_thread(&self) -> bool {
+        !self.is_main_thread()
+    }
 }
 
 impl SharedHandler<'_> for Shared {
@@ -112,6 +142,9 @@ impl HostHandlers for Host {
             .register::<HostGui>()
             .register::<HostParams>()
             .register::<HostState>();
+        if thread_check_offered() {
+            builder.register::<HostThreadCheck>();
+        }
     }
 }
 

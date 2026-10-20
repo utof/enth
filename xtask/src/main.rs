@@ -18,6 +18,7 @@ mod plugin;
 mod preset;
 mod preset_add;
 mod reaper;
+mod rtsan;
 mod validate;
 
 use std::collections::BTreeMap;
@@ -127,9 +128,14 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     the leak gates under Xvfb (started here): editor-cycles (at most 26 KB per open/close
                                     cycle, threads constant, one editor_closed per open; release bundle with the
                                     editor-counts feature) and instance churn (flat PSS, no thread or descriptor left)
+  rtsan [--toolchain nightly] [--secs 10] [--no-build] [--only CHECK]...
+                                    the plugin's process() under RealtimeSanitizer in the test host (both built with
+                                    a nightly and -Zsanitizer=realtime): renders, state-load swaps, floods, A/B,
+                                    bursts and note ends must be clean, and a deliberate allocation must be caught
   extract-presets <project.rpp>... [--out DIR] [--name NAME] [--force] [--dry-run]
                                     write each enth instance's saved patch in REAPER projects to
-                                    content/presets/<track or FX name>.patch.json, byte for byte (owner build 2)
+                                    content/presets/<track or FX name>.patch.json, named and typed after the track
+                                    instead of Init (only the metadata changes; owner build 2)
   starter-project --out FILE.rpp [--tracks bass,pad,pluck,lead] [--patch FILE] [--force]
                                     a REAPER project with one enth (CLAP) per named track, loaded with the starter patch
                                     (Init: every P1 module, the extras off, gain-staged): where owner build 2 starts
@@ -168,6 +174,7 @@ fn main() -> ExitCode {
         Some("reaper-soak") => reaper::reaper_soak(&args[1..]),
         Some("host-render") => host_render::host_render(&args[1..]),
         Some("leak-test") => leak::leak_test(&args[1..]),
+        Some("rtsan") => rtsan::rtsan(&args[1..]),
         Some("extract-presets") => preset::extract_presets(&args[1..]),
         Some("starter-project") => preset::write_starter_project(&args[1..]),
         Some("preset-add") => preset_add::preset_add(&args[1..]),

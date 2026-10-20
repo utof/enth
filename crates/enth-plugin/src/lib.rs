@@ -34,6 +34,9 @@
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
 )]
+// RealtimeSanitizer (`--cfg enth_rtsan` on nightly, `cargo xtask rtsan`): the plugin's `process()` is a real-time
+// context, so the RTSan-built test host aborts on any allocation, lock or blocking call inside it (R1/S1 lane INT).
+#![cfg_attr(enth_rtsan, feature(sanitize))]
 
 pub mod crash;
 pub mod editor;
@@ -276,6 +279,12 @@ pub struct Enth {
     player: game::Player,
 }
 
+/// RealtimeSanitizer's positive control (`cargo xtask rtsan`, R1/S1 lane INT): with `ENTH_RTSAN_CONTROL=alloc` set at
+/// activation, `process()` allocates in every block, which the RTSan-built test host must abort on. Compiled only
+/// with `--cfg enth_rtsan`.
+#[cfg(enth_rtsan)]
+static RTSAN_CONTROL: AtomicBool = AtomicBool::new(false);
+
 impl Default for Enth {
     fn default() -> Self {
         // A fresh instance plays Init (lane AM): the starter patch, gain-staged; `Patch::init()` stays the CLI's.
@@ -372,6 +381,11 @@ impl Plugin for Enth {
         buffer_config: &BufferConfig,
         context: &mut impl ActivateContext<Self>,
     ) -> bool {
+        #[cfg(enth_rtsan)]
+        RTSAN_CONTROL.store(
+            std::env::var_os("ENTH_RTSAN_CONTROL").is_some_and(|v| v == "alloc"),
+            Ordering::Relaxed,
+        );
         let activation = Activation {
             sample_rate: buffer_config.sample_rate,
             offline: buffer_config.process_mode == ProcessMode::Offline,
@@ -430,12 +444,17 @@ impl Plugin for Enth {
         }
     }
 
+    #[cfg_attr(enth_rtsan, sanitize(realtime = "nonblocking"))]
     fn process(
         &mut self,
         buffer: &mut Buffer<'_>,
         _aux: &mut AuxiliaryBuffers<'_>,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        #[cfg(enth_rtsan)]
+        if RTSAN_CONTROL.load(Ordering::Relaxed) {
+            drop(std::hint::black_box(vec![0_u8; 64]));
+        }
         self.process_block(buffer, context)
     }
 }

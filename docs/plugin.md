@@ -246,6 +246,25 @@ Measured at PL (2026-10-20):
 
 **After lane FK2** (2026-10-20, fork patches 6–9): `cargo test -p enth-plugin` 44 passed; clap-validator 36 passed, 0 failed, 8 skipped (debug and release, the release bundle built with `CARGO_BUILD_WARNINGS=deny`); Steinberg's VST3 validator 47 passed, 0 failed (debug and release); `cli-equal --min-compared 60` 63 equal, 0 differ (debug and release); `host-render` 10 cases, hashes unchanged (debug and release); `reaper-test` exit 0 in 5 consecutive full runs, 239 checks each.
 
+## RealtimeSanitizer (lane INT, R1/S1)
+
+`cargo xtask rtsan` (`xtask/src/rtsan.rs`) runs the whole plugin's `process()` under RTSan in the test host, where the nightly workflow covers only the engine's and render's own tests. Both binaries are built with a nightly toolchain and `-Zsanitizer=realtime --cfg enth_rtsan -C link-arg=-Wl,--export-dynamic` into `target/rtsan/`: `--cfg enth_rtsan` marks `Plugin::process` (and `Engine::process`) `#[sanitize(realtime = "nonblocking")]`, and the test host links the runtime and exports it so the plugin's calls resolve. Any allocation, lock or blocking call inside `process()`, the host's callbacks included, aborts the run (exit 43) with its stack, which the command names from the binaries' symbol tables. No system package: the runtime ships in the nightly `rust-std`.
+
+| Check | What runs | Result (2026-10-20, rustc 1.101.0-nightly 8006091eb 2026-10-17) |
+| --- | --- | --- |
+| `control` | `render` with `ENTH_RTSAN_CONTROL=alloc`: the plugin allocates in `process()` on purpose (`--cfg enth_rtsan` builds only) | caught (`calloc`): the sanitizer is live |
+| `render-chord`, `render-block-1`, `render-block-4096` | Init's chord; the REAPER round-trip patch at host blocks 1 and 4096 | clean |
+| `swaps-crossfade`, `swaps-instant` | `process-stats`, a state load every 250 ms between Init and the rich patch (plan swaps, crossfades, the pump, a voice-count change) | clean |
+| `flood`, `ab`, `bursts`, `note-end` | parameter floods; a Recreate round's A/B every 250 ms (`ab-toggle`); 16 to 4,096 events in a block; note ends at five block sizes | clean |
+| `no-thread-check` | `swaps-instant` in a host without CLAP's thread-check extension | **caught (information)**: see below |
+
+The scenarios run with the test host offering CLAP's thread-check extension (`ENTH_TEST_HOST_THREAD_CHECK=1`, as REAPER and Bitwig do; off by default so the other gates keep the host they were measured with). Two findings:
+
+- **A host without thread-check gets an allocation on the audio thread** at the first voice-count change (step 7 of [the audio block](#the-audio-block)): `set_current_voice_capacity` → nice-plug's `schedule_gui` → `is_main_thread`, whose fallback is `std::thread::current()` in the plugin's own std, which allocates its thread handle and the dynamic TLS block the first time it runs on a thread. nice-plug knows (a FIXME under `permit_alloc`, which is why `assert_process_allocs` never saw it). Once per audio thread, in hosts that lack thread-check only. A fork patch for lane FK: compare a thread id cached in a `thread_local!` of the wrapper's own, or queue the task without asking from `process()`.
+- **The test host allocated in the plugin's real-time context** in `bursts`: its 64-event output buffer grew while the plugin pushed `NOTE_END`s (the host's `try_push`, a `realloc`). Fixed: 8,192 events reserved (`OUTPUT_EVENT_CAPACITY`). Real hosts preallocate.
+
+About 5 minutes to build cold and a minute to run (`--secs` per `process-stats` scenario, default 10). A local check, not in CI; the nightly workflow could run it next to its RTSan job.
+
 ## REAPER scenarios
 
 `cargo xtask reaper-test --package enth-plugin` (lane RH) runs native REAPER 7.82 headless, always inside `xvfb-run`, with Dummy Audio and a throwaway copy of the install, through the Lua scripts in `xtask/reaper/`. Each script appends `check` and `data` lines to a log; `xtask/src/reaper.rs` and its submodules (`checks.rs`, `audio.rs`, `chunk.rs`) read them and make the checks that need the saved state or the rendered audio. It never plays sound. Needs `xvfb-run`, `timeout` and `python3`; ffmpeg is not needed.

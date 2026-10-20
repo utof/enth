@@ -280,7 +280,10 @@ impl JobSetup {
             silent_inputs,
             outputs,
             events_in: EventBuffer::with_capacity(64),
-            events_out: EventBuffer::with_capacity(64),
+            // The plugin pushes its output events (NOTE_END, up to one per note of a burst) inside its `process()`,
+            // so a buffer that grows there is the host allocating in the plugin's real-time context: RealtimeSanitizer
+            // (`cargo xtask rtsan`) flagged the 64-event buffer in `bursts` (R1/S1 lane INT). Real hosts preallocate.
+            events_out: EventBuffer::with_capacity(OUTPUT_EVENT_CAPACITY),
             schedule: self.schedule,
             config: self.config,
             next_block: 0,
@@ -321,6 +324,10 @@ pub struct OutRecord {
 }
 
 /// Drives one plugin instance block by block. Lives on a single thread.
+/// Output events reserved per block: more than `bursts`' largest count (4096 notes, each of which may end in the
+/// block) plus the parameter and voice events around them.
+pub const OUTPUT_EVENT_CAPACITY: usize = 8192;
+
 pub struct JobRunner {
     processor: PluginAudioProcessor<Host>,
     in_ports: AudioPorts,
