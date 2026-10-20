@@ -80,6 +80,10 @@ fn assert_no_value_before_level_4(h: &[Hint], patch: &Patch) {
     }
     assert!(h[0].module.is_none() && h[0].param.is_none() && h[0].turn.is_none());
     assert!(h[1].param.is_none() && h[1].turn.is_none());
+    assert!(
+        h[..3].iter().all(|hint| hint.route.is_none()),
+        "a route's source waits for level 4"
+    );
 }
 
 /// One known error: the target is the starter with `param` changed; the player has the starter.
@@ -288,10 +292,15 @@ fn a_missing_filter_sweep_points_at_the_route() {
         "{}",
         h4.text
     );
-    let _ = RouteAddr {
-        src: route.src,
-        dst: route.dst,
-    };
+    assert_eq!(
+        h4.route,
+        Some(RouteAddr {
+            src: route.src,
+            dst: route.dst,
+        }),
+        "level 4 names the route it adds"
+    );
+    assert_eq!(h4.param, Some(addr("filter1.cutoff")));
 }
 
 #[test]

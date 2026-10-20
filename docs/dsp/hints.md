@@ -152,7 +152,7 @@ The levels, with the structured `Hint` fields each fills (empty before their lev
 | 1 | Which aspect is off, and how | `aspect`, `difference` | "Check the brightness: your sound is darker than the target." |
 | 2 | Which module or region | `module` | "Your sound is darker than the target: look at the filter (filter1)." |
 | 3 | Which parameter, and which way | `param`, `turn` | "…: raise Cutoff on the filter (filter1)." |
-| 4 | A concrete value range | `range` | "…: set Cutoff on the filter (filter1) to between 1.6kHz and 2.6kHz." |
+| 4 | A concrete value range | `range`; for a route hint `route` (lane HINT, FU1: its source and destination, which level 4's text names; level 3 names only the destination, `param`) | "…: set Cutoff on the filter (filter1) to between 1.6kHz and 2.6kHz." |
 
 A categorical parameter has no `turn` or `range`: its level-3 text says to change it, level 4 names the setting. `Hint::measured` is true when the text comes from a verified render of the solver's fix and false for a categorical or advice hint.
 
