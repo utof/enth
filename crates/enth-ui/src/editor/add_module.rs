@@ -243,7 +243,7 @@ fn card_items(ui: &mut Ui, t: &Theme, view: &CardView, along_x: bool, out: &mut 
             }
         })
     });
-    after.response.on_disabled_hover_text(full(place.section));
+    after.inner.response.on_disabled_hover_text(full(place.section));
     let duplicate = ui
         .add_enabled(room, Button::new("Duplicate"))
         .on_disabled_hover_text(full(place.section));
