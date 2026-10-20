@@ -110,6 +110,9 @@ fn render_moving(mut m: Moving) -> f32 {
 // 1,000. Measured: 5,517,718 (lp_1v), 65,201,335 (lp_16v), 71,442,823 (drive_16v, 12 dB) and 71,381,472 (moving_16v,
 // a cutoff event every segment); over the `engine` bench's 3,873,015 and 43,370,997 that is 28.4 instructions per
 // sample per voice for a static filter, 36.6 with the saturator and 36.5 with the cutoff moving (docs/dsp/svf.md).
+// The drive's make-up gain (FU1 lane DRV, 2026-10-21; before → after on the same build of everything else):
+// 4,995,647 → 5,001,648 (lp_1v), 56,836,437 → 56,932,453 (lp_16v), 63,077,925 → 63,894,229 (drive_16v: +1.06
+// instructions per sample per voice, the second ramp add) and 73,189,536 → 73,309,536 (moving_16v). Budgets kept.
 #[library_benchmark]
 #[bench::lp_1v(args = (1,), setup = lp, config = common::budget(6_070_000))]
 #[bench::lp_16v(args = (16,), setup = lp, config = common::budget(71_722_000))]

@@ -149,14 +149,16 @@ impl Drive {
     /// The saturator for a drive of `db` decibels (clamped to `0..=`[`MAX_DRIVE_DB`]; NaN is 0 dB).
     #[must_use]
     pub fn from_db(db: f32) -> Self {
-        let a = amount(db);
-        let b = 1.0 / (1.0 + a * DRIVE_REFERENCE_SQ);
-        let c = flush((a * b) as f32);
-        if c == 0.0 {
-            Self::OFF
-        } else {
-            Self { b: b as f32, c }
+        // 0 dB (the default, and what a moving filter with no drive recomputes every segment) costs one compare.
+        if db > 0.0 {
+            let a = amount(db);
+            let b = 1.0 / (1.0 + a * DRIVE_REFERENCE_SQ);
+            let c = flush((a * b) as f32);
+            if c > 0.0 {
+                return Self { b: b as f32, c };
+            }
         }
+        Self::OFF
     }
 
     /// The constant term `b = 1/(1 + a·r²)`, in `(0, 1]`.
