@@ -13,7 +13,12 @@
 //!   sits where a last-bit difference flips it.
 //!
 //! The answers: `exact` (the target), `start` (the template's start patch, what a round begins with) and `near` (the
-//! start with every randomized parameter but the last set to the target's: one knob away).
+//! target with its last randomized parameter back at the start's value: one knob away).
+//!
+//! Regenerated once, on purpose (2026-10-20, lane SKR, after lane ST's merge): the stubs pair modules through ST's
+//! `match_modules`, which reads an unrouted modulator as absent, and the first `near` answer (the start with the
+//! randomized values set but not the drawn routes) lost its modulators at levels 3–5; `near` is now built from the
+//! target, and the `start` rows moved with the matcher. Codes and fingerprints did not change.
 //!
 //! The file is compiled in, so the wasm run needs no directory. Regenerate only on purpose (a new answer or case;
 //! review the diff): `cargo test -p enth-golden --test skr_challenges -- --ignored regenerate`.
@@ -60,10 +65,11 @@ fn round(level: u8, seed: u64) -> (ChallengeCode, PreparedRound) {
 
 /// The three fixed answers.
 fn answers(round: &PreparedRound) -> [(&'static str, Patch); 3] {
-    let mut near = round.start().clone();
-    let params = round.params();
-    for addr in &params[..params.len().saturating_sub(1)] {
-        let value = round.target().value(addr).unwrap();
+    // One knob away: the target with its last randomized parameter back at the start's value (its routes and
+    // switches kept, so the modules still match the target's).
+    let mut near = round.target().clone();
+    if let Some(addr) = round.params().last() {
+        let value = round.start().value(addr).unwrap();
         enth_patch::apply(
             &mut near,
             Op::SetParam {
