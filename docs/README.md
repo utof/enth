@@ -28,6 +28,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
 | [agent-evals.md](agent-evals.md) | The agent eval set (30 text goals, eval version 3): families, witnesses, the audit (`cargo xtask agent-eval audit`), the paid-run cost, and the analysis findings it surfaced |
 | [challenge.md](challenge.md) | `enth-challenge` (L4): the challenge model (`enth.challenge/1`), `RandomSpec`, challenge codes (short and long, Crockford base32), version rules, and the scoring types and traits |
+| [dsp/match.md](dsp/match.md) | `enth-solver` match: CMA-ES with a heuristic start and measured-axis pins, deterministic for any worker count; the CMA-ES floor for GR1 |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
 | [phase-1a.md](phase-1a.md) | The P1a (headless core) lanes: freezes, waves, ownership, acceptance, owner gates (done; the actual hours are recorded there) |
 | [phase-2.md](phase-2.md) | **Start here when coding.** The R1 + S1 (Recreate and Instrument 0.1) lanes: freezes, waves, ownership, acceptance, owner gates, the test strategy for the game logic |

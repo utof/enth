@@ -15,6 +15,8 @@ use crate::editor::cards::{CardView, Form, Intent, Intents, control};
 /// What the header shows.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HeaderView {
+    /// The preset the sound came from and whether it was edited since, for the Presets hook's ◀ name ▶ (lane PBU).
+    pub presets: crate::editor::browser::HeaderPresets,
     /// The patch's name; empty for an unnamed patch.
     pub patch_name: String,
     pub can_undo: bool,
@@ -65,18 +67,22 @@ impl<'a> Header<'a> {
             t.text.title.clone(),
             c.text.primary,
         );
-        let (name, ink) = if self.view.patch_name.is_empty() {
-            ("Untitled", c.text.label)
-        } else {
-            (self.view.patch_name.as_str(), c.text.primary)
-        };
-        ui.painter().text(
-            inner.center(),
-            Align2::CENTER_CENTER,
-            name,
-            t.text.body.clone(),
-            ink,
-        );
+        // With the Presets hook (lane PBU) the name is part of its ◀ name ▶, drawn by the hook.
+        #[cfg(not(feature = "presets"))]
+        {
+            let (name, ink) = if self.view.patch_name.is_empty() {
+                ("Untitled", c.text.label)
+            } else {
+                (self.view.patch_name.as_str(), c.text.primary)
+            };
+            ui.painter().text(
+                inner.center(),
+                Align2::CENTER_CENTER,
+                name,
+                t.text.body.clone(),
+                ink,
+            );
+        }
         let mut buttons = ui.new_child(
             UiBuilder::new()
                 .max_rect(inner)

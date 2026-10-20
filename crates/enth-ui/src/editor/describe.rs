@@ -6,8 +6,16 @@ use enth_patch::{ModSource, ModuleId, Op, ParamAddr, Patch, Target};
 use super::cards::view::source_name;
 use crate::theme::glyph;
 
-/// A step's name from its first op, against `patch` (the patch as it is now; titles come from module labels).
+/// A step's name from its first op, against `patch` (the patch as it is now; titles come from module labels). An
+/// editor preset load ([`Entry::load`]) is one step whatever its ops: "Load Sub One" (lane PBU).
 pub fn entry(patch: &Patch, entry: &Entry) -> String {
+    if let Some(name) = &entry.load {
+        return if name.trim().is_empty() {
+            "Load preset".to_owned()
+        } else {
+            format!("Load {name}")
+        };
+    }
     entry
         .forward
         .first()
@@ -94,5 +102,25 @@ mod tests {
             enabled: false,
         };
         assert_eq!(describe(&patch, &off), "Osc 1 off");
+    }
+
+    #[test]
+    fn a_preset_load_reads_load_and_its_name() {
+        let mut patch = Patch::init();
+        let mut history = History::default();
+        let mut preset = Patch::init();
+        "Sub One".clone_into(&mut preset.meta.name);
+        let ops = enth_patch::ops_between(&patch, &preset).unwrap();
+        history
+            .edit_load(&mut patch, ops, "Sub One".to_owned())
+            .unwrap();
+        let step = history.undo_stack().last().unwrap();
+        assert_eq!(entry(&patch, step), "Load Sub One");
+        let mut unnamed = patch.clone();
+        "Other".clone_into(&mut unnamed.meta.name);
+        let ops = enth_patch::ops_between(&patch, &unnamed).unwrap();
+        history.edit_load(&mut patch, ops, String::new()).unwrap();
+        let step = history.undo_stack().last().unwrap();
+        assert_eq!(entry(&patch, step), "Load preset");
     }
 }

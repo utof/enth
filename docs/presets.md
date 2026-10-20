@@ -1,6 +1,6 @@
 # Presets
 
-> Lane PBC of R1/S1 (the preset core, without UI). The browser and the save dialog are lane PBU's; the factory sounds are lane PR's and AM's. Code: `crates/enth-session/src/presets.rs` (format, index, search, naming, the session's load and save), `crates/enth-plugin/src/presets.rs` (the user folder and the folder store), `crates/enth-plugin/src/crash.rs` (the crash file), `crates/enth-patch/src/diff.rs` (`ops_between`).
+> Lane PBC of R1/S1 (the preset core, without UI). The browser and the save dialog are lane PBU's ([The browser](#the-browser-lane-pbu)); the factory sounds are lane PR's and AM's. Code: `crates/enth-session/src/presets.rs` (format, index, search, naming, the session's load and save), `crates/enth-plugin/src/presets.rs` (the user folder and the folder store), `crates/enth-plugin/src/crash.rs` (the crash file), `crates/enth-patch/src/diff.rs` (`ops_between`).
 
 A preset is a patch in a file. There is no second format: a preset file is exactly `Patch::to_json()`, the same text the plugin saves in the host's `patch` field and `enth` reads and writes, so any preset is a valid saved state and any saved state is a preset.
 
@@ -81,7 +81,40 @@ The bookmark is `PresetState { last }` in the `enth` field's `preset` member (`e
 - `enth-crash-<UTC date>-<UTC time>-<counter>-<process id>.txt` in `ENTH_CRASH_DIR` or `<Documents>/enth/Crashes`: version and profile, time (UTC and unix), platform, thread name and id, location, message, backtrace. **No personal data**: no patch, project, host or environment, and the home folder is replaced by `~` everywhere in the text, including in the message.
 - Bounded: three files per process, nothing once the folder holds 50, a report cut at 64 KiB. Nothing is ever deleted.
 - **Real time:** installing allocates once, on the host's main thread at library load; the non-panic path runs none of this code. In a panic (possibly on the audio thread) the hook allocates inside `nice_plug::util::permit_alloc`, as a debug build's `assert_process_allocs` would abort otherwise.
-- For the editor, on the next load: `crash::pending(dir)` lists the files not yet offered, `read_report(path)` reads one, `mark_seen(path)` renames it to `….seen.txt` (kept, offered once). The editor's offer is not built yet.
+- For the editor, on the next load: `crash::pending(dir)` lists the files not yet offered, `read_report(path)` reads one, `mark_seen(path)` renames it to `….seen.txt` (kept, offered once). The editor's offer is lane PBU's ([below](#the-crash-offer)).
+
+## The browser (lane PBU)
+
+Code: `crates/enth-ui/src/editor/browser.rs` and `browser/{header,panel,save,crash}.rs` (the editor's side is in [editor.md](editor.md#the-preset-browser-lane-pbu)); the plugin's wiring in `crates/enth-plugin/src/editor.rs`. Every load below is `SessionEdit::load_preset` (one undo step, no host parameter writes, the project marked dirty); every save is `SessionEdit::save_preset`.
+
+**The header: "◀ Name ▶ Browse Save"**, right after the wordmark.
+
+- The name is the bookmarked preset's (`InstanceState::preset.last_key()`: its title from the last scan, else its file name), else the patch's own, else "Untitled". A dot follows it while the sound differs from that preset (`HistoryView::is_dirty`: after an edit, or after an undo of the load). Clicking the name opens or closes the browser, like Browse.
+- ◀ and ▶ load the previous and the next preset of the browser's current list (its tab and its search; `presets::step`), wrapping round; with no bookmark, or one the list does not hold, ▶ gives the first and ◀ the last. Each step is one undo step. A file that vanished since the scan opens the panel on a fresh scan, with the reason.
+- **Known limit:** the dot follows the session's history, which starts again when the host loads a project; a sound edited and saved with the project shows no dot after a reload, until it is edited again.
+
+**The browse panel**, over the body in any layout (the regions under it are not drawn, so the frame gets cheaper):
+
+- Tabs: All (factory first, then the user's), Factory, User, Favorites. A search field takes words in any order, `#tag` and `by:author` (`Library::search`); it is never focused by itself, because inside a host the keyboard reaches the plugin only while a field is typed in (fork patch 4), so the host's shortcuts keep working while browsing.
+- A row is ☆ (★ when starred), ▶, the name, where it lives ("Factory › bass" in All and Favorites, the folder otherwise), the tags and the author; the description is its tooltip, and the loaded preset's row is highlighted. A click loads it; a double-click loads it and closes the panel; Escape and × close it. The footer shows the last message (an error with its hint, in red) and "N files could not be read", with the files and the reasons as a tooltip.
+- **The scan** (`PresetStore::scan`) runs every time the panel opens, and on the first ◀ ▶ when nothing was scanned yet, on the GUI thread inside the session lock (the plugin draws under it). A big user folder makes that one frame slow; it is not measured, and moving the scan before the lock is a follow-up.
+- **Favorites:** ☆ calls `PresetStore::set_favorite` (saved at once; a refusal is the footer's message); the browser keeps its own copy, since `Library` keeps the favorites it was built with.
+- **Audition:** ▶ held loads the preset (unless it is the loaded one), then plays middle C at velocity 100 through the session's audition notes until the pointer is released anywhere, or the window closes (the shell's `audition_all_off`). A session with no engine says why in the footer. REAPER keeps calling `process()` with the transport stopped, so it sounds there (measured by `preset-load`: a peak of about 0.67 on CLAP and on VST3 with ▶ held, the transport stopped); other hosts are still the open check of [phase-2.md](phase-2.md#open-checks).
+
+**The Save dialog**, a card over the body:
+
+- Filled from the patch: its name, its tags, and the folder of the user preset it came from. A folder may be typed (made if new); the factory presets are never offered (they are read-only).
+- Tags from the vocabulary: one type (a second click clears it), up to four character words; the patch's other tags are kept and offered beside them.
+- "Save preset" or Enter saves. A name in use (`preset_exists`) is never replaced silently: the dialog asks "“Name” is already in your presets. Replace it?", and Replace saves again with `overwrite`; Cancel goes back to the fields. Any other refusal shows its message and its `hint()` (`bad_preset_name`, `bad_preset_folder`, `no_user_folder`, `preset_io`, …). Escape or Cancel closes it. Opened from the panel, the panel comes back after a save, rescanned (on the User tab if it was on Factory).
+- With no user folder the dialog says so in red ("set ENTH_PRESETS_DIR").
+
+**The undo step's name** is "Load <name>" (`describe::entry` on `Entry::load`; "Load preset" for an unnamed one), so the header's Undo tooltip reads "Undo Load Glass Pad".
+
+**Stores.** The plugin hands the editor `FsStore::from_env()` when the host creates the editor; the editor's default is `MemStore::default()` (the embedded factory presets, no user files), which the dev window and the tests use.
+
+### The crash offer
+
+At every open of the window the plugin lists the crash folder's pending files (`crash::pending`) and hands them to the editor as a `CrashReports` (`CrashFolder` in `enth-plugin/src/editor.rs`; the UI crate does no I/O). While some wait, a small notice sits in the body's lower right corner: "enth stopped unexpectedly last time. It wrote a report on this computer. Nothing was sent anywhere." with Show report and Dismiss. It is a foreground area, not a modal: the editor works beside and under it. Either button marks every pending file as offered (`mark_seen`, a rename; nothing is deleted), so each is offered once. Show report puts the newest report over the body, with where the files are, Copy report (to the clipboard) and Close report.
 
 ## Tests and gates
 
@@ -93,3 +126,6 @@ The bookmark is `PresetState { last }` in the `enth` field's `preset` member (`e
 | Every user-folder branch with fake environments; `FsStore` on temporary folders; a preset load, undo and redo through `Shared::with_session` mark the project dirty once each and write nothing to the host | `crates/enth-plugin/src/presets.rs` |
 | The panic hook, in a test binary of its own | `crates/enth-plugin/tests/crash.rs`, `src/crash.rs` |
 | Every file in `content/presets/` (recursively) is `to_json()`, uses the vocabulary, has its own name and is embedded | `crates/enth-plugin/tests/presets.rs` |
+| (PBU) The browser through a real session by kittest: browse, search, tabs, favorites, a click and a double-click load, ◀ ▶, the edited dot, the Save dialog (tags, confirm, refusals with hints), audition, the crash notice; snapshots of the header, the panel and the dialog | `crates/enth-ui/tests/browser.rs`, `tests/browser_snapshots.rs` |
+| (PBU) The browser over `FsStore` on a temporary folder; the crash folder offered once | `crates/enth-plugin/src/editor.rs` |
+| (PBU) REAPER `preset-load`, CLAP and VST3: a user preset loaded with real clicks through the browser; the bookmark saved; no host parameter moves on the load, its undo or its redo; the project dirty; one editor Undo and Redo; ▶ held with the transport stopped measured | `cargo xtask reaper-test --scenario preset-load` (`xtask/reaper/preset.lua`) |
