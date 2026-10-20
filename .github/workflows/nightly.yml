@@ -5,7 +5,10 @@ name: nightly
 #             also catching syscalls, I/O and pthread locks inside `process`. It does not see an uncontended std Mutex
 #             (measured in Phase 0), so the clippy ban on Mutex/RwLock stays.
 #   proptest: every property test with a fresh random seed and ten times the cases. The gate itself runs with a fixed
-#             seed (.cargo/config.toml, .config/nextest.toml); a find here is replayed with the printed seed.
+#             seed (.cargo/config.toml, .config/nextest.toml); a find here is replayed with the printed seed. A property
+#             that renders per case caps its own count (enth-challenge's P10 pair: 1,000, `render_property` in
+#             tests/ss_sound.rs): proptest applies PROPTEST_CASES over any count a test configures, and at 10,000 the
+#             pair hit nextest's ten-minute limit (run 39506542786).
 #   leak:     the plugin's leak gates (P1b lane INT, `cargo xtask leak-test`): 200 editor open/close cycles under Xvfb
 #             (at most 26 KB per cycle, threads constant, one editor_closed per open) and 200 instance lives (flat PSS,
 #             no thread or descriptor left behind). Locally the coordinator runs them before merging an editor lane.
@@ -83,13 +86,18 @@ jobs:
           PROPTEST_RNG_SEED: ${{ steps.seed.outputs.seed }}
           PROPTEST_CASES: "10000"
         run: cargo nextest run --locked --profile explore --no-tests=pass --workspace --exclude 'spike-*' --exclude enth-ui --exclude enth-plugin --exclude enth-test-host --exclude xtask
-      # A new regression file is the reproduction: commit it together with the fix (it is merged as a union).
+      # A new regression file is the reproduction: commit it together with the fix (it is merged as a union). proptest
+      # writes `<test file>.proptest-regressions` beside an integration test's file (tests/fuzz_lite.rs ->
+      # tests/fuzz_lite.proptest-regressions), which the old `**/proptest-regressions/**` never matched: run 39506542786
+      # uploaded nothing. The committed files come along; the new or grown one is the find.
       - name: Keep new regression files
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proptest-regressions-${{ steps.seed.outputs.seed }}
-          path: "**/proptest-regressions/**"
+          path: |
+            **/*.proptest-regressions
+            **/proptest-regressions/**
           if-no-files-found: ignore
 
   leak:
