@@ -14,6 +14,7 @@ pub mod events;
 pub mod host;
 pub mod instances;
 pub mod latency;
+pub mod leak_diag;
 pub mod notes;
 pub mod procfs;
 pub mod query;

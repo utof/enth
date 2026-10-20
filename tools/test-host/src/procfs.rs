@@ -7,6 +7,9 @@ pub struct Memory {
     pub pss_kb: u64,
     pub pss_anon_kb: u64,
     pub rss_kb: u64,
+    /// The proportional share of this process's swapped-out pages (`SwapPss`): `pss_anon_kb + swap_pss_kb` is the
+    /// anonymous footprint whether or not the kernel swapped part of it out (lane SOAK's metric).
+    pub swap_pss_kb: u64,
 }
 
 /// Parses the text of `/proc/<pid>/smaps_rollup`.
@@ -24,6 +27,7 @@ pub fn parse_smaps_rollup(text: &str) -> Memory {
             ("Pss", Some(kb)) => m.pss_kb = kb,
             ("Pss_Anon", Some(kb)) => m.pss_anon_kb = kb,
             ("Rss", Some(kb)) => m.rss_kb = kb,
+            ("SwapPss", Some(kb)) => m.swap_pss_kb = kb,
             _ => {}
         }
     }
@@ -35,6 +39,50 @@ pub fn memory() -> Result<Memory, String> {
     let text = std::fs::read_to_string("/proc/self/smaps_rollup")
         .map_err(|e| format!("/proc/self/smaps_rollup: {e}"))?;
     Ok(parse_smaps_rollup(&text))
+}
+
+/// One mapping of `/proc/self/smaps`, its anonymous and swapped kilobytes (the leak diagnostics, lane LK).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Mapping {
+    /// `start-end perms offset dev inode [name]`, the mapping's header line.
+    pub header: String,
+    pub size_kb: u64,
+    pub anonymous_kb: u64,
+    pub swap_kb: u64,
+}
+
+/// Parses the text of `/proc/<pid>/smaps` into its mappings.
+pub fn parse_smaps(text: &str) -> Vec<Mapping> {
+    let mut maps: Vec<Mapping> = Vec::new();
+    for line in text.lines() {
+        let first = line.split_whitespace().next().unwrap_or_default();
+        if first.contains('-') && !first.ends_with(':') {
+            maps.push(Mapping {
+                header: line.split_whitespace().collect::<Vec<_>>().join(" "),
+                ..Mapping::default()
+            });
+            continue;
+        }
+        let (Some(map), Some((key, rest))) = (maps.last_mut(), line.split_once(':')) else {
+            continue;
+        };
+        let kb = rest
+            .trim()
+            .strip_suffix("kB")
+            .and_then(|n| n.trim().parse::<u64>().ok());
+        match (key, kb) {
+            ("Size", Some(kb)) => map.size_kb = kb,
+            ("Anonymous", Some(kb)) => map.anonymous_kb = kb,
+            ("Swap", Some(kb)) => map.swap_kb = kb,
+            _ => {}
+        }
+    }
+    maps
+}
+
+/// This process's mappings, from `/proc/self/smaps`.
+pub fn mappings() -> Vec<Mapping> {
+    std::fs::read_to_string("/proc/self/smaps").map_or_else(|_| Vec::new(), |t| parse_smaps(&t))
 }
 
 /// Number of threads in this process.
@@ -86,16 +134,30 @@ mod tests {
 
     #[test]
     fn smaps_rollup_is_parsed() {
-        let text = "55d0-7ffc ---p 00000000 00:00 0   [rollup]\nRss:               54321 kB\nPss:               12345 kB\nPss_Dirty:          100 kB\nPss_Anon:            2000 kB\nReferenced:        1 kB\n";
+        let text = "55d0-7ffc ---p 00000000 00:00 0   [rollup]\nRss:               54321 kB\nPss:               12345 kB\nPss_Dirty:          100 kB\nPss_Anon:            2000 kB\nReferenced:        1 kB\nSwap:               700 kB\nSwapPss:            600 kB\n";
         let m = parse_smaps_rollup(text);
         assert_eq!(
             m,
             Memory {
                 pss_kb: 12_345,
                 pss_anon_kb: 2_000,
-                rss_kb: 54_321
+                rss_kb: 54_321,
+                swap_pss_kb: 600,
             }
         );
+    }
+
+    #[test]
+    fn smaps_mappings_are_parsed() {
+        let text = "5555-6666 rw-p 00000000 00:00 0                          [heap]\nSize:               132 kB\nAnonymous:           64 kB\nSwap:                 8 kB\n7f00-7f10 r-xp 00001000 08:02 123  /usr/lib/libGL.so.1\nSize:                 64 kB\nAnonymous:            0 kB\nVmFlags: rd ex mr mw me\n";
+        let maps = parse_smaps(text);
+        assert_eq!(maps.len(), 2);
+        assert_eq!(maps[0].header, "5555-6666 rw-p 00000000 00:00 0 [heap]");
+        assert_eq!(
+            (maps[0].size_kb, maps[0].anonymous_kb, maps[0].swap_kb),
+            (132, 64, 8)
+        );
+        assert_eq!((maps[1].size_kb, maps[1].anonymous_kb), (64, 0));
     }
 
     #[test]
