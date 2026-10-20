@@ -35,7 +35,7 @@ Since P1b (lane S0b, 2026-10-19) the tokens are split by area, one file each, so
 | `states.rs` | `disabled_opacity` |
 | `motion.rs` | Repaint rates, transition time |
 | `glyph.rs` | Symbols with a fixed meaning (✓ ~ ✗ ⊕ ▶ › → • ● ○); a test checks that Inter covers them |
-| `sizes/<area>.rs` | Per-widget dimensions, one file per UI area: `bar`, `card`, `cards`, `display`, `handle`, `knob`, `matrix`, `pane`, `tile`, `window` (and `control_height` in `sizes/mod.rs`). `editor` holds the layout regions and popups (lane ED1, see [editor.md](editor.md)); `modulation` (lane ED2: the knob's depth handle, the compact route list) and `output` (lane ED2: the scope, spectrum and meters); see [editor.md](editor.md) |
+| `sizes/<area>.rs` | Per-widget dimensions, one file per UI area: `bar`, `card`, `cards`, `display`, `handle`, `knob`, `matrix`, `pane`, `tile`, `window` (and `control_height` in `sizes/mod.rs`). `editor` holds the layout regions and popups (lane ED1, see [editor.md](editor.md)); `modulation` (lane ED2: the knob's depth handle, the compact route list) and `output` (lane ED2: the scope, spectrum and meters); see [editor.md](editor.md). R1 and S1 (2026-10-20): S0r pre-declares the new lanes' area files, among them `recreate` (lane RUI: the challenge bar, the results drawer, the randomizer settings), and files for the add slot (AM) and the preset browser (PBU) |
 
 A lane adds a token only in its own area's file; a brand-new area is a new file plus its field in `sizes/mod.rs`. Every new field has a serde default (or a `Default` that reads the dark theme), so a theme file dumped before it still loads.
 
@@ -64,7 +64,7 @@ Starting proposals from the UI reference analysis; the G0 UI spike checks them o
 
 **Type:** one regular-weight sans in 2 weights (e.g. Inter, OFL-1.1) plus a face with tabular digits for values. At most 3 font files in the atlas. *Built:* Inter 4.1 Regular and SemiBold plus Inter Tabular, a 10 KB subset of Inter Regular with `tnum` frozen in (egui applies no OpenType features); text styles `label` 11 regular, `body` 12 regular, `value` 12 tabular, `title` 14 semibold, `strong` 12 semibold.
 
-**Component sizes:** window 1200×800 (minimum about 1000×680) · header 40 · macro bar 56 · modulator strip 140 · status line 22 · generator card 96 (collapsed 24) · effect lane 220 wide · knob 36 with a 3 px track · lesson pane 320. *Added by the G0 spike:* knob cell 56 wide (values in units need about 52 px), control height 24, generator display slot 128 wide, lane display 40 tall, enable toggle 12, source tile 72×56 with a 14 px badge, matrix rows 16 with a 88 px target column and 36 px source columns, display grid 4×2 with a 3 px phase marker, knob drag travel 200 px (Shift ×0.1) over a 270° sweep.
+**Component sizes:** window 1200×800 (minimum about 1000×680; see the 2026-10-20 note below: at the minimum, layout 1 loses its overview) · header 40 · macro bar 56 · modulator strip 140 · status line 22 · generator card 96 (collapsed 24) · effect lane 220 wide · knob 36 with a 3 px track · lesson pane 320. *Added by the G0 spike:* knob cell 56 wide (values in units need about 52 px), control height 24, generator display slot 128 wide, lane display 40 tall, enable toggle 12, source tile 72×56 with a 14 px badge, matrix rows 16 with a 88 px target column and 36 px source columns, display grid 4×2 with a 3 px phase marker, knob drag travel 200 px (Shift ×0.1) over a 270° sweep.
 
 **Catalogue cards (`size.cards`, added by lane UI-C, below):** switch 28×16, at most 4 segments, envelope stage 0.05 minimum and 0.25 range.
 
@@ -122,6 +122,17 @@ The catalogue cards (`crates/enth-ui/src/editor/cards/`) generate a control for 
 - **Stable ids and discrete knobs.** `Knob::id`, `CurveHandles::id`, `MacroBar::id`, `SourceTile::id` and `MatrixGrid::id` (with `show_cells` for per-cell responses) interact under a global id built from what the control controls (a module id and a parameter address), so a drag survives a re-layout: 59 of 59 control ids stayed the same across two layouts. `Knob::steps(n)` makes a discrete knob snap to `n` steps while keeping the unrounded position of a running drag, so a slow drag moves Polyphony (it was stuck at 16). Curve handles closer than their reach split their grab areas at the midpoint, so the pointer picks the nearest one.
 - **Token gallery** (updated on purpose): a new row with a stepped knob, two switches, a segmented cell and a segmented row; the PNG grew from 1100×1320 to 1100×1404. One PNG per card and per region joins it in `crates/enth-ui/tests/snapshots/` (`card_*.png`, `region_*.png`).
 - `enth-params` now parses the U+2212 minus sign that the design system displays.
+
+### Planned for R1 and S1 (2026-10-20)
+
+Decided by the R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/`, report 03 and the summary); the layouts and measurements are in [editor.md](editor.md#planned-for-r1-and-s1-2026-10-20), the lanes in [phase-2.md](phase-2.md).
+
+- **The header row carries the new controls; no bar row is added.** In Play the patch name becomes ◀ Name ▶ Browse Save. In Recreate the challenge bar shares the header row (480 / 480 px at 1200 × 800, with nothing overflowing); a 40 px bar row of its own made the tiles, the route list and the effects lane overflow. The results drawer takes the overview's slot after Submit.
+- **The preset browse panel covers the body in any layout.** It is view state drawn over the cards, not a layout region, and it uses the existing surfaces and text styles; a value it needs goes in PBU's area file.
+- **The dashed "+ Add" slot** is a flat outline, shown only where a section has room for it (principle 3: no fills, shadows or gradients). Its size and dash are tokens in AM's area file.
+- **Score rings** after Submit use `score.good`, `score.near` and `score.bad` with ✓ ~ ✗, never colour alone (principle 1). In Recreate no label or tooltip shows a target value.
+- **The lesson pane (320)** fits at 1200 × 800 only when the lesson hides the modules it doesn't use.
+- **The minimum window is open.** At `size.window.min` (1000 × 680) layout 1 has no overview region, so the source tiles and the route list (the drag sources) vanish. Lane AM measures; then the minimum rises, or the layout variants handle it (LV).
 
 ## Rules and enforcement
 

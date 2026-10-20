@@ -31,7 +31,7 @@ The shell owns the protocol; the editor is the middle of it ([plugin.md](plugin.
 4. `drain_requests` into a local buffer; **unlock**;
 5. forward `ShellRequest::Host` writes to nice-plug's `ParamSetter` (begin, set, end).
 
-`Editor::frame` never pumps, folds or drains. The shell calls `Editor::open(session, theme)` at every `build()` (live feedback starts: a telemetry reader over the session's tap, enabled) and `Editor::close()` when the window closes (the tap stops publishing). The plugin draws it on egui's root `Ui` (the whole window; the editor paints its own background). An editor preset load is `Session::load_patch` under the lock, never `GuiContext::set_state` (`enth-plugin/clippy.toml` bans it); the dev window's `--patch` takes that path.
+`Editor::frame` never pumps, folds or drains. The shell calls `Editor::open(session, theme)` at every `build()` (live feedback starts: a telemetry reader over the session's tap, enabled) and `Editor::close()` when the window closes (the tap stops publishing). The plugin draws it on egui's root `Ui` (the whole window; the editor paints its own background). An editor preset load is `Session::load_patch` under the lock, never `GuiContext::set_state` (`enth-plugin/clippy.toml` bans it); the dev window's `--patch` takes that path. (Planned, 2026-10-20: the preset browser's load becomes `Session::load_preset`, one undo step delivered like a load, with no host writes; [below](#planned-for-r1-and-s1-2026-10-20).)
 
 ### Intents
 
@@ -173,6 +173,36 @@ Measured (`tests/repaint.rs`, exact delays from egui's output, no clock): an idl
 
 - **`Overlay`** (`editor/overlay.rs`): per parameter an emphasis (normal, dimmed, hidden) and a score; per module an emphasis. The editor applies it to the read model before drawing (`overlay::apply`): a hidden parameter is not drawn, a hidden module's card is dropped, a dimmed one draws in the dimmed ink and stays editable, a score draws as the knob's ring with its glyph. P1b ships `NoOverlay` (`Editor::set_overlay` takes another). Recreate dims and scores; only a lesson hides.
 - **Reserved regions** behind the `learn` and `recreate` features of `enth-ui`: `lesson`, `challenge_bar`, `results`. A mode is a layout that places them; P1b draws an empty panel with the region's name.
+- **Where they go** (2026-10-20, R1 research, measured at 1200 × 800 with the G1 patch): a mode is a layout file plus an overlay. Recreate's challenge bar shares the header row, and the results drawer takes the overview slot after Submit; a Learn pane of 320 px fits only when the lesson hides the modules it doesn't use. Details under [Planned for R1 and S1](#planned-for-r1-and-s1-2026-10-20).
+
+## Planned for R1 and S1 (2026-10-20)
+
+Decided by the R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/`, report 03 and the summary); built by the lanes named in [phase-2.md](phase-2.md). Lane S0r declares three no-op hooks in the header (Recreate, Presets, Add), so AM, PBU and RUI each fill their own. Each lane adds its own section here when it lands.
+
+**Adding and removing modules (lane AM).** The patch ops exist (`AddModule`, `RemoveModule`, `Move`, `SetLabel`, `SetAmpEnv`, each with an exact inverse); only the intents are missing. Add, remove, move, duplicate and rename are one op and one undo step each, through one `session.edit`, and a refusal (`TooMany`, `InUseAsAmpEnv`) shows as the status line's hint. Three entry points:
+
+- a **"⋯" menu on every card**: Add after ▸ (the kinds valid for the section), Duplicate, Move up and down, Rename…, Make amp envelope, Remove;
+- **right-click on empty region space** opens Add;
+- a **dashed "+ Add" slot** while a section is under its limit, only where there is room: at 1200 × 800 the P1 default's sources region holds exactly three 96 px strips (304 px), so a ghost slot there would scroll.
+
+The status line reports what a removal took with it ("Removed Filter 1, 2 routes and automation slot 3"). Every add, remove or enable recompiles the plan; the crossfading swap block is reported, not gated ([benchmarks.md](benchmarks.md#lane-rt-the-plugin-measured-2026-10-20)). The same lane makes a fresh instance play the starter patch as "Init" (gain-staged) and measures the minimum window (below).
+
+**The preset header and browse panel (lanes PBC and PBU).** The header's patch name becomes **◀ Name ▶ Browse Save**. The browse panel is editor view state drawn over the body, not a layout region, so it works in every layout, and while it is open it replaces the cards (the frame gets cheaper). Report 03's design: Factory, User and Favorites; a word search over name, description, author and tags; click loads, double-click loads and closes, Escape closes; ◀ ▶ step through the current list (they come first because arrow keys may reach the host); Save never offers a read-only folder. A load is `Session::load_preset`: one undo step from `ops_between(current, preset)`, delivered like a load (no per-slot or per-macro host writes, the nih-plug #92 crash class), and it marks the project dirty. A preset file is exactly `Patch::to_json()`; user presets live in `Documents/enth/Presets` (`ENTH_PRESETS_DIR` overrides it). The search field relies on the keyboard-focus fork patch inside REAPER (owner check 1.5).
+
+**Recreate and Learn in the layout (lanes RUI and LV).** Measured overflow with the G1 patch (report 03's scratch harness, `Editor::report()` at each size):
+
+| Candidate | 1200 × 800 | 1000 × 680 |
+| --- | --- | --- |
+| Lanes (Play) | none | band 148 × 21 px, effects 98 px, no overview |
+| Challenge bar as its own 40 px row under the header | tiles 39, routes 47, effects 26 | band 148 × 69, effects 146 |
+| **Challenge bar sharing the header row** (480 / 480) | **none** | as lanes |
+| **The same, with the results in the overview slot** | **none** | as lanes |
+| Lesson pane (320) in the effects column, or as a left column | the band (732 or 276 px), tiles and routes | the band (932 or 476 px); effects 98 in the left-column one |
+| Both lesson layouts with a small patch (`init` or `pluck_1osc`, standing in for a lesson that hides unused modules) | none (`pad_2osc`: the band by 48 px in one of them) | not run |
+
+So Recreate's bar shares the header row (the patch name hides; the target is unknown anyway), and after Submit the results drawer (scores, time, Retry, New, Show target) replaces the overview, while the per-control rings draw on the knobs through `Overlay`. A Learn step names its layout and its overlay, and hides what it doesn't use.
+
+**The minimum window (open: lane AM measures, then LV).** At `size.window.min` (1000 × 680) layout 1 has no overview region, so the source tiles and the route list vanish and nothing can be dragged from; the band scrolls 148 × 21 px and the effects lane 98 px, and the sources region is 528 px wide while the oscillator strip's content reaches about 625 px (probably clipped; inferred, not rendered). Either the minimum rises, or the variants handle it. Claude Design gets the `enth.layout/1` vocabulary (regions, parts, `arrange` values, token names with their values) and both sizes, and every variant gets its snapshots and an overflow report at 1200 × 800 and at 1000 × 680.
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`)
 
