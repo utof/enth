@@ -806,6 +806,11 @@ pub enum JobResult {
         /// Why, for the status line.
         message: String,
     },
+    /// For [`JobKind::Prepare`]: `prepare_round` refused the target as silent (`enth_challenge::RoundError::
+    /// SilentTarget`): any silent answer would score 100 %. The round breaks with [`GameError::SilentTarget`] before
+    /// any patch loads and is never logged (it had no target); the editor deals another seed for a round it dealt
+    /// (R1/S1 lane INT).
+    SilentTarget,
 }
 
 impl JobResult {
@@ -818,6 +823,7 @@ impl JobResult {
             JobResult::Loudness { .. } => "loudness",
             JobResult::Hint(_) => "hint",
             JobResult::Failed { .. } => "failed",
+            JobResult::SilentTarget => "silent_target",
         }
     }
 }
@@ -1109,6 +1115,9 @@ pub enum GameError {
         /// What is wrong.
         reason: String,
     },
+    /// The target is silent through its phrase ([`JobResult::SilentTarget`]): there is nothing to recreate. Only
+    /// ending the round, or starting another, is left; nothing was stashed or loaded.
+    SilentTarget,
     /// A rating outside 1–5.
     BadRating(u8),
     /// The first score is recorded: a rating now would not be blind.
@@ -1134,6 +1143,7 @@ impl GameError {
             GameError::Code(e) => e.code(),
             GameError::Spec(e) => e.code(),
             GameError::TooLarge { .. } => "too_large",
+            GameError::SilentTarget => "silent_target",
             GameError::BadRating(_) => "bad_rating",
             GameError::AlreadyScored => "already_scored",
         }
@@ -1166,6 +1176,11 @@ impl GameError {
             }
             GameError::BadReport { .. } => {
                 "report this: the shell scored with other rules than the challenge's".to_owned()
+            }
+            GameError::SilentTarget => {
+                "nobody can hear this target, so there is nothing to recreate: start another round (a new seed), or \
+                 change the settings or the code"
+                    .to_owned()
             }
             GameError::BadRating(_) => "rate from 1 (nothing like it) to 5 (can't tell them apart)".to_owned(),
             GameError::AlreadyScored => {
@@ -1206,6 +1221,7 @@ impl std::fmt::Display for GameError {
             GameError::BadReport { reason } => {
                 write!(f, "the score report does not fit the challenge: {reason}")
             }
+            GameError::SilentTarget => f.write_str("the target is silent"),
             GameError::BadRating(r) => write!(f, "rating {r} is not 1 to {RATING_MAX}"),
             GameError::AlreadyScored => f.write_str("the first score is already recorded"),
         }
@@ -1503,6 +1519,10 @@ impl Session {
                 self.game_job_failed(job, message);
                 Ok(())
             }
+            ("prepare", JobResult::SilentTarget) => {
+                self.game_silent_target();
+                Ok(())
+            }
             ("prepare", JobResult::Prepared(prepared)) => {
                 self.game_prepared(*prepared);
                 Ok(())
@@ -1568,6 +1588,16 @@ impl Session {
         if measured < self.game.revision && self.game.settle_at.is_none() {
             self.game.settle_at = Some(self.game.now);
         }
+    }
+
+    /// The prepare job found the target silent: the round breaks before anything is stashed or loaded (so ending it
+    /// changes nothing, and starting another closes it unlogged: it was never played).
+    fn game_silent_target(&mut self) {
+        if let Some(record) = self.record_mut() {
+            record.phase = Phase::Broken;
+        }
+        self.game.listen = Listen::Off;
+        self.game.error = Some(GameError::SilentTarget);
     }
 
     fn game_job_failed(&mut self, job: &'static str, message: String) {

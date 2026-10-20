@@ -178,7 +178,7 @@ A fresh instance plays **Init** (lane AM, R1/S1; `src/init.rs`): the starter pat
 
 | Job | Runs |
 | --- | --- |
-| `Prepare` | `prepare_round(&spec)` (lane SS's `sound/1` renders here, 0.25–2 s); the target rendered through its phrase at the scored rate and seed (`SCORING_SAMPLE_RATE`, `SCORING_SEED`) and measured; at the host's rate when it differs (rendered again); the loop handed to the audio thread; `Prepared::from_round(&round, lufs)` posted |
+| `Prepare` | `prepare_round(&spec)` (lane SS's `sound/1` renders here, 0.25–2 s); the target rendered through its phrase at the scored rate and seed (`SCORING_SAMPLE_RATE`, `SCORING_SEED`) and measured; at the host's rate when it differs (rendered again); the loop handed to the audio thread; `Prepared::from_round(&round, lufs)` posted. A silent target (`RoundError::SilentTarget`) posts `JobResult::SilentTarget`, no loop (R1/S1 lane INT) |
 | `Score` | `score_round(&round, &patch)` with the round kept from its `Prepare` (rebuilt from the job's challenge with `prepare_challenge` if the worker lost it) |
 | `Rings` | `score_structure(&round, &patch)` |
 | `Loudness` | the phrase rendered through the player's patch at 48 kHz and measured |
@@ -246,6 +246,25 @@ Measured at PL (2026-10-20):
 
 **After lane FK2** (2026-10-20, fork patches 6–9): `cargo test -p enth-plugin` 44 passed; clap-validator 36 passed, 0 failed, 8 skipped (debug and release, the release bundle built with `CARGO_BUILD_WARNINGS=deny`); Steinberg's VST3 validator 47 passed, 0 failed (debug and release); `cli-equal --min-compared 60` 63 equal, 0 differ (debug and release); `host-render` 10 cases, hashes unchanged (debug and release); `reaper-test` exit 0 in 5 consecutive full runs, 239 checks each.
 
+## RealtimeSanitizer (lane INT, R1/S1)
+
+`cargo xtask rtsan` (`xtask/src/rtsan.rs`) runs the whole plugin's `process()` under RTSan in the test host, where the nightly workflow covers only the engine's and render's own tests. Both binaries are built with a nightly toolchain and `-Zsanitizer=realtime --cfg enth_rtsan -C link-arg=-Wl,--export-dynamic` into `target/rtsan/`: `--cfg enth_rtsan` marks `Plugin::process` (and `Engine::process`) `#[sanitize(realtime = "nonblocking")]`, and the test host links the runtime and exports it so the plugin's calls resolve. Any allocation, lock or blocking call inside `process()`, the host's callbacks included, aborts the run (exit 43) with its stack, which the command names from the binaries' symbol tables. No system package: the runtime ships in the nightly `rust-std`.
+
+| Check | What runs | Result (2026-10-20, rustc 1.101.0-nightly 8006091eb 2026-10-17) |
+| --- | --- | --- |
+| `control` | `render` with `ENTH_RTSAN_CONTROL=alloc`: the plugin allocates in `process()` on purpose (`--cfg enth_rtsan` builds only) | caught (`calloc`): the sanitizer is live |
+| `render-chord`, `render-block-1`, `render-block-4096` | Init's chord; the REAPER round-trip patch at host blocks 1 and 4096 | clean |
+| `swaps-crossfade`, `swaps-instant` | `process-stats`, a state load every 250 ms between Init and the rich patch (plan swaps, crossfades, the pump, a voice-count change) | clean |
+| `flood`, `ab`, `bursts`, `note-end` | parameter floods; a Recreate round's A/B every 250 ms (`ab-toggle`); 16 to 4,096 events in a block; note ends at five block sizes | clean |
+| `no-thread-check` | `swaps-instant` in a host without CLAP's thread-check extension | **caught (information)**: see below |
+
+The scenarios run with the test host offering CLAP's thread-check extension (`ENTH_TEST_HOST_THREAD_CHECK=1`, as REAPER and Bitwig do; off by default so the other gates keep the host they were measured with). Two findings:
+
+- **A host without thread-check gets an allocation on the audio thread** at the first voice-count change (step 7 of [the audio block](#the-audio-block)): `set_current_voice_capacity` → nice-plug's `schedule_gui` → `is_main_thread`, whose fallback is `std::thread::current()` in the plugin's own std, which allocates its thread handle and the dynamic TLS block the first time it runs on a thread. nice-plug knows (a FIXME under `permit_alloc`, which is why `assert_process_allocs` never saw it). Once per audio thread, in hosts that lack thread-check only. A fork patch for lane FK: compare a thread id cached in a `thread_local!` of the wrapper's own, or queue the task without asking from `process()`.
+- **The test host allocated in the plugin's real-time context** in `bursts`: its 64-event output buffer grew while the plugin pushed `NOTE_END`s (the host's `try_push`, a `realloc`). Fixed: 8,192 events reserved (`OUTPUT_EVENT_CAPACITY`). Real hosts preallocate.
+
+About 5 minutes to build cold and a minute to run (`--secs` per `process-stats` scenario, default 10). A local check, not in CI; the nightly workflow could run it next to its RTSan job.
+
 ## REAPER scenarios
 
 `cargo xtask reaper-test --package enth-plugin` (lane RH) runs native REAPER 7.82 headless, always inside `xvfb-run`, with Dummy Audio and a throwaway copy of the install, through the Lua scripts in `xtask/reaper/`. Each script appends `check` and `data` lines to a log; `xtask/src/reaper.rs` and its submodules (`checks.rs`, `audio.rs`, `chunk.rs`) read them and make the checks that need the saved state or the rendered audio. It never plays sound. Needs `xvfb-run`, `timeout` and `python3`; ffmpeg is not needed.
@@ -270,7 +289,7 @@ cargo xtask reaper-test --package enth-plugin --format clap --scenario state --s
 | `editor-smoke` | the editor opens, draws (at least 20 distinct colours read back with `XGetImage`), stays open and closes, five cycles | 5 | 10.5 / 10.9 s |
 | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty` 1; the fork's patch 6), and the editor open with no edit leaves it clean; a slot-bound control is measured (below) | 18 | 15.5 / 14.9 s |
 | `preset-load` | (lane PBU) a user preset (the roundtrip patch, the only file in `ENTH_PRESETS_DIR`) loaded over the state patch by clicking the editor's Browse, User and first row with real X events: the saved state holds it and the bookmark `user:roundtrip`; none of the 72 host parameters moves on the load, on one editor Undo or on one Redo, and each of those takes the whole load back or again; the project is dirty (REAPER shows it about 0.5 s after the load on both formats, so the script polls); ▶ held with the transport stopped is measured as data (it sounds: peak about 0.67). The click points are in `preset.lua` and in `REAPER_POINTS` of `crates/enth-ui/tests/browser.rs`, whose kittest test makes the same clicks | 14 | 7.6 / 7.1 s |
-| `starter-project` | (CLAP; lane INT) the project `cargo xtask starter-project` writes opens with the starter patch (Init since lane AM) on its four tracks (`bass`, `pad`, `pluck`, `lead`), byte for byte, and `extract-presets` on REAPER's save returns the four by name | 8 | 2.9 s |
+| `starter-project` | (CLAP; lane INT) the project `cargo xtask starter-project` writes opens with the starter patch (Init since lane AM) on its four tracks (`bass`, `pad`, `pluck`, `lead`), byte for byte, and `extract-presets` on REAPER's save returns the four by name, each named and typed after its track ("Bass", tag `bass`) rather than "Init" (R1/S1 lane INT) | 8 | 2.9 s |
 | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch bytes, the rendered slot and macro audio | 4, and 2 info rows (one run) | within the above |
 
 Full suite: exit 0 in three consecutive runs, 102, 105 and 123 s at a load of 8 to 15 (the old suite: about 45 s for 53 checks), 217, 217 and 218 `ok` rows, no `FAIL`; the rows have the same names in every run. The 218th is the CLAP flat lane below: it applied the lane in one run of three and the row became an `ok` instead of an `info`. After lane FK2: exit 0 in five consecutive runs at a load of 8 to 11, 239 `ok` rows each (about 2 min 50 s per run), the late `macro-automation` level 0.4078 in every run on both formats.
@@ -381,7 +400,7 @@ So the difference is not REAPER's FX windows or SWELL (the controls are flat), a
 
 ## Presets
 
-`content/presets/*.patch.json` are sounds made in the editor, each exactly the `patch` field the plugin saved ([content/presets/README.md](../content/presets/README.md)). `cargo xtask extract-presets <project.rpp>...` (lane INT, `xtask/src/preset.rs`) finds every enth instance in a REAPER project, decodes its state with the harness's chunk code and writes the `patch` field verbatim, named after the FX's own name or the track. `cargo xtask starter-project --out FILE.rpp` writes the project owner build 2 starts from: four named tracks, each holding the CLAP with Init (`content/presets/init.patch.json`, every P1 module, the extra ones switched off, gain-staged; lane AM), the patch a fresh instance plays. `tests/presets.rs` checks every preset, folders included, against the format and the tag vocabulary ([presets.md](presets.md)); `reaper-test` checks both commands against REAPER (`preset-extracted`, `starter-project`).
+`content/presets/*.patch.json` are sounds made in the editor, each the `patch` field the plugin saved, as `Patch::to_json()` ([content/presets/README.md](../content/presets/README.md)). `cargo xtask extract-presets <project.rpp>...` (lane INT, `xtask/src/preset.rs`) finds every enth instance in a REAPER project, decodes its state with the harness's chunk code and writes the `patch` field with only its metadata changed: the file and `meta.name` come from the FX's own name or the track (`bass` gives `bass.patch.json` named "Bass"), and a sound made from Init loses Init's `init` tag and description and gains the type its name spells (R1/S1 lane INT; before, every sound made from the starter project was named "Init" and collided with the factory Init). A name another preset in the folder already has is refused. `cargo xtask starter-project --out FILE.rpp` writes the project owner build 2 starts from: four named tracks, each holding the CLAP with Init (`content/presets/init.patch.json`, every P1 module, the extra ones switched off, gain-staged; lane AM), the patch a fresh instance plays. `tests/presets.rs` checks every preset, folders included, against the format and the tag vocabulary ([presets.md](presets.md)); `reaper-test` checks both commands against REAPER (`preset-extracted`, `starter-project`).
 
 ## Known pitfalls
 
@@ -399,6 +418,8 @@ So the difference is not REAPER's FX windows or SWELL (the controls are flat), a
 - **nice-plug's own input queue** grows (one allocation, permitted inside its wrapper and logged) when a host sends more than 1,024 events in a block; the plugin's list then renders in chunks. The engine drops events only past 4,096 waiting for one segment boundary.
 
 ## For the next lanes
+
+(R1/S1 lane INT, 2026-10-20: RT, ED2, RH, RUI, CL, GK and GC are merged. Still open from the notes below: `skr-v1.txt`'s five codes in GC's format, the plugin-side `host-render` case for a target, and the **Open** line.)
 
 - **RT:** build with `--features rt-stats` and read `Shared::rt_stats` or the `ENTH_RT_STATS` report for the plugin's own share of `process()`; `process-stats` times the whole call. A block with an event flood now renders in chunks (several `Engine::process` calls, each of which renders at least the segments it needs), and the ledger sweeps once per chunk: measure a flood block, not only steady state. The voice-info report is a nice-plug task queue push plus `request_callback`, made only on a voice-count change; the rescan request is no longer made from `process()`. The pump's `try_send` is unchanged.
 - **ED2:** a `TelemetryReader` per `build()`; repaints already come from the tap's wake flag.

@@ -2,8 +2,8 @@ name: release
 
 # Friend and release builds (lane FB; research report 04 of the R1/S1 session; docs/distribution.md says how to run this and
 # what to hand to friends). It runs ONLY on a version tag (`v*`) or by hand (Actions > release > Run workflow), NEVER on
-# a push to main: this repository is private, a macOS minute costs ten times a Linux one ($0.062 against $0.006), and one
-# full run is about $1 to $1.8 (the estimates are in docs/distribution.md; the first run replaces them with numbers).
+# a push to main. The repository is public since 2026-10-20, so GitHub's standard runners cost no money; a run still
+# takes about 20 to 55 runner minutes (docs/distribution.md), so friend builds stay a deliberate act.
 #
 # Three legs, each a native build on its own OS, each: clap-validator 0.4.1 on the DEBUG bundle (nice-plug's
 # assert_process_allocs aborts the validator's process() calls on any allocation), then the RELEASE CLAP + VST3
@@ -120,7 +120,7 @@ jobs:
           mkdir -p "stage/${name}"
           cp -R target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3 "stage/${name}/"
           cp docs/friends-install.md "stage/${name}/INSTALL.md"
-          cp LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          cp docs/gr1-friends.md LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
           printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
           (cd stage && zip -q -r -y -X "../${name}.zip" "${name}")
           unzip -l "${name}.zip"
@@ -253,7 +253,7 @@ jobs:
           Copy-Item 'target\bundled\enth-plugin.clap' $stage
           Copy-Item -Recurse 'target\bundled\enth-plugin.vst3' $stage
           Copy-Item 'docs\friends-install.md' (Join-Path $stage 'INSTALL.md')
-          Copy-Item 'LICENSE', 'THIRD_PARTY_NOTICES.md' $stage
+          Copy-Item 'docs\gr1-friends.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md' $stage
           "enth $($env:VERSION)`ncommit $($env:GITHUB_SHA)`n$(rustc --version)`nrunner $($env:RUNNER_OS) $($env:RUNNER_ARCH)" | Set-Content (Join-Path $stage 'BUILD.txt')
           $zip = "$name.zip"
           # Zipped from inside stage/, so the zip's one top-level folder is enth-<version>-windows-x86_64. 7-Zip is on the
@@ -375,7 +375,7 @@ jobs:
           mkdir -p "stage/${name}"
           cp -R target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3 "stage/${name}/"
           cp docs/friends-install.md "stage/${name}/INSTALL.md"
-          cp LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          cp docs/gr1-friends.md LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
           printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
           # Apple's own way to zip a bundle: ditto keeps the symlinks, permissions and the signature intact.
           ditto -c -k --keepParent "stage/${name}" "${name}.zip"

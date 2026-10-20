@@ -20,7 +20,7 @@ A factory preset's path is its folder and file name under `content/presets/` wit
 
 `meta.tags` of a factory preset come from a small vocabulary (`enth_session::presets::tags`), checked by `tags::check_factory` and by `cargo test -p enth-plugin --test presets` for every file in `content/presets/`:
 
-- **Exactly one type**: `bass`, `lead`, `pad`, `pluck`, `keys`, `arp`, `fx`, `texture`, `init`.
+- **Exactly one type**: `bass`, `lead`, `pad`, `pluck`, `keys`, `arp`, `perc` (a drum or percussion hit; R1/S1 lane INT), `fx`, `texture`, `init`.
 - **Up to four character words**: `bright`, `dark`, `warm`, `clean`, `gritty`, `hollow`, `metallic`, `noisy`, `soft`, `hard`, `smooth`, `wide`, `mono`, `evolving`, `rhythmic`, `vintage`.
 - Lower case, no spaces, no repeats; the patch needs a `meta.name`, at most 64 characters, and no two factory presets share a name (ignoring case).
 

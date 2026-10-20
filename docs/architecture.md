@@ -106,7 +106,7 @@ enth/
 │   ├── enth-wasm/          # L8  later — created when needed
 │   └── enth-py/            # L8  later — created when needed
 ├── content/
-│   ├── presets/            # *.patch.json: sounds made in the editor, each exactly the plugin's saved patch (`cargo xtask extract-presets`); the owner's G1 four first
+│   ├── presets/            # *.patch.json: Init, the owner's G1 four (`cargo xtask extract-presets`: the plugin's saved patch, named after its track) and the picked factory presets in <type>/ folders
 │   ├── templates/          # constrained patch templates for games, ML and agent starts
 │   ├── lessons/            # content packs: lesson.toml + markdown + patches; targets rendered on the fly
 │   └── agent-evals/        # goals/*.toml + prompts (agent benchmark; P1a: 10 starter text goals, R1: more goals and reference sounds)

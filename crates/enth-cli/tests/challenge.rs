@@ -135,6 +135,38 @@ fn bad_codes_are_refused_with_their_reason() {
     assert_eq!((o.code, e.error.as_str()), (3, "out_of_range"));
 }
 
+/// R1/S1 lane INT (lane GC's finding): a code whose target is silent (lane GC's `silent-l2-s23`, custom settings
+/// with `musical` 0) is refused for play, exit 3 `silent_target` with a hint, instead of scoring every silent answer
+/// 100 %.
+#[test]
+fn a_silent_target_is_refused_with_its_reason() {
+    let s = Scratch::new("silent");
+    let silent = "H000-G000-0000-0000-Q680-0000-804X-2T92-M0S";
+    let patch = s.path("init.patch.json");
+    enth_cli_write(&patch, &enth_patch::Patch::init());
+    for args in [
+        vec!["challenge", "new", "--code", silent],
+        vec!["challenge", "show", silent],
+        vec!["compare", patch.as_str(), "--code", silent],
+    ] {
+        let o = run(&args);
+        let e: ErrorOut = round_trip(&o);
+        assert_eq!(
+            (o.code, e.error.as_str()),
+            (3, "silent_target"),
+            "{args:?}: {}",
+            o.stdout
+        );
+        assert!(e.hint.contains("another seed"), "{}", e.hint);
+    }
+    // The same settings with another seed play.
+    let mut spec = *enth_challenge::ChallengeCode::decode(silent)
+        .unwrap()
+        .spec();
+    spec.seed += 1;
+    assert!(enth_challenge::prepare_round(&spec).is_ok());
+}
+
 #[test]
 fn compare_scores_a_patch_against_a_code_with_score_round() {
     let s = Scratch::new("compare");

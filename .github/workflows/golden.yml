@@ -2,8 +2,9 @@ name: golden
 
 # Golden renders (P1a lane S0; research report 04). One SHA-256 per case in tests/golden, the same on every platform:
 # Linux and Windows natively, wasm32-wasip1 under wasmtime, on every push to main and every pull request that touches
-# the engine. macOS runs on demand and weekly only: the repository is private, where a macOS minute costs about ten
-# times a Linux minute (GitHub billing: $0.062 against $0.006), so it must not run on every push.
+# the engine. macOS runs on demand and weekly only: the policy dates from the private repository, where a macOS minute
+# cost about ten times a Linux minute ($0.062 against $0.006). Since 2026-10-20 the repository is public and standard
+# runners are free, so running macOS on every push is now a question of runner time only (coordinator's call).
 # The expected hashes are the committed tests/golden/expected files. `cargo xtask golden --update` is refused under CI:
 # a golden changes on purpose, locally, and the commit message says why. A platform that differs breaks the
 # "same patch + seed = same samples" contract. The older spike-only checks stay in engine-golden.yml.

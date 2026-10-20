@@ -620,6 +620,50 @@ fn a_failed_preparation_breaks_the_round_and_ending_it_restores_the_stash() {
     assert_eq!(s.patch().to_json(), own);
 }
 
+/// R1/S1 lane INT (lane GC's finding): a silent target would score every silent answer 100 %, so `prepare_round`
+/// refuses it and the worker answers `JobResult::SilentTarget`. The round breaks before anything loads, and the
+/// editor's next deal closes it without a log line (it was never played).
+#[test]
+fn a_silent_target_breaks_the_round_unlogged_and_another_seed_replaces_it() {
+    let mut s = Session::new(custom_patch());
+    let own = s.patch().to_json();
+    s.game_tick(0, EditorView::Opened);
+    s.game_start(source()).unwrap();
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, JobResult::SilentTarget)
+        .unwrap();
+    let v = view(&s);
+    assert_eq!(v.phase, Phase::Broken);
+    assert_eq!(v.error, Some(GameError::SilentTarget));
+    assert_eq!(GameError::SilentTarget.code(), "silent_target");
+    assert!(GameError::SilentTarget.hint().contains("another round"));
+    assert_eq!(s.patch().to_json(), own, "nothing was loaded");
+    assert_eq!(s.game_submit(), Err(GameError::Broken));
+    assert_eq!(s.game_listen(Listen::Target), Err(GameError::Broken));
+    // Another seed: the silent round closes unlogged, and the new one plays.
+    s.game_start(RoundSource::Settings(spec_seed(43))).unwrap();
+    let requests = drain(&mut s);
+    assert!(logs(&requests).is_empty(), "{requests:#?}");
+    let prepare = job(&requests, "prepare");
+    s.game_job_done(prepare.id, prepared_for(spec_seed(43)))
+        .unwrap();
+    let v = view(&s);
+    assert_eq!((v.phase, v.error), (Phase::Playing, None));
+    s.game_end(EndChoice::Restore).unwrap();
+    assert_eq!(s.patch().to_json(), own);
+    // Silence answers only a prepare job.
+    play(&mut s, 10);
+    s.game_submit().unwrap();
+    let score = job(&drain(&mut s), "score");
+    assert!(matches!(
+        s.game_job_done(score.id, JobResult::SilentTarget),
+        Err(GameError::WrongResult {
+            job: "score",
+            result: "silent_target"
+        })
+    ));
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Codes and settings (lane CT's types)
 // ---------------------------------------------------------------------------------------------------------------

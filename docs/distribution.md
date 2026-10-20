@@ -28,10 +28,12 @@ Friends play the Recreate game on Windows and macOS, so they need plugin files t
    - **Tag** (starts all three legs): `git tag v0.1.0-friend1 <commit>` then `git push origin v0.1.0-friend1`. Name tags `v<version>-friend<N>`; the plugin's own crate version is still `0.0.0`, so the tag is the build's name.
    - **By hand** (choose the legs): Actions tab > **release** > **Run workflow**, pick the branch or tag, untick the legs you do not need. The same from a terminal: `gh workflow run release.yml --ref main -f macos=false`. A run by hand on a branch is named `dev-<7-digit commit>`.
 3. **Wait** for the run (estimates below). Each job's summary lists its zip's size and SHA-256.
-4. **Download** the zips from the run's page, under **Artifacts** (`gh run download <run-id>` works too, untried). They are named `enth-<version>-linux-x86_64.zip`, `enth-<version>-windows-x86_64.zip` and `enth-<version>-macos-universal.zip`, each uploaded as the zip itself, so a download is the zip and not a zip of a zip. **They expire after 14 days** (Actions artefacts; a release asset would not expire, see [Delivery](#delivery-from-a-private-repository)).
+4. **Download** the zips from the run's page, under **Artifacts** (`gh run download <run-id>` works too, untried). They are named `enth-<version>-linux-x86_64.zip`, `enth-<version>-windows-x86_64.zip` and `enth-<version>-macos-universal.zip`, each uploaded as the zip itself, so a download is the zip and not a zip of a zip. **They expire after 14 days** (Actions artefacts; a release asset would not expire, see [Delivery](#delivery)).
 5. **Forward** the zip for each friend's OS together with [friends-install.md](friends-install.md) (the zip carries a copy as `INSTALL.md`).
 
-Each zip holds a folder `enth-<version>-<os>/` with `enth-plugin.clap`, `enth-plugin.vst3`, `INSTALL.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `BUILD.txt` (version, commit, compiler, runner). Bug reports quote the first two lines of `BUILD.txt`.
+Each zip holds a folder `enth-<version>-<os>/` with `enth-plugin.clap`, `enth-plugin.vst3`, `INSTALL.md`, `gr1-friends.md` (how to play the 20 rounds and send the log; added by R1/S1 lane INT, so `INSTALL.md`'s link to it works inside the zip), `LICENSE`, `THIRD_PARTY_NOTICES.md` and `BUILD.txt` (version, commit, compiler, runner). Bug reports quote the first two lines of `BUILD.txt`.
+
+**The Linux leg, rehearsed locally** (R1/S1 lane INT, 2026-10-20, at `192749c`): the release bundle, clap-validator 0.4.1 on the debug and release bundles (36 passed, 0 failed, 8 skipped each), Steinberg's VST3 validator (47 of 47, both), then the leg's packaging commands by hand: an 11 MB zip (each plugin file 16 MB unpacked; FB measured 7.8 MB before the Recreate round) with the folder and the seven entries above. The unzipped `.clap` loads and plays in the test host and links only `libc`, `libm` and `libgcc_s`, but **needs glibc 2.39** (Ubuntu 24.04, Debian 13, Fedora 40 or newer): a friend on Ubuntu 22.04 cannot load it. Building that leg on `ubuntu-22.04` would lower it to 2.35; not done, since no friend is known to need it.
 
 ### What each leg does
 
@@ -62,7 +64,7 @@ Written without a Windows or macOS machine, so these are the steps most likely t
 
 ## Cost per run
 
-Estimates, not measurements. They come from the repository's own job times (the Linux plugin-validation job took 2 minutes warm and 8 to 9 minutes cold when it built two spike plugins; its Windows twins run 1.3 to 1.7 times longer) and from list prices per minute: Linux $0.006, Windows $0.010, macOS $0.062 (GitHub, 2026-01-01 prices). Every job rounds up to a whole minute. Private-repository runners have 2 vCPUs (Linux, Windows) or 3 (macOS).
+**Since 2026-10-20 the repository is public, so GitHub's standard runners cost no money** ([Delivery](#delivery)); the dollar figures below were for the private repository and stay as a measure of runner time (a run still takes 20 to 55 runner minutes, and a macOS job is the slowest). Estimates, not measurements. They come from the repository's own job times (the Linux plugin-validation job took 2 minutes warm and 8 to 9 minutes cold when it built two spike plugins; its Windows twins run 1.3 to 1.7 times longer) and from list prices per minute: Linux $0.006, Windows $0.010, macOS $0.062 (GitHub, 2026-01-01 prices). Every job rounds up to a whole minute. Private-repository runners have 2 vCPUs (Linux, Windows) or 3 (macOS).
 
 | Leg | Builds | Cold (no cache) | Warm (cache restored) |
 | --- | --- | --- | --- |
@@ -105,7 +107,7 @@ On Windows the CLAP file is `enth-plugin.clap` (a DLL) and the VST3 is the folde
 
 | Option | Cost | Notes |
 | --- | --- | --- |
-| **The owner downloads the zips and forwards them** (chat, a cloud link) | none | Works for anyone. A zip is about 8 to 15 MB. Forward [friends-install.md](friends-install.md) with it |
+| **The owner downloads the zips and forwards them** (chat, a cloud link) | none | Works for anyone. A zip is about 11 MB (Linux, measured) to perhaps 25 MB (the universal macOS bundle). It carries `INSTALL.md` and `gr1-friends.md` |
 | **Friends with a GitHub account download the artefacts themselves** | none | From the `release.yml` run's page; artefacts expire after 14 days |
 | **A release with the zips as assets** | needs `contents: write` in `release.yml` (it is read-only now) | Downloadable without a login, and assets do not expire. Not built; the next step if forwarding gets tedious. It would also be the place for debug symbols (PDB, dSYM) |
 
@@ -172,5 +174,6 @@ The YAML is valid (GitHub parsed it: the workflow is listed as `nightly`, active
 | The standalone app: yes or no | owner |
 | A dependency-notices file for public builds; Developer ID and Windows signing | S1 |
 | The x86-64 slice of the macOS bundle, Windows on ARM, and macOS older than 11: not built or not tested | friends / later |
+| The Linux build needs glibc 2.39 (Ubuntu 24.04 or newer); an `ubuntu-22.04` runner would give 2.35 | when a Linux friend needs it |
 | Debug symbols (PDB, dSYM) kept per release | with the draft-release follow-up |
 | A crash file the editor offers on next load (report 04 §2.10) | a plugin lane |

@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 # Exact pins live in the root Cargo.toml: clack is pre-1.0 and changes its API between minor versions (0.2.0 is the current release, 2026-09-12).
 clack-host.workspace = true
-clack-extensions = { workspace = true, features = ["clack-host", "audio-ports", "note-ports", "params", "gui", "state", "log"] }
+clack-extensions = { workspace = true, features = ["clack-host", "audio-ports", "note-ports", "params", "gui", "state", "log", "thread-check"] }
 serde_json.workspace = true
 sha2.workspace = true      # pure-Rust SHA-256, the same crate and version as spike-engine
 # Pure-Rust X11 client (no libxcb): the host-side parent window for embedded editors. baseview pulls the same version in.

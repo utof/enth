@@ -133,6 +133,14 @@ pub fn decode(text: &str) -> Result<ChallengeCode, CliError> {
 
 /// A round that could not be regenerated: exit 3 for a spec this build refuses, 4 when a scorer could not render.
 pub fn from_round(e: &RoundError) -> CliError {
+    if matches!(e, RoundError::SilentTarget) {
+        // R1/S1 lane INT: any silent answer would score 100 %, so the round is refused (exit 3).
+        return error::invalid(
+            e.code(),
+            format!("the challenge cannot be played: {e}, so there is nothing to recreate"),
+            e.hint(),
+        );
+    }
     let message = format!("the challenge's target cannot be regenerated: {e}");
     match e.code() {
         "render_failed" | "analysis_failed" => error::failed(e.code(), message, e.hint()),

@@ -61,7 +61,7 @@ The last row of G1: **"you can make a bass, pad, pluck and lead you like"** thro
 2. Make each sound in the editor until you like it. The editor has Undo and Redo in its header, right-click → *Type value…* (units like `1.2kHz`, `A4`, `-12 st`), drag-to-modulate from the source tiles, the eight macros, and the status line, which names what you hover.
 3. Save the project often (Ctrl+S).
 4. For each sound, note: do you like it (yes or no), one line on what it is, and what got in your way (missing modules or controls, confusing layout). The last part feeds the layout pick and S1.
-5. Give an agent the project's path. It runs `cargo xtask extract-presets ~/enth-g1/g1-sounds.rpp`, which writes `content/presets/{bass,pad,pluck,lead}.patch.json` exactly as the plugin saved them (named after the tracks), checks them and commits them ([content/presets/README.md](../content/presets/README.md)).
+5. Give an agent the project's path. It runs `cargo xtask extract-presets ~/enth-g1/g1-sounds.rpp`, which writes `content/presets/{bass,pad,pluck,lead}.patch.json` as the plugin saved them, each named and tagged after its track ("Bass", tag `bass`; not "Init"), checks them and commits them ([content/presets/README.md](../content/presets/README.md)).
 
 G1's row passes when you like all four. If one is not there yet, say what is missing: that is a finding, not a failure of yours.
 

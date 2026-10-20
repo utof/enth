@@ -42,14 +42,20 @@ struct App {
     jobs: Vec<Job>,
     results: Vec<(enth_session::game::JobId, JobResult)>,
     seed: u64,
+    /// Seeds the shell draws before falling back to `seed` (R1/S1 lane INT: a silent deal, then another).
+    seeds: std::collections::VecDeque<u64>,
+    /// Seeds whose target the worker answers as silent, standing in for `prepare_round`'s `silent_target` (the
+    /// level presets are never silent; enth-challenge and the plugin's worker test the real refusal).
+    silent: Vec<u64>,
     log: Vec<RoundLogEntry>,
     /// The shell plays rounds (calls `set_round` every frame), as the plugin does.
     plays: bool,
 }
 
 /// The worker's part, synchronously: the same functions the plugin's worker calls.
-fn run(job: &Job) -> JobResult {
+fn run(job: &Job, silent: &[u64]) -> JobResult {
     match &job.kind {
+        JobKind::Prepare { spec } if silent.contains(&spec.seed) => JobResult::SilentTarget,
         JobKind::Prepare { spec } => {
             let round = prepare_round(spec).unwrap();
             JobResult::Prepared(Box::new(Prepared::from_round(&round, None)))
@@ -84,6 +90,8 @@ fn app(patch: Patch, plays: bool) -> App {
         jobs: Vec::new(),
         results: Vec::new(),
         seed: 42,
+        seeds: std::collections::VecDeque::new(),
+        silent: Vec::new(),
         log: Vec::new(),
         plays,
     }
@@ -132,8 +140,11 @@ fn harness_with(app: App, render: bool) -> Harness<'static, App> {
             }
             app.editor
                 .frame(&mut root, &app.theme, &mut app.session, down);
-            let seed = app.seed;
-            app.editor.apply_game(&mut app.session, &mut || seed);
+            let fallback = app.seed;
+            let seeds = &mut app.seeds;
+            app.editor.apply_game(&mut app.session, &mut || {
+                seeds.pop_front().unwrap_or(fallback)
+            });
             app.session.drain_requests().for_each(drop);
             for request in app.session.drain_game_requests() {
                 match request {
@@ -144,7 +155,7 @@ fn harness_with(app: App, render: bool) -> Harness<'static, App> {
             }
             // The worker, between frames.
             for job in std::mem::take(&mut app.jobs) {
-                let result = run(&job);
+                let result = run(&job, &app.silent);
                 app.results.push((job.id, result));
             }
         },
@@ -1004,4 +1015,28 @@ fn reaper_points_hit_their_controls() {
     h.run_steps(2);
     click(&mut h, "End");
     hits(&h, "End and restore my patch", RESTORE);
+}
+
+/// R1/S1 lane INT (lane GC's finding): a silent target is refused, and the editor deals the same level again with a
+/// fresh seed; the silent round was never played, so the round log stays empty.
+#[test]
+fn a_silent_target_is_dealt_again_with_a_fresh_seed() {
+    let mut a = app(common::patches::p1_default(), true);
+    a.seeds = [7, 8].into();
+    a.silent = vec![7];
+    let mut h = harness_with(a, false);
+    h.run_steps(2);
+    click(&mut h, "Recreate");
+    click(&mut h, "Level 2");
+    click(&mut h, "Start");
+    h.run_steps(4);
+    assert_eq!(phase(&h), Some(Phase::Playing), "dealt again and prepared");
+    let dealt = SpecPreset::by_id(2).unwrap().spec(LATEST_GENERATOR, 8);
+    assert_eq!(
+        round(&h).unwrap().code,
+        ChallengeCode::short(dealt).unwrap().to_string(),
+        "the second seed's round"
+    );
+    assert!(h.state().log.is_empty(), "{:?}", h.state().log);
+    assert!(h.state().seeds.is_empty());
 }
