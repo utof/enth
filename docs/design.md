@@ -282,32 +282,74 @@ Budget: everything runs locally; a "create from sound" result must arrive in **u
 
 The Recreate game's targets come from a randomizer the player controls on a settings page. All features stay available at every level — difficulty changes what the *challenge* randomizes; it never locks parts of the synth.
 
+2026-10-20 (R1 + S1 research, `_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/`: reports 01 and 05 and the summary): the generator below replaces the first draft's float `RandomSpec`, and adds keyed streams, an observability mask, a minimum step decided on values, reachable quantization and versioned codes. A 250-line prototype measured the rules (report 01). Lanes CT, RG and SKR build it ([phase-2.md](phase-2.md)).
+
 ```rust
 pub struct RandomSpec {
+    pub generator: u16,               // frozen generator version (priors and rules); any change is a new version
     pub seed: u64,
-    pub difficulty: f32,                       // 0..=1, one knob for quick use
-    pub amounts: BTreeMap<Category, f32>,      // 0..=1 per category; overrides the knob when set
-    pub musical: f32,                          // 0 = anything goes, 1 = safe, musical results only
-    pub template: Option<TemplateId>,          // structure to start from (or random structure at high difficulty)
+    pub difficulty: u8,               // 0..=100 %: picks one of five levels; the auto staircase moves it
+    pub amounts: [Option<u8>; 6],     // % per Category; overrides the level when set
+    pub musical: u8,                  // %: 100 = priors only, 0 = uniform
+    pub template: u8,                 // archetype: start patch and prior set (pluck, pad, bass, lead, keys)
 }
 pub enum Category { Oscillators, Filter, Envelopes, Modulation, Effects, Structure }
 ```
 
-| Difficulty | What gets randomized |
-| --- | --- |
-| Lowest | Oscillator waveform, tuning, level — 1–2 knobs |
-| Low | + filter type, cutoff, resonance |
-| Medium | + amp and filter envelopes |
-| High | + LFOs and modulation routes |
-| Highest | + effects and structure (which modules exist) |
+**Integers only.** A float that goes through text and back can flip a draw, so only integer fields let a code, a JSON file and the settings page give the same target. Lane CT freezes the exact fields at F1r.
+
+| Level | What gets randomized | Observable parameters |
+| --- | --- | --- |
+| 1 (lowest) | Oscillator 1's waveform and octave | 1–2 |
+| 2 | + filter mode, cutoff, resonance | 3–5 |
+| 3 | + amp and filter envelopes, the filter envelope's depth | 6–10 |
+| 4 | + 1–2 LFO routes and their rates | 9–14 |
+| 5 (highest) | + osc 2, noise and effects with their settings, more routes, and structure (which modules are on) | 12–20 |
+
+- One more category per level, Basic-tier parameters first in each (`ParamSpec.learn.tier`); `amounts` set how many parameters a category draws and how wide. The first draft's lowest level also randomized the oscillator's level, but a lone source's level is a gauge (below).
+- **Calibrated by pass rates, not by distance.** The median distance from the start stops growing after the filter level (0.36, 0.89, 1.00, 0.99 and 1.06 for levels 1–5 in the prototype), so a level is defined by what it randomizes, and calibrated by the solver's evaluations to pass, the agent's solve rate and GR1's pass rates. The levels are labelled beta for GR1.
+- An optional **auto difficulty** is a staircase: two passes up, one fail down (it converges on about 71 % passes; Levitt 1971).
+- Level 1 is a tutorial level of about 12 distinct sounds (4 waves × 3 octaves), so a session keeps a seed history.
 
 **Target generation works in parameter space only.** A seed must give the same target on every machine, and a render-dependent accept/reject step (is it audible, does it differ from the start) can flip on a one-bit difference. The generator also uses the pinned maths of §5: in the engine spike, `std` maths instead of `libm` turned 13 of 1,000 seeds into a different patch on glibc (and changed every render). So every rule below is a test on parameter values, never on a render. If a render-based check is ever added, the challenge code carries the accepted attempt index, so every machine regenerates the same target without repeating the check.
 
+**Keyed streams, never a sequence** (2026-10-20). Every value is drawn from its own stream, `derive(derive(seed, fnv1a64(address)), attempt)`, with the pinned `const` `derive` and `fnv1a64` of `enth-dsp`'s `rng` and all maths through the pinned `libm`. Adding a parameter, a module or a category never moves the other draws: a higher difficulty keeps the lower categories' values, and a new catalogue entry never silently changes every shared code. It is §5's voice-seed rule applied to the generator. Measured in the prototype: oscillator values identical at two difficulties for 1,000 of 1,000 seeds; 3 × 1,000 target hashes identical on native x86-64 and `wasm32-wasip1` (`libm`'s `pow`, `log10` and `round` included); 328 µs per target, mostly parsing the starter JSON.
+
+**Never randomize what the phrase can't reveal** (2026-10-20). `observable(&Patch, &Performance) -> Mask` is pure and works in parameter space; the same mask feeds structure % and the score rings on the editor's overlay ([ADR-0007](adr/0007-metric-v1.md)). It leaves out:
+
+- **gauges**, which never vary alone: the only source's level, `master.level`, `comp.makeup` (levels vary only as ratios between sources, wet only against dry);
+- **dead parameters**: `pw` unless the wave is pulse, `position` unless it is a table, `sync` on the first oscillator, anything in a disabled module, the depths of absent routes; keytrack without two notes an octave apart, velocity amounts without two velocities, glide without overlapping mono or legato notes, an attack longer than the hold, a release longer than the tail;
+- **nuisances**: phase mode, phase, seed;
+- **degenerate pairs** (keytrack and cutoff with one note): at most one of them is randomized.
+
+Measured with metric v1: `osc1.level` 100 → 50 %, `master.level` −6 dB and a 300 ms glide on one note each give a distance of 0.0000, and keytrack at 100 % on C3 equals a cutoff move from 2 to 1 kHz (0.4487 both).
+
+**A minimum audible step from the start, decided on values** (2026-10-20). Each parameter has a hand-written just-noticeable step (cutoff 2 semitones, times × 1.5, levels 3 dB; a wave change always counts). The target must exceed it on k parameters, with k set by the level; where it doesn't, the failing keys' `attempt` goes up by one and they redraw, so every machine recomputes the same attempt. Without it, 55 of 200 lowest-level targets were effectively the start.
+
 **Musical / safe** means the generator only accepts targets that:
 
-- sample parameter values from per-parameter priors, not uniform noise: hand-written ranges, log scales and forbidden combinations at first, fitted to enth's own presets once they exist;
-- stay audible and unclipped by construction (level and gain ranges), with scoring loudness-normalised;
-- differ from the starting patch by a minimum step in the editable parameters, and are reachable within the challenge's constraints;
-- avoid extreme ranges (ear-piercing resonance, sub-audible pitch) unless `musical` is low.
+- sample parameter values from per-parameter priors, not uniform noise. 2026-10-20: the priors are hand-written and relative to the phrase's note (an LP cutoff at least 1.5 × f0; resonance and drive skewed low; semitones on intervals; envelopes as a pluck/pad mixture; wave weights favouring saw and pulse), versioned as code (`priors::v1`), and fitted to enth's own presets later as a new generator version. `musical` blends towards uniform: below 100 a value comes from the prior with probability `musical`, otherwise uniformly. The same knob is R3's dataset knob. Measured over 200 targets per level: musical targets were silent 0–1 times against 5–8 for uniform ones, and quieter than −40 LUFS 0–12 times against 43–60;
+- stay audible and unclipped by construction (level and gain ranges), with scoring loudness-normalised. 11–15 % of musical targets peaked above 0 dBFS in float, so playback is loudness-matched, and the generator may set `master.level` for headroom (a gauge, so outside structure);
+- differ from the starting patch by the minimum step above, and are **reachable**: quantized to values a player can hit (3 significant digits, route depths in 5 % steps; "unreachable value" is one of the three complaints on Syntorial's help page), within the challenge's constraints;
+- avoid extreme ranges (ear-piercing resonance, sub-audible pitch) unless `musical` is low: the safety bounds (a resonance cap, audible pitch, cutoff relative to f0, total level) stay on above 20.
+
+**Structure over the starter superset** (2026-10-20; owner, default yes). At the highest level R1 randomizes enable flags and routes over the starter superset patch (`xtask/src/preset/starter.patch.json`: every P1 module, with osc 2, the noise, the compressor and the reverb off, and env 2 and both LFOs unrouted). Today's editor reaches such a target by enabling modules and dragging routes, and `canonical_hash` already drops disabled modules and depth-0 routes. Adding and removing modules comes with S1 (lane AM).
+
+**Phrases** (2026-10-20). The challenge's performance is a phrase id from a versioned table in `enth-challenge`: one held note for levels 1–3, two notes an octave apart at two velocities when keytrack or velocity is in play, a legato pair for mono or glide. The generator picks the phrase, so observability is checked before the round starts.
+
+**Codes and generator versions** (2026-10-20).
+
+- A challenge code is a versioned binary in Crockford base32 with a check symbol (no I, L, O or U; hyphens are ignored): about 13 characters for a preset spec, about 32 for custom settings.
+- It carries the generator and engine versions and a prefix of the target's canonical hash. Decoding regenerates the target and compares the prefix: a mismatch is refused with a hint, never scored against a different target (Factorio's lesson: checksum the state, and find the first divergence). Open for CT at F1r: the bit budget, since a 32-bit prefix and an engine version do not fit in 13 characters, and whether an engine-version mismatch refuses or only warns ([phase-2.md](phase-2.md#open-checks)).
+- The target patch is never persisted: a round stores the code and regenerates the target.
+- Old generator versions stay frozen. Each emits a patch in its own schema version, which then goes through `enth_patch::migrate`, so catalogue changes keep old codes valid; each has a 1,000-entry spec → target-hash golden on Linux, Windows and wasm (macOS weekly). Any change to priors or rules is a new version.
 
 The same `RandomSpec` drives solo Recreate rounds, agent evals, ML dataset sampling and duel codes.
+
+### The round: A/B and feedback (2026-10-20)
+
+- **Target ▶** plays a pre-rendered, loudness-matched loop of the scored phrase, which is exactly the audio the scorer hears. **Mine ▶** plays the same phrase live through the player's engine, locked to the loop's position, so an edit is heard at once (the keyboard plays Mine). A/B flips at the same position with a short crossfade, and the louder side is attenuated, never the quieter one boosted (that can clip). The level match and the scorer share one gain function.
+- **No second engine.** One engine runs, plus a buffer read: two engines would double the real-time cost against about 2.5× headroom, need a second plan pipeline, and play a target that is not the scored one. No engine work is needed. Reports 01 and 02 agree on Target; 01's live Mine was chosen over 02's second pre-rendered loop, so the player hears edits at once.
+- **Score on submit.** No live score by default. Submit shows sound, structure and combined % with their components (§6, [ADR-0007](adr/0007-metric-v1.md)), the time, and Good/Near/Bad rings on the randomized knobs through the editor's `Overlay`; the rings then update live while the player keeps tweaking, and the first submit stays the recorded score. Hints and Reveal mark the round as assisted. GR1 tries a live meter as an assist and decides.
+- **Time** is the first passing submit, from timestamps the shell supplies (core crates read no clocks); it pauses while the editor is closed.
+- **Disputes.** A three-way vote ("felt too low", "about right", "too high") and a Disagree button write the code, the player's patch and the score report to a local round log. Nothing leaves the machine unless the player sends the file.
