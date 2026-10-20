@@ -6,7 +6,9 @@
 //!   crossfade; `Engine::swap` with `take_state_from`);
 //! - `crossfade_swap`: the block in which a crossfading swap lands (an unrouted voice LFO added): both plans run from
 //!   that segment on, and the surviving modules' state, the reverb's 1.6 MB of delay lines among it, is copied;
-//! - `crossfade`: the next three blocks, wholly inside the 256-frame crossfade (both plans run).
+//! - `crossfade`: the next three blocks, wholly inside the 256-frame crossfade (both plans run);
+//! - `note_ons`: a block that starts 16 new notes, each stealing a voice of the held chord (no swap): the third spiky
+//!   block research report 03 named.
 //!
 //! The setup renders 0.5 s first, so the voices, the envelopes and the reverb are in their steady state, and sends the
 //! plan from the bench's own thread (the session compiles and sends on the main thread; neither is measured). The
@@ -48,12 +50,13 @@ fn budget(ir: u64) -> LibraryBenchmarkConfig {
         .clone()
 }
 
-/// An engine mid-chord, its link and one block's buffers.
+/// An engine mid-chord, its link, one block's buffers and the events of the next measured block.
 pub struct Playing {
     engine: Engine,
     link: Link,
     left: Vec<f32>,
     right: Vec<f32>,
+    events: Vec<Event>,
 }
 
 impl Playing {
@@ -61,23 +64,35 @@ impl Playing {
         self.engine
             .process(black_box(&mut self.left), black_box(&mut self.right), &[]);
     }
+
+    fn block_with_events(&mut self) {
+        self.engine.process(
+            black_box(&mut self.left),
+            black_box(&mut self.right),
+            black_box(&self.events),
+        );
+    }
+}
+
+/// 16 note-ons at frame 0 (the bench helpers' chord shape), note ids from `first_id`.
+fn chord(base_key: u8, first_id: i32) -> Vec<Event> {
+    (0..16u8)
+        .map(|i| Event {
+            offset: 0,
+            kind: EventKind::NoteOn {
+                key: NoteKey::new(base_key + (i * 5) % 60, first_id + i32::from(i)),
+                velocity: 0.8,
+            },
+        })
+        .collect()
 }
 
 /// G1 playing a held 16-note chord (the bench helpers' chord), warmed up for [`WARM_FRAMES`].
 fn playing() -> Playing {
     let (plan, _) = compile(&g1_patch(), &PrepareCfg::new(SR)).expect("G1 compiles");
     let (mut engine, link) = Engine::with_link(plan, 0x0E17_5EED, LinkCapacity::default());
-    let chord: Vec<Event> = (0..16u8)
-        .map(|i| Event {
-            offset: 0,
-            kind: EventKind::NoteOn {
-                key: NoteKey::new(36 + (i * 5) % 60, i32::from(i)),
-                velocity: 0.8,
-            },
-        })
-        .collect();
     let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
-    engine.process(&mut left, &mut right, &chord);
+    engine.process(&mut left, &mut right, &chord(36, 0));
     for _ in 1..WARM_FRAMES / BLOCK {
         engine.process(&mut left, &mut right, &[]);
     }
@@ -86,6 +101,7 @@ fn playing() -> Playing {
         link,
         left,
         right,
+        events: Vec::new(),
     }
 }
 
@@ -127,6 +143,13 @@ fn crossfade_swap_setup(_: ()) -> Playing {
     sent(&module_added())
 }
 
+/// Playing, with a second 16-note chord (a semitone up, new note ids) queued for the next block.
+fn note_ons_setup(_: ()) -> Playing {
+    let mut p = playing();
+    p.events = chord(37, 100);
+    p
+}
+
 /// The crossfading swap has landed (its block rendered in the setup).
 fn crossfading_setup(_: ()) -> Playing {
     let mut p = sent(&module_added());
@@ -137,17 +160,25 @@ fn crossfading_setup(_: ()) -> Playing {
 
 // Budgets: measured on x86_64 Linux (Intel i7-9750H, valgrind/callgrind via gungraun 0.20.0) with the pinned toolchain
 // on 2026-10-20 (lane RT, main aa0fec0), plus 10 %, rounded up to 1,000:
-// - normal: 407,853 (6,373 per frame);
-// - instant: 444,905 (+9 % on a normal block: `carry_from` pairs the modules, the reverb's core is exchanged);
-// - crossfade_swap: 2,489,249 (6.1×: both plans run two segments and the surviving state is copied; callgrind counts
+// - normal: 407,869 (6,373 per frame);
+// - instant: 444,921 (+9 % on a normal block: `carry_from` pairs the modules, the reverb's core is exchanged);
+// - crossfade_swap: 2,489,265 (6.1×: both plans run two segments and the surviving state is copied; callgrind counts
 //   the copy's memory traffic, 6.0 M L1 hits against 0.55 M);
-// - crossfade: 2,407,206 for three blocks, 802,402 each (2.0×: both plans run).
+// - crossfade: 2,407,222 for three blocks, 802,407 each (2.0×: both plans run);
+// - note_ons: 647,848 (1.6×: 16 voices stolen and started).
 #[library_benchmark]
 #[bench::normal(args = ((),), setup = normal_setup, config = budget(NORMAL_IR))]
 #[bench::instant(args = ((),), setup = instant_setup, config = budget(INSTANT_IR))]
 #[bench::crossfade_swap(args = ((),), setup = crossfade_swap_setup, config = budget(CROSSFADE_SWAP_IR))]
 fn one_block(mut p: Playing) -> Playing {
     p.block();
+    p
+}
+
+#[library_benchmark]
+#[bench::note_ons(args = ((),), setup = note_ons_setup, config = budget(NOTE_ONS_IR))]
+fn events_block(mut p: Playing) -> Playing {
+    p.block_with_events();
     p
 }
 
@@ -164,6 +195,10 @@ const NORMAL_IR: u64 = 449_000;
 const INSTANT_IR: u64 = 490_000;
 const CROSSFADE_SWAP_IR: u64 = 2_739_000;
 const CROSSFADE_IR: u64 = 2_648_000;
+const NOTE_ONS_IR: u64 = 713_000;
 
-library_benchmark_group!(name = swap, benchmarks = [one_block, crossfade_blocks]);
+library_benchmark_group!(
+    name = swap,
+    benchmarks = [one_block, events_block, crossfade_blocks]
+);
 main!(library_benchmark_groups = swap);
