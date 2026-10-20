@@ -1,0 +1,48 @@
+{
+  "schema": "enth.challenge/1",
+  "target": {
+    "kind": "seed",
+    "spec": {
+      "generator": 1,
+      "seed": 18446744073709551615,
+      "difficulty": 40,
+      "amounts": [
+        null,
+        100,
+        null,
+        null,
+        0,
+        null
+      ],
+      "musical": 70,
+      "template": 3
+    }
+  },
+  "answer": "patch",
+  "phrase": 3,
+  "start": {
+    "kind": "template",
+    "template": 3
+  },
+  "constraints": {},
+  "assists": {
+    "live_meter": true,
+    "dim_unused": true,
+    "hint_budget": 2
+  },
+  "scoring": {
+    "sound": "sound/1",
+    "structure": "structure/1",
+    "combined": "combined/1",
+    "time": "time/1",
+    "sound_weight": 62,
+    "pass_mark": 90
+  },
+  "meta": {
+    "title": "Custom, with assists",
+    "tags": [
+      "fixture",
+      "r1"
+    ]
+  }
+}

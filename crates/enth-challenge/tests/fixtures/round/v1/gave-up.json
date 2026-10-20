@@ -1,0 +1,15 @@
+{
+  "schema": "enth.round-result/1",
+  "code": "H000-ZZZZ-ZZZZ-ZZZZ-ZA4C-0R00-80DX-BDYX-X5J0-0E",
+  "outcome": "gave_up",
+  "first_submit": null,
+  "submits": 0,
+  "time_to_pass_ms": null,
+  "active_ms": 300000,
+  "assists": {
+    "hints": 0,
+    "live_meter": true,
+    "revealed": true
+  },
+  "agreement": null
+}

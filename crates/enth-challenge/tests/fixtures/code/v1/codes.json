@@ -1,0 +1,222 @@
+[
+  {
+    "name": "level1-seed0",
+    "spec": {
+      "generator": 1,
+      "seed": 0,
+      "difficulty": 0,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "0.2.0",
+    "target": "00000000",
+    "short": "1040-1000-0000-0=",
+    "long": "H000-G000-0000-0000-0068-0000-8000-0000-009"
+  },
+  {
+    "name": "level2-seed42",
+    "spec": {
+      "generator": 1,
+      "seed": 42,
+      "difficulty": 25,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "255.255.255",
+    "target": "0123abcd",
+    "short": "1080-1000-0001-AC",
+    "long": "H000-G000-0000-0001-A6E8-07ZZ-ZZG2-8XBS-M0N"
+  },
+  {
+    "name": "level3-seed-max-short",
+    "spec": {
+      "generator": 1,
+      "seed": 1099511627775,
+      "difficulty": 50,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "0.2.0",
+    "target": "ffffffff",
+    "short": "10C0-1ZZZ-ZZZZ-ZZ",
+    "long": "H000-G000-0ZZZ-ZZZZ-ZCP8-0000-80FZ-ZZZZ-W0N"
+  },
+  {
+    "name": "level4-seed-2^40",
+    "spec": {
+      "generator": 1,
+      "seed": 1099511627776,
+      "difficulty": 75,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "255.255.255",
+    "target": "00000000",
+    "short": null,
+    "long": "H000-G000-1000-0000-0JY8-07ZZ-ZZG0-0000-00T"
+  },
+  {
+    "name": "level4-seed-short",
+    "spec": {
+      "generator": 1,
+      "seed": 737894400291,
+      "difficulty": 75,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "0.2.0",
+    "target": "0123abcd",
+    "short": "10G0-1NF6-YY09-3G",
+    "long": "H000-G000-0NF6-YY09-3JY8-0000-8002-8XBS-M05"
+  },
+  {
+    "name": "level5-seed-max",
+    "spec": {
+      "generator": 1,
+      "seed": 18446744073709551615,
+      "difficulty": 100,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "255.255.255",
+    "target": "ffffffff",
+    "short": null,
+    "long": "H000-ZZZZ-ZZZZ-ZZZZ-ZS68-07ZZ-ZZZZ-ZZZZ-W0S"
+  },
+  {
+    "name": "level5-seed7",
+    "spec": {
+      "generator": 1,
+      "seed": 7,
+      "difficulty": 100,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    },
+    "engine": "0.2.0",
+    "target": "00000000",
+    "short": "10M0-1000-0000-74",
+    "long": "H000-G000-0000-0000-7S68-0000-8000-0000-002"
+  },
+  {
+    "name": "custom",
+    "spec": {
+      "generator": 1,
+      "seed": 18446744073709551615,
+      "difficulty": 40,
+      "amounts": [
+        null,
+        100,
+        null,
+        null,
+        0,
+        null
+      ],
+      "musical": 70,
+      "template": 3
+    },
+    "engine": "255.255.255",
+    "target": "0123abcd",
+    "short": null,
+    "long": "H000-ZZZZ-ZZZZ-ZZZZ-ZA4C-0ZZZ-ZZG2-8XBS-N5J0-0X"
+  },
+  {
+    "name": "every-amount",
+    "spec": {
+      "generator": 1,
+      "seed": 18446744073709551615,
+      "difficulty": 40,
+      "amounts": [
+        0,
+        1,
+        50,
+        99,
+        100,
+        7
+      ],
+      "musical": 70,
+      "template": 255
+    },
+    "engine": "0.2.0",
+    "target": "ffffffff",
+    "short": null,
+    "long": "H000-ZZZZ-ZZZZ-ZZZZ-ZA4D-ZR00-80FZ-ZZZZ-ZY00-5JRY-83GT"
+  },
+  {
+    "name": "musical-0",
+    "spec": {
+      "generator": 1,
+      "seed": 0,
+      "difficulty": 0,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 0,
+      "template": 0
+    },
+    "engine": "255.255.255",
+    "target": "00000000",
+    "short": null,
+    "long": "H000-G000-0000-0000-0000-07ZZ-ZZG0-0000-005"
+  }
+]
