@@ -97,6 +97,9 @@ pub struct CardView {
     /// Where a module sits in its section, for the card's "…" menu (lane AM); `None` for the built-ins, which have
     /// no menu.
     pub place: Option<Place>,
+    /// A score ring on the module's enable toggle (a Recreate round's enable-flag row, lane RUI; from the editor's
+    /// [`Overlay`](crate::editor::overlay::Overlay)). None outside a round.
+    pub enable_score: Option<Score>,
 }
 
 impl CardView {
@@ -125,6 +128,7 @@ impl CardView {
             visible: VISIBLE_TIER,
             more_open: false,
             place: Place::of(patch, &module.id),
+            enable_score: None,
         }
     }
 
@@ -162,6 +166,7 @@ impl CardView {
             visible: VISIBLE_TIER,
             more_open: false,
             place: None,
+            enable_score: None,
         }
     }
 

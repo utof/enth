@@ -110,6 +110,18 @@ impl<'a> Card<'a> {
             );
             out.extend(display_out);
             out.extend(params_out);
+            // A Recreate round's ring on the enable toggle (lane RUI): the toggle sits at the header row's left end.
+            if let Some(score) = view.enable_score
+                && view.enabled.is_some()
+            {
+                let side = t.size.card.toggle;
+                let header = response.header.rect;
+                let toggle = Rect::from_center_size(
+                    egui::pos2(header.left() + side / 2.0, header.center().y),
+                    egui::vec2(side, side),
+                );
+                crate::editor::overlay::paint_score(ui.painter(), t, toggle, score);
+            }
             if response.toggled
                 && let CardKey::Module(module) = &view.key
             {
@@ -331,6 +343,15 @@ pub(crate) fn control(
     } else {
         control_body(ui, t, view, p, label, form, dimmed, out)
     };
+    // A score ring on a switch or a segmented control (a knob draws its own on its dial; lane RUI).
+    if let Some(score) = p.score
+        && matches!(
+            present::control(t, p.spec),
+            Control::Segmented | Control::Toggle
+        )
+    {
+        crate::editor::overlay::paint_score(ui.painter(), t, response.rect, score);
+    }
     modulate::target(ui, t, view, p, &response, out);
     menu::attach(t, view.kind, p, &response, out);
     menu::entry(ui, t, p, response.rect, out);
