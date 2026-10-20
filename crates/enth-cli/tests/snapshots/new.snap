@@ -5,7 +5,7 @@ expression: "record(&s, &o, false)"
 exit: 0
 --- stdout
 {
-  "engine": "0.2.0",
+  "engine": "0.3.0",
   "modules": [
     "osc1",
     "filter1",

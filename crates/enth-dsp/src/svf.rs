@@ -22,8 +22,9 @@
 //!   across the block, three adds and no division per sample. Report 02 measured 13–23 dB less error than stepping,
 //!   and the filter stays stable along the interpolation path (eigenvalues of the update matrix ≤ 0.99995 in
 //!   magnitude between 20 Hz and 21.6 kHz at Q 25).
-//! - **Drive is a continuous soft saturator in front of the filter** ([`drive_amount`]): `x / sqrt(1 + a·x²)`, which
-//!   is the identity, bit for bit, at 0 dB.
+//! - **Drive is a continuous soft saturator in front of the filter** ([`Drive`]): `x / sqrt(b + c·x²)`, an algebraic
+//!   sigmoid with make-up gain, so that a signal at the reference level ([`DRIVE_REFERENCE_SQ`], the RMS of a
+//!   full-scale saw) keeps its level at every drive (lane DRV, FU1). It is the identity, bit for bit, at 0 dB.
 //!
 //! Determinism: the only transcendental is `tanf` (and `exp2`/`expm1` for the parameter maps), through
 //! `util::math`; the per-sample code is `+ − × ÷` and `sqrt`, all correctly rounded in IEEE 754. No `mul_add`.
@@ -83,25 +84,113 @@ pub fn q_from_resonance(percent: f32) -> f32 {
     (f64::from(Q_MIN) * math::exp2(LOG2_Q_RANGE * r)) as f32
 }
 
-/// The saturator amount `a = G² − 1` for a drive of `db` decibels (`G = 10^(dB/20)`): 0 for `db <= 0` (and for NaN),
-/// which makes the saturator the identity. Computed in `f64` and rounded once.
-#[must_use]
-pub fn drive_amount(db: f32) -> f32 {
+/// The highest drive the saturator computes, in dB: the catalogue's maximum. Higher values are clamped.
+pub const MAX_DRIVE_DB: f32 = 24.0;
+
+/// The drive's reference level, squared: `r² = 1/3`, so `r = 1/√3 ≈ 0.577` (−4.77 dBFS), the RMS of a full-scale
+/// saw. The saturator passes `±r` unchanged at every drive ([`Drive`]): signals above it are compressed, signals
+/// below it are raised towards it, so a full-level oscillator keeps about its loudness as drive adds harmonics.
+pub const DRIVE_REFERENCE_SQ: f64 = 1.0 / 3.0;
+
+/// `ln(10)/10`: `10^(dB/10) = exp(dB · ln(10)/10)`.
+const LN10_OVER_10: f64 = 0.230_258_509_299_404_6;
+
+/// The sigmoid amount `a = G² − 1` for a drive of `db` decibels (`G = 10^(dB/20)`, `db` clamped to
+/// [`MAX_DRIVE_DB`]), in `f64`: 0 for `db <= 0` (and for NaN).
+fn amount(db: f32) -> f64 {
     if db > 0.0 {
         // G² − 1 = 10^(dB/10) − 1 = expm1(dB · ln(10)/10).
-        math::expm1(f64::from(db) * 0.230_258_509_299_404_6) as f32
+        math::expm1(f64::from(db.min(MAX_DRIVE_DB)) * LN10_OVER_10)
     } else {
         0.0
     }
 }
 
-/// The soft saturator in front of the filter: `x / sqrt(1 + a·x²)` for `a = `[`drive_amount`]. Odd, monotonic,
-/// unity gain at small signals, the identity (bit for bit) at `a = 0`, and bounded by `1/sqrt(a)`: gain `G` into
-/// the sigmoid `u/sqrt(1 + u²)`, normalised back by `1/G`, offset so that 0 dB is transparent.
+/// The sigmoid amount `a = G² − 1` for a drive of `db` decibels (`G = 10^(dB/20)`, clamped to [`MAX_DRIVE_DB`]):
+/// 0 for `db <= 0` (and for NaN). Computed in `f64` and rounded once. It sets the curve's shape (the knee falls as
+/// `1/sqrt(a)`); [`Drive::from_db`] turns it into the saturator's two coefficients.
+#[must_use]
+pub fn drive_amount(db: f32) -> f32 {
+    amount(db) as f32
+}
+
+/// The saturator in front of the filter, for one drive setting: `y = x / sqrt(b + c·x²)`.
+///
+/// With `a = `[`drive_amount`]` = G² − 1` and the reference level `r` (`r² = `[`DRIVE_REFERENCE_SQ`]):
+///
+/// ```text
+/// b = 1 / (1 + a·r²)        c = a·b        so  b + c·r² = 1
+/// ```
+///
+/// That is the algebraic sigmoid `x / sqrt(1 + a·x²)` (gain `sqrt(a)` into `u/sqrt(1 + u²)`, normalised back) times
+/// a make-up gain `sqrt(1 + a·r²)`. Without the make-up the curve was bounded by `1/sqrt(a)`, so a full-level
+/// oscillator lost about 1 dB per dB of drive (−19.8 LUFS at 24 dB); with it, `±r` passes unchanged at every drive.
+///
+/// - **Odd and monotonic**: `dy/dx = b / (b + c·x²)^(3/2) > 0`.
+/// - **Bounded**: `|y| < 1/sqrt(c) = sqrt(r² + 1/a)`, which falls to `r` as the drive rises; and
+///   `|y| ≤ max(|x|, r)`: a peak above `r` never grows, a quieter signal rises at most to `r`.
+/// - **Small-signal gain** `1/sqrt(b) = sqrt(1 + a·r²)`: +19.3 dB at 24 dB of drive.
+/// - **The identity at 0 dB**, bit for bit: `b = 1`, `c = 0`, and `x / sqrt(1 + 0·x²)` is exactly `x`
+///   ([`process_block`] skips the saturator there anyway).
+///
+/// Both coefficients are rounded once from `f64`; `c` below the flush threshold makes the drive [`Drive::OFF`].
+/// Ramping `b` and `c` linearly keeps `b + c·r² = 1` along the ramp, so drive automation never moves the reference
+/// level.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Drive {
+    b: f32,
+    c: f32,
+}
+
+impl Drive {
+    /// No drive: `b = 1`, `c = 0`, the identity.
+    pub const OFF: Self = Self { b: 1.0, c: 0.0 };
+
+    /// The saturator for a drive of `db` decibels (clamped to `0..=`[`MAX_DRIVE_DB`]; NaN is 0 dB).
+    #[must_use]
+    pub fn from_db(db: f32) -> Self {
+        let a = amount(db);
+        let b = 1.0 / (1.0 + a * DRIVE_REFERENCE_SQ);
+        let c = flush((a * b) as f32);
+        if c == 0.0 {
+            Self::OFF
+        } else {
+            Self { b: b as f32, c }
+        }
+    }
+
+    /// The constant term `b = 1/(1 + a·r²)`, in `(0, 1]`.
+    #[must_use]
+    pub fn b(self) -> f32 {
+        self.b
+    }
+
+    /// The square-law term `c = a·b`, in `[0, 1/r²)`.
+    #[must_use]
+    pub fn c(self) -> f32 {
+        self.c
+    }
+
+    /// Whether this is no drive at all (`c = 0`, which comes with `b = 1`).
+    #[must_use]
+    pub fn is_off(self) -> bool {
+        self.c == 0.0
+    }
+}
+
+/// The soft saturator in front of the filter: `x / sqrt(b + c·x²)` for a [`Drive`]. Odd, monotonic, bounded,
+/// level-preserving at the reference level `±r`, and the identity (bit for bit) at [`Drive::OFF`].
 #[inline(always)]
 #[must_use]
-pub fn saturate(x: f32, a: f32) -> f32 {
-    x / (1.0 + a.max(0.0) * x * x).sqrt()
+pub fn saturate(x: f32, drive: Drive) -> f32 {
+    shape(x, drive.b, drive.c)
+}
+
+/// `x / sqrt(b + c·x²)`. `c` is clamped at 0, so the rounding of a ramp that ends at no drive cannot make the root's
+/// argument negative; `b` stays positive along any ramp between two [`Drive`]s.
+#[inline(always)]
+fn shape(x: f32, b: f32, c: f32) -> f32 {
+    x / (b + c.max(0.0) * x * x).sqrt()
 }
 
 /// The filter coefficients for one cutoff and damping.
@@ -196,21 +285,21 @@ impl State {
 }
 
 /// Filter `io` in place. The coefficients ramp linearly from `from` (the previous block's end) to `to` across the
-/// block (the last sample uses `to`, up to rounding), and the saturator amount ramps from `drive_from` to
-/// `drive_to` (see [`drive_amount`]); with both at zero the saturator is skipped entirely, which is bit-identical to
+/// block (the last sample uses `to`, up to rounding), and the saturator's two coefficients ramp from `drive_from` to
+/// `drive_to` (see [`Drive`]); with both [`Drive::OFF`] the saturator is skipped entirely, which is bit-identical to
 /// running it. The states are flushed at the end.
 pub fn process_block<const N: usize>(
     state: &mut State,
     mode: Mode,
     from: &Coeffs,
     to: &Coeffs,
-    drive_from: f32,
-    drive_to: f32,
+    drive_from: Drive,
+    drive_to: Drive,
     io: &mut [f32; N],
 ) {
     // A ramp between equal coefficients adds exact zeros: skipping it is bit-identical and saves four adds a sample.
     let ramp = from != to;
-    let drive = drive_from > 0.0 || drive_to > 0.0;
+    let drive = !(drive_from.is_off() && drive_to.is_off());
     macro_rules! go {
         ($m:expr) => {
             match (ramp, drive) {
@@ -241,8 +330,8 @@ fn run<const MODE: u8, const RAMP: bool, const DRIVE: bool, const N: usize>(
     state: &mut State,
     from: &Coeffs,
     to: &Coeffs,
-    drive_from: f32,
-    drive_to: f32,
+    drive_from: Drive,
+    drive_to: Drive,
     io: &mut [f32; N],
 ) {
     let n = N as f32;
@@ -261,8 +350,12 @@ fn run<const MODE: u8, const RAMP: bool, const DRIVE: bool, const N: usize>(
     } else {
         (0.0, 0.0, 0.0, 0.0)
     };
-    let mut a = drive_from;
-    let da = (drive_to - drive_from) / n;
+    let (mut b, mut c) = (drive_from.b, drive_from.c);
+    let (step_b, step_c) = if DRIVE {
+        ((drive_to.b - b) / n, (drive_to.c - c) / n)
+    } else {
+        (0.0, 0.0)
+    };
     for x in io.iter_mut() {
         if RAMP {
             a1 += d1;
@@ -272,8 +365,9 @@ fn run<const MODE: u8, const RAMP: bool, const DRIVE: bool, const N: usize>(
         }
         let mut v0 = *x;
         if DRIVE {
-            a += da;
-            v0 = saturate(v0, a);
+            b += step_b;
+            c += step_c;
+            v0 = shape(v0, b, c);
         }
         *x = state.step_with::<MODE>(a1, a2, a3, k, v0);
     }
@@ -366,31 +460,126 @@ mod tests {
         assert_eq!(k_from_resonance(500.0), k_from_resonance(100.0));
     }
 
+    /// The reference level `r = 1/√3`.
+    fn reference() -> f32 {
+        DRIVE_REFERENCE_SQ.sqrt() as f32
+    }
+
     #[test]
-    fn the_saturator_is_transparent_at_zero_and_bounded_above() {
+    fn the_saturator_is_the_identity_at_zero_db_and_bounded_above() {
         assert_eq!(drive_amount(0.0), 0.0);
         assert_eq!(drive_amount(-3.0), 0.0);
         assert_eq!(drive_amount(f32::NAN), 0.0);
-        for x in [-3.0f32, -0.5, 0.0, 0.123, 1.0, 40.0] {
-            assert_eq!(saturate(x, 0.0).to_bits(), x.to_bits());
+        for db in [0.0f32, -3.0, f32::NAN, f32::NEG_INFINITY, 1e-30] {
+            assert_eq!(Drive::from_db(db), Drive::OFF, "{db}");
         }
-        // 12 dB: G = 3.981, a = G² − 1 = 14.85, the limit 1/sqrt(a) = 0.2595.
+        assert!(Drive::OFF.is_off() && !Drive::from_db(0.01).is_off());
+        for x in [-3.0f32, -0.5, 0.0, -0.0, 0.123, 1.0, 40.0, 1e30, f32::MAX] {
+            assert_eq!(saturate(x, Drive::OFF).to_bits(), x.to_bits());
+        }
+        // 12 dB: G = 3.981, a = G² − 1 = 14.85; b = 1/(1 + a/3) = 0.1681, c = a·b = 2.496; the limit
+        // 1/sqrt(c) = sqrt(1/3 + 1/a) = 0.6330 and the small-signal gain 1/sqrt(b) = 2.439 (+7.7 dB).
         let a = drive_amount(12.0);
         assert!((a - 14.848).abs() < 0.01, "{a}");
-        assert!(saturate(1000.0, a) <= 1.0 / a.sqrt());
-        assert!((saturate(1000.0, a) - 1.0 / a.sqrt()).abs() < 1e-4);
-        // Unity small-signal gain, odd, monotonic.
-        assert!((saturate(1e-3, a) / 1e-3 - 1.0).abs() < 1e-4);
-        let mut last = -1.0f32;
-        for i in -100..=100 {
-            let x = i as f32 * 0.05;
-            let y = saturate(x, a);
-            assert_eq!(y.to_bits(), (-saturate(-x, a)).to_bits(), "odd at {x}");
-            assert!(y >= last);
-            last = y;
-        }
-        // 24 dB: a = 250.
+        let d = Drive::from_db(12.0);
+        assert!((d.b() - 0.168_10).abs() < 1e-4, "{d:?}");
+        assert!((d.c() - 2.4960).abs() < 1e-3, "{d:?}");
+        let limit = 1.0 / d.c().sqrt();
+        assert!((limit - 0.6330).abs() < 1e-3, "{limit}");
+        assert!(saturate(1000.0, d) <= limit);
+        assert!((saturate(1000.0, d) - limit).abs() < 1e-4);
+        assert!((saturate(1e-3, d) / 1e-3 - 2.439).abs() < 1e-3);
+        // 24 dB: a = 250.2, b = 0.01185, c = 2.964 (below 1/r² = 3); above the catalogue's 24 dB it is clamped.
         assert!((drive_amount(24.0) - 250.19).abs() < 0.1);
+        let top = Drive::from_db(24.0);
+        assert!(
+            (top.b() - 0.011_85).abs() < 1e-4 && top.c() < 3.0,
+            "{top:?}"
+        );
+        assert_eq!(Drive::from_db(30.0), top);
+        assert_eq!(Drive::from_db(f32::INFINITY), top);
+    }
+
+    #[test]
+    fn the_saturator_is_odd_monotonic_bounded_and_holds_the_reference_level() {
+        let r = reference();
+        for db in [0.05f32, 0.5, 1.0, 3.0, 6.0, 9.0, 12.0, 18.0, 23.9, 24.0] {
+            let d = Drive::from_db(db);
+            // b + c·r² = 1: the reference level passes unchanged.
+            assert!(
+                (saturate(r, d) - r).abs() < 2e-7,
+                "{db}: {}",
+                saturate(r, d)
+            );
+            let limit = 1.0 / d.c().sqrt();
+            let mut last = f32::NEG_INFINITY;
+            for i in -2_000..=2_000 {
+                let x = i as f32 * 0.0025;
+                let y = saturate(x, d);
+                assert_eq!(
+                    y.to_bits(),
+                    (-saturate(-x, d)).to_bits(),
+                    "{db}: odd at {x}"
+                );
+                // Monotonic; deep in saturation the true step is below one ulp, so allow the last bit.
+                assert!(
+                    y >= last - f32::EPSILON * last.abs(),
+                    "{db}: monotonic at {x}"
+                );
+                last = y;
+                // Never above the limit, and never above max(|x|, r): a peak above r never grows.
+                assert!(y.abs() < limit, "{db}: {x} -> {y}");
+                assert!(y.abs() <= x.abs().max(r) * (1.0 + 2e-7), "{db}: {x} -> {y}");
+            }
+            // Huge and extreme inputs stay finite and bounded; near the asymptote the output is flat to within the
+            // last bit (rounding, not a fold-back), while x² is finite.
+            let bound = limit * (1.0 + 1e-6);
+            let mut last = 0.0f32;
+            let mut x = 1.0f32;
+            for _ in 0..=18 {
+                x *= 10.0;
+                let y = saturate(x, d);
+                assert!(
+                    y.is_finite() && y >= last * (1.0 - 1e-6) && y <= bound,
+                    "{db}: {x} -> {y}"
+                );
+                last = y;
+            }
+            for x in [1e30f32, f32::MAX, -f32::MAX] {
+                let y = saturate(x, d);
+                assert!(y.is_finite() && y.abs() <= bound, "{db}: {x} -> {y}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_drive_ramp_keeps_the_reference_level_at_every_sample() {
+        // The block loop ramps b and c linearly; b + c·r² = 1 is linear, so it holds along the ramp, up to rounding.
+        let r = reference();
+        let pairs = [(0.0f32, 24.0f32), (24.0, 0.0), (3.0, 18.0), (12.0, 12.5)];
+        for (from_db, to_db) in pairs {
+            let (from, to) = (Drive::from_db(from_db), Drive::from_db(to_db));
+            let n = 32.0f32;
+            let (mut b, mut c) = (from.b(), from.c());
+            let (sb, sc) = ((to.b() - b) / n, (to.c() - c) / n);
+            let mut last = shape(0.9, from.b(), from.c());
+            let mut biggest = 0.0f32;
+            for _ in 0..32 {
+                b += sb;
+                c += sc;
+                let y = shape(r, b, c);
+                assert!((y - r).abs() < 1e-6, "{from_db} -> {to_db}: {y}");
+                // A ramp down to no drive cannot make the root's argument negative.
+                assert!(shape(1e15, b, c).is_finite());
+                let y = shape(0.9, b, c);
+                biggest = biggest.max((y - last).abs());
+                last = y;
+            }
+            // Smooth: a loud input (0.9) moves by at most 0.02 per sample even when the drive jumps from 0 to 24 dB
+            // in one segment (0.32 in one step without the ramp).
+            assert!(biggest < 0.021, "{from_db} -> {to_db}: a step of {biggest}");
+            assert!((last - shape(0.9, to.b(), to.c())).abs() < 1e-5);
+        }
     }
 
     #[test]
@@ -548,7 +737,7 @@ mod tests {
             let mut a = State::ZERO;
             let mut b = State::ZERO;
             let mut block = input;
-            process_block(&mut a, mode, &c, &c, 0.0, 0.0, &mut block);
+            process_block(&mut a, mode, &c, &c, Drive::OFF, Drive::OFF, &mut block);
             let plain: Vec<f32> = input.iter().map(|&x| b.tick(mode, &c, x)).collect();
             assert_eq!(block.to_vec(), plain, "{mode:?}");
             assert_eq!(a, b);
@@ -565,8 +754,8 @@ mod tests {
             ($mode:expr, $m:expr) => {{
                 let (mut s1, mut s2) = (State::ZERO, State::ZERO);
                 let (mut plain, mut sat) = (input, input);
-                process_block(&mut s1, $mode, &c, &c, 0.0, 0.0, &mut plain);
-                run::<$m, false, true, 32>(&mut s2, &c, &c, 0.0, 0.0, &mut sat);
+                process_block(&mut s1, $mode, &c, &c, Drive::OFF, Drive::OFF, &mut plain);
+                run::<$m, false, true, 32>(&mut s2, &c, &c, Drive::OFF, Drive::OFF, &mut sat);
                 s2.flush();
                 assert_eq!(plain, sat, "{:?}", $mode);
                 assert_eq!(s1, s2);
@@ -579,28 +768,38 @@ mod tests {
     }
 
     #[test]
-    fn drive_adds_harmonics_and_keeps_small_signals_unchanged() {
+    fn drive_adds_harmonics_and_keeps_a_full_scale_saw_at_its_level() {
         let c = Coeffs::new(18_000.0, 1.0, SR);
-        let a = drive_amount(24.0);
+        let d = Drive::from_db(24.0);
         let w = 2.0 * core::f32::consts::PI * 1_000.0 / SR;
         let mut s_clean = State::ZERO;
         let mut s_drive = State::ZERO;
-        // Small signal (0.001): the same output within 0.1 %.
+        // Small signal (0.001): the make-up gain 1/sqrt(b) = sqrt(1 + a/3) = 9.19 (+19.3 dB), within 0.1 %.
+        let makeup = 1.0 / d.b().sqrt();
+        assert!((makeup - 9.187).abs() < 0.01, "{makeup}");
         let mut worst = 0.0f32;
         for i in 0..4800 {
             let x = 0.001 * math::sinf(w * i as f32);
             let mut b1 = [x; 1];
             let mut b2 = [x; 1];
-            process_block(&mut s_clean, Mode::Lp, &c, &c, 0.0, 0.0, &mut b1);
-            process_block(&mut s_drive, Mode::Lp, &c, &c, a, a, &mut b2);
+            process_block(
+                &mut s_clean,
+                Mode::Lp,
+                &c,
+                &c,
+                Drive::OFF,
+                Drive::OFF,
+                &mut b1,
+            );
+            process_block(&mut s_drive, Mode::Lp, &c, &c, d, d, &mut b2);
             if i > 100 {
-                worst = worst.max((b1[0] - b2[0]).abs());
+                worst = worst.max((b1[0] * makeup - b2[0]).abs());
             }
         }
-        assert!(worst < 2e-5, "{worst}");
+        assert!(worst < 1e-5, "{worst}");
         // Full scale: a 1 kHz sine through 24 dB of drive grows a third harmonic (odd symmetry), where the clean
         // path has essentially none.
-        let third = |drive: f32| {
+        let third = |drive: Drive| {
             let mut s = State::ZERO;
             let (mut re1, mut im1, mut re3, mut im3) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
             let total = 4800usize;
@@ -617,8 +816,35 @@ mod tests {
             }
             (re3 * re3 + im3 * im3).sqrt() / (re1 * re1 + im1 * im1).sqrt()
         };
-        assert!(third(0.0) < 0.002, "{}", third(0.0));
-        assert!(third(a) > 0.1, "{}", third(a));
+        assert!(third(Drive::OFF) < 0.002, "{}", third(Drive::OFF));
+        assert!(third(d) > 0.1, "{}", third(d));
+        // The level: a full-scale 110 Hz saw (naive, ±1) keeps its RMS within 1.5 dB from 0 to 24 dB of drive (the
+        // old curve, bounded by 1/sqrt(a), lost 19.6 dB at 24 dB).
+        let rms_db = |db: f32| {
+            let drive = Drive::from_db(db);
+            let mut s = State::ZERO;
+            let mut sum = 0.0f64;
+            let mut block = [0.0f32; 32];
+            for j in 0..1_500 {
+                for (i, x) in block.iter_mut().enumerate() {
+                    let n = j * 32 + i;
+                    *x = (n % 436) as f32 / 218.0 - 1.0;
+                }
+                process_block(&mut s, Mode::Lp, &c, &c, drive, drive, &mut block);
+                if j >= 100 {
+                    sum += block
+                        .iter()
+                        .map(|&y| f64::from(y) * f64::from(y))
+                        .sum::<f64>();
+                }
+            }
+            10.0 * math::log10(sum / (1_400.0 * 32.0))
+        };
+        let clean = rms_db(0.0);
+        for db in [3.0f32, 6.0, 12.0, 18.0, 24.0] {
+            let change = rms_db(db) - clean;
+            assert!(change.abs() < 1.5, "{db} dB of drive: {change:+.2} dB");
+        }
     }
 
     #[test]
@@ -627,8 +853,10 @@ mod tests {
         let k = k_from_resonance(100.0);
         let mut rng = Rng::new(0x1234_5678);
         for mode in [Mode::Lp, Mode::Bp, Mode::Hp, Mode::Notch] {
-            for drive in [0.0f32, 24.0] {
-                let a = drive_amount(drive);
+            // 0 dB, 24 dB, and (-1) the drive jumping to a random value every block: drive automation at the
+            // segment rate, ramped per sample.
+            for drive in [0.0f32, 24.0, -1.0] {
+                let mut a = Drive::from_db(drive);
                 let mut s = State::ZERO;
                 let mut prev = Coeffs::new(1_000.0, k, SR);
                 let (mut peak, mut sum) = (0.0f32, 0.0f64);
@@ -638,7 +866,11 @@ mod tests {
                     let fc = 20.0 * math::exp2f(u * math::log2f(0.45 * SR / 20.0));
                     let next = Coeffs::new(fc, k, SR);
                     let mut block: [f32; 32] = core::array::from_fn(|_| rng.bipolar_f32() * 0.5);
-                    process_block(&mut s, mode, &prev, &next, a, a, &mut block);
+                    let from = a;
+                    if drive < 0.0 {
+                        a = Drive::from_db(rng.unit_f32() * 24.0);
+                    }
+                    process_block(&mut s, mode, &prev, &next, from, a, &mut block);
                     for y in block {
                         assert!(y.is_finite(), "{mode:?} drive {drive}");
                         peak = peak.max(y.abs());
@@ -646,8 +878,9 @@ mod tests {
                     }
                     prev = next;
                 }
-                // Bounded: the input is ±0.5 and the worst gain is Q = 25 at a resonant peak, but a random walk
-                // of the cutoff cannot pump it (report 02 measured a peak of 2.9).
+                // Bounded: the input is ±0.5 (at most ±r = ±0.577 after the saturator's make-up) and the worst gain
+                // is Q = 25 at a resonant peak, but a random walk of the cutoff cannot pump it (report 02 measured a
+                // peak of 2.9).
                 assert!(peak < 25.0, "{mode:?} drive {drive}: peak {peak}");
                 // No stuck DC: the mean of a zero-mean input stays far below the signal.
                 let mean = sum / f64::from(blocks) / 32.0;
@@ -710,7 +943,15 @@ mod tests {
             *o = s_step.tick(Mode::Lp, &c1, saw(i));
         }
         let mut ramped: [f32; 32] = core::array::from_fn(saw);
-        process_block(&mut s_ramp, Mode::Lp, &c0, &c1, 0.0, 0.0, &mut ramped);
+        process_block(
+            &mut s_ramp,
+            Mode::Lp,
+            &c0,
+            &c1,
+            Drive::OFF,
+            Drive::OFF,
+            &mut ramped,
+        );
         let err = |a: &[f32; 32]| {
             a.iter()
                 .zip(&reference)
@@ -733,7 +974,7 @@ mod tests {
         };
         let c = Coeffs::new(1_000.0, 1.0, SR);
         let mut block = [0.0f32; 32];
-        process_block(&mut s, Mode::Lp, &c, &c, 0.0, 0.0, &mut block);
+        process_block(&mut s, Mode::Lp, &c, &c, Drive::OFF, Drive::OFF, &mut block);
         assert_eq!(s, State::ZERO);
         assert!(!s.has_subnormal());
         assert!(block.iter().all(|y| y.to_bits() == 0 || y.abs() >= 1e-30));

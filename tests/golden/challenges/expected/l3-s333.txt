@@ -12,7 +12,7 @@ render rate=48000 seed=236412653 frames=144000 sha256=6becdc4bca9a4ab8dd67bfeb48
 scoring sound/1 structure/1 combined/1 time/1 weight=65 pass_mark=90
   answer exact
     report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
-    sound distance=0.000000000 floor=0.030764316 scale=0.111932600 jnd=0.000000000
+    sound distance=0.000000000 floor=0.030764316 scale=0.111932865 jnd=0.000000000
     component pitch same close target=-3300.008792184 answer=-3300.008792184
     component brightness same close target=267.951673055 answer=267.951673055
     component harmonics same close target=0.319796029 answer=0.319796029
@@ -34,8 +34,8 @@ scoring sound/1 structure/1 combined/1 time/1 weight=65 pass_mark=90
     ring osc1.wave good same 1.000000000 answer=osc1.wave
     ring env2 -> filter1.cutoff good same 1.000000000 answer=env2 -> filter1.cutoff
   answer start
-    report sound=3.698051717 structure=39.960078235 combined=16.389760998 passed=false margin=-86.301948283
-    sound distance=1.187628589 floor=0.030764316 scale=0.111932600 jnd=58.433154998
+    report sound=3.698053717 structure=39.960078235 combined=16.389762298 passed=false margin=-86.301946283
+    sound distance=1.187628589 floor=0.030764316 scale=0.111932865 jnd=58.433130468
     component pitch higher far target=-3300.008792184 answer=-2100.000526561
     component brightness higher far target=267.951673055 answer=894.250747943
     component harmonics same close target=0.319796029 answer=0.344186717
@@ -59,8 +59,8 @@ scoring sound/1 structure/1 combined/1 time/1 weight=65 pass_mark=90
     moved osc1.fine bad higher 0.000000000 answer=osc1.fine
     module missing env2 adsr
   answer near
-    report sound=88.993882731 structure=95.975898814 combined=91.437588360 passed=false margin=-1.006117269
-    sound distance=0.145993810 floor=0.030764316 scale=0.111932600 jnd=1.071384017
+    report sound=88.993912613 structure=95.975898814 combined=91.437607784 passed=false margin=-1.006087387
+    sound distance=0.145993810 floor=0.030764316 scale=0.111932865 jnd=1.071381574
     component pitch same close target=-3300.008792184 answer=-3300.008807317
     component brightness higher a_bit target=267.951673055 answer=311.368560866
     component harmonics same close target=0.319796029 answer=0.330303225

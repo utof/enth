@@ -53,4 +53,4 @@ pub use voice::{NoteEnd, VoiceState};
 
 /// The engine version stamped into patches authored on this build (`Patch::engine`) and into golden files. Bump it
 /// when a DSP change alters output on purpose (the goldens change in the same commit).
-pub const ENGINE_VERSION: &str = "0.2.0";
+pub const ENGINE_VERSION: &str = "0.3.0";
