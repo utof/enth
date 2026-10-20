@@ -78,6 +78,14 @@ fn churn_passes_a_clean_plugin_and_fails_each_kind_of_leak() {
         );
     }
 
+    // A leak of 2 KB per cycle fails as well: the trim before each sample gives back free pages, never live ones (lane
+    // LK; with the real plugin and no trim, a 2 KB leak hid in the pages freed instances left resident).
+    let mut small = options(None);
+    small.inject = Some(Inject::LeakKb(2));
+    let report = churn::run(&entry, &id, &small).unwrap();
+    assert_eq!(report["trim_before_sample"], true);
+    assert!(!checks(&report).0, "2 KB per cycle passed: {report}");
+
     // And a threshold set above the fault lets it through, so the limits are what decide.
     let mut loose = options(Some(r#"{"leak":"mem:32"}"#));
     loose.max_kb_per_cycle = 100.0;

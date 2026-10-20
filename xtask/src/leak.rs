@@ -22,7 +22,9 @@
 //!   thread that was Mesa's `disk$0` queue thread finishing its exit (docs/plugin.md, "Leak gates").
 //! - **`churn`**: 200 whole instance lives (instantiate, load a patch, activate, play, deactivate, drop) must leave
 //!   PSS flat (at most 1 KB per cycle, the test host's default) and no thread or descriptor behind. The test host's
-//!   exit status is the verdict.
+//!   exit status is the verdict. It runs with the same deterministic allocator (each cycle's audio thread is a new
+//!   thread; with glibc's arenas the slope wandered from 0.41 to 0.92 KB per cycle) and samples after `malloc_trim(0)`
+//!   (without it a 2 KB per cycle leak hid in freed pages and read 0.10; with it, 2.43).
 //!
 //! Reports: `target/leak-test/` (`editor-cycles.json`, `editor-counts.jsonl`, `churn.json`, `leak-test.json`). The
 //! exit status is the verdict. A run takes several minutes (about 2 × 200 cycles of 0.15 s or more per mode, plus the
@@ -563,13 +565,14 @@ fn churn_detail(report: &Value) -> String {
     }
     format!(
         "PSS {} KB per cycle after the warm-up ({} in the second half; limit {}), threads +{}, descriptors +{}, \
-         failures {}",
+         failures {}, malloc {}",
         s["pss_kb_per_cycle_after_warmup"],
         s["pss_kb_per_cycle_second_half"],
         report["limits"]["max_kb_per_cycle"],
         s["thread_growth_after_warmup"],
         s["fd_growth_after_warmup"],
         report["failures"],
+        report["malloc"],
     )
 }
 

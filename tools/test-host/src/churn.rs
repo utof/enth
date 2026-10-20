@@ -15,7 +15,8 @@
 //! - the number of memory **mappings**, `/proc/self/maps` (information).
 //!
 //! The first `--warmup` cycles are ignored: the first instance loads libraries, grows the allocator and warms
-//! caches. Over the rest, the gate is the least-squares PSS slope (both over all of them and over the second
+//! caches. Before each sample the host gives every free page back to the kernel (`malloc_trim(0)`, unless
+//! `--system-malloc`; lane LK), so PSS counts the pages live allocations hold. Over the rest, the gate is the least-squares PSS slope (both over all of them and over the second
 //! half) against `--max-kb-per-cycle`, and the growth in threads and descriptors against `--max-thread-growth`
 //! and `--max-fd-growth` (default 0: any thread or descriptor a cycle leaves behind fails the run).
 //!
@@ -93,6 +94,10 @@ pub struct Options {
     pub max_thread_growth: i64,
     pub max_fd_growth: i64,
     pub inject: Option<Inject>,
+    /// Give every free page back to the kernel before each sample ([`procfs::trim_heap`]; lane LK): each cycle drops
+    /// a whole instance, and a leak of a few KB fills the holes it leaves in pages that are already resident (with the
+    /// deterministic allocator and no trim, `--inject leak-kb=2` read 0.10 KB per cycle; with the trim, 2.43).
+    pub trim: bool,
     pub process_on: ProcessThread,
 }
 
@@ -111,6 +116,7 @@ impl Default for Options {
             max_thread_growth: 0,
             max_fd_growth: 0,
             inject: None,
+            trim: true,
             process_on: ProcessThread::Dedicated,
         }
     }
@@ -182,6 +188,9 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Value, Stri
             inject.apply();
         }
         std::thread::sleep(Duration::from_millis(opts.settle_ms));
+        if opts.trim {
+            procfs::trim_heap();
+        }
         series.pss_kb.push(procfs::memory()?.pss_kb);
         series.threads.push(procfs::thread_count());
         series.fds.push(fd_count());
@@ -242,6 +251,7 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Value, Stri
         "settle_ms": opts.settle_ms,
         "process_thread": match opts.process_on { ProcessThread::Dedicated => "a new thread per cycle", ProcessThread::Calling => "the calling thread" },
         "inject": opts.inject.map(|i| format!("{i:?}")),
+        "trim_before_sample": opts.trim,
         "loadavg": procfs::loadavg(),
         "before_cycles": { "pss_kb": before.pss_kb, "threads": before_counts.0, "fds": before_counts.1, "maps": before_counts.2 },
         "series": { "pss_kb": series.pss_kb, "threads": series.threads, "fds": series.fds, "maps": series.maps },

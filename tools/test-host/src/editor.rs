@@ -15,7 +15,7 @@
 //! **What makes the numbers repeatable** (lane LK, R1/S1; `docs/plugin.md`, "Leak gates"):
 //!
 //! - A measurement process sets glibc's allocator to one arena with blocks of 128 KiB or more mapped on their own and
-//!   trimmed at once ([`deterministic_malloc`], before the plugin is loaded; `--system-malloc` leaves the defaults).
+//!   trimmed at once ([`procfs::deterministic_malloc`], before the plugin is loaded; `--system-malloc` leaves the defaults).
 //!   With the defaults, each editor's window thread can get another arena, and the freed ~55 MB of the last one stays
 //!   resident: one run read 405 KB per cycle that way, and a 9 MB block that stayed or went at random read 53 KB.
 //! - Each sample records `SwapPss` beside `Pss_Anon`; their sum is the anonymous footprint whether or not the kernel
@@ -76,43 +76,12 @@ pub struct Options {
     pub mode: Mode,
 }
 
-/// The block size from which [`deterministic_malloc`] maps blocks on their own, and the free space at the top of the
-/// heap above which it trims: 128 KiB, glibc's starting value for both, held fixed.
-const MALLOC_THRESHOLD: i32 = 128 * 1024;
 /// How long a close gets for its exiting threads to go before the count is recorded, and how often it looks.
 pub const THREAD_SETTLE_MS: u64 = 1000;
 const THREAD_POLL_MS: u64 = 10;
 /// After this many closes whose threads outlived [`THREAD_SETTLE_MS`], a run stops waiting: those threads are not
 /// exiting, and a thread left behind by every close would otherwise cost a second per cycle.
 const THREAD_SETTLE_GIVE_UP: usize = 5;
-
-/// Makes glibc's allocator deterministic for a measurement process; call it before the plugin is loaded and before
-/// any thread starts. One arena (`M_ARENA_MAX` 1), so a new window thread never brings a fresh arena while the last
-/// one keeps its freed memory; blocks of [`MALLOC_THRESHOLD`] or more mapped on their own, and the heap trimmed once
-/// that much is free at its top, both fixed (setting them turns off glibc's sliding thresholds, which follow the
-/// largest block freed so far; with them a 9 MB block was still resident after some closes and not after others). A
-/// leak still shows: memory never freed stays resident whatever the policy, and memory freed is given back instead of
-/// hiding the next leak in pages that are already resident (a 26 KB per open leak read 16 and 21 KB per cycle with
-/// glibc's defaults, 26 more than the residual with these). Returns what it set, for the report.
-pub fn deterministic_malloc() -> Value {
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    {
-        // SAFETY: `mallopt` only changes the allocator's parameters; it takes the arena lock itself.
-        let set = |param, value| unsafe { libc::mallopt(param, value) } == 1;
-        if set(libc::M_ARENA_MAX, 1)
-            && set(libc::M_MMAP_THRESHOLD, MALLOC_THRESHOLD)
-            && set(libc::M_TRIM_THRESHOLD, MALLOC_THRESHOLD)
-        {
-            json!({ "arena_max": 1, "mmap_threshold": MALLOC_THRESHOLD, "trim_threshold": MALLOC_THRESHOLD })
-        } else {
-            json!("system (mallopt refused)")
-        }
-    }
-    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
-    {
-        json!("system (not glibc)")
-    }
-}
 
 /// The thread count after a close, given time for threads that are still exiting to go: starting from the `first`
 /// read, it waits (`wait`, then `count` again) while the count is above `ceiling` (the count after the previous close,
@@ -723,13 +692,5 @@ mod tests {
         // Nothing above the ceiling: no wait at all.
         let (n, polls) = settled_threads(3, 3, 100, || unreachable!(), || unreachable!());
         assert_eq!((n, polls), (3, 0));
-    }
-
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    #[test]
-    fn the_allocator_takes_the_deterministic_settings() {
-        let set = deterministic_malloc();
-        assert_eq!(set["arena_max"], 1, "{set}");
-        assert_eq!(set["mmap_threshold"], MALLOC_THRESHOLD);
     }
 }
