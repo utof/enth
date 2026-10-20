@@ -433,9 +433,9 @@ pub struct Assists {
 /// The scorers [`ScoringSpec::recreate`] names in this build: sound, structure, combined, time. **Stubs until lanes
 /// SS and ST land theirs** (F1r review S12): the stubs score in parameter space under their own ids, so no stub
 /// score is ever stored under `sound/1`. The lane that lands a scorer switches its entry here in the same commit
-/// (SS: `sound/1`; ST: `structure/1`, `combined/1`).
+/// (SS: `sound/1`, switched by lane SS; ST: `structure/1`, `combined/1`).
 pub const RECREATE_SCORERS: [ScorerId; 4] = [
-    ScorerId::SOUND_STUB,
+    ScorerId::SOUND_V1,
     ScorerId::STRUCTURE_STUB,
     ScorerId::COMBINED_STUB,
     ScorerId::TIME_V1,

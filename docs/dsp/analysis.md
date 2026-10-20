@@ -17,6 +17,8 @@
 | `sweep` | Brightness sweeps from the centroid over time: filter envelopes and filter LFOs (`FilterSweep`) |
 | `loudness` | `LoudnessMeter`: LUFS, sample peak, true peak, clipping (`Level`) |
 | `features`, `distance` | Multi-resolution log-mel, envelope, centroid track, MFCC, f0 track (`FeatureExtractor`); metric v1 and its components |
+| `pooled` | Metric v1.1 (`logmel-pool85-l1/1`, lane SS): the mel magnitudes pooled over 85 ms before the log ([below](#metric-v11-and-harmonic-content-lane-ss-2026-10-20)) |
+| `harmonics` | The odd share of the harmonic energy above the fundamental (lane SS): the sound score's waveform row |
 | `fft` | `FftPath::{Scalar, Dispatched}` and the real-FFT planner |
 | `units` | Descriptor units and note names |
 | `test_signals` | Signals with known answers: sines, polyBLEP oscillators, detuned pairs, ADSR, tremolo, noise, the 10-parameter toy voice (with an optional cutoff LFO, `render_toy_lfo`) |
@@ -126,6 +128,12 @@ Per item the checker returns `pass`, `got` (the feature's unit), `compared` (the
 ## Features and metric v1
 
 `FeatureExtractor::extract` scales a clip to −23 LUFS, then computes natural-log mel magnitudes at FFT 2048, 1024 and 512 (hop n/2, Hann, 64 triangular bands, 30 Hz–16 kHz, `2595·log10(1 + f/700)`), a 10 ms RMS envelope in dB and its ±50 ms crest, an energy-weighted centroid track (log2 Hz, mid resolution), MFCC c0–c12 (DCT-II of the log-mel) and optionally a YIN f0 track. `distance::metric_v1` (`METRIC_V1 = "logmel-l1/1"`, provisional, ADR-0007) is the mean absolute log-mel difference averaged over the three resolutions, 1e3 when either clip is silent; `components` adds the envelope, centroid, MFCC and f0 distances beside it.
+
+### Metric v1.1 and harmonic content (lane SS, 2026-10-20)
+
+- **`pooled::metric_v1_1`** (`METRIC_V1_1 = "logmel-pool85-l1/1"`, beside v1, which is unchanged): per resolution, non-overlapping blocks of 4, 8 and 16 frames (85.3 ms at 48 kHz); per block and band, the log of the mean of `exp(logmel)` (the mel magnitude plus v1's 1e-5); then v1's L1 over the blocks both clips have, averaged over the resolutions; `SILENT` when either clip is silent. Compute `pool(&features)` once per clip. It pools magnitudes as report 02's experiment did. A common start-phase shift of the toy voice costs 0.059 under v1 and 0.007 under v1.1, while a third-of-an-octave cutoff move stays (0.215 → 0.222). On 40 generated targets the floor is a median 0.06 of the JND scale against v1's 0.31 (docs/challenge.md, "Sound score (lane SS)"). `libm` only, fixed sums.
+- **`harmonics::measure`**: a Welch spectrum (Hann, 8192 points, or 4096 or 2048 for a shorter span) of a span; each harmonic h = 1…16 of a given f0 below min(0.45 · rate, 16 kHz) takes the bins within max(3 bins, 2 % of h·f0), never past halfway to a neighbour. `odd_share` = power of odd harmonics from 3 / power of all from 2: about 1 for a square or a triangle, 0.35 for a saw; `None` when the harmonics above the fundamental are more than 40 dB below it (a sine), or the span is under 2048 samples. It jumps near a 50 % pulse (a 45 % pulse reads about 0.54).
+- Both run on the scalar path. Lane SS's `sound/1` pin (`enth-challenge/tests/ss_determinism.rs`) covers them, and the descriptors `sound/1` reads, natively and on wasm32-wasip1 under wasmtime, with the same bits.
 
 ## Determinism and the scalar FFT path
 
