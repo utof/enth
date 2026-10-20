@@ -35,7 +35,7 @@ Since P1b (lane S0b, 2026-10-19) the tokens are split by area, one file each, so
 | `states.rs` | `disabled_opacity` |
 | `motion.rs` | Repaint rates, transition time |
 | `glyph.rs` | Symbols with a fixed meaning (✓ ~ ✗ ⊕ ▶ › → • ● ○); a test checks that Inter covers them |
-| `sizes/<area>.rs` | Per-widget dimensions, one file per UI area: `bar`, `card`, `cards`, `display`, `handle`, `knob`, `matrix`, `pane`, `tile`, `window` (and `control_height` in `sizes/mod.rs`). `editor` holds the layout regions and popups (lane ED1, see [editor.md](editor.md)); `modulation` (drag-to-modulate and the matrix overview, lane ED2) is reserved: empty until that lane adds fields |
+| `sizes/<area>.rs` | Per-widget dimensions, one file per UI area: `bar`, `card`, `cards`, `display`, `handle`, `knob`, `matrix`, `pane`, `tile`, `window` (and `control_height` in `sizes/mod.rs`). `editor` holds the layout regions and popups (lane ED1, see [editor.md](editor.md)); `modulation` (lane ED2: the knob's depth handle, the compact route list) and `output` (lane ED2: the scope, spectrum and meters); see [editor.md](editor.md) |
 
 A lane adds a token only in its own area's file; a brand-new area is a new file plus its field in `sizes/mod.rs`. Every new field has a serde default (or a `Default` that reads the dark theme), so a theme file dumped before it still loads.
 

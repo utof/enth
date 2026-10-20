@@ -2,7 +2,8 @@
 //! stereo meter, all from the telemetry tap. Layout 1 places it right of the header. With no telemetry (a detached
 //! session, nothing published yet) it draws an empty display and empty meters.
 //!
-//! - **Scope**: the newest `size.output.scope_samples` samples of the mono mix `(L + R) / 2` the tap keeps.
+//! - **Scope**: half of the newest `size.output.scope_samples` samples of the mono mix `(L + R) / 2` the tap keeps,
+//!   starting at the first rising zero crossing of the older half (a trigger, so a steady tone stands still).
 //! - **Spectrum**: the same window through a Hann window and a radix-2 FFT, in dB from `size.output.meter_floor_db`
 //!   to 0 dBFS, on the display's log-frequency axis. Computed only when the tap brought new samples.
 //! - **Meters**: each channel's peak of the last published block in dB, falling back at `size.output.meter_fall_db_per_s`
@@ -89,7 +90,7 @@ impl<'a> Output<'a> {
             }
             ("Spectrum", Trace::Spectrum(&state.bins))
         } else {
-            ("Scope", Trace::Scope(samples))
+            ("Scope", Trace::Scope(triggered(samples)))
         };
         Display::new(t, trace, display.size())
             .caption(caption)
@@ -155,4 +156,14 @@ impl<'a> Output<'a> {
             });
         }
     }
+}
+
+/// The scope's window: the second half's length of `samples`, starting at the first rising zero crossing in the first
+/// half (else the newest half), so a periodic signal draws at the same phase frame after frame.
+fn triggered(samples: &[f32]) -> &[f32] {
+    let half = samples.len() / 2;
+    let start = (1..half)
+        .find(|&i| samples[i - 1] < 0.0 && samples[i] >= 0.0)
+        .unwrap_or(half);
+    &samples[start..start + half]
 }

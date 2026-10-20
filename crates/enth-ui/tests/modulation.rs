@@ -319,7 +319,24 @@ fn the_overview_fits_the_p1_default_at_1200_by_800_as_a_route_list() {
         report.overflow
     );
     let overview = report.rect(enth_ui::editor::Region::Overview).unwrap();
-    println!("overview at 1200 x 800: {overview:?}");
+    // The numbers: the tiles take one row (7 tiles), the matrix panel the rest of the width.
+    let t = Theme::dark();
+    let tiles = 7.0 * t.size.tile.width + 6.0 * t.space.tight + 2.0 * t.space.gap;
+    let panel = vec2(overview.width() - tiles - t.space.gap, overview.height());
+    let caption = h.ctx.fonts_mut(|f| f.row_height(&t.text.label)) + t.space.tight;
+    let matrix = enth_ui::editor::regions::MatrixView::of(h.state().session.patch());
+    let grid = (
+        t.size.matrix.target_width + t.size.matrix.cell_width * matrix.sources.len() as f32,
+        t.size.matrix.row_height * (matrix.targets.len() + 1) as f32 + 2.0 * t.space.gap + caption,
+    );
+    let list = enth_ui::editor::regions::RouteList::needed(&t, &matrix, panel.x, caption);
+    println!(
+        "overview {overview:?}; matrix panel {panel:?}; the grid needs {grid:?}, the route list {list:?}"
+    );
+    assert!(
+        list.y <= panel.y + 0.5,
+        "the list fits: {list:?} in {panel:?}"
+    );
     // All eight routes are cells of the list; a drag on one sets its depth (one gesture).
     for (target, source) in [
         ("Filter 1 Cutoff", "Env 2"),
