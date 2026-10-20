@@ -1,0 +1,975 @@
+{
+  "schema": "enth.gr1-report/1",
+  "input": {
+    "files": 3,
+    "lines": 61,
+    "entries": 61,
+    "skipped_unusable": 0,
+    "skipped_other_schema": 0,
+    "errors": 0,
+    "warnings": 0,
+    "notes": 40,
+    "privacy_findings": 0,
+    "problems": [
+      {
+        "severity": "note",
+        "message": "unknown field `input` ignored",
+        "count": 22,
+        "first_at": "p2.jsonl:1"
+      },
+      {
+        "severity": "note",
+        "message": "unknown `result.agreement` value `unsure`, counted as unknown",
+        "count": 4,
+        "first_at": "p2.jsonl:2"
+      },
+      {
+        "severity": "note",
+        "message": "unknown field `result.assists.coach` ignored",
+        "count": 13,
+        "first_at": "p2.jsonl:3"
+      },
+      {
+        "severity": "note",
+        "message": "unknown `result.outcome` value `timed_out`",
+        "count": 1,
+        "first_at": "p2.jsonl:14"
+      }
+    ],
+    "privacy": []
+  },
+  "thresholds": {
+    "rounds_each": 20,
+    "agree_overall": 0.7,
+    "agree_each": 0.5,
+    "min_votes": 10,
+    "want_more": 0.6,
+    "min_rated_for_rho": 8,
+    "bootstrap_reps": 2000,
+    "bootstrap_seed": 7454074619262496879
+  },
+  "gate": [
+    {
+      "id": "players",
+      "check": "You and your friends play",
+      "reading": "at least 2 players (1 is the owner-only fallback)",
+      "value": "3 player(s)",
+      "status": "met"
+    },
+    {
+      "id": "rounds",
+      "check": "20 rounds each, logged",
+      "reading": "every player has at least 20 played rounds",
+      "value": "short: p3 17/20",
+      "status": "not_met"
+    },
+    {
+      "id": "agree",
+      "check": "Mostly agree with the score",
+      "reading": "at least 70 % \"about right\" overall and no rater under 50 % (a rater has 10 votes or more)",
+      "value": "76 % about right over 45 votes",
+      "status": "met"
+    },
+    {
+      "id": "want_more",
+      "check": "Want more",
+      "reading": "\"another round?\" answered yes on at least 60 % of rounds",
+      "value": "81 % (47 of 58 rounds); end-of-session: 2 of 3 said yes",
+      "status": "met"
+    },
+    {
+      "id": "agent",
+      "check": "The agent's solve rate is recorded as a baseline",
+      "reading": "an agent arm beside the no-op and CMA-ES floors",
+      "value": "agent: pass@1 60 % over 60 attempts on 20 codes; floors present: 2 of 2",
+      "status": "met"
+    }
+  ],
+  "players": [
+    {
+      "id": "p1",
+      "files": 1,
+      "rounds": 20,
+      "played": 20,
+      "skipped": 0,
+      "unusable": 0,
+      "restored": 0,
+      "passed": 13,
+      "gave_up": 2,
+      "pass_rate": 0.65,
+      "assisted": 8,
+      "assisted_share": 0.4,
+      "median_time_to_pass_ms": 96155.0,
+      "votes": 18,
+      "about_right": 14,
+      "about_right_share": 0.7778,
+      "rated": 17,
+      "disputes": 1,
+      "wanted_more": 16,
+      "wanted_more_rate": 0.8,
+      "by_level": [
+        {
+          "level": 1,
+          "played": 4,
+          "passed": 4
+        },
+        {
+          "level": 2,
+          "played": 4,
+          "passed": 4
+        },
+        {
+          "level": 3,
+          "played": 4,
+          "passed": 2
+        },
+        {
+          "level": 4,
+          "played": 4,
+          "passed": 2
+        },
+        {
+          "level": 5,
+          "played": 4,
+          "passed": 1
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "files": 1,
+      "rounds": 21,
+      "played": 20,
+      "skipped": 1,
+      "unusable": 0,
+      "restored": 1,
+      "passed": 10,
+      "gave_up": 3,
+      "pass_rate": 0.5,
+      "assisted": 8,
+      "assisted_share": 0.4,
+      "median_time_to_pass_ms": 63527.5,
+      "votes": 13,
+      "about_right": 12,
+      "about_right_share": 0.9231,
+      "rated": 18,
+      "disputes": 0,
+      "wanted_more": 19,
+      "wanted_more_rate": 0.9048,
+      "by_level": [
+        {
+          "level": 1,
+          "played": 4,
+          "passed": 3
+        },
+        {
+          "level": 2,
+          "played": 4,
+          "passed": 4
+        },
+        {
+          "level": 3,
+          "played": 4,
+          "passed": 2
+        },
+        {
+          "level": 4,
+          "played": 4,
+          "passed": 0
+        },
+        {
+          "level": 5,
+          "played": 4,
+          "passed": 1
+        }
+      ]
+    },
+    {
+      "id": "p3",
+      "files": 1,
+      "rounds": 17,
+      "played": 17,
+      "skipped": 0,
+      "unusable": 0,
+      "restored": 0,
+      "passed": 13,
+      "gave_up": 1,
+      "pass_rate": 0.7647,
+      "assisted": 3,
+      "assisted_share": 0.1765,
+      "median_time_to_pass_ms": 86548.0,
+      "votes": 14,
+      "about_right": 8,
+      "about_right_share": 0.5714,
+      "rated": 0,
+      "disputes": 1,
+      "wanted_more": 12,
+      "wanted_more_rate": 0.7059,
+      "by_level": [
+        {
+          "level": 1,
+          "played": 4,
+          "passed": 4
+        },
+        {
+          "level": 2,
+          "played": 4,
+          "passed": 4
+        },
+        {
+          "level": 3,
+          "played": 3,
+          "passed": 2
+        },
+        {
+          "level": 4,
+          "played": 3,
+          "passed": 1
+        },
+        {
+          "level": 5,
+          "played": 3,
+          "passed": 2
+        }
+      ]
+    }
+  ],
+  "levels": [
+    {
+      "level": 1,
+      "played": 12,
+      "passed": 11,
+      "pass": {
+        "n": 12,
+        "k": 11,
+        "rate": 0.9167,
+        "ci": [
+          0.6461,
+          0.9851
+        ]
+      },
+      "unassisted_played": 11,
+      "unassisted_passed": 10,
+      "assisted": 1,
+      "median_time_to_pass_ms": 86548.0,
+      "median_time_to_pass_unassisted_ms": 83800.5,
+      "median_first_sound": 69.58,
+      "median_best_sound": 96.73
+    },
+    {
+      "level": 2,
+      "played": 12,
+      "passed": 12,
+      "pass": {
+        "n": 12,
+        "k": 12,
+        "rate": 1.0,
+        "ci": [
+          0.7575,
+          1.0
+        ]
+      },
+      "unassisted_played": 7,
+      "unassisted_passed": 7,
+      "assisted": 5,
+      "median_time_to_pass_ms": 91532.5,
+      "median_time_to_pass_unassisted_ms": 85870.0,
+      "median_first_sound": 81.04,
+      "median_best_sound": 95.86
+    },
+    {
+      "level": 3,
+      "played": 11,
+      "passed": 6,
+      "pass": {
+        "n": 11,
+        "k": 6,
+        "rate": 0.5455,
+        "ci": [
+          0.2801,
+          0.7873
+        ]
+      },
+      "unassisted_played": 8,
+      "unassisted_passed": 4,
+      "assisted": 3,
+      "median_time_to_pass_ms": 89621.0,
+      "median_time_to_pass_unassisted_ms": 89621.0,
+      "median_first_sound": 62.42,
+      "median_best_sound": 92.67
+    },
+    {
+      "level": 4,
+      "played": 11,
+      "passed": 3,
+      "pass": {
+        "n": 11,
+        "k": 3,
+        "rate": 0.2727,
+        "ci": [
+          0.0975,
+          0.5656
+        ]
+      },
+      "unassisted_played": 7,
+      "unassisted_passed": 1,
+      "assisted": 4,
+      "median_time_to_pass_ms": 80039.0,
+      "median_time_to_pass_unassisted_ms": 80039.0,
+      "median_first_sound": 59.36,
+      "median_best_sound": 85.72
+    },
+    {
+      "level": 5,
+      "played": 11,
+      "passed": 4,
+      "pass": {
+        "n": 11,
+        "k": 4,
+        "rate": 0.3636,
+        "ci": [
+          0.1517,
+          0.6462
+        ]
+      },
+      "unassisted_played": 5,
+      "unassisted_passed": 3,
+      "assisted": 6,
+      "median_time_to_pass_ms": 84840.5,
+      "median_time_to_pass_unassisted_ms": 86371.0,
+      "median_first_sound": 45.34,
+      "median_best_sound": 66.78
+    }
+  ],
+  "time_to_pass": {
+    "n": 36,
+    "median_ms": 86120.5,
+    "unassisted_n": 25,
+    "unassisted_median_ms": 85870.0
+  },
+  "assists": {
+    "played": 57,
+    "assisted": 19,
+    "share": 0.3333,
+    "with_hint": 17,
+    "hints": 40,
+    "revealed": 6,
+    "live_meter": 0,
+    "assisted_passes": 11
+  },
+  "agreement": {
+    "scored_rounds": 55,
+    "votes": 45,
+    "too_low": 5,
+    "about_right": 34,
+    "too_high": 6,
+    "unknown": 4,
+    "no_vote": 6,
+    "response_rate": 0.8909,
+    "about_right_share": 0.7556,
+    "too_low_share": 0.1111,
+    "too_high_share": 0.1333,
+    "median_sound_too_low": 81.64,
+    "median_sound_about_right": 61.55,
+    "median_sound_too_high": 54.53,
+    "players": [
+      {
+        "id": "p1",
+        "votes": 18,
+        "about_right": 14,
+        "share": 0.7778,
+        "rater": true
+      },
+      {
+        "id": "p2",
+        "votes": 13,
+        "about_right": 12,
+        "share": 0.9231,
+        "rater": true
+      },
+      {
+        "id": "p3",
+        "votes": 14,
+        "about_right": 8,
+        "share": 0.5714,
+        "rater": true
+      }
+    ]
+  },
+  "rating": {
+    "n": 35,
+    "mean_rating": 3.17,
+    "sound": {
+      "n": 35,
+      "rho": 0.8181,
+      "ci_lo": 0.6856,
+      "ci_hi": 0.9014
+    },
+    "structure": {
+      "n": 35,
+      "rho": 0.817,
+      "ci_lo": 0.6948,
+      "ci_hi": 0.8857
+    },
+    "combined": {
+      "n": 35,
+      "rho": 0.8149,
+      "ci_lo": 0.6832,
+      "ci_hi": 0.8984
+    },
+    "by_rating": [
+      {
+        "rating": 1,
+        "n": 3,
+        "median_sound": 34.39
+      },
+      {
+        "rating": 2,
+        "n": 12,
+        "median_sound": 41.44
+      },
+      {
+        "rating": 3,
+        "n": 5,
+        "median_sound": 68.99
+      },
+      {
+        "rating": 4,
+        "n": 6,
+        "median_sound": 75.34
+      },
+      {
+        "rating": 5,
+        "n": 9,
+        "median_sound": 96.25
+      }
+    ],
+    "players": [
+      {
+        "id": "p1",
+        "n": 17,
+        "rho": 0.8117
+      },
+      {
+        "id": "p2",
+        "n": 18,
+        "rho": 0.8389
+      }
+    ]
+  },
+  "want_more": {
+    "rounds": {
+      "n": 58,
+      "k": 47,
+      "rate": 0.8103,
+      "ci": [
+        0.6915,
+        0.8907
+      ]
+    },
+    "players": [
+      {
+        "id": "p1",
+        "rounds": {
+          "n": 20,
+          "k": 16,
+          "rate": 0.8,
+          "ci": [
+            0.584,
+            0.9193
+          ]
+        }
+      },
+      {
+        "id": "p2",
+        "rounds": {
+          "n": 21,
+          "k": 19,
+          "rate": 0.9048,
+          "ci": [
+            0.7109,
+            0.9735
+          ]
+        }
+      },
+      {
+        "id": "p3",
+        "rounds": {
+          "n": 17,
+          "k": 12,
+          "rate": 0.7059,
+          "ci": [
+            0.4687,
+            0.8672
+          ]
+        }
+      }
+    ],
+    "survey": [
+      {
+        "id": "p1",
+        "want_more": "yes",
+        "os": "linux",
+        "daw": "reaper",
+        "note": "More levels, and a way to keep the target.",
+        "known_player": true
+      },
+      {
+        "id": "p2",
+        "want_more": "yes",
+        "os": "windows",
+        "daw": "bitwig",
+        "note": null,
+        "known_player": true
+      },
+      {
+        "id": "p3",
+        "want_more": "maybe",
+        "os": "macos",
+        "daw": "reaper",
+        "note": "Level 5 felt unfair.",
+        "known_player": true
+      }
+    ],
+    "unanswered": []
+  },
+  "disputes": [
+    {
+      "player": "p1",
+      "serial": 3,
+      "code": "10C0-1SZF-FJQG-10",
+      "level": 3,
+      "outcome": "passed",
+      "scores": [
+        62.42,
+        47.88,
+        57.33
+      ],
+      "vote": "too_low",
+      "note": "Sounded the same to me, and it scored far lower than I expected.",
+      "has_end": true
+    },
+    {
+      "player": "p3",
+      "serial": 5,
+      "code": "10M0-1078-9039-YM",
+      "level": 5,
+      "outcome": "gave_up",
+      "scores": [
+        42.04,
+        19.54,
+        34.17
+      ],
+      "vote": "too_low",
+      "note": "The cutoff and the wave matched by ear but structure says bad.",
+      "has_end": true
+    }
+  ],
+  "checks": {
+    "codes": 20,
+    "codes_played_by_all": 17,
+    "scorers": [
+      {
+        "value": "sound/1 structure/1 combined/1",
+        "count": 55
+      }
+    ],
+    "engines": [
+      {
+        "value": "0.2.0",
+        "count": 58
+      }
+    ],
+    "mixed_scorers": false,
+    "mixed_engines": false,
+    "fingerprint_drift": [],
+    "custom_codes": 0,
+    "unplaced_rounds": 0
+  },
+  "baseline": {
+    "codes": 20,
+    "codes_played_by_humans": 20,
+    "humans_all": {
+      "label": "humans (all rounds)",
+      "id": "humans",
+      "codes": 20,
+      "overall": {
+        "n": 57,
+        "passes": 36,
+        "rate": 0.6316,
+        "ci": [
+          0.5018,
+          0.7448
+        ],
+        "median_sound": 93.36
+      },
+      "by_level": [
+        {
+          "level": 1,
+          "n": 12,
+          "passes": 11,
+          "rate": 0.9167,
+          "ci": [
+            0.6461,
+            0.9851
+          ],
+          "median_sound": 96.73
+        },
+        {
+          "level": 2,
+          "n": 12,
+          "passes": 12,
+          "rate": 1.0,
+          "ci": [
+            0.7575,
+            1.0
+          ],
+          "median_sound": 95.86
+        },
+        {
+          "level": 3,
+          "n": 11,
+          "passes": 6,
+          "rate": 0.5455,
+          "ci": [
+            0.2801,
+            0.7873
+          ],
+          "median_sound": 92.67
+        },
+        {
+          "level": 4,
+          "n": 11,
+          "passes": 3,
+          "rate": 0.2727,
+          "ci": [
+            0.0975,
+            0.5656
+          ],
+          "median_sound": 85.72
+        },
+        {
+          "level": 5,
+          "n": 11,
+          "passes": 4,
+          "rate": 0.3636,
+          "ci": [
+            0.1517,
+            0.6462
+          ],
+          "median_sound": 66.78
+        }
+      ],
+      "median_renders": null,
+      "median_tokens": null,
+      "median_cost_usd": null,
+      "total_cost_usd": null
+    },
+    "humans_same_codes": {
+      "label": "humans (the baseline's codes)",
+      "id": "humans",
+      "codes": 20,
+      "overall": {
+        "n": 57,
+        "passes": 36,
+        "rate": 0.6316,
+        "ci": [
+          0.5018,
+          0.7448
+        ],
+        "median_sound": 93.36
+      },
+      "by_level": [
+        {
+          "level": 1,
+          "n": 12,
+          "passes": 11,
+          "rate": 0.9167,
+          "ci": [
+            0.6461,
+            0.9851
+          ],
+          "median_sound": 96.73
+        },
+        {
+          "level": 2,
+          "n": 12,
+          "passes": 12,
+          "rate": 1.0,
+          "ci": [
+            0.7575,
+            1.0
+          ],
+          "median_sound": 95.86
+        },
+        {
+          "level": 3,
+          "n": 11,
+          "passes": 6,
+          "rate": 0.5455,
+          "ci": [
+            0.2801,
+            0.7873
+          ],
+          "median_sound": 92.67
+        },
+        {
+          "level": 4,
+          "n": 11,
+          "passes": 3,
+          "rate": 0.2727,
+          "ci": [
+            0.0975,
+            0.5656
+          ],
+          "median_sound": 85.72
+        },
+        {
+          "level": 5,
+          "n": 11,
+          "passes": 4,
+          "rate": 0.3636,
+          "ci": [
+            0.1517,
+            0.6462
+          ],
+          "median_sound": 66.78
+        }
+      ],
+      "median_renders": null,
+      "median_tokens": null,
+      "median_cost_usd": null,
+      "total_cost_usd": null
+    },
+    "arms": [
+      {
+        "label": "agent",
+        "id": "agent",
+        "codes": 20,
+        "overall": {
+          "n": 60,
+          "passes": 36,
+          "rate": 0.6,
+          "ci": [
+            0.4737,
+            0.7143
+          ],
+          "median_sound": 91.72
+        },
+        "by_level": [
+          {
+            "level": 1,
+            "n": 12,
+            "passes": 12,
+            "rate": 1.0,
+            "ci": [
+              0.7575,
+              1.0
+            ],
+            "median_sound": 94.29
+          },
+          {
+            "level": 2,
+            "n": 12,
+            "passes": 9,
+            "rate": 0.75,
+            "ci": [
+              0.4677,
+              0.9111
+            ],
+            "median_sound": 92.54
+          },
+          {
+            "level": 3,
+            "n": 12,
+            "passes": 6,
+            "rate": 0.5,
+            "ci": [
+              0.2538,
+              0.7462
+            ],
+            "median_sound": 87.01
+          },
+          {
+            "level": 4,
+            "n": 12,
+            "passes": 5,
+            "rate": 0.4167,
+            "ci": [
+              0.1933,
+              0.6805
+            ],
+            "median_sound": 78.46
+          },
+          {
+            "level": 5,
+            "n": 12,
+            "passes": 4,
+            "rate": 0.3333,
+            "ci": [
+              0.1381,
+              0.6094
+            ],
+            "median_sound": 74.98
+          }
+        ],
+        "median_renders": 96.0,
+        "median_tokens": 130654.5,
+        "median_cost_usd": 0.196,
+        "total_cost_usd": 11.739
+      },
+      {
+        "label": "no-op floor",
+        "id": "noop",
+        "codes": 20,
+        "overall": {
+          "n": 20,
+          "passes": 0,
+          "rate": 0.0,
+          "ci": [
+            0.0,
+            0.1611
+          ],
+          "median_sound": 12.07
+        },
+        "by_level": [
+          {
+            "level": 1,
+            "n": 4,
+            "passes": 0,
+            "rate": 0.0,
+            "ci": [
+              0.0,
+              0.4899
+            ],
+            "median_sound": 7.68
+          },
+          {
+            "level": 2,
+            "n": 4,
+            "passes": 0,
+            "rate": 0.0,
+            "ci": [
+              0.0,
+              0.4899
+            ],
+            "median_sound": 14.66
+          },
+          {
+            "level": 3,
+            "n": 4,
+            "passes": 0,
+            "rate": 0.0,
+            "ci": [
+              0.0,
+              0.4899
+            ],
+            "median_sound": 8.05
+          },
+          {
+            "level": 4,
+            "n": 4,
+            "passes": 0,
+            "rate": 0.0,
+            "ci": [
+              0.0,
+              0.4899
+            ],
+            "median_sound": 11.08
+          },
+          {
+            "level": 5,
+            "n": 4,
+            "passes": 0,
+            "rate": 0.0,
+            "ci": [
+              0.0,
+              0.4899
+            ],
+            "median_sound": 9.96
+          }
+        ],
+        "median_renders": 1.0,
+        "median_tokens": null,
+        "median_cost_usd": null,
+        "total_cost_usd": null
+      },
+      {
+        "label": "CMA-ES floor",
+        "id": "cmaes",
+        "codes": 20,
+        "overall": {
+          "n": 20,
+          "passes": 10,
+          "rate": 0.5,
+          "ci": [
+            0.2993,
+            0.7007
+          ],
+          "median_sound": 88.49
+        },
+        "by_level": [
+          {
+            "level": 1,
+            "n": 4,
+            "passes": 2,
+            "rate": 0.5,
+            "ci": [
+              0.15,
+              0.85
+            ],
+            "median_sound": 89.97
+          },
+          {
+            "level": 2,
+            "n": 4,
+            "passes": 3,
+            "rate": 0.75,
+            "ci": [
+              0.3006,
+              0.9544
+            ],
+            "median_sound": 91.26
+          },
+          {
+            "level": 3,
+            "n": 4,
+            "passes": 4,
+            "rate": 1.0,
+            "ci": [
+              0.5101,
+              1.0
+            ],
+            "median_sound": 95.02
+          },
+          {
+            "level": 4,
+            "n": 4,
+            "passes": 1,
+            "rate": 0.25,
+            "ci": [
+              0.0456,
+              0.6994
+            ],
+            "median_sound": 70.26
+          },
+          {
+            "level": 5,
+            "n": 4,
+            "passes": 0,
+            "rate": 0.0,
+            "ci": [
+              0.0,
+              0.4899
+            ],
+            "median_sound": 59.67
+          }
+        ],
+        "median_renders": 1500.0,
+        "median_tokens": null,
+        "median_cost_usd": null,
+        "total_cost_usd": null
+      }
+    ]
+  }
+}
