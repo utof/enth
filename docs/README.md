@@ -2,7 +2,7 @@
 
 > **Working name:** `enth` (the repo folder). The final product name is still open — see [naming.md](naming.md). Crates use the `enth-` prefix; renaming later is a find-and-replace.
 >
-> **As of:** 2026-10-20 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). P1a (the headless core, [phase-1a.md](phase-1a.md)) is done except the owner's gates (the reverb A/B and the blind listen); its G1 table is [p1a-g1.md](p1a-g1.md). P1b (the plugin and the editor, [phase-1b.md](phase-1b.md)) is merged, lane RT's real-time measurement included; lane INT's integration is on its branch. Its G1 table is [p1b-g1.md](p1b-g1.md): every automated check passes, and your three rows are pending. **Your next steps are on one page: [p1b-owner.md](p1b-owner.md)** (owner build 1 on the real display, about 45 min; owner build 2, four sounds for G1, 60–90 min, plus 30 min of real audio).
+> **As of:** 2026-10-20 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). P1a (the headless core, [phase-1a.md](phase-1a.md)) is done except the owner's gates (the reverb A/B and the blind listen); its G1 table is [p1a-g1.md](p1a-g1.md). P1b (the plugin and the editor, [phase-1b.md](phase-1b.md)) is merged, lane RT's real-time measurement included; lane INT's integration is on its branch. Its G1 table is [p1b-g1.md](p1b-g1.md): every automated check passes, and your three rows are pending. **Your next steps are on one page: [p1b-owner.md](p1b-owner.md)** (owner build 1 on the real display, about 45 min; owner build 2, four sounds for G1, 60–90 min, plus 30 min of real audio). **R1 and S1 (the Recreate game and Instrument 0.1) are planned together in [phase-2.md](phase-2.md)**, from the 2026-10-20 research session; wave 1 is running.
 
 `enth` is an open-source (MIT) modular synthesizer written in Rust, shipped first as a **CLAP plugin**, built for its author and friends first. It combines ideas that usually live in separate products:
 
@@ -28,7 +28,8 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
 | [phase-1a.md](phase-1a.md) | The P1a (headless core) lanes: freezes, waves, ownership, acceptance, owner gates (done; the actual hours are recorded there) |
-| [phase-1b.md](phase-1b.md) | **Start here when coding.** The P1b (plugin and editor) lanes: freezes, waves, ownership, acceptance, owner gates |
+| [phase-2.md](phase-2.md) | **Start here when coding.** The R1 + S1 (Recreate and Instrument 0.1) lanes: freezes, waves, ownership, acceptance, owner gates, the test strategy for the game logic |
+| [phase-1b.md](phase-1b.md) | The P1b (plugin and editor) lanes: freezes, waves, ownership, acceptance, owner gates (merged; the owner's builds are pending) |
 | [p1b-owner.md](p1b-owner.md) | **The owner's sheet:** owner build 1 (the real display) and owner build 2 (G1's four sounds, real audio), each check with what "pass" looks like and how to report back |
 | [p1b-g1.md](p1b-g1.md) | The plugin-side G1 table: each check, its status and the evidence |
 | [plugin.md](plugin.md) | `enth-plugin` (L8): the CLAP and VST3 shell, threads, the audio block, state, slot names, dirty marking, REAPER scenarios, the leak gates and presets |
@@ -49,7 +50,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | Process | Deep-research session before every milestone; sub-reports saved verbatim in `_local/sessions/<date>-<slug>/` | Decided — [research-process.md](research-process.md) |
 | Roadmap shape | Minimal Syntorial-sized synth first, then Recreate and Synth tracks in parallel | Decided — [roadmap.md](roadmap.md) |
 | Language & licence | Rust, MIT; dependencies limited to permissive licences | Decided — [ADR-0004](adr/0004-licensing.md) |
-| Plugin format | CLAP first; VST3 second; AU later; standalone app deferred | Decided |
+| Plugin format | CLAP first; VST3 second; AU deferred past S1. Friend builds for R1: CLAP and VST3 bundles for Linux, Windows and macOS, unsigned; a standalone app only after the owner's OK (2026-10-20) | Decided — [roadmap.md](roadmap.md#r1--recreate-mode-34-weeks), [phase-2.md](phase-2.md) |
 | Plugin shell | Start on `nice-plug`; keep it thin; `clack` is the escape hatch. Carried as a private vendored fork under `vendor/` (nine patches: slot rename, `editor_closed`, baseview xkb fix, keyboard focus only while typing, a lost note-on, dirty marking, the VST3 CC list, a main-thread rescan, no restart on a render-mode change; [vendor/README.md](../vendor/README.md)) | Accepted at G0 (2026-10-19); fork decided 2026-10-19 (P1b research) — [ADR-0001](adr/0001-plugin-shell.md) |
 | UI | Native Rust UI, **no WebView**: egui rendered with glow, no second toolkit | Accepted at G0 (2026-10-19); real-display checks pending with the owner — [ADR-0002](adr/0002-ui-toolkit.md) |
 | Agent interface | CLI first (`enth`), JSON output, real units; thin MCP wrapper later if wanted | Decided — [ADR-0003](adr/0003-agent-cli.md) |
@@ -69,4 +70,4 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 
 ## How to use these docs with a coding agent
 
-Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-1b.md`, then do P1b lane <name>."* Phase 0 and P1a are done (their lanes are in `phase-0.md` and `phase-1a.md`); the P1b research summary is `_local/sessions/2026-10-19-p1b-plugin-editor/summary.md`, so read it before saying go. The work runs as parallel lanes behind three freezes (see the lane table in `phase-1b.md`). Each lane has acceptance criteria; ask the agent to stop and report at the end of its lane.
+Start a session in the repo root and say: *"Read `docs/README.md`, `AGENTS.md`, `docs/research-process.md` and `docs/phase-2.md`, then do lane <name>."* Phase 0, P1a and P1b are done (their lanes are in `phase-0.md`, `phase-1a.md` and `phase-1b.md`); the R1 + S1 research summary is `_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/summary.md`, so read it before saying go. The work runs as parallel lanes behind three freezes (see the lane table in `phase-2.md`). Each lane has acceptance criteria; ask the agent to stop and report at the end of its lane.
