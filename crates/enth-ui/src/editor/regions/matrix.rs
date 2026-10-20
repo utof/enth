@@ -10,6 +10,7 @@ use crate::Theme;
 use crate::editor::cards::present;
 use crate::editor::cards::view::{CardView, source_name};
 use crate::editor::cards::{Grip, Intent, Intents, ids};
+use crate::theme::Score;
 use crate::widgets::MatrixGrid;
 
 /// The routes as a grid.
@@ -23,6 +24,9 @@ pub struct MatrixView {
     pub depths: Vec<f32>,
     /// The cells that hold a route (a route may have depth 0), row-major: the compact route list's rows (lane ED2).
     pub routes: Vec<usize>,
+    /// Score rings on cells, row-major (a Recreate round's route rows, lane RUI; from the editor's overlay): empty
+    /// outside a round.
+    pub scores: Vec<(usize, Score)>,
 }
 
 impl MatrixView {
@@ -64,7 +68,34 @@ impl MatrixView {
             targets,
             depths,
             routes,
+            scores: Vec::new(),
         }
+    }
+
+    /// The same view with `score` asked of every route (a Recreate round's rings, lane RUI).
+    #[must_use]
+    pub fn scored(mut self, score: impl Fn(&RouteAddr) -> Option<Score>) -> Self {
+        let columns = self.sources.len();
+        self.scores = self
+            .routes
+            .iter()
+            .filter_map(|&cell| {
+                let route = RouteAddr {
+                    src: self.sources[cell % columns].0.clone(),
+                    dst: self.targets[cell / columns].0.clone(),
+                };
+                score(&route).map(|s| (cell, s))
+            })
+            .collect();
+        self
+    }
+
+    /// The score ring on `cell`, if any.
+    pub fn score(&self, cell: usize) -> Option<Score> {
+        self.scores
+            .iter()
+            .find(|(c, _)| *c == cell)
+            .map(|(_, s)| *s)
     }
 }
 
@@ -145,6 +176,9 @@ impl<'a> Matrix<'a> {
             .inner;
         let columns = v.sources.len();
         for (index, cell) in cells.iter().enumerate() {
+            if let Some(score) = v.score(index) {
+                crate::editor::overlay::paint_score(ui.painter(), t, cell.rect, score);
+            }
             let (row, col) = (index / columns, index % columns);
             let route = RouteAddr {
                 src: v.sources[col].0.clone(),

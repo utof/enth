@@ -55,7 +55,7 @@ pub use enth_challenge::{
     TargetFingerprint, Verdict,
 };
 use enth_patch::history::{GestureId, History};
-use enth_patch::{MacroIndex, Op, ParamAddr, Patch, RouteAddr};
+use enth_patch::{MacroIndex, ModuleId, Op, ParamAddr, Patch, RouteAddr};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -160,6 +160,33 @@ pub fn knobs(structure: &StructureScore) -> Vec<KnobScore> {
             };
             Some(KnobScore {
                 addr,
+                verdict: p.verdict,
+                randomized: p.randomized,
+            })
+        })
+        .collect()
+}
+
+/// Every ring a structure score gives (lane RUI, additive beside [`knobs`]): one per row with a control in the
+/// player's patch, in its order, **including the route and enable-flag rows** that [`knobs`] skips. A row's
+/// `answer_addr` (the player's control) is read as lane ST writes it: a route as [`RouteAddr`]'s text
+/// (`lfo1 -> filter1.cutoff`), an enable flag as `<id>.enabled`, anything else as a [`ParamAddr`]. A row with no
+/// control in the player's patch (`answer_addr` absent: a missing route or module), text this build cannot parse or
+/// a verdict from a newer build is skipped. A report without answer addresses rings the target's address, as
+/// [`knobs`] does.
+pub fn rings(structure: &StructureScore) -> Vec<Ring> {
+    structure
+        .params
+        .iter()
+        .filter(|p| p.verdict != Verdict::Unknown)
+        .filter_map(|p| {
+            let text = match &p.answer_addr {
+                Some(text) => text.as_str(),
+                None if p.direction == enth_challenge::Direction::Missing => return None,
+                None => p.addr.as_str(),
+            };
+            Some(Ring {
+                at: RingAt::parse(text)?,
                 verdict: p.verdict,
                 randomized: p.randomized,
             })
@@ -496,6 +523,44 @@ pub enum EditSource {
 pub struct KnobScore {
     /// The player's control.
     pub addr: ParamAddr,
+    /// Its verdict.
+    pub verdict: Verdict,
+    /// The target randomized it; `false` for a control the player moved that the target left alone.
+    pub randomized: bool,
+}
+
+/// Where a ring goes in the player's patch ([`rings`]; lane RUI, additive).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RingAt {
+    /// A parameter's control (a knob, a switch, a segmented control).
+    Param(ParamAddr),
+    /// A modulation route (`lfo1 -> filter1.cutoff`): its matrix cell or route-list row.
+    Route(RouteAddr),
+    /// A module's enable toggle (a row `<id>.enabled`).
+    Enable(ModuleId),
+}
+
+impl RingAt {
+    /// Reads a structure row's address as lane ST writes it: a route (`src -> dst`), an enable flag
+    /// (`<id>.enabled`) or a parameter. `None` for text this build cannot parse.
+    pub fn parse(text: &str) -> Option<RingAt> {
+        if text.contains("->") {
+            return text.parse().ok().map(RingAt::Route);
+        }
+        if let Some(id) = text.strip_suffix(".enabled") {
+            return ModuleId::new(id).ok().map(RingAt::Enable);
+        }
+        text.parse().ok().map(RingAt::Param)
+    }
+}
+
+/// One ring after the first submit, on a parameter, a route or a module's enable toggle ([`rings`]; lane RUI,
+/// additive beside [`KnobScore`]).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Ring {
+    /// The player's control.
+    pub at: RingAt,
     /// Its verdict.
     pub verdict: Verdict,
     /// The target randomized it; `false` for a control the player moved that the target left alone.
@@ -915,6 +980,9 @@ pub struct RoundView {
     pub report: Option<Arc<ScoreReport>>,
     /// The rings (after the first submit; live).
     pub knobs: Vec<KnobScore>,
+    /// Every ring (after the first submit; live), routes and enable flags included ([`rings`]; lane RUI,
+    /// additive): `knobs` holds the parameter rings only.
+    pub rings: Vec<Ring>,
     /// The A/B state.
     pub ab: AbState,
     /// Hint levels used.
@@ -1224,6 +1292,7 @@ pub(crate) struct GameLive {
     clock_last: Option<u64>,
     visible: bool,
     knobs: Vec<KnobScore>,
+    rings: Vec<Ring>,
     report: Option<Arc<ScoreReport>>,
     hint: Option<CoachHint>,
     error: Option<GameError>,
@@ -1464,6 +1533,7 @@ impl Session {
                     return Err(err);
                 }
                 self.game.knobs = knobs(&structure);
+                self.game.rings = rings(&structure);
                 self.game_resettle(measured);
                 Ok(())
             }
@@ -1649,6 +1719,7 @@ impl Session {
         };
         let score = summary(&report);
         let knobs = knobs(&report.structure);
+        let rings = rings(&report.structure);
         let Some(record) = self.record_mut() else {
             return;
         };
@@ -1674,6 +1745,7 @@ impl Session {
             };
         }
         self.game.knobs = knobs;
+        self.game.rings = rings;
         self.game.report = Some(Arc::new(report));
         self.game.error = None;
         self.game.dirty();
@@ -1939,6 +2011,7 @@ impl GameEdit for Session {
             submits: record.submits.len() as u32,
             report: self.game.report.clone(),
             knobs: self.game.knobs.clone(),
+            rings: self.game.rings.clone(),
             ab: self.game_ab(),
             hints: record.hints,
             hint: self.game.hint.clone(),
@@ -2174,6 +2247,83 @@ impl GameEdit for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lane RUI: route and enable-flag rows ring their route and toggle; missing rows, unparsable text and newer
+    /// verdicts ring nothing; `knobs` keeps only the parameter rows, as before.
+    #[test]
+    fn rings_include_routes_and_enable_flags_where_knobs_skip_them() {
+        use enth_challenge::Direction;
+        use enth_challenge::score::{ParamScore, ScorerId};
+        let row = |addr: &str, answer: Option<&str>, verdict, direction| ParamScore {
+            addr: addr.to_owned(),
+            answer_addr: answer.map(str::to_owned),
+            score: 0.5,
+            verdict,
+            direction,
+            randomized: true,
+        };
+        let structure = StructureScore {
+            scorer: ScorerId::STRUCTURE_V1,
+            percent: 50.0,
+            params: vec![
+                row(
+                    "osc1.wave",
+                    Some("osc2.wave"),
+                    Verdict::Good,
+                    Direction::Same,
+                ),
+                row(
+                    "lfo1 -> filter1.cutoff",
+                    Some("lfo1 -> filter1.cutoff"),
+                    Verdict::Near,
+                    Direction::Lower,
+                ),
+                row(
+                    "osc2.enabled",
+                    Some("osc2.enabled"),
+                    Verdict::Bad,
+                    Direction::Missing,
+                ),
+                row(
+                    "env2 -> filter1.cutoff",
+                    None,
+                    Verdict::Bad,
+                    Direction::Missing,
+                ),
+                row(
+                    "nope -> ",
+                    Some("nope -> "),
+                    Verdict::Bad,
+                    Direction::Higher,
+                ),
+                row(
+                    "filter1.cutoff",
+                    Some("filter1.cutoff"),
+                    Verdict::Unknown,
+                    Direction::Same,
+                ),
+            ],
+            modules: Vec::new(),
+        };
+        let r = rings(&structure);
+        assert_eq!(
+            r.iter().map(|r| r.at.clone()).collect::<Vec<_>>(),
+            vec![
+                RingAt::Param("osc2.wave".parse().unwrap()),
+                RingAt::Route("lfo1 -> filter1.cutoff".parse().unwrap()),
+                RingAt::Enable(ModuleId::new("osc2").unwrap()),
+            ]
+        );
+        assert_eq!(
+            r.iter().map(|r| r.verdict).collect::<Vec<_>>(),
+            [Verdict::Good, Verdict::Near, Verdict::Bad]
+        );
+        assert_eq!(
+            knobs(&structure).len(),
+            1,
+            "knobs keeps the parameter rows only"
+        );
+    }
 
     #[test]
     fn the_louder_side_is_attenuated_and_the_quieter_never_boosted() {

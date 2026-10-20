@@ -262,8 +262,18 @@ impl Editor {
                 }
             }
         }
-        overlay::apply(self.overlay.as_ref(), &mut cards);
+        overlay::apply(self.active_overlay(), &mut cards);
         cards
+    }
+
+    /// The overlay laid over the cards: a live Recreate round's rings and dimming (lane RUI), else the one set with
+    /// [`Editor::set_overlay`].
+    fn active_overlay(&self) -> &dyn Overlay {
+        #[cfg(feature = "recreate")]
+        if let Some(round) = self.recreate.overlay() {
+            return round;
+        }
+        self.overlay.as_ref()
     }
 
     /// The modulation sources, with their live levels in the tiles' 0..1.
@@ -317,7 +327,11 @@ impl Editor {
         let regions = self.layout.regions(rect);
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
-        let sheet = body.filter(|_| self.presets.covers_body());
+        #[cfg(feature = "recreate")]
+        let settings_page = self.recreate.covers_body();
+        #[cfg(not(feature = "recreate"))]
+        let settings_page = false;
+        let sheet = body.filter(|_| self.presets.covers_body() || settings_page);
         let mut out = Intents::default();
         let mut overflow = Vec::new();
         let mut status = None;
@@ -367,10 +381,22 @@ impl Editor {
                         overflow.push((placed.region.name(), shown.overflow));
                         mark_cards(&ctx, &cards, &mut fingerprint);
                     }
+                    // A Recreate round's results drawer takes the overview slot once it has something to show (lane RUI).
+                    #[cfg(feature = "recreate")]
+                    Region::Overview if self.recreate.drawer_open() => {
+                        let shown =
+                            super::recreate::results::show(&mut self.recreate, ui, t, r, &mut out);
+                        overflow.push(("results", shown.overflow));
+                    }
                     Region::Overview => {
                         let sources = self.sources(patch);
-                        let matrix = MatrixView::of(patch);
+                        let overlay = self.active_overlay();
+                        let matrix = MatrixView::of(patch).scored(|route| overlay.route(route));
                         let shown = Overview::new(t, &sources, &matrix).show(ui, r, &mut out);
+                        #[cfg(feature = "recreate")]
+                        if self.recreate.has_results() {
+                            super::recreate::results::reopen(ui, t, r, &mut out);
+                        }
                         overflow.push(("overview.tiles", shown.tiles_overflow));
                         overflow.push(("overview.matrix", shown.matrix_overflow));
                         for s in &sources {
@@ -404,12 +430,18 @@ impl Editor {
                 }
             }
             if let Some(b) = sheet {
-                self.presets.show(ui, t, b, &*session, &mut out);
+                #[cfg(feature = "recreate")]
+                if settings_page {
+                    super::recreate::settings::show(&mut self.recreate, ui, t, b, &mut out);
+                }
+                if !settings_page {
+                    self.presets.show(ui, t, b, &*session, &mut out);
+                }
             }
         }
         if let Some(r) = status {
             let error = session.status().last_error.map(|e| e.hint());
-            // A live Recreate round's readout (lane SKR's skeleton bar) takes the notice's place.
+            // A live Recreate round's readout (lane SKR; kept by lane RUI's bar) takes the notice's place.
             #[cfg(feature = "recreate")]
             let round = self.recreate.readout();
             #[cfg(not(feature = "recreate"))]
@@ -444,6 +476,11 @@ impl Editor {
         if self.presets.take_changed() {
             ctx.request_repaint();
         }
+        // So does a change to the Recreate view (the mode, the drawer, the settings page; lane RUI).
+        #[cfg(feature = "recreate")]
+        if self.recreate.take_changed() {
+            ctx.request_repaint();
+        }
     }
 
     /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
@@ -462,7 +499,7 @@ impl Editor {
             match &intent {
                 Intent::Preset(p) => self.presets.apply(session, p),
                 #[cfg(feature = "recreate")]
-                Intent::Game(g) => self.recreate.push(*g),
+                Intent::Game(g) => self.recreate.push(g.clone()),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
                 Intent::End(_) => {
                     session.end_gesture();

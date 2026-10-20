@@ -10,14 +10,14 @@ Play them as **4 sets of 5**. A set is one round at each level, 1 (easy) to 5 (h
 
 Each round:
 
-1. **Start** a round at the level (or from the code). enth makes a hidden sound and gives you a patch to change.
-2. **Listen** to the target and to yours, and change your patch until they sound the same.
-3. **Submit** when you think it is close. Before the score shows, enth asks you to rate your attempt from 1 ("nothing like it") to 5 ("can't tell them apart"). Answer by ear, before you see the number.
-4. **Vote** on the score: too low, about right or too high. Please vote every time; this is the main thing I am measuring.
-5. Keep going until it passes, or use **Hint** or **Reveal** if you are stuck. Both are fine and enth notes that you used them. A round only counts if you submit at least once or reveal.
-6. **End** the round. If you would like to play another, just start the next one: starting another round is how you tell me you want more.
+1. Click **Recreate** at the top of the window. Pick the level with the five dots (1 to 5), or paste the code into **Paste a code**, then click **Start**. enth makes a hidden sound and gives you a patch to change.
+2. **Listen**: **Target ▶** plays the hidden sound, **Mine ▶** plays yours, and **A/B** flips between them at the same place. Change your patch until they sound the same.
+3. **Submit** when you think it is close. Before the score shows, enth asks **How close is yours to the target?**: click 1 ("Nothing like it") to 5 ("I can't tell them apart"), or **Skip**. Answer by ear, before you see the number.
+4. **Vote** on the score, beside **Score felt**: **Too low**, **About right** or **Too high**. Please vote every time; this is the main thing I am measuring.
+5. Keep going until it passes (you can **Submit** again), or use **Hint** or **Reveal** if you are stuck. Both are fine and enth notes that you used them. A round only counts if you submit at least once or reveal.
+6. If you would like to play another, click **New round** under the score (or **Try again** for the same sound) without ending first: starting another round straight away is how you tell me you want more. Otherwise click **End**, then **End and restore my patch** (your own sound comes back) or **End and keep this patch**.
 
-If a score is plainly wrong, dispute it and write one line about what you heard. Leave out names and anything private.
+If a score is plainly wrong, click **Disagree…**, write one line about what you heard, and click **Send**. Leave out names and anything private.
 
 ## Where the log file is
 

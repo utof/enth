@@ -211,6 +211,10 @@ fn route_row(ui: &Ui, t: &Theme, v: &MatrixView, cell: usize, rect: Rect, out: &
         });
     }
 
+    // A Recreate round's ring on the route (lane RUI).
+    if let Some(score) = v.score(cell) {
+        crate::editor::overlay::paint_score(ui.painter(), t, depth_rect, score);
+    }
     // The cell, drawn like a grid cell: a bar from the centre and the depth in percent.
     let painter = ui.painter();
     let fill = if hit.hovered() || hit.dragged() {

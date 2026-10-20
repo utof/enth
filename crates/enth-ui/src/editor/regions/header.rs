@@ -131,8 +131,17 @@ impl<'a> Header<'a> {
         // feature, so AM, PBU and RUI never edit this one to add them. No-ops until those lanes fill them.
         #[cfg(feature = "add-module")]
         crate::editor::add_module::header(&mut buttons, t, inner, self.view, out);
+        // In Recreate mode the challenge bar takes the Presets group's place (lane RUI): the group steps aside.
+        #[cfg(feature = "recreate")]
+        let presets = !self.view.recreate.mode;
+        #[cfg(not(feature = "recreate"))]
+        let presets = true;
         #[cfg(feature = "presets")]
-        crate::editor::browser::header(&mut ui, t, inner, self.view, out);
+        if presets {
+            crate::editor::browser::header(&mut ui, t, inner, self.view, out);
+        }
+        #[cfg(not(feature = "presets"))]
+        let _ = presets;
         // Lane SKR: the Recreate bar joins the right-hand row, left of Add (it fits there beside the Presets group).
         #[cfg(feature = "recreate")]
         crate::editor::recreate::bar::header(&mut buttons, t, inner, self.view, out);

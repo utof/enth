@@ -16,6 +16,15 @@
 //! 64, one 30 Hz frame's worth at 48 kHz) before every editor frame, and draws the telemetry (rings, tile levels,
 //! the scope, the meters); `spectrum` is the same with the output region showing the spectrum; `engine` renders the
 //! same audio with no editor, so the editor's share is `live − engine` per frame.
+//!
+//! Recreate (lane RUI): a fourth argument `recreate` plays every case inside a level-5 Recreate round whose patch is
+//! the case's patch, scored and with a hint: the challenge bar in the header, the results drawer in the overview
+//! slot, the rings on the knobs, and the round view handed over every frame as the plugin does. The worker's jobs
+//! run before the measured frames, so `(I(250) − I(50)) / 200` drops them.
+//!
+//! ```text
+//! valgrind --tool=callgrind target/release/examples/frame_bench spectrum 250 max recreate
+//! ```
 
 #![allow(
     clippy::print_stdout,
@@ -26,6 +35,10 @@
 mod patches;
 
 use egui::{Event, Pos2, RawInput, Rect, pos2, vec2};
+use enth_patch::Patch;
+use enth_session::game::{
+    CoachHint, EditorView, GameEdit, GameRequest, JobKind, JobResult, Prepared, RoundSource,
+};
 use enth_session::{Activation, Session};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
@@ -39,11 +52,15 @@ fn main() {
         Some("max") => patches::maximum(),
         _ => patches::p1_default(),
     };
+    let recreate = args.next().as_deref() == Some("recreate");
     let theme = Theme::dark();
     let ctx = egui::Context::default();
     theme.apply(&ctx);
-    let mut session = Session::new(patch);
+    let mut session = Session::new(patch.clone());
     let mut editor = Editor::new(&theme);
+    if recreate {
+        round(&mut session, &patch);
+    }
     let live = matches!(case.as_str(), "live" | "spectrum" | "engine");
     let mut render: Box<dyn FnMut()> = Box::new(|| {});
     if live {
@@ -75,6 +92,10 @@ fn main() {
     let mut run = |events: Vec<Event>, frame: u32| {
         render();
         session.pump();
+        if recreate {
+            session.game_tick(10_000 + u64::from(frame) * 33, EditorView::Visible);
+            editor.set_round(session.round());
+        }
         let input = RawInput {
             screen_rect: Some(screen),
             time: Some(f64::from(frame) / f64::from(theme.motion.animated_hz)),
@@ -85,6 +106,10 @@ fn main() {
             let down = ui.input(|i| i.pointer.any_down());
             editor.frame(ui, &theme, &mut session, down);
         });
+        if recreate {
+            editor.apply_game(&mut session, &mut || 1);
+            session.drain_game_requests().for_each(drop);
+        }
         let primitives =
             ctx.tessellate(std::mem::take(&mut output.shapes), output.pixels_per_point);
         std::hint::black_box(primitives);
@@ -98,9 +123,9 @@ fn main() {
     let knob = ctx
         .read_response(ids::param(&cutoff))
         .map_or(screen.center(), |r| r.rect.center());
-    // An empty strip of the header, left of the patch name.
+    // An empty strip of the header, left of the patch name (in a round: right of the challenge bar's End).
     let idle_at = pos2(
-        screen.width() * 0.25,
+        screen.width() * if recreate { 0.53 } else { 0.25 },
         theme.space.gap + theme.size.bar.header * 0.5,
     );
     match case.as_str() {
@@ -150,4 +175,73 @@ fn main() {
         }
     }
     println!("frame_bench: {case}, {frames} frames");
+}
+
+/// A level-5 round on `session` whose patch becomes `patch`, scored once, with its rings settled and a hint: the jobs
+/// run here, synchronously, with the worker's functions.
+fn round(session: &mut Session, patch: &Patch) {
+    let spec = enth_challenge::SpecPreset::by_id(5)
+        .expect("level 5")
+        .spec(enth_challenge::spec::LATEST_GENERATOR, 7);
+    let mut now = 0;
+    // The round prepared once (as the plugin's worker keeps it), for the score, rings and hint jobs.
+    let mut kept: Option<enth_challenge::PreparedRound> = None;
+    let mut drive = |session: &mut Session, now: &mut u64| {
+        for _ in 0..64 {
+            *now += 100;
+            session.game_tick(*now, EditorView::Visible);
+            let jobs: Vec<_> = session
+                .drain_game_requests()
+                .filter_map(|r| match r {
+                    GameRequest::Run(job) => Some(job),
+                    _ => None,
+                })
+                .collect();
+            for job in jobs {
+                let result = match &job.kind {
+                    JobKind::Prepare { spec } => {
+                        let round = enth_challenge::prepare_round(spec).expect("prepares");
+                        let prepared = Prepared::from_round(&round, None);
+                        kept = Some(round);
+                        JobResult::Prepared(Box::new(prepared))
+                    }
+                    JobKind::Score { patch, .. } => {
+                        let round = kept.as_ref().expect("prepared first");
+                        JobResult::Scored(Box::new(
+                            enth_challenge::score_round(round, patch).expect("scores"),
+                        ))
+                    }
+                    JobKind::Rings { patch, .. } => {
+                        let round = kept.as_ref().expect("prepared first");
+                        JobResult::Rings(Box::new(
+                            enth_challenge::score_structure(round, patch).expect("rings"),
+                        ))
+                    }
+                    JobKind::Hint { level, .. } => JobResult::Hint(CoachHint::new(
+                        *level,
+                        "Your sound is darker than the target: look at the filter (filter1).",
+                    )),
+                    _ => JobResult::Loudness { lufs: None },
+                };
+                let _ = session.game_job_done(job.id, result);
+            }
+        }
+    };
+    session.game_tick(now, EditorView::Opened);
+    session
+        .game_start(RoundSource::Settings(spec))
+        .expect("starts");
+    drive(session, &mut now);
+    let ops = enth_patch::ops_between(session.patch(), patch).expect("a diff");
+    session.edit(ops, None).expect("edits");
+    session.game_submit().expect("submits");
+    drive(session, &mut now);
+    session.game_hint().expect("a hint");
+    drive(session, &mut now);
+    session.drain_requests().for_each(drop);
+    let round = session.round().expect("a round");
+    assert!(
+        round.submits == 1 && round.hint.is_some() && !round.rings.is_empty(),
+        "{round:?}"
+    );
 }
