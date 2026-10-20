@@ -39,7 +39,7 @@ fn g1(voices: usize) -> common::Prepared {
 // within G1's 12,000 per frame (1,152,000,000).
 // Measured on x86_64 Linux (Intel i7-9750H, valgrind/callgrind via gungraun 0.20.0) with the pinned toolchain:
 // - S2b, 2026-10-19 (stub osc/noise/svf/lfo/reverb/comp, the reference envelope): 122,452,870 (1,276 per frame).
-// - E, 2026-10-19 (d58c5cb, all real modules: D1 oscillators and noise, D2 svf/adsr/lfo, FXW reverb and compressor):
+// - E, 2026-10-19 (c7f13bb, all real modules: D1 oscillators and noise, D2 svf/adsr/lfo, FXW reverb and compressor):
 //   590,803,521 (6,154 per frame), L1 hits 759,464,564, estimated cycles 777,955,924.
 #[library_benchmark]
 #[bench::g1_16v(args = (16,), setup = g1, config = common::budget(G1_BUDGET_IR))]

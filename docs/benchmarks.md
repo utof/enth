@@ -200,7 +200,7 @@ Eight instances fit on one thread. Sixteen need several threads, which hosts pro
 
 ### Lane RT: the plugin, measured (2026-10-20)
 
-**Conditions.** The coordinator's release bundle of main `aa0fec0`, and the same build with `--features rt-stats` for the plugin's own share. The G1 patch (`tools/test-host/golden/enth-plugin.g1.patch.json`, which is `Patch::to_json()` of `crates/enth-engine/benches/common/g1.rs`) holds the 16-note chord. 64 frames at 48 kHz. `enth-test-host process-stats --require-rt`: rtkit RR 10, `RLIMIT_RTTIME` 200 ms, not pinned. Steady runs last 120 s after a 10 s warm-up; swap runs 120 s; flood and multi-instance runs 60 s. Every run held `flock -x /tmp/enth-quiet.lock`, so no lane built meanwhile.
+**Conditions.** The coordinator's release bundle of main `0f4f29d`, and the same build with `--features rt-stats` for the plugin's own share. The G1 patch (`tools/test-host/golden/enth-plugin.g1.patch.json`, which is `Patch::to_json()` of `crates/enth-engine/benches/common/g1.rs`) holds the 16-note chord. 64 frames at 48 kHz. `enth-test-host process-stats --require-rt`: rtkit RR 10, `RLIMIT_RTTIME` 200 ms, not pinned. Steady runs last 120 s after a 10 s warm-up; swap runs 120 s; flood and multi-instance runs 60 s. Every run held `flock -x /tmp/enth-quiet.lock`, so no lane built meanwhile.
 
 **Environment.** i7-9750H, kernel 7.0.0-38 `PREEMPT_DYNAMIC`, governor `powersave` (EPP `balance_performance`), 10–11 GB of swap in use. PipeWire's quantum is 2048, which does not matter here: the test host drives its own timer. The load average was 1.5–7, because the owner's other work ran at times (a pytest at 240–500 % CPU early on). The raw JSON reports, with the environment snapshot and the load at the start and end of each run, are in `~/code/enth-scratch/p1b/rt/runs/`.
 
@@ -268,7 +268,7 @@ Eight instances fit on one thread. Sixteen need several threads, which hosts pro
 | `crossfade` (the 3 blocks after it) | 2,407,222 | 2.0× per block | 2,648,000 |
 | `note_ons` (16 new notes, every voice stolen) | 647,848 | 1.6× | 713,000 |
 
-The other engine budgets were re-measured on `aa0fec0` with `cargo xtask bench`, and every one holds. None of these benches attaches a tap or runs the plugin, so ED2's quiet rule and PL's ledger are not in them (the ledger is costed above).
+The other engine budgets were re-measured on `0f4f29d` with `cargo xtask bench`, and every one holds. None of these benches attaches a tap or runs the plugin, so ED2's quiet rule and PL's ledger are not in them (the ledger is costed above).
 
 | Bench | Measured | Budget | Headroom | Against the measurement in the bench file |
 | --- | --- | --- | --- | --- |

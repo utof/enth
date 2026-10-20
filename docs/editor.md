@@ -400,7 +400,7 @@ Options: `--patch FILE`, `--layout NAME|FILE` (or `ENTH_LAYOUT`), `--theme FILE`
 
 The live cases (ED2) render 1,600 frames of audio before each frame through an active session; the editor's share is that case minus `engine` (the same audio, no editor: 5.91 M per frame at the P1 default, 10.43 M at the maximum patch). ED2's additions cost +0.04 M idle at the P1 default and +0.10 M at the maximum patch (depth handles, range arcs, the route list, the output region); a `ui.scope` per control for the refused-target dimming had cost 0.25–0.4 M, so only a refused control gets one. Everything stays under the proposed 10 M limit; the maximum patch with the spectrum has 6 % to spare.
 
-**Lane AM** (R1/S1; the "…" button on every module card, the region menus, the "+ Add" slots), measured against F0r (`513a22d`) on the same machine and toolchain:
+**Lane AM** (R1/S1; the "…" button on every module card, the region menus, the "+ Add" slots), measured against F0r (`c5efbf2`) on the same machine and toolchain:
 
 | Case | F0r | AM |
 | --- | --- | --- |

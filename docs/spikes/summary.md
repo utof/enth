@@ -1,6 +1,6 @@
 # Phase 0 summary (Task 7)
 
-- Date: 2026-10-19. Lane Z, after every lane was merged into `main` (last merge `a97ca55`, 09:19).
+- Date: 2026-10-19. Lane Z, after every lane was merged into `main` (last merge `64414bf`, 09:19).
 - Sources: the lane docs in this folder ([shell](shell.md), [engine](engine.md), [metric](metric.md), [ui](ui.md), [test-host](test-host.md), [agent-probe](agent-probe.md)), the research summary `_local/sessions/2026-10-19-phase-0-spikes/summary.md`, `git log`, the lanes' scratch notes, and the GitHub Actions runs of 2026-10-19.
 - Companions: [owner-checklist.md](owner-checklist.md) (everything waiting on the owner), [environment.md](environment.md) (the machine).
 

@@ -159,7 +159,7 @@ fn crossfading_setup(_: ()) -> Playing {
 }
 
 // Budgets: measured on x86_64 Linux (Intel i7-9750H, valgrind/callgrind via gungraun 0.20.0) with the pinned toolchain
-// on 2026-10-20 (lane RT, main aa0fec0), plus 10 %, rounded up to 1,000:
+// on 2026-10-20 (lane RT, main 0f4f29d), plus 10 %, rounded up to 1,000:
 // - normal: 407,869 (6,373 per frame);
 // - instant: 444,921 (+9 % on a normal block: `carry_from` pairs the modules, the reverb's core is exchanged);
 // - crossfade_swap: 2,489,265 (6.1×: both plans run two segments and the surviving state is copied; callgrind counts

@@ -90,7 +90,7 @@ const _: () = assert!(
 /// The most rounds of the minimum-step check per category before the step is forced.
 pub const MAX_ROUNDS: u16 = 16;
 
-/// The frozen start of template 0 (a byte copy of `xtask/src/preset/starter.patch.json` at F0r, `513a22d`). It is a
+/// The frozen start of template 0 (a byte copy of `xtask/src/preset/starter.patch.json` at F0r, `c5efbf2`). It is a
 /// separate copy so that later edits to the editor's starter or Init patch never move a target.
 const STARTER_V1: &str = include_str!("random/starter-v1.patch.json");
 
