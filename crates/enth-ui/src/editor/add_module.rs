@@ -206,10 +206,18 @@ pub(crate) fn card_menu(
     if view.place.is_none() {
         return;
     }
-    if let Some(button) = button {
+    if let Some(button) = button.filter(|b| b.clicked() || is_open(b)) {
         Popup::menu(button).show(|ui| card_items(ui, t, view, along_x, out));
     }
-    Popup::context_menu(header).show(|ui| card_items(ui, t, view, along_x, out));
+    if header.secondary_clicked() || header.clicked() || is_open(header) {
+        Popup::context_menu(header).show(|ui| card_items(ui, t, view, along_x, out));
+    }
+}
+
+/// Whether the menu `response` opens is open. A closed menu is not built at all: twenty cards' and four regions' idle
+/// popups cost about 0.1 M instructions a frame at the maximum patch (`examples/frame_bench`).
+fn is_open(response: &Response) -> bool {
+    Popup::is_id_open(&response.ctx, Popup::default_response_id(response))
 }
 
 /// The card menu's items (module docs).
@@ -313,6 +321,9 @@ pub(crate) fn region_menu(
     } else {
         None
     };
+    if open.is_none() && !is_open(background) {
+        return;
+    }
     Popup::menu(background)
         .open_memory(open)
         .at_pointer_fixed()
@@ -333,22 +344,12 @@ pub(crate) fn slot(ui: &mut Ui, t: &Theme, rect: Rect, id: Id, room: &Room, out:
     } else {
         t.color.text.label
     };
-    let stroke = t.stroke.thin(if response.hovered() {
+    let line = if response.hovered() {
         t.color.text.label
     } else {
         t.color.line.grid
-    });
-    let r = rect.shrink(t.stroke.thin * 0.5);
-    let outline = [
-        r.left_top(),
-        r.right_top(),
-        r.right_bottom(),
-        r.left_bottom(),
-        r.left_top(),
-    ];
-    let a = &t.size.add_module;
-    ui.painter()
-        .extend(Shape::dashed_line(&outline, stroke, a.dash, a.dash_gap));
+    };
+    ui.painter().add(dashed_outline(t, rect, line));
     let text = if rect.width() < rect.height() {
         glyph::ADD.to_owned()
     } else {
@@ -361,7 +362,40 @@ pub(crate) fn slot(ui: &mut Ui, t: &Theme, rect: Rect, id: Id, room: &Room, out:
         t.text.body.clone(),
         ink,
     );
-    Popup::menu(&response).show(|ui| add_items(ui, t, room, out));
+    if response.clicked() || is_open(&response) {
+        Popup::menu(&response).show(|ui| add_items(ui, t, room, out));
+    }
+}
+
+/// A dashed outline just inside `rect`, `stroke.thin` wide, as one mesh of axis-aligned dashes: one shape for the
+/// tessellator instead of one line segment per dash (`Shape::dashed_line` cost the P1 default's two slots about
+/// 0.28 M instructions a frame, measured with `examples/frame_bench`; a mesh costs a small fraction of that).
+fn dashed_outline(t: &Theme, rect: Rect, color: egui::Color32) -> Shape {
+    let a = &t.size.add_module;
+    let w = t.stroke.thin;
+    let mut mesh = egui::Mesh::default();
+    let mut dashes = |from: f32, to: f32, rect_at: &dyn Fn(f32, f32) -> Rect| {
+        let mut at = from;
+        while at < to {
+            let end = (at + a.dash).min(to);
+            mesh.add_colored_rect(rect_at(at, end), color);
+            at = end + a.dash_gap;
+        }
+    };
+    let (l, r, top, bottom) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    dashes(l, r, &|x0, x1| {
+        Rect::from_min_max(pos2(x0, top), pos2(x1, top + w))
+    });
+    dashes(l, r, &|x0, x1| {
+        Rect::from_min_max(pos2(x0, bottom - w), pos2(x1, bottom))
+    });
+    dashes(top + w, bottom - w, &|y0, y1| {
+        Rect::from_min_max(pos2(l, y0), pos2(l + w, y1))
+    });
+    dashes(top + w, bottom - w, &|y0, y1| {
+        Rect::from_min_max(pos2(r - w, y0), pos2(r, y1))
+    });
+    Shape::mesh(mesh)
 }
 
 /// The open "Rename…" field (one at a time).
