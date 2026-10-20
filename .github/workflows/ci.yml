@@ -62,6 +62,34 @@ jobs:
       - run: cargo xtask check-layers
       - run: cargo xtask wasm-check
 
+  # Cross-target guard (lane FB, research report 04 of the R1/S1 session): the plugin must keep compiling, and stay
+  # clippy-clean, for the two platforms friends use. Nothing is linked or run: `clippy` stops after type checking, so
+  # no mingw or Apple SDK is needed and a Linux runner is enough (measured locally: 38 s and 29 s cold, 3 jobs). The
+  # real Windows (MSVC) and macOS builds are in release.yml, on a tag or by hand, because a macOS minute costs ten times
+  # a Linux one. The libraries the Linux jobs install (ALSA, JACK, X11, GL) are not needed: those crates are
+  # target-specific, and the run above also passed with `PKG_CONFIG=/bin/false`. Windows-gnu stands in for MSVC here
+  # (both are `cfg(windows)`); the MSVC link is release.yml's job.
+  cross-target:
+    name: clippy for ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-gnu, aarch64-apple-darwin]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: Add the standard library for ${{ matrix.target }}
+        run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: cross-${{ matrix.target }}   # both legs share a job id; without a key they would overwrite each other's cache
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo clippy -p enth-plugin --all-targets --all-features --locked --target ${{ matrix.target }} -- -D warnings
+
   deny:
     name: cargo-deny ${{ matrix.checks }}
     runs-on: ubuntu-24.04

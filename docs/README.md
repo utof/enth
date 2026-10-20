@@ -2,7 +2,7 @@
 
 > **Working name:** `enth` (the repo folder). The final product name is still open — see [naming.md](naming.md). Crates use the `enth-` prefix; renaming later is a find-and-replace.
 >
-> **As of:** 2026-10-20 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). P1a (the headless core, [phase-1a.md](phase-1a.md)) is done except the owner's gates (the reverb A/B and the blind listen); its G1 table is [p1a-g1.md](p1a-g1.md). P1b (the plugin and the editor, [phase-1b.md](phase-1b.md)) is merged, lane RT's real-time measurement included; lane INT's integration is on its branch. Its G1 table is [p1b-g1.md](p1b-g1.md): every automated check passes, and your three rows are pending. **Your next steps are on one page: [p1b-owner.md](p1b-owner.md)** (owner build 1 on the real display, about 45 min; owner build 2, four sounds for G1, 60–90 min, plus 30 min of real audio). **R1 and S1 (the Recreate game and Instrument 0.1) are planned together in [phase-2.md](phase-2.md)**, from the 2026-10-20 research session; wave 1 is running.
+> **As of:** 2026-10-20 · **Status:** Phase 0 complete except the owner's checks ([spikes/summary.md](spikes/summary.md), [owner checklist](spikes/owner-checklist.md)). P1a (the headless core, [phase-1a.md](phase-1a.md)) is done except the owner's gates (the reverb A/B and the blind listen); its G1 table is [p1a-g1.md](p1a-g1.md). P1b (the plugin and the editor, [phase-1b.md](phase-1b.md)) is merged, lane RT's real-time measurement included; lane INT's integration too. Its G1 table is [p1b-g1.md](p1b-g1.md): every automated check passes, and your three rows are pending. **Your next steps are on one page: [p1b-owner.md](p1b-owner.md)** (owner build 1 on the real display, about 45 min; owner build 2, four sounds for G1, 60–90 min, plus 30 min of real audio). **R1 and S1 (the Recreate game and Instrument 0.1) are planned together in [phase-2.md](phase-2.md)**, from the 2026-10-20 research session; wave 1 is running.
 
 `enth` is an open-source (MIT) modular synthesizer written in Rust, shipped first as a **CLAP plugin**, built for its author and friends first. It combines ideas that usually live in separate products:
 
@@ -33,6 +33,8 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [p1b-owner.md](p1b-owner.md) | **The owner's sheet:** owner build 1 (the real display) and owner build 2 (G1's four sounds, real audio), each check with what "pass" looks like and how to report back |
 | [p1b-g1.md](p1b-g1.md) | The plugin-side G1 table: each check, its status and the evidence |
 | [plugin.md](plugin.md) | `enth-plugin` (L8): the CLAP and VST3 shell, threads, the audio block, state, slot names, dirty marking, REAPER scenarios, the leak gates and presets |
+| [distribution.md](distribution.md) | Friend and release builds: `release.yml` (tag or by hand only), the per-push Windows and macOS cross-target guard, costs per run, signing, what friends do, DAW coverage |
+| [friends-install.md](friends-install.md) | The short install sheet to forward to friends |
 | [phase-0.md](phase-0.md) | The Phase 0 lanes and tasks, with acceptance criteria (done) |
 | [spikes/summary.md](spikes/summary.md) | What Phase 0 measured and changed, the G0 results, and the owner's [checklist](spikes/owner-checklist.md) |
 | [benchmarks.md](benchmarks.md) | How we measure UI stacks, the engine, and the agent loop — and the pass/fail thresholds |
