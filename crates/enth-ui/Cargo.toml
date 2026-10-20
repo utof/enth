@@ -22,7 +22,9 @@ presets = []
 # Lane AM: the header's "+ Add" menu. On by default, since S1 ships adding and removing modules (the cards' "…" menus,
 # the region menus and the "+ Add" slots are always built); `default-features = false` drops the header button only.
 add-module = []
-default = ["add-module"]
+# Lane SKR (F2r): `recreate` on by default. Its header hook draws nothing until a shell hands the editor a round view
+# (`Editor::set_round`), so kittest and dev-window frames that never do are unchanged; the plugin does every frame.
+default = ["add-module", "recreate"]
 
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).

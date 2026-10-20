@@ -35,6 +35,12 @@ pub enum Grip {
 /// One thing a control asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Intent {
+    /// The Recreate bar (feature `recreate`; lane SKR's skeleton, lane RUI's UI): a round intent. The editor queues
+    /// it for the shell, which applies it to its `GameEdit` after the frame ([`Editor::apply_game`]); never an op.
+    ///
+    /// [`Editor::apply_game`]: crate::editor::Editor::apply_game
+    #[cfg(feature = "recreate")]
+    Game(crate::editor::recreate::bar::GameIntent),
     /// A drag started on a control: the edits up to the matching `End` are one gesture (one undo step).
     Begin(Grip),
     /// A parameter's new plain value, in real units and valid for its spec.
@@ -96,6 +102,13 @@ impl Intent {
     /// at the end of the summation order; a depth of 0 on a missing route is nothing.
     pub fn ops(&self, patch: &Patch) -> Vec<Op> {
         match self {
+            // Round intents go to the shell's `GameEdit`, never through ops (lane SKR).
+            #[cfg(feature = "recreate")]
+            #[allow(
+                clippy::match_same_arms,
+                reason = "lane SKR's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
+            )]
+            Intent::Game(_) => Vec::new(),
             Intent::Set { addr, value } => vec![Op::SetParam {
                 addr: addr.clone(),
                 value: *value,

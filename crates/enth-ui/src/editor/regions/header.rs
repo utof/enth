@@ -25,6 +25,10 @@ pub struct HeaderView {
     pub redo: Option<String>,
     /// Every section and how full it is, for the Add menu (lane AM, the Add hook).
     pub room: crate::editor::add_module::Room,
+    /// The Recreate bar's view (lane SKR's skeleton, the Recreate hook): empty, and drawn as nothing, until the
+    /// shell hands the editor a round view.
+    #[cfg(feature = "recreate")]
+    pub recreate: crate::editor::recreate::bar::BarView,
 }
 
 /// The header band.

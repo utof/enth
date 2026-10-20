@@ -129,6 +129,8 @@ fn region_snapshots() {
         undo: Some("Filter 1 › Cutoff".to_owned()),
         redo: None,
         room: enth_ui::editor::add_module::Room::all(&patch),
+        // The hook fields of later lanes (the Recreate bar draws nothing without a shell's round view).
+        ..HeaderView::default()
     };
     region_snapshot(
         r,
