@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "lead-chip-pulse"
+added = "2026-10-20"
+difficulty = 2
+tags = ["lead", "pulse", "envelope", "retro"]
+brief = "a chiptune square lead: hard on, hard off, no movement"
+template = "init"
+expect = "pitch.note ~ C5, attack < 5ms, sustain > -1.5dB, release < 40ms, brightness > 2.5kHz, stability > 0.95, tremolo == null, noisiness < 0.05, peak < -1dB"
+rationale = "A retro game lead: instant on (attack under 5 ms), held at full level, instant off (release under 40 ms), bright, and with no movement at all, which `stability > 0.95` (no vibrato, no detune: a detuned patch reads 0) and `tremolo == null` say. A pulse and a saw read alike here (4.2 and 4.9 kHz at C5; no descriptor tells a pulse's harmonic recipe), so the list asks for the envelope and the stillness, and the brief names the wave. The blank patch fails sustain and release. Witness: pulse 25 %, 0 ms attack, 10 ms release (release 8 ms, stability 0.999)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C5", vel = 100, on_s = 0.0, off_s = 1.0 }], dur_s = 1.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

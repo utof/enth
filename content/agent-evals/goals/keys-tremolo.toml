@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "keys-tremolo"
+added = "2026-10-20"
+difficulty = 3
+tags = ["keys", "tremolo", "lfo", "modulation", "envelope"]
+brief = "an electric-piano-like key with a gentle tremolo"
+template = "init"
+expect = "pitch.note ~ C4, tremolo in [3.5Hz, 7Hz], tremolo_depth in [2.5dB, 12dB], attack < 15ms, sustain in [-20dB, -4dB], brightness in [400Hz, 1.2kHz], beating == null, release < 400ms, peak < -1dB"
+rationale = "An electric-piano-like key: struck, decaying to a quieter held level (sustain -20 to -4 dB), mellow (400 Hz to 1.2 kHz at C4), with a gentle amplitude wobble: a tremolo of 3.5-7 Hz and 2.5-12 dB. Needs an LFO routed to a level. The depth window both ways: a 20 % route read 1.9 dB (too shallow to hear as tremolo), and a trance gate reads over 30 dB. Witness: triangle, lfo1 5 Hz sine to osc1.level at 50 %, 1.5 s decay to 35 % (tremolo 5.0 Hz, 5.3 dB, sustain -8.9 dB)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C4", vel = 100, on_s = 0.0, off_s = 2.5 }], dur_s = 3.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

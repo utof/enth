@@ -12,6 +12,8 @@
 //! - [`ops`]: the edits. **Every patch mutation is an [`Op`]**; [`apply`] returns the inverse ops, [`apply_all`] is
 //!   atomic, and [`ops::effect`] says whether an op needs a plan rebuild. [`history`] keeps undo and redo over
 //!   them, merging a knob drag only for one address.
+//! - [`diff`]: [`ops_between`], the ops that turn one patch into another, checked by applying them (the session's
+//!   undoable preset load and the CLI's `diff`; lane PBC of R1/S1).
 //! - [`error`]: one vocabulary of [`PatchError`]s (a stable code, a message, a hint, `did_you_mean`) shared by ops,
 //!   validation, the file layer, migrations and the ops JSON; [`Invalid`] lists every [`Violation`] with a path.
 //! - [`validate`](mod@validate): every invariant of a patch, all violations at once, in the order of a file.
@@ -33,6 +35,7 @@
 pub mod addr;
 pub mod canon;
 pub mod catalogue;
+pub mod diff;
 pub mod error;
 pub mod file;
 pub mod history;
@@ -47,6 +50,7 @@ pub use addr::{
     AddrError, MacroIndex, ModSource, ModuleId, ParamAddr, Position, RouteAddr, SlotIndex, Target,
 };
 pub use catalogue::{Builtin, CATALOGUE, ModuleKind, ModuleSpec, Rate};
+pub use diff::ops_between;
 pub use error::{Invalid, OpError, PatchError, Violation};
 pub use model::{Macro, ModuleInstance, Patch, PatchMeta, Route, Section, VoiceSettings};
 pub use modulation::{ModulationRange, modulation_range};

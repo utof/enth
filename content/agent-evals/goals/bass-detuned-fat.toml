@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "bass-detuned-fat"
+added = "2026-10-20"
+difficulty = 3
+tags = ["bass", "detune", "low", "filter"]
+brief = "a fat detuned bass, warm rather than buzzy"
+template = "init"
+expect = "pitch.note ~ E2, beating in [0.6Hz, 2Hz], brightness in [350Hz, 1kHz], attack < 40ms, sustain > -6dB, release < 300ms, peak < -1dB"
+rationale = "Two saws a little apart, low-passed: the beat window 0.6-2 Hz at E2 (82.4 Hz) means about 13-42 cents between the oscillators, warm rather than buzzy means a brightness window of 350 Hz to 1 kHz (a saw at E2 reads about 3 kHz), and it holds and stops like a bass. The blank patch fails on beating and brightness. Witness: osc1 -11 ct, osc2 +11 ct, a 1.2 kHz low-pass (beating 1.05 Hz, centroid 593 Hz). Note for agents and maintainers: `pitch.stability` reads 0 on a detuned patch (the YIN track wobbles with the beat), so this goal has no stability item and the vibrato goal asks for `beating == null`."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "E2", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

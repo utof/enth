@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "lead-vibrato"
+added = "2026-10-20"
+difficulty = 3
+tags = ["lead", "vibrato", "lfo", "modulation"]
+brief = "a singing saw lead with a clear vibrato"
+template = "init"
+expect = "pitch.note ~ A4, stability in [0.4, 0.85], beating == null, attack < 30ms, sustain > -4dB, brightness in [1.2kHz, 4kHz], release < 300ms, peak < -1dB"
+rationale = "The vibrato goal: a held saw lead whose pitch wobbles. There is no vibrato-rate descriptor; `pitch.stability` (1 minus the std of the voiced frames in cents over 50) reads it: a sine LFO on the pitch at ±15, ±30 and ±50 ct reads 0.79, 0.59 and 0.31, a still saw about 0.99. The window 0.4-0.85 asks for a clear but not seasick vibrato. `beating == null` rules out the other way to lower stability (a detuned pair reads 0, measured). The brightness window keeps it a little filtered. Witness: lfo1 5.5 Hz sine to osc1.fine at 30 ct (stability 0.586), a 3 kHz low-pass. Limit: a slow drift would read like a vibrato; the rate is not measured."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "A4", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

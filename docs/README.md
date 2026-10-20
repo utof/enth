@@ -26,12 +26,15 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [session.md](session.md) | `enth-session` (L6): the one `Session` that owns the live patch, its API, the threading contract, plan delivery, the host bridge, undo and the saved state |
 | [editor.md](editor.md) | The plugin editor (`enth-ui` `editor::Editor`): how it binds to the session, layouts as data (`ENTH_LAYOUT`, layout 1 "lanes"), the right-click menu, the dev window, and how to add a layout |
 | [agent-cli.md](agent-cli.md) | The `enth` CLI that lets LLM agents (and humans and scripts) build patches with feedback |
+| [agent-evals.md](agent-evals.md) | The agent eval set (30 text goals, eval version 3): families, witnesses, the audit (`cargo xtask agent-eval audit`), the paid-run cost, and the analysis findings it surfaced |
+| [challenge.md](challenge.md) | `enth-challenge` (L4): the challenge model (`enth.challenge/1`), `RandomSpec`, challenge codes (short and long, Crockford base32), version rules, and the scoring types and traits |
 | [roadmap.md](roadmap.md) | A minimal synth, then the Recreate and Synth tracks in parallel; gates; what *not* to build yet |
 | [phase-1a.md](phase-1a.md) | The P1a (headless core) lanes: freezes, waves, ownership, acceptance, owner gates (done; the actual hours are recorded there) |
 | [phase-2.md](phase-2.md) | **Start here when coding.** The R1 + S1 (Recreate and Instrument 0.1) lanes: freezes, waves, ownership, acceptance, owner gates, the test strategy for the game logic |
 | [phase-1b.md](phase-1b.md) | The P1b (plugin and editor) lanes: freezes, waves, ownership, acceptance, owner gates (merged; the owner's builds are pending) |
 | [p1b-owner.md](p1b-owner.md) | **The owner's sheet:** owner build 1 (the real display) and owner build 2 (G1's four sounds, real audio), each check with what "pass" looks like and how to report back |
 | [p1b-g1.md](p1b-g1.md) | The plugin-side G1 table: each check, its status and the evidence |
+| [presets.md](presets.md) | Presets: the file format (`Patch::to_json()`), factory and user folders, the tag vocabulary, search, the undoable load (no host writes), saving, favorites and the local crash file |
 | [plugin.md](plugin.md) | `enth-plugin` (L8): the CLAP and VST3 shell, threads, the audio block, state, slot names, dirty marking, REAPER scenarios, the leak gates and presets |
 | [distribution.md](distribution.md) | Friend and release builds: `release.yml` (tag or by hand only), the per-push Windows and macOS cross-target guard, costs per run, signing, what friends do, DAW coverage |
 | [friends-install.md](friends-install.md) | The short install sheet to forward to friends |

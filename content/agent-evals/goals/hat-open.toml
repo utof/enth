@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "hat-open"
+added = "2026-10-20"
+difficulty = 2
+tags = ["percussion", "hat", "noise", "structure"]
+brief = "an open hi-hat: a bright noise hiss that rings for about half a second"
+template = "init"
+expect = "noisiness > 0.8, brightness > 7kHz, attack < 5ms, duration in [250ms, 800ms], sustain < -40dB, pitch == null, peak < -1dB"
+rationale = "The open twin of hat-closed-noise: noise, high-passed, ringing 250-800 ms (the closed hat's window is 25-120 ms), with the key held 1 s and no sustain. Structural like the closed hat (take the oscillator out, add noise). White noise reads about 12 kHz, high-passed at 6 kHz about 14 kHz; the 7 kHz floor allows pink or a gentler filter. Witness: noise, 6 kHz high-pass, 1.1 s decay to 0 % (duration 555 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C3", vel = 100, on_s = 0.0, off_s = 1.0 }], dur_s = 1.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
