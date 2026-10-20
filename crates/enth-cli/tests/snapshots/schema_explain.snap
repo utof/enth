@@ -1,0 +1,459 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "EffectOut": {
+      "additionalProperties": false,
+      "description": "What one descriptor did when a parameter moved one just-noticeable step.",
+      "properties": {
+        "change": {
+          "description": "`higher`, `lower`, `appears` or `vanishes`.",
+          "type": "string"
+        },
+        "feature": {
+          "description": "The descriptor.",
+          "type": "string"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its reading before, in the descriptor's unit (absent when it appears)."
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its reading after (absent when it vanishes)."
+        }
+      },
+      "required": [
+        "feature",
+        "change"
+      ],
+      "type": "object"
+    },
+    "MeasuredOut": {
+      "additionalProperties": false,
+      "description": "Measured with the engine on a patch (`--patch`): the response of the descriptors to one step of each parameter.",
+      "properties": {
+        "params": {
+          "description": "One entry per continuous parameter probed (a parameter query: one).",
+          "items": {
+            "$ref": "#/$defs/ParamEffectOut"
+          },
+          "type": "array"
+        },
+        "patch": {
+          "description": "The patch that was probed.",
+          "type": "string"
+        },
+        "perf": {
+          "$ref": "#/$defs/PerfOut",
+          "description": "The performance that was played."
+        },
+        "renders": {
+          "description": "Renders used, the patch's own included.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "skipped": {
+          "description": "Parameters left out: categorical ones, which a step does not describe, and ones the render budget skipped.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "patch",
+        "perf",
+        "renders",
+        "params"
+      ],
+      "type": "object"
+    },
+    "MovesOut": {
+      "additionalProperties": false,
+      "description": "A descriptor a parameter moves, with what it means.",
+      "properties": {
+        "feature": {
+          "description": "The descriptor (`spectrum.centroid_hz`), as `describe` and `check` name it.",
+          "type": "string"
+        },
+        "meaning": {
+          "description": "What that descriptor measures, in a sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feature",
+        "meaning"
+      ],
+      "type": "object"
+    },
+    "NoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a reported performance.",
+      "properties": {
+        "note": {
+          "description": "The note name; null when inferred from audio.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "off_s": {
+          "description": "Note-off time in seconds; null when unknown.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "on_s": {
+          "description": "Note-on time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "description": "MIDI velocity; null when inferred from audio.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on_s"
+      ],
+      "type": "object"
+    },
+    "ParamBriefOut": {
+      "additionalProperties": false,
+      "description": "One parameter of a module, in short.",
+      "properties": {
+        "default": {
+          "description": "The default, in real units.",
+          "type": "string"
+        },
+        "effect": {
+          "description": "What it does, in one sentence.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The key.",
+          "type": "string"
+        },
+        "moves": {
+          "description": "The descriptor it mainly moves.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The display name.",
+          "type": "string"
+        },
+        "range": {
+          "description": "The range in real units (`20Hz..20kHz`), or the values (`lp|bp|hp|notch`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "range",
+        "default",
+        "effect"
+      ],
+      "type": "object"
+    },
+    "ParamEffectOut": {
+      "additionalProperties": false,
+      "description": "What a probe of one parameter showed in the patch.",
+      "properties": {
+        "effects": {
+          "description": "The descriptors that moved, most affected first (at most four).",
+          "items": {
+            "$ref": "#/$defs/EffectOut"
+          },
+          "type": "array"
+        },
+        "from": {
+          "description": "The value before, in real units.",
+          "type": "string"
+        },
+        "inert": {
+          "description": "True when `reach` is under 0.25: no descriptor notices the step in this patch (the parameter does nothing\nhere, and the game does not compare it).",
+          "type": "boolean"
+        },
+        "param": {
+          "description": "The address (`filter1.cutoff`).",
+          "type": "string"
+        },
+        "reach": {
+          "description": "How far the most affected descriptor moved, in units of the smallest difference the game's structure score\ntolerates in it: 1 is one tolerance, so a parameter should move several such steps to be heard as a change.",
+          "format": "double",
+          "type": "number"
+        },
+        "to": {
+          "description": "The value probed: one just-noticeable step, toward the roomier side of the range.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "param",
+        "from",
+        "to",
+        "reach",
+        "inert",
+        "effects"
+      ],
+      "type": "object"
+    },
+    "ParamFactsOut": {
+      "additionalProperties": false,
+      "description": "The catalogue's facts about one parameter.",
+      "properties": {
+        "accepts": {
+          "description": "Example spellings a value may take (`800Hz`, `1.2kHz`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "automatable": {
+          "description": "Host automation may drive it.",
+          "type": "boolean"
+        },
+        "default": {
+          "$ref": "#/$defs/Reading",
+          "description": "The default: a number in `unit`, an enum key, or a boolean for a toggle."
+        },
+        "key": {
+          "description": "The key used in addresses (`cutoff`).",
+          "type": "string"
+        },
+        "max": {
+          "description": "The highest value (null for enums and toggles).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min": {
+          "description": "The lowest value (null for enums and toggles).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "modulatable": {
+          "description": "Routes may modulate it.",
+          "type": "boolean"
+        },
+        "moves": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MovesOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The descriptor it mainly moves."
+        },
+        "reads_as": {
+          "description": "How the value shows in that descriptor, where the two differ.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scale": {
+          "description": "`linear`, `log`, `power`, `int`, `enum` or `toggle`.",
+          "type": "string"
+        },
+        "tier": {
+          "description": "`basic`, `intermediate` or `advanced`.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "The unit suffix values are stored in (`Hz`, `ms`, `dB`, `%`, `ct`, `st`); empty for plain numbers, enums and\ntoggles.",
+          "type": "string"
+        },
+        "values": {
+          "description": "The enum keys, for enums.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "unit",
+        "default",
+        "scale",
+        "accepts",
+        "tier",
+        "modulatable",
+        "automatable"
+      ],
+      "type": "object"
+    },
+    "PerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a command used, and where it came from.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the clip in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes (empty when unknown).",
+          "items": {
+            "$ref": "#/$defs/NoteOut"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`flag` (`--perf`, `--note`, `--hold`, `--dur`, `--vel`), `default` (the CLI's default performance), `wav` (the\n`enth` chunk of the WAV), `inferred` (a note-off found in the audio) or `none` (unknown: decay, sustain and\nrelease are null).",
+          "type": "string"
+        },
+        "why_missing": {
+          "description": "Why the performance is unknown, when it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "dur_s",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    }
+  },
+  "$id": "enth.explain/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.explain/1`: what a parameter, a module or a module kind does, from the catalogue; with `--patch`, also\nwhat it does in that patch, measured.",
+  "properties": {
+    "hint": {
+      "description": "The next command to try.",
+      "type": "string"
+    },
+    "kind": {
+      "description": "The module kind (`svf`), or `voice` / `master`.",
+      "type": "string"
+    },
+    "measured": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MeasuredOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What the engine measured on `--patch`."
+    },
+    "name": {
+      "description": "The display name of the parameter, or of the module kind.",
+      "type": "string"
+    },
+    "param": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ParamFactsOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "For a parameter: its facts."
+    },
+    "params": {
+      "description": "For a module, kind or built-in: its parameters, in short.",
+      "items": {
+        "$ref": "#/$defs/ParamBriefOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.explain/1",
+      "description": "`enth.explain/1`.",
+      "type": "string"
+    },
+    "subject": {
+      "description": "The address, id or kind as resolved (`filter1.cutoff`, `filter1`, `svf`, `voice`).",
+      "type": "string"
+    },
+    "summary": {
+      "description": "The catalogue's sentence for it.",
+      "type": "string"
+    },
+    "text": {
+      "description": "The explanation in plain language (what a terminal prints).",
+      "type": "string"
+    },
+    "what": {
+      "description": "What was asked: `param`, `module` (a module id in the patch), `kind` or `builtin` (`voice`, `master`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "what",
+    "subject",
+    "kind",
+    "name",
+    "summary",
+    "text",
+    "hint"
+  ],
+  "title": "ExplainOut",
+  "type": "object"
+}

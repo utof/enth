@@ -1,0 +1,23 @@
+---
+source: crates/enth-cli/tests/suggest.rs
+expression: "gamekit::record(&s, &o, &[\"/level\", \"/levels\"])"
+---
+exit: 0
+--- stdout
+{
+  "aspect": "brightness",
+  "close": false,
+  "code": "1040-1000-0000-7M",
+  "difference": "higher",
+  "hint": "`--level 4` reveals more; each level costs one coach run, and the game counts a hint as assistance",
+  "level": 3,
+  "levels": 4,
+  "measured": false,
+  "module": "osc1",
+  "param": "osc1.wave",
+  "patch": "[TMP]/p.patch.json",
+  "renders": "<num>",
+  "schema": "enth.suggest/1",
+  "text": "Your sound is brighter than the target: change Wave on the oscillator (osc1)."
+}
+--- stderr

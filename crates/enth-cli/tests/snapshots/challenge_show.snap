@@ -26,6 +26,7 @@ exit: 0
       }
     ]
   },
+  "preset": "Level 3",
   "randomized": [
     "env1.attack",
     "env1.decay",
@@ -40,7 +41,7 @@ exit: 0
     "osc1.wave"
   ],
   "reveal": null,
-  "schema": "enth.challenge-show/1",
+  "schema": "enth.challenge-show/2",
   "scoring": {
     "combined": "[scorer]",
     "pass_mark": 90,

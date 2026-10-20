@@ -1,0 +1,40 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 0
+--- stdout
+{
+  "hint": "add --patch <patch> to measure what it does in your patch; `enth params <kind>` lists units and ranges",
+  "kind": "svf",
+  "name": "Cutoff",
+  "param": {
+    "accepts": [
+      "800",
+      "800Hz",
+      "1.2kHz",
+      "A4",
+      "C#3",
+      "Db2"
+    ],
+    "automatable": true,
+    "default": "<num>",
+    "key": "cutoff",
+    "max": "<num>",
+    "min": "<num>",
+    "modulatable": true,
+    "moves": {
+      "feature": "spectrum.centroid_hz",
+      "meaning": "Average frequency of the sound's energy, weighted by magnitude (spectral centroid). Higher is brighter; a pure sine reads its own pitch"
+    },
+    "scale": "log",
+    "tier": "basic",
+    "unit": "Hz"
+  },
+  "schema": "enth.explain/1",
+  "subject": "filter1.cutoff",
+  "summary": "The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.",
+  "text": "filter1.cutoff (Cutoff) is a parameter of the filter (svf).\nThe corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.\nIn Hz, from 20Hz to 20kHz, default 2kHz. Its knob is logarithmic: equal steps are equal ratios, so a turn near the bottom is as big a musical move as one near the top.\nWrite it as 800, 800Hz, 1.2kHz.\nIt mainly moves spectrum.centroid_hz: Average frequency of the sound's energy, weighted by magnitude (spectral centroid). Higher is brighter; a pure sine reads its own pitch.\nRoutes can modulate it (an LFO or envelope into this address), and host automation can drive it.",
+  "what": "param"
+}
+--- stderr

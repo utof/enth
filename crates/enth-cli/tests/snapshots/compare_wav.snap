@@ -1,0 +1,43 @@
+---
+source: crates/enth-cli/tests/compare.rs
+expression: "gamekit::record(&s, &o, &[], &hide)"
+---
+exit: 0
+--- stdout
+{
+  "combined": null,
+  "differences": "<hidden>",
+  "distance": "<num>",
+  "hint": "`differences` says which way each descriptor is off; `enth match --target <wav> --start <patch>` searches for the parameters",
+  "margin": null,
+  "metric": "logmel-l1/1",
+  "mode": "wav",
+  "pass_mark": null,
+  "passed": null,
+  "patch": "[TMP]/dark.patch.json",
+  "report": "<hidden>",
+  "schema": "enth.compare/2",
+  "scorers": [],
+  "sound": null,
+  "structure": null,
+  "target": {
+    "code": null,
+    "fingerprint": null,
+    "kind": "wav",
+    "perf": {
+      "dur_s": 3,
+      "notes": [
+        {
+          "note": "C3",
+          "off_s": 1.5,
+          "on_s": 0,
+          "vel": 100
+        }
+      ],
+      "source": "wav"
+    },
+    "phrase": null,
+    "source": "[TMP]/pluck.wav"
+  }
+}
+--- stderr

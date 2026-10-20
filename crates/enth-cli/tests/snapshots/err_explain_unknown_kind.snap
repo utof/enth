@@ -1,0 +1,28 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "svf"
+  ],
+  "error": "unknown_kind",
+  "exit": 3,
+  "hint": "`enth modules` lists the kinds; `enth params <kind>` their parameters; a module id like filter1 works with --patch",
+  "known": [
+    "osc",
+    "noise",
+    "svf",
+    "adsr",
+    "lfo",
+    "reverb",
+    "comp",
+    "voice",
+    "master"
+  ],
+  "message": "'svff' is not a parameter, module, module kind or built-in",
+  "schema": "enth.error/1"
+}
+--- stderr

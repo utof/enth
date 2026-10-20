@@ -3,89 +3,353 @@ source: crates/enth-cli/tests/schemas.rs
 expression: v
 ---
 {
-  "$id": "enth.compare/1",
+  "$defs": {
+    "CompareTargetOut": {
+      "additionalProperties": false,
+      "description": "What a patch was compared with.",
+      "properties": {
+        "code": {
+          "description": "The challenge's code (a challenge file without one: null; null for a patch or a WAV).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fingerprint": {
+          "description": "The regenerated target's fingerprint (64 hex digits), for a challenge.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`code` (`--code`), `challenge` (`--challenge FILE`), `patch` or `wav` (`--target`).",
+          "type": "string"
+        },
+        "perf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PerfOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The performance both were played with, for a patch or WAV reference (a challenge's is its phrase)."
+        },
+        "phrase": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhraseRefOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The phrase both were heard through, for a challenge or a patch reference."
+        },
+        "source": {
+          "description": "The code, or the file path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source"
+      ],
+      "type": "object"
+    },
+    "DifferenceOut": {
+      "additionalProperties": false,
+      "description": "One descriptor that differs between the patch and the reference by more than the game tolerates in it.",
+      "properties": {
+        "aspect": {
+          "description": "The aspect it belongs to (`brightness`, `pitch`, `attack`, `decay`, `sustain`, `release`, `noisiness`,\n`beating`, `tremolo`, `sweep`): the coach's words.",
+          "type": "string"
+        },
+        "direction": {
+          "description": "The patch relative to the reference: `higher`, `lower`, `missing` (the reference has it, the patch does not)\nor `extra` (the patch has it, the reference does not).",
+          "type": "string"
+        },
+        "feature": {
+          "description": "The descriptor (`spectrum.centroid_hz`).",
+          "type": "string"
+        },
+        "ours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The patch's reading, in the descriptor's unit (null when missing)."
+        },
+        "perceptual": {
+          "description": "In words: \"ours is brighter than the target\".",
+          "type": "string"
+        },
+        "severity": {
+          "description": "`high` (4 units or more, or missing or extra), `medium` (2 or more) or `low`.",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The reference's reading (null when extra)."
+        },
+        "units": {
+          "description": "How far apart they are, in units of the smallest difference the game tolerates in this descriptor (null for\nmissing and extra). Only differences of 0.5 or more are listed.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "feature",
+        "aspect",
+        "direction",
+        "severity",
+        "perceptual"
+      ],
+      "type": "object"
+    },
+    "NoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a reported performance.",
+      "properties": {
+        "note": {
+          "description": "The note name; null when inferred from audio.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "off_s": {
+          "description": "Note-off time in seconds; null when unknown.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "on_s": {
+          "description": "Note-on time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "description": "MIDI velocity; null when inferred from audio.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on_s"
+      ],
+      "type": "object"
+    },
+    "PerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a command used, and where it came from.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the clip in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes (empty when unknown).",
+          "items": {
+            "$ref": "#/$defs/NoteOut"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`flag` (`--perf`, `--note`, `--hold`, `--dur`, `--vel`), `default` (the CLI's default performance), `wav` (the\n`enth` chunk of the WAV), `inferred` (a note-off found in the audio) or `none` (unknown: decay, sustain and\nrelease are null).",
+          "type": "string"
+        },
+        "why_missing": {
+          "description": "Why the performance is unknown, when it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "dur_s",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "PhraseRefOut": {
+      "additionalProperties": false,
+      "description": "A phrase in the table.",
+      "properties": {
+        "id": {
+          "description": "Its id (`--phrase 1`).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Its name (`held`, `octave_pair`, `legato_pair`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    }
+  },
+  "$id": "enth.compare/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.compare/1`: a patch scored against a challenge's target.",
+  "description": "`enth.compare/2`: a patch against a challenge's target, a reference patch or a reference WAV.\n\nVersion 2 (lane CL) adds `mode`, `target` (which replaces `code` and `fingerprint`), `distance`, `metric` and\n`differences`, and makes the game's scores optional: a WAV has no nuisance floor to scale them by, so a WAV\nreference gets a `distance` and the `differences`, and `sound`, `structure`, `combined`, `pass_mark`, `passed`,\n`margin`, `scorers` and `report` are null or empty. A challenge's `report` no longer holds the target's readings\n(`--reveal` brings them back): the game never shows them during a round.",
   "properties": {
-    "code": {
-      "description": "The challenge's code (null for a challenge file without one).",
+    "combined": {
+      "description": "Combined %, 0 to 100; null for a WAV reference.",
+      "format": "double",
       "type": [
-        "string",
+        "number",
         "null"
       ]
     },
-    "combined": {
-      "description": "Combined %, 0-100.",
+    "differences": {
+      "description": "The descriptors that differ, the most different first (at most eight). Empty for a challenge: the game\nshows the direction and closeness in the report, never the target's readings.",
+      "items": {
+        "$ref": "#/$defs/DifferenceOut"
+      },
+      "type": "array"
+    },
+    "distance": {
+      "description": "Metric v1 (`logmel-l1/1`, the distance `enth match` minimises) between the patch's render and the target's:\n0 is identical, over 1 is a different sound.",
       "format": "double",
       "type": "number"
     },
-    "fingerprint": {
-      "description": "The target's fingerprint.",
-      "type": "string"
-    },
     "hint": {
-      "description": "What it means.",
+      "description": "What it means and what to do next.",
       "type": "string"
     },
     "margin": {
-      "description": "Sound % minus the pass mark.",
+      "description": "Sound % minus the pass mark; null for a WAV reference.",
       "format": "double",
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "metric": {
+      "description": "The metric's id.",
+      "type": "string"
+    },
+    "mode": {
+      "description": "`challenge` (a code or a challenge file), `patch` or `wav`.",
+      "type": "string"
     },
     "pass_mark": {
-      "description": "The pass mark (sound %).",
+      "description": "The pass mark (sound %); null for a WAV reference.",
       "format": "uint8",
       "maximum": 255,
       "minimum": 0,
-      "type": "integer"
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "passed": {
-      "description": "Sound % at or above the pass mark.",
-      "type": "boolean"
+      "description": "Sound % at or above the pass mark; null for a WAV reference.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "patch": {
       "description": "The patch scored.",
       "type": "string"
     },
     "report": {
-      "description": "The full score report (`enth.score-report/1`): components, the per-parameter verdicts."
+      "description": "The full score report (`enth.score-report/1`): components, the per-parameter verdicts; null for a WAV\nreference. For a challenge it holds no target readings unless `--reveal`."
     },
     "schema": {
-      "const": "enth.compare/1",
-      "description": "`enth.compare/1`.",
+      "const": "enth.compare/2",
+      "description": "`enth.compare/2`.",
       "type": "string"
     },
     "scorers": {
-      "description": "The scorers that scored it: sound, structure, combined.",
+      "description": "The scorers that scored it: sound, structure, combined (empty for a WAV reference).",
       "items": {
         "type": "string"
       },
       "type": "array"
     },
     "sound": {
-      "description": "Sound %, 0-100 (decides the pass).",
+      "description": "Sound %, 0 to 100 (decides the pass); null for a WAV reference.",
       "format": "double",
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "structure": {
-      "description": "Structure %, 0-100.",
+      "description": "Structure %, 0 to 100; null for a WAV reference.",
       "format": "double",
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "target": {
+      "$ref": "#/$defs/CompareTargetOut",
+      "description": "What it was compared with."
     }
   },
   "required": [
     "schema",
+    "mode",
     "patch",
-    "fingerprint",
-    "sound",
-    "structure",
-    "combined",
-    "pass_mark",
-    "passed",
-    "margin",
+    "target",
+    "distance",
+    "metric",
     "scorers",
-    "report",
+    "differences",
     "hint"
   ],
   "title": "CompareOut",
