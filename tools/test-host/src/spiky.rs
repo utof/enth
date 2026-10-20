@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(c.skipped, 2);
         assert_eq!(c.window_sizes, [2]);
         assert_eq!(c.swap_blocks, [2], "a tie goes to the earlier block");
-        assert!(c.crossfade_blocks.is_empty());
+        assert_eq!(c.crossfade_blocks, Vec::<usize>::new());
         assert!(
             !c.normal_blocks.contains(&3),
             "the window's other block is not normal"
