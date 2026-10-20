@@ -17,6 +17,12 @@
 //! cargo xtask extract-presets ~/enth-g1/sounds.rpp                     # writes content/presets/<track>.patch.json
 //! cargo xtask extract-presets a.rpp b.rpp --out DIR --dry-run         # lists what it would write
 //! ```
+//!
+//! **`cargo xtask starter-project --out FILE`** writes the other end: a REAPER project with four tracks named `bass`,
+//! `pad`, `pluck` and `lead`, each holding enth (CLAP) loaded with the [starter patch](STARTER_PATCH). A fresh
+//! instance plays `Patch::init()` (one oscillator, one envelope) and the editor cannot add modules yet, so owner
+//! build 2 starts from this project instead: every P1 module is there, the extra ones switched off. `--tracks a,b,c`
+//! and `--patch FILE` change the tracks and the patch.
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +38,14 @@ const VST3_CLASS_HEX: &str = "55555EADAA77C9FAF878DDDDB0B9D9BD";
 
 /// Where presets live in the repository.
 pub const PRESET_DIR: &str = "content/presets";
+
+/// The patch a starter project loads on every track, in the plugin's own serialisation (the plugin saved it: it
+/// loads and saves back byte for byte): every P1 module at its catalogue defaults, `osc1` into `filter1` with `env1`
+/// on the amp; `osc2`, `noise1`, `comp1` and `reverb1` switched off; `env2`, `lfo1` and `lfo2` unrouted; no routes, no
+/// slots, macros at 0.
+pub const STARTER_PATCH: &str = include_str!("preset/starter.patch.json");
+/// The starter project's tracks: the four G1 sounds.
+pub const STARTER_TRACKS: [&str; 4] = ["bass", "pad", "pluck", "lead"];
 
 /// The plugin format of an instance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -370,6 +384,106 @@ pub fn extract_presets(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// A REAPER project text: one track per name, each holding enth's CLAP with `patch` as its state. The blocks are the
+/// ones REAPER 7.82 saves (a `<CLAP "CLAPi: enth (enth)" dev.enth.synth "">` block whose `<STATE>` is base64 of the
+/// plugin's stream, a `u64` length and nice-plug's state JSON, in lines of 128 characters); REAPER fills in everything
+/// else a project leaves out. The state holds no host parameter values (they start at their defaults) and no `enth`
+/// field (the instance settings start at theirs).
+pub fn starter_project(tracks: &[&str], patch: &str) -> String {
+    use std::fmt::Write as _;
+    let json = format!(
+        r#"{{"version":"0.0.0","params":{{}},"fields":{{"patch":{}}}}}"#,
+        serde_json::Value::String(patch.to_owned())
+    );
+    let mut bytes = (json.len() as u64).to_le_bytes().to_vec();
+    bytes.extend_from_slice(json.as_bytes());
+    let b64 = chunk::base64_encode(&bytes);
+    let mut text = String::from("<REAPER_PROJECT 0.1 \"7.82/linux-x86_64\" 0\n  TEMPO 120 4 4\n");
+    for name in tracks {
+        let quoted = if name.contains('"') {
+            format!("'{name}'")
+        } else {
+            format!("\"{name}\"")
+        };
+        let _ = write!(
+            text,
+            "  <TRACK\n    NAME {quoted}\n    <FXCHAIN\n      SHOW 0\n      LASTSEL 0\n      DOCKED 0\n      BYPASS 0 0 0\n      \
+             <CLAP \"CLAPi: enth (enth)\" {CLAP_ID} \"\"\n        CFG 4 0 0 \"\"\n        <STATE\n"
+        );
+        for line in b64.as_bytes().chunks(128) {
+            let _ = writeln!(text, "          {}", String::from_utf8_lossy(line));
+        }
+        text.push_str("        >\n      >\n      FLOATPOS 0 0 0 0\n      WAK 0 0\n    >\n  >\n");
+    }
+    text.push_str(">\n");
+    text
+}
+
+/// `cargo xtask starter-project --out FILE [--tracks a,b,…] [--patch FILE] [--force]`.
+pub fn write_starter_project(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: cargo xtask starter-project --out FILE.rpp [--tracks bass,pad,pluck,lead] [--patch FILE] [--force]";
+    let (mut out, mut tracks, mut patch_file, mut force) = (None, None, None, false);
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--out" => out = Some(PathBuf::from(iter.next().ok_or(USAGE)?)),
+            "--tracks" => tracks = Some(iter.next().ok_or(USAGE)?.clone()),
+            "--patch" => patch_file = Some(PathBuf::from(iter.next().ok_or(USAGE)?)),
+            "--force" => force = true,
+            other => return Err(format!("unknown option {other}; {USAGE}")),
+        }
+    }
+    let out = out.ok_or(USAGE)?;
+    let names: Vec<String> = match &tracks {
+        Some(list) => list
+            .split(',')
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .collect(),
+        None => STARTER_TRACKS.iter().map(|t| (*t).to_owned()).collect(),
+    };
+    if names.is_empty() {
+        return Err(format!("--tracks names no track; {USAGE}"));
+    }
+    let patch = match &patch_file {
+        Some(path) => {
+            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
+        }
+        None => STARTER_PATCH.to_owned(),
+    };
+    if serde_json::from_str::<serde_json::Value>(&patch)
+        .ok()
+        .and_then(|v| v.get("schema").cloned())
+        .is_none()
+    {
+        return Err("the patch is not a patch document (no `schema`)".to_owned());
+    }
+    if out.exists() && !force {
+        return Err(format!(
+            "{} exists: it may hold your sounds (--force replaces it)",
+            out.display()
+        ));
+    }
+    if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    std::fs::write(&out, starter_project(&refs, patch.trim_end()))
+        .map_err(|e| format!("{}: {e}", out.display()))?;
+    println!(
+        "{}: {} tracks ({}), each with enth (CLAP) on {} ({} bytes)",
+        display(&out),
+        names.len(),
+        names.join(", "),
+        patch_file.as_ref().map_or_else(
+            || "the starter patch".to_owned(),
+            |p| p.display().to_string()
+        ),
+        patch.trim_end().len()
+    );
+    Ok(())
+}
+
 fn display(path: &Path) -> String {
     std::env::current_dir()
         .ok()
@@ -463,6 +577,26 @@ mod tests {
         );
         assert_eq!(slug("  Bass — Sub (v2)! "), "bass-sub-v2");
         assert_eq!(slug("—"), "");
+    }
+
+    #[test]
+    fn a_starter_project_gives_back_its_patch_on_every_track() {
+        let text = starter_project(&STARTER_TRACKS, STARTER_PATCH);
+        let found = instances(&text).unwrap();
+        let names: Vec<String> = found
+            .iter()
+            .enumerate()
+            .map(|(i, f)| preset_name(f, "x", i))
+            .collect();
+        assert_eq!(names, STARTER_TRACKS);
+        assert!(
+            found
+                .iter()
+                .all(|f| f.patch == STARTER_PATCH && f.kind == Kind::Clap)
+        );
+        let starter: serde_json::Value = serde_json::from_str(STARTER_PATCH).unwrap();
+        assert_eq!(starter["meta"]["name"], "Starter");
+        assert_eq!(starter["generators"].as_array().map(Vec::len), Some(3));
     }
 
     #[test]

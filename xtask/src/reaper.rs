@@ -19,6 +19,7 @@
 //! | `two-instances` | two instances keep their own patch and values, through a reload and a deleted neighbour |
 //! | `editor-smoke` | the editor opens, draws and closes five times, under Xvfb |
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
+//! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
 //! It runs the product plugin only (`enth-plugin`, the default package). The Phase 0 shell spike's three scenarios went
@@ -36,10 +37,8 @@ mod audio;
 mod checks;
 mod chunk;
 
-#[cfg(test)]
-pub(crate) use chunk::base64_encode;
-/// The state-chunk decoding `cargo xtask extract-presets` shares with the scenarios (`crate::preset`).
-pub(crate) use chunk::{base64_decode, nice_plug_state};
+/// The state-chunk code `cargo xtask extract-presets` and `starter-project` share with the scenarios (`crate::preset`).
+pub(crate) use chunk::{base64_decode, base64_encode, nice_plug_state};
 
 const DEFAULT_REAPER: &str = "apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper";
 /// Hard limit for one REAPER launch; a hung script (e.g. a modal error dialog) is killed.
@@ -92,11 +91,12 @@ enum Scenario {
     TwoInstances,
     EditorSmoke,
     DirtyFlag,
+    StarterProject,
     CrossFormat,
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 10] = [
+    const PRODUCT: [Scenario; 11] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
@@ -106,6 +106,7 @@ impl Scenario {
         Scenario::TwoInstances,
         Scenario::EditorSmoke,
         Scenario::DirtyFlag,
+        Scenario::StarterProject,
         Scenario::CrossFormat,
     ];
     fn name(self) -> &'static str {
@@ -119,6 +120,7 @@ impl Scenario {
             Scenario::TwoInstances => "two-instances",
             Scenario::EditorSmoke => "editor-smoke",
             Scenario::DirtyFlag => "dirty-flag",
+            Scenario::StarterProject => "starter-project",
             Scenario::CrossFormat => "cross-format",
         }
     }
@@ -668,8 +670,87 @@ fn run_scenario(
             );
             dirty_flag(report, format, &edit, &control, &idle);
         }
+        Scenario::StarterProject => starter_project(sb, report, format)?,
         Scenario::CrossFormat => {}
     }
+    Ok(())
+}
+
+/// `starter-project` (lane INT, CLAP only: the project holds the CLAP): the project `cargo xtask starter-project` writes
+/// opens in REAPER with the starter patch loaded on each of its four named tracks, and `extract-presets` on REAPER's
+/// save of it gives the four tracks' patches back by name, so owner build 2 can start there.
+fn starter_project(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
+    let scope = format!("{}/starter-project", format.tag());
+    if format != Format::Clap {
+        report.info(
+            &scope,
+            "clap-only",
+            "the starter project holds enth's CLAP; the VST3 is inserted by hand",
+        );
+        return Ok(());
+    }
+    let project = sb.out.join(format!("starter-{}.rpp", format.tag()));
+    let text = crate::preset::starter_project(
+        &crate::preset::STARTER_TRACKS,
+        crate::preset::STARTER_PATCH,
+    );
+    std::fs::write(&project, text).map_err(|e| format!("{}: {e}", project.display()))?;
+    let log = run_script(
+        sb,
+        report,
+        format,
+        "starter-project",
+        "starter",
+        "open",
+        &[("ENTH_STARTER_PROJECT", project.display().to_string())],
+    );
+    let names = crate::preset::STARTER_TRACKS.join(",");
+    let tracks = log.data.get("starter-tracks").cloned().unwrap_or_default();
+    report.add(
+        &scope,
+        "tracks-named",
+        tracks == names,
+        format!("tracks {tracks:?}"),
+    );
+    let loaded = (1..=crate::preset::STARTER_TRACKS.len())
+        .filter(|i| {
+            chunk::Saved::read(&sb.out, format, &format!("starter-{i}"))
+                .is_ok_and(|s| s.patch_text() == Some(crate::preset::STARTER_PATCH))
+        })
+        .count();
+    report.add(
+        &scope,
+        "starter-patch-loaded",
+        loaded == crate::preset::STARTER_TRACKS.len(),
+        format!(
+            "{loaded} of {} plugins hold the starter patch, byte for byte",
+            crate::preset::STARTER_TRACKS.len()
+        ),
+    );
+    let saved = sb.out.join(format!("starter-{}-saved.rpp", format.tag()));
+    let (ok, detail) = match std::fs::read_to_string(&saved)
+        .map_err(|e| format!("{}: {e}", saved.display()))
+        .and_then(|text| crate::preset::instances(&text))
+    {
+        Ok(found) => {
+            let got: Vec<String> = found
+                .iter()
+                .enumerate()
+                .map(|(i, f)| crate::preset::preset_name(f, "starter", i))
+                .collect();
+            let same = found
+                .iter()
+                .all(|f| f.patch == crate::preset::STARTER_PATCH);
+            (
+                got.join(",") == names && same,
+                format!(
+                    "extract-presets on REAPER's save: {got:?}, every patch the starter's: {same}"
+                ),
+            )
+        }
+        Err(e) => (false, e),
+    };
+    report.add(&scope, "presets-extracted-by-name", ok, detail);
     Ok(())
 }
 

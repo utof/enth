@@ -107,8 +107,9 @@ const USAGE: &str = "usage: cargo xtask <command>
   reaper-test [--package <pkg>] [--plugin-name <name>] [--release] [--no-build] [--bundle-dir <dir>]
               [--format clap|vst3] [--scenario <name>]...
                                     local gate: the REAPER scenarios (state, patch-roundtrip, slot-automation,
-                                    macro-automation, undo-state-load, two-instances, editor-smoke, dirty-flag,
-                                    cross-format) on CLAP and VST3, headless under Xvfb; --bundle-dir (or
+                                    macro-automation, mod-wheel, undo-state-load, two-instances, editor-smoke,
+                                    dirty-flag, starter-project, cross-format) on CLAP and VST3, headless under Xvfb;
+                                    --bundle-dir (or
                                     ENTH_BUNDLE_DIR) runs prebuilt bundles instead of building
   host-render [--package <pkg>] [--release] [--no-build] [--update]
                                     plugin-level golden: bundle <pkg>, render it offline through the test host (Linux)
@@ -120,6 +121,9 @@ const USAGE: &str = "usage: cargo xtask <command>
   extract-presets <project.rpp>... [--out DIR] [--name NAME] [--force] [--dry-run]
                                     write each enth instance's saved patch in REAPER projects to
                                     content/presets/<track or FX name>.patch.json, byte for byte (owner build 2)
+  starter-project --out FILE.rpp [--tracks bass,pad,pluck,lead] [--patch FILE] [--force]
+                                    a REAPER project with one enth (CLAP) per named track, loaded with the starter patch
+                                    (every P1 module; the editor cannot add modules yet): where owner build 2 starts
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
@@ -142,6 +146,7 @@ fn main() -> ExitCode {
         Some("host-render") => host_render::host_render(&args[1..]),
         Some("leak-test") => leak::leak_test(&args[1..]),
         Some("extract-presets") => preset::extract_presets(&args[1..]),
+        Some("starter-project") => preset::write_starter_project(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         Some("golden") => golden::golden(&args[1..]),
         Some("bench" | "budget") => bench::bench(&args[1..]),
