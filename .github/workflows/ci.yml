@@ -90,12 +90,12 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy -p enth-plugin --all-targets --all-features --locked --target ${{ matrix.target }} -- -D warnings
 
-  # R1/S1, pre-declared by lane S0r and disabled: the editor and the plugin with every editor feature on (`learn`,
-  # `recreate`, `presets`, `add-module`). The `check` job builds default features only, so it never compiles the header
-  # hooks or the Recreate views. The first of lanes AM, PBU and RUI to give its hook content removes the `if:`.
+  # R1/S1, pre-declared by lane S0r: the editor and the plugin with every editor feature on (`learn`, `recreate`,
+  # `presets`, `add-module`). The `check` job builds default features only, so it never compiles the Presets and
+  # Recreate hooks or the Recreate views (`add-module` is a default feature since lane AM). Lane AM's hook was the first
+  # with content, so the job runs.
   editor-features:
-    name: editor features (lanes AM, PBU, RUI; disabled)
-    if: vars.ENTH_JOB_EDITOR_FEATURES == 'on'   # disabled: an unset repository variable skips the job
+    name: editor features (lanes AM, PBU, RUI)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
