@@ -608,6 +608,15 @@ impl Job<'_> {
         {
             cost.secondary += 1.0;
         }
+        // Incoming routes, by their sources' kind (whose pairing may not be known yet): twins that differ only in
+        // what modulates them (tremolo on one oscillator, vibrato on the other) are not interchangeable, and a
+        // randomized route onto a module weighs on its pairing like its parameters do.
+        let (focus, rest) = signature_loss(
+            &incoming(&m.target, &m.mask, &t.id, &m.routes),
+            &incoming(self.answer, self.a_mask, &a.id, &BTreeSet::new()),
+        );
+        cost.primary += focus;
+        cost.secondary += rest;
         if t.kind.section() == Section::Modulators {
             let t_src = ModSource::Module(t.id.clone());
             let a_src = ModSource::Module(a.id.clone());
@@ -693,11 +702,85 @@ impl Job<'_> {
                 cost.secondary += 1.0;
             }
         }
+        for (_, _, _, randomized) in incoming(&m.target, &m.mask, &t.id, &m.routes) {
+            if randomized {
+                cost.primary += 1.0;
+            } else {
+                cost.secondary += 1.0;
+            }
+        }
         if m.enables.contains(&t.id) {
             cost.primary += 1.0;
         }
         cost
     }
+}
+
+/// One heard route onto a module, as its pairing sees it: the source's kind, the parameter, the depth, and whether
+/// the round randomized it.
+type Incoming<'p> = (&'p str, &'static str, f32, bool);
+
+/// The heard routes onto module `id`, in patch order (`focus`: the randomized routes).
+fn incoming<'p>(
+    patch: &'p Patch,
+    mask: &Mask,
+    id: &ModuleId,
+    focus: &BTreeSet<RouteAddr>,
+) -> Vec<Incoming<'p>> {
+    patch
+        .routes
+        .iter()
+        .filter(|r| r.depth != 0.0 && r.dst.module_id() == Some(id))
+        .filter_map(|r| {
+            let addr = RouteAddr {
+                src: r.src.clone(),
+                dst: r.dst.clone(),
+            };
+            mask.route(&addr)
+                .is_some_and(Visibility::is_observable)
+                .then(|| (r, focus.contains(&addr)))
+        })
+        .map(|(r, focus)| {
+            let class = match &r.src {
+                ModSource::Module(s) => patch.find(s).map_or("", |(_, m)| m.kind.key()),
+                ModSource::Velocity => "velocity",
+                ModSource::Key => "key",
+                ModSource::ModWheel => "mod_wheel",
+                ModSource::Macro(_) => "macro",
+            };
+            (class, r.dst.param(), r.depth, focus)
+        })
+        .collect()
+}
+
+/// The route loss between two lists of incoming routes: each target route against the closest unused answer route
+/// of the same source kind and parameter (absent: depth 0), then each unused answer route against depth 0. Returns
+/// (the loss on randomized target routes, the rest).
+fn signature_loss(t: &[Incoming<'_>], a: &[Incoming<'_>]) -> (f64, f64) {
+    let loss = |x: f32, y: f32| 1.0 - item_score(ROUTE_JND.steps(x, y));
+    let mut used = vec![false; a.len()];
+    let (mut focus, mut rest) = (0.0, 0.0);
+    for &(class, param, depth, randomized) in t {
+        let total = if randomized { &mut focus } else { &mut rest };
+        let best = a
+            .iter()
+            .enumerate()
+            .filter(|(j, r)| !used[*j] && r.0 == class && r.1 == param)
+            .min_by(|(i, x), (j, y)| loss(depth, x.2).total_cmp(&loss(depth, y.2)).then(i.cmp(j)));
+        match best {
+            Some((j, r)) => {
+                used[j] = true;
+                *total += loss(depth, r.2);
+            }
+            None => *total += loss(depth, 0.0),
+        }
+    }
+    for (j, r) in a.iter().enumerate() {
+        if !used[j] {
+            rest += loss(0.0, r.2);
+        }
+    }
+    (focus, rest)
 }
 
 fn map_dst(dst: &ParamAddr, pairs: &BTreeMap<ModuleId, ModuleId>) -> Option<ParamAddr> {

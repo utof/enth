@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c2b56a650787d41e830894651d554c0273bc95571967e202e92805cbe0230ec3 # shrinks to spec = RandomSpec { generator: 1, seed: 8757653102682962, difficulty: 0, amounts: [None, None, None, None, None, Some(1)], musical: 11, template: 0 }, picks = [(11, 0.0)], wave = 0.3448046989510261
+cc 4177e3cab8fe2a5085601e535d69b8b45f408c03791b70e28e75cfb50f79415f # shrinks to spec = RandomSpec { generator: 1, seed: 3955263795275965, difficulty: 81, amounts: [None, None, None, None, None, None], musical: 0, template: 0 }, picks = []
+cc 0236a96e6e36f0c1b8174c647a332d537f07afeb1917f1699bdfff0a6a5b1756 # shrinks to spec = RandomSpec { generator: 1, seed: 581469117469529, difficulty: 81, amounts: [Some(0), None, None, None, None, None], musical: 0, template: 0 }
+cc 3d2775776d22f95d74a33397085b289ba5d5a9fe188a1e25182917b7d70102b0 # shrinks to spec = RandomSpec { generator: 1, seed: 1699818000590941, difficulty: 0, amounts: [None, None, None, Some(1), None, Some(1)], musical: 70, template: 0 }, pick = 873, u = 0.5626588542995212
