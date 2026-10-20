@@ -12,7 +12,7 @@
 //!    attack, decay, sustain level, release and noisiness as bands around the target's reading (in ln for Hz and ms,
 //!    so the band is a ratio), and beating, tremolo and a filter sweep either as a band or, when the target has none,
 //!    as `== null`. The tolerance of each is [`Sensitivity::tolerance`]: what the descriptor does when every
-//!    randomized parameter is one just-noticeable step off, kept within [`tolerance_bounds`]. Loudness, peak and
+//!    randomized parameter is one just-noticeable step off, kept within [`tolerance_bounds`](crate::sensitivity::tolerance_bounds). Loudness, peak and
 //!    clipping are not in the list: the A/B switch matches the level and the sound score ignores it.
 //! 2. **[`CoachTarget::plan`]**, per hint request: run [`hint`](crate::hint()) on the player's patch against that
 //!    list, with the randomized parameters (and any other the player's patch has moved away from the target) as
@@ -30,18 +30,28 @@
 //!
 //! **No early leak.** Levels 1 to 3 carry no number at all (a module id such as `filter1` is a name, not a value),
 //! and the structured fields are empty until their level: `module` from 2, `param` and `turn` from 3, `range` at 4.
-//! The text is built from the player's patch, the target's descriptors and the verified fix only; the target's
-//! parameter values are read for one thing, the set of parameters the player may be told about. Even level 4 gives a
+//! The text is built from the player's patch, the target's descriptors and the verified fix; the target *patch* is
+//! read for two things only, which parameters the player may be told about, and whether a measured move is merely
+//! compensating for a categorical difference (below), and never quoted before level 4. Even level 4 gives a
 //! range, not the target's value: the verified fix's value plus and minus the distance at which the descriptor
-//! stays within its tolerance (the sensitivity's slope), rounded outward to two significant digits.
+//! stays within its tolerance (the sensitivity's slope, at least one probe step, at most 0.15 of the knob), rounded
+//! outward to two significant digits. A categorical parameter has no range: its level-4 text names the setting.
 //!
-//! **What the pick is.** The aspects that fail are ranked by how far off they are in tolerance units. The first
-//! one (worst first) that a move of the fix demonstrably serves, by the sensitivity's slope and sign, is the hint's
-//! subject, and the move with the largest predicted effect on it is the hint's parameter. Failing that, a
-//! categorical difference between the player's patch and the target (a waveform, a filter mode, a module switched
-//! off) in a module that can affect the aspect is named (`measured: false`: the solver does not move categorical
-//! parameters yet, `docs/dsp/hints.md`); failing that, one measured move the fix makes anyway; failing that, general
-//! advice for the aspect. Nothing failing: every level says so.
+//! **What the pick is.** The aspects that fail are ranked by how far off they are in tolerance units (an aspect
+//! missing from or extra in the player's sound ranks first). Going down that list:
+//!
+//! 1. the move of the fix that demonstrably serves the aspect, by the sensitivity's slope and sign (largest
+//!    predicted effect, a move that is not compensating first), is the hint's subject: `measured: true`;
+//! 2. a categorical difference between the player's patch and the target, found by comparing the two (a waveform, a
+//!    filter mode, a module switched on or off, a modulation route to add, remove or re-weigh) in a module that can
+//!    affect the aspect, is named instead (`measured: false`: the solver does not move categorical parameters or
+//!    routes yet, `docs/dsp/hints.md`). It also wins over a measured move that is *compensating*: one that turns
+//!    the knob away from the target's own value or lands more than 0.15 of the knob from it (the cutoff closed to
+//!    hide the wrong waveform);
+//! 3. otherwise the next aspect.
+//!
+//! When no aspect has either, one measured move the fix makes anyway is the subject; failing that, general advice
+//! for the worst aspect (`Verdict::Advice`, no value). Nothing failing: every level says so (`Verdict::Close`).
 //!
 //! # Cost and determinism
 //!
@@ -58,7 +68,7 @@ use enth_analysis::margin::Interval;
 use enth_challenge::{PreparedRound, model::SCORING_SAMPLE_RATE, model::SCORING_SEED};
 use enth_params::{Kind, ParamSpec};
 use enth_patch::catalogue::ModuleKind;
-use enth_patch::{ModuleId, Op, ParamAddr, Patch, Target, ops_between};
+use enth_patch::{ModSource, ModuleId, Op, ParamAddr, Patch, Target, ops_between};
 use enth_render::{Performance, RenderSpec};
 
 use crate::eval::Evaluator;
@@ -78,8 +88,11 @@ const PRESENCE_ERR: f64 = 8.0;
 /// The half-width of a level-4 range when the sensitivity has no slope for the move, on the normalised axis.
 const DEFAULT_HALF_RANGE: f64 = 0.08;
 /// The narrowest and widest half-width of a level-4 range, on the normalised axis (at least one probe step).
-const MIN_HALF_RANGE: f64 = 0.02;
-const MAX_HALF_RANGE: f64 = 0.25;
+const MIN_HALF_RANGE: f64 = 0.005;
+const MAX_HALF_RANGE: f64 = 0.15;
+/// A move that lands further than this from the target's own value of the parameter (on the normalised axis), or
+/// that turns the knob away from it, is compensating for something else, not the real difference.
+const COMPENSATING: f64 = 0.15;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Aspects
@@ -228,16 +241,24 @@ impl Aspect {
     /// General advice for the aspect (never a value), for when no measured move or categorical difference is known.
     fn advice(self) -> &'static str {
         match self {
-            Aspect::Pitch => "tune the oscillator, by semitones for the note and by cents for the last bit",
-            Aspect::Brightness => "open or close the filter, or pick a waveform with more or fewer harmonics",
+            Aspect::Pitch => {
+                "tune the oscillator, by semitones for the note and by cents for the last bit"
+            }
+            Aspect::Brightness => {
+                "open or close the filter, or pick a waveform with more or fewer harmonics"
+            }
             Aspect::Attack => "change the envelope's attack time",
             Aspect::Decay => "change the envelope's decay time, and its sustain level with it",
             Aspect::Sustain => "change the envelope's sustain level",
             Aspect::Release => "change the envelope's release time",
             Aspect::Noisiness => "add or remove the noise generator, or pick a purer waveform",
-            Aspect::Beating => "set two oscillators slightly apart in tune, or switch the second one off",
+            Aspect::Beating => {
+                "set two oscillators slightly apart in tune, or switch the second one off"
+            }
             Aspect::Tremolo => "route an LFO to the level, and set its rate",
-            Aspect::Sweep => "route an envelope or an LFO to the filter's cutoff, and set its depth",
+            Aspect::Sweep => {
+                "route an envelope or an LFO to the filter's cutoff, and set its depth"
+            }
         }
     }
 
@@ -245,7 +266,9 @@ impl Aspect {
     fn involves(self, kind: ModuleKind) -> bool {
         match self {
             Aspect::Pitch | Aspect::Beating => kind == ModuleKind::Osc,
-            Aspect::Brightness => matches!(kind, ModuleKind::Osc | ModuleKind::Svf | ModuleKind::Noise),
+            Aspect::Brightness => {
+                matches!(kind, ModuleKind::Osc | ModuleKind::Svf | ModuleKind::Noise)
+            }
             Aspect::Attack | Aspect::Decay | Aspect::Sustain => kind == ModuleKind::Adsr,
             Aspect::Release => matches!(kind, ModuleKind::Adsr | ModuleKind::Reverb),
             Aspect::Noisiness => matches!(kind, ModuleKind::Noise | ModuleKind::Osc),
@@ -549,18 +572,25 @@ impl CoachTarget {
         let diff = ops_between(patch, &self.target).unwrap_or_default();
         let mut only = self.randomized.clone();
         for op in &diff {
-            if let Op::SetParam { addr, .. } = op {
-                if !only.contains(addr) {
-                    only.push(addr.clone());
-                }
+            if let Op::SetParam { addr, .. } = op
+                && !only.contains(addr)
+            {
+                only.push(addr.clone());
             }
         }
         let hint_cfg = HintCfg {
             only: Some(only),
             ..cfg.hint.clone()
         };
-        let result = hint(patch, &self.perf, &self.spec, &self.expects, eval, &hint_cfg)
-            .map_err(CoachError::Hint)?;
+        let result = hint(
+            patch,
+            &self.perf,
+            &self.spec,
+            &self.expects,
+            eval,
+            &hint_cfg,
+        )
+        .map_err(CoachError::Hint)?;
         Ok(self.explain(patch, &diff, result))
     }
 
@@ -648,11 +678,7 @@ fn expect_of(item: &Item, base: &Descriptors) -> Expect {
     let raw = base.get(item.feature);
     let (canonical, test, reference_hz) = match (item.target, raw) {
         (Some(_), Some(raw)) if item.feature.is_pitch() => (
-            format!(
-                "{path} = {}Hz ± {}ct",
-                short(raw),
-                short(item.tolerance)
-            ),
+            format!("{path} = {}Hz ± {}ct", short(raw), short(item.tolerance)),
             Test::Within(Interval::closed(-item.tolerance, item.tolerance)),
             Some(raw),
         ),
@@ -704,22 +730,29 @@ struct Finding {
 /// What the hints are about.
 enum Subject<'a> {
     /// A move of the verified fix.
-    Move {
-        finding: Finding,
-        mv: &'a Move,
-    },
+    Move { finding: Finding, mv: &'a Move },
     /// A categorical difference between the player's patch and the target.
     Structure {
         finding: Finding,
         change: Categorical,
     },
     /// Nothing known to touch: general advice.
-    Advice {
-        finding: Finding,
-    },
+    Advice { finding: Finding },
 }
 
-/// A categorical difference between the player's patch and the target.
+/// How a modulation route differs between the player's patch and the target.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RouteChange {
+    /// The target has the route, the player's patch does not; the target's depth.
+    Add { depth: f32 },
+    /// The player's patch has a route the target does not.
+    Remove,
+    /// Both have it, with different depths; the target's.
+    Depth { depth: f32 },
+}
+
+/// A categorical difference between the player's patch and the target: what the solver does not move, found by
+/// comparing the two patches (so `measured: false`).
 #[derive(Clone, Debug)]
 enum Categorical {
     /// A categorical parameter (waveform, filter mode, toggle) set differently; `value` is the target's.
@@ -736,18 +769,37 @@ enum Categorical {
         kind: ModuleKind,
         on: bool,
     },
+    /// A modulation route one patch has and the other lacks, or has with another depth.
+    Route {
+        src: ModSource,
+        src_kind: Option<ModuleKind>,
+        dst: ParamAddr,
+        change: RouteChange,
+    },
+}
+
+/// Whether a route from a source of `src` kind to the parameter `dst` can change the aspect.
+fn route_involves(aspect: Aspect, src: Option<ModuleKind>, dst: &str) -> bool {
+    let moving = matches!(src, Some(ModuleKind::Lfo | ModuleKind::Adsr));
+    match aspect {
+        Aspect::Tremolo => src == Some(ModuleKind::Lfo) && dst == "level",
+        Aspect::Sweep => moving && matches!(dst, "cutoff" | "resonance" | "drive"),
+        Aspect::Brightness => matches!(dst, "cutoff" | "resonance" | "drive" | "pw" | "position"),
+        Aspect::Pitch => matches!(dst, "fine" | "semi"),
+        _ => false,
+    }
 }
 
 impl Categorical {
-    fn kind(&self) -> ModuleKind {
+    /// Whether this difference can explain a failing aspect. A missing or extra aspect (`existence`) is explained
+    /// by structure (a module, a route), not by a mode or a waveform.
+    fn relates(&self, aspect: Aspect, existence: bool) -> bool {
         match self {
-            Categorical::Param { kind, .. } | Categorical::Enabled { kind, .. } => *kind,
-        }
-    }
-
-    fn module(&self) -> &ModuleId {
-        match self {
-            Categorical::Param { module, .. } | Categorical::Enabled { module, .. } => module,
+            Categorical::Param { kind, .. } => !existence && aspect.involves(*kind),
+            Categorical::Enabled { kind, .. } => aspect.involves(*kind),
+            Categorical::Route { src_kind, dst, .. } => {
+                route_involves(aspect, *src_kind, dst.param())
+            }
         }
     }
 }
@@ -790,54 +842,43 @@ fn findings(items: &[Item], before: &[ItemResult]) -> Vec<Finding> {
     out
 }
 
-/// The move of `fix` that serves `finding` best, by the sensitivity's slope: the largest predicted change of the
-/// descriptor toward the target. For an aspect that is missing or extra, a move whose parameter is tagged with the
-/// aspect's descriptor (largest normalised move).
-fn attribute<'a>(finding: &Finding, fix: &'a Fix, sens: &Sensitivity) -> Option<&'a Move> {
-    let mut best: Option<(&Move, f64)> = None;
-    for m in &fix.moves {
-        let score = match finding.difference {
-            Difference::Higher | Difference::Lower => {
-                let want = if finding.difference == Difference::Higher {
-                    -1.0
-                } else {
-                    1.0
-                };
-                let Some(slope) = sens
-                    .param(&m.addr)
-                    .and_then(|p| p.slope(finding.feature))
-                else {
-                    continue;
-                };
-                let predicted = slope * m.normalised() * want;
-                if predicted < 0.1 * aim(finding.feature) {
-                    continue;
-                }
-                predicted
-            }
-            Difference::Missing | Difference::Extra => {
-                let tagged = m
-                    .spec
-                    .perceptual
-                    .and_then(Feature::parse)
-                    .and_then(Aspect::from_feature)
-                    == Some(finding.aspect);
-                if !tagged {
-                    continue;
-                }
-                libm::fabs(m.normalised())
-            }
-        };
-        if best.is_none_or(|(_, s)| score > s) {
-            best = Some((m, score));
+/// How far a move is predicted to bring the finding's descriptor toward the target (by the sensitivity's slope, in
+/// its compare domain), or `None` when it does not. For an aspect that is missing or extra, a move whose parameter
+/// is tagged with the aspect's descriptor counts, by the size of the move.
+fn serves(finding: &Finding, m: &Move, sens: &Sensitivity) -> Option<f64> {
+    match finding.difference {
+        Difference::Higher | Difference::Lower => {
+            let want = if finding.difference == Difference::Higher {
+                -1.0
+            } else {
+                1.0
+            };
+            let slope = sens.param(&m.addr)?.slope(finding.feature)?;
+            let predicted = slope * m.normalised() * want;
+            (predicted >= 0.1 * aim(finding.feature)).then_some(predicted)
+        }
+        Difference::Missing | Difference::Extra => {
+            let tagged = m
+                .spec
+                .perceptual
+                .and_then(Feature::parse)
+                .and_then(Aspect::from_feature)
+                == Some(finding.aspect);
+            tagged.then(|| libm::fabs(m.normalised()))
         }
     }
-    best.map(|(m, _)| m)
 }
 
 /// The categorical differences between `patch` and the target, from the verified op list that turns one into the
-/// other: categorical parameters and switched modules, in patch order.
+/// other: categorical parameters, switched modules and modulation routes, in the list's order.
 fn categorical_differences(patch: &Patch, target: &Patch, diff: &[Op]) -> Vec<Categorical> {
+    let kind_of = |src: &ModSource| match src {
+        ModSource::Module(id) => target
+            .find(id)
+            .or_else(|| patch.find(id))
+            .map(|(_, m)| m.kind),
+        _ => None,
+    };
     let mut out = Vec::new();
     for op in diff {
         match op {
@@ -872,6 +913,24 @@ fn categorical_differences(patch: &Patch, target: &Patch, diff: &[Op]) -> Vec<Ca
                     });
                 }
             }
+            Op::InsertRoute { route, .. } => out.push(Categorical::Route {
+                src: route.src.clone(),
+                src_kind: kind_of(&route.src),
+                dst: route.dst.clone(),
+                change: RouteChange::Add { depth: route.depth },
+            }),
+            Op::RemoveRoute { route } => out.push(Categorical::Route {
+                src: route.src.clone(),
+                src_kind: kind_of(&route.src),
+                dst: route.dst.clone(),
+                change: RouteChange::Remove,
+            }),
+            Op::SetDepth { route, depth } => out.push(Categorical::Route {
+                src: route.src.clone(),
+                src_kind: kind_of(&route.src),
+                dst: route.dst.clone(),
+                change: RouteChange::Depth { depth: *depth },
+            }),
             _ => {}
         }
     }
@@ -900,22 +959,28 @@ impl CoachTarget {
             };
         };
         let categorical = categorical_differences(patch, &self.target, diff);
-        let sens = &self.sensitivity;
         let fix = result.fix.as_ref();
-        // Worst first: a move that serves it, else a categorical difference in a module that can change it.
+        // Worst first: a move that serves the aspect, or a categorical difference in a module that can change it.
+        // A move that compensates for a categorical difference (the cutoff closed to hide the wrong waveform) gives
+        // way to naming the difference.
         let mut subject: Option<Subject<'_>> = None;
         for f in &found {
-            if let Some(mv) = fix.and_then(|fx| attribute(f, fx, sens)) {
-                subject = Some(Subject::Move { finding: *f, mv });
-                break;
-            }
-            if let Some(change) = categorical.iter().find(|c| f.aspect.involves(c.kind())) {
-                subject = Some(Subject::Structure {
+            let existence = matches!(f.difference, Difference::Missing | Difference::Extra);
+            let mv = fix.and_then(|fx| self.attribute(f, fx));
+            let cat = categorical.iter().find(|c| c.relates(f.aspect, existence));
+            subject = match (mv, cat) {
+                (Some(mv), Some(c)) if self.compensating(mv) => Some(Subject::Structure {
                     finding: *f,
-                    change: change.clone(),
-                });
-                break;
-            }
+                    change: c.clone(),
+                }),
+                (Some(mv), _) => Some(Subject::Move { finding: *f, mv }),
+                (None, Some(c)) => Some(Subject::Structure {
+                    finding: *f,
+                    change: c.clone(),
+                }),
+                (None, None) => continue,
+            };
+            break;
         }
         // Else a move the fix makes anyway (the biggest), else advice.
         let subject = subject.unwrap_or_else(|| {
@@ -928,7 +993,7 @@ impl CoachTarget {
                 None => Subject::Advice { finding: worst },
             }
         });
-        let (hints, verdict) = self.tell(patch, &subject, fix);
+        let (hints, verdict) = self.tell(patch, &subject, fix, &found);
         CoachPlan {
             hints,
             verdict,
@@ -937,8 +1002,43 @@ impl CoachTarget {
         }
     }
 
+    /// The move of `fix` that serves `finding` best: one that does not compensate for something else first, then the
+    /// largest predicted effect.
+    fn attribute<'a>(&self, finding: &Finding, fix: &'a Fix) -> Option<&'a Move> {
+        let mut best: Option<(&Move, (bool, f64))> = None;
+        for m in &fix.moves {
+            let Some(score) = serves(finding, m, &self.sensitivity) else {
+                continue;
+            };
+            let key = (!self.compensating(m), score);
+            let better =
+                best.is_none_or(|(_, (c, sc))| (key.0 && !c) || (key.0 == c && key.1 > sc));
+            if better {
+                best = Some((m, key));
+            }
+        }
+        best.map(|(m, _)| m)
+    }
+
+    /// Whether a move matches the descriptors by compensating for something else: it turns the knob away from the
+    /// target's own value, or lands far from it. (The target's value steers which hint is chosen; it is never shown.)
+    fn compensating(&self, mv: &Move) -> bool {
+        let Some(tv) = self.target.value(&mv.addr) else {
+            return false;
+        };
+        let norm = |v: f32| f64::from(mv.spec.to_norm(v));
+        let (from, to, t) = (norm(mv.from), norm(mv.to), norm(tv));
+        (t - from) * (to - from) <= 0.0 || libm::fabs(to - t) > COMPENSATING
+    }
+
     /// The four hints for a subject.
-    fn tell(&self, patch: &Patch, subject: &Subject<'_>, fix: Option<&Fix>) -> (Vec<Hint>, Verdict) {
+    fn tell(
+        &self,
+        patch: &Patch,
+        subject: &Subject<'_>,
+        fix: Option<&Fix>,
+        found: &[Finding],
+    ) -> (Vec<Hint>, Verdict) {
         let (finding, verdict) = match subject {
             Subject::Move { finding, .. } => (finding, Verdict::Measured),
             Subject::Structure { finding, .. } => (finding, Verdict::Structure),
@@ -953,12 +1053,24 @@ impl CoachTarget {
                 h
             })
             .collect();
-        hints[0].text = format!("Check the {}: {}.", finding.aspect.name(), lower_first(&lead));
+        hints[0].text = format!(
+            "Check the {}: {}.",
+            finding.aspect.name(),
+            lower_first(&lead)
+        );
         match subject {
             Subject::Move { finding, mv } => {
                 let place = place(patch, &self.target, mv.addr.target());
-                let turn = if mv.to > mv.from { Turn::Raise } else { Turn::Lower };
-                let verb = if turn == Turn::Raise { "raise" } else { "lower" };
+                let turn = if mv.to > mv.from {
+                    Turn::Raise
+                } else {
+                    Turn::Lower
+                };
+                let verb = if turn == Turn::Raise {
+                    "raise"
+                } else {
+                    "lower"
+                };
                 let (lo, hi) = self.range(mv, finding);
                 hints[1].text = format!("{lead}: look at {place}.");
                 hints[2].text = format!("{lead}: {verb} {} on {place}.", mv.spec.name);
@@ -967,7 +1079,7 @@ impl CoachTarget {
                     mv.spec.name,
                     mv.spec.display(lo),
                     mv.spec.display(hi),
-                    self.also(patch, mv, fix),
+                    self.also(patch, mv, fix, found),
                 );
                 for h in &mut hints {
                     h.measured = true;
@@ -981,37 +1093,82 @@ impl CoachTarget {
                 }
                 hints[3].range = Some((lo, hi));
             }
-            Subject::Structure { change, .. } => {
-                let module = change.module();
-                let place = place(patch, &self.target, &Target::Module(module.clone()));
-                hints[1].text = format!("{lead}: look at {place}.");
-                match change {
-                    Categorical::Param {
-                        addr, spec, value, ..
-                    } => {
-                        hints[2].text = format!("{lead}: change {} on {place}.", spec.name);
-                        hints[3].text = format!(
-                            "{lead}: set {} on {place} to {}.",
-                            spec.name,
-                            spec.display(*value)
-                        );
-                        for h in &mut hints[2..] {
-                            h.param = Some(addr.clone());
+            Subject::Structure { change, .. } => match change {
+                Categorical::Param {
+                    addr,
+                    module,
+                    spec,
+                    value,
+                    ..
+                } => {
+                    let place = place(patch, &self.target, &Target::Module(module.clone()));
+                    hints[1].text = format!("{lead}: look at {place}.");
+                    hints[2].text = format!("{lead}: change {} on {place}.", spec.name);
+                    hints[3].text = format!(
+                        "{lead}: set {} on {place} to {}.",
+                        spec.name,
+                        spec.display(*value)
+                    );
+                    for h in &mut hints[1..] {
+                        h.module = Some(module.clone());
+                    }
+                    for h in &mut hints[2..] {
+                        h.param = Some(addr.clone());
+                    }
+                }
+                Categorical::Enabled { module, on, .. } => {
+                    let place = place(patch, &self.target, &Target::Module(module.clone()));
+                    hints[1].text = format!("{lead}: look at {place}.");
+                    hints[2].text =
+                        format!("{lead}: check whether {place} should be switched on or off.");
+                    hints[3].text =
+                        format!("{lead}: switch {place} {}.", if *on { "on" } else { "off" });
+                    for h in &mut hints[1..] {
+                        h.module = Some(module.clone());
+                    }
+                }
+                Categorical::Route {
+                    src, dst, change, ..
+                } => {
+                    let name = patch
+                        .spec(dst)
+                        .or_else(|| self.target.spec(dst))
+                        .map_or(dst.param(), |sp| sp.name);
+                    let at = format!("{name} on {}", place(patch, &self.target, dst.target()));
+                    let from = match src {
+                        ModSource::Module(id) => {
+                            place(patch, &self.target, &Target::Module(id.clone()))
+                        }
+                        other => format!("the {other} source"),
+                    };
+                    hints[1].text = format!("{lead}: look at the modulation routes.");
+                    match change {
+                        RouteChange::Add { depth } => {
+                            let (lo, hi) = depth_range(*depth);
+                            hints[2].text = format!("{lead}: add a modulation route to {at}.");
+                            hints[3].text = format!(
+                                "{lead}: route {from} to {at} with a depth between {lo}% and {hi}%."
+                            );
+                        }
+                        RouteChange::Remove => {
+                            hints[2].text = format!("{lead}: remove a modulation route to {at}.");
+                            hints[3].text =
+                                format!("{lead}: remove the route from {from} to {at}.");
+                        }
+                        RouteChange::Depth { depth } => {
+                            let (lo, hi) = depth_range(*depth);
+                            hints[2].text =
+                                format!("{lead}: change how strongly {at} is modulated.");
+                            hints[3].text = format!(
+                                "{lead}: set the depth of the route from {from} to {at} to between {lo}% and {hi}%."
+                            );
                         }
                     }
-                    Categorical::Enabled { on, .. } => {
-                        hints[2].text =
-                            format!("{lead}: check whether {place} should be switched on or off.");
-                        hints[3].text = format!(
-                            "{lead}: switch {place} {}.",
-                            if *on { "on" } else { "off" }
-                        );
+                    for h in &mut hints[2..] {
+                        h.param = Some(dst.clone());
                     }
                 }
-                for h in &mut hints[1..] {
-                    h.module = Some(module.clone());
-                }
-            }
+            },
             Subject::Advice { finding } => {
                 let a = finding.aspect;
                 hints[1].text = format!("{lead}: look at {}.", a.region());
@@ -1036,7 +1193,10 @@ impl CoachTarget {
             .and_then(|p| p.slope(finding.feature))
             .filter(|s| libm::fabs(*s) > 1e-9)
             .map_or(DEFAULT_HALF_RANGE, |s| tolerance / libm::fabs(s));
-        let floor = ps.map_or(0.0, |p| libm::fabs(p.step)).max(MIN_HALF_RANGE);
+        // At least one probe step (a just-noticeable step of the parameter) each side.
+        let floor = ps
+            .map_or(0.0, |p| libm::fabs(p.step))
+            .clamp(MIN_HALF_RANGE, MAX_HALF_RANGE);
         let half = half.clamp(floor, MAX_HALF_RANGE);
         let lo = spec.from_norm((u - half).max(0.0) as f32);
         let hi = spec.from_norm((u + half).min(1.0) as f32);
@@ -1045,30 +1205,50 @@ impl CoachTarget {
         (lo.min(mv.to), hi.max(mv.to))
     }
 
-    /// A closing sentence naming the other knobs the fix moved (names only).
-    fn also(&self, patch: &Patch, mv: &Move, fix: Option<&Fix>) -> String {
+    /// A closing sentence naming the other knobs of the fix that also bring a failing aspect closer (names only),
+    /// grouped by module.
+    fn also(&self, patch: &Patch, mv: &Move, fix: Option<&Fix>, found: &[Finding]) -> String {
         let Some(fix) = fix else {
             return String::new();
         };
-        let others: Vec<String> = fix
+        let mut groups: Vec<(String, Vec<&str>)> = Vec::new();
+        // A move counts when it brings some failing aspect a quarter of its tolerance closer: a smaller predicted
+        // effect is as likely to be descriptor noise.
+        let helps = |m: &Move| {
+            found.iter().any(|f| {
+                serves(f, m, &self.sensitivity)
+                    .is_some_and(|gain| gain >= 0.25 * self.items[f.item].tolerance)
+            })
+        };
+        for m in fix
             .moves
             .iter()
-            .filter(|m| m.addr != mv.addr)
-            .take(2)
-            .map(|m| {
-                format!(
-                    "{} on {}",
-                    m.spec.name,
-                    place(patch, &self.target, m.addr.target())
-                )
-            })
-            .collect();
-        if others.is_empty() {
-            String::new()
-        } else {
-            format!(" The same fix also moves {}.", others.join(" and "))
+            .filter(|m| m.addr != mv.addr && helps(m))
+            .take(3)
+        {
+            let at = place(patch, &self.target, m.addr.target());
+            match groups.iter_mut().find(|(p, _)| *p == at) {
+                Some((_, names)) => names.push(m.spec.name),
+                None => groups.push((at, vec![m.spec.name])),
+            }
         }
+        if groups.is_empty() {
+            return String::new();
+        }
+        let parts: Vec<String> = groups
+            .iter()
+            .map(|(at, names)| format!("{} on {at}", names.join(" and ")))
+            .collect();
+        format!(" The same fix also moves {}.", parts.join(" and "))
     }
+}
+
+/// A route depth range around `depth` (percent): 15 points each side, outward to a multiple of 5, within ±100.
+fn depth_range(depth: f32) -> (i32, i32) {
+    let d = f64::from(depth);
+    let lo = (libm::floor((d - 15.0) / 5.0) * 5.0).max(-100.0);
+    let hi = (libm::ceil((d + 15.0) / 5.0) * 5.0).min(100.0);
+    (lo as i32, hi as i32)
 }
 
 /// The sentence a finding opens with, capitalised and without a full stop.
@@ -1173,11 +1353,8 @@ mod tests {
                 a.region(),
                 a.advice(),
             ] {
-                assert!(!text.is_empty());
-                assert!(
-                    !text.chars().any(|c| c.is_ascii_digit()),
-                    "{a:?}: {text}"
-                );
+                assert_ne!(text, "");
+                assert!(!text.chars().any(|c| c.is_ascii_digit()), "{a:?}: {text}");
             }
         }
     }
@@ -1199,6 +1376,9 @@ mod tests {
         assert!((lo - 2_000.0 * libm::exp(-0.2)).abs() < 1e-9);
         assert!((hi - 2_000.0 * libm::exp(0.2)).abs() < 1e-9);
         assert_eq!(band(Feature::Sustain, -6.0, 3.0), (-9.0, -3.0));
-        assert_eq!(crate::sensitivity::tolerance_bounds(Feature::Sustain), (3.0, 12.0));
+        assert_eq!(
+            crate::sensitivity::tolerance_bounds(Feature::Sustain),
+            (3.0, 12.0)
+        );
     }
 }

@@ -559,7 +559,9 @@ mod tests {
 
     #[test]
     fn a_probe_goes_toward_the_roomier_side_and_stays_in_range() {
-        let cutoff = enth_patch::catalogue::ModuleKind::Svf.param("cutoff").unwrap();
+        let cutoff = enth_patch::catalogue::ModuleKind::Svf
+            .param("cutoff")
+            .unwrap();
         // 2 kHz is above the middle of the log axis (632 Hz): the probe goes down by 2 semitones.
         let down = probe_value(cutoff, 2_000.0, 1.0).unwrap();
         assert!((down / 2_000.0 - libm::pow(2.0, -2.0 / 12.0) as f32).abs() < 1e-4);
