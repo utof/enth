@@ -2,7 +2,7 @@
 
 `enth-challenge` (L4) holds what a Recreate round is made of: the `Challenge`, the randomizer's `RandomSpec`, the phrases, the challenge codes, the scorer interfaces and the round's results. This page is the reference for its persisted types and interfaces, and what the F1r judge reviews ([phase-2.md](phase-2.md#freezes)). The designs behind it are [design.md §6](design.md#6-challenge-and-scoring) and [§9](design.md#9-randomizer-and-difficulty), [ADR-0007's 2026-10-20 note](adr/0007-metric-v1.md#note--2026-10-20-r1s1-research-five-fixes-for-the-sound-score) and reports 01 and 02 of the [R1/S1 research](../_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/summary.md).
 
-**Status (2026-10-20):** lane CT's types are written and tested, for review at F1r. The generator, the phrase table and the scorers are lanes RG, SS and ST, each with a section at the end.
+**Status (2026-10-20):** lane CT's types are written and tested, reviewed at F1r ("freeze after M1–M3"), and the review's must-fix and should-fix items are done (lane F1R): the target fingerprint, the catalogue pin, tolerant output types, the GF(32) check symbol, the round's composition (`score::round`) with stub scorers, and the rest listed in [the F1r fixes](#the-f1r-review-fixes-lane-f1r). The generator and the phrase table are lane RG's; the scorers are lanes SS and ST, each with a section at the end.
 
 | Section | Owner |
 | --- | --- |
@@ -15,9 +15,9 @@
 
 1. The player picks settings (or pastes a code). The shell draws a fresh seed and keeps 40 bits of it, so the code stays short.
 2. `ChallengeCode::decode(text)` gives the code; `code.spec()` gives the `RandomSpec`.
-3. The generator (RG) regenerates from the spec: the target patch, the phrase id it picked, and the parameters it randomized.
-4. `code.verify(&canonical_hash(&target), EngineVersion::CURRENT)` checks the target. A long code with another hash prefix is refused; another engine version gives a warning.
-5. `Challenge::recreate(spec, phrase)` builds the challenge. The scorers (SS, ST) `prepare` on the target once and `score` each submit; `ScoreReport::new` decides pass from sound alone.
+3. `prepare_round(&spec)` ([Scoring a round](#scoring-a-round)) regenerates the target (lane RG: the patch, the phrase id it picked, the parameters it randomized and the target's **fingerprint**), builds `Challenge::recreate(spec, phrase)` and prepares every scorer the challenge names.
+4. `code.verify(&round.fingerprint(), EngineVersion::CURRENT)` checks the target. A long code with another fingerprint prefix is refused; another engine version gives a warning.
+5. `score_round(&round, &patch)` scores each submit: sound, structure and combined from the challenge's scorers, and the pass from sound alone (`ScoreReport::new`).
 6. The round ends with a `RoundResult` for the results drawer and the round log.
 
 **The target patch is never persisted.** A round keeps the code text it started from, and regenerates the target from it. A long code made on another machine keeps that machine's engine version this way.
@@ -48,14 +48,16 @@
 Rules:
 
 - **Versioned.** `Challenge::from_json` checks the schema (`missing_schema`, `bad_schema`, `challenge_too_new` for a newer one), then decodes and validates. Embedded in another serde type, a challenge goes through the same checks (`try_from`).
-- **Unknown fields are refused**, at every level, and every change to the shape is a version bump with a migration. A field is never silently ignored, because ignoring a constraint would play a different game.
+- **Unknown fields are refused**, at every level, and every change to the shape is a version bump with a migration. A field is never silently ignored, because ignoring a constraint would play a different game. (The outputs, a score report and a round result, are read tolerantly instead: [below](#scoring-interfaces).)
 - **Integers only.** No float anywhere in a challenge.
 - **Byte-deterministic.** `to_json` writes compact JSON in declaration order; the fixtures pin the bytes.
-- `Challenge::validate` checks what the types cannot: a valid spec, the start template, a non-zero phrase, percentages at most 100.
+- `Challenge::validate` checks what the types cannot: a valid spec (a generator and a template this build has, a seed below 2⁵³), the start template, a non-zero phrase, percentages at most 100.
 
-`ScoringSpec::recreate(difficulty)` is the Recreate default: the v1 scorers, a sound weight of `50 + 30·difficulty/100` % (50 % at difficulty 0, where structure is unambiguous and ADR-0007 asks to lean on it; 80 % at 100), and the pass mark `DEFAULT_PASS_MARK` = 90. The weights live in the challenge, so a later default never changes an old challenge's score.
+`ScoringSpec::recreate(difficulty)` is the Recreate default: this build's `RECREATE_SCORERS`, a sound weight of `50 + 30·difficulty/100` % (50 % at difficulty 0, where structure is unambiguous and ADR-0007 asks to lean on it; 80 % at 100), and the pass mark `DEFAULT_PASS_MARK` = 90. `ScoringSpec::with_scorers` gives the same weights with named scorers (the fixtures and the golden challenges pin the v1 ids that way). The weights live in the challenge, so a later default never changes an old challenge's score.
 
-**The scored render** is fixed by two constants in `model`: `SCORING_SAMPLE_RATE` = 48,000 Hz and `SCORING_SEED` = `enth_render::DEFAULT_SEED`. So `enth render` of a target with its phrase gives exactly the audio the scorer hears and Target ▶ plays.
+**The default scorers are stubs until SS and ST land** (F1r review S12): `RECREATE_SCORERS` is `sound-stub/1`, `structure-stub/1`, `combined-stub/1`, `time/1`. The stubs score in parameter space under their own ids, so no stub score is ever stored, logged or pinned as `sound/1`. Lane SS switches the sound entry to `sound/1` in the commit that lands it (and ST `structure/1` and `combined/1`). **The pass mark stays and the curve moves:** SS fits `sound/1`'s curve so that the rating-4.5 point lands on 90, GR1's refit is `sound/2` with the same mark, and the stubs use 90 as is.
+
+**The scored render** is fixed by two constants in `model`: `SCORING_SAMPLE_RATE` = 48,000 Hz and `SCORING_SEED` = `0x0E17_5EED`, written out (F1r review S12) so it can never follow the CLI's default silently; a test checks it equals `enth_render::DEFAULT_SEED`. So `enth render` of a target with its phrase gives exactly the audio the scorer hears and Target ▶ plays.
 
 ### Phrases
 
@@ -66,26 +68,27 @@ A `Phrase` is the notes and length a target is heard and scored through: `notes:
 ```rust
 pub struct RandomSpec {
     pub generator: u16,                // 1..=LATEST_GENERATOR
-    pub seed: u64,                     // any; a short code holds 40 bits
+    pub seed: u64,                     // 0..=MAX_SEED (2^53 - 1); a short code holds 40 bits
     pub difficulty: u8,                // 0..=100: picks the level
     pub amounts: [Option<u8>; 6],      // 0..=100 per Category; None follows difficulty
     pub musical: u8,                   // 0..=100: 100 = priors only, 0 = uniform
-    pub template: u8,                  // archetype; 0 = the starter superset
+    pub template: u8,                  // 0..=LATEST_TEMPLATE; 0 = the starter superset
 }
 ```
 
 JSON: `{"generator":1,"seed":42,"difficulty":25,"amounts":[null,null,null,null,null,null],"musical":100,"template":0}`, every number an unsigned integer (a float that goes through text and back can flip a draw). Unknown fields are refused. The spec has no version of its own: it is persisted only inside a versioned challenge or code, and a change to it bumps both. `Category` is `Oscillators, Filter, Envelopes, Modulation, Effects, Structure`, in difficulty order, and indexes `amounts`.
 
-`RandomSpec::validate` is the one check: every percentage at most 100 (`out_of_range`), and a generator from 1 (`no_generator`) to `LATEST_GENERATOR` (`code_too_new`).
+`RandomSpec::validate` is the one check: a generator from 1 (`no_generator`) to `LATEST_GENERATOR` (`code_too_new`), a template up to `LATEST_TEMPLATE` (0 today; `code_too_new`: template ids are append-only, so an unknown one is a newer build's), a seed up to `MAX_SEED` = 2⁵³ − 1 (`out_of_range`: the JSON form writes the seed as a number, and JavaScript and many JSON tools keep only 53 bits of one, which would silently give another target; the long code's 64-bit field stays), and every percentage at most 100 (`out_of_range`).
 
 **What RG follows** (RG settles the rest at F1r):
 
 - The generator calls `validate()` first and refuses a spec that fails it; it never clamps.
-- It implements every version from 1 to `spec::LATEST_GENERATOR` (1 today). Freezing a new version bumps that constant in the same commit that adds the version's golden.
+- It implements every version from 1 to `spec::LATEST_GENERATOR` (1 today). Freezing a new version bumps that constant in the same commit that adds the version's golden. Likewise every template from 0 to `spec::LATEST_TEMPLATE`.
+- **The start patch has no slot assignments and routes no macro or mod wheel, and no target adds such a route** (lane SG's host-automation rule: host automation must not reach a round's patch; F1r review N3). `random::tests::the_start_has_no_slots_and_no_macro_routes_and_targets_add_none` checks it.
 - Levels: the presets put levels 1–5 at difficulty 0, 25, 50, 75 and 100. Any banding that keeps those five in different levels, in order, works; the proposal is 0–20, 21–40, 41–60, 61–80 and 81–100.
 - Template ids are append-only, like preset and phrase ids.
 - A seed made by a formula rather than drawn (a daily challenge's, say) keeps its top 40 bits (`>> 24`), so its code stays short.
-- Generation returns the target patch, the phrase id it picked, and the randomized addresses (observable, in address order), because the scorers' `TargetContext` takes all three.
+- Generation returns the target patch, the phrase id it picked, the randomized addresses (observable, in address order), because the scorers' `TargetContext` takes all three, and the target's [fingerprint](#the-target-fingerprint).
 
 ### Presets
 
@@ -101,18 +104,18 @@ A short code carries settings by preset id (`SpecPreset`). Code v1's table is fr
 
 ## Codes v1
 
-A challenge code is a `RandomSpec` that a person can read out, type and paste: a versioned bit string in [Crockford base32](https://www.crockford.com/base32.html) with Crockford's mod-37 check symbol. `ChallengeCode` is the type; serde reads and writes its canonical text.
+A challenge code is a `RandomSpec` that a person can read out, type and paste: a versioned bit string in [Crockford base32](https://www.crockford.com/base32.html) with a weighted check symbol over GF(32), itself one of the 32 data symbols. `ChallengeCode` is the type; serde reads and writes its canonical text.
 
 | Form | Symbols (hyphens not counted) | Carries | Starts with | Example |
 | --- | --- | --- | --- | --- |
-| **short** | 13 data + 1 check = **14** | a preset id, the generator (< 4096), the seed (< 2⁴⁰) | `1` | `1080-1000-0001-AC` (level 2, seed 42) |
-| **long** | 34–43 data + 1 check = **35–44** | the whole spec, the engine version, a 32-bit target-hash prefix | `H` | `H000-ZZZZ-ZZZZ-ZZZZ-ZA4C-0ZZZ-ZZG2-8XBS-N5J0-0X` |
+| **short** | 13 data + 1 check = **14** | a preset id, the generator (< 4096), the seed (< 2⁴⁰) | `1` | `1080-1000-0001-AB` (level 2, seed 42) |
+| **long** | 34–43 data + 1 check = **35–44** | the whole spec, the engine version, a 32-bit target-fingerprint prefix | `H` | `H000-G07Z-ZZZZ-ZZZZ-ZA4C-07ZZ-ZZG2-8XBS-N5J0-0A` |
 
-About one code in seven ends in one of `* ~ $ = U`, Crockford's check symbols for 32–36. `ChallengeCode::short(spec)` gives the short form when the spec is a preset's with a short seed and generator; otherwise `ChallengeCode::long(spec, engine, target_prefix)`. `Challenge::code(prefix)` picks for you.
+Every symbol is a data symbol (F1r review S2): Crockford's mod-37 check, which code v1 first had, put one of `* ~ $ = U` at the end of about one code in seven, which is hard to read aloud and breaks in Markdown, URLs and shells. Code v1 was re-frozen with the GF(32) check before any code was shared. `ChallengeCode::short(spec)` gives the short form when the spec is a preset's with a short seed and generator; otherwise `ChallengeCode::long(spec, engine, target_prefix)`. `Challenge::code(prefix)` picks for you.
 
 ### Layout
 
-Fields are written most significant bit first and cut into 5-bit symbols; the last symbol is zero-padded. The first symbol is `form << 4 | version`, so every later version can be told apart before its layout is known.
+Fields are written most significant bit first and cut into 5-bit symbols; the last symbol is zero-padded. The first symbol is `form << 4 | version`, so every later version can be told apart before its layout is known. **Version 15 is reserved as an escape** (`CODE_VERSION_ESCAPE`, F1r review N2): a later kind of code (R5's result codes, duels) starts with it in either form and puts a kind field next, so the 1-bit form never runs out; versions 2–14 are for new layouts of the two forms, and this build reads any of them as `code_too_new`.
 
 | Short (65 bits) | Bits |
 | --- | --- |
@@ -132,32 +135,32 @@ Fields are written most significant bit first and cut into 5-bit symbols; the la
 | musical | 7 |
 | template | 8 |
 | engine major, minor, patch | 8 + 8 + 8 |
-| target-hash prefix | 32 |
+| target-fingerprint prefix | 32 |
 | amounts mask (`Category::ALL` order, first category in the high bit) | 6 |
 | each set amount, in that order | 7 each |
 
-The prefix is the first 32 bits of `enth_patch::canon::canonical_hash` of the regenerated target, big-endian (`TargetPrefix`, shown as the hash's first 8 hex digits).
+The prefix is the first 32 bits of the regenerated target's [fingerprint](#the-target-fingerprint), big-endian (`TargetPrefix`, shown as the fingerprint's first 8 hex digits). It is not a patch hash: `canonical_hash` holds the patch schema, so the first schema bump would have refused every long code.
 
 ### The bit budget (open check, settled here)
 
 The summary asked for about 13 characters carrying the generator and engine versions and a 32-bit prefix; 13 symbols hold 65 bits, which cannot hold all of that. So:
 
-- **The short code holds 64 bits of payload** (version, preset, generator, seed) plus the form bit, in 13 symbols and a check: report 01's form. It carries **no hash prefix and no engine version.** Its guarantee is that a generator version is frozen and pinned by its spec → target-hash golden on Linux, Windows and wasm (macOS weekly). A short code names only preset settings, which are exactly what those goldens cover.
-- **The long code carries both**: the engine version (24 bits, enough for `0.2.0`-style versions up to 255.255.255) and a 32-bit prefix (a drifted target slips through with probability 2⁻³²). It is the form for custom settings, and the model for R5's result codes, which add scores and the patch.
+- **The short code holds 64 bits of payload** (version, preset, generator, seed) plus the form bit, in 13 symbols and a check: report 01's form. It carries **no prefix and no engine version.** Its guarantee is that a generator version is frozen and pinned by its spec → fingerprint golden on Linux, Windows and wasm (macOS weekly). A short code names only preset settings, which are exactly what those goldens cover. Two typos can give another valid short code: 1.3 % of random double substitutions with the GF(32) check (264 of 20,000, lane F1R's probe; the judge measured 0.9 % for the mod-37 check), accepted for R1 (F1r review S3). A round's log line carries the target's fingerprint and the engine version, so a replay of a logged code can still tell drift from a different target.
+- **The long code carries both**: the engine version (24 bits, enough for `0.2.0`-style versions up to 255.255.255) and a 32-bit prefix (a drifted target slips through with probability 2⁻³²). It is the form for custom settings. R5's result codes take the escape version: they carry the answer's fingerprint and the scores (a patch is kilobytes, so never the patch itself).
 
 ### Reading a code
 
-- Case is ignored; `O` reads as `0` and `I`/`L` as `1` (Crockford's aliases); hyphens and whitespace are ignored anywhere. `U` and `* ~ $ =` are check symbols only (values 36 and 32–35).
-- Checks, in order: every character is a symbol (`bad_symbol`); 2 to 64 symbols (`bad_length`; `empty_code` for none); the check symbol (`bad_check`); the version (`code_too_new` above 1, `bad_field` for 0); the form's exact length (`bad_length`); zero padding and a known preset (`bad_field`); the spec (`RandomSpec::validate`: `out_of_range`, `no_generator`, and `code_too_new` for a generator this build does not run).
+- Case is ignored; `O` reads as `0` and `I`/`L` as `1` (Crockford's aliases); hyphens and whitespace are ignored anywhere. `U` and `* ~ $ =` are no symbols at all (`bad_symbol`).
+- Checks, in order: every character is a symbol (`bad_symbol`); 2 to 64 symbols (`bad_length`; `empty_code` for none); the check symbol (`bad_check`); the version (`code_too_new` from 2 to 15, `bad_field` for 0); the form's exact length (`bad_length`); zero padding and preset 0 (`bad_field`); a preset this build does not have (`code_too_new`: preset ids are append-only, so it is a newer build's, never damage); the spec (`RandomSpec::validate`: `out_of_range` for a percentage or a seed from 2⁵³, `no_generator`, and `code_too_new` for a generator or template this build does not have).
 - `decode` never panics; a property test feeds it arbitrary text.
 
-**What the check symbol catches.** It is the data's value, as one base-32 number, mod 37. Because 37 is prime and does not divide 32:
+**What the check symbol catches.** Read every symbol as an element of GF(32) = GF(2)[x]/(x⁵ + x² + 1), whose α = x has order 31 (the polynomial is primitive). The check c makes the whole word s₀ … sₙ₋₁ c vanish at α: Σⱼ wⱼ·sⱼ = 0 with the weight α^j for the symbol j places from the end (the check has weight 1). So c = α · (the data read as a polynomial at α), one Horner pass with a shift and an XOR per symbol. Addition is XOR, so a difference is a sum:
 
-- **Every single substitution.** A changed data symbol at place i changes the value by (b − a)·32ⁱ with 0 < |b − a| ≤ 31 < 37, which is never 0 mod 37. A changed check symbol is another value.
-- **Every adjacent swap.** Swapping data symbols a and b at places i + 1 and i changes the value by 31·(b − a)·32ⁱ, never 0 mod 37. Swapping the last data symbol d with the check symbol c: if c ≥ 32, a check-only symbol lands in the data (`bad_symbol`); otherwise the new value needs the check 2c − d (mod 37), which equals d only when c = d, which is no swap.
-- **A dropped or added symbol** in a short code, by its fixed length. In a long code the length follows the amounts mask, so the check catches it with probability 36/37.
+- **Every single substitution.** Changing a symbol a to b ≠ a at j places from the end changes the sum by α^j·(a + b), and neither factor is 0. That holds for the check symbol too (j = 0).
+- **Every adjacent swap.** Swapping a ≠ b at places j + 1 and j changes the sum by α^j·(1 + α)·(a + b): α ≠ 1, so no factor is 0. That includes the last data symbol and the check (j = 0), at any length.
+- **A dropped or added symbol** in a short code, by its fixed length. In a long code the length follows the amounts mask, so the check catches it with probability 31/32.
 
-The property tests check the first two exhaustively for every position of 256 random codes per run.
+The property tests check the first two exhaustively for every position of 256 random codes per run, and `alpha_is_primitive` checks α's order.
 
 ### Versions and the engine
 
@@ -165,22 +168,38 @@ The property tests check the first two exhaustively for every position of 256 ra
 | --- | --- | --- |
 | Code version newer than this build's | refused, `code_too_new` | the layout is unknown |
 | Generator newer than `LATEST_GENERATOR` | refused, `code_too_new` | this build cannot regenerate the target |
-| Long code's hash prefix ≠ the regenerated target's | refused, `target_mismatch` | the round must never be scored against a different target; it means a generator was not frozen, a bug to report |
+| Long code's fingerprint prefix ≠ the regenerated target's | refused, `target_mismatch` | the round must never be scored against a different target; it means a generator was not frozen, a bug to report |
 | Long code's engine version ≠ this build's | **warning only**, `engine_differs` (`CodeWarning`) | the target patch is the same; only its audio, and so the scores, may differ slightly |
 
-`ChallengeCode::verify(&target_hash, EngineVersion::CURRENT)` does the last two; a short code passes it (it carries neither). Comparing two players' scores across engine versions is R5's concern: its result codes carry the engine version and warn on a mismatch.
+`ChallengeCode::verify(&fingerprint, EngineVersion::CURRENT)` does the last two; a short code passes it (it carries neither). Warning on another engine is right for solo R1; comparing two players' scores across engine versions is R5's concern, and R5 must refuse or rescore on a mismatch (its result codes carry the engine version; F1r review N2).
 
 ## Generator versions are frozen
 
-- **A generator version's output never changes.** Version N gives the same target, bit for bit, for the same spec, on every platform, forever. Any change to the priors, the rules, the mask, the minimum step, the quantization or the draw order is a new version, frozen beside the old ones; old versions are never edited or removed.
-- **Each version emits a patch in the schema it was written for**, which then goes through `enth_patch::migrate`, so catalogue changes keep old codes valid.
-- **Goldens store spec → target hash per version**: 1,000 (seed, settings) pairs → the canonical hash of the target, in `enth-golden`, on Linux, Windows and wasm on every push and on macOS weekly (RG writes them; GC adds the challenge goldens). A golden of a released version never changes; a new version adds its own file.
+- **A generator version's output never changes.** Version N gives the same target fingerprint for the same spec, on every platform, forever. Any change to the priors, the rules, the mask, the minimum step, the quantization or the draw order is a new version, frozen beside the old ones; old versions are never edited or removed.
+- **What is enforced** (F1r review M2, rewritten from the first draft's "each version emits a patch in its own schema", which nothing built): a version runs on its template's frozen start patch (template 0's bytes are pinned), migrated to the current schema when it loads, and reads the live catalogue (`ParamSpec`s, through `Patch::spec`) for its draws, quantization and just-noticeable steps. So **a version reads only catalogue fields that a test pins**: `random::tests::the_catalogue_fields_v1_reads_are_pinned` snapshots the range, scale, unit, default, items, key and flags of every parameter v1 reads (each address in `priors::v1::SLOTS`, every route destination v1 can draw, and `master.level`) in `src/random/catalogue-v1.txt`. A catalogue change that trips it must keep v1's old values in a frozen copy that v1 reads, or ship generator v2; it never updates the snapshot. A catalogue change v1 does not read (a new parameter, a new module, a schema bump that renames none of v1's keys) changes no v1 target and no fingerprint.
+- **Goldens store spec → target fingerprint per version**: 1,000 (seed, settings) pairs → the [fingerprint](#the-target-fingerprint), in `enth-golden`, on Linux, Windows and wasm on every push and on macOS weekly (RG writes them; GC adds the challenge goldens). A patch hash would move with the schema; the fingerprint moves only with the target. A golden of a released version never changes; a new version adds its own file.
 - **Releasing a version** bumps `spec::LATEST_GENERATOR` in the same commit as its golden. New rounds use the latest version; old codes keep theirs.
 - The same holds for the other tables a code depends on: preset ids, phrase ids and template ids are append-only, and a released entry never changes.
 
+## The target fingerprint
+
+`TargetFingerprint` (`enth_challenge::fingerprint`, F1r review M1) is a target's identity, independent of the patch schema: what a long code's prefix, a round saved mid-play (`target_hash`), the round log and generator goldens check. `random::Generated::fingerprint` holds it, and `PreparedRound::fingerprint` passes it on.
+
+It is SHA-256 of a frozen byte string: the magic `enth-target-v1`, the generator (u16, big-endian), the phrase id (u16), the entry count (u32), then each entry in byte order of its key: the key's length (u16) and UTF-8 text, a tag (`p` a parameter value, `r` a route depth, `e` an enable flag) and the value (an f32's bits, big-endian, -0.0 as 0.0; or one byte, 0 or 1). Keys are names, never positions: a parameter's address (`filter1.cutoff`, `master.level`), a route's `<source>-><destination>` and a module's `<id>.enabled`.
+
+Generator v1's entries are every draw it made, at its value in the final patch, and `master.level` when its headroom rule lowered it. Nothing else of the patch enters it, so re-encoding the target (a schema bump's migration) or adding a catalogue parameter keeps every fingerprint (`random::tests::t1_*`), while any drawn value that moves by one ulp gives another. The encoding is frozen with its magic (`fingerprint::tests::the_v1_preimage_is_pinned`); a generator that needs another kind of entry uses a new magic.
+
 ## Scoring interfaces
 
-Scorers are additive (design.md §6): each has a `ScorerId` written `name/version` (`sound/1`, `structure/1`, `combined/1`, `time/1`). A change that would move any score is a new id beside the old one (metric v1.1 is its own id), so a stored report keeps meaning what it said.
+Scorers are additive (design.md §6): each has a `ScorerId` written `name/version`. A change that would move any score is a new id beside the old one (metric v1.1 is its own id), so a stored report keeps meaning what it said.
+
+| Id | What | Lane |
+| --- | --- | --- |
+| `sound-stub/1`, `structure-stub/1`, `combined-stub/1` | The stubs ([below](#scoring-a-round)): parameter space, no render; this build's default until SS and ST land | CT |
+| `sound/1` | Metric v1 with report 02's fixes and **the fitted curve** (after metric session 2) | SS |
+| `sound/2` | The same metric, the curve **refitted to GR1's blind ratings** (reserved); the pass mark stays 90 | SS, after GR1 |
+| `structure/1`, `combined/1` | Structure % and w·sound + (1 − w)·structure | ST |
+| `time/1` | The first passing submit in editor-visible time: a rule the session keeps, not a scorer to run | SG |
 
 ```rust
 pub trait Scorer: Send + Sync {
@@ -205,20 +224,40 @@ pub struct TargetContext<'a> {
 - **Pure.** No I/O, threads or clocks. `prepare` runs once per challenge (about 0.1–1 s of renders), `score` per submit; the shell's worker runs both, off the UI and audio threads. The session never needs the traits, only their results.
 - **Deterministic.** A score that decides pass gives the same bits on every platform: the scalar FFT path, the in-house `libm` loudness, a fixed summation order (SS).
 - **Only sound decides pass:** `ScoringSpec::passes(sound %)` is `sound % ≥ pass_mark`. The pass mark is an integer sound %; SS fits the curve so that the rating-4.5 point lands on it.
+- **Reports are read tolerantly** (F1r review S6): every output type (`SoundScore`, `Component`, `StructureScore`, `ParamScore`, `ModuleTerm`, `Combined`, `ScoreReport`, `RoundResult`) ignores unknown fields, gives a field added later a default when it is missing, and reads an unknown enum value as `unknown` (`ComponentKind`, `Direction`, `Closeness`, `Verdict`, `ModuleStatus`, `Outcome`, `Agreement`). So a lane adds an output field within `enth.score-report/1` (optional, with a default), and a newer build's report still reads. The challenge and the spec stay strict.
 
 | Type | Holds |
 | --- | --- |
 | `SoundScore` | `scorer`, `percent` (0–100), `distance` (raw metric), `floor` (the target's nuisance floor), `scale` (per-challenge JND scale), `jnd` (= max(0, distance − floor) / scale), `components` |
 | `Component` | `kind`, `direction` (`same`, `higher`, `lower`, `missing`, `extra`: the answer relative to the target), `closeness` (`close`, `a_bit`, `far`), optional `target` and `answer` readings in the kind's unit (never shown during a round) |
-| `ComponentKind` | `pitch` (cents re A4), `brightness` (centroid, Hz), `attack` (ms), `envelope` (decay to sustain, ms), `release` (ms), `noisiness` (noise ratio), `movement` (rate of beating, tremolo or sweep, Hz) |
-| `StructureScore` | `scorer`, `percent`, `params` (one `ParamScore` per randomized parameter, in address order), `modules` (`ModuleTerm`s the matching left over) |
-| `ParamScore` | `addr` (text, so an old report reads after a catalogue change; `param_addr()` parses it), `score` (0–1), `verdict` (`good`, `near`, `bad`: the editor's ring) |
+| `ComponentKind` | `pitch` (cents re A4), `brightness` (centroid, Hz), `harmonics` (harmonic content, the waveform: odd-to-all harmonic energy, 0–1), `attack` (ms), `envelope` (decay to sustain, ms), `sustain` (sustain level, dB re the peak), `release` (ms), `noisiness` (noise ratio), `movement` (rate of beating, tremolo or sweep, Hz). Level 1 is waveform plus octave, so harmonics and the sustain level have rows of their own (F1r review S6) |
+| `StructureScore` | `scorer`, `percent` (over the randomized parameters), `params` (one `ParamScore` per randomized parameter, then one per parameter the player moved that the target did not randomize, each part in address order), `modules` (`ModuleTerm`s the matching left over) |
+| `ParamScore` | `addr` (the target's, text, so an old report reads after a catalogue change; `param_addr()` parses it), `answer_addr` (the matched address in the player's patch, where the ring goes once modules are added and removed; `None` when the player has no match), `score` (0–1), `verdict` (`good`, `near`, `bad`: the ring), `direction` (`same`, `higher`, `lower`, `missing`), `randomized` (false for a "moved but not randomized" row, never counted in structure %) |
 | `ModuleTerm` | `id`, `kind`, `status` (`missing` or `extra`) |
 | `Combined` | `scorer`, `percent`, `sound_weight` |
-| `ScoreReport` | `sound`, `structure`, `combined`, `pass_mark`, `passed`; `margin()` = sound % − pass mark; `verdicts()` for the rings |
-| `ScoreError` | `render_failed`, `analysis_failed`, `unscorable` |
+| `ScoreReport` | `sound`, `structure`, `combined`, `pass_mark`, `passed`, `engine` (the engine that rendered the scored audio: an engine change can move a sound score); `margin()` = sound % − pass mark; `verdicts()` for the rings (randomized rows); `check_against(&scoring)` (the ids, the pass mark, the percentages and the pass recomputed: what the session checks before it records a worker's report) |
+| `ScoreError` | `render_failed`, `analysis_failed`, `unscorable`, `unknown_scorer` |
 
 `ScoreReport` is JSON with `"schema": "enth.score-report/1"` first. Reading one refuses a percentage outside 0–100 or not finite, and a `passed` that disagrees with the sound % and the pass mark. Scores are `f64`, written with shortest round-trip text, so the golden challenges can pin them to 1e-6.
+
+## Scoring a round
+
+`enth_challenge::score::round` (F1r review S5) is the round's composition as one pure function, so no shell composes scorers: the plugin's game worker, the CLI's `enth compare` and the golden challenges call the same code.
+
+| Function | Does |
+| --- | --- |
+| `prepare_round(&spec) -> Result<PreparedRound, RoundError>` | Validates the spec, regenerates the target from its template's start, builds `Challenge::recreate(spec, phrase)` with this build's default scorers, prepares each |
+| `prepare_challenge(challenge)` | The same for a given challenge (a golden challenge, `compare`, a file): validates it, regenerates its target, refuses another phrase than the generator's pick (`phrase_mismatch`), prepares the scorers it names |
+| `score_round(&round, &patch) -> Result<ScoreReport, ScoreError>` | Sound, structure, combined and the pass from sound alone; refuses a scorer that answers under another id |
+| `score_structure(&round, &patch)` | The structure score alone: the live rings, no render |
+
+`PreparedRound` is `Send + Sync` and built only by these functions, so its parts belong together: `challenge()`, `start()`, `target()`, `generated()`, `params()` (the randomized parameters), `fingerprint()` and `phrase()`. A worker keeps it per round (or shares it in an `Arc`).
+
+**The dispatch.** Each id a challenge names maps to an implementation: the stubs first, then each lane's hook **in its own file**, so a lane adds its scorer without editing CT's: `score::sound::prepare(id, ctx)` (SS), `score::structure::prepare(id, ctx)` and `score::combined::combiner(id)` (ST); each returns `None` for an id it does not have. `time/1` is the only time rule. Anything else is refused, `unknown_scorer` (until SS lands it, `sound/1` too: a challenge is never silently stubbed). A hook wraps its scorer with `Ready::prepare(scorer, ctx)`, which keeps the scorer and its `prepare` output behind the `PreparedScorer` trait.
+
+**The stubs** (`score::stub`, CT): every one works in parameter space, with no render, through generator v1's just-noticeable steps (`priors::jnd`, `Jnd::steps`). A randomized parameter scores 1 within one step of the target, falling linearly to 0 at four, with the ring good under one step, near under three, bad beyond; sound % and structure % are both the mean over the randomized parameters, combined is w·sound + (1 − w)·structure, and the sound stub's components come from the parameters that feed each kind (osc semitones → pitch, the wave → harmonics, the filter → brightness, the envelopes → attack, envelope, sustain, release; noise → noisiness; LFOs → movement). The target scores 100. **Not a sound score**: it lets SKR, RUI and GC wire and test the round before SS and ST land.
+
+**Module matching** (`score::matching`, owner ST, pre-declared by F1R): `match_modules(target, answer) -> ModuleMatching` pairs the player's modules with the target's (`answer_of`, `target_of`, `missing`, `extra`, `answer_addr`), for SS's mapping before the scoring render (ADR-0007 fix 2), ST's structure score and the rings. Until ST fills it, modules pair by id and kind, which is exact while players cannot add or remove modules.
 
 ## Round results
 
@@ -233,20 +272,21 @@ pub struct TargetContext<'a> {
 | `time_to_pass_ms` | editor-visible time to the first passing submit; `null` without a pass |
 | `active_ms` | editor-visible time of the whole round |
 | `assists` | `AssistsUsed`: `hints` revealed, `live_meter`, `revealed`; `any()` marks the round as assisted |
-| `agreement` | the player's vote: `too_low`, `about_right`, `too_high`, or `null` |
+| `agreement` | the player's vote: `too_low`, `about_right`, `too_high`, or `null` (a newer build's value reads as `unknown`) |
+| `rating` | the player's **blind rating** of the first submit, 1–5, given before its score showed (ADR-0007's note, review point (a); F1r review S9), or `null`: GR1 refits the curve with it |
 
-Reading one refuses a pass without a time (and a time without a pass), and a first submit without submits (and the reverse). Times come from the shell; core crates read no clock.
+Reading one refuses a pass without a time (and a time without a pass; not checked for a newer build's `unknown` outcome), a first submit without submits (and the reverse), and a rating outside 1–5. It is read tolerantly (above). Times come from the shell; core crates read no clock.
 
 ## Versions and fixtures
 
 | Form | Version | Fixtures (`crates/enth-challenge/tests/fixtures/`) |
 | --- | --- | --- |
 | Challenge | `enth.challenge/1` | `challenge/v1/{level1,level5,custom}.json` |
-| Code | code v1 (in the first symbol) | `code/v1/codes.json`: ten specs, both forms, every preset; **frozen once released**: it is a promise to every player who has a code |
-| Score report | `enth.score-report/1` | `score/v1/report.json` |
+| Code | code v1 (in the first symbol) | `code/v1/codes.json`: ten specs, both forms, every preset; **frozen**: a promise to every player who has a code. Its SHA-256 is pinned (`code_v1_fixture_bytes_are_pinned`) and the regenerate test writes it only when it is missing. Re-frozen once, at the F1r review, before any code was shared (the GF(32) check, 53-bit seeds, template 0) |
+| Score report | `enth.score-report/1` | `score/v1/report.json` (with the S6 fields: answer addresses, directions, a moved-but-not-randomized row, the harmonics and sustain kinds, the engine) |
 | Round result | `enth.round-result/1` | `round/v1/{passed,gave-up}.json` |
 
-`tests/fixtures.rs` checks that each fixture is what this build writes and that it reads back to its case. A format change on purpose adds `v<N+1>/` beside the old fixtures (kept as migration inputs) and regenerates the current ones with `cargo test -p enth-challenge --test fixtures -- --ignored regenerate`; read the diff.
+`tests/fixtures.rs` checks that each fixture is what this build writes and that it reads back to its case (the challenge fixtures pin the v1 scorer ids, whatever this build's default is). A format change on purpose adds `v<N+1>/` beside the old fixtures (kept as migration inputs) and regenerates the current ones with `cargo test -p enth-challenge --test fixtures -- --ignored regenerate`; read the diff.
 
 ## Properties
 
@@ -254,9 +294,13 @@ Reading one refuses a pass without a time (and a time without a pass), and a fir
 | --- | --- |
 | **P1** `decode(encode(c)) == c` | `code::tests::p1_codes_round_trip`: any short and long code, also lower case, unhyphenated and with `o`/`l` aliases |
 | **P1** a corrupted code gives an error, never a panic | `p1_garbage_never_panics`, `p1_symbol_soup_never_panics`, `p1_a_dropped_or_added_symbol_in_a_short_code_is_caught` |
-| **P1** the check symbol catches every single substitution and adjacent swap | `p1_every_single_substitution_is_caught`, `p1_every_adjacent_swap_is_caught` (every position of every generated code) |
-| The spec is integer-only | `spec::tests::any_spec_is_integers_only_and_round_trips`, `a_challenge_holds_integers_only` |
-| Versioning | `a_newer_code_version_is_refused`, `a_newer_generator_is_refused`, `schemas_are_checked`, the fixture tests |
+| **P1** the check symbol catches every single substitution and adjacent swap | `p1_every_single_substitution_is_caught`, `p1_every_adjacent_swap_is_caught` (every position of every generated code), `alpha_is_primitive`, `check_symbols_are_data_symbols` |
+| The spec is integer-only, and its seed exact in JSON | `spec::tests::any_spec_is_integers_only_and_round_trips`, `a_challenge_holds_integers_only`, `seeds_from_2_pow_53_are_refused` |
+| Versioning | `a_newer_code_version_is_refused`, `version_15_is_the_reserved_escape`, `a_newer_generator_is_refused`, `a_newer_template_is_code_too_new`, `an_unknown_preset_is_too_new_and_generator_0_is_refused`, `schemas_are_checked`, the fixture tests, `code_v1_fixture_bytes_are_pinned` |
+| The fingerprint holds only what the generator decided (T1) | `fingerprint::tests::the_v1_preimage_is_pinned`, `random::tests::t1_the_fingerprint_holds_only_what_the_generator_decided`, `t1_an_unreached_slot_keeps_every_fingerprint`, `fingerprints_are_pinned` |
+| The catalogue fields v1 reads are pinned (T2) | `random::tests::the_catalogue_fields_v1_reads_are_pinned`, `every_drawn_route_is_in_the_pin` |
+| Outputs read tolerantly | `score_reports_read_tolerantly`, `model::tests::newer_votes_outcomes_and_fields_read_tolerantly` |
+| The round's composition | `score::round::tests` (the target scores 100, unknown scorers refused, another phrase refused, `Send + Sync`), `score::stub::tests`, `score::matching::tests` |
 
 Property tests run 256 cases with the gate's fixed seed, and 10,000 nightly ([AGENTS.md](../AGENTS.md#done-means)).
 
@@ -268,12 +312,12 @@ Generator v1 (`enth_challenge::random`, `priors`, `phrases`; lane RG, 2026-10-20
 
 | Item | What it does |
 | --- | --- |
-| `random::target(&spec)` | `generate(&spec, &start(spec.template)?)` |
+| `random::target(&spec)` | `spec.validate()`, then `generate(&spec, &start(spec.template)?)` (so a newer template is `code_too_new`) |
 | `random::generate(&spec, &start) -> Result<Generated, GenError>` | Calls `spec.validate()` first (a failing spec is `GenError::Spec`, with the spec's code), then runs the spec's generator version |
-| `random::start(template)` | The start patch of a template: `0` is the starter superset, frozen as it was at F0r (a byte copy in `src/random/starter-v1.patch.json`, its exact hash pinned), so editing the editor's starter or Init never moves a target. Ids 1–5 (pluck, pad, bass, lead, keys) are reserved; template ids are append-only |
-| `Generated` | `patch`; `phrase` (the `PhraseId` it picked); `params` (the randomized parameters in address order, for `TargetContext::randomized`); `randomized` (everything drawn, in draw order, with its category and whether it counted for the minimum step: parameters, routes, enable flags); `steps` (the minimum step per category); `level` |
+| `random::start(template)` | The start patch of a template: `0` is the starter superset, frozen as it was at F0r (a byte copy in `src/random/starter-v1.patch.json`, its bytes' SHA-256 pinned, which no schema bump moves), so editing the editor's starter or Init never moves a target. Ids 1–5 (pluck, pad, bass, lead, keys) are reserved; template ids are append-only, and `spec::LATEST_TEMPLATE` is the newest this build has |
+| `Generated` | `generator`; `fingerprint` (the target's [fingerprint](#the-target-fingerprint)); `patch`; `phrase` (the `PhraseId` it picked); `params` (the randomized parameters in address order, for `TargetContext::randomized`); `randomized` (everything drawn, in draw order, with its category and whether it counted for the minimum step: parameters, routes, enable flags); `steps` (the minimum step per category); `level` |
 | `random::observable(&patch, &phrase) -> Mask` | The observability mask (below), shared with ST and the overlay; `Generated::mask()` is the target's |
-| `priors::jnd(&spec)` and `priors::ROUTE_JND` | The just-noticeable steps (below), for "audibly different" tests |
+| `priors::jnd(&spec)` and `priors::ROUTE_JND` | The just-noticeable steps (below), for "audibly different" tests; `Jnd::steps(from, to)` says how many steps apart two values are (the stubs use it, ST may) |
 | `phrases::{TABLE, phrase(id), HELD, OCTAVE_PAIR, LEGATO_PAIR}` | The phrase table |
 
 ### Levels and what each randomizes
@@ -329,11 +373,13 @@ Levels 1–4 always use `held`. Every phrase's lowest key is C3 and every note i
 
 ### The golden
 
-`tests/golden/tests/rg_generator.rs`, in `enth-golden`, so `golden.yml` runs it on Linux and Windows (debug and release) and under wasmtime on every push, and on macOS weekly: 1,000 specs (every fourth a code v1 preset with a 40-bit seed, the rest spread over difficulty, `musical` 0–100 and amounts), each line with the phrase and the first 16 hex digits of the target's canonical and exact hashes, and a last line with the SHA-256 of all 1,000 exact hashes (`8416a9ec…`). Native x86-64 and `wasm32-wasip1` under wasmtime 48 give the same file (2026-10-20). A v1 target never changes: a new rule is generator v2, with its own file.
+`tests/golden/tests/rg_generator.rs`, in `enth-golden`, so `golden.yml` runs it on Linux and Windows (debug and release) and under wasmtime on every push, and on macOS weekly: 1,000 specs (every fourth a code v1 preset with a 40-bit seed, the rest 53-bit seeds spread over difficulty, `musical` 0–100 and amounts), each line with the phrase and the first 16 hex digits of the target's fingerprint, and a last line with the SHA-256 of all 1,000 fingerprints (`5c8b5c3a…`). Native x86-64 and `wasm32-wasip1` under wasmtime give the same file (2026-10-20). A v1 target never changes: a new rule is generator v2, with its own file.
+
+**Regenerated once, on purpose** (lane F1R, F1r review M1 and S4): the first file pinned `canonical_hash` and `exact_hash`, whose bytes hold the patch schema and every value by position, so the first schema bump or new catalogue parameter would have moved every line without any v1 target changing; it now pins the fingerprint, which moves only with the target. The seeds went from 64 to 53 bits in the same change (a spec's seed is at most 2⁵³ − 1). No v1 rule changed.
 
 ### Measured audibility
 
-`tests/rg_levels.rs` (ignored; run by hand in release) renders 200 targets per cell through their phrase, the way report 01 measured its prototype:
+`tests/rg_levels.rs` (ignored; run by hand in release) renders 200 targets per cell through their phrase, the way report 01 measured its prototype. The table was measured with 64-bit seeds; the test now keeps their top 53 bits (F1r review S4), so a rerun samples other targets of the same rules:
 
 | `musical` | Level | Silent (no LUFS) | Below −40 LUFS | Float peak above 0 dBFS | Median LUFS |
 | --- | --- | --- | --- | --- | --- |
@@ -341,6 +387,30 @@ Levels 1–4 always use `held`. Every phrase's lowest key is C3 and every note i
 | 0 | 1 / 2 / 3 / 4 / 5 | 0 / 6 / 5 / 4 / 0 | 0 / 26 / 32 / 28 / 50 | 0 / 39 / 25 / 41 / 13 | −12.6 / −15.0 / −19.7 / −18.9 / −30.6 |
 
 Musical targets are never silent (report 01's prototype: 0–1 in 200) and rarely quiet (0–8, against 0–12). Float peaks above 0 dBFS are more common than the prototype's 11–15 % (up to 32 % at level 2, where resonance and the band-pass peak), which loudness-matched playback absorbs; the starter's own gain staging is lane AM's.
+
+## The F1r review fixes (lane F1R)
+
+The judge's review of CT and SG (`f1r-review.md`, 2026-10-20) returned "freeze after M1–M3". Every must-fix and should-fix item is done; the coordinator decided the four owner calls (S2, S9, N2, N3).
+
+| Finding | Fix | Where |
+| --- | --- | --- |
+| M1 target hashes follow the patch schema | The [target fingerprint](#the-target-fingerprint), used by the long code's prefix, `verify`, SG's saved `target_hash`, the round log and the v1 golden | `fingerprint`, `random`, `code`; SG |
+| M2 the freezing rule was not what RG built | [Rewritten](#generator-versions-are-frozen) to what is enforced, with the catalogue pin | `random/catalogue-v1.txt` |
+| M3 a newer enum value lost the stash | Tolerant enums everywhere in a saved round and in the outputs; SG reads its `game` object leniently | `model`, `score`; SG |
+| S1 an unknown preset was damage, an unknown template passed | Both `code_too_new`; the template is checked in `RandomSpec::validate` | `code`, `spec` |
+| S2 punctuation check symbols | The GF(32) check, all data symbols; code v1 re-frozen | `code` |
+| S3 short codes carry no prefix | Accepted for R1; the log line carries the fingerprint and the engine | SG |
+| S4 seeds above 2⁵³ | Refused (`MAX_SEED`) | `spec` |
+| S5 composition in shells | [`score::round`](#scoring-a-round), stub scorers, `score/matching.rs` pre-declared for ST | `score` |
+| S6 output types not additive | The new fields, tolerant reading | `score` |
+| S7 randomized addresses never reached the session | `Prepared::params`, `RoundView::params` | SG |
+| S8 the stash and escaping outside the budget | Escaped budgets, a refused start, a 64 KiB exported edit log | SG |
+| S9 no blind rating | `RoundResult::rating`, SG's `game_rate` | `model`; SG |
+| S10 SG trusted the worker's pass | `ScoreReport::check_against`; SG refuses (`wrong_result`) | `score`; SG |
+| S11 nothing woke an idle editor | `RoundView::wake_at_ms`; SKR's repaint on a post | SG, docs/session.md |
+| S12 provisional names | Stub, fitted and refit ids; `SCORING_SEED` a literal | `score`, `model` |
+| N2 no room for a third kind of code | Version 15 is the escape | `code` |
+| N3 the round took the whole `GameState`; the start-patch rule | Only `round`; the rule is in [What RG follows](#randomspec) | SG; `random` tests |
 
 ## Sound score (lane SS)
 

@@ -13,7 +13,7 @@
 //!   and a generator this build runs), and the generator refuses a spec that fails it rather than clamping.
 //! - **`generator` picks frozen code.** Versions `1..=`[`LATEST_GENERATOR`] exist in this build, and a version's
 //!   output never changes (docs/challenge.md, "Generator versions are frozen"). Freezing a new version bumps
-//!   [`LATEST_GENERATOR`] in the same commit that adds its spec → target-hash golden.
+//!   [`LATEST_GENERATOR`] in the same commit that adds its spec → target-fingerprint golden.
 //! - **`difficulty` picks the level.** Five levels, each one category more ([`Category::ALL`] order). The presets
 //!   below put levels 1–5 at difficulty 0, 25, 50, 75 and 100, so any banding that keeps those five values in
 //!   different levels, in order, works; RG's proposed bands are 0–20, 21–40, 41–60, 61–80 and 81–100.

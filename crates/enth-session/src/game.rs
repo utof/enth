@@ -171,7 +171,7 @@ pub fn knobs(structure: &StructureScore) -> Vec<KnobScore> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RoundSource {
     /// The settings page: the shell drew the seed (a short code holds 40 bits of it). A preset's spec has its short
-    /// code at once; a custom spec gets its long code when the target exists (it carries the target's hash prefix).
+    /// code at once; a custom spec gets its long code when the target exists (it carries the target's fingerprint prefix).
     Settings(RandomSpec),
     /// A code the player pasted, or a daily's.
     Code(ChallengeCode),
@@ -255,7 +255,7 @@ pub struct RoundRecord {
     pub id: RoundId,
     /// The text of the code the round started from (a long code keeps its maker's engine version). The target is
     /// regenerated from it, never persisted (design.md §9). Empty only while a round started from custom settings
-    /// is still preparing (its long code carries the target's hash prefix, so it exists with the target).
+    /// is still preparing (its long code carries the target's fingerprint prefix, so it exists with the target).
     pub code: String,
     /// Where the round is.
     pub phase: Phase,
@@ -1019,15 +1019,15 @@ pub enum GameError {
         /// The shell's message.
         message: String,
     },
-    /// The regenerated target differs from the one the round was played against.
+    /// The regenerated target differs from the one the round was played against (another fingerprint).
     TargetDrift {
-        /// The saved hash.
+        /// The saved fingerprint.
         expected: String,
-        /// The regenerated target's hash.
+        /// The regenerated target's fingerprint.
         found: String,
     },
     /// The code is refused: it does not decode (`code_too_new`, `bad_check`, …), or the regenerated target has
-    /// another hash prefix than a long code's (`target_mismatch`). The inner code passes through.
+    /// another fingerprint prefix than a long code's (`target_mismatch`). The inner code passes through.
     Code(CodeError),
     /// The settings are refused (`out_of_range`, `no_generator`, `code_too_new`).
     Spec(SpecError),
@@ -1131,7 +1131,7 @@ impl std::fmt::Display for GameError {
             GameError::JobFailed { job, message } => write!(f, "the {job} job failed: {message}"),
             GameError::TargetDrift { expected, found } => write!(
                 f,
-                "the regenerated target hashes to {found}, not {expected}"
+                "the regenerated target's fingerprint is {found}, not {expected}"
             ),
             GameError::Code(e) => write!(f, "challenge code refused: {e}"),
             GameError::Spec(e) => write!(f, "settings refused: {e}"),

@@ -498,7 +498,7 @@ pub enum CodeError {
     },
     /// The spec it carries is refused, a newer generator included (`code_too_new`).
     Spec(SpecError),
-    /// The target this build regenerates has another hash prefix than the code's ([`ChallengeCode::verify`]).
+    /// The target this build regenerates has another fingerprint prefix than the code's ([`ChallengeCode::verify`]).
     TargetMismatch {
         /// The prefix in the code.
         code: TargetPrefix,
