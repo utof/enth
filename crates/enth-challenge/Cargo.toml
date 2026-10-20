@@ -1,0 +1,29 @@
+[package]
+name = "enth-challenge"
+description = "L4: the Challenge (target, start, phrase, scoring), the Recreate randomizer, challenge codes and the scorers (docs/architecture.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pre-declared by lane S0r (R1/S1, freeze point F0r) so Cargo.lock is resolved before the lanes fan out; lanes use
+# what they need. A core crate (L0-L5): no I/O, threads, clocks or global RNG, and it builds for wasm32
+# (`cargo xtask wasm-check`); the root clippy.toml bans apply.
+enth-dsp.workspace = true          # derive and fnv1a64: keyed draws, derive(derive(seed, fnv1a64(address)), attempt) (RG)
+enth-params.workspace = true       # ParamSpec ranges, scales and units: priors, reachable quantization (RG, ST)
+enth-patch.workspace = true        # Patch, addresses, the catalogue, ENGINE_VERSION (every lane)
+enth-engine.workspace = true       # module kinds and plan facts the scorers may need (SS, ST)
+enth-render.workspace = true       # the scored render and the phrase as a Performance (SS, phrases)
+enth-analysis.workspace = true     # metric v1, descriptors, Expect lists for the coach (SS, SN)
+libm.workspace = true              # the only door to transcendentals: priors and the in-house BS.1770 loudness (RG, SS)
+serde.workspace = true             # Challenge v1, RandomSpec, ScoreReport are persisted (CT)
+serde_json.workspace = true        # fixtures and the long code's payload (CT)
+sha2.workspace = true              # the target-hash prefix a code carries (CT)
+
+[dev-dependencies]
+proptest.workspace = true          # generator properties P2-P6 (RG), scorer properties (SS, ST)
+insta.workspace = true             # Challenge and code fixtures (CT)
+
+[lints]
+workspace = true

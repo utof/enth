@@ -15,6 +15,11 @@ dev-window = ["dep:eframe"]
 # (docs/editor.md). P1b builds no presenters for them: a reserved region draws an empty panel.
 learn = []
 recreate = []
+# R1/S1 header hook points (lane S0r): each feature turns on its no-op hook in the header (regions/header.rs) until its
+# lane fills it: `recreate` (lane RUI, editor/recreate/), `presets` (lane PBU, editor/browser.rs), `add-module` (lane AM,
+# editor/add_module.rs). The lanes decide whether a feature stays, becomes a default, or goes.
+presets = []
+add-module = []
 
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).
@@ -28,6 +33,8 @@ enth-session.workspace = true
 # Layouts are JSON (`ENTH_LAYOUT`, the built-in files under src/editor/layout/), and their size tokens resolve through the
 # theme's serde form. Already in Cargo.lock as a dev-dependency, so moving it here changes no lock entry.
 serde_json.workspace = true
+# Pre-declared by lane S0r (R1/S1): the Recreate views read Challenge and ScoreReport types (lane RUI).
+enth-challenge.workspace = true
 # glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine; the clipboard for text fields.
 eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional = true }
 

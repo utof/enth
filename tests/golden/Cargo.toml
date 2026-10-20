@@ -19,6 +19,8 @@ path = "src/main.rs"
 enth-render.workspace = true
 enth-analysis.workspace = true
 enth-patch.workspace = true
+# Pre-declared by lane S0r (R1/S1): golden challenges under tests/golden/challenges/ (lane GC), RG's generator hashes.
+enth-challenge.workspace = true
 libm.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -25,6 +25,7 @@ enth-patch = { path = "crates/enth-patch" }
 enth-engine = { path = "crates/enth-engine" }
 enth-render = { path = "crates/enth-render" }
 enth-analysis = { path = "crates/enth-analysis" }
+enth-challenge = { path = "crates/enth-challenge" }  # L4 (R1/S1 lane S0r)
 enth-solver = { path = "crates/enth-solver" }
 enth-cli = { path = "crates/enth-cli" }
 enth-ui = { path = "crates/enth-ui" }
@@ -86,6 +87,19 @@ clack-extensions = "=0.2.0"                         # MIT OR Apache-2.0. Members
 clack-plugin = "=0.2.0"                             # MIT OR Apache-2.0. dev-dependency of the test host: an in-process test plugin
 x11rb = "=0.13.2"                                   # MIT OR Apache-2.0. Pure-Rust X11 client: the host-side parent window for embedded editors. baseview pulls the same version in
 libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-host timing: clock_gettime, setrlimit(RLIMIT_RTTIME), sched_setaffinity (research 03)
+
+# R1/S1 dependencies (lane S0r, freeze point F0r; research session 2026-10-20-r1-s1-recreate-and-instrument). Same rules
+# as the blocks above: every pin is exact, only the coordinator edits this table and Cargo.lock after F0r (one commit
+# per change), and a lane that needs a crate asks for it. S0r also wrote every internal edge the R1/S1 lanes need
+# (enth-challenge in the solver, the session, the UI, the plugin, the CLI and the golden harness; enth-patch in xtask
+# for `preset-add`): a new edge changes the depending crate's Cargo.lock entry and fails `--locked` just as a new
+# crate does.
+#
+# No new crates.io crate yet. Report 03 picked `dirs` =7.0.0 (MIT OR Apache-2.0) for the user preset folder, but its
+# `dirs-sys` 0.5.0 always pulls `option-ext` 0.2.0, which is MPL-2.0: not in deny.toml, so `cargo deny check licenses`
+# fails and AGENTS.md needs the owner's OK first (lane S0r measured it, 2026-10-20). Until then the preset folder is
+# found without it (lane PBC), or the owner allows MPL-2.0 for that one crate in deny.toml and the coordinator adds
+# `dirs` here.
 
 # The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork";
 # lane FK). `vendor/` holds the crates.io sources (a pristine-import commit, then one commit per patch: slot rename,

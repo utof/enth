@@ -18,6 +18,9 @@ enth-engine.workspace = true
 enth-render.workspace = true
 enth-patch.workspace = true
 enth-params.workspace = true
+# Pre-declared by lane S0r (R1/S1): game wiring, the target render and scoring on a worker (SKR), hints (SN).
+enth-challenge.workspace = true
+enth-solver.workspace = true
 # Exact pins in the root Cargo.toml (docs/adr/0001-plugin-shell.md). `assert_process_allocs` only has an effect in debug
 # builds: nice-plug gates it on debug_assertions, and the validator's process() calls abort on any allocation.
 nice-plug = { workspace = true, features = ["vst3", "editor", "assert_process_allocs"] }
@@ -36,6 +39,11 @@ rt-stats = []
 # Editor lifecycle counters for the leak gate (src/editor_counts.rs, `cargo xtask leak-test`): off by default; with it
 # the plugin counts `build()` and `editor_closed()` and appends them to the file `$ENTH_EDITOR_COUNTS` names.
 editor-counts = []
+# R1/S1 (lane S0r): forward enth-ui's header hook features, so a build can turn a hook on from the plugin. No behaviour
+# until lanes RUI, PBU and AM fill their hooks; off by default.
+recreate = ["enth-ui/recreate"]
+presets = ["enth-ui/presets"]
+add-module = ["enth-ui/add-module"]
 
 [dev-dependencies]
 insta.workspace = true
