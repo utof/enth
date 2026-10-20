@@ -87,7 +87,7 @@ fn run(job: &Job, silent: &[u64], hint_at: Option<&enth_patch::ParamAddr>) -> Jo
                     hint = hint.with_module(module.clone());
                 }
             }
-            JobResult::Hint(hint)
+            JobResult::Hint(Box::new(hint))
         }
         _ => JobResult::Failed {
             message: "not in this test".to_owned(),
@@ -694,7 +694,11 @@ fn a_hint_highlights_its_control() {
     click(&mut h, "Hint");
     h.run_steps(2);
     assert_eq!(round(&h).unwrap().hints, 1);
-    assert_eq!(marks(&h), (false, None), "level 1 names an aspect, not a control");
+    assert_eq!(
+        marks(&h),
+        (false, None),
+        "level 1 names an aspect, not a control"
+    );
     click(&mut h, "Hint");
     h.run_steps(2);
     assert_eq!(marks(&h), (true, None), "level 2: the module's card");

@@ -217,10 +217,10 @@ fn round(session: &mut Session, patch: &Patch) {
                             enth_challenge::score_structure(round, patch).expect("rings"),
                         ))
                     }
-                    JobKind::Hint { level, .. } => JobResult::Hint(CoachHint::new(
+                    JobKind::Hint { level, .. } => JobResult::Hint(Box::new(CoachHint::new(
                         *level,
                         "Your sound is darker than the target: look at the filter (filter1).",
-                    )),
+                    ))),
                     _ => JobResult::Loudness { lufs: None },
                 };
                 let _ = session.game_job_done(job.id, result);

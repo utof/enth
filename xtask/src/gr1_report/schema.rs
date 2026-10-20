@@ -811,7 +811,8 @@ mod tests {
     #[test]
     fn the_dim_assist_reads_without_an_issue_and_counts_as_an_assist() {
         let mut v = end_line();
-        v["result"]["assists"] = json!({"hints": 0, "live_meter": false, "revealed": false, "dim_unused": true});
+        v["result"]["assists"] =
+            json!({"hints": 0, "live_meter": false, "revealed": false, "dim_unused": true});
         let p = parse(&v);
         assert!(p.issues.is_empty(), "{:?}", p.issues);
         let a = p.entry.unwrap().result.unwrap().assists;

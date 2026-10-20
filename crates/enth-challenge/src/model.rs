@@ -1118,10 +1118,7 @@ mod tests {
             text,
             r#"{"hints":0,"live_meter":false,"revealed":false,"dim_unused":true}"#
         );
-        assert_eq!(
-            serde_json::from_str::<AssistsUsed>(&text).unwrap(),
-            dimmed
-        );
+        assert_eq!(serde_json::from_str::<AssistsUsed>(&text).unwrap(), dimmed);
         let old: AssistsUsed =
             serde_json::from_str(r#"{"hints":2,"live_meter":false,"revealed":true}"#).unwrap();
         assert!(!old.dim_unused && old.any());

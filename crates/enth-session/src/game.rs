@@ -650,11 +650,7 @@ impl CoachHint {
 
     /// With the aspect that is off (its code) and how the player's sound differs (level 1 on).
     #[must_use]
-    pub fn with_aspect(
-        mut self,
-        aspect: impl Into<String>,
-        difference: Option<Direction>,
-    ) -> Self {
+    pub fn with_aspect(mut self, aspect: impl Into<String>, difference: Option<Direction>) -> Self {
         self.aspect = Some(aspect.into());
         self.difference = difference;
         self
@@ -922,8 +918,8 @@ pub enum JobResult {
         /// The phrase's integrated loudness through the player's patch.
         lufs: Option<f32>,
     },
-    /// For [`JobKind::Hint`].
-    Hint(CoachHint),
+    /// For [`JobKind::Hint`] (boxed since lane HINT gave the hint its structured fields).
+    Hint(Box<CoachHint>),
     /// Any job that could not finish.
     Failed {
         /// Why, for the status line.
@@ -1695,7 +1691,7 @@ impl Session {
                 Ok(())
             }
             ("hint", JobResult::Hint(hint)) => {
-                self.game.hint = Some(hint.laddered());
+                self.game.hint = Some((*hint).laddered());
                 Ok(())
             }
             (job, result) => {
@@ -2567,7 +2563,8 @@ mod tests {
     /// writes none of them, a structured one round-trips, and a newer build's turn or difference reads as `unknown`.
     #[test]
     fn a_coach_hints_structured_fields_are_additive() {
-        let old: CoachHint = serde_json::from_str(r#"{"level":2,"text":"Look at the filter."}"#).unwrap();
+        let old: CoachHint =
+            serde_json::from_str(r#"{"level":2,"text":"Look at the filter."}"#).unwrap();
         assert_eq!(old, CoachHint::new(2, "Look at the filter."));
         assert!(!old.points());
         assert_eq!(
@@ -2592,10 +2589,7 @@ mod tests {
         let back: CoachHint = serde_json::from_str(&newer).unwrap();
         assert_eq!(
             (back.turn, back.difference),
-            (
-                Some(HintTurn::Unknown),
-                Some(Direction::Unknown)
-            )
+            (Some(HintTurn::Unknown), Some(Direction::Unknown))
         );
     }
 

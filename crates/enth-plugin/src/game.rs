@@ -578,7 +578,7 @@ impl Runner {
         let Some((_, plan)) = coach.plan.as_ref() else {
             return failed("hints", "no plan");
         };
-        JobResult::Hint(coach_hint(plan.hint(level)))
+        JobResult::Hint(Box::new(coach_hint(plan.hint(level))))
     }
 }
 
@@ -1845,7 +1845,7 @@ mod tests {
                     let JobResult::Hint(h) = r else {
                         panic!("{r:?}")
                     };
-                    out.push(h);
+                    out.push(*h);
                 }
             }
             out
@@ -1855,7 +1855,11 @@ mod tests {
         assert_eq!(hints(3), serial, "3 workers");
         // What each hint points at follows the coach's ladder, and the session keeps it as it came.
         for h in &serial {
-            assert!(h.aspect.is_some(), "level {}: the aspect from level 1", h.level);
+            assert!(
+                h.aspect.is_some(),
+                "level {}: the aspect from level 1",
+                h.level
+            );
             assert!(h.level >= 2 || h.module.is_none(), "{h:?}");
             assert!(
                 h.level >= 3 || (h.param.is_none() && h.turn.is_none()),
@@ -1890,7 +1894,9 @@ mod tests {
         println!("| --- | --- | --- | --- | --- | --- | --- |");
         for level in 1..=4_u8 {
             for seed in [3_u64, 11, 29] {
-                let spec = SpecPreset::by_id(level).unwrap().spec(LATEST_GENERATOR, seed);
+                let spec = SpecPreset::by_id(level)
+                    .unwrap()
+                    .spec(LATEST_GENERATOR, seed);
                 let id = round_id(u32::from(level) * 100 + seed as u32);
                 let mut reference: Option<Vec<CoachHint>> = None;
                 for &n in &workers {
@@ -1948,7 +1954,7 @@ mod tests {
                         let JobResult::Hint(h) = r else {
                             panic!("{r:?}")
                         };
-                        hints.push(h);
+                        hints.push(*h);
                         let coach = runner.coach.as_ref().unwrap();
                         if level == 1 {
                             renders.push(coach.target.sensitivity().renders);

@@ -81,12 +81,7 @@ pub trait Overlay {
 /// Outlines the control or card a revealed hint points at (lane HINT): a thick stroke in the value accent a tight gap
 /// outside `rect`, and the [`Pointer`]'s glyph (↑ or ↓) inside its top left corner when it has one. Never colour
 /// alone for a direction: the glyph says it.
-pub fn paint_hint(
-    painter: &egui::Painter,
-    t: &crate::Theme,
-    rect: egui::Rect,
-    pointer: Pointer,
-) {
+pub fn paint_hint(painter: &egui::Painter, t: &crate::Theme, rect: egui::Rect, pointer: Pointer) {
     let ink = t.color.accent.value;
     painter.rect_stroke(
         rect.expand(t.space.tight),
@@ -97,7 +92,10 @@ pub fn paint_hint(
     // Inside the outline's top left corner (the score glyph takes the top right), clear of the stroke.
     if let Some(glyph) = pointer.glyph() {
         painter.text(
-            egui::pos2(rect.left() + t.space.hairline, rect.top() + t.space.hairline),
+            egui::pos2(
+                rect.left() + t.space.hairline,
+                rect.top() + t.space.hairline,
+            ),
             egui::Align2::LEFT_TOP,
             glyph,
             t.text.label.clone(),

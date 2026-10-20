@@ -262,10 +262,8 @@ mod tests {
         assert!(o.module_hint(&lfo), "a route's source at level 4");
         // A categorical parameter (no turn) gets the outline alone.
         let mut round = hinted(3);
-        round.hint = Some(
-            CoachHint::new(3, "change Wave")
-                .with_param("osc1.wave".parse().unwrap(), None),
-        );
+        round.hint =
+            Some(CoachHint::new(3, "change Wave").with_param("osc1.wave".parse().unwrap(), None));
         let o = RoundOverlay::of(&round, false);
         assert_eq!(
             o.param(&"osc1.wave".parse().unwrap()).hint,

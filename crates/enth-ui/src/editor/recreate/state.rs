@@ -817,12 +817,20 @@ mod tests {
         assert_eq!(recreate.queued(), [], "no assist, nothing to report");
         recreate.dim_unused = true;
         recreate.set_round(Some(r.clone()));
-        assert_eq!(recreate.queued(), [], "no randomized parameters yet: nothing dims");
+        assert_eq!(
+            recreate.queued(),
+            [],
+            "no randomized parameters yet: nothing dims"
+        );
         r.params = vec!["filter1.cutoff".parse().unwrap()];
         let mut preparing = r.clone();
         preparing.phase = Phase::Preparing;
         recreate.set_round(Some(preparing));
-        assert_eq!(recreate.queued(), [], "the session refuses it while preparing");
+        assert_eq!(
+            recreate.queued(),
+            [],
+            "the session refuses it while preparing"
+        );
         recreate.set_round(Some(r.clone()));
         recreate.set_round(Some(r.clone()));
         assert_eq!(recreate.queued(), [GameIntent::DimUnused], "queued once");

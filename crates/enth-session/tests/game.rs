@@ -452,7 +452,10 @@ fn hints_are_levels_that_mark_the_round_assisted() {
         let text = format!("level {level}");
         s.game_job_done(
             hint.id,
-            JobResult::Hint(enth_session::game::CoachHint::new(level, text.clone())),
+            JobResult::Hint(Box::new(enth_session::game::CoachHint::new(
+                level,
+                text.clone(),
+            ))),
         )
         .unwrap();
         let v = view(&s);
@@ -481,14 +484,22 @@ fn hints_keep_only_the_fields_their_level_names() {
     for level in 1..=4u8 {
         s.game_hint().unwrap();
         let hint = job(&drain(&mut s), "hint");
-        s.game_job_done(hint.id, JobResult::Hint(full(level)))
+        s.game_job_done(hint.id, JobResult::Hint(Box::new(full(level))))
             .unwrap();
         let h = view(&s).hint.unwrap();
-        assert_eq!(h.text, format!("level {level}"), "the next hint replaces the last");
+        assert_eq!(
+            h.text,
+            format!("level {level}"),
+            "the next hint replaces the last"
+        );
         assert_eq!(h.aspect.as_deref(), Some("brightness"));
         assert_eq!(h.module.is_some(), level >= 2, "level {level}");
         assert_eq!(h.param.is_some(), level >= 3, "level {level}");
-        assert_eq!(h.turn, (level >= 3).then_some(HintTurn::Raise), "level {level}");
+        assert_eq!(
+            h.turn,
+            (level >= 3).then_some(HintTurn::Raise),
+            "level {level}"
+        );
         assert_eq!(h.route.is_some(), level == 4, "level {level}");
     }
     s.game_end(EndChoice::Keep).unwrap();
@@ -1235,7 +1246,7 @@ fn mid_round() -> Session {
     let hint = job(&drain(&mut s), "hint");
     s.game_job_done(
         hint.id,
-        JobResult::Hint(enth_session::game::CoachHint::new(1, "brighter")),
+        JobResult::Hint(Box::new(enth_session::game::CoachHint::new(1, "brighter"))),
     )
     .unwrap();
     s.game_tick(7_000, EditorView::Visible);
@@ -1581,7 +1592,10 @@ fn the_round_fixture_is_what_this_build_writes_and_loads() {
 #[test]
 fn a_round_saved_before_the_dim_assist_loads_with_it_off() {
     let fixture = round_fixture();
-    assert!(!fixture.instance.contains("dim_unused"), "predates the field");
+    assert!(
+        !fixture.instance.contains("dim_unused"),
+        "predates the field"
+    );
     let mut t = Session::default();
     assert_eq!(t.load(&fixture).errors, []);
     let v = view(&t);
@@ -1614,7 +1628,10 @@ fn the_dim_assist_marks_the_round_assisted_and_reaches_the_save_and_the_log() {
     drain(&mut s);
     s.game_dim_unused().unwrap();
     let v = view(&s);
-    assert!(v.dim_unused && v.assisted, "the dim assist counts as an assist");
+    assert!(
+        v.dim_unused && v.assisted,
+        "the dim assist counts as an assist"
+    );
     assert!(
         drain(&mut s).contains(&GameRequest::Dirty),
         "the record changed: the project is dirty"
@@ -1626,7 +1643,11 @@ fn the_dim_assist_marks_the_round_assisted_and_reaches_the_save_and_the_log() {
     );
     // Saved mid-round, it comes back with the record.
     let saved = s.save(None);
-    assert!(saved.instance.contains(r#""dim_unused":true"#), "{}", saved.instance);
+    assert!(
+        saved.instance.contains(r#""dim_unused":true"#),
+        "{}",
+        saved.instance
+    );
     let mut t = Session::default();
     assert_eq!(t.load(&saved).errors, []);
     assert!(t.game_record().unwrap().dim_unused);
@@ -1650,7 +1671,10 @@ fn a_log_line_from_before_the_dim_assist_reads() {
         .pointer_mut("/result/assists")
         .and_then(serde_json::Value::as_object_mut)
         .unwrap();
-    assert_eq!(assists.remove("dim_unused"), Some(serde_json::Value::Bool(true)));
+    assert_eq!(
+        assists.remove("dim_unused"),
+        Some(serde_json::Value::Bool(true))
+    );
     let back: RoundLogEntry = serde_json::from_value(old).unwrap();
     let assists = back.result.unwrap().assists;
     assert!(!assists.dim_unused && !assists.any());
@@ -1821,7 +1845,7 @@ fn only_patch_replacements_reach_the_engine_one_plan_each() {
     let hint = job(&drain(&mut s), "hint");
     s.game_job_done(
         hint.id,
-        JobResult::Hint(enth_session::game::CoachHint::new(1, "x")),
+        JobResult::Hint(Box::new(enth_session::game::CoachHint::new(1, "x"))),
     )
     .unwrap();
     s.game_vote(Agreement::AboutRight).unwrap();
