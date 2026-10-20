@@ -11,12 +11,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use enth_challenge::score::ParamScore;
-use enth_challenge::{Combined, PhraseId, ScorerId, ScoringSpec, SoundScore, SpecPreset};
+use enth_challenge::{
+    Combined, Direction, PhraseId, ScoringSpec, SoundScore, SpecPreset, TargetFingerprint,
+};
 use enth_engine::{Event, EventKind, NoteKey};
 use enth_patch::model::{ModuleInstance, Section};
 use enth_patch::{ModuleKind, Op, Patch, Position, apply_all};
 use enth_session::game::{
-    Challenge, EditorView, EndChoice, GameEdit, GameRequest, JobKind, JobResult, Listen,
+    Challenge, EditorView, EndChoice, GameEdit, GameRequest, JobKind, JobResult, Listen, Prepared,
     RandomSpec, RoundSource, ScoreReport, StructureScore, Verdict,
 };
 use enth_session::{Activation, Session};
@@ -54,14 +56,18 @@ fn target_patch() -> Patch {
     p
 }
 
+/// The rings, from the scorer this build's default challenge names.
 fn structure() -> StructureScore {
     StructureScore {
-        scorer: ScorerId::STRUCTURE_V1,
+        scorer: ScoringSpec::recreate(25).structure,
         percent: 30.0,
         params: vec![ParamScore {
             addr: "filter1.cutoff".to_owned(),
+            answer_addr: Some("filter1.cutoff".to_owned()),
             score: 0.5,
             verdict: Verdict::Near,
+            direction: Direction::Higher,
+            randomized: true,
         }],
         modules: Vec::new(),
     }
@@ -75,16 +81,18 @@ fn answer_jobs(s: &mut Session) {
             continue;
         };
         let result = match job.kind {
-            JobKind::Prepare { spec } => JobResult::Prepared {
-                challenge: Box::new(Challenge::recreate(spec, PhraseId(1))),
-                start: Box::new(start_patch()),
-                target: Box::new(target_patch()),
-                target_lufs: Some(-16.0),
-            },
+            JobKind::Prepare { spec } => JobResult::Prepared(Box::new(Prepared::new(
+                Challenge::recreate(spec, PhraseId(1)),
+                start_patch(),
+                target_patch(),
+                vec![addr("filter1.cutoff")],
+                TargetFingerprint([0x5A; 32]),
+                Some(-16.0),
+            ))),
             JobKind::Score { challenge, .. } => JobResult::Scored(Box::new(ScoreReport::new(
                 &challenge.scoring,
                 SoundScore {
-                    scorer: ScorerId::SOUND_V1,
+                    scorer: challenge.scoring.sound.clone(),
                     percent: 40.0,
                     distance: 0.5,
                     floor: 0.0,
@@ -94,7 +102,7 @@ fn answer_jobs(s: &mut Session) {
                 },
                 structure(),
                 Combined {
-                    scorer: ScorerId::COMBINED_V1,
+                    scorer: challenge.scoring.combined.clone(),
                     percent: 35.0,
                     sound_weight: ScoringSpec::recreate(25).sound_weight,
                 },

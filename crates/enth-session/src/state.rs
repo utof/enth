@@ -78,8 +78,13 @@ pub struct InstanceState {
     /// ([`crate::game::RoundRecord`]), which the session mutates in place and keeps `None` while no round is live.
     /// Optional and omitted when `None`, so a state without a round saves the same bytes as before the field existed
     /// (state version 1: an optional field with a default), and older builds ignore it. A host load reconciles it
-    /// with the live round ([`Session::load_instance`]; docs/session.md, "The Recreate round").
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// with the live round ([`Session::load_instance`]; docs/session.md, "The Recreate round"). Read leniently
+    /// ([`GameState::lenient`](crate::game::GameState::lenient)): a `game` object this build cannot decode keeps its
+    /// round's stash and never fails the rest of the field (F1r review M3).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::game::lenient_game"
+    )]
     pub game: Option<crate::game::GameState>,
     /// The instance's preset bookkeeping (lane PBC; reserved by lane S0r for R1/S1). Optional and omitted when
     /// `None`, like `game`.

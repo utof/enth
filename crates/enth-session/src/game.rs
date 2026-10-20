@@ -26,28 +26,34 @@
 //! # What is saved
 //!
 //! The `enth` field's `game` object ([`GameState`]) holds the [`RoundRecord`]: the challenge code (the target is
-//! never persisted: it is regenerated from the code and checked against [`RoundRecord::target_hash`]), the stash
-//! (the player's own patch, as patch-file text), the active time, the scored submits as integers, hints, the vote
-//! and the edit log. It is absent while no round is live, so a state without a round keeps its bytes, and it stays
-//! within `enth.plugin-state/1` (optional fields with defaults; docs/session.md, "The saved state").
+//! never persisted: it is regenerated from the code and checked against [`RoundRecord::target_hash`], the target's
+//! fingerprint), the stash (the player's own patch, as patch-file text), the active time, the scored submits as
+//! integers, hints, the blind rating, the vote and the edit log. It is absent while no round is live, so a state
+//! without a round keeps its bytes, and it stays within `enth.plugin-state/1` (optional fields with defaults;
+//! docs/session.md, "The saved state"). It is read tolerantly: an unknown enum value reads as `unknown`, and a
+//! `game` object this build cannot read at all keeps its round's stash ([`GameState::lenient`]), so a newer build's
+//! round fails only itself, never the editor preferences or the player's patch. Every part is budgeted in escaped
+//! bytes ([`ROUND_BYTES`]), so a round never makes the `enth` field unloadable.
 //!
 //! # Lane CT's types
 //!
 //! A round starts from settings or a code ([`RoundSource`]) and keeps the **code text** it started from, so a long
 //! code keeps its maker's engine version (docs/challenge.md). The [`Challenge`] itself comes back from the prepare
-//! job, because the phrase is the generator's pick (`Challenge::recreate(spec, phrase)`). The session checks the
-//! regenerated target itself: [`ChallengeCode::verify`] (a long code's hash prefix refuses, another engine version
-//! warns) and, on a resumed round, the full canonical hash it saved. Scores are CT's [`ScoreReport`]; the round log
-//! carries CT's [`RoundResult`] (`enth.round-result/1`).
+//! job, because the phrase is the generator's pick (`Challenge::recreate(spec, phrase)`); the shell's worker builds
+//! the job's [`Prepared`] from CT's `prepare_round` ([`Prepared::from_round`]). The session checks the regenerated
+//! target itself, by its fingerprint ([`TargetFingerprint`], schema-independent): [`ChallengeCode::verify`] (a long
+//! code's prefix refuses, another engine version warns) and, on a resumed round, the full fingerprint it saved. It
+//! checks each worker report against the challenge too (scorer ids, pass mark, the pass recomputed from the sound
+//! %). Scores are CT's [`ScoreReport`]; the round log carries CT's [`RoundResult`] (`enth.round-result/1`).
 
 use std::sync::Arc;
 
+use enth_challenge::model::RATING_MAX;
 pub use enth_challenge::{
-    Agreement, AssistsUsed, Challenge, ChallengeCode, CodeError, CodeWarning, Outcome, RandomSpec,
-    RoundResult, ScoreReport, SpecError, StructureScore, Verdict,
+    Agreement, AssistsUsed, Challenge, ChallengeCode, CodeError, CodeWarning, EngineVersion,
+    Outcome, PreparedRound, RandomSpec, RoundResult, ScoreReport, SpecError, StructureScore,
+    TargetFingerprint, Verdict,
 };
-use enth_challenge::{EngineVersion, TargetPrefix};
-use enth_patch::canon::canonical_hash;
 use enth_patch::history::{GestureId, History};
 use enth_patch::{MacroIndex, Op, ParamAddr, Patch, RouteAddr};
 use serde::{Deserialize, Serialize};
@@ -68,19 +74,56 @@ pub const HINT_LEVELS: u8 = 4;
 /// The most scored submits one round records (a bound on the saved state, not a game rule anyone should reach).
 pub const MAX_SUBMITS: usize = 255;
 
-/// The most bytes the edit log keeps (its ops' JSON); later entries are counted in
-/// [`RoundRecord::edits_dropped`] instead. The log also shrinks so the whole round stays under [`ROUND_BYTES`].
-pub const EDIT_LOG_BYTES: usize = 256 * 1024;
+// The saved round's budget (F1r review S8). Every part that is text inside the record is counted as it is saved:
+// escaped, inside the `enth` field's JSON (a patch's quotes double it). The parts add up to less than ROUND_BYTES,
+// which leaves the rest of the `enth` field room under MAX_FIELD_BYTES (checked below and by test).
 
-/// The budget for the whole saved round (stash, last submitted patch and edit log), well under the `enth` field's
-/// [`MAX_FIELD_BYTES`](crate::state::MAX_FIELD_BYTES): a round never makes the saved state unloadable.
-pub const ROUND_BYTES: usize = 768 * 1024;
+/// The most bytes the edit log keeps (its entries' JSON); later entries are counted in
+/// [`RoundRecord::edits_dropped`] instead, and the whole log goes to the round's `end` line
+/// ([`RoundLogEntry::edit_log`]). Every save and every host undo point carries it, so it stays small.
+pub const EDIT_LOG_BYTES: usize = 64 * 1024;
 
-/// The longest submitted patch the record keeps for the round log (a realistic patch is about 20 KB).
+/// The largest stash, escaped as saved: the player's own patch text (a realistic patch is about 20 KB, about 30 KB
+/// escaped). A round whose stash would not fit is refused at its start ([`GameError::TooLarge`]), so the player's
+/// patch is never lost to an unloadable save.
+pub const STASH_BYTES: usize = 384 * 1024;
+
+/// The longest submitted patch the record keeps for the round log, escaped as saved (omitted above it).
 pub const MAX_SUBMITTED_PATCH_BYTES: usize = 128 * 1024;
 
-/// The longest dispute note kept, in characters.
+/// The longest first report the record keeps, escaped as saved (omitted above it; a report is a few KB).
+pub const FIRST_REPORT_BYTES: usize = 64 * 1024;
+
+/// The longest dispute note kept, in characters (at most 6 bytes each once escaped).
 pub const DISPUTE_CHARS: usize = 2000;
+
+/// The budget for the whole saved round: the parts above plus the submits and the record's own fields. Well under
+/// the `enth` field's [`MAX_FIELD_BYTES`](crate::state::MAX_FIELD_BYTES): a round never makes the saved state
+/// unloadable (the largest round is a test).
+pub const ROUND_BYTES: usize = 768 * 1024;
+
+/// The record's fields besides the budgeted texts and the submits: id, code, phase, fingerprint, times, flags.
+const RECORD_FIXED_BYTES: usize = 2 * 1024;
+
+/// One submit's JSON at its largest.
+const SUBMIT_BYTES: usize = 128;
+
+const _: () = assert!(
+    STASH_BYTES
+        + MAX_SUBMITTED_PATCH_BYTES
+        + FIRST_REPORT_BYTES
+        + EDIT_LOG_BYTES
+        + 6 * DISPUTE_CHARS
+        + MAX_SUBMITS * SUBMIT_BYTES
+        + RECORD_FIXED_BYTES
+        <= ROUND_BYTES
+);
+const _: () = assert!(ROUND_BYTES + 64 * 1024 < crate::state::MAX_FIELD_BYTES);
+
+/// The bytes `text` takes saved as a JSON string: its escaped form with the quotes.
+pub fn escaped_len(text: &str) -> usize {
+    serde_json::to_string(text).map_or(usize::MAX, |t| t.len())
+}
 
 /// The schema of a [`RoundLogEntry`] line.
 pub const ROUND_LOG_SCHEMA: &str = "enth.round-log/1";
@@ -99,16 +142,26 @@ pub fn summary(report: &ScoreReport) -> ScoreSummary {
     )
 }
 
-/// The rings a structure score gives: one per randomized parameter, in address order. An address this build cannot
-/// parse (a report from a newer catalogue) has no knob to ring and is skipped.
+/// The rings a structure score gives: one per row, in its order (the randomized parameters first), on the
+/// **player's** control (`answer_addr`: once modules are added and removed, the player's `osc2` may be the target's
+/// `osc1`). A row with no match in the player's patch (`direction: missing`), an address this build cannot parse (a
+/// report from a newer catalogue) or a verdict from a newer build has no knob to ring and is skipped. A report
+/// without answer addresses (written before they existed) rings the target's address.
 pub fn knobs(structure: &StructureScore) -> Vec<KnobScore> {
     structure
         .params
         .iter()
+        .filter(|p| p.verdict != Verdict::Unknown)
         .filter_map(|p| {
-            p.param_addr().ok().map(|addr| KnobScore {
+            let addr = match &p.answer_addr {
+                Some(text) => text.parse().ok()?,
+                None if p.direction == enth_challenge::Direction::Missing => return None,
+                None => p.param_addr().ok()?,
+            };
+            Some(KnobScore {
                 addr,
                 verdict: p.verdict,
+                randomized: p.randomized,
             })
         })
         .collect()
@@ -130,9 +183,10 @@ pub enum RoundSource {
 
 /// The instance's game data, as the `enth` field saves it ([`InstanceState::game`](crate::InstanceState::game)).
 ///
-/// The session keeps the field `None` while no round is live, so a state without a round saves exactly the bytes
-/// it saved before R1. `GameState::default()` (no round) serialises as `{}`; later optional fields (the
-/// randomizer's last settings, an auto-difficulty staircase, a seed history) can join it within version 1.
+/// The session keeps the field `None` while it is empty (no round is live), so a state without a round saves
+/// exactly the bytes it saved before R1. `GameState::default()` (no round) serialises as `{}`; later optional fields
+/// (the randomizer's last settings, an auto-difficulty staircase, a seed history) can join it within version 1, and
+/// the round's entries touch only [`round`](GameState::round), never them (F1r review N3).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GameState {
@@ -141,12 +195,59 @@ pub struct GameState {
     pub round: Option<RoundRecord>,
 }
 
+impl GameState {
+    /// Nothing to save: every field is at its default.
+    pub fn is_empty(&self) -> bool {
+        *self == GameState::default()
+    }
+
+    /// Read a saved `game` object without ever failing (F1r review M3): the state if it decodes; otherwise, when it
+    /// holds a round whose stash is text, that round restored [`Phase::Broken`] with its id, code and stash (so
+    /// ending it brings the player's patch back); otherwise nothing. A newer build's round thus fails only itself,
+    /// never the `enth` field and the editor preferences in it.
+    pub fn lenient(value: &Value) -> Option<GameState> {
+        if let Ok(state) = GameState::deserialize(value) {
+            return Some(state);
+        }
+        let round = value.get("round")?;
+        let stash = round.get("stash")?.as_str()?.to_owned();
+        let id = round
+            .get("id")
+            .and_then(|v| serde_json::from_value::<RoundId>(v.clone()).ok())
+            .unwrap_or_default();
+        let code = round
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        Some(GameState {
+            round: Some(RoundRecord {
+                id,
+                code,
+                phase: Phase::Broken,
+                stash: Some(stash),
+                ..RoundRecord::default()
+            }),
+        })
+    }
+}
+
+/// The `enth` field's `game` reader ([`GameState::lenient`]): never fails, so the rest of the field always loads.
+pub(crate) fn lenient_game<'de, D>(deserializer: D) -> Result<Option<GameState>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.as_ref().and_then(GameState::lenient))
+}
+
 /// One round as it is saved: everything needed to resume it after the project is reopened, except the target
 /// (regenerated from [`code`](RoundRecord::code)) and what the shell's jobs recompute (the target's audio, Mine's
 /// loudness, the live rings, a hint's text, the full score report).
 ///
 /// Integers and text only, so its bytes are deterministic and it is `Eq`. Every field has a default and empty ones
-/// are omitted, so a newer build's extra fields are ignored and missing ones default (state version 1).
+/// are omitted, so a newer build's extra fields are ignored and missing ones default (state version 1). Every enum
+/// in it reads a newer build's value as `unknown` (`Phase::Unknown`, `EditSource::Other`, `Agreement::Unknown`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RoundRecord {
@@ -162,8 +263,9 @@ pub struct RoundRecord {
     /// held, so a patch this build could not read survives too). `None` until the first round's target is ready.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stash: Option<String>,
-    /// The target's canonical hash (64 hex digits), set when the target is first prepared; a regenerated target
-    /// must match it, or the round is [`Phase::Broken`].
+    /// The target's fingerprint (64 hex digits, [`TargetFingerprint`]: schema-independent, so a patch schema bump
+    /// never breaks a saved round), set when the target is first prepared; a regenerated target must match it, or
+    /// the round is [`Phase::Broken`] (`target_drift`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_hash: Option<String>,
     /// Active time in the round, in milliseconds: counted only while the editor is visible and the target is ready.
@@ -178,6 +280,9 @@ pub struct RoundRecord {
     pub hints: u8,
     /// The target was revealed (gave up). Marks the round assisted.
     pub revealed: bool,
+    /// The blind rating (1–5) of the first submit, given before its score showed (F1r review S9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<u8>,
     /// The agreement vote, once given.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agreement: Option<Agreement>,
@@ -186,11 +291,12 @@ pub struct RoundRecord {
     pub dispute: Option<String>,
     /// The first submit's full [`ScoreReport`] (the recorded score), as its own versioned JSON text
     /// (`enth.score-report/1`), for the round's [`RoundResult`]. Text, so the record holds no float and a report
-    /// schema this build cannot read never makes the `enth` field unloadable.
+    /// schema this build cannot read never makes the `enth` field unloadable. Omitted above
+    /// [`FIRST_REPORT_BYTES`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_report: Option<String>,
     /// The patch of the last scored submit, as patch-file text, for the round log (omitted when larger than
-    /// [`MAX_SUBMITTED_PATCH_BYTES`]).
+    /// [`MAX_SUBMITTED_PATCH_BYTES`], escaped).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub submitted_patch: Option<String>,
     /// The edit log: every change to the round's patch, stamped with active time.
@@ -254,6 +360,7 @@ impl RoundRecord {
             active_ms: self.active_ms,
             assists: self.assists(),
             agreement: self.agreement,
+            rating: self.rating,
         })
     }
 }
@@ -387,10 +494,12 @@ pub enum EditSource {
 /// `Overlay` draws it).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KnobScore {
-    /// The parameter.
+    /// The player's control.
     pub addr: ParamAddr,
     /// Its verdict.
     pub verdict: Verdict,
+    /// The target randomized it; `false` for a control the player moved that the target left alone.
+    pub randomized: bool,
 }
 
 /// A coach hint, as the shell's hint job returns it (lane SN fills it from `enth-solver`'s coach).
@@ -496,15 +605,17 @@ pub struct Job {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum JobKind {
-    /// Regenerate from `spec` (lane RG's generator: the target, the phrase it picked, the randomized addresses),
-    /// build `Challenge::recreate(spec, phrase)`, render the target's loop of the scored phrase and keep it for
-    /// Target ▶ (the shell owns the buffer; the session never sees audio), measure its loudness, and `prepare` the
-    /// scorers (lanes SS, ST). Answer [`JobResult::Prepared`]. The session checks the code against the target.
+    /// Run `enth_challenge::prepare_round(&spec)` (lane RG's generator, `Challenge::recreate(spec, phrase)` and every
+    /// scorer it names, prepared) and keep the `PreparedRound` under the job's round for the score, rings and hint
+    /// jobs; render the target's loop of the scored phrase and keep it for Target ▶ (the shell owns the buffer; the
+    /// session never sees audio); measure its loudness. Answer [`JobResult::Prepared`] with
+    /// [`Prepared::from_round`]. The session checks the code against the target's fingerprint.
     Prepare {
         /// The settings (from the code, for a pasted or a restored round).
         spec: RandomSpec,
     },
-    /// Score `patch` against the target (lanes SS, ST). Answer [`JobResult::Scored`].
+    /// Score `patch` against the target: `enth_challenge::score_round` on the round's `PreparedRound`. Answer
+    /// [`JobResult::Scored`]; the session checks the report against the challenge.
     Score {
         /// The challenge.
         challenge: Arc<Challenge>,
@@ -515,7 +626,8 @@ pub enum JobKind {
         /// Which submit this is (1 = the first).
         submit: u32,
     },
-    /// The per-knob rings for `patch` (structure only, no render needed). Answer [`JobResult::Rings`].
+    /// The per-knob rings for `patch` (structure only, no render needed: `enth_challenge::score_structure`). Answer
+    /// [`JobResult::Rings`].
     Rings {
         /// The challenge.
         challenge: Arc<Challenge>,
@@ -558,22 +670,67 @@ impl JobKind {
     }
 }
 
+/// What a prepare job hands back: the challenge, the start and target patches, the randomized parameters, the
+/// target's fingerprint and the target loop's loudness. `non_exhaustive`, so a field added later never breaks a
+/// shell: build it with [`Prepared::from_round`] (what the worker does) or [`Prepared::new`] (tests and fakes).
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct Prepared {
+    /// `Challenge::recreate(spec, phrase)`, with the generator's phrase and the scorers it names.
+    pub challenge: Challenge,
+    /// The patch the player starts from.
+    pub start: Patch,
+    /// The target (kept in memory only; never saved).
+    pub target: Patch,
+    /// The randomized parameters, in address order (lane RG's `Generated::params`): the rings and Challenge v1's
+    /// `dim_unused` assist (F1r review S7).
+    pub params: Vec<ParamAddr>,
+    /// The target's fingerprint, which the session checks against the code and a saved round.
+    pub fingerprint: TargetFingerprint,
+    /// The target loop's integrated loudness (LUFS; `None` if silent).
+    pub target_lufs: Option<f32>,
+}
+
+impl Prepared {
+    /// A prepared target from its parts.
+    pub fn new(
+        challenge: Challenge,
+        start: Patch,
+        target: Patch,
+        params: Vec<ParamAddr>,
+        fingerprint: TargetFingerprint,
+        target_lufs: Option<f32>,
+    ) -> Prepared {
+        Prepared {
+            challenge,
+            start,
+            target,
+            params,
+            fingerprint,
+            target_lufs,
+        }
+    }
+
+    /// What the worker answers for a `PreparedRound` from `enth_challenge::prepare_round`, with the loudness it
+    /// measured on the target's loop. Every part comes from the one prepared round, so they belong together.
+    pub fn from_round(round: &PreparedRound, target_lufs: Option<f32>) -> Prepared {
+        Prepared {
+            challenge: round.challenge().clone(),
+            start: round.start().clone(),
+            target: round.target().clone(),
+            params: round.params().to_vec(),
+            fingerprint: round.fingerprint(),
+            target_lufs,
+        }
+    }
+}
+
 /// A job's answer.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum JobResult {
-    /// For [`JobKind::Prepare`]: the challenge, the start and target patches and the target's loudness (LUFS;
-    /// `None` if silent).
-    Prepared {
-        /// `Challenge::recreate(spec, phrase)`, with the generator's phrase.
-        challenge: Box<Challenge>,
-        /// The patch the player starts from.
-        start: Box<Patch>,
-        /// The target (kept in memory only; never saved).
-        target: Box<Patch>,
-        /// The target loop's integrated loudness.
-        target_lufs: Option<f32>,
-    },
+    /// For [`JobKind::Prepare`].
+    Prepared(Box<Prepared>),
     /// For [`JobKind::Score`].
     Scored(Box<ScoreReport>),
     /// For [`JobKind::Rings`]: lane ST's structure score (its `params` carry the verdicts).
@@ -596,7 +753,7 @@ impl JobResult {
     /// The result's name, for errors.
     pub fn name(&self) -> &'static str {
         match self {
-            JobResult::Prepared { .. } => "prepared",
+            JobResult::Prepared(_) => "prepared",
             JobResult::Scored(_) => "scored",
             JobResult::Rings(_) => "rings",
             JobResult::Loudness { .. } => "loudness",
@@ -651,8 +808,9 @@ pub enum EndedBy {
 }
 
 /// One line of the local round log, schema [`ROUND_LOG_SCHEMA`] (summary "GR1 data": code, patch, scores, time,
-/// the agreement vote). Lane GK writes the exporter and `cargo xtask gr1-report`. Nothing leaves the machine unless
-/// the player sends the file.
+/// the blind rating, the agreement vote). Lane GK writes the exporter and `cargo xtask gr1-report`. Nothing leaves
+/// the machine unless the player sends the file. Read tolerantly: unknown fields are ignored, and the fields added
+/// at the F1r review default when missing.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RoundLogEntry {
     /// [`ROUND_LOG_SCHEMA`].
@@ -681,6 +839,17 @@ pub struct RoundLogEntry {
     pub patch: Option<String>,
     /// The last scored submit's full report, while the session still holds it (not after a project reload).
     pub report: Option<ScoreReport>,
+    /// The target's fingerprint (64 hex digits), once the target was ready (F1r review S3): a replay of a logged
+    /// short code (which carries no prefix) can tell whether it regenerated the same target.
+    #[serde(default)]
+    pub fingerprint: Option<String>,
+    /// The engine of the build that played the round (F1r review S3): an engine change can move a sound score.
+    #[serde(default)]
+    pub engine: Option<EngineVersion>,
+    /// The edit log, on the `end` line (empty on a `dispute` line): every change to the round's patch with its
+    /// active time, up to [`EDIT_LOG_BYTES`] (F1r review S8).
+    #[serde(default)]
+    pub edit_log: Vec<EditRecord>,
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -762,10 +931,19 @@ pub struct RoundView {
     pub assisted: bool,
     /// The target was revealed.
     pub revealed: bool,
+    /// The blind rating (1–5), once given.
+    pub rating: Option<u8>,
     /// The agreement vote.
     pub agreement: Option<Agreement>,
     /// The difficulty, 0–100 (the challenge bar's dots).
     pub difficulty: Option<u8>,
+    /// The randomized parameters, in address order, once the target is ready (F1r review S7): Challenge v1's
+    /// `dim_unused` assist dims every other control.
+    pub params: Vec<ParamAddr>,
+    /// When the round next needs a frame, in the shell's milliseconds (the clock `game_tick` gets), even if
+    /// nothing else changes (F1r review S11): a settled patch's jobs are due, or the running timer shows its next
+    /// second. The editor draws nothing while idle, so it asks for a repaint at this time. `None`: no deadline.
+    pub wake_at_ms: Option<u64>,
     /// What the code check reported without stopping the round (`engine_differs`: the code was made with another
     /// engine, so the target may sound slightly different from its maker's).
     pub warnings: Vec<CodeWarning>,
@@ -789,6 +967,10 @@ pub trait GameEdit {
     fn game_hint(&mut self) -> Result<u8, GameError>;
     /// Give up: load the target (marks the round assisted; no more submits).
     fn game_reveal(&mut self) -> Result<(), GameError>;
+    /// The blind rating of the first submit, 1–5 ("nothing like it" to "can't tell them apart"), asked **before its
+    /// score shows** so the score cannot anchor it (ADR-0007's note, review point (a); GR1 refits the curve with it).
+    /// Accepted from the start of play until the first score is recorded; a later rating replaces an earlier one.
+    fn game_rate(&mut self, rating: u8) -> Result<(), GameError>;
     /// The agreement vote (after a scored submit); a later vote replaces it.
     fn game_vote(&mut self, agreement: Agreement) -> Result<(), GameError>;
     /// The Disagree button (after a scored submit): keeps the note and logs a dispute line at once.
@@ -849,6 +1031,26 @@ pub enum GameError {
     Code(CodeError),
     /// The settings are refused (`out_of_range`, `no_generator`, `code_too_new`).
     Spec(SpecError),
+    /// The round would not fit the saved state: the player's patch is too large to stash (a patch this build could
+    /// not read, kept as text). Nothing changed.
+    TooLarge {
+        /// What does not fit (`stash`).
+        what: &'static str,
+        /// Its size, escaped as saved.
+        bytes: usize,
+        /// The most it may take.
+        max: usize,
+    },
+    /// The worker's report does not fit the challenge (other scorer ids or pass mark, a percentage out of range, a
+    /// pass that does not follow from the sound %): a shell bug. No submit is recorded.
+    BadReport {
+        /// What is wrong.
+        reason: String,
+    },
+    /// A rating outside 1–5.
+    BadRating(u8),
+    /// The first score is recorded: a rating now would not be blind.
+    AlreadyScored,
 }
 
 impl GameError {
@@ -864,11 +1066,14 @@ impl GameError {
             GameError::NoMoreHints => "no_more_hints",
             GameError::TooManySubmits => "too_many_submits",
             GameError::StaleJob(_) => "stale_job",
-            GameError::WrongResult { .. } => "wrong_result",
+            GameError::WrongResult { .. } | GameError::BadReport { .. } => "wrong_result",
             GameError::JobFailed { .. } => "job_failed",
             GameError::TargetDrift { .. } => "target_drift",
             GameError::Code(e) => e.code(),
             GameError::Spec(e) => e.code(),
+            GameError::TooLarge { .. } => "too_large",
+            GameError::BadRating(_) => "bad_rating",
+            GameError::AlreadyScored => "already_scored",
         }
     }
 
@@ -893,6 +1098,16 @@ impl GameError {
             GameError::TargetDrift { .. } => {
                 "this build generates a different target for the code: end the round (report it with the code)"
                     .to_owned()
+            }
+            GameError::TooLarge { .. } => {
+                "your patch is too large to keep during a round: save it as a preset, then start from Init".to_owned()
+            }
+            GameError::BadReport { .. } => {
+                "report this: the shell scored with other rules than the challenge's".to_owned()
+            }
+            GameError::BadRating(_) => "rate from 1 (nothing like it) to 5 (can't tell them apart)".to_owned(),
+            GameError::AlreadyScored => {
+                "the rating is asked before the score shows, so it cannot change now".to_owned()
             }
         }
     }
@@ -920,6 +1135,17 @@ impl std::fmt::Display for GameError {
             ),
             GameError::Code(e) => write!(f, "challenge code refused: {e}"),
             GameError::Spec(e) => write!(f, "settings refused: {e}"),
+            GameError::TooLarge { what, bytes, max } => {
+                write!(
+                    f,
+                    "the {what} takes {bytes} bytes, over the {max} a round may save"
+                )
+            }
+            GameError::BadReport { reason } => {
+                write!(f, "the score report does not fit the challenge: {reason}")
+            }
+            GameError::BadRating(r) => write!(f, "rating {r} is not 1 to {RATING_MAX}"),
+            GameError::AlreadyScored => f.write_str("the first score is already recorded"),
         }
     }
 }
@@ -984,6 +1210,8 @@ pub(crate) struct GameLive {
     /// What the code check reported without stopping the round.
     warnings: Vec<CodeWarning>,
     target: Option<Arc<Patch>>,
+    /// The randomized parameters, in address order.
+    params: Vec<ParamAddr>,
     target_lufs: Option<f32>,
     mine_lufs: Option<f32>,
     /// The player's own undo history, while the round runs in this process (not saved: no history is).
@@ -1075,17 +1303,9 @@ impl GameLive {
     }
 }
 
-/// The round's byte budget for the edit log, given the other text it saves.
-fn log_budget(record: &RoundRecord) -> usize {
-    let other = record.stash.as_ref().map_or(0, String::len)
-        + record.submitted_patch.as_ref().map_or(0, String::len)
-        + record.dispute.as_ref().map_or(0, String::len);
-    ROUND_BYTES.saturating_sub(other).min(EDIT_LOG_BYTES)
-}
-
-/// One log entry's size in the budget: its ops' JSON plus the entry's own keys.
+/// One log entry's size in the budget: its ops' JSON plus the entry's own keys and time at their longest.
 fn entry_bytes(ops: &Value) -> usize {
-    ops.to_string().len() + 48
+    ops.to_string().len() + 64
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1220,24 +1440,35 @@ impl Session {
                 self.game_job_failed(job, message);
                 Ok(())
             }
-            (
-                "prepare",
-                JobResult::Prepared {
-                    challenge,
-                    start,
-                    target,
-                    target_lufs,
-                },
-            ) => {
-                self.game_prepared(*challenge, start, target, target_lufs);
+            ("prepare", JobResult::Prepared(prepared)) => {
+                self.game_prepared(*prepared);
                 Ok(())
             }
             ("score", JobResult::Scored(report)) => {
+                // The session never records a report the challenge could not have produced (F1r review S10).
+                let check = self.game.challenge.as_ref().map_or_else(
+                    || Err("the round has no challenge".to_owned()),
+                    |c| report.check_against(&c.scoring),
+                );
+                if let Err(reason) = check {
+                    self.game.jobs.score = None;
+                    let err = GameError::BadReport { reason };
+                    self.game.error = Some(err.clone());
+                    return Err(err);
+                }
                 self.game_scored(*report);
                 Ok(())
             }
             ("rings", JobResult::Rings(structure)) => {
                 let measured = self.game.jobs.rings.take().map_or(0, |r| r.1);
+                let expected = self.game.challenge.as_ref().map(|c| &c.scoring.structure);
+                if expected != Some(&structure.scorer) {
+                    let err = GameError::BadReport {
+                        reason: format!("the rings come from {}", structure.scorer),
+                    };
+                    self.game.error = Some(err.clone());
+                    return Err(err);
+                }
                 self.game.knobs = knobs(&structure);
                 self.game_resettle(measured);
                 Ok(())
@@ -1293,16 +1524,17 @@ impl Session {
     }
 
     /// The prepare job is done: check the challenge and the target against the round's settings, code and saved
-    /// hash, then start play (a fresh round) or resume it (a restored one). Any mismatch breaks the round.
-    fn game_prepared(
-        &mut self,
-        challenge: Challenge,
-        start: Box<Patch>,
-        target: Box<Patch>,
-        target_lufs: Option<f32>,
-    ) {
-        let hash = canonical_hash(&target);
-        let hex = hash.to_hex();
+    /// fingerprint, then start play (a fresh round) or resume it (a restored one). Any mismatch breaks the round.
+    fn game_prepared(&mut self, prepared: Prepared) {
+        let Prepared {
+            challenge,
+            start,
+            target,
+            params,
+            fingerprint,
+            target_lufs,
+        } = prepared;
+        let hex = fingerprint.to_hex();
         if challenge.spec() != self.game.spec.as_ref() {
             self.game_job_failed(
                 "prepare",
@@ -1310,6 +1542,9 @@ impl Session {
             );
             return;
         }
+        // A fresh round stashes the player's patch: it must fit the saved state (it may have grown while the target
+        // was prepared, through a host load).
+        let own_bytes = self.own_patch_bytes();
         let Some(record) = self.instance.game.as_mut().and_then(|g| g.round.as_mut()) else {
             return;
         };
@@ -1320,9 +1555,18 @@ impl Session {
                 expected: expected.clone(),
                 found: hex.clone(),
             })
+        } else if record.phase == Phase::Preparing
+            && record.stash.is_none()
+            && own_bytes > STASH_BYTES
+        {
+            Err(GameError::TooLarge {
+                what: "stash",
+                bytes: own_bytes,
+                max: STASH_BYTES,
+            })
         } else if record.code.is_empty() {
-            // Custom settings: the long code carries the target's hash prefix, so it exists only now.
-            match challenge.code(TargetPrefix::of(&hash)) {
+            // Custom settings: the long code carries the target's fingerprint prefix, so it exists only now.
+            match challenge.code(fingerprint.prefix()) {
                 Some(code) => {
                     record.code = code.to_string();
                     Ok(Vec::new())
@@ -1334,7 +1578,7 @@ impl Session {
             }
         } else {
             ChallengeCode::decode(&record.code)
-                .and_then(|code| code.verify(&hash, EngineVersion::CURRENT))
+                .and_then(|code| code.verify(&fingerprint, EngineVersion::CURRENT))
                 .map_err(GameError::Code)
         };
         let warnings = match checked {
@@ -1349,17 +1593,36 @@ impl Session {
         record.target_hash = Some(hex);
         let fresh = record.phase == Phase::Preparing;
         self.game.challenge = Some(Arc::new(challenge));
-        self.game.target = Some(Arc::from(target));
+        self.game.target = Some(Arc::new(target));
+        self.game.params = params;
         self.game.target_lufs = target_lufs;
         self.game.warnings = warnings;
         self.game.error = None;
         if fresh {
-            self.game_begin(*start);
+            self.game_begin(start);
         }
         // Time counts from now, not from the start of the preparation; Mine's loudness (and, for a resumed round
         // that was scored, the rings) are measured at the next tick.
         self.game.clock_last = Some(self.game.now);
         self.game.settle_at = Some(self.game.now);
+    }
+
+    /// The player's own patch text as a stash would save it (escaped): what [`STASH_BYTES`] bounds.
+    fn own_patch_bytes(&self) -> usize {
+        match &self.unloaded_patch {
+            Some(text) => escaped_len(text),
+            None => escaped_len(&self.patch.to_json()),
+        }
+    }
+
+    /// Set the saved round, keeping the `game` object's other fields; an empty object is saved as none, so a state
+    /// without a round keeps its bytes (F1r review N3).
+    fn put_round(&mut self, round: Option<RoundRecord>) {
+        let game = self.instance.game.get_or_insert_with(GameState::default);
+        game.round = round;
+        if game.is_empty() {
+            self.instance.game = None;
+        }
     }
 
     /// The target is ready for a fresh round: stash the player's patch and history (unless a previous round already
@@ -1396,14 +1659,16 @@ impl Session {
             return;
         };
         if record.submits.is_empty() {
-            record.first_report = serde_json::to_string(&report).ok();
+            record.first_report = serde_json::to_string(&report)
+                .ok()
+                .filter(|text| escaped_len(text) <= FIRST_REPORT_BYTES);
         }
         record.submits.push(SubmitRecord {
             at_ms: pending.at_ms,
             score,
         });
         record.submitted_patch =
-            (pending.patch.len() <= MAX_SUBMITTED_PATCH_BYTES).then_some(pending.patch);
+            (escaped_len(&pending.patch) <= MAX_SUBMITTED_PATCH_BYTES).then_some(pending.patch);
         if score.passed && record.time_to_pass_ms.is_none() {
             record.time_to_pass_ms = Some(pending.at_ms);
         }
@@ -1451,9 +1716,11 @@ impl Session {
     }
 
     /// End the live round, if any, for `why`: log it if it was played, cancel its jobs, switch A/B off and forget
-    /// its transient state. Returns its record (with the stash) and the player's stashed history.
+    /// its transient state. Takes only the round from the `game` object (its other fields stay). Returns the record
+    /// (with the stash) and the player's stashed history.
     fn game_close(&mut self, why: EndedBy) -> Option<(RoundRecord, Option<History>)> {
-        let record = self.instance.game.take()?.round?;
+        let record = self.instance.game.as_mut()?.round.take()?;
+        self.put_round(None);
         if record.played() {
             let entry = self.log_entry(&record, LogEvent::End, Some(why));
             self.game.requests.push(GameRequest::Log(Box::new(entry)));
@@ -1488,6 +1755,27 @@ impl Session {
             edits: (record.edits.len() as u32).saturating_add(record.edits_dropped),
             patch: record.submitted_patch.clone(),
             report: self.game.report.as_deref().cloned(),
+            fingerprint: record.target_hash.clone(),
+            engine: Some(EngineVersion::CURRENT),
+            edit_log: if event == LogEvent::End {
+                record.edits.clone()
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    /// When the round next needs a frame without input (the view's `wake_at_ms`): the settled jobs' time, or the
+    /// running timer's next whole second of active time.
+    fn game_wake_at(&self, record: &RoundRecord) -> Option<u64> {
+        let timer = (self.game.visible
+            && self.game.clock_last.is_some()
+            && self.game.target.is_some()
+            && record.phase.is_live())
+        .then(|| self.game.now.saturating_add(1000 - record.active_ms % 1000));
+        match (self.game.settle_at, timer) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
         }
     }
 
@@ -1559,7 +1847,7 @@ impl Session {
             return;
         };
         let t_ms = record.active_ms;
-        let budget = log_budget(record);
+        let budget = EDIT_LOG_BYTES;
         if merging && let Some(last) = record.edits.last_mut() {
             let old = entry_bytes(&last.ops);
             if self.game.edit_bytes - old + size <= budget {
@@ -1583,23 +1871,23 @@ impl Session {
     /// project) keeps the live record, so submits, time and the vote are never rolled back. A different round, or
     /// none, ends the live one (logged, [`EndedBy::Host`]) and restores the loaded one.
     pub(crate) fn game_reconcile_load(&mut self, live: Option<GameState>) {
-        let loaded = self.instance.game.take().and_then(|g| g.round);
+        // Only the rounds are reconciled: the loaded `game` object's other fields are the host's and stay.
+        let loaded = self.instance.game.as_mut().and_then(|g| g.round.take());
         let live = live.and_then(|g| g.round);
         if let (Some(l), Some(n)) = (&live, &loaded)
             && l.id == n.id
             && l.code == n.code
         {
-            self.instance.game = Some(GameState { round: live });
+            self.put_round(live);
             return;
         }
         if let Some(record) = live {
-            self.instance.game = Some(GameState {
-                round: Some(record),
-            });
+            self.put_round(Some(record));
             let _ = self.game_close(EndedBy::Host);
         }
-        if let Some(record) = loaded {
-            self.game_restore(record);
+        match loaded {
+            Some(record) => self.game_restore(record),
+            None => self.put_round(None),
         }
     }
 
@@ -1616,6 +1904,7 @@ impl Session {
             // Saved while a custom-settings round prepared, before its code existed. Nothing was played: without a
             // stash there is nothing to keep, and with one (a new round after a played one) only ending it is left.
             if record.stash.is_none() {
+                self.put_round(None);
                 return;
             }
             record.phase = Phase::Broken;
@@ -1634,9 +1923,7 @@ impl Session {
                 }
             }
         }
-        self.instance.game = Some(GameState {
-            round: Some(record),
-        });
+        self.put_round(Some(record));
     }
 }
 
@@ -1663,8 +1950,11 @@ impl GameEdit for Session {
             hint: self.game.hint.clone(),
             assisted: record.assisted(),
             revealed: record.revealed,
+            rating: record.rating,
             agreement: record.agreement,
             difficulty: self.game.spec.map(|s| s.difficulty),
+            params: self.game.params.clone(),
+            wake_at_ms: self.game_wake_at(record),
             warnings: self.game.warnings.clone(),
             error: self.game.error.clone(),
         })
@@ -1680,6 +1970,16 @@ impl GameEdit for Session {
             }
             RoundSource::Code(code) => (*code.spec(), code.to_string()),
         };
+        // The player's patch must fit the saved state as a stash, unless a live round already holds the stash.
+        let carried = self.game_record().is_some_and(|r| r.stash.is_some());
+        let bytes = self.own_patch_bytes();
+        if !carried && bytes > STASH_BYTES {
+            return Err(GameError::TooLarge {
+                what: "stash",
+                bytes,
+                max: STASH_BYTES,
+            });
+        }
         let (stash, history) = match self.game_close(EndedBy::NewRound) {
             Some((record, history)) => (record.stash, history),
             None => (None, None),
@@ -1695,9 +1995,7 @@ impl GameEdit for Session {
             stash,
             ..RoundRecord::default()
         };
-        self.instance.game = Some(GameState {
-            round: Some(record),
-        });
+        self.put_round(Some(record));
         self.unloaded_instance = None; // the user's own state now (a newer build's `enth` text is replaced)
         self.game.stash_history = history;
         self.game.spec = Some(spec);
@@ -1806,6 +2104,27 @@ impl GameEdit for Session {
         Ok(())
     }
 
+    fn game_rate(&mut self, rating: u8) -> Result<(), GameError> {
+        if rating == 0 || rating > RATING_MAX {
+            return Err(GameError::BadRating(rating));
+        }
+        let record = self.game_record().ok_or(GameError::NoRound)?;
+        match record.phase {
+            Phase::Preparing => return Err(GameError::NotReady),
+            Phase::Broken | Phase::Unknown => return Err(GameError::Broken),
+            Phase::Revealed => return Err(GameError::Revealed),
+            Phase::Playing | Phase::Submitted | Phase::Passed => {}
+        }
+        if !record.submits.is_empty() {
+            return Err(GameError::AlreadyScored);
+        }
+        if let Some(record) = self.record_mut() {
+            record.rating = Some(rating);
+        }
+        self.game.dirty();
+        Ok(())
+    }
+
     fn game_vote(&mut self, agreement: Agreement) -> Result<(), GameError> {
         let record = self.record_mut().ok_or(GameError::NoRound)?;
         if record.submits.is_empty() {
@@ -1900,14 +2219,14 @@ mod tests {
     }
 
     #[test]
-    fn the_log_budget_shrinks_so_the_round_fits_the_field() {
-        let mut record = RoundRecord::default();
-        assert_eq!(log_budget(&record), EDIT_LOG_BYTES);
-        record.stash = Some("x".repeat(600 * 1024));
-        assert_eq!(log_budget(&record), ROUND_BYTES - 600 * 1024);
-        record.submitted_patch = Some("x".repeat(200 * 1024));
-        assert_eq!(log_budget(&record), 0);
-        const { assert!(ROUND_BYTES + 64 * 1024 < crate::state::MAX_FIELD_BYTES) };
+    fn escaped_lengths_count_the_quotes_and_escapes() {
+        assert_eq!(escaped_len(""), 2);
+        assert_eq!(escaped_len("ab"), 4);
+        assert_eq!(escaped_len("\"a\""), 7);
+        assert_eq!(escaped_len("\u{1}"), 8);
+        assert_eq!(escaped_len("é"), 4, "UTF-8 is not escaped");
+        let patch = enth_patch::Patch::init().to_json();
+        assert!(escaped_len(&patch) > patch.len() + patch.matches('"').count());
     }
 
     #[test]
