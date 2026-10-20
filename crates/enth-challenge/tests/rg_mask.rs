@@ -63,8 +63,8 @@ fn ra(src: &str, dst: &str) -> RouteAddr {
 
 #[test]
 fn the_starter_under_one_held_note() {
-    let m = mask(&starter(), HELD);
     use Visibility::{Disabled, Gauge, Nuisance, Observable};
+    let m = mask(&starter(), HELD);
     let cases = [
         // gauges
         ("osc1.level", Gauge),

@@ -90,7 +90,7 @@ fn bad_specs_are_refused() {
     let e = target(&s).unwrap_err();
     assert_eq!(e.code(), "out_of_range");
     assert!(e.to_string().contains("amounts.modulation"), "{e}");
-    assert!(!e.hint().is_empty());
+    assert_ne!(e.hint(), "");
     let mut s = spec(1, 50, 101);
     assert_eq!(target(&s).unwrap_err().code(), "out_of_range");
     s.musical = 100;

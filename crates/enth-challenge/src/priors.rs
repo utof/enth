@@ -101,17 +101,13 @@ pub fn jnd(spec: &ParamSpec) -> Jnd {
             floor: 0.0,
         },
         Unit::Hz => Jnd::Semitones(2.0),
-        Unit::Ms => Jnd::Ratio {
-            factor: 1.5,
-            floor: 1.0,
-        },
-        Unit::Db => Jnd::Abs(3.0),
+        Unit::Db | Unit::Cents => Jnd::Abs(3.0),
         Unit::Semitones => Jnd::Abs(1.0),
-        Unit::Cents => Jnd::Abs(3.0),
         Unit::Octaves => Jnd::Abs(1.0 / 6.0),
         Unit::Percent => Jnd::Abs(10.0),
         Unit::Degrees => Jnd::Abs(30.0),
-        // Ratios (`comp.ratio`), unitless values (reverb detune and damping) and any unit added later.
+        // Times (ms: × 1.5, with 1 ms added so times near 0 do not count every microsecond), ratios (`comp.ratio`),
+        // unitless values (reverb detune and damping) and any unit added later.
         _ => Jnd::Ratio {
             factor: 1.5,
             floor: 1.0,
@@ -312,10 +308,9 @@ pub mod v1 {
 
     fn lfo_depth(_: &Ctx<'_>, d: &Draws<'_>, dst: &str) -> f32 {
         match dst {
-            "osc1.fine" => 10.0 + 20.0 * d.u(),     // ±20-60 cents
             "filter1.cutoff" => 5.0 + 20.0 * d.u(), // ±0.5-2.5 octaves
             "osc1.level" => 10.0 + 30.0 * d.u(),
-            _ => 10.0 + 20.0 * d.u(),
+            _ => 10.0 + 20.0 * d.u(), // vibrato on osc1.fine (±20-60 cents), PWM
         }
     }
 

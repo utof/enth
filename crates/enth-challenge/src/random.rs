@@ -315,7 +315,7 @@ impl Draws<'_> {
     }
 
     /// A weighted choice by an integer draw (exact on every platform): `items` are (value, weight).
-    pub(crate) fn pick_by(&self, bits: u64, items: &[(f32, u32)]) -> f32 {
+    pub(crate) fn pick_by(bits: u64, items: &[(f32, u32)]) -> f32 {
         let total: u64 = items.iter().map(|(_, w)| u64::from(*w)).sum();
         let mut r = if total == 0 { 0 } else { bits % total };
         for (v, w) in items {
@@ -329,16 +329,16 @@ impl Draws<'_> {
 
     /// A weighted choice from the slot's main stream.
     pub(crate) fn pick(&self, items: &[(f32, u32)]) -> f32 {
-        self.pick_by(self.bits_of(self.key, self.attempt), items)
+        Self::pick_by(self.bits_of(self.key, self.attempt), items)
     }
 
     /// A weighted choice from an auxiliary stream shared by several slots, at attempt 0.
     pub(crate) fn pick_shared(&self, name: &str, items: &[(f32, u32)]) -> f32 {
-        self.pick_by(self.bits_of(name, 0), items)
+        Self::pick_by(self.bits_of(name, 0), items)
     }
 
     /// Whether this draw comes from the prior: true with probability `musical` %, from `<key>/musical`.
-    fn from_prior(&self, musical: u8) -> bool {
+    fn use_prior(&self, musical: u8) -> bool {
         self.bits_of(&format!("{}/musical", self.key), self.attempt) % 100 < u64::from(musical)
     }
 }
@@ -467,7 +467,7 @@ fn choose_phrase(seed: u64, musical: u8) -> PhraseId {
         key: "phrase",
         attempt: 0,
     };
-    let items: &[(f32, u32)] = if d.from_prior(musical) {
+    let items: &[(f32, u32)] = if d.use_prior(musical) {
         &priors::v1::PHRASE_WEIGHTS
     } else {
         &[(1.0, 1), (2.0, 1), (3.0, 1)]
@@ -629,30 +629,27 @@ impl Gen<'_> {
                 if !mask.is_observable(&addr) {
                     return None;
                 }
-                let v = match forced {
-                    Some(v) => v,
-                    None => {
-                        let domain = uniform(&ctx);
-                        let raw = if d.from_prior(self.musical) {
-                            prior(&ctx, &d)
-                        } else {
-                            uniform_value(spec, domain, &d)
-                        };
-                        let raw = if width < 1.0 && matches!(spec.kind, Kind::Float { .. }) {
-                            let (s, t) = (spec.to_norm(from), spec.to_norm(spec.clamp(raw)));
-                            spec.from_norm(s + width * (t - s))
-                        } else {
-                            raw
-                        };
-                        // A narrow amount pulls towards the start, which may sit outside the observable or safe
-                        // range (a 2 kHz high-pass two octaves below C3): keep the value inside it.
-                        let raw = match domain {
-                            Domain::Range(lo, hi) => raw.clamp(lo.min(hi), hi.max(lo)),
-                            Domain::Items(_) => raw,
-                        };
-                        quantize(spec, raw)
-                    }
-                };
+                let v = forced.unwrap_or_else(|| {
+                    let domain = uniform(&ctx);
+                    let raw = if d.use_prior(self.musical) {
+                        prior(&ctx, &d)
+                    } else {
+                        uniform_value(spec, domain, &d)
+                    };
+                    let raw = if width < 1.0 && matches!(spec.kind, Kind::Float { .. }) {
+                        let (s, t) = (spec.to_norm(from), spec.to_norm(spec.clamp(raw)));
+                        spec.from_norm(s + width * (t - s))
+                    } else {
+                        raw
+                    };
+                    // A narrow amount pulls towards the start, which may sit outside the observable or safe
+                    // range (a 2 kHz high-pass two octaves below C3): keep the value inside it.
+                    let raw = match domain {
+                        Domain::Range(lo, hi) => raw.clamp(lo.min(hi), hi.max(lo)),
+                        Domain::Items(_) => raw,
+                    };
+                    quantize(spec, raw)
+                });
                 let passes = priors::jnd(spec).exceeded(from, v);
                 Some((
                     Op::SetParam {
@@ -675,7 +672,7 @@ impl Gen<'_> {
                 }
                 let on = match forced {
                     Some(v) => v != 0.0,
-                    None if d.from_prior(self.musical) => {
+                    None if d.use_prior(self.musical) => {
                         let p = u32::from(*percent);
                         d.pick(&[(1.0, p), (0.0, 100 - p)]) != 0.0
                     }
@@ -696,10 +693,10 @@ impl Gen<'_> {
             }
             What::Route { src, dst, depth } => {
                 let src: ModSource = src.parse().expect("table sources parse (tested)");
-                if let ModSource::Module(id) = &src {
-                    if !self.patch.find(id).is_some_and(|(_, m)| m.enabled) {
-                        return None;
-                    }
+                if let ModSource::Module(id) = &src
+                    && !self.patch.find(id).is_some_and(|(_, m)| m.enabled)
+                {
+                    return None;
                 }
                 let dst_key = format!("{key}/dst");
                 let aux = Draws {
@@ -707,7 +704,7 @@ impl Gen<'_> {
                     key: &dst_key,
                     attempt: 0,
                 };
-                let dst_text = dst(&ctx, &d, aux.from_prior(self.musical))?;
+                let dst_text = dst(&ctx, &d, aux.use_prior(self.musical))?;
                 let dst: ParamAddr = dst_text.parse().expect("table destinations parse (tested)");
                 let spec = self.patch.spec(&dst)?;
                 let heard = matches!(
@@ -732,7 +729,7 @@ impl Gen<'_> {
                     .map_or(0.0, |r| r.depth);
                 let v = match forced {
                     Some(v) => v,
-                    None => depth_step(if d.from_prior(self.musical) {
+                    None => depth_step(if d.use_prior(self.musical) {
                         depth(&ctx, &d, dst_text)
                     } else {
                         // 5-100 % in 5 % steps, either sign.

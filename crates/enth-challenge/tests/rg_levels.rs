@@ -9,7 +9,8 @@
 //! cargo test --release -p enth-challenge --test rg_levels -- --ignored --nocapture
 //! ```
 //!
-//! `RG_LEVELS_N` sets the targets per cell (default 200).
+//! `RG_LEVELS_N` sets the targets per cell (default 200); `RG_LEVELS_SHOW=1` lists every silent or too-quiet target
+//! with what was drawn.
 
 #![allow(
     clippy::print_stdout,
@@ -33,7 +34,7 @@ fn audibility_by_level() {
     let mut meter = LoudnessMeter::new(48_000);
     println!("musical level n silent quiet(<-40LUFS) peak>0dBFS lufs_p50 forced_steps");
     for musical in [100u8, 0] {
-        for (level, difficulty) in [(1, 0u8), (2, 20), (3, 40), (4, 60), (5, 80)] {
+        for (level, difficulty) in [(1, 0u8), (2, 25), (3, 50), (4, 75), (5, 100)] {
             let (mut silent, mut quiet, mut hot, mut forced) = (0, 0, 0, 0);
             let mut lufs = Vec::new();
             for i in 0..n {

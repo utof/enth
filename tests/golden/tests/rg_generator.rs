@@ -32,14 +32,16 @@ use enth_challenge::random::{self, Generated};
 use enth_challenge::spec::PRESETS;
 use enth_challenge::{Category, RandomSpec};
 use enth_patch::canon::{canonical_hash, exact_hash};
+use std::fmt::Write as _;
+
 use sha2::{Digest, Sha256};
 
 const EXPECTED: &str = include_str!("../generator/v1.txt");
 
-/// The seed every golden spec's seed derives from ("RG_v1").
-const ROOT: u64 = 0x5247_5F76_31;
+/// The seed every golden spec's seed derives from (`RG_v1` in ASCII).
+const ROOT: u64 = 0x0052_475F_7631;
 
-/// The `i`-th golden seed: one SplitMix64 output (Vigna's public-domain constants) over `ROOT + i·γ`, spread over
+/// The `i`-th golden seed: one `SplitMix64` output (Vigna's public-domain constants) over `ROOT + i·γ`, spread over
 /// all 64 bits.
 const fn seed_of(i: u64) -> u64 {
     let mut z = ROOT.wrapping_add(i.wrapping_mul(0x9E37_79B9_7F4A_7C15));
@@ -52,7 +54,7 @@ const fn seed_of(i: u64) -> u64 {
 /// exactly what a short code can carry, which has no hash prefix and relies on this golden. The rest spread the
 /// difficulty over every value, `musical` over 0, 20, 21, 50 and 100, and set one amount in some (to 0 in some).
 fn spec(i: u64) -> RandomSpec {
-    if i % 4 == 0 {
+    if i.is_multiple_of(4) {
         return PRESETS[((i / 4) % 5) as usize].spec(random::GENERATOR_V1, seed_of(i) >> 24);
     }
     let mut amounts = [None; Category::COUNT];
@@ -107,8 +109,11 @@ fn compute() -> String {
         out.push('\n');
     }
     let digest: [u8; 32] = all.finalize().into();
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    out.push_str(&format!("all {hex}\n"));
+    let hex = digest.iter().fold(String::new(), |mut h, b| {
+        let _ = write!(h, "{b:02x}");
+        h
+    });
+    let _ = writeln!(out, "all {hex}");
     out
 }
 
