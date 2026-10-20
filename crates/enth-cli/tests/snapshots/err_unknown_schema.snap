@@ -30,9 +30,13 @@ exit: 3
     "check",
     "step",
     "guide",
+    "suggest",
+    "match",
+    "explain",
     "bench",
     "challenge-new",
     "challenge-show",
+    "challenge-decode",
     "compare"
   ],
   "message": "no schema named 'chek'",

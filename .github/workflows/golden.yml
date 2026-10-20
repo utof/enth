@@ -7,6 +7,9 @@ name: golden
 # The expected hashes are the committed tests/golden/expected files. `cargo xtask golden --update` is refused under CI:
 # a golden changes on purpose, locally, and the commit message says why. A platform that differs breaks the
 # "same patch + seed = same samples" contract. The older spike-only checks stay in engine-golden.yml.
+# R1/S1 lane GC adds the golden challenges (tests/golden/challenges/, the `gc_challenges` test of enth-golden): they
+# run inside every `cargo test -p enth-golden` below (Linux and Windows debug and release, wasm32-wasip1 under wasmtime,
+# macOS weekly), and the `challenges` job adds the analysis and scoring determinism they stand on.
 
 on:
   push:
@@ -111,6 +114,15 @@ jobs:
           RUSTFLAGS: -C target-feature=+simd128
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir ${{ github.workspace }}/tests/golden
         run: cargo test --release --locked --target wasm32-wasip1 -p enth-golden --test golden --target-dir target-simd128
+      # R1/S1 lane GC: the analysis bits (scalar FFT, features, descriptors, findings) and sound/1's bits under wasmtime.
+      - name: Analysis determinism inside wasmtime (scalar path; ebur128 within a tolerance)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-analysis --test determinism
+      - name: sound/1 determinism inside wasmtime
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-challenge --test ss_determinism
 
   # On demand and weekly only (see the header). macos-latest is arm64: the first run shows whether aarch64 agrees
   # with the x86-64 hashes. If it does not, the difference is a determinism bug to find, not a hash to override;
@@ -130,16 +142,36 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask golden
       - run: cargo test --release --locked -p enth-golden
+      # The golden challenges run in the test above (`gc_challenges`). aarch64 and x86-64 must agree on the analysis and
+      # sound/1 bits too; ebur128's loudness is compared within 1e-6, not pinned.
+      - run: cargo test --release --locked -p enth-analysis --test determinism
+      - run: cargo test --release --locked -p enth-challenge --test ss_determinism
 
-  # R1/S1 lane GC, pre-declared by lane S0r and disabled: the golden challenges (tests/golden/challenges/: generator
-  # hashes, scores and their margins) and RG's 1,000-hash generator golden, on Linux, Windows and wasm32-wasip1, with
-  # macOS weekly in the job above. GC removes the `if:` and writes the steps; until then the job never starts and
-  # costs no minutes.
+  # R1/S1 lane GC. The golden challenges (tests/golden/challenges/: generator hashes, scores and their margins) and RG's
+  # 1,000-hash generator golden are tests of enth-golden, so the `hashes` job, the `wasm` job and the weekly `macos` job
+  # already run them. This job pins what they stand on, on Linux and Windows: the analysis bits (scalar FFT, spectral
+  # features, descriptors, findings: `enth-analysis --test determinism`) and sound/1's bits (`enth-challenge --test
+  # ss_determinism`, lane SS). Release only: the Linux debug builds run in ci.yml. A failure here means a platform computes
+  # a different number, which is a bug to find in the code, not a pin to move.
   challenges:
-    name: golden challenges (lane GC; disabled)
-    if: vars.ENTH_JOB_CHALLENGES == 'on'   # disabled: an unset repository variable skips the job
-    runs-on: ubuntu-24.04
+    name: analysis and scoring determinism on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: windows-x86_64, os: windows-latest }
     steps:
-      - name: Not built yet
-        run: echo "lane GC writes the golden-challenge steps here" && false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Analysis determinism (pinned hashes; ebur128 loudness within 1e-6)
+        run: cargo test --release --locked -p enth-analysis --test determinism -- --nocapture
+      - name: sound/1 determinism (pinned hash of the loudness and of three scores)
+        run: cargo test --release --locked -p enth-challenge --test ss_determinism -- --nocapture

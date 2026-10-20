@@ -150,9 +150,14 @@ fn compare_scores_a_patch_against_a_code_with_score_round() {
     let o = run(&["compare", &target, "--code", &code]);
     assert_eq!(o.code, 0, "{}", o.stdout);
     let out: CompareOut = round_trip(&o);
-    assert!(out.passed);
-    assert_eq!(out.sound, 100.0);
-    assert_eq!(out.report["schema"], "enth.score-report/1");
+    assert_eq!(out.passed, Some(true));
+    assert_eq!(out.sound, Some(100.0));
+    assert_eq!(out.mode, "challenge");
+    assert_eq!(out.distance, 0.0, "the target is at distance 0 from itself");
+    assert_eq!(
+        out.report.as_ref().unwrap()["schema"],
+        "enth.score-report/1"
+    );
     // What score_round gives for the same patch and challenge, field for field.
     let round = enth_challenge::prepare_round(&level(1, 42)).unwrap();
     let start = s.path("start.patch.json");
@@ -164,14 +169,14 @@ fn compare_scores_a_patch_against_a_code_with_score_round() {
     // The CLI prints numbers rounded (`out::normalise`).
     let near = |a: f64, b: f64| (a - b).abs() < 0.01;
     assert!(
-        near(out.sound, want.sound.percent),
-        "{} {}",
+        near(out.sound.unwrap(), want.sound.percent),
+        "{:?} {}",
         out.sound,
         want.sound.percent
     );
-    assert!(near(out.structure, want.structure.percent));
-    assert!(near(out.combined, want.combined.percent));
-    assert_eq!(out.passed, want.passed);
+    assert!(near(out.structure.unwrap(), want.structure.percent));
+    assert!(near(out.combined.unwrap(), want.combined.percent));
+    assert_eq!(out.passed, Some(want.passed));
     assert_eq!(
         out.scorers,
         [
@@ -185,7 +190,8 @@ fn compare_scores_a_patch_against_a_code_with_score_round() {
     let file = s.write("c.challenge.json", &new.challenge.to_string());
     let by_file: CompareOut = round_trip(&run(&["compare", &start, "--challenge", &file]));
     assert_eq!(by_file.sound, out.sound);
-    assert_eq!(by_file.code.as_deref(), Some(code.as_str()));
+    assert_eq!(by_file.target.code.as_deref(), Some(code.as_str()));
+    assert_eq!(by_file.target.kind, "challenge");
     // Neither a code nor a challenge: a usage error.
     let o = run(&["compare", &start]);
     assert_eq!(json(&o)["exit"], 2, "{}", o.stdout);
@@ -204,4 +210,257 @@ fn the_built_commands_are_in_help() {
     for cmd in ["compare", "challenge"] {
         assert!(help.contains(&format!("  {cmd} ")), "{cmd}:\n{help}");
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// decode, custom settings (lane CL)
+// ---------------------------------------------------------------------------------------------------------------
+
+use enth_cli::schema::ChallengeDecodeOut;
+
+#[test]
+fn decode_reads_a_short_code_without_regenerating() {
+    let s = Scratch::new("challenge_decode");
+    let code = enth_challenge::ChallengeCode::short(level(3, 7))
+        .unwrap()
+        .to_string();
+    let typed = code.to_lowercase().replace('-', " ");
+    let o = run(&["challenge", "decode", &typed]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    let d: ChallengeDecodeOut = round_trip(&o);
+    assert_eq!(d.schema, "enth.challenge-decode/1");
+    assert_eq!(d.code, code);
+    assert_eq!(d.form, "short");
+    let preset = d.preset.clone().expect("a level is a preset");
+    assert_eq!((preset.id, preset.name.as_str()), (3, "Level 3"));
+    assert_eq!(
+        (d.spec.seed, d.spec.difficulty, d.spec.generator),
+        (7, 50, 1)
+    );
+    assert_eq!(d.spec.amounts, vec![None; 6]);
+    assert_eq!(d.categories.len(), 6);
+    assert!(d.engine.is_none() && d.engine_current.is_none() && d.target_prefix.is_none());
+    settings(&s).bind(|| assert_snapshot!("challenge_decode", record(&s, &o, false)));
+}
+
+#[test]
+fn decode_reads_a_long_code_and_its_prefix_matches_new() {
+    let seed = (1u64 << 40).to_string();
+    let new: ChallengeNewOut = round_trip(&run(&["challenge", "new", "--seed", &seed]));
+    let d: ChallengeDecodeOut = round_trip(&run(&["challenge", "decode", &new.code]));
+    assert_eq!(d.form, "long");
+    assert_eq!(d.engine.as_deref(), Some(new.engine.as_str()));
+    assert_eq!(d.engine_current, Some(true));
+    assert_eq!(
+        d.target_prefix.as_deref(),
+        Some(new.fingerprint_prefix.as_str())
+    );
+    assert_eq!(d.spec, new.spec);
+}
+
+#[test]
+fn custom_settings_travel_in_a_long_code() {
+    let o = run(&[
+        "challenge",
+        "new",
+        "--difficulty",
+        "33",
+        "--amount",
+        "filter=80,effects=0",
+        "--musical",
+        "60",
+        "--seed",
+        "5",
+    ]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    let new: ChallengeNewOut = round_trip(&o);
+    assert_eq!(new.form, "long");
+    assert!(new.preset.is_none());
+    assert_eq!(new.spec.difficulty, 33);
+    assert_eq!(new.spec.musical, 60);
+    assert_eq!(
+        new.spec.amounts,
+        vec![None, Some(80), None, None, Some(0), None]
+    );
+    // The code reads back to the same settings, `new --code` gives the same challenge, and `show` regenerates it
+    // (a long code carries the target's fingerprint prefix, which is checked).
+    let d: ChallengeDecodeOut = round_trip(&run(&["challenge", "decode", &new.code]));
+    assert_eq!(d.spec, new.spec);
+    assert!(d.preset.is_none());
+    assert_eq!(
+        d.target_prefix.as_deref(),
+        Some(new.fingerprint_prefix.as_str())
+    );
+    let again: ChallengeNewOut = round_trip(&run(&["challenge", "new", "--code", &new.code]));
+    assert_eq!(again, new);
+    let shown: ChallengeShowOut = round_trip(&run(&["challenge", "show", &new.code]));
+    assert_eq!(shown.fingerprint, new.fingerprint);
+    assert!(shown.preset.is_none());
+    // The game's own function agrees about the target.
+    let spec = enth_challenge::ChallengeCode::decode(&new.code).unwrap();
+    let round = enth_challenge::prepare_round(spec.spec()).unwrap();
+    assert_eq!(round.fingerprint().to_hex(), new.fingerprint);
+}
+
+#[test]
+fn a_level_with_an_override_is_custom_and_a_levels_difficulty_is_the_level() {
+    let custom: ChallengeNewOut = round_trip(&run(&[
+        "challenge",
+        "new",
+        "--level",
+        "2",
+        "--musical",
+        "50",
+        "--seed",
+        "3",
+    ]));
+    assert_eq!(
+        (
+            custom.form.as_str(),
+            custom.preset,
+            custom.spec.difficulty,
+            custom.spec.musical
+        ),
+        ("long", None, 25, 50)
+    );
+    let by_level: ChallengeNewOut =
+        round_trip(&run(&["challenge", "new", "--level", "2", "--seed", "3"]));
+    let by_difficulty: ChallengeNewOut = round_trip(&run(&[
+        "challenge",
+        "new",
+        "--difficulty",
+        "25",
+        "--seed",
+        "3",
+    ]));
+    assert_eq!(by_level.preset.as_deref(), Some("Level 2"));
+    assert_eq!(by_difficulty.code, by_level.code);
+    assert_eq!(by_difficulty.form, "short");
+    // Amounts spelled as a percentage and in any case.
+    let spelled: ChallengeNewOut = round_trip(&run(&[
+        "challenge",
+        "new",
+        "--amount",
+        "Filter=80%",
+        "--seed",
+        "3",
+    ]));
+    assert_eq!(spelled.spec.amounts[1], Some(80));
+}
+
+#[test]
+fn custom_settings_are_checked_and_errors_say_what_is_valid() {
+    let cases: Vec<(Vec<&str>, i32, &str)> = vec![
+        (
+            vec!["challenge", "new", "--amount", "filtr=80"],
+            3,
+            "unknown_category",
+        ),
+        (
+            vec!["challenge", "new", "--amount", "filter"],
+            2,
+            "bad_amount",
+        ),
+        (
+            vec!["challenge", "new", "--amount", "filter=high"],
+            3,
+            "out_of_range",
+        ),
+        (
+            vec!["challenge", "new", "--amount", "filter=101"],
+            3,
+            "out_of_range",
+        ),
+        (
+            vec!["challenge", "new", "--difficulty", "101"],
+            3,
+            "out_of_range",
+        ),
+        (
+            vec!["challenge", "new", "--musical", "101"],
+            3,
+            "out_of_range",
+        ),
+        (
+            vec!["challenge", "new", "--template", "9"],
+            3,
+            "code_too_new",
+        ),
+        (
+            vec!["challenge", "new", "--generator", "9"],
+            3,
+            "code_too_new",
+        ),
+        (
+            vec!["challenge", "new", "--generator", "0"],
+            3,
+            "no_generator",
+        ),
+        (
+            vec!["challenge", "new", "--level", "2", "--difficulty", "10"],
+            2,
+            "usage",
+        ),
+        (
+            vec![
+                "challenge",
+                "new",
+                "--code",
+                "1040-1000-0000-7M",
+                "--difficulty",
+                "10",
+            ],
+            2,
+            "usage",
+        ),
+        (
+            vec![
+                "challenge",
+                "new",
+                "--code",
+                "1040-1000-0000-7M",
+                "--amount",
+                "filter=1",
+            ],
+            2,
+            "usage",
+        ),
+        (vec!["challenge", "decode"], 2, "usage"),
+        (vec!["challenge", "decode", ""], 3, "empty_code"),
+        (
+            vec!["challenge", "decode", "1040-1000-0000-7N"],
+            3,
+            "bad_check",
+        ),
+    ];
+    for (args, exit, error) in cases {
+        let o = run(&args);
+        let e: ErrorOut = round_trip(&o);
+        assert_eq!(
+            (o.code, e.error.as_str()),
+            (exit, error),
+            "{args:?}: {}",
+            o.stdout
+        );
+        assert_ne!(e.hint, "", "{args:?}");
+    }
+    let o = run(&["challenge", "new", "--amount", "filtr=80"]);
+    let e: ErrorOut = round_trip(&o);
+    assert_eq!(e.did_you_mean, ["filter"]);
+}
+
+#[test]
+fn the_new_and_show_outputs_say_their_preset() {
+    let s = Scratch::new("challenge_preset");
+    let o = run(&["challenge", "new", "--level", "4", "--seed", "11"]);
+    let new: ChallengeNewOut = round_trip(&o);
+    assert_eq!(new.preset.as_deref(), Some("Level 4"));
+    assert_eq!(new.schema, "enth.challenge-new/2");
+    let shown: ChallengeShowOut = round_trip(&run(&["challenge", "show", &new.code]));
+    assert_eq!(
+        (shown.preset.as_deref(), shown.schema.as_str()),
+        (Some("Level 4"), "enth.challenge-show/2")
+    );
+    let custom = run(&["challenge", "new", "--difficulty", "33", "--seed", "5"]);
+    settings(&s).bind(|| assert_snapshot!("challenge_new_custom", record(&s, &custom, false)));
 }

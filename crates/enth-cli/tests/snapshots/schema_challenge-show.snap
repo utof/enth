@@ -246,10 +246,10 @@ expression: v
       "type": "object"
     }
   },
-  "$id": "enth.challenge-show/1",
+  "$id": "enth.challenge-show/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.challenge-show/1`: what a code names, without the answer unless asked.",
+  "description": "`enth.challenge-show/2`: what a code names, without the answer unless asked. Version 2 adds `preset`.",
   "properties": {
     "code": {
       "description": "The code, in its canonical text.",
@@ -295,6 +295,13 @@ expression: v
       "$ref": "#/$defs/PhraseOut",
       "description": "The phrase the target is heard and scored through."
     },
+    "preset": {
+      "description": "The preset these settings are (`Level 2`), or null for custom settings.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "randomized": {
       "description": "The randomized parameters' addresses (no values): what a round's rings and \"dim unused\" show.",
       "items": {
@@ -314,8 +321,8 @@ expression: v
       "description": "The answer, with `--reveal` only."
     },
     "schema": {
-      "const": "enth.challenge-show/1",
-      "description": "`enth.challenge-show/1`.",
+      "const": "enth.challenge-show/2",
+      "description": "`enth.challenge-show/2`.",
       "type": "string"
     },
     "scoring": {

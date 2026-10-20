@@ -1,0 +1,5 @@
+description = "Level 4, seed 12: sixteen parameters and three routes, a 0.5 ms attack. Near: the second LFO 1.6 times slower."
+code = "10G0-1000-0000-C1"
+
+[answers.near]
+mul = { "lfo2.rate" = 0.625 }

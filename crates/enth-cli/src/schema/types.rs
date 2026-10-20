@@ -1264,11 +1264,11 @@ pub struct ScoringOut {
     pub pass_mark: u8,
 }
 
-/// `enth.challenge-new/1`: a challenge and its code.
+/// `enth.challenge-new/2`: a challenge and its code. Version 2 adds `preset`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChallengeNewOut {
-    /// `enth.challenge-new/1`.
+    /// `enth.challenge-new/2`.
     pub schema: String,
     /// The challenge code to share or paste.
     pub code: String,
@@ -1278,6 +1278,8 @@ pub struct ChallengeNewOut {
     pub level: u8,
     /// The settings.
     pub spec: SpecOut,
+    /// The preset these settings are (`Level 2`), or null for custom settings (which travel in a long code).
+    pub preset: Option<String>,
     /// The phrase the target is heard through.
     pub phrase: PhraseOut,
     /// The target's fingerprint (SHA-256 of what the generator decided, 64 hex digits).
@@ -1318,11 +1320,11 @@ pub struct RevealOut {
     pub wrote: Option<String>,
 }
 
-/// `enth.challenge-show/1`: what a code names, without the answer unless asked.
+/// `enth.challenge-show/2`: what a code names, without the answer unless asked. Version 2 adds `preset`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChallengeShowOut {
-    /// `enth.challenge-show/1`.
+    /// `enth.challenge-show/2`.
     pub schema: String,
     /// The code, in its canonical text.
     pub code: String,
@@ -1332,6 +1334,8 @@ pub struct ChallengeShowOut {
     pub level: u8,
     /// The settings.
     pub spec: SpecOut,
+    /// The preset these settings are (`Level 2`), or null for custom settings.
+    pub preset: Option<String>,
     /// The phrase the target is heard and scored through.
     pub phrase: PhraseOut,
     /// How it is scored.
@@ -1351,37 +1355,5 @@ pub struct ChallengeShowOut {
     /// The answer, with `--reveal` only.
     pub reveal: Option<RevealOut>,
     /// What to do next.
-    pub hint: String,
-}
-
-/// `enth.compare/1`: a patch scored against a challenge's target.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CompareOut {
-    /// `enth.compare/1`.
-    pub schema: String,
-    /// The patch scored.
-    pub patch: String,
-    /// The challenge's code (null for a challenge file without one).
-    pub code: Option<String>,
-    /// The target's fingerprint.
-    pub fingerprint: String,
-    /// Sound %, 0-100 (decides the pass).
-    pub sound: f64,
-    /// Structure %, 0-100.
-    pub structure: f64,
-    /// Combined %, 0-100.
-    pub combined: f64,
-    /// The pass mark (sound %).
-    pub pass_mark: u8,
-    /// Sound % at or above the pass mark.
-    pub passed: bool,
-    /// Sound % minus the pass mark.
-    pub margin: f64,
-    /// The scorers that scored it: sound, structure, combined.
-    pub scorers: Vec<String>,
-    /// The full score report (`enth.score-report/1`): components, the per-parameter verdicts.
-    pub report: serde_json::Value,
-    /// What it means.
     pub hint: String,
 }

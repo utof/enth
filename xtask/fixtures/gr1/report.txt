@@ -1,0 +1,125 @@
+GR1 report (enth.gr1-report/1)
+Read 3 round log file(s): 61 lines, 61 read into rounds (0 unusable, 0 from another schema version); 0 error(s), 0 warning(s), 40 note(s).
+Privacy lint: clean (no email address or home-folder path found)
+
+Gate indicators (the proposed reading, docs/gr1.md; you decide GR1)
+  [  met   ] You and your friends play
+             reading: at least 2 players (1 is the owner-only fallback)
+             logs:    3 player(s)
+  [NOT MET ] 20 rounds each, logged
+             reading: every player has at least 20 played rounds
+             logs:    short: p3 17/20
+  [  met   ] Mostly agree with the score
+             reading: at least 70 % "about right" overall and no rater under 50 % (a rater has 10 votes or more)
+             logs:    76 % about right over 45 votes
+  [  met   ] Want more
+             reading: "another round?" answered yes on at least 60 % of rounds
+             logs:    81 % (47 of 58 rounds); end-of-session: 2 of 3 said yes
+  [  met   ] The agent's solve rate is recorded as a baseline
+             reading: an agent arm beside the no-op and CMA-ES floors
+             logs:    agent: pass@1 60 % over 60 attempts on 20 codes; floors present: 2 of 2
+
+Players
+  player  rounds  played  skipped  unusable  restored  passed  pass  assisted  median ttp  votes  about right  rated  disputes  want more
+  ------  ------  ------  -------  --------  --------  ------  ----  --------  ----------  -----  -----------  -----  --------  ---------
+  p1          20      20        0         0         0      13   65%       40%        1:36     18          78%     17         1        80%
+  p2          21      20        1         0         1      10   50%       40%        1:04     13          92%     18         0        90%
+  p3          17      17        0         0         0      13   76%       18%        1:27     14          57%      0         1        71%
+  played = tried (a scored submit or a reveal); restored = rounds a host restore logged again (the last end line counts); ttp = time to pass; want more = ended by "another round?".
+
+Pass rate by level (all players; rounds are the trials, so the interval is a rough guide)
+  level  played  passed  pass   95% CI  unassisted  assisted  median ttp  unassisted ttp  sound 1st  sound best
+  -----  ------  ------  ----  -------  ----------  --------  ----------  --------------  ---------  ----------
+  1          12      11   92%   65-99%       10/11         1        1:27            1:24       69.6        96.7
+  2          12      12  100%  76-100%         7/7         5        1:32            1:26       81.0        95.9
+  3          11       6   55%   28-79%         4/8         3        1:30            1:30       62.4        92.7
+  4          11       3   27%   10-57%         1/7         4        1:20            1:20       59.4        85.7
+  5          11       4   36%   15-65%         3/5         6        1:25            1:26       45.3        66.8
+  sound 1st = median sound % of the recorded (first) submit; sound best = median of each round's best submit.
+
+  passed/played  level 1  level 2  level 3  level 4  level 5
+  -------------  -------  -------  -------  -------  -------
+  p1                 4/4      4/4      2/4      2/4      1/4
+  p2                 3/4      4/4      2/4      0/4      1/4
+  p3                 4/4      4/4      2/3      1/3      2/3
+
+Time to pass and assists
+  median time to pass 1:26 over 36 passes; unassisted 1:26 over 25 passes (active time to the first passing submit, m:ss).
+  assisted share 33% (19 of 57 played rounds): 17 used a hint (40 hints in all), 6 revealed the target, 0 had the live meter; 11 of the passes were assisted.
+
+Agreement with the score (the vote after each round)
+  vote         rounds  share  median sound %
+  -----------  ------  -----  --------------
+  too low           5    11%            81.6
+  about right      34    76%            61.5
+  too high          6    13%            54.5
+  45 votes on 55 scored rounds (response 89%); 4 vote(s) from a newer build not counted; 6 scored round(s) without a vote.
+  about right by player: p1 78% (18 votes); p2 92% (13 votes); p3 57% (14 votes).
+
+Blind rating against the score (rated before the score showed; the recorded first submit)
+  rated rounds 35, mean rating 3.17.
+  Spearman rho, rating against sound %      +0.82  [+0.69, +0.90]  n=35
+  Spearman rho, rating against structure %  +0.82  [+0.69, +0.89]  n=35
+  Spearman rho, rating against combined %   +0.81  [+0.68, +0.90]  n=35
+  (95% percentile bootstrap over rounds, 2000 resamples, seed 0x6772315f7265706f.)
+
+  rating  rounds  median sound %
+  ------  ------  --------------
+  1            3            34.4
+  2           12            41.4
+  3            5            69.0
+  4            6            75.3
+  5            9            96.2
+  per player (at least 8 rated rounds): p1 +0.81 (n=17); p2 +0.84 (n=18).
+
+Want more
+  "another round?" answered yes on 47 of 58 ended rounds (81%). Every sitting's last round cannot say yes, so this reads low by about one round per sitting.
+  by player: p1 80% (16 of 20); p2 90% (19 of 21); p3 71% (12 of 17).
+  End-of-session answers:
+  player  want more?  os       daw     note
+  ------  ----------  -------  ------  ------------------------------------------
+  p1      yes         linux    reaper  More levels, and a way to keep the target.
+  p2      yes         windows  bitwig
+  p3      maybe       macos    reaper  Level 5 felt unfair.
+
+Disputes
+  p1 serial 3 (level 3, 10C0-1SZF-FJQG-10), sound 62.4, structure 47.9, combined 57.3, outcome passed, vote too_low
+      "Sounded the same to me, and it scored far lower than I expected."
+  p3 serial 5 (level 5, 10M0-1078-9039-YM), sound 42.0, structure 19.5, combined 34.2, outcome gave_up, vote too_low
+      "The cutoff and the wave matched by ear but structure says bad."
+
+Agent baseline beside the humans (pass@1 = passes over single attempts)
+  20 code(s) in the baseline; humans played 20 of them. Humans are scored on each round's best sound %, arms on the final patch's.
+  pass@1                              level 1       level 2     level 3     level 4     level 5          all  95% CI
+  -----------------------------  ------------  ------------  ----------  ----------  ----------  -----------  ------
+  humans (all rounds)             92% (11/12)  100% (12/12)  55% (6/11)  27% (3/11)  36% (4/11)  63% (36/57)  50-74%
+  humans (the baseline's codes)   92% (11/12)  100% (12/12)  55% (6/11)  27% (3/11)  36% (4/11)  63% (36/57)  50-74%
+  agent                          100% (12/12)    75% (9/12)  50% (6/12)  42% (5/12)  33% (4/12)  60% (36/60)  47-71%
+  no-op floor                        0% (0/4)      0% (0/4)    0% (0/4)    0% (0/4)    0% (0/4)    0% (0/20)   0-16%
+  CMA-ES floor                      50% (2/4)     75% (3/4)  100% (4/4)   25% (1/4)    0% (0/4)  50% (10/20)  30-70%
+
+  median sound %                 level 1  level 2  level 3  level 4  level 5   all
+  -----------------------------  -------  -------  -------  -------  -------  ----
+  humans (all rounds)               96.7     95.9     92.7     85.7     66.8  93.4
+  humans (the baseline's codes)     96.7     95.9     92.7     85.7     66.8  93.4
+  agent                             94.3     92.5     87.0     78.5     75.0  91.7
+  no-op floor                        7.7     14.7      8.1     11.1     10.0  12.1
+  CMA-ES floor                      90.0     91.3     95.0     70.3     59.7  88.5
+
+  effort per attempt  attempts  codes  renders  tokens   cost  total cost
+  ------------------  --------  -----  -------  ------  -----  ----------
+  agent                     60     20       96  130654  $0.20      $11.74
+  no-op floor               20     20        1       -      -           -
+  CMA-ES floor              20     20     1500       -      -           -
+
+Checks
+  codes played: 20 distinct, 17 played by every player.
+  scorers: sound/1 structure/1 combined/1 x55
+  engines: 0.2.0 x58
+  targets: every code gave one target fingerprint.
+
+Problems
+  note    unknown field `input` ignored (x22, first at p2.jsonl:1)
+  note    unknown `result.agreement` value `unsure`, counted as unknown (x4, first at p2.jsonl:2)
+  note    unknown field `result.assists.coach` ignored (x13, first at p2.jsonl:3)
+  note    unknown `result.outcome` value `timed_out` (x1, first at p2.jsonl:14)

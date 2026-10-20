@@ -1,0 +1,8 @@
+description = "The maximum patch: level 5 with every category at 100 %, thirty-two parameters, three routes and four enable flags, the legato pair. Near: the pitch half a semitone off. Bare: osc 2, the reverb and the compressor switched off."
+code = "H000-G000-0000-0004-KS68-0000-80F5-X508-7ZJC-K4S6-9J0G"
+
+[answers.near]
+add = { "osc1.semi" = 0.5 }
+
+[answers.bare]
+enable = { osc2 = false, reverb1 = false, comp1 = false }

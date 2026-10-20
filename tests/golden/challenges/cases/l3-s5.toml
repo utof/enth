@@ -1,0 +1,5 @@
+description = "Level 3, seed 5: eleven randomized parameters and an envelope with a 5.8 ms attack and a 387 ms decay. Near: the pitch a quarter semitone off."
+code = "10C0-1000-0000-5D"
+
+[answers.near]
+add = { "osc1.semi" = 0.25 }

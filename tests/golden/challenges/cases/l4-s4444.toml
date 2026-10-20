@@ -1,0 +1,5 @@
+description = "Level 4, seed 4444: fifteen parameters and three modulation routes, two LFOs among them. Near: the second LFO a quarter faster."
+code = "10G0-1000-004A-WC"
+
+[answers.near]
+mul = { "lfo2.rate" = 1.25 }

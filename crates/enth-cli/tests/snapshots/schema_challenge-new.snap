@@ -143,10 +143,10 @@ expression: v
       "type": "object"
     }
   },
-  "$id": "enth.challenge-new/1",
+  "$id": "enth.challenge-new/2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`enth.challenge-new/1`: a challenge and its code.",
+  "description": "`enth.challenge-new/2`: a challenge and its code. Version 2 adds `preset`.",
   "properties": {
     "challenge": {
       "description": "The challenge (`enth.challenge/1`), as the game plays it."
@@ -186,9 +186,16 @@ expression: v
       "$ref": "#/$defs/PhraseOut",
       "description": "The phrase the target is heard through."
     },
+    "preset": {
+      "description": "The preset these settings are (`Level 2`), or null for custom settings (which travel in a long code).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "schema": {
-      "const": "enth.challenge-new/1",
-      "description": "`enth.challenge-new/1`.",
+      "const": "enth.challenge-new/2",
+      "description": "`enth.challenge-new/2`.",
       "type": "string"
     },
     "spec": {

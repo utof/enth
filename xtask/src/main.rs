@@ -133,10 +133,16 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     tags from the factory vocabulary, engine stamp, unique name) under
                                     content/presets-candidates/<type>/; promote a picked candidate into
                                     content/presets/<type>/ (`preset-add --help`; R1/S1 lane PR)
-  gr1-report <round log>...         (not built yet: R1/S1 lane GK) the GR1 numbers from the friends' round logs
+  gr1-report [options] <round log>...
+                                    the GR1 numbers from the friends' round logs (enth.round-log/1): rounds, pass
+                                    rate by level, time to pass, assists, agreement, blind rating vs score, disputes,
+                                    want more, and the agent baseline beside the no-op and CMA-ES floors; --json,
+                                    --validate, --codes; `gr1-report --help`, docs/gr1.md (R1/S1 lane GK)
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
+  golden --challenges [--only <c>]  the golden challenges of tests/golden/challenges (same flags; --update only adds
+                                    pins, a pinned result changes with its scorer id; R1/S1 lane GC)
   bench [-p <pkg>] [--bench <name>] gungraun instruction budgets (default package enth-engine; alias: budget)
   agent-eval [--dry-run] [...]      the agent-eval harness: agents design sounds with `enth` (--dry-run: scripted fake
                                     agent, no model call; a real run needs --confirm-spend); see `agent-eval --help`

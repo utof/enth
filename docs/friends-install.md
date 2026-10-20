@@ -59,3 +59,5 @@ Send me:
 - the first two lines of `BUILD.txt` from the zip (they say which build you have).
 
 Crashes: on a Mac the DAW's crash report is in `~/Library/Logs/DiagnosticReports`; on Windows tell me when it happened and what you were doing.
+
+After installing, play the Recreate rounds as [gr1-friends.md](gr1-friends.md) describes.

@@ -10,6 +10,7 @@
 | [Randomizer](#randomizer-lane-rg) | RG |
 | [Sound score](#sound-score-lane-ss) | SS |
 | [Structure, combined and time](#structure-combined-and-time-lane-st) | ST |
+| [Golden challenges](#golden-challenges-lane-gc) | GC |
 
 ## How a round uses these types
 
@@ -677,3 +678,91 @@ The property tests passed 10,000 cases on three seeds besides the gate's 256. Th
 
 - twin oscillators that differ only in what modulates them;
 - a randomized route that should keep its oscillator.
+
+## Golden challenges (lane GC)
+
+25 challenge codes, pinned with the target they regenerate and what the scorers say about three fixed answers each. They are the end-to-end check on the game's logic: a change anywhere between the code and the percentage moves a pin, on every platform at once. The harness is `tests/golden/src/challenges/` (tooling, not a core crate); the data is `tests/golden/challenges/`; the test is `tests/golden/tests/gc_challenges.rs`.
+
+```text
+tests/golden/challenges/
+  cases/<name>.toml      the input: a code, a description, recipes for the answers beyond `exact` and `start`
+  expected/<name>.txt    the pins, written by `cargo xtask golden --challenges --update`, never by a test or CI
+```
+
+### A case
+
+```toml
+description = "Level 1, seed 1: a triangle wave at the start's pitch (two randomized parameters). Near: the pitch 0.1 semitone off."
+code = "1040-1000-0000-1R"        # short or long form; written canonically (uppercase), checked against its own re-encoding
+scorings = ["v1"]                  # the default; `stub` names the parameter-space stand-ins (below)
+
+[answers.near]                     # at most two answers beyond `exact` and `start`; those two names are reserved
+add = { "osc1.semi" = 0.1 }        # applied in order: base, enable, set, mul, add, depth
+```
+
+`exact` is the target's own patch, `start` is the round's start patch, and a recipe starts from either (`base = "target"` is the default) and moves it by `enable` (`{ osc2 = false }`), `set`, `mul`, `add` (on `module.param` addresses) and `depth` (a route's depth, `"lfo1 -> filter1.cutoff" = 40.0`). Recipes go through `enth_patch::apply`, so a recipe that the patch model would refuse fails the case.
+
+### What is pinned
+
+| Part | Pinned as |
+| --- | --- |
+| The code | the code, its form (short, or long with its engine version), the spec it decodes to (generator, seed, difficulty, musical, template, the six amounts), the level and the phrase |
+| The target | the **fingerprint** (never a patch hash: it moves only when the target does, [the fingerprint](#the-target-fingerprint)), the counts of what the generator drew, the target's integrated loudness, and the SHA-256 of the scored render (to tell a render difference from a scoring one) |
+| Each answer, per scorer set | sound %, structure %, combined %, pass, the margin; sound's distance, floor, scale, jnd; each component's direction, badge and both readings; each ring's verdict (`good`, `near`, `bad`) and the moved parameters; the module terms |
+
+Numbers are compared within 1e-6 (relative for readings), which stands for the printed digits only: the scorers are bit-exact. The harness also prints one SHA-256 over every case's unrounded numbers (`bits`); it is not a pin, but a native and a wasm run print the same one.
+
+Every challenge is built with `ScoringSpec::with_scorers` and the scorer ids named in the block's heading (`scoring sound/1 structure/1 combined/1 time/1 weight=50 pass_mark=90`), so a new default scorer never changes a golden.
+
+### The margin
+
+No pass or fail decision may sit within **1e-3** of the pass mark (`margin::check`, on every answer of every block). The scorers are deterministic, but a gain that moves in its last bit should not be able to flip a pinned decision unnoticed. A case within the margin fails, in a check and in an update, with the case, the answer, the sound % and the way out: change the answer's recipe, using `cargo run -p enth-golden -- --challenges --propose <code or settings>`, which prints a code's target facts, its randomized parameters and the start's score, then the target moved by a few amounts one parameter at a time with the sound and structure % and a `!` on any move within the margin. The pinned cases keep at least 0.04 from the pass mark. Tested with a deliberately too-close case (`the_margin_refuses_an_answer_too_close_to_the_pass_mark`, built by bisecting a pulse width to within 0.00025 of the mark) and at the boundary (`the_margin_is_one_thousandth_either_side`).
+
+Only the pass mark has a margin. The structure ring verdicts (`good` under one step, `near` under three) are exact arithmetic on steps, not a threshold on a float score.
+
+### Updating
+
+`cargo xtask golden --challenges --update` (refused under `CI`):
+
+- A case with no `expected/` file gets one.
+- A case that lists a **new scorer set** gets a new block beside the old; the old block is kept byte for byte.
+- Anything already pinned that would change is **refused**, with the lines that differ and this text: a pinned result never changes under the same scorer ids; a change is a new scorer id (a new block), never an edit. The deliberate exception is the case that has never been shared (the generator or the engine moved before any code was handed out): delete its `expected/` file, update, and say why in the commit.
+- An `expected/` file with no case is reported stale and not deleted.
+
+`--only <case>` restricts a check or an update to one case. `cargo xtask golden --challenges --wasm` runs the same checks under wasmtime.
+
+### The set
+
+| Level | Cases | Near misses (pass / fail) |
+| --- | --- | --- |
+| 1 | `l1-s1`, `l1-s4`, `l1-s11`, `l1-s14` | 2 / 2 |
+| 2 | `l2-s2`, `l2-s7`, `l2-s11`, `l2-s22` | 2 / 2 |
+| 3 | `l3-s3`, `l3-s5`, `l3-s12`, `l3-s333` | 2 / 2 |
+| 4 | `l4-s8`, `l4-s12`, `l4-s19`, `l4-s4444` | 2 / 2 |
+| 5 | `l5-s2`, `l5-s3`, `l5-s9`, `l5-s55555` | 2 / 2 |
+| Special (long codes) | `musical0-l4-s5` (musical 0), `structure-l2-s2` (randomized structure: osc 2 and noise on), `max-l5-s147` (every amount 100: 39 drawn items), `quiet-l2-s92` (a target at -65.9 LUFS), `silent-l2-s23` (a silent target) | |
+
+The cases include phrases 1, 2 and 3 (`l5-s2` and `structure-l2-s2` are phrase 2, `l5-s55555` and `max-l5-s147` phrase 3), and five long codes (engine version 0.2.0 and the 32-bit fingerprint prefix). The structure and max cases also pin a `bare` answer (the extra modules disabled).
+
+### Determinism
+
+| What | Where it runs |
+| --- | --- |
+| The challenges (`gc_challenges`, with RG's `rg_generator` and the other `enth-golden` tests) | `cargo test -p enth-golden` in the `hashes` job (Linux and Windows, debug and release), the `wasm` job (`wasm32-wasip1` under wasmtime) and the weekly `macos` job |
+| Analysis: the scalar FFT, features, descriptors and findings (`enth-analysis --test determinism`, `FINDINGS_SCALAR` included) | the `challenges` job (Linux and Windows, release), the `wasm` job, the weekly `macos` job |
+| `sound/1` (`enth-challenge --test ss_determinism`, lane SS) | the same three |
+
+Linux x86-64, debug, release and wasm32-wasip1 under wasmtime 48 give the same `bits` for the 25 cases and the same `FINDINGS_SCALAR` (its first wasm comparison); Windows and macOS run in CI. ebur128's loudness (analysis) is compared within 1e-6, not pinned. The `challenges` job is enabled (it was gated on `vars.ENTH_JOB_CHALLENGES`); a docs-only push still runs nothing.
+
+Costs: the check takes about 40 s natively in debug, 37 s for all eight tests in release, and 50 s under wasmtime.
+
+### Findings while choosing answers
+
+- `sound/1` steps by a few thousandths where a pitch offset crosses a decision in the analysis (level 1 seed 1: 90.0019 just below an offset of 0.17550 semitones, 89.9988 just above), so a pitch bisection can straddle the pass mark without landing in the margin band. Pulse width is smooth; the too-close test uses it.
+- A start can be close to a pass: `l1-s11`'s starts at 87.8 % (2.2 under the mark) and `l2-s11`'s at 75.1 %. The pins hold the exact numbers, and the invariant test requires only that no start passes.
+- A silent target gives every silent answer 100 % (`silent-l2-s23`); its start is silent too, and the near miss passes.
+- Envelope parameters barely move `sound/1`; the near misses are pitch, pulse width, cutoff and rate offsets.
+
+### Joining lane SKR's five
+
+`tests/golden/challenges/skr-v1.txt` (lane SKR) pins the stub scorers' columns for five of the codes here (`1R`, `PJ`, `DG`, `WC`, `3Q`) in its own format. The two files do not touch. To move them into this format, list `scorings = ["v1", "stub"]` in those five cases and run `--update`: the `stub` set (`sound-stub/1 structure-stub/1 combined-stub/1 time/1`) is added as a second block, beside the pinned `v1` one.

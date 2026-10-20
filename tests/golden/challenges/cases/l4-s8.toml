@@ -1,0 +1,5 @@
+description = "Level 4, seed 8: fifteen parameters and three routes. Near: the first LFO 1.6 times slower."
+code = "10G0-1000-0000-89"
+
+[answers.near]
+mul = { "lfo1.rate" = 0.625 }

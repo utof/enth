@@ -1,0 +1,39 @@
+---
+source: crates/enth-cli/tests/compare.rs
+expression: "gamekit::record(&s, &o, &[], &hide)"
+---
+exit: 1
+--- stdout
+{
+  "combined": "<num>",
+  "differences": "<hidden>",
+  "distance": "<num>",
+  "hint": "not yet: `differences` says which way each descriptor is off; `enth match --target <ref> --start <patch>` searches for the parameters",
+  "margin": "<num>",
+  "metric": "logmel-l1/1",
+  "mode": "patch",
+  "pass_mark": "<num>",
+  "passed": false,
+  "patch": "[TMP]/dark.patch.json",
+  "report": "<hidden>",
+  "schema": "enth.compare/2",
+  "scorers": [
+    "sound/1",
+    "structure/1",
+    "combined/1"
+  ],
+  "sound": "<num>",
+  "structure": "<num>",
+  "target": {
+    "code": null,
+    "fingerprint": null,
+    "kind": "patch",
+    "perf": null,
+    "phrase": {
+      "id": "<num>",
+      "name": "held"
+    },
+    "source": "[TMP]/pluck.patch.json"
+  }
+}
+--- stderr

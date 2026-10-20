@@ -1,0 +1,5 @@
+description = "Level 1, seed 11: a pulse wave at 43.1 % width; the start (a saw) scores 87.8 %, 2.2 points under the pass mark. Near: the pitch half a semitone off."
+code = "1040-1000-0000-BC"
+
+[answers.near]
+add = { "osc1.semi" = 0.5 }

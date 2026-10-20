@@ -1,0 +1,5 @@
+description = "Level 3, seed 333: a saw an octave down with a slow envelope and a low-pass at 208 Hz. Near: the cutoff a quarter higher."
+code = "10C0-1000-000A-DG"
+
+[answers.near]
+mul = { "filter1.cutoff" = 1.25 }

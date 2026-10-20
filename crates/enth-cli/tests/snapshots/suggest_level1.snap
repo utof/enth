@@ -1,0 +1,21 @@
+---
+source: crates/enth-cli/tests/suggest.rs
+expression: "gamekit::record(&s, &o, &[\"/level\", \"/levels\"])"
+---
+exit: 0
+--- stdout
+{
+  "aspect": "brightness",
+  "close": false,
+  "code": "1040-1000-0000-7M",
+  "difference": "higher",
+  "hint": "`--level 2` reveals more; each level costs one coach run, and the game counts a hint as assistance",
+  "level": 1,
+  "levels": 4,
+  "measured": false,
+  "patch": "[TMP]/p.patch.json",
+  "renders": "<num>",
+  "schema": "enth.suggest/1",
+  "text": "Check the brightness: your sound is brighter than the target."
+}
+--- stderr

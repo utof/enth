@@ -32,9 +32,9 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 | --- | --- | --- |
 | 0 | OK (for `check`: all expectations passed) | |
 | 1 | Ran fine, but `check` had failures | |
-| 2 | Usage error (bad flags) | `usage` (clap, with the usage line in `hint`), `bad_expect`, `bad_perf`, `nothing_to_apply` |
-| 3 | Validation error (bad patch, unknown param, value out of range) | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range` with `try`, `min`, `max`, `bad_value`, `wrong_unit`, `bad_json`, `unknown_op`, …), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema`, `not_a_patch` |
-| 4 | Render or analysis failure | `render_failed`, `analysis_failed`, `unsupported_wav`, `write_failed` |
+| 2 | Usage error (bad flags) | `usage` (clap, with the usage line in `hint`), `bad_expect`, `bad_perf`, `nothing_to_apply`; R1: `bad_level`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_workers`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase` |
+| 3 | Validation error (bad patch, unknown param, value out of range) | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range` with `try`, `min`, `max`, `bad_value`, `wrong_unit`, `bad_json`, `unknown_op`, …), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema`, `not_a_patch`; R1: every `enth-challenge` code a code or file can raise (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, …), `unknown_category`, `nothing_to_search` |
+| 4 | Render or analysis failure | `render_failed`, `analysis_failed`, `unsupported_wav`, `write_failed`; R1: `start_failed`, `pool_failed`, `silent_target` and the solver's own codes |
 | 5 | File not found | `file_not_found` |
 
 Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (possibly empty), and where it applies `path` (an address such as `filter1.cutof`, an op such as `ops[2]`, or a path into a file such as `generators[1].params.cutoff`), `file`, `known` (the valid names, when the list is short) and `errors` (every problem, when a file has several). On a terminal the error is plain text on stderr instead.
@@ -53,15 +53,16 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth render p.patch.json [--note C3 --vel 100 --hold 1.5 --dur 3 \| --perf perf.json] [--out p.wav] [--bits f32\|16\|24] [--seed n]` | Deterministic render. Writes a stereo 32-bit float WAV with an `enth` chunk holding the performance (`--bits 16\|24` for integer PCM, same chunk); reports `peak_dbfs`, `true_peak_dbtp`, `clipped_pct` and `clipping` over both channels |
 | `enth describe <wav\|patch> [--perf perf.json]` | Perceptual descriptors (renders first if given a patch). A WAV needs its performance. Precedence: `--perf`, then the `enth` chunk that `render` wrote, then an inferred note-off (`perf.source` says which: `flag`, `default`, `wav`, `inferred`, `none`); otherwise decay, sustain and release come back null, and `missing` says why for every null descriptor |
 | `enth check <wav\|patch> --expect '<list>' [--perf perf.json] [--no-fix] [--fix-budget 16]` | Pass/fail per expectation with its margin and noise, and one measured multi-parameter `fix` for all the failures |
-| `enth compare <wav\|patch> --target t.wav` | Score 0–100, component distances, perceptual differences |
-| `enth suggest p.patch.json --target t.wav \| --expect '<list>' [--top 5]` | Ranked parameter moves from measured sensitivities |
-| `enth match p.patch.json --target t.wav --free <addrs> [--budget 300] --out p2.patch.json` | Optimiser fine-tunes only the freed params |
+| `enth compare <patch> --target <patch\|wav>` / `--code <code>` / `--challenge FILE` | Distance to a reference (patch or WAV) with the perceptual differences, or the Recreate score against a challenge (`enth.compare/2`) |
+| `enth suggest p.patch.json --code <code> [--level 1..4]` | The game's hint button: which aspect is off, which module, which parameter and which way, a range; never the target's values at levels 1 to 3 (`enth.suggest/1`) |
+| `enth match --target <wav\|patch\|code> [--start p] [--free <addrs>\|--level N] [--budget N] [--workers N] [--stop-at D] --out p2.patch.json` | Optimiser fine-tunes only the freed params; the same result for any worker count (`enth.match/1`) |
 | `enth step p.patch.json --ops '<json>' \| --set k=v[,…] [--expect …\|--target …] --out p2.patch.json` | apply + render + describe + check/compare in one call (fewest round trips). It echoes only the features named in `--expect` plus a headline, unless `--full` |
-| `enth explain p.patch.json` | Plain-language explanation of the patch (doubles as lesson text) |
+| `enth explain <addr\|module\|kind> [--patch p]` | Plain text and JSON from the catalogue for a parameter, a module or a kind; with `--patch`, what a just-noticeable step of the parameter does in that patch (`enth.explain/1`) |
+| `enth challenge new\|show\|decode` | Make, regenerate and read Recreate challenges and their codes (`enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
 | `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
-**CLI v0 (P1a) is 13 commands:** `schema`, `modules`, `params`, `new`, `apply`, `get`, `diff`, `render`, `describe`, `check`, `step`, `guide` and `bench`, each with a defined output shape. `random`, `compare`, `suggest`, `match`, `explain`, `validate` and `migrate` come later.
+**CLI v0 (P1a) is 13 commands:** `schema`, `modules`, `params`, `new`, `apply`, `get`, `diff`, `render`, `describe`, `check`, `step`, `guide` and `bench`, each with a defined output shape. R1 adds `challenge`, `compare`, `suggest`, `match` and `explain` (below); `random`, `validate` and `migrate` come later (`challenge new` already generates targets with the game's randomizer).
 
 ### CLI v0 as built (2026-10-19, P1a lane C)
 
@@ -73,6 +74,8 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth.new/1`, `enth.templates/1` | `new`, `new --list` |
 | `enth.apply/2`, `enth.get/1`, `enth.diff/2` | `apply`, `get`, `diff` |
 | `enth.render/1`, `enth.describe/2`, `enth.check/2`, `enth.step/2`, `enth.bench/1` | `render`, `describe`, `check`, `step`, `bench` |
+| `enth.suggest/1`, `enth.match/1`, `enth.explain/1` | `suggest`, `match`, `explain` (R1, lane CL) |
+| `enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`, `enth.compare/2` | `challenge new\|show\|decode`, `compare` (R1: lane SKR's /1 shapes, versioned by lane CL) |
 | `enth.error/1` | every error |
 | `enth.patch/1`, `enth.ops/1`, `enth.perf/1`, `enth.wavmeta/1` | input documents: a patch file, the ops JSON, a performance, the WAV chunk |
 
@@ -212,38 +215,133 @@ The numbers are illustrative. A `fix` is one move for the whole list, rendered a
 - **`blocked` says what cannot be done.** When no move of the free parameters satisfies an item, the result names the item and the parameters sitting at their bounds, and says when the performance or the structure is the limit (a held note lasts at least `perf.hold`; there is no noise source). It never offers a hint that trades one failure for another.
 - **`check` on a WAV** gives margins and noise (the noise comes from re-analysing shifted windows, not re-rendering) but no `fix`: there is no patch to move.
 
-## Comparing to a reference (`compare`, `suggest`, `match`)
+## The Recreate game on the command line (`challenge`, `compare`, `suggest`, `match`, `explain`)
 
-```json
-{"schema":"enth.compare/1","score":71,
- "distance":{"spectral":0.22,"envelope":0.35,"pitch":0.01,"modulation":0.10,"stereo":0.05},
- "differences":[
-  {"feature":"spectrum.centroid_hz","ours":1840,"target":1120,"perceptual":"ours is noticeably brighter","severity":"high"},
-  {"feature":"envelope.attack_ms","ours":4,"target":45,"perceptual":"target fades in; ours clicks","severity":"high"},
-  {"feature":"detune.beating_hz","ours":1.8,"target":0.6,"perceptual":"ours sounds more chorused","severity":"medium"}]}
-```
+R1 (lanes SKR and CL, 2026-10-20). Every command here calls the functions the game's worker and the golden challenges call (`enth_challenge::{prepare_round, score_round}`, lane SN's coach, lane MT's search), so the CLI judges exactly what the plugin judges. All of it is deterministic: the same inputs give the same bytes, and `--workers` changes the speed only. The examples below are real output (engine 0.2.0, the `init` template, debug build) with the long fields shortened.
 
-```json
-{"schema":"enth.suggest/1","base_score":71,
- "moves":[
-  {"param":"filter1.cutoff","from":"3.2kHz","to":"1.4kHz","score_after":80,"moves_feature":"spectrum.centroid_hz -690Hz"},
-  {"param":"env1.attack","from":"2ms","to":"40ms","score_after":78,"moves_feature":"envelope.attack_ms +38ms"},
-  {"param":"osc1.fine","from":"18ct","to":"6ct","score_after":74,"moves_feature":"detune.beating_hz -1.2Hz"}]}
-```
-
-`suggest` renders ± small moves for each editable parameter (cheap: the engine renders hundreds of short clips per second), so its numbers are measured, not guessed. `match` hands the fine-tuning to CMA-ES, restricted to the parameters the agent frees, so structure stays the agent's choice.
-
-### `enth challenge` and `enth compare` as built (lane SKR, F2r; lane CL finishes them)
-
-A first version for the round skeleton: the same functions the game's worker and the golden challenges call, so the CLI scores exactly what the plugin scores.
+A challenge is named by `--code <code>` (what the game shows; case, hyphens and spaces are ignored) or `--challenge FILE` (an `enth.challenge/1` document). Anything about a challenge's *target* stays hidden unless the command's job is to show it (`challenge show --reveal`, `compare --reveal`): an agent that is playing the round must not be able to read the answer from the tools it uses to play.
 
 | Command | Output | Does |
 | --- | --- | --- |
-| `enth challenge new [--level N \| --code X] [--seed S]` | `enth.challenge-new/1` | A challenge from a level's preset (1–5, default 1) and a seed (default a fresh 40-bit one, so the code stays short; from 2^40 the long code), or the challenge a code names: the code and its form, the settings, the phrase, the target's fingerprint and its 8-digit prefix, the engine, and the `enth.challenge/1` JSON |
-| `enth challenge show <code> [--reveal] [--out T.patch.json]` | `enth.challenge-show/1` | Decodes the code (case, hyphens, spaces and Crockford's aliases ignored), regenerates the target, checks a long code's fingerprint prefix (`target_mismatch`) and engine (`engine_differs`, a warning on stderr), and shows the phrase, the scoring, the randomized parameters' addresses and the draw count; **no target value** unless `--reveal`, which adds every randomized value beside the start's and the target patch (`--out` writes it) |
-| `enth compare <patch> --code <code> \| --challenge FILE` | `enth.compare/1` | Scores the patch with `enth_challenge::score_round` and the scorers the challenge names (`sound/1` since lane SS; ST's structure and combined scores switch in by themselves): sound, structure and combined %, the pass mark, `passed`, the margin, the scorer ids and the full `enth.score-report/1`. **Exit 1 when it does not pass**, like `check` |
+| `enth challenge new [--level N \| --difficulty D] [--seed S] [--amount CAT=PCT,…] [--musical PCT] [--template N] [--generator N]` | `enth.challenge-new/2` | A challenge from a level's preset (1–5, default 1) or any difficulty 0–100, a seed (default a fresh 40-bit one, so the code stays short; from 2^40 the long code) and overrides: `--amount filter=80,effects=0` sets a category's share of randomized parameters (`oscillators`, `filter`, `envelopes`, `modulation`, `effects`, `structure`), `--musical` mixes the musical priors with uniform draws. A preset's settings give the short code; custom settings give the long one (`preset` is null). With `--code X` it re-derives the challenge a code names. Prints the code and its form, the settings, the phrase, the target's fingerprint and its 8-digit prefix, the engine and the `enth.challenge/1` JSON |
+| `enth challenge show <code> [--reveal] [--out T.patch.json]` | `enth.challenge-show/2` | Decodes the code, regenerates the target, checks a long code's fingerprint prefix (`target_mismatch`) and engine (`engine_differs`, a warning on stderr), and shows the phrase, the scoring, the randomized parameters' addresses and the draw count; **no target value** unless `--reveal`, which adds every randomized value beside the start's and the target patch (`--out` writes it) |
+| `enth challenge decode <code>` | `enth.challenge-decode/1` | Reads a code without rendering anything: its form, settings, the preset it equals (if any), the engine and the target prefix (a long code has them) |
+| `enth compare <patch> --code X \| --challenge FILE \| --target REF.patch.json \| --target REF.wav` | `enth.compare/2` | How close the patch is to a target, three ways (below) |
+| `enth suggest <patch> --code X [--level 1..4] [--workers N]` | `enth.suggest/1` | The game's hint button |
+| `enth match --target <wav\|patch\|code> […]` | `enth.match/1` | The optimiser |
+| `enth explain <addr\|module\|kind> [--patch p] [--perf …]` | `enth.explain/1` | What something does |
 
-Errors carry the code's or the round's own reason and hint (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, `out_of_range`, exit 3). Not yet: a WAV or patch reference (`--target`, the planned shape above), custom settings for `new` (amounts, `musical`, template), and `decode`; lane CL owns those and versions the schemas when the shapes change.
+```sh
+enth challenge new --level 2 --seed 7        # code 1080-1000-0000-7N, "preset":"Level 2", "form":"short"
+enth challenge new --level 3 --seed 9 --amount filter=50,effects=0 --musical 60
+                                             # code H000-G000-0000-0000-9CKR-0000-8075-4DC0-94S0-0Q, "preset":null
+enth challenge decode 1080-1000-0000-7N
+```
+
+```json
+{"schema":"enth.challenge-decode/1","code":"1080-1000-0000-7N","form":"short",
+ "preset":{"id":2,"name":"Level 2"},
+ "spec":{"amounts":[null,null,null,null,null,null],"difficulty":25,"generator":1,"musical":100,"seed":7,"template":0},
+ "categories":["oscillators","filter","envelopes","modulation","effects","structure"],
+ "engine":null,"engine_current":null,"target_prefix":null,
+ "hint":"`enth challenge show 1080-1000-0000-7N` regenerates the target and summarises it; …"}
+```
+
+`amounts` is one entry per category, in the order of `categories`; `null` means "what the difficulty gives". A short code holds a preset and a seed below 2^40; a long code holds any settings, the engine and the first four bytes of the target's fingerprint.
+
+### `enth compare`: three kinds of target
+
+`compare` always reports `distance` (the metric `enth match` minimises, `logmel-l1/1`, so a `match` and a `compare` of the same target agree) and, for a patch or a WAV reference, `differences`: the descriptors that differ by more than the game tolerates in them, in words, sorted by size. The scores are the game's.
+
+| Target | Scores | Exit 1 when |
+| --- | --- | --- |
+| `--code X` / `--challenge FILE` | `sound`, `structure`, `combined` %, `pass_mark`, `passed`, `margin`, `scorers` and the full `enth.score-report/1` as the game's results drawer shows it (each aspect's direction and closeness, **not** the target's readings: `--reveal` adds them) | the patch does not pass |
+| `--target REF.patch.json [--phrase N\|name]` | the same scores, on a hand-made round: the reference stands for the target, heard through a phrase of the table (default: the held note), the parameters it moved off their defaults stand for the randomized ones, the pass mark is the game's (90) | the patch does not pass |
+| `--target REF.wav [--perf …]` | none (`sound`, `structure`, `combined`, `pass_mark`, `passed`, `margin` and `report` are null): the game's scores scale by re-rendering the target with nuisance changes, which needs a patch behind it. The notes that made the WAV come from `--perf` or its `enth` chunk (`perf_required` when neither says) | never (exit 0) |
+
+```json
+{"schema":"enth.compare/2","mode":"patch","patch":"mine.patch.json",
+ "target":{"kind":"patch","source":"matched.patch.json","code":null,"fingerprint":null,
+           "phrase":{"id":1,"name":"held"},"perf":null},
+ "distance":1.835,"metric":"logmel-l1/1",
+ "sound":27.48,"structure":0,"combined":13.74,"pass_mark":90,"passed":false,"margin":-62.52,
+ "scorers":["sound/1","structure/1","combined/1"],"report":{"schema":"enth.score-report/1","…":"…"},
+ "differences":[
+  {"feature":"spectrum.centroid_hz","aspect":"brightness","direction":"higher","ours":3441,"target":296.7,
+   "units":12.86,"severity":"high","perceptual":"ours is brighter than the target"},
+  {"feature":"modulation.filter_sweep.depth_oct","aspect":"sweep","direction":"extra","ours":0.2045,"target":null,
+   "units":null,"severity":"high","perceptual":"ours has a filter sweep that the target lacks"},
+  {"feature":"envelope.decay_ms","aspect":"decay","direction":"lower","ours":25,"target":31,"units":1.128,
+   "severity":"low","perceptual":"ours decays faster than the target"}],
+ "hint":"not yet: `differences` says which way each descriptor is off; …"}
+```
+
+`units` is the size of the difference in units of the smallest difference the game tolerates in that descriptor (under 0.5 is not listed; 2 or more is `medium`, 4 or more `high`); `ours` and `target` are in the descriptor's unit. At most 8 differences are listed. `--phrase` and `--perf` are refused where they cannot apply (`phrase_fixed`, `perf_fixed`).
+
+Version 2 of `enth.compare` (it was `/1` in lane SKR's first cut): `code` and `fingerprint` moved into `target` (which also says the `kind`: `code`, `patch` or `wav`); `sound`, `structure`, `combined`, `pass_mark`, `passed`, `margin` and `report` may be null (a WAV has no game score); new `mode`, `distance`, `metric`, `differences`. **Behaviour change:** `compare --code` no longer prints the target's component readings in `report` unless `--reveal` (the first cut printed `target` and `answer` values for each component, which let a player read the answer off the scoring tool). `enth.challenge-new` and `enth.challenge-show` went to `/2` for `preset`.
+
+### `enth suggest`: the hint button
+
+`enth suggest p.patch.json --code X --level N` runs lane SN's coach: the target's descriptors become an expectation list, the solver measures a move on your patch and the verified move becomes four graded hints. **Level 1** says which aspect is off and how, **2** the module, **3** the parameter and which way to turn it, **4** a range for it. Levels 1 to 3 print no number at all, and level 4 a range around the fix, never the target's own value: the output carries a field only from its level on (a test checks that no level leaks a higher level's field). A hint makes a round *assisted* in the game; here it is only information. It costs the target's sensitivity (one render per randomized parameter) and a few renders of your patch (`renders` says how many).
+
+```json
+{"schema":"enth.suggest/1","patch":"mine.patch.json","code":"1080-1000-0000-7N","level":3,"levels":4,
+ "close":false,"measured":false,"aspect":"brightness","difference":"higher","module":"osc1","param":"osc1.wave",
+ "text":"Your sound is brighter than the target: change Wave on the oscillator (osc1).","renders":8,
+ "hint":"`--level 4` reveals more; each level costs one coach run, and the game counts a hint as assistance"}
+```
+
+At level 1 the object has `aspect`, `difference` and `text` only; level 2 adds `module`; level 3 adds `param` and, for a continuous parameter, `turn` (`raise` or `lower`); level 4 adds `range`, `[lo, hi]` in the parameter's real units. A categorical parameter (an oscillator's wave) is changed, not turned: it has no `turn` or `range`, and level 4's text names the setting. `measured` is true when the hint comes from a verified render (the coach's fix) rather than from comparing the patches or from general advice. `close: true` means nothing measured is off: submit it. `suggest` does not take `--target` yet (a patch or WAV reference); use `compare` for the differences against one.
+
+### `enth match`: the optimiser
+
+```sh
+enth match --target 1080-1000-0000-7N --free filter1.cutoff,osc1.wave --budget 40 --out matched.patch.json
+enth match --target t.wav --start p.patch.json --free filter1,env1.release --out p2.patch.json
+enth match --target t.patch.json --level 2 --stop-at 0.005
+enth match --target 1080-1000-0000-7N --free drawn --budget 600
+```
+
+`--target` is a WAV (its performance from `--perf` or the file's `enth` chunk), a patch (played with `--perf`, default C3 held 1.5 s) or a challenge code (played through its phrase from the challenge's start patch). `--start` is the patch to search from (default: the challenge's start for a code, the `init` template otherwise). The free set is what may move: addresses and module ids (`--free filter1,env1.release`), `observable` (every parameter that can be heard; the default), `drawn` (a code's randomized parameters) or `--level N` (the observable parameters of the Recreate categories up to level N: 1 oscillators and noise, 2 the filter, 3 envelopes, 4 LFOs, 5 effects and the voice). **Structure is never searched**: modules and routes stay as the start has them. The search is lane MT's: a heuristic start from the target's descriptors, then CMA-ES with restarts, inside `--budget` renders (default 1500, the probe included), stopping early at `--stop-at D`. `--seed` (default 1) explores differently; the same seed repeats the search exactly. **The output is identical for any `--workers`** (the batches go through one rayon pool and come back by index); only `--max-seconds` (a wall-clock cap, off by default) can make a result depend on the machine.
+
+```json
+{"schema":"enth.match/1","target":{"kind":"code","source":"1080-1000-0000-7N","fingerprint":"231b82a9…"},
+ "start":"challenge start","free":{"how":"listed","count":2,"continuous":1,"categorical":1,
+                                    "addrs":["filter1.cutoff","osc1.wave"]},
+ "settings":{"budget":40,"seed":1},"stop":"budget","renders":40,"runs":1,
+ "start_distance":1.049,"heuristic_distance":0.5138,"distance":0.05009,
+ "start_score":{"sound":38.88,"structure":53,"combined":44.95,"pass_mark":90,"passed":false},
+ "score":{"sound":98.62,"structure":85.41,"combined":92.94,"pass_mark":90,"passed":true},
+ "changes":[{"op":"set","target":"filter1.cutoff","from":"2kHz","to":"9.057kHz"},
+            {"op":"set","target":"osc1.wave","from":"saw","to":"triangle"}],
+ "ops":[{"set":"filter1.cutoff","to":9056.711},{"set":"osc1.wave","to":"triangle"}],
+ "trace":{"batches":10,"steps":[{"stage":"probe","renders":6,"best":0.05288},{"stage":"run 0","renders":10,"best":0.05223}]},
+ "wrote":"matched.patch.json","hint":"it passes the challenge: the best patch is written to --out"}
+```
+
+`score` and `start_score` appear for a code target only (the game's score of the best patch and of the start). `ops` replays with `enth apply --ops`. `trace.steps` lists the points where the search improved (`--full` lists every batch). `stop` is `budget` (the renders ran out), `goal` (`--stop-at` was reached), `exhausted` (nothing left to try) or `time` (`--max-seconds`).
+
+### `enth explain`: what something does
+
+`enth explain filter1.cutoff`, `enth explain svf` or `enth explain voice` prints the catalogue's facts in plain text on a terminal and as JSON otherwise: what it does, its unit and range, the descriptor it moves and how the knob is scaled. A module id (`filter1`) needs `--patch` to say which kind it is. With `--patch`, it also measures: lane SN's sensitivity renders the patch once and once with each parameter moved one just-noticeable step, and reports which descriptors moved. A parameter's `reach` is how far the most affected descriptor moves, in units of the smallest difference the game tolerates in it; under 0.25 the parameter is `inert` in this patch: nothing here notices it.
+
+```json
+{"schema":"enth.explain/1","what":"param","subject":"filter1.cutoff","kind":"svf","name":"Cutoff",
+ "summary":"The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.",
+ "param":{"key":"cutoff","unit":"Hz","min":20,"max":20000,"default":2000,"scale":"log","tier":"basic",
+          "accepts":["800","800Hz","1.2kHz","A4","C#3","Db2"],"automatable":true,"modulatable":true,
+          "moves":{"feature":"spectrum.centroid_hz","meaning":"Average frequency of the sound's energy, …"}},
+ "measured":{"patch":"pluck.patch.json","renders":2,"perf":{"…":"…"},
+             "params":[{"param":"filter1.cutoff","from":"1kHz","to":"890.9Hz","reach":0.3557,"inert":false,
+                        "effects":[{"feature":"spectrum.centroid_hz","change":"lower","from":1183,"to":1105}]}]},
+ "text":"filter1.cutoff (Cutoff) is a parameter of the filter (svf). …","hint":"…"}
+```
+
+Asking for a module (`params`) or a kind lists its parameters; a module with `--patch` measures them all and ranks them by `reach`. The `text` field is the same prose a terminal prints.
+
+### Errors and exits
+
+All errors are `enth.error/1` with a stable `code` and a `hint`. Usage mistakes are exit 2 (`bad_level`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_workers`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase`), a code or file the build refuses is exit 3 (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, `out_of_range`, `unknown_category`, `unknown_kind`, `unknown_param`, `nothing_to_search`), a render or analysis failure exit 4, a missing file exit 5. `compare` exits 1 when a scored patch does not pass, like `check`; `suggest`, `match`, `explain` and `challenge` exit 0 when they ran.
 
 ## Three typical workflows
 
@@ -257,8 +355,10 @@ Errors carry the code's or the round's own reason and hint (`bad_check`, `bad_sy
 **Reference sound** ("make this"):
 
 1. `enth describe target.wav` → LLM picks a template and structure.
-2. `enth step … --target target.wav` a few times for coarse moves; follow `suggest`.
-3. `enth match --free <params>` to fine-tune; stop at the score threshold.
+2. `enth step` with ops for the coarse moves, then `enth compare p.patch.json --target target.wav` for the distance and the descriptors that differ (`ours is brighter than the target`); repeat until the differences are small.
+3. `enth match --target target.wav --start p.patch.json --free <params> --out p2.patch.json` to fine-tune only the parameters the LLM freed; `--stop-at 0.005` ends it at a close match.
+
+**Recreate challenge** ("get as close to the game's target as you can"): `enth challenge new --level 2` gives a code; `enth compare p.patch.json --code <code>` scores a patch and exits 1 until it passes; `enth suggest p.patch.json --code <code> --level 1` (then 2, 3, 4) is the hint button; `enth match --target <code> --level 2` lets the optimiser have a go at the first two categories.
 
 **Edit** ("less clicky, a bit brighter"):
 

@@ -1,0 +1,57 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 0
+--- stdout
+{
+  "hint": "add --patch <patch> to measure what it does in your patch; `enth params <kind>` lists units and ranges",
+  "kind": "svf",
+  "name": "Filter",
+  "params": [
+    {
+      "default": "lp",
+      "effect": "The filter response: lp, bp, hp or notch.",
+      "key": "mode",
+      "moves": "spectrum.centroid_hz",
+      "name": "Mode",
+      "range": "lp|bp|hp|notch"
+    },
+    {
+      "default": "2kHz",
+      "effect": "The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.",
+      "key": "cutoff",
+      "moves": "spectrum.centroid_hz",
+      "name": "Cutoff",
+      "range": "20Hz..20kHz"
+    },
+    {
+      "default": "10%",
+      "effect": "Emphasis at the cutoff, from none (Q 0.5) to a sharp whistling peak (Q 25).",
+      "key": "resonance",
+      "name": "Resonance",
+      "range": "0%..100%"
+    },
+    {
+      "default": "0%",
+      "effect": "How much the cutoff follows the played note: 100 % moves it an octave per octave played.",
+      "key": "keytrack",
+      "name": "Key tracking",
+      "range": "0%..100%"
+    },
+    {
+      "default": "0dB",
+      "effect": "Gain into a soft saturator before the filter, normalised back after: adds grit and harmonics.",
+      "key": "drive",
+      "moves": "spectrum.harmonics_db",
+      "name": "Drive",
+      "range": "0dB..24dB"
+    }
+  ],
+  "schema": "enth.explain/1",
+  "subject": "svf",
+  "summary": "A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.",
+  "text": "svf: the filter module kind (svf). A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.\nParameters:\n  mode: lp|bp|hp|notch, default lp. The filter response: lp, bp, hp or notch. [moves spectrum.centroid_hz]\n  cutoff: 20Hz..20kHz, default 2kHz. The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps. [moves spectrum.centroid_hz]\n  resonance: 0%..100%, default 10%. Emphasis at the cutoff, from none (Q 0.5) to a sharp whistling peak (Q 25).\n  keytrack: 0%..100%, default 0%. How much the cutoff follows the played note: 100 % moves it an octave per octave played.\n  drive: 0dB..24dB, default 0dB. Gain into a soft saturator before the filter, normalised back after: adds grit and harmonics. [moves spectrum.harmonics_db]",
+  "what": "kind"
+}
+--- stderr

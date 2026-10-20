@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/matching.rs
+expression: "gamekit::record(&s, &o, &[])"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_budget",
+  "exit": 2,
+  "hint": "the default is 1500; a close match to a level 1 or 2 target takes 20 to 600",
+  "message": "--budget 0: a search needs at least one render",
+  "schema": "enth.error/1"
+}
+--- stderr

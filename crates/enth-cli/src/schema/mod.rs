@@ -5,12 +5,14 @@
 //! another version. There is no `jsonschema` crate: its default features build C code. The typed round trip in the
 //! tests keeps the schemas honest instead.
 
+pub mod game;
 pub mod types;
 
 use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::Value;
 
+pub use game::*;
 pub use types::*;
 
 /// The schema id of every object, `enth.<name>/<version>`. A shape change or a change of meaning bumps the
@@ -45,14 +47,22 @@ pub mod ids {
     pub const STEP: &str = "enth.step/2";
     /// `enth guide`.
     pub const GUIDE: &str = "enth.guide/1";
+    /// `enth suggest` (lane CL).
+    pub const SUGGEST: &str = "enth.suggest/1";
+    /// `enth match` (lane CL).
+    pub const MATCH: &str = "enth.match/1";
+    /// `enth explain` (lane CL).
+    pub const EXPLAIN: &str = "enth.explain/1";
     /// `enth bench`.
     pub const BENCH: &str = "enth.bench/1";
-    /// `enth challenge new` (lane SKR).
-    pub const CHALLENGE_NEW: &str = "enth.challenge-new/1";
-    /// `enth challenge show` (lane SKR).
-    pub const CHALLENGE_SHOW: &str = "enth.challenge-show/1";
-    /// `enth compare` (lane SKR, then CL).
-    pub const COMPARE: &str = "enth.compare/1";
+    /// `enth challenge new` (lane SKR; /2 adds `preset`, lane CL).
+    pub const CHALLENGE_NEW: &str = "enth.challenge-new/2";
+    /// `enth challenge show` (lane SKR; /2 adds `preset`, lane CL).
+    pub const CHALLENGE_SHOW: &str = "enth.challenge-show/2";
+    /// `enth challenge decode` (lane CL).
+    pub const CHALLENGE_DECODE: &str = "enth.challenge-decode/1";
+    /// `enth compare` (lane SKR; /2 compares with a patch or a WAV too, lane CL).
+    pub const COMPARE: &str = "enth.compare/2";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -195,6 +205,24 @@ pub const ENTRIES: &[Entry] = &[
         generate: gen_schema::<GuideOut>,
     },
     Entry {
+        name: "suggest",
+        id: ids::SUGGEST,
+        describes: "the output of enth suggest",
+        generate: gen_schema::<SuggestOut>,
+    },
+    Entry {
+        name: "match",
+        id: ids::MATCH,
+        describes: "the output of enth match",
+        generate: gen_schema::<MatchOut>,
+    },
+    Entry {
+        name: "explain",
+        id: ids::EXPLAIN,
+        describes: "the output of enth explain",
+        generate: gen_schema::<ExplainOut>,
+    },
+    Entry {
         name: "bench",
         id: ids::BENCH,
         describes: "the output of enth bench",
@@ -211,6 +239,12 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::CHALLENGE_SHOW,
         describes: "the output of enth challenge show",
         generate: gen_schema::<ChallengeShowOut>,
+    },
+    Entry {
+        name: "challenge-decode",
+        id: ids::CHALLENGE_DECODE,
+        describes: "the output of enth challenge decode",
+        generate: gen_schema::<ChallengeDecodeOut>,
     },
     Entry {
         name: "compare",

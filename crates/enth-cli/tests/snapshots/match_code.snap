@@ -1,0 +1,64 @@
+---
+source: crates/enth-cli/tests/matching.rs
+expression: "gamekit::record(&s, &o, &[])"
+---
+exit: 0
+--- stdout
+{
+  "changes": [],
+  "distance": "<num>",
+  "free": {
+    "addrs": [
+      "osc1.fine",
+      "osc1.semi",
+      "osc1.wave"
+    ],
+    "categorical": "<num>",
+    "continuous": "<num>",
+    "count": "<num>",
+    "how": "level 1"
+  },
+  "hint": "it does not pass yet: raise --budget, free more (--free observable, or a higher --level), or try another --seed; rerun with --out <patch> to write the best patch",
+  "ops": [],
+  "renders": "<num>",
+  "runs": "<num>",
+  "schema": "enth.match/1",
+  "score": {
+    "combined": "<num>",
+    "pass_mark": "<num>",
+    "passed": false,
+    "sound": "<num>",
+    "structure": "<num>"
+  },
+  "settings": {
+    "budget": "<num>",
+    "seed": 1
+  },
+  "start": "challenge start",
+  "start_distance": "<num>",
+  "start_score": {
+    "combined": "<num>",
+    "pass_mark": "<num>",
+    "passed": false,
+    "sound": "<num>",
+    "structure": "<num>"
+  },
+  "stop": "budget",
+  "target": {
+    "fingerprint": "006f84878298371ac20cb02fc88cd651319a79f92f71dd6d9a1336810d850871",
+    "kind": "code",
+    "source": "1040-1000-0000-7M"
+  },
+  "trace": {
+    "batches": "<num>",
+    "steps": [
+      {
+        "best": "<num>",
+        "renders": "<num>",
+        "stage": "probe"
+      }
+    ]
+  },
+  "wrote": null
+}
+--- stderr

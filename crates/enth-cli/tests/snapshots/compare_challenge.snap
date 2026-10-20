@@ -1,0 +1,39 @@
+---
+source: crates/enth-cli/tests/compare.rs
+expression: "gamekit::record(&s, &o, &[], &hide)"
+---
+exit: 1
+--- stdout
+{
+  "combined": "<num>",
+  "differences": "<hidden>",
+  "distance": "<num>",
+  "hint": "not yet: the report's components say which way and how far each aspect is off; `enth suggest` gives a graded hint, `enth match` searches",
+  "margin": "<num>",
+  "metric": "logmel-l1/1",
+  "mode": "challenge",
+  "pass_mark": "<num>",
+  "passed": false,
+  "patch": "[TMP]/init.patch.json",
+  "report": "<hidden>",
+  "schema": "enth.compare/2",
+  "scorers": [
+    "sound/1",
+    "structure/1",
+    "combined/1"
+  ],
+  "sound": "<num>",
+  "structure": "<num>",
+  "target": {
+    "code": "1040-1000-0000-7M",
+    "fingerprint": "006f84878298371ac20cb02fc88cd651319a79f92f71dd6d9a1336810d850871",
+    "kind": "code",
+    "perf": null,
+    "phrase": {
+      "id": "<num>",
+      "name": "held"
+    },
+    "source": "1040-1000-0000-7M"
+  }
+}
+--- stderr
