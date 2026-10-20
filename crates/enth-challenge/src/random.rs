@@ -646,16 +646,23 @@ impl Gen<'_> {
                 let v = match forced {
                     Some(v) => v,
                     None => {
+                        let domain = uniform(&ctx);
                         let raw = if d.from_prior(self.musical) {
                             prior(&ctx, &d)
                         } else {
-                            uniform_value(spec, uniform(&ctx), &d)
+                            uniform_value(spec, domain, &d)
                         };
                         let raw = if width < 1.0 && matches!(spec.kind, Kind::Float { .. }) {
                             let (s, t) = (spec.to_norm(from), spec.to_norm(spec.clamp(raw)));
                             spec.from_norm(s + width * (t - s))
                         } else {
                             raw
+                        };
+                        // A narrow amount pulls towards the start, which may sit outside the observable or safe
+                        // range (a 2 kHz high-pass two octaves below C3): keep the value inside it.
+                        let raw = match domain {
+                            Domain::Range(lo, hi) => raw.clamp(lo.min(hi), hi.max(lo)),
+                            Domain::Items(_) => raw,
                         };
                         quantize(spec, raw)
                     }
