@@ -456,7 +456,7 @@ v1 cannot see real moves under its own floor on a third of the targets, so `soun
 
 ### Module mapping and nuisance parameters
 
-Start phases and noise follow module ids, so `scoring_patch(target, answer)` renames the answer's modules onto the target's before the render. It starts from `matching::match_modules` and keeps the pairs whose two modules are both on or both off. **Local fallback** (lane ST's matcher is not on main yet): the leftovers pair by kind in section order, enabled with enabled first; an unpaired module whose id a pair took gets `zz1`, `zz2`, …. **Follow-up once ST is on main** (about 10 lines in `sound.rs`): keep `matching::Matcher::for_round(ctx)` in the prepared state and render `matcher.relabel(&matcher.pair(answer), answer)`, so SS and ST pair alike and routes come in the target's order.
+Start phases and noise follow module ids, so the answer's modules are renamed onto the target's before the render. The prepared state keeps `matching::Matcher::for_round(ctx)`, and `SoundPrepared::scoring_patch(answer)` renders `matcher.relabel(&matcher.pair(answer), answer)` ([Module matching](#module-matching)), so SS and ST pair alike and routes come in the target's order (lane ST switched it on merging SS, replacing the local fallback; `ss_determinism`'s pin did not move). The free `scoring_patch(target, answer)` is the same with the context-free pairing.
 
 The answer's **nuisance parameters** (lane RG's `Visibility::Nuisance`: phase modes, start phases, seeds) take the target's values in the scored render: an LFO retriggered at another start phase moved a level-4 score to 88 % before this, and P10 asks for at least 99. The generator never draws them, so they are not part of the challenge. The player still hears their own value.
 
@@ -542,7 +542,7 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER=/path/to/wasmtime cargo test -p enth-challenge
 - **GC (golden challenges):** prepare with `ScoringSpec::with_scorers(d, ScorerId::SOUND_V1, …)` so the pins keep `sound/1` whatever the default becomes. Scores are bit-exact, so pin them to 1e-6 and keep the ≥ 1e-3 margin rule. The target scores exactly 100, and the start fails at every level. Budget about 2 s per level-5 prepare. For `golden.yml`'s wasm job, the command above runs `ss_determinism`.
 - **RUI (results drawer):** headline `percent` against `pass_mark`. Rows: `components` in order with `direction` and `closeness` badges, and `component_text(&c)` for the words. **Never show `target` or `answer` during a round** (no peeking); after a reveal they are fine. `jnd`, `floor` and `scale` are for the CLI and debugging, not players. A progress bar may run from the start's percent to 90.
 - **SKR (worker):** `prepare_round` now renders, which takes 0.25–2 s. Run it on the worker and keep the `PreparedRound`. Measure Target ▶ and Mine ▶ with `loudness::integrated_lufs` on the 48 kHz mid channel and pass them to `Prepared::from_round` and `mine_lufs`.
-- **ST:** switch to `Matcher::for_round` + `relabel` once both lanes are on main (above). When ST switches `structure/1` and `combined/1` in `RECREATE_SCORERS`, the round fixture in enth-session (`state/v1/round.enth.json`) and `t6`'s "wrong id" need the same treatment SS gave them.
+- **ST:** done on merging SS: `Matcher::for_round` + `relabel` in `sound.rs`, the session's round fixture regenerated and `t6`'s wrong structure id.
 
 ### How `sound/2` replaces `sound/1`
 

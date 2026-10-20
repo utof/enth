@@ -17,7 +17,8 @@
 //!
 //! Per submit ([`Scorer::score`]):
 //!
-//! 1. **map the player's modules onto the target's ids** ([`scoring_patch`]), so start phases and noise, which
+//! 1. **map the player's modules onto the target's ids** ([`SoundPrepared::scoring_patch`]: lane ST's round
+//!    matcher, the pairing the structure score and the rings use), so start phases and noise, which
 //!    follow module ids, match, and give every nuisance parameter (phase modes, start phases, seeds) the target's
 //!    value; then render and analyse as above;
 //! 2. `distance` = metric v1.1 to the target; `jnd` = `max(0, distance − floor) / scale` plus the **pitch and
@@ -43,11 +44,11 @@ use enth_analysis::fft::{FftPath, FftPlanner};
 use enth_analysis::harmonics;
 use enth_analysis::pooled::{self, Pooled};
 use enth_dsp::util::rng::{derive, fnv1a64};
-use enth_patch::addr::{ModSource, ParamAddr, Target};
-use enth_patch::{ModuleId, Op, Patch, Section};
+use enth_patch::addr::ParamAddr;
+use enth_patch::{Op, Patch};
 use enth_render::{RenderSpec, render};
 
-use super::matching;
+use super::matching::{self, Matcher};
 use super::round::{PreparedScorer, Ready};
 use super::{
     Closeness, Component, ComponentKind, Direction, ScoreError, Scorer, ScorerId, SoundScore,
@@ -97,8 +98,9 @@ pub struct SoundV1;
 /// What `sound/1` keeps from the target.
 #[derive(Clone, Debug)]
 pub struct SoundPrepared {
-    target: Patch,
     phrase: Phrase,
+    /// The round's module pairing (lane ST's [`Matcher`]), the same the structure score and the rings use.
+    matcher: Matcher,
     clip: Clip,
     floor: f64,
     scale: f64,
@@ -109,6 +111,12 @@ pub struct SoundPrepared {
 }
 
 impl SoundPrepared {
+    /// The answer as `sound/1` renders it: its modules paired with the target's by the round's [`Matcher`] and
+    /// renamed onto the target's ids, sections and routes in the target's order ([`Matcher::relabel`]).
+    pub fn scoring_patch(&self, answer: &Patch) -> Patch {
+        self.matcher.relabel(&self.matcher.pair(answer), answer)
+    }
+
     /// The target's nuisance floor (metric v1.1).
     pub fn floor(&self) -> f64 {
         self.floor
@@ -183,8 +191,8 @@ impl Scorer for SoundV1 {
         )?;
         if clip.pooled.silent {
             return Ok(SoundPrepared {
-                target: ctx.target.clone(),
                 phrase,
+                matcher: Matcher::for_round(ctx),
                 clip,
                 floor: 0.0,
                 scale: calibrate::SCALE_MIN,
@@ -210,8 +218,8 @@ impl Scorer for SoundV1 {
             jitter.push(distance(&clip.pooled, &c.pooled));
         }
         Ok(SoundPrepared {
-            target: ctx.target.clone(),
             phrase,
+            matcher: Matcher::for_round(ctx),
             clip,
             floor,
             scale: calibrate::scale(&jitter),
@@ -222,7 +230,7 @@ impl Scorer for SoundV1 {
     }
 
     fn score(&self, prepared: &SoundPrepared, answer: &Patch) -> Result<SoundScore, ScoreError> {
-        let mapped = with_nuisance(scoring_patch(&prepared.target, answer), &prepared.nuisance);
+        let mapped = with_nuisance(prepared.scoring_patch(answer), &prepared.nuisance);
         let mut an = Analyser::new();
         let clip = an.clip(
             &render_mid(&mapped, &prepared.phrase, SCORING_SEED)?,
@@ -274,67 +282,18 @@ fn render_mid(patch: &Patch, phrase: &Phrase, seed: u64) -> Result<Vec<f32>, Sco
 /// start phases and noise follow module ids (design.md §5's seed rule), so an equivalent patch under other ids would
 /// otherwise score as different.
 ///
-/// The pairing starts from [`matching::match_modules`] (lane ST's matcher; a placeholder pairing by id and kind until
-/// ST lands it) and keeps its pairs whose two modules are both enabled or both off. **Local fallback** (until ST's
-/// matcher pairs across ids, and harmless after): the target's modules left over pair with the answer's left over of
-/// the same kind, in section order, enabled with enabled first. Answer modules still unpaired keep their ids unless a
-/// paired module took that id, in which case they get a fresh one (`zz1`, `zz2`, …). Every reference (sections,
-/// routes, slots, the amplitude envelope) follows. Only ids change: the render plays the player's parameters.
+/// The pairing is lane ST's matcher ([`super::matching`]): present modules pair per kind by content (disabled
+/// modules, silent generators and unrouted modulators are absent and keep their ids unless a partner took one), and
+/// [`Matcher::relabel`] renames the pairs onto the target's ids and puts generators, modulators and routes in the
+/// target's order, so an answer equal to the target up to ids and order renders the target's samples bit for bit.
+/// Only ids and order change: the render plays the player's parameters. This context-free form pairs as
+/// [`matching::match_modules`] does (held phrase, nothing randomized); the scorer itself uses the round's matcher
+/// ([`SoundPrepared::scoring_patch`]).
 pub fn scoring_patch(target: &Patch, answer: &Patch) -> Patch {
-    let m = matching::match_modules(target, answer);
-    let enabled = |p: &Patch, id: &ModuleId| p.find(id).is_some_and(|(_, x)| x.enabled);
-    let mut pairs: Vec<(ModuleId, ModuleId)> = m
-        .pairs()
-        .iter()
-        .filter(|(t, a)| enabled(target, t) == enabled(answer, a))
-        .cloned()
-        .collect();
-    let paired_t =
-        |pairs: &[(ModuleId, ModuleId)], id: &ModuleId| pairs.iter().any(|(t, _)| t == id);
-    let paired_a =
-        |pairs: &[(ModuleId, ModuleId)], id: &ModuleId| pairs.iter().any(|(_, a)| a == id);
-    for same_state in [true, false] {
-        for (_, t) in target.modules() {
-            if paired_t(&pairs, &t.id) {
-                continue;
-            }
-            let partner = answer.modules().find(|(_, a)| {
-                a.kind == t.kind
-                    && !paired_a(&pairs, &a.id)
-                    && (!same_state || a.enabled == t.enabled)
-            });
-            if let Some((_, a)) = partner {
-                pairs.push((t.id.clone(), a.id.clone()));
-            }
-        }
-    }
-    let taken: Vec<&ModuleId> = pairs.iter().map(|(t, _)| t).collect();
-    let mut renames: Vec<(ModuleId, ModuleId)> =
-        pairs.iter().map(|(t, a)| (a.clone(), t.clone())).collect();
-    let mut fresh = 0u32;
-    for (_, a) in answer.modules() {
-        if paired_a(&pairs, &a.id) {
-            continue;
-        }
-        if taken.contains(&&a.id) {
-            let new = loop {
-                fresh += 1;
-                let Ok(id) = ModuleId::numbered("zz", fresh) else {
-                    continue;
-                };
-                if !taken.contains(&&id) && answer.find(&id).is_none() {
-                    break id;
-                }
-            };
-            renames.push((a.id.clone(), new));
-        }
-    }
-    rename(answer, |id| {
-        renames
-            .iter()
-            .find(|(from, _)| from == id)
-            .map_or_else(|| id.clone(), |(_, to)| to.clone())
-    })
+    let held =
+        crate::phrases::phrase(crate::phrases::HELD).expect("the held phrase is in the table");
+    let matcher = Matcher::new(target, held, &matching::Draws::default());
+    matcher.relabel(&matcher.pair(answer), answer)
 }
 
 /// The target's nuisance parameters (phase modes, start phases, seeds: lane RG's [`Visibility::Nuisance`]) with
@@ -364,33 +323,6 @@ fn with_nuisance(mut p: Patch, nuisance: &[(ParamAddr, f32)]) -> Patch {
         }
     }
     p
-}
-
-/// `p` with every module id passed through `f` (ids, routes, slots, the amplitude envelope).
-fn rename(p: &Patch, f: impl Fn(&ModuleId) -> ModuleId) -> Patch {
-    let mut q = p.clone();
-    let map_addr = |a: &ParamAddr| match a.target() {
-        Target::Module(id) => {
-            ParamAddr::new(Target::Module(f(id)), a.param()).unwrap_or_else(|_| a.clone())
-        }
-        _ => a.clone(),
-    };
-    for section in Section::ALL {
-        for m in q.section_mut(section) {
-            m.id = f(&m.id);
-        }
-    }
-    for r in &mut q.routes {
-        if let ModSource::Module(id) = &r.src {
-            r.src = ModSource::Module(f(id));
-        }
-        r.dst = map_addr(&r.dst);
-    }
-    for s in q.slots.iter_mut().flatten() {
-        *s = map_addr(s);
-    }
-    q.voice.amp_env = f(&q.voice.amp_env);
-    q
 }
 
 // ---------------------------------------------------------------------------------------------------------------
