@@ -1,16 +1,15 @@
 name: golden
 
 # Golden renders (P1a lane S0; research report 04). One SHA-256 per case in tests/golden, the same on every platform:
-# Linux and Windows natively, wasm32-wasip1 under wasmtime, on every push to main and every pull request that touches
-# the engine. macOS runs on demand and weekly only: the policy dates from the private repository, where a macOS minute
-# cost about ten times a Linux minute ($0.062 against $0.006). Since 2026-10-20 the repository is public and standard
-# runners are free, so running macOS on every push is now a question of runner time only (coordinator's call).
+# Linux (x86-64 and aarch64), Windows and macOS (aarch64) natively and wasm32-wasip1 under wasmtime, on every push to
+# main and every pull request that touches the engine. macOS ran weekly only while the repository was private (a macOS
+# minute cost about ten times a Linux minute); since 2026-10-20 it is public, standard and arm64 runners are free, and
+# the coordinator moved macOS to every push and added linux-aarch64 (2026-10-21).
 # The expected hashes are the committed tests/golden/expected files. `cargo xtask golden --update` is refused under CI:
 # a golden changes on purpose, locally, and the commit message says why. A platform that differs breaks the
 # "same patch + seed = same samples" contract. The older spike-only checks stay in engine-golden.yml.
 # R1/S1 lane GC adds the golden challenges (tests/golden/challenges/, the `gc_challenges` test of enth-golden): they
-# run inside every `cargo test -p enth-golden` below (Linux and Windows debug and release, wasm32-wasip1 under wasmtime,
-# macOS weekly), and the `challenges` job adds the analysis and scoring determinism they stand on.
+# run inside every `cargo test -p enth-golden` below (Linux, Windows and macOS, wasm32-wasip1 under wasmtime), and the `challenges` job adds the analysis and scoring determinism they stand on.
 
 on:
   push:
@@ -36,7 +35,7 @@ on:
       - ".github/workflows/golden.yml"
   workflow_dispatch:
   schedule:
-    - cron: "41 4 * * 1"   # weekly: the macOS leg, and runner-image drift for the others
+    - cron: "41 4 * * 1"   # weekly: runner-image drift
 
 permissions:
   contents: read
@@ -60,6 +59,7 @@ jobs:
       matrix:
         include:
           - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: linux-aarch64, os: ubuntu-24.04-arm }
           - { name: windows-x86_64, os: windows-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,8 +78,8 @@ jobs:
       - name: Harness and golden tests, release
         run: cargo test --release --locked -p enth-golden
       # Both flag sets enable FMA. Rust never contracts a * b + c, and the code never calls mul_add, so nothing may change.
-      - name: Same hashes with the runner's own CPU features and with explicit FMA/AVX2 (Linux)
-        if: runner.os == 'Linux'
+      - name: Same hashes with the runner's own CPU features and with explicit FMA/AVX2 (Linux x86-64)
+        if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
           for flags in "-C target-cpu=native" "-C target-feature=+fma,+avx2"; do
@@ -125,12 +125,11 @@ jobs:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
         run: cargo test --release --locked --target wasm32-wasip1 -p enth-challenge --test ss_determinism
 
-  # On demand and weekly only (see the header). macos-latest is arm64: the first run shows whether aarch64 agrees
-  # with the x86-64 hashes. If it does not, the difference is a determinism bug to find, not a hash to override;
-  # a `[platform_hash]` entry in the expected file is the stop-gap (tests/golden/src/lib.rs).
+  # Every push and pull request since 2026-10-21 (see the header). macos-latest is arm64. If it disagrees with the
+  # x86-64 hashes, the difference is a determinism bug to find, not a hash to override; a `[platform_hash]` entry in
+  # the expected file is the stop-gap (tests/golden/src/lib.rs).
   macos:
-    name: goldens on macos-aarch64 (on demand and weekly)
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    name: goldens on macos-aarch64
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -149,7 +148,7 @@ jobs:
       - run: cargo test --release --locked -p enth-challenge --test ss_determinism
 
   # R1/S1 lane GC. The golden challenges (tests/golden/challenges/: generator hashes, scores and their margins) and RG's
-  # 1,000-hash generator golden are tests of enth-golden, so the `hashes` job, the `wasm` job and the weekly `macos` job
+  # 1,000-hash generator golden are tests of enth-golden, so the `hashes` job, the `wasm` job and the `macos` job
   # already run them. This job pins what they stand on, on Linux and Windows: the analysis bits (scalar FFT, spectral
   # features, descriptors, findings: `enth-analysis --test determinism`) and sound/1's bits (`enth-challenge --test
   # ss_determinism`, lane SS). Release only: the Linux debug builds run in ci.yml. A failure here means a platform computes
