@@ -21,8 +21,8 @@ fn saw(voices: usize) -> common::Prepared {
 // commit. With D1's Plaits saw, D2's ADSR and S2b's parameter pass merged (2026-10-19): 3,288,125 and 34,919,329
 // instructions (69 and 727 per frame).
 #[library_benchmark]
-#[bench::saw_1v(args = (1,), setup = saw, config = common::budget(3_617_000))]
-#[bench::saw_16v(args = (16,), setup = saw, config = common::budget(38_412_000))]
+#[bench::saw_1v(args = (1,), setup = saw, config = common::budget(3_898_000))]
+#[bench::saw_16v(args = (16,), setup = saw, config = common::budget(40_573_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }

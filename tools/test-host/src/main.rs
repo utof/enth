@@ -45,7 +45,8 @@ usage:
   enth-test-host process-stats <plugin.clap> [--secs 120] [--warmup 10] [--block 64] [--sr 48000] [--rt 10|none]
         [--require-rt] [--pin CPU,CPU] [--instances 1] [--threads 1] [--editor] [--notes SCRIPT] [--state FILE ...]
         [--gate g1|g1-multi] [--max-p99-us N] [--max-p999-us N] [--max-callback-p99-pct N]
-        [--inject busy-us=N[,every=K]]
+        [--inject busy-us=N[,every=K]] [--swap-state FILE [--swap-ms 250] [--swap-kind instant|crossfade]
+        [--max-swap-p99-us N] [--max-crossfade-p99-us N]] [--flood N [--flood-ms 250]]
   enth-test-host latency <plugin.clap> --param NAME --to VALUE [--from VALUE] [--notes SCRIPT] [--at 0.5]
         [--offsets 0,17,63] [--after 0.5] [--block 64] [--sr 48000] [--threshold-db -60] [--state FILE ...]
         [--max-onset-ms N] [--max-audible-ms N] [--inject delay-blocks=K]
@@ -849,6 +850,13 @@ fn cmd_process_stats(rest: &[String]) -> Outcome {
                 "max-callback-p99-pct",
                 "inject",
                 "plugin-id",
+                "swap-state",
+                "swap-ms",
+                "swap-kind",
+                "max-swap-p99-us",
+                "max-crossfade-p99-us",
+                "flood",
+                "flood-ms",
             ],
             &STATE_OPTIONS,
         ),
@@ -900,10 +908,60 @@ fn cmd_process_stats(rest: &[String]) -> Outcome {
         .one("inject")
         .map(enth_test_host::render::BusyFault::parse)
         .transpose()?;
+    // Spiky blocks (lane RT): structural edits and event floods.
+    if let Some(file) = args.one("swap-state") {
+        let base = opts
+            .state
+            .clone()
+            .ok_or("--swap-state needs --state FILE: the run alternates between the two")?;
+        let bytes = std::fs::read(file).map_err(|e| format!("--swap-state {file}: {e}"))?;
+        let format = state::Format::parse(args.one("state-format").unwrap_or("auto"))?;
+        let field = args.one("state-field").unwrap_or(state::DEFAULT_FIELD);
+        let alt = state::prepare(bytes, format, field, &plugin_version(&entry, &id))
+            .map_err(|e| format!("--swap-state {file}: {e}"))?;
+        opts.swap = Some(enth_test_host::spiky::Swap {
+            base_state: base,
+            alt_state: alt.bytes,
+            every_ms: args.number("swap-ms", 250u64)?,
+            kind: enth_test_host::spiky::SwapKind::parse(
+                args.one("swap-kind").unwrap_or("instant"),
+            )?,
+        });
+    } else if [
+        "swap-ms",
+        "swap-kind",
+        "max-swap-p99-us",
+        "max-crossfade-p99-us",
+    ]
+    .iter()
+    .any(|o| args.one(o).is_some())
+    {
+        return Err(
+            "--swap-ms, --swap-kind and the swap budgets need --swap-state FILE".to_owned(),
+        );
+    }
+    if let Some(events) = args.one("flood") {
+        let events: usize = events
+            .parse()
+            .map_err(|_| format!("--flood {events:?}: a number of note events"))?;
+        if events < 2 {
+            return Err(
+                "--flood needs at least 2 note events (one note-on and its note-off)".to_owned(),
+            );
+        }
+        opts.flood = Some(enth_test_host::spiky::Flood {
+            events,
+            every_ms: args.number("flood-ms", 250u64)?,
+        });
+    } else if args.one("flood-ms").is_some() {
+        return Err("--flood-ms needs --flood N".to_owned());
+    }
     for (name, slot) in [
         ("max-p99-us", &mut opts.max_p99_us),
         ("max-p999-us", &mut opts.max_p999_us),
         ("max-callback-p99-pct", &mut opts.max_callback_p99_pct),
+        ("max-swap-p99-us", &mut opts.max_swap_p99_us),
+        ("max-crossfade-p99-us", &mut opts.max_crossfade_p99_us),
     ] {
         if let Some(text) = args.one(name) {
             *slot = Some(

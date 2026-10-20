@@ -23,6 +23,10 @@
 //!   timer, like a host's worker pool. 16 instances on one thread cannot keep up on this laptop.
 //! - **`--editor`** opens the plugin's editor in a host-made X11 window for the whole run, to compare against a run
 //!   without. Only under Xvfb (`xvfb::require_xvfb`), never on a real display.
+//! - **Spiky blocks** (lane RT, [`crate::spiky`]): `--swap-state FILE --swap-ms 250 --swap-kind instant|crossfade`
+//!   loads two states alternately on the main thread while the audio thread plays, and reports the swap blocks and
+//!   the crossfade blocks apart from the normal ones; `--flood N --flood-ms 250` puts N note events into one block
+//!   that often and reports the flood blocks.
 //!
 //! The report carries an environment snapshot (`uptime`, load average at the start and the end, kernel and
 //! preemption model, CPU governor and frequency, `PipeWire`'s quantum, rtkit's limits) because the numbers mean
@@ -39,6 +43,7 @@ use serde_json::{Value, json};
 use crate::host::Host;
 use crate::procfs;
 use crate::render::{BusyFault, JobRunner, RenderConfig, RenderRequest, Session};
+use crate::spiky::{self, Blocks, Flood, Swap};
 
 /// The G1 chord: sixteen held notes.
 pub const G1_NOTES: &str = "C2@0+3600:0.8, G2@0+3600:0.8, C3@0+3600:0.8, E3@0+3600:0.8, G3@0+3600:0.8, B3@0+3600:0.8, C4@0+3600:0.8, D4@0+3600:0.8, E4@0+3600:0.8, G4@0+3600:0.8, A4@0+3600:0.8, B4@0+3600:0.8, C5@0+3600:0.8, E5@0+3600:0.8, G5@0+3600:0.8, C6@0+3600:0.8";
@@ -66,6 +71,13 @@ pub struct Options {
     pub max_callback_p99_pct: Option<f64>,
     /// Negative control: a deliberate slowdown inside the timed `process()` window.
     pub inject: Option<BusyFault>,
+    /// Structural edits during the run ([`crate::spiky`]).
+    pub swap: Option<Swap>,
+    /// Event floods during the run ([`crate::spiky`]).
+    pub flood: Option<Flood>,
+    /// Budgets, in microseconds, on the swap blocks' and the crossfade blocks' plugin p99.
+    pub max_swap_p99_us: Option<f64>,
+    pub max_crossfade_p99_us: Option<f64>,
 }
 
 impl Default for Options {
@@ -87,6 +99,10 @@ impl Default for Options {
             max_p999_us: None,
             max_callback_p99_pct: None,
             inject: None,
+            swap: None,
+            flood: None,
+            max_swap_p99_us: None,
+            max_crossfade_p99_us: None,
         }
     }
 }
@@ -413,6 +429,9 @@ struct ThreadRun {
     wall: Vec<u64>,
     cpu: Vec<u64>,
     late: Vec<u64>,
+    /// When each measured block's callback started and ended (`CLOCK_MONOTONIC` ns), for [`crate::spiky`].
+    starts: Vec<u64>,
+    ends: Vec<u64>,
     misses: usize,
     resyncs: usize,
     processors: Vec<StoppedPluginAudioProcessor<Host>>,
@@ -454,6 +473,8 @@ fn audio_thread(
     let mut wall = Vec::with_capacity(plan.measure_blocks);
     let mut cpu = Vec::with_capacity(plan.measure_blocks);
     let mut late = Vec::with_capacity(plan.measure_blocks);
+    let mut starts = Vec::with_capacity(plan.measure_blocks);
+    let mut ends = Vec::with_capacity(plan.measure_blocks);
     let (mut misses, mut resyncs) = (0usize, 0usize);
     plan.barrier.wait();
     let mut next = now_ns() + 20_000_000;
@@ -477,6 +498,8 @@ fn audio_thread(
             wall.push(done - woke);
             cpu.push(cpu_used);
             late.push(lateness);
+            starts.push(woke);
+            ends.push(done);
             if lateness + (done - woke) > plan.period_ns {
                 misses += 1;
             }
@@ -499,6 +522,8 @@ fn audio_thread(
         wall,
         cpu,
         late,
+        starts,
+        ends,
         misses,
         resyncs,
         processors: runners.into_iter().map(|r| r.finish().0).collect(),
@@ -514,6 +539,16 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
         crate::xvfb::require_xvfb()?;
         if opts.instances != 1 {
             return Err("--editor opens the editor of one instance: use --instances 1".to_owned());
+        }
+    }
+    if opts.swap.is_some() {
+        if opts.instances != 1 {
+            return Err(
+                "--swap-state loads the state of one instance: use --instances 1".to_owned(),
+            );
+        }
+        if opts.editor || opts.flood.is_some() {
+            return Err("--swap-state runs alone: no --editor or --flood with it".to_owned());
         }
     }
     if opts.rt.is_some() {
@@ -539,8 +574,18 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
     };
     let mut sessions = Vec::new();
     let mut processors = Vec::new();
+    let mut flood_plan = None;
     for _ in 0..opts.instances {
         let mut session = Session::open(entry, id, &request)?;
+        if let Some(flood) = opts.flood {
+            flood_plan = Some(spiky::add_floods(
+                &mut session.schedule,
+                flood,
+                opts.block,
+                opts.sample_rate,
+                (warm_blocks + measure_blocks) as u64,
+            ));
+        }
         processors.push(session.activate()?);
         sessions.push(session);
     }
@@ -585,9 +630,19 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
             })
             .collect::<Result<_, _>>()?;
 
-        // The main thread: the host's main loop. With --editor it keeps the editor open and serviced.
+        // The main thread: the host's main loop. With --editor it keeps the editor open and serviced; with
+        // --swap-state it loads the two states in turn, from the end of the warm-up.
         let mut editor_info = Value::Null;
-        if opts.editor {
+        let mut swap_loads = (Vec::new(), None);
+        if let Some(swap) = &opts.swap {
+            let begin = now_ns() + (opts.warmup_secs * 1e9) as u64 + 100_000_000;
+            swap_loads = spiky::drive_swaps(&mut sessions[0].instance, swap, begin, &|| {
+                finished.load(Ordering::SeqCst) >= threads
+            });
+            if swap_loads.1.is_some() {
+                stop.store(true, Ordering::Relaxed);
+            }
+        } else if opts.editor {
             let session = &mut sessions[0];
             editor_info = crate::editor::run_open_until(&mut session.instance, 2000, &|| {
                 finished.load(Ordering::SeqCst) >= threads
@@ -608,9 +663,9 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
                     .map_err(|_| "an audio thread panicked".to_owned())?
             })
             .collect::<Result<Vec<_>, String>>()?;
-        Ok((runs, editor_info))
+        Ok((runs, editor_info, swap_loads))
     });
-    let (runs, editor_info) = outcome?;
+    let (runs, editor_info, (swap_loads, swap_error)) = outcome?;
     let elapsed = started.elapsed().as_secs_f64();
     let loadavg_end = procfs::loadavg();
 
@@ -622,7 +677,28 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
     let mut rt_ok = true;
     let mut worst_callback_p99_pct: f64 = 0.0;
     let mut finished_runs: Vec<(usize, StoppedPluginAudioProcessor<Host>)> = Vec::new();
+    let mut swaps_report = Value::Null;
+    let mut floods_report = Value::Null;
+    let mut swap_p99s = None;
     for (index, (instances, run)) in runs.into_iter().enumerate() {
+        // Spiky blocks: thread 0's first instance (a swap run has one instance; a flood hits every instance alike).
+        if index == 0 && !run.plugin.is_empty() {
+            let blocks = Blocks {
+                starts: &run.starts,
+                ends: &run.ends,
+                plugin: &run.plugin[0],
+                callback: &run.wall,
+            };
+            if let Some(swap) = &opts.swap {
+                let (report, swap_p99, crossfade_p99) =
+                    spiky::swap_report(swap, &swap_loads, &blocks, opts.block);
+                swaps_report = report;
+                swap_p99s = Some((swap_p99, crossfade_p99));
+            }
+            if let (Some(flood), Some(plan)) = (opts.flood, &flood_plan) {
+                floods_report = spiky::flood_report(flood, plan, warm_blocks as u64, &blocks).0;
+            }
+        }
         total_misses += run.misses;
         let real_time = run.scheduling["real_time"] == true;
         if opts.rt.is_some() && !real_time {
@@ -702,6 +778,25 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
             "a thread's callback p99 is {worst_callback_p99_pct:.1} % of the period, over the {budget} % budget"
         ));
     }
+    if let Some(error) = &swap_error {
+        failures.push(format!("a structural edit failed: {error}"));
+    }
+    if let Some((swap_p99, crossfade_p99)) = swap_p99s {
+        if let Some(budget) = opts.max_swap_p99_us
+            && swap_p99 > budget
+        {
+            failures.push(format!(
+                "the swap blocks' process() p99 {swap_p99:.1} us is over the {budget} us budget"
+            ));
+        }
+        if let Some(budget) = opts.max_crossfade_p99_us
+            && crossfade_p99 > budget
+        {
+            failures.push(format!(
+                "the crossfade blocks' process() p99 {crossfade_p99:.1} us is over the {budget} us budget"
+            ));
+        }
+    }
     if opts.rt.is_some() && !rt_ok && opts.require_rt {
         failures.push("a thread did not get real-time scheduling (--require-rt)".to_owned());
     }
@@ -735,6 +830,8 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
             "pin": opts.pin,
             "editor": opts.editor,
             "inject": opts.inject.map(|f| format!("busy-us={} every={}", f.us, f.every)),
+            "swap": opts.swap.as_ref().map(|s| json!({ "kind": s.kind.name(), "every_ms": s.every_ms, "alt_state_bytes": s.alt_state.len() })),
+            "flood": opts.flood.map(|f| json!({ "note_events": f.events / 2 * 2, "every_ms": f.every_ms })),
             "notes": opts.notes,
             "state_bytes": opts.state.as_ref().map(Vec::len),
             "wall_seconds": elapsed,
@@ -754,10 +851,14 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
         "instances": instance_rows,
         "deadline_misses": total_misses,
         "editor_info": editor_info,
+        "swaps": swaps_report,
+        "floods": floods_report,
         "budgets": {
             "max_p99_us": opts.max_p99_us,
             "max_p999_us": opts.max_p999_us,
             "max_callback_p99_pct": opts.max_callback_p99_pct,
+            "max_swap_p99_us": opts.max_swap_p99_us,
+            "max_crossfade_p99_us": opts.max_crossfade_p99_us,
         },
         "warnings": warnings,
         "failures": failures,
