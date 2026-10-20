@@ -818,6 +818,12 @@ mod tests {
             Challenge::from_json(&inner).unwrap_err().code(),
             "bad_challenge"
         );
+        let start = json.replacen("\"template\":0}", "\"template\":0,\"x\":1}", 1);
+        assert_ne!(start, json);
+        assert_eq!(
+            Challenge::from_json(&start).unwrap_err().code(),
+            "bad_challenge"
+        );
         let target = json.replacen("\"kind\":\"seed\",", "\"kind\":\"seed\",\"x\":1,", 1);
         assert_eq!(
             Challenge::from_json(&target).unwrap_err().code(),

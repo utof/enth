@@ -84,6 +84,7 @@ JSON: `{"generator":1,"seed":42,"difficulty":25,"amounts":[null,null,null,null,n
 - It implements every version from 1 to `spec::LATEST_GENERATOR` (1 today). Freezing a new version bumps that constant in the same commit that adds the version's golden.
 - Levels: the presets put levels 1–5 at difficulty 0, 25, 50, 75 and 100. Any banding that keeps those five in different levels, in order, works; the proposal is 0–20, 21–40, 41–60, 61–80 and 81–100.
 - Template ids are append-only, like preset and phrase ids.
+- A seed made by a formula rather than drawn (a daily challenge's, say) keeps its top 40 bits (`>> 24`), so its code stays short.
 - Generation returns the target patch, the phrase id it picked, and the randomized addresses (observable, in address order), because the scorers' `TargetContext` takes all three.
 
 ### Presets
@@ -107,7 +108,7 @@ A challenge code is a `RandomSpec` that a person can read out, type and paste: a
 | **short** | 13 data + 1 check = **14** | a preset id, the generator (< 4096), the seed (< 2⁴⁰) | `1` | `1080-1000-0001-AC` (level 2, seed 42) |
 | **long** | 34–43 data + 1 check = **35–44** | the whole spec, the engine version, a 32-bit target-hash prefix | `H` | `H000-ZZZZ-ZZZZ-ZZZZ-ZA4C-0ZZZ-ZZG2-8XBS-N5J0-0X` |
 
-`ChallengeCode::short(spec)` gives the short form when the spec is a preset's with a short seed and generator; otherwise `ChallengeCode::long(spec, engine, target_prefix)`. `Challenge::code(prefix)` picks for you.
+About one code in seven ends in one of `* ~ $ = U`, Crockford's check symbols for 32–36. `ChallengeCode::short(spec)` gives the short form when the spec is a preset's with a short seed and generator; otherwise `ChallengeCode::long(spec, engine, target_prefix)`. `Challenge::code(prefix)` picks for you.
 
 ### Layout
 
