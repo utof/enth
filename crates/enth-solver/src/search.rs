@@ -7,17 +7,22 @@
 //! 1. **Free parameters** ([`FreeSet`]): the addresses a match may move, with their bounds from `ParamSpec`. A
 //!    `Float` is searched on its normalised axis; an `Enum`, a `Toggle` or a small `Int` (a waveform, a filter
 //!    mode) is categorical, chosen per run.
-//! 2. **Probe.** One batch evaluates the start patch and, for the start's categorical choice and each one-flip
-//!    neighbour of it, a *heuristic point*: the start with [`Heuristic`] suggestions applied (envelope times from the
-//!    descriptors, pitch from the measured f0, cutoff from a harmonic model of the waveform being tried). The
-//!    choices are ranked by that distance. The spike guessed the waveform from the audio; the descriptors do not
-//!    carry it, so the probe asks the metric instead (`docs/dsp/match.md`).
-//! 3. **Runs.** CMA-ES ([`cmaes`](crate::cmaes)) on the continuous axes, once per top-ranked categorical choice
-//!    (at most [`SearchCfg::runs_per_cycle`]), from that choice's heuristic point with a small step. When a run
-//!    collapses, stalls or becomes ill-conditioned, the next one starts. After a cycle the choices are re-ranked by
-//!    the best distance each reached and the two best get **IPOP** restarts: a random start and double the
-//!    population, every cycle.
-//! 4. **Budget.** [`SearchCfg::budget`] caps the renders, probe included, and the cap is hard: the last batch is cut
+//! 2. **Probe.** One batch evaluates the start patch and, for each categorical *choice* (every combination of the
+//!    categorical values when there are at most [`MAX_PROBED_CHOICES`], else the start's and its one-flip
+//!    neighbours), a *heuristic point*: the start with [`Heuristic`] suggestions applied (envelope times from the
+//!    descriptors, pitch from the measured f0, cutoff from a harmonic model of the waveform and filter mode being
+//!    tried). The choices are ranked by that distance. The spike guessed the waveform from the audio; the
+//!    descriptors do not carry it, so the probe asks the metric instead (`docs/dsp/match.md`).
+//! 3. **Runs.** CMA-ES ([`cmaes`](crate::cmaes)) on the continuous axes, once per top-ranked choice (at most
+//!    [`SearchCfg::runs_per_cycle`]), from that choice's heuristic point with a first step as narrow as the
+//!    heuristic is precise ([`Suggestion::spread`]). A run ends when it collapses, stalls or becomes
+//!    ill-conditioned.
+//! 4. **Expand.** When the runs are done, the best choice's one-flip neighbours that were not probed are evaluated
+//!    at its best continuous point and the best two get a run: a coordinate descent over the categorical axes, for
+//!    when there are too many combinations to probe at once.
+//! 5. **Restart.** Then the two best choices get **IPOP** restarts, one cycle after another: a random start
+//!    (keeping what the heuristic measured precisely) and double the population.
+//! 6. **Budget.** [`SearchCfg::budget`] caps the renders, probe included, and the cap is hard: the last batch is cut
 //!    short rather than overshooting.
 //!
 //! # Determinism and parallelism
@@ -54,18 +59,23 @@ pub mod free;
 pub mod objective;
 
 use core::fmt;
+use std::collections::VecDeque;
 
 use enth_dsp::util::rng::Rng;
 use enth_patch::Patch;
 
-use crate::cmaes::{Cmaes, CmaesError, StopReason, WORST_FITNESS, default_lambda};
+use crate::cmaes::{Cmaes, CmaesError, WORST_FITNESS, default_lambda};
 use crate::heuristic::{Heuristic, PRECISE, Suggestion};
 
 pub use free::{Axis, AxisKind, FreeSet, MAX_CATEGORIES, Point};
 pub use objective::{FAILED, MetricTarget, MetricWorker, Objective};
 
-/// The most categorical choices probed (the start's and its one-flip neighbours).
-pub const MAX_PROBED_CHOICES: usize = 24;
+/// The most categorical choices probed at once: every combination of the categorical values up to this many, else the
+/// start's choice and its one-flip neighbours.
+pub const MAX_PROBED_CHOICES: usize = 32;
+
+/// The most categorical choices a search keeps (the probe's and the expansions').
+const MAX_CHOICES: usize = 96;
 
 /// Why a search could not start or continue.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -165,7 +175,7 @@ pub struct SearchCfg {
     pub sigma_random: f64,
     /// Stop as soon as the best distance is at or below this.
     pub stop_at: Option<f64>,
-    /// How many categorical choices get a run in the first cycle (the best by probe distance); later cycles run two.
+    /// How many categorical choices get a run after the probe (the best by probe distance); later rounds run two.
     pub runs_per_cycle: usize,
     /// Apply the [`Heuristic`] suggestions (when a heuristic is given). Off, every point starts from the start patch.
     pub use_heuristic: bool,
@@ -239,7 +249,7 @@ pub enum StopCause {
     Goal,
     /// The caller's `after_batch` asked to stop (a wall-clock cap lives there).
     Cancelled,
-    /// There was nothing more to try (no continuous axis to run CMA-ES on, and the probe is done).
+    /// There was nothing more to try (no continuous axis to run CMA-ES on, and no better categorical choice).
     Exhausted,
 }
 
@@ -270,18 +280,37 @@ pub struct SearchResult {
 #[derive(Clone, Debug)]
 struct Choice {
     cat: Vec<usize>,
-    /// The continuous start of its runs in the first cycle: the heuristic point.
+    /// Where its warm runs start on the continuous axes: the heuristic point, or the best point of the choice it was
+    /// expanded from.
     mean: Vec<f64>,
     /// Per continuous axis, the scale of the first step around `mean` (1 = the default step; the heuristic narrows
-    /// the axes it measured precisely). CMA-ES runs on `u / scale`.
+    /// the axes it measured less precisely). CMA-ES runs on `u / scale`.
     scale: Vec<f64>,
+    /// Per continuous axis, whether the heuristic measured it precisely enough to leave it alone: a pinned axis
+    /// keeps its `mean` in every run (the pitch is a needle in the metric: see [`PRECISE`]).
+    pinned: Vec<bool>,
+    /// Its distance when probed (`NaN` before).
     probe: f64,
+    /// The best distance any candidate of this choice reached, and where (on the continuous axes).
     best: f64,
+    best_cont: Vec<f64>,
+    /// Its neighbours have been probed.
+    expanded: bool,
+}
+
+/// A CMA-ES run to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Job {
+    /// From the choice's `mean`, with the default first step.
+    Warm(usize),
+    /// From a random point (keeping the precisely measured axes), with a larger step and population.
+    Random(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Probe,
+    Expand,
     Runs,
     Done,
 }
@@ -297,19 +326,23 @@ pub struct Search {
     rng: Rng,
     /// Where the start patch sits on every axis.
     start_point: Point,
-    lambda0: usize,
     n_cont: usize,
     phase: Phase,
     choices: Vec<Choice>,
-    order: Vec<usize>,
+    /// Runs still to do, in order.
+    todo: VecDeque<Job>,
+    /// Random-restart rounds begun.
     cycle: usize,
-    pos: usize,
     runs: usize,
     es: Option<Cmaes>,
     run_choice: usize,
+    /// The continuous axes (indices into the continuous list) the running CMA-ES moves: the choice's unpinned ones.
+    run_axes: Vec<usize>,
+    /// The scale per continuous axis the running CMA-ES uses (the choice's, but 1 for an axis whose pin is released).
+    run_scale: Vec<f64>,
     /// The points of the batch `ask` returned, and whether each patch could be built.
     pending: Vec<(Point, bool)>,
-    /// For a probe batch: the choice each point belongs to (`None` for the start point).
+    /// For a probe or expand batch: the choice each point belongs to (`None` for the start point).
     pending_choice: Vec<Option<usize>>,
     pending_full: bool,
     evals: usize,
@@ -320,6 +353,38 @@ pub struct Search {
     suggestions: Vec<Suggestion>,
     trace: Vec<TraceStep>,
     stop: Option<StopCause>,
+}
+
+/// Every combination of the categorical values, the start's first, then in axis order; `None` if there are more
+/// than `cap`.
+fn all_assignments(free: &FreeSet, start: &[usize], cap: usize) -> Option<Vec<Vec<usize>>> {
+    let sizes: Vec<usize> = free
+        .categorical()
+        .iter()
+        .map(|&i| match &free.axes()[i].kind {
+            AxisKind::Categorical { values } => values.len(),
+            AxisKind::Continuous => 1,
+        })
+        .collect();
+    let mut total = 1usize;
+    for s in &sizes {
+        total = total.checked_mul(*s)?;
+        if total > cap {
+            return None;
+        }
+    }
+    let mut out: Vec<Vec<usize>> = Vec::with_capacity(total);
+    for n in 0..total {
+        let mut rest = n;
+        let mut cat = vec![0; sizes.len()];
+        for k in (0..sizes.len()).rev() {
+            cat[k] = rest % sizes[k];
+            rest /= sizes[k];
+        }
+        out.push(cat);
+    }
+    out.sort_by_key(|c| c != start);
+    Some(out)
 }
 
 impl Search {
@@ -335,18 +400,12 @@ impl Search {
         cfg: &SearchCfg,
     ) -> Result<Search, SearchError> {
         cfg.validate()?;
-        if free.axes().iter().any(|a| start.value(&a.addr).is_none()) {
-            let bad = free.axes().iter().find(|a| start.value(&a.addr).is_none());
+        if let Some(bad) = free.axes().iter().find(|a| start.value(&a.addr).is_none()) {
             return Err(SearchError::UnknownParam {
-                addr: bad.map(|a| a.addr.to_string()).unwrap_or_default(),
+                addr: bad.addr.to_string(),
             });
         }
         let n_cont = free.continuous().len();
-        let lambda0 = if cfg.lambda > 0 {
-            cfg.lambda
-        } else {
-            default_lambda(n_cont.max(1))
-        };
         let start_point = free.point_of(start);
         let heuristic = heuristic.filter(|_| cfg.use_heuristic).cloned();
         Ok(Search {
@@ -356,16 +415,16 @@ impl Search {
             cfg: cfg.clone(),
             rng: Rng::new(enth_dsp::util::rng::derive(cfg.seed, SEARCH_STREAM)),
             start_point: start_point.clone(),
-            lambda0,
             n_cont,
             phase: Phase::Probe,
             choices: Vec::new(),
-            order: Vec::new(),
+            todo: VecDeque::new(),
             cycle: 0,
-            pos: 0,
             runs: 0,
             es: None,
             run_choice: 0,
+            run_axes: Vec::new(),
+            run_scale: Vec::new(),
             pending: Vec::new(),
             pending_choice: Vec::new(),
             pending_full: false,
@@ -392,7 +451,7 @@ impl Search {
     }
 
     /// The heuristic point of a categorical choice: the start with the heuristic's suggestions (for a patch carrying
-    /// that choice) applied on the normalised axes.
+    /// that choice) applied on the normalised axes, the first-step scale of every axis, and the suggestions.
     fn heuristic_point(&self, cat: &[usize]) -> (Point, Vec<f64>, Vec<Suggestion>) {
         let mut point = Point {
             cont: self.start_point.cont.clone(),
@@ -437,9 +496,13 @@ impl Search {
             Phase::Probe => {
                 let start_point = self.start_point.clone();
                 points.push((start_point.clone(), None));
-                let mut cats = vec![start_point.cat.clone()];
-                cats.extend(self.free.neighbours(&start_point.cat));
-                cats.truncate(MAX_PROBED_CHOICES);
+                let cats = all_assignments(&self.free, &start_point.cat, MAX_PROBED_CHOICES)
+                    .unwrap_or_else(|| {
+                        let mut cats = vec![start_point.cat.clone()];
+                        cats.extend(self.free.neighbours(&start_point.cat));
+                        cats.truncate(MAX_PROBED_CHOICES);
+                        cats
+                    });
                 for (ci, cat) in cats.into_iter().enumerate() {
                     let (hp, scale, sug) = self.heuristic_point(&cat);
                     if ci == 0 {
@@ -448,15 +511,33 @@ impl Search {
                     self.choices.push(Choice {
                         cat,
                         mean: hp.cont.clone(),
+                        pinned: scale.iter().map(|s| *s < PRECISE).collect(),
                         scale,
                         probe: f64::NAN,
                         best: f64::INFINITY,
+                        best_cont: hp.cont.clone(),
+                        expanded: false,
                     });
                     // The incumbent's heuristic point is the start itself when the heuristic changed nothing.
                     if ci == 0 && hp == start_point {
                         continue;
                     }
                     points.push((hp, Some(ci)));
+                }
+                self.pending_full = true;
+            }
+            Phase::Expand => {
+                // The new choices are the last ones added; each is probed at the point it will start from.
+                for (ci, c) in self.choices.iter().enumerate() {
+                    if c.probe.is_nan() {
+                        points.push((
+                            Point {
+                                cont: c.mean.clone(),
+                                cat: c.cat.clone(),
+                            },
+                            Some(ci),
+                        ));
+                    }
                 }
                 self.pending_full = true;
             }
@@ -469,15 +550,17 @@ impl Search {
                     return Vec::new();
                 };
                 let choice = &self.choices[self.run_choice];
-                let (cat, scale) = (choice.cat.clone(), choice.scale.clone());
+                let (cat, scale) = (choice.cat.clone(), self.run_scale.clone());
+                let pinned_at = choice.mean.clone();
+                let axes = self.run_axes.clone();
                 let sampled = es.ask();
                 self.pending_full = sampled.len() <= room;
                 points.extend(sampled.into_iter().map(|v| {
-                    let cont = v
-                        .iter()
-                        .zip(&scale)
-                        .map(|(v, s)| (v * s).clamp(0.0, 1.0))
-                        .collect();
+                    // Pinned axes keep the heuristic's value; the others come from the optimiser, un-scaled.
+                    let mut cont = pinned_at.clone();
+                    for (&k, v) in axes.iter().zip(&v) {
+                        cont[k] = (v * scale[k]).clamp(0.0, 1.0);
+                    }
                     (
                         Point {
                             cont,
@@ -512,49 +595,76 @@ impl Search {
         patches
     }
 
-    /// Start the next CMA-ES run of the schedule.
-    fn begin_run(&mut self) {
-        let cycle_len = self.cycle_len();
-        let choice = self.order[self.pos.min(cycle_len - 1)];
-        self.run_choice = choice;
-        // CMA-ES runs on v = u / scale, so a narrow scale makes a narrow first step (and a box [0, 1 / scale]).
-        let scale = self.choices[choice].scale.clone();
-        let heuristic_mean = self.choices[choice].mean.clone();
-        let (mean_u, sigma, lambda) = if self.cycle == 0 {
-            (heuristic_mean, self.cfg.sigma_start, self.lambda0)
-        } else {
-            // A random restart re-randomises what the descriptors left open and keeps what they measured precisely.
-            let mean: Vec<f64> = (0..self.n_cont)
-                .map(|k| {
-                    let r = self.rng.unit_f64();
-                    if scale[k] < PRECISE { heuristic_mean[k] } else { r }
-                })
-                .collect();
-            (
-                mean,
-                self.cfg.sigma_random,
-                self.lambda0 << self.cycle.min(MAX_DOUBLINGS),
-            )
-        };
-        let mean: Vec<f64> = mean_u.iter().zip(&scale).map(|(u, s)| u / s).collect();
-        let upper: Vec<f64> = scale.iter().map(|s| 1.0 / s).collect();
-        let seed = self.rng.next_u64();
-        match Cmaes::new(mean, sigma, lambda, vec![0.0; self.n_cont], upper, seed) {
-            Ok(es) => {
-                self.es = Some(es);
-                self.runs += 1;
-            }
-            Err(_) => self.phase = Phase::Done,
-        }
+    /// The continuous axes of a choice that CMA-ES may move: the unpinned ones, or every one once the pins are
+    /// released (a wrong measurement must not rule out the answer for good).
+    fn movable_axes(&self, choice: usize) -> Vec<usize> {
+        let released = self.cycle >= PIN_CYCLES;
+        (0..self.n_cont)
+            .filter(|&k| released || !self.choices[choice].pinned[k])
+            .collect()
     }
 
-    fn cycle_len(&self) -> usize {
-        let want = if self.cycle == 0 {
-            self.cfg.runs_per_cycle
+    /// Start the next CMA-ES run of the schedule: the next queued job whose choice has an axis to move.
+    fn begin_run(&mut self) {
+        while let Some(job) = self.todo.pop_front() {
+            let (Job::Warm(choice) | Job::Random(choice)) = job;
+            let axes = self.movable_axes(choice);
+            if axes.is_empty() {
+                continue;
+            }
+            // CMA-ES runs on v = u / scale, so a narrow scale makes a narrow first step (and a box [0, 1 / scale]).
+            // A released pin starts from the full step again.
+            let released = self.cycle >= PIN_CYCLES;
+            let scale: Vec<f64> = (0..self.n_cont)
+                .map(|k| {
+                    if released && self.choices[choice].pinned[k] {
+                        1.0
+                    } else {
+                        self.choices[choice].scale[k]
+                    }
+                })
+                .collect();
+            let warm_mean = self.choices[choice].mean.clone();
+            let (mean_u, sigma, lambda) = match job {
+                Job::Warm(_) => (warm_mean, self.cfg.sigma_start, self.lambda_for(axes.len(), 0)),
+                Job::Random(_) => {
+                    // A random restart re-randomises what the descriptors left open. The draw is taken for every
+                    // axis, so the stream does not depend on which are pinned.
+                    let mean: Vec<f64> = (0..self.n_cont).map(|_| self.rng.unit_f64()).collect();
+                    (
+                        mean,
+                        self.cfg.sigma_random,
+                        self.lambda_for(axes.len(), self.cycle.min(MAX_DOUBLINGS)),
+                    )
+                }
+            };
+            let mean: Vec<f64> = axes.iter().map(|&k| mean_u[k] / scale[k]).collect();
+            let upper: Vec<f64> = axes.iter().map(|&k| 1.0 / scale[k]).collect();
+            let seed = self.rng.next_u64();
+            match Cmaes::new(mean, sigma, lambda, vec![0.0; axes.len()], upper, seed) {
+                Ok(es) => {
+                    self.es = Some(es);
+                    self.run_choice = choice;
+                    self.run_axes = axes;
+                    self.run_scale = scale;
+                    self.runs += 1;
+                }
+                Err(_) => self.phase = Phase::Done,
+            }
+            return;
+        }
+        // Nothing left that can run: ask the scheduler (it expands, restarts or ends the search).
+        self.schedule();
+    }
+
+    /// The population of a run over `dims` axes after `doublings` doublings: the setting, or Hansen's default.
+    fn lambda_for(&self, dims: usize, doublings: usize) -> usize {
+        let base = if self.cfg.lambda > 0 {
+            self.cfg.lambda
         } else {
-            2
+            default_lambda(dims)
         };
-        want.min(self.order.len()).max(1)
+        base << doublings
     }
 
     /// The distances of the batch the last [`Search::ask`] returned, in the same order. A non-finite value counts as
@@ -570,7 +680,7 @@ impl Search {
             });
         }
         let stage = match self.phase {
-            Phase::Probe => Stage::Probe,
+            Phase::Probe | Phase::Expand => Stage::Probe,
             _ => Stage::Run(self.runs.saturating_sub(1)),
         };
         let fit: Vec<f64> = distances
@@ -595,9 +705,15 @@ impl Search {
         });
         match self.phase {
             Phase::Probe => self.finish_probe(&fit),
+            Phase::Expand => self.finish_expand(&fit),
             Phase::Runs => {
                 let c = self.run_choice;
-                self.choices[c].best = self.choices[c].best.min(batch_best);
+                for ((point, _), &f) in self.pending.iter().zip(&fit) {
+                    if f < self.choices[c].best {
+                        self.choices[c].best = f;
+                        self.choices[c].best_cont.clone_from(&point.cont);
+                    }
+                }
                 if self.pending_full {
                     let es_fit: Vec<f64> = fit
                         .iter()
@@ -605,10 +721,9 @@ impl Search {
                         .collect();
                     if let Some(es) = self.es.as_mut() {
                         es.tell(&es_fit)?;
-                        if es.stop_reason().is_some_and(|r| {
-                            matches!(r, StopReason::TolX | StopReason::Condition | StopReason::Stall)
-                        }) {
-                            self.end_run();
+                        if es.stop_reason().is_some() {
+                            self.es = None;
+                            self.schedule();
                         }
                     }
                 }
@@ -625,63 +740,146 @@ impl Search {
         Ok(())
     }
 
-    fn finish_probe(&mut self, fit: &[f64]) {
-        self.start_f = fit.first().copied();
-        let mut incumbent_probed = false;
+    /// Record a probe or expand batch against its choices.
+    fn record_probe(&mut self, fit: &[f64]) {
         for (k, choice) in self.pending_choice.iter().enumerate() {
             if let Some(ci) = *choice {
-                self.choices[ci].probe = fit[k];
-                self.choices[ci].best = self.choices[ci].best.min(fit[k]);
-                incumbent_probed |= ci == 0;
+                let c = &mut self.choices[ci];
+                c.probe = fit[k];
+                if fit[k] < c.best {
+                    c.best = fit[k];
+                    c.best_cont.clone_from(&self.pending[k].0.cont);
+                }
             }
         }
-        // The incumbent's heuristic point was the start itself when no separate point was evaluated.
-        if !incumbent_probed {
-            if let Some(c) = self.choices.first_mut() {
-                c.probe = fit[0];
-                c.best = c.best.min(fit[0]);
-            }
-        } else {
-            self.heuristic_f = Some(self.choices[0].probe);
-        }
-        // A probe cut short by the budget leaves later choices unranked: they sort last.
-        let mut order: Vec<usize> = (0..self.choices.len()).collect();
-        order.sort_by(|&a, &b| {
-            let key = |i: usize| {
-                let p = self.choices[i].probe;
-                if p.is_nan() { f64::INFINITY } else { p }
-            };
-            key(a).total_cmp(&key(b)).then(a.cmp(&b))
-        });
-        self.order = order;
-        self.phase = if self.n_cont == 0 {
-            Phase::Done
-        } else {
-            Phase::Runs
-        };
     }
 
-    fn end_run(&mut self) {
-        self.es = None;
-        self.pos += 1;
-        if self.pos >= self.cycle_len() {
-            self.cycle += 1;
-            self.pos = 0;
-            // Re-rank by the best each choice reached, ties by the earlier order.
-            let rank: Vec<usize> = self.order.clone();
-            let mut order = rank.clone();
-            order.sort_by(|&a, &b| {
-                self.choices[a]
-                    .best
-                    .total_cmp(&self.choices[b].best)
-                    .then(
-                        rank.iter()
-                            .position(|&x| x == a)
-                            .cmp(&rank.iter().position(|&x| x == b)),
-                    )
-            });
-            self.order = order;
+    /// The choices ranked by `key`, best first, ties by index.
+    fn ranked(&self, key: impl Fn(&Choice) -> f64, among: impl Fn(usize) -> bool) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.choices.len()).filter(|&i| among(i)).collect();
+        order.sort_by(|&a, &b| {
+            let k = |i: usize| {
+                let v = key(&self.choices[i]);
+                if v.is_nan() { f64::INFINITY } else { v }
+            };
+            k(a).total_cmp(&k(b)).then(a.cmp(&b))
+        });
+        order
+    }
+
+    fn finish_probe(&mut self, fit: &[f64]) {
+        self.start_f = fit.first().copied();
+        let incumbent_probed = self.pending_choice.contains(&Some(0));
+        self.record_probe(fit);
+        // The incumbent's heuristic point was the start itself when no separate point was evaluated.
+        if incumbent_probed {
+            self.heuristic_f = Some(self.choices[0].probe);
+        } else if let Some(c) = self.choices.first_mut() {
+            c.probe = fit[0];
+            if fit[0] < c.best {
+                c.best = fit[0];
+                c.best_cont.clone_from(&self.pending[0].0.cont);
+            }
         }
+        // A probe cut short by the budget leaves later choices unranked: they sort last.
+        let top = self.ranked(|c| c.probe, |_| true);
+        self.todo = top
+            .into_iter()
+            .take(self.cfg.runs_per_cycle)
+            .map(Job::Warm)
+            .collect();
+        self.phase = Phase::Runs;
+        if self.n_cont == 0 {
+            self.todo.clear();
+        }
+        self.es = None;
+        self.schedule_if_idle();
+    }
+
+    fn finish_expand(&mut self, fit: &[f64]) {
+        self.record_probe(fit);
+        let fresh: Vec<usize> = self
+            .pending_choice
+            .iter()
+            .filter_map(|c| *c)
+            .collect();
+        let mut order = fresh;
+        order.sort_by(|&a, &b| {
+            self.choices[a]
+                .probe
+                .total_cmp(&self.choices[b].probe)
+                .then(a.cmp(&b))
+        });
+        self.todo = order.into_iter().take(2).map(Job::Warm).collect();
+        if self.n_cont == 0 {
+            self.todo.clear();
+        }
+        self.phase = Phase::Runs;
+        self.es = None;
+        self.schedule_if_idle();
+    }
+
+    /// If no run is queued, decide what comes next: expand the best choice, or restart.
+    fn schedule_if_idle(&mut self) {
+        if self.todo.is_empty() {
+            self.schedule();
+        }
+    }
+
+    /// A run ended: pick the next piece of work. Runs queued first; when none are left, the best choice's neighbours
+    /// are probed once (a coordinate descent over the categorical axes), and then the two best choices restart.
+    fn schedule(&mut self) {
+        if !self.todo.is_empty() {
+            self.phase = Phase::Runs;
+            return;
+        }
+        let Some(best) = self
+            .ranked(|c| c.best, |_| true)
+            .first()
+            .copied()
+        else {
+            self.phase = Phase::Done;
+            return;
+        };
+        if !self.choices[best].expanded {
+            self.choices[best].expanded = true;
+            let (mean, cat) = (self.choices[best].best_cont.clone(), self.choices[best].cat.clone());
+            let mut added = false;
+            for n in self.free.neighbours(&cat) {
+                if self.choices.iter().any(|c| c.cat == n) || self.choices.len() >= MAX_CHOICES {
+                    continue;
+                }
+                let (_, scale, _) = self.heuristic_point(&n);
+                self.choices.push(Choice {
+                    cat: n,
+                    mean: mean.clone(),
+                    pinned: scale.iter().map(|s| *s < PRECISE).collect(),
+                    scale,
+                    probe: f64::NAN,
+                    best: f64::INFINITY,
+                    best_cont: mean.clone(),
+                    expanded: false,
+                });
+                added = true;
+            }
+            if added {
+                self.phase = Phase::Expand;
+                return;
+            }
+            return self.schedule();
+        }
+        if self.n_cont == 0 {
+            self.phase = Phase::Done;
+            return;
+        }
+        self.cycle += 1;
+        self.todo = self
+            .ranked(|c| c.best, |_| true)
+            .into_iter()
+            .take(2)
+            .map(Job::Random)
+            .collect();
+        self.phase = Phase::Runs;
     }
 
     /// Stop the search now (the caller's cap).
@@ -733,6 +931,10 @@ impl Search {
 /// The stream number the search derives its generator from, so a seed shared with other parts of a caller does not
 /// reuse their stream.
 const SEARCH_STREAM: u64 = 0x4D41_5443_4853_4541; // "MATCHSEA"
+
+/// The random-restart cycles that keep the precisely measured axes pinned at the heuristic's value; later cycles move
+/// every axis again, so a wrong measurement costs renders and not the answer.
+const PIN_CYCLES: usize = 2;
 
 /// The narrowest scale a suggestion may ask for: a floor so a step never underflows the optimiser's tolerances.
 const MIN_SCALE: f64 = 1e-3;
