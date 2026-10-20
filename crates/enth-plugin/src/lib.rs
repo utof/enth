@@ -28,11 +28,13 @@
 //! | `editor_counts` | with the `editor-counts` cargo feature: editor opens and `editor_closed` calls, for the leak gate | INT |
 //! | [`game`] | a Recreate round's clock, worker, target and phrase players, A/B crossfade, round log | SKR (R1/S1; pre-declared by S0r) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
+//! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
 )]
 
+pub mod crash;
 pub mod editor;
 #[cfg(feature = "editor-counts")]
 pub mod editor_counts;
@@ -310,6 +312,14 @@ impl Plugin for Enth {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    /// Install the crash-file panic hook ([`crash`]) once, when the library loads. `Some(false)` ("no logger") makes
+    /// nice-plug skip its own `log_panics`, which would replace the hook; there is no tracing subscriber to set up
+    /// (the feature is off), so nothing else is lost.
+    fn setup_logger() -> Option<bool> {
+        crash::install();
+        Some(false)
     }
 
     /// The fork's host requests (marking the project dirty, the parameter-info rescan), kept for [`Shared::settle`].

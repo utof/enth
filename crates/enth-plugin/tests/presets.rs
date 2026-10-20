@@ -40,27 +40,94 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-#[test]
-fn every_preset_is_a_patch_the_plugin_saves_back_unchanged() {
-    let dir = root().join("content/presets");
-    let mut checked = 0;
-    let mut failures = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("content/presets exists") {
-        let path = entry.expect("a directory entry").path();
+/// Every `*.patch.json` under `dir`, folders included (dot files and folders are skipped, like the plugin's scan).
+fn preset_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .expect("content/presets exists")
+        .map(|e| e.expect("a directory entry").path())
+        .collect();
+    entries.sort();
+    for path in entries {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if !name.ends_with(".patch.json") {
+        if name.starts_with('.') {
             continue;
         }
-        let text = std::fs::read_to_string(&path).expect("a readable preset");
-        if let Err(why) = check(&path, &text) {
+        if path.is_dir() {
+            preset_files(&path, out);
+        } else if name.ends_with(".patch.json") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn every_preset_is_a_patch_the_plugin_saves_back_unchanged() {
+    let mut files = Vec::new();
+    preset_files(&root().join("content/presets"), &mut files);
+    let mut failures = Vec::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path).expect("a readable preset");
+        if let Err(why) = check(path, &text) {
             failures.push(why);
         }
-        checked += 1;
     }
     assert!(failures.is_empty(), "{failures:#?}");
-    println!("{checked} presets checked");
+    println!("{} presets checked", files.len());
+}
+
+/// The factory presets are the browser's front page (docs/presets.md): one type tag, up to four character tags, all
+/// from the vocabulary in `enth_session::presets::tags`; a name of their own, and no two alike ignoring case.
+#[test]
+fn every_factory_preset_uses_the_tag_vocabulary_and_a_name_of_its_own() {
+    let mut files = Vec::new();
+    preset_files(&root().join("content/presets"), &mut files);
+    let mut problems = Vec::new();
+    let mut names: std::collections::BTreeMap<String, PathBuf> = std::collections::BTreeMap::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path).expect("a readable preset");
+        let patch = enth_patch::file::load(&text)
+            .expect("checked by the test above")
+            .patch;
+        for why in enth_session::presets::tags::check_factory(&patch.meta) {
+            problems.push(format!("{}: {why}", path.display()));
+        }
+        let name = patch.meta.name.trim().to_lowercase();
+        if let Some(first) = names.insert(name.clone(), path.clone()) {
+            problems.push(format!(
+                "{}: the name {name:?} is also {}'s",
+                path.display(),
+                first.display()
+            ));
+        }
+    }
+    assert!(problems.is_empty(), "{problems:#?}");
+}
+
+/// What the plugin embeds is what is on disk: the build script found every file (no preset is left out of the
+/// binary because a folder was added without a rebuild trigger).
+#[test]
+fn the_embedded_factory_presets_are_the_files_on_disk() {
+    let mut files = Vec::new();
+    let dir = root().join("content/presets");
+    preset_files(&dir, &mut files);
+    let on_disk: Vec<String> = files
+        .iter()
+        .map(|p| {
+            p.strip_prefix(&dir)
+                .unwrap()
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .collect();
+    let embedded: Vec<String> = enth_session::presets::factory_files()
+        .iter()
+        .map(|f| f.key.file_name())
+        .collect();
+    assert_eq!(embedded, on_disk);
 }
 
 #[test]

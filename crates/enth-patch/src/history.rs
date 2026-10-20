@@ -27,6 +27,14 @@
 //!
 //! The entries' `inverse` lists must be what [`apply_all`] returned for their `forward` (the merge relies on the
 //! first inverse op undoing the last forward op).
+//!
+//! # Loads
+//!
+//! [`History::edit_load`] records a whole-patch replacement (an editor preset load, built from
+//! [`ops_between`](crate::ops_between)) as one undo step marked with the loaded patch's name ([`Entry::load`]). It
+//! never merges with a neighbour (the session ends an open drag first, as for undo). The mark is for the session, which delivers such a
+//! step, and its undo and redo, like a load instead of like an edit (no per-parameter host writes), and for the
+//! editor, which names the step "Load Name" instead of describing its first op.
 
 use crate::canon::identical;
 use crate::model::Patch;
@@ -45,6 +53,9 @@ pub struct Entry {
     pub inverse: Vec<Op>,
     /// The gesture it belongs to, if any.
     pub gesture: Option<GestureId>,
+    /// `Some(name)` when the step is an editor preset load ([`History::edit_load`]): the name of the loaded patch
+    /// (possibly empty). A load step is never part of a gesture.
+    pub load: Option<String>,
     before: u64,
     after: u64,
 }
@@ -133,6 +144,16 @@ impl History {
     /// Record a transaction that has been applied: `forward` and the `inverse` that [`apply_all`] returned. A new
     /// record clears the redo stack. Empty transactions are ignored.
     pub fn record(&mut self, forward: Vec<Op>, inverse: Vec<Op>, gesture: Option<GestureId>) {
+        self.push(forward, inverse, gesture, None);
+    }
+
+    fn push(
+        &mut self,
+        forward: Vec<Op>,
+        inverse: Vec<Op>,
+        gesture: Option<GestureId>,
+        load: Option<String>,
+    ) {
         if forward.is_empty() && inverse.is_empty() {
             return;
         }
@@ -153,6 +174,7 @@ impl History {
             forward,
             inverse,
             gesture,
+            load,
             before: self.current,
             after,
         });
@@ -172,6 +194,20 @@ impl History {
     ) -> Result<(), TxError> {
         let inverse = apply_all(patch, &ops)?;
         self.record(ops, inverse, gesture);
+        Ok(())
+    }
+
+    /// Apply `ops` atomically and record them as one **load** step named `name` ([`Entry::load`]): it belongs to no
+    /// gesture and never merges (the caller ends an open drag first). An empty `ops` records nothing. On error
+    /// nothing changes.
+    pub fn edit_load(
+        &mut self,
+        patch: &mut Patch,
+        ops: Vec<Op>,
+        name: String,
+    ) -> Result<(), TxError> {
+        let inverse = apply_all(patch, &ops)?;
+        self.push(ops, inverse, None, Some(name));
         Ok(())
     }
 
