@@ -1,0 +1,5 @@
+description = "Level 5, seed 55555 (lane SKR's case): the legato pair, twenty parameters, two routes and four enable flags. Near: the pitch a quarter semitone off."
+code = "10M0-1000-01P8-3Q"
+
+[answers.near]
+add = { "osc1.semi" = 0.25 }

@@ -1,0 +1,5 @@
+description = "Level 2, seed 2: a saw an octave up through a resonant low-pass at 2.7 kHz. Near: 20 points more resonance."
+code = "1080-1000-0000-2Z"
+
+[answers.near]
+add = { "filter1.resonance" = 20 }

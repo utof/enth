@@ -1,0 +1,124 @@
+# enth golden challenge `structure-l2-s2` (challenges/cases/structure-l2-s2.toml). Pinned: the code's facts, the target's fingerprint and render, and per scorer set every answer's report. Nothing here changes under the same scorer ids; written only by `cargo xtask golden --challenges --update`.
+code H000-G000-0000-0000-26E8-0000-807R-2WSZ-C3J0-2
+form long engine=0.2.0
+spec generator=1 seed=2 difficulty=25 musical=100 template=0 amounts=-,-,-,-,-,100
+level 2
+phrase 2
+fingerprint 7c0b99fbc1d128c4c4410cbc6378e90a3a4a5ace6f45b0f95374c2b212562382
+drawn params=12 routes=1 enables=2
+target lufs=-14.129304200
+render rate=48000 seed=236412653 frames=228000 sha256=72a4cdc1f717ef01c0af2c6a32dffc4ba4fcd957924f2797b18c27fdfc7a9f9d
+
+scoring sound/1 structure/1 combined/1 time/1 weight=57 pass_mark=90
+  answer exact
+    report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.093596418 scale=0.197064028 jnd=0.000000000
+    component pitch same close target=-900.098601837 answer=-900.098601837
+    component brightness same close target=3404.298692998 answer=3404.298692998
+    component harmonics same close target=0.382166035 answer=0.382166035
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=226.000000000 answer=226.000000000
+    component sustain same close target=-6.592605622 answer=-6.592605622
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.035288488 answer=0.035288488
+    component movement same close target=1.602172852 answer=1.602172852
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.keytrack good same 1.000000000 answer=filter1.keytrack
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring noise1.color good same 1.000000000 answer=noise1.color
+    ring noise1.level good same 1.000000000 answer=noise1.level
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    ring osc2.fine good same 1.000000000 answer=osc2.fine
+    ring osc2.level good same 1.000000000 answer=osc2.level
+    ring osc2.semi good same 1.000000000 answer=osc2.semi
+    ring osc2.wave good same 1.000000000 answer=osc2.wave
+    ring velocity -> filter1.cutoff good same 1.000000000 answer=velocity -> filter1.cutoff
+    ring noise1.enabled good same 1.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc2.enabled
+  answer start
+    report sound=4.067656809 structure=14.691005557 combined=8.635696771 passed=false margin=-85.932343191
+    sound distance=1.303891334 floor=0.093596418 scale=0.197064028 jnd=54.260809982
+    component pitch lower far target=-900.098601837 answer=-2100.000543505
+    component brightness lower far target=3404.298692998 answer=894.247527710
+    component harmonics same close target=0.382166035 answer=0.344186697
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope lower far target=226.000000000 answer=25.000000000
+    component sustain higher a_bit target=-6.592605622 answer=-2.758742246
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.035288488 answer=0.000040336
+    component movement missing far target=1.602172852 answer=-
+    ring filter1.cutoff near lower 0.350560889 answer=filter1.cutoff
+    ring filter1.keytrack bad lower 0.000000000 answer=filter1.keytrack
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance bad lower 0.000000000 answer=filter1.resonance
+    ring noise1.color bad missing 0.000000000 answer=-
+    ring noise1.level bad missing 0.000000000 answer=-
+    ring osc1.semi bad missing 0.000000000 answer=-
+    ring osc1.wave bad missing 0.000000000 answer=-
+    ring osc2.fine bad lower 0.000000000 answer=osc1.fine
+    ring osc2.level bad higher 0.000000000 answer=osc1.level
+    ring osc2.semi bad lower 0.000000000 answer=osc1.semi
+    ring osc2.wave bad higher 0.000000000 answer=osc1.wave
+    ring velocity -> filter1.cutoff bad missing 0.000000000 answer=-
+    ring noise1.enabled bad missing 0.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc1.enabled
+    module missing osc1 osc
+    module missing noise1 noise
+  answer bare
+    report sound=79.699996666 structure=44.322916865 combined=64.487852352 passed=false margin=-10.300003334
+    sound distance=0.445074522 floor=0.093596418 scale=0.197064028 jnd=1.838574076
+    component pitch same close target=-900.098601837 answer=-899.967714844
+    component brightness lower a_bit target=3404.298692998 answer=2811.734492787
+    component harmonics same close target=0.382166035 answer=0.362520185
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope lower far target=226.000000000 answer=28.000000000
+    component sustain higher a_bit target=-6.592605622 answer=-2.865702303
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.035288488 answer=0.000040220
+    component movement missing far target=1.602172852 answer=-
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.keytrack good same 1.000000000 answer=filter1.keytrack
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring noise1.color bad missing 0.000000000 answer=-
+    ring noise1.level bad missing 0.000000000 answer=-
+    ring osc1.semi bad missing 0.000000000 answer=-
+    ring osc1.wave bad missing 0.000000000 answer=-
+    ring osc2.fine bad higher 0.091666698 answer=osc1.fine
+    ring osc2.level bad higher 0.000000000 answer=osc1.level
+    ring osc2.semi good same 1.000000000 answer=osc1.semi
+    ring osc2.wave bad higher 0.000000000 answer=osc1.wave
+    ring velocity -> filter1.cutoff good same 1.000000000 answer=velocity -> filter1.cutoff
+    ring noise1.enabled bad missing 0.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc1.enabled
+    module missing osc1 osc
+    module missing noise1 noise
+  answer near
+    report sound=93.073838933 structure=96.780719051 combined=94.667797384 passed=true margin=3.073838933
+    sound distance=0.235630594 floor=0.093596418 scale=0.197064028 jnd=0.732894852
+    component pitch same close target=-900.098601837 answer=-899.757590657
+    component brightness higher a_bit target=3404.298692998 answer=4110.893391473
+    component harmonics same close target=0.382166035 answer=0.376543168
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=226.000000000 answer=226.000000000
+    component sustain same close target=-6.592605622 answer=-6.513004580
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.035288488 answer=0.051693437
+    component movement same close target=1.602172852 answer=1.602172852
+    ring filter1.cutoff near higher 0.517107858 answer=filter1.cutoff
+    ring filter1.keytrack good same 1.000000000 answer=filter1.keytrack
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring noise1.color good same 1.000000000 answer=noise1.color
+    ring noise1.level good same 1.000000000 answer=noise1.level
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    ring osc2.fine good same 1.000000000 answer=osc2.fine
+    ring osc2.level good same 1.000000000 answer=osc2.level
+    ring osc2.semi good same 1.000000000 answer=osc2.semi
+    ring osc2.wave good same 1.000000000 answer=osc2.wave
+    ring velocity -> filter1.cutoff good same 1.000000000 answer=velocity -> filter1.cutoff
+    ring noise1.enabled good same 1.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc2.enabled

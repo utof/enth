@@ -1,0 +1,5 @@
+description = "Level 3, seed 12: a pulse wave with a 0.5 ms attack and a 169 ms decay. Near: the pulse width 10 points off."
+code = "10C0-1000-0000-CZ"
+
+[answers.near]
+add = { "osc1.pw" = 10 }

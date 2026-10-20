@@ -1,0 +1,5 @@
+description = "Level 4, seed 19: sixteen parameters and three routes. Near: the release 1.6 times longer."
+code = "10G0-1000-0000-KT"
+
+[answers.near]
+mul = { "env1.release" = 1.6 }

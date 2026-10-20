@@ -1,0 +1,5 @@
+description = "Level 4 with musical = 0: uniform draws instead of priors (a long code). Near: the amplitude envelope's sustain 10 points higher."
+code = "H000-G000-0000-0000-5JR0-0000-80BQ-SRGS-80A"
+
+[answers.near]
+add = { "env1.sustain" = 10 }

@@ -1,0 +1,61 @@
+# enth golden challenge `l2-s2` (challenges/cases/l2-s2.toml). Pinned: the code's facts, the target's fingerprint and render, and per scorer set every answer's report. Nothing here changes under the same scorer ids; written only by `cargo xtask golden --challenges --update`.
+code 1080-1000-0000-2Z
+form short
+spec generator=1 seed=2 difficulty=25 musical=100 template=0 amounts=-,-,-,-,-,-
+level 2
+phrase 1
+fingerprint 7cdbe22ebb36a047cda47f7e7046c221a1222d0df6a6f3d7bb573a7357cc018c
+drawn params=5 routes=0 enables=0
+target lufs=-8.954112567
+render rate=48000 seed=236412653 frames=144000 sha256=6037c04b3efeab721447cf48302549b57feab7f91948d29b1a1c51d38707de6d
+
+scoring sound/1 structure/1 combined/1 time/1 weight=57 pass_mark=90
+  answer exact
+    report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.002289982 scale=0.141096092 jnd=0.000000000
+    component pitch same close target=-899.982244802 answer=-899.982244802
+    component brightness same close target=1744.778548427 answer=1744.778548427
+    component harmonics same close target=0.409109591 answer=0.409109591
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=39.000000000 answer=39.000000000
+    component sustain same close target=-2.724880287 answer=-2.724880287
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.000040643 answer=0.000040643
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+  answer start
+    report sound=4.275612479 structure=47.011217782 combined=22.651922759 passed=false margin=-85.724387521
+    sound distance=0.556878569 floor=0.002289982 scale=0.141096092 jnd=52.190995045
+    component pitch lower far target=-899.982244802 answer=-2100.000526561
+    component brightness lower far target=1744.778548427 answer=894.250747943
+    component harmonics same close target=0.409109591 answer=0.344186717
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope lower far target=39.000000000 answer=25.000000000
+    component sustain same close target=-2.724880287 answer=-2.829406318
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.000040643 answer=0.000040326
+    ring filter1.cutoff near lower 0.350560889 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance bad lower 0.000000000 answer=filter1.resonance
+    ring osc1.semi bad lower 0.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    moved osc1.fine bad lower 0.000000000 answer=osc1.fine
+  answer near
+    report sound=88.799869771 structure=90.000001907 combined=89.315926590 passed=false margin=-1.200130229
+    sound distance=0.121794664 floor=0.002289982 scale=0.141096092 jnd=1.087242263
+    component pitch same close target=-899.982244802 answer=-899.982146375
+    component brightness same close target=1744.778548427 answer=1861.594100297
+    component harmonics same close target=0.409109591 answer=0.349043088
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=39.000000000 answer=35.000000000
+    component sustain same close target=-2.724880287 answer=-2.755011706
+    component release same close target=202.000000000 answer=202.000000000
+    component noisiness same close target=0.000040643 answer=0.000044372
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance near higher 0.500000095 answer=filter1.resonance
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave

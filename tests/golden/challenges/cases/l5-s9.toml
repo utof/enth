@@ -1,0 +1,5 @@
+description = "Level 5, seed 9: a held note with a second oscillator and a compressor on, twenty-two parameters. Near: the second oscillator a quarter semitone off."
+code = "10M0-1000-0000-9Q"
+
+[answers.near]
+add = { "osc2.semi" = 0.25 }
