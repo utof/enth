@@ -5,8 +5,9 @@
 //! host does. Both binaries are built with a nightly toolchain and `-Zsanitizer=realtime --cfg enth_rtsan`:
 //!
 //! - `enth-plugin` (release, with `ab-toggle` so the A/B scenario can run; the feature does nothing unless the test
-//!   host sets its variable): `--cfg enth_rtsan` marks `Plugin::process` (and the engine's `process`)
-//!   `#[sanitize(realtime = "nonblocking")]`, so everything that runs inside it is a real-time context;
+//!   host sets its variable): `--cfg enth_rtsan` marks nice-plug's CLAP `process` entry (the vendored fork's patch
+//!   10), `Plugin::process` and the engine's `process` `#[sanitize(realtime = "nonblocking")]`, so everything that
+//!   runs inside the host's `process()` call, nice-plug's event handling included, is a real-time context;
 //! - `enth-test-host`, which links `RTSan`'s runtime and exports it (`-Wl,--export-dynamic`) so the plugin's
 //!   `__rtsan_realtime_enter`/`exit` calls resolve when it is loaded. Any allocation, lock or blocking call inside
 //!   `process()`, the host's own callbacks included, aborts the run (exit 43) with the call's stack.
@@ -19,8 +20,8 @@
 //! | `control` | `render` with `ENTH_RTSAN_CONTROL=alloc` (the plugin allocates in `process()`, `--cfg enth_rtsan` only) | caught: proves the sanitizer is live |
 //! | `render-chord` | `render`, Init, a four-note chord, 64-frame blocks | clean |
 //! | `render-block-1`, `render-block-4096` | `render`, the REAPER round-trip patch (3 generators, effects, routes, a slot) | clean |
-//! | `swaps-crossfade`, `swaps-instant` | `process-stats`, a state load every 250 ms between Init and the rich patch (plan swaps, crossfades, the background pump, a voice-count change) | clean |
-//! | `flood` | `process-stats --flood 64`: parameter floods | clean |
+//! | `swaps-crossfade`, `swaps-instant` | `process-stats`, a state load every 250 ms between Init and the rich patch (plan swaps, crossfades, a voice-count change) | clean |
+//! | `flood` | `process-stats --flood 64`: floods of 64 note events | clean |
 //! | `ab` | `process-stats --ab 250`: a Recreate round's A/B flipping every 250 ms (the target loop, the phrase player) | clean |
 //! | `bursts` | `bursts`: 16 to 4096 events in one block, every voice stolen | clean |
 //! | `note-end` | `note-end`: note ends at several block sizes | clean |
@@ -336,7 +337,7 @@ fn checks(root: &Path, plugin: &Path, secs: u32) -> Vec<Check> {
             args: stats(&["--state", &rich, "--flood", "64"]),
             env: tc.clone(),
             expect: Expect::Clean,
-            why: "parameter floods of 64 events",
+            why: "floods of 64 note events",
         },
         Check {
             name: "ab",
@@ -486,7 +487,11 @@ mod tests {
         // Fork patch 10's proof: scenarios without thread-check exist and must be clean.
         let without: Vec<&Check> = checks
             .iter()
-            .filter(|c| !c.env.iter().any(|(k, _)| *k == "ENTH_TEST_HOST_THREAD_CHECK"))
+            .filter(|c| {
+                !c.env
+                    .iter()
+                    .any(|(k, _)| *k == "ENTH_TEST_HOST_THREAD_CHECK")
+            })
             .collect();
         assert!(without.len() >= 2);
         assert!(without.iter().all(|c| c.expect == Expect::Clean));

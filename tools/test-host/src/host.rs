@@ -46,8 +46,10 @@ impl Default for MainThreadId {
 
 /// `ENTH_TEST_HOST_THREAD_CHECK=1` makes the host offer CLAP's thread-check extension, as REAPER and Bitwig do
 /// (R1/S1 lane INT, `cargo xtask rtsan`). Off by default, so the other gates keep the host they were measured with.
-/// Without it, nice-plug's `is_main_thread` falls back to `std::thread::current()` in the plugin's own std, which
-/// allocates the first time it runs on a thread, the audio thread included (a `permit_alloc`, its FIXME).
+/// Without it, nice-plug's `is_main_thread` answers by itself: stock nice-plug compared `std::thread::current()` in
+/// the plugin's own std, which allocates the first time it runs on a thread, the audio thread included (a
+/// `permit_alloc`, its FIXME); the vendored fork's patch 10 compares the OS thread identity instead
+/// (`vendor/README.md`), and `cargo xtask rtsan`'s `no-thread-check` scenarios run this host without the extension.
 pub fn thread_check_offered() -> bool {
     std::env::var_os("ENTH_TEST_HOST_THREAD_CHECK").is_some_and(|v| v == "1")
 }
