@@ -197,7 +197,7 @@ Decided by the R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-
 | Lesson pane (320) in the effects column, or as a left column | the band (732 or 276 px), tiles and routes | the band (932 or 476 px); effects 98 in the left-column one |
 | Both lesson layouts with a small patch (`init` or `pluck_1osc`, standing in for a lesson that hides unused modules) | none (`pad_2osc`: the band by 48 px in one of them) | not run |
 
-So Recreate's bar shares the header row (the patch name hides; the target is unknown anyway), and after Submit the results drawer (scores, time, Retry, New, Show target) replaces the overview, while the per-control rings draw on the knobs through `Overlay`. A Learn step names its layout and its overlay, and hides what it doesn't use.
+So Recreate's bar shares the header row (the patch name hides; the target is unknown anyway), and after Submit the results drawer (scores, time, Retry, New, Show target) replaces the overview, while the per-control rings draw on the knobs through `Overlay`. A Learn step names its layout and its overlay, and hides what it doesn't use. Lane SKR's skeleton bar (F2r) plays a round in the meantime: [The Recreate hook](#the-recreate-hook-lane-skr).
 
 **The minimum window.** Decided by lane AM: `size.window.min` rose to 1200 × 800 ([below](#the-minimum-window)). Every layout variant still gets its snapshots and an overflow report, at 1200 × 800 and at whatever smaller size it promises to handle; Claude Design gets the `enth.layout/1` vocabulary (regions, parts, `arrange` values, token names with their values).
 
@@ -269,6 +269,17 @@ So layout 1 needs all of 1200 × 800: the band of lane cards needs 1,148 px of w
 | `size.browser.notice_width` | 380 | the crash notice |
 
 Rows, buttons and fields are `size.control_height` high. Glyphs (`theme/glyph.rs`): `PREVIOUS` ◀, `NEXT` ▶, `FAVORITE` ★, `NOT_FAVORITE` ☆, `CLOSE` ×, all in Inter.
+
+## The Recreate hook (lane SKR)
+
+**Lane SKR's skeleton plays a round through the header's Recreate hook; lane RUI replaces the bar with the real challenge bar, results drawer and settings (wave 4).** The `recreate` feature is on by default in `enth-ui` and `enth-plugin` since SKR; the hook draws nothing until a shell hands the editor a round view, so kittest, the dev window and every snapshot that never does are unchanged.
+
+- **The seam** (what a shell does each frame, and what RUI builds on): `Editor::set_round(GameEdit::round())` before the frame; the bar pushes `Intent::Game(GameIntent)`, which the editor queues (`Recreate::push`) instead of applying, since it holds only a `SessionEdit`; `Editor::apply_game(&mut dyn GameEdit, seed)` after the frame applies them (`recreate::bar::apply_game`; the shell supplies a 40-bit seed for a round from settings); `Editor::hold_scores(results)` before the shell hands worker results to `Session::game_job_done`. The plugin's glue is `Glue::round_frame` ([plugin.md](plugin.md#the-recreate-round-lane-skr)).
+- **The bar** (`editor/recreate/bar.rs`), in the header's right-hand row, left of Add (the Presets group starts right after the wordmark): **Start** (level 1) while no round is live; then **Target ▶** and **Mine ▶** (toggles: a second click turns the side off) and a **Round** menu with **Submit**, **Hint**, **Reveal** and **End** (End restores the player's own patch). The readout (the code, the phase, sound and structure %, the time, the latest hint, or why an intent was refused) is the status line's right end while a round is live (`Recreate::readout`), so the header row stays short.
+- **The blind rating** (docs/session.md, "Time, submits and feedback"): the first Submit of a round without a rating turns the Round menu into **Rate yours** ("Rate 1" … "Rate 5", "Skip"), and `hold_scores` keeps the `Scored` result back until the player answers, so the session records the rating before the score (it refuses a rating after the first score is recorded).
+- **Accessibility labels**: "Start", "Target ▶", "Mine ▶", "Round", "Submit", "Hint", "Reveal", "End", "Rate yours", "Rate 1" … "Rate 5", "Skip".
+- **Tests**: `tests/recreate.rs` drives Start → Target ▶ → Mine ▶ → Submit → the rating (the score held back) → Hint → Reveal → End over a real `Session`, the worker's jobs run between frames with the same `enth-challenge` functions; `recreate_round_live.png` shows the bar beside the Presets group and the readout on the status line at 1200 × 800; `bar.rs` unit tests cover the view, the rating hold and the readout.
+- **For RUI**: the bar uses no size token of its own (default buttons and menus in `text.body`), so `theme/sizes/recreate.rs` is still empty; the reserved `challenge_bar` and `results` regions are untouched; the no-peek check (no label or tooltip shows a target value) is RUI's. `RoundView::params` (the randomized addresses) and `knobs` (the rings) are not drawn yet.
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 

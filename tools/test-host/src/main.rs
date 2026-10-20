@@ -47,6 +47,7 @@ usage:
         [--gate g1|g1-multi] [--max-p99-us N] [--max-p999-us N] [--max-callback-p99-pct N]
         [--inject busy-us=N[,every=K]] [--swap-state FILE [--swap-ms 250] [--swap-kind instant|crossfade]
         [--max-swap-p99-us N] [--max-crossfade-p99-us N]] [--flood N [--flood-ms 250]]
+        [--ab MS (a bundle built with --features ab-toggle: a Recreate round's A/B flipping every MS ms)]
   enth-test-host latency <plugin.clap> --param NAME --to VALUE [--from VALUE] [--notes SCRIPT] [--at 0.5]
         [--offsets 0,17,63] [--after 0.5] [--block 64] [--sr 48000] [--threshold-db -60] [--state FILE ...]
         [--max-onset-ms N] [--max-audible-ms N] [--inject delay-blocks=K]
@@ -857,11 +858,21 @@ fn cmd_process_stats(rest: &[String]) -> Outcome {
                 "max-crossfade-p99-us",
                 "flood",
                 "flood-ms",
+                "ab",
             ],
             &STATE_OPTIONS,
         ),
         &["require-rt", "editor"],
     )?;
+    // Before the plugin loads: the A/B harness reads the environment at activation (lane SKR).
+    let ab = args
+        .one("ab")
+        .map(|ms| {
+            ms.parse::<u64>()
+                .map_err(|_| format!("--ab {ms:?}: milliseconds between A/B flips"))
+                .and_then(stats::AbHarness::arm)
+        })
+        .transpose()?;
     let (path, entry, id) = load(&args)?;
     let loaded = load_state(&args, &entry, &id)?;
     let mut opts = stats::Options::default();
@@ -973,6 +984,7 @@ fn cmd_process_stats(rest: &[String]) -> Outcome {
     if opts.block == 0 {
         return Err("--block must be at least 1".to_owned());
     }
+    opts.ab = ab;
     let (mut report, _) = stats::run(&entry, &id, &opts)?;
     report["gate"] = json!(args.one("gate"));
     Ok(finish(

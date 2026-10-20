@@ -27,7 +27,7 @@
 //! | [`init`] | the Init patch a fresh instance plays (the gain-staged starter, `content/presets/init.patch.json`) | AM (R1/S1) |
 //! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
 //! | `editor_counts` | with the `editor-counts` cargo feature: editor opens, `editor_closed` calls and drawn frames, for the leak gate and owner check 1.3 | INT, AM |
-//! | [`game`] | a Recreate round's clock, worker, target and phrase players, A/B crossfade, round log | SKR (R1/S1; pre-declared by S0r) |
+//! | [`game`] | a Recreate round's job worker, target loop and phrase player, A/B crossfade, round log (the clock is in [`editor`]) | SKR (R1/S1) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 //! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
@@ -50,6 +50,8 @@ pub mod process;
 pub mod rt_stats;
 pub mod state;
 #[cfg(test)]
+mod tests_game;
+#[cfg(test)]
 mod tests_host;
 
 use std::num::NonZeroU32;
@@ -57,6 +59,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 
 use enth_engine::Engine;
+use enth_session::game::GameRequest;
 use enth_session::{Activation, HostParam, HostValues, Session, ShellRequest};
 use nice_plug::editor::dpi::LogicalSize;
 use nice_plug::prelude::*;
@@ -100,6 +103,9 @@ pub struct Shared {
     /// The editor window closed (seen by `process()` through `EguiEditorState::is_open`): the next pump releases
     /// audition notes.
     pub editor_closed: AtomicBool,
+    /// A Recreate round's shell side (lane SKR, [`game`]): the job worker, the A/B atomics `process()` reads, the
+    /// target loop's hand-off and the round log. Every drain of the session acts on its game requests here.
+    pub game: game::Game,
     /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
     /// persistent fields, which own this).
     params: OnceLock<Weak<EnthParams>>,
@@ -133,6 +139,7 @@ impl Shared {
             rebaseline: AtomicBool::new(false),
             restored: process::Restored::new(),
             editor_closed: AtomicBool::new(false),
+            game: game::Game::new(),
             params: OnceLock::new(),
             host: OnceLock::new(),
             #[cfg(feature = "rt-stats")]
@@ -150,9 +157,12 @@ impl Shared {
             .map(|p| p.host_values())
     }
 
-    /// Lock the session, run `f`, drain its requests and note whether a compile is left pending, unlock; then act
-    /// on the requests that need no host call ([`Shared::settle`]) and return the host writes for the caller to
-    /// forward (only the editor produces them, on the GUI thread).
+    /// Lock the session, run `f`, drain its requests (the shell's and the round's) and note whether a compile is left
+    /// pending, unlock; then act on the requests that need no host call ([`Shared::settle`]) and return the host
+    /// writes for the caller to forward (only the editor produces them, on the GUI thread).
+    ///
+    /// The round's requests (`Session::drain_game_requests`, lane SKR) are drained wherever the shell's are, so a
+    /// `Prepare` a host load asks for (the main thread) reaches the worker as surely as an editor's start does.
     ///
     /// On a `ShellRequest::RenameParams` it also sets the 72 display names from the patch **before** unlocking, so
     /// two threads that rename one after the other (the GUI's edit, the host's load) leave the later patch's names.
@@ -164,15 +174,17 @@ impl Shared {
             let mut session = self.session.lock();
             let result = f(&mut session);
             let requests: Vec<ShellRequest> = session.drain_requests().collect();
+            let game: Vec<GameRequest> = session.drain_game_requests().collect();
             if requests
                 .iter()
                 .any(|r| matches!(r, ShellRequest::RenameParams))
             {
                 self.set_names(session.patch());
             }
-            (result, requests, session.status().compile_pending)
+            (result, (requests, game), session.status().compile_pending)
         };
-        let host = self.settle(requests, pending);
+        let (requests, game) = requests;
+        let host = self.settle(requests, game, pending);
         (result, host)
     }
 
@@ -204,10 +216,20 @@ impl Shared {
     /// [`HostRequests::mark_dirty`]: CLAP `clap_host_state.mark_dirty`, VST3 `IComponentHandler2::setDirty(true)`, which
     /// the fork performs on the host's main thread (queued from the GUI thread; one waiting request absorbs the next).
     /// A slot-bound edit also moves a host parameter, which dirties the project anyway; marking it again is harmless.
-    fn settle(&self, requests: Vec<ShellRequest>, compile_pending: bool) -> Vec<ShellRequest> {
+    ///
+    /// The round's requests go to [`game::Game::act`] (jobs to the worker, the A/B state to `process()`'s atomics,
+    /// round-log lines to the log file); its `GameRequest::Dirty` is coalesced with `PatchEdited`, so a drain marks
+    /// the project dirty at most once (docs/session.md, "What lane SKR must wire" 9).
+    fn settle(
+        &self,
+        requests: Vec<ShellRequest>,
+        game: Vec<GameRequest>,
+        compile_pending: bool,
+    ) -> Vec<ShellRequest> {
         if compile_pending {
             self.pump_wanted.store(true, Ordering::Release);
         }
+        let mut dirty = self.game.act(game);
         let mut host = Vec::new();
         for request in requests {
             match request {
@@ -218,13 +240,12 @@ impl Shared {
                     }
                 }
                 ShellRequest::Host(_) => host.push(request),
-                ShellRequest::PatchEdited => {
-                    if let Some(requests) = self.host.get() {
-                        requests.mark_dirty();
-                    }
-                }
+                ShellRequest::PatchEdited => dirty = true,
                 _ => {}
             }
+        }
+        if dirty && let Some(requests) = self.host.get() {
+            requests.mark_dirty();
         }
         host
     }
@@ -251,6 +272,8 @@ pub struct Enth {
     repaint: RepaintNotifier,
     engine: Option<Engine>,
     audio: Audio,
+    /// A Recreate round's audio side: the target loop and Mine ▶'s phrase, the A/B mix (lane SKR, [`game`]).
+    player: game::Player,
 }
 
 impl Default for Enth {
@@ -261,6 +284,7 @@ impl Default for Enth {
         // Set once, here: nothing else can have set it.
         let _ = shared.params.set(Arc::downgrade(&params));
         let size = enth_ui::Theme::dark().size.window.default;
+        let player = game::Player::new(shared.game.mailbox());
         Enth {
             params,
             shared,
@@ -268,6 +292,7 @@ impl Default for Enth {
             repaint: RepaintNotifier::new(),
             engine: None,
             audio: Audio::new(),
+            player,
         }
     }
 }
@@ -377,7 +402,12 @@ impl Plugin for Enth {
         // `PARAM_VALUE` at frame 0) still reaches the engine.
         self.audio
             .activate(&self.params, buffer_config.sample_rate, voices);
+        // A round's target loop follows the host's rate; the new engine holds none of Mine's notes (lane SKR).
+        self.shared.game.set_host_rate(buffer_config.sample_rate);
+        self.player.activate(buffer_config.sample_rate);
         self.shared.rebaseline.store(false, Ordering::Release);
+        #[cfg(feature = "ab-toggle")]
+        game::harness::start(&self.shared, &mut self.player, buffer_config.sample_rate);
         true
     }
 
@@ -387,12 +417,15 @@ impl Plugin for Enth {
         self.engine = None;
         #[cfg(feature = "rt-stats")]
         self.shared.rt_stats.write_report();
+        #[cfg(feature = "ab-toggle")]
+        game::harness::report(&self.player);
     }
 
     fn reset(&mut self) {
         if let Some(engine) = self.engine.as_mut() {
             // CLAP reset: the engine frees its voices without reporting them, so the next block reports them.
             self.audio.note_reset();
+            self.player.reset();
             engine.reset();
         }
     }

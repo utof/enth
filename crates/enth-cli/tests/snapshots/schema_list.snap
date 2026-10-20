@@ -102,6 +102,21 @@ exit: 0
       "describes": "the output of enth bench",
       "id": "enth.bench/1",
       "name": "bench"
+    },
+    {
+      "describes": "the output of enth challenge new",
+      "id": "enth.challenge-new/1",
+      "name": "challenge-new"
+    },
+    {
+      "describes": "the output of enth challenge show",
+      "id": "enth.challenge-show/1",
+      "name": "challenge-show"
+    },
+    {
+      "describes": "the output of enth compare",
+      "id": "enth.compare/1",
+      "name": "compare"
     }
   ]
 }

@@ -27,6 +27,10 @@ pub struct HeaderView {
     pub redo: Option<String>,
     /// Every section and how full it is, for the Add menu (lane AM, the Add hook).
     pub room: crate::editor::add_module::Room,
+    /// The Recreate bar's view (lane SKR's skeleton, the Recreate hook): empty, and drawn as nothing, until the
+    /// shell hands the editor a round view.
+    #[cfg(feature = "recreate")]
+    pub recreate: crate::editor::recreate::bar::BarView,
 }
 
 /// The header band.
@@ -129,7 +133,8 @@ impl<'a> Header<'a> {
         crate::editor::add_module::header(&mut buttons, t, inner, self.view, out);
         #[cfg(feature = "presets")]
         crate::editor::browser::header(&mut ui, t, inner, self.view, out);
+        // Lane SKR: the Recreate bar joins the right-hand row, left of Add (it fits there beside the Presets group).
         #[cfg(feature = "recreate")]
-        crate::editor::recreate::bar::header(&mut ui, t, inner, self.view, out);
+        crate::editor::recreate::bar::header(&mut buttons, t, inner, self.view, out);
     }
 }

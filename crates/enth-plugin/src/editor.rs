@@ -20,10 +20,19 @@
 //! creation (`FsStore::from_env()`: `ENTH_PRESETS_DIR`, else `Documents/enth/Presets`); its loads are the session's
 //! undoable preset loads, under the same lock, with no host parameter writes. Every `build()` also looks for crash
 //! files not offered yet ([`crash::pending`]) and hands them to the editor's notice as a [`CrashFolder`].
+//!
+//! **A Recreate round** (lane SKR, docs/session.md "What lane SKR must wire" 1–2): every `build()` ticks the round's
+//! clock with `EditorView::Opened` and hands the worker the window's egui context (it asks for a repaint each time it
+//! posts a result); every frame, under the same lock and after `pump` and `fold_host`, ticks it with `Visible`, hands
+//! the worker's results back (`Session::game_job_done`, a score held back while the blind rating is asked), gives
+//! the editor the round's view, draws, and applies the Recreate bar's intents to the session's `GameEdit`; after the
+//! frame it asks egui for a repaint at the round's `wake_at_ms`. Closing ticks it with `Hidden`, so the round's
+//! time pauses while the window is closed.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use enth_session::game::{EditorView, GameEdit};
 use enth_session::{GestureStep, HostWrite, SessionEdit, SessionView, ShellRequest};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
@@ -39,6 +48,7 @@ use nice_plug_egui::{
 
 use crate::Shared;
 use crate::crash;
+use crate::game;
 use crate::params::EnthParams;
 use crate::presets::{FsStore, Os, SystemEnv};
 
@@ -156,6 +166,61 @@ impl Glue {
         &self.editor
     }
 
+    /// Before a frame (lane SKR): the session's round, for the Recreate bar.
+    #[cfg(feature = "recreate")]
+    pub fn set_round(&mut self, round: Option<enth_session::game::RoundView>) {
+        self.editor.set_round(round);
+    }
+
+    /// After a frame (lane SKR): the Recreate bar's intents, applied to the session's round.
+    #[cfg(feature = "recreate")]
+    pub fn apply_game(&mut self, game: &mut dyn GameEdit) {
+        self.editor.apply_game(game, &mut game::fresh_seed);
+    }
+
+    /// The worker's results to hand back now (a score waits while the bar asks the blind rating).
+    #[cfg(feature = "recreate")]
+    pub fn hold_scores(
+        &mut self,
+        results: Vec<(enth_session::game::JobId, enth_session::game::JobResult)>,
+    ) -> Vec<(enth_session::game::JobId, enth_session::game::JobResult)> {
+        self.editor.hold_scores(results)
+    }
+
+    /// Without the Recreate bar every result goes back at once.
+    #[cfg(not(feature = "recreate"))]
+    pub fn hold_scores(
+        &mut self,
+        results: Vec<(enth_session::game::JobId, enth_session::game::JobResult)>,
+    ) -> Vec<(enth_session::game::JobId, enth_session::game::JobResult)> {
+        results
+    }
+
+    /// One editor frame of a round's glue, under the session lock (lane SKR): the clock, the worker's results, the
+    /// round view, the editor's frame, the bar's intents. Returns when the round next needs a frame (`wake_at_ms`).
+    pub fn round_frame(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        session: &mut enth_session::Session,
+        game: &game::Game,
+        now_ms: u64,
+        pointer_down: bool,
+    ) -> Option<u64> {
+        session.game_tick(now_ms, EditorView::Visible);
+        for (id, result) in self.hold_scores(game.take_results()) {
+            // A result the round no longer waits for is refused as stale, harmlessly.
+            let _ = session.game_job_done(id, result);
+        }
+        game.follow_rate();
+        #[cfg(feature = "recreate")]
+        self.set_round(session.round());
+        self.frame(ui, theme, session, pointer_down);
+        #[cfg(feature = "recreate")]
+        self.apply_game(session);
+        session.round().and_then(|r| r.wake_at_ms)
+    }
+
     /// The editor's preset browser (lane PBU): its store and its crash offer.
     pub fn presets_mut(&mut self) -> &mut Presets {
         self.editor.presets_mut()
@@ -269,10 +334,14 @@ impl NiceEguiApp for EditorApp {
         self.shared.editor_counts.built();
         self.theme.apply(&egui_ctx);
         self.glue.presets_mut().offer_crash(crash_offer());
+        // The round's worker asks this window for a repaint whenever it posts a result (lane SKR).
+        self.shared.game.set_repaint(Some(egui_ctx.clone()));
         let env = layout_from_env();
         let glue = &mut self.glue;
         let theme = &self.theme;
         let (saved, writes) = self.shared.with_session(|s| {
+            // Every build() is a fresh open: the time since the last tick never counts.
+            s.game_tick(game::now_ms(), EditorView::Opened);
             glue.end_drag(s);
             glue.open(s, theme);
             s.instance().ui.layout.clone()
@@ -292,7 +361,10 @@ impl NiceEguiApp for EditorApp {
         let ((), writes) = self.shared.with_session(|s| {
             glue.end_drag(s);
             let _ = s.audition_all_off();
+            // The round's time pauses while the window is closed (lane SKR).
+            s.game_tick(game::now_ms(), EditorView::Hidden);
         });
+        self.shared.game.set_repaint(None);
         glue.close();
         if let Some(gui) = self.gui.take() {
             forward(&gui, &self.params, writes);
@@ -308,12 +380,20 @@ impl NiceEguiApp for EditorApp {
             glue,
             ..
         } = self;
-        let ((), writes) = shared.with_session(|s| {
+        let now = game::now_ms();
+        let (wake, writes) = shared.with_session(|s| {
             s.pump();
             s.fold_host(&host);
-            // The root Ui covers the whole window; the editor paints its own background.
-            glue.frame(ui, theme, s, pointer_down);
+            // The round's clock and results, then the editor's frame (the root Ui covers the whole window; the editor
+            // paints its own background) and the Recreate bar's intents (lane SKR).
+            glue.round_frame(ui, theme, s, &shared.game, now, pointer_down)
         });
+        // An idle editor draws nothing, so the round asks for its next frame itself: settled jobs, the timer's next
+        // second (F1r review S11). The worker's posts request their own repaints.
+        if let Some(at) = wake {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(at.saturating_sub(now)));
+        }
         // Lane AM: count the drawn frame, and whether it asked for the next (live data), for owner check 1.3.
         #[cfg(feature = "editor-counts")]
         self.shared

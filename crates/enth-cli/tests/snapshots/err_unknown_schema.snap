@@ -30,7 +30,10 @@ exit: 3
     "check",
     "step",
     "guide",
-    "bench"
+    "bench",
+    "challenge-new",
+    "challenge-show",
+    "compare"
   ],
   "message": "no schema named 'chek'",
   "schema": "enth.error/1"

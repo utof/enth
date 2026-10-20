@@ -1,0 +1,93 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$id": "enth.compare/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.compare/1`: a patch scored against a challenge's target.",
+  "properties": {
+    "code": {
+      "description": "The challenge's code (null for a challenge file without one).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "combined": {
+      "description": "Combined %, 0-100.",
+      "format": "double",
+      "type": "number"
+    },
+    "fingerprint": {
+      "description": "The target's fingerprint.",
+      "type": "string"
+    },
+    "hint": {
+      "description": "What it means.",
+      "type": "string"
+    },
+    "margin": {
+      "description": "Sound % minus the pass mark.",
+      "format": "double",
+      "type": "number"
+    },
+    "pass_mark": {
+      "description": "The pass mark (sound %).",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "passed": {
+      "description": "Sound % at or above the pass mark.",
+      "type": "boolean"
+    },
+    "patch": {
+      "description": "The patch scored.",
+      "type": "string"
+    },
+    "report": {
+      "description": "The full score report (`enth.score-report/1`): components, the per-parameter verdicts."
+    },
+    "schema": {
+      "const": "enth.compare/1",
+      "description": "`enth.compare/1`.",
+      "type": "string"
+    },
+    "scorers": {
+      "description": "The scorers that scored it: sound, structure, combined.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sound": {
+      "description": "Sound %, 0-100 (decides the pass).",
+      "format": "double",
+      "type": "number"
+    },
+    "structure": {
+      "description": "Structure %, 0-100.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema",
+    "patch",
+    "fingerprint",
+    "sound",
+    "structure",
+    "combined",
+    "pass_mark",
+    "passed",
+    "margin",
+    "scorers",
+    "report",
+    "hint"
+  ],
+  "title": "CompareOut",
+  "type": "object"
+}

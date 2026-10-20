@@ -145,6 +145,8 @@ fn browser_snapshots() {
         undo: Some("Load Glass Pad".to_owned()),
         redo: None,
         room: enth_ui::editor::add_module::Room::all(&Patch::init()),
+        // The Recreate bar (lane SKR) draws nothing without a shell's round view.
+        ..HeaderView::default()
     };
     let t = theme.clone();
     let mut h = common::harness(

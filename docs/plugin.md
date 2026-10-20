@@ -17,6 +17,8 @@
 | `src/state.rs` | the persistent fields `patch` and `enth` | SK |
 | `src/editor.rs` | the `NiceEguiApp` (`EditorApp`) and `Glue`, the plugin's handle on `enth_ui::editor::Editor` ([editor.md](editor.md)) | SK, ED1 |
 | `src/tests_host.rs` | [in-process host tests](#tests-and-gates): the real plugin through fake nice-plug contexts, compared bit for bit with `enth_render` | PL |
+| `src/game.rs` | [a Recreate round](#the-recreate-round-lane-skr): the job worker, the target loop's lock-free hand-off, the A/B player in `process()`, the round log, the `ab-toggle` measurement harness | SKR (R1/S1) |
+| `src/tests_game.rs` | a full round through the real plugin with the real worker and jobs | SKR |
 | `clippy.toml` | the workspace's bans, minus I/O, plus `GuiContext::set_state`/`get_state`, `execute_gui` and `VoiceID::id_or_fallback` | SK |
 | `tests/cli-equal.profile.toml` | the engine goldens `cli-equal` renders through the plugin (all of them since PL, `mod-controls` included); `cargo xtask host-render` runs it since INT | SK, PL |
 | `tests/presets.rs` | every `content/presets/*.patch.json` is exactly `Patch::to_json()` of a current patch, so the plugin saves it back unchanged ([Presets](#presets)) | INT |
@@ -38,6 +40,7 @@ The plugin-level golden is `tools/test-host/golden/enth-plugin.toml` with its in
 | Host main thread | `activate`, `deactivate`, state save and load (the persistent fields) | the session, through `Shared::with_session` |
 | baseview's GUI thread | the editor's `build` and `ui` | the session, through `Shared::with_session`; `ParamSetter` after unlocking |
 | nice-plug's background worker | `Task::Pump` | the session (pump, audition release) |
+| the game worker (`enth-game`, lane SKR) | a round's jobs ([below](#the-recreate-round-lane-skr)); spawned at the first job, joined when `Shared` drops | its own queues and the target loop's hand-off. **Never the session lock** |
 
 `Shared` holds the one lock, `parking_lot::Mutex<Session>`, and atomics: `pump_wanted`, `monitor_bypass`, `rebaseline`, `editor_closed`, plus a weak reference to the parameters for reading the host's values off the audio thread, the fork's `HostRequests` (set once by the wrapper right after construction, `Plugin::host_requests`) and, with `rt-stats`, the histogram. **`Shared::with_session` is the only way in:** it locks, runs the closure, drains the session's requests, sets the 72 display names if one of them was `RenameParams` ([below](#parameter-names)), notes whether a compile is still pending, **unlocks**, then stores the monitor bypass, asks the host for a parameter-info rescan on a rename, marks the project dirty on `PatchEdited` ([Dirty marking](#dirty-marking)), arms `pump_wanted`, and returns the host writes. Only editor edits make host writes, and the editor forwards them to `ParamSetter` after this returns, never under the lock, because a host may call back synchronously (to read the state, which locks).
 
@@ -160,6 +163,58 @@ A fresh instance plays **Init** (lane AM, R1/S1; `src/init.rs`): the starter pat
 - **What stays `Patch::init()`:** the CLI's `init` template, `Session::default()`, the session's state fixtures and tests, and the fallback when a saved `patch` field does not load (the session's rule).
 - **What changed with it:** the plugin golden's `chord` case (a fresh instance; `5463f1a1…` → `2a64822d…`, the other nine and `cli-equal` unchanged) and `starter-project`'s patch. REAPER's scenarios load their own patches, and `undo-state-load` names any patch without its marks "init", so they hold.
 
+## The Recreate round (lane SKR)
+
+**The plugin plays a Recreate round end to end: the session's `game` module decides, the shell runs its jobs, plays the A/B and writes the round log** (freeze point F2r, [phase-2.md](phase-2.md); the session's side is [session.md](session.md#the-recreate-round-lane-sg-r1), "What lane SKR must wire"). Everything is in `src/game.rs`; `lib.rs`, `process.rs` and `editor.rs` call it.
+
+| Part | Thread | What it does |
+| --- | --- | --- |
+| `Game` (in `Shared`) | whoever drains the session | `Shared::with_session` drains `Session::drain_game_requests` beside `drain_requests`, so every caller acts on them after unlocking: `Run` jobs go to the worker, `Cancel` removes a queued job, `Ab` goes to the A/B atomics (the A/B state first: it is the state after the drain, and a clear must reach the worker before the next round's `Prepare`), `Log` lines go to the round log, and `Dirty` is coalesced with `ShellRequest::PatchEdited` into **one** `mark_dirty` per drain |
+| the game worker | `enth-game`, spawned at the first job | runs each job from its payload (`Runner`) and posts `(id, result)` to a queue; each post asks the open editor for a repaint (`egui::Context::request_repaint`, lock-free). Unbounded `VecDeque` queues behind short `parking_lot` locks, never the session's, so neither side blocks on a full queue; the worker waits on a condition variable only for work. A panicking job answers `Failed` (the crash hook writes its file) and the round breaks instead of hanging |
+| the editor glue | GUI, once per frame | `Opened` at every `build()`, `Visible` each frame, `Hidden` at close (`Session::game_tick`, the shell's monotonic milliseconds); at the top of the frame, after `pump` and `fold_host`, the worker's results go back (`game_job_done`), then the editor draws, then the Recreate bar's intents reach `GameEdit` ([editor.md](editor.md#the-recreate-hook-lane-skr)); after the frame a repaint at `RoundView::wake_at_ms` |
+| `Player` | audio | below |
+
+**The jobs** (`Runner`, every one through `enth-challenge`'s round functions; the worker composes nothing):
+
+| Job | Runs |
+| --- | --- |
+| `Prepare` | `prepare_round(&spec)` (lane SS's `sound/1` renders here, 0.25–2 s); the target rendered through its phrase at the scored rate and seed (`SCORING_SAMPLE_RATE`, `SCORING_SEED`) and measured; at the host's rate when it differs (rendered again); the loop handed to the audio thread; `Prepared::from_round(&round, lufs)` posted |
+| `Score` | `score_round(&round, &patch)` with the round kept from its `Prepare` (rebuilt from the job's challenge with `prepare_challenge` if the worker lost it) |
+| `Rings` | `score_structure(&round, &patch)` |
+| `Loudness` | the phrase rendered through the player's patch at 48 kHz and measured |
+| `Hint` | lane SN's coach: one `CoachTarget::for_round` per round, one `CoachPlan` per patch (levels 2–4 of an unchanged patch cost nothing), the hint's text only (`CoachHint`); the plan's verified fix is never shown. The evaluator is `enth_solver::Serial` (a parallel one needs `enth-analysis` in the plugin's dependencies) |
+
+**Loudness and gains.** Both sides of the A/B are measured with lane SS's `enth_challenge::loudness::integrated_lufs` on the 48 kHz render's mid channel (`game::integrated_lufs`); the session turns the two readings into gains with the scorer's own `gain_db` (`game::ab_gains`, P11), and the shell converts the dB values with `loudness::db_to_amp` on the thread that drained them. The louder side is turned down; the quieter one is never boosted.
+
+**The target loop's hand-off** (`Mailbox`): an incoming and a retired slot, each an `AtomicPtr` to a boxed `TargetLoop` (the loop's frames and the phrase's notes in frames at the loop's rate). Only the worker publishes (so a clear, the empty loop sent when `AbState::target_ready` turns false, and the next round's loop arrive in order); a loop the audio thread has not taken yet is freed by the publisher. The audio thread swaps the incoming pointer out and hands the loop it replaces back through the retired slot, keeping it in a pending slot while that slot is still full: **it never allocates or frees**. The worker, each editor frame and `Drop` collect retired loops.
+
+**`Player`, in `process()`** (around the render; [The audio block](#the-audio-block)):
+
+1. Before the render: read the A/B atomics, take a new loop, follow the switch. While Target ▶ or Mine ▶ is on, **Mine's phrase** runs: its notes go into the block's event list at their loop positions, on note port `game::GAME_PORT` (`0x7F01`), so a host note-off never releases them and the `NOTE_END` ledger never reports them; they keep playing, muted, under Target ▶, so a flip is instant. A loop at another rate than the host's never plays (the GUI frame asks the worker for one at the host's rate after a re-activation).
+2. After the render: `out = engine · gain_mine · (1 − w) + loop · gain_target · w`, at one shared position (the loop's), every factor ramped over `AB_FADE_MS` (10 ms). Off: the phrase's notes are released and the gains settle back to unity.
+3. **While no round plays (or the switch is off and the ramps have settled), the player returns before touching a sample**: four atomic loads and one pointer swap per block. So a plugin render still equals `enth render` bit for bit, `host-render` and `cli-equal` are unchanged, and the in-process host tests pass untouched.
+
+**Target ▶ is the scored audio**: at 48 kHz the loop is exactly the render the scorer hears (`tests_game.rs` compares it sample for sample, scaled by the level-match gain); at another rate the same patch and phrase rendered at the host's rate.
+
+**Transport.** REAPER keeps calling `process()` while its transport is stopped (lane PBU's check), so Target ▶ and Mine ▶ play with the transport stopped there; other hosts are an open check.
+
+**The round log.** Each `GameRequest::Log` line (`enth.round-log/1`) is appended, one write per line in append mode, to `$ENTH_ROUNDS_DIR/round-log.jsonl` when set, else `<Documents>/enth/Rounds/round-log.jsonl` (beside the crash folder, `<Documents>/enth/Crashes`; `game::round_log_path`). A log that cannot be written does not stop the round: the record is in the saved state. Nothing is sent anywhere; lane GK's `gr1-report` reads the file.
+
+**The `ab-toggle` measurement harness** (cargo feature, off by default; never in a shipped build): with `ENTH_AB_TOGGLE_MS` set, activation starts a round (`ENTH_AB_CODE`, else level 1 with seed 1), waits for its target and turns Target ▶ on, and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio; at deactivation one `enth.plugin-ab-stats/1` line goes to `ENTH_AB_REPORT`. `enth-test-host process-stats --ab MS` sets both variables before it loads the plugin and reads the report back (it fails when the bundle has no harness or the A/B never flipped).
+
+| Measured (lane SKR, 2026-10-20) | Result |
+| --- | --- |
+| `process()` with a round's A/B flipping every 250 ms (`process-stats --gate g1 --ab 250`, release `ab-toggle` bundle, rtkit RR, under `flock -x`) | p50 11.0 µs, p99 27.2 µs, p99.9 40.1 µs, max 92 µs over 90,000 blocks of 64 frames (2.0 % of the period at p99); 518 flips, 48,808 Target and 48,692 Mine blocks; SCHED_RR 10, 6 deadline misses, load 7–9: **G1 passes** (p99 and p99.9 under 333 µs) |
+| The same bundle, no round (`process-stats --gate g1`), the same session | p50 10.8 µs, p99 26.3 µs, p99.9 38.9 µs, max 412 µs; 4 deadline misses. So the A/B costs about 1 µs at p99 (+3 %): the loop read and the crossfade are a few multiplies per sample, and Mine's phrase is one or two voices more |
+| Allocation check: the debug `ab-toggle` bundle (`assert_process_allocs`) through `process-stats --ab 250 --secs 8 --rt none` | 35 flips, 3,383 Target and 3,367 Mine blocks, a 144,000-frame loop (3 s at 48 kHz), no abort |
+| `reaper-test`, scenario `round` (debug bundle, Xvfb, Dummy Audio, transport stopped) | 7 of 7 on CLAP and VST3: the round plays 0.8–1.4 s after Start (lane SS's `sound/1` prepares in it); Target ▶ peaks 0.66–0.71 and Mine ▶ 0.65–0.74 on the track's meter; Round › Submit and Skip record a scored submit (`sound/1` 4.4 % for the start patch two octaves off); End removes the round and writes one `end` line |
+| The whole `reaper-test` | exit 0, 291 checks |
+| clap-validator 0.4.1 (debug) | 36 passed, 0 failed, 8 skipped |
+| `host-render` | the 10 cases' hashes unchanged; `cli-equal` 63 of 63 equal |
+| `leak-test` (with the round's code in, no round played) | editor 4.36 and 5.03 KB per cycle (limit 26), 3 threads after every close, 200 of 200 drawn and closed; churn 0.50 KB per cycle, nothing left behind |
+
+Tests: `src/game.rs` (the hand-off without a free on the audio side, an idle player leaves the block bit for bit, the crossfade and the shared position, Mine's attenuation and the phrase's wrap, the loudness, the runner's jobs, the coach, the log path, the lazy worker), `src/tests_game.rs` (start → Target ▶ equal to the scored render → Mine ▶ → a submit that does not pass → the target rebuilt → a pass → End restores the patch, logs the round, marks dirty once; 44.1 kHz; no round, no worker), `enth-ui`'s `tests/recreate.rs` (the kittest round flow).
+
 ## rt-stats
 
 `cargo xtask bundle enth-plugin --features rt-stats` (the bundler passes cargo options through) compiles `rt_stats.rs`: `process_block` reads `Instant::now()` at its top and records the elapsed time at its end (the plugin's own work, nice-plug's wrapper excluded) into a log-scale histogram of atomic counters, 16 buckets per octave of nanoseconds (each at most 6.25 % wide), plus the count, frames, sum and maximum: relaxed atomic adds, no lock, no allocation. `Shared::rt_stats.snapshot()` gives p50, p99, p99.9 (the upper edge of the bucket that holds them, so at most one bucket high) and the maximum; at `deactivate`, if `ENTH_RT_STATS` names a file, one JSON line (`enth.plugin-rt-stats/1`, microseconds, with the non-empty buckets) is appended and the counters restart. Without the feature the module is not compiled and `process()` reads no clock. It complements `enth-test-host process-stats`, which times the whole `process()` call from the host's side. Checked end to end: a debug feature bundle rendering the golden chord through `enth-test-host render` (1,500 blocks of 64 frames) wrote one report line at deactivation (debug build, a loaded laptop: p50 39 µs, p99 59 µs, max 76 µs; not an RT measurement).
@@ -275,4 +330,8 @@ Measured on INT's branch (2026-10-20, load 13–16, 3 min 9 s): 12.31 and 12.45 
 - **ED2:** a `TelemetryReader` per `build()`; repaints already come from the tap's wake flag.
 - **RH:** done for the scenarios above; a new one loads any patch with `inject_state` and a chunk from `write_state_chunk`. PL changed `state.lua` (the patch's names accepted in `param-names` and checked in `param-renamed`) and flipped `CLAP_FLAT_LANE_IS_KNOWN_GAP`. FK2 flipped `DIRTY_MARKING_EXPECTED`, added `clean-without-an-edit`, `midi-cc-params` (91 VST3 parameters), the `mod-wheel` scenario and `render-repeatable`.
 - **Owner build 1** ([p1b-owner.md](p1b-owner.md), lane INT folded these in): renamed slot names in REAPER on a real display (CLAP after a moment, VST3 at once), REAPER's save prompt after an editor-only edit (both formats), whether its FX parameter menus show the 16 hidden "MIDI Ch. N CC 1" entries, the mod wheel from a hardware controller in both formats, and a CLAP offline bounce of short notes with none dropped.
+- **RUI** (lane SKR): the editor's seam is `Editor::set_round` / `apply_game` / `hold_scores` and `Intent::Game` ([editor.md](editor.md#the-recreate-hook-lane-skr)); the plugin already ticks the clock, hands results back, wakes the editor at `wake_at_ms` and on every worker post, and holds a score back while the rating is asked. Replace `editor/recreate/bar.rs`'s skeleton; the shell needs no change for a new bar. `RoundView::params` and `knobs` are ready for the overlay.
+- **CL** (lane SKR): `enth challenge new|show` and `enth compare --code|--challenge` are built on `score_round` ([agent-cli.md](agent-cli.md)); the `--target` reference form, `decode` and custom settings are yours.
+- **GK** (lane SKR): the round log is `$ENTH_ROUNDS_DIR/round-log.jsonl`, else `<Documents>/enth/Rounds/round-log.jsonl`, one `enth.round-log/1` line per `GameRequest::Log`, appended in order; rename the path in `game::round_log_path` if your sheets need another.
+- **GC** (lane SKR): five golden challenges are pinned with the stub scorers named (`tests/golden/challenges/skr-v1.txt`, `tests/golden/tests/skr_challenges.rs`); add `sound/1`'s columns beside them, and the plugin-side `host-render` case (the target played through the plugin equals `enth render` of the target) can start from `tests_game.rs`'s comparison.
 - **Open:** slot value text in the target's units; poly-mod in a real CLAP host (Bitwig, owned by S1); marking the project dirty for a monitor-bypass switch (a session signal, above); refusing audition notes in a CLAP bounce now that the plugin is not restarted for it (a fork patch could expose the current mode).

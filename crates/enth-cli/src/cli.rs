@@ -207,7 +207,6 @@ pub enum Cmd {
     // R1 commands, pre-declared by lane S0r: hidden, and each answers `not_built_yet` until its lane builds it in
     // its own file under `cmd/` (which also holds its arguments) and removes `hide` here.
     /// Score a patch against a challenge's target (lanes SKR, then CL).
-    #[command(hide = true)]
     Compare(crate::cmd::compare::Args),
     /// The coach's next move towards a challenge's target (lane CL).
     #[command(hide = true)]
@@ -218,7 +217,6 @@ pub enum Cmd {
     /// What a parameter or module does (lane CL).
     #[command(hide = true)]
     Explain(crate::cmd::explain::Args),
-    /// Challenges and their codes (lanes SKR, then CL).
-    #[command(hide = true)]
+    /// Challenges and their codes: `new`, `show` (lanes SKR, then CL).
     Challenge(crate::cmd::challenge::Args),
 }
