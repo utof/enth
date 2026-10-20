@@ -237,6 +237,64 @@ The host cannot see `editor_closed` (the fork's patch 2), so the gate builds the
 
 Measured on INT's branch (2026-10-20, load 13–16, 3 min 9 s): 12.31 and 12.45 KB per cycle (baseline 0.0), 3 threads after every close, 200 of 200 drawn, (200, 200) counts in both runs; churn 0.54 KB per cycle, +0 threads, +0 descriptors. Control: the `aa0fec0` bundle, built without the feature, fails the counts check (exit 1).
 
+## Soak
+
+`cargo xtask reaper-soak --minutes N [--bundle-dir D]` (lane SOAK; `xtask/src/reaper/soak.rs`, the driver `xtask/reaper/soak.lua`) is the long run behind gate GS1, "no crashes or audio-thread allocations under clap-validator and a one-hour REAPER soak". A local gate, not CI; `--minutes` defaults to 60. It builds the **debug** bundle (`--no-build` reuses `target/bundled`; `--bundle-dir` takes a copy), so nice-plug's `assert_process_allocs` aborts the process on any allocation in `process()`, and runs the native REAPER of `reaper-test` (a private copy, a fresh `reaper.ini`, Dummy Audio at 48 kHz) under `xvfb-run`, never on the real display. The transport does not run under Dummy Audio, so every note goes through REAPER's virtual keyboard (`I_RECINPUT = 4096 + (63 << 5) + channel`, `I_RECMON`, `I_RECARM`, `StuffMIDIMessage`), one track and one instance per MIDI channel (`--instances`, 1 to 16, default 4).
+
+What the script does for the whole time:
+
+| Action | How often | Detail |
+|---|---|---|
+| Notes | all the time | four patterns on the four channels: a chord every 0.5 s; a run of single notes every 0.12 s; a burst of 24 notes in 0.5 s every 12 s (more than the 16 voices, so voices are stolen), held 3 s; three held notes for 6 s with CC 1, pitch bend and the sustain pedal moving, every seventh round ended by CC 123. `--no-notes` turns them off |
+| Sweeps | every tick of 50 ms (about 57 parameter sets a second per instance) | every parameter of every instance follows its own slow sine (the 8 macros 0.05 to 0.5 Hz, the slots 0.02 to 0.2 Hz, random phase), 2 macros and 2 slots per instance per tick; one set in 300 jumps to 0 or 1. `--no-sweeps` |
+| State loads | `--load-secs`, default 90 | `clap_chunk` (or `vst_chunk`) on one instance in turn, from seven patches built by `chunk::write_state_chunk`: roundtrip, starter, state, slot, macro, wheel, dirty-control |
+| Instance churn | `--churn-secs`, default 300 | delete the plugin and add it again on one track, then load a patch; every fourth churn with the editor open (the window must go with it) |
+| Editor | `--editor-secs`, default 60 | open the floating window, wait for the first drawn frame, drag the osc1 Level knob with real X events (`xinput.py`), hold `--editor-hold-secs` (5), close, wait for the window to go, settle 3 s, read the memory. `0` never opens it |
+
+The xtask supervises REAPER from outside: it finds the process by its executable, samples `smaps_rollup` every `--sample-secs` (15) (`Pss`, `Pss_Anon`, `Pss_File`, `SwapPss`, `Rss`), the thread and descriptor counts and the Xvfb server's PSS, and reads the script's log (`soak.log`: `check` and `data` lines). Checks, all of which must pass for exit 0:
+
+| Check | Fails when |
+|---|---|
+| `no-allocation-abort` | REAPER's output has "memory allocation of N bytes failed" (the allocator's error handler after `assert_process_allocs`; exit 134) |
+| `no-crash` | REAPER is gone before the script's `finished` line, or exits non-zero (the signal is named) |
+| `no-hang` | no new line in `soak.log` for `--hang-secs` (90; 240 s while REAPER starts); the threads' states are read from `/proc` first (gdb cannot attach under Yama), then the group is killed |
+| `ran-to-the-end` | the script stops short of `--minutes` |
+| `allocation-guard-armed` | the bundle does not carry `nice_assert_no_alloc` (not a debug build) |
+| `load-N`, `host-calls-ok` | an instance does not load; a state load, parameter set or churn is refused by REAPER |
+| `editor-cycles-drew-and-closed` | a cycle draws no first frame or leaves its window behind |
+| `tracks-stay-unmuted` | a track gets muted behind the script's back (see Gotchas) |
+| `instances-keep-sounding`, `audio-flows` | an instance makes no sound for 5 whole minutes in a row, or never |
+| `memory-growth` | the anonymous memory (`Pss_Anon + SwapPss`; a Theil-Sen slope over the settled samples, editor closed for 5 s, after the warm-up of 25 % of the run clamped to 60 to 600 s) grows more than `--max-pss-mb-per-hour` (5.0); the file-backed PSS and the Xvfb's are reported beside it. Fewer than 8 settled samples is a fail for runs of 30 minutes or more, a note below |
+| `threads-steady` | the settled thread counts differ by more than `--max-thread-spread` (2) |
+| `fds-steady` | the descriptors at the end exceed those at the start by more than `--max-fd-growth` (4) |
+
+`editor-cycle-growth` is information only (the per-cycle slope after the warm-up, the median cycle, the test host's gate for comparison), as are `underruns` (Dummy Audio has no deadline) and `audio-coverage`. The report `soak-report.json` (`enth.reaper-soak/1`; `--report FILE` copies it) holds the commit, verdict, failed checks, config, limits, how the run ended, the fits, all checks, every sample, every editor cycle (memory before and after), the per-minute peak of each instance and the script's events; a short text summary goes to stdout. `--self-test crash|hang` signals REAPER 30 s in: the run must fail as `no-crash` (SIGSEGV) or `no-hang`.
+
+Negative control for the allocation guard: a temporary `Vec::with_capacity(48)` in `process_block` after 3000 blocks, built as a debug bundle (never committed), aborts REAPER with "memory allocation of 48 bytes failed" (exit 134) and the soak fails `no-allocation-abort` with that message, so the guard is armed under REAPER.
+
+Measured on SOAK's branch (2026-10-20, commit `ea19d42`, debug bundle, 4 instances, defaults, 60.1 min wall clock under `flock -s`): **exit 0, all checks pass**. 62192 notes, 55710 controller moves, 822944 parameter sets (0 refused), 54 state loads (0 failed), 11 instance churns (0 failed, 2 of them with the editor open), 60 editor cycles (60 drew, 60 closed, 60 of 60 XTest edits changed the patch); every instance sounded in 59 of 59 whole minutes (peaks 9.9 to 11.8 per instance); no allocation abort, no crash, no hang. Anonymous memory (`Pss_Anon + SwapPss`) 81 MB at the start, 152 MB at the end, **+1.7 MB/h** over 160 settled samples after the 600 s warm-up (limit 5.0); the threads read 27 in every settled sample, the descriptors 9 at both ends; the editor cycles read +12 KB for the median cycle and +31 KB per cycle by the slope over 50 cycles (noisy; the 10 s cycles below are the better number). Control runs of the harness itself: `--self-test crash` fails `no-crash`, `--self-test hang` fails `no-hang`, and the allocation negative control fails `no-allocation-abort`. The report of that run is `enth.reaper-soak/1` JSON (`soak-60min.json` in the lane's scratch).
+
+### Gotchas
+
+- **REAPER's circuit breaker mutes loud tracks.** Preferences > Audio has "Automute: track output exceeds" (`automute=2`, level `automuteval=8.0`, linear, +18 dB, by default), and REAPER neither plays nor processes a muted track. A burst of 24 notes through a patch with no limiter peaks at 8 to 40, so within seconds one instance after another went silent and stayed silent, which looked like a plugin bug (it was the same with the stock ReaSynth). The soak's `reaper.ini` carries `automute=0` (`automuteflags=0` does not help), the script logs every `B_MUTE` change with the last 48 MIDI messages, and the `tracks-stay-unmuted` and `instances-keep-sounding` checks fail a run that goes silent again.
+- **The Bash tool of the agent harness caps a foreground command at 10 minutes.** An hour has to run detached (`setsid nohup … &` under `flock -s /tmp/enth-quiet.lock`) and be polled with `until [ -f done ] || [ $SECONDS -ge 480 ]; do sleep 10; done`. If you kill it, end `xvfb-run` with SIGTERM (it ends its Xvfb); an orphaned Xvfb keeps the shared lock and blocks every exclusive timing run. The xtask ends its own Xvfb when the run ends.
+- **PSS alone is a bad metric on a loaded box**: page-cache eviction and swapping move it by tens of MB. The soak fits `Pss_Anon + SwapPss`.
+- **The editor makes 27 threads 54**: llvmpipe's rasterizer workers, one set per GL context, gone on close. Thread and memory samples are taken only when the editor has been closed for 5 s (`mark` lines in the log).
+- `gdb` cannot attach (Yama `ptrace_scope`) and heaptrack segfaults once a plugin opens a window; `valgrind` was not needed.
+
+### Memory per editor open/close
+
+Report 04's 3-minute probe saw 0.5 to 0.7 MB per open/close cycle in REAPER, against 12.4 KB per cycle in the test host's leak gate. Measured here (debug bundle, Xvfb, one instance, a cycle every 10 s; `scratch/exp/*.json`):
+
+| Run | Result |
+|---|---|
+| `enth-test-host editor-cycles`, 60 cycles | anonymous 36.9, 56.4, 64.5, 65.2, 65.6 MB over the first five cycles, then 14.5 KB per cycle: a **warm-up of about 65 MB** (the plugin's first window, Mesa's GL and llvmpipe's JIT), in the test host too |
+| enth in REAPER, 70 min, 418 cycles | 108.7 MB after cycle 1, 147.5 after cycle 5 (the same warm-up), then 15.7 KB per cycle over cycles 6 to 100 and 14.8 over 100 to 200; after that one 11 MB block comes and goes (cycles 197 to 220 flip between 144 and 155 MB) and the memory steps up by 11.9 MB at cycle 327 and 3.8 MB at cycle 370; 168 MB at the end |
+| REAPER's own FX windows (ReaEQ, ReaSynth), 90 cycles | flat (0 kB per cycle), no warm-up |
+| enth, notes and sweeps, no editor, 20 min | +0.3 MB/h |
+
+So the difference is not REAPER's FX windows or SWELL (the controls are flat), and not a per-cycle cost of 0.5 MB: it is the one-time warm-up of the first few windows (GL, Mesa, llvmpipe, the plugin), which a probe of a few minutes reads as growth. The steady cost is about 15 KB per cycle in REAPER and in the test host alike (the leak gate measures 12.4 KB), independent of llvmpipe's threads and JIT (`LP_NUM_THREADS=0` and softpipe read 20 to 25 KB per cycle on 29 to 40 cycles, noisy). It does not plateau to zero: a linear tail of about 15 KB per cycle (0.9 MB/h at the soak's cycle a minute) plus a few retained blocks of 4 to 12 MB, which look like allocator hysteresis (an 11.1 MB block that is kept in some cycles and returned in the next). The soak's limit (5 MB/h of anonymous memory, the editor cycling once a minute) sits above that tail and below a real leak: 100 KB per cycle would be 6 MB/h and fail.
+
 ## Presets
 
 `content/presets/*.patch.json` are sounds made in the editor, each exactly the `patch` field the plugin saved ([content/presets/README.md](../content/presets/README.md)). `cargo xtask extract-presets <project.rpp>...` (lane INT, `xtask/src/preset.rs`) finds every enth instance in a REAPER project, decodes its state with the harness's chunk code and writes the `patch` field verbatim, named after the FX's own name or the track. `cargo xtask starter-project --out FILE.rpp` writes the project owner build 2 starts from: four named tracks, each holding the CLAP with the starter patch (`xtask/src/preset/starter.patch.json`, every P1 module, the extra ones switched off), because a fresh instance plays `Patch::init()` and the editor cannot add modules yet. `tests/presets.rs` checks every preset; `reaper-test` checks both commands against REAPER (`preset-extracted`, `starter-project`).

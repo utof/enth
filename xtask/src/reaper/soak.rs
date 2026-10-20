@@ -8,9 +8,10 @@
 //!
 //! - it samples the process every `--sample-secs` (PSS and swapped PSS from `smaps_rollup`, threads, descriptors, the
 //!   Xvfb server's PSS), so a leak the script cannot see still shows;
-//! - it watches the script's log for a heartbeat (a REAPER that stops answering is a hang: stacks are taken with gdb,
-//!   then the process group is killed) and the process itself (a REAPER that dies before the script's `finished` line
-//!   is a crash; an `assert_process_allocs` abort is told apart by the message it prints);
+//! - it watches the script's log for a heartbeat (a REAPER that stops answering is a hang: the threads' states are
+//!   read from /proc, since gdb cannot attach under Yama, then the process group is killed) and the process itself (a
+//!   REAPER that dies before the script's `finished` line is a crash; an `assert_process_allocs` abort is told apart
+//!   by the message it prints);
 //! - after the run it fits trends (Theil-Sen, robust to outliers) to the settled samples with the editor closed and
 //!   fails on growth beyond the stated limits.
 //!
@@ -30,10 +31,9 @@ use crate::{bundle, plugin};
 
 /// The script ends REAPER itself; this much extra wall time is allowed for its start and its quit.
 const OVERRUN_GRACE_SECS: u64 = 300;
-/// Settled samples a trend is fitted to (fewer: reported, not judged, unless the run is long).
 /// An instance that makes no sound for this many whole minutes in a row, with notes played into it, fails the run.
 const MAX_SILENT_MINUTES: usize = 5;
-
+/// Settled samples a trend is fitted to (fewer: reported, not judged, unless the run is long).
 const MIN_TREND_SAMPLES: usize = 8;
 /// REAPER scans the bundles, makes a project and adds the instances before the script's first log line.
 const STARTUP_SECS: f64 = 240.0;
@@ -944,8 +944,8 @@ fn supervise(sb: &Sandbox, o: &Options, chunks: &[String]) -> Result<Outcome, St
     // shared build/run lock (it inherits it) and block every exclusive timing run of the other lanes.
     kill_leftovers(&exe, group);
     if let Some(x) = xvfb {
-        let is_xvfb = std::fs::read_to_string(format!("/proc/{x}/comm"))
-            .is_ok_and(|c| c.trim() == "Xvfb");
+        let is_xvfb =
+            std::fs::read_to_string(format!("/proc/{x}/comm")).is_ok_and(|c| c.trim() == "Xvfb");
         if is_xvfb {
             signal(i64::from(x), "TERM");
             std::thread::sleep(Duration::from_millis(500));
