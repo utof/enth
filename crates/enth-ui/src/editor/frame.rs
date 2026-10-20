@@ -41,8 +41,8 @@ pub struct FrameReport {
     /// Content that reached past its region, by part (`"sources"`, …, `"overview.tiles"`, `"overview.matrix"`), in
     /// px per axis. Only entries over half a pixel are listed: an empty list means nothing scrolls.
     pub overflow: Vec<(&'static str, Vec2)>,
-    /// The next frame the editor asked egui for (lane ED2): `motion.animated_interval()` while visible live data
-    /// changes, `None` when it sleeps on the tap (0 frames until input or new data).
+    /// The next frame the editor asked egui for (lane ED2): `motion.scope_interval()` (1/60 s; lane AM, R1/S1) while
+    /// visible live data changes, `None` when it sleeps on the tap (0 frames until input or new data).
     pub repaint: Option<Duration>,
 }
 
@@ -351,9 +351,12 @@ impl Editor {
                 .show(ui, r);
         }
         overflow.retain(|(_, o)| o.x > 0.5 || o.y > 0.5);
+        // 1/60 s, not the 30 Hz the design system animates at: baseview 0.4.1 paces redraws at the X Present `msc + 2`
+        // (every other vblank), so a 1/30 s request draws about 20 frames a second and a 1/60 s one about 30
+        // (Phase 0; docs/editor.md, lane AM).
         let repaint = self
             .live
-            .schedule(&ctx, fingerprint.finish(), t.motion.animated_interval());
+            .schedule(&ctx, fingerprint.finish(), t.motion.scope_interval());
         self.report = FrameReport {
             regions,
             overflow,

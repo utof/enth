@@ -243,6 +243,11 @@ impl NiceEguiApp for EditorApp {
             // The root Ui covers the whole window; the editor paints its own background.
             glue.frame(ui, theme, s, pointer_down);
         });
+        // Lane AM: count the drawn frame, and whether it asked for the next (live data), for owner check 1.3.
+        #[cfg(feature = "editor-counts")]
+        self.shared
+            .editor_counts
+            .frame(self.glue.editor().report().repaint.is_some());
         if let Some(gui) = &self.gui {
             forward(gui, &self.params, writes);
         }

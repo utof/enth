@@ -178,7 +178,9 @@ pub fn leak_test(args: &[String]) -> Result<(), String> {
     if options.editor {
         let report = editor_cycles(&host, &clap, &out, &options)?;
         let counts = read_counts(&out.join("editor-counts.jsonl"))?;
-        let (editor_checks, facts) = judge_editor(&report, &counts, &options);
+        let frames = read_frames(&out.join("editor-counts.jsonl"))?;
+        let (editor_checks, mut facts) = judge_editor(&report, &counts, &options);
+        facts["plugin_frames"] = frames;
         checks.extend(editor_checks);
         summary["editor_cycles"] = facts;
     }
@@ -314,6 +316,25 @@ fn read_counts(path: &Path) -> Result<Vec<(u64, u64)>, String> {
             ))
         })
         .collect()
+}
+
+/// The frame fields of the same lines (lane AM, R1/S1; additive): frames drawn, live frames and the live frame rate per
+/// plugin instance, for the report only (no check reads them).
+fn read_frames(path: &Path) -> Result<Value, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|line| {
+            let v: Value =
+                serde_json::from_str(line).map_err(|e| format!("{}: {e}", path.display()))?;
+            Ok(json!({ "frames": v["frames"], "live_frames": v["live_frames"], "live_fps": v["live_fps"] }))
+        })
+        .collect::<Result<Vec<Value>, String>>()
+        .map(Value::Array)
 }
 
 /// Least-squares slope of `ys` against their index, after the first `warmup` values.

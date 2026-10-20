@@ -25,7 +25,7 @@
 //! | [`state`] | the persistent fields bridging nice-plug's state and the session blob | SK |
 //! | [`editor`] | the `NiceEguiApp` window around the `enth-ui` editor | SK, ED1 |
 //! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
-//! | `editor_counts` | with the `editor-counts` cargo feature: editor opens and `editor_closed` calls, for the leak gate | INT |
+//! | `editor_counts` | with the `editor-counts` cargo feature: editor opens, `editor_closed` calls and drawn frames, for the leak gate and owner check 1.3 | INT, AM |
 //! | [`game`] | a Recreate round's clock, worker, target and phrase players, A/B crossfade, round log | SKR (R1/S1; pre-declared by S0r) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 #![allow(
@@ -106,7 +106,8 @@ pub struct Shared {
     /// `process()` timings (the `rt-stats` cargo feature).
     #[cfg(feature = "rt-stats")]
     pub rt_stats: rt_stats::RtStats,
-    /// Editor opens and `editor_closed` calls (the `editor-counts` cargo feature), reported when this drops.
+    /// Editor opens, `editor_closed` calls and drawn frames (the `editor-counts` cargo feature), reported when this
+    /// drops.
     #[cfg(feature = "editor-counts")]
     pub editor_counts: editor_counts::EditorCounts,
 }
