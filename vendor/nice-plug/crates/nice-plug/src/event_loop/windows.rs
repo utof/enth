@@ -6,7 +6,6 @@ use std::ffi::{CString, c_void};
 use std::mem;
 use std::ptr;
 use std::sync::Weak;
-use std::thread::{self, ThreadId};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::{
     LibraryLoader::GetModuleHandleA, Performance::QueryPerformanceCounter,
@@ -18,9 +17,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::PCSTR;
 
-use super::{BackgroundThread, EventLoop, MainThreadExecutor};
+use super::{BackgroundThread, EventLoop, MainThreadExecutor, OsThreadId};
 use crate::nice_debug_assert_failure;
-use crate::util::permit_alloc;
 
 /// The custom message ID for our notify event. If the hidden event loop window receives this, then
 /// it knows it should start polling events.
@@ -43,7 +41,7 @@ pub(crate) struct WindowsEventLoop<T, E> {
 
     /// The ID of the main thread. In practice this is the ID of the thread that created this task
     /// queue.
-    main_thread_id: ThreadId,
+    main_thread_id: OsThreadId,
 
     /// An invisible window that we can post a message to when we need to do something on the main
     /// thread. The host's message loop will then cause our message to be proceeded.
@@ -136,7 +134,7 @@ where
 
         Self {
             executor: executor.clone(),
-            main_thread_id: thread::current().id(),
+            main_thread_id: OsThreadId::current(),
             message_window: HwndWrapper(window),
             message_window_class_name: class_name,
             tasks_sender,
@@ -178,9 +176,9 @@ where
     }
 
     fn is_main_thread(&self) -> bool {
-        // FIXME: `thread::current()` may allocate the first time it's called, is there a safe
-        //        non-allocating version of this without using huge OS-specific libraries?
-        permit_alloc(|| thread::current().id() == self.main_thread_id)
+        // Enth patch 10: `thread::current()` allocated the first time it ran on a thread (upstream's
+        // FIXME here); `GetCurrentThreadId()` never does.
+        self.main_thread_id.is_current()
     }
 }
 

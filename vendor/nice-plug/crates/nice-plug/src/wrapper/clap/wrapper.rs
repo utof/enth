@@ -89,14 +89,15 @@ use std::os::raw::c_char;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Weak};
-use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 use try_lock::TryLock;
 
 use super::context::{WrapperActivateContext, WrapperHostRequests, WrapperProcessContext};
 use super::descriptor::PluginDescriptor;
 use super::util::ClapPtr;
-use crate::event_loop::{BackgroundThread, EventLoop, MainThreadExecutor, TASK_QUEUE_CAPACITY};
+use crate::event_loop::{
+    BackgroundThread, EventLoop, MainThreadExecutor, OsThreadId, TASK_QUEUE_CAPACITY,
+};
 use crate::util::permit_alloc;
 use crate::wrapper::clap::ClapPlugin;
 use crate::wrapper::clap::context::RemoteControlPages;
@@ -292,8 +293,8 @@ pub struct Wrapper<P: ClapPlugin> {
     /// The ID of the main thread. In practice this is the ID of the thread that created this
     /// object. If the host supports the thread check extension (and
     /// [`host_thread_check`][Self::host_thread_check] thus contains a value), then that extension
-    /// is used instead.
-    main_thread_id: ThreadId,
+    /// is used instead. An OS thread identity, which never allocates (enth patch 10).
+    main_thread_id: OsThreadId,
     /// A background thread for running tasks independently from the host'main GUI thread. Useful
     /// for longer, blocking tasks. Initialized later as it needs a reference to the wrapper.
     background_thread: AtomicRefCell<Option<BackgroundThread<Task<P>, Self>>>,
@@ -397,9 +398,10 @@ impl<P: ClapPlugin> EventLoop<Task<P>, Wrapper<P>> for Wrapper<P> {
             Some(thread_check) => {
                 unsafe_clap_call! { thread_check=>is_main_thread(&*self.host_callback) }
             }
-            // FIXME: `thread::current()` may allocate the first time it's called, is there a safe
-            //        non-allocating version of this without using huge OS-specific libraries?
-            None => permit_alloc(|| thread::current().id() == self.main_thread_id),
+            // Enth patch 10: upstream compared `thread::current().id()` here (under a FIXME), which
+            // allocated the first time it ran on a thread, the host's audio thread included;
+            // `OsThreadId` reads the OS's identity of the thread and never allocates.
+            None => self.main_thread_id.is_current(),
         }
     }
 }
@@ -801,7 +803,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             ),
 
             tasks: ArrayQueue::new(TASK_QUEUE_CAPACITY),
-            main_thread_id: thread::current().id(),
+            main_thread_id: OsThreadId::current(),
             // Initialized later as it needs a reference to the wrapper for the executor
             background_thread: AtomicRefCell::new(None),
         };

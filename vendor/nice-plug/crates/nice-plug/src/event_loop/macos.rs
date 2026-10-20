@@ -7,7 +7,6 @@ use core_foundation::runloop::{
     CFRunLoopWakeUp, kCFRunLoopCommonModes,
 };
 use crossbeam::channel::{self, Receiver, Sender};
-use objc2::{class, msg_send};
 use std::os::raw::c_void;
 use std::sync::Weak;
 
@@ -116,7 +115,10 @@ where
     }
 
     fn is_main_thread(&self) -> bool {
-        unsafe { msg_send![class!(NSThread), isMainThread] }
+        // Enth patch 10: `pthread_main_np()`, which is what `+[NSThread isMainThread]` answers,
+        // without an Objective-C message from `process()` (a method-cache miss in `objc_msgSend`
+        // takes the runtime lock and may allocate).
+        super::is_process_main_thread()
     }
 }
 

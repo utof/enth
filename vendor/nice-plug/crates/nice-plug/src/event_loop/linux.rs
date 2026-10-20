@@ -3,11 +3,9 @@
 //! delegate expensive processing to another thread.
 
 use std::sync::Weak;
-use std::thread::{self, ThreadId};
 
-use super::{BackgroundThread, EventLoop, MainThreadExecutor};
+use super::{BackgroundThread, EventLoop, MainThreadExecutor, OsThreadId};
 use crate::nice_debug_assert_failure;
-use crate::util::permit_alloc;
 
 /// See [`EventLoop`][super::EventLoop].
 pub(crate) struct LinuxEventLoop<T, E> {
@@ -21,8 +19,8 @@ pub(crate) struct LinuxEventLoop<T, E> {
     background_thread: BackgroundThread<T, E>,
 
     /// The ID of the main thread. In practice this is the ID of the thread that created this task
-    /// queue.
-    main_thread_id: ThreadId,
+    /// queue. An OS thread identity, which never allocates (enth patch 10).
+    main_thread_id: OsThreadId,
 }
 
 impl<T, E> EventLoop<T, E> for LinuxEventLoop<T, E>
@@ -34,7 +32,7 @@ where
         Self {
             executor: executor.clone(),
             background_thread: BackgroundThread::get_or_create(executor),
-            main_thread_id: thread::current().id(),
+            main_thread_id: OsThreadId::current(),
         }
     }
 
@@ -60,8 +58,8 @@ where
     }
 
     fn is_main_thread(&self) -> bool {
-        // FIXME: `thread::current()` may allocate the first time it's called, is there a safe
-        //        non-allocating version of this without using huge OS-specific libraries?
-        permit_alloc(|| thread::current().id() == self.main_thread_id)
+        // Enth patch 10: `thread::current()` allocated the first time it ran on a thread (upstream's
+        // FIXME here); `pthread_self()` never does.
+        self.main_thread_id.is_current()
     }
 }
