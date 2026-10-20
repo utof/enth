@@ -1,0 +1,354 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "PhraseNoteOut": {
+      "additionalProperties": false,
+      "description": "One note of a phrase.",
+      "properties": {
+        "hold_ms": {
+          "description": "How long it is held, ms.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "description": "MIDI key (60 = C4).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start_ms": {
+          "description": "Note-on, ms from the start.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "velocity": {
+          "description": "MIDI velocity, 1-127.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "velocity",
+        "start_ms",
+        "hold_ms"
+      ],
+      "type": "object"
+    },
+    "PhraseOut": {
+      "additionalProperties": false,
+      "description": "The phrase a target is heard and scored through.",
+      "properties": {
+        "id": {
+          "description": "Its id in the phrase table.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "length_ms": {
+          "description": "The render's length, ms (the notes plus the release tail).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Its name (`held`, `octave_pair`, `legato_pair`).",
+          "type": "string"
+        },
+        "notes": {
+          "description": "The notes.",
+          "items": {
+            "$ref": "#/$defs/PhraseNoteOut"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "length_ms",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "RevealOut": {
+      "additionalProperties": false,
+      "description": "The answer (`enth challenge show --reveal`).",
+      "properties": {
+        "target": {
+          "description": "The target patch (`enth.patch/1`)."
+        },
+        "values": {
+          "description": "Every randomized parameter's start and target values, in address order.",
+          "items": {
+            "$ref": "#/$defs/RevealedValue"
+          },
+          "type": "array"
+        },
+        "wrote": {
+          "description": "The file `--out` wrote, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "values",
+        "target"
+      ],
+      "type": "object"
+    },
+    "RevealedValue": {
+      "additionalProperties": false,
+      "description": "A randomized parameter's start and target values (`enth challenge show --reveal`).",
+      "properties": {
+        "addr": {
+          "description": "The address.",
+          "type": "string"
+        },
+        "start": {
+          "description": "The start patch's value, in real units.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "target": {
+          "description": "The target's value, in real units.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "addr"
+      ],
+      "type": "object"
+    },
+    "ScoringOut": {
+      "additionalProperties": false,
+      "description": "How a challenge is scored.",
+      "properties": {
+        "combined": {
+          "description": "The combined score's id.",
+          "type": "string"
+        },
+        "pass_mark": {
+          "description": "The sound % at or above which a submit passes.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sound": {
+          "description": "The sound scorer's id (`sound-stub/1` until lane SS lands `sound/1`).",
+          "type": "string"
+        },
+        "sound_weight": {
+          "description": "The weight of sound in the combined score, %.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "structure": {
+          "description": "The structure scorer's id.",
+          "type": "string"
+        },
+        "time": {
+          "description": "The time rule's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sound",
+        "structure",
+        "combined",
+        "time",
+        "sound_weight",
+        "pass_mark"
+      ],
+      "type": "object"
+    },
+    "SpecOut": {
+      "additionalProperties": false,
+      "description": "A challenge's settings (`enth_challenge::RandomSpec`): integers only.",
+      "properties": {
+        "amounts": {
+          "description": "Per category (oscillators, filter, envelopes, modulation, effects, structure): 0-100, or null to follow the\ndifficulty.",
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "type": "array"
+        },
+        "difficulty": {
+          "description": "0-100: picks the level.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generator": {
+          "description": "The generator version (frozen: the same target for the same settings, forever).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "musical": {
+          "description": "0-100: 100 = priors only, 0 = uniform draws.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seed": {
+          "description": "The seed (a short code holds 40 bits; at most 2^53 - 1).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "template": {
+          "description": "The start template (0 = the starter superset).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "generator",
+        "seed",
+        "difficulty",
+        "amounts",
+        "musical",
+        "template"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.challenge-show/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.challenge-show/1`: what a code names, without the answer unless asked.",
+  "properties": {
+    "code": {
+      "description": "The code, in its canonical text.",
+      "type": "string"
+    },
+    "draws": {
+      "description": "Every draw the generator made (parameters, route depths, enable flags).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "engine": {
+      "description": "The engine a long code was made with (null for a short code).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fingerprint": {
+      "description": "The regenerated target's fingerprint (64 hex digits).",
+      "type": "string"
+    },
+    "fingerprint_prefix": {
+      "description": "Its first 8 hex digits.",
+      "type": "string"
+    },
+    "form": {
+      "description": "`short` or `long`.",
+      "type": "string"
+    },
+    "hint": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "level": {
+      "description": "The level, 1-5.",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "phrase": {
+      "$ref": "#/$defs/PhraseOut",
+      "description": "The phrase the target is heard and scored through."
+    },
+    "randomized": {
+      "description": "The randomized parameters' addresses (no values): what a round's rings and \"dim unused\" show.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reveal": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RevealOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The answer, with `--reveal` only."
+    },
+    "schema": {
+      "const": "enth.challenge-show/1",
+      "description": "`enth.challenge-show/1`.",
+      "type": "string"
+    },
+    "scoring": {
+      "$ref": "#/$defs/ScoringOut",
+      "description": "How it is scored."
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecOut",
+      "description": "The settings."
+    },
+    "warnings": {
+      "description": "What the code check reported without refusing (`engine_differs`).",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "code",
+    "form",
+    "level",
+    "spec",
+    "phrase",
+    "scoring",
+    "randomized",
+    "draws",
+    "fingerprint",
+    "fingerprint_prefix",
+    "warnings",
+    "hint"
+  ],
+  "title": "ChallengeShowOut",
+  "type": "object"
+}

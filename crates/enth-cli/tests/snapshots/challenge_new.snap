@@ -1,0 +1,91 @@
+---
+source: crates/enth-cli/tests/challenge.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "challenge": {
+    "answer": "patch",
+    "assists": {
+      "dim_unused": false,
+      "hint_budget": null,
+      "live_meter": false
+    },
+    "constraints": {},
+    "meta": {
+      "tags": [],
+      "title": ""
+    },
+    "phrase": 1,
+    "schema": "enth.challenge/1",
+    "scoring": {
+      "combined": "[scorer]",
+      "pass_mark": 90,
+      "sound": "[scorer]",
+      "sound_weight": 57,
+      "structure": "[scorer]",
+      "time": "time/1"
+    },
+    "start": {
+      "kind": "template",
+      "template": 0
+    },
+    "target": {
+      "kind": "seed",
+      "spec": {
+        "amounts": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "difficulty": 25,
+        "generator": 1,
+        "musical": 100,
+        "seed": 42,
+        "template": 0
+      }
+    }
+  },
+  "code": "1080-1000-0001-AB",
+  "engine": "0.2.0",
+  "fingerprint": "045d6d6d7c6fa099499e9ec2b20160de3a598dcb2a97b82799008804c07e92d2",
+  "fingerprint_prefix": "045d6d6d",
+  "form": "short",
+  "level": 2,
+  "next": "enth challenge show 1080-1000-0001-AB",
+  "phrase": {
+    "id": 1,
+    "length_ms": 3000,
+    "name": "held",
+    "notes": [
+      {
+        "hold_ms": 1500,
+        "key": 48,
+        "start_ms": 0,
+        "velocity": 100
+      }
+    ]
+  },
+  "schema": "enth.challenge-new/1",
+  "spec": {
+    "amounts": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "difficulty": 25,
+    "generator": 1,
+    "musical": 100,
+    "seed": 42,
+    "template": 0
+  },
+  "warnings": []
+}
+--- stderr

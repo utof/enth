@@ -1194,3 +1194,194 @@ pub struct MetaOp {
     /// Any of `name`, `author`, `description`, `tags`; the others keep their value.
     pub meta: PatchMetaDoc,
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// R1 commands (lane SKR, F2r; lane CL finishes them): `enth challenge new|show`, `enth compare`.
+// ---------------------------------------------------------------------------------------------------------------
+
+/// A challenge's settings (`enth_challenge::RandomSpec`): integers only.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SpecOut {
+    /// The generator version (frozen: the same target for the same settings, forever).
+    pub generator: u16,
+    /// The seed (a short code holds 40 bits; at most 2^53 - 1).
+    pub seed: u64,
+    /// 0-100: picks the level.
+    pub difficulty: u8,
+    /// Per category (oscillators, filter, envelopes, modulation, effects, structure): 0-100, or null to follow the
+    /// difficulty.
+    pub amounts: Vec<Option<u8>>,
+    /// 0-100: 100 = priors only, 0 = uniform draws.
+    pub musical: u8,
+    /// The start template (0 = the starter superset).
+    pub template: u8,
+}
+
+/// One note of a phrase.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PhraseNoteOut {
+    /// MIDI key (60 = C4).
+    pub key: u8,
+    /// MIDI velocity, 1-127.
+    pub velocity: u8,
+    /// Note-on, ms from the start.
+    pub start_ms: u32,
+    /// How long it is held, ms.
+    pub hold_ms: u32,
+}
+
+/// The phrase a target is heard and scored through.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PhraseOut {
+    /// Its id in the phrase table.
+    pub id: u16,
+    /// Its name (`held`, `octave_pair`, `legato_pair`).
+    pub name: String,
+    /// The render's length, ms (the notes plus the release tail).
+    pub length_ms: u32,
+    /// The notes.
+    pub notes: Vec<PhraseNoteOut>,
+}
+
+/// How a challenge is scored.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScoringOut {
+    /// The sound scorer's id (`sound-stub/1` until lane SS lands `sound/1`).
+    pub sound: String,
+    /// The structure scorer's id.
+    pub structure: String,
+    /// The combined score's id.
+    pub combined: String,
+    /// The time rule's id.
+    pub time: String,
+    /// The weight of sound in the combined score, %.
+    pub sound_weight: u8,
+    /// The sound % at or above which a submit passes.
+    pub pass_mark: u8,
+}
+
+/// `enth.challenge-new/1`: a challenge and its code.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChallengeNewOut {
+    /// `enth.challenge-new/1`.
+    pub schema: String,
+    /// The challenge code to share or paste.
+    pub code: String,
+    /// `short` (a preset and a 40-bit seed) or `long` (any settings, with the engine and a fingerprint prefix).
+    pub form: String,
+    /// The level, 1-5.
+    pub level: u8,
+    /// The settings.
+    pub spec: SpecOut,
+    /// The phrase the target is heard through.
+    pub phrase: PhraseOut,
+    /// The target's fingerprint (SHA-256 of what the generator decided, 64 hex digits).
+    pub fingerprint: String,
+    /// Its first 8 hex digits (what a long code carries).
+    pub fingerprint_prefix: String,
+    /// This build's engine version.
+    pub engine: String,
+    /// The challenge (`enth.challenge/1`), as the game plays it.
+    pub challenge: serde_json::Value,
+    /// What the code check reported without refusing (`engine_differs`).
+    pub warnings: Vec<String>,
+    /// The usual next command.
+    pub next: String,
+}
+
+/// A randomized parameter's start and target values (`enth challenge show --reveal`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RevealedValue {
+    /// The address.
+    pub addr: String,
+    /// The start patch's value, in real units.
+    pub start: Option<f32>,
+    /// The target's value, in real units.
+    pub target: Option<f32>,
+}
+
+/// The answer (`enth challenge show --reveal`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RevealOut {
+    /// Every randomized parameter's start and target values, in address order.
+    pub values: Vec<RevealedValue>,
+    /// The target patch (`enth.patch/1`).
+    pub target: serde_json::Value,
+    /// The file `--out` wrote, if any.
+    pub wrote: Option<String>,
+}
+
+/// `enth.challenge-show/1`: what a code names, without the answer unless asked.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChallengeShowOut {
+    /// `enth.challenge-show/1`.
+    pub schema: String,
+    /// The code, in its canonical text.
+    pub code: String,
+    /// `short` or `long`.
+    pub form: String,
+    /// The level, 1-5.
+    pub level: u8,
+    /// The settings.
+    pub spec: SpecOut,
+    /// The phrase the target is heard and scored through.
+    pub phrase: PhraseOut,
+    /// How it is scored.
+    pub scoring: ScoringOut,
+    /// The randomized parameters' addresses (no values): what a round's rings and "dim unused" show.
+    pub randomized: Vec<String>,
+    /// Every draw the generator made (parameters, route depths, enable flags).
+    pub draws: usize,
+    /// The regenerated target's fingerprint (64 hex digits).
+    pub fingerprint: String,
+    /// Its first 8 hex digits.
+    pub fingerprint_prefix: String,
+    /// The engine a long code was made with (null for a short code).
+    pub engine: Option<String>,
+    /// What the code check reported without refusing (`engine_differs`).
+    pub warnings: Vec<String>,
+    /// The answer, with `--reveal` only.
+    pub reveal: Option<RevealOut>,
+    /// What to do next.
+    pub hint: String,
+}
+
+/// `enth.compare/1`: a patch scored against a challenge's target.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompareOut {
+    /// `enth.compare/1`.
+    pub schema: String,
+    /// The patch scored.
+    pub patch: String,
+    /// The challenge's code (null for a challenge file without one).
+    pub code: Option<String>,
+    /// The target's fingerprint.
+    pub fingerprint: String,
+    /// Sound %, 0-100 (decides the pass).
+    pub sound: f64,
+    /// Structure %, 0-100.
+    pub structure: f64,
+    /// Combined %, 0-100.
+    pub combined: f64,
+    /// The pass mark (sound %).
+    pub pass_mark: u8,
+    /// Sound % at or above the pass mark.
+    pub passed: bool,
+    /// Sound % minus the pass mark.
+    pub margin: f64,
+    /// The scorers that scored it: sound, structure, combined.
+    pub scorers: Vec<String>,
+    /// The full score report (`enth.score-report/1`): components, the per-parameter verdicts.
+    pub report: serde_json::Value,
+    /// What it means.
+    pub hint: String,
+}
