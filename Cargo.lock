@@ -1301,6 +1301,7 @@ name = "enth-plugin"
 version = "0.0.0"
 dependencies = [
  "egui",
+ "enth-analysis",
  "enth-challenge",
  "enth-engine",
  "enth-params",
