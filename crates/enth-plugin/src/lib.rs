@@ -24,6 +24,7 @@
 //! | [`ledger`] | the host notes not reported ended yet: exactly one `NOTE_END` per host note | PL |
 //! | [`state`] | the persistent fields bridging nice-plug's state and the session blob | SK |
 //! | [`editor`] | the `NiceEguiApp` window around the `enth-ui` editor | SK, ED1 |
+//! | [`init`] | the Init patch a fresh instance plays (the gain-staged starter, `content/presets/init.patch.json`) | AM (R1/S1) |
 //! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
 //! | `editor_counts` | with the `editor-counts` cargo feature: editor opens, `editor_closed` calls and drawn frames, for the leak gate and owner check 1.3 | INT, AM |
 //! | [`game`] | a Recreate round's clock, worker, target and phrase players, A/B crossfade, round log | SKR (R1/S1; pre-declared by S0r) |
@@ -37,6 +38,7 @@ pub mod editor;
 #[cfg(feature = "editor-counts")]
 pub mod editor_counts;
 pub mod game;
+pub mod init;
 pub mod ledger;
 pub mod notes;
 pub mod params;
@@ -251,7 +253,8 @@ pub struct Enth {
 
 impl Default for Enth {
     fn default() -> Self {
-        let shared = Arc::new(Shared::new(Session::default()));
+        // A fresh instance plays Init (lane AM): the starter patch, gain-staged; `Patch::init()` stays the CLI's.
+        let shared = Arc::new(Shared::new(Session::new(init::patch())));
         let params = Arc::new(EnthParams::new(&shared));
         // Set once, here: nothing else can have set it.
         let _ = shared.params.set(Arc::downgrade(&params));
