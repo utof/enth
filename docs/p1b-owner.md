@@ -22,6 +22,12 @@ Start REAPER (`~/apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper`). Once: *Op
 
 For live notes: arm the track, set its input to your MIDI keyboard or REAPER's virtual keyboard (*View → Virtual MIDI keyboard*, Alt+B), and turn monitoring on.
 
+A fresh enth plays the smallest patch (one oscillator, one envelope: no filter, no LFO, no reverb), and the editor cannot add modules yet. Checks 1.8, 1.10 and 1.11 need more, so make a project with every module for them (it refuses to overwrite a file):
+
+```bash
+cargo xtask starter-project --out ~/enth-g1/build1.rpp
+```
+
 ## Owner build 1: the real display (about 45 minutes)
 
 Do each check in CLAP first, then VST3 where the row says so.
@@ -35,10 +41,10 @@ Do each check in CLAP first, then VST3 where the row says so.
 | 1.5 | Space after clicking the editor | Click an empty part of the editor, press Space. Click a knob, press Space. Right-click a knob, *Type value…*, type `a b`, then Escape. Click REAPER's arrange view, press Space | Space starts and stops REAPER's transport after each click in the editor. While typing, `a b` appears in the field and the transport does not move. (This decides whether the keyboard-focus patch works in REAPER's windows) | 3 min |
 | 1.6 | HiDPI | `echo "Xft.dpi: 192" \| xrdb -merge`, restart REAPER, open enth. Afterwards `echo "Xft.dpi: 96" \| xrdb -merge` and restart REAPER again | The editor is sharp and whole: REAPER does not clip it to its top-left quarter (baseview #359 under Xvfb) | 6 min |
 | 1.7 | Save prompt after an editor edit, both formats | New project, insert enth, save the project. Turn one knob in the editor (not a macro: osc 1's Level). Then *File → Close project* | REAPER asks whether to save (the edit marked the project dirty). Then the same with the VST3 | 3 min |
-| 1.8 | Renamed slot names, both formats | Right-click the filter's Cutoff, *Automate*. Open the FX's parameter list (the *Param* button in the FX window, or the track's envelope button) | Slot 1 reads "Filter 1 · Cutoff" (or the card's label), not "Slot 1": CLAP after a moment (under a second), VST3 at once. Save, close and reopen the project: the names are still there | 4 min |
+| 1.8 | Renamed slot names, both formats | In `~/enth-g1/build1.rpp` (*File → Open project*), on the `bass` track: right-click the filter's Cutoff, *Automate*. Open the FX's parameter list (the *Param* button in the FX window, or the track's envelope button) | Slot 1 reads "Filter 1 · Cutoff" (or the card's label), not "Slot 1": CLAP after a moment (under a second), VST3 at once. Save, close and reopen the project: the names are still there. For the VST3, insert "VST3i: enth (enth)" on a new track and automate osc 1's Level the same way | 4 min |
 | 1.9 | Hidden MIDI CC entries (VST3) | In the VST3's parameter list and its envelope menu, scroll past the 72 parameters | Information, not pass or fail: do "MIDI Ch. 1 CC 1" … "MIDI Ch. 16 CC 1" (16 entries) show? Note where. Say if they bother you | 2 min |
-| 1.10 | Mod wheel from your controller, both formats | Drag the *Wheel* tile's ⊕ onto osc 1's Level or the Cutoff (this makes a route), then play and move the hardware mod wheel | The sound follows the wheel in CLAP and in VST3. Skip if you have no controller with a wheel | 3 min |
-| 1.11 | Drag-to-modulate | Drag *LFO 1*'s ⊕ onto the Cutoff and drop it; drag the orange dot on the knob's ring up and down; click *Undo*. Then drag *Env 1*'s ⊕ onto a reverb knob | A drop makes an orange arc and a route in the overview; the dot sets the depth; Undo removes the route. The envelope on the reverb is refused, with the reason on the status line. Everything stays smooth | 4 min |
+| 1.10 | Mod wheel from your controller, both formats | In `build1.rpp`, drag the *Wheel* tile's ⊕ onto the Cutoff (this makes a route), then play and move the hardware mod wheel; for the VST3, a new track with the VST3 and osc 1's Level as the target | The sound follows the wheel in CLAP and in VST3. Skip if you have no controller with a wheel | 3 min |
+| 1.11 | Drag-to-modulate | In `build1.rpp`: drag *LFO 1*'s ⊕ onto the Cutoff and drop it; drag the orange dot on the knob's ring up and down; click *Undo*. Then drag *Env 1*'s ⊕ onto a reverb knob (the reverb card starts switched off; the refusal shows either way) | A drop makes an orange arc and a route in the overview; the dot sets the depth; Undo removes the route. The envelope on the reverb is refused, with the reason on the status line. Everything stays smooth | 4 min |
 | 1.12 | CLAP offline bounce of short notes | A MIDI item with 16 short notes (1/16 notes at 120 BPM) on the CLAP. *File → Render*, full-speed offline, to a WAV; import the WAV | All 16 notes are in the WAV (count the blobs in the waveform). Stock nice-plug restarted the plugin about 30 ms into a CLAP render and lost a note; the fork's patch 9 stops that | 4 min |
 
 ## Owner build 2: G1, four sounds you like (60–90 minutes, one or two sittings)
