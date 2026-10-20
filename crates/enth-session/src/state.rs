@@ -74,8 +74,11 @@ pub struct InstanceState {
     pub monitor: MonitorState,
     /// Editor preferences (the editor is rebuilt on every open, so its view state lives here).
     pub ui: UiState,
-    /// The Recreate round to resume (lane SG; reserved by lane S0r for R1/S1). Optional and omitted when `None`, so
-    /// a state without a round saves the same bytes as before the field existed, and older builds ignore it.
+    /// The Recreate round to resume (lane SG; reserved by lane S0r for R1/S1): the live round's saved record
+    /// ([`crate::game::RoundRecord`]), which the session mutates in place and keeps `None` while no round is live.
+    /// Optional and omitted when `None`, so a state without a round saves the same bytes as before the field existed
+    /// (state version 1: an optional field with a default), and older builds ignore it. A host load reconciles it
+    /// with the live round ([`Session::load_instance`]; docs/session.md, "The Recreate round").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game: Option<crate::game::GameState>,
     /// The instance's preset bookkeeping (lane PBC; reserved by lane S0r for R1/S1). Optional and omitted when
@@ -493,6 +496,7 @@ impl Session {
     pub fn load_instance(&mut self, text: &str) -> LoadReport {
         let mut report = LoadReport::default();
         self.unloaded_instance = None;
+        let live_round = self.instance.game.take(); // lane SG: reconciled with the loaded round below
         self.instance = match InstanceState::from_json(text) {
             Ok((state, version)) => {
                 report.instance_version = Some(version);
@@ -507,6 +511,7 @@ impl Session {
                 InstanceState::default()
             }
         };
+        self.game_reconcile_load(live_round);
         self.requests
             .push(ShellRequest::MonitorBypass(self.instance.monitor.fx_bypass));
         report
@@ -565,6 +570,7 @@ impl Session {
             _ => self.history.mark_saved(),
         }
         report.history = Some(fate);
+        self.game_note_load(); // a live Recreate round logs it (lane SG, crate::game)
         self.reset_host_baseline();
         // Releasing audition notes needs an active engine; detached there is nothing to release.
         let _ = self.audition_all_off();

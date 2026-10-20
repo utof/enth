@@ -126,6 +126,9 @@ pub struct Session {
     pub(crate) telemetry: Option<Arc<dyn TelemetrySource>>,
     /// Address maps for the epochs the tap may still be publishing (newest last).
     pub(crate) telemetry_maps: Vec<TelemetryMap>,
+    /// The Recreate round's state that is not saved (lane SG; the saved part is `instance.game`): see
+    /// [`crate::game`].
+    pub(crate) game: crate::game::GameLive,
 }
 
 impl std::fmt::Debug for Session {
@@ -170,6 +173,7 @@ impl Session {
             unloaded_instance: None,
             telemetry: None,
             telemetry_maps: Vec::new(),
+            game: crate::game::GameLive::default(),
         }
     }
 
