@@ -99,16 +99,15 @@ The full steps are in [friends-install.md](friends-install.md). In short: unzip,
 
 On Windows the CLAP file is `enth-plugin.clap` (a DLL) and the VST3 is the folder `enth-plugin.vst3\Contents\x86_64-win\enth-plugin.vst3`; on macOS both are bundles (`Contents/MacOS/enth-plugin`, `Info.plist`, `PkgInfo`). Sources: CLAP's `entry.h` and Steinberg's VST3 location page, as report 04 §2.3 read them. A DAW that scans only the system-wide VST3 folder needs the file copied there (one administrator prompt).
 
-## Delivery from a private repository
+## Delivery
 
-Actions artefacts and release assets in a private repository need a GitHub login with access to it, so a friend cannot open a link. Options:
+**The repository is public since 2026-10-20** (`utof/enth`; the earlier private repository is archived as `utof/enth-private-archive`). Standard GitHub-hosted runner minutes are free for public repositories, which is why it went public. Actions artefacts of a public repository still need a GitHub login to download, so:
 
 | Option | Cost | Notes |
 | --- | --- | --- |
-| **The owner downloads the zips and forwards them** (chat, a cloud link) | none | The default. A zip is about 8 to 15 MB. Forward [friends-install.md](friends-install.md) with it |
-| **Add friends as read-only collaborators** | they see all the source | They can then download artefacts themselves. Fine for a few trusted friends; GitHub's free plan has no collaborator limit on private repositories |
-| **A draft release with the zips as assets** | needs `contents: write` in `release.yml` (it is read-only now) | Assets do not expire after 14 days. Not built; a follow-up if the 14-day expiry hurts. It would also be the place for debug symbols (PDB, dSYM) |
-| **Make the repository public** | the source becomes public | Not decided; standard GitHub-hosted runner minutes are also free for public repositories |
+| **The owner downloads the zips and forwards them** (chat, a cloud link) | none | Works for anyone. A zip is about 8 to 15 MB. Forward [friends-install.md](friends-install.md) with it |
+| **Friends with a GitHub account download the artefacts themselves** | none | From the `release.yml` run's page; artefacts expire after 14 days |
+| **A release with the zips as assets** | needs `contents: write` in `release.yml` (it is read-only now) | Downloadable without a login, and assets do not expire. Not built; the next step if forwarding gets tedious. It would also be the place for debug symbols (PDB, dSYM) |
 
 ## DAW coverage
 

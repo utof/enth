@@ -56,7 +56,7 @@ Sources: the P1b research session (`_local/sessions/2026-10-19-p1b-plugin-editor
 
 **The fork**
 
-- **Vendored in the repo behind `[patch.crates-io]`, not a git fork.** A public fork would expose the project name (the repo is private), CI would depend on Codeberg being up, and `deny.toml` would need `allow-git`. The layout is in [architecture.md](../architecture.md#vendored-crates-p1b). The crates come from the crates.io `.crate` files that `Cargo.lock` pinned, with a pristine-import commit and then one commit per patch.
+- **Vendored in the repo behind `[patch.crates-io]`, not a git fork.** A public fork would have exposed the project name while the repo was private (it is public since 2026-10-20), CI would depend on Codeberg being up, and `deny.toml` would need `allow-git`. The layout is in [architecture.md](../architecture.md#vendored-crates-p1b). The crates come from the crates.io `.crate` files that `Cargo.lock` pinned, with a pristine-import commit and then one commit per patch.
 - **Four patches** (a fifth, for a lost note-on, came from lane TH; see the lane FK note below):
   1. **Slot rename** (13 files, +123/−4): a display-name override, a main-thread CLAP `rescan(INFO)` and a VST3 `restartComponent(kParamTitlesChanged)`. It applies cleanly to the crates.io sources. VST3 in REAPER still shows "Slot N".
   2. **`editor_closed`** (+9, in nice-plug-egui): `Drop` for the editor's app wrapper calls it. Measured: 20 builds and 20 `editor_closed()` calls (stock: none). `EguiEditorState::is_open()` is also reliable (20 of 20 opens and closes seen from `process()`), so correctness never depended on the patch.
