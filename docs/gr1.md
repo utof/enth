@@ -70,6 +70,7 @@ The writer is `RoundLogEntry` (`crates/enth-session/src/game.rs`). "Needed" mean
 | `hints` | integer | Hints asked for. |
 | `live_meter` | bool | The live meter was on. |
 | `revealed` | bool | The target was revealed (`gave_up` when that came before a pass). |
+| `dim_unused` | bool | The `dim_unused` assist (the modules the target leaves alone dimmed) was on while the round could be played (lane HINT, FU1). Written only when true: a line without it reads as false. |
 
 ### How the reader treats a line
 
@@ -153,7 +154,7 @@ Gate indicators (the proposed reading, docs/gr1.md; you decide GR1)
 
 | Section | Question | How it is computed |
 | --- | --- | --- |
-| Players | How many rounds did each person play, and how did it go? | `rounds` is distinct rounds after the dedupe; `played` excludes skipped and broken rounds; `restored` counts rounds with a second `end` line; `passed` is an outcome of `passed`; `pass` is passed over played; `assisted` is the share of played rounds with a hint, the live meter or a reveal. |
+| Players | How many rounds did each person play, and how did it go? | `rounds` is distinct rounds after the dedupe; `played` excludes skipped and broken rounds; `restored` counts rounds with a second `end` line; `passed` is an outcome of `passed`; `pass` is passed over played; `assisted` is the share of played rounds with a hint, the live meter, a reveal or the dim assist. |
 | Pass rate by level | Is each level winnable? | Level comes from the code (preset 1 to 5). The 95 % Wilson interval treats rounds as independent trials, so it is a rough guide. Also shown: unassisted passes over unassisted rounds, median time to pass, median sound % of the recorded first submit and of each round's best submit. Per player and level below it. |
 | Time to pass and assists | How long, and how much help? | Median active time to the first passing submit (m:ss), over passes, with and without assists; hints, reveals, live-meter rounds, and how many passes were assisted. |
 | Agreement | Do they agree with the score? | The vote after each scored round: counts and shares, response rate (votes over scored rounds), median sound % per vote, and "about right" per player. A missing vote is not disagreement; unknown values are counted apart. |
