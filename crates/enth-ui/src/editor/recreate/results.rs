@@ -293,7 +293,9 @@ fn score_column(round: &RoundView, ui: &mut Ui, t: &Theme, rect: Rect) -> f32 {
                 }
                 facts.push(format!("{} submits", round.submits));
             }
-            if round.assisted {
+            if round.revealed {
+                facts.push("revealed".to_owned());
+            } else if round.assisted {
                 facts.push("assisted".to_owned());
             }
             line(
