@@ -111,7 +111,7 @@ cargo xtask gr1-report _local/gr1/logs --validate             # fix what it name
 cargo xtask gr1-report _local/gr1/logs --baseline content/gr1/floors.jsonl --survey _local/gr1/survey.jsonl --strict
 ```
 
-`content/gr1/floors.jsonl` already holds the no-op and CMA-ES floors on the 20 codes (the start passes 0 of 20, CMA-ES 12 of 20). The agent arm is the one step that costs money (about $25 for three attempts on each code): say if you want it, and an agent runs it ([gr1.md](gr1.md#making-the-baseline-lines)). Read the report in [gr1-owner.md](gr1-owner.md#5-read-the-report)'s order: the gate lines, who is short of 20, agreement, pass rate by level, every dispute. The thresholds (70 % "about right", no rater under 50 %, 60 % want more) are proposals; GR1 is your call.
+`content/gr1/floors.jsonl` already holds the no-op and CMA-ES floors on the 20 codes (the start passes 0 of 20, CMA-ES 13 of 20; re-made on engine 0.3.0). The agent arm is the one step that costs money (about $25 for three attempts on each code): say if you want it, and an agent runs it ([gr1.md](gr1.md#making-the-baseline-lines)). Read the report in [gr1-owner.md](gr1-owner.md#5-read-the-report)'s order: the gate lines, who is short of 20, agreement, pass rate by level, every dispute. The thresholds (70 % "about right", no rater under 50 %, 60 % want more) are proposals; GR1 is your call.
 
 ## 8. Bitwig poly-mod (optional, 20 min)
 
