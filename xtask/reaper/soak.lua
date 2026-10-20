@@ -3,7 +3,7 @@
 --   * notes through REAPER's virtual keyboard (the transport does not run under Dummy Audio; research 04): one track per
 --     instance, each on its own MIDI channel, four patterns (chords, a fast run, bursts of 24 notes that steal
 --     voices, long held notes with the mod wheel, pitch bend and sustain pedal), always released again;
---   * parameter sweeps: a random walk over the 72 host parameters of every instance (the automation stand-in);
+--   * parameter sweeps: slow sines over the 72 host parameters of every instance (the automation stand-in);
 --   * structural edits: a state load every ENTH_SOAK_LOAD_SECS (the next of the xtask's patch chunks, round robin), and
 --     every ENTH_SOAK_CHURN_SECS an instance deleted and added again;
 --   * the editor opened every ENTH_SOAK_EDITOR_SECS (round robin over the instances), drawn, edited with XTest events
@@ -196,20 +196,35 @@ end
 local PATTERNS = { pattern_chords, pattern_run, pattern_burst, pattern_expressive }
 
 -- ---- parameter sweeps -----------------------------------------------------------------------------------------------
-local walk = {} -- walk[i][p] = { cur, target }
+-- Every parameter of every instance follows its own slow sine (0.05-0.5 Hz for the 8 macros, 0.02-0.2 Hz for the 64
+-- slots, random phase), so values pass through the whole range again and again and a patch never sits silent for
+-- minutes (a random walk that visits a parameter rarely did). Per tick (SWEEP_STEP seconds) each instance gets 2
+-- macros and 2 slots, in turn; now and then (1 set in 300) a parameter jumps to an extreme for that set.
+local lfo = {} -- lfo[i][p] = { rate (rad/s), phase }
+local cursor = {} -- cursor[i] = { macro, slot }
 local function sweep(now)
+  local t = now - T0
   for i = 1, N do
-    for _ = 1, 2 do
-      local p = (rnd() < 0.5) and rint(0, 7) or rint(0, NPARAMS - 1)
-      local w = walk[i][p]
-      if not w then w = { rnd(), rnd() }; walk[i][p] = w end
-      local d = w[2] - w[1]
-      if math.abs(d) < 0.02 then
-        w[2] = (rnd() < 0.1) and (rnd() < 0.5 and 0 or 1) or rnd() -- now and then straight to an extreme
+    local l, c = lfo[i], cursor[i]
+    for k = 1, 4 do
+      local p
+      if k <= 2 then
+        p = c[1] % math.min(8, NPARAMS)
+        c[1] = c[1] + 1
       else
-        w[1] = w[1] + d * 0.35
+        p = 8 + (c[2] % math.max(1, NPARAMS - 8))
+        c[2] = c[2] + 1
+        if p >= NPARAMS then p = p % NPARAMS end
       end
-      if not reaper.TrackFX_SetParamNormalized(tracks[i], fxs[i], p, w[1]) then counts.param_fail = counts.param_fail + 1 end
+      local w = l[p]
+      if not w then
+        local hz = (p < 8) and (0.05 + 0.45 * rnd()) or (0.02 + 0.18 * rnd())
+        w = { 2 * math.pi * hz, 2 * math.pi * rnd() }
+        l[p] = w
+      end
+      local v = 0.5 + 0.5 * math.sin(w[2] + w[1] * t)
+      if rnd() < 1 / 300 then v = (rnd() < 0.5) and 0 or 1 end
+      if not reaper.TrackFX_SetParamNormalized(tracks[i], fxs[i], p, v) then counts.param_fail = counts.param_fail + 1 end
       counts.sets = counts.sets + 1
     end
   end
@@ -239,7 +254,7 @@ local function churn(i)
     return
   end
   fxs[i] = fx
-  walk[i] = {}
+  lfo[i] = {}
   event("churn", string.format("inst=%d fx=%d", i, fx))
   load_chunk(i, "churn-load")
 end
@@ -338,7 +353,8 @@ local function setup()
     local tr = reaper.GetTrack(0, i - 1)
     tracks[i] = tr
     held[i] = {}
-    walk[i] = {}
+    lfo[i] = {}
+    cursor[i] = { 0, 0 }
     peak_win[i] = 0
     fxs[i] = reaper.TrackFX_AddByName(tr, FX_NAME, false, -1)
     check("load-" .. i, fxs[i] >= 0, FX_NAME)

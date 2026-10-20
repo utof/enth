@@ -30,6 +30,8 @@ use crate::{bundle, plugin};
 
 /// The script ends REAPER itself; this much extra wall time is allowed for its start and its quit.
 const OVERRUN_GRACE_SECS: u64 = 300;
+/// Settled samples a trend is fitted to (fewer: reported, not judged, unless the run is long).
+const MIN_TREND_SAMPLES: usize = 8;
 /// REAPER scans the bundles, makes a project and adds the instances before the script's first log line.
 const STARTUP_SECS: f64 = 240.0;
 
@@ -294,6 +296,19 @@ fn find_xvfb(reaper_pid: u32) -> Option<u32> {
         }
     }
     None
+}
+
+/// Ends the run's processes: the process group `xvfb-run` was started in, and any REAPER of this sandbox left behind
+/// (xvfb-run runs its command in a group of its own, so the first kill does not reach it).
+fn kill_leftovers(exe: &Path, group: i64) {
+    signal(-group, "KILL");
+    for _ in 0..20 {
+        let Some(pid) = find_pid_by_exe(exe) else {
+            return;
+        };
+        signal(i64::from(pid), "KILL");
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
 
 fn signal(pid_or_group: i64, name: &str) {
@@ -831,14 +846,14 @@ fn supervise(sb: &Sandbox, o: &Options, chunks: &[String]) -> Result<Outcome, St
             if let Some(p) = pid {
                 hang_stacks = capture_stacks(p, &sb.out);
             }
-            signal(-group, "KILL");
+            kill_leftovers(&exe, group);
             let _ = child.wait();
             exit = format!("killed by the supervisor: no log line for {silent:.0} s");
             ending = Ending::Hung;
             break;
         }
         if now.duration_since(started).as_secs() > deadline_secs + 30 {
-            signal(-group, "KILL");
+            kill_leftovers(&exe, group);
             let _ = child.wait();
             exit = "killed by the supervisor: past the deadline".to_owned();
             ending = Ending::Overran;
@@ -906,8 +921,8 @@ fn supervise(sb: &Sandbox, o: &Options, chunks: &[String]) -> Result<Outcome, St
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    // Whatever is left of the group (an Xvfb that outlived a kill) goes too.
-    signal(-group, "KILL");
+    // Whatever is left (an Xvfb or a REAPER that outlived a kill) goes too.
+    kill_leftovers(&exe, group);
     Ok(Outcome {
         ending,
         samples,
@@ -1170,6 +1185,22 @@ fn evaluate(
             .filter(|(_, p)| **p <= 1e-6)
             .map(|(i, _)| i + 1)
             .collect();
+        let whole: Vec<&BTreeMap<String, String>> =
+            peaks.iter().filter(|r| !r.contains_key("final")).collect();
+        let sounding: Vec<String> = (0..o.instances)
+            .map(|i| {
+                let key = format!("p{}", i + 1);
+                let n = whole
+                    .iter()
+                    .filter(|r| num(r, &key).unwrap_or(0.0) > 1e-6)
+                    .count();
+                format!("{n}/{}", whole.len())
+            })
+            .collect();
+        checks.info(
+            "audio-coverage",
+            format!("minutes with sound, per instance: {}", sounding.join(" ")),
+        );
         checks.add(
             "audio-flows",
             !peaks.is_empty() && dead.is_empty(),
@@ -1226,7 +1257,7 @@ fn evaluate(
         fits.fds_start = median(&fd_values[..edge]);
         fits.fds_end = median(&fd_values[fd_values.len() - edge..]);
     }
-    let enough = settled_all_editor_closed.len() >= 8;
+    let enough = settled_all_editor_closed.len() >= MIN_TREND_SAMPLES;
     let judged_long = wanted_secs >= 1800.0;
     if enough {
         if let Some(slope) = fits.footprint_mb_h {
@@ -1419,15 +1450,20 @@ fn print_summary(o: &Options, outcome: &Outcome, checks: &Checks, fits: &Fits, r
         outcome.ending
     );
     if let (Some(a), Some(b)) = (fits.footprint_start_mb, fits.footprint_end_mb) {
-        println!(
-            "reaper-soak: anonymous memory {a:.0} -> {b:.0} MB, trend {:+.1} MB/h (limit {:.1}), threads {}-{}, descriptors {}-{}",
-            fits.footprint_mb_h.unwrap_or(0.0),
-            o.limits.pss_slope_mb_h,
-            fits.threads_min.unwrap_or(0),
-            fits.threads_max.unwrap_or(0),
-            fits.fds_start.unwrap_or(0.0),
-            fits.fds_end.unwrap_or(0.0),
-        );
+        let trend = if fits.settled_samples >= MIN_TREND_SAMPLES {
+            format!(
+                "trend {:+.1} MB/h (limit {:.1}), threads {}-{}, descriptors {:.0}-{:.0}",
+                fits.footprint_mb_h.unwrap_or(0.0),
+                o.limits.pss_slope_mb_h,
+                fits.threads_min.unwrap_or(0),
+                fits.threads_max.unwrap_or(0),
+                fits.fds_start.unwrap_or(0.0),
+                fits.fds_end.unwrap_or(0.0),
+            )
+        } else {
+            "no trend (too few settled samples)".to_owned()
+        };
+        println!("reaper-soak: anonymous memory {a:.0} -> {b:.0} MB, {trend}");
     }
     println!("reaper-soak: report {}", report.display());
 }
