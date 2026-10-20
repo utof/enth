@@ -12,11 +12,14 @@
 //! | --- | --- | --- |
 //! | [`sensitivity`] | per-parameter sensitivity of a challenge's sound score | SN |
 //! | [`coach`] | Recreate hints: the target's descriptors as an `Expect` list for [`hint()`] | SN |
-//! | [`cmaes`] | CMA-ES ported from `spike-metric`, for `enth match` and the solver floors | MT |
-//! | [`nearest`] | the nearest reachable patch to a sound, where a match starts (R2 if late) | MT |
+//! | [`cmaes`] | CMA-ES ported from `spike-metric`: ask-tell, seeded, bounded, IPOP restarts | MT |
+//! | [`search`] | `enth match`: free parameters, a distance, a render budget; probe, CMA-ES runs and restarts (`docs/dsp/match.md`) | MT |
+//! | [`heuristic`] | the search's start: envelope, pitch, cutoff and detune from a target's descriptors | MT |
+//! | [`nearest`] | the nearest reachable patch to a sound: a documented stub, on the cut list (R2) | MT |
 //!
-//! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator,
-//! which returns results by job index, so a hint is identical for any worker count.
+//! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator (an
+//! [`Objective`](search::Objective) for a match), which returns results by job index, so a hint or a match is
+//! identical for any worker count.
 //!
 //! ```
 //! use enth_analysis::parse_list;
@@ -39,8 +42,10 @@
 pub mod cmaes;
 pub mod coach;
 pub mod eval;
+pub mod heuristic;
 pub mod hint;
 pub mod nearest;
+pub mod search;
 pub mod sensitivity;
 
 pub use eval::{EvalError, Evaluator, Job, Serial, measure, note_timing};

@@ -58,6 +58,11 @@ fn run(job: &Job) -> JobResult {
 }
 
 fn harness() -> Harness<'static, App> {
+    harness_with(false)
+}
+
+/// The harness, rendering on lavapipe when `render` (snapshots).
+fn harness_with(render: bool) -> Harness<'static, App> {
     let theme = Theme::dark();
     let app = App {
         editor: Editor::new(&theme),
@@ -68,46 +73,56 @@ fn harness() -> Harness<'static, App> {
         results: Vec::new(),
         seed: 42,
     };
-    Harness::builder()
+    let mut builder = Harness::builder()
         .with_size(theme.size.window.default)
         .with_pixels_per_point(1.0)
         .with_step_dt(1.0 / 60.0)
-        .with_context_setup(move |ctx| theme.apply(ctx))
-        .build_ui_state(
-            |ui, app: &mut App| {
-                let down = ui.input(|i| i.pointer.any_down());
-                let rect = ui.ctx().content_rect();
-                let mut root = ui.new_child(UiBuilder::new().max_rect(rect));
-                // The glue's frame: the clock, results back, the round view, draw, the bar's intents.
-                app.now += 16;
-                let view = if app.now == 16 {
-                    EditorView::Opened
-                } else {
-                    EditorView::Visible
-                };
-                app.session.game_tick(app.now, view);
-                for (id, result) in app.editor.hold_scores(std::mem::take(&mut app.results)) {
-                    let _ = app.session.game_job_done(id, result);
+        .with_context_setup(move |ctx| theme.apply(ctx));
+    if render {
+        builder = builder.renderer(common::cpu_renderer());
+    }
+    builder.build_ui_state(
+        |ui, app: &mut App| {
+            let down = ui.input(|i| i.pointer.any_down());
+            let rect = ui.ctx().content_rect();
+            let mut root = ui.new_child(UiBuilder::new().max_rect(rect));
+            // The glue's frame: the clock, results back, the round view, draw, the bar's intents.
+            app.now += 16;
+            let view = if app.now == 16 {
+                EditorView::Opened
+            } else {
+                EditorView::Visible
+            };
+            app.session.game_tick(app.now, view);
+            for (id, result) in app.editor.hold_scores(std::mem::take(&mut app.results)) {
+                let _ = app.session.game_job_done(id, result);
+            }
+            app.editor.set_round(app.session.round());
+            app.editor
+                .frame(&mut root, &app.theme, &mut app.session, down);
+            let seed = app.seed;
+            app.editor.apply_game(&mut app.session, &mut || seed);
+            app.session.drain_requests().for_each(drop);
+            for request in app.session.drain_game_requests() {
+                if let GameRequest::Run(job) = request {
+                    app.jobs.push(job);
                 }
-                app.editor.set_round(app.session.round());
-                app.editor
-                    .frame(&mut root, &app.theme, &mut app.session, down);
-                let seed = app.seed;
-                app.editor.apply_game(&mut app.session, &mut || seed);
-                app.session.drain_requests().for_each(drop);
-                for request in app.session.drain_game_requests() {
-                    if let GameRequest::Run(job) = request {
-                        app.jobs.push(job);
-                    }
-                }
-                // The worker, between frames.
-                for job in std::mem::take(&mut app.jobs) {
-                    let result = run(&job);
-                    app.results.push((job.id, result));
-                }
-            },
-            app,
-        )
+            }
+            // The worker, between frames.
+            for job in std::mem::take(&mut app.jobs) {
+                let result = run(&job);
+                app.results.push((job.id, result));
+            }
+        },
+        app,
+    )
+}
+
+/// Open the bar's `menu` and click its `item`.
+fn menu(h: &mut Harness<'_, App>, menu: &str, item: &str) {
+    h.get_by_label(menu).click();
+    h.run_steps(2);
+    h.get_by_label(item).click();
 }
 
 fn phase(h: &Harness<'_, App>) -> Option<Phase> {
@@ -140,23 +155,27 @@ fn a_round_from_start_to_end_through_the_bar() {
     assert_eq!(h.state().session.game_ab().listen, Listen::Mine);
 
     // The first Submit asks the blind rating; the score is computed but held back until it is given.
-    h.get_by_label("Submit").click();
+    menu(&mut h, "Round", "Submit");
     h.run_steps(3);
     assert!(h.state().editor.recreate().asking());
     let round = h.state().session.round().unwrap();
     assert_eq!(round.first, None, "the score waits for the rating");
     assert!(round.pending.scoring);
-    h.get_by_label("Rate 3").click();
+    menu(&mut h, "Rate yours", "Rate 3");
     h.run_steps(3);
     let round = h.state().session.round().unwrap();
     assert_eq!(round.rating, Some(3), "the rating came before the score");
     assert!(round.first.is_some(), "then the score");
     assert!(
-        h.query_by_label_contains("Sound").is_some(),
-        "the readout shows the score"
+        h.state()
+            .editor
+            .recreate()
+            .readout()
+            .is_some_and(|r| r.contains("Sound")),
+        "the status line's readout shows the score"
     );
 
-    h.get_by_label("Reveal").click();
+    menu(&mut h, "Round", "Reveal");
     h.run_steps(2);
     assert_eq!(phase(&h), Some(Phase::Revealed));
     assert_eq!(
@@ -165,7 +184,7 @@ fn a_round_from_start_to_end_through_the_bar() {
         "the target is loaded"
     );
 
-    h.get_by_label("End").click();
+    menu(&mut h, "Round", "End");
     h.run_steps(2);
     assert_eq!(phase(&h), None);
     let mut back = h.state().session.patch().clone();
@@ -180,12 +199,26 @@ fn skipping_the_rating_shows_the_score_without_one() {
     h.run_steps(2);
     h.get_by_label("Start").click();
     h.run_steps(3);
-    h.get_by_label("Submit").click();
-    h.run_steps(2);
-    h.get_by_label("Skip").click();
+    menu(&mut h, "Round", "Submit");
+    h.run_steps(3);
+    menu(&mut h, "Rate yours", "Skip");
     h.run_steps(3);
     let round = h.state().session.round().unwrap();
     assert_eq!(round.rating, None);
     assert_eq!(round.submits, 1);
     assert!(!h.state().editor.recreate().asking());
+}
+
+/// The editor with a live round (Target ▶ on), at the default window: where the skeleton bar sits (between the
+/// Presets group and Add), and its readout on the status line. Update on purpose and look at it:
+/// `UPDATE_SNAPSHOTS=1 cargo test -p enth-ui --test recreate`.
+#[test]
+fn a_live_round_snapshot() {
+    let mut h = harness_with(true);
+    h.run_steps(2);
+    h.get_by_label("Start").click();
+    h.run_steps(3);
+    h.get_by_label("Target ▶").click();
+    h.run_steps(3);
+    h.snapshot("recreate_round_live");
 }

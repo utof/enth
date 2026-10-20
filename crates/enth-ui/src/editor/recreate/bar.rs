@@ -6,10 +6,10 @@
 //! # Lane SKR's skeleton
 //!
 //! A round played end to end through the header's Recreate hook, with the least UI that does it: **Start** (level 1),
-//! **Target ▶**, **Mine ▶**, **Submit**, **Reveal**, **End** (restores the player's own patch) and a one-line
-//! readout (phase, sound and structure %, the time). The first Submit asks the **blind rating** ("Rate 1" … "Rate 5",
-//! or "Skip") before the score shows, and the score is held back until it is given (docs/session.md, "What lane SKR
-//! must wire" 7): [`Recreate::hold_scores`] keeps a `Scored` result from the session until the player answers, so the
+//! then **Target ▶**, **Mine ▶** and a **Round** menu (**Submit**, **Reveal**, **End**, which restores the player's
+//! own patch), and a one-line readout on the status line (code, phase, sound and structure %, the time). The first
+//! Submit asks the **blind rating** (a **Rate yours** menu: "Rate 1" … "Rate 5", or "Skip") before the score shows, and the
+//! score is held back until it is given (docs/session.md, "What lane SKR must wire" 7): [`Recreate::hold_scores`] keeps a `Scored` result from the session until the player answers, so the
 //! session records the rating before the score (it refuses a rating after the first score).
 //!
 //! The seam (what RUI builds on, and what a shell does each frame, docs/editor.md "The Recreate hook"):
@@ -27,7 +27,7 @@
 //! [`Editor::apply_game`]: crate::editor::Editor::apply_game
 //! [`Editor::hold_scores`]: crate::editor::Editor::hold_scores
 
-use egui::{Align, Button, Layout, RichText, Ui, UiBuilder, pos2};
+use egui::{Button, RichText, Ui};
 use enth_challenge::spec::{LATEST_GENERATOR, SpecPreset};
 use enth_session::game::{
     EndChoice, GameEdit, GameError, JobId, JobResult, Listen, Phase, RoundSource, RoundView,
@@ -243,6 +243,20 @@ impl Recreate {
         self.queued.push(intent);
     }
 
+    /// The round's one-line readout for the status line's right end (code, phase, scores, time, or why an intent was
+    /// refused): `None` while no round is live and nothing was refused.
+    pub fn readout(&self) -> Option<String> {
+        let v = self.view();
+        if !v.available || (!v.live && v.readout.is_empty()) {
+            return None;
+        }
+        Some(if v.code.is_empty() {
+            v.readout
+        } else {
+            format!("Recreate {} {} {}", v.code, glyph::BULLET, v.readout)
+        })
+    }
+
     /// Whether the blind rating is being asked.
     pub fn asking(&self) -> bool {
         self.asking
@@ -278,13 +292,16 @@ impl Recreate {
     }
 }
 
-/// The header's Recreate hook point (feature `recreate`): called by the header with its own `Ui` and inner
-/// rectangle, so the bar sits in the header row without editing `regions/header.rs`. Lane SKR's skeleton draws the
-/// buttons left of the patch name, after the wordmark; nothing at all until the shell plays rounds.
+/// The header's Recreate hook point (feature `recreate`): called by the header with its right-hand row (laid out right
+/// to left, after the Add button) and inner rectangle, so the bar sits in the header row without editing the rest of
+/// `regions/header.rs`. Lane SKR's skeleton: **Start** alone while no round is live; then **Target ▶**, **Mine ▶**
+/// and a **Round** menu (Submit, Reveal, End), which becomes a **Rate yours** menu ("Rate 1" … "Rate 5", "Skip") while the
+/// blind rating is asked. Short, so it fits between the Presets group and the Add button at the minimum window; the
+/// readout goes to the status line ([`Recreate::readout`]). Nothing at all until the shell plays rounds.
 pub(crate) fn header(
     ui: &mut Ui,
     t: &crate::Theme,
-    rect: egui::Rect,
+    _rect: egui::Rect,
     view: &crate::editor::regions::HeaderView,
     out: &mut Intents,
 ) {
@@ -292,97 +309,87 @@ pub(crate) fn header(
     if !bar.available {
         return;
     }
-    let wordmark = ui
-        .painter()
-        .layout_no_wrap(
-            "enth".to_owned(),
-            t.text.title.clone(),
-            t.color.text.primary,
-        )
-        .size()
-        .x;
-    let left = rect.left() + wordmark + t.space.section;
-    let mut row = ui.new_child(
-        UiBuilder::new()
-            .max_rect(egui::Rect::from_min_max(pos2(left, rect.top()), rect.max))
-            .layout(Layout::left_to_right(Align::Center)),
-    );
-    row.spacing_mut().item_spacing.x = t.space.tight;
     let button = |text: &str| Button::new(RichText::new(text).font(t.text.body.clone()));
     let game = |out: &mut Intents, g| out.push(Intent::Game(g));
-    if bar.live {
-        let target = format!("Target {}", glyph::PLAY);
-        let mine = format!("Mine {}", glyph::PLAY);
-        let on = |l| bar.listen == l;
-        if row
-            .add_enabled(bar.ready, button(&target).selected(on(Listen::Target)))
+    // Right to left: the gap after Add first, then the last control first.
+    ui.add_space(t.space.section);
+    if !bar.live {
+        if ui
+            .add(button("Start"))
+            .on_hover_text("A Recreate round at level 1: rebuild the sound by ear")
             .clicked()
         {
-            let to = if on(Listen::Target) {
-                Listen::Off
-            } else {
-                Listen::Target
-            };
-            game(out, GameIntent::Listen(to));
+            game(out, GameIntent::Start { level: 1 });
         }
-        if row
-            .add_enabled(bar.ready, button(&mine).selected(on(Listen::Mine)))
-            .clicked()
-        {
-            let to = if on(Listen::Mine) {
-                Listen::Off
-            } else {
-                Listen::Mine
-            };
-            game(out, GameIntent::Listen(to));
-        }
-        if bar.asking {
-            for rating in 1..=5u8 {
-                if row
-                    .add(button(&format!("Rate {rating}")))
-                    .on_hover_text("1: nothing like it … 5: can't tell them apart")
-                    .clicked()
-                {
-                    game(out, GameIntent::Rate(Some(rating)));
+        return;
+    }
+    if bar.asking {
+        ui.menu_button(
+            RichText::new("Rate yours").font(t.text.body.clone()),
+            |ui| {
+                ui.label(
+                    RichText::new(
+                        "How close is yours? 1: nothing like it … 5: can't tell them apart",
+                    )
+                    .font(t.text.label.clone())
+                    .color(t.color.text.label),
+                );
+                for rating in 1..=5u8 {
+                    if ui.button(format!("Rate {rating}")).clicked() {
+                        game(out, GameIntent::Rate(Some(rating)));
+                        ui.close();
+                    }
                 }
+                if ui.button("Skip").clicked() {
+                    game(out, GameIntent::Rate(None));
+                    ui.close();
+                }
+            },
+        );
+    } else {
+        ui.menu_button(RichText::new("Round").font(t.text.body.clone()), |ui| {
+            if ui
+                .add_enabled(bar.can_submit, Button::new("Submit"))
+                .clicked()
+            {
+                game(out, GameIntent::Submit);
+                ui.close();
             }
-            if row.add(button("Skip")).clicked() {
-                game(out, GameIntent::Rate(None));
+            let revealable =
+                matches!(bar.phase, Phase::Playing | Phase::Submitted | Phase::Passed) && bar.ready;
+            if ui
+                .add_enabled(revealable, Button::new("Reveal"))
+                .on_hover_text("Give up: load the target (the round counts as assisted)")
+                .clicked()
+            {
+                game(out, GameIntent::Reveal);
+                ui.close();
             }
-        } else if row.add_enabled(bar.can_submit, button("Submit")).clicked() {
-            game(out, GameIntent::Submit);
-        }
-        let revealable = matches!(bar.phase, Phase::Playing | Phase::Submitted | Phase::Passed);
-        if row
-            .add_enabled(revealable && bar.ready, button("Reveal"))
-            .on_hover_text("Give up: load the target (the round counts as assisted)")
-            .clicked()
-        {
-            game(out, GameIntent::Reveal);
-        }
-        if row
-            .add(button("End"))
-            .on_hover_text("End the round and bring your own patch back")
-            .clicked()
-        {
-            game(out, GameIntent::End(EndChoice::Restore));
-        }
-    } else if row
-        .add(button("Start"))
-        .on_hover_text("A Recreate round at level 1: rebuild the sound by ear")
+            if ui
+                .button("End")
+                .on_hover_text("End the round and bring your own patch back")
+                .clicked()
+            {
+                game(out, GameIntent::End(EndChoice::Restore));
+                ui.close();
+            }
+        });
+    }
+    let on = |l| bar.listen == l;
+    let flip = |l| if on(l) { Listen::Off } else { l };
+    let mine = format!("Mine {}", glyph::PLAY);
+    if ui
+        .add_enabled(bar.ready, button(&mine).selected(on(Listen::Mine)))
         .clicked()
     {
-        game(out, GameIntent::Start { level: 1 });
+        game(out, GameIntent::Listen(flip(Listen::Mine)));
     }
-    if !bar.readout.is_empty() {
-        let readout = row.label(
-            RichText::new(&bar.readout)
-                .font(t.text.label.clone())
-                .color(t.color.text.label),
-        );
-        if !bar.code.is_empty() {
-            readout.on_hover_text(format!("Code {}", bar.code));
-        }
+    let target = format!("Target {}", glyph::PLAY);
+    if ui
+        .add_enabled(bar.ready, button(&target).selected(on(Listen::Target)))
+        .clicked()
+    {
+        game(out, GameIntent::Listen(flip(Listen::Target)));
     }
 }
 

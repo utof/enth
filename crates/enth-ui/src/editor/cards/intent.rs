@@ -35,6 +35,10 @@ pub enum Grip {
 /// One thing a control asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Intent {
+    /// The preset browser (lane PBU): the header's ◀ ▶, Browse and Save, the browse panel's loads, auditions and
+    /// favorites, the Save dialog and the crash offer. The editor hands it to its preset state
+    /// ([`Presets`](crate::editor::browser::Presets)); a load is the session's one-undo-step preset load.
+    Preset(crate::editor::browser::PresetIntent),
     /// The Recreate bar (feature `recreate`; lane SKR's skeleton, lane RUI's UI): a round intent. The editor queues
     /// it for the shell, which applies it to its `GameEdit` after the frame ([`Editor::apply_game`]); never an op.
     ///
@@ -102,6 +106,12 @@ impl Intent {
     /// at the end of the summation order; a depth of 0 on a missing route is nothing.
     pub fn ops(&self, patch: &Patch) -> Vec<Op> {
         match self {
+            // The browser loads and saves through the session's own preset calls, never as ops (lane PBU).
+            #[allow(
+                clippy::match_same_arms,
+                reason = "lane PBU's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
+            )]
+            Intent::Preset(_) => Vec::new(),
             // Round intents go to the shell's `GameEdit`, never through ops (lane SKR).
             #[cfg(feature = "recreate")]
             #[allow(

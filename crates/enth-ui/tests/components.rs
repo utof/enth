@@ -123,6 +123,7 @@ fn region_snapshots() {
     let band = |height: f32| vec2(t.size.window.default.x, height + 2.0 * t.space.gap);
 
     let header = HeaderView {
+        presets: enth_ui::editor::browser::HeaderPresets::default(),
         patch_name: patch.meta.name.clone(),
         can_undo: true,
         can_redo: false,

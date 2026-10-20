@@ -20,6 +20,7 @@ use enth_patch::{ModSource, Patch, Section, modulation_range};
 use enth_session::{SessionEdit, SessionView};
 
 use super::add_module::{self, Room};
+use super::browser::{self, Presets};
 use super::cards::view::{self, CardView};
 use super::cards::{CardKey, Intent, Intents, ids};
 use super::describe;
@@ -76,6 +77,8 @@ pub struct Editor {
     live: Live,
     /// The output region's mode, meters and spectrum.
     output: OutputState,
+    /// The preset browser (lane PBU): its store, the sheet over the body, the crash offer.
+    presets: Presets,
     /// egui's input time at the last frame (the meters fall by the time between frames).
     last_time: Option<f64>,
     /// The Recreate bar's state (lane SKR's skeleton): the round view the shell handed over, the round intents
@@ -118,6 +121,7 @@ impl Editor {
             report: FrameReport::default(),
             live: Live::default(),
             output: OutputState::default(),
+            presets: Presets::default(),
             last_time: None,
             #[cfg(feature = "recreate")]
             recreate: super::recreate::bar::Recreate::default(),
@@ -181,11 +185,23 @@ impl Editor {
     /// The window closed (or hid): the tap stops publishing and the editor asks for no more frames.
     pub fn close(&mut self) {
         self.live.close();
+        self.presets.closed();
     }
 
     /// The live state (telemetry, for tests and the dev window).
     pub fn live(&self) -> &Live {
         &self.live
+    }
+
+    /// The preset browser (lane PBU): what covers the body, the list, the last message.
+    pub fn presets(&self) -> &Presets {
+        &self.presets
+    }
+
+    /// The preset browser, to hand it the shell's store ([`Presets::set_store`]) and crash reports
+    /// ([`Presets::offer_crash`]).
+    pub fn presets_mut(&mut self) -> &mut Presets {
+        &mut self.presets
     }
 
     /// Before a frame (lane SKR, the Recreate hook): the session's round, from `GameEdit::round()`. A shell that
@@ -299,17 +315,24 @@ impl Editor {
         ui.painter()
             .rect_filled(rect, 0.0, t.color.surface.background);
         let regions = self.layout.regions(rect);
+        // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
+        let body = browser::body(&regions);
+        let sheet = body.filter(|_| self.presets.covers_body());
         let mut out = Intents::default();
         let mut overflow = Vec::new();
         let mut status = None;
         {
             let patch = session.patch();
             for placed in &regions {
+                if sheet.is_some_and(|b| browser::covered(placed, b)) {
+                    continue;
+                }
                 let r = placed.rect;
                 match placed.region {
                     Region::Header => {
                         let history = session.history();
                         let header = HeaderView {
+                            presets: self.presets.header(&*session),
                             patch_name: patch.meta.name.clone(),
                             can_undo: history.can_undo(),
                             can_redo: history.can_redo(),
@@ -380,16 +403,28 @@ impl Editor {
                     }
                 }
             }
+            if let Some(b) = sheet {
+                self.presets.show(ui, t, b, &*session, &mut out);
+            }
         }
         if let Some(r) = status {
             let error = session.status().last_error.map(|e| e.hint());
+            // A live Recreate round's readout (lane SKR's skeleton bar) takes the notice's place.
+            #[cfg(feature = "recreate")]
+            let round = self.recreate.readout();
+            #[cfg(not(feature = "recreate"))]
+            let round: Option<String> = None;
             let right = error
                 .as_deref()
                 .or(self.said.as_deref())
+                .or(round.as_deref())
                 .unwrap_or(&self.notice);
             Status::new(t, out.hovered.as_ref())
                 .right(right)
                 .show(ui, r);
+        }
+        if let Some(b) = body {
+            self.presets.show_notice(ui, t, b, &mut out);
         }
         overflow.retain(|(_, o)| o.x > 0.5 || o.y > 0.5);
         // 1/60 s, not the 30 Hz the design system animates at: baseview 0.4.1 paces redraws at the X Present `msc + 2`
@@ -405,6 +440,10 @@ impl Editor {
         };
         let intents = out.take();
         self.apply(session, intents, pointer_down);
+        // A sheet that opened or closed at the frame's end shows in the next pass.
+        if self.presets.take_changed() {
+            ctx.request_repaint();
+        }
     }
 
     /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
@@ -421,6 +460,7 @@ impl Editor {
     ) {
         for intent in intents {
             match &intent {
+                Intent::Preset(p) => self.presets.apply(session, p),
                 #[cfg(feature = "recreate")]
                 Intent::Game(g) => self.recreate.push(*g),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
@@ -461,6 +501,7 @@ impl Editor {
             session.end_gesture();
             self.gesture = None;
         }
+        self.presets.settle(session, pointer_down);
     }
 
     /// Close any drag's gesture: at every open of the window (`build()`) and when it closes.
