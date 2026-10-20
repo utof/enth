@@ -414,7 +414,139 @@ The judge's review of CT and SG (`f1r-review.md`, 2026-10-20) returned "freeze a
 
 ## Sound score (lane SS)
 
-*To be written by lane SS:* `sound/1` (module mapping, the nuisance floor, the per-challenge JND scale, the fitted curve and its pass point, the components and their tolerances) and the in-house loudness.
+`sound/1` (`enth_challenge::score::sound`, `calibrate`, `loudness`; lane SS, 2026-10-20) is the real sound score and this build's default (`RECREATE_SCORERS` names it). It decides pass. It is **provisional**: the curve comes from the owner's metric session 1 on the toy synth, and session 2 plus a real-engine pairs session refit it ([below](#how-sound2-replaces-sound1)).
+
+### What it computes
+
+| Step | Once per challenge (`prepare`, 0.25–1.8 s in release) | Per submit (`score`, about 40 ms) |
+| --- | --- | --- |
+| Patch | the target | the answer with its modules **renamed onto the target's ids** and the target's value at each **nuisance parameter** |
+| Render | the phrase at `SCORING_SAMPLE_RATE` and `SCORING_SEED`, the mid channel | the same |
+| Level | to −23 LUFS with the in-house `libm` loudness | the same |
+| Features | metric v1.1's pooled log-mel (scalar FFT) and the descriptor readings | the same |
+| Floor | the largest distance to 2 renders at other seeds (`floor_seed(1)`, `floor_seed(2)`), and the largest change of the pitch and odd-share readings | — |
+| Scale | the median distance of the 16-copy jitter set, at least 0.01 | — |
+| Score | — | `jnd` = max(0, d − floor) / scale + guard; `percent` = 100 / (1 + (jnd / 5.11)^1.338) |
+
+**Pass is `jnd ≤ 0.989`**, which is `percent ≥ 90` (the pass mark). `SoundScore`'s `distance`, `floor` and `scale` are metric-v1.1 values; its `jnd` includes the guard, so the guard is `jnd − max(0, distance − floor) / scale`.
+
+### The in-house loudness (`loudness`)
+
+BS.1770-4 on `libm`: K-weighting (the shelf and the RLB high pass as two biquads in `f64`, from the analog prototypes, so any rate works; at 48 kHz the coefficients match the standard's tables within 1e-9), the mean square over 400 ms blocks every 100 ms, the −70 LUFS and −10 LU gates, and an ungated whole-clip fallback under one block; at or below −70 LUFS a clip is silent (`None`). Against `ebur128` it agrees within **1.8e-9 LU** on sines from 40 Hz to 12 kHz, the toy waves, noise, gated and stepped signals and ten rendered targets (`tests/ss_loudness.rs`). `ebur128` stays for display and true peak.
+
+| Function | Use |
+| --- | --- |
+| `integrated_lufs(x, rate)` | the loudness; the scorer's, and what the worker measures both A/B sides with (the 48 kHz mid channel) |
+| `gain_db(lufs, reference)` | **the one gain function** (P11): `reference − lufs` |
+| `db_to_amp(db)`, `scoring_gain(x, rate)` | the linear gain; the gain to −23 LUFS |
+| `ab_gains_db(target, mine)` | both sides to the quieter one's loudness: the louder attenuated, the quieter at exactly 0 dB, symmetric; `(0, 0)` when either is unmeasured. `enth_session::game::ab_gains` calls it |
+
+### Metric v1.1, not v1
+
+Metric v1.1 (`enth_analysis::pooled`, `logmel-pool85-l1/1`) is v1's log-mel with the mel magnitudes averaged over 85 ms blocks (4, 8 and 16 frames per resolution) before the log, then the same L1. It pools magnitudes as report 02's experiment did (the ADR says "power"), so report 02's numbers hold. On 40 generated targets (8 per level, `tests/ss_measure.rs`, release):
+
+| | v1 | v1.1 |
+| --- | --- | --- |
+| Median floor / scale | 0.31 | **0.06** |
+| Targets whose floor exceeds their scale | 13 of 40 (up to 2.65×) | 0 |
+| A three-step cutoff move on such a target | z = 0 on all 13 (below the floor) | z up to 2.8 (0 where the cutoff sits far above the harmonics) |
+| Median JND scale | 0.255 | 0.172 (by level 0.17, 0.12, 0.13, 0.16, 0.29) |
+
+v1 cannot see real moves under its own floor on a third of the targets, so `sound/1` uses v1.1.
+
+### Module mapping and nuisance parameters
+
+Start phases and noise follow module ids, so `scoring_patch(target, answer)` renames the answer's modules onto the target's before the render. It starts from `matching::match_modules` and keeps the pairs whose two modules are both on or both off. **Local fallback** (lane ST's matcher is not on main yet): the leftovers pair by kind in section order, enabled with enabled first; an unpaired module whose id a pair took gets `zz1`, `zz2`, …. **Follow-up once ST is on main** (about 10 lines in `sound.rs`): keep `matching::Matcher::for_round(ctx)` in the prepared state and render `matcher.relabel(&matcher.pair(answer), answer)`, so SS and ST pair alike and routes come in the target's order.
+
+The answer's **nuisance parameters** (lane RG's `Visibility::Nuisance`: phase modes, start phases, seeds) take the target's values in the scored render: an LFO retriggered at another start phase moved a level-4 score to 88 % before this, and P10 asks for at least 99. The generator never draws them, so they are not part of the challenge. The player still hears their own value.
+
+### Calibration: the JND scale, the bridge and the curve
+
+The jitter set moves every observable continuous parameter and route of the target by one step, up or down by a keyed sign (`calibrate::JITTER_SEED`):
+
+| Unit | Step | | Unit | Step |
+| --- | --- | --- | --- | --- |
+| Hz, ratios, unitless | × 1.1 | | levels and sustain (%) | 2 dB over a 1 % floor |
+| ms | × 1.1 over a 1 ms floor | | other % | 5 points |
+| dB | 2 dB | | route depth | 2.5 points |
+| cents, semitones | 10 ct | | degrees | 10° |
+
+These are ADR-0007's "check's defaults to start" except pitch. `check`'s 25 ct is a pass band, not a step: the pitch difference limen near C3 is of the order of 10 ct, and a detune moved by 25 ct changes the beat rate many times over.
+
+**The bridge.** Session 1 rated toy-synth pairs in metric-v1 distance (rating 4.5 at A = 0.26, rating 3 at A = 0.89; report 02 §2.2). Lane SS re-measured the spike's toy synth with these steps (`~/code/enth-scratch/r1s1/ss/bridge`; 40 targets of the spike's seeded list, 30 perturbed pairs each, built like the listening design's):
+
+| Measured on the toy synth | Value |
+| --- | --- |
+| T1 (the spike's ±1 % jitter), first 20 targets | 0.1189 (the spike: 0.123), so the setup reproduces |
+| Median JND scale, v1 / v1.1 | 0.2832 / **0.1629** (2.4 × T1) |
+| Median v1.1 distance of pairs at A = 0.26 ± 15 % (148 pairs) | **0.1611**: rating 4.5 at z = 0.989 |
+| Median v1.1 distance of pairs at A = 0.89 ± 15 % (89 pairs) | **0.8325**: rating 3 at z = 5.11 |
+| Cross-check, per-pair z(v1.1) / z(v1) near the two points | 0.93 and 1.45: z = 0.85 and 4.56 |
+
+**The curve** puts rating 4.5 on the pass mark and rating 3 on 50 %: `z50 = 0.8325 / 0.1629 = 5.11`, `k = ln 9 / ln(0.8325 / 0.1611) = 1.338` (`Curve::SOUND_V1`). Under v1 the same bridge gives z = 0.918 and 3.14.
+
+### The pitch and waveform guard
+
+Loudness-matched log-mel barely sees an octave or a waveform behind a filter. Before the guard, on level 1 (waveform plus octave): an octave-down saw scored z = 1.7 (81 %), and a 42.5 % pulse against the start's saw z = 0.86 (91 %), so **the untouched start passed**. So `jnd` adds `max(0, |Δpitch| − pitch floor) / 25 ct + max(0, |Δodd share| − wave floor) / 0.25`, each term only when both clips have the reading. A pitch error alone fails from about 25 ct, `check`'s "same pitch" band. A saw against a square is 2.6 JND. With it, **no start passes on 40 targets** (`ss_measure::the_start_by_level`: an octave off scores 3–5 %). This is lane SS's deviation from ADR-0007's "components beside the headline" (two components now feed it). Its units are provisional like the curve, for the real-engine pairs session to set.
+
+### Components
+
+One row per kind that either clip has, in `ComponentKind::ALL` order, read on **the phrase's first note** (from its note-on to the next note-on, with its note-off):
+
+| Kind | Reading (unit) | One tolerance | Notes |
+| --- | --- | --- | --- |
+| `pitch` | YIN f0, else the tonal pitch (cents re A4) | 25 ct | feeds the guard |
+| `brightness` | spectral centroid (Hz) | 10 % | |
+| `harmonics` | odd share of the harmonic energy from h = 2, up to h = 16 (0–1) | 0.1 | feeds the guard; none for a sine; jumps near a 50 % pulse (a 45 % pulse reads 0.54) |
+| `attack` | ms | 25 % over 5 ms | the descriptor resolves about 5 ms at C3 |
+| `envelope` | decay to the sustain level (ms) | 10 % over 10 ms | |
+| `sustain` | dB re the peak | 2 dB | |
+| `release` | ms | 10 % over 10 ms | |
+| `noisiness` | noise ratio (0–1) | 0.05 | |
+| `movement` | the strongest of a detune beat, a tremolo (dB of wobble) and a filter LFO (6 dB an octave), Hz | 10 % | vibrato is not a reading |
+
+Direction: `same` within one tolerance, else `higher` or `lower`; `missing` or `extra` when one clip lacks the reading. Badge: `close` under one tolerance, `a_bit` under three, `far` beyond. `component_text(&c)` gives the words, which never contain a reading: "brighter than the target", "attack slightly too fast", "pitch matches the target", "no movement; the target beats, wobbles or sweeps".
+
+### Determinism and cost
+
+`tests/ss_determinism.rs` pins a SHA-256 over the in-house loudness of four signals and every number of three `sound/1` scores of a level-4 challenge (target, start, near miss: percent, distance, floor, scale, jnd, the guard's floors, each component). It gives `ab1e8042…763e` in native debug and release **and on wasm32-wasip1 under wasmtime**, which also runs the 2026-10-20 descriptors (tonal pitch, sweeps, the tremolo-corrected envelope) under wasmtime for the first time:
+
+```text
+CARGO_TARGET_WASM32_WASIP1_RUNNER=/path/to/wasmtime cargo test -p enth-challenge --target wasm32-wasip1 --test ss_determinism
+```
+
+`prepare` takes about 0.25–0.3 s at levels 1–3 and 1.8 s at level 5 (reverb renders) in release. Debug is close, since the engine and analysis are optimised in the dev profile. `score` takes about 40 ms.
+
+### Properties
+
+| Property | Tests (`tests/ss_sound.rs` unless named) |
+| --- | --- |
+| P7: scores in 0–100, the target scores exactly 100 | `p7_the_target_scores_100_and_scores_stay_in_range` |
+| P7 (lane brief): equivalent patches (every id relabelled, an extra module that is off, generators reordered) score within 0.5 of the target | `p7_equivalent_patches_score_as_the_target` |
+| P10: a 1e-3 relative move changes the score by under 0.5 point, from the target and from a near miss; a nuisance change scores at least 99 | `p10_a_tiny_move_barely_moves_the_score`, `p10_a_nuisance_change_scores_at_least_99` (32 cases each) |
+| Monotone in an injected error (cutoff, fine, release, sustain, decay; within 0.5 point where a parameter stops mattering) | `the_score_is_monotone_in_an_injected_error` |
+| The start never passes | `the_start_never_passes_and_reads_in_words` |
+| P11: the A/B match uses the scorer's loudness and gain, is symmetric and never boosts | `p11_ab_gains_are_symmetric_and_never_boost`, `p11_the_ab_match_uses_the_scorers_loudness_and_never_boosts`, `loudness::tests`, `enth_session::game` |
+| Bit-identical across platforms | `ss_determinism.rs` |
+
+### Known limits
+
+- **Detune** on two oscillators reads as decorrelation, not pitch, and not monotonically (report 02 §2.3), so the monotonicity test skips fine moves on multi-oscillator targets.
+- **Envelope timing** stays mostly out of the headline. A short attack (5 → 20 ms) or a decay towards a high sustain barely moves v1.1; the attack and decay rows show it. An attack term is for the real-engine session to weigh.
+- **The guard's pitch** is YIN's period. A target whose reading flips octave between its own nuisance renders gets a pitch floor of about 1200 ct, which switches the term off, but an answer that flips octave would be penalised.
+- **First note only** for the components. On the octave and legato pairs the release is extrapolated or absent.
+- **The calibration** is toy-synth ratings bridged through medians. The per-target scale varies (0.04–0.33 under v1.1 on the engine), and the bridge assumes the toy's and the engine's moves are rated alike at equal JND distance.
+
+### What other lanes need
+
+- **GC (golden challenges):** prepare with `ScoringSpec::with_scorers(d, ScorerId::SOUND_V1, …)` so the pins keep `sound/1` whatever the default becomes. Scores are bit-exact, so pin them to 1e-6 and keep the ≥ 1e-3 margin rule. The target scores exactly 100, and the start fails at every level. Budget about 2 s per level-5 prepare. For `golden.yml`'s wasm job, the command above runs `ss_determinism`.
+- **RUI (results drawer):** headline `percent` against `pass_mark`. Rows: `components` in order with `direction` and `closeness` badges, and `component_text(&c)` for the words. **Never show `target` or `answer` during a round** (no peeking); after a reveal they are fine. `jnd`, `floor` and `scale` are for the CLI and debugging, not players. A progress bar may run from the start's percent to 90.
+- **SKR (worker):** `prepare_round` now renders, which takes 0.25–2 s. Run it on the worker and keep the `PreparedRound`. Measure Target ▶ and Mine ▶ with `loudness::integrated_lufs` on the 48 kHz mid channel and pass them to `Prepared::from_round` and `mine_lufs`.
+- **ST:** switch to `Matcher::for_round` + `relabel` once both lanes are on main (above). When ST switches `structure/1` and `combined/1` in `RECREATE_SCORERS`, the round fixture in enth-session (`state/v1/round.enth.json`) and `t6`'s "wrong id" need the same treatment SS gave them.
+
+### How `sound/2` replaces `sound/1`
+
+`sound/2` keeps everything above and refits the curve (`z50`, `k`), and if the data say so the guard's units, to **GR1's blind ratings** (`RoundResult::rating`, asked before the score shows) against each first submit's `jnd`. The pass mark stays 90, so `sound/2`'s rating-4.5 point lands on 90 again. It lands as a new arm in `score::sound::prepare` and a new `Curve` constant, and `RECREATE_SCORERS` switches in the same commit. `sound/1` stays in the build, so every stored `sound/1` report and golden keeps its meaning (design.md §6, "Scoring is additive"). A change to the metric, the steps, the guard or the floor is likewise a new id, never an edit of `sound/1`: `ss_determinism`'s pin guards that.
 
 ## Structure, combined and time (lane ST)
 

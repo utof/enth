@@ -1904,7 +1904,7 @@ fn t6_an_inconsistent_worker_report_is_refused() {
     let mut s = Session::new(custom_patch());
     play(&mut s, 0);
     let mut wrong_id = report(95.0);
-    wrong_id.sound.scorer = enth_challenge::ScorerId::SOUND_V1;
+    wrong_id.sound.scorer = enth_challenge::ScorerId::SOUND_V2;
     let mut wrong_mark = report(95.0);
     wrong_mark.pass_mark = 50;
     let mut flipped = report(95.0);

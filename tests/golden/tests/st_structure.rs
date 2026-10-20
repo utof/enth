@@ -32,10 +32,13 @@
 use std::fmt::Write as _;
 
 use enth_challenge::random;
+use enth_challenge::score::ScorerId;
 use enth_challenge::score::StructureScore;
 use enth_challenge::score::combined::CombinedV1;
 use enth_challenge::spec::{MAX_SEED, PRESETS};
-use enth_challenge::{Category, RandomSpec, prepare_round, score_structure};
+use enth_challenge::{
+    Category, Challenge, PreparedRound, RandomSpec, prepare_challenge, score_structure,
+};
 use enth_patch::{ModSource, ModuleId, Op, ParamAddr, Patch, Section};
 use sha2::{Digest, Sha256};
 
@@ -80,6 +83,14 @@ fn spec(i: u64) -> RandomSpec {
         musical: [100, 0, 50, 100, 21][(i % 5) as usize],
         template: random::TEMPLATE_STARTER,
     }
+}
+
+/// The round of `spec` with the sound stub (only structure is read here, and `sound/1`'s `prepare` renders).
+fn prepare_round(spec: &RandomSpec) -> Result<PreparedRound, enth_challenge::RoundError> {
+    let generated = random::target(spec).unwrap();
+    let mut challenge = Challenge::recreate(*spec, generated.phrase);
+    challenge.scoring.sound = ScorerId::SOUND_STUB;
+    prepare_challenge(challenge)
 }
 
 fn set(p: &mut Patch, addr: &ParamAddr, value: f32) {

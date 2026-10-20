@@ -391,8 +391,8 @@ mod tests {
         let e = prepare_challenge(c.clone()).unwrap_err();
         assert_eq!(e.code(), "unknown_scorer");
         assert!(e.hint().contains("sound/9"), "{}", e.hint());
-        // Until SS lands it, `sound/1` is unknown here too: never silently stubbed.
-        c.scoring.sound = ScorerId::SOUND_V1;
+        // `sound/2` (GR1's refit) is reserved, not landed: unknown here too, never silently scored by `sound/1`.
+        c.scoring.sound = ScorerId::SOUND_V2;
         assert_eq!(
             prepare_challenge(c.clone()).unwrap_err().code(),
             "unknown_scorer"

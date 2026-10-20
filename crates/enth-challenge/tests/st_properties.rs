@@ -14,7 +14,9 @@ use enth_challenge::random;
 use enth_challenge::score::matching::Matcher;
 use enth_challenge::score::{ScorerId, StructureScore, Verdict};
 use enth_challenge::spec::MAX_SEED;
-use enth_challenge::{Category, PreparedRound, RandomSpec, prepare_round, score_structure};
+use enth_challenge::{
+    Category, Challenge, PreparedRound, RandomSpec, prepare_challenge, score_structure,
+};
 use enth_patch::canon::{canonical_hash, canonicalise};
 use enth_patch::model::MAX_GENERATORS;
 use enth_patch::{
@@ -45,8 +47,13 @@ fn specs() -> impl Strategy<Value = RandomSpec> {
         })
 }
 
+/// The round of `spec` with the sound stub: these tests read structure only, and `sound/1`'s `prepare` renders
+/// (its floor and JND scale), which would make 256 cases slow.
 fn round(spec: &RandomSpec) -> PreparedRound {
-    prepare_round(spec).unwrap()
+    let generated = random::target(spec).unwrap();
+    let mut challenge = Challenge::recreate(*spec, generated.phrase);
+    challenge.scoring.sound = ScorerId::SOUND_STUB;
+    prepare_challenge(challenge).unwrap()
 }
 
 fn score(round: &PreparedRound, answer: &Patch) -> StructureScore {

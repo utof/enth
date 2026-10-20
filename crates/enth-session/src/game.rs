@@ -564,19 +564,13 @@ pub struct AbState {
 }
 
 /// The A/B level match: attenuate the louder side by the loudness difference. Either side unmeasured or silent
-/// (`None`, or not finite) leaves both at 0 dB. **Swap when lane SS lands:** P11 asks the A/B level match and the
-/// scorer to share one gain function (`enth_challenge::loudness`); both already read the same loudness measurement.
+/// (`None`, or not finite) leaves both at 0 dB. P11: it is lane SS's shared gain function,
+/// `enth_challenge::loudness::ab_gains_db`, the one the scorer's −23 LUFS gain uses; the worker measures both sides
+/// with `enth_challenge::loudness::integrated_lufs` on the 48 kHz mid channel, as the scorer does.
 pub fn ab_gains(target_lufs: Option<f32>, mine_lufs: Option<f32>) -> (f32, f32) {
-    match (target_lufs, mine_lufs) {
-        (Some(t), Some(m)) if t.is_finite() && m.is_finite() => {
-            if t > m {
-                (m - t, 0.0)
-            } else {
-                (0.0, t - m)
-            }
-        }
-        _ => (0.0, 0.0),
-    }
+    let (t, m) =
+        enth_challenge::loudness::ab_gains_db(target_lufs.map(f64::from), mine_lufs.map(f64::from));
+    (t as f32, m as f32)
 }
 
 // ---------------------------------------------------------------------------------------------------------------

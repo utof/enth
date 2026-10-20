@@ -7,7 +7,9 @@
 //!   the float render.
 //! - [`expect`]: the expectation parser (`brightness>2kHz`, `pitch=C3±20ct`, `beating in [3Hz, 9Hz]`) and the
 //!   checker (pass, value, signed margin, nuisance noise, `thin`); [`margin`] holds the margin rules.
-//! - [`features`] and [`distance`]: multi-resolution log-mel and friends, and metric v1 (log-mel L1, provisional).
+//! - [`features`] and [`distance`]: multi-resolution log-mel and friends, and metric v1 (log-mel L1, provisional);
+//!   [`pooled`]: metric v1.1 (the mel magnitudes pooled over ~85 ms before the log, its own id); [`harmonics`]: the
+//!   odd share of the harmonic energy (the sound score's waveform row).
 //! - [`beat`] and [`envelope`]: the multi-harmonic beating estimator and fitted beat removal; [`sweep`]: filter
 //!   envelopes and filter LFOs from the centroid over time.
 //! - [`fft`]: the scalar (identical everywhere) and dispatched FFT paths; [`loudness`], [`pitch`] (YIN), [`units`].
@@ -23,10 +25,12 @@ pub mod envelope;
 pub mod expect;
 pub mod features;
 pub mod fft;
+pub mod harmonics;
 mod linalg;
 pub mod loudness;
 pub mod margin;
 pub mod pitch;
+pub mod pooled;
 pub mod sweep;
 pub mod test_signals;
 pub mod units;
