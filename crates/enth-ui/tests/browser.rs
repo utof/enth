@@ -656,3 +656,73 @@ fn a_preset_the_store_lost_is_refused_with_the_reason() {
         Some("No presets in this list")
     );
 }
+
+/// The click points of `xtask/reaper/preset.lua` (offsets into the plugin's 1200 × 800 window): keep both in step.
+const REAPER_POINTS: [(&str, (f32, f32)); 6] = [
+    ("browse", (347.0, 28.0)),
+    ("user_tab", (138.0, 80.0)),
+    ("first_row", (200.0, 140.0)),
+    ("first_play", (60.0, 140.0)),
+    ("undo", (759.0, 28.0)),
+    ("redo", (809.0, 28.0)),
+];
+
+fn point(name: &str) -> egui::Pos2 {
+    let (_, (x, y)) = REAPER_POINTS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .expect("a REAPER point");
+    egui::pos2(*x, *y)
+}
+
+/// A press and a release at `pos`, as `xinput.py click` sends them.
+fn click_at(h: &mut Harness<'_, App>, pos: egui::Pos2) {
+    h.hover_at(pos);
+    h.step();
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    h.run_steps(3);
+}
+
+#[test]
+fn reaper_points_hit_their_controls() {
+    // As the REAPER scenario sets it up: one user preset, whatever the factory holds.
+    let mut store = MemStore::default();
+    store.put_user(
+        "roundtrip",
+        &preset("reaper-test roundtrip", &["pad"], "enth", 25.0).to_json(),
+    );
+    let mut h = harness_with(store, false);
+    let contains = |h: &Harness<'_, App>, label: &str, name: &str| {
+        let rect = h.get_by_label(label).rect();
+        assert!(
+            rect.contains(point(name)),
+            "{name} {:?} is not on {label:?} at {rect:?}: update REAPER_POINTS and xtask/reaper/preset.lua",
+            point(name)
+        );
+    };
+    contains(&h, "Browse", "browse");
+    contains(&h, "Undo", "undo");
+    contains(&h, "Redo", "redo");
+    click_at(&mut h, point("browse"));
+    contains(&h, "User", "user_tab");
+    click_at(&mut h, point("user_tab"));
+    contains(&h, "reaper-test roundtrip", "first_row");
+    contains(&h, "Audition reaper-test roundtrip", "first_play");
+    // The scenario's sequence: the row loads, Undo takes it back, Redo again.
+    let before = h.state().session.patch().clone();
+    click_at(&mut h, point("first_row"));
+    assert_eq!(h.state().session.patch().meta.name, "reaper-test roundtrip");
+    assert_eq!(h.state().last(), Some(PresetKey::user("roundtrip")));
+    click_at(&mut h, point("undo"));
+    assert_eq!(h.state().session.patch(), &before);
+    click_at(&mut h, point("redo"));
+    assert_eq!(h.state().session.patch().meta.name, "reaper-test roundtrip");
+    assert_eq!(h.state().host_writes(), 0);
+}

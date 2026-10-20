@@ -10,6 +10,8 @@ anywhere else. Uses only the standard library (ctypes) with libX11 and libXtst, 
     xinput.py click <x> <y>                  press and release button 1 at root coordinates
     xinput.py drag <x1> <y1> <x2> <y2>       press at 1, move in steps to 2, release
     xinput.py key <keysym-name>              press and release a key (e.g. z, Escape)
+    xinput.py down <x> <y>                   move there and press button 1, holding it (lane PBU: hold an audition)
+    xinput.py up <x> <y>                     move there and release button 1
     xinput.py stats <title-substring>        raise the window, then print "<distinct colours> <non-background fraction>"
                                              of the client window's pixels (sampled)
 
@@ -171,6 +173,10 @@ def main():
             move(x1 + (x2 - x1) * i / 10, y1 + (y2 - y1) * i / 10)
         pause(0.05)
         button(False)
+    elif cmd in ("down", "up"):
+        move(args[1], args[2])
+        pause(0.05)
+        button(cmd == "down")
     elif cmd == "key":
         code = x11.XKeysymToKeycode(dpy, x11.XStringToKeysym(args[1].encode()))
         xtst.XTestFakeKeyEvent(dpy, code, 1, 0)
