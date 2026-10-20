@@ -23,6 +23,8 @@ pub struct HeaderView {
     pub undo: Option<String>,
     /// What Redo would redo.
     pub redo: Option<String>,
+    /// Every section and how full it is, for the Add menu (lane AM, the Add hook).
+    pub room: crate::editor::add_module::Room,
 }
 
 /// The header band.

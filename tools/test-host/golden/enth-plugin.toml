@@ -26,11 +26,12 @@ sample_rate = 48000
 block = 64
 duration = 2.0
 
-# A fresh instance: the init patch (one saw through the amp envelope), three held notes.
+# A fresh instance: Init (lane AM, R1/S1; `content/presets/init.patch.json`: the starter patch, one saw through the
+# filter and the amp envelope with the extras off, the master at -12 dB), three held notes.
 [[case]]
 name = "chord"
 notes = "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8"
-sha256 = "5463f1a1eedd4f7214c431b7b089240f0bed3378901726f793d92efde621648f"
+sha256 = "2a64822dd4e49eb857ff5f8f873b18fed642cbfcc4fd08a13f8e8ee8aaf5b1e1"
 
 # The golden patch loaded as state before activation: the patch is the sound.
 [[case]]

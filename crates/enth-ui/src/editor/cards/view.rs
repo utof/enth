@@ -9,6 +9,7 @@ use enth_patch::{
 };
 
 use super::present;
+use crate::editor::add_module::Place;
 use crate::editor::modulate::DropCheck;
 use crate::editor::overlay::Emphasis;
 use crate::theme::{Category, Score};
@@ -93,6 +94,9 @@ pub struct CardView {
     pub visible: Tier,
     /// "More" is open (editor view state the editor keeps, toggled by [`super::Intent::ShowMore`]).
     pub more_open: bool,
+    /// Where a module sits in its section, for the card's "…" menu (lane AM); `None` for the built-ins, which have
+    /// no menu.
+    pub place: Option<Place>,
 }
 
 impl CardView {
@@ -120,6 +124,7 @@ impl CardView {
             params,
             visible: VISIBLE_TIER,
             more_open: false,
+            place: Place::of(patch, &module.id),
         }
     }
 
@@ -156,6 +161,7 @@ impl CardView {
             params,
             visible: VISIBLE_TIER,
             more_open: false,
+            place: None,
         }
     }
 
@@ -244,7 +250,7 @@ fn param_view(patch: &Patch, addr: ParamAddr, spec: &'static ParamSpec, value: f
 }
 
 /// "osc2" → "Osc 2". An id that isn't the kind's prefix and a number is shown as it is.
-fn title(kind: ModuleKind, id: &ModuleId) -> String {
+pub(crate) fn title(kind: ModuleKind, id: &ModuleId) -> String {
     let short = present::short_name(kind);
     match id.as_str().strip_prefix(kind.spec().id_prefix) {
         Some(n) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => format!("{short} {n}"),

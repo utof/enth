@@ -14,8 +14,8 @@ use super::present::{self, Control};
 use super::view::{CardKey, CardKind, CardView, ParamView};
 use super::{envelope, ids, menu, shapes};
 use crate::Theme;
-use crate::editor::modulate;
 use crate::editor::overlay::Emphasis;
+use crate::editor::{add_module, modulate};
 use crate::widgets::{
     CardShape, Display, Emphasis as KnobEmphasis, Ink, Knob, ModuleCard, Segmented, Toggle, Trace,
 };
@@ -24,8 +24,11 @@ use crate::widgets::{
 pub struct CardOutput {
     /// The whole card.
     pub rect: Rect,
-    /// The header row (drag it to reorder; ED1 decides what a header drag does).
+    /// The header row (drag it to reorder; ED1 decides what a header drag does). A right-click on it opens the
+    /// module's menu (lane AM).
     pub header: Response,
+    /// The "…" module menu button (lane AM); `None` for the built-ins.
+    pub menu: Option<Response>,
 }
 
 /// Draws one card.
@@ -33,6 +36,8 @@ pub struct Card<'a> {
     theme: &'a Theme,
     view: &'a CardView,
     shape: CardShape,
+    /// The card sits in a band, left to right (its menu's moves read "left" and "right").
+    along_x: bool,
 }
 
 impl<'a> Card<'a> {
@@ -42,7 +47,15 @@ impl<'a> Card<'a> {
             theme,
             view,
             shape: CardShape::Stacked,
+            along_x: false,
         }
+    }
+
+    /// The card sits in a band, left to right: its menu's moves read "Move left" and "Move right" (lane AM).
+    #[must_use]
+    pub fn along_x(mut self, along_x: bool) -> Self {
+        self.along_x = along_x;
+        self
     }
 
     /// A strip: the display left of one row of controls (two with "More" open), the full width of the `Ui`.
@@ -71,7 +84,8 @@ impl<'a> Card<'a> {
                 .then_some(if view.more_open { "Less" } else { "More" });
             let mut card = ModuleCard::new(t, "card", &view.title, view.category(), &mut enabled)
                 .id(id)
-                .switchable(view.enabled.is_some());
+                .switchable(view.enabled.is_some())
+                .menu(view.place.is_some());
             if let Some(kind) = view.kind_text() {
                 card = card.kind(kind);
             }
@@ -110,9 +124,20 @@ impl<'a> Card<'a> {
                     open: !view.more_open,
                 });
             }
+            // Lane AM: the module menu (the "…" button, a right-click on the title row) and its "Rename…" field.
+            add_module::card_menu(
+                t,
+                view,
+                response.menu.as_ref(),
+                &response.header,
+                self.along_x,
+                out,
+            );
+            add_module::rename_field(ui, t, view, response.header.rect, out);
             CardOutput {
                 rect: response.rect,
                 header: response.header,
+                menu: response.menu,
             }
         })
         .inner

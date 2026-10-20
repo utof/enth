@@ -13,7 +13,8 @@
 //! Built-in sections (voice, master) can't be switched off: [`ModuleCard::switchable`] hides the
 //! toggle. A header [`action`](ModuleCard::action) is a small text button at the right of the
 //! title row (the catalogue cards' "More" disclosure). A strip can hold more than one row of
-//! knobs ([`ModuleCard::rows`]); the parameter closure starts each new row with `ui.end_row()`.
+//! knobs ([`ModuleCard::rows`]); the parameter closure starts each new row with `ui.end_row()`. A card can end its
+//! title row with a "…" [`menu`](ModuleCard::menu) button (lane AM: the module menu), right of the action.
 
 use egui::{
     Align, Align2, CornerRadius, Id, IdSalt, Layout, Rect, Response, Role, Sense, Ui, UiBuilder,
@@ -44,6 +45,7 @@ pub struct ModuleCard<'a> {
     lifted: bool,
     switchable: bool,
     action: Option<&'a str>,
+    menu: bool,
     rows: usize,
 }
 
@@ -56,6 +58,8 @@ pub struct CardResponse {
     pub toggled: bool,
     /// The header action, if the card has one ([`ModuleCard::action`]).
     pub action: Option<Response>,
+    /// The "…" menu button, if the card has one ([`ModuleCard::menu`]).
+    pub menu: Option<Response>,
 }
 
 impl<'a> ModuleCard<'a> {
@@ -79,6 +83,7 @@ impl<'a> ModuleCard<'a> {
             lifted: false,
             switchable: true,
             action: None,
+            menu: false,
             rows: 1,
         }
     }
@@ -104,6 +109,14 @@ impl<'a> ModuleCard<'a> {
     #[must_use]
     pub fn action(mut self, text: &'a str) -> Self {
         self.action = Some(text);
+        self
+    }
+
+    /// A "…" button at the right end of the header row (right of the action), `size.add_module.menu_width` wide; its
+    /// response is in [`CardResponse::menu`] and its accessible name is "<title> menu". Drawn at full strength.
+    #[must_use]
+    pub fn menu(mut self, menu: bool) -> Self {
+        self.menu = menu;
         self
     }
 
@@ -206,11 +219,13 @@ impl<'a> ModuleCard<'a> {
         child.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
         params(&mut child);
         let action = self.action_button(ui, header_rect);
+        let menu = self.menu_button(ui, header_rect);
         CardResponse {
             header,
             rect,
             toggled,
             action,
+            menu,
         }
     }
 
@@ -288,12 +303,52 @@ impl<'a> ModuleCard<'a> {
             ),
         );
         let action = self.action_button(ui, header_rect);
+        let menu = self.menu_button(ui, header_rect);
         CardResponse {
             header,
             rect,
             toggled,
             action,
+            menu,
         }
+    }
+
+    /// The width the "…" menu button takes at the right end of the header row (0 without one).
+    fn menu_width(&self) -> f32 {
+        if self.menu {
+            self.theme.size.add_module.menu_width
+        } else {
+            0.0
+        }
+    }
+
+    /// The "…" menu button: the glyph centred in its cell, primary while hovered.
+    fn menu_button(&self, ui: &mut Ui, header: Rect) -> Option<Response> {
+        if !self.menu {
+            return None;
+        }
+        let t = self.theme;
+        let rect = Rect::from_min_max(
+            pos2(header.right() - self.menu_width(), header.top()),
+            header.max,
+        );
+        let response = ui.interact(rect, self.base_id(ui).with("menu"), Sense::click());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(Role::Button, true, format!("{} menu", self.title))
+        });
+        let ink = if response.hovered() {
+            t.color.text.primary
+        } else {
+            t.color.text.label
+        };
+        ui.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            crate::theme::glyph::MENU,
+            t.text.title.clone(),
+            ink,
+        );
+        Some(response)
     }
 
     /// The header action: right-aligned label text, primary while hovered.
@@ -302,7 +357,8 @@ impl<'a> ModuleCard<'a> {
         let t = self.theme;
         let galley = paint::one_line(ui, text, &t.text.label, t.color.text.label, header.width());
         let size = vec2(galley.size().x + 2.0 * t.space.tight, header.height());
-        let rect = Rect::from_min_size(pos2(header.right() - size.x, header.top()), size);
+        let right = header.right() - self.menu_width();
+        let rect = Rect::from_min_size(pos2(right - size.x, header.top()), size);
         let response = ui.interact(rect, self.base_id(ui).with("action"), Sense::click());
         response.widget_info(|| egui::WidgetInfo::labeled(Role::Button, true, text));
         let ink = if response.hovered() {
@@ -384,15 +440,17 @@ impl<'a> ModuleCard<'a> {
         let t = self.theme;
         let c = &t.color;
         let painter = content.painter();
-        // Leave the action's place free.
+        // Leave the action's and the menu button's places free.
+        let end = header.right() - self.menu_width();
         let right = match self.action {
             Some(text) => {
                 let w = paint::one_line(content, text, &t.text.label, c.text.label, header.width())
                     .size()
                     .x;
-                header.right() - w - 2.0 * t.space.tight - t.space.gap
+                end - w - 2.0 * t.space.tight - t.space.gap
             }
-            None => header.right(),
+            None if self.menu => end - t.space.gap,
+            None => end,
         };
         let header = Rect::from_min_max(header.min, pos2(right.max(header.left()), header.max.y));
         let title_left = if self.switchable {
