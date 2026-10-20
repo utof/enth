@@ -1430,7 +1430,11 @@ impl Session {
         self.game.cancel_all();
         let history = self.game.stash_history.take();
         self.game.reset();
-        self.game.dirty();
+        // A host load is the host's own change: marking the project dirty after it would add a host undo point
+        // (and cut REAPER's redo).
+        if why != EndedBy::Host {
+            self.game.dirty();
+        }
         Some((record, history))
     }
 

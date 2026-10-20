@@ -1,6 +1,6 @@
 # The session (`enth-session`, L6)
 
-**One single-threaded `Session` owns the live patch.** It holds the `Patch`, its `History`, the engine's `Link`, the `PlanMap` of the latest plan it sent, and the per-instance state outside the patch. The editor and the plugin shell change the patch only through it. It does no I/O, spawns no threads, reads no clocks and takes no locks; the plugin wraps it in one mutex. Lane S1s wrote this page and the crate's public API (freeze point F1b, [phase-1b.md](phase-1b.md)); lanes SK and S2s fill in the bodies that talk to the engine. Sources: research report 01 (R2, R3, R7, R8) and 02 (D5, D7) in `_local/sessions/2026-10-19-p1b-plugin-editor/`, [design.md §3–§4](design.md#4-host-parameters-macros--automation-slots), and the engine seams in [dsp/engine.md](dsp/engine.md#p1b-seams-lane-e-what-the-session-plugin-and-editor-lanes-rely-on).
+**One single-threaded `Session` owns the live patch.** It holds the `Patch`, its `History`, the engine's `Link`, the `PlanMap` of the latest plan it sent, and the per-instance state outside the patch. The editor and the plugin shell change the patch only through it. It does no I/O, spawns no threads, reads no clocks and takes no locks; the plugin wraps it in one mutex. Lane S1s wrote this page and the crate's public API (freeze point F1b, [phase-1b.md](phase-1b.md)); lanes SK and S2s fill in the bodies that talk to the engine. Sources: research report 01 (R2, R3, R7, R8) and 02 (D5, D7) in `_local/sessions/2026-10-19-p1b-plugin-editor/`, [design.md §3–§4](design.md#4-host-parameters-macros--automation-slots), and the engine seams in [dsp/engine.md](dsp/engine.md#p1b-seams-lane-e-what-the-session-plugin-and-editor-lanes-rely-on). Lane SG (R1, freeze point F1r, [phase-2.md](phase-2.md)) added the Recreate round: its API, threading contract and saved state are in ["The Recreate round"](#the-recreate-round-lane-sg-r1).
 
 ## The API in brief
 
@@ -18,6 +18,9 @@
 | `Session::{save, save_patch, save_instance, load, load_patch, load_instance}` | `state` | Save and load; a patch that does not load is kept as text and saved back unchanged until the first edit | Implemented; the host-load history policy is "reconcile" ([below](#host-state-loads-and-the-history)) |
 | `Session::{activate, deactivate, pump}`, `Activation`, `PumpReport` | `link` | The engine side | `deactivate` implemented; `activate` and the active `pump` are SK's stubs |
 | `TelemetrySource`, `TelemetryFrame`, `TelemetryMap`, `TelemetryReader` | `telemetry` | The tap's reader side; `TelemetryFrame` is the engine's `TapFrame` (`non_exhaustive`: fakes build it from `Default`), and `Tap` implements `TelemetrySource`; the reader follows a re-activation (`set_enabled`, `refresh`) | Implemented and tested against a real engine |
+| `GameEdit`, `RoundView`, `Listen`, `Vote`, `EndChoice` | `game` | The editor's round intents (start, A/B, submit, hint, reveal, vote, dispute, end) and its read model; `Session` implements the trait, a kittest fake can | Lane SG (R1, freeze point F1r); [below](#the-recreate-round-lane-sg-r1) |
+| `Session::{game_tick, game_job_done, drain_game_requests, game_ab, game_record}`, `Job`, `JobKind`, `JobResult`, `GameRequest`, `EditorView` | `game` | The shell's side of a round: the injected clock, the jobs its worker runs, the round's outbox | Lane SG |
+| `GameState`, `RoundRecord`, `RoundLogEntry` | `game` | The `enth` field's `game` object (absent while no round is live) and the round log's line (`enth.round-log/1`) | Lane SG; fixture `tests/fixtures/state/v1/round.*.json` |
 
 Stubs return `SessionError::Unsupported { what, lane }` (or `Inactive` while detached), never panic, and name the lane that fills them in.
 
@@ -27,10 +30,11 @@ Stubs return `SessionError::Unsupported { what, lane }` (or `Inactive` while det
 
 | Thread | Calls into the session | Never |
 | --- | --- | --- |
-| **Host main thread** | nice-plug `initialize`/`activate`: `fold_host`, `activate` (returns the `Engine`); `deactivate`; state save through the persistent fields' `map`: `save_patch(Some(&host))`, `save_instance()`; state load through the fields' `set`: `load_instance`, `load_patch`; then `drain_requests` | Call into the host while holding the lock |
-| **baseview's GUI thread** (the editor; a separate thread in baseview 0.4.1) | Once per frame, inside egui's update closure only (never across painting or the buffer swap): `pump`, `fold_host(&host)`, then the editor's reads and edits through `SessionView`/`SessionEdit`, then `drain_requests` into a local buffer; **unlock**; then forward `ShellRequest::Host` writes to `ParamSetter` | `GuiContext::set_state` (see below); keep the lock while calling `ParamSetter` |
+| **Host main thread** | nice-plug `initialize`/`activate`: `fold_host`, `activate` (returns the `Engine`); `deactivate`; state save through the persistent fields' `map`: `save_patch(Some(&host))`, `save_instance()` (it carries the round's record); state load through the fields' `set`: `load_instance` (it reconciles the round: [below](#host-loads-during-a-round)), `load_patch`; then `drain_requests` and `drain_game_requests` | Call into the host while holding the lock |
+| **baseview's GUI thread** (the editor; a separate thread in baseview 0.4.1) | Once per frame, inside egui's update closure only (never across painting or the buffer swap): `pump`, `fold_host(&host)`, `game_tick(now, view)`, then `game_job_done` for each job result the game worker posted, then the editor's reads and edits through `SessionView`/`SessionEdit` and `GameEdit`, then `drain_requests` and `drain_game_requests` into local buffers; **unlock**; then forward `ShellRequest::Host` writes to `ParamSetter`, jobs to the game worker, A/B to its atomics and round-log lines to the log writer | `GuiContext::set_state` (see below); keep the lock while calling `ParamSetter` |
 | **nice-plug's background worker** (`bg-worker`) | The shell's "pump wanted" task: lock, `pump`, unlock (see "Plan delivery") | Anything but `pump` (it makes no `ShellRequest`, so there is nothing to forward) |
-| **Audio thread** (`process`, CLAP `reset`) | **Nothing.** It owns the `Engine`, a preallocated event buffer and the last host values it saw. The one thing it schedules is the background pump task, rate-limited | Lock the session; touch it; schedule GUI work (`execute_gui`) |
+| **The shell's game worker** (lane SKR's thread) | **Nothing.** It runs the round's `Job`s from their own payloads (owned patches, shared `Arc`s), keeps the target's loop buffer for the audio thread, and posts each `JobResult` to a queue the GUI thread drains | Lock the session; call `game_job_done` itself (a prepared target loads the start patch, whose requests must be forwarded from the GUI thread) |
+| **Audio thread** (`process`, CLAP `reset`) | **Nothing.** It owns the `Engine`, a preallocated event buffer and the last host values it saw. The one thing it schedules is the background pump task, rate-limited. In a round it also plays the target's loop buffer (handed over like a plan, through a ring) and reads the A/B atomics | Lock the session; touch it; schedule GUI work (`execute_gui`) |
 
 - **The mutex.** The plugin holds `parking_lot::Mutex<Session>` in its shared state, used by the host main thread, the GUI thread and nice-plug's background worker (the pump task), never the audio thread. It is the only lock, so there is no lock order; nobody holding it waits on another thread or calls the host, so no thread can deadlock on it. A hold is at most one editor frame's edits, with at most one plan compile (about 0.9 ms for the G1 patch, mostly the reverb's preparation; [design.md §3](design.md#3-engine-and-real-time-safety)). The session itself takes no lock and is `Send` (a test checks).
 - **Never call into the host or nice-plug while holding the lock.** A host may call back synchronously on the same thread (REAPER is reported, anecdotally, to read the state for an undo point when a parameter changes), and the persistent field's `map` would then lock the session again and deadlock. So the shell drains `ShellRequest`s into a local buffer, unlocks, and only then acts on them. This matters more once baseview PR #357 lands and the GUI thread becomes the main thread; the mutex stays correct either way.
@@ -140,7 +144,7 @@ Two nice-plug persistent fields, both permanent names ([naming.md](naming.md)):
 | Field | Text | Versioned by |
 | --- | --- | --- |
 | `patch` | Exactly `Patch::to_json()`, carried raw (never re-parsed through `serde_json::Value`) | The patch file's `schema` number and `enth_patch::migrate`, the same path as `enth render` |
-| `enth` | `{"schema":"enth.plugin-state/1","monitor":{"fx_bypass":false},"ui":{"layout":"lanes","scale_percent":100,"advanced":false}}` | Its `schema` string and `state::INSTANCE_STEPS` |
+| `enth` | `{"schema":"enth.plugin-state/1","monitor":{"fx_bypass":false},"ui":{"layout":"lanes","scale_percent":100,"advanced":false}}`, plus `"game":{"round":{…}}` while a Recreate round is live ([below](#what-a-round-saves)) and PBC's `preset` | Its `schema` string and `state::INSTANCE_STEPS` |
 
 - The slot assignments and the macros (values and names) live in the patch; the 72 host values are nice-plug's own `params` and are never needed to rebuild the sound.
 - Byte-deterministic (clap-validator's `state-reproducibility-binary`); each field at most 1 MiB; the two fields load independently (nice-plug sets `enth` before `patch`).
@@ -148,6 +152,153 @@ Two nice-plug persistent fields, both permanent names ([naming.md](naming.md)):
 - **Two version axes, both exercised.** The `patch` field is versioned by the patch file's own `schema` and `enth_patch::migrate`; patch schema 0 is the synthetic predecessor kept to keep that machinery honest, so `tests/fixtures/state/v0/{lanes,minimal}.patch.json` (with their `.migrated.patch.json`) load through `Session::load_patch` as a saved state does, migrate, and save back as the current schema, byte for byte. The `enth` field's walk, `migrate_instance_with(value, current, steps)`, runs the same code `migrate_instance` runs with this build's (empty) `INSTANCE_STEPS`, but with a table of the test's own, so the day `STATE_VERSION` becomes 2 the hook is already proven for a chain, for a missing step (`migration_failed`, never a panic), and for a step that rejects its input.
 - A `patch` field that does not load (a newer schema, damage) leaves the init patch playing, `status().patch_unloaded`, and its text, which every save writes back unchanged until the first edit, undo or redo. A field over 1 MiB is not kept. An `enth` field from a **newer** version (`schema_too_new`) is kept the same way: the defaults play, `status().instance_unloaded` is set, and every save writes the stored text back unchanged until the first real change of the monitor bypass or the editor preferences. A damaged `enth` field is not kept (it gives the defaults and is re-saved with them; only preferences are lost); unknown fields of a newer version 1 are dropped on re-save. A project saved by a newer build and saved again by this one therefore keeps both fields byte for byte (tested).
 - Fixtures: `crates/enth-session/tests/fixtures/state/v1/{default,custom}.{patch,enth}.json`. `custom` carries three slots (the first, the second and the last), a named macro, a module label, a route and non-default editor preferences. Regenerate on purpose with `cargo test -p enth-session --test state -- --ignored regenerate` and read the diff. The `v0/` fixtures are inputs and are not regenerated by the v1 tests; their `.migrated` files are what the migration must produce.
+
+## The Recreate round (lane SG, R1)
+
+`enth-session`'s `game` module is the pure Recreate round ([design.md §9](design.md#the-round-ab-and-feedback-2026-10-20), [phase-2.md](phase-2.md)). It keeps the session's rules: no clocks, no threads, no I/O, no locks. **Time comes from timestamps the shell passes in**, and **background work (generating and rendering the target, scoring, hints) runs as jobs the shell executes** on its own worker and hands back. The audio thread never touches any of it. Lane CT's `Challenge` and `ScoreReport` are local placeholders until F1r ([below](#f1r-swaps)).
+
+### The lifecycle
+
+| Phase | Entered by | The patch | Leaves by |
+| --- | --- | --- | --- |
+| (no round) | — | the player's own | `game_start(challenge)` |
+| `Preparing` | `game_start`: a `Prepare` job is asked for | unchanged (the player can still edit it) | `Prepared`: the player's patch and undo history are stashed, the start patch loads |
+| `Playing` | the target is ready | the start, then the player's edits | `game_submit` and its `Scored` result |
+| `Submitted` | a scored submit that did not pass | the player's | a passing submit |
+| `Passed` | the first passing submit, which sets the time to pass | the player's | — (keep tweaking, vote, end) |
+| `Revealed` | `game_reveal`: gives up, assisted, no more submits | the target | — (vote, end) |
+| `Broken` | the target could not be prepared or regenerated (a failed job, a bad code, another hash) | unchanged | `game_end` only; the stash is kept |
+
+From any phase, `game_end(Restore)` brings back the stashed patch and its undo history, and `game_end(Keep)` keeps the round's patch and history. `game_start` from a live round is a new round: the old one is logged and the **original** stash carries over, so "your patch" is always the one from before the first round. Only sound decides a pass (lane ST's combined score is reported beside it).
+
+### Who calls what
+
+| Entry | Thread | Does |
+| --- | --- | --- |
+| `game_tick(now_ms, EditorView)` | GUI, once per frame after `pump` and `fold_host` | The clock and the settled jobs. `Opened` at every `build()` (the time since the last tick never counts, even if a close went unreported), `Visible` each frame, `Hidden` when the editor closes |
+| `GameEdit::{game_start, game_listen, game_submit, game_hint, game_reveal, game_vote, game_dispute, game_end}`, `GameEdit::round` | GUI, at the end of the frame like `SessionEdit` | The editor's intents and its read model (`RoundView`, rebuilt every frame; a kittest fake builds one from `Default`) |
+| `game_job_done(id, result)` | GUI (or host main), under the lock | Hands a job's result back. A result for a job the round no longer waits for is `StaleJob` and changes nothing |
+| `drain_game_requests()` | Wherever `drain_requests` is drained, under the lock | `Run(job)`, `Cancel(id)`, `Ab(state)`, `Log(line)`, `Dirty`; acted on **after unlocking** |
+| `load_instance` / `save_instance` | Host main | Restore, reconcile or end the round ([below](#host-loads-during-a-round)); save its record |
+
+Every other entry uses the latest tick's time. Edits, undo and redo need no new entry: the session's edit path (`deliver`) and host folds log them into the round.
+
+### Jobs
+
+Each job is a pure function of its payload (patches are owned or `Arc`-shared), so the worker never locks the session. At most one of each kind is in flight.
+
+| Job | When | The worker | Result |
+| --- | --- | --- | --- |
+| `Prepare { challenge }` | `game_start`, and on restoring a saved round | Generates start and target (lane RG), renders the target's loop of the scored phrase **and keeps the buffer** for Target ▶ (the session never sees audio), measures its loudness, calibrates the scorer (lane SS) | `Prepared { start, target, target_lufs }` |
+| `Score { challenge, target, patch, submit }` | `game_submit` (the patch at the moment of Submit) | Scores it (lanes SS, ST) | `Scored(ScoreReport)` |
+| `Loudness { challenge, patch }` | The patch has settled (`SETTLE_MS`, 300 ms, after the last change) | Renders the phrase through the player's patch and measures it, for Mine ▶'s gain | `Loudness { lufs }` |
+| `Rings { challenge, target, patch }` | Settled, after the first submit | The per-knob Good / Near / Bad (structure only) | `Rings(knobs)` |
+| `Hint { challenge, target, patch, level }` | `game_hint` | The coach at that level (lane SN) | `Hint(CoachHint)` |
+
+Any job may answer `Failed { message }`: a failed `Prepare` breaks the round, a failed score records no submit. A settled job that measured an older revision of the patch is asked again at the next tick. The game worker is SKR's own thread, not nice-plug's background worker (a one-second calibration would hold up the plan pump).
+
+### A/B
+
+`game_listen(Off | Target | Mine)` sets the switch; `AbState` carries it with `target_ready` and the loudness-match gains, and the session pushes `GameRequest::Ab` whenever it changes. **Target ▶** is the shell's pre-rendered loop; **Mine ▶** is the same phrase played live through the engine, locked to the loop's position; the shell does the flip and its short crossfade. The louder side is attenuated by the loudness difference and the quieter one is never boosted (`game::ab_gains`, both gains ≤ 0 dB; an unmeasured or silent side leaves both at 0 dB). The gains come from the same loudness measurement as the scorer's (P11); when lane SS lands, `ab_gains` calls its shared gain function. A/B sends the engine nothing: no engine work, as design.md §9 says.
+
+### Time, submits and feedback
+
+- **Active time** counts only between visible ticks while the target is ready: it pauses while the editor is closed and while the target is prepared or regenerated. A timestamp older than the last is treated as the last.
+- **The time to pass** is the active time when the player pressed Submit on the first passing submit (not when its score arrived). A submit made just before a reveal still counts.
+- **Score on submit**: the first scored submit is the recorded score; each later one is shown and kept. After the first, the rings come from each report and then from `Rings` jobs as the patch settles.
+- **Hints** go up one level per call (`HINT_LEVELS` = 4) and **a reveal** loads the target; both mark the round assisted.
+- **The vote** (too low, about right, too high) and **a dispute** need a scored submit. A dispute is logged at once (a crash cannot lose it); the round's `end` line carries it too.
+
+### The edit log
+
+Every change to the round's patch is logged with the round's active time: editor edits, undo and redo (from `deliver`), host folds (from `fold_host`), host loads and the reveal (whole-patch changes, logged with empty ops). Ops are kept in their resolved wire form (`enth_patch::wire::to_json`), so replaying the log from the start patch with `wire::resolve` gives the round's patches (tested). A drag's moves of one target merge into one entry, as the history merges them. The log is capped at 256 KiB, and less when the stash is large, so a round never makes the `enth` field unloadable; entries over the cap are counted in `edits_dropped`.
+
+### Undo and the stash
+
+- Starting play stashes the player's patch (as patch-file text, exactly what the `patch` field held, so a patch this build could not read survives too) and their undo history, and gives the round an empty history: **Undo never leaves the round**.
+- `game_end(Restore)` puts both back; the player's own steps are undoable again. After a project reload the stash comes back without its history (no history is ever saved).
+- The start, a reveal and the restore each replace the whole patch the way a load does: an open drag is closed (its host gestures stay open until the editor's next `end_gesture`), the plan forgets the engine's remembered host slot values, the host baseline is reset, audition notes are released, the plan is sent at once, `RenameParams` goes out when the host would see other names, and `PatchEdited` marks the project dirty. Each is exactly one plan (tested against a running engine).
+- **A reveal starts a new history line** for now: the round's steps do not apply to the target. An undoable reveal is lane PBC's undoable load (`ops_between`), an F1r follow-up.
+
+### Host automation
+
+The patch-wins rules hold in a round unchanged. The start patch has no slot assignments (lane RG's generator must keep it so), so host slot automation does nothing while a round plays; the first fold after the start only records, and the player's slots and names come back with the restore, where the first fold again only records (tested). Host macro automation does fold into the round's patch (macros are not slotted); it is logged as `host`, and it is audible only if the start patch routes a macro, which it should not. A slot the player assigns during a round works as usual.
+
+### What a round saves
+
+The `enth` field's optional `game` object, `{"round":{…}}` (`GameState`, `RoundRecord`), is **absent while no round is live**, so every state without a round keeps its bytes (the v1 fixtures are re-checked through game calls that start nothing, and after a round ended with Restore). It stays within `enth.plugin-state/1`: optional fields with defaults, unknown fields ignored, empty ones omitted, and an unknown phase or edit source from a newer build reads as `unknown` / `other` (a round in an unknown phase restores `Broken`). It holds:
+
+| Field | What |
+| --- | --- |
+| `id` | `{serial, nonce}`: rounds counted in this instance, and the shell's time at the start |
+| `code` | The challenge code. **The target is never saved**: it is regenerated from the code |
+| `phase` | Where the round is |
+| `stash` | The player's own patch, as patch-file text |
+| `target_hash` | The target's canonical hash: a regenerated target must match it, or the round is `Broken` (`target_drift`) |
+| `active_ms`, `time_to_pass_ms` | Active time so far, and the first passing submit's |
+| `submits` | Every scored submit: its active time, pass, and sound, structure and combined % as **integer hundredths** (no float in the record but the edit log's patch values) |
+| `hints`, `revealed`, `vote`, `dispute` | Assists and the player's verdict |
+| `submitted_patch` | The last scored submit's patch, for the round log (omitted above 128 KiB) |
+| `edits`, `edits_dropped` | The edit log |
+
+Not saved, and recomputed after a reload: the target and its audio (the `Prepare` job runs again; play, Submit and Target ▶ wait for it, and so does the clock), Mine's loudness, the rings, the latest hint's text and the last full score report. The `patch` field holds the round's patch, so `enth render` of a mid-round project plays what the player hears. A pre-R1 build ignores `game` and drops it on its next save, losing the stash; no pre-R1 build went to friends.
+
+### Host loads during a round
+
+A host loads state when it opens a project and on its own Undo. nice-plug sets `enth` before `patch`, and `load_instance` reconciles the round it loaded with the live one:
+
+| The loaded `enth` field holds | The live round | Then |
+| --- | --- | --- |
+| the same round (`id` and `code`) | live | **The live record wins.** REAPER's Undo restores an earlier save of this project, and must not roll back submits, the time or the vote. The patch still follows the host (logged as a `load`) |
+| another round, or none | live | The live round ends, logged with `ended_by: host`; then the loaded one is restored, if any. A host load never marks the project dirty (a dirty mark would add a host undo point and cut REAPER's redo) |
+| a round | none | **Restored**: the code is decoded (an undecodable one restores `Broken`) and a `Prepare` job asked for; the patch is not touched |
+
+### The round log
+
+Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.round-log/1`: `event` (`end` or `dispute`), `round`, `code`, `outcome` (`passed`, `revealed`, `abandoned`, `broken`; `in_progress` on a dispute line), `ended_by` (`restore`, `keep`, `new_round` (GR1's "want more"), `host`), `active_ms`, `time_to_pass_ms`, `submits` (the first is the recorded score), `hints`, `revealed`, `assisted`, `vote`, `dispute`, `edits`, `patch` (the last scored submit's) and `report` (its full score report, while the session still holds it). The shell appends it to a local JSONL file (I/O, never on the audio thread); lane GK writes the exporter and `cargo xtask gr1-report`. A round a host load restored after its `end` line can log again: readers keep the last `end` per `round`.
+
+### F1r swaps
+
+| Placeholder (`game::placeholder`) | Becomes | Touches |
+| --- | --- | --- |
+| `Challenge` (a code) | `enth_challenge::model::Challenge` (lane CT) | The `Challenge` alias; `Challenge::code()` must exist |
+| `decode(code)` | `enth_challenge::code::decode` | `game_restore`; the round fixture's code must then be a real code (regenerate it) |
+| `ScoreReport` (pass, three %, knobs) | `enth_challenge::score::ScoreReport` | The alias, `placeholder::summary` and `placeholder::knobs` |
+| `ab_gains` | Lane SS's shared gain function (P11) | `ab_gains` (after F1r: SS is in wave 3) |
+| The reveal's new history line | PBC's undoable load (`ops_between`) | `game_reveal` |
+
+### Decisions (lane SG)
+
+1. **The saved record is the single source of truth.** It lives in `InstanceState::game` and is changed in place, so `save_instance` needed no change; the transient part (target, stashed history, jobs, clock, outbox) is a `Session` field.
+2. **Integer scores in the saved state.** Floats never enter the record (scores are hundredths of a percent), so it stays `Eq` and byte-deterministic; the full report goes to the round log while it is in memory.
+3. **The game has its own outbox** (`drain_game_requests`) beside `ShellRequest`: jobs go to a worker, A/B to atomics, log lines to a file, and `ShellRequest`'s shape stays as F1b froze it.
+4. **Jobs are the only way to compute**, including generation, which is cheap: the session never depends on RG's or SS's code, and every job can be replayed from its payload.
+5. **Results come back on the GUI thread**, never from the worker, because a prepared target replaces the patch, whose requests the GUI thread forwards.
+6. **The same round loaded by the host keeps its live progress**: a host's Undo cannot undo a submit.
+7. **The stash is patch-file text**, so it migrates like the `patch` field and keeps a patch this build cannot read.
+
+### What lane SKR must wire
+
+1. **The clock.** In the editor's update closure, after `pump` and `fold_host`: `game_tick(monotonic_ms, Visible)`; `Opened` in every `build()`; `Hidden` from the fork's `editor_closed` (or when `EguiEditorState::is_open()` turns false).
+2. **The worker.** Its own thread: run each `GameRequest::Run(job)` and post `(id, result)` to a bounded queue; drop cancelled ids; the GUI thread hands results back with `game_job_done` at the top of the frame, before the editor's edits.
+3. **The `Prepare` job.** Lane RG's generator for start and target, the target's render of the scored phrase as a preallocated loop buffer, its loudness, lane SS's calibration; the buffer goes to the audio thread like a plan (a ring with a return ring), and is dropped when `Ab.target_ready` turns false.
+4. **A/B in `process()`.** Read the A/B atomics; play the buffer or the phrase (the shell's sequencer feeding Mine's notes), locked to one position, with a short crossfade and the gains (dB to linear in the shell). The `process-stats` A/B toggle (F2r).
+5. **Score, rings, loudness and hint jobs**, through CT, SS, ST and SN's code as each lands.
+6. **The round log.** Append each `GameRequest::Log` line to the local JSONL file after unlocking (GK names the path).
+7. **Dirty.** Coalesce `GameRequest::Dirty` with `ShellRequest::PatchEdited` into one `mark_dirty()` per frame.
+8. **Draining.** `drain_game_requests` wherever `drain_requests` is drained (the GUI thread after each frame, the host main thread after a state load, which may ask for a `Prepare`).
+
+### Tests (lane SG)
+
+| What | Where |
+| --- | --- |
+| The lifecycle from start to pass; reveal; a submit in flight at the reveal; hint levels; a new round keeping the original stash; an end before play; abandon; disputes; stale, wrong and failed results; a failed preparation | `tests/game.rs` |
+| A/B: sides, flips, the louder side attenuated, a stale loudness asked again, rings after the first submit | `tests/game.rs` |
+| The injected clock: preparation, idle frames, a closed editor, an unreported close, a timestamp from the past, the time to pass | `tests/game.rs` |
+| Undo inside the round, the player's history back, Keep keeping the round's history, a drag across the start; the edit log's merge, times, host entries and replay; host slots in a round | `tests/game.rs` |
+| The saved state: v1 fixtures byte-identical without a round and after one; a project saved mid-round restored, stash included; target drift; a bad code and a newer phase; same-round, other-round and no-round host loads; within version 1; no float in the record; the round fixture | `tests/game.rs`, `tests/fixtures/state/v1/round.*.json` |
+| No audio-thread contact: only the start, a reveal and the restore reach the engine, one plan each; twelve rounds while a test audio thread renders under `assert_no_alloc` | `tests/game.rs`, `tests/game_audio.rs` |
+| Gains, score rounding, unknown phases, the log budget, `Send` | `src/game.rs` unit tests |
 
 ## Decisions
 

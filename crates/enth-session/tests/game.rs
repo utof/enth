@@ -1017,11 +1017,13 @@ fn a_host_load_of_the_same_round_keeps_the_live_progress() {
         earlier.patch,
         "the patch follows the host"
     );
+    let requests = drain(&mut s);
     assert_eq!(
-        runs(&drain(&mut s)),
+        runs(&requests),
         [],
         "the live target is kept: nothing to regenerate"
     );
+    assert!(!requests.contains(&GameRequest::Dirty));
     assert!(s.game_submit().is_ok());
 }
 
@@ -1043,6 +1045,10 @@ fn a_host_load_without_a_round_ends_the_live_one() {
         (Outcome::Abandoned, Some(EndedBy::Host))
     );
     assert!(requests.iter().any(|r| matches!(r, GameRequest::Cancel(_))));
+    assert!(
+        !requests.contains(&GameRequest::Dirty),
+        "a host load never marks the project dirty (it would cut REAPER's redo)"
+    );
     assert_eq!(s.save(None), before);
 }
 
