@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "pad-trance-gate"
+added = "2026-10-20"
+difficulty = 3
+tags = ["pad", "gate", "tremolo", "lfo", "modulation"]
+brief = "a trance-gate chop: a sustained saw chopped into fast rhythmic pulses"
+template = "init"
+expect = "pitch.note ~ A3, tremolo in [5Hz, 10Hz], tremolo_depth > 12dB, brightness in [800Hz, 3kHz], release < 300ms, beating == null, peak < -1dB"
+rationale = "A rhythmic gate: a held saw chopped on and off at 5-10 Hz. That is a deep tremolo (`tremolo_depth` over 12 dB), on one oscillator: with two detuned oscillators the tremolo and the beat estimators disagree (a square gate hid the beat, a sine gate read as beating and no tremolo, measured; the analysis does not cover detune combined with tremolo), so `beating == null` keeps the patch measurable. Against keys-tremolo (a gentle 2.5-12 dB wobble on a decaying key) this one is deep and sustained. Witness: lfo1 8 Hz square, unipolar, routed to osc1.level at -100 %, a 2 kHz low-pass (tremolo 8.0 Hz, depth 31.8 dB)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "A3", vel = 100, on_s = 0.0, off_s = 3.0 }], dur_s = 4.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "pluck-marimba"
+added = "2026-10-20"
+difficulty = 2
+tags = ["pluck", "mallet", "envelope", "short"]
+brief = "a soft wooden marimba-like note"
+template = "init"
+expect = "pitch.note ~ C4, attack < 10ms, brightness in [300Hz, 900Hz], duration in [150ms, 600ms], sustain < -40dB, noisiness < 0.05, peak < -1dB"
+rationale = "A mallet note: struck (attack under 10 ms), soft and woody (brightness 300-900 Hz at C4: a triangle reads 581 Hz, a sine 262 Hz, a saw 4.2 kHz), over in 150-600 ms although the key is held 1 s, and clean. Against pluck-bright-short this one is dark; against perc-woodblock it is lower and longer. Witness: triangle, 0 ms attack, 700 ms decay to 0 % (duration 358 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C4", vel = 100, on_s = 0.0, off_s = 1.0 }], dur_s = 1.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

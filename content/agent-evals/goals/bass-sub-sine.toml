@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "bass-sub-sine"
+added = "2026-10-20"
+difficulty = 1
+tags = ["bass", "sub", "low", "sine"]
+brief = "a deep, clean sub bass"
+template = "init"
+expect = "pitch.note ~ A1, brightness < 80Hz, noisiness < 0.05, sustain > -3dB, release < 250ms, beating == null, peak < -1dB"
+rationale = "The easy end of the basses: one waveform change and the envelope. A sub bass is a pure low tone that holds while the key is down: the brightness ceiling of 80 Hz at A1 (55 Hz) leaves only a sine (it reads 56.6 Hz; a triangle reads 155 Hz, a saw about 3 kHz, a saw low-passed at 80 Hz 95 Hz), and noisiness, `beating == null` and the headroom keep it clean. The blank patch fails on brightness and sustain (a 70 % sustain reads about -5.8 dB at A1, noise 1.4 dB). No attack item: on a 55 Hz note the attack reading is inflated by the 18 ms period (docs/dsp/analysis.md, Limits). Witness: sine, full sustain, a 150 ms release (reads 74 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

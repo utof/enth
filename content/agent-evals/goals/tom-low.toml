@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "tom-low"
+added = "2026-10-20"
+difficulty = 3
+tags = ["percussion", "tom", "noise", "low", "structure"]
+brief = "a low floor tom: a deep tonal thud with a little noise"
+template = "init"
+expect = "tonal_pitch ~ G2, noisiness in [0.08, 0.6], attack < 15ms, duration in [200ms, 700ms], sustain < -40dB, brightness in [150Hz, 1.2kHz], peak < -1dB"
+rationale = "A drum with a pitched body: a low tone (`tonal_pitch ~ G2`, read under the noise) with some noise (0.08-0.6: less than snare-crack's 0.4-0.85), dark (150 Hz to 1.2 kHz), gone in 200-700 ms with the key held 0.6 s. Balancing the tone against the noise is the work: pink noise at full level against a full-level sine reads only 0.03 noisiness, so the tone comes down. Inharmonic drum modes are not measured (the tonal pitch wants a harmonic series; docs/dsp/analysis.md). Witness: sine at 35 %, pink noise, 1.2 kHz low-pass, 900 ms decay to 0 % (noisiness 0.18, tonal 98.2 Hz)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "G2", vel = 100, on_s = 0.0, off_s = 0.6 }], dur_s = 1.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

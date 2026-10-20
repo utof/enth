@@ -1,0 +1,22 @@
+# Placeholder (eval version 3, R1/S1 lane EV2): the reference-sound targets R1 adds to the text goals.
+# Nothing reads this file yet; it reserves the slots and names the plug points. The spec is docs/agent-evals.md,
+# "Reference targets (not built)". When the harness reads it, the schema becomes enth.agent-eval-targets/1, the
+# goals that use a target move to enth.agent-eval/2, and eval_version changes.
+schema = "enth.agent-eval-targets/0"
+status = "placeholder"
+
+# 25 seeded targets from the randomizer (lane RG, wave 2): 5 per difficulty 1..5, fixed seeds, each a challenge
+# code (RandomSpec: generator and engine versions plus a target-hash prefix) that the harness renders at run time
+# with the goal's performance. The agent gets only target.wav, never the code or the patch.
+[seeded]
+needs = ["enth random with codes (lane RG)", "enth compare on the game's scorer (lanes SS, CL)"]
+per_difficulty = [5, 5, 5, 5, 5]
+codes = []
+
+# 5 recordings, CC0 or the owner's own (report 02 section 2.10): about 1-3 s, mono, 48 kHz, small enough for git.
+# Suggested spread: a plucked string, a bass note, a sustained tone, a drum hit, a texture. The owner chooses.
+[recordings]
+needs = ["the owner's files or CC0 sources with their URLs", "enth compare on the game's scorer (lanes SS, CL)"]
+count = 5
+licences = ["CC0-1.0", "owner"]
+files = []

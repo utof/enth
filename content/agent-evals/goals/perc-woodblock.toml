@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "perc-woodblock"
+added = "2026-10-20"
+difficulty = 2
+tags = ["percussion", "woodblock", "short", "envelope"]
+brief = "a short, high wooden click like a woodblock"
+template = "init"
+expect = "pitch.note ~ E5, attack < 5ms, duration in [40ms, 200ms], sustain < -40dB, brightness in [500Hz, 2kHz], noisiness < 0.1, peak < -1dB"
+rationale = "A very short sound on purpose: a high wooden click of 40-200 ms (the floor so a click of a few samples does not count), tonal and on the note (pitch at E5, 659 Hz, reads within 1 ct even at 64 ms), not bright (500 Hz to 2 kHz excludes a raw saw) and clean. Short sounds are valid goals: the sound is measured as it is, the key held 0.3 s. Witness: triangle, 0 ms attack, 200 ms decay to 0 % (duration 105 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "E5", vel = 100, on_s = 0.0, off_s = 0.3 }], dur_s = 1.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

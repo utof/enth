@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "bass-acid-squelch"
+added = "2026-10-20"
+difficulty = 4
+tags = ["bass", "filter", "envelope", "sweep", "resonance"]
+brief = "an acid bass: a resonant filter that snaps shut on every note"
+template = "init"
+expect = "pitch.note ~ A2, filter_sweep > 1.2oct, sweep_ms in [80ms, 500ms], brightness in [250Hz, 1.2kHz], sustain > -6dB, release < 250ms, peak < -1dB"
+rationale = "A resonant low-pass whose cutoff an envelope throws open and lets snap shut on every note: a one-shot brightness sweep (`filter_sweep` over 1.2 octaves, `sweep_ms` 80-500 ms), with the closed filter as the body (brightness 250 Hz to 1.2 kHz at A2), held like a mono bass. The squelch itself (the resonance) has no descriptor, and the sweep direction is in `describe` but not in the expectation vocabulary, so an opening sweep with a dark start could pass too; the brightness window makes the closed state the body. No attack item: on a resonant low-pass closing over a held note the level peaks when the resonance crosses the low harmonics (with a 1 ms amp attack the witness's variants read 64-161 ms). Witness: 350 Hz, 70 % resonance, env2 0/600 ms/0 % at +4 oct (sweep 1.9 oct, 192 ms, centroid 368 Hz)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "A2", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

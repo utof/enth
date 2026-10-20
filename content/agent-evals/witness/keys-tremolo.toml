@@ -1,0 +1,13 @@
+# Hand-picked solution for the goal of the same name: what `cargo xtask agent-eval --dry-run` replays as its scripted
+# fake agent, and the proof that the goal's expectation list is reachable with the current engine. SPOILER: this is
+# the answer; the agent under test never sees this directory (it runs in an empty temp dir with only an `enth`
+# wrapper). `{perf}` and `{expect}` are filled in from the goal (or from self_expect on the self-written track).
+schema = "enth.agent-eval-witness/1"
+id = "keys-tremolo"
+self_expect = "pitch.note ~ C4, tremolo in [3Hz, 8Hz], attack < 20ms, sustain < -3dB"
+
+[[step]]
+args = ["new", "--template", "init", "--out", "sound.patch.json"]
+
+[[step]]
+args = ["step", "sound.patch.json", "--ops", '[{"set":"osc1.wave","to":"triangle"},{"add":"lfo","id":"lfo1","params":{"rate":"5Hz","shape":"sine"}},{"route":"lfo1 -> osc1.level","depth":"50%"},{"set":"env1.attack","to":"2ms"},{"set":"env1.decay","to":"1.5s"},{"set":"env1.sustain","to":"35%"},{"set":"env1.release","to":"300ms"},{"set":"master.level","to":"-6dB"}]', "--perf", "{perf}", "--expect", "{expect}"]

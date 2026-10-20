@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "fx-reverse-swell"
+added = "2026-10-20"
+difficulty = 3
+tags = ["fx", "swell", "envelope"]
+brief = "a reverse swell: a tone that fades in over the whole note and cuts off dead at the end"
+template = "init"
+expect = "pitch.note ~ C4, attack > 1000ms, sustain > -1.5dB, release < 60ms, brightness in [500Hz, 2.5kHz], peak < -1dB"
+rationale = "The reversed-sample effect: a tone that rises for the whole note and stops dead when the key is released. The attack is still running at note-off (attack over 1 s with the key held 2 s, and the level at note-off is the peak: sustain over -1.5 dB), then a release under 60 ms. A pad with a 1.2 s attack and a long release (control, measured) fails attack, release and nothing else. Witness: 1.5 kHz low-pass, 2.5 s attack, 20 ms release (attack 1544 ms, release 12 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C4", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
