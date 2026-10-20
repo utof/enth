@@ -1265,6 +1265,7 @@ dependencies = [
  "clap",
  "ebur128",
  "enth-analysis",
+ "enth-challenge",
  "enth-patch",
  "enth-render",
  "fundsp",

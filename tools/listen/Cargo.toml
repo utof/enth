@@ -17,6 +17,8 @@ path = "src/main.rs"
 enth-analysis.workspace = true
 enth-render.workspace = true
 enth-patch.workspace = true
+# Added by the coordinator (2026-10-21) for lane PAIRS (`enth-listen pairs`): generator v1, sound/1, loudness, A/B gains.
+enth-challenge.workspace = true
 # Phase 0 spike used as a library: the toy synth and the CMA-ES search that make the ABX stimuli (docs/listening.md).
 spike-metric = { path = "../../spikes/spike-metric" }
 # 2-channel BS.1770 loudness for the stereo reverb stimuli (enth-analysis' meter is mono); same pin as enth-analysis.
