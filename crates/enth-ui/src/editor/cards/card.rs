@@ -297,15 +297,15 @@ pub(crate) fn control(
     };
     let dimmed = p.emphasis == Emphasis::Dimmed;
     // While a source's ⊕ is dragged, a control it cannot modulate draws dimmed (lane ED2, `editor::modulate`).
-    let refused = modulate::refused(p);
-    let response = ui
-        .scope(|ui| {
-            if refused {
-                ui.multiply_opacity(t.state.disabled_opacity);
-            }
+    let response = if modulate::refused(p) {
+        ui.scope(|ui| {
+            ui.multiply_opacity(t.state.disabled_opacity);
             control_body(ui, t, view, p, label, form, dimmed, out)
         })
-        .inner;
+        .inner
+    } else {
+        control_body(ui, t, view, p, label, form, dimmed, out)
+    };
     modulate::target(ui, t, view, p, &response, out);
     menu::attach(t, view.kind, p, &response, out);
     menu::entry(ui, t, p, response.rect, out);

@@ -11,6 +11,11 @@
 //! pointer moves over an empty strip of the header, so every frame is a full pass where nothing changes) and `drag`
 //! (a knob drag, so every frame edits the patch through the session and redraws the changed knob). Patches: `p1`
 //! (the P1 default, the G1 reference patch) or `max` (the maximum patch).
+//!
+//! Live cases (lane ED2): `live` runs an active session with a held note, renders 1,600 frames of audio (25 blocks of
+//! 64, one 30 Hz frame's worth at 48 kHz) before every editor frame, and draws the telemetry (rings, tile levels,
+//! the scope, the meters); `spectrum` is the same with the output region showing the spectrum; `engine` renders the
+//! same audio with no editor, so the editor's share is `live − engine` per frame.
 
 #![allow(
     clippy::print_stdout,
@@ -21,7 +26,7 @@
 mod patches;
 
 use egui::{Event, Pos2, RawInput, Rect, pos2, vec2};
-use enth_session::Session;
+use enth_session::{Activation, Session};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
 use enth_ui::editor::cards::ids;
@@ -39,8 +44,37 @@ fn main() {
     theme.apply(&ctx);
     let mut session = Session::new(patch);
     let mut editor = Editor::new(&theme);
+    let live = matches!(case.as_str(), "live" | "spectrum" | "engine");
+    let mut render: Box<dyn FnMut()> = Box::new(|| {});
+    if live {
+        let mut engine = session
+            .activate(Activation {
+                sample_rate: 48_000.0,
+                offline: false,
+            })
+            .expect("activates");
+        editor.open(&session, &theme);
+        let _ = enth_session::SessionEdit::audition_on(&mut session, 48, 1.0);
+        session.pump();
+        render = Box::new(move || {
+            let (mut l, mut r) = ([0.0f32; 64], [0.0f32; 64]);
+            for _ in 0..25 {
+                engine.process(&mut l, &mut r, &[]);
+            }
+            std::hint::black_box(&l);
+        });
+    }
+    if case == "engine" {
+        for _ in 0..frames {
+            render();
+        }
+        println!("frame_bench: {case}, {frames} frames");
+        return;
+    }
     let screen = Rect::from_min_size(Pos2::ZERO, theme.size.window.default);
     let mut run = |events: Vec<Event>, frame: u32| {
+        render();
+        session.pump();
         let input = RawInput {
             screen_rect: Some(screen),
             time: Some(f64::from(frame) / f64::from(theme.motion.animated_hz)),
@@ -70,6 +104,25 @@ fn main() {
         theme.space.gap + theme.size.bar.header * 0.5,
     );
     match case.as_str() {
+        "live" | "spectrum" => {
+            if case == "spectrum" {
+                // A click on the output display switches it to the spectrum.
+                let display = ctx
+                    .read_response(ids::region("output").with("display"))
+                    .map_or(screen.center(), |r| r.rect.center());
+                let click = |pressed| Event::PointerButton {
+                    pos: display,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                };
+                run(vec![Event::PointerMoved(display), click(true)], 2);
+                run(vec![click(false), Event::PointerGone], 3);
+            }
+            for f in 0..frames {
+                run(Vec::new(), f + 4);
+            }
+        }
         "drag" => {
             run(
                 vec![
