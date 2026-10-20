@@ -6,7 +6,8 @@
 //! back by index, so the result vector is a pure function of the candidates: identical for any worker count.
 #![allow(
     clippy::disallowed_methods,
-    reason = "test and example support: stands in for the shell's thread pool, which the core crates must not spawn"
+    clippy::disallowed_types,
+    reason = "test and example support: stands in for the shell's thread pool, which the core crates must not spawn or lock"
 )]
 
 use std::sync::Mutex;
@@ -42,7 +43,9 @@ impl Objective for Pool<'_> {
                 .map(|w| {
                     let next = &next;
                     s.spawn(move || {
-                        let mut w = w.lock().expect("a worker never panics while holding its lock");
+                        let mut w = w
+                            .lock()
+                            .expect("a worker never panics while holding its lock");
                         let mut got = Vec::new();
                         loop {
                             let i = next.fetch_add(1, Ordering::Relaxed);

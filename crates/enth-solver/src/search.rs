@@ -202,14 +202,18 @@ impl SearchCfg {
             return Err(SearchError::BadCfg("budget must be at least 1 render"));
         }
         if self.lambda != 0 && self.lambda < 4 {
-            return Err(SearchError::BadCfg("lambda must be 0 (default) or at least 4"));
+            return Err(SearchError::BadCfg(
+                "lambda must be 0 (default) or at least 4",
+            ));
         }
         if !(self.sigma_start.is_finite()
             && self.sigma_start > 0.0
             && self.sigma_random.is_finite()
             && self.sigma_random > 0.0)
         {
-            return Err(SearchError::BadCfg("sigma_start and sigma_random must be positive"));
+            return Err(SearchError::BadCfg(
+                "sigma_start and sigma_random must be positive",
+            ));
         }
         if self.runs_per_cycle == 0 {
             return Err(SearchError::BadCfg("runs_per_cycle must be at least 1"));
@@ -580,15 +584,12 @@ impl Search {
         self.pending.clear();
         self.pending_choice.clear();
         for (point, choice) in points {
-            match self.free.apply(&self.base, &point) {
-                Some(p) => {
-                    patches.push(p);
-                    self.pending.push((point, true));
-                }
-                None => {
-                    patches.push(self.base.clone());
-                    self.pending.push((point, false));
-                }
+            if let Some(p) = self.free.apply(&self.base, &point) {
+                patches.push(p);
+                self.pending.push((point, true));
+            } else {
+                patches.push(self.base.clone());
+                self.pending.push((point, false));
             }
             self.pending_choice.push(choice);
         }
@@ -626,7 +627,11 @@ impl Search {
                 .collect();
             let warm_mean = self.choices[choice].mean.clone();
             let (mean_u, sigma, lambda) = match job {
-                Job::Warm(_) => (warm_mean, self.cfg.sigma_start, self.lambda_for(axes.len(), 0)),
+                Job::Warm(_) => (
+                    warm_mean,
+                    self.cfg.sigma_start,
+                    self.lambda_for(axes.len(), 0),
+                ),
                 Job::Random(_) => {
                     // A random restart re-randomises what the descriptors left open. The draw is taken for every
                     // axis, so the stream does not depend on which are pinned.
@@ -798,11 +803,7 @@ impl Search {
 
     fn finish_expand(&mut self, fit: &[f64]) {
         self.record_probe(fit);
-        let fresh: Vec<usize> = self
-            .pending_choice
-            .iter()
-            .filter_map(|c| *c)
-            .collect();
+        let fresh: Vec<usize> = self.pending_choice.iter().filter_map(|c| *c).collect();
         let mut order = fresh;
         order.sort_by(|&a, &b| {
             self.choices[a]
@@ -833,17 +834,16 @@ impl Search {
             self.phase = Phase::Runs;
             return;
         }
-        let Some(best) = self
-            .ranked(|c| c.best, |_| true)
-            .first()
-            .copied()
-        else {
+        let Some(best) = self.ranked(|c| c.best, |_| true).first().copied() else {
             self.phase = Phase::Done;
             return;
         };
         if !self.choices[best].expanded {
             self.choices[best].expanded = true;
-            let (mean, cat) = (self.choices[best].best_cont.clone(), self.choices[best].cat.clone());
+            let (mean, cat) = (
+                self.choices[best].best_cont.clone(),
+                self.choices[best].cat.clone(),
+            );
             let mut added = false;
             for n in self.free.neighbours(&cat) {
                 if self.choices.iter().any(|c| c.cat == n) || self.choices.len() >= MAX_CHOICES {
@@ -980,10 +980,11 @@ pub fn search_with(
         }
         let distances = objective.distances(&candidates);
         s.tell(&distances)?;
-        if let Some(step) = s.last_step().copied() {
-            if !s.finished() && !after_batch(&step) {
-                s.cancel();
-            }
+        if let Some(step) = s.last_step().copied()
+            && !s.finished()
+            && !after_batch(&step)
+        {
+            s.cancel();
         }
     }
     Ok(s.result())
@@ -1006,4 +1007,465 @@ pub fn search_metric(
         .map(|d| Heuristic::new(d, target.performance()));
     let mut worker = target.worker();
     search(start, free, heuristic.as_ref(), &mut worker, cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use enth_analysis::Descriptors;
+    use enth_patch::{
+        ModuleId, ModuleInstance, ModuleKind, Op, ParamAddr, Position, Section, apply,
+    };
+    use enth_render::Performance;
+
+    fn addr(s: &str) -> ParamAddr {
+        s.parse().unwrap()
+    }
+
+    fn set(p: &mut Patch, a: &str, v: f32) {
+        apply(
+            p,
+            Op::SetParam {
+                addr: addr(a),
+                value: v,
+            },
+        )
+        .unwrap();
+    }
+
+    /// The oscillator axes of the synthetic searches: two categorical (wave, sync), three continuous.
+    const SMALL: [&str; 5] = [
+        "osc1.wave",
+        "osc1.sync",
+        "osc1.semi",
+        "osc1.fine",
+        "osc1.pw",
+    ];
+
+    /// Five categorical axes' worth of choices (5 × 2 × 5 × 3 = 150 combinations, more than are probed at once) and
+    /// the three continuous ones.
+    const MANY: [&str; 7] = [
+        "osc1.wave",
+        "osc1.sync",
+        "osc1.table",
+        "osc1.phase_mode",
+        "osc1.semi",
+        "osc1.fine",
+        "osc1.pw",
+    ];
+
+    fn free_of(start: &Patch, addrs: &[&str]) -> FreeSet {
+        let a: Vec<ParamAddr> = addrs.iter().map(|s| addr(s)).collect();
+        FreeSet::new(start, &a).unwrap()
+    }
+
+    /// A hidden target patch, `flips` away from the init patch in the categorical axes and moved on three
+    /// continuous ones.
+    fn hidden_target(many: bool) -> Patch {
+        let mut t = Patch::init();
+        set(&mut t, "osc1.wave", 3.0);
+        set(&mut t, "osc1.sync", 1.0);
+        if many {
+            set(&mut t, "osc1.table", 3.0);
+        }
+        set(&mut t, "osc1.semi", -7.0);
+        set(&mut t, "osc1.fine", 33.0);
+        set(&mut t, "osc1.pw", 70.0);
+        t
+    }
+
+    /// The synthetic landscape: one unit per categorical axis that differs from the target, plus the Euclidean
+    /// distance on the normalised continuous axes. Counts its calls.
+    struct Landscape {
+        free: FreeSet,
+        target: Point,
+        calls: usize,
+    }
+
+    impl Landscape {
+        fn new(free: &FreeSet, target: &Patch) -> Landscape {
+            Landscape {
+                free: free.clone(),
+                target: free.point_of(target),
+                calls: 0,
+            }
+        }
+
+        fn at(&self, p: &Patch) -> f64 {
+            let pt = self.free.point_of(p);
+            let cat = pt
+                .cat
+                .iter()
+                .zip(&self.target.cat)
+                .filter(|(a, b)| a != b)
+                .count();
+            let cont: f64 = pt
+                .cont
+                .iter()
+                .zip(&self.target.cont)
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum();
+            f64::from(u32::try_from(cat).unwrap()) + libm::sqrt(cont)
+        }
+    }
+
+    impl Objective for Landscape {
+        fn distances(&mut self, candidates: &[Patch]) -> Vec<f64> {
+            self.calls += candidates.len();
+            candidates.iter().map(|p| self.at(p)).collect()
+        }
+    }
+
+    #[test]
+    fn finds_a_target_two_categorical_flips_away() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let mut land = Landscape::new(&free, &hidden_target(false));
+        let cfg = SearchCfg {
+            budget: 800,
+            stop_at: Some(0.02),
+            ..SearchCfg::default()
+        };
+        let found = search(&start, &free, None, &mut land, &cfg).unwrap();
+        assert_eq!(found.stop, StopCause::Goal, "{found:?}");
+        assert!(found.distance <= 0.02);
+        assert_eq!(found.best.value(&addr("osc1.wave")), Some(3.0));
+        assert_eq!(found.best.value(&addr("osc1.sync")), Some(1.0));
+        assert!(found.start_distance > 2.0, "two flips and a move away");
+        assert_eq!(found.renders, land.calls);
+        // The probe took every one of the ten combinations at once: the start and nine others.
+        assert_eq!(found.trace[0].stage, Stage::Probe);
+        assert_eq!(found.trace[0].renders, 10);
+    }
+
+    #[test]
+    fn walks_the_categorical_axes_when_there_are_too_many_combinations() {
+        let start = Patch::init();
+        let free = free_of(&start, &MANY);
+        let mut land = Landscape::new(&free, &hidden_target(true));
+        let cfg = SearchCfg {
+            budget: 3000,
+            stop_at: Some(0.02),
+            ..SearchCfg::default()
+        };
+        let found = search(&start, &free, None, &mut land, &cfg).unwrap();
+        assert_eq!(found.stop, StopCause::Goal, "{found:?}");
+        for (a, v) in [("osc1.wave", 3.0), ("osc1.sync", 1.0), ("osc1.table", 3.0)] {
+            assert_eq!(found.best.value(&addr(a)), Some(v), "{a}");
+        }
+        // The first batch is the start and its one-flip neighbours, not the 150 combinations.
+        assert!(
+            found.trace[0].renders <= MAX_PROBED_CHOICES,
+            "{:?}",
+            found.trace[0]
+        );
+    }
+
+    #[test]
+    fn the_budget_is_a_hard_cap_for_any_size() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        for budget in [1usize, 2, 5, 7, 10, 11, 13, 29, 100] {
+            let mut land = Landscape::new(&free, &hidden_target(false));
+            let cfg = SearchCfg {
+                budget,
+                ..SearchCfg::default()
+            };
+            let found = search(&start, &free, None, &mut land, &cfg).unwrap();
+            assert!(
+                found.renders <= budget,
+                "budget {budget}: {}",
+                found.renders
+            );
+            assert_eq!(found.renders, land.calls, "budget {budget}");
+            assert_eq!(found.renders, budget, "a search this hard uses the budget");
+            assert_eq!(found.stop, StopCause::Budget);
+            assert!(found.start_distance.is_finite());
+            assert!(found.distance <= found.start_distance);
+            assert_eq!(found.trace.last().unwrap().renders, budget);
+        }
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_search_and_another_seed_a_different_one() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let run = |seed: u64| {
+            let mut land = Landscape::new(&free, &hidden_target(false));
+            let cfg = SearchCfg {
+                seed,
+                budget: 300,
+                ..SearchCfg::default()
+            };
+            search(&start, &free, None, &mut land, &cfg).unwrap()
+        };
+        let (a, b, c) = (run(5), run(5), run(6));
+        assert_eq!(a, b, "same seed, same everything");
+        assert_ne!(a.trace, c.trace, "another seed walks another path");
+    }
+
+    #[test]
+    fn a_goal_stops_and_the_callback_cancels() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        // A goal above the start's own distance is met by the first batch.
+        let mut land = Landscape::new(&free, &hidden_target(false));
+        let cfg = SearchCfg {
+            stop_at: Some(100.0),
+            ..SearchCfg::default()
+        };
+        let found = search(&start, &free, None, &mut land, &cfg).unwrap();
+        assert_eq!(found.stop, StopCause::Goal);
+        assert_eq!(found.trace.len(), 1);
+
+        let mut land = Landscape::new(&free, &hidden_target(false));
+        let mut seen = Vec::new();
+        let found = search_with(
+            &start,
+            &free,
+            None,
+            &mut land,
+            &SearchCfg::default(),
+            &mut |step| {
+                seen.push(step.renders);
+                seen.len() < 3
+            },
+        )
+        .unwrap();
+        assert_eq!(found.stop, StopCause::Cancelled);
+        assert_eq!(found.trace.len(), 3);
+        assert_eq!(seen.len(), 3);
+        assert_eq!(found.renders, land.calls);
+    }
+
+    /// An objective that breaks the contract: no distances at all.
+    struct Empty;
+
+    impl Objective for Empty {
+        fn distances(&mut self, _: &[Patch]) -> Vec<f64> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn a_wrong_number_of_distances_is_an_error_and_changes_nothing() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let err = search(&start, &free, None, &mut Empty, &SearchCfg::default()).unwrap_err();
+        assert_eq!(
+            err,
+            SearchError::ObjectiveCount {
+                expected: 10,
+                got: 0
+            }
+        );
+        assert_eq!(err.code(), "objective_count");
+
+        // The driver can recover: the batch is still owed.
+        let mut s = Search::new(&start, &free, None, &SearchCfg::default()).unwrap();
+        let batch = s.ask();
+        assert_eq!(s.tell(&[1.0]).unwrap_err().code(), "objective_count");
+        assert_eq!(s.renders(), 0);
+        s.tell(&vec![1.0; batch.len()]).unwrap();
+        assert_eq!(s.renders(), batch.len());
+    }
+
+    #[test]
+    fn non_finite_distances_count_as_failures() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let mut s = Search::new(&start, &free, None, &SearchCfg::default()).unwrap();
+        let batch = s.ask();
+        let mut d = vec![f64::NAN; batch.len()];
+        d[3] = 2.0;
+        s.tell(&d).unwrap();
+        assert_eq!(s.best_distance(), 2.0);
+        assert_eq!(s.last_step().unwrap().batch_best, 2.0);
+    }
+
+    #[test]
+    fn with_nothing_continuous_the_search_ends_when_the_choices_are_ranked() {
+        let start = Patch::init();
+        let free = free_of(&start, &["osc1.wave", "osc1.sync"]);
+        let mut land = Landscape::new(&free, &hidden_target(false));
+        let found = search(&start, &free, None, &mut land, &SearchCfg::default()).unwrap();
+        assert_eq!(found.stop, StopCause::Exhausted);
+        assert_eq!(found.distance, 0.0);
+        assert_eq!(found.renders, 10, "one probe of every combination");
+        assert_eq!(found.runs, 0);
+        assert_eq!(found.best.value(&addr("osc1.wave")), Some(3.0));
+        assert_eq!(found.best.value(&addr("osc1.sync")), Some(1.0));
+    }
+
+    #[test]
+    fn bad_settings_and_foreign_free_sets_are_errors() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let bad = |f: fn(&mut SearchCfg)| {
+            let mut cfg = SearchCfg::default();
+            f(&mut cfg);
+            Search::new(&start, &free, None, &cfg).unwrap_err()
+        };
+        for e in [
+            bad(|c| c.budget = 0),
+            bad(|c| c.lambda = 3),
+            bad(|c| c.sigma_start = 0.0),
+            bad(|c| c.sigma_random = f64::NAN),
+            bad(|c| c.runs_per_cycle = 0),
+        ] {
+            assert_eq!(e.code(), "bad_search_cfg", "{e}");
+            assert_ne!(e.hint(), "");
+        }
+
+        // A free set made for a patch with a filter, run on one without.
+        let mut with_filter = Patch::init();
+        apply(
+            &mut with_filter,
+            Op::AddModule {
+                at: Position {
+                    section: Section::VoiceFx,
+                    index: 0,
+                },
+                module: ModuleInstance::new(ModuleId::new("filter1").unwrap(), ModuleKind::Svf),
+            },
+        )
+        .unwrap();
+        let foreign = free_of(&with_filter, &["filter1.cutoff"]);
+        let e = Search::new(&start, &foreign, None, &SearchCfg::default()).unwrap_err();
+        assert_eq!(
+            e,
+            SearchError::UnknownParam {
+                addr: "filter1.cutoff".to_owned()
+            }
+        );
+    }
+
+    /// The heuristic of a target whose only measured descriptor is a pitch of `semitones` from the played C4.
+    fn pitch_heuristic(semitones: f64) -> Heuristic {
+        use enth_analysis::descriptors::ModulationDesc;
+        use enth_analysis::loudness::Level;
+        use enth_analysis::pitch::Pitch;
+        let c4 = 440.0 * libm::exp2((60.0 - 69.0) / 12.0);
+        let desc = Descriptors {
+            dur_s: 1.0,
+            silent: false,
+            pitch: Some(Pitch {
+                f0_hz: c4 * libm::exp2(semitones / 12.0),
+                note: "C3".to_owned(),
+                cents_dev: 0.0,
+                stability: 1.0,
+                voiced: 1.0,
+            }),
+            tonal: None,
+            envelope: None,
+            spectrum: None,
+            noise_ratio: None,
+            detune: None,
+            modulation: ModulationDesc::default(),
+            loudness: Level {
+                lufs_i: Some(-23.0),
+                peak_dbfs: -6.0,
+                true_peak_dbtp: -6.0,
+                clipped_pct: 0.0,
+                clipping: false,
+            },
+        };
+        Heuristic::new(&desc, &Performance::note(60, 0.8, 0.5, 1.0))
+    }
+
+    /// The target of the pitch tests: `semi` and no fine detune, a pulse with hard sync at width 70.
+    fn pitched_target(semi: f32) -> Patch {
+        let mut t = Patch::init();
+        set(&mut t, "osc1.wave", 3.0);
+        set(&mut t, "osc1.sync", 1.0);
+        set(&mut t, "osc1.semi", semi);
+        set(&mut t, "osc1.pw", 70.0);
+        t
+    }
+
+    #[test]
+    fn a_pitch_measured_to_a_cent_is_kept_while_the_rest_is_searched() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let target = pitched_target(-12.0);
+        // A needle on the pitch, like the metric's (a tenth of a semitone off costs as much as a wrong waveform):
+        // the rest of the landscape is smooth, and does not point at the semitone.
+        let semi_axis = free
+            .continuous()
+            .iter()
+            .position(|&i| free.axes()[i].addr == addr("osc1.semi"))
+            .unwrap();
+        let mut needle = |p: &Patch| {
+            let mut pt = free.point_of(p);
+            let mut t = free.point_of(&target);
+            pt.cont[semi_axis] = 0.0;
+            t.cont[semi_axis] = 0.0;
+            let sum: f64 = pt
+                .cont
+                .iter()
+                .zip(&t.cont)
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum();
+            let wrong_pitch = (p.value(&addr("osc1.semi")).unwrap() + 12.0).abs() > 0.01;
+            let cat = free.point_of(p).cat != free.point_of(&target).cat;
+            libm::sqrt(sum) + if wrong_pitch { 0.07 } else { 0.0 } + if cat { 1.0 } else { 0.0 }
+        };
+        let heuristic = pitch_heuristic(-12.0);
+        let cfg = SearchCfg {
+            budget: 3000,
+            stop_at: Some(0.01),
+            ..SearchCfg::default()
+        };
+        let found = search(&start, &free, Some(&heuristic), &mut needle, &cfg).unwrap();
+        assert_eq!(found.stop, StopCause::Goal, "{found:?}");
+        let semi = found.best.value(&addr("osc1.semi")).unwrap();
+        assert!((semi + 12.0).abs() < 0.01, "{semi}");
+        assert_eq!(
+            found.suggestions.len(),
+            2,
+            "pitch gives semi and fine: {:?}",
+            found.suggestions
+        );
+        assert!(found.suggestions.iter().all(|s| s.spread < PRECISE));
+    }
+
+    #[test]
+    fn a_wrong_measurement_is_released_after_the_pinned_cycles() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        // The descriptors say -5 semitones; the target is +7. A smooth landscape: once the pin is released CMA-ES
+        // walks to it.
+        let mut land = Landscape::new(&free, &pitched_target(7.0));
+        let heuristic = pitch_heuristic(-5.0);
+        let cfg = SearchCfg {
+            budget: 20_000,
+            stop_at: Some(0.03),
+            ..SearchCfg::default()
+        };
+        let found = search(&start, &free, Some(&heuristic), &mut land, &cfg).unwrap();
+        assert_eq!(found.stop, StopCause::Goal, "{found:?}");
+        let semi = found.best.value(&addr("osc1.semi")).unwrap();
+        assert!((semi - 7.0).abs() < 3.0, "{semi}");
+        assert!(found.runs > 1, "the pinned runs came first: {}", found.runs);
+    }
+
+    #[test]
+    fn a_closure_is_an_objective_and_the_result_applies_exactly() {
+        let start = Patch::init();
+        let free = free_of(&start, &SMALL);
+        let land = Landscape::new(&free, &hidden_target(false));
+        let mut f = |p: &Patch| land.at(p);
+        let cfg = SearchCfg {
+            budget: 60,
+            ..SearchCfg::default()
+        };
+        let found = search(&start, &free, None, &mut f, &cfg).unwrap();
+        // The reported patch is the start with only free parameters set, and its distance is what was reported.
+        assert_eq!(land.at(&found.best), found.distance);
+        let mut untouched = found.best.clone();
+        for a in SMALL {
+            set(&mut untouched, a, start.value(&addr(a)).unwrap());
+        }
+        assert_eq!(untouched, start);
+    }
 }

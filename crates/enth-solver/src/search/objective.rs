@@ -32,10 +32,10 @@
 //! provided its population `lambda` does not depend on that number
 //! ([`SearchCfg::lambda`](super::SearchCfg::lambda)).
 
+use enth_analysis::descriptors::Want;
 use enth_analysis::distance::metric_v1;
 use enth_analysis::features::{FeatureCfg, FeatureExtractor, Features};
 use enth_analysis::{Describer, Descriptors};
-use enth_analysis::descriptors::Want;
 use enth_patch::Patch;
 use enth_render::{Performance, RenderSpec, render};
 

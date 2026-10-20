@@ -73,7 +73,10 @@ fn main() {
         "lvl", "seed", "n", "free", "before", "heur", "after", "renders", "runs", "secs", "drawn"
     );
     let (mut befores, mut afters, mut renders_all, mut heurs) = (vec![], vec![], vec![], vec![]);
-    for level in levels.split(',').filter_map(|l| l.trim().parse::<usize>().ok()) {
+    for level in levels
+        .split(',')
+        .filter_map(|l| l.trim().parse::<usize>().ok())
+    {
         let preset = &PRESETS[level - 1];
         let (mut b_l, mut a_l, mut r_l) = (vec![], vec![], vec![]);
         for i in 0..targets {

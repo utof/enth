@@ -250,16 +250,16 @@ impl Heuristic {
                     .get(AdsrParam::Sustain.key())
                     .map(|v| f64::from(v) / 100.0),
             };
-            if let (Some(decay), Some(s)) = (env.decay_ms, sustain_frac) {
-                if decay > 0.0 {
-                    push(
-                        patch,
-                        key(AdsrParam::Decay),
-                        decay / decay_ratio(s),
-                        "envelope.decay_ms",
-                        SPREAD_ENVELOPE,
-                    );
-                }
+            if let (Some(decay), Some(s)) = (env.decay_ms, sustain_frac)
+                && decay > 0.0
+            {
+                push(
+                    patch,
+                    key(AdsrParam::Decay),
+                    decay / decay_ratio(s),
+                    "envelope.decay_ms",
+                    SPREAD_ENVELOPE,
+                );
             }
             if let Some(release) = env.release_ms {
                 push(
@@ -274,7 +274,12 @@ impl Heuristic {
 
         // --- the pitch ---
         let osc = first_enabled(patch, ModuleKind::Osc);
-        let f0 = self.desc.pitch.as_ref().map(|p| p.f0_hz).filter(|f| *f > 0.0);
+        let f0 = self
+            .desc
+            .pitch
+            .as_ref()
+            .map(|p| p.f0_hz)
+            .filter(|f| *f > 0.0);
         if let (Some(osc), Some(f0)) = (osc, f0) {
             let semitones = 12.0 * libm::log2(f0 / self.note_hz);
             let semi_addr = addr_of(osc, OscParam::Semi.key()).filter(|a| free.contains(a));
@@ -344,13 +349,7 @@ impl Heuristic {
                     }
                 }
                 if best_err.is_finite() {
-                    push(
-                        patch,
-                        cutoff,
-                        best,
-                        "spectrum.centroid_hz",
-                        SPREAD_CUTOFF,
-                    );
+                    push(patch, cutoff, best, "spectrum.centroid_hz", SPREAD_CUTOFF);
                 }
             }
         }
