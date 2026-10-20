@@ -124,7 +124,8 @@ pub fn drive_amount(db: f32) -> f32 {
 ///
 /// That is the algebraic sigmoid `x / sqrt(1 + a·x²)` (gain `sqrt(a)` into `u/sqrt(1 + u²)`, normalised back) times
 /// a make-up gain `sqrt(1 + a·r²)`. Without the make-up the curve was bounded by `1/sqrt(a)`, so a full-level
-/// oscillator lost about 1 dB per dB of drive (−19.8 LUFS at 24 dB); with it, `±r` passes unchanged at every drive.
+/// oscillator lost about 1 dB per dB of drive (19.8 dB quieter at 24 dB); with it, `±r` passes unchanged at every
+/// drive.
 ///
 /// - **Odd and monotonic**: `dy/dx = b / (b + c·x²)^(3/2) > 0`.
 /// - **Bounded**: `|y| < 1/sqrt(c) = sqrt(r² + 1/a)`, which falls to `r` as the drive rises; and

@@ -284,6 +284,8 @@ The other engine budgets were re-measured on `0f4f29d` with `cargo xtask bench`,
 
 Proposed for the coordinator; lane RT changed none of these budgets.
 
+`svf` after the drive's make-up gain (FU1 lane DRV, engine 0.3.0; the same "before" counts as the row above): 5,001,648 / 56,932,453 / 63,894,229 / 73,309,536, so headroom 17.6 / 20.6 / 18.7 / 6.6 % (`drive_16v` +1.06 instructions per sample per voice, [dsp/svf.md](dsp/svf.md#cost)).
+
 - **Re-base `engine` to measured + 10 %: 3,898,000 and 40,573,000.** It has 2.1 % and 4.0 % left after growing 7.7 % and 5.6 % since its recorded measurement (taken when D1, D2 and S2b merged, before P1b's engine work). The next small engine change in any lane would fail it for growth that is already merged.
 - **Tighten the module budgets with 15–26 % of headroom to measured + 10 %.** The engine skeleton got cheaper under them, so each now lets a 15–25 % regression of its module through.
 
