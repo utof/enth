@@ -13,11 +13,12 @@
 //! | `state` (`state-create`, `state-reload`) | 72 parameters with stable ids and names, automation lanes, a patch loaded as state and the host's values saved with it, all back after a reload in a new process |
 //! | `patch-roundtrip` | a rich non-default patch comes back byte for byte after a save, a reload, a second save and a second reload |
 //! | `slot-automation` | automation on slots 1 and 64 makes the rendered sound brighter and louder, as the patch maps them |
-//! | `macro-automation` | automation on macros 1 and 8 makes it louder and brighter |
+//! | `macro-automation` | automation on macros 1 and 8 makes it louder and brighter, and a second offline render of the project is the same audio |
+//! | `mod-wheel` | the mod wheel (MIDI CC 1 in a MIDI item) reaches the patch: VST3 through the one CC parameter the plugin maps |
 //! | `undo-state-load` | REAPER's undo and redo across plugin state loads restore the patch and the parameters |
 //! | `two-instances` | two instances keep their own patch and values, through a reload and a deleted neighbour |
 //! | `editor-smoke` | the editor opens, draws and closes five times, under Xvfb |
-//! | `dirty-flag` | reads `IsProjectDirty` after an editor-only patch edit (the open check), with a control |
+//! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
 //! The spike shell (`--package spike-shell`) keeps its older three: `state`, `automation` and `editor-smoke`.
@@ -80,6 +81,7 @@ enum Scenario {
     PatchRoundtrip,
     SlotAutomation,
     MacroAutomation,
+    ModWheel,
     UndoStateLoad,
     TwoInstances,
     EditorSmoke,
@@ -90,11 +92,12 @@ enum Scenario {
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 9] = [
+    const PRODUCT: [Scenario; 10] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
         Scenario::MacroAutomation,
+        Scenario::ModWheel,
         Scenario::UndoStateLoad,
         Scenario::TwoInstances,
         Scenario::EditorSmoke,
@@ -114,6 +117,7 @@ impl Scenario {
             Scenario::PatchRoundtrip => "patch-roundtrip",
             Scenario::SlotAutomation => "slot-automation",
             Scenario::MacroAutomation => "macro-automation",
+            Scenario::ModWheel => "mod-wheel",
             Scenario::UndoStateLoad => "undo-state-load",
             Scenario::TwoInstances => "two-instances",
             Scenario::EditorSmoke => "editor-smoke",
@@ -290,6 +294,7 @@ struct Chunks {
     roundtrip: Option<String>,
     slot: Option<String>,
     macros: Option<String>,
+    wheel: Option<String>,
     dirty_control: Option<String>,
 }
 
@@ -303,6 +308,8 @@ const PRODUCT_ROUNDTRIP_PATCH: &str = include_str!("../reaper/enth-roundtrip.pat
 const PRODUCT_SLOT_PATCH: &str = include_str!("../reaper/enth-slot-automation.patch.json");
 /// `macro-automation`: macro 1 raises osc1's level, macro 8 opens the filter.
 const PRODUCT_MACRO_PATCH: &str = include_str!("../reaper/enth-macro-automation.patch.json");
+/// `mod-wheel`: the mod wheel turns osc1's level down by 100 %.
+const PRODUCT_WHEEL_PATCH: &str = include_str!("../reaper/enth-mod-wheel.patch.json");
 /// `dirty-flag` control: every knob of the first card is bound to a host slot.
 const PRODUCT_DIRTY_CONTROL_PATCH: &str = include_str!("../reaper/enth-dirty-control.patch.json");
 
@@ -320,6 +327,7 @@ impl Chunks {
             roundtrip: make("roundtrip", PRODUCT_ROUNDTRIP_PATCH)?,
             slot: make("slot", PRODUCT_SLOT_PATCH)?,
             macros: make("macro", PRODUCT_MACRO_PATCH)?,
+            wheel: make("wheel", PRODUCT_WHEEL_PATCH)?,
             dirty_control: make("dirty-control", PRODUCT_DIRTY_CONTROL_PATCH)?,
         })
     }
@@ -596,7 +604,35 @@ fn run_scenario(
                 checks::flat_lane(&sb.out, report, format, CLAP_FLAT_LANE_IS_KNOWN_GAP);
             } else {
                 checks::macro_automation(&sb.out, report, format);
+                // The same project rendered again must give the same audio: REAPER restarted a CLAP plugin in the
+                // middle of every offline render, at a point that depended on the render's speed, until the fork's
+                // patch 9 (`CLAP_RESTART_ON_RENDER_MODE_CHANGE`); that cut a note somewhere different each time.
+                let rendered = sb.out.join(format!("render-macro-{tag}.wav"));
+                let first = sb.out.join(format!("render-macro-{tag}-first.wav"));
+                std::fs::rename(&rendered, &first)
+                    .map_err(|e| format!("{}: {e}", rendered.display()))?;
+                render_project(
+                    sb,
+                    report,
+                    format,
+                    name,
+                    &format!("macro-automation-{tag}.rpp"),
+                )?;
+                checks::render_repeatable(report, format, &first, &rendered);
             }
+        }
+        Scenario::ModWheel => {
+            let mut extra = chunk_env(chunks.wheel.as_ref(), None);
+            extra.push(("ENTH_SCENARIO", "wheel".to_owned()));
+            run_script(sb, report, format, "mod-wheel", "render", "build", &extra);
+            render_project(
+                sb,
+                report,
+                format,
+                "mod-wheel",
+                &format!("wheel-automation-{tag}.rpp"),
+            )?;
+            checks::mod_wheel(&sb.out, report, format);
         }
         Scenario::Automation => {
             // The spike shell: macro 1 and slot 1 ramped together, heard in an offline render.
