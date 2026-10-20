@@ -1936,7 +1936,12 @@ fn t6_an_inconsistent_worker_report_is_refused() {
     s.game_tick(1_000, EditorView::Visible);
     let rings = job(&drain(&mut s), "rings");
     let mut other = structure(10.0, Verdict::Bad);
-    other.scorer = enth_challenge::ScorerId::STRUCTURE_V1;
+    // Whichever structure scorer the challenge does not name (lane ST made `structure/1` the default).
+    other.scorer = if scoring().structure == enth_challenge::ScorerId::STRUCTURE_V1 {
+        enth_challenge::ScorerId::STRUCTURE_STUB
+    } else {
+        enth_challenge::ScorerId::STRUCTURE_V1
+    };
     assert_eq!(
         s.game_job_done(rings.id, JobResult::Rings(Box::new(other)))
             .unwrap_err()
