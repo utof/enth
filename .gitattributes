@@ -5,3 +5,9 @@
 
 # Golden challenge pins are compared as text: keep LF on every platform (lane GC).
 tests/golden/challenges/** text eol=lf
+
+# The generator and structure goldens are compared as whole text too (`include_str!` == computed): keep LF, or a
+# Windows checkout (core.autocrlf) turns every line into CRLF and the test fails with "0 of 1003 lines differ"
+# (golden.yml's Windows job on e47543f; R1/S1 lane INT).
+tests/golden/generator/** text eol=lf
+tests/golden/structure/** text eol=lf
