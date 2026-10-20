@@ -19,9 +19,11 @@
 //! | `two-instances` | two instances keep their own patch and values, through a reload and a deleted neighbour |
 //! | `editor-smoke` | the editor opens, draws and closes five times, under Xvfb |
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
+//! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
-//! The spike shell (`--package spike-shell`) keeps its older three: `state`, `automation` and `editor-smoke`.
+//! It runs the product plugin only (`enth-plugin`, the default package). The Phase 0 shell spike's three scenarios went
+//! with the spike when P1b lane INT retired it from the workspace.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -34,6 +36,9 @@ use crate::{bundle, plugin};
 mod audio;
 mod checks;
 mod chunk;
+
+/// The state-chunk code `cargo xtask extract-presets` and `starter-project` share with the scenarios (`crate::preset`).
+pub(crate) use chunk::{base64_decode, base64_encode, nice_plug_state};
 
 const DEFAULT_REAPER: &str = "apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper";
 /// Hard limit for one REAPER launch; a hung script (e.g. a modal error dialog) is killed.
@@ -86,13 +91,12 @@ enum Scenario {
     TwoInstances,
     EditorSmoke,
     DirtyFlag,
-    /// The spike shell's older automation scenario (macro 1 and slot 1 ramped together).
-    Automation,
+    StarterProject,
     CrossFormat,
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 10] = [
+    const PRODUCT: [Scenario; 11] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
@@ -102,15 +106,9 @@ impl Scenario {
         Scenario::TwoInstances,
         Scenario::EditorSmoke,
         Scenario::DirtyFlag,
+        Scenario::StarterProject,
         Scenario::CrossFormat,
     ];
-    const SPIKE: [Scenario; 4] = [
-        Scenario::State,
-        Scenario::Automation,
-        Scenario::EditorSmoke,
-        Scenario::CrossFormat,
-    ];
-
     fn name(self) -> &'static str {
         match self {
             Scenario::State => "state",
@@ -122,16 +120,15 @@ impl Scenario {
             Scenario::TwoInstances => "two-instances",
             Scenario::EditorSmoke => "editor-smoke",
             Scenario::DirtyFlag => "dirty-flag",
-            Scenario::Automation => "automation",
+            Scenario::StarterProject => "starter-project",
             Scenario::CrossFormat => "cross-format",
         }
     }
 
     fn parse(text: &str) -> Option<Scenario> {
-        let all = Scenario::PRODUCT.iter().chain(&Scenario::SPIKE);
         match text {
             "state-create" | "state-reload" => Some(Scenario::State),
-            _ => all.copied().find(|s| s.name() == text),
+            _ => Scenario::PRODUCT.iter().copied().find(|s| s.name() == text),
         }
     }
 }
@@ -184,7 +181,7 @@ fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
                 options.scenarios.push(Scenario::parse(name).ok_or_else(|| {
                     let names: Vec<&str> = Scenario::PRODUCT.iter().map(|s| s.name()).collect();
                     format!(
-                        "unknown scenario {name:?} (the product's: {}; the spike shell's older `automation`)",
+                        "unknown scenario {name:?} (the scenarios: {})",
                         names.join(", ")
                     )
                 })?);
@@ -314,13 +311,9 @@ const PRODUCT_WHEEL_PATCH: &str = include_str!("../reaper/enth-mod-wheel.patch.j
 const PRODUCT_DIRTY_CONTROL_PATCH: &str = include_str!("../reaper/enth-dirty-control.patch.json");
 
 impl Chunks {
-    fn write(out: &Path, format: Format, product: bool) -> Result<Chunks, String> {
+    fn write(out: &Path, format: Format) -> Result<Chunks, String> {
         let make = |name: &str, patch: &str| -> Result<Option<String>, String> {
-            if product {
-                write_state_chunk(out, name, format, patch).map(Some)
-            } else {
-                Ok(None)
-            }
+            write_state_chunk(out, name, format, patch).map(Some)
         };
         Ok(Chunks {
             state: make("state", PRODUCT_STATE_PATCH)?,
@@ -376,6 +369,12 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     let options = parse_options(args, &meta.workspace_root)?;
     plugin::require_member(&meta, &options.package)?;
     let package = options.package.as_str();
+    if package != plugin::PRODUCT_PACKAGE {
+        return Err(format!(
+            "reaper-test runs the scenarios of {} only, not {package}",
+            plugin::PRODUCT_PACKAGE
+        ));
+    }
     let reaper = reaper_path()?;
     require_tool(
         "xvfb-run",
@@ -410,42 +409,21 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         }
     }
 
-    let product = package == plugin::PRODUCT_PACKAGE;
     let mut scenarios: Vec<Scenario> = if options.scenarios.is_empty() {
-        if product {
-            Scenario::PRODUCT.to_vec()
-        } else {
-            Scenario::SPIKE.to_vec()
-        }
+        Scenario::PRODUCT.to_vec()
     } else {
         options.scenarios.clone()
     };
     // The comparison between formats needs what these leave behind.
     if scenarios.contains(&Scenario::CrossFormat) {
-        let needed: &[Scenario] = if product {
-            &[
-                Scenario::State,
-                Scenario::PatchRoundtrip,
-                Scenario::SlotAutomation,
-                Scenario::MacroAutomation,
-            ]
-        } else {
-            &[Scenario::State, Scenario::Automation]
-        };
-        scenarios.extend_from_slice(needed);
+        scenarios.extend_from_slice(&[
+            Scenario::State,
+            Scenario::PatchRoundtrip,
+            Scenario::SlotAutomation,
+            Scenario::MacroAutomation,
+        ]);
         scenarios.sort();
         scenarios.dedup();
-    }
-    let allowed = if product {
-        &Scenario::PRODUCT[..]
-    } else {
-        &Scenario::SPIKE[..]
-    };
-    if let Some(bad) = scenarios.iter().find(|s| !allowed.contains(s)) {
-        return Err(format!(
-            "scenario {} does not run for {package}",
-            bad.name()
-        ));
     }
 
     let work = meta.target_directory.join("reaper-test");
@@ -470,7 +448,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     let mut timing = Timing::default();
     for &format in &options.formats {
         let started = Instant::now();
-        let chunks = Chunks::write(&sandbox.out, format, product)?;
+        let chunks = Chunks::write(&sandbox.out, format)?;
         for &scenario in scenarios.iter().filter(|s| **s != Scenario::CrossFormat) {
             let t = Instant::now();
             run_scenario(
@@ -491,7 +469,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     }
 
     if scenarios.contains(&Scenario::CrossFormat) {
-        cross_format(&sandbox, &mut report, &shared, &options.formats, product);
+        cross_format(&sandbox, &mut report, &shared, &options.formats);
     }
 
     print_report(&report);
@@ -519,7 +497,6 @@ fn run_scenario(
     scenario: Scenario,
 ) -> Result<(), String> {
     let tag = format.tag();
-    let product = chunks.state.is_some();
     match scenario {
         Scenario::State => {
             // (a) and (c): parameters, ids, automation lane, state; then reload in a new process.
@@ -546,7 +523,7 @@ fn run_scenario(
                     );
                 }
             }
-            checks::state(sb, report, format, product);
+            checks::state(sb, report, format);
         }
         Scenario::PatchRoundtrip => {
             for phase in ["create", "reload1", "reload2"] {
@@ -566,6 +543,7 @@ fn run_scenario(
                 );
             }
             checks::roundtrip(&sb.out, report, format, PRODUCT_ROUNDTRIP_PATCH);
+            preset_extracted(&sb.out, report, format);
             if let Ok(saved) = chunk::Saved::read(&sb.out, format, "roundtrip-create")
                 && let Some(text) = saved.patch_text()
             {
@@ -634,12 +612,6 @@ fn run_scenario(
             )?;
             checks::mod_wheel(&sb.out, report, format);
         }
-        Scenario::Automation => {
-            // The spike shell: macro 1 and slot 1 ramped together, heard in an offline render.
-            run_script(sb, report, format, "automation", "automation", "build", &[]);
-            render_project(sb, report, format, "automation", &format!("auto-{tag}.rpp"))?;
-            checks::automation_legacy(&sb.out, report, format);
-        }
         Scenario::UndoStateLoad => {
             let extra = chunk_env(chunks.state.as_ref(), chunks.roundtrip.as_ref());
             run_script(sb, report, format, "undo-state-load", "undo", "run", &extra);
@@ -698,9 +670,121 @@ fn run_scenario(
             );
             dirty_flag(report, format, &edit, &control, &idle);
         }
+        Scenario::StarterProject => starter_project(sb, report, format)?,
         Scenario::CrossFormat => {}
     }
     Ok(())
+}
+
+/// `starter-project` (lane INT, CLAP only: the project holds the CLAP): the project `cargo xtask starter-project` writes
+/// opens in REAPER with the starter patch loaded on each of its four named tracks, and `extract-presets` on REAPER's
+/// save of it gives the four tracks' patches back by name, so owner build 2 can start there.
+fn starter_project(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
+    let scope = format!("{}/starter-project", format.tag());
+    if format != Format::Clap {
+        report.info(
+            &scope,
+            "clap-only",
+            "the starter project holds enth's CLAP; the VST3 is inserted by hand",
+        );
+        return Ok(());
+    }
+    let project = sb.out.join(format!("starter-{}.rpp", format.tag()));
+    let text = crate::preset::starter_project(
+        &crate::preset::STARTER_TRACKS,
+        crate::preset::STARTER_PATCH,
+    );
+    std::fs::write(&project, text).map_err(|e| format!("{}: {e}", project.display()))?;
+    let log = run_script(
+        sb,
+        report,
+        format,
+        "starter-project",
+        "starter",
+        "open",
+        &[("ENTH_STARTER_PROJECT", project.display().to_string())],
+    );
+    let names = crate::preset::STARTER_TRACKS.join(",");
+    let tracks = log.data.get("starter-tracks").cloned().unwrap_or_default();
+    report.add(
+        &scope,
+        "tracks-named",
+        tracks == names,
+        format!("tracks {tracks:?}"),
+    );
+    let loaded = (1..=crate::preset::STARTER_TRACKS.len())
+        .filter(|i| {
+            chunk::Saved::read(&sb.out, format, &format!("starter-{i}"))
+                .is_ok_and(|s| s.patch_text() == Some(crate::preset::STARTER_PATCH))
+        })
+        .count();
+    report.add(
+        &scope,
+        "starter-patch-loaded",
+        loaded == crate::preset::STARTER_TRACKS.len(),
+        format!(
+            "{loaded} of {} plugins hold the starter patch, byte for byte",
+            crate::preset::STARTER_TRACKS.len()
+        ),
+    );
+    let saved = sb.out.join(format!("starter-{}-saved.rpp", format.tag()));
+    let (ok, detail) = match std::fs::read_to_string(&saved)
+        .map_err(|e| format!("{}: {e}", saved.display()))
+        .and_then(|text| crate::preset::instances(&text))
+    {
+        Ok(found) => {
+            let got: Vec<String> = found
+                .iter()
+                .enumerate()
+                .map(|(i, f)| crate::preset::preset_name(f, "starter", i))
+                .collect();
+            let same = found
+                .iter()
+                .all(|f| f.patch == crate::preset::STARTER_PATCH);
+            (
+                got.join(",") == names && same,
+                format!(
+                    "extract-presets on REAPER's save: {got:?}, every patch the starter's: {same}"
+                ),
+            )
+        }
+        Err(e) => (false, e),
+    };
+    report.add(&scope, "presets-extracted-by-name", ok, detail);
+    Ok(())
+}
+
+/// `cargo xtask extract-presets` on the project `patch-roundtrip` saved first (lane INT): the one enth instance in it
+/// gives back the patch the scenario loaded, byte for byte, so a sound the owner saves in REAPER becomes a preset file
+/// unchanged.
+fn preset_extracted(out: &Path, report: &mut Report, format: Format) {
+    let project = out.join(format!("roundtrip-{}-a.rpp", format.tag()));
+    let want = PRODUCT_ROUNDTRIP_PATCH.trim_end();
+    let (ok, detail) = match std::fs::read_to_string(&project)
+        .map_err(|e| format!("{}: {e}", project.display()))
+        .and_then(|text| crate::preset::instances(&text))
+    {
+        Ok(found) => (
+            found.len() == 1 && found[0].patch == want,
+            format!(
+                "{} enth instance(s) in the saved project; the extracted patch is {} bytes, {}",
+                found.len(),
+                found.first().map_or(0, |f| f.patch.len()),
+                if found.first().is_some_and(|f| f.patch == want) {
+                    "identical to the patch loaded"
+                } else {
+                    "NOT the patch loaded"
+                }
+            ),
+        ),
+        Err(e) => (false, e),
+    };
+    report.add(
+        &format!("{}/patch-roundtrip", format.tag()),
+        "preset-extracted",
+        ok,
+        detail,
+    );
 }
 
 /// Renders a project the script saved, offline (`reaper -renderproject`), into the output directory.
@@ -800,13 +884,7 @@ fn dirty_flag(report: &mut Report, format: Format, edit: &Log, control: &Log, id
 }
 
 /// What CLAP and VST3 must agree on.
-fn cross_format(
-    sb: &Sandbox,
-    report: &mut Report,
-    shared: &Shared,
-    formats: &[Format],
-    product: bool,
-) {
+fn cross_format(sb: &Sandbox, report: &mut Report, shared: &Shared, formats: &[Format]) {
     let [first, second, ..] = formats else {
         return;
     };
@@ -817,9 +895,6 @@ fn cross_format(
         shared.idents.contains_key(first) && shared.idents.get(first) == shared.idents.get(second),
         "CLAP and VST3 report the same 72 ids",
     );
-    if !product {
-        return;
-    }
     report.add(
         scope,
         "saved-patch-same-in-both-formats",
@@ -865,11 +940,7 @@ fn print_table(report: &Report, timing: &Timing, formats: &[Format]) {
                 .rows
                 .iter()
                 .filter_map(|r| r.scope.strip_prefix(&format!("{tag}/")))
-                .filter(|s| {
-                    s == name
-                        || (name == "state" && s.starts_with("state-"))
-                        || (name == "automation" && s.starts_with("automation"))
-                })
+                .filter(|s| s == name || (name == "state" && s.starts_with("state-")))
                 .collect::<std::collections::BTreeSet<_>>()
             {
                 let (o, t) = report.count(&format!("{tag}/{scope}"));

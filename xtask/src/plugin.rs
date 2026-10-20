@@ -1,15 +1,12 @@
 //! Which plugin package the plugin-level commands (`bundle`, `install`, `host-render`, `reaper-test`,
 //! `validate`) act on, and what they need to know about it.
 //!
-//! Without `--package` they use [`default_package`]: the Phase 0 spike `spike-shell` until the product plugin
-//! `enth-plugin` (P1b lane SK) exports a CLAP entry, and `enth-plugin` from then on. So the day SK's
-//! `nice_export_clap!` line lands, the gates (`scripts/gate.sh full`, CI) start covering the product with
-//! no further edit; the plugin's golden file `tools/test-host/golden/enth-plugin.toml` must exist by then.
+//! Without `--package` they use [`default_package`], the product plugin `enth-plugin`. Until P1b lane SK exported its
+//! CLAP entry the default was the Phase 0 spike `spike-shell`; lane INT retired the shell and UI spikes from the
+//! workspace, so `enth-plugin` is the only plugin package left.
 
 use std::path::{Path, PathBuf};
 
-/// The default until the product plugin exists.
-pub const SPIKE_PACKAGE: &str = "spike-shell";
 /// The product plugin (`crates/enth-plugin`).
 pub const PRODUCT_PACKAGE: &str = "enth-plugin";
 
@@ -59,38 +56,9 @@ pub fn one_package(split: Split, root: &Path) -> Result<(String, Vec<String>), S
     }
 }
 
-/// `enth-plugin` once it exports a CLAP entry, else `spike-shell`.
-pub fn default_package(root: &Path) -> String {
-    if product_exports_clap(root) {
-        PRODUCT_PACKAGE.to_owned()
-    } else {
-        SPIKE_PACKAGE.to_owned()
-    }
-}
-
-/// Whether `crates/enth-plugin/src` has a line that starts with the `nice_export_clap!(` macro call. A mention
-/// inside a string or a comment does not count.
-fn product_exports_clap(root: &Path) -> bool {
-    let mut dirs = vec![root.join("crates").join(PRODUCT_PACKAGE).join("src")];
-    while let Some(dir) = dirs.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                dirs.push(path);
-            } else if path.extension().is_some_and(|e| e == "rs")
-                && std::fs::read_to_string(&path).is_ok_and(|text| {
-                    text.lines()
-                        .any(|l| l.trim_start().starts_with("nice_export_clap!("))
-                })
-            {
-                return true;
-            }
-        }
-    }
-    false
+/// The plugin a command acts on without `--package`: `enth-plugin`.
+pub fn default_package(_root: &Path) -> String {
+    PRODUCT_PACKAGE.to_owned()
 }
 
 /// Every command that takes a package takes a workspace member.
@@ -104,7 +72,7 @@ pub fn require_member(meta: &crate::Metadata, package: &str) -> Result<(), Strin
         Ok(())
     } else {
         Err(format!(
-            "unknown package {package:?}: not a workspace member (plugins: {SPIKE_PACKAGE}, spike-ui-plugin, {PRODUCT_PACKAGE})"
+            "unknown package {package:?}: not a workspace member (the plugin: {PRODUCT_PACKAGE})"
         ))
     }
 }
@@ -129,11 +97,10 @@ pub fn host_golden(package: &str) -> String {
 
 /// How REAPER lists the plugin: `TrackFX_AddByName` matches this as a substring of the plugin's display name.
 /// `--plugin-name` overrides it. REAPER lists the product as `CLAPi: enth (enth)` (name, then vendor); the vendor
-/// keeps "enth" from also matching `enth spike-shell (enth)` when both are bundled (lane SK).
+/// keeps "enth" from also matching another plugin whose name starts with it, such as a Phase 0 spike still installed
+/// in `~/.clap` (`enth spike-shell (enth)`).
 pub fn reaper_plugin_name(package: &str) -> String {
     match package {
-        "spike-shell" => "enth spike-shell".to_owned(),
-        "spike-ui-plugin" => "enth spike-ui".to_owned(),
         PRODUCT_PACKAGE => "enth (enth)".to_owned(),
         _ => "enth".to_owned(),
     }
@@ -168,9 +135,9 @@ mod tests {
 
     #[test]
     fn a_leading_positional_is_a_package_only_when_asked() {
-        let args = strings(&["spike-shell", "--locked"]);
+        let args = strings(&["enth-plugin", "--locked"]);
         let with = split_packages(&args, true).unwrap();
-        assert_eq!(with.packages, strings(&["spike-shell"]));
+        assert_eq!(with.packages, strings(&["enth-plugin"]));
         assert_eq!(with.rest, strings(&["--locked"]));
         let without = split_packages(&args, false).unwrap();
         assert_eq!(without.packages, Vec::<String>::new());
@@ -191,26 +158,9 @@ mod tests {
             root,
         )
         .unwrap();
-        assert_eq!(p, SPIKE_PACKAGE);
+        assert_eq!(p, PRODUCT_PACKAGE);
         assert_eq!(rest, strings(&["--release"]));
         let two = split_packages(&strings(&["-p", "a", "-p", "b"]), false).unwrap();
         assert!(one_package(two, root).is_err());
-    }
-
-    #[test]
-    fn the_export_macro_is_found_only_as_a_call() {
-        let dir =
-            std::env::temp_dir().join(format!("enth-xtask-plugin-test-{}", std::process::id()));
-        let src = dir.join("crates").join(PRODUCT_PACKAGE).join("src");
-        std::fs::create_dir_all(&src).unwrap();
-        std::fs::write(
-            src.join("lib.rs"),
-            "#![allow(unsafe_code, reason = \"nice_export_clap!(X) expands to entry points\")]\n// nice_export_clap!(X);\n",
-        )
-        .unwrap();
-        assert_eq!(default_package(&dir), SPIKE_PACKAGE);
-        std::fs::write(src.join("lib.rs"), "nice_export_clap!(Enth);\n").unwrap();
-        assert_eq!(default_package(&dir), PRODUCT_PACKAGE);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

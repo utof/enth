@@ -195,6 +195,8 @@ impl NiceEguiApp for EditorApp {
         nice_gui_ctx: GuiContext,
         _frame: &mut Frame,
     ) -> Result<(), HandlerError> {
+        #[cfg(feature = "editor-counts")]
+        self.shared.editor_counts.built();
         self.theme.apply(&egui_ctx);
         let env = layout_from_env();
         let glue = &mut self.glue;
@@ -213,6 +215,8 @@ impl NiceEguiApp for EditorApp {
     /// The window closed (called by the vendored nice-plug-egui, lane FK; `process()` also watches
     /// `EguiEditorState::is_open()`): end a drag, release audition notes, forward the `End`s, drop the context.
     fn editor_closed(&mut self) {
+        #[cfg(feature = "editor-counts")]
+        self.shared.editor_counts.closed();
         let glue = &mut self.glue;
         let ((), writes) = self.shared.with_session(|s| {
             glue.end_drag(s);

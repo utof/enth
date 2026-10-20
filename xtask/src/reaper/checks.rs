@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::audio::{Notes, Wav, compare_levels, median_at, rms, roughness};
+use super::audio::{Notes, Wav, compare_levels, median_at};
 use super::chunk::Saved;
 use super::{Format, Report, Sandbox};
 
@@ -42,9 +42,8 @@ fn cutoff_at(norm: f64) -> f64 {
 
 // ---- state-create and state-reload -----------------------------------------------------------------------------
 
-/// Decodes the plugin state REAPER saved before and after the reload and compares the values and
-/// the patch blob (which carries a nonce stamped by the plugin on first activation).
-pub fn state(sb: &Sandbox, report: &mut Report, format: Format, product: bool) {
+/// Decodes the plugin state REAPER saved before and after the reload and compares the values and the patch.
+pub fn state(sb: &Sandbox, report: &mut Report, format: Format) {
     let scope = format!("{}/state-reload", format.tag());
     let (created, reloaded) = match (
         Saved::read(&sb.out, format, "create"),
@@ -67,26 +66,7 @@ pub fn state(sb: &Sandbox, report: &mut Report, format: Format, product: bool) {
             format!("macro_1 = {m:?}, slot_1 = {s:?}"),
         );
     }
-    if product {
-        product_state(report, &scope, &created, &reloaded);
-        return;
-    }
-    // The blob is stored as a string holding JSON; the nonce proves it came from the saved state.
-    let nonce = |state: &serde_json::Value| -> Option<String> {
-        let blob: serde_json::Value =
-            serde_json::from_str(state["fields"]["patch"].as_str()?).ok()?;
-        blob["nonce"].as_str().map(str::to_owned)
-    };
-    let (before, after) = (nonce(&created), nonce(&reloaded));
-    report.add(
-        &scope,
-        "patch-blob-restored",
-        before.is_some() && before == after,
-        format!(
-            "nonce {} before and after reload",
-            before.as_deref().unwrap_or("missing")
-        ),
-    );
+    product_state(report, &scope, &created, &reloaded);
 }
 
 /// The product's saved state: the patch loaded in `state-create` came back byte for byte after the reload in a new
@@ -613,34 +593,5 @@ pub fn renders_agree(out: &Path, report: &mut Report, kind: &str, first: Format,
                 ""
             }
         ),
-    );
-}
-
-/// The spike shell's `automation` scenario (kept as it was): macro 1 and slot 1 ramped together from 0 to 1.
-pub fn automation_legacy(out: &Path, report: &mut Report, format: Format) {
-    let scope = format!("{}/automation", format.tag());
-    let Some(wav) = load_render(
-        out,
-        report,
-        &scope,
-        &format!("render-{}.wav", format.tag()),
-        2.0,
-    ) else {
-        return;
-    };
-    let (early, late) = (wav.window(0.25, 0.55), wav.window(1.7, 2.0));
-    let (rms_early, rms_late) = (rms(early), rms(late));
-    let (hf_early, hf_late) = (roughness(early), roughness(late));
-    report.add(
-        &scope,
-        "macro-1-gets-louder",
-        rms_early > 0.0 && rms_late > 3.0 * rms_early,
-        format!("rms {rms_early:.4} at 0.25-0.55 s -> {rms_late:.4} at 1.7-2.0 s"),
-    );
-    report.add(
-        &scope,
-        "slot-1-gets-brighter",
-        hf_early > 0.0 && hf_late > 2.0 * hf_early,
-        format!("brightness {hf_early:.4} at 0.25-0.55 s -> {hf_late:.4} at 1.7-2.0 s"),
     );
 }

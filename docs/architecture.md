@@ -77,7 +77,7 @@ Directory names match package names: `crates/enth-dsp` is the package `enth-dsp`
 
 ```
 enth/
-├── Cargo.toml              # virtual workspace: members (crates/*, xtask, spikes/*, later tools/*), default-members, [workspace.package], [workspace.lints]; P1b adds [patch.crates-io] for vendor/ and excludes vendor/
+├── Cargo.toml              # virtual workspace: members (crates/*, xtask, tests/golden, three spikes, tools/*), default-members, [workspace.package], [workspace.lints]; P1b adds [patch.crates-io] for vendor/ and excludes vendor/ and the retired spikes
 ├── rust-toolchain.toml     # pinned stable toolchain (1.99.1) + wasm32 targets
 ├── clippy.toml             # lint options: bans I/O, clocks, threads and locks in core crates
 ├── .cargo/config.toml      # [alias] xtask = "run --package xtask --"
@@ -106,12 +106,14 @@ enth/
 │   ├── enth-wasm/          # L8  later — created when needed
 │   └── enth-py/            # L8  later — created when needed
 ├── content/
-│   ├── presets/            # *.patch.json
+│   ├── presets/            # *.patch.json: sounds made in the editor, each exactly the plugin's saved patch (`cargo xtask extract-presets`); the owner's G1 four first
 │   ├── templates/          # constrained patch templates for games, ML and agent starts
 │   ├── lessons/            # content packs: lesson.toml + markdown + patches; targets rendered on the fly
 │   └── agent-evals/        # goals/*.toml + prompts (agent benchmark; P1a: 10 starter text goals, R1: more goals and reference sounds)
 ├── tests/golden/           # the `enth-golden` crate (it needs both L3 crates and `check-layers` rejects same-layer edges, so it is exempt): reference patches, expected hashes (one per case, valid on every platform; per-platform overrides only where a platform has not run yet) and feature summaries as text — no WAVs in git
-├── spikes/                 # Phase 0 throwaway code (spike-* packages, exempt from layers)
+├── spikes/                 # Phase 0 throwaway code (spike-* packages, exempt from layers). Members: spike-metric (tools/listen uses it), spike-engine
+│                           # (`cargo xtask wasm-hash`, the engine-golden workflow), spike-agent (the probe CLI). spike-shell, spike-ui and spike-ui-plugin
+│                           # left the workspace in P1b lane INT: their source stays as the evidence docs/spikes/ links to, frozen, and no longer builds
 ├── scripts/                # gate.sh lane|full: the two merge gates, judged by exit status only
 ├── tools/
 │   └── test-host/          # enth-test-host: tiny CLAP host (clack-host): scripted editor open/close, timings; P1b adds --state loading, cli-equal, instance churn, event bursts, NOTE_END checks, process-stats and knob-to-sound latency
@@ -119,7 +121,8 @@ enth/
 ├── ml/                     # later: Python (uv) training + ONNX export; never shipped
 └── xtask/                  # layers.toml; commands: check-layers, wasm-check, bundle, install, reaper-test, host-render, wasm-hash;
                             # P1a adds golden, bench and agent-eval; P1b adds validate (the pinned clap-validator 0.4.1), affected (the crates a change
-                            # touches plus their dependants, which gate.sh lane tests) and a --package option for bundle, install, validate, host-render and reaper-test
+                            # touches plus their dependants, which gate.sh lane tests) and a --package option for bundle, install, validate, host-render and reaper-test;
+                            # lane INT adds leak-test (editor-cycles and instance churn under Xvfb), extract-presets and starter-project, and host-render runs cli-equal
 ```
 
 ## Vendored crates (P1b)

@@ -9,6 +9,9 @@
 # Prerequisites (this script builds nothing):
 #   cargo xtask bundle spike-shell --release          # target/bundled/spike-shell.clap
 #   cargo build --release -p enth-test-host           # target/release/enth-test-host
+# P1b lane INT retired spike-shell from the workspace, so its bundle now comes from a checkout before that (main
+# aa0fec0 or earlier: `cargo xtask bundle spike-shell --release` there), passed with --plugin. The controls below are
+# written for spike-shell (it does not render the engine's patches, for one), so they do not carry over to enth-plugin.
 #
 # Timings (process-stats) run under the exclusive build lock, `flock -x /tmp/enth-quiet.lock`, so nothing builds
 # meanwhile; --no-timing skips them. To hold the lock for the whole run instead of per command:

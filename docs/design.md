@@ -153,7 +153,7 @@ The modular parameter set changes whenever the patch changes, so it is never exp
 Measured in Phase 0 (2026-10-19, [spikes/shell.md](spikes/shell.md)):
 
 - **CLAP:** a rescan (`RESCAN_INFO`) renames a slot in REAPER within 50 ms. Stock nice-plug 0.4.2 cannot do it; a 123-line add-only patch can. We carry it in a privately vendored fork (decided 2026-10-19, P1b research; [ADR-0001](adr/0001-plugin-shell.md)).
-- **VST3:** hosts may reject the title-change message (`kParamTitlesChanged`). REAPER 7.82 does, so VST3 in REAPER shows "Slot N". Carla's VST3 host accepts it.
+- **VST3:** hosts may reject the title-change message (`kParamTitlesChanged`). REAPER 7.82 does, but it reads VST3 parameter titles live, so with the fork's display-name override VST3 in REAPER shows the new names at once (measured by lane PL, 2026-10-20, [plugin.md](plugin.md#parameter-names); the Phase 0 spike had no override, so it showed "Slot N"). Carla's VST3 host accepts the message.
 - An automation lane that already exists keeps its old label but stays bound to the parameter by ID.
 - Names are derived from the patch on the main thread only, and a rescan is requested after a slot assignment and after a state load. With the fork, the session asks for a rename with a `ShellRequest::RenameParams` (only when the host would see other names or kinds, [session.md](session.md#parameter-names-and-rescans)), and the shell sets the display names and requests the rescan (`request_param_info_rescan`) on the main thread, never from `process()`: the rescan is GUI work, and GUI work scheduled from `process()` may run inline there.
 

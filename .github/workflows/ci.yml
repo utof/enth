@@ -33,7 +33,7 @@ jobs:
       - name: Install the toolchain from rust-toolchain.toml
         run: rustup toolchain install && rustc --version
 
-      # ALSA/JACK/X11/GL for the plugin and UI spikes (same list as nice-plug's CI), plus Mesa's
+      # ALSA/JACK/X11/GL for the plugin and the editor (same list as nice-plug's CI), plus Mesa's
       # lavapipe: enth-ui's snapshot tests render on a CPU Vulkan adapter only (.cargo/config.toml).
       - name: System libraries for plugin, GUI and audio crates
         run: |
@@ -74,12 +74,13 @@ jobs:
           tool: cargo-deny@0.20.2
       - run: cargo deny --locked check ${{ matrix.checks }}
 
-  # Task 3 (docs/spikes/shell.md). clap-validator 0.4.1 has no GUI tests, so no display is needed.
+  # clap-validator 0.4.1 has no GUI tests, so no display is needed (Phase 0 task 3, docs/spikes/shell.md; the shell and
+  # UI spikes it validated then left the workspace in P1b lane INT).
   # `cargo xtask validate` downloads the pinned release (sha256-checked; the pin lives in xtask/src/validate.rs, the one
   # place) and runs it on the bundle. The debug bundle has nice-plug's assert_process_allocs on (the validator's
   # process() calls abort on any allocation).
   validate:
-    name: clap-validator on the plugins
+    name: clap-validator on the plugin
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -97,37 +98,17 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Validate spike-shell (debug and release bundles)
-        run: |
-          cargo xtask validate --package spike-shell
-          cargo xtask validate --package spike-shell --release
-      # Task 4: the reference panel in a copy of the shell plugin (spikes/spike-ui-plugin).
-      - name: Validate spike-ui-plugin (debug and release bundles)
-        run: |
-          cargo xtask validate --package spike-ui-plugin
-          cargo xtask validate --package spike-ui-plugin --release
-      # P1b: the product plugin, from the day crates/enth-plugin exports a CLAP entry (lane SK). Until then the
-      # package builds as an empty library and `bundle` would write nothing, so these steps are skipped.
-      - name: Does crates/enth-plugin export a CLAP entry yet?
-        id: product
-        run: |
-          if grep -rqsE '^[[:space:]]*nice_export_clap!\(' crates/enth-plugin/src; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "crates/enth-plugin exports no CLAP entry yet: skipping its validation"
-          fi
       - name: Validate enth-plugin (debug and release bundles)
-        if: steps.product.outputs.ready == 'true'
         run: |
           cargo xtask validate --package enth-plugin
           cargo xtask validate --package enth-plugin --release
 
-  # Phase 0 lane H (docs/spikes/test-host.md). The spike plugin goes through a real CLAP host (clack-host in
-  # tools/test-host): loaded from its .clap file, rendered offline with a fixed block size and compared with
-  # the committed SHA-256 of the samples. It opens no window, so no display is needed.
+  # Phase 0 lane H and P1b lanes TH, SK and PL (docs/spikes/test-host.md, docs/plugin.md). The plugin goes through a
+  # real CLAP host (clack-host in tools/test-host): loaded from its .clap file, rendered offline with a fixed block size
+  # and compared with the committed SHA-256 of the samples: the engine's goldens through the plugin, and plugin-only
+  # cases. It opens no window, so no display is needed.
   host-render:
-    name: plugin golden render (spike-shell via the test host)
+    name: plugin golden render (enth-plugin via the test host)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -146,14 +127,10 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # Debug bundle: nice-plug's assert_process_allocs is on, so an allocation in process() aborts the render.
-      # The release bundle gives the same six hashes (checked locally with `--release`).
-      - run: cargo xtask host-render --package spike-shell
+      # The release bundle gives the same hashes (checked locally with `--release`).
+      - run: cargo xtask host-render --package enth-plugin
       - name: The same instances render the same samples (shared-state check)
         run: |
-          target/debug/enth-test-host instances target/bundled/spike-shell.clap \
+          target/debug/enth-test-host instances target/bundled/enth-plugin.clap \
+            --state tools/test-host/golden/enth-plugin.patch.json \
             --notes "C4@0+1.5:0.8, E4@0+1.5:0.8, G4@0+1.5:0.8" -n 3
-      # P1b: the product plugin through the test host (engine goldens through the plugin, plugin-only cases), from the
-      # day its golden file is committed (lanes TH and SK). The debug bundle has assert_process_allocs on.
-      - name: Plugin golden render (enth-plugin via the test host)
-        if: hashFiles('tools/test-host/golden/enth-plugin.toml') != ''
-        run: cargo xtask host-render --package enth-plugin

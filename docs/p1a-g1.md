@@ -1,14 +1,14 @@
 # P1a: the headless G1 table
 
 - Date: 2026-10-19 (P1a lane E). Engine 0.2.0, main at `d58c5cb` plus lane E.
-- Source of the gate: [roadmap.md](roadmap.md#p1--minimal-synth--cli-v0-46-weeks) (Gate G1) and [phase-1a.md](phase-1a.md#the-headless-g1-checks). The agent-eval protocol is in [agent-cli.md](agent-cli.md#evaluating-the-cli-like-a-product); this page records what was built and where each check stands.
+- Source of the gate: [roadmap.md](roadmap.md#p1--minimal-synth--cli-v0-46-weeks) (Gate G1) and [phase-1a.md](phase-1a.md#the-headless-g1-checks). The plugin half is [p1b-g1.md](p1b-g1.md) (2026-10-20). The agent-eval protocol is in [agent-cli.md](agent-cli.md#evaluating-the-cli-like-a-product); this page records what was built and where each check stands.
 - Status words: **passed** (measured or green in CI, with the source), **pending owner** (needs your ears), **pending coordinator** (needs the paid run or a CI trigger that costs money), **failed**. Nothing is failed.
 
 ## The table
 
 | # | Check | Status | Source |
 | --- | --- | --- | --- |
-| 1 | 16 voices: at most 12,000 instructions per frame, and at least 10× realtime on one core | **passed**: 6,154 instructions per frame (590,803,521 per 2 s render), 23.5× realtime (median; 25–26× best run) | [`benches/g1.rs`](../crates/enth-engine/benches/g1.rs); [numbers below](#1-the-16-voice-cpu-budget). The `p99 process()` half of the criterion is P1b (it needs the test host) |
+| 1 | 16 voices: at most 12,000 instructions per frame, and at least 10× realtime on one core | **passed**: 6,154 instructions per frame (590,803,521 per 2 s render), 23.5× realtime (median; 25–26× best run) | [`benches/g1.rs`](../crates/enth-engine/benches/g1.rs); [numbers below](#1-the-16-voice-cpu-budget). The `p99 process()` half of the criterion is P1b (it needs the test host): passed, [p1b-g1.md](p1b-g1.md) row 2 (lane RT, steady p99 112.5–123.3 µs against 333) |
 | 2 | Patches round-trip through JSON | **passed**: bit-exact for every finite f32, fixtures for every schema version, non-finite numbers refused, fuzz-lite never panics | S1b: [`props.rs`](../crates/enth-patch/tests/props.rs) (`json_round_trip_is_bit_exact`, `every_parameter_value_round_trips`, `wire_form_round_trips`), [`migrate.rs`](../crates/enth-patch/tests/migrate.rs), [`fuzz.rs`](../crates/enth-patch/tests/fuzz.rs); `cargo test -p enth-patch` green on 2026-10-19 |
 | 3 | Goldens on Linux, Windows and wasm32 on every push, reverb and compressor included | **passed**: `golden` workflow run 39264457142 on `d58c5cb`: Linux x86_64, Windows x86_64 and wasm32-wasip1 under wasmtime all success. The 72 cases include `reverb-*` and `comp-*`. `engine-golden` run 39264457218 also success | `gh run list --workflow golden.yml`; [`.github/workflows/golden.yml`](../.github/workflows/golden.yml); `cargo xtask golden` is `ok` in the lane E worktree |
 | 4 | Goldens on macOS, once before G1 | **passed**: `golden` run 39273104073 (`workflow_dispatch`, 2026-10-19) on macOS **aarch64**: all 72 cases identical to the x86_64 hashes. Renders are now bit-identical on Linux x86_64, Windows x86_64, macOS arm64 and wasm32. (That run's Windows leg failed to compile `xtask` on a dead-code warning, fixed in the same commit as this table update) | `gh run view 39273104073` |

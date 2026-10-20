@@ -25,12 +25,15 @@
 //! | [`state`] | the persistent fields bridging nice-plug's state and the session blob | SK |
 //! | [`editor`] | the `NiceEguiApp` window around the `enth-ui` editor | SK, ED1 |
 //! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
+//! | `editor_counts` | with the `editor-counts` cargo feature: editor opens and `editor_closed` calls, for the leak gate | INT |
 #![allow(
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
 )]
 
 pub mod editor;
+#[cfg(feature = "editor-counts")]
+pub mod editor_counts;
 pub mod ledger;
 pub mod notes;
 pub mod params;
@@ -99,6 +102,17 @@ pub struct Shared {
     /// `process()` timings (the `rt-stats` cargo feature).
     #[cfg(feature = "rt-stats")]
     pub rt_stats: rt_stats::RtStats,
+    /// Editor opens and `editor_closed` calls (the `editor-counts` cargo feature), reported when this drops.
+    #[cfg(feature = "editor-counts")]
+    pub editor_counts: editor_counts::EditorCounts,
+}
+
+/// The last reference went: the plugin and every editor window are gone, so the counts are final.
+#[cfg(feature = "editor-counts")]
+impl Drop for Shared {
+    fn drop(&mut self) {
+        self.editor_counts.write_report();
+    }
 }
 
 impl Shared {
@@ -114,6 +128,8 @@ impl Shared {
             host: OnceLock::new(),
             #[cfg(feature = "rt-stats")]
             rt_stats: rt_stats::RtStats::new(),
+            #[cfg(feature = "editor-counts")]
+            editor_counts: editor_counts::EditorCounts::new(),
         }
     }
 
