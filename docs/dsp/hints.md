@@ -1,6 +1,6 @@
 # Hints (`enth-solver::hint`)
 
-- Date: 2026-10-19. P1a lane H; 2026-10-20, P1b lane EV (verdicts name the module, the new descriptor families). Crate: `crates/enth-solver` (L5; depends on `enth-params`, `enth-patch`, `enth-render`, `enth-analysis`, `libm`; no I/O, clocks, threads or global RNG; builds for wasm32).
+- Date: 2026-10-19. P1a lane H; 2026-10-20, P1b lane EV (verdicts name the module, the new descriptor families); 2026-10-20, R1/S1 lane SN (the [coach](#coach-and-sensitivity-r1s1-lane-sn) and the sensitivity it reads; `hint/` itself is unchanged). Crate: `crates/enth-solver` (L5; depends on `enth-params`, `enth-patch`, `enth-render`, `enth-analysis`, `libm`; no I/O, clocks, threads or global RNG; builds for wasm32).
 - What it is: the `fix` and `blocked` of `enth check` and `enth step` ([agent-cli.md](../agent-cli.md#expectations-enth-check), [design.md §7](../design.md#7-how-far-were-your-knobs-when-many-answers-are-right)). Given a patch, the goal's performance and an expectation list with failures, it returns **one** move of several parameters that makes failing items pass while every passing item keeps passing, measured by real renders, or a verdict naming the item that cannot pass and why.
 - Ported from our own research prototype (report 03 §5 and F7, `~/code/enth-scratch/2026-10-19-p1a/03/proto/src/solver.rs`), no third-party source. Nothing needs a `THIRD_PARTY_NOTICES.md` entry.
 
@@ -115,3 +115,81 @@ A random sweep on real renders (40 random two-oscillator patches, envelope setti
 - **Route depths and `semi` are not moved**, so a filter sweep that is too shallow or a transposed oscillator is only named, never fixed: the verdict says which knob to turn. (An LFO's `rate` is free when the LFO is a route source, so a filter-LFO rate item can be fixed.)
 - **Noise is not part of the hint.** The fix aims one aim margin inside each band, and acceptance uses the deterministic render; the CLI's `noise` and `thin` (two nuisance re-renders) are not recomputed for the fixed patch.
 - **No conflict list on success.** Report 03's cosine conflict detector was untested on real conflicts and is not built; conflicts are reported per blocked item from the model (`conflicts_with`).
+
+## Coach and sensitivity (R1/S1, lane SN)
+
+The Recreate game's hint button. Two modules in `enth-solver`, `sensitivity.rs` and `coach.rs`; `hint/` is **not** touched: the coach hands the unchanged solver an `Expect` list built from the target's descriptors and turns the verified `Fix` into four graded hints. Same rules as the rest of the crate: pure, no I/O, threads, clocks or global RNG, `libm` only, wasm32-buildable. The tests are `tests/sensitivity.rs` (7) and `tests/coach.rs` (11).
+
+### Sensitivity (`sensitivity::sensitivity`)
+
+How much each randomized parameter moves each descriptor, **measured**, not catalogued: one batch of `1 + n` evaluations (the target, then each continuous randomized parameter moved one just-noticeable step), through the caller's `Evaluator` (results by job index, so the worker count never matters). The step is `enth_challenge::priors::jnd` (cutoff 2 st, times ×1.5, levels 3 dB, cents 3), toward the middle of the axis when the value sits at an end. Everything is compared in the solver's own domain (cents above 1 Hz for pitch, ln for Hz and ms features, the unit otherwise), and a descriptor's change below `INERT_BELOW` (0.25) aim margins counts as no change.
+
+| Result | Meaning |
+| --- | --- |
+| `ParamSensitivity::delta(f)`, `slope(f)` | The change of descriptor `f` over one step, and per unit of the normalised axis (signed: which way the descriptor goes when the knob is raised) |
+| `reach()`, `inert()` | The largest effect in aim margins over all descriptors; `inert` when it is under `INERT_BELOW` |
+| `tolerance_norm()` | How far the knob can move before its strongest descriptor leaves the tolerance band (normalised axis) |
+| `Sensitivity::combined(f)` | The root-sum-square of the single-step effects of every randomized parameter on `f`: what the descriptor does when every knob is one step off at once |
+| `Sensitivity::tolerance(f)` | `combined(f)` clamped to `tolerance_bounds(f)`: 2 to 8 aim margins (pitch 10 to 25 ct). This is the width the coach and lane ST give a descriptor |
+| `discrete`, `unprobed` | Randomized parameters that are not continuous (a waveform), and continuous ones the budget or a failed render left out (tagged ones are probed first) |
+
+Budget: `SensitivityCfg::max_renders` (48), the target's render included. Errors are values (`SensitivityError::{NoBudget, NoNotes, Base, Contract}`, each with a `code()`), never panics.
+
+### The coach (`coach::CoachTarget`)
+
+```rust
+let mut ct = CoachTarget::for_round(&round, &mut eval, &CoachCfg::default())?; // once per round
+let plan = ct.plan(&patch, &mut eval, &cfg)?;                                  // once per patch revision
+let hint = plan.hint(level);                                                  // levels 1..=4, free
+```
+
+`CoachTarget::prepare` does the target's half (render, describe, sensitivity) and builds one `Item` per descriptor the target has: pitch against the target's note, brightness, attack, decay, sustain level, release and noisiness as bands `target ± tolerance` (in ln for Hz and ms, so the band is a ratio), and beating, tremolo and the filter sweep as a band or, when the target has none, `== null`. Loudness, peak and clipping are left out (the A/B switch matches the level; the sound score ignores it). `plan` then calls `hint(patch, perf, spec, &expects, eval, &HintCfg { only: randomized ∪ the SetParams that differ from the target, .. })` and maps the result. `CoachCfg::default()` is `SensitivityCfg::default()` and `HintCfg { max_renders: 24, transpose: true, .. }` (`osc.semi` is a randomized parameter, so "raise Semitones" is a valid level-3 hint).
+
+The levels, with the structured `Hint` fields each fills (empty before their level):
+
+| Level | Says | Fields | Example text |
+| --- | --- | --- | --- |
+| 1 | Which aspect is off, and how | `aspect`, `difference` | "Check the brightness: your sound is darker than the target." |
+| 2 | Which module or region | `module` | "Your sound is darker than the target: look at the filter (filter1)." |
+| 3 | Which parameter, and which way | `param`, `turn` | "…: raise Cutoff on the filter (filter1)." |
+| 4 | A concrete value range | `range` | "…: set Cutoff on the filter (filter1) to between 1.6kHz and 2.6kHz." |
+
+A categorical parameter has no `turn` or `range`: its level-3 text says to change it, level 4 names the setting. `Hint::measured` is true when the text comes from a verified render of the solver's fix and false for a categorical or advice hint.
+
+**No early leak.** Levels 1 to 3 contain no number at all but module ids (`filter1` is a name). Level 4 gives a range, not the target's value: the verified fix's value plus and minus the distance at which the strongest descriptor stays within tolerance (`tolerance / |slope|`, at least one probe step, at most 0.15 of the axis), rounded outward to two significant digits. The target's patch is read for two things, which parameters the player may be told about and whether a move is compensating (below), and never quoted. `tests/coach.rs` checks that no text before level 4 contains a digit outside a module id, on a synthetic landscape and on real rounds at several difficulties.
+
+**Which hint** (`CoachPlan::verdict`):
+
+| Verdict | When | `measured` |
+| --- | --- | --- |
+| `Measured` | A move of the fix serves the worst failing aspect (largest predicted effect by the sensitivity slope; one that is not compensating first) | true |
+| `Structure` | A categorical difference, found by comparing the player's patch with the target (waveform, filter mode, a module switched on or off, a route to add, remove or re-weigh), in a module that can affect the aspect. It wins over a *compensating* measured move: one that turns the knob away from the target's own value or lands more than 0.15 of the axis from it (closing the cutoff to hide the wrong waveform) | false |
+| `Advice` | No move and no difference serves any failing aspect: general advice for the worst one, no value | false |
+| `Close` | Nothing fails: every level says so | false |
+
+Aspects are ranked by how far off they are in tolerance units; one missing from or extra in the player's sound counts as 8 and ranks first. Hints for a missing tremolo or filter sweep point at the missing route (level 2: "look at the modulation routes"; level 3: "add a modulation route to the filter's cutoff"; level 4 adds the depth range), not at an LFO shape.
+
+### Determinism and costs
+
+The sensitivity and the plan send every render through the caller's `Evaluator` in fixed-order batches and read results by job index; the maths is the crate's usual `libm` `f64`. The same inputs give the same text for 1, 4 and 8 workers and for a batch evaluated back to front (`the_worker_count_does_not_change_the_hints`, `the_result_is_pure_and_the_same_for_any_worker_count`).
+
+| Job | Budget | Renders | Release, serial, load about 6 |
+| --- | --- | --- | --- |
+| `CoachTarget::prepare`, once per round | `SensitivityCfg::max_renders` (48) | `1 +` the continuous randomized parameters (difficulty 100: about 20) | 0.1 to 0.3 s; 2.3 s at difficulty 100 |
+| `CoachTarget::plan`, per patch revision | `HintCfg::max_renders` (24), the player's base render included | 6 to 19 measured | 0.16 to 0.53 s |
+| `coach_hint` (one shot) | The sum of the two | at most 72 | |
+
+`prepare` and the probe batch of `plan` parallelise (the evaluator decides); the solver's verification steps are serial. The budget tests count the evaluator's calls: `prepare` stays within `sensitivity.max_renders`, `plan` within `hint.max_renders`.
+
+### What a caller needs
+
+- **The Hint job (lane SKR):** keep one `CoachTarget` per round, built lazily at the first hint (`for_round`, which plays the round's phrase at the scoring rate and seed, so the coach hears what the scorer hears). On a `Hint` request run `ct.plan(&patch, eval, &cfg)?.hint(level)` and map it with `CoachHint::new(h.level, h.text.clone())` (`CoachHint` lives in `enth-session`, above the solver). Cache the plan per patch revision: levels 2 to 4 of the same patch are then free. The evaluator must call `enth_solver::measure` (for example rayon `par_iter().map_init`) so the probes run in parallel. A hint makes the round *assisted* (the session's bookkeeping). `plan.result.fix` holds the exact ops for a future "apply this move"; do not show it to a player.
+- **The UI (lane RUI):** show `Hint::text`; it is self-contained at every level. The structured fields (`aspect`, `difference`, `module`, `param`, `turn`, `range`) may be used to highlight the module or knob, but only the fields of the levels the player has asked for are filled. At `Close` the text is the same at every level.
+- **Lane ST:** `sensitivity(...)`, `ParamSensitivity::{inert, reach, tolerance_norm, slope}`, `Sensitivity::tolerance` and `tolerance_bounds` give the structure and time tolerances without a second measurement.
+
+### Limits
+
+- **Categorical moves are named, not measured.** The solver does not move waveforms, modes, routes or module on/off, so those hints are `measured: false` and the coach cannot say how much better the patch gets.
+- **Noisy descriptors.** Decay is the noisiest; the attack descriptor does not resolve below about 10 ms (a probe of a shorter attack reads as no change), so a very fast attack gets a tolerance from the clamp, not from a measurement.
+- **One fix, one hint.** The plan names the single best aspect and move; it does not list everything wrong. After the player acts, ask again.
+- **Cost at the highest difficulty.** `prepare` with 20 randomized parameters is about 2.3 s serial; run it on a parallel evaluator and not on the UI thread.
