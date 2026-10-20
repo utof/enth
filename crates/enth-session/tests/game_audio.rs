@@ -10,12 +10,14 @@ mod common;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
+use enth_challenge::score::ParamScore;
+use enth_challenge::{Combined, PhraseId, ScorerId, ScoringSpec, SoundScore, SpecPreset};
 use enth_engine::{Event, EventKind, NoteKey};
 use enth_patch::model::{ModuleInstance, Section};
 use enth_patch::{ModuleKind, Op, Patch, Position, apply_all};
 use enth_session::game::{
-    Challenge, EditorView, EndChoice, GameEdit, GameRequest, JobKind, JobResult, KnobScore, Listen,
-    ScoreReport, Verdict,
+    Challenge, EditorView, EndChoice, GameEdit, GameRequest, JobKind, JobResult, Listen,
+    RandomSpec, RoundSource, ScoreReport, StructureScore, Verdict,
 };
 use enth_session::{Activation, Session};
 
@@ -52,6 +54,19 @@ fn target_patch() -> Patch {
     p
 }
 
+fn structure() -> StructureScore {
+    StructureScore {
+        scorer: ScorerId::STRUCTURE_V1,
+        percent: 30.0,
+        params: vec![ParamScore {
+            addr: "filter1.cutoff".to_owned(),
+            score: 0.5,
+            verdict: Verdict::Near,
+        }],
+        modules: Vec::new(),
+    }
+}
+
 /// Answer every job in the outbox the way a shell's worker would, at once.
 fn answer_jobs(s: &mut Session) {
     let requests: Vec<GameRequest> = s.drain_game_requests().collect();
@@ -60,22 +75,31 @@ fn answer_jobs(s: &mut Session) {
             continue;
         };
         let result = match job.kind {
-            JobKind::Prepare { .. } => JobResult::Prepared {
+            JobKind::Prepare { spec } => JobResult::Prepared {
+                challenge: Box::new(Challenge::recreate(spec, PhraseId(1))),
                 start: Box::new(start_patch()),
                 target: Box::new(target_patch()),
                 target_lufs: Some(-16.0),
             },
-            JobKind::Score { .. } => JobResult::Scored(ScoreReport {
-                passed: false,
-                sound: 40.0,
-                structure: 30.0,
-                combined: 35.0,
-                knobs: vec![KnobScore {
-                    addr: addr("filter1.cutoff"),
-                    verdict: Verdict::Near,
-                }],
-            }),
-            JobKind::Rings { .. } => JobResult::Rings(Vec::new()),
+            JobKind::Score { challenge, .. } => JobResult::Scored(Box::new(ScoreReport::new(
+                &challenge.scoring,
+                SoundScore {
+                    scorer: ScorerId::SOUND_V1,
+                    percent: 40.0,
+                    distance: 0.5,
+                    floor: 0.0,
+                    scale: 0.1,
+                    jnd: 5.0,
+                    components: Vec::new(),
+                },
+                structure(),
+                Combined {
+                    scorer: ScorerId::COMBINED_V1,
+                    percent: 35.0,
+                    sound_weight: ScoringSpec::recreate(25).sound_weight,
+                },
+            ))),
+            JobKind::Rings { .. } => JobResult::Rings(Box::new(structure())),
             JobKind::Loudness { .. } => JobResult::Loudness { lufs: Some(-20.0) },
             _ => JobResult::Failed {
                 message: "not in this test".to_owned(),
@@ -138,8 +162,8 @@ fn rounds_never_stop_the_audio_thread_or_make_it_allocate() {
         for round in 0..12u32 {
             now += 1_000;
             s.game_tick(now, EditorView::Opened);
-            s.game_start(Challenge::new(format!("R1-AUDIO-{round}")))
-                .unwrap();
+            let spec: RandomSpec = SpecPreset::by_id(2).unwrap().spec(1, u64::from(round));
+            s.game_start(RoundSource::Settings(spec)).unwrap();
             answer_jobs(&mut s); // the start patch: a structural plan swap
             step(&mut s, round * 10);
             s.game_listen(Listen::Target).unwrap();

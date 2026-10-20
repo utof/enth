@@ -8,13 +8,19 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use enth_challenge::score::{ModuleTerm, ParamScore};
+use enth_challenge::{
+    Combined, EngineVersion, PhraseId, RoundResult, ScorerId, ScoringSpec, SoundScore, SpecPreset,
+    TargetPrefix,
+};
 use enth_engine::{Engine, Event, EventKind, NoteKey};
+use enth_patch::canon::canonical_hash;
 use enth_patch::model::{ModuleInstance, Section};
 use enth_patch::{ModuleKind, Op, Patch, Position, apply_all};
 use enth_session::game::{
-    Challenge, EditSource, EditorView, EndChoice, EndedBy, GameEdit, GameError, GameRequest, Job,
-    JobId, JobKind, JobResult, KnobScore, Listen, LogEvent, Outcome, Phase, RoundLogEntry,
-    RoundView, ScoreReport, Verdict, Vote,
+    Agreement, Challenge, ChallengeCode, EditSource, EditorView, EndChoice, EndedBy, GameEdit,
+    GameError, GameRequest, Job, JobId, JobKind, JobResult, Listen, LogEvent, Outcome, Phase,
+    RandomSpec, RoundLogEntry, RoundSource, RoundView, ScoreReport, StructureScore, Verdict,
 };
 use enth_session::state::STATE_VERSION;
 use enth_session::{
@@ -23,7 +29,6 @@ use enth_session::{
 
 use common::{addr, custom_patch, id, init_patch, macro_index};
 
-const CODE: &str = "R1-TEST-0001";
 const CUTOFF: &str = "filter1.cutoff";
 const RESONANCE: &str = "filter1.resonance";
 
@@ -59,29 +64,97 @@ fn target_patch() -> Patch {
     p
 }
 
-fn challenge() -> Challenge {
-    Challenge::new(CODE)
+/// Level 2 (a preset, so a short code) with generator 1 and `seed`.
+fn spec_seed(seed: u64) -> RandomSpec {
+    SpecPreset::by_id(2).unwrap().spec(1, seed)
 }
 
-fn report(passed: bool, sound: f32) -> ScoreReport {
-    ScoreReport {
-        passed,
-        sound,
-        structure: sound - 10.0,
-        combined: sound - 5.0,
-        knobs: vec![KnobScore {
-            addr: addr(CUTOFF),
-            verdict: if passed { Verdict::Good } else { Verdict::Bad },
-        }],
+fn spec() -> RandomSpec {
+    spec_seed(42)
+}
+
+fn source() -> RoundSource {
+    RoundSource::Settings(spec())
+}
+
+/// The round's code: level 2's short code for seed 42.
+fn code() -> String {
+    ChallengeCode::short(spec()).unwrap().to_string()
+}
+
+/// Custom settings (not a preset): their code is the long form, made once the target exists.
+fn custom_spec() -> RandomSpec {
+    RandomSpec {
+        musical: 80,
+        ..spec()
     }
 }
 
-fn prepared() -> JobResult {
+/// Lane ST's structure score with one ring on the cutoff.
+fn structure(percent: f64, verdict: Verdict) -> StructureScore {
+    StructureScore {
+        scorer: ScorerId::STRUCTURE_V1,
+        percent,
+        params: vec![ParamScore {
+            addr: CUTOFF.to_owned(),
+            score: 0.5,
+            verdict,
+        }],
+        modules: Vec::<ModuleTerm>::new(),
+    }
+}
+
+/// A report with this sound % (it passes at the default pass mark, 90).
+fn report(sound: f64) -> ScoreReport {
+    let scoring = ScoringSpec::recreate(spec().difficulty);
+    let verdict = if sound >= 90.0 {
+        Verdict::Good
+    } else {
+        Verdict::Bad
+    };
+    ScoreReport::new(
+        &scoring,
+        SoundScore {
+            scorer: ScorerId::SOUND_V1,
+            percent: sound,
+            distance: 0.5,
+            floor: 0.0,
+            scale: 0.1,
+            jnd: 5.0,
+            components: Vec::new(),
+        },
+        structure(sound - 10.0, verdict),
+        Combined {
+            scorer: ScorerId::COMBINED_V1,
+            percent: sound - 5.0,
+            sound_weight: scoring.sound_weight,
+        },
+    )
+}
+
+fn prepared_for(spec: RandomSpec) -> JobResult {
     JobResult::Prepared {
+        challenge: Box::new(Challenge::recreate(spec, PhraseId(1))),
         start: Box::new(start_patch()),
         target: Box::new(target_patch()),
         target_lufs: Some(-14.0),
     }
+}
+
+fn prepared() -> JobResult {
+    prepared_for(spec())
+}
+
+/// The round-log line's round result (lane CT's `enth.round-result/1`), checked to read back as one.
+fn result(line: &RoundLogEntry) -> RoundResult {
+    let result = line.result.clone().expect("the code decodes");
+    let json = serde_json::to_string(&result).unwrap();
+    assert_eq!(
+        serde_json::from_str::<RoundResult>(&json).unwrap(),
+        result,
+        "a valid round result"
+    );
+    result
 }
 
 fn drain(s: &mut Session) -> Vec<GameRequest> {
@@ -116,7 +189,7 @@ fn logs(requests: &[GameRequest]) -> Vec<RoundLogEntry> {
     requests
         .iter()
         .filter_map(|r| match r {
-            GameRequest::Log(entry) => Some(entry.clone()),
+            GameRequest::Log(entry) => Some((**entry).clone()),
             _ => None,
         })
         .collect()
@@ -129,7 +202,7 @@ fn view(s: &Session) -> RoundView {
 /// Start a round at shell time `now` (the editor open) and answer its prepare job.
 fn play(s: &mut Session, now: u64) {
     s.game_tick(now, EditorView::Opened);
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     let prepare = job(&drain(s), "prepare");
     s.game_job_done(prepare.id, prepared()).unwrap();
 }
@@ -138,7 +211,7 @@ fn play(s: &mut Session, now: u64) {
 fn submit(s: &mut Session, report: ScoreReport) -> Job {
     s.game_submit().unwrap();
     let score = job(&drain(s), "score");
-    s.game_job_done(score.id, JobResult::Scored(report))
+    s.game_job_done(score.id, JobResult::Scored(Box::new(report)))
         .unwrap();
     score
 }
@@ -159,17 +232,18 @@ fn a_round_runs_from_start_to_pass_and_back_to_the_players_patch() {
     assert_eq!(s.round(), None);
 
     s.game_tick(1_000, EditorView::Opened);
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     // Preparing: the player's patch still plays, and the target is asked for.
     let v = view(&s);
     assert_eq!(
-        (v.phase, v.pending.preparing, v.code.as_str()),
-        (Phase::Preparing, true, CODE)
+        (v.phase, v.pending.preparing, v.code.clone(), v.difficulty),
+        (Phase::Preparing, true, code(), Some(25))
     );
     assert_eq!(s.patch().to_json(), before.patch);
     let requests = drain(&mut s);
     let prepare = job(&requests, "prepare");
-    assert!(matches!(&prepare.kind, JobKind::Prepare { challenge } if challenge.code() == CODE));
+    assert!(matches!(&prepare.kind, JobKind::Prepare { spec: s } if *s == spec()));
+    assert_eq!(prepare.round, s.game_record().unwrap().id);
     assert!(requests.contains(&GameRequest::Dirty));
     assert_eq!(s.game_submit(), Err(GameError::NotReady));
 
@@ -215,7 +289,7 @@ fn a_round_runs_from_start_to_pass_and_back_to_the_players_patch() {
     }
     // The player keeps editing while the score is computed: the job scores the patch at Submit.
     s.edit(vec![set(CUTOFF, 850.0)], None).unwrap();
-    s.game_job_done(score.id, JobResult::Scored(report(false, 41.0)))
+    s.game_job_done(score.id, JobResult::Scored(Box::new(report(41.0))))
         .unwrap();
     let v = view(&s);
     assert_eq!(v.phase, Phase::Submitted);
@@ -231,7 +305,7 @@ fn a_round_runs_from_start_to_pass_and_back_to_the_players_patch() {
 
     // Two more seconds, a passing submit: the time to pass is its active time.
     s.game_tick(8_000, EditorView::Visible);
-    submit(&mut s, report(true, 92.5));
+    submit(&mut s, report(92.5));
     let v = view(&s);
     assert_eq!(
         (v.phase, v.time_to_pass_ms, v.submits),
@@ -247,10 +321,10 @@ fn a_round_runs_from_start_to_pass_and_back_to_the_players_patch() {
 
     // A later passing submit does not move the time.
     s.game_tick(9_000, EditorView::Visible);
-    submit(&mut s, report(true, 95.0));
+    submit(&mut s, report(95.0));
     assert_eq!(view(&s).time_to_pass_ms, Some(7_000));
 
-    s.game_vote(Vote::Right).unwrap();
+    s.game_vote(Agreement::AboutRight).unwrap();
     s.game_end(EndChoice::Restore).unwrap();
     assert_eq!(s.round(), None);
     let requests = drain(&mut s);
@@ -259,13 +333,21 @@ fn a_round_runs_from_start_to_pass_and_back_to_the_players_patch() {
     let line = &lines[0];
     assert_eq!(line.schema, "enth.round-log/1");
     assert_eq!(
-        (line.event, line.outcome, line.ended_by),
-        (LogEvent::End, Outcome::Passed, Some(EndedBy::Restore))
+        (line.event, line.ended_by, line.broken),
+        (LogEvent::End, Some(EndedBy::Restore), false)
     );
-    assert_eq!((line.active_ms, line.time_to_pass_ms), (8_000, Some(7_000)));
-    assert_eq!(line.submits.len(), 3);
-    assert_eq!(line.vote, Some(Vote::Right));
-    assert_eq!(line.code, CODE);
+    let r = result(line);
+    assert_eq!(r.outcome, Outcome::Passed);
+    assert_eq!((r.active_ms, r.time_to_pass_ms), (8_000, Some(7_000)));
+    assert_eq!((r.submits, line.submits.len()), (3, 3));
+    assert_eq!(
+        r.first_submit.unwrap().sound.percent,
+        41.0,
+        "the recorded score is the first"
+    );
+    assert_eq!(r.agreement, Some(Agreement::AboutRight));
+    assert_eq!((r.code.to_string(), line.code.clone()), (code(), code()));
+    assert!(!r.assists.any());
     assert!(line.report.is_some() && line.patch.is_some());
     // Back to exactly the player's patch, and both saved fields are byte for byte what they were.
     assert_eq!(s.save(None), before);
@@ -291,15 +373,15 @@ fn reveal_loads_the_target_marks_the_round_assisted_and_ends_submits() {
     );
     assert_eq!(s.game_submit(), Err(GameError::Revealed));
     assert_eq!(s.game_hint(), Err(GameError::Revealed));
-    assert_eq!(s.game_vote(Vote::TooLow), Err(GameError::NotScored));
+    assert_eq!(s.game_vote(Agreement::TooLow), Err(GameError::NotScored));
     let edits = &s.game_record().unwrap().edits;
     assert_eq!(edits.last().unwrap().source, EditSource::Reveal);
 
     s.game_end(EndChoice::Keep).unwrap();
-    let line = &logs(&drain(&mut s))[0];
+    let r = result(&logs(&drain(&mut s))[0]);
     assert_eq!(
-        (line.outcome, line.revealed, line.assisted),
-        (Outcome::Revealed, true, true)
+        (r.outcome, r.assists.revealed, r.assists.any()),
+        (Outcome::GaveUp, true, true)
     );
     assert_eq!(
         s.patch().to_json(),
@@ -316,7 +398,7 @@ fn a_submit_in_flight_when_revealing_still_counts() {
     s.game_submit().unwrap();
     let score = job(&drain(&mut s), "score");
     s.game_reveal().unwrap();
-    s.game_job_done(score.id, JobResult::Scored(report(true, 90.0)))
+    s.game_job_done(score.id, JobResult::Scored(Box::new(report(90.0))))
         .unwrap();
     let v = view(&s);
     assert_eq!((v.phase, v.time_to_pass_ms), (Phase::Revealed, Some(4_000)));
@@ -352,22 +434,26 @@ fn a_new_round_keeps_the_original_stash_and_logs_the_old_one() {
     play(&mut s, 0);
     s.edit(vec![set(CUTOFF, 2000.0)], None).unwrap();
     s.game_tick(3_000, EditorView::Visible);
-    s.game_start(Challenge::new("R1-TEST-0002")).unwrap();
+    s.game_start(RoundSource::Settings(spec_seed(43))).unwrap();
     let requests = drain(&mut s);
     let line = &logs(&requests)[0];
     assert_eq!(
-        (line.outcome, line.ended_by, line.code.as_str()),
-        (Outcome::Abandoned, Some(EndedBy::NewRound), CODE)
+        (result(line).outcome, line.ended_by, line.code.clone()),
+        (Outcome::NotPassed, Some(EndedBy::NewRound), code())
     );
     assert!(
         requests.iter().any(|r| matches!(r, GameRequest::Cancel(_))),
         "the old loudness job is cancelled"
     );
     let prepare = job(&requests, "prepare");
-    assert_eq!(view(&s).code, "R1-TEST-0002");
+    assert_eq!(
+        view(&s).code,
+        ChallengeCode::short(spec_seed(43)).unwrap().to_string()
+    );
     assert_eq!(view(&s).active_ms, 0);
     assert_eq!(s.game_record().unwrap().id.serial, 2);
-    s.game_job_done(prepare.id, prepared()).unwrap();
+    s.game_job_done(prepare.id, prepared_for(spec_seed(43)))
+        .unwrap();
     assert_eq!(
         s.game_record().unwrap().stash.as_deref(),
         Some(own.as_str())
@@ -380,7 +466,7 @@ fn a_new_round_keeps_the_original_stash_and_logs_the_old_one() {
 fn ending_a_round_that_never_started_logs_nothing_and_changes_nothing() {
     let mut s = Session::new(custom_patch());
     let own = s.patch().to_json();
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     let prepare = job(&drain(&mut s), "prepare");
     s.game_end(EndChoice::Restore).unwrap();
     let requests = drain(&mut s);
@@ -402,10 +488,10 @@ fn giving_up_without_a_submit_logs_an_abandoned_round() {
     s.game_tick(2_500, EditorView::Visible);
     assert_eq!(s.game_dispute("too hard"), Err(GameError::NotScored));
     s.game_end(EndChoice::Restore).unwrap();
-    let line = &logs(&drain(&mut s))[0];
+    let r = result(&logs(&drain(&mut s))[0]);
     assert_eq!(
-        (line.outcome, line.active_ms, line.submits.len()),
-        (Outcome::Abandoned, 2_500, 0)
+        (r.outcome, r.active_ms, r.submits, r.first_submit),
+        (Outcome::NotPassed, 2_500, 0, None)
     );
 }
 
@@ -413,15 +499,15 @@ fn giving_up_without_a_submit_logs_an_abandoned_round() {
 fn a_dispute_is_logged_at_once_and_again_with_the_end() {
     let mut s = Session::new(custom_patch());
     play(&mut s, 0);
-    submit(&mut s, report(false, 30.0));
-    s.game_vote(Vote::TooLow).unwrap();
-    s.game_vote(Vote::TooHigh).unwrap();
+    submit(&mut s, report(30.0));
+    s.game_vote(Agreement::TooLow).unwrap();
+    s.game_vote(Agreement::TooHigh).unwrap();
     let note = "x".repeat(5_000);
     s.game_dispute(&note).unwrap();
     let line = logs(&drain(&mut s)).pop().unwrap();
     assert_eq!(
-        (line.event, line.outcome, line.ended_by),
-        (LogEvent::Dispute, Outcome::InProgress, None)
+        (line.event, result(&line).outcome, line.ended_by),
+        (LogEvent::Dispute, Outcome::NotPassed, None)
     );
     assert_eq!(
         line.dispute.as_ref().unwrap().chars().count(),
@@ -429,8 +515,8 @@ fn a_dispute_is_logged_at_once_and_again_with_the_end() {
         "bounded"
     );
     assert_eq!(
-        line.vote,
-        Some(Vote::TooHigh),
+        result(&line).agreement,
+        Some(Agreement::TooHigh),
         "a later vote replaces the earlier one"
     );
     s.game_end(EndChoice::Keep).unwrap();
@@ -449,7 +535,10 @@ fn stale_wrong_and_failed_results_are_handled() {
     let score = job(&drain(&mut s), "score");
     // A result of the wrong kind is refused and the job is still awaited.
     assert_eq!(
-        s.game_job_done(score.id, JobResult::Rings(vec![])),
+        s.game_job_done(
+            score.id,
+            JobResult::Rings(Box::new(structure(0.0, Verdict::Bad)))
+        ),
         Err(GameError::WrongResult {
             job: "score",
             result: "rings"
@@ -479,7 +568,7 @@ fn a_failed_preparation_breaks_the_round_and_ending_it_restores_the_stash() {
     let own = s.patch().to_json();
     play(&mut s, 0);
     // A second round whose target cannot be prepared: the stash carried over must survive.
-    s.game_start(Challenge::new("R1-TEST-0002")).unwrap();
+    s.game_start(RoundSource::Settings(spec_seed(43))).unwrap();
     let prepare = job(&drain(&mut s), "prepare");
     s.game_job_done(
         prepare.id,
@@ -494,6 +583,202 @@ fn a_failed_preparation_breaks_the_round_and_ending_it_restores_the_stash() {
     assert_eq!(s.game_listen(Listen::Mine), Err(GameError::Broken));
     s.game_end(EndChoice::Restore).unwrap();
     assert_eq!(s.patch().to_json(), own);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Codes and settings (lane CT's types)
+// ---------------------------------------------------------------------------------------------------------------
+
+fn long_code(spec: RandomSpec, engine: EngineVersion, prefix: TargetPrefix) -> ChallengeCode {
+    ChallengeCode::long(spec, engine, prefix).unwrap()
+}
+
+fn target_prefix() -> TargetPrefix {
+    TargetPrefix::of(&canonical_hash(&target_patch()))
+}
+
+#[test]
+fn custom_settings_get_their_long_code_once_the_target_exists() {
+    assert_eq!(ChallengeCode::short(custom_spec()), None, "not a preset");
+    let mut s = Session::new(custom_patch());
+    s.game_start(RoundSource::Settings(custom_spec())).unwrap();
+    assert_eq!(
+        view(&s).code,
+        "",
+        "the long code carries the target's hash prefix"
+    );
+    let prepare = job(&drain(&mut s), "prepare");
+    assert!(matches!(prepare.kind, JobKind::Prepare { spec } if spec == custom_spec()));
+    s.game_job_done(prepare.id, prepared_for(custom_spec()))
+        .unwrap();
+    let long = long_code(custom_spec(), EngineVersion::CURRENT, target_prefix());
+    assert_eq!(view(&s).code, long.to_string());
+    assert_eq!(view(&s).phase, Phase::Playing);
+    // Saved and reopened, the round regenerates from its long code.
+    let saved = s.save(None);
+    let mut t = Session::default();
+    t.load(&saved);
+    let prepare = job(&drain(&mut t), "prepare");
+    assert!(matches!(prepare.kind, JobKind::Prepare { spec } if spec == custom_spec()));
+    t.game_job_done(prepare.id, prepared_for(custom_spec()))
+        .unwrap();
+    assert_eq!(
+        (view(&t).phase, view(&t).warnings.len()),
+        (Phase::Playing, 0)
+    );
+}
+
+#[test]
+fn a_pasted_long_code_whose_target_differs_is_refused() {
+    let mut s = Session::new(custom_patch());
+    let own = s.patch().to_json();
+    let code = long_code(
+        custom_spec(),
+        EngineVersion::CURRENT,
+        TargetPrefix(0xDEAD_BEEF),
+    );
+    s.game_start(RoundSource::Code(code)).unwrap();
+    assert_eq!(
+        view(&s).code,
+        code.to_string(),
+        "the code text the round started from"
+    );
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared_for(custom_spec()))
+        .unwrap();
+    let v = view(&s);
+    assert_eq!(v.phase, Phase::Broken);
+    assert_eq!(v.error.unwrap().code(), "target_mismatch");
+    assert_eq!(
+        s.patch().to_json(),
+        own,
+        "never scored against a different target"
+    );
+    s.game_end(EndChoice::Restore).unwrap();
+    assert_eq!(s.patch().to_json(), own);
+    assert_eq!(logs(&drain(&mut s)), [], "never played");
+}
+
+#[test]
+fn a_code_made_with_another_engine_warns_and_plays() {
+    let mut s = Session::new(custom_patch());
+    let other = EngineVersion {
+        major: 0,
+        minor: 1,
+        patch: 0,
+    };
+    assert_ne!(other, EngineVersion::CURRENT);
+    let code = long_code(custom_spec(), other, target_prefix());
+    s.game_start(RoundSource::Code(code)).unwrap();
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared_for(custom_spec()))
+        .unwrap();
+    let v = view(&s);
+    assert_eq!(v.phase, Phase::Playing);
+    assert_eq!(v.warnings.len(), 1);
+    assert_eq!(v.warnings[0].code(), "engine_differs");
+    assert_eq!(
+        v.code,
+        code.to_string(),
+        "the maker's engine version stays in the code"
+    );
+}
+
+#[test]
+fn refused_settings_change_nothing() {
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    drain(&mut s);
+    let bad = RandomSpec {
+        difficulty: 101,
+        ..spec()
+    };
+    let err = s.game_start(RoundSource::Settings(bad)).unwrap_err();
+    assert_eq!(err.code(), "out_of_range");
+    let newer = RandomSpec {
+        generator: 999,
+        ..spec()
+    };
+    assert_eq!(
+        s.game_start(RoundSource::Settings(newer))
+            .unwrap_err()
+            .code(),
+        "code_too_new"
+    );
+    assert_eq!(
+        (view(&s).phase, view(&s).code.clone()),
+        (Phase::Playing, code())
+    );
+    assert_eq!(drain(&mut s), [], "the live round did not end");
+}
+
+#[test]
+fn a_challenge_for_other_settings_breaks_the_round() {
+    let mut s = Session::new(custom_patch());
+    s.game_start(source()).unwrap();
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared_for(spec_seed(99)))
+        .unwrap();
+    let v = view(&s);
+    assert_eq!(
+        (v.phase, v.error.unwrap().code()),
+        (Phase::Broken, "job_failed")
+    );
+}
+
+#[test]
+fn the_challenges_hint_budget_limits_hints() {
+    for (budget, allowed) in [(Some(0u8), 0u8), (Some(2), 2), (Some(9), 4), (None, 4)] {
+        let mut s = Session::new(custom_patch());
+        s.game_start(source()).unwrap();
+        let prepare = job(&drain(&mut s), "prepare");
+        let mut challenge = Challenge::recreate(spec(), PhraseId(1));
+        challenge.assists.hint_budget = budget;
+        s.game_job_done(
+            prepare.id,
+            JobResult::Prepared {
+                challenge: Box::new(challenge),
+                start: Box::new(start_patch()),
+                target: Box::new(target_patch()),
+                target_lufs: None,
+            },
+        )
+        .unwrap();
+        for level in 1..=allowed {
+            assert_eq!(s.game_hint(), Ok(level), "{budget:?}");
+            let hint = job(&drain(&mut s), "hint");
+            s.game_job_done(
+                hint.id,
+                JobResult::Failed {
+                    message: "-".into(),
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(s.game_hint(), Err(GameError::NoMoreHints), "{budget:?}");
+    }
+}
+
+#[test]
+fn a_custom_round_saved_before_its_code_exists_is_dropped_or_kept_for_its_stash() {
+    // A first round: nothing was played and no stash taken, so the reload has no round.
+    let mut s = Session::new(custom_patch());
+    s.game_start(RoundSource::Settings(custom_spec())).unwrap();
+    let saved = s.save(None);
+    let mut t = Session::default();
+    t.load(&saved);
+    assert_eq!(t.round(), None);
+    assert_eq!(drain(&mut t), []);
+    // A new round after a played one carries the stash: it restores broken, and ending it brings the stash back.
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    s.game_start(RoundSource::Settings(custom_spec())).unwrap();
+    let saved = s.save(None);
+    let mut t = Session::default();
+    t.load(&saved);
+    assert_eq!(view(&t).phase, Phase::Broken);
+    t.game_end(EndChoice::Restore).unwrap();
+    assert_eq!(t.patch().to_json(), custom_patch().to_json());
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -516,7 +801,7 @@ fn ab_switches_sides_and_attenuates_the_louder_one() {
     assert_eq!(s.game_listen(Listen::Target), Err(GameError::NoRound));
     assert_eq!(s.game_listen(Listen::Off), Ok(()));
     s.game_tick(0, EditorView::Opened);
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     assert_eq!(s.game_listen(Listen::Target), Err(GameError::NotReady));
     assert_eq!(
         s.game_listen(Listen::Mine),
@@ -604,17 +889,14 @@ fn the_rings_update_live_after_the_first_submit() {
         1,
         "only loudness before the first submit"
     );
-    submit(&mut s, report(false, 50.0));
+    submit(&mut s, report(50.0));
     s.edit(vec![set(CUTOFF, 800.0)], None).unwrap();
     s.game_tick(3 * SETTLE, EditorView::Visible);
     let requests = drain(&mut s);
     let rings = job(&requests, "rings");
     s.game_job_done(
         rings.id,
-        JobResult::Rings(vec![KnobScore {
-            addr: addr(CUTOFF),
-            verdict: Verdict::Good,
-        }]),
+        JobResult::Rings(Box::new(structure(100.0, Verdict::Good))),
     )
     .unwrap();
     assert_eq!(view(&s).knobs[0].verdict, Verdict::Good);
@@ -633,7 +915,7 @@ fn the_rings_update_live_after_the_first_submit() {
 fn time_counts_only_while_the_editor_is_visible_and_the_target_is_ready() {
     let mut s = Session::new(custom_patch());
     s.game_tick(10_000, EditorView::Opened);
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     // Preparing takes 1.5 s: not counted.
     s.game_tick(11_500, EditorView::Visible);
     let prepare = job(&drain(&mut s), "prepare");
@@ -659,7 +941,7 @@ fn time_counts_only_while_the_editor_is_visible_and_the_target_is_ready() {
     s.game_tick(200_200, EditorView::Visible);
     assert_eq!(view(&s).active_ms, 5_700);
     // The time to pass is the active time at the passing submit.
-    submit(&mut s, report(true, 99.0));
+    submit(&mut s, report(99.0));
     assert_eq!(view(&s).time_to_pass_ms, Some(5_700));
 }
 
@@ -701,7 +983,7 @@ fn keeping_the_rounds_patch_keeps_the_rounds_history() {
 fn a_round_closes_an_open_drag_and_a_stale_gesture_id_is_no_gesture() {
     let mut s = Session::new(custom_patch());
     s.game_tick(0, EditorView::Opened);
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     let prepare = job(&drain(&mut s), "prepare");
     let g = s.begin_gesture();
     s.edit(vec![set(CUTOFF, 999.0)], Some(g)).unwrap();
@@ -774,7 +1056,7 @@ fn edits_are_logged_with_active_time_drags_merge_and_the_log_replays() {
 #[test]
 fn edits_while_a_first_round_prepares_are_the_players_own_and_not_logged() {
     let mut s = Session::new(custom_patch());
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     let prepare = job(&drain(&mut s), "prepare");
     s.edit(vec![set(CUTOFF, 2222.0)], None).unwrap();
     s.game_job_done(prepare.id, prepared()).unwrap();
@@ -831,7 +1113,7 @@ fn without_a_round_every_v1_fixture_keeps_its_bytes() {
         // A round started and ended with Restore leaves both fields byte for byte as they were.
         play(&mut s, 100);
         s.edit(vec![set(CUTOFF, 640.0)], None).unwrap();
-        submit(&mut s, report(false, 10.0));
+        submit(&mut s, report(10.0));
         s.game_end(EndChoice::Restore).unwrap();
         assert_eq!(s.save(None), expected, "{name}: after a round");
     }
@@ -843,7 +1125,7 @@ fn mid_round() -> Session {
     play(&mut s, 1_000);
     s.game_tick(4_000, EditorView::Visible);
     s.edit(vec![set(CUTOFF, 900.0)], None).unwrap();
-    submit(&mut s, report(false, 35.0));
+    submit(&mut s, report(35.0));
     s.game_hint().unwrap();
     let hint = job(&drain(&mut s), "hint");
     s.game_job_done(
@@ -853,8 +1135,8 @@ fn mid_round() -> Session {
     .unwrap();
     s.game_tick(7_000, EditorView::Visible);
     s.edit(vec![set(RESONANCE, 33.0)], None).unwrap();
-    submit(&mut s, report(false, 61.0));
-    s.game_vote(Vote::TooLow).unwrap();
+    submit(&mut s, report(61.0));
+    s.game_vote(Agreement::TooLow).unwrap();
     s.game_tick(8_000, EditorView::Visible);
     drain(&mut s);
     shell_requests(&mut s);
@@ -899,7 +1181,7 @@ fn a_project_saved_mid_round_restores_the_round_and_the_stash() {
         ),
         (Phase::Submitted, true, 7_000, 2, 1)
     );
-    assert_eq!(v.vote, Some(Vote::TooLow));
+    assert_eq!(v.agreement, Some(Agreement::TooLow));
     // The target is regenerated before play resumes; the clock waits for it.
     assert_eq!(t.game_submit(), Err(GameError::NotReady));
     assert_eq!(t.game_listen(Listen::Target), Err(GameError::NotReady));
@@ -940,6 +1222,7 @@ fn a_different_regenerated_target_breaks_the_round_but_keeps_the_stash() {
     t.game_job_done(
         prepare.id,
         JobResult::Prepared {
+            challenge: Box::new(Challenge::recreate(spec(), PhraseId(1))),
             start: Box::new(start_patch()),
             target: Box::new(other),
             target_lufs: None,
@@ -953,14 +1236,24 @@ fn a_different_regenerated_target_breaks_the_round_but_keeps_the_stash() {
     t.game_end(EndChoice::Restore).unwrap();
     assert_eq!(t.patch().to_json(), custom_patch().to_json());
     let line = &logs(&drain(&mut t))[0];
-    assert_eq!(line.outcome, Outcome::Broken);
+    assert_eq!(
+        (line.broken, result(line).outcome),
+        (true, Outcome::NotPassed)
+    );
 }
 
 #[test]
 fn a_saved_round_with_a_bad_code_or_a_newer_phase_restores_broken() {
     let saved = mid_round().save(None);
     for (from, to) in [
-        (format!("\"code\":\"{CODE}\""), "\"code\":\"\"".to_owned()),
+        (
+            format!("\"code\":\"{}\"", code()),
+            format!("\"code\":\"{}X\"", code()),
+        ),
+        (
+            format!("\"code\":\"{}\"", code()),
+            "\"code\":\"\"".to_owned(),
+        ),
         (
             "\"phase\":\"submitted\"".to_owned(),
             "\"phase\":\"duel\",\"later\":1".to_owned(),
@@ -988,7 +1281,7 @@ fn a_host_load_of_the_same_round_keeps_the_live_progress() {
     let earlier = s.save(None);
     s.game_tick(12_000, EditorView::Visible);
     s.edit(vec![set(CUTOFF, 805.0)], None).unwrap();
-    submit(&mut s, report(true, 93.0));
+    submit(&mut s, report(93.0));
     let live = s.game_record().unwrap().clone();
     drain(&mut s);
     s.load(&earlier);
@@ -1001,13 +1294,13 @@ fn a_host_load_of_the_same_round_keeps_the_live_progress() {
             after.submits.as_slice(),
             after.active_ms,
             after.time_to_pass_ms,
-            after.vote
+            after.agreement
         ),
         (
             live.submits.as_slice(),
             live.active_ms,
             live.time_to_pass_ms,
-            live.vote
+            live.agreement
         ),
         "the live record wins"
     );
@@ -1041,8 +1334,8 @@ fn a_host_load_without_a_round_ends_the_live_one() {
     let requests = drain(&mut s);
     let line = &logs(&requests)[0];
     assert_eq!(
-        (line.outcome, line.ended_by),
-        (Outcome::Abandoned, Some(EndedBy::Host))
+        (result(line).outcome, line.ended_by),
+        (Outcome::NotPassed, Some(EndedBy::Host))
     );
     assert!(requests.iter().any(|r| matches!(r, GameRequest::Cancel(_))));
     assert!(
@@ -1057,13 +1350,17 @@ fn a_host_load_of_another_round_replaces_the_live_one() {
     let saved = mid_round().save(None);
     let mut s = Session::new(custom_patch());
     s.game_tick(0, EditorView::Opened);
-    s.game_start(Challenge::new("R1-OTHER")).unwrap();
+    s.game_start(RoundSource::Settings(spec_seed(44))).unwrap();
     let prepare = job(&drain(&mut s), "prepare");
-    s.game_job_done(prepare.id, prepared()).unwrap();
+    s.game_job_done(prepare.id, prepared_for(spec_seed(44)))
+        .unwrap();
     s.load(&saved);
     let requests = drain(&mut s);
-    assert_eq!(logs(&requests)[0].code, "R1-OTHER");
-    assert_eq!(view(&s).code, CODE);
+    assert_eq!(
+        logs(&requests)[0].code,
+        ChallengeCode::short(spec_seed(44)).unwrap().to_string()
+    );
+    assert_eq!(view(&s).code, code());
     assert_eq!(job(&requests, "prepare").kind.name(), "prepare");
 }
 
@@ -1191,9 +1488,12 @@ impl GameEdit for Fake {
     fn round(&self) -> Option<RoundView> {
         self.0.clone()
     }
-    fn game_start(&mut self, challenge: Challenge) -> Result<(), GameError> {
+    fn game_start(&mut self, source: RoundSource) -> Result<(), GameError> {
+        let RoundSource::Settings(spec) = source else {
+            return Err(GameError::NotReady);
+        };
         let mut v = RoundView::default();
-        challenge.code().clone_into(&mut v.code);
+        v.code = ChallengeCode::short(spec).unwrap().to_string();
         self.0 = Some(v);
         Ok(())
     }
@@ -1209,7 +1509,7 @@ impl GameEdit for Fake {
     fn game_reveal(&mut self) -> Result<(), GameError> {
         Err(GameError::NotReady)
     }
-    fn game_vote(&mut self, _: Vote) -> Result<(), GameError> {
+    fn game_vote(&mut self, _: Agreement) -> Result<(), GameError> {
         Err(GameError::NotScored)
     }
     fn game_dispute(&mut self, _: &str) -> Result<(), GameError> {
@@ -1227,8 +1527,8 @@ fn the_editor_drives_a_round_through_a_trait_object() {
     let mut fake = Fake(None);
     for edit in [&mut session as &mut dyn GameEdit, &mut fake] {
         assert_eq!(edit.round(), None);
-        edit.game_start(challenge()).unwrap();
-        assert_eq!(edit.round().unwrap().code, CODE);
+        edit.game_start(source()).unwrap();
+        assert_eq!(edit.round().unwrap().code, code());
         edit.game_end(EndChoice::Restore).unwrap();
         assert_eq!(edit.round(), None);
     }
@@ -1286,7 +1586,7 @@ fn only_patch_replacements_reach_the_engine_one_plan_each() {
     let idle = engine_side(&mut s, &mut engine);
 
     s.game_tick(0, EditorView::Opened);
-    s.game_start(challenge()).unwrap();
+    s.game_start(source()).unwrap();
     let prepare = job(&drain(&mut s), "prepare");
     assert_eq!(
         engine_side(&mut s, &mut engine),
@@ -1311,7 +1611,7 @@ fn only_patch_replacements_reach_the_engine_one_plan_each() {
         .unwrap();
     s.game_submit().unwrap();
     let score = job(&drain(&mut s), "score");
-    s.game_job_done(score.id, JobResult::Scored(report(false, 20.0)))
+    s.game_job_done(score.id, JobResult::Scored(Box::new(report(20.0))))
         .unwrap();
     s.game_hint().unwrap();
     let hint = job(&drain(&mut s), "hint");
@@ -1320,7 +1620,7 @@ fn only_patch_replacements_reach_the_engine_one_plan_each() {
         JobResult::Hint(enth_session::game::CoachHint::new(1, "x")),
     )
     .unwrap();
-    s.game_vote(Vote::Right).unwrap();
+    s.game_vote(Agreement::AboutRight).unwrap();
     s.game_dispute("fine").unwrap();
     s.game_listen(Listen::Off).unwrap();
     s.game_tick(9_999, EditorView::Hidden);

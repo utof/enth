@@ -31,15 +31,22 @@
 //! and the edit log. It is absent while no round is live, so a state without a round keeps its bytes, and it stays
 //! within `enth.plugin-state/1` (optional fields with defaults; docs/session.md, "The saved state").
 //!
-//! # F1r swaps (placeholders for lane CT's types)
+//! # Lane CT's types
 //!
-//! [`Challenge`], [`ScoreReport`] and the code decoder are local stand-ins in [`placeholder`] until lane CT's
-//! `enth_challenge::model::Challenge`, `enth_challenge::score::ScoreReport` and `enth_challenge::code::decode` land.
-//! The session reads them only through [`placeholder::summary`], [`placeholder::knobs`] and [`Challenge::code`], so
-//! the swap touches the two type aliases, those helpers and the tests' constructors.
+//! A round starts from settings or a code ([`RoundSource`]) and keeps the **code text** it started from, so a long
+//! code keeps its maker's engine version (docs/challenge.md). The [`Challenge`] itself comes back from the prepare
+//! job, because the phrase is the generator's pick (`Challenge::recreate(spec, phrase)`). The session checks the
+//! regenerated target itself: [`ChallengeCode::verify`] (a long code's hash prefix refuses, another engine version
+//! warns) and, on a resumed round, the full canonical hash it saved. Scores are CT's [`ScoreReport`]; the round log
+//! carries CT's [`RoundResult`] (`enth.round-result/1`).
 
 use std::sync::Arc;
 
+pub use enth_challenge::{
+    Agreement, AssistsUsed, Challenge, ChallengeCode, CodeError, CodeWarning, Outcome, RandomSpec,
+    RoundResult, ScoreReport, SpecError, StructureScore, Verdict,
+};
+use enth_challenge::{EngineVersion, TargetPrefix};
 use enth_patch::canon::canonical_hash;
 use enth_patch::history::{GestureId, History};
 use enth_patch::{MacroIndex, Op, ParamAddr, Patch, RouteAddr};
@@ -49,12 +56,6 @@ use serde_json::Value;
 use crate::bridge::host_layout_changed;
 use crate::model::{Session, ShellRequest};
 use crate::state::{StateError, decode_patch};
-
-/// The challenge a round plays. **F1r swap:** `enth_challenge::model::Challenge` (lane CT).
-pub type Challenge = placeholder::Challenge;
-
-/// What the scorer returns for one submit. **F1r swap:** `enth_challenge::score::ScoreReport` (lane CT).
-pub type ScoreReport = placeholder::ScoreReport;
 
 /// After the last edit, how long the patch must stay unchanged before the session asks for Mine's loudness (A/B
 /// gains) and, after the first submit, the live rings (report 01 §2.6: about 300 ms).
@@ -85,76 +86,42 @@ pub const DISPUTE_CHARS: usize = 2000;
 pub const ROUND_LOG_SCHEMA: &str = "enth.round-log/1";
 
 // ---------------------------------------------------------------------------------------------------------------
-// Placeholders for lane CT's types
+// Reading lane CT's results
 // ---------------------------------------------------------------------------------------------------------------
 
-/// Minimal stand-ins for lane CT's `Challenge`, `ScoreReport` and code decoder, so the session game API builds and
-/// is tested before F1r. **Every item here is swapped at F1r**; nothing outside this module and the two aliases
-/// above names them.
-pub mod placeholder {
-    use serde::{Deserialize, Serialize};
+/// The integer summary the round saves of a report (the only place the session reads its scores).
+pub fn summary(report: &ScoreReport) -> ScoreSummary {
+    ScoreSummary::from_percent(
+        report.passed,
+        report.sound.percent,
+        report.structure.percent,
+        report.combined.percent,
+    )
+}
 
-    use super::{KnobScore, ScoreSummary};
+/// The rings a structure score gives: one per randomized parameter, in address order. An address this build cannot
+/// parse (a report from a newer catalogue) has no knob to ring and is skipped.
+pub fn knobs(structure: &StructureScore) -> Vec<KnobScore> {
+    structure
+        .params
+        .iter()
+        .filter_map(|p| {
+            p.param_addr().ok().map(|addr| KnobScore {
+                addr,
+                verdict: p.verdict,
+            })
+        })
+        .collect()
+}
 
-    /// Stand-in for `enth_challenge::model::Challenge`. The session needs only its code (persisted, to regenerate
-    /// the target) and hands the whole value to the shell's jobs.
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct Challenge {
-        /// The challenge code (Crockford base32 in CT's code v1).
-        pub code: String,
-    }
-
-    impl Challenge {
-        /// A challenge with this code.
-        pub fn new(code: impl Into<String>) -> Self {
-            Challenge { code: code.into() }
-        }
-
-        /// The code a round saves to regenerate the target.
-        pub fn code(&self) -> &str {
-            &self.code
-        }
-    }
-
-    /// Stand-in for `enth_challenge::code::decode`: rebuilds the challenge from a saved code when a round is
-    /// restored. Refuses an empty code or one longer than 64 characters (CT's long form is about 32).
-    pub fn decode(code: &str) -> Result<Challenge, String> {
-        if code.is_empty() || code.chars().count() > 64 {
-            return Err(format!("not a challenge code: {code:?}"));
-        }
-        Ok(Challenge::new(code))
-    }
-
-    /// Stand-in for `enth_challenge::score::ScoreReport`: the three scores (0–100), pass (sound alone decides it)
-    /// and the per-knob verdicts for the rings. CT's report also carries the descriptor components.
-    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-    pub struct ScoreReport {
-        /// Sound decided a pass.
-        pub passed: bool,
-        /// Sound %, 0–100.
-        pub sound: f32,
-        /// Structure %, 0–100.
-        pub structure: f32,
-        /// Combined %, 0–100.
-        pub combined: f32,
-        /// One verdict per randomized, observable knob.
-        pub knobs: Vec<KnobScore>,
-    }
-
-    /// The integer summary the round saves (the only place the session reads the report's scores).
-    pub fn summary(report: &ScoreReport) -> ScoreSummary {
-        ScoreSummary::from_percent(
-            report.passed,
-            report.sound,
-            report.structure,
-            report.combined,
-        )
-    }
-
-    /// The rings a report gives (the only place the session reads its knobs).
-    pub fn knobs(report: &ScoreReport) -> Vec<KnobScore> {
-        report.knobs.clone()
-    }
+/// Where a round starts from ([`GameEdit::game_start`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RoundSource {
+    /// The settings page: the shell drew the seed (a short code holds 40 bits of it). A preset's spec has its short
+    /// code at once; a custom spec gets its long code when the target exists (it carries the target's hash prefix).
+    Settings(RandomSpec),
+    /// A code the player pasted, or a daily's.
+    Code(ChallengeCode),
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -185,7 +152,9 @@ pub struct GameState {
 pub struct RoundRecord {
     /// Which round this is: a host load of the same round keeps the live progress.
     pub id: RoundId,
-    /// The challenge code. The target is regenerated from it, never persisted (design.md §9).
+    /// The text of the code the round started from (a long code keeps its maker's engine version). The target is
+    /// regenerated from it, never persisted (design.md §9). Empty only while a round started from custom settings
+    /// is still preparing (its long code carries the target's hash prefix, so it exists with the target).
     pub code: String,
     /// Where the round is.
     pub phase: Phase,
@@ -211,10 +180,15 @@ pub struct RoundRecord {
     pub revealed: bool,
     /// The agreement vote, once given.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vote: Option<Vote>,
+    pub agreement: Option<Agreement>,
     /// The player's dispute note, once given.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispute: Option<String>,
+    /// The first submit's full [`ScoreReport`] (the recorded score), as its own versioned JSON text
+    /// (`enth.score-report/1`), for the round's [`RoundResult`]. Text, so the record holds no float and a report
+    /// schema this build cannot read never makes the `enth` field unloadable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_report: Option<String>,
     /// The patch of the last scored submit, as patch-file text, for the round log (omitted when larger than
     /// [`MAX_SUBMITTED_PATCH_BYTES`]).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,9 +201,18 @@ pub struct RoundRecord {
 }
 
 impl RoundRecord {
+    /// The help used, in CT's terms (R1 has no live meter yet).
+    pub fn assists(&self) -> AssistsUsed {
+        AssistsUsed {
+            hints: self.hints,
+            live_meter: false,
+            revealed: self.revealed,
+        }
+    }
+
     /// Hints or a reveal were used.
     pub fn assisted(&self) -> bool {
-        self.hints > 0 || self.revealed
+        self.assists().any()
     }
 
     /// The target was ready at least once: the player has played this round (it gets a log entry when it ends).
@@ -237,17 +220,41 @@ impl RoundRecord {
         self.target_hash.is_some()
     }
 
-    /// How the round stands, for the log.
+    /// How the round stands or ended, in CT's terms: passed, gave up (revealed before a pass) or not passed.
     pub fn outcome(&self) -> Outcome {
         if self.time_to_pass_ms.is_some() {
             Outcome::Passed
         } else if self.revealed {
-            Outcome::Revealed
-        } else if self.phase == Phase::Broken {
-            Outcome::Broken
+            Outcome::GaveUp
         } else {
-            Outcome::Abandoned
+            Outcome::NotPassed
         }
+    }
+
+    /// The round's [`RoundResult`] so far. `None` when its code does not decode (a broken round restored from a
+    /// newer build). The first report is read from its saved text; if that is unreadable too, the result counts no
+    /// submit, so it stays a valid `enth.round-result/1`, and the log line's own summaries keep the scores.
+    pub fn result(&self) -> Option<RoundResult> {
+        let code = ChallengeCode::decode(&self.code).ok()?;
+        let first_submit = self
+            .first_report
+            .as_deref()
+            .and_then(|text| serde_json::from_str::<ScoreReport>(text).ok());
+        let submits = if first_submit.is_some() {
+            self.submits.len() as u32
+        } else {
+            0
+        };
+        Some(RoundResult {
+            code,
+            outcome: self.outcome(),
+            first_submit,
+            submits,
+            time_to_pass_ms: self.time_to_pass_ms,
+            active_ms: self.active_ms,
+            assists: self.assists(),
+            agreement: self.agreement,
+        })
     }
 }
 
@@ -324,8 +331,8 @@ pub struct ScoreSummary {
 
 impl ScoreSummary {
     /// From percentages (0–100; clamped, a NaN counts as 0), rounded to hundredths.
-    pub fn from_percent(passed: bool, sound: f32, structure: f32, combined: f32) -> Self {
-        fn hundredths(pct: f32) -> u16 {
+    pub fn from_percent(passed: bool, sound: f64, structure: f64, combined: f64) -> Self {
+        fn hundredths(pct: f64) -> u16 {
             if pct.is_nan() {
                 return 0;
             }
@@ -372,35 +379,12 @@ pub enum EditSource {
     Other,
 }
 
-/// The three-way agreement vote (report 05: GR1's "mostly agree").
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Vote {
-    /// "Felt too low."
-    TooLow,
-    /// "About right."
-    Right,
-    /// "Felt too high."
-    TooHigh,
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // Feedback types
 // ---------------------------------------------------------------------------------------------------------------
 
-/// A knob's ring after the first submit (Syntorial-style right / near / wrong; the editor's `Overlay` draws it).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Verdict {
-    /// Within its tolerance.
-    Good,
-    /// Close.
-    Near,
-    /// Off.
-    Bad,
-}
-
-/// One knob's verdict.
+/// One knob's ring after the first submit (CT's [`Verdict`]: Good / Near / Bad, Syntorial-style; the editor's
+/// `Overlay` draws it).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KnobScore {
     /// The parameter.
@@ -501,6 +485,9 @@ pub struct JobId(pub u64);
 pub struct Job {
     /// Its id, to hand back with the result.
     pub id: JobId,
+    /// The round it is for: the worker may keep per-round state under it (the target's buffer, the scorers'
+    /// `prepare` output) and drop it when another round starts or `Ab.target_ready` turns false.
+    pub round: RoundId,
     /// What to do.
     pub kind: JobKind,
 }
@@ -509,12 +496,13 @@ pub struct Job {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum JobKind {
-    /// Generate the challenge's start and target patches (lane RG), render the target's loop of the scored phrase
-    /// and keep it for Target ▶ (the shell owns the buffer; the session never sees audio), measure its loudness,
-    /// and calibrate the scorer (lane SS). Answer [`JobResult::Prepared`].
+    /// Regenerate from `spec` (lane RG's generator: the target, the phrase it picked, the randomized addresses),
+    /// build `Challenge::recreate(spec, phrase)`, render the target's loop of the scored phrase and keep it for
+    /// Target ▶ (the shell owns the buffer; the session never sees audio), measure its loudness, and `prepare` the
+    /// scorers (lanes SS, ST). Answer [`JobResult::Prepared`]. The session checks the code against the target.
     Prepare {
-        /// The challenge.
-        challenge: Arc<Challenge>,
+        /// The settings (from the code, for a pasted or a restored round).
+        spec: RandomSpec,
     },
     /// Score `patch` against the target (lanes SS, ST). Answer [`JobResult::Scored`].
     Score {
@@ -574,8 +562,11 @@ impl JobKind {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum JobResult {
-    /// For [`JobKind::Prepare`]: the start and target patches and the target's loudness (LUFS; `None` if silent).
+    /// For [`JobKind::Prepare`]: the challenge, the start and target patches and the target's loudness (LUFS;
+    /// `None` if silent).
     Prepared {
+        /// `Challenge::recreate(spec, phrase)`, with the generator's phrase.
+        challenge: Box<Challenge>,
         /// The patch the player starts from.
         start: Box<Patch>,
         /// The target (kept in memory only; never saved).
@@ -584,9 +575,9 @@ pub enum JobResult {
         target_lufs: Option<f32>,
     },
     /// For [`JobKind::Score`].
-    Scored(ScoreReport),
-    /// For [`JobKind::Rings`].
-    Rings(Vec<KnobScore>),
+    Scored(Box<ScoreReport>),
+    /// For [`JobKind::Rings`]: lane ST's structure score (its `params` carry the verdicts).
+    Rings(Box<StructureScore>),
     /// For [`JobKind::Loudness`]: Mine's loudness (LUFS; `None` if silent).
     Loudness {
         /// The phrase's integrated loudness through the player's patch.
@@ -629,7 +620,7 @@ pub enum GameRequest {
     /// `target_ready` is false.
     Ab(AbState),
     /// Append this line to the local round log (JSONL; lane GK's exporter). File I/O: never on the audio thread.
-    Log(RoundLogEntry),
+    Log(Box<RoundLogEntry>),
     /// The round changed what the `enth` field saves (a start, a scored submit, a hint, a reveal, a vote, a
     /// dispute, an end): mark the host project dirty, coalesced with [`ShellRequest::PatchEdited`].
     Dirty,
@@ -643,22 +634,6 @@ pub enum LogEvent {
     End,
     /// The player pressed Disagree (written at once, so a crash cannot lose it; the round's `end` line follows).
     Dispute,
-}
-
-/// How a round stands or ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Outcome {
-    /// A submit passed.
-    Passed,
-    /// The player revealed the target without passing.
-    Revealed,
-    /// Ended without a pass or a reveal.
-    Abandoned,
-    /// The target could not be regenerated.
-    Broken,
-    /// Still being played (a dispute line).
-    InProgress,
 }
 
 /// What ended a round.
@@ -687,26 +662,17 @@ pub struct RoundLogEntry {
     /// The round (lines of one round share it; a round that a host load restored after its `end` line may log
     /// again: keep the last `end`).
     pub round: RoundId,
-    /// The challenge code (it carries the generator and engine versions).
+    /// The code text (also in `result`, when it decodes).
     pub code: String,
-    /// How the round stands or ended.
-    pub outcome: Outcome,
     /// What ended it (`None` on a dispute line).
     pub ended_by: Option<EndedBy>,
-    /// Active time in the round.
-    pub active_ms: u64,
-    /// The first passing submit's active time.
-    pub time_to_pass_ms: Option<u64>,
-    /// Every scored submit; the first is the recorded score.
+    /// The round could not continue ([`Phase::Broken`]).
+    pub broken: bool,
+    /// Lane CT's `enth.round-result/1`: outcome, the first submit's report (the recorded score), the submit count,
+    /// the time to pass, active time, assists and the agreement vote. `None` only when the code does not decode.
+    pub result: Option<RoundResult>,
+    /// Every scored submit as integers (the result holds only the first report and a count).
     pub submits: Vec<SubmitRecord>,
-    /// Hint levels used.
-    pub hints: u8,
-    /// The target was revealed.
-    pub revealed: bool,
-    /// Hints or a reveal were used.
-    pub assisted: bool,
-    /// The agreement vote.
-    pub vote: Option<Vote>,
     /// The dispute note.
     pub dispute: Option<String>,
     /// Edits made (log entries plus those over the log's budget).
@@ -797,7 +763,12 @@ pub struct RoundView {
     /// The target was revealed.
     pub revealed: bool,
     /// The agreement vote.
-    pub vote: Option<Vote>,
+    pub agreement: Option<Agreement>,
+    /// The difficulty, 0–100 (the challenge bar's dots).
+    pub difficulty: Option<u8>,
+    /// What the code check reported without stopping the round (`engine_differs`: the code was made with another
+    /// engine, so the target may sound slightly different from its maker's).
+    pub warnings: Vec<CodeWarning>,
     /// The last thing that went wrong in the round.
     pub error: Option<GameError>,
 }
@@ -807,9 +778,9 @@ pub struct RoundView {
 pub trait GameEdit {
     /// The round, if one is live.
     fn round(&self) -> Option<RoundView>;
-    /// Start a round on `challenge` (a round already live ends first, logged; its stash carries over). Asks for a
-    /// [`JobKind::Prepare`]; the patch changes only when it is done.
-    fn game_start(&mut self, challenge: Challenge) -> Result<(), GameError>;
+    /// Start a round from settings or a code (a round already live ends first, logged; its stash carries over).
+    /// Refused settings change nothing. Asks for a [`JobKind::Prepare`]; the patch changes only when it is done.
+    fn game_start(&mut self, source: RoundSource) -> Result<(), GameError>;
     /// Set the A/B switch. `Target` needs the target ready; `Target` and `Mine` need a live round.
     fn game_listen(&mut self, listen: Listen) -> Result<(), GameError>;
     /// Submit the current patch for scoring. Returns the submit's number (1 = first).
@@ -819,7 +790,7 @@ pub trait GameEdit {
     /// Give up: load the target (marks the round assisted; no more submits).
     fn game_reveal(&mut self) -> Result<(), GameError>;
     /// The agreement vote (after a scored submit); a later vote replaces it.
-    fn game_vote(&mut self, vote: Vote) -> Result<(), GameError>;
+    fn game_vote(&mut self, agreement: Agreement) -> Result<(), GameError>;
     /// The Disagree button (after a scored submit): keeps the note and logs a dispute line at once.
     fn game_dispute(&mut self, note: &str) -> Result<(), GameError>;
     /// End the round (logged if it was played).
@@ -873,11 +844,11 @@ pub enum GameError {
         /// The regenerated target's hash.
         found: String,
     },
-    /// A restored round's code does not decode.
-    BadCode {
-        /// Why.
-        message: String,
-    },
+    /// The code is refused: it does not decode (`code_too_new`, `bad_check`, …), or the regenerated target has
+    /// another hash prefix than a long code's (`target_mismatch`). The inner code passes through.
+    Code(CodeError),
+    /// The settings are refused (`out_of_range`, `no_generator`, `code_too_new`).
+    Spec(SpecError),
 }
 
 impl GameError {
@@ -896,7 +867,8 @@ impl GameError {
             GameError::WrongResult { .. } => "wrong_result",
             GameError::JobFailed { .. } => "job_failed",
             GameError::TargetDrift { .. } => "target_drift",
-            GameError::BadCode { .. } => "bad_code",
+            GameError::Code(e) => e.code(),
+            GameError::Spec(e) => e.code(),
         }
     }
 
@@ -907,9 +879,11 @@ impl GameError {
             GameError::NotReady => "the target is still being prepared: try again in a moment".to_owned(),
             GameError::Busy { what } => format!("the {what} is still being computed"),
             GameError::Revealed => "the target was revealed: start a new round".to_owned(),
-            GameError::Broken | GameError::BadCode { .. } => {
+            GameError::Broken => {
                 "this round cannot continue: end it (your own patch comes back)".to_owned()
             }
+            GameError::Code(e) => e.hint(),
+            GameError::Spec(e) => e.hint(),
             GameError::NotScored => "submit first: the vote is about your score".to_owned(),
             GameError::NoMoreHints => "every hint is used: reveal the target, or keep going".to_owned(),
             GameError::TooManySubmits => "this round has as many submits as it records".to_owned(),
@@ -944,7 +918,8 @@ impl std::fmt::Display for GameError {
                 f,
                 "the regenerated target hashes to {found}, not {expected}"
             ),
-            GameError::BadCode { message } => write!(f, "bad challenge code: {message}"),
+            GameError::Code(e) => write!(f, "challenge code refused: {e}"),
+            GameError::Spec(e) => write!(f, "settings refused: {e}"),
         }
     }
 }
@@ -1002,7 +977,12 @@ impl MergeKey {
 /// [`RoundRecord`] (in `InstanceState::game`).
 #[derive(Default)]
 pub(crate) struct GameLive {
+    /// The round's settings (from its code, or the settings page).
+    spec: Option<RandomSpec>,
+    /// The challenge the prepare job built (with the generator's phrase).
     challenge: Option<Arc<Challenge>>,
+    /// What the code check reported without stopping the round.
+    warnings: Vec<CodeWarning>,
     target: Option<Arc<Patch>>,
     target_lufs: Option<f32>,
     mine_lufs: Option<f32>,
@@ -1065,10 +1045,11 @@ impl GameLive {
         *self = keep;
     }
 
-    fn job(&mut self, kind: JobKind) -> JobId {
+    fn job(&mut self, round: RoundId, kind: JobKind) -> JobId {
         self.jobs.next += 1;
         let id = JobId(self.jobs.next);
-        self.requests.push(GameRequest::Run(Job { id, kind }));
+        self.requests
+            .push(GameRequest::Run(Job { id, round, kind }));
         id
     }
 
@@ -1188,21 +1169,28 @@ impl Session {
             return;
         }
         let scored = !record.submits.is_empty();
+        let round = record.id;
         self.game.settle_at = None;
         let revision = self.game.revision;
         if self.game.jobs.loudness.is_none() {
-            let id = self.game.job(JobKind::Loudness {
-                challenge: Arc::clone(&challenge),
-                patch: Box::new(self.patch.clone()),
-            });
+            let id = self.game.job(
+                round,
+                JobKind::Loudness {
+                    challenge: Arc::clone(&challenge),
+                    patch: Box::new(self.patch.clone()),
+                },
+            );
             self.game.jobs.loudness = Some((id, revision));
         }
         if scored && self.game.jobs.rings.is_none() {
-            let id = self.game.job(JobKind::Rings {
-                challenge,
-                target,
-                patch: Box::new(self.patch.clone()),
-            });
+            let id = self.game.job(
+                round,
+                JobKind::Rings {
+                    challenge,
+                    target,
+                    patch: Box::new(self.patch.clone()),
+                },
+            );
             self.game.jobs.rings = Some((id, revision));
         }
     }
@@ -1235,21 +1223,22 @@ impl Session {
             (
                 "prepare",
                 JobResult::Prepared {
+                    challenge,
                     start,
                     target,
                     target_lufs,
                 },
             ) => {
-                self.game_prepared(start, target, target_lufs);
+                self.game_prepared(*challenge, start, target, target_lufs);
                 Ok(())
             }
             ("score", JobResult::Scored(report)) => {
-                self.game_scored(report);
+                self.game_scored(*report);
                 Ok(())
             }
-            ("rings", JobResult::Rings(knobs)) => {
+            ("rings", JobResult::Rings(structure)) => {
                 let measured = self.game.jobs.rings.take().map_or(0, |r| r.1);
-                self.game.knobs = knobs;
+                self.game.knobs = knobs(&structure);
                 self.game_resettle(measured);
                 Ok(())
             }
@@ -1303,27 +1292,66 @@ impl Session {
         self.game.error = Some(err);
     }
 
-    fn game_prepared(&mut self, start: Box<Patch>, target: Box<Patch>, target_lufs: Option<f32>) {
-        let hash = canonical_hash(&target).to_hex();
-        let Some(record) = self.record_mut() else {
-            return;
-        };
-        if let Some(expected) = &record.target_hash
-            && *expected != hash
-        {
-            let expected = expected.clone();
-            record.phase = Phase::Broken;
-            self.game.listen = Listen::Off;
-            self.game.error = Some(GameError::TargetDrift {
-                expected,
-                found: hash,
-            });
+    /// The prepare job is done: check the challenge and the target against the round's settings, code and saved
+    /// hash, then start play (a fresh round) or resume it (a restored one). Any mismatch breaks the round.
+    fn game_prepared(
+        &mut self,
+        challenge: Challenge,
+        start: Box<Patch>,
+        target: Box<Patch>,
+        target_lufs: Option<f32>,
+    ) {
+        let hash = canonical_hash(&target);
+        let hex = hash.to_hex();
+        if challenge.spec() != self.game.spec.as_ref() {
+            self.game_job_failed(
+                "prepare",
+                "the prepared challenge is for other settings".to_owned(),
+            );
             return;
         }
-        record.target_hash = Some(hash);
+        let Some(record) = self.instance.game.as_mut().and_then(|g| g.round.as_mut()) else {
+            return;
+        };
+        let checked = if let Some(expected) = &record.target_hash
+            && *expected != hex
+        {
+            Err(GameError::TargetDrift {
+                expected: expected.clone(),
+                found: hex.clone(),
+            })
+        } else if record.code.is_empty() {
+            // Custom settings: the long code carries the target's hash prefix, so it exists only now.
+            match challenge.code(TargetPrefix::of(&hash)) {
+                Some(code) => {
+                    record.code = code.to_string();
+                    Ok(Vec::new())
+                }
+                None => Err(GameError::JobFailed {
+                    job: "prepare",
+                    message: "this challenge has no code".to_owned(),
+                }),
+            }
+        } else {
+            ChallengeCode::decode(&record.code)
+                .and_then(|code| code.verify(&hash, EngineVersion::CURRENT))
+                .map_err(GameError::Code)
+        };
+        let warnings = match checked {
+            Ok(warnings) => warnings,
+            Err(e) => {
+                record.phase = Phase::Broken;
+                self.game.listen = Listen::Off;
+                self.game.error = Some(e);
+                return;
+            }
+        };
+        record.target_hash = Some(hex);
         let fresh = record.phase == Phase::Preparing;
+        self.game.challenge = Some(Arc::new(challenge));
         self.game.target = Some(Arc::from(target));
         self.game.target_lufs = target_lufs;
+        self.game.warnings = warnings;
         self.game.error = None;
         if fresh {
             self.game_begin(*start);
@@ -1362,11 +1390,14 @@ impl Session {
         let Some(pending) = self.game.jobs.score.take() else {
             return;
         };
-        let score = placeholder::summary(&report);
-        let knobs = placeholder::knobs(&report);
+        let score = summary(&report);
+        let knobs = knobs(&report.structure);
         let Some(record) = self.record_mut() else {
             return;
         };
+        if record.submits.is_empty() {
+            record.first_report = serde_json::to_string(&report).ok();
+        }
         record.submits.push(SubmitRecord {
             at_ms: pending.at_ms,
             score,
@@ -1425,7 +1456,7 @@ impl Session {
         let record = self.instance.game.take()?.round?;
         if record.played() {
             let entry = self.log_entry(&record, LogEvent::End, Some(why));
-            self.game.requests.push(GameRequest::Log(entry));
+            self.game.requests.push(GameRequest::Log(Box::new(entry)));
         }
         self.game.cancel_all();
         let history = self.game.stash_history.take();
@@ -1449,19 +1480,10 @@ impl Session {
             event,
             round: record.id,
             code: record.code.clone(),
-            outcome: if event == LogEvent::Dispute {
-                Outcome::InProgress
-            } else {
-                record.outcome()
-            },
             ended_by,
-            active_ms: record.active_ms,
-            time_to_pass_ms: record.time_to_pass_ms,
+            broken: record.phase == Phase::Broken,
+            result: record.result(),
             submits: record.submits.clone(),
-            hints: record.hints,
-            revealed: record.revealed,
-            assisted: record.assisted(),
-            vote: record.vote,
             dispute: record.dispute.clone(),
             edits: (record.edits.len() as u32).saturating_add(record.edits_dropped),
             patch: record.submitted_patch.clone(),
@@ -1590,17 +1612,26 @@ impl Session {
         if record.phase == Phase::Unknown {
             record.phase = Phase::Broken;
         }
-        match placeholder::decode(&record.code) {
-            Ok(challenge) if record.phase != Phase::Broken => {
-                let challenge = Arc::new(challenge);
-                self.game.challenge = Some(Arc::clone(&challenge));
-                let id = self.game.job(JobKind::Prepare { challenge });
-                self.game.jobs.prepare = Some(id);
+        if record.code.is_empty() {
+            // Saved while a custom-settings round prepared, before its code existed. Nothing was played: without a
+            // stash there is nothing to keep, and with one (a new round after a played one) only ending it is left.
+            if record.stash.is_none() {
+                return;
             }
-            Ok(_) => {}
-            Err(message) => {
-                record.phase = Phase::Broken;
-                self.game.error = Some(GameError::BadCode { message });
+            record.phase = Phase::Broken;
+        }
+        if record.phase != Phase::Broken {
+            match ChallengeCode::decode(&record.code) {
+                Ok(code) => {
+                    let spec = *code.spec();
+                    self.game.spec = Some(spec);
+                    let id = self.game.job(record.id, JobKind::Prepare { spec });
+                    self.game.jobs.prepare = Some(id);
+                }
+                Err(e) => {
+                    record.phase = Phase::Broken;
+                    self.game.error = Some(GameError::Code(e));
+                }
             }
         }
         self.instance.game = Some(GameState {
@@ -1632,24 +1663,35 @@ impl GameEdit for Session {
             hint: self.game.hint.clone(),
             assisted: record.assisted(),
             revealed: record.revealed,
-            vote: record.vote,
+            agreement: record.agreement,
+            difficulty: self.game.spec.map(|s| s.difficulty),
+            warnings: self.game.warnings.clone(),
             error: self.game.error.clone(),
         })
     }
 
-    fn game_start(&mut self, challenge: Challenge) -> Result<(), GameError> {
+    fn game_start(&mut self, source: RoundSource) -> Result<(), GameError> {
+        // Refused settings change nothing: check them before the live round ends.
+        let (spec, code) = match source {
+            RoundSource::Settings(spec) => {
+                spec.validate().map_err(GameError::Spec)?;
+                let short = ChallengeCode::short(spec).map(|c| c.to_string());
+                (spec, short.unwrap_or_default())
+            }
+            RoundSource::Code(code) => (*code.spec(), code.to_string()),
+        };
         let (stash, history) = match self.game_close(EndedBy::NewRound) {
             Some((record, history)) => (record.stash, history),
             None => (None, None),
         };
         self.game.serial = self.game.serial.saturating_add(1);
-        let challenge = Arc::new(challenge);
+        let id = RoundId {
+            serial: self.game.serial,
+            nonce: self.game.now,
+        };
         let record = RoundRecord {
-            id: RoundId {
-                serial: self.game.serial,
-                nonce: self.game.now,
-            },
-            code: challenge.code().to_owned(),
+            id,
+            code,
             stash,
             ..RoundRecord::default()
         };
@@ -1658,9 +1700,9 @@ impl GameEdit for Session {
         });
         self.unloaded_instance = None; // the user's own state now (a newer build's `enth` text is replaced)
         self.game.stash_history = history;
-        self.game.challenge = Some(Arc::clone(&challenge));
-        let id = self.game.job(JobKind::Prepare { challenge });
-        self.game.jobs.prepare = Some(id);
+        self.game.spec = Some(spec);
+        let job = self.game.job(id, JobKind::Prepare { spec });
+        self.game.jobs.prepare = Some(job);
         self.game.dirty();
         Ok(())
     }
@@ -1691,14 +1733,18 @@ impl GameEdit for Session {
         }
         let submit = record.submits.len() as u32 + 1;
         let at_ms = record.active_ms;
+        let round = record.id;
         let patch = Box::new(self.patch.clone());
         let text = patch.to_json();
-        let id = self.game.job(JobKind::Score {
-            challenge,
-            target,
-            patch,
-            submit,
-        });
+        let id = self.game.job(
+            round,
+            JobKind::Score {
+                challenge,
+                target,
+                patch,
+                submit,
+            },
+        );
         self.game.jobs.score = Some(PendingScore {
             id,
             at_ms,
@@ -1712,17 +1758,26 @@ impl GameEdit for Session {
         if self.game.jobs.hint.is_some() {
             return Err(GameError::Busy { what: "hint" });
         }
-        if record.hints >= HINT_LEVELS {
+        // The challenge's hint budget (`None`: no limit beyond the levels; 0: no hints).
+        let budget = challenge
+            .assists
+            .hint_budget
+            .map_or(HINT_LEVELS, |b| b.min(HINT_LEVELS));
+        if record.hints >= budget {
             return Err(GameError::NoMoreHints);
         }
         let level = record.hints + 1;
+        let round = record.id;
         let patch = Box::new(self.patch.clone());
-        let id = self.game.job(JobKind::Hint {
-            challenge,
-            target,
-            patch,
-            level,
-        });
+        let id = self.game.job(
+            round,
+            JobKind::Hint {
+                challenge,
+                target,
+                patch,
+                level,
+            },
+        );
         self.game.jobs.hint = Some(id);
         if let Some(record) = self.record_mut() {
             record.hints = level;
@@ -1751,12 +1806,12 @@ impl GameEdit for Session {
         Ok(())
     }
 
-    fn game_vote(&mut self, vote: Vote) -> Result<(), GameError> {
+    fn game_vote(&mut self, agreement: Agreement) -> Result<(), GameError> {
         let record = self.record_mut().ok_or(GameError::NoRound)?;
         if record.submits.is_empty() {
             return Err(GameError::NotScored);
         }
-        record.vote = Some(vote);
+        record.agreement = Some(agreement);
         self.game.dirty();
         Ok(())
     }
@@ -1769,7 +1824,7 @@ impl GameEdit for Session {
         record.dispute = Some(note.chars().take(DISPUTE_CHARS).collect());
         let record = record.clone();
         let entry = self.log_entry(&record, LogEvent::Dispute, None);
-        self.game.requests.push(GameRequest::Log(entry));
+        self.game.requests.push(GameRequest::Log(Box::new(entry)));
         self.game.dirty();
         Ok(())
     }
@@ -1820,7 +1875,7 @@ mod tests {
 
     #[test]
     fn scores_are_saved_as_clamped_hundredths() {
-        let s = ScoreSummary::from_percent(true, 87.456, -3.0, f32::NAN);
+        let s = ScoreSummary::from_percent(true, 87.456, -3.0, f64::NAN);
         assert_eq!(
             (s.passed, s.sound, s.structure, s.combined),
             (true, 8746, 0, 0)
