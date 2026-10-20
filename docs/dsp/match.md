@@ -107,7 +107,7 @@ By level (drawn set, heuristic, `stop_at` 0.005): level 1 median before 1.5085, 
 
 The heuristic is worth about 5 more solved targets of 10 on the drawn set and 2 more on the 11-axis set, and 40x fewer renders when it works. The observable set (the agent does not know which parameters were drawn) is the harder case and the one the GR1 CMA-ES floor should use alongside the drawn one: with 11 axes five of the ten targets end between 0.005 and 0.1 when the 1,500 renders are used up. A larger budget would close part of that; it was not measured.
 
-**Cost.** A render at the scoring spec with the generated phrase takes roughly 15-30 ms of one worker (6-12 s for 1,500 renders on 4 workers, with other agents running on the machine); the search itself (CMA-ES on at most 11 axes, the heuristic) is negligible next to it. Results are bit-identical for 1, 2, 3 and 8 workers (`tests/match.rs`).
+**Cost.** A render at the scoring spec with the generated phrase takes roughly 15-30 ms of one worker (6-12 s for 1,500 renders on 4 workers, with other agents running on the machine); the search itself (CMA-ES on at most 11 axes, the heuristic) is negligible next to it. Results are bit-identical for 1, 2, 3 and 8 workers (`tests/match.rs`), and `match_floor` prints the same table (distances, renders, runs) for 1 and 8 workers over the ten targets.
 
 **Golden challenges.** The golden challenge set (`tests/golden/challenges/`, lane GC) did not exist on this branch's base (GC had not started), so the solve rate above is on the randomizer's fixed-seed targets, the closest stand-in. Run the floor against the golden codes once they exist: the example takes its targets from `random::target`, and a `--code` flag is a few lines once CT's code type is wired.
 
