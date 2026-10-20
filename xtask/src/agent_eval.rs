@@ -7,8 +7,10 @@
 //! needs the owner's approval of the spend, and `--dry-run` replaces the model with a scripted fake agent.
 //!
 //! Layout: `goal` (the set on disk), `wrap` (the wrapper), `stream` (Claude Code transcripts), `fake` (the dry-run
-//! agents), `run` (trials), `report` (summaries), `blind` (the owner's blind check), `util`.
+//! agents), `run` (trials), `report` (summaries), `blind` (the owner's blind check), `audit` (the set's honesty
+//! checks), `util`.
 
+mod audit;
 mod blind;
 mod fake;
 mod goal;
@@ -37,7 +39,10 @@ const USAGE: &str = "usage: cargo xtask agent-eval [run] [options]
   agent-eval report <dir>   rebuild summary.json and the tables from a run directory
   agent-eval listen <dir> [--player CMD] [--dry-run]
                             the owner's blind check (plays audio only when started by the owner; --dry-run plays nothing)
-  agent-eval goals          list the goals and check their witnesses exist";
+  agent-eval goals          list the goals and check their witnesses exist
+  agent-eval audit [--goals id,...] [--cross] [--enth PATH]
+                            honesty checks, no model: each witness passes both lists with no thin item, and the
+                            untouched starting template fails the designer list (--cross: lists on other witnesses)";
 
 /// The eval set under the workspace root.
 pub fn load_set(root: &Path) -> Result<goal::EvalSet, String> {
@@ -61,6 +66,7 @@ pub fn agent_eval(args: &[String]) -> Result<(), String> {
         }
         Some("listen") => listen(&args[1..]),
         Some("goals") => goals(),
+        Some("audit") => audit::audit(&args[1..]),
         Some("--help" | "-h" | "help") => {
             println!("{USAGE}");
             Ok(())

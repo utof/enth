@@ -703,7 +703,7 @@ fn command_version(bin: &str) -> Option<String> {
         .flatten()
 }
 
-fn ensure_enth(root: &Path, target: &Path, opts: &Opts) -> Result<PathBuf, String> {
+pub(super) fn ensure_enth(root: &Path, target: &Path, opts: &Opts) -> Result<PathBuf, String> {
     if let Some(p) = &opts.enth {
         return if p.is_file() {
             p.canonicalize()
