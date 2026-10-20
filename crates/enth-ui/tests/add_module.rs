@@ -444,7 +444,7 @@ fn an_add_on_an_active_session_is_one_plan_through_the_structural_path() {
         epoch + 2,
         "undo is one plan too"
     );
-    assert!(h.state().session.patch().voice_fx.is_empty());
+    assert_eq!(h.state().session.patch().voice_fx, []);
 }
 
 #[test]

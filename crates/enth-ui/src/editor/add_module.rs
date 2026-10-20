@@ -496,7 +496,7 @@ pub fn note(before: &Patch, intent: &Intent) -> Option<String> {
                 [] => {}
                 [one] => parts.push(format!("automation slot {one}")),
                 [rest @ .., last] => {
-                    parts.push(format!("automation slots {} and {last}", rest.join(", ")))
+                    parts.push(format!("automation slots {} and {last}", rest.join(", ")));
                 }
             }
             Some(match parts.as_slice() {
