@@ -5,7 +5,8 @@
 //! to the session's `GameEdit` (`Editor::apply_game`). The game worker is played by the test between frames, running
 //! the same `enth-challenge` functions (`prepare_round`, `score_round`, `score_structure`) with the stub scorers.
 //!
-//! Start → Target ▶ → Mine ▶ → Submit → the blind rating (the score held back until it is given) → Reveal → End.
+//! Start → Target ▶ → Mine ▶ → Submit → the blind rating (the score held back until it is given) → Hint → Reveal →
+//! End.
 
 mod common;
 
@@ -174,6 +175,14 @@ fn a_round_from_start_to_end_through_the_bar() {
             .is_some_and(|r| r.contains("Sound")),
         "the status line's readout shows the score"
     );
+
+    // A hint (the coach runs on the shell's worker; this test's worker has none, so the job fails harmlessly): the
+    // round counts it and is assisted.
+    menu(&mut h, "Round", "Hint");
+    h.run_steps(3);
+    let round = h.state().session.round().unwrap();
+    assert_eq!(round.hints, 1);
+    assert!(round.assisted);
 
     menu(&mut h, "Round", "Reveal");
     h.run_steps(2);

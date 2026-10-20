@@ -6,8 +6,8 @@
 //! # Lane SKR's skeleton
 //!
 //! A round played end to end through the header's Recreate hook, with the least UI that does it: **Start** (level 1),
-//! then **Target ▶**, **Mine ▶** and a **Round** menu (**Submit**, **Reveal**, **End**, which restores the player's
-//! own patch), and a one-line readout on the status line (code, phase, sound and structure %, the time). The first
+//! then **Target ▶**, **Mine ▶** and a **Round** menu (**Submit**, **Hint**, **Reveal**, **End**, which restores
+//! the player's own patch), and a one-line readout on the status line (code, phase, sound and structure %, the time). The first
 //! Submit asks the **blind rating** (a **Rate yours** menu: "Rate 1" … "Rate 5", or "Skip") before the score shows, and the
 //! score is held back until it is given (docs/session.md, "What lane SKR must wire" 7): [`Recreate::hold_scores`] keeps a `Scored` result from the session until the player answers, so the
 //! session records the rating before the score (it refuses a rating after the first score).
@@ -51,6 +51,8 @@ pub enum GameIntent {
     Submit,
     /// The blind rating, 1–5, or `None` to skip it.
     Rate(Option<u8>),
+    /// The next hint level (lane SN's coach; marks the round assisted).
+    Hint,
     /// Give up and load the target.
     Reveal,
     /// End the round.
@@ -77,6 +79,7 @@ pub fn apply_game(
             GameIntent::Submit => game.game_submit().map(drop),
             GameIntent::Rate(Some(rating)) => game.game_rate(rating),
             GameIntent::Rate(None) => Ok(()),
+            GameIntent::Hint => game.game_hint().map(drop),
             GameIntent::Reveal => game.game_reveal(),
             GameIntent::End(choice) => game.game_end(choice),
         };
@@ -164,9 +167,16 @@ impl BarView {
                 Phase::Revealed => "Revealed",
                 Phase::Preparing | Phase::Broken | Phase::Unknown => "Preparing",
             };
-            match &scores {
+            let line = match &scores {
                 Some(s) => format!("{lead} {} {s} {} {time}", glyph::BULLET, glyph::BULLET),
                 None => format!("{lead} {} {time}", glyph::BULLET),
+            };
+            if r.pending.hinting {
+                format!("{line} {} Thinking of a hint…", glyph::BULLET)
+            } else if let Some(h) = &r.hint {
+                format!("{line} {} Hint {}: {}", glyph::BULLET, h.level, h.text)
+            } else {
+                line
             }
         };
         let open = matches!(r.phase, Phase::Playing | Phase::Submitted | Phase::Passed);
@@ -238,7 +248,7 @@ impl Recreate {
             GameIntent::Rate(_) | GameIntent::Start { .. } | GameIntent::End(_) => {
                 self.asking = false;
             }
-            GameIntent::Listen(_) | GameIntent::Reveal => {}
+            GameIntent::Listen(_) | GameIntent::Hint | GameIntent::Reveal => {}
         }
         self.queued.push(intent);
     }
@@ -295,7 +305,7 @@ impl Recreate {
 /// The header's Recreate hook point (feature `recreate`): called by the header with its right-hand row (laid out right
 /// to left, after the Add button) and inner rectangle, so the bar sits in the header row without editing the rest of
 /// `regions/header.rs`. Lane SKR's skeleton: **Start** alone while no round is live; then **Target ▶**, **Mine ▶**
-/// and a **Round** menu (Submit, Reveal, End), which becomes a **Rate yours** menu ("Rate 1" … "Rate 5", "Skip") while the
+/// and a **Round** menu (Submit, Hint, Reveal, End), which becomes a **Rate yours** menu ("Rate 1" … "Rate 5", "Skip") while the
 /// blind rating is asked. Short, so it fits between the Presets group and the Add button at the minimum window; the
 /// readout goes to the status line ([`Recreate::readout`]). Nothing at all until the shell plays rounds.
 pub(crate) fn header(
@@ -357,6 +367,14 @@ pub(crate) fn header(
             }
             let revealable =
                 matches!(bar.phase, Phase::Playing | Phase::Submitted | Phase::Passed) && bar.ready;
+            if ui
+                .add_enabled(revealable, Button::new("Hint"))
+                .on_hover_text("The next hint (the round counts as assisted)")
+                .clicked()
+            {
+                game(out, GameIntent::Hint);
+                ui.close();
+            }
             if ui
                 .add_enabled(revealable, Button::new("Reveal"))
                 .on_hover_text("Give up: load the target (the round counts as assisted)")

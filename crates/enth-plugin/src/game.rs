@@ -54,8 +54,11 @@ use enth_engine::{Event, EventKind, NoteKey};
 use enth_patch::Patch;
 use enth_render::{RenderOutput, RenderSpec, render};
 use enth_session::game::{
-    AbState, GameRequest, Job, JobId, JobKind, JobResult, Listen, Prepared, RoundId, RoundLogEntry,
+    AbState, CoachHint, GameRequest, Job, JobId, JobKind, JobResult, Listen, Prepared, RoundId,
+    RoundLogEntry,
 };
+use enth_solver::Serial;
+use enth_solver::coach::{CoachCfg, CoachPlan, CoachTarget};
 use parking_lot::{Condvar, Mutex};
 
 use crate::presets::{Environment, Os, SystemEnv, documents_dir};
@@ -363,12 +366,24 @@ impl AbShared {
 #[derive(Default)]
 pub struct Runner {
     round: Option<(RoundId, Arc<PreparedRound>)>,
+    /// Lane SN's coach for the round: its target measured once (`CoachTarget::for_round`), and the last patch's plan,
+    /// so levels 2–4 of an unchanged patch cost nothing.
+    coach: Option<Coach>,
+}
+
+/// The coach's state for one round.
+struct Coach {
+    round: RoundId,
+    target: CoachTarget,
+    /// The last patch planned, and its four hints.
+    plan: Option<(Patch, CoachPlan)>,
 }
 
 impl std::fmt::Debug for Runner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Runner")
             .field("round", &self.round.as_ref().map(|r| r.0))
+            .field("coach", &self.coach.as_ref().map(|c| c.round))
             .finish()
     }
 }
@@ -424,14 +439,12 @@ impl Runner {
                 };
                 (result, None)
             }
-            // Lane SN's coach (`enth_solver::coach`) is not built yet; the session records the failure and the
-            // round goes on. Swap in the coach call here when SN lands.
-            JobKind::Hint { .. } => (
-                JobResult::Failed {
-                    message: "hints arrive with lane SN's coach".to_owned(),
-                },
-                None,
-            ),
+            JobKind::Hint {
+                challenge,
+                patch,
+                level,
+                ..
+            } => (self.hint(job.round, &challenge, &patch, level), None),
             _ => (
                 JobResult::Failed {
                     message: "this build's game worker does not know the job".to_owned(),
@@ -499,6 +512,53 @@ impl Runner {
     /// Forget the round (its target went).
     pub fn clear(&mut self) {
         self.round = None;
+        self.coach = None;
+    }
+
+    /// Lane SN's coach at `level` for `patch` (docs/dsp/hints.md): the target measured once per round, one plan per
+    /// patch, then that plan's hint at the level. Only the hint's text reaches the session (`CoachHint`); the plan's
+    /// verified fix holds exact values and is never shown. The evaluator is `enth_solver::Serial`: a parallel one
+    /// needs `enth-analysis`'s `Descriptors` in the plugin's dependencies (a coordinator edit); the job runs on the
+    /// worker either way, so the editor never waits for it.
+    fn hint(
+        &mut self,
+        id: RoundId,
+        challenge: &enth_challenge::Challenge,
+        patch: &Patch,
+        level: u8,
+    ) -> JobResult {
+        let round = match self.prepared(id, challenge) {
+            Ok(round) => round,
+            Err(e) => return e,
+        };
+        let cfg = CoachCfg::default();
+        let mut eval = Serial::default();
+        if self.coach.as_ref().is_none_or(|c| c.round != id) {
+            match CoachTarget::for_round(&round, &mut eval, &cfg) {
+                Ok(target) => {
+                    self.coach = Some(Coach {
+                        round: id,
+                        target,
+                        plan: None,
+                    });
+                }
+                Err(e) => return failed("measuring the target for hints", e),
+            }
+        }
+        let Some(coach) = self.coach.as_mut() else {
+            return failed("hints", "no coach");
+        };
+        if coach.plan.as_ref().is_none_or(|(p, _)| p != patch) {
+            match coach.target.plan(patch, &mut eval, &cfg) {
+                Ok(plan) => coach.plan = Some((patch.clone(), plan)),
+                Err(e) => return failed("the hint", e),
+            }
+        }
+        let Some((_, plan)) = coach.plan.as_ref() else {
+            return failed("hints", "no plan");
+        };
+        let h = plan.hint(level);
+        JobResult::Hint(CoachHint::new(h.level, h.text.clone()))
     }
 }
 
@@ -1650,6 +1710,69 @@ mod tests {
             48_000,
         );
         assert!(matches!(scored, JobResult::Scored(_)), "{scored:?}");
+    }
+
+    #[test]
+    fn hints_come_from_the_coach_one_plan_per_patch() {
+        let mut runner = Runner::default();
+        let id = round_id(3);
+        let (result, _) = runner.run(
+            Job {
+                id: JobId(1),
+                round: id,
+                kind: JobKind::Prepare { spec: level1(9) },
+            },
+            48_000,
+        );
+        let JobResult::Prepared(prepared) = result else {
+            panic!("{result:?}")
+        };
+        let challenge = Arc::new(prepared.challenge.clone());
+        let hint = |runner: &mut Runner, level| {
+            runner
+                .run(
+                    Job {
+                        id: JobId(2),
+                        round: id,
+                        kind: JobKind::Hint {
+                            challenge: Arc::clone(&challenge),
+                            target: Arc::new(prepared.target.clone()),
+                            patch: Box::new(prepared.start.clone()),
+                            level,
+                        },
+                    },
+                    48_000,
+                )
+                .0
+        };
+        let JobResult::Hint(first) = hint(&mut runner, 1) else {
+            panic!("no hint")
+        };
+        assert_eq!(first.level, 1);
+        assert_ne!(first.text, "");
+        assert!(
+            !first.text.chars().any(|c| c.is_ascii_digit()),
+            "level 1 carries no number: {}",
+            first.text
+        );
+        let planned = runner
+            .coach
+            .as_ref()
+            .and_then(|c| c.plan.as_ref())
+            .map(|p| p.1.clone());
+        let JobResult::Hint(fourth) = hint(&mut runner, 4) else {
+            panic!("no hint")
+        };
+        assert_eq!(fourth.level, 4);
+        assert_eq!(
+            runner
+                .coach
+                .as_ref()
+                .and_then(|c| c.plan.as_ref())
+                .map(|p| p.1.clone()),
+            planned,
+            "the same patch reuses its plan"
+        );
     }
 
     #[test]
