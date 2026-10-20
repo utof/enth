@@ -10,7 +10,7 @@
 //!   (else any observable continuous one); `pitch` moves `osc1.semi`. A move with nothing to move falls back to
 //!   `all`. Each pair has its own sign seed for the directions.
 //! - **Checks.** Identical pairs at levels 2 and 4; obviously different pairs of a level-1 and a level-5 target whose
-//!   osc 1 waves differ and whose osc 1 pitches are at least an octave apart (drawn again until they are).
+//!   osc 1 waves differ and whose enabled oscillators are all at least an octave apart (drawn again until they are).
 //! - **Trials.** Each session plays every pair once, in a shuffled order, with the target first in half of the pairs
 //!   and X a copy of A in half of the trials (both balanced per session). Trial ids and clip ids are random.
 
@@ -207,8 +207,9 @@ fn pick_param(
     })
 }
 
-/// osc 1's wave index and semitones of a generated target (for the obviously different pairs).
-fn osc1_of(spec: &RandomSpec) -> Result<(f32, f32), String> {
+/// osc 1's wave index and the semitones of every enabled oscillator of a generated target (for the obviously
+/// different pairs: a level-5 target's osc 2 can sit at the level-1 target's pitch even when osc 1 is an octave up).
+fn osc_of(spec: &RandomSpec) -> Result<(f32, Vec<f32>), String> {
     let g = random::target(spec).map_err(|e| format!("generator: {e}"))?;
     let read = |a: &str| {
         a.parse::<ParamAddr>()
@@ -216,7 +217,16 @@ fn osc1_of(spec: &RandomSpec) -> Result<(f32, f32), String> {
             .and_then(|addr| g.patch.value(&addr))
             .unwrap_or(0.0)
     };
-    Ok((read("osc1.wave"), read("osc1.semi")))
+    let semis = ["osc1", "osc2"]
+        .iter()
+        .filter(|id| {
+            g.patch
+                .modules()
+                .any(|(_, m)| m.enabled && m.id.to_string() == **id)
+        })
+        .map(|id| read(&format!("{id}.semi")))
+        .collect();
+    Ok((read("osc1.wave"), semis))
 }
 
 struct Ids {
@@ -305,8 +315,9 @@ pub fn make_plan(seed: u64, n_pairs: usize) -> Result<Plan, String> {
         let (target, other) = loop {
             let a = spec(1, rng.next_u64())?;
             let b = spec(5, rng.next_u64())?;
-            let ((wa, sa), (wb, sb)) = (osc1_of(&a)?, osc1_of(&b)?);
-            if wa != wb && (sa - sb).abs() >= 12.0 {
+            let ((wa, sa), (wb, sb)) = (osc_of(&a)?, osc_of(&b)?);
+            let apart = sa.iter().all(|x| sb.iter().all(|y| (x - y).abs() >= 12.0));
+            if wa != wb && apart {
                 break (a, b);
             }
         };

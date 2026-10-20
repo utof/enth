@@ -201,7 +201,7 @@ fn design_pair(p: &PlannedPair) -> Result<(Pair, Vec<String>), String> {
                 .ok_or("an obviously different pair has a second spec")?;
             let o = random::target(&other).map_err(err)?;
             let m = measure_pair(&prepared, &o.patch)?;
-            if m.jnd < BIN_LOWER[4] {
+            if m.jnd < BIN_LOWER[BIN_LOWER.len() - 1] {
                 warnings.push(format!(
                     "pair {}: sound/1 puts the obviously different check only {:.1} JND apart",
                     p.index, m.jnd

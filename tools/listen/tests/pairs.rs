@@ -191,9 +191,8 @@ fn check_measured(m: &Manifest) {
         assert_eq!(p.bin, bin_of(s.jnd));
         match p.plan.role {
             PairRole::Same => assert!(s.jnd == 0.0 && s.percent == 100.0, "{s:?}"),
-            // built different (another wave, an octave apart, level 1 against level 5); sound/1 can read less than
-            // the ear hears (its pitch guard misses an octave that YIN folds), but never near the pass mark
-            PairRole::Different => assert!(s.jnd >= 4.0, "pair {}: {s:?}", p.plan.index),
+            // built different: another wave, every oscillator an octave apart, level 1 against level 5
+            PairRole::Different => assert!(s.jnd >= 8.0, "pair {}: {s:?}", p.plan.index),
             PairRole::Test => {
                 assert!(p.steps.is_some() && p.kind.is_some());
                 assert!(p.ladder_jnd.len() >= 17);
