@@ -6,6 +6,11 @@
 //! committed hash. A mismatch means the plugin's sound, its parameter handling, its state loading or the
 //! test host changed: update the golden deliberately with `--update` and say why in the commit message.
 //!
+//! Then, for a package with a `crates/<package>/tests/cli-equal.profile.toml` (enth-plugin), **CLI = plugin**: the
+//! engine's own golden cases (`tests/golden`) rendered through the plugin at host blocks 1, 64, 100 and 4096 must give
+//! the engine's hashes (`enth-test-host cli-equal --min-compared 60`; P1b lane INT wired it here, so `gate.sh full`
+//! and CI's `host-render` job check it on every plugin change instead of only by hand).
+//!
 //! Linux only: the bundle layout (a bare `.clap` file) and the CI job are Linux's.
 
 use std::path::{Path, PathBuf};
@@ -156,11 +161,63 @@ pub fn host_render(args: &[String]) -> Result<(), String> {
             golden.sample_rate,
             golden.block
         );
+        let profile_file = root
+            .join("crates")
+            .join(package)
+            .join("tests")
+            .join("cli-equal.profile.toml");
+        if profile_file.exists() {
+            cli_equal(&host, &clap, &root, &profile_file)?;
+        }
         Ok(())
     } else {
         Err(format!(
             "host-render failed:\n  {}\nIf the change is deliberate, run `cargo xtask host-render --update` and explain it in the commit message.",
             failures.join("\n  ")
+        ))
+    }
+}
+
+/// The engine's golden cases through the plugin must give the engine's hashes, at every host block size, with at least
+/// 60 cases compared (the test host skips the ones a plugin cannot play; 63 are compared today).
+const CLI_EQUAL_MIN_COMPARED: &str = "60";
+
+fn cli_equal(host: &Path, clap: &Path, root: &Path, profile: &Path) -> Result<(), String> {
+    let output = Command::new(host)
+        .current_dir(root)
+        .arg("cli-equal")
+        .arg(clap)
+        .arg("--profile")
+        .arg(profile)
+        .args(["--min-compared", CLI_EQUAL_MIN_COMPARED])
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .output()
+        .map_err(|e| format!("cannot run {}: {e}", host.display()))?;
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+    let count = |key: &str| {
+        report[key]
+            .as_u64()
+            .map_or("?".to_owned(), |n| n.to_string())
+    };
+    let summary = format!(
+        "{} compared, {} equal, {} differ, {} skipped",
+        count("compared"),
+        count("equal"),
+        count("differs"),
+        count("skipped")
+    );
+    if output.status.success() {
+        println!("host-render: cli-equal ok ({summary}; the engine's goldens through the plugin)");
+        Ok(())
+    } else {
+        Err(format!(
+            "host-render: cli-equal failed ({}; {summary}): the plugin no longer renders the engine's golden cases like \
+             the CLI. Rerun: enth-test-host cli-equal {} --profile {}\n{}",
+            output.status,
+            clap.display(),
+            profile.display(),
+            String::from_utf8_lossy(&output.stderr)
         ))
     }
 }
