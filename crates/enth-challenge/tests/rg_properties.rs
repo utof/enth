@@ -28,16 +28,20 @@ fn amounts() -> impl Strategy<Value = [Option<u8>; Category::COUNT]> {
 }
 
 fn specs() -> impl Strategy<Value = RandomSpec> {
-    (any::<u64>(), 0u8..=100, 0u8..=100, amounts()).prop_map(
-        |(seed, difficulty, musical, amounts)| RandomSpec {
+    (
+        0..=enth_challenge::spec::MAX_SEED,
+        0u8..=100,
+        0u8..=100,
+        amounts(),
+    )
+        .prop_map(|(seed, difficulty, musical, amounts)| RandomSpec {
             generator: random::GENERATOR_V1,
             seed,
             difficulty,
             amounts,
             musical,
             template: random::TEMPLATE_STARTER,
-        },
-    )
+        })
 }
 
 fn route_depth(p: &Patch, r: &RouteAddr) -> f32 {

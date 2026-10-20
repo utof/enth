@@ -4,7 +4,7 @@
     "kind": "seed",
     "spec": {
       "generator": 1,
-      "seed": 18446744073709551615,
+      "seed": 9007199254740991,
       "difficulty": 40,
       "amounts": [
         null,
@@ -15,14 +15,14 @@
         null
       ],
       "musical": 70,
-      "template": 3
+      "template": 0
     }
   },
   "answer": "patch",
   "phrase": 3,
   "start": {
     "kind": "template",
-    "template": 3
+    "template": 0
   },
   "constraints": {},
   "assists": {

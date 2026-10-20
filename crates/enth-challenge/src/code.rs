@@ -1,15 +1,16 @@
 //! **Owner: lane CT** (code v1, freeze point F1r). The reference is docs/challenge.md, "Codes v1".
 //!
 //! A challenge code is a [`RandomSpec`] in a form a person can read out, type and paste (report 01 §2.5, design.md
-//! §9): a versioned bit string in Crockford base32 with Crockford's mod-37 check symbol. Decoding regenerates
-//! nothing; the caller regenerates the target from [`ChallengeCode::spec`] and calls [`ChallengeCode::verify`].
+//! §9): a versioned bit string in Crockford base32 with a weighted check symbol over GF(32), itself one of the 32
+//! data symbols. Decoding regenerates nothing; the caller regenerates the target from [`ChallengeCode::spec`] and
+//! calls [`ChallengeCode::verify`] with its [`TargetFingerprint`].
 //!
 //! # The two forms
 //!
 //! | Form | Symbols | Carries | Starts with |
 //! | --- | --- | --- | --- |
 //! | **short** | 13 data + 1 check = 14 | a [`SpecPreset`] id, the generator (< 4096), the seed (< 2⁴⁰) | `1` |
-//! | **long** | 34–43 data + 1 check = 35–44 | the whole spec, the engine version, a 32-bit target-hash prefix | `H` |
+//! | **long** | 34–43 data + 1 check = 35–44 | the whole spec, the engine version, a 32-bit target-fingerprint prefix | `H` |
 //!
 //! Bits are written most significant first, then cut into 5-bit symbols; the last symbol is zero-padded.
 //!
@@ -19,16 +20,20 @@
 //!   (Category::ALL order, first category in the high bit) | 7 bits per set amount, in that order`.
 //!
 //! The first symbol is `form << 4 | version`, so a short v1 code starts with `1` and a long one with `H`, and every
-//! later version can be told apart before its layout is known.
+//! later version can be told apart before its layout is known. Version 15 is reserved as an escape
+//! ([`CODE_VERSION_ESCAPE`]): a later kind of code (a result code, a duel) starts with it and puts a kind field next,
+//! so the 1-bit form never runs out. Versions 2–14 are for new layouts of these two forms.
 //!
 //! # Reading a code
 //!
 //! Case is ignored, `O` reads as `0` and `I`/`L` as `1` (Crockford), and hyphens and spaces are ignored anywhere.
-//! The check symbol (`0`–`9`, `A`–`Z` without `I L O U`, then `* ~ $ = U` for 32–36) is the data's value mod 37, so
-//! it catches every single substitution and every adjacent swap (docs/challenge.md has the argument), and the fixed
-//! short length catches a dropped or added symbol. The order of checks: symbols, length bounds, the check symbol,
-//! the version (`code_too_new` for a newer one), the form's layout, then the spec ([`RandomSpec::validate`]: a
-//! newer generator is refused too, because this build cannot regenerate its target).
+//! Every symbol, the check included, is one of Crockford's 32 (`0`–`9`, `A`–`Z` without `I L O U`). The check makes
+//! the whole word, read as a polynomial over GF(32) with the check as its constant term, vanish at α (a root of
+//! x⁵ + x² + 1): it catches every single substitution and every adjacent swap, at any length (docs/challenge.md has
+//! the argument), and the fixed short length catches a dropped or added symbol. The order of checks: symbols, length
+//! bounds, the check symbol, the version (`code_too_new` for a newer one), the form's layout (`code_too_new` for a
+//! preset this build does not have), then the spec ([`RandomSpec::validate`]: a newer generator or template is
+//! refused too, because this build cannot regenerate its target).
 //!
 //! # Versions
 //!
@@ -38,13 +43,22 @@
 use core::fmt;
 use core::str::FromStr;
 
-use enth_patch::canon::PatchHash;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::spec::{Category, LATEST_GENERATOR, RandomSpec, SpecError, SpecPreset};
+use crate::fingerprint::TargetFingerprint;
+use crate::spec::{Category, Limits, RandomSpec, SpecError, SpecPreset};
 
 /// The code format version this build writes, and the newest it reads.
 pub const CODE_VERSION: u8 = 1;
+
+/// The version reserved as an escape (F1r review N2): a later kind of code starts with it and a kind field follows.
+/// This build reads none of them (`code_too_new`), and no layout version ever reaches it.
+pub const CODE_VERSION_ESCAPE: u8 = 15;
+
+const _: () = assert!(
+    CODE_VERSION < CODE_VERSION_ESCAPE,
+    "version 15 is the escape to a kind field, never a layout"
+);
 
 /// Seed bits in a short code: a short code holds seeds below 2⁴⁰.
 pub const SHORT_SEED_BITS: u32 = 40;
@@ -61,11 +75,11 @@ pub const LONG_SYMBOLS_MIN: usize = 35;
 /// The most symbols in a long code (every amount set), the check symbol included.
 pub const LONG_SYMBOLS_MAX: usize = 44;
 
-/// The 32 data symbols: Crockford's alphabet, value = position.
-const DATA_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+/// The 32 symbols: Crockford's alphabet, value = position. The check symbol is one of them too.
+const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/// The 37 check symbols: the data symbols, then `* ~ $ = U` for 32–36.
-const CHECK_ALPHABET: &[u8; 37] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ*~$=U";
+/// GF(32)'s modulus: x⁵ + x² + 1, a primitive polynomial, so α = x has order 31.
+const GF32_MODULUS: u8 = 0b10_0101;
 
 /// Bits of a long code before its amounts: form, version, generator, seed, difficulty, musical, template, engine,
 /// target prefix, amounts mask.
@@ -148,21 +162,39 @@ impl fmt::Display for EngineVersion {
     }
 }
 
-/// The first 32 bits of a target's canonical hash (`enth_patch::canon::canonical_hash`), big-endian: what a long
-/// code carries so a build that regenerates a different target refuses the code.
+impl Serialize for EngineVersion {
+    /// As its text, `"0.2.0"` (score reports and round-log lines carry it).
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for EngineVersion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        EngineVersion::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format_args!(
+                "{text:?} is not an engine version (major.minor.patch)"
+            ))
+        })
+    }
+}
+
+/// The first 32 bits of a target's [`TargetFingerprint`], big-endian: what a long code carries so a build that
+/// regenerates a different target refuses the code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TargetPrefix(pub u32);
 
 impl TargetPrefix {
-    /// The prefix of `hash`.
-    pub fn of(hash: &PatchHash) -> TargetPrefix {
-        let h = hash.0;
+    /// The prefix of `fingerprint`.
+    pub fn of(fingerprint: &TargetFingerprint) -> TargetPrefix {
+        let h = fingerprint.0;
         TargetPrefix(u32::from_be_bytes([h[0], h[1], h[2], h[3]]))
     }
 }
 
 impl fmt::Display for TargetPrefix {
-    /// Eight lowercase hex digits: the start of the hash's `to_hex()`.
+    /// Eight lowercase hex digits: the start of the fingerprint's `to_hex()`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:08x}", self.0)
     }
@@ -173,7 +205,7 @@ impl fmt::Display for TargetPrefix {
 pub enum CodeForm {
     /// 14 symbols: a preset, the generator and the seed.
     Short,
-    /// 35–44 symbols: the whole spec, the engine version and a target-hash prefix.
+    /// 35–44 symbols: the whole spec, the engine version and a target-fingerprint prefix.
     Long,
 }
 
@@ -210,7 +242,7 @@ impl ChallengeCode {
     }
 
     /// The long form of any valid `spec`, made with `engine` (usually [`EngineVersion::CURRENT`]), whose regenerated
-    /// target has the canonical-hash prefix `target`.
+    /// target's fingerprint starts with `target`.
     pub fn long(
         spec: RandomSpec,
         engine: EngineVersion,
@@ -244,7 +276,7 @@ impl ChallengeCode {
         }
     }
 
-    /// A long code's target-hash prefix; `None` for a short code.
+    /// A long code's target-fingerprint prefix; `None` for a short code.
     pub fn target(&self) -> Option<TargetPrefix> {
         match self.form {
             Form::Short => None,
@@ -263,18 +295,19 @@ impl ChallengeCode {
             if i > 0 && i % GROUP == 0 {
                 out.push('-');
             }
-            out.push(char::from(CHECK_ALPHABET[usize::from(v)]));
+            out.push(char::from(ALPHABET[usize::from(v)]));
         }
         out
     }
 
     /// Read a code (see the [module docs](self) for what is accepted and the order of checks). Never panics.
     pub fn decode(text: &str) -> Result<ChallengeCode, CodeError> {
-        decode_up_to(text, LATEST_GENERATOR)
+        decode_within(text, &Limits::BUILD)
     }
 
-    /// Check the regenerated target against this code. `target` is the canonical hash of the patch this build
-    /// generated from [`spec`](Self::spec); `build` is this build's engine version.
+    /// Check the regenerated target against this code. `target` is the fingerprint of the target this build
+    /// generated from [`spec`](Self::spec) (`random::Generated::fingerprint`); `build` is this build's engine
+    /// version.
     ///
     /// - A long code whose prefix differs is refused (`target_mismatch`): the round must never be scored against a
     ///   different target.
@@ -283,7 +316,7 @@ impl ChallengeCode {
     /// - A short code carries neither, so it always passes; its guarantee is the frozen generator and its goldens.
     pub fn verify(
         &self,
-        target: &PatchHash,
+        target: &TargetFingerprint,
         build: EngineVersion,
     ) -> Result<Vec<CodeWarning>, CodeError> {
         let Form::Long {
@@ -451,7 +484,12 @@ pub enum CodeError {
         /// The newest this build reads ([`CODE_VERSION`]).
         supported: u8,
     },
-    /// A field holds a value no encoder writes: version 0, an unknown preset, padding bits that are not zero.
+    /// A short code names a preset this build does not have: preset ids are append-only, so a newer build made it.
+    PresetTooNew {
+        /// The preset id.
+        preset: u8,
+    },
+    /// A field holds a value no encoder writes: version 0, preset 0, padding bits that are not zero.
     BadField {
         /// The field.
         field: &'static str,
@@ -460,7 +498,7 @@ pub enum CodeError {
     },
     /// The spec it carries is refused, a newer generator included (`code_too_new`).
     Spec(SpecError),
-    /// The target this build regenerates has another hash prefix than the code's ([`ChallengeCode::verify`]).
+    /// The target this build regenerates has another fingerprint prefix than the code's ([`ChallengeCode::verify`]).
     TargetMismatch {
         /// The prefix in the code.
         code: TargetPrefix,
@@ -477,7 +515,7 @@ impl CodeError {
             CodeError::BadSymbol { .. } => "bad_symbol",
             CodeError::BadLength { .. } => "bad_length",
             CodeError::BadCheck => "bad_check",
-            CodeError::TooNew { .. } => "code_too_new",
+            CodeError::TooNew { .. } | CodeError::PresetTooNew { .. } => "code_too_new",
             CodeError::BadField { .. } => "bad_field",
             CodeError::Spec(e) => e.code(),
             CodeError::TargetMismatch { .. } => "target_mismatch",
@@ -496,6 +534,9 @@ impl CodeError {
             ),
             CodeError::BadCheck => "the check symbol does not match: there is a typo in the code".to_owned(),
             CodeError::TooNew { .. } => "made by a newer enth: update enth to play it".to_owned(),
+            CodeError::PresetTooNew { preset } => {
+                format!("made with preset {preset}, from a newer enth: update enth to play it")
+            }
             CodeError::BadField { .. } => "the code is damaged, or was not made by enth".to_owned(),
             CodeError::Spec(e) => e.hint(),
             CodeError::TargetMismatch { .. } => {
@@ -518,6 +559,9 @@ impl fmt::Display for CodeError {
                 f,
                 "code version {version} is newer than this build's {supported}"
             ),
+            CodeError::PresetTooNew { preset } => {
+                write!(f, "preset {preset} is newer than this build's presets")
+            }
             CodeError::BadField { field, value } => write!(f, "{field} {value} is not valid"),
             CodeError::Spec(e) => write!(f, "{e}"),
             CodeError::TargetMismatch { code, found } => write!(
@@ -536,17 +580,32 @@ impl From<SpecError> for CodeError {
     }
 }
 
-/// Crockford's check: the value of the data symbols, read as one base-32 number, mod 37.
-fn check_value(data: &[u8]) -> u8 {
-    data.iter().fold(0u32, |r, &v| (r * 32 + u32::from(v)) % 37) as u8
+/// `v · α` in GF(32): a shift, reduced by x⁵ + x² + 1.
+const fn times_alpha(v: u8) -> u8 {
+    let w = v << 1;
+    if w & 0b10_0000 != 0 {
+        w ^ GF32_MODULUS
+    } else {
+        w
+    }
 }
 
-/// The value of a symbol (0–36, check symbols included), after Crockford's case and alias rules.
+/// The word's polynomial at α (Horner, first symbol highest): Σ sᵢ·α^(n−1−i), additions being XOR.
+fn at_alpha(symbols: &[u8]) -> u8 {
+    symbols.iter().fold(0u8, |acc, &s| times_alpha(acc) ^ s)
+}
+
+/// The check symbol: the value c that makes the data followed by c vanish at α, which is α · (the data at α).
+fn check_value(data: &[u8]) -> u8 {
+    times_alpha(at_alpha(data))
+}
+
+/// The value of a symbol (0–31), after Crockford's case and alias rules.
 fn symbol_value(c: char) -> Option<u8> {
     match c.to_ascii_uppercase() {
         'O' => Some(0),
         'I' | 'L' => Some(1),
-        u => CHECK_ALPHABET
+        u => ALPHABET
             .iter()
             .position(|&b| char::from(b) == u)
             .map(|i| i as u8),
@@ -556,8 +615,8 @@ fn symbol_value(c: char) -> Option<u8> {
 /// The most symbols [`decode`](ChallengeCode::decode) reads before it gives up: above every known length.
 const MAX_SYMBOLS: usize = 64;
 
-/// [`ChallengeCode::decode`] with another newest generator (the tests cover every `u16` this way).
-fn decode_up_to(text: &str, latest: u16) -> Result<ChallengeCode, CodeError> {
+/// [`ChallengeCode::decode`] with other spec limits (the tests cover every value a field can hold this way).
+fn decode_within(text: &str, limits: &Limits) -> Result<ChallengeCode, CodeError> {
     let mut syms: Vec<(u8, usize, char)> = Vec::with_capacity(LONG_SYMBOLS_MAX);
     let mut count = 0usize;
     for (position, c) in text.chars().enumerate() {
@@ -580,17 +639,11 @@ fn decode_up_to(text: &str, latest: u16) -> Result<ChallengeCode, CodeError> {
     if !(2..=MAX_SYMBOLS).contains(&count) {
         return Err(CodeError::BadLength { symbols: count });
     }
-    let (check, data) = syms.split_last().ok_or(CodeError::Empty)?;
-    let mut values = Vec::with_capacity(data.len());
-    for &(v, position, symbol) in data {
-        if usize::from(v) >= DATA_ALPHABET.len() {
-            return Err(CodeError::BadSymbol { symbol, position });
-        }
-        values.push(v);
-    }
-    if check_value(&values) != check.0 {
+    let values: Vec<u8> = syms.iter().map(|&(v, _, _)| v).collect();
+    if at_alpha(&values) != 0 {
         return Err(CodeError::BadCheck);
     }
+    let values = &values[..values.len() - 1];
     let first = values[0];
     let long = first & 0b1_0000 != 0;
     let version = first & 0b0_1111;
@@ -607,11 +660,11 @@ fn decode_up_to(text: &str, latest: u16) -> Result<ChallengeCode, CodeError> {
         });
     }
     let code = if long {
-        decode_long(&values)?
+        decode_long(values)?
     } else {
-        decode_short(&values)?
+        decode_short(values)?
     };
-    code.spec.validate_up_to(latest)?;
+    code.spec.validate_within(limits)?;
     Ok(code)
 }
 
@@ -627,10 +680,15 @@ fn decode_short(values: &[u8]) -> Result<ChallengeCode, CodeError> {
     let generator = r.take(SHORT_GENERATOR_BITS as usize)? as u16;
     let seed = r.take(SHORT_SEED_BITS as usize)?;
     r.zero_padding(values.len() * 5 - SHORT_BITS)?;
-    let preset = SpecPreset::by_id(preset_id).ok_or(CodeError::BadField {
-        field: "preset",
-        value: u64::from(preset_id),
-    })?;
+    if preset_id == 0 {
+        return Err(CodeError::BadField {
+            field: "preset",
+            value: 0,
+        });
+    }
+    // Preset ids are append-only: one this build does not have is a newer build's.
+    let preset =
+        SpecPreset::by_id(preset_id).ok_or(CodeError::PresetTooNew { preset: preset_id })?;
     Ok(ChallengeCode {
         spec: preset.spec(generator, seed),
         form: Form::Short,
@@ -751,13 +809,14 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::spec::{PERCENT_MAX, PRESETS};
+    use crate::spec::{LATEST_GENERATOR, MAX_SEED, PERCENT_MAX, PRESETS};
 
     fn percent() -> impl Strategy<Value = u8> {
         0..=PERCENT_MAX
     }
 
-    /// Any spec the long form must carry: every `u16` generator but 0 (the tests decode with `latest = u16::MAX`).
+    /// Any spec the long form must carry: every `u16` generator but 0, every seed and template (the tests decode
+    /// with [`Limits::ANY`]).
     fn any_spec() -> impl Strategy<Value = RandomSpec> {
         (
             1..=u16::MAX,
@@ -816,7 +875,7 @@ mod tests {
     }
 
     fn decode_any(text: &str) -> Result<ChallengeCode, CodeError> {
-        decode_up_to(text, u16::MAX)
+        decode_within(text, &Limits::ANY)
     }
 
     /// The symbols of a canonical code, hyphens dropped.
@@ -846,10 +905,8 @@ mod tests {
         #[test]
         fn p1_every_single_substitution_is_caught(code in any_code()) {
             let syms = symbols(&code);
-            let last = syms.len() - 1;
-            for i in 0..syms.len() {
-                let alphabet: &[u8] = if i == last { CHECK_ALPHABET } else { DATA_ALPHABET };
-                for &b in alphabet {
+            for (i, _) in syms.iter().enumerate() {
+                for &b in ALPHABET {
                     if b == syms[i] {
                         continue;
                     }
@@ -880,7 +937,7 @@ mod tests {
             dropped.remove(at);
             prop_assert!(decode_any(&text(&dropped)).is_err());
             let mut added = syms;
-            added.insert(at, DATA_ALPHABET[b]);
+            added.insert(at, ALPHABET[b]);
             prop_assert!(decode_any(&text(&added)).is_err());
         }
 
@@ -907,11 +964,11 @@ mod tests {
     fn custom() -> RandomSpec {
         RandomSpec {
             generator: 1,
-            seed: u64::MAX,
+            seed: MAX_SEED,
             difficulty: 40,
             amounts: [None, Some(100), None, None, Some(0), None],
             musical: 70,
-            template: 3,
+            template: 0,
         }
     }
 
@@ -920,7 +977,7 @@ mod tests {
         let mut data = code.data_symbols(version);
         data.push(check_value(&data));
         data.iter()
-            .map(|&v| char::from(CHECK_ALPHABET[usize::from(v)]))
+            .map(|&v| char::from(ALPHABET[usize::from(v)]))
             .collect()
     }
 
@@ -928,7 +985,7 @@ mod tests {
     fn with_check(mut data: Vec<u8>) -> String {
         data.push(check_value(&data));
         data.iter()
-            .map(|&v| char::from(CHECK_ALPHABET[usize::from(v)]))
+            .map(|&v| char::from(ALPHABET[usize::from(v)]))
             .collect()
     }
 
@@ -976,10 +1033,14 @@ mod tests {
         );
         assert_eq!(e.code(), "code_too_new");
         let long = ChallengeCode::long(custom(), EngineVersion::CURRENT, TargetPrefix(1)).unwrap();
-        assert_eq!(
-            decode_any(&with_version(&long, 15)).unwrap_err().code(),
-            "code_too_new"
-        );
+        for version in 2..=14 {
+            assert_eq!(
+                decode_any(&with_version(&long, version))
+                    .unwrap_err()
+                    .code(),
+                "code_too_new"
+            );
+        }
         assert_eq!(
             decode_any(&with_version(&code, 0)).unwrap_err(),
             CodeError::BadField {
@@ -1011,20 +1072,55 @@ mod tests {
         assert!(e.hint().contains("update enth"), "{}", e.hint());
     }
 
+    /// N2 (F1r review): version 15 is the escape to a kind field, in both forms; this build reads no kind, so a code
+    /// that uses it is a newer build's.
     #[test]
-    fn an_unknown_preset_or_generator_0_is_refused() {
-        // Short layout with preset 6 (not in v1's table).
+    fn version_15_is_the_reserved_escape() {
+        for first in [CODE_VERSION_ESCAPE, 0b1_0000 | CODE_VERSION_ESCAPE] {
+            // The header symbol, a kind field and some payload: whatever follows, it is too new.
+            let text = with_check(vec![first, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            let e = decode_any(&text).unwrap_err();
+            assert_eq!(
+                e,
+                CodeError::TooNew {
+                    version: CODE_VERSION_ESCAPE,
+                    supported: CODE_VERSION
+                }
+            );
+            assert_eq!(e.code(), "code_too_new");
+        }
+        assert_eq!(char::from(ALPHABET[usize::from(CODE_VERSION_ESCAPE)]), 'F');
+        assert_eq!(
+            char::from(ALPHABET[16 | usize::from(CODE_VERSION_ESCAPE)]),
+            'Z'
+        );
+    }
+
+    fn short_with_preset(preset: u8) -> String {
         let mut w = Writer::default();
         w.put(0, 1);
         w.put(1, 4);
-        w.put(6, 8);
+        w.put(u64::from(preset), 8);
         w.put(1, 12);
         w.put(5, 40);
+        with_check(w.syms)
+    }
+
+    /// S1 (F1r review): a preset this build does not have is a newer build's (ids are append-only), so it is
+    /// `code_too_new`, not damage; preset 0 is never written.
+    #[test]
+    fn an_unknown_preset_is_too_new_and_generator_0_is_refused() {
+        for preset in [6, 7, 200, 255] {
+            let e = decode_any(&short_with_preset(preset)).unwrap_err();
+            assert_eq!(e, CodeError::PresetTooNew { preset });
+            assert_eq!(e.code(), "code_too_new");
+            assert!(e.hint().contains("update enth"), "{}", e.hint());
+        }
         assert_eq!(
-            decode_any(&with_check(w.syms)),
+            decode_any(&short_with_preset(0)),
             Err(CodeError::BadField {
                 field: "preset",
-                value: 6
+                value: 0
             })
         );
         let mut w = Writer::default();
@@ -1072,6 +1168,78 @@ mod tests {
         );
     }
 
+    /// S1 and S4 (F1r review): a long code carries any template and seed, and this build refuses a newer template
+    /// (`code_too_new`) and a seed a JSON reader could change (`out_of_range`).
+    #[test]
+    fn a_newer_template_or_a_huge_seed_in_a_long_code_is_refused() {
+        let mut spec = custom();
+        spec.template = 3;
+        let code = ChallengeCode {
+            spec,
+            form: Form::Long {
+                engine: EngineVersion::CURRENT,
+                target: TargetPrefix(9),
+            },
+        };
+        assert_eq!(decode_any(&code.encode()), Ok(code), "the codec carries it");
+        let e = ChallengeCode::decode(&code.encode()).unwrap_err();
+        assert_eq!(e.code(), "code_too_new");
+        assert!(e.hint().contains("template 3"), "{}", e.hint());
+        let mut spec = custom();
+        spec.seed = MAX_SEED + 1;
+        let code = ChallengeCode {
+            spec,
+            form: Form::Long {
+                engine: EngineVersion::CURRENT,
+                target: TargetPrefix(9),
+            },
+        };
+        assert_eq!(decode_any(&code.encode()), Ok(code));
+        assert_eq!(
+            ChallengeCode::decode(&code.encode()).unwrap_err().code(),
+            "out_of_range"
+        );
+        assert!(ChallengeCode::long(spec, EngineVersion::CURRENT, TargetPrefix(0)).is_err());
+    }
+
+    /// S2 (F1r review): every check symbol is a data symbol, so no code ends in punctuation or `U`; the old mod-37
+    /// check put one in about every seventh code.
+    #[test]
+    fn check_symbols_are_data_symbols() {
+        let mut seen = [false; 32];
+        for seed in 0..2_000u64 {
+            let text = ChallengeCode::short(level(1 + (seed % 5) as u8, seed * 7_919))
+                .unwrap()
+                .encode();
+            let last = text.bytes().last().unwrap();
+            let v = ALPHABET
+                .iter()
+                .position(|&b| b == last)
+                .expect("a data symbol");
+            seen[v] = true;
+        }
+        assert!(seen.iter().all(|s| *s), "every symbol occurs as a check");
+        for bad in ['*', '~', '$', '=', 'U', 'u'] {
+            let text = format!("1080-1000-0001-A{bad}");
+            assert_eq!(
+                ChallengeCode::decode(&text).unwrap_err().code(),
+                "bad_symbol"
+            );
+        }
+    }
+
+    /// The check's arithmetic: α has order 31 in GF(32), so the weights α^j at adjacent places always differ and are
+    /// never 0, which is what the substitution and swap arguments need.
+    #[test]
+    fn alpha_is_primitive() {
+        let mut v = 1u8;
+        for n in 1..=31 {
+            v = times_alpha(v);
+            assert!(v < 32 && v != 0);
+            assert_eq!(v == 1, n == 31, "order 31: {n}");
+        }
+    }
+
     #[test]
     fn errors_name_what_went_wrong() {
         assert_eq!(ChallengeCode::decode(""), Err(CodeError::Empty));
@@ -1083,7 +1251,7 @@ mod tests {
                 position: 16
             })
         );
-        // `U` is a check symbol only.
+        // `U` is no symbol at all.
         assert_eq!(
             ChallengeCode::decode("U0000000000000").unwrap_err().code(),
             "bad_symbol"
@@ -1122,8 +1290,8 @@ mod tests {
 
     #[test]
     fn verify_refuses_another_target_and_warns_on_another_engine() {
-        let hash = PatchHash([0xAB; 32]);
-        let other = PatchHash([0xAC; 32]);
+        let hash = TargetFingerprint([0xAB; 32]);
+        let other = TargetFingerprint([0xAC; 32]);
         let long =
             ChallengeCode::long(custom(), EngineVersion::CURRENT, TargetPrefix::of(&hash)).unwrap();
         assert_eq!(long.verify(&hash, EngineVersion::CURRENT), Ok(vec![]));
@@ -1149,11 +1317,12 @@ mod tests {
     }
 
     #[test]
-    fn target_prefixes_are_the_start_of_the_hex_hash() {
+    fn target_prefixes_are_the_start_of_the_hex_fingerprint() {
         let mut h = [0u8; 32];
         h[..4].copy_from_slice(&[0x01, 0x23, 0xab, 0xcd]);
-        let hash = PatchHash(h);
-        assert_eq!(TargetPrefix::of(&hash).to_string(), hash.to_hex()[..8]);
+        let f = TargetFingerprint(h);
+        assert_eq!(TargetPrefix::of(&f).to_string(), f.to_hex()[..8]);
+        assert_eq!(f.prefix(), TargetPrefix(0x0123_abcd));
     }
 
     #[test]

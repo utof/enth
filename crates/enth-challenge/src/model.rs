@@ -12,7 +12,9 @@
 //! ignoring a constraint would play a different game. Every number in it is an integer.
 //!
 //! The round's results ([`RoundResult`], [`Outcome`], [`AssistsUsed`], [`Agreement`]) are here too: lane SG's round
-//! produces them and lane GK's round log stores them, with `"schema": "enth.round-result/1"`.
+//! produces them and lane GK's round log stores them, with `"schema": "enth.round-result/1"`. A result is an output,
+//! read tolerantly (F1r review M3, S6): unknown fields are ignored, a missing new field takes its default and an
+//! unknown enum value reads as `unknown`, so a newer build's result (or a round saved by one) still reads.
 
 use enth_render::{Note, Performance};
 use serde::{Deserialize, Serialize};
@@ -38,13 +40,15 @@ pub const ROUND_RESULT_SCHEMA: &str = "enth.round-result/1";
 /// rate).
 pub const SCORING_SAMPLE_RATE: u32 = 48_000;
 
-/// The render seed of every scored render and of the Target ▶ loop: the CLI's default seed, so `enth render` of a
-/// target with its phrase gives exactly the audio the scorer hears (design.md §5). The nuisance-floor renders of the
-/// sound scorer use other seeds, derived from this one.
-pub const SCORING_SEED: u64 = enth_render::DEFAULT_SEED;
+/// The render seed of every scored render and of the Target ▶ loop, written out (F1r review S12): a scored render
+/// must never move because the CLI's default seed did. It equals `enth_render::DEFAULT_SEED` today, so `enth render`
+/// of a target with its phrase gives exactly the audio the scorer hears (design.md §5; a test checks the two agree).
+/// The nuisance-floor renders of the sound scorer use other seeds, derived from this one.
+pub const SCORING_SEED: u64 = 0x0E17_5EED;
 
-/// The sound % at or above which a submit passes, unless a challenge says otherwise: provisional until lane SS fits
-/// the curve, which it fits so that the rating-4.5 point lands on this mark (ADR-0007's 2026-10-20 note).
+/// The sound % at or above which a submit passes, unless a challenge says otherwise. **The mark stays and the curve
+/// moves** (F1r review S12): lane SS fits `sound/1`'s curve so that the rating-4.5 point lands on 90, and GR1's refit
+/// is `sound/2`, fitted to the same mark. The stubs (`sound-stub/1`) use it as is.
 pub const DEFAULT_PASS_MARK: u8 = 90;
 
 /// A challenge: what a round asks of the player. See the [module docs](self).
@@ -84,7 +88,8 @@ pub struct Challenge {
 
 impl Challenge {
     /// The Recreate challenge for `spec`, heard through `phrase` (the generator's pick for this spec): the template's
-    /// start, no constraints, the default assists, and [`ScoringSpec::recreate`] at the spec's difficulty.
+    /// start, no constraints, the default assists, and [`ScoringSpec::recreate`] at the spec's difficulty (this
+    /// build's default scorers).
     pub fn recreate(spec: RandomSpec, phrase: PhraseId) -> Challenge {
         Challenge {
             target: Target::Seed(spec),
@@ -123,16 +128,16 @@ impl Challenge {
     }
 
     /// The code to share or log for a generated target: the short form when the spec has one, otherwise the long form
-    /// made with this build's engine and `target`, the regenerated target's canonical-hash prefix. A round that
-    /// started from a code keeps that code instead, so a long code keeps its maker's engine version.
+    /// made with this build's engine and `target`, the regenerated target's fingerprint prefix. A round that started
+    /// from a code keeps that code instead, so a long code keeps its maker's engine version.
     pub fn code(&self, target: TargetPrefix) -> Option<ChallengeCode> {
         let spec = *self.spec()?;
         ChallengeCode::short(spec)
             .or_else(|| ChallengeCode::long(spec, EngineVersion::CURRENT, target).ok())
     }
 
-    /// Check what the types cannot: a valid spec, a start that matches the spec's template, a phrase id, and the
-    /// scoring percentages. Every load runs it.
+    /// Check what the types cannot: a valid spec (a generator and template this build has, a seed below 2⁵³), a
+    /// start that matches the spec's template, a phrase id, and the scoring percentages. Every load runs it.
     pub fn validate(&self) -> Result<(), ChallengeError> {
         match &self.target {
             Target::Seed(spec) => {
@@ -425,16 +430,27 @@ pub struct Assists {
     pub hint_budget: Option<u8>,
 }
 
+/// The scorers [`ScoringSpec::recreate`] names in this build: sound, structure, combined, time. **Stubs until lanes
+/// SS and ST land theirs** (F1r review S12): the stubs score in parameter space under their own ids, so no stub
+/// score is ever stored under `sound/1`. The lane that lands a scorer switches its entry here in the same commit
+/// (SS: `sound/1`; ST: `structure/1`, `combined/1`).
+pub const RECREATE_SCORERS: [ScorerId; 4] = [
+    ScorerId::SOUND_STUB,
+    ScorerId::STRUCTURE_STUB,
+    ScorerId::COMBINED_STUB,
+    ScorerId::TIME_V1,
+];
+
 /// Which scorers a challenge uses, how they combine and where pass is (report 02; design.md §6, "Scoring is
 /// additive"). Only sound decides pass.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScoringSpec {
-    /// The sound scorer (lane SS): `sound/1`.
+    /// The sound scorer: `sound/1` (lane SS's fitted curve), `sound/2` (GR1's refit) or `sound-stub/1`.
     pub sound: ScorerId,
-    /// The structure scorer (lane ST): `structure/1`.
+    /// The structure scorer: `structure/1` (lane ST) or `structure-stub/1`.
     pub structure: ScorerId,
-    /// The combined score (lane ST): `combined/1`.
+    /// The combined score: `combined/1` (lane ST) or `combined-stub/1`.
     pub combined: ScorerId,
     /// The time rule (lane ST): `time/1`, the first passing submit in editor-visible time.
     pub time: ScorerId,
@@ -445,16 +461,29 @@ pub struct ScoringSpec {
 }
 
 impl ScoringSpec {
-    /// The Recreate default at `difficulty` (0–100): the v1 scorers, the sound weight rising linearly from 50 % at
-    /// difficulty 0 to 80 % at 100 (where many routes are valid and structure is ambiguous), and
-    /// [`DEFAULT_PASS_MARK`].
+    /// The Recreate default at `difficulty` (0–100): this build's [`RECREATE_SCORERS`], the sound weight rising
+    /// linearly from 50 % at difficulty 0 to 80 % at 100 (where many routes are valid and structure is ambiguous),
+    /// and [`DEFAULT_PASS_MARK`].
     pub fn recreate(difficulty: u8) -> ScoringSpec {
+        let [sound, structure, combined, time] = RECREATE_SCORERS;
+        ScoringSpec::with_scorers(difficulty, sound, structure, combined, time)
+    }
+
+    /// [`recreate`](Self::recreate)'s weights and pass mark with named scorers (the golden challenges and the tests
+    /// pin the v1 ids this way, whatever this build's default is).
+    pub fn with_scorers(
+        difficulty: u8,
+        sound: ScorerId,
+        structure: ScorerId,
+        combined: ScorerId,
+        time: ScorerId,
+    ) -> ScoringSpec {
         let d = u32::from(difficulty.min(PERCENT_MAX));
         ScoringSpec {
-            sound: ScorerId::SOUND_V1,
-            structure: ScorerId::STRUCTURE_V1,
-            combined: ScorerId::COMBINED_V1,
-            time: ScorerId::TIME_V1,
+            sound,
+            structure,
+            combined,
+            time,
             sound_weight: (50 + 30 * d / 100) as u8,
             pass_mark: DEFAULT_PASS_MARK,
         }
@@ -611,11 +640,14 @@ pub enum Outcome {
     NotPassed,
     /// The player revealed the target before passing.
     GaveUp,
+    /// An outcome from a newer build (read tolerantly; never written by this one).
+    #[serde(other)]
+    Unknown,
 }
 
-/// The help a round used. Any of it marks the round as assisted.
+/// The help a round used. Any of it marks the round as assisted. Read tolerantly: a newer build's assist is ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct AssistsUsed {
     /// Hints revealed.
     pub hints: u8,
@@ -633,7 +665,8 @@ impl AssistsUsed {
 }
 
 /// The player's vote on the score after a round: GR1's "mostly agree" measure and the dispute path (design.md §9,
-/// "Disputes").
+/// "Disputes"). It is saved inside a round, so a value from a newer build reads as [`Agreement::Unknown`] and never
+/// makes the saved round unreadable (F1r review M3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Agreement {
@@ -643,7 +676,14 @@ pub enum Agreement {
     AboutRight,
     /// "Felt too high".
     TooHigh,
+    /// A vote from a newer build (read tolerantly; the editor never offers it).
+    #[serde(other)]
+    Unknown,
 }
+
+/// The blind rating's scale: 1 ("nothing like it") to 5 ("I can't tell them apart"), asked before the score shows
+/// (ADR-0007's 2026-10-20 note, review point (a); F1r review S9), so GR1 can refit the curve.
+pub const RATING_MAX: u8 = 5;
 
 /// What one round produced, for the results drawer and the round log. Times are editor-visible milliseconds from the
 /// shell's clock (core crates read none). JSON with `"schema": "enth.round-result/1"` first.
@@ -666,10 +706,14 @@ pub struct RoundResult {
     pub assists: AssistsUsed,
     /// The player's vote on the score, if they gave one.
     pub agreement: Option<Agreement>,
+    /// The player's blind rating of the first submit, 1–[`RATING_MAX`], given before its score showed; `None`
+    /// without one.
+    pub rating: Option<u8>,
 }
 
+/// The on-disk shape. Read tolerantly: unknown fields are ignored and the fields added after the first draft
+/// (`rating`) default when missing.
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RoundResultFile {
     schema: String,
     code: ChallengeCode,
@@ -680,6 +724,8 @@ struct RoundResultFile {
     active_ms: u64,
     assists: AssistsUsed,
     agreement: Option<Agreement>,
+    #[serde(default)]
+    rating: Option<u8>,
 }
 
 impl From<RoundResult> for RoundResultFile {
@@ -694,6 +740,7 @@ impl From<RoundResult> for RoundResultFile {
             active_ms: r.active_ms,
             assists: r.assists,
             agreement: r.agreement,
+            rating: r.rating,
         }
     }
 }
@@ -708,12 +755,16 @@ impl TryFrom<RoundResultFile> for RoundResult {
                 f.schema
             ));
         }
+        // A newer build's outcome cannot be checked against the time; every other one is.
         let passed = f.outcome == Outcome::Passed;
-        if passed != f.time_to_pass_ms.is_some() {
+        if f.outcome != Outcome::Unknown && passed != f.time_to_pass_ms.is_some() {
             return Err("a passed round has a time to pass, and only a passed round".to_owned());
         }
         if f.first_submit.is_some() != (f.submits > 0) {
             return Err("a round has a first submit exactly when it has submits".to_owned());
+        }
+        if f.rating.is_some_and(|r| r == 0 || r > RATING_MAX) {
+            return Err(format!("a rating is 1 to {RATING_MAX}"));
         }
         Ok(RoundResult {
             code: f.code,
@@ -724,6 +775,7 @@ impl TryFrom<RoundResultFile> for RoundResult {
             active_ms: f.active_ms,
             assists: f.assists,
             agreement: f.agreement,
+            rating: f.rating,
         })
     }
 }
@@ -733,9 +785,18 @@ mod tests {
     use super::*;
     use crate::spec::{Category, LATEST_GENERATOR, SpecPreset};
 
+    /// Level 1 with the v1 scorer ids, whatever this build's default is.
     fn level1() -> Challenge {
         let spec = SpecPreset::by_id(1).unwrap().spec(1, 42);
-        Challenge::recreate(spec, PhraseId(1))
+        let mut c = Challenge::recreate(spec, PhraseId(1));
+        c.scoring = ScoringSpec::with_scorers(
+            0,
+            ScorerId::SOUND_V1,
+            ScorerId::STRUCTURE_V1,
+            ScorerId::COMBINED_V1,
+            ScorerId::TIME_V1,
+        );
+        c
     }
 
     #[test]
@@ -936,6 +997,78 @@ mod tests {
             .validate(),
             Err(PhraseError::BadVelocity { index: 0 })
         );
+    }
+
+    /// S12 (F1r review): the scoring seed is a literal that cannot follow the CLI's default silently, and it agrees
+    /// with it today; the Recreate default names the stubs until SS and ST land.
+    #[test]
+    fn the_scoring_seed_is_a_literal_equal_to_the_default_seed() {
+        assert_eq!(SCORING_SEED, enth_render::DEFAULT_SEED);
+        let s = ScoringSpec::recreate(25);
+        assert_eq!(
+            [
+                s.sound.clone(),
+                s.structure.clone(),
+                s.combined.clone(),
+                s.time.clone()
+            ],
+            RECREATE_SCORERS
+        );
+        assert_eq!(s.pass_mark, DEFAULT_PASS_MARK);
+        assert_eq!(
+            Challenge::recreate(SpecPreset::by_id(2).unwrap().spec(1, 1), PhraseId(1)).scoring,
+            s
+        );
+    }
+
+    /// M3 (F1r review): a vote or an outcome from a newer build reads as `unknown`, and a result written by a newer
+    /// build with an extra field still reads.
+    #[test]
+    fn newer_votes_outcomes_and_fields_read_tolerantly() {
+        assert_eq!(
+            serde_json::from_str::<Agreement>("\"disagree\"").unwrap(),
+            Agreement::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<Outcome>("\"timed_out\"").unwrap(),
+            Outcome::Unknown
+        );
+        let r = RoundResult {
+            code: ChallengeCode::short(SpecPreset::by_id(1).unwrap().spec(1, 3)).unwrap(),
+            outcome: Outcome::NotPassed,
+            first_submit: None,
+            submits: 0,
+            time_to_pass_ms: None,
+            active_ms: 10,
+            assists: AssistsUsed::default(),
+            agreement: None,
+            rating: Some(4),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        let newer = json
+            .replacen(
+                "\"agreement\":null",
+                "\"agreement\":\"disagree\",\"streak\":3",
+                1,
+            )
+            .replacen("\"outcome\":\"not_passed\"", "\"outcome\":\"timed_out\"", 1)
+            .replacen("\"hints\":0", "\"hints\":0,\"slow_motion\":true", 1);
+        assert_ne!(newer, json);
+        let back: RoundResult = serde_json::from_str(&newer).unwrap();
+        assert_eq!(
+            (back.agreement, back.outcome, back.rating),
+            (Some(Agreement::Unknown), Outcome::Unknown, Some(4))
+        );
+        let old = json.replacen(",\"rating\":4", "", 1);
+        assert_ne!(old, json);
+        assert_eq!(
+            serde_json::from_str::<RoundResult>(&old).unwrap().rating,
+            None
+        );
+        for bad in ["0", "6"] {
+            let text = json.replacen("\"rating\":4", &format!("\"rating\":{bad}"), 1);
+            assert!(serde_json::from_str::<RoundResult>(&text).is_err(), "{bad}");
+        }
     }
 
     #[test]

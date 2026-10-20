@@ -37,9 +37,19 @@
 //! 8. **Headroom.** When the enabled sources sum above 100 %, `master.level` (a gauge, never drawn) is lowered by
 //!    their sum in 0.5 dB steps, at most 12 dB.
 //!
-//! Old generator versions stay frozen: v1's 1,000-spec hash golden is `tests/golden/tests/rg_generator.rs` (in
-//! `enth-golden`, so `golden.yml` runs it on every platform), and any change
-//! to a prior, a rule or the table is a new generator version.
+//! 9. **The fingerprint** ([`Generated::fingerprint`], F1r review M1): SHA-256 of the generator, the phrase and every
+//!    draw by name and value (and `master.level` when the headroom rule set it), in the frozen format of
+//!    [`crate::fingerprint`]. It never holds the patch schema, a position or a default, so a catalogue change that
+//!    v1 does not read keeps every v1 target's fingerprint: what a long code's prefix, a saved round and the golden
+//!    check.
+//!
+//! Old generator versions stay frozen: v1's 1,000-spec fingerprint golden is `tests/golden/tests/rg_generator.rs`
+//! (in `enth-golden`, so `golden.yml` runs it on every platform), and any change to a prior, a rule or the table is
+//! a new generator version. **What v1 reads from the catalogue is pinned** (`src/random/catalogue-v1.txt`, checked
+//! by `random::tests::the_catalogue_fields_v1_reads_are_pinned`): v1 runs on the migrated, current-schema start and
+//! reads live `ParamSpec`s (ranges, scales, units, defaults, items, flags, keys), so a catalogue edit to one of
+//! those fields for one of its keys trips that test, and must keep v1's values in a frozen copy or ship
+//! generator v2.
 
 mod mask;
 
@@ -53,10 +63,11 @@ use enth_patch::{
     ModSource, ModuleId, Op, ParamAddr, Patch, PatchMeta, Rate, Route, RouteAddr, apply,
 };
 
+use crate::fingerprint::{EntryValue, Preimage, TargetFingerprint};
 use crate::model::{Phrase, PhraseId};
 use crate::phrases::{self, REFERENCE_KEY};
 use crate::priors::{self, Jnd};
-use crate::spec::{Category, LATEST_GENERATOR, RandomSpec, SpecError};
+use crate::spec::{Category, LATEST_GENERATOR, LATEST_TEMPLATE, RandomSpec, SpecError};
 
 /// Generator v1: this module's rules and [`priors::v1`](crate::priors). The versions this build runs are
 /// `1..=`[`LATEST_GENERATOR`]; a spec naming another is refused by [`RandomSpec::validate`], never guessed.
@@ -70,6 +81,11 @@ const _: () = assert!(
 /// Template 0: the starter superset patch (every P1 module; osc 2, the noise, the compressor and the reverb off; env 2
 /// and both LFOs unrouted), frozen as it was at F0r. Templates 1-5 (pluck, pad, bass, lead, keys) are reserved.
 pub const TEMPLATE_STARTER: u8 = 0;
+
+const _: () = assert!(
+    LATEST_TEMPLATE == TEMPLATE_STARTER,
+    "a new template needs its start here and LATEST_TEMPLATE bumped with it"
+);
 
 /// The most rounds of the minimum-step check per category before the step is forced.
 pub const MAX_ROUNDS: u16 = 16;
@@ -112,10 +128,10 @@ pub const fn unlock_level(category: Category) -> u8 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum GenError {
-    /// The spec fails [`RandomSpec::validate`] (a percentage above 100, generator 0, or a generator newer than
-    /// [`LATEST_GENERATOR`]). The generator refuses it; it never clamps.
+    /// The spec fails [`RandomSpec::validate`] (a percentage above 100, a seed above 2⁵³, generator 0, or a
+    /// generator or template newer than this build's). The generator refuses it; it never clamps.
     Spec(SpecError),
-    /// The spec names a template this build does not have.
+    /// [`start`] was asked for a template this build does not have (a spec naming one fails `validate` first).
     UnknownTemplate {
         /// The template the spec names.
         template: u8,
@@ -205,9 +221,14 @@ pub struct Step {
     pub forced: bool,
 }
 
-/// A generated target: the patch, the phrase it is heard through, and what was randomized.
+/// A generated target: the patch, the phrase it is heard through, what was randomized, and its fingerprint.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Generated {
+    /// The generator version that made it.
+    pub generator: u16,
+    /// The target's fingerprint (see the [module docs](self), step 9): what a long code's prefix, a saved round and
+    /// the golden check, independent of the patch schema.
+    pub fingerprint: TargetFingerprint,
     /// The target patch (the start, changed through ops only).
     pub patch: Patch,
     /// The phrase the challenge plays (an id in [`phrases::TABLE`]).
@@ -258,8 +279,10 @@ pub fn start(template: u8) -> Result<Patch, GenError> {
     }
 }
 
-/// The target of a spec, from its template's start: [`generate`]`(spec, &`[`start`]`(spec.template)?)`.
+/// The target of a spec, from its template's start: [`generate`]`(spec, &`[`start`]`(spec.template)?)`, after the
+/// spec's own check (so a newer template is `code_too_new`, like a newer generator).
 pub fn target(spec: &RandomSpec) -> Result<Generated, GenError> {
+    spec.validate().map_err(GenError::Spec)?;
     generate(spec, &start(spec.template)?)
 }
 
@@ -892,7 +915,8 @@ pub(crate) fn generate_with(
         });
     }
 
-    headroom(&mut g)?;
+    let headroom = headroom(&mut g)?;
+    let fingerprint = fingerprint_v1(spec.generator, phrase_id, &randomized, &g.patch, headroom);
     let mut params: Vec<ParamAddr> = randomized
         .iter()
         .filter_map(|r| match &r.drawn {
@@ -903,6 +927,8 @@ pub(crate) fn generate_with(
     params.sort();
     params.dedup();
     Ok(Generated {
+        generator: spec.generator,
+        fingerprint,
         patch: g.patch,
         phrase: phrase_id,
         level,
@@ -912,9 +938,53 @@ pub(crate) fn generate_with(
     })
 }
 
+/// The fingerprint of generator v1's target ([`crate::fingerprint`]'s v1 format): every draw, by its key, at its
+/// value in the final patch (a parameter's value, a route's depth, an enable flag), and `master.level` when the
+/// headroom rule set it. Frozen with v1's golden.
+pub(crate) fn fingerprint_v1(
+    generator: u16,
+    phrase: PhraseId,
+    randomized: &[Randomized],
+    patch: &Patch,
+    headroom: bool,
+) -> TargetFingerprint {
+    let mut pre = Preimage::new(generator, phrase);
+    for r in randomized {
+        match &r.drawn {
+            Drawn::Param(addr) => {
+                if let Some(v) = patch.value(addr) {
+                    pre.push(addr.to_string(), EntryValue::Param(v));
+                }
+            }
+            Drawn::Route(route) => {
+                let depth = patch
+                    .routes
+                    .iter()
+                    .find(|x| x.src == route.src && x.dst == route.dst)
+                    .map_or(0.0, |x| x.depth);
+                pre.push(
+                    format!("{}->{}", route.src, route.dst),
+                    EntryValue::Depth(depth),
+                );
+            }
+            Drawn::Enable(id) => {
+                let on = patch.find(id).is_some_and(|(_, m)| m.enabled);
+                pre.push(format!("{id}.enabled"), EntryValue::Flag(on));
+            }
+        }
+    }
+    if headroom {
+        let addr = ParamAddr::master(MasterParam::Level);
+        if let Some(v) = patch.value(&addr) {
+            pre.push(addr.to_string(), EntryValue::Param(v));
+        }
+    }
+    pre.finish()
+}
+
 /// Lower `master.level` by the enabled sources' summed level when it is above 100 %, in 0.5 dB steps, at most 12
-/// dB (design.md §9: the generator may set the gauge for headroom).
-fn headroom(g: &mut Gen<'_>) -> Result<(), GenError> {
+/// dB (design.md §9: the generator may set the gauge for headroom). Returns whether it set it.
+fn headroom(g: &mut Gen<'_>) -> Result<bool, GenError> {
     let sum: f64 = g
         .patch
         .generators
@@ -924,7 +994,7 @@ fn headroom(g: &mut Gen<'_>) -> Result<(), GenError> {
         .map(|l| f64::from(l) / 100.0)
         .sum();
     if sum <= 1.0 {
-        return Ok(());
+        return Ok(false);
     }
     let db = (libm::ceil(20.0 * libm::log10(sum) * 2.0) / 2.0).min(12.0);
     let addr = ParamAddr::master(MasterParam::Level);
@@ -936,8 +1006,9 @@ fn headroom(g: &mut Gen<'_>) -> Result<(), GenError> {
         .clamp(current.min(-db as f32));
     if value != current {
         g.apply(Op::SetParam { addr, value })?;
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 #[cfg(test)]

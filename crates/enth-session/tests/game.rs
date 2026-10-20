@@ -10,17 +10,18 @@ use std::path::{Path, PathBuf};
 
 use enth_challenge::score::{ModuleTerm, ParamScore};
 use enth_challenge::{
-    Combined, EngineVersion, PhraseId, RoundResult, ScorerId, ScoringSpec, SoundScore, SpecPreset,
-    TargetPrefix,
+    Combined, Direction, EngineVersion, PhraseId, RoundResult, ScoringSpec, SoundScore, SpecPreset,
+    TargetFingerprint, TargetPrefix,
 };
 use enth_engine::{Engine, Event, EventKind, NoteKey};
-use enth_patch::canon::canonical_hash;
+use enth_patch::canon::exact_hash;
 use enth_patch::model::{ModuleInstance, Section};
 use enth_patch::{ModuleKind, Op, Patch, Position, apply_all};
 use enth_session::game::{
     Agreement, Challenge, ChallengeCode, EditSource, EditorView, EndChoice, EndedBy, GameEdit,
     GameError, GameRequest, Job, JobId, JobKind, JobResult, Listen, LogEvent, Outcome, Phase,
-    RandomSpec, RoundLogEntry, RoundSource, RoundView, ScoreReport, StructureScore, Verdict,
+    Prepared, RandomSpec, RoundLogEntry, RoundSource, RoundView, ScoreReport, StructureScore,
+    Verdict,
 };
 use enth_session::state::STATE_VERSION;
 use enth_session::{
@@ -90,15 +91,23 @@ fn custom_spec() -> RandomSpec {
     }
 }
 
-/// Lane ST's structure score with one ring on the cutoff.
+/// The challenge's scoring (this build's default scorers), which every worker report must match.
+fn scoring() -> ScoringSpec {
+    ScoringSpec::recreate(spec().difficulty)
+}
+
+/// Lane ST's structure score (from the challenge's structure scorer) with one ring on the cutoff.
 fn structure(percent: f64, verdict: Verdict) -> StructureScore {
     StructureScore {
-        scorer: ScorerId::STRUCTURE_V1,
+        scorer: scoring().structure,
         percent,
         params: vec![ParamScore {
             addr: CUTOFF.to_owned(),
+            answer_addr: Some(CUTOFF.to_owned()),
             score: 0.5,
             verdict,
+            direction: Direction::Higher,
+            randomized: true,
         }],
         modules: Vec::<ModuleTerm>::new(),
     }
@@ -106,7 +115,7 @@ fn structure(percent: f64, verdict: Verdict) -> StructureScore {
 
 /// A report with this sound % (it passes at the default pass mark, 90).
 fn report(sound: f64) -> ScoreReport {
-    let scoring = ScoringSpec::recreate(spec().difficulty);
+    let scoring = scoring();
     let verdict = if sound >= 90.0 {
         Verdict::Good
     } else {
@@ -115,7 +124,7 @@ fn report(sound: f64) -> ScoreReport {
     ScoreReport::new(
         &scoring,
         SoundScore {
-            scorer: ScorerId::SOUND_V1,
+            scorer: scoring.sound.clone(),
             percent: sound,
             distance: 0.5,
             floor: 0.0,
@@ -125,20 +134,46 @@ fn report(sound: f64) -> ScoreReport {
         },
         structure(sound - 10.0, verdict),
         Combined {
-            scorer: ScorerId::COMBINED_V1,
+            scorer: scoring.combined.clone(),
             percent: sound - 5.0,
             sound_weight: scoring.sound_weight,
         },
     )
 }
 
+/// A fake target's fingerprint (a real worker passes `prepare_round`'s): different targets, different prints.
+fn fingerprint_of(target: &Patch) -> TargetFingerprint {
+    TargetFingerprint(exact_hash(target).0)
+}
+
+fn fingerprint() -> TargetFingerprint {
+    fingerprint_of(&target_patch())
+}
+
+/// The randomized parameters of the fake target.
+fn params() -> Vec<enth_patch::ParamAddr> {
+    vec![addr(CUTOFF), addr(RESONANCE)]
+}
+
+/// A prepare job's answer: `challenge` over the start and `target`.
+fn prepared_with(challenge: Challenge, target: Patch, target_lufs: Option<f32>) -> JobResult {
+    let print = fingerprint_of(&target);
+    JobResult::Prepared(Box::new(Prepared::new(
+        challenge,
+        start_patch(),
+        target,
+        params(),
+        print,
+        target_lufs,
+    )))
+}
+
 fn prepared_for(spec: RandomSpec) -> JobResult {
-    JobResult::Prepared {
-        challenge: Box::new(Challenge::recreate(spec, PhraseId(1))),
-        start: Box::new(start_patch()),
-        target: Box::new(target_patch()),
-        target_lufs: Some(-14.0),
-    }
+    prepared_with(
+        Challenge::recreate(spec, PhraseId(1)),
+        target_patch(),
+        Some(-14.0),
+    )
 }
 
 fn prepared() -> JobResult {
@@ -594,7 +629,7 @@ fn long_code(spec: RandomSpec, engine: EngineVersion, prefix: TargetPrefix) -> C
 }
 
 fn target_prefix() -> TargetPrefix {
-    TargetPrefix::of(&canonical_hash(&target_patch()))
+    fingerprint().prefix()
 }
 
 #[test]
@@ -734,16 +769,8 @@ fn the_challenges_hint_budget_limits_hints() {
         let prepare = job(&drain(&mut s), "prepare");
         let mut challenge = Challenge::recreate(spec(), PhraseId(1));
         challenge.assists.hint_budget = budget;
-        s.game_job_done(
-            prepare.id,
-            JobResult::Prepared {
-                challenge: Box::new(challenge),
-                start: Box::new(start_patch()),
-                target: Box::new(target_patch()),
-                target_lufs: None,
-            },
-        )
-        .unwrap();
+        s.game_job_done(prepare.id, prepared_with(challenge, target_patch(), None))
+            .unwrap();
         for level in 1..=allowed {
             assert_eq!(s.game_hint(), Ok(level), "{budget:?}");
             let hint = job(&drain(&mut s), "hint");
@@ -1125,6 +1152,7 @@ fn mid_round() -> Session {
     play(&mut s, 1_000);
     s.game_tick(4_000, EditorView::Visible);
     s.edit(vec![set(CUTOFF, 900.0)], None).unwrap();
+    s.game_rate(4).unwrap();
     submit(&mut s, report(35.0));
     s.game_hint().unwrap();
     let hint = job(&drain(&mut s), "hint");
@@ -1221,12 +1249,7 @@ fn a_different_regenerated_target_breaks_the_round_but_keeps_the_stash() {
     apply_all(&mut other, &[set(CUTOFF, 801.0)]).unwrap();
     t.game_job_done(
         prepare.id,
-        JobResult::Prepared {
-            challenge: Box::new(Challenge::recreate(spec(), PhraseId(1))),
-            start: Box::new(start_patch()),
-            target: Box::new(other),
-            target_lufs: None,
-        },
+        prepared_with(Challenge::recreate(spec(), PhraseId(1)), other, None),
     )
     .unwrap();
     let v = view(&t);
@@ -1509,6 +1532,9 @@ impl GameEdit for Fake {
     fn game_reveal(&mut self) -> Result<(), GameError> {
         Err(GameError::NotReady)
     }
+    fn game_rate(&mut self, _: u8) -> Result<(), GameError> {
+        Err(GameError::NotReady)
+    }
     fn game_vote(&mut self, _: Agreement) -> Result<(), GameError> {
         Err(GameError::NotScored)
     }
@@ -1646,4 +1672,466 @@ fn only_patch_replacements_reach_the_engine_one_plan_each() {
     );
     assert_eq!(engine.stats().dropped_events, 0);
     assert_eq!(engine.stats().stale_events, 0);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The F1r review's fixes (lane F1R)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Non-default editor preferences, to see that a load keeps them.
+fn prefs() -> enth_session::UiState {
+    enth_session::UiState {
+        layout: "grid".to_owned(),
+        scale_percent: 150,
+        advanced: true,
+    }
+}
+
+/// T3 (M3): a saved round holding a newer build's value in any of its enums (the phase, an edit's source, the vote,
+/// and the first report's verdict, direction, closeness, kind and status) loads: the editor preferences stay, and
+/// the stash comes back on Restore.
+#[test]
+fn t3_newer_enum_values_in_a_saved_round_keep_the_preferences_and_the_stash() {
+    let mut s = mid_round();
+    s.set_ui(prefs());
+    let saved = s.save(None);
+    let own = custom_patch().to_json();
+    for (from, to) in [
+        ("\"phase\":\"submitted\"", "\"phase\":\"practice\""),
+        ("\"source\":\"editor\"", "\"source\":\"midi\""),
+        ("\"agreement\":\"too_low\"", "\"agreement\":\"disagree\""),
+        (
+            "\\\"verdict\\\":\\\"bad\\\"",
+            "\\\"verdict\\\":\\\"awful\\\"",
+        ),
+        (
+            "\\\"direction\\\":\\\"higher\\\"",
+            "\\\"direction\\\":\\\"wobbly\\\"",
+        ),
+        ("\"hints\":1", "\"hints\":1,\"streak\":{\"kind\":\"new\"}"),
+    ] {
+        assert!(saved.instance.contains(from), "{from}");
+        let instance = saved.instance.replacen(from, to, 1);
+        let mut t = Session::default();
+        let report = t.load(&SavedState {
+            patch: saved.patch.clone(),
+            instance,
+        });
+        assert_eq!(report.errors, [], "{to}");
+        assert_eq!(t.instance().ui, prefs(), "{to}: the preferences stay");
+        let record = t.game_record().expect("the round is kept").clone();
+        assert_eq!(record.stash.as_deref(), Some(own.as_str()), "{to}");
+        if to.contains("practice") {
+            assert_eq!(
+                record.phase,
+                Phase::Broken,
+                "an unknown phase restores broken"
+            );
+        }
+        if to.contains("disagree") {
+            assert_eq!(record.agreement, Some(Agreement::Unknown));
+        }
+        t.game_end(EndChoice::Restore).unwrap();
+        assert_eq!(t.patch().to_json(), own, "{to}: the stash comes back");
+    }
+}
+
+/// T3 (M3): a `game` object this build cannot decode at all (a field of another type) fails only its round: it
+/// restores broken with its stash, and the preferences stay.
+#[test]
+fn t3_a_round_this_build_cannot_read_keeps_its_stash() {
+    let mut s = mid_round();
+    s.set_ui(prefs());
+    let saved = s.save(None);
+    let own = custom_patch().to_json();
+    for (from, to) in [
+        ("\"active_ms\":7000", "\"active_ms\":\"seven seconds\""),
+        ("\"hints\":1", "\"hints\":\"one\""),
+        ("\"id\":{\"serial\":1", "\"id\":{\"serial\":-1"),
+    ] {
+        assert!(saved.instance.contains(from), "{from}");
+        let instance = saved.instance.replacen(from, to, 1);
+        let mut t = Session::default();
+        let report = t.load(&SavedState {
+            patch: saved.patch.clone(),
+            instance,
+        });
+        assert_eq!(report.errors, [], "{to}");
+        assert_eq!(t.instance().ui, prefs(), "{to}");
+        let v = view(&t);
+        assert_eq!(v.phase, Phase::Broken, "{to}");
+        assert_eq!(t.game_submit(), Err(GameError::Broken));
+        t.game_end(EndChoice::Restore).unwrap();
+        assert_eq!(t.patch().to_json(), own, "{to}");
+    }
+    // Without a readable stash there is nothing to keep: no round, and still the preferences.
+    let instance = saved
+        .instance
+        .replacen("\"active_ms\":7000", "\"active_ms\":[]", 1)
+        .replacen("\"stash\":\"", "\"stash_v2\":\"", 1);
+    let mut t = Session::default();
+    assert_eq!(
+        t.load(&SavedState {
+            patch: saved.patch.clone(),
+            instance,
+        })
+        .errors,
+        []
+    );
+    assert_eq!(t.round(), None);
+    assert_eq!(t.instance().ui, prefs());
+}
+
+/// T3 (S8): the largest round the budget allows, every part at its cap and escaped at its worst, still fits the
+/// `enth` field, and loads back with its stash.
+#[test]
+fn t3_the_largest_round_fits_the_enth_field() {
+    use enth_session::game::{
+        DISPUTE_CHARS, EDIT_LOG_BYTES, EditRecord, FIRST_REPORT_BYTES, MAX_SUBMITS,
+        MAX_SUBMITTED_PATCH_BYTES, RoundId, RoundRecord, STASH_BYTES, ScoreSummary, SubmitRecord,
+        escaped_len,
+    };
+    use enth_session::state::MAX_FIELD_BYTES;
+    // Text whose escaped form is as long as the cap allows, built from the worst character (a control character
+    // takes 6 bytes escaped).
+    let worst = |cap: usize| "\u{1}".repeat((cap - 2) / 6);
+    let stash = worst(STASH_BYTES);
+    assert!(escaped_len(&stash) <= STASH_BYTES && escaped_len(&stash) > STASH_BYTES - 8);
+    let mut edits = Vec::new();
+    let mut bytes = 0;
+    loop {
+        let ops = serde_json::json!([{"set": "filter1.cutoff", "to": 1234.5678}]);
+        let size = ops.to_string().len() + 64;
+        if bytes + size > EDIT_LOG_BYTES {
+            break;
+        }
+        bytes += size;
+        edits.push(EditRecord {
+            t_ms: u64::MAX,
+            source: EditSource::Reveal,
+            ops,
+        });
+    }
+    let record = RoundRecord {
+        id: RoundId {
+            serial: u32::MAX,
+            nonce: u64::MAX,
+        },
+        code: "H000-G07Z-ZZZZ-ZZZZ-ZA4C-07ZZ-ZZG2-8XBS-N5J0-0A".to_owned(),
+        phase: Phase::Submitted,
+        stash: Some(stash.clone()),
+        target_hash: Some("f".repeat(64)),
+        active_ms: u64::MAX,
+        submits: vec![
+            SubmitRecord {
+                at_ms: u64::MAX,
+                score: ScoreSummary {
+                    passed: true,
+                    sound: 10_000,
+                    structure: 10_000,
+                    combined: 10_000,
+                },
+            };
+            MAX_SUBMITS
+        ],
+        time_to_pass_ms: Some(u64::MAX),
+        hints: u8::MAX,
+        revealed: true,
+        rating: Some(5),
+        agreement: Some(Agreement::AboutRight),
+        dispute: Some("\u{1}".repeat(DISPUTE_CHARS)),
+        first_report: Some(worst(FIRST_REPORT_BYTES)),
+        submitted_patch: Some(worst(MAX_SUBMITTED_PATCH_BYTES)),
+        edits,
+        edits_dropped: u32::MAX,
+    };
+    let instance = InstanceState {
+        ui: enth_session::UiState {
+            layout: "x".repeat(64),
+            ..enth_session::UiState::default()
+        },
+        game: Some(GameState {
+            round: Some(record),
+        }),
+        ..InstanceState::default()
+    };
+    let text = instance.to_json();
+    assert!(
+        text.len() <= MAX_FIELD_BYTES,
+        "{} bytes over {MAX_FIELD_BYTES}",
+        text.len()
+    );
+    let (back, _) = InstanceState::from_json(&text).unwrap();
+    assert_eq!(back, instance);
+    assert_eq!(
+        back.game.unwrap().round.unwrap().stash.as_deref(),
+        Some(stash.as_str())
+    );
+}
+
+/// S8: a player's patch too large to stash (a newer build's patch, kept as text) refuses the round at its start,
+/// with a clear error, and changes nothing; the save still loads.
+#[test]
+fn s8_a_patch_too_large_to_stash_refuses_the_start() {
+    use enth_session::game::STASH_BYTES;
+    let mut s = Session::new(custom_patch());
+    let huge = format!("{{\"schema\":9999,\"x\":\"{}\"}}", "\\\"".repeat(200_000));
+    assert!(huge.len() < enth_session::state::MAX_FIELD_BYTES);
+    s.load_patch(&huge);
+    assert!(s.status().patch_unloaded, "kept as text");
+    let e = s.game_start(source()).unwrap_err();
+    assert!(
+        matches!(e, GameError::TooLarge { what: "stash", bytes, max } if bytes > max && max == STASH_BYTES),
+        "{e:?}"
+    );
+    assert_eq!(e.code(), "too_large");
+    assert_ne!(e.hint(), "");
+    assert_eq!(s.round(), None);
+    assert_eq!(drain(&mut s), []);
+    let saved = s.save(None);
+    assert_eq!(saved.patch, huge, "the player's text is untouched");
+    assert_eq!(
+        Session::default().load(&saved).errors.len(),
+        1,
+        "only the patch's own error"
+    );
+}
+
+/// T6 (S10): a worker report the challenge could not have produced is refused, records no submit, and frees the
+/// score slot; so are rings from another scorer.
+#[test]
+fn t6_an_inconsistent_worker_report_is_refused() {
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    let mut wrong_id = report(95.0);
+    wrong_id.sound.scorer = enth_challenge::ScorerId::SOUND_V1;
+    let mut wrong_mark = report(95.0);
+    wrong_mark.pass_mark = 50;
+    let mut flipped = report(95.0);
+    flipped.passed = false;
+    let mut lying = report(50.0);
+    lying.passed = true;
+    let mut nan = report(95.0);
+    nan.sound.percent = f64::NAN;
+    let mut over = report(95.0);
+    over.structure.percent = 150.0;
+    for bad in [wrong_id, wrong_mark, flipped, lying, nan, over] {
+        s.game_submit().unwrap();
+        let score = job(&drain(&mut s), "score");
+        let e = s
+            .game_job_done(score.id, JobResult::Scored(Box::new(bad.clone())))
+            .unwrap_err();
+        assert_eq!(e.code(), "wrong_result", "{bad:?}");
+        assert!(matches!(e, GameError::BadReport { .. }));
+        let v = view(&s);
+        assert_eq!((v.submits, v.phase), (0, Phase::Playing));
+        assert_eq!(v.error.unwrap().code(), "wrong_result");
+        assert!(!v.pending.scoring, "the slot is free again");
+    }
+    // A consistent report still counts.
+    submit(&mut s, report(92.0));
+    assert_eq!(view(&s).phase, Phase::Passed);
+    // Rings from another structure scorer are refused too.
+    s.edit(vec![set(CUTOFF, 1000.0)], None).unwrap();
+    s.game_tick(1_000, EditorView::Visible);
+    let rings = job(&drain(&mut s), "rings");
+    let mut other = structure(10.0, Verdict::Bad);
+    other.scorer = enth_challenge::ScorerId::STRUCTURE_V1;
+    assert_eq!(
+        s.game_job_done(rings.id, JobResult::Rings(Box::new(other)))
+            .unwrap_err()
+            .code(),
+        "wrong_result"
+    );
+}
+
+/// T6 (S4): settings with a seed a JSON reader could change are refused at the start, and change nothing.
+#[test]
+fn t6_seeds_from_2_pow_53_are_refused_at_the_start() {
+    let mut s = Session::new(custom_patch());
+    for seed in [1u64 << 53, u64::MAX] {
+        let e = s
+            .game_start(RoundSource::Settings(RandomSpec { seed, ..spec() }))
+            .unwrap_err();
+        assert_eq!(e.code(), "out_of_range");
+        assert_eq!(s.round(), None);
+    }
+    let ok = RandomSpec {
+        seed: enth_challenge::spec::MAX_SEED,
+        ..custom_spec()
+    };
+    s.game_start(RoundSource::Settings(ok)).unwrap();
+}
+
+/// S7: the randomized parameters reach the round's view once the target is ready (for `dim_unused`).
+#[test]
+fn s7_the_randomized_parameters_reach_the_view() {
+    let mut s = Session::new(custom_patch());
+    s.game_start(source()).unwrap();
+    assert_eq!(view(&s).params, []);
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    assert_eq!(view(&s).params, params());
+}
+
+/// S9: the blind rating is taken before the first score shows, one per round (a later one replaces it), 1 to 5, and
+/// goes to the round's result.
+#[test]
+fn s9_the_blind_rating_is_asked_before_the_score_shows() {
+    let mut s = Session::new(custom_patch());
+    assert_eq!(s.game_rate(3), Err(GameError::NoRound));
+    s.game_start(source()).unwrap();
+    assert_eq!(s.game_rate(3), Err(GameError::NotReady));
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    assert_eq!(s.game_rate(0).unwrap_err().code(), "bad_rating");
+    assert_eq!(s.game_rate(6), Err(GameError::BadRating(6)));
+    s.game_submit().unwrap();
+    let score = job(&drain(&mut s), "score");
+    // Submitted, its score not shown yet: the moment the editor asks.
+    s.game_rate(2).unwrap();
+    s.game_rate(4).unwrap();
+    assert_eq!(view(&s).rating, Some(4));
+    s.game_job_done(score.id, JobResult::Scored(Box::new(report(40.0))))
+        .unwrap();
+    assert_eq!(s.game_rate(5), Err(GameError::AlreadyScored));
+    assert_eq!(s.game_record().unwrap().rating, Some(4));
+    s.game_end(EndChoice::Restore).unwrap();
+    let r = result(&logs(&drain(&mut s))[0]);
+    assert_eq!(r.rating, Some(4));
+    // After a reveal the player has heard the target as their own: no rating.
+    let mut t = Session::new(custom_patch());
+    play(&mut t, 0);
+    t.game_reveal().unwrap();
+    assert_eq!(t.game_rate(3), Err(GameError::Revealed));
+}
+
+/// S11: the view says when the round next needs a frame: the settled jobs' time, the running timer's next second,
+/// and nothing while the editor is closed.
+#[test]
+fn s11_the_view_says_when_the_round_next_needs_a_frame() {
+    let mut s = Session::new(custom_patch());
+    s.game_tick(0, EditorView::Opened);
+    s.game_start(source()).unwrap();
+    assert_eq!(
+        view(&s).wake_at_ms,
+        None,
+        "preparing: the worker's post wakes the editor"
+    );
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    assert_eq!(view(&s).wake_at_ms, Some(0), "the settled jobs are due now");
+    s.game_tick(250, EditorView::Visible);
+    assert_eq!(view(&s).wake_at_ms, Some(1_000), "the timer's next second");
+    s.edit(vec![set(CUTOFF, 1500.0)], None).unwrap();
+    assert_eq!(
+        view(&s).wake_at_ms,
+        Some(550),
+        "settled 300 ms after the edit"
+    );
+    s.game_tick(1_300, EditorView::Visible);
+    assert_eq!(view(&s).wake_at_ms, Some(2_000));
+    s.game_tick(1_400, EditorView::Hidden);
+    assert_eq!(view(&s).wake_at_ms, None, "closed: no timer, no frames");
+}
+
+/// S3 and S8: each log line carries the target's fingerprint and the engine, and the `end` line the edit log.
+#[test]
+fn s3_log_lines_carry_the_fingerprint_the_engine_and_the_edit_log() {
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    s.edit(vec![set(CUTOFF, 700.0)], None).unwrap();
+    submit(&mut s, report(30.0));
+    s.game_dispute("too harsh").unwrap();
+    let dispute = logs(&drain(&mut s)).pop().unwrap();
+    assert_eq!(dispute.edit_log, [], "the dispute line is small");
+    let edits = s.game_record().unwrap().edits.clone();
+    s.game_end(EndChoice::Keep).unwrap();
+    let end = logs(&drain(&mut s)).pop().unwrap();
+    for line in [&dispute, &end] {
+        assert_eq!(line.fingerprint, Some(fingerprint().to_hex()));
+        assert_eq!(line.engine, Some(EngineVersion::CURRENT));
+    }
+    assert_eq!(end.edit_log, edits);
+    assert_eq!(end.edits as usize, edits.len());
+    // A line written before these fields existed still reads.
+    let mut old = serde_json::to_value(&end).unwrap();
+    let fields = old.as_object_mut().unwrap();
+    for key in ["fingerprint", "engine", "edit_log"] {
+        assert!(fields.remove(key).is_some(), "{key}");
+    }
+    let back: RoundLogEntry = serde_json::from_value(old).unwrap();
+    assert_eq!((back.fingerprint, back.engine), (None, None));
+}
+
+/// S6: a ring goes on the player's control (the row's answer address), a row with no match rings nothing, and a
+/// row for a parameter the target did not randomize says so.
+#[test]
+fn s6_rings_go_on_the_players_control() {
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    let mut r = report(40.0);
+    r.structure.params = vec![
+        ParamScore {
+            addr: CUTOFF.to_owned(),
+            answer_addr: Some(RESONANCE.to_owned()),
+            score: 0.5,
+            verdict: Verdict::Near,
+            direction: Direction::Lower,
+            randomized: true,
+        },
+        ParamScore {
+            addr: "osc2.level".to_owned(),
+            answer_addr: None,
+            score: 0.0,
+            verdict: Verdict::Bad,
+            direction: Direction::Missing,
+            randomized: true,
+        },
+        ParamScore {
+            addr: "env1.release".to_owned(),
+            answer_addr: Some("env1.release".to_owned()),
+            score: 0.0,
+            verdict: Verdict::Bad,
+            direction: Direction::Higher,
+            randomized: false,
+        },
+    ];
+    submit(&mut s, r);
+    let knobs = view(&s).knobs;
+    assert_eq!(
+        knobs
+            .iter()
+            .map(|k| (k.addr.to_string(), k.verdict, k.randomized))
+            .collect::<Vec<_>>(),
+        [
+            (RESONANCE.to_owned(), Verdict::Near, true),
+            ("env1.release".to_owned(), Verdict::Bad, false)
+        ]
+    );
+}
+
+/// M1: a resumed round checks the regenerated target by its fingerprint, which a patch re-encoding never moves:
+/// only another target breaks it.
+#[test]
+fn m1_a_resumed_round_is_checked_by_fingerprint() {
+    let saved = mid_round().save(None);
+    assert!(saved.instance.contains(&fingerprint().to_hex()));
+    let mut t = Session::default();
+    t.load(&saved);
+    let prepare = job(&drain(&mut t), "prepare");
+    // The same target with another fingerprint is another target.
+    t.game_job_done(
+        prepare.id,
+        JobResult::Prepared(Box::new(Prepared::new(
+            Challenge::recreate(spec(), PhraseId(1)),
+            start_patch(),
+            target_patch(),
+            params(),
+            TargetFingerprint([7; 32]),
+            None,
+        ))),
+    )
+    .unwrap();
+    assert_eq!(view(&t).error.unwrap().code(), "target_drift");
 }
