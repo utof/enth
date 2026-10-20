@@ -55,7 +55,7 @@ Rules:
 
 `ScoringSpec::recreate(difficulty)` is the Recreate default: this build's `RECREATE_SCORERS`, a sound weight of `50 + 30·difficulty/100` % (50 % at difficulty 0, where structure is unambiguous and ADR-0007 asks to lean on it; 80 % at 100), and the pass mark `DEFAULT_PASS_MARK` = 90. `ScoringSpec::with_scorers` gives the same weights with named scorers (the fixtures and the golden challenges pin the v1 ids that way). The weights live in the challenge, so a later default never changes an old challenge's score.
 
-**The default scorers are stubs until SS and ST land** (F1r review S12): `RECREATE_SCORERS` is `sound-stub/1`, `structure-stub/1`, `combined-stub/1`, `time/1`. The stubs score in parameter space under their own ids, so no stub score is ever stored, logged or pinned as `sound/1`. Lane SS switches the sound entry to `sound/1` in the commit that lands it (and ST `structure/1` and `combined/1`). **The pass mark stays and the curve moves:** SS fits `sound/1`'s curve so that the rating-4.5 point lands on 90, GR1's refit is `sound/2` with the same mark, and the stubs use 90 as is.
+**The default scorers are stubs until SS and ST land** (F1r review S12): `RECREATE_SCORERS` was `sound-stub/1`, `structure-stub/1`, `combined-stub/1`, `time/1`; lane ST switched structure and combined to `structure/1` and `combined/1` ([below](#structure-combined-and-time-lane-st)). The stubs score in parameter space under their own ids, so no stub score is ever stored, logged or pinned as `sound/1`. Lane SS switches the sound entry to `sound/1` in the commit that lands it (and ST `structure/1` and `combined/1`). **The pass mark stays and the curve moves:** SS fits `sound/1`'s curve so that the rating-4.5 point lands on 90, GR1's refit is `sound/2` with the same mark, and the stubs use 90 as is.
 
 **The scored render** is fixed by two constants in `model`: `SCORING_SAMPLE_RATE` = 48,000 Hz and `SCORING_SEED` = `0x0E17_5EED`, written out (F1r review S12) so it can never follow the CLI's default silently; a test checks it equals `enth_render::DEFAULT_SEED`. So `enth render` of a target with its phrase gives exactly the audio the scorer hears and Target ▶ plays.
 
@@ -257,7 +257,7 @@ pub struct TargetContext<'a> {
 
 **The stubs** (`score::stub`, CT): every one works in parameter space, with no render, through generator v1's just-noticeable steps (`priors::jnd`, `Jnd::steps`). A randomized parameter scores 1 within one step of the target, falling linearly to 0 at four, with the ring good under one step, near under three, bad beyond; sound % and structure % are both the mean over the randomized parameters, combined is w·sound + (1 − w)·structure, and the sound stub's components come from the parameters that feed each kind (osc semitones → pitch, the wave → harmonics, the filter → brightness, the envelopes → attack, envelope, sustain, release; noise → noisiness; LFOs → movement). The target scores 100. **Not a sound score**: it lets SKR, RUI and GC wire and test the round before SS and ST land.
 
-**Module matching** (`score::matching`, owner ST, pre-declared by F1R): `match_modules(target, answer) -> ModuleMatching` pairs the player's modules with the target's (`answer_of`, `target_of`, `missing`, `extra`, `answer_addr`), for SS's mapping before the scoring render (ADR-0007 fix 2), ST's structure score and the rings. Until ST fills it, modules pair by id and kind, which is exact while players cannot add or remove modules.
+**Module matching** (`score::matching`, owner ST, pre-declared by F1R): `match_modules(target, answer) -> ModuleMatching` pairs the player's modules with the target's (`answer_of`, `target_of`, `missing`, `extra`, `answer_addr`), for SS's mapping before the scoring render (ADR-0007 fix 2), ST's structure score and the rings. Lane ST filled it: [Module matching](#module-matching) (and `Matcher`, the round's pairing that SS and ST share).
 
 ## Round results
 
@@ -456,7 +456,7 @@ v1 cannot see real moves under its own floor on a third of the targets, so `soun
 
 ### Module mapping and nuisance parameters
 
-Start phases and noise follow module ids, so `scoring_patch(target, answer)` renames the answer's modules onto the target's before the render. It starts from `matching::match_modules` and keeps the pairs whose two modules are both on or both off. **Local fallback** (lane ST's matcher is not on main yet): the leftovers pair by kind in section order, enabled with enabled first; an unpaired module whose id a pair took gets `zz1`, `zz2`, …. **Follow-up once ST is on main** (about 10 lines in `sound.rs`): keep `matching::Matcher::for_round(ctx)` in the prepared state and render `matcher.relabel(&matcher.pair(answer), answer)`, so SS and ST pair alike and routes come in the target's order.
+Start phases and noise follow module ids, so the answer's modules are renamed onto the target's before the render. The prepared state keeps `matching::Matcher::for_round(ctx)`, and `SoundPrepared::scoring_patch(answer)` renders `matcher.relabel(&matcher.pair(answer), answer)` ([Module matching](#module-matching)), so SS and ST pair alike and routes come in the target's order (lane ST switched it on merging SS, replacing the local fallback; `ss_determinism`'s pin did not move). The free `scoring_patch(target, answer)` is the same with the context-free pairing.
 
 The answer's **nuisance parameters** (lane RG's `Visibility::Nuisance`: phase modes, start phases, seeds) take the target's values in the scored render: an LFO retriggered at another start phase moved a level-4 score to 88 % before this, and P10 asks for at least 99. The generator never draws them, so they are not part of the challenge. The player still hears their own value.
 
@@ -542,7 +542,7 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER=/path/to/wasmtime cargo test -p enth-challenge
 - **GC (golden challenges):** prepare with `ScoringSpec::with_scorers(d, ScorerId::SOUND_V1, …)` so the pins keep `sound/1` whatever the default becomes. Scores are bit-exact, so pin them to 1e-6 and keep the ≥ 1e-3 margin rule. The target scores exactly 100, and the start fails at every level. Budget about 2 s per level-5 prepare. For `golden.yml`'s wasm job, the command above runs `ss_determinism`.
 - **RUI (results drawer):** headline `percent` against `pass_mark`. Rows: `components` in order with `direction` and `closeness` badges, and `component_text(&c)` for the words. **Never show `target` or `answer` during a round** (no peeking); after a reveal they are fine. `jnd`, `floor` and `scale` are for the CLI and debugging, not players. A progress bar may run from the start's percent to 90.
 - **SKR (worker):** `prepare_round` now renders, which takes 0.25–2 s. Run it on the worker and keep the `PreparedRound`. Measure Target ▶ and Mine ▶ with `loudness::integrated_lufs` on the 48 kHz mid channel and pass them to `Prepared::from_round` and `mine_lufs`.
-- **ST:** switch to `Matcher::for_round` + `relabel` once both lanes are on main (above). When ST switches `structure/1` and `combined/1` in `RECREATE_SCORERS`, the round fixture in enth-session (`state/v1/round.enth.json`) and `t6`'s "wrong id" need the same treatment SS gave them.
+- **ST:** done on merging SS: `Matcher::for_round` + `relabel` in `sound.rs`, the session's round fixture regenerated and `t6`'s wrong structure id.
 
 ### How `sound/2` replaces `sound/1`
 
@@ -550,4 +550,130 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER=/path/to/wasmtime cargo test -p enth-challenge
 
 ## Structure, combined and time (lane ST)
 
-*To be written by lane ST:* `structure/1` (canonicalising, matching, tolerances, equivalences, verdict thresholds), `combined/1` (the formula and the default weights) and `time/1`.
+Lane ST, 2026-10-20: `score/matching.rs`, `score/structure.rs` and `score/combined.rs`. `RECREATE_SCORERS` names `structure/1` and `combined/1`; sound stays `sound-stub/1` until lane SS lands `sound/1`. The tolerances are generator v1's just-noticeable steps (`priors::jnd`). Lane SN's measured sensitivity (`enth_solver::sensitivity`) cannot feed them: `enth-challenge` is L4 and `enth-solver` L5. A scorer that takes measured tolerances, passed in by an L5+ caller, would be `structure/2`.
+
+### Module matching
+
+`score::matching` pairs the player's modules with the target's. Lane SS's scored render, the structure score and the rings use the same pairing, so a ring and the render agree on which module is the player's osc 1.
+
+| Item | What it does |
+| --- | --- |
+| `match_modules(target, answer) -> ModuleMatching` | The context-free pairing of two patches: heard through the held phrase, nothing randomized (`enth compare` on two patches). F1R's signature, unchanged |
+| `Matcher::for_round(ctx)`, `matcher.pair(answer)` | The round's pairing: built once in a scorer's `prepare`, then used on every submit. It weighs what the round randomized first. **SS and ST both use it** |
+| `Draws::of(ctx)` | What the generator drew: the parameters, the routes and the enable flags. `TargetContext` carries only the parameters, so the generator runs again on the start (pure, about 0.3 ms) and must give `ctx.target` exactly. A hand-made context falls back to what the target changed from the start |
+| `ModuleMatching` | `pairs`, `missing` and `extra` (present modules only), `answer_of`, `target_of`, `answer_addr`, `target_addr`, `answer_route`, `target_route`, `is_identity` |
+| `matcher.relabel(&m, answer)` | **What SS renders.** The answer with every paired module renamed to its partner's id (seeds follow ids), with generators, modulators and routes in the target's order. Clashing unpaired modules get the lowest free `<prefix><n>`. Generators keep their order when the answer uses hard sync, and `voice_fx` and `fx` are chains, never reordered. A valid answer gives a valid patch. **Guarantee:** an answer that equals the target up to ids and order renders the target's samples bit for bit (`relabelled_equivalents_render_the_target_bit_for_bit`). `ModuleMatching::relabel` does the same but keeps the answer's route order |
+
+**Present** is what takes part in the pairing:
+
+- an enabled module;
+- for a generator, not silent: a level above 0, or a route of non-zero depth on its level;
+- for a modulator, live under the mask: the amplitude envelope, or the source of a non-zero route onto something heard.
+
+So a disabled module, a silent generator, an unrouted LFO and a depth-0 route are absent: they pair with nothing and cost nothing. These are `canon`'s equivalences (disabled ≡ absent, depth 0 ≡ no route), applied to the patches as they are, so the player's real ids survive for the rings. Canonicalising first would relabel them.
+
+**Pairing.** Modules pair per kind (oscillators with oscillators), so a permutation pairs by content, never by id, and the two amplitude envelopes always pair with each other. Each kind is an exact minimum-cost assignment: dynamic programming over subsets, since a section holds at most 8 modules. It pairs as many modules as the smaller side has. The cost compares three things, in order:
+
+1. **The structure loss on what the round randomized:** Σ (1 − sᵢ) over the target module's randomized parameters, the randomized routes onto it (read by the source's kind, since the sources' pairing may not be known yet) and the randomized routes it drives. A target module left unpaired loses 1 for each such item, plus 1 when its enable flag was drawn. So the pairing is the reading that scores best for the player.
+2. The same loss over the other parameters and routes that either side's mask calls observable. A hard-sync master paired with a non-master counts 1.
+3. The number of renamed pairs.
+
+Remaining ties go to the lexicographically first assignment: the target's modules in patch order, each taking the earliest answer module that keeps the optimum. Equal costs therefore keep ids and order. The kinds are paired in a fixed order:
+
+1. the generators, twice: first against each patch's own first generator, then against the partner of the target's first generator (levels are ratios to it);
+2. the effects;
+3. the modulators, twice: route destinations map through the pairs found so far.
+
+### `structure/1`
+
+**What it compares:** only what the generator drew, all of it observable through the phrase (P4). Gauges, nuisances and dead parameters are never compared: nobody can hear them, and metric v1 measured `osc1.level` 100 → 50 %, `master.level` −6 dB and a 300 ms glide on one note at a distance of 0.0000.
+
+| Item (one row) | Distance in steps | Row `addr` | `answer_addr` |
+| --- | --- | --- | --- |
+| A randomized parameter | Just-noticeable steps of the target's value against the player's partner's, with the folds below. Infinite without a partner | `filter1.cutoff` | The partner's address (`osc2.wave` for the target's `osc1.wave` when the oscillators swapped); `null` when missing |
+| A randomized route | Depth difference in route steps (5 points); an absent route is depth 0. Infinite when an end's module has no partner | `lfo1 -> filter1.cutoff` (`RouteAddr`'s text) | The player's route, when it exists |
+| A randomized enable flag | 0 when the player's patch has the module exactly when the target does, else infinite. A target module that is on is matched by its partner; one that is off by the absence of an extra module of its kind | `osc2.enabled` | The player's module of that row, `<id>.enabled` |
+| A left-over module (`modules`) | Infinite, unless an enable-flag row already counts it | — | — |
+
+**The folds** (the equivalences beyond matching):
+
+- **Pitch:** an oscillator's `semi` and `fine` read as one pitch, 100·semi + fine cents. So +12 st ≡ +11 st and +100 ct, the semi row counts semitones and the fine row cents.
+- **Levels as ratios:** a generator's level reads in dB against the target's first generator (in the answer, against that generator's partner; level 0 when it has none: absent ≡ silent). So every source 6 dB down is the same mix.
+- **Wet against dry:** the reverb's `wet` reads against its `dry`.
+
+Not folded: pulse at 50 % against the pulse wavetable (0.02–0.05 apart in report 02, not one of P8's), and the order of different kinds in an effect chain.
+
+**Tolerances** are `priors::jnd`, generator v1's minimum steps, through `Jnd::steps`:
+
+| Parameter | One step |
+| --- | --- |
+| Cutoffs and other frequencies | 2 semitones |
+| LFO rates | × 1.5 |
+| Times | × 1.5, with 1 ms added |
+| Levels in % | 3 dB |
+| dB values | 3 dB |
+| Semitones | 1 (100 ct in the pitch fold) |
+| Cents | 3 |
+| Octaves | 1/6 |
+| Other percentages | 10 points |
+| Degrees | 30, wrapping |
+| Route depths | 5 points |
+| A discrete value or a flag | Any change is infinitely far |
+
+They are "beta", like the levels: GR1's disputes tune them.
+
+**Scores and rings:**
+
+- **An item scores** `item_score(steps)`: 1 under one step (inaudible), else 1 − steps/4, reaching 0 at four steps. Report 02's curve is 1 within the tolerance, falling to 0 at four. Here the fall starts from the origin, cut at one step, because an integer semitone off is exactly one step: under report 02's curve it would score 1. This way it scores 0.75.
+- **The ring** is `verdict(steps)`: good under one step, near under three, bad from three. **Structure % is 100 exactly when every counted ring is good.**
+- **Structure %** = 100 × the mean item score over the counted items: every randomized parameter, route and enable flag, plus every left-over module not already counted by an enable-flag row. It is 100 when there is nothing to compare. Every item weighs the same in v1; weights from measured sensitivity would be `structure/2`.
+- **Direction:** `same` under one step, otherwise `higher` or `lower`. For an enumeration it compares item indices. It is `missing` without a partner or route, and `extra` for an enable flag or route the target lacks.
+- **Rows the player moved that the target did not randomize** (`randomized: false`) are shown when they are a step or more off, and never counted. They cover the target's other observable parameters, the target's other heard routes, and the player's heard routes between paired modules.
+- **Row order:** randomized parameters (address order), randomized routes, enable flags (id order), then the moved parameters and moved routes. `modules` lists the missing ones (target order), then the extra ones (player order).
+
+**What the editor and the CLI need to know:**
+
+- **Route and enable-flag rows do not parse as `ParamAddr`.** Parse a route with `RouteAddr::from_str`, and strip `.enabled` for a module's switch.
+- The session's `knobs()` skips both, as it skips any address it cannot parse, so they show only once RUI rings routes and switches.
+- `score_structure` needs no render: it costs one mask and one pairing, so the live rings after the first submit are cheap.
+
+**Accepted consequences:**
+
+- An enabled extra module can *raise* an off-target answer's score. When it fits the target better than the player's own module, the matching reads it as the partner, and the player's module becomes the extra term.
+- Disabling a module also removes what only it made heard: with the filter off, env 2 (which only drove the cutoff) is missing too.
+
+### `combined/1`
+
+combined = (w·sound + (100 − w)·structure) / 100, where w is the challenge's `sound_weight` in percent. The weight lives in the challenge, so a later default never moves an old score.
+
+The Recreate default is lane CT's `ScoringSpec::recreate`: w = 50 + 30·difficulty/100, with integer division.
+
+- **50 % at difficulty 0:** structure is unambiguous there, and ADR-0007 asks to lean on it.
+- **80 % at 100:** many routes are valid there.
+
+The formula puts the integer weight first, so 65·90 + 35·80 = 8650 → 86.5 exactly. `CombinedV1::percent(w, sound, structure)` is the same formula for the CLI.
+
+**It never decides pass:** `ScoreReport::new` decides pass from sound alone (`combined_never_decides_pass`).
+
+### `time/1`
+
+Time to pass is the first passing **submit**, in the editor-visible milliseconds the shell's clock gave the session. Core crates read no clock. It counts submits, not a live pass, because a live pass light would give the answer away.
+
+- `score::combined::time_to_pass(submits)` is the rule as a pure function over `Submit { at_ms, passed }`, taken in submit order; it is `None` without a pass.
+- `first_passing(log, passes)` replays any timed log ("you were at a pass at 1:42").
+- The session (lane SG) keeps the same rule on its own (`time_to_pass_ms` is set on the first passing scored submit).
+
+### Properties
+
+| Property | Tests |
+| --- | --- |
+| **P8** the target scores 100 against itself; equivalences score 100 with every ring good and no module left over. The equivalences: swapped ids; reordered sections; the canonical form; disabled modules with any values; an extra disabled or silent oscillator; a depth-0 route; enharmonic tunings; every source 6 dB down; gauges and nuisances moved | `tests/st_properties.rs`: `p8_equivalent_patches_score_100` |
+| **P8** a disabled extra module costs nothing on any answer; an enabled one costs on the target | `p8_a_disabled_extra_module_costs_nothing` |
+| **P9** monotone: an error injected into one observable parameter (towards any value), or into a randomized route's depth (up to 0 when it would change sign: at 0 the route and maybe its modulator are absent), never raises structure % | `p9_monotone_along_a_parameter`, `p9_monotone_along_a_route` |
+| Deterministic; relabelling for SS | `determinism_and_relabelling`, `relabelled_equivalents_render_the_target_bit_for_bit`, `rings_follow_the_players_modules` |
+| Identical on native and wasm | `tests/golden/tests/st_structure.rs`: 300 targets × 3 answers, `structure/v1.txt`. Debug, release and `wasm32-wasip1` under wasmtime 48.0.6 give the same file (`all 15b9f55c…`), and `golden.yml` runs it with no job of its own. **Frozen with `structure/1`:** a change that moves it is `structure/2` |
+
+The property tests passed 10,000 cases on three seeds besides the gate's 256. That run found two pairing bugs, which are now fixed and kept in `st_properties.proptest-regressions`:
+
+- twin oscillators that differ only in what modulates them;
+- a randomized route that should keep its oscillator.
