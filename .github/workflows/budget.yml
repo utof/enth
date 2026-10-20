@@ -10,6 +10,13 @@ name: budget
 on:
   push:
     branches: [main]
+    paths:  # the same paths as pull_request: a docs-only push runs nothing
+      - "crates/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/budget.yml"
   pull_request:
     paths:
       - "crates/**"

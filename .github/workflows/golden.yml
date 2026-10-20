@@ -11,6 +11,15 @@ name: golden
 on:
   push:
     branches: [main]
+    paths:  # the same paths as pull_request: a docs-only push runs nothing
+      - "crates/**"
+      - "tests/golden/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/**"
+      - ".github/workflows/golden.yml"
   pull_request:
     paths:
       - "crates/**"

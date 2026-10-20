@@ -8,6 +8,13 @@ name: engine-golden
 on:
   push:
     branches: [main]
+    paths:  # the same paths as pull_request: a docs-only push runs nothing
+      - "spikes/spike-engine/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/engine-golden.yml"
   pull_request:
     paths:
       - "spikes/spike-engine/**"

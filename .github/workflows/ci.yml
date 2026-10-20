@@ -3,7 +3,15 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:  # docs-only changes run nothing (69 of the first 107 commits on main changed only Markdown)
+      - "**/*.md"
+      - "docs/**"
+      - "_local/**"
   pull_request:
+    paths-ignore:  # docs-only changes run nothing (69 of the first 107 commits on main changed only Markdown)
+      - "**/*.md"
+      - "docs/**"
+      - "_local/**"
   workflow_dispatch:
   schedule:
     - cron: "23 5 * * 1"   # weekly, so new RustSec advisories surface without a push
