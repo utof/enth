@@ -14,7 +14,7 @@
 //! | Item | Distance in steps | Row `addr` |
 //! | --- | --- | --- |
 //! | a randomized parameter | its just-noticeable steps ([`priors::jnd`](crate::priors::jnd), [`Jnd::steps`](crate::priors::Jnd::steps)), with the folds below; infinite without a partner | the address, `filter1.cutoff` |
-//! | a randomized route | depth difference in route steps ([`ROUTE_JND`](crate::priors::ROUTE_JND), 5 points), an absent route at depth 0; infinite when an end's module has no partner | the route, `lfo1 -> filter1.cutoff` |
+//! | a randomized route | depth difference in route steps ([`ROUTE_JND`], 5 points), an absent route at depth 0; infinite when an end's module has no partner | the route, `lfo1 -> filter1.cutoff` |
 //! | a randomized enable flag | 0 when the player's patch has the module exactly when the target does, else infinite | `osc2.enabled` |
 //! | a module the matching left over | infinite (it scores 0), unless an enable-flag row already says so | `modules` |
 //!
@@ -29,7 +29,7 @@
 //! sensitivity would be `structure/2`. Rows for what the player moved that the target did not randomize
 //! (`randomized: false`) and the module list are shown but, except the modules, never counted.
 //!
-//! **The dispatch hook** ([`prepare`], F1r review S5): `score::round` asks this file for the structure scorer a
+//! **The dispatch hook** (`prepare`, F1r review S5): `score::round` asks this file for the structure scorer a
 //! challenge names, after the stub (`structure-stub/1`).
 
 use std::cmp::Ordering;

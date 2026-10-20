@@ -15,7 +15,7 @@
 //! session, the CLI and the round log's reader, and [`first_passing`] replays any timed log ("you were at a pass at
 //! 1:42").
 //!
-//! **The dispatch hook** ([`combiner`], F1r review S5): `score::round` asks this file for the combiner a challenge
+//! **The dispatch hook** (`combiner`, F1r review S5): `score::round` asks this file for the combiner a challenge
 //! names, after the stub (`combined-stub/1`). `time/1` is checked by `score::round` itself.
 
 use super::{Combined, Combiner, ScorerId, SoundScore, StructureScore};

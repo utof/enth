@@ -38,11 +38,13 @@
 //! pairing as many modules as the smaller side has. The cost of a pair is lexicographic:
 //!
 //! 1. **the structure loss** on what the round randomized: Σ (1 − sᵢ) over the target module's randomized
-//!    parameters and the randomized routes it is the source of, with sᵢ the structure score's per-item score
+//!    parameters, the randomized routes onto it (read by their sources' kind, whose pairing may not be known yet)
+//!    and the randomized routes it drives, with sᵢ the structure score's per-item score
 //!    ([`super::structure::item_score`]); a target module left unpaired loses 1 per such item, plus 1 when its
 //!    enable flag was drawn. So the pairing is the one that scores best for the player;
-//! 2. the same loss over the other parameters either side's mask calls observable, and the other routes (a sync
-//!    master paired with a non-master counts 1 here);
+//! 2. the same loss over the other parameters either side's mask calls observable, and the other routes onto and
+//!    from the module (a sync master paired with a non-master counts 1 here), so twins that differ only in what
+//!    modulates them are told apart;
 //! 3. how many pairs change id.
 //!
 //! Remaining ties go to the lexicographically first assignment (the target's modules in patch order, each taking the
