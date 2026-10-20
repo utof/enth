@@ -355,6 +355,38 @@ mod tests {
     }
 
     #[test]
+    fn opening_the_window_enables_the_tap_and_closing_it_stops_it() {
+        let theme = Theme::dark();
+        let mut session = Session::new(Patch::init());
+        let engine = session
+            .activate(enth_session::Activation {
+                sample_rate: 48_000.0,
+                offline: false,
+            })
+            .unwrap();
+        let tap = engine.tap().unwrap();
+        assert!(!tap.is_enabled(), "closed: the tap does not publish");
+        let mut glue = Glue::new(&theme);
+        glue.open(&session, &theme);
+        assert!(tap.is_enabled(), "build() opens live feedback");
+        glue.close();
+        assert!(!tap.is_enabled(), "editor_closed stops it");
+        // A window opened while the plugin is inactive picks the tap up when the session has one.
+        let mut detached = Session::new(Patch::init());
+        glue.open(&detached, &theme);
+        let engine = detached
+            .activate(enth_session::Activation {
+                sample_rate: 48_000.0,
+                offline: false,
+            })
+            .unwrap();
+        let ctx = egui::Context::default();
+        theme.apply(&ctx);
+        frame(&ctx, &mut glue, &mut detached, Vec::new());
+        assert!(engine.tap().unwrap().is_enabled());
+    }
+
+    #[test]
     fn the_layout_comes_from_enth_layout_then_the_saved_name_then_lanes() {
         let theme = Theme::dark();
         let mut glue = Glue::new(&theme);

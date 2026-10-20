@@ -33,7 +33,9 @@ fn scene() -> Scene {
     let (_, m) = patch.find(&id).unwrap();
     let mut card = CardView::module(&patch, m);
     for p in &mut card.params {
-        if let Some(r) = modulation_range(&patch, &p.addr).filter(|r| r.is_modulated()) {
+        if let Some(r) =
+            modulation_range(&patch, &p.addr).filter(enth_patch::ModulationRange::is_modulated)
+        {
             p.range = Some((r.lo, r.hi));
             // The envelope is a third of the way up: the live arc runs from the value towards the range's top.
             p.live = Some(r.base + (r.hi - r.base) / 3.0);
