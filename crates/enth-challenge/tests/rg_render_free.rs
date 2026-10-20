@@ -4,15 +4,18 @@
 //! The crate depends on `enth-render` (for `model::Phrase::performance` and the scorers), so the dependency graph
 //! cannot show it. This test reads the generator's sources instead (`random`, its mask, the priors and the phrase
 //! table, each up to its test module): outside comments they name no crate but `enth_dsp` (the keyed draws),
-//! `enth_params` and `enth_patch`, reach no module of this crate but `phrases`, `priors`, `random`, `spec` and
-//! `model`, take nothing from `model` but the `Phrase`, `PhraseId` and `PhraseNote` data types, and never ask a
-//! phrase for its `Performance` (the one place `model` touches `enth-render`).
+//! `enth_params` and `enth_patch`, reach no module of this crate but `phrases`, `priors`, `random`, `spec`,
+//! `fingerprint`, `code` and `model`, take nothing from `model` but the `Phrase`, `PhraseId` and `PhraseNote` data
+//! types, and never ask a phrase for its `Performance` (the one place `model` touches `enth-render`). The target
+//! fingerprint (`fingerprint`, F1r review M1) and the code module it names its prefix from are read too.
 
-const SOURCES: [(&str, &str); 4] = [
+const SOURCES: [(&str, &str); 6] = [
     ("src/random.rs", include_str!("../src/random.rs")),
     ("src/random/mask.rs", include_str!("../src/random/mask.rs")),
     ("src/priors.rs", include_str!("../src/priors.rs")),
     ("src/phrases.rs", include_str!("../src/phrases.rs")),
+    ("src/fingerprint.rs", include_str!("../src/fingerprint.rs")),
+    ("src/code.rs", include_str!("../src/code.rs")),
 ];
 
 /// The code of a source file up to its test module: every line with its `//` comment (doc comments included) cut
@@ -55,7 +58,16 @@ fn the_generator_never_reaches_the_renderer() {
             }
             for module in idents(line, "crate::") {
                 assert!(
-                    ["phrases", "priors", "random", "spec", "model"].contains(&module),
+                    [
+                        "phrases",
+                        "priors",
+                        "random",
+                        "spec",
+                        "fingerprint",
+                        "code",
+                        "model"
+                    ]
+                    .contains(&module),
                     "{file}:{n}: the generator reaches crate::{module}: {line}"
                 );
                 if module == "model" {

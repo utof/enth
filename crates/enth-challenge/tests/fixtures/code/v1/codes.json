@@ -18,8 +18,8 @@
     },
     "engine": "0.2.0",
     "target": "00000000",
-    "short": "1040-1000-0000-0=",
-    "long": "H000-G000-0000-0000-0068-0000-8000-0000-009"
+    "short": "1040-1000-0000-0T",
+    "long": "H000-G000-0000-0000-0068-0000-8000-0000-00V"
   },
   {
     "name": "level2-seed42",
@@ -40,8 +40,8 @@
     },
     "engine": "255.255.255",
     "target": "0123abcd",
-    "short": "1080-1000-0001-AC",
-    "long": "H000-G000-0000-0001-A6E8-07ZZ-ZZG2-8XBS-M0N"
+    "short": "1080-1000-0001-AB",
+    "long": "H000-G000-0000-0001-A6E8-07ZZ-ZZG2-8XBS-M0B"
   },
   {
     "name": "level3-seed-max-short",
@@ -62,8 +62,8 @@
     },
     "engine": "0.2.0",
     "target": "ffffffff",
-    "short": "10C0-1ZZZ-ZZZZ-ZZ",
-    "long": "H000-G000-0ZZZ-ZZZZ-ZCP8-0000-80FZ-ZZZZ-W0N"
+    "short": "10C0-1ZZZ-ZZZZ-Z4",
+    "long": "H000-G000-0ZZZ-ZZZZ-ZCP8-0000-80FZ-ZZZZ-W0Q"
   },
   {
     "name": "level4-seed-2^40",
@@ -85,7 +85,7 @@
     "engine": "255.255.255",
     "target": "00000000",
     "short": null,
-    "long": "H000-G000-1000-0000-0JY8-07ZZ-ZZG0-0000-00T"
+    "long": "H000-G000-1000-0000-0JY8-07ZZ-ZZG0-0000-00A"
   },
   {
     "name": "level4-seed-short",
@@ -106,14 +106,14 @@
     },
     "engine": "0.2.0",
     "target": "0123abcd",
-    "short": "10G0-1NF6-YY09-3G",
+    "short": "10G0-1NF6-YY09-3R",
     "long": "H000-G000-0NF6-YY09-3JY8-0000-8002-8XBS-M05"
   },
   {
     "name": "level5-seed-max",
     "spec": {
       "generator": 1,
-      "seed": 18446744073709551615,
+      "seed": 9007199254740991,
       "difficulty": 100,
       "amounts": [
         null,
@@ -129,7 +129,7 @@
     "engine": "255.255.255",
     "target": "ffffffff",
     "short": null,
-    "long": "H000-ZZZZ-ZZZZ-ZZZZ-ZS68-07ZZ-ZZZZ-ZZZZ-W0S"
+    "long": "H000-G07Z-ZZZZ-ZZZZ-ZS68-07ZZ-ZZZZ-ZZZZ-W0T"
   },
   {
     "name": "level5-seed7",
@@ -150,14 +150,14 @@
     },
     "engine": "0.2.0",
     "target": "00000000",
-    "short": "10M0-1000-0000-74",
-    "long": "H000-G000-0000-0000-7S68-0000-8000-0000-002"
+    "short": "10M0-1000-0000-7B",
+    "long": "H000-G000-0000-0000-7S68-0000-8000-0000-00N"
   },
   {
     "name": "custom",
     "spec": {
       "generator": 1,
-      "seed": 18446744073709551615,
+      "seed": 9007199254740991,
       "difficulty": 40,
       "amounts": [
         null,
@@ -168,18 +168,18 @@
         null
       ],
       "musical": 70,
-      "template": 3
+      "template": 0
     },
     "engine": "255.255.255",
     "target": "0123abcd",
     "short": null,
-    "long": "H000-ZZZZ-ZZZZ-ZZZZ-ZA4C-0ZZZ-ZZG2-8XBS-N5J0-0X"
+    "long": "H000-G07Z-ZZZZ-ZZZZ-ZA4C-07ZZ-ZZG2-8XBS-N5J0-0A"
   },
   {
     "name": "every-amount",
     "spec": {
       "generator": 1,
-      "seed": 18446744073709551615,
+      "seed": 5124095576030430,
       "difficulty": 40,
       "amounts": [
         0,
@@ -190,12 +190,12 @@
         7
       ],
       "musical": 70,
-      "template": 255
+      "template": 0
     },
     "engine": "0.2.0",
     "target": "ffffffff",
     "short": null,
-    "long": "H000-ZZZZ-ZZZZ-ZZZZ-ZA4D-ZR00-80FZ-ZZZZ-ZY00-5JRY-83GT"
+    "long": "H000-G04H-MASW-9NF6-YA4C-0000-80FZ-ZZZZ-ZY00-5JRY-83GQ"
   },
   {
     "name": "musical-0",
@@ -217,6 +217,6 @@
     "engine": "255.255.255",
     "target": "00000000",
     "short": null,
-    "long": "H000-G000-0000-0000-0000-07ZZ-ZZG0-0000-005"
+    "long": "H000-G000-0000-0000-0000-07ZZ-ZZG0-0000-00Z"
   }
 ]

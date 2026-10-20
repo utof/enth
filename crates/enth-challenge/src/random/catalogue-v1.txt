@@ -1,0 +1,43 @@
+comp1.attack key=attack unit=Ms float 0.1..100.0 Log default=10.0 flags=-a--
+comp1.ratio key=ratio unit=Ratio float 1.0..20.0 Log default=4.0 flags=ma--
+comp1.release key=release unit=Ms float 10.0..2000.0 Log default=200.0 flags=-a--
+comp1.threshold key=threshold unit=Db float -60.0..0.0 Linear default=-18.0 flags=ma--
+env1.attack key=attack unit=Ms float 0.0..10000.0 Power(4.0) default=5.0 flags=ma--
+env1.decay key=decay unit=Ms float 0.0..10000.0 Power(4.0) default=300.0 flags=ma--
+env1.release key=release unit=Ms float 0.0..20000.0 Power(4.0) default=400.0 flags=ma--
+env1.sustain key=sustain unit=Percent float 0.0..100.0 Linear default=70.0 flags=ma--
+env1.velocity key=velocity unit=Percent float 0.0..100.0 Linear default=0.0 flags=-a--
+env2.attack key=attack unit=Ms float 0.0..10000.0 Power(4.0) default=5.0 flags=ma--
+env2.decay key=decay unit=Ms float 0.0..10000.0 Power(4.0) default=300.0 flags=ma--
+env2.release key=release unit=Ms float 0.0..20000.0 Power(4.0) default=400.0 flags=ma--
+env2.sustain key=sustain unit=Percent float 0.0..100.0 Linear default=70.0 flags=ma--
+filter1.cutoff key=cutoff unit=Hz float 20.0..20000.0 Log default=2000.0 flags=ma--
+filter1.drive key=drive unit=Db float 0.0..24.0 Linear default=0.0 flags=ma--
+filter1.keytrack key=keytrack unit=Percent float 0.0..100.0 Linear default=0.0 flags=-a--
+filter1.mode key=mode unit=None enum [lp,bp,hp,notch] default=0.0 flags=-a--
+filter1.resonance key=resonance unit=Percent float 0.0..100.0 Linear default=10.0 flags=ma--
+lfo1.rate key=rate unit=Hz float 0.01..50.0 Log default=2.0 flags=ma--
+lfo1.shape key=shape unit=None enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] default=0.0 flags=-a--
+lfo2.rate key=rate unit=Hz float 0.01..50.0 Log default=2.0 flags=ma--
+lfo2.shape key=shape unit=None enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] default=0.0 flags=-a--
+master.level key=level unit=Db float -36.0..12.0 Linear default=0.0 flags=-a--
+noise1.color key=color unit=None enum [white,pink] default=0.0 flags=-a--
+noise1.level key=level unit=Percent float 0.0..100.0 Linear default=100.0 flags=ma--
+osc1.fine key=fine unit=Cents float -100.0..100.0 Linear default=0.0 flags=ma--
+osc1.level key=level unit=Percent float 0.0..100.0 Linear default=100.0 flags=ma--
+osc1.position key=position unit=Percent float 0.0..100.0 Linear default=0.0 flags=ma--
+osc1.pw key=pw unit=Percent float 5.0..95.0 Linear default=50.0 flags=ma--
+osc1.semi key=semi unit=Semitones float -48.0..48.0 Linear default=0.0 flags=ma--
+osc1.wave key=wave unit=None enum [sine,triangle,saw,pulse,table] default=2.0 flags=-a--
+osc2.fine key=fine unit=Cents float -100.0..100.0 Linear default=0.0 flags=ma--
+osc2.level key=level unit=Percent float 0.0..100.0 Linear default=100.0 flags=ma--
+osc2.position key=position unit=Percent float 0.0..100.0 Linear default=0.0 flags=ma--
+osc2.pw key=pw unit=Percent float 5.0..95.0 Linear default=50.0 flags=ma--
+osc2.semi key=semi unit=Semitones float -48.0..48.0 Linear default=0.0 flags=ma--
+osc2.wave key=wave unit=None enum [sine,triangle,saw,pulse,table] default=2.0 flags=-a--
+reverb1.decay key=decay unit=Ms float 100.0..30000.0 Log default=3000.0 flags=-a--
+reverb1.high_cut key=high_cut unit=Hz float 1000.0..20000.0 Log default=12000.0 flags=ma--
+reverb1.room key=room unit=Ms float 10.0..200.0 Linear default=80.0 flags=-a--
+reverb1.wet key=wet unit=Db float -60.0..6.0 Linear default=-6.0 flags=ma--
+voice.glide key=glide unit=Ms float 0.0..10000.0 Power(4.0) default=0.0 flags=-a--
+voice.mode key=mode unit=None enum [poly,mono,legato] default=0.0 flags=--s-

@@ -1,6 +1,6 @@
 {
   "schema": "enth.round-result/1",
-  "code": "1080-1000-0001-AC",
+  "code": "1080-1000-0001-AB",
   "outcome": "passed",
   "first_submit": {
     "schema": "enth.score-report/1",
@@ -27,6 +27,20 @@
           "answer": 1530.5
         },
         {
+          "kind": "harmonics",
+          "direction": "lower",
+          "closeness": "close",
+          "target": 0.5,
+          "answer": 0.48
+        },
+        {
+          "kind": "sustain",
+          "direction": "higher",
+          "closeness": "a_bit",
+          "target": -12.0,
+          "answer": -6.5
+        },
+        {
           "kind": "movement",
           "direction": "missing",
           "closeness": "far",
@@ -41,13 +55,35 @@
       "params": [
         {
           "addr": "filter1.cutoff",
+          "answer_addr": "filter1.cutoff",
           "score": 0.5,
-          "verdict": "near"
+          "verdict": "near",
+          "direction": "higher",
+          "randomized": true
         },
         {
           "addr": "osc1.wave",
+          "answer_addr": "osc2.wave",
           "score": 1.0,
-          "verdict": "good"
+          "verdict": "good",
+          "direction": "same",
+          "randomized": true
+        },
+        {
+          "addr": "osc2.level",
+          "answer_addr": null,
+          "score": 0.0,
+          "verdict": "bad",
+          "direction": "missing",
+          "randomized": true
+        },
+        {
+          "addr": "env1.release",
+          "answer_addr": "env1.release",
+          "score": 0.25,
+          "verdict": "bad",
+          "direction": "lower",
+          "randomized": false
         }
       ],
       "modules": [
@@ -64,7 +100,8 @@
       "sound_weight": 65
     },
     "pass_mark": 90,
-    "passed": true
+    "passed": true,
+    "engine": "0.2.0"
   },
   "submits": 2,
   "time_to_pass_ms": 95250,
@@ -74,5 +111,6 @@
     "live_meter": false,
     "revealed": false
   },
-  "agreement": "about_right"
+  "agreement": "about_right",
+  "rating": 4
 }

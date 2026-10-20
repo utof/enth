@@ -1,6 +1,6 @@
 {
   "schema": "enth.round-result/1",
-  "code": "H000-ZZZZ-ZZZZ-ZZZZ-ZA4C-0R00-80DX-BDYX-X5J0-0E",
+  "code": "H000-G07Z-ZZZZ-ZZZZ-ZA4C-0000-80DX-BDYX-X5J0-0G",
   "outcome": "gave_up",
   "first_submit": null,
   "submits": 0,
@@ -11,5 +11,6 @@
     "live_meter": true,
     "revealed": true
   },
-  "agreement": null
+  "agreement": null,
+  "rating": null
 }

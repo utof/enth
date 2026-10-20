@@ -18,7 +18,8 @@
 //! | [`spec`] | [`RandomSpec`], [`Category`], [`SpecPreset`]: the randomizer's integer-only settings and the frozen presets | CT, with RG |
 //! | [`model`] | [`Challenge`] v1 (target, phrase, start, constraints, assists, [`ScoringSpec`]), [`Phrase`], and the round's results ([`RoundResult`]) | CT |
 //! | [`code`] | [`ChallengeCode`]: code v1, Crockford base32 with a check symbol, short and long forms | CT |
-//! | [`score`] | the [`Scorer`] and [`Combiner`] traits, [`SoundScore`], [`StructureScore`], [`Combined`], [`ScoreReport`]; sound, structure and combined scorers | CT; SS; ST |
+//! | [`fingerprint`] | [`TargetFingerprint`]: the schema-independent identity of a generated target (F1r review M1) | CT, with RG |
+//! | [`score`] | the [`Scorer`] and [`Combiner`] traits, [`SoundScore`], [`StructureScore`], [`Combined`], [`ScoreReport`]; the round's composition ([`score::round`]: [`prepare_round`], [`score_round`]); the stubs; sound, structure, combined and matching | CT; SS; ST |
 //! | [`random`] | the generator: keyed draws, the observability mask, minimum step, frozen generator versions | RG |
 //! | [`priors`] | hand-written per-parameter priors relative to the phrase's note; the `musical` blend | RG |
 //! | [`phrases`] | the versioned phrase table (one held note, an octave pair, a legato pair) | RG |
@@ -27,6 +28,7 @@
 
 pub mod calibrate;
 pub mod code;
+pub mod fingerprint;
 pub mod loudness;
 pub mod model;
 pub mod phrases;
@@ -36,9 +38,13 @@ pub mod score;
 pub mod spec;
 
 pub use code::{ChallengeCode, CodeError, CodeForm, CodeWarning, EngineVersion, TargetPrefix};
+pub use fingerprint::TargetFingerprint;
 pub use model::{
     Agreement, AnswerKind, Assists, AssistsUsed, Challenge, ChallengeError, ChallengeMeta,
     Constraints, Outcome, Phrase, PhraseId, PhraseNote, RoundResult, ScoringSpec, Start, Target,
+};
+pub use score::round::{
+    PreparedRound, RoundError, prepare_challenge, prepare_round, score_round, score_structure,
 };
 pub use score::{
     Closeness, Combined, Combiner, Component, ComponentKind, Direction, ScoreError, ScoreReport,

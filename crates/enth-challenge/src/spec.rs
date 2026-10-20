@@ -18,7 +18,13 @@
 //!   below put levels 1–5 at difficulty 0, 25, 50, 75 and 100, so any banding that keeps those five values in
 //!   different levels, in order, works; RG's proposed bands are 0–20, 21–40, 41–60, 61–80 and 81–100.
 //! - **Short codes need short seeds.** A short code holds a 40-bit seed ([`crate::code::SHORT_SEED_BITS`]), so a
-//!   shell that draws a fresh seed for a round keeps 40 bits of it; any `u64` still works through the long code.
+//!   shell that draws a fresh seed for a round keeps 40 bits of it; any seed up to [`MAX_SEED`] works through the
+//!   long code.
+//! - **Seeds stay below 2⁵³** ([`MAX_SEED`]). The JSON form writes the seed as a number, and JavaScript and many JSON
+//!   tools keep only 53 bits of one, which would silently give another target. [`RandomSpec::validate`] refuses a
+//!   larger seed (`out_of_range`); the long code's 64-bit field stays as it is.
+//! - **Templates this build has.** A template is a start patch and a prior set; ids are append-only, and this build
+//!   has `0..=`[`LATEST_TEMPLATE`]. A spec naming a newer one is refused (`code_too_new`), like a newer generator.
 //!
 //! [`PRESETS`] names the settings a short code can carry. Preset ids are append-only and a preset's settings never
 //! change, because an old short code must keep naming the same spec.
@@ -32,6 +38,15 @@ pub const PERCENT_MAX: u8 = 100;
 /// one, each frozen; a spec or a code that names a newer one is refused (`code_too_new`), because this build cannot
 /// regenerate its target.
 pub const LATEST_GENERATOR: u16 = 1;
+
+/// The newest template this build has (`0`, the starter superset). Template ids are append-only; lane RG's
+/// [`crate::random::start`] has every template from 0 to this one, and a spec or a code that names a newer one is
+/// refused (`code_too_new`), because this build cannot build its start patch.
+pub const LATEST_TEMPLATE: u8 = 0;
+
+/// The largest seed a spec may hold: 2⁵³ − 1, the largest integer every JSON reader keeps exact (JavaScript's
+/// `Number.MAX_SAFE_INTEGER`). A short code holds 40 bits, far below it.
+pub const MAX_SEED: u64 = (1 << 53) - 1;
 
 /// What a challenge randomizes (design.md §9), in difficulty order: level 1 randomizes the oscillators, and each
 /// level adds the next category.
@@ -85,8 +100,9 @@ pub struct RandomSpec {
     /// The generator version, `1..=`[`LATEST_GENERATOR`]. Old versions stay frozen, with hash goldens, so an old code
     /// keeps its target; a newer version than the build knows is refused (`code_too_new`).
     pub generator: u16,
-    /// The seed every draw is keyed from: `derive(derive(seed, fnv1a64(address)), attempt)`. Any `u64`; a short code
-    /// holds only the low 40 bits ([`crate::code::SHORT_SEED_BITS`]).
+    /// The seed every draw is keyed from: `derive(derive(seed, fnv1a64(address)), attempt)`. At most [`MAX_SEED`]
+    /// (2⁵³ − 1), so the JSON number survives every reader; a short code holds 40 bits
+    /// ([`crate::code::SHORT_SEED_BITS`]).
     pub seed: u64,
     /// The one knob, 0–100 (design.md §9's 0..=1 as a percentage): it picks the level, and so which categories are
     /// randomized. RG maps it to the five levels (see the [module docs](self)).
@@ -98,7 +114,7 @@ pub struct RandomSpec {
     /// with this probability. The same knob later samples ML datasets.
     pub musical: u8,
     /// The archetype: a start patch and a prior set (pluck, pad, bass, lead, keys). 0 means none (the starter
-    /// superset); RG numbers the rest, append-only.
+    /// superset); RG numbers the rest, append-only. At most [`LATEST_TEMPLATE`] in this build.
     pub template: u8,
 }
 
@@ -108,22 +124,32 @@ impl RandomSpec {
         self.amounts[category.index()]
     }
 
-    /// Check the ranges and the generator version: every percentage at most [`PERCENT_MAX`], and a generator from 1
-    /// to [`LATEST_GENERATOR`]. The generator calls this before it draws anything.
+    /// Check the ranges, the generator and the template: a generator from 1 to [`LATEST_GENERATOR`], a template up
+    /// to [`LATEST_TEMPLATE`], a seed up to [`MAX_SEED`] and every percentage at most [`PERCENT_MAX`]. The
+    /// generator calls this before it draws anything.
     pub fn validate(&self) -> Result<(), SpecError> {
-        self.validate_up_to(LATEST_GENERATOR)
+        self.validate_within(&Limits::BUILD)
     }
 
-    /// [`validate`](Self::validate) against another newest generator, so the code tests can cover every `u16`.
-    pub(crate) fn validate_up_to(&self, latest: u16) -> Result<(), SpecError> {
+    /// [`validate`](Self::validate) against other limits, so the code tests can cover every field's whole range.
+    pub(crate) fn validate_within(&self, limits: &Limits) -> Result<(), SpecError> {
         if self.generator == 0 {
             return Err(SpecError::NoGenerator);
         }
-        if self.generator > latest {
+        if self.generator > limits.generator {
             return Err(SpecError::GeneratorTooNew {
                 generator: self.generator,
-                latest,
+                latest: limits.generator,
             });
+        }
+        if self.template > limits.template {
+            return Err(SpecError::TemplateTooNew {
+                template: self.template,
+                latest: limits.template,
+            });
+        }
+        if self.seed > limits.seed {
+            return Err(SpecError::SeedTooLarge { seed: self.seed });
         }
         let percent = |field: &'static str, value: u8| {
             if value > PERCENT_MAX {
@@ -149,6 +175,34 @@ impl RandomSpec {
     }
 }
 
+/// What [`RandomSpec::validate_within`] admits: this build's limits, or wider ones for the codec tests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Limits {
+    /// The newest generator.
+    pub(crate) generator: u16,
+    /// The newest template.
+    pub(crate) template: u8,
+    /// The largest seed.
+    pub(crate) seed: u64,
+}
+
+impl Limits {
+    /// This build's: [`LATEST_GENERATOR`], [`LATEST_TEMPLATE`], [`MAX_SEED`].
+    pub(crate) const BUILD: Limits = Limits {
+        generator: LATEST_GENERATOR,
+        template: LATEST_TEMPLATE,
+        seed: MAX_SEED,
+    };
+
+    /// Every value each field can hold (the codec tests: a code carries any of them).
+    #[cfg(test)]
+    pub(crate) const ANY: Limits = Limits {
+        generator: u16::MAX,
+        template: u8::MAX,
+        seed: u64::MAX,
+    };
+}
+
 /// The field names [`SpecError::OutOfRange`] reports for each amount, in [`Category::ALL`] order.
 const AMOUNT_FIELDS: [&str; Category::COUNT] = [
     "amounts.oscillators",
@@ -172,6 +226,18 @@ pub enum SpecError {
         /// The newest this build runs ([`LATEST_GENERATOR`]).
         latest: u16,
     },
+    /// `template` is newer than this build has.
+    TemplateTooNew {
+        /// The template the spec names.
+        template: u8,
+        /// The newest this build has ([`LATEST_TEMPLATE`]).
+        latest: u8,
+    },
+    /// `seed` is above [`MAX_SEED`] (2⁵³ − 1): a JSON reader could change it.
+    SeedTooLarge {
+        /// The seed.
+        seed: u64,
+    },
     /// A percentage is above [`PERCENT_MAX`].
     OutOfRange {
         /// The field (`difficulty`, `musical`, `amounts.filter`, …).
@@ -182,13 +248,13 @@ pub enum SpecError {
 }
 
 impl SpecError {
-    /// A stable snake-case code. A newer generator shares `code_too_new` with a newer code version: the remedy is the
-    /// same.
+    /// A stable snake-case code. A newer generator or template shares `code_too_new` with a newer code version: the
+    /// remedy is the same. A seed above 2⁵³ shares `out_of_range` with a percentage above 100.
     pub fn code(&self) -> &'static str {
         match self {
             SpecError::NoGenerator => "no_generator",
-            SpecError::GeneratorTooNew { .. } => "code_too_new",
-            SpecError::OutOfRange { .. } => "out_of_range",
+            SpecError::GeneratorTooNew { .. } | SpecError::TemplateTooNew { .. } => "code_too_new",
+            SpecError::SeedTooLarge { .. } | SpecError::OutOfRange { .. } => "out_of_range",
         }
     }
 
@@ -199,6 +265,12 @@ impl SpecError {
             SpecError::GeneratorTooNew { generator, latest } => format!(
                 "made with generator {generator}, and this enth knows up to {latest}: update enth to play it"
             ),
+            SpecError::TemplateTooNew { template, latest } => format!(
+                "made with template {template}, and this enth has templates up to {latest}: update enth to play it"
+            ),
+            SpecError::SeedTooLarge { .. } => {
+                "seeds are below 2^53, so every JSON reader keeps them exact".to_owned()
+            }
             SpecError::OutOfRange { field, .. } => {
                 format!("{field} is a percentage, 0 to {PERCENT_MAX}")
             }
@@ -214,6 +286,11 @@ impl core::fmt::Display for SpecError {
                 f,
                 "the spec names generator {generator}, newer than this build's {latest}"
             ),
+            SpecError::TemplateTooNew { template, latest } => write!(
+                f,
+                "the spec names template {template}, newer than this build's {latest}"
+            ),
+            SpecError::SeedTooLarge { seed } => write!(f, "seed {seed} is above 2^53 - 1"),
             SpecError::OutOfRange { field, value } => {
                 write!(f, "{field} is {value}, above {PERCENT_MAX}")
             }
@@ -293,13 +370,14 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{
-        Category, LATEST_GENERATOR, PERCENT_MAX, PRESETS, RandomSpec, SpecError, SpecPreset,
+        Category, LATEST_GENERATOR, LATEST_TEMPLATE, MAX_SEED, PERCENT_MAX, PRESETS, RandomSpec,
+        SpecError, SpecPreset,
     };
 
     fn spec() -> RandomSpec {
         RandomSpec {
             generator: 1,
-            seed: u64::MAX,
+            seed: MAX_SEED,
             difficulty: 40,
             amounts: [None, Some(100), None, None, Some(0), None],
             musical: 100,
@@ -325,7 +403,7 @@ mod tests {
         }
     }
 
-    /// Integers only: every number in the JSON form is an unsigned integer, and a `u64::MAX` seed survives.
+    /// Integers only: every number in the JSON form is an unsigned integer, and the largest seed survives.
     #[test]
     fn a_spec_round_trips_through_json_as_integers() {
         let json = serde_json::to_string(&spec()).unwrap();
@@ -342,11 +420,11 @@ mod tests {
         /// the text reads back to the same spec.
         #[test]
         fn any_spec_is_integers_only_and_round_trips(
-            seed in any::<u64>(),
+            seed in 0..=MAX_SEED,
             difficulty in 0..=PERCENT_MAX,
             amounts in proptest::array::uniform6(proptest::option::of(0..=PERCENT_MAX)),
             musical in 0..=PERCENT_MAX,
-            template in any::<u8>(),
+            template in 0..=LATEST_TEMPLATE,
         ) {
             let s = RandomSpec { generator: LATEST_GENERATOR, seed, difficulty, amounts, musical, template };
             prop_assert_eq!(s.validate(), Ok(()));
@@ -362,7 +440,7 @@ mod tests {
     fn the_json_form_is_pinned() {
         assert_eq!(
             serde_json::to_string(&spec()).unwrap(),
-            r#"{"generator":1,"seed":18446744073709551615,"difficulty":40,"amounts":[null,100,null,null,0,null],"musical":100,"template":0}"#
+            r#"{"generator":1,"seed":9007199254740991,"difficulty":40,"amounts":[null,100,null,null,0,null],"musical":100,"template":0}"#
         );
     }
 
@@ -407,6 +485,42 @@ mod tests {
         let mut s = spec();
         s.musical = 255;
         assert_eq!(s.validate().unwrap_err().code(), "out_of_range");
+    }
+
+    /// S4 (F1r review): a seed a JSON reader could change is refused, and the largest safe one is not; it reads back
+    /// exactly through `f64`, which is what JavaScript holds.
+    #[test]
+    fn seeds_from_2_pow_53_are_refused() {
+        let mut s = spec();
+        assert_eq!(s.validate(), Ok(()));
+        assert_eq!(MAX_SEED as f64 as u64, MAX_SEED, "exact in an f64");
+        assert_ne!((MAX_SEED + 2) as f64 as u64, MAX_SEED + 2, "past it, not");
+        for seed in [MAX_SEED + 1, 1 << 60, u64::MAX] {
+            s.seed = seed;
+            let e = s.validate().unwrap_err();
+            assert_eq!(e, SpecError::SeedTooLarge { seed });
+            assert_eq!(e.code(), "out_of_range");
+            assert!(e.hint().contains("2^53"), "{}", e.hint());
+        }
+    }
+
+    /// S1 (F1r review): a template this build does not have is a newer build's, like a newer generator.
+    #[test]
+    fn a_newer_template_is_code_too_new() {
+        let mut s = spec();
+        s.template = LATEST_TEMPLATE;
+        assert_eq!(s.validate(), Ok(()));
+        s.template = LATEST_TEMPLATE + 1;
+        let e = s.validate().unwrap_err();
+        assert_eq!(
+            e,
+            SpecError::TemplateTooNew {
+                template: LATEST_TEMPLATE + 1,
+                latest: LATEST_TEMPLATE
+            }
+        );
+        assert_eq!(e.code(), "code_too_new");
+        assert!(e.hint().contains("update enth"), "{}", e.hint());
     }
 
     #[test]

@@ -62,6 +62,37 @@ impl Jnd {
         }
     }
 
+    /// How many steps `to` is from `from`: 0 when they are equal, at least 1 (up to rounding) exactly when
+    /// [`exceeded`](Self::exceeded); `f64::INFINITY` for any change of a discrete value, or where the step's ratio
+    /// cannot be taken (a non-positive value). For "how far" rather than "whether" (the stub scorers; ST may reuse
+    /// it).
+    pub fn steps(self, from: f32, to: f32) -> f64 {
+        if from == to {
+            return 0.0;
+        }
+        let (a, b) = (f64::from(from), f64::from(to));
+        let ratio = |a: f64, b: f64, per: f64| {
+            if a > 0.0 && b > 0.0 {
+                libm::fabs(libm::log(b / a)) / per
+            } else {
+                f64::INFINITY
+            }
+        };
+        match self {
+            Jnd::Any => f64::INFINITY,
+            Jnd::Abs(step) => libm::fabs(b - a) / f64::from(step),
+            Jnd::Ratio { factor, floor } => {
+                let f = f64::from(floor);
+                ratio(a + f, b + f, libm::log(f64::from(factor)))
+            }
+            Jnd::Semitones(st) => ratio(a, b, f64::from(st) * libm::log(2.0) / 12.0),
+            Jnd::Db { db, floor } => {
+                let f = f64::from(floor);
+                ratio(a + f, b + f, f64::from(db) * libm::log(10.0) / 20.0)
+            }
+        }
+    }
+
     /// The value 1.1 steps from `from`, up (`dir` = 1) or down (−1): the minimum step's forced value, before
     /// rounding.
     pub fn beyond(self, from: f32, dir: f32) -> f32 {
@@ -688,6 +719,40 @@ mod tests {
         assert_eq!(jnd(&spec(Unit::Percent, "resonance")), Jnd::Abs(10.0));
         assert!(ROUTE_JND.exceeded(0.0, 5.0) && !ROUTE_JND.exceeded(10.0, 5.1));
         assert!(Jnd::Any.exceeded(2.0, 3.0) && !Jnd::Any.exceeded(2.0, 2.0));
+    }
+
+    #[test]
+    fn steps_agree_with_exceeded() {
+        let cases = [
+            (Jnd::Abs(3.0), -18.0, -12.0),
+            (Jnd::Semitones(2.0), 2_000.0, 2_250.0),
+            (
+                Jnd::Ratio {
+                    factor: 1.5,
+                    floor: 1.0,
+                },
+                5.0,
+                8.0,
+            ),
+            (
+                Jnd::Db {
+                    db: 3.0,
+                    floor: 1.0,
+                },
+                100.0,
+                70.0,
+            ),
+        ];
+        for (j, from, to) in cases {
+            assert_eq!(j.steps(from, from), 0.0);
+            let s = j.steps(from, to);
+            assert!(s.is_finite() && s > 0.0, "{j:?}");
+            assert_eq!(s >= 1.0 - 1e-9, j.exceeded(from, to), "{j:?} {s}");
+            assert!((j.steps(to, from) - s).abs() < 1e-9, "symmetric");
+        }
+        assert_eq!(Jnd::Abs(3.0).steps(0.0, 6.0), 2.0);
+        assert_eq!(Jnd::Any.steps(1.0, 2.0), f64::INFINITY);
+        assert_eq!(Jnd::Semitones(2.0).steps(0.0, 100.0), f64::INFINITY);
     }
 
     #[test]

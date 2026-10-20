@@ -40,7 +40,8 @@ fn audibility_by_level() {
             for i in 0..n {
                 let spec = RandomSpec {
                     generator: random::GENERATOR_V1,
-                    seed: derive(0x4C45_5645_4C53, i),
+                    // 53 bits: a spec's seed is at most `MAX_SEED` (F1r review S4).
+                    seed: derive(0x4C45_5645_4C53, i) >> 11,
                     difficulty,
                     amounts: [None; Category::COUNT],
                     musical,
