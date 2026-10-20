@@ -99,7 +99,8 @@ fn new_writes_a_stamped_dense_patch() {
     let n: NewOut = round_trip(&o);
     assert_eq!(n.modules, ["osc1", "filter1", "env1", "env2"]);
     let text = std::fs::read_to_string(&out).unwrap();
-    assert!(text.contains("\"engine\": \"0.1.0\""), "{text}");
+    let stamp = format!("\"engine\": \"{}\"", enth_patch::file::ENGINE_VERSION);
+    assert!(text.contains(&stamp), "{text}");
     assert!(text.contains("\"keytrack\""), "written dense: {text}");
     let list = run(&["new", "--list"]);
     let t: TemplatesOut = round_trip(&list);

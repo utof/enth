@@ -7,7 +7,7 @@
 //! ```json
 //! {
 //!   "schema": 1,
-//!   "engine": "0.1.0",
+//!   "engine": "0.2.0",
 //!   "meta": { "name": "Soft pluck", "tags": ["pluck"] },
 //!   "voice": { "mode": "poly", "polyphony": 8, "glide": 0, "amp_env": "env1" },
 //!   "master": { "level": 0 },
@@ -68,9 +68,15 @@ pub use load::{Loaded, load, load_value};
 /// have exactly `SCHEMA` entries, which the compiler checks.
 pub const SCHEMA: u32 = 1;
 
-/// The engine version stamped on a patch written without one (`Patch::init()` has none). The engine crate will own
-/// the real constant; until then DSP changes that move goldens bump this by hand.
-pub const ENGINE_VERSION: &str = "0.1.0";
+/// The engine version stamped on a patch written without one (`Patch::init()` has none): the version of the engine
+/// build that authors it. It must equal `enth_engine::ENGINE_VERSION`. This crate (L1) cannot depend on the engine
+/// (L2), so the constant lives here and `enth-engine`'s `tests/engine_version.rs` fails when the two differ: a DSP
+/// change that bumps one bumps the other in the same commit.
+///
+/// The stamp is a record, not an input: nothing branches on it today (loading keeps whatever stamp a file has, an
+/// older one included, and the sound hash leaves it out). Compatibility modes keyed on it are later work
+/// (design.md §5).
+pub const ENGINE_VERSION: &str = "0.2.0";
 
 /// A whole patch file. See the [module docs](self).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

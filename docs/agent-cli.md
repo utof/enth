@@ -96,7 +96,7 @@ Version 2 (2026-10-20, P1b lane EV, the G1 eval findings in [p1a-g1.md](p1a-g1.m
 ```json
 {
   "schema": 1,
-  "engine": "0.1.0",
+  "engine": "0.2.0",
   "meta": { "name": "Soft pluck", "tags": ["pluck"] },
   "voice": { "mode": "poly", "polyphony": 8, "glide": 0, "amp_env": "env1" },
   "master": { "level": 0 },
