@@ -21,6 +21,7 @@
 | `examples/dev_window.rs` | the dev window (feature `dev-window`) |
 | `examples/frame_bench.rs` | instructions per editor frame, headless (ED2 added the live cases) |
 | `crates/enth-plugin/src/editor.rs` | the plugin window: `EditorApp` and `Glue`, the plugin's handle on `Editor` |
+| `editor/browser.rs`, `editor/browser/` | the preset browser (lane PBU): `Presets` (the editor's preset state), the header's Presets hook (`header.rs`), the browse panel (`panel.rs`), the Save dialog (`save.rs`), the crash notice and report (`crash.rs`); tokens in `theme/sizes/browser.rs` ([below](#the-preset-browser-lane-pbu)) |
 
 ## The frame
 
@@ -183,7 +184,7 @@ Decided by the R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-
 
 **Adding and removing modules (lane AM).** Built: see [Adding and removing modules](#adding-and-removing-modules-lane-am) below.
 
-**The preset header and browse panel (lanes PBC and PBU).** The header's patch name becomes **◀ Name ▶ Browse Save**. The browse panel is editor view state drawn over the body, not a layout region, so it works in every layout, and while it is open it replaces the cards (the frame gets cheaper). Report 03's design: Factory, User and Favorites; a word search over name, description, author and tags; click loads, double-click loads and closes, Escape closes; ◀ ▶ step through the current list (they come first because arrow keys may reach the host); Save never offers a read-only folder. A load is `Session::load_preset`: one undo step from `ops_between(current, preset)`, delivered like a load (no per-slot or per-macro host writes, the nih-plug #92 crash class), and it marks the project dirty. A preset file is exactly `Patch::to_json()`; user presets live in `Documents/enth/Presets` (`ENTH_PRESETS_DIR` overrides it). The search field relies on the keyboard-focus fork patch inside REAPER (owner check 1.5).
+**The preset header and browse panel (lanes PBC and PBU).** The header's patch name becomes **◀ Name ▶ Browse Save**. The browse panel is editor view state drawn over the body, not a layout region, so it works in every layout, and while it is open it replaces the cards (the frame gets cheaper). Report 03's design: Factory, User and Favorites; a word search over name, description, author and tags; click loads, double-click loads and closes, Escape closes; ◀ ▶ step through the current list (they come first because arrow keys may reach the host); Save never offers a read-only folder. A load is `Session::load_preset`: one undo step from `ops_between(current, preset)`, delivered like a load (no per-slot or per-macro host writes, the nih-plug #92 crash class), and it marks the project dirty. A preset file is exactly `Patch::to_json()`; user presets live in `Documents/enth/Presets` (`ENTH_PRESETS_DIR` overrides it). The search field relies on the keyboard-focus fork patch inside REAPER (owner check 1.5). Landed: [The preset browser](#the-preset-browser-lane-pbu).
 
 **Recreate and Learn in the layout (lanes RUI and LV).** Measured overflow with the G1 patch (report 03's scratch harness, `Editor::report()` at each size):
 
@@ -245,6 +246,29 @@ So layout 1 needs all of 1200 × 800: the band of lane cards needs 1,148 px of w
 - a compact layout is a variant's (lane LV), with its own overflow report.
 
 `tests/add_module.rs::the_minimum_window_keeps_every_region_of_layout_1` checks that the minimum equals the default and that every region, the overview and every tile's handle are there at it, so `editor_lanes_p1.png` (1200 × 800) is also the snapshot at the minimum.
+
+## The preset browser (lane PBU)
+
+**The header's patch name is "◀ Name ▶ Browse Save", and the browser's three sheets (the browse panel, the Save dialog, a crash report) are drawn over the body in any layout.** The behaviour, the stores and the crash offer are described in [presets.md](presets.md#the-browser-lane-pbu); this section is the editor's side.
+
+- **Where it hooks in.** `Editor` owns a `Presets` (`Editor::presets`, `presets_mut`): the store (a boxed `PresetStore`; `MemStore` unless the shell hands another, which the plugin does with `FsStore::from_env()`), the last scan, the open sheet and its view state, the held audition note and the crash offer. The header's Presets hook (feature `presets`, a default feature since PBU) draws the group right after the wordmark from `HeaderView::presets` (`HeaderPresets`: the name, from a preset, edited, browsing, saving), so it never meets the right-hand controls (Add, Undo, Redo, the master knob), down to the minimum window. The name paints only through the hook while the feature is on.
+- **Intents.** Every browser control pushes `Intent::Preset(PresetIntent)`, applied in order with the frame's other intents (`Presets::apply`): `Step(±1)`, `Browse(bool)`, `OpenSave`, `Close`, `Load { key, close }`, `Audition(key)`, `Favorite { key, on }`, `Save { overwrite }`, `ShowCrash`, `DismissCrash`. A load is `SessionEdit::load_preset` through `presets::load_from` (one undo step, no host writes, `PatchEdited`); a save is `SessionEdit::save_preset`. The tab, the search text and the dialog's fields are view state edited in place while drawing. `describe::entry` names a load step "Load <name>", so Undo's tooltip reads "Undo Load Glass Pad".
+- **Over the body.** While a sheet is open, `Editor::frame` computes the body (the bounding box of every region but the header, the output, the status line and the challenge bar) and skips every region that overlaps it: no card is built or drawn, so the frame gets cheaper, and the live rings under the sheet stop asking for frames. The header row and the status line stay. A sheet that opens or closes at a frame's end asks egui for one more pass.
+- **Audition.** ▶ held on a row: load it unless it is loaded, then `SessionEdit::audition_on(60, 100/127)`; the note is released at the first frame with no pointer button down (like a drag's gesture) and when the window closes. The note's key stays inside a boxed release closure, so the UI crate needs no engine types.
+- **The crash notice** is a foreground `Area` in the body's lower right corner; it is not modal and the editor keeps working beside and under it. The shell hands the reports in at every open as a `CrashReports` (the UI crate does no I/O).
+- **Accessibility labels** (kittest finds the controls by them): "Previous preset", "Next preset", "Preset <name>" (and "Preset <name> (edited)"), "Browse", "Save"; the tabs by name; "Search presets"; a row by the preset's title, its "Favorite <title>" and "Audition <title>"; "Close browser"; "Preset name", "Preset folder", the tag chips by tag, "Save preset", "Replace", "Cancel"; "Show report", "Dismiss", "Copy report", "Close report".
+
+| Token (`theme/sizes/browser.rs`) | Value | For |
+| --- | --- | --- |
+| `size.browser.header_name` | 180 | the name between ◀ and ▶ ("…" past it) |
+| `size.browser.search_width` | 280 | the panel's search field |
+| `size.browser.name_column` | 240 | a row's name column |
+| `size.browser.folder_column` | 140 | where it lives ("Factory › bass") |
+| `size.browser.author_column` | 140 | the author, at the right end; the tags take the rest |
+| `size.browser.dialog_width` | 480 | the Save dialog's card |
+| `size.browser.notice_width` | 380 | the crash notice |
+
+Rows, buttons and fields are `size.control_height` high. Glyphs (`theme/glyph.rs`): `PREVIOUS` ◀, `NEXT` ▶, `FAVORITE` ★, `NOT_FAVORITE` ☆, `CLOSE` ×, all in Inter.
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 
@@ -324,6 +348,9 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 | (ED2) Live snapshots from synthetic telemetry: range and live arcs, the depth handle, tile levels, the output region as scope and spectrum | `crates/enth-ui/tests/live_snapshots.rs` (`region_live.png`, `region_live_spectrum.png`) |
 | (ED2) The tap's quiet rule: an editor opened in silence sees the plan sent while it was closed; a global LFO keeps publishing; a macro or value moved in silence publishes until it settles | `crates/enth-engine/tests/tap.rs` |
 | The plugin's glue: gestures, "More", the layout choice (`ENTH_LAYOUT`, the saved name, a refused file), a headless drag through the session | `crates/enth-plugin/src/editor.rs` |
+| (PBU) The preset browser through a real `Session`: browse hides the body and Escape and × close; a click loads one undo step with no host writes and one `PatchEdited`, Undo and Redo take it back and again; a double-click loads and closes; the search with words, `#tag` and `by:`; tabs; favorites saved by the store; ◀ ▶ step and wrap and follow the search; the edited mark; the Save dialog's tags, its confirm before replacing and its refusals with hints; ▶ held loads and sounds through an active engine until release; audition without an engine says why; the crash notice never blocks and is offered once; the REAPER scenario's click points | `crates/enth-ui/tests/browser.rs` |
+| (PBU) Snapshots: the header with an edited preset, the browse panel and the Save dialog at 1200 × 800 | `crates/enth-ui/tests/browser_snapshots.rs` (`browser_header.png`, `browser_panel.png`, `browser_save.png`) |
+| (PBU) The plugin's browser over a folder store (a load, its undo step, no host writes, a save with a confirm, exactly `to_json()`), the crash folder offered once | `crates/enth-plugin/src/editor.rs` |
 
 ## For the next lanes
 

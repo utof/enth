@@ -15,12 +15,19 @@
 //! `editor_closed` stops it; the editor asks egui for frames only while visible live data changes, and `process()`
 //! turns the tap's wake flag into a repaint.
 //! Never `GuiContext::set_state`: an editor preset load calls `Session::load_patch` under the lock.
+//!
+//! The preset browser (lane PBU) reads and writes the user folder through the [`FsStore`] handed to the editor at
+//! creation (`FsStore::from_env()`: `ENTH_PRESETS_DIR`, else `Documents/enth/Presets`); its loads are the session's
+//! undoable preset loads, under the same lock, with no host parameter writes. Every `build()` also looks for crash
+//! files not offered yet ([`crash::pending`]) and hands them to the editor's notice as a [`CrashFolder`].
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use enth_session::{GestureStep, HostWrite, SessionEdit, SessionView, ShellRequest};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
+use enth_ui::editor::browser::{CrashReports, Presets};
 use enth_ui::editor::cards::{CardKey, Intent};
 use enth_ui::editor::layout::LayoutSpec;
 use nice_plug::context::gui::GuiContext;
@@ -31,7 +38,9 @@ use nice_plug_egui::{
 };
 
 use crate::Shared;
+use crate::crash;
 use crate::params::EnthParams;
+use crate::presets::{FsStore, Os, SystemEnv};
 
 /// The editor nice-plug spawns (the window's size comes from the theme's `size.window.default` token).
 pub fn create(
@@ -41,6 +50,8 @@ pub fn create(
     repaint: RepaintNotifier,
 ) -> Option<EguiEditor<EditorApp>> {
     let theme = Theme::dark();
+    let mut glue = Glue::new(&theme);
+    glue.presets_mut().set_store(Box::new(FsStore::from_env()));
     create_egui_editor(
         state,
         repaint,
@@ -48,7 +59,7 @@ pub fn create(
         EditorApp {
             shared,
             params,
-            glue: Glue::new(&theme),
+            glue,
             theme,
             gui: None,
         },
@@ -144,6 +155,65 @@ impl Glue {
     pub fn editor(&self) -> &Editor {
         &self.editor
     }
+
+    /// The editor's preset browser (lane PBU): its store and its crash offer.
+    pub fn presets_mut(&mut self) -> &mut Presets {
+        self.editor.presets_mut()
+    }
+}
+
+/// The crash files not offered yet, in the crash folder ([`crash::crash_dir`]), for the editor's notice (lane PBU):
+/// `None` when there are none (or no folder). Read at every open of the window: one directory listing.
+pub fn crash_offer() -> Option<Box<dyn CrashReports>> {
+    let dir = crash::crash_dir(&SystemEnv, Os::current())?;
+    CrashFolder::new(dir).map(|f| Box::new(f) as Box<dyn CrashReports>)
+}
+
+/// The editor's view of the crash folder: the files [`crash::pending`] listed when the window opened.
+#[derive(Debug)]
+pub struct CrashFolder {
+    dir: PathBuf,
+    files: Vec<PathBuf>,
+}
+
+impl CrashFolder {
+    /// The pending crash files in `dir`; `None` if there are none.
+    pub fn new(dir: PathBuf) -> Option<Self> {
+        let files = crash::pending(&dir);
+        (!files.is_empty()).then_some(CrashFolder { dir, files })
+    }
+}
+
+impl CrashReports for CrashFolder {
+    fn count(&self) -> usize {
+        self.files.len()
+    }
+
+    fn newest(&self) -> Result<String, String> {
+        let newest = self.files.last().ok_or("no crash file")?;
+        crash::read_report(newest).map_err(|e| e.to_string())
+    }
+
+    fn location(&self) -> String {
+        self.dir.display().to_string()
+    }
+
+    /// Renames each file to `….seen.txt` ([`crash::mark_seen`]); the ones that could not be renamed stay pending.
+    fn mark_seen(&mut self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        self.files.retain(|file| match crash::mark_seen(file) {
+            Ok(_) => false,
+            Err(e) => {
+                errors.push(format!("{}: {e}", file.display()));
+                true
+            }
+        });
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
 }
 
 /// The layout `ENTH_LAYOUT` names, if it is set: a built-in's name ("lanes") or a layout file (JSON, schema
@@ -198,6 +268,7 @@ impl NiceEguiApp for EditorApp {
         #[cfg(feature = "editor-counts")]
         self.shared.editor_counts.built();
         self.theme.apply(&egui_ctx);
+        self.glue.presets_mut().offer_crash(crash_offer());
         let env = layout_from_env();
         let glue = &mut self.glue;
         let theme = &self.theme;
@@ -420,6 +491,164 @@ mod tests {
             "lanes",
         );
         assert_eq!(glue.editor().layout().name(), "lanes");
+    }
+
+    /// A fresh folder under the system's temporary folder, removed when dropped.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static N: AtomicU32 = AtomicU32::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "enth-pbu-{label}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            TempDir(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn preset(name: &str) -> Patch {
+        let mut patch = Patch::init();
+        name.clone_into(&mut patch.meta.name);
+        enth_patch::apply(
+            &mut patch,
+            enth_patch::Op::SetParam {
+                addr: level(),
+                value: 40.0,
+            },
+        )
+        .expect("osc1's level takes 40 %");
+        patch
+    }
+
+    #[test]
+    fn the_browser_loads_and_saves_user_presets_through_the_folder_store() {
+        use enth_session::presets::FILE_SUFFIX;
+        use enth_session::{PresetKey, PresetState, Source};
+        use enth_ui::editor::browser::{PresetIntent, Sheet};
+
+        let dir = TempDir::new("browser");
+        let wobble = preset("Wobble");
+        std::fs::write(dir.0.join(format!("Wobble{FILE_SUFFIX}")), wobble.to_json()).unwrap();
+        let mut session = Session::new(Patch::init());
+        let mut glue = Glue::default();
+        glue.presets_mut()
+            .set_store(Box::new(FsStore::new(Some(dir.0.clone()))));
+        let preset = |intent| vec![Intent::Preset(intent)];
+
+        glue.apply(&mut session, preset(PresetIntent::Browse(true)), false);
+        assert_eq!(glue.editor().presets().sheet(), Sheet::Browse);
+        let key = PresetKey::user("Wobble");
+        assert!(
+            glue.editor()
+                .presets()
+                .library()
+                .is_some_and(|l| l.get(&key).is_some()),
+            "the scan found the user preset"
+        );
+        session.drain_requests().for_each(drop);
+
+        glue.apply(
+            &mut session,
+            preset(PresetIntent::Load {
+                key: key.clone(),
+                close: true,
+            }),
+            false,
+        );
+        assert_eq!(session.patch().meta.name, "Wobble");
+        assert_eq!(session.patch().value(&level()), Some(40.0));
+        let step = session.history().next_undo().expect("one undo step");
+        assert_eq!(step.load.as_deref(), Some("Wobble"));
+        let requests: Vec<ShellRequest> = session.drain_requests().collect();
+        assert!(
+            !requests.iter().any(|r| matches!(r, ShellRequest::Host(_))),
+            "a preset load writes no host parameter: {requests:?}"
+        );
+        assert!(requests.contains(&ShellRequest::PatchEdited));
+        assert_eq!(
+            glue.editor().presets().sheet(),
+            Sheet::Closed,
+            "a double-click closes"
+        );
+        assert_eq!(
+            session
+                .instance()
+                .preset
+                .as_ref()
+                .and_then(PresetState::last_key),
+            Some(key.clone())
+        );
+
+        // Save it back under its own name: the dialog asks first, then replaces the file with exactly to_json().
+        glue.apply(
+            &mut session,
+            vec![Intent::Set {
+                addr: level(),
+                value: 55.0,
+            }],
+            false,
+        );
+        glue.apply(&mut session, preset(PresetIntent::OpenSave), false);
+        glue.apply(
+            &mut session,
+            preset(PresetIntent::Save { overwrite: false }),
+            false,
+        );
+        assert_eq!(glue.editor().presets().save_confirm(), Some(&key));
+        glue.apply(
+            &mut session,
+            preset(PresetIntent::Save { overwrite: true }),
+            false,
+        );
+        assert_eq!(glue.editor().presets().sheet(), Sheet::Closed);
+        let saved = std::fs::read_to_string(dir.0.join(format!("Wobble{FILE_SUFFIX}"))).unwrap();
+        assert_eq!(saved, session.patch().to_json());
+        assert!(!session.history().is_dirty(), "a save counts as saved");
+        assert_eq!(key.source, Source::User);
+    }
+
+    #[test]
+    fn the_crash_folder_offers_its_pending_files_once() {
+        let dir = TempDir::new("crash");
+        assert!(
+            CrashFolder::new(dir.0.clone()).is_none(),
+            "no files, no offer"
+        );
+        std::fs::write(
+            dir.0.join("enth-crash-20261019-100000-1-42.txt"),
+            "older report",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.0.join("enth-crash-20261020-100000-1-43.txt"),
+            "newer report",
+        )
+        .unwrap();
+        let mut folder = CrashFolder::new(dir.0.clone()).expect("two pending files");
+        assert_eq!(folder.count(), 2);
+        assert_eq!(folder.newest().unwrap(), "newer report");
+        folder.mark_seen().unwrap();
+        assert_eq!(folder.count(), 0);
+        assert!(
+            crash::pending(&dir.0).is_empty(),
+            "both renamed to .seen.txt"
+        );
+        assert!(CrashFolder::new(dir.0.clone()).is_none(), "offered once");
+        assert!(
+            dir.0
+                .join("enth-crash-20261020-100000-1-43.seen.txt")
+                .exists()
+        );
     }
 
     #[test]
