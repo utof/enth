@@ -176,6 +176,14 @@ opt-level = 3
 [profile.dev.package.enth-analysis]
 opt-level = 3
 
+# The solver (match, sensitivity, coach) and the game's scorers render many patches per test; unoptimised, a
+# 40-render `enth match` took ~9 s (lane CL, 2026-10-20). Their scalar paths are bit-identical across opt levels.
+[profile.dev.package.enth-solver]
+opt-level = 3
+
+[profile.dev.package.enth-challenge]
+opt-level = 3
+
 # The listening tool's fundsp comparison reverbs run in tests; unoptimised they add ~1.5 min to the workspace tests.
 [profile.dev.package.fundsp]
 opt-level = 3

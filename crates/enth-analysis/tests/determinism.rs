@@ -255,7 +255,7 @@ fn findings_hash() -> u64 {
 const FFT_SCALAR: u64 = 0xb7c8_97c5_1e15_be08;
 const FEATURES_SCALAR: u64 = 0x7c65_ee25_fda7_f8ea;
 const DESCRIPTORS_SCALAR: u64 = 0x270e_0957_e2c3_42e9;
-/// Pinned on `x86_64` Linux on 2026-10-20; not yet compared under wasmtime (not installed on the lane machine).
+/// Pinned on `x86_64` Linux on 2026-10-20; matches under wasmtime 48.0.6 (wasm32-wasip1), checked by lane GC on 2026-10-20.
 const FINDINGS_SCALAR: u64 = 0xf42d_955b_7708_91fe;
 
 #[test]

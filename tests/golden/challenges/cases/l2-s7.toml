@@ -1,0 +1,5 @@
+description = "Level 2, seed 7: a triangle wave through a low-pass at 7.6 kHz. Near: the pitch a quarter semitone off."
+code = "1080-1000-0000-7N"
+
+[answers.near]
+add = { "osc1.semi" = 0.25 }

@@ -1,0 +1,66 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 0
+--- stdout
+{
+  "hint": "`enth explain <module id> --patch <patch>` ranks every parameter of a module; `enth apply <patch> --set <addr>=<value>` changes one",
+  "kind": "svf",
+  "measured": {
+    "params": [
+      {
+        "effects": "<hidden>",
+        "from": "1kHz",
+        "inert": false,
+        "param": "filter1.cutoff",
+        "reach": "<num>",
+        "to": "890.9Hz"
+      }
+    ],
+    "patch": "[TMP]/p.patch.json",
+    "perf": {
+      "dur_s": 3,
+      "notes": [
+        {
+          "note": "C3",
+          "off_s": 1.5,
+          "on_s": 0,
+          "vel": 100
+        }
+      ],
+      "source": "default"
+    },
+    "renders": "<num>"
+  },
+  "name": "Cutoff",
+  "param": {
+    "accepts": [
+      "800",
+      "800Hz",
+      "1.2kHz",
+      "A4",
+      "C#3",
+      "Db2"
+    ],
+    "automatable": true,
+    "default": "<num>",
+    "key": "cutoff",
+    "max": "<num>",
+    "min": "<num>",
+    "modulatable": true,
+    "moves": {
+      "feature": "spectrum.centroid_hz",
+      "meaning": "Average frequency of the sound's energy, weighted by magnitude (spectral centroid). Higher is brighter; a pure sine reads its own pitch"
+    },
+    "scale": "log",
+    "tier": "basic",
+    "unit": "Hz"
+  },
+  "schema": "enth.explain/1",
+  "subject": "filter1.cutoff",
+  "summary": "The corner frequency: lower is darker for a low-pass; route an envelope here for plucks and sweeps.",
+  "text": "<hidden>",
+  "what": "param"
+}
+--- stderr

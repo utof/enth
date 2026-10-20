@@ -2,3 +2,6 @@
 # the same file must not conflict: keep the union of both sides.
 **/proptest-regressions/**/*.txt merge=union
 **/proptest-regressions/*.txt merge=union
+
+# Golden challenge pins are compared as text: keep LF on every platform (lane GC).
+tests/golden/challenges/** text eol=lf

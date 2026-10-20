@@ -38,9 +38,12 @@ use crate::{bundle, plugin};
 mod audio;
 mod checks;
 mod chunk;
+mod soak;
 
 /// The state-chunk code `cargo xtask extract-presets` and `starter-project` share with the scenarios (`crate::preset`).
 pub(crate) use chunk::{base64_decode, base64_encode, nice_plug_state};
+/// `cargo xtask reaper-soak` (lane SOAK): the long run, `soak.rs`.
+pub use soak::reaper_soak;
 
 const DEFAULT_REAPER: &str = "apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper";
 /// Hard limit for one REAPER launch; a hung script (e.g. a modal error dialog) is killed.

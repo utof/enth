@@ -1,0 +1,43 @@
+---
+source: crates/enth-cli/tests/matching.rs
+expression: "gamekit::record(&s, &o, &[\"/settings/budget\", \"/settings/stop_at\"],\n&[\"/changes\", \"/ops\", \"/trace/steps\"])"
+---
+exit: 0
+--- stdout
+{
+  "changes": "<hidden>",
+  "distance": "<num>",
+  "free": {
+    "addrs": [
+      "filter1.cutoff"
+    ],
+    "categorical": "<num>",
+    "continuous": "<num>",
+    "count": "<num>",
+    "how": "listed"
+  },
+  "heuristic_distance": "<num>",
+  "hint": "`enth apply <start> --ops '<ops>'` writes the best patch, or rerun with --out",
+  "ops": "<hidden>",
+  "renders": "<num>",
+  "runs": "<num>",
+  "schema": "enth.match/1",
+  "settings": {
+    "budget": 30,
+    "seed": 1,
+    "stop_at": 0.02
+  },
+  "start": "[TMP]/start.patch.json",
+  "start_distance": "<num>",
+  "stop": "goal",
+  "target": {
+    "kind": "patch",
+    "source": "[TMP]/target.patch.json"
+  },
+  "trace": {
+    "batches": "<num>",
+    "steps": "<hidden>"
+  },
+  "wrote": null
+}
+--- stderr

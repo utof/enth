@@ -1,0 +1,130 @@
+# enth golden challenge `l5-s3` (challenges/cases/l5-s3.toml). Pinned: the code's facts, the target's fingerprint and render, and per scorer set every answer's report. Nothing here changes under the same scorer ids; written only by `cargo xtask golden --challenges --update`.
+code 10M0-1000-0000-33
+form short
+spec generator=1 seed=3 difficulty=100 musical=100 template=0 amounts=-,-,-,-,-,-
+level 5
+phrase 1
+fingerprint d2c87fc47711633bc387f05207f9e6e9da06894eeae0f31f767635cb9687fe58
+drawn params=20 routes=2 enables=4
+target lufs=-36.919015950
+render rate=48000 seed=236412653 frames=144000 sha256=af54886a40cbb115f6fdca6ab03606db4260aa37aa65158d7692e14a797aad60
+
+scoring sound/1 structure/1 combined/1 time/1 weight=80 pass_mark=90
+  answer exact
+    report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.061400410 scale=0.432368882 jnd=0.000000000
+    component pitch same close target=-2099.455119032 answer=-2099.455119032
+    component brightness same close target=495.975598537 answer=495.975598537
+    component harmonics same close target=0.999965138 answer=0.999965138
+    component attack same close target=767.000000000 answer=767.000000000
+    component envelope same close target=622.000000000 answer=622.000000000
+    component sustain same close target=-6.669546380 answer=-6.669546380
+    component release same close target=1500.000000000 answer=1500.000000000
+    component noisiness same close target=0.016781899 answer=0.016781899
+    component movement same close target=3.723513815 answer=3.723513815
+    ring env1.attack good same 1.000000000 answer=env1.attack
+    ring env1.decay good same 1.000000000 answer=env1.decay
+    ring env1.release good same 1.000000000 answer=env1.release
+    ring env1.sustain good same 1.000000000 answer=env1.sustain
+    ring env2.decay good same 1.000000000 answer=env2.decay
+    ring env2.sustain good same 1.000000000 answer=env2.sustain
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring lfo1.rate good same 1.000000000 answer=lfo1.rate
+    ring lfo1.shape good same 1.000000000 answer=lfo1.shape
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    ring osc2.fine good same 1.000000000 answer=osc2.fine
+    ring osc2.level good same 1.000000000 answer=osc2.level
+    ring osc2.semi good same 1.000000000 answer=osc2.semi
+    ring osc2.wave good same 1.000000000 answer=osc2.wave
+    ring reverb1.decay good same 1.000000000 answer=reverb1.decay
+    ring reverb1.room good same 1.000000000 answer=reverb1.room
+    ring reverb1.wet good same 1.000000000 answer=reverb1.wet
+    ring env2 -> filter1.cutoff good same 1.000000000 answer=env2 -> filter1.cutoff
+    ring lfo1 -> filter1.cutoff good same 1.000000000 answer=lfo1 -> filter1.cutoff
+    ring comp1.enabled good same 1.000000000 answer=comp1.enabled
+    ring noise1.enabled good same 1.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc2.enabled
+    ring reverb1.enabled good same 1.000000000 answer=reverb1.enabled
+  answer start
+    report sound=46.140284748 structure=22.998460928 combined=41.511919984 passed=false margin=-43.859715252
+    sound distance=1.400817202 floor=0.061400410 scale=0.432368882 jnd=5.736968987
+    component pitch same close target=-2099.455119032 answer=-2100.000539497
+    component brightness higher far target=495.975598537 answer=894.247507983
+    component harmonics lower far target=0.999965138 answer=0.344186700
+    component attack lower far target=767.000000000 answer=5.000000000
+    component envelope lower far target=622.000000000 answer=25.000000000
+    component sustain higher a_bit target=-6.669546380 answer=-2.758742272
+    component release lower far target=1500.000000000 answer=202.000000000
+    component noisiness same close target=0.016781899 answer=0.000040336
+    component movement missing far target=3.723513815 answer=-
+    ring env1.attack near lower 0.368842585 answer=env1.attack
+    ring env1.decay good same 1.000000000 answer=env1.decay
+    ring env1.release near higher 0.300711084 answer=env1.release
+    ring env1.sustain good same 1.000000000 answer=env1.sustain
+    ring env2.decay bad missing 0.000000000 answer=-
+    ring env2.sustain bad missing 0.000000000 answer=-
+    ring filter1.cutoff bad higher 0.000000000 answer=filter1.cutoff
+    ring filter1.mode bad lower 0.000000000 answer=filter1.mode
+    ring filter1.resonance bad lower 0.000000000 answer=filter1.resonance
+    ring lfo1.rate bad missing 0.000000000 answer=-
+    ring lfo1.shape bad missing 0.000000000 answer=-
+    ring osc1.semi bad missing 0.000000000 answer=-
+    ring osc1.wave bad missing 0.000000000 answer=-
+    ring osc2.fine bad lower 0.000000000 answer=osc1.fine
+    ring osc2.level bad higher 0.000000000 answer=osc1.level
+    ring osc2.semi good same 1.000000000 answer=osc1.semi
+    ring osc2.wave bad higher 0.000000000 answer=osc1.wave
+    ring reverb1.decay bad missing 0.000000000 answer=-
+    ring reverb1.room bad missing 0.000000000 answer=-
+    ring reverb1.wet bad missing 0.000000000 answer=-
+    ring env2 -> filter1.cutoff bad missing 0.000000000 answer=-
+    ring lfo1 -> filter1.cutoff bad missing 0.000000000 answer=-
+    ring comp1.enabled good same 1.000000000 answer=comp1.enabled
+    ring noise1.enabled good same 1.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc1.enabled
+    ring reverb1.enabled bad missing 0.000000000 answer=reverb1.enabled
+    module missing osc1 osc
+    module missing reverb1 reverb
+    module missing env2 adsr
+    module missing lfo1 lfo
+  answer near
+    report sound=90.478988795 structure=98.076923077 combined=91.998575651 passed=true margin=0.478988795
+    sound distance=0.427293845 floor=0.061400410 scale=0.432368882 jnd=0.949548353
+    component pitch same close target=-2099.455119032 answer=-2102.181717389
+    component brightness higher a_bit target=495.975598537 answer=651.880978636
+    component harmonics same close target=0.999965138 answer=0.999967814
+    component attack same close target=767.000000000 answer=780.000000000
+    component envelope same close target=622.000000000 answer=645.000000000
+    component sustain same close target=-6.669546380 answer=-6.949256276
+    component release same close target=1500.000000000 answer=1500.000000000
+    component noisiness same close target=0.016781899 answer=0.009527305
+    component movement same close target=3.723513815 answer=3.723513815
+    ring env1.attack good same 1.000000000 answer=env1.attack
+    ring env1.decay good same 1.000000000 answer=env1.decay
+    ring env1.release good same 1.000000000 answer=env1.release
+    ring env1.sustain good same 1.000000000 answer=env1.sustain
+    ring env2.decay good same 1.000000000 answer=env2.decay
+    ring env2.sustain near higher 0.500000000 answer=env2.sustain
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring lfo1.rate good same 1.000000000 answer=lfo1.rate
+    ring lfo1.shape good same 1.000000000 answer=lfo1.shape
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    ring osc2.fine good same 1.000000000 answer=osc2.fine
+    ring osc2.level good same 1.000000000 answer=osc2.level
+    ring osc2.semi good same 1.000000000 answer=osc2.semi
+    ring osc2.wave good same 1.000000000 answer=osc2.wave
+    ring reverb1.decay good same 1.000000000 answer=reverb1.decay
+    ring reverb1.room good same 1.000000000 answer=reverb1.room
+    ring reverb1.wet good same 1.000000000 answer=reverb1.wet
+    ring env2 -> filter1.cutoff good same 1.000000000 answer=env2 -> filter1.cutoff
+    ring lfo1 -> filter1.cutoff good same 1.000000000 answer=lfo1 -> filter1.cutoff
+    ring comp1.enabled good same 1.000000000 answer=comp1.enabled
+    ring noise1.enabled good same 1.000000000 answer=noise1.enabled
+    ring osc2.enabled good same 1.000000000 answer=osc2.enabled
+    ring reverb1.enabled good same 1.000000000 answer=reverb1.enabled

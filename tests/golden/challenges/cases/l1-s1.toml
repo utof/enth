@@ -1,0 +1,5 @@
+description = "Level 1, seed 1: a triangle wave at the start's pitch (two randomized parameters). Near: the pitch 0.1 semitone off."
+code = "1040-1000-0000-1R"
+
+[answers.near]
+add = { "osc1.semi" = 0.1 }

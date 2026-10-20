@@ -1,0 +1,43 @@
+---
+source: crates/enth-cli/tests/challenge.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "categories": [
+    "oscillators",
+    "filter",
+    "envelopes",
+    "modulation",
+    "effects",
+    "structure"
+  ],
+  "code": "10C0-1000-0000-79",
+  "engine": null,
+  "engine_current": null,
+  "form": "short",
+  "hint": "`enth challenge show 10C0-1000-0000-79` regenerates the target and summarises it; `enth challenge new --code 10C0-1000-0000-79` prints the challenge",
+  "preset": {
+    "id": 3,
+    "name": "Level 3"
+  },
+  "schema": "enth.challenge-decode/1",
+  "spec": {
+    "amounts": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "difficulty": 50,
+    "generator": 1,
+    "musical": 100,
+    "seed": 7,
+    "template": 0
+  },
+  "target_prefix": null
+}
+--- stderr

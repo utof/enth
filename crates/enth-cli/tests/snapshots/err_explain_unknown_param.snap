@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [
+    "svf.cutoff"
+  ],
+  "error": "unknown_param",
+  "exit": 3,
+  "hint": "svf has: mode, cutoff, resonance, keytrack, drive; units and ranges: `enth params svf`",
+  "message": "'svf.cutof' names no parameter of svf",
+  "path": "svf.cutof",
+  "schema": "enth.error/1"
+}
+--- stderr

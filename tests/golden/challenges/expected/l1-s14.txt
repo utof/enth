@@ -1,0 +1,55 @@
+# enth golden challenge `l1-s14` (challenges/cases/l1-s14.toml). Pinned: the code's facts, the target's fingerprint and render, and per scorer set every answer's report. Nothing here changes under the same scorer ids; written only by `cargo xtask golden --challenges --update`.
+code 1040-1000-0000-E6
+form short
+spec generator=1 seed=14 difficulty=0 musical=100 template=0 amounts=-,-,-,-,-,-
+level 1
+phrase 1
+fingerprint 5708bcce78638ffae4d64d3f3c7c5d8c0ecf0c05216185acd7440eb7ff39d60c
+drawn params=3 routes=0 enables=0
+target lufs=-7.976783856
+render rate=48000 seed=236412653 frames=144000 sha256=684a6fdb1704da4f3ec5a8f3f05448ccff3ef5676ab0bdf9d80482e367f53e73
+
+scoring sound/1 structure/1 combined/1 time/1 weight=50 pass_mark=90
+  answer exact
+    report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.002448871 scale=0.234151204 jnd=0.000000000
+    component pitch same close target=-899.985143074 answer=-899.985143074
+    component brightness same close target=940.388169602 answer=940.388169602
+    component harmonics same close target=0.147456537 answer=0.147456537
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=25.000000000 answer=25.000000000
+    component sustain same close target=-2.774153939 answer=-2.774153939
+    component release same close target=200.000000000 answer=200.000000000
+    component noisiness same close target=0.000045957 answer=0.000045957
+    ring osc1.pw good same 1.000000000 answer=osc1.pw
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+  answer start
+    report sound=4.461404873 structure=18.083333969 combined=11.272369421 passed=false margin=-85.538595127
+    sound distance=0.399746923 floor=0.002448871 scale=0.234151204 jnd=50.484288258
+    component pitch lower far target=-899.985143074 answer=-2100.000526561
+    component brightness same close target=940.388169602 answer=894.250747943
+    component harmonics higher a_bit target=0.147456537 answer=0.344186717
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=25.000000000 answer=25.000000000
+    component sustain same close target=-2.774153939 answer=-2.829406318
+    component release same close target=200.000000000 answer=202.000000000
+    component noisiness same close target=0.000045957 answer=0.000040326
+    ring osc1.pw near higher 0.542500019 answer=osc1.pw
+    ring osc1.semi bad lower 0.000000000 answer=osc1.semi
+    ring osc1.wave bad lower 0.000000000 answer=osc1.wave
+    moved osc1.fine bad lower 0.000000000 answer=osc1.fine
+  answer near
+    report sound=92.171093312 structure=100.000000000 combined=96.085546656 passed=true margin=2.171093312
+    sound distance=0.189791623 floor=0.002448871 scale=0.234151204 jnd=0.809056172
+    component pitch same close target=-899.985143074 answer=-899.985267092
+    component brightness same close target=940.388169602 answer=937.861621124
+    component harmonics same close target=0.147456537 answer=0.145215751
+    component attack same close target=5.000000000 answer=5.000000000
+    component envelope same close target=25.000000000 answer=24.000000000
+    component sustain same close target=-2.774153939 answer=-2.755833866
+    component release same close target=200.000000000 answer=200.000000000
+    component noisiness same close target=0.000045957 answer=0.000047154
+    ring osc1.pw good same 1.000000000 answer=osc1.pw
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave

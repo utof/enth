@@ -14,6 +14,7 @@
 //!   together with the reason. Reviewers reject golden updates that do not say why.
 //! - No WAVs in git: hashes and summaries only.
 
+pub mod challenges;
 pub mod patch;
 pub mod source;
 pub mod summary;

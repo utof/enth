@@ -1,23 +1,59 @@
-//! `cargo xtask golden [--update] [--wasm]`: the golden renders of `tests/golden` (package `enth-golden`).
+//! `cargo xtask golden [--challenges [--only <case>]] [--update] [--wasm]`: the golden renders of `tests/golden`
+//! (package `enth-golden`).
 //!
 //! Compares every case in `tests/golden/cases` with its `expected/` file and reports all mismatches in one run.
 //! `--update` rewrites the expected files (refused under `CI`) and prints the list of changed cases for the commit
 //! message. `--wasm` builds the same binary for `wasm32-wasip1` and runs it under wasmtime (`$WASMTIME` or `wasmtime`
 //! on `PATH`); the hashes must equal the native ones. See `tests/golden/src/lib.rs` for the design.
+//!
+//! `--challenges` runs the golden challenges of `tests/golden/challenges/` instead (R1/S1 lane GC): the same flags,
+//! `--only <case>` for one case. `--update` there creates a new case's pins and adds a new scorer set to an old one,
+//! and refuses to change anything already pinned (the scorer id must change instead); see `docs/challenge.md`.
 
 use std::path::PathBuf;
 use std::process::Command;
 
-const USAGE: &str = "usage: cargo xtask golden [--update] [--wasm]";
+const USAGE: &str = "usage: cargo xtask golden [--challenges [--only <case>]] [--update] [--wasm]";
+
+/// What to run: the golden renders, or the golden challenges (optionally one case).
+#[derive(Default)]
+struct Which {
+    challenges: bool,
+    only: Option<String>,
+}
+
+impl Which {
+    /// The arguments after the binary's name.
+    fn args(&self, update: bool) -> Vec<String> {
+        let mut args = Vec::new();
+        if self.challenges {
+            args.push("--challenges".to_owned());
+        }
+        if update {
+            args.push("--update".to_owned());
+        }
+        if let Some(only) = &self.only {
+            args.extend(["--only".to_owned(), only.clone()]);
+        }
+        args
+    }
+}
 
 pub fn golden(args: &[String]) -> Result<(), String> {
     let (mut update, mut wasm) = (false, false);
-    for arg in args {
+    let mut which = Which::default();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--update" => update = true,
             "--wasm" => wasm = true,
+            "--challenges" => which.challenges = true,
+            "--only" => which.only = Some(args.next().ok_or_else(|| USAGE.to_owned())?.clone()),
             _ => return Err(USAGE.to_owned()),
         }
+    }
+    if which.only.is_some() && !which.challenges {
+        return Err("--only needs --challenges".to_owned());
     }
     if update && std::env::var_os("CI").is_some() {
         return Err(
@@ -29,9 +65,9 @@ pub fn golden(args: &[String]) -> Result<(), String> {
         return Err("--update runs natively; --wasm only compares".to_owned());
     }
     let status = if wasm {
-        run_wasm()?
+        run_wasm(&which)?
     } else {
-        run_native(update)?
+        run_native(update, &which)?
     };
     if status.success() {
         Ok(())
@@ -40,7 +76,7 @@ pub fn golden(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn run_native(update: bool) -> Result<std::process::ExitStatus, String> {
+fn run_native(update: bool, which: &Which) -> Result<std::process::ExitStatus, String> {
     let mut cmd = super::cargo();
     cmd.args([
         "run",
@@ -51,14 +87,12 @@ fn run_native(update: bool) -> Result<std::process::ExitStatus, String> {
         "enth-golden",
         "--",
     ]);
-    if update {
-        cmd.arg("--update");
-    }
+    cmd.args(which.args(update));
     cmd.status()
         .map_err(|e| format!("cannot run cargo run: {e}"))
 }
 
-fn run_wasm() -> Result<std::process::ExitStatus, String> {
+fn run_wasm(which: &Which) -> Result<std::process::ExitStatus, String> {
     let meta = super::metadata()?;
     let wasmtime =
         std::env::var_os("WASMTIME").map_or_else(|| PathBuf::from("wasmtime"), PathBuf::from);
@@ -99,6 +133,7 @@ fn run_wasm() -> Result<std::process::ExitStatus, String> {
         .arg("--dir")
         .arg(&golden_dir)
         .arg(&wasm)
+        .args(which.args(false))
         .status()
         .map_err(|e| format!("cannot run wasmtime: {e}"))
 }

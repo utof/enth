@@ -1,0 +1,5 @@
+description = "Level 1, seed 4: a pulse wave at 30.2 % width, an octave down. Near: the pitch a quarter semitone off."
+code = "1040-1000-0000-4J"
+
+[answers.near]
+add = { "osc1.semi" = 0.25 }

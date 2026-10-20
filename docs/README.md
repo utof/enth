@@ -39,6 +39,8 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [plugin.md](plugin.md) | `enth-plugin` (L8): the CLAP and VST3 shell, threads, the audio block, state, slot names, dirty marking, REAPER scenarios, the leak gates and presets |
 | [distribution.md](distribution.md) | Friend and release builds: `release.yml` (tag or by hand only), the per-push Windows and macOS cross-target guard, costs per run, signing, what friends do, DAW coverage |
 | [friends-install.md](friends-install.md) | The short install sheet to forward to friends |
+| [gr1.md](gr1.md) | Gate GR1: the protocol, the round-log fields, `cargo xtask gr1-report` and how to read it, the proposed thresholds, the agent and floor baselines |
+| [gr1-owner.md](gr1-owner.md) / [gr1-friends.md](gr1-friends.md) | The owner's and the friends' GR1 sheets: collect logs and decide; play 20 rounds and send the log |
 | [phase-0.md](phase-0.md) | The Phase 0 lanes and tasks, with acceptance criteria (done) |
 | [spikes/summary.md](spikes/summary.md) | What Phase 0 measured and changed, the G0 results, and the owner's [checklist](spikes/owner-checklist.md) |
 | [benchmarks.md](benchmarks.md) | How we measure UI stacks, the engine, and the agent loop — and the pass/fail thresholds |

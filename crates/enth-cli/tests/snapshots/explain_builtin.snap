@@ -1,0 +1,33 @@
+---
+source: crates/enth-cli/tests/explain.rs
+expression: "gamekit::record(&s, &o, &[], hide)"
+---
+exit: 0
+--- stdout
+{
+  "hint": "add --patch <patch> to measure what it does in your patch; `enth params <kind>` lists units and ranges",
+  "kind": "voice",
+  "name": "Glide",
+  "param": {
+    "accepts": [
+      "40",
+      "40ms",
+      "0.5s"
+    ],
+    "automatable": true,
+    "default": "<num>",
+    "key": "glide",
+    "max": "<num>",
+    "min": "<num>",
+    "modulatable": false,
+    "scale": "power",
+    "tier": "basic",
+    "unit": "ms"
+  },
+  "schema": "enth.explain/1",
+  "subject": "voice.glide",
+  "summary": "Time to slide from the previous note's pitch to the new one; 0 is off. Linear in semitones.",
+  "text": "voice.glide (Glide) is a parameter of the voice (voice).\nTime to slide from the previous note's pitch to the new one; 0 is off. Linear in semitones.\nIn ms, from 0ms to 10s, default 0ms. Its knob is curved, with more resolution toward one end.\nWrite it as 40, 40ms, 0.5s.\nHost automation can drive it; routes cannot.",
+  "what": "param"
+}
+--- stderr
