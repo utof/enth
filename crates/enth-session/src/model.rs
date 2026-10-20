@@ -359,8 +359,8 @@ pub enum ShellRequest {
     RenameParams,
     /// The monitor FX bypass changed: store it into the atomic `process()` reads.
     MonitorBypass(bool),
-    /// The patch changed through the editor, which the host cannot see. Coalesce per frame; the shell may mark the
-    /// project dirty if a fork patch adds that (nice-plug never does; an open check in docs/phase-1b.md).
+    /// The patch changed through the editor (edits, undo, redo), which the host cannot see. Coalesce per frame; the
+    /// shell marks the host project dirty through the fork's `HostRequests::mark_dirty()` (patch 6).
     PatchEdited,
 }
 
