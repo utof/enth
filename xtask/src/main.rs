@@ -117,7 +117,7 @@ const USAGE: &str = "usage: cargo xtask <command>
   agent-eval [--dry-run] [...]      the agent-eval harness: agents design sounds with `enth` (--dry-run: scripted fake
                                     agent, no model call; a real run needs --confirm-spend); see `agent-eval --help`
 
---package defaults to spike-shell, and to enth-plugin once it exports a CLAP entry (src/plugin.rs).";
+--package defaults to enth-plugin, the one plugin in the workspace (src/plugin.rs).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

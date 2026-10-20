@@ -1,7 +1,7 @@
 -- Shared helpers for the headless REAPER tests run by `cargo xtask reaper-test`.
 -- Settings come from environment variables set by the xtask:
 --   ENTH_OUT (results dir), ENTH_EMPTY_PROJECT, ENTH_LOG (log file name inside ENTH_OUT),
---   ENTH_FX (REAPER plugin name, e.g. "CLAPi: enth spike-shell"), ENTH_TAG (e.g. "clap"), ENTH_PHASE.
+--   ENTH_FX (REAPER plugin name, e.g. "CLAPi: enth (enth)"), ENTH_TAG (e.g. "clap"), ENTH_PHASE.
 -- Every result is a line in the log: `check<TAB>name<TAB>ok|FAIL<TAB>detail` or `data<TAB>key<TAB>value`.
 
 OUT = os.getenv("ENTH_OUT")

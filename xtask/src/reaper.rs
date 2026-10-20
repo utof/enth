@@ -21,7 +21,8 @@
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
-//! The spike shell (`--package spike-shell`) keeps its older three: `state`, `automation` and `editor-smoke`.
+//! It runs the product plugin only (`enth-plugin`, the default package). The Phase 0 shell spike's three scenarios went
+//! with the spike when P1b lane INT retired it from the workspace.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -86,8 +87,6 @@ enum Scenario {
     TwoInstances,
     EditorSmoke,
     DirtyFlag,
-    /// The spike shell's older automation scenario (macro 1 and slot 1 ramped together).
-    Automation,
     CrossFormat,
 }
 
@@ -104,13 +103,6 @@ impl Scenario {
         Scenario::DirtyFlag,
         Scenario::CrossFormat,
     ];
-    const SPIKE: [Scenario; 4] = [
-        Scenario::State,
-        Scenario::Automation,
-        Scenario::EditorSmoke,
-        Scenario::CrossFormat,
-    ];
-
     fn name(self) -> &'static str {
         match self {
             Scenario::State => "state",
@@ -122,16 +114,14 @@ impl Scenario {
             Scenario::TwoInstances => "two-instances",
             Scenario::EditorSmoke => "editor-smoke",
             Scenario::DirtyFlag => "dirty-flag",
-            Scenario::Automation => "automation",
             Scenario::CrossFormat => "cross-format",
         }
     }
 
     fn parse(text: &str) -> Option<Scenario> {
-        let all = Scenario::PRODUCT.iter().chain(&Scenario::SPIKE);
         match text {
             "state-create" | "state-reload" => Some(Scenario::State),
-            _ => all.copied().find(|s| s.name() == text),
+            _ => Scenario::PRODUCT.iter().copied().find(|s| s.name() == text),
         }
     }
 }
@@ -184,7 +174,7 @@ fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
                 options.scenarios.push(Scenario::parse(name).ok_or_else(|| {
                     let names: Vec<&str> = Scenario::PRODUCT.iter().map(|s| s.name()).collect();
                     format!(
-                        "unknown scenario {name:?} (the product's: {}; the spike shell's older `automation`)",
+                        "unknown scenario {name:?} (the scenarios: {})",
                         names.join(", ")
                     )
                 })?);
@@ -314,13 +304,9 @@ const PRODUCT_WHEEL_PATCH: &str = include_str!("../reaper/enth-mod-wheel.patch.j
 const PRODUCT_DIRTY_CONTROL_PATCH: &str = include_str!("../reaper/enth-dirty-control.patch.json");
 
 impl Chunks {
-    fn write(out: &Path, format: Format, product: bool) -> Result<Chunks, String> {
+    fn write(out: &Path, format: Format) -> Result<Chunks, String> {
         let make = |name: &str, patch: &str| -> Result<Option<String>, String> {
-            if product {
-                write_state_chunk(out, name, format, patch).map(Some)
-            } else {
-                Ok(None)
-            }
+            write_state_chunk(out, name, format, patch).map(Some)
         };
         Ok(Chunks {
             state: make("state", PRODUCT_STATE_PATCH)?,
@@ -376,6 +362,12 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     let options = parse_options(args, &meta.workspace_root)?;
     plugin::require_member(&meta, &options.package)?;
     let package = options.package.as_str();
+    if package != plugin::PRODUCT_PACKAGE {
+        return Err(format!(
+            "reaper-test runs the scenarios of {} only, not {package}",
+            plugin::PRODUCT_PACKAGE
+        ));
+    }
     let reaper = reaper_path()?;
     require_tool(
         "xvfb-run",
@@ -410,42 +402,21 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         }
     }
 
-    let product = package == plugin::PRODUCT_PACKAGE;
     let mut scenarios: Vec<Scenario> = if options.scenarios.is_empty() {
-        if product {
-            Scenario::PRODUCT.to_vec()
-        } else {
-            Scenario::SPIKE.to_vec()
-        }
+        Scenario::PRODUCT.to_vec()
     } else {
         options.scenarios.clone()
     };
     // The comparison between formats needs what these leave behind.
     if scenarios.contains(&Scenario::CrossFormat) {
-        let needed: &[Scenario] = if product {
-            &[
-                Scenario::State,
-                Scenario::PatchRoundtrip,
-                Scenario::SlotAutomation,
-                Scenario::MacroAutomation,
-            ]
-        } else {
-            &[Scenario::State, Scenario::Automation]
-        };
-        scenarios.extend_from_slice(needed);
+        scenarios.extend_from_slice(&[
+            Scenario::State,
+            Scenario::PatchRoundtrip,
+            Scenario::SlotAutomation,
+            Scenario::MacroAutomation,
+        ]);
         scenarios.sort();
         scenarios.dedup();
-    }
-    let allowed = if product {
-        &Scenario::PRODUCT[..]
-    } else {
-        &Scenario::SPIKE[..]
-    };
-    if let Some(bad) = scenarios.iter().find(|s| !allowed.contains(s)) {
-        return Err(format!(
-            "scenario {} does not run for {package}",
-            bad.name()
-        ));
     }
 
     let work = meta.target_directory.join("reaper-test");
@@ -470,7 +441,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     let mut timing = Timing::default();
     for &format in &options.formats {
         let started = Instant::now();
-        let chunks = Chunks::write(&sandbox.out, format, product)?;
+        let chunks = Chunks::write(&sandbox.out, format)?;
         for &scenario in scenarios.iter().filter(|s| **s != Scenario::CrossFormat) {
             let t = Instant::now();
             run_scenario(
@@ -491,7 +462,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     }
 
     if scenarios.contains(&Scenario::CrossFormat) {
-        cross_format(&sandbox, &mut report, &shared, &options.formats, product);
+        cross_format(&sandbox, &mut report, &shared, &options.formats);
     }
 
     print_report(&report);
@@ -519,7 +490,6 @@ fn run_scenario(
     scenario: Scenario,
 ) -> Result<(), String> {
     let tag = format.tag();
-    let product = chunks.state.is_some();
     match scenario {
         Scenario::State => {
             // (a) and (c): parameters, ids, automation lane, state; then reload in a new process.
@@ -546,7 +516,7 @@ fn run_scenario(
                     );
                 }
             }
-            checks::state(sb, report, format, product);
+            checks::state(sb, report, format);
         }
         Scenario::PatchRoundtrip => {
             for phase in ["create", "reload1", "reload2"] {
@@ -633,12 +603,6 @@ fn run_scenario(
                 &format!("wheel-automation-{tag}.rpp"),
             )?;
             checks::mod_wheel(&sb.out, report, format);
-        }
-        Scenario::Automation => {
-            // The spike shell: macro 1 and slot 1 ramped together, heard in an offline render.
-            run_script(sb, report, format, "automation", "automation", "build", &[]);
-            render_project(sb, report, format, "automation", &format!("auto-{tag}.rpp"))?;
-            checks::automation_legacy(&sb.out, report, format);
         }
         Scenario::UndoStateLoad => {
             let extra = chunk_env(chunks.state.as_ref(), chunks.roundtrip.as_ref());
@@ -805,7 +769,6 @@ fn cross_format(
     report: &mut Report,
     shared: &Shared,
     formats: &[Format],
-    product: bool,
 ) {
     let [first, second, ..] = formats else {
         return;
@@ -817,9 +780,6 @@ fn cross_format(
         shared.idents.contains_key(first) && shared.idents.get(first) == shared.idents.get(second),
         "CLAP and VST3 report the same 72 ids",
     );
-    if !product {
-        return;
-    }
     report.add(
         scope,
         "saved-patch-same-in-both-formats",
@@ -865,11 +825,7 @@ fn print_table(report: &Report, timing: &Timing, formats: &[Format]) {
                 .rows
                 .iter()
                 .filter_map(|r| r.scope.strip_prefix(&format!("{tag}/")))
-                .filter(|s| {
-                    s == name
-                        || (name == "state" && s.starts_with("state-"))
-                        || (name == "automation" && s.starts_with("automation"))
-                })
+                .filter(|s| s == name || (name == "state" && s.starts_with("state-")))
                 .collect::<std::collections::BTreeSet<_>>()
             {
                 let (o, t) = report.count(&format!("{tag}/{scope}"));

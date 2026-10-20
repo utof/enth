@@ -1,10 +1,15 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "xtask", "tests/golden", "spikes/*", "tools/*"]
+# Phase 0 spikes still in use: spike-metric (tools/listen depends on it), spike-engine (`cargo xtask wasm-hash`, the
+# engine-golden workflow) and spike-agent (the agent-loop probe CLI). The shell and UI spikes (spike-shell, spike-ui,
+# spike-ui-plugin) left the workspace in P1b lane INT once xtask targeted enth-plugin: their source stays under spikes/
+# as the Phase 0 evidence the docs link to, frozen, and no longer builds (docs/architecture.md, "Folder layout").
+members = ["crates/*", "xtask", "tests/golden", "spikes/spike-agent", "spikes/spike-engine", "spikes/spike-metric", "tools/*"]
 default-members = ["crates/*", "xtask", "tests/golden"]   # plain `cargo build/test/clippy` skip spikes and tools; CI passes --workspace
 # Vendored third-party crates (P1b lane FK, `[patch.crates-io]` below) are path dependencies inside the workspace
-# directory, which cargo would otherwise adopt as members: clippy, fmt and `--workspace` would then lint them.
-exclude = ["vendor"]
+# directory, which cargo would otherwise adopt as members: clippy, fmt and `--workspace` would then lint them. The
+# retired spikes are excluded so that no later glob adopts them again.
+exclude = ["vendor", "spikes/spike-shell", "spikes/spike-ui", "spikes/spike-ui-plugin"]
 
 [workspace.package]
 version = "0.0.0"
