@@ -6,6 +6,7 @@
 
 Changes from earlier plans:
 
+- **2026-10-20:** R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/summary.md`). R1 and S1 run in parallel on what exists, planned together in [phase-2.md](phase-2.md): five waves behind three freezes (F0r, F1r, F2r), about 22–42 agent-hours planned and 26–30 expected. Targets are the same on every machine because every random draw is keyed by its parameter address, never taken in sequence, and a challenge code carries the generator and engine versions and a target-hash prefix ([design.md §9](design.md#9-randomizer-and-difficulty)). Before sound % decides a pass it gets module mapping, metric v1.1's pooling, descriptor components, per-challenge calibration and a `libm` loudness ([ADR-0007](adr/0007-metric-v1.md)). The A/B plays a pre-rendered target against the live engine, with no engine work. Score disputes are the top risk, so an agreement vote and a local round log go into the first playable round. In S1, poly-mod is already done (only the Bitwig check is left), a fresh instance will play a gain-staged starter patch as "Init", and a preset load becomes one undo step. The friend build is CLAP and VST3 bundles first, from a tag-only `release.yml`, unsigned for R1; a standalone app waits for your OK; AU is deferred past S1. Docs-only pushes no longer run CI.
 - **2026-10-19 (e):** P1b research (`_local/sessions/2026-10-19-p1b-plugin-editor/summary.md`). P1b is buildable on what exists, with an engine-seams lane (E+) in the spine and a privately vendored fork of nice-plug and baseview (CLAP slot names, an `editor_closed` fix, baseview's xkb leak fix, keyboard focus only while typing). The plugin renders exactly like the CLI (20 of 20 runs bit-identical), so "CLI = plugin renders" becomes a G1 check. The real-time row of G1 now gates on p99 and p99.9 under real-time priority and on swap blocks, and a plan swap moves effect state instead of copying it. The editor makes layout data, so each Claude Design variant becomes one file. The P1b lane plan is [phase-1b.md](phase-1b.md).
 - **2026-10-19 (d):** P1a research (`_local/sessions/2026-10-19-p1a-headless-core/summary.md`). P1a is buildable as planned, with five design corrections: seeds never come from the patch hash; the processing quantum is a 32-frame segment behind a FIFO, not "block 64"; the reverb needs no RNG; the probe's 15 of 15 was partly a descriptor bug (13 of 15 when re-judged); and P1a gains a minimal `enth-solver` (hints), `enth-golden` and the text-goal agent-eval harness. G1's CPU budget is re-set, because (c)'s 340 M instructions per 2 s render was too tight for the real module set; macOS goldens run on demand or weekly; "a bass, pad, pluck and lead you like" moves to P1b. The P1a lane plan is [phase-1a.md](phase-1a.md).
 - **2026-10-19 (c):** Phase 0 closed ([spikes/summary.md](spikes/summary.md)). G0 passes on the automated tier; the owner's real-display and listening checks are pending ([spikes/owner-checklist.md](spikes/owner-checklist.md)). ADR-0001 and ADR-0002 are accepted. The editor's PSS growth per open fails its gate until baseview's keymap leak is fixed upstream. G1 gets a proposed 16-voice CPU budget and an agent-eval protocol from the agent-loop probe.
@@ -100,17 +101,27 @@ The effort figures are still unvalidated guesses; Phase 0 records actual against
 - **Seven waves, two heavy slots each, every heavy lane paired with a light one:** S0b with E+; UI-C and TH, with S1s; SK and FK (the vendored fork), with S2s; ED1 and PL, with RH and owner build 1 (real display); ED2 and RT; INT, with owner build 2; later, LV (one per layout variant) once you pick.
 - About 27–51 agent-hours in total, a critical path of about 13.5–24. Your time: owner build 1 (about 40 min), the layout pick (20–30 min), owner build 2 (60–90 min), real audio with 8 instances (30 min), and an optional Bitwig poly-mod check (45 min).
 
+## R1 + S1 lane plan
+
+2026-10-20, from the R1 + S1 research. The full plan, with per-lane ownership and acceptance, owner gates and the test strategy for the game logic, is [phase-2.md](phase-2.md).
+
+- **A serial spine with three freezes.** S0r (workspace prep: `enth-challenge` created, every file pre-declared, three header hooks) gives **F0r**. CT (challenge, `RandomSpec`, code and score types) and SG (the session's game API) give **F1r**, reviewed together by a judge agent, because these types are persisted, go to friends and later carry duels. SKR (a round end to end in the plugin, with 5 golden challenges on Linux, Windows and wasm) gives **F2r**. After F2r, challenge, session and plugin types change only additively.
+- **Five waves, two heavy slots each:** S0r with the friend build (FB), the one-hour REAPER soak (SOAK), the agent evals (EV2) and the docs; then add/remove modules (AM) with CT, SG, the randomizer and the preset core; then SKR and the preset browser with the scorers, coach, match, golden challenges and factory presets; then the Recreate UI with the CLI and the GR1 kit; then INT, owner build 3, a friend smoke round and GR1. Layout variants (LV) come when you pick one.
+- About 22–42 agent-hours planned, 26–30 expected (calibrated on P1b's 20 measured hours against its 27–51 estimate); the critical path is about 8–11 h of wall time. Your time: about 3 h new (the friend survey first, owner build 3 with the preset pick, GR1's 20 rounds, the layout pick), plus the P1 backlog. Each friend: about 1.5–2 h.
+
 ## Track R — Recreate
 
 ### R1 — Recreate mode (3–4 weeks)
 
 The game you most want: the synth makes a random patch, you recreate it, and you get a smart score.
 
+2026-10-20: planned together with S1. Lanes, freezes, owner gates and the test strategy for the game logic are in [phase-2.md](phase-2.md); the generator, codes, A/B and feedback are in [design.md §9](design.md#9-randomizer-and-difficulty).
+
 - A **Recreate** button that turns the plugin into game mode (no separate app or onboarding).
 - **Randomizer settings page** ([design.md §9](design.md#9-randomizer-and-difficulty)): how much each category is randomized, a musical/safe slider, and one difficulty knob that widens what gets randomized (oscillators → filter → envelopes → modulation → effects). Everything stays available — difficulty changes the challenge, it doesn't lock features.
 - Instant level-matched A/B, a 0–100 score with sound %, structure % and combined %, time to pass, and coach hints from measured sensitivity.
 - CLI: `compare`, `suggest`, `match`, `explain`; the `content/agent-evals` set grows to about 30 goals plus reference sounds (the harness and the first 10 goals land in P1a).
-- **Prerequisites for the friends' round (GR1):** ask your friends now which OS and DAW they use (Ableton, Logic and Cubase had no CLAP support as of July 2026), then provide a **friend build**: a standalone app through nice-plug's wrapper and/or a Windows VST3 build. Windows and macOS builds are otherwise not planned before S1, and the standalone app not before S4. If that is too much, GR1 becomes owner-only and the friends join in S1.
+- **Prerequisites for the friends' round (GR1):** ask your friends now which OS and DAW they use (Ableton, Logic and Cubase had no CLAP support as of July 2026), then provide a **friend build**. 2026-10-20 (R1 research): **plugin bundles first**, CLAP and VST3 for Linux, Windows (MSVC, static C runtime) and macOS (one universal bundle), from a `release.yml` that runs on a tag or by hand, never on push, with clap-validator on each leg. **Unsigned for R1:** the macOS bundles are ad-hoc signed and need one Terminal line each (`xattr -dr com.apple.quarantine`); Windows gets no signing. A **standalone app** (for Logic users and friends with no DAW) comes only after your OK, because it pulls system audio and MIDI libraries; AU is deferred past S1; signing (Developer ID and notarization on macOS, a Windows certificate) waits for a public S1. If that is too much, GR1 becomes owner-only and the friends join in S1.
 
 **Gate GR1:** you and friends (on a build they can run) play 20 rounds each, mostly agree with the score, and want more; the agent's solve rate is recorded as a baseline.
 
@@ -153,6 +164,8 @@ No server-side compute. Thanks to determinism, a challenge is just a **seed + se
 
 Polished editor (generator / modulator / effect lanes, drag-to-modulate with depth rings, scopes), preset browser, undo/redo, CLAP poly-mod on macros, VST3, Windows and macOS builds in CI.
 
+2026-10-20: planned together with R1 in [phase-2.md](phase-2.md). CLAP poly-mod on macros is already implemented and test-host-checked (P1b lane PL), so only your Bitwig check is left. The editor gains add and remove (and a fresh instance plays a gain-staged starter patch as "Init") and a preset browser whose loads are one undo step. Windows and macOS builds come from `release.yml`, on a tag or by hand, plus a per-push cross-target clippy guard on the Linux runner.
+
 **Gate GS1:** ten presets you'd actually use; no crashes or audio-thread allocations under `clap-validator` and a one-hour REAPER soak; the real editor still meets the UI thresholds.
 
 ### S2 — Depth (rolling)
@@ -165,7 +178,7 @@ Any effect (and maybe generator) exportable as its own small plugin, Kilohearts 
 
 ### S4 — Standalone app (deferred); web (maybe never)
 
-Standalone: window + the same egui editor + `cpal` audio + `midir` MIDI. Web, only if wanted: engine in an AudioWorklet (wasm32) + egui compiled to wasm.
+Standalone: window + the same egui editor + `cpal` audio + `midir` MIDI. 2026-10-20: it may come early, in R1's friend build, as `enth-standalone` on nice-plug's `standalone` feature (it compiles for Linux, Windows and macOS, and its licences pass `cargo deny`), once you OK its system libraries; until then the friend build is plugin bundles only. Web, only if wanted: engine in an AudioWorklet (wasm32) + egui compiled to wasm.
 
 ## Light and heavy builds (later, prepared now)
 
