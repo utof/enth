@@ -1,0 +1,5 @@
+description = "Level 5, seed 2: the octave pair, twenty-six parameters. Near: the cutoff a quarter higher."
+code = "10M0-1000-0000-21"
+
+[answers.near]
+mul = { "filter1.cutoff" = 1.25 }

@@ -1,0 +1,5 @@
+description = "Level 1, seed 14: a pulse wave at 31.7 % width, an octave up. Near: the pulse width 5 points off."
+code = "1040-1000-0000-E6"
+
+[answers.near]
+add = { "osc1.pw" = 5 }

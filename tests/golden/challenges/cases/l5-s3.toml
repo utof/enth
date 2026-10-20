@@ -1,0 +1,5 @@
+description = "Level 5, seed 3: a held note, twenty parameters, two routes and four enable flags. Near: the filter envelope's sustain 20 points off."
+code = "10M0-1000-0000-33"
+
+[answers.near]
+add = { "env2.sustain" = 20 }

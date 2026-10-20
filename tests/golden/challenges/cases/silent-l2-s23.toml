@@ -1,0 +1,5 @@
+description = "A silent target: level 2 with musical = 0; a band-pass at 9.1 kHz leaves a triangle wave 18.5 semitones under C3 below the loudness gate. sound/1 scores any silent answer 100 % and the start near 0. Near: a semitone off, also silent."
+code = "H000-G000-0000-0000-Q680-0000-804X-2T92-M0S"
+
+[answers.near]
+add = { "osc1.semi" = 1 }

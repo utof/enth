@@ -1,0 +1,5 @@
+description = "Level 2, seed 22: a pulse wave at 39.8 % width, an octave up, through a band-pass at 648 Hz. Near: the cutoff a quarter higher."
+code = "1080-1000-0000-PJ"
+
+[answers.near]
+mul = { "filter1.cutoff" = 1.25 }

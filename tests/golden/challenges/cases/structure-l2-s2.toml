@@ -1,0 +1,8 @@
+description = "Level 2 with the Structure category randomized: osc 2 and the noise are on, the phrase is the octave pair, and a velocity route is drawn. Near: the cutoff a quarter higher. Bare: both extra modules switched off."
+code = "H000-G000-0000-0000-26E8-0000-807R-2WSZ-C3J0-2"
+
+[answers.near]
+mul = { "filter1.cutoff" = 1.25 }
+
+[answers.bare]
+enable = { osc2 = false, noise1 = false }

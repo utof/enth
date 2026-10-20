@@ -1,0 +1,5 @@
+description = "Level 3, seed 3: a triangle wave through a resonant band-pass at 401 Hz with a short envelope. Near: the filter envelope's sustain 10 points off."
+code = "10C0-1000-0000-31"
+
+[answers.near]
+add = { "env2.sustain" = 10 }

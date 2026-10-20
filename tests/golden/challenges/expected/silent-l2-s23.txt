@@ -1,0 +1,46 @@
+# enth golden challenge `silent-l2-s23` (challenges/cases/silent-l2-s23.toml). Pinned: the code's facts, the target's fingerprint and render, and per scorer set every answer's report. Nothing here changes under the same scorer ids; written only by `cargo xtask golden --challenges --update`.
+code H000-G000-0000-0000-Q680-0000-804X-2T92-M0S
+form long engine=0.2.0
+spec generator=1 seed=23 difficulty=25 musical=0 template=0 amounts=-,-,-,-,-,-
+level 2
+phrase 1
+fingerprint 4e8b49151b1120189a5c53642740d507b64c6d701988a070ccedeea4b55c9fb8
+drawn params=5 routes=0 enables=0
+target lufs=silent
+render rate=48000 seed=236412653 frames=144000 sha256=7f0d5070593966c284dbee09ad033498d5e1e4dc47ce014a12482ac1cd5fdbed
+
+scoring sound/1 structure/1 combined/1 time/1 weight=57 pass_mark=90
+  answer exact
+    report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.000000000 scale=0.010000000 jnd=0.000000000
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+  answer start
+    report sound=0.000181448 structure=0.000000000 combined=0.000103425 passed=false margin=-89.999818552
+    sound distance=1000.000000000 floor=0.000000000 scale=0.010000000 jnd=100000.000000000
+    component pitch extra far target=- answer=-2100.000526561
+    component brightness extra far target=- answer=894.250747943
+    component harmonics extra far target=- answer=0.344186717
+    component attack extra far target=- answer=5.000000000
+    component envelope extra far target=- answer=25.000000000
+    component sustain extra far target=- answer=-2.829406318
+    component release extra far target=- answer=202.000000000
+    component noisiness extra far target=- answer=0.000040326
+    ring filter1.cutoff bad lower 0.000000000 answer=filter1.cutoff
+    ring filter1.mode bad lower 0.000000000 answer=filter1.mode
+    ring filter1.resonance bad lower 0.000000000 answer=filter1.resonance
+    ring osc1.semi bad higher 0.000000000 answer=osc1.semi
+    ring osc1.wave bad higher 0.000000000 answer=osc1.wave
+    moved osc1.fine bad higher 0.000000000 answer=osc1.fine
+  answer near
+    report sound=100.000000000 structure=95.000000000 combined=97.850000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.000000000 scale=0.010000000 jnd=0.000000000
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring osc1.semi near higher 0.750000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    moved osc1.fine bad higher 0.000000000 answer=osc1.fine

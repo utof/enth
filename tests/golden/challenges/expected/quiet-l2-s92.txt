@@ -1,0 +1,68 @@
+# enth golden challenge `quiet-l2-s92` (challenges/cases/quiet-l2-s92.toml). Pinned: the code's facts, the target's fingerprint and render, and per scorer set every answer's report. Nothing here changes under the same scorer ids; written only by `cargo xtask golden --challenges --update`.
+code H000-G000-0000-0002-W680-0000-801V-S0PJ-W0W
+form long engine=0.2.0
+spec generator=1 seed=92 difficulty=25 musical=0 template=0 amounts=-,-,-,-,-,-
+level 2
+phrase 1
+fingerprint 1de416978aa78456a71e5b2feea9fcc774894e9a6193a8a4dc4389ac16566cae
+drawn params=6 routes=0 enables=0
+target lufs=-65.881908179
+render rate=48000 seed=236412653 frames=144000 sha256=0e5aee8e171d4574581009455de21763e2425cc93269924b77540a73ccba5a89
+
+scoring sound/1 structure/1 combined/1 time/1 weight=57 pass_mark=90
+  answer exact
+    report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
+    sound distance=0.000000000 floor=0.180835428 scale=0.972496980 jnd=0.000000000
+    component pitch same close target=2261.646194714 answer=2261.646194714
+    component brightness same close target=3349.791298132 answer=3349.791298132
+    component harmonics same close target=0.691855968 answer=0.691855968
+    component attack same close target=0.000000000 answer=0.000000000
+    component envelope same close target=63.000000000 answer=63.000000000
+    component sustain same close target=-41.350319744 answer=-41.350319744
+    component release same close target=0.000000000 answer=0.000000000
+    component noisiness same close target=0.961826244 answer=0.961826244
+    component movement same close target=18.982933558 answer=18.982933558
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring osc1.position good same 1.000000000 answer=osc1.position
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+  answer start
+    report sound=0.864495911 structure=0.833333333 combined=0.851096003 passed=false margin=-89.135504089
+    sound distance=1.274531424 floor=0.180835428 scale=0.972496980 jnd=176.969267198
+    component pitch lower far target=2261.646194714 answer=-2100.000526561
+    component brightness lower far target=3349.791298132 answer=894.250747943
+    component harmonics lower far target=0.691855968 answer=0.344186717
+    component attack higher far target=0.000000000 answer=5.000000000
+    component envelope lower far target=63.000000000 answer=25.000000000
+    component sustain higher far target=-41.350319744 answer=-2.829406318
+    component release higher far target=0.000000000 answer=202.000000000
+    component noisiness lower far target=0.961826244 answer=0.000040326
+    component movement missing far target=18.982933558 answer=-
+    ring filter1.cutoff bad lower 0.000000000 answer=filter1.cutoff
+    ring filter1.mode bad lower 0.000000000 answer=filter1.mode
+    ring filter1.resonance bad lower 0.000000000 answer=filter1.resonance
+    ring osc1.position bad lower 0.050000000 answer=osc1.position
+    ring osc1.semi bad higher 0.000000000 answer=osc1.semi
+    ring osc1.wave bad lower 0.000000000 answer=osc1.wave
+    moved osc1.fine bad higher 0.000000000 answer=osc1.fine
+  answer near
+    report sound=89.364000316 structure=100.000000000 combined=93.937480180 passed=false margin=-0.635999684
+    sound distance=0.167442619 floor=0.180835428 scale=0.972496980 jnd=1.041101906
+    component pitch higher a_bit target=2261.646194714 answer=2287.737965221
+    component brightness same close target=3349.791298132 answer=3404.174527505
+    component harmonics same close target=0.691855968 answer=0.689521876
+    component attack same close target=0.000000000 answer=0.000000000
+    component envelope lower far target=63.000000000 answer=9.000000000
+    component sustain lower far target=-41.350319744 answer=-49.055076013
+    component release same close target=0.000000000 answer=0.000000000
+    component noisiness same close target=0.961826244 answer=0.961504496
+    component movement same close target=18.982933558 answer=19.288795109
+    ring filter1.cutoff good same 1.000000000 answer=filter1.cutoff
+    ring filter1.mode good same 1.000000000 answer=filter1.mode
+    ring filter1.resonance good same 1.000000000 answer=filter1.resonance
+    ring osc1.position good same 1.000000000 answer=osc1.position
+    ring osc1.semi good same 1.000000000 answer=osc1.semi
+    ring osc1.wave good same 1.000000000 answer=osc1.wave
+    moved osc1.fine bad higher 0.000000000 answer=osc1.fine
