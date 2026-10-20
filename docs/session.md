@@ -18,9 +18,9 @@
 | `Session::{save, save_patch, save_instance, load, load_patch, load_instance}` | `state` | Save and load; a patch that does not load is kept as text and saved back unchanged until the first edit | Implemented; the host-load history policy is "reconcile" ([below](#host-state-loads-and-the-history)) |
 | `Session::{activate, deactivate, pump}`, `Activation`, `PumpReport` | `link` | The engine side | `deactivate` implemented; `activate` and the active `pump` are SK's stubs |
 | `TelemetrySource`, `TelemetryFrame`, `TelemetryMap`, `TelemetryReader` | `telemetry` | The tap's reader side; `TelemetryFrame` is the engine's `TapFrame` (`non_exhaustive`: fakes build it from `Default`), and `Tap` implements `TelemetrySource`; the reader follows a re-activation (`set_enabled`, `refresh`) | Implemented and tested against a real engine |
-| `GameEdit`, `RoundView`, `Listen`, `Vote`, `EndChoice` | `game` | The editor's round intents (start, A/B, submit, hint, reveal, vote, dispute, end) and its read model; `Session` implements the trait, a kittest fake can | Lane SG (R1, freeze point F1r); [below](#the-recreate-round-lane-sg-r1) |
+| `GameEdit`, `RoundView`, `RoundSource`, `Listen`, `EndChoice` | `game` | The editor's round intents (start from settings or a code, A/B, submit, hint, reveal, vote with CT's `Agreement`, dispute, end) and its read model; `Session` implements the trait, a kittest fake can | Lane SG (R1, freeze point F1r); [below](#the-recreate-round-lane-sg-r1) |
 | `Session::{game_tick, game_job_done, drain_game_requests, game_ab, game_record}`, `Job`, `JobKind`, `JobResult`, `GameRequest`, `EditorView` | `game` | The shell's side of a round: the injected clock, the jobs its worker runs, the round's outbox | Lane SG |
-| `GameState`, `RoundRecord`, `RoundLogEntry` | `game` | The `enth` field's `game` object (absent while no round is live) and the round log's line (`enth.round-log/1`) | Lane SG; fixture `tests/fixtures/state/v1/round.*.json` |
+| `GameState`, `RoundRecord`, `RoundLogEntry` | `game` | The `enth` field's `game` object (absent while no round is live) and the round log's line (`enth.round-log/1`, carrying CT's `enth.round-result/1`) | Lane SG; fixture `tests/fixtures/state/v1/round.*.json` |
 
 Stubs return `SessionError::Unsupported { what, lane }` (or `Inactive` while detached), never panic, and name the lane that fills them in.
 
@@ -155,28 +155,32 @@ Two nice-plug persistent fields, both permanent names ([naming.md](naming.md)):
 
 ## The Recreate round (lane SG, R1)
 
-`enth-session`'s `game` module is the pure Recreate round ([design.md §9](design.md#the-round-ab-and-feedback-2026-10-20), [phase-2.md](phase-2.md)). It keeps the session's rules: no clocks, no threads, no I/O, no locks. **Time comes from timestamps the shell passes in**, and **background work (generating and rendering the target, scoring, hints) runs as jobs the shell executes** on its own worker and hands back. The audio thread never touches any of it. Lane CT's `Challenge` and `ScoreReport` are local placeholders until F1r ([below](#f1r-swaps)).
+`enth-session`'s `game` module is the pure Recreate round ([design.md §9](design.md#the-round-ab-and-feedback-2026-10-20), [phase-2.md](phase-2.md)). It keeps the session's rules: no clocks, no threads, no I/O, no locks. **Time comes from timestamps the shell passes in**, and **background work (generating and rendering the target, scoring, hints) runs as jobs the shell executes** on its own worker and hands back. The audio thread never touches any of it. It runs on lane CT's types ([challenge.md](challenge.md)): `RandomSpec`, `ChallengeCode`, `Challenge`, `ScoreReport`, `StructureScore`, `Verdict`, `Agreement`, `Outcome`, `AssistsUsed` and `RoundResult`.
 
 ### The lifecycle
 
 | Phase | Entered by | The patch | Leaves by |
 | --- | --- | --- | --- |
-| (no round) | — | the player's own | `game_start(challenge)` |
-| `Preparing` | `game_start`: a `Prepare` job is asked for | unchanged (the player can still edit it) | `Prepared`: the player's patch and undo history are stashed, the start patch loads |
+| (no round) | — | the player's own | `game_start(RoundSource::Settings(spec) \| RoundSource::Code(code))` |
+| `Preparing` | `game_start`: a `Prepare` job is asked for (refused settings change nothing) | unchanged (the player can still edit it) | `Prepared`: the code is checked against the target, the player's patch and undo history are stashed, the start patch loads |
 | `Playing` | the target is ready | the start, then the player's edits | `game_submit` and its `Scored` result |
 | `Submitted` | a scored submit that did not pass | the player's | a passing submit |
 | `Passed` | the first passing submit, which sets the time to pass | the player's | — (keep tweaking, vote, end) |
 | `Revealed` | `game_reveal`: gives up, assisted, no more submits | the target | — (vote, end) |
-| `Broken` | the target could not be prepared or regenerated (a failed job, a bad code, another hash) | unchanged | `game_end` only; the stash is kept |
+| `Broken` | the target could not be prepared or regenerated (a failed job, a code that does not decode, `target_mismatch`, another saved hash, a challenge for other settings) | unchanged | `game_end` only; the stash is kept |
 
 From any phase, `game_end(Restore)` brings back the stashed patch and its undo history, and `game_end(Keep)` keeps the round's patch and history. `game_start` from a live round is a new round: the old one is logged and the **original** stash carries over, so "your patch" is always the one from before the first round. Only sound decides a pass (lane ST's combined score is reported beside it).
+
+### Codes and settings
+
+A round keeps **the text of the code it started from**, so a long code keeps its maker's engine version (challenge.md, "How a round uses these types"). From the settings page (`RoundSource::Settings`), the spec is validated first (`out_of_range`, `no_generator`, `code_too_new`; a refused spec changes nothing), and a preset's spec has its short code at once. A custom spec's code is the long form, which carries the target's hash prefix, so the session makes it with `Challenge::code(prefix)` when the target exists. A pasted code (`RoundSource::Code`) is decoded by the editor first (`ChallengeCode::decode`). When the target arrives, the session checks it itself: the challenge must be for the round's spec, `ChallengeCode::verify` refuses a long code whose hash prefix differs (`target_mismatch`, the round breaks before any patch loads) and reports another engine version as a warning (`engine_differs`, shown in `RoundView::warnings`; the round plays), and a resumed round's target must match the full canonical hash it saved (`target_drift`: a short code carries no prefix). The challenge comes back from the prepare job, because its phrase is the generator's pick (`Challenge::recreate(spec, phrase)`).
 
 ### Who calls what
 
 | Entry | Thread | Does |
 | --- | --- | --- |
 | `game_tick(now_ms, EditorView)` | GUI, once per frame after `pump` and `fold_host` | The clock and the settled jobs. `Opened` at every `build()` (the time since the last tick never counts, even if a close went unreported), `Visible` each frame, `Hidden` when the editor closes |
-| `GameEdit::{game_start, game_listen, game_submit, game_hint, game_reveal, game_vote, game_dispute, game_end}`, `GameEdit::round` | GUI, at the end of the frame like `SessionEdit` | The editor's intents and its read model (`RoundView`, rebuilt every frame; a kittest fake builds one from `Default`) |
+| `GameEdit::{game_start, game_listen, game_submit, game_hint, game_reveal, game_vote, game_dispute, game_end}`, `GameEdit::round` | GUI, at the end of the frame like `SessionEdit` | The editor's intents and its read model (`RoundView`, rebuilt every frame: phase, code, difficulty, timer, scores, rings, A/B, hints, the vote, code warnings, the last error; a kittest fake builds one from `Default`) |
 | `game_job_done(id, result)` | GUI (or host main), under the lock | Hands a job's result back. A result for a job the round no longer waits for is `StaleJob` and changes nothing |
 | `drain_game_requests()` | Wherever `drain_requests` is drained, under the lock | `Run(job)`, `Cancel(id)`, `Ab(state)`, `Log(line)`, `Dirty`; acted on **after unlocking** |
 | `load_instance` / `save_instance` | Host main | Restore, reconcile or end the round ([below](#host-loads-during-a-round)); save its record |
@@ -185,14 +189,14 @@ Every other entry uses the latest tick's time. Edits, undo and redo need no new 
 
 ### Jobs
 
-Each job is a pure function of its payload (patches are owned or `Arc`-shared), so the worker never locks the session. At most one of each kind is in flight.
+Each job is a pure function of its payload (patches are owned or `Arc`-shared), so the worker never locks the session. At most one of each kind is in flight. Every job carries its `RoundId`, under which the worker keeps the round's state (the target's buffer, the scorers' `prepare` output) until another round starts or `Ab.target_ready` turns false.
 
 | Job | When | The worker | Result |
 | --- | --- | --- | --- |
-| `Prepare { challenge }` | `game_start`, and on restoring a saved round | Generates start and target (lane RG), renders the target's loop of the scored phrase **and keeps the buffer** for Target ▶ (the session never sees audio), measures its loudness, calibrates the scorer (lane SS) | `Prepared { start, target, target_lufs }` |
-| `Score { challenge, target, patch, submit }` | `game_submit` (the patch at the moment of Submit) | Scores it (lanes SS, ST) | `Scored(ScoreReport)` |
+| `Prepare { spec }` | `game_start`, and on restoring a saved round (the spec from its code) | Regenerates from the spec (lane RG: target, phrase, randomized addresses), builds `Challenge::recreate(spec, phrase)`, renders the target's loop of the scored phrase **and keeps the buffer** for Target ▶ (the session never sees audio), measures its loudness, runs the scorers' `prepare` (lanes SS, ST) | `Prepared { challenge, start, target, target_lufs }` |
+| `Score { challenge, target, patch, submit }` | `game_submit` (the patch at the moment of Submit) | Scores it (lanes SS, ST; `ScoreReport::new`) | `Scored(ScoreReport)` |
 | `Loudness { challenge, patch }` | The patch has settled (`SETTLE_MS`, 300 ms, after the last change) | Renders the phrase through the player's patch and measures it, for Mine ▶'s gain | `Loudness { lufs }` |
-| `Rings { challenge, target, patch }` | Settled, after the first submit | The per-knob Good / Near / Bad (structure only) | `Rings(knobs)` |
+| `Rings { challenge, target, patch }` | Settled, after the first submit | The per-knob Good / Near / Bad (lane ST's structure score; no render) | `Rings(StructureScore)` |
 | `Hint { challenge, target, patch, level }` | `game_hint` | The coach at that level (lane SN) | `Hint(CoachHint)` |
 
 Any job may answer `Failed { message }`: a failed `Prepare` breaks the round, a failed score records no submit. A settled job that measured an older revision of the patch is asked again at the next tick. The game worker is SKR's own thread, not nice-plug's background worker (a one-second calibration would hold up the plan pump).
@@ -206,8 +210,8 @@ Any job may answer `Failed { message }`: a failed `Prepare` breaks the round, a 
 - **Active time** counts only between visible ticks while the target is ready: it pauses while the editor is closed and while the target is prepared or regenerated. A timestamp older than the last is treated as the last.
 - **The time to pass** is the active time when the player pressed Submit on the first passing submit (not when its score arrived). A submit made just before a reveal still counts.
 - **Score on submit**: the first scored submit is the recorded score; each later one is shown and kept. After the first, the rings come from each report and then from `Rings` jobs as the patch settles.
-- **Hints** go up one level per call (`HINT_LEVELS` = 4) and **a reveal** loads the target; both mark the round assisted.
-- **The vote** (too low, about right, too high) and **a dispute** need a scored submit. A dispute is logged at once (a crash cannot lose it); the round's `end` line carries it too.
+- **Hints** go up one level per call, up to `HINT_LEVELS` = 4 or the challenge's `assists.hint_budget` if lower; **a reveal** loads the target; both mark the round assisted (CT's `AssistsUsed`).
+- **The vote** (CT's `Agreement`: too low, about right, too high) and **a dispute** need a scored submit. A dispute is logged at once (a crash cannot lose it); the round's `end` line carries it too.
 
 ### The edit log
 
@@ -231,13 +235,14 @@ The `enth` field's optional `game` object, `{"round":{…}}` (`GameState`, `Roun
 | Field | What |
 | --- | --- |
 | `id` | `{serial, nonce}`: rounds counted in this instance, and the shell's time at the start |
-| `code` | The challenge code. **The target is never saved**: it is regenerated from the code |
+| `code` | The text of the code the round started from. **The target is never saved**: it is regenerated from the code. Empty only while a custom-settings round prepares |
 | `phase` | Where the round is |
 | `stash` | The player's own patch, as patch-file text |
 | `target_hash` | The target's canonical hash: a regenerated target must match it, or the round is `Broken` (`target_drift`) |
 | `active_ms`, `time_to_pass_ms` | Active time so far, and the first passing submit's |
-| `submits` | Every scored submit: its active time, pass, and sound, structure and combined % as **integer hundredths** (no float in the record but the edit log's patch values) |
-| `hints`, `revealed`, `vote`, `dispute` | Assists and the player's verdict |
+| `submits` | Every scored submit: its active time, pass, and sound, structure and combined % as **integer hundredths** (no JSON float in the record but the edit log's patch values) |
+| `first_report` | The first submit's full `ScoreReport` (the recorded score) as its own versioned JSON text (`enth.score-report/1`), for the round's `RoundResult`; text, so a report schema this build cannot read never makes the `enth` field unloadable |
+| `hints`, `revealed`, `agreement`, `dispute` | Assists and the player's verdict |
 | `submitted_patch` | The last scored submit's patch, for the round log (omitted above 128 KiB) |
 | `edits`, `edits_dropped` | The edit log |
 
@@ -251,21 +256,19 @@ A host loads state when it opens a project and on its own Undo. nice-plug sets `
 | --- | --- | --- |
 | the same round (`id` and `code`) | live | **The live record wins.** REAPER's Undo restores an earlier save of this project, and must not roll back submits, the time or the vote. The patch still follows the host (logged as a `load`) |
 | another round, or none | live | The live round ends, logged with `ended_by: host`; then the loaded one is restored, if any. A host load never marks the project dirty (a dirty mark would add a host undo point and cut REAPER's redo) |
-| a round | none | **Restored**: the code is decoded (an undecodable one restores `Broken`) and a `Prepare` job asked for; the patch is not touched |
+| a round | none | **Restored**: the code is decoded (an undecodable one restores `Broken`, `code_too_new` included) and a `Prepare` job asked for with its spec; the patch is not touched. A custom round saved before its code existed restores nothing if it had no stash yet, and `Broken` (so the stash can come back) if it had |
 
 ### The round log
 
-Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.round-log/1`: `event` (`end` or `dispute`), `round`, `code`, `outcome` (`passed`, `revealed`, `abandoned`, `broken`; `in_progress` on a dispute line), `ended_by` (`restore`, `keep`, `new_round` (GR1's "want more"), `host`), `active_ms`, `time_to_pass_ms`, `submits` (the first is the recorded score), `hints`, `revealed`, `assisted`, `vote`, `dispute`, `edits`, `patch` (the last scored submit's) and `report` (its full score report, while the session still holds it). The shell appends it to a local JSONL file (I/O, never on the audio thread); lane GK writes the exporter and `cargo xtask gr1-report`. A round a host load restored after its `end` line can log again: readers keep the last `end` per `round`.
+Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.round-log/1`: `event` (`end` or `dispute`), `round`, `code` (its text), `ended_by` (`restore`, `keep`, `new_round` (GR1's "want more"), `host`), `broken`, **`result`: lane CT's `RoundResult` (`enth.round-result/1`: outcome `passed`, `not_passed` or `gave_up`, the first submit's report, the submit count, the time to pass, active time, `AssistsUsed`, the `Agreement`)**, `submits` (every scored submit as integers, beside the result's first report and count), `dispute`, `edits`, `patch` (the last scored submit's) and `report` (its full report, while the session still holds it). `result` is `None` only when the code does not decode; if the saved first report is unreadable (a newer build's), the result counts no submit, so it stays valid, and `submits` keeps the scores. The shell appends it to a local JSONL file (I/O, never on the audio thread); lane GK writes the exporter and `cargo xtask gr1-report`. A round a host load restored after its `end` line can log again: readers keep the last `end` per `round`.
 
-### F1r swaps
+### Still to swap after F1r
 
-| Placeholder (`game::placeholder`) | Becomes | Touches |
+| Now | Becomes | Touches |
 | --- | --- | --- |
-| `Challenge` (a code) | `enth_challenge::model::Challenge` (lane CT) | The `Challenge` alias; `Challenge::code()` must exist |
-| `decode(code)` | `enth_challenge::code::decode` | `game_restore`; the round fixture's code must then be a real code (regenerate it) |
-| `ScoreReport` (pass, three %, knobs) | `enth_challenge::score::ScoreReport` | The alias, `placeholder::summary` and `placeholder::knobs` |
-| `ab_gains` | Lane SS's shared gain function (P11) | `ab_gains` (after F1r: SS is in wave 3) |
-| The reveal's new history line | PBC's undoable load (`ops_between`) | `game_reveal` |
+| `game::ab_gains` (attenuate the louder side by the loudness difference) | Lane SS's shared gain function (P11) | `ab_gains` (SS is in wave 3) |
+| A reveal starts a new history line | PBC's undoable load (`ops_between`) | `game_reveal` |
+| `AssistsUsed::live_meter` is always false | The live-meter assist, if GR1 keeps it | `RoundRecord::assists` |
 
 ### Decisions (lane SG)
 
@@ -276,12 +279,14 @@ Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.
 5. **Results come back on the GUI thread**, never from the worker, because a prepared target replaces the patch, whose requests the GUI thread forwards.
 6. **The same round loaded by the host keeps its live progress**: a host's Undo cannot undo a submit.
 7. **The stash is patch-file text**, so it migrates like the `patch` field and keeps a patch this build cannot read.
+8. **The record keeps the code's text, not a parsed code**, and the first report as text: a code or a report from a newer build fails only its own round (restored `Broken`, or a result without its first report), never the `enth` field and the preferences in it.
+9. **The session verifies the target itself** (`ChallengeCode::verify`, the saved full hash, the challenge's spec): a shell bug or a drifted generator cannot make a round score against another target.
 
 ### What lane SKR must wire
 
 1. **The clock.** In the editor's update closure, after `pump` and `fold_host`: `game_tick(monotonic_ms, Visible)`; `Opened` in every `build()`; `Hidden` from the fork's `editor_closed` (or when `EguiEditorState::is_open()` turns false).
 2. **The worker.** Its own thread: run each `GameRequest::Run(job)` and post `(id, result)` to a bounded queue; drop cancelled ids; the GUI thread hands results back with `game_job_done` at the top of the frame, before the editor's edits.
-3. **The `Prepare` job.** Lane RG's generator for start and target, the target's render of the scored phrase as a preallocated loop buffer, its loudness, lane SS's calibration; the buffer goes to the audio thread like a plan (a ring with a return ring), and is dropped when `Ab.target_ready` turns false.
+3. **The `Prepare` job.** Lane RG's generator on the job's spec (target, phrase, randomized addresses), `Challenge::recreate(spec, phrase)` returned with the start and the target, the target's render of the scored phrase (`SCORING_SAMPLE_RATE`, `SCORING_SEED`) as a preallocated loop buffer, its loudness, the scorers' `prepare` kept under the job's `RoundId`; the buffer goes to the audio thread like a plan (a ring with a return ring), and is dropped when `Ab.target_ready` turns false. The editor decodes a pasted code (`ChallengeCode::decode`) and passes `RoundSource::Code`; the settings page passes `RoundSource::Settings` with a freshly drawn seed (40 bits, so a preset's code stays short).
 4. **A/B in `process()`.** Read the A/B atomics; play the buffer or the phrase (the shell's sequencer feeding Mine's notes), locked to one position, with a short crossfade and the gains (dB to linear in the shell). The `process-stats` A/B toggle (F2r).
 5. **Score, rings, loudness and hint jobs**, through CT, SS, ST and SN's code as each lands.
 6. **The round log.** Append each `GameRequest::Log` line to the local JSONL file after unlocking (GK names the path).
@@ -292,7 +297,8 @@ Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.
 
 | What | Where |
 | --- | --- |
-| The lifecycle from start to pass; reveal; a submit in flight at the reveal; hint levels; a new round keeping the original stash; an end before play; abandon; disputes; stale, wrong and failed results; a failed preparation | `tests/game.rs` |
+| The lifecycle from start to pass; reveal; a submit in flight at the reveal; hint levels; a new round keeping the original stash; an end before play; abandon; disputes; stale, wrong and failed results; a failed preparation; every log line's `RoundResult` reads back as a valid `enth.round-result/1` | `tests/game.rs` |
+| Codes and settings: a custom spec's long code made with the target and resumed from; a pasted long code with another prefix refused (`target_mismatch`); another engine warns (`engine_differs`) and plays; refused settings change nothing; a challenge for other settings; the hint budget; a custom round saved before its code | `tests/game.rs` |
 | A/B: sides, flips, the louder side attenuated, a stale loudness asked again, rings after the first submit | `tests/game.rs` |
 | The injected clock: preparation, idle frames, a closed editor, an unreported close, a timestamp from the past, the time to pass | `tests/game.rs` |
 | Undo inside the round, the player's history back, Keep keeping the round's history, a drag across the start; the edit log's merge, times, host entries and replay; host slots in a round | `tests/game.rs` |
