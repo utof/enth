@@ -52,6 +52,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [listening.md](listening.md) | The owner's listening tests: metric pairs, ABX, reverb A/B, real-engine pairs (`sound/2`'s curve) — commands, timings, what each decides |
 | [design-system.md](design-system.md) | Design tokens and the minimal visual language of the editor |
 | [naming.md](naming.md) | Product name candidates and mode names |
+| [../content/lessons/PLAN.md](../content/lessons/PLAN.md) | The R2 lesson plan: the 42 lessons (36 core, 6 studies) with new controls, Hear pairs, Do challenges, checks and packs; the 12-lesson tour; catalogue coverage; what each lesson waits for |
 
 ## Decisions at a glance
 
