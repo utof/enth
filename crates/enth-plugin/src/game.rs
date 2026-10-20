@@ -239,6 +239,10 @@ impl Mailbox {
 
     /// The audio thread: the newest loop, if one is waiting. Swaps a pointer; never allocates.
     fn take(&self) -> Option<Box<TargetLoop>> {
+        // A load first, so an idle block reads the slot without writing its cache line.
+        if self.incoming.load(Ordering::Acquire).is_null() {
+            return None;
+        }
         let p = self.incoming.swap(ptr::null_mut(), Ordering::AcqRel);
         // SAFETY: as in `collect`.
         unsafe { take_box(p) }
