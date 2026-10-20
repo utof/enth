@@ -127,8 +127,8 @@ jobs:
         run: cargo bench --locked -p spike-engine --bench instr
 
   # On demand only. Free arm64 hosted runners (ubuntu-24.04-arm, windows-11-arm, macos-latest) are for public
-  # repositories; this repository is private, where arm64 hosted runners are only available as paid larger
-  # runners. Run this by hand from the Actions tab when you have such a runner, or make the repository public.
+  # repositories, which this one is since 2026-10-20 (it was private when this job was written, when arm64 runners
+  # were paid larger runners only). Run it by hand from the Actions tab; whether it runs on a schedule is open.
   # It checks the one platform whose float behaviour has not been measured yet: the render and patch hashes must
   # equal the x86-64 golden files, and the FPCR.FZ test runs.
   aarch64:

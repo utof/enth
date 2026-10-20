@@ -44,7 +44,7 @@ Then rescan plugins in your DAW (or restart it). If the DAW still says it cannot
 
 ## Linux
 
-Copy `enth-plugin.clap` to `~/.clap/` and the `enth-plugin.vst3` folder to `~/.vst3/`, then rescan in your DAW.
+Copy `enth-plugin.clap` to `~/.clap/` and the `enth-plugin.vst3` folder to `~/.vst3/`, then rescan in your DAW. It needs a 2024 or newer distribution (glibc 2.39: Ubuntu 24.04, Debian 13, Fedora 40 or newer); on an older one the DAW will not load it, so tell me.
 
 ## First sound
 
@@ -60,4 +60,4 @@ Send me:
 
 Crashes: on a Mac the DAW's crash report is in `~/Library/Logs/DiagnosticReports`; on Windows tell me when it happened and what you were doing.
 
-After installing, play the Recreate rounds as [gr1-friends.md](gr1-friends.md) describes.
+After installing, play the Recreate rounds as [gr1-friends.md](gr1-friends.md) describes (the zip holds a copy).
