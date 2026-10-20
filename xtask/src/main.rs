@@ -137,6 +137,8 @@ const USAGE: &str = "usage: cargo xtask <command>
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
+  golden --challenges [--only <c>]  the golden challenges of tests/golden/challenges (same flags; --update only adds
+                                    pins, a pinned result changes with its scorer id; R1/S1 lane GC)
   bench [-p <pkg>] [--bench <name>] gungraun instruction budgets (default package enth-engine; alias: budget)
   agent-eval [--dry-run] [...]      the agent-eval harness: agents design sounds with `enth` (--dry-run: scripted fake
                                     agent, no model call; a real run needs --confirm-spend); see `agent-eval --help`
