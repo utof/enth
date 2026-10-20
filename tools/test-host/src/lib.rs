@@ -18,6 +18,7 @@ pub mod notes;
 pub mod procfs;
 pub mod query;
 pub mod render;
+pub mod spiky;
 pub mod state;
 pub mod stats;
 pub mod toml_lite;

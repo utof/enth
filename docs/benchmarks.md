@@ -132,15 +132,15 @@ The measured column is the Phase 0 engine spike (`spikes/spike-engine`, [spikes/
 | Offline render speed | `enth bench`, `hyperfine` | G0 floor ≥ 100× realtime per core (met). From P1: ≥ 1,000× for the 1-voice template and ≥ 100× for an 8-voice P1-like patch, on the scalar path; G1 adds the 16-voice budget ([roadmap](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)). Report min and median with the load average | 1 voice: 1,993× best, 1,783× median (wasmtime 1,357×). 16 voices: 129× / 122× scalar, 245× / 213× f32x8. 8-voice P1-like with reverb: 152× / 149× scalar, 231× / 217× f32x8 |
 | CPU per voice at 48 kHz | **Instruction counts** (callgrind, gungraun), per module | Regression gate: an absolute `hard_limits` budget per benchmark (measured + 10 %) that fails the run when exceeded; it needs no stored baseline, so it works in CI. Re-measure budgets with the golden hashes after a toolchain, `libm` or `wide` bump. Criterion and wall-clock time are information only: with no code change Criterion reported two false "improvements" (−13%, −36%) under load | Per 2 s render (budget in brackets): 1 voice 8.15 M (9.0 M); 16 voices scalar 122.4 M (135 M), f32x4 65.1 M (72 M), f32x8 62.9 M (69.5 M); P1-like 8 voices scalar 112.4 M (124 M), f32x8 62.3 M (69 M). That is 80–85 instructions per sample and voice for the simple voice, 146 for the P1-like one. Passes locally and on GitHub's ubuntu-24.04 runner |
 | Subnormals | A deterministic test: render a 40 s release tail and count subnormal values | 0. Instruction counts under-report the denormal penalty (4.1× more instructions against 33.5× more wall time in the spike), so this test is half of the gate | 0 subnormal output samples and state values over 40 s tails (scalar and lanes, 12 random patches). Negative control without flushing: 203,962 subnormal samples, voices never end |
-| p99 and p99.9 `process()` time at 64 samples | test host `process-stats`, under rtkit `SCHED_RR` | p99 and p99.9 < 25% of the block deadline (333 µs of 1.33 ms at 48 kHz); max is information | Engine only, 2026-10-19 ([details](#real-time-measurement-p1b)): p99 125–146 µs, p99.9 166–186 µs (12–14 %). Plugin level: not measured yet (P1b, lane RT) |
-| Plan swap time | test host `process-stats` | Swap-block p99 < 25% of the deadline with a structural edit every 250 ms; compile off the audio thread | Engine only, 2026-10-19: with the state copy, instant-swap block p99 797 µs (max 997 µs, 75 %); with the move, p99 139 µs (max 149 µs). A crossfading swap still copies (p99 1,052 µs). Compiling the G1 patch takes about 0.9 ms on the main thread |
+| p99 and p99.9 `process()` time at 64 samples | test host `process-stats`, under rtkit `SCHED_RR` | p99 and p99.9 < 25% of the block deadline (333 µs of 1.33 ms at 48 kHz); max is information | Engine only, 2026-10-19 ([details](#real-time-measurement-p1b)): p99 125–146 µs, p99.9 166–186 µs (12–14 %). Plugin, release bundle, 2026-10-20 ([lane RT](#lane-rt-the-plugin-measured-2026-10-20)): p99 112–123 µs, p99.9 125–134 µs (8–10 %), at load 2–6 |
+| Plan swap time | test host `process-stats` | Swap-block p99 < 25% of the deadline with a structural edit every 250 ms; compile off the audio thread | Engine only, 2026-10-19: with the state copy, instant-swap block p99 797 µs (max 997 µs, 75 %); with the move, p99 139 µs (max 149 µs). A crossfading swap still copies (p99 1,052 µs). Compiling the G1 patch takes about 0.9 ms on the main thread. Plugin, 2026-10-20 ([lane RT](#lane-rt-the-plugin-measured-2026-10-20)): instant-swap block p99 107–148 µs, crossfade blocks p99 180 µs, the crossfading swap block p99 337–339 µs (max 521 µs, reported); gungraun budgets in `benches/swap.rs` |
 | Allocations on the audio thread | `assert_no_alloc` in engine tests (debug builds only); nice-plug's `assert_process_allocs` in plugin debug builds | 0 | 0: `assert_no_alloc` around every `process()` block (scalar, x4, x8; 16 random patches), negative control caught; clap-validator's process tests pass with `assert_process_allocs` on |
 | Real-time safety | RTSan, one nightly run (nightly Rust; the runtime ships in rust-std) | No findings. It catches `malloc` but misses an uncontended `std::sync::Mutex`, so `enth-engine` also has no `Mutex` or `RwLock` | One manual run (rustc 1.101.0-nightly 2026-10-17): no findings; an injected allocation is reported, an uncontended `Mutex` is not |
 | Determinism | golden tests in CI | Hashes identical across platforms, wasm engines and build flags (Linux, wasm32 under wasmtime and node, Windows; aarch64 if runners exist); a feature summary with tolerances is only the diagnostic when a hash differs | 1,010 hashes identical on Linux x86-64, Windows x86-64 (CI) and `wasm32-wasip1` under wasmtime (with and without simd128), across debug, release, `target-cpu=native`, FMA, LTO, lanes and FTZ/DAZ. aarch64: manual CI job only. node/V8 not re-run (research 03 ran it on an earlier engine) |
 
 ## Real-time measurement (P1b)
 
-2026-10-19, from the P1b research (report 03). The numbers are engine-only (`enth-engine` standing in for the plugin; there is no `enth-plugin` yet): paced 64-frame blocks at 48 kHz, one G1 instance, on this laptop at a **load average of 7 to 26** because other builds were running, so wall-clock numbers are upper bounds. Re-run the G1 numbers on a quiet machine before the gate, with the environment snapshot recorded.
+2026-10-19, from the P1b research (report 03). The numbers are engine-only (`enth-engine` standing in for the plugin; there is no `enth-plugin` yet): paced 64-frame blocks at 48 kHz, one G1 instance, on this laptop at a **load average of 7 to 26** because other builds were running, so wall-clock numbers are upper bounds. Re-run the G1 numbers on a quiet machine before the gate, with the environment snapshot recorded. Lane RT did that with the plugin on 2026-10-20, at load 1.5–7: [the results](#lane-rt-the-plugin-measured-2026-10-20).
 
 ### Real-time priority first
 
@@ -164,6 +164,7 @@ The `process()` row of Gate G1 ([roadmap.md](roadmap.md#p1--minimal-synth--cli-v
 - **Conditions:** the real `enth-plugin` release bundle; the G1 patch with a held 16-note chord; 64 frames at 48 kHz; `enth-test-host process-stats` with rtkit RR 10; one instance; 120 s after a 10 s warm-up; the environment snapshot recorded (load, governor, quantum, kernel, preempt mode).
 - **Pass:** p99 under 25 % of the deadline (333 µs) **and** p99.9 under 25 %. With a structural edit every 250 ms, the p99 of instant-swap blocks and of the blocks during a crossfade is under 25 % too.
 - **Today** (the engine standing in): steady p99 125–146 µs and p99.9 166–186 µs pass. Swap blocks on main fail (below).
+- **The plugin, 2026-10-20 (lane RT):** every gated condition passes ([below](#lane-rt-the-plugin-measured-2026-10-20)); the guards are `benches/swap.rs` and the move test.
 - **Guards that need no wall clock**, because wall-clock time is information only: a test that an instant swap moves the state (the new plan's reverb buffers are the old plan's), and gungraun budgets for three spiky blocks (an instant swap, a crossfade, 16 note-ons). Instruction counts under-state a memory copy, so the move test, not the budgets, guards against a copy.
 
 ### The plan swap
@@ -196,6 +197,110 @@ Eight instances fit on one thread. Sixteen need several threads, which hosts pro
 - **Headless REAPER over JACK did not connect**, so a REAPER xrun test stays owner-attended. The owner's PipeWire config forces min-quantum 1024; `pw-metadata -n settings 0 clock.force-quantum 64` bypasses the config's limits (documented), and `clock.force-quantum 0` puts it back.
 - **Editor against audio, under Xvfb** (llvmpipe is a worst-case CPU competitor). With an RR audio thread, opening an animating 1100×768 editor made no measurable difference: 0 and 2 misses closed, 4 and 3 open, per 45,000 blocks. With `SCHED_OTHER` the misses roughly doubled (1,024–1,146 closed, 1,947–2,114 open, per 22,500). So GUI-caused xruns come from the scheduling class, from locks shared with the audio thread and from GPU-driver latency, not from editor CPU as such. Only the last needs the real GPU, which is the owner tier. At 2–4 misses a minute a 60 s A/B cannot resolve a difference: use interleaved runs of 10 minutes.
 - **Allocation checks.** `assert_process_allocs` wraps nice-plug's whole process wrapper in debug builds only, so keep it on for debug bundles under the test host and clap-validator. An RTSan-built test host (nightly, date pinned, linked with `--export-dynamic`) that wraps the plugin call in `__rtsan_realtime_enter` and `__rtsan_realtime_exit` catches `malloc` in a plain stable-built plugin. It misses an uncontended `std::sync::Mutex` and a `thread::sleep`, and the entry symbol is internal, not part of Clang's public API.
+
+### Lane RT: the plugin, measured (2026-10-20)
+
+**Conditions.** The coordinator's release bundle of main `aa0fec0`, and the same build with `--features rt-stats` for the plugin's own share. The G1 patch (`tools/test-host/golden/enth-plugin.g1.patch.json`, which is `Patch::to_json()` of `crates/enth-engine/benches/common/g1.rs`) holds the 16-note chord. 64 frames at 48 kHz. `enth-test-host process-stats --require-rt`: rtkit RR 10, `RLIMIT_RTTIME` 200 ms, not pinned. Steady runs last 120 s after a 10 s warm-up; swap runs 120 s; flood and multi-instance runs 60 s. Every run held `flock -x /tmp/enth-quiet.lock`, so no lane built meanwhile.
+
+**Environment.** i7-9750H, kernel 7.0.0-38 `PREEMPT_DYNAMIC`, governor `powersave` (EPP `balance_performance`), 10–11 GB of swap in use. PipeWire's quantum is 2048, which does not matter here: the test host drives its own timer. The load average was 1.5–7, because the owner's other work ran at times (a pytest at 240–500 % CPU early on). The raw JSON reports, with the environment snapshot and the load at the start and end of each run, are in `~/code/enth-scratch/p1b/rt/runs/`.
+
+| Condition | Measured | Limit | Result | Load |
+| --- | --- | --- | --- | --- |
+| `process()` p99, steady | 112.5–123.3 µs, median 116.4 (3 runs; 8.4–9.2 %) | < 333 µs | **Pass** | 2.1–5.6 |
+| `process()` p99.9, steady | 125.1–133.6 µs, median 128.7 (9.4–10.0 %) | < 333 µs | **Pass** | 2.1–5.6 |
+| `process()` max, steady | 179–1,336 µs | information | — | 2.1–5.6 |
+| Instant-swap block p99, an edit every 250 ms (480 swaps a run) | 106.7 and 147.9 µs (max 133 and 166) | < 333 µs | **Pass** | 1.5–4.9 |
+| Crossfade blocks p99 | 180.5 and 179.7 µs (max 216 and 197) | < 333 µs | **Pass** | 1.7–2.1 |
+| Crossfading swap block p99 | 336.6 and 339.2 µs (25.2–25.4 %); p50 220–225, max 484–521 | reported, not gated | At the line | 1.7–2.1 |
+| 8 instances on 1 thread: callback p50 and max | p50 388–454 µs (29–34 %); max 1,243–2,778 µs (93–208 %) | information (research: 59 % and 91 %) | — | 2.1–4.1 |
+| 16 instances on 4 threads: each thread's callback p99 | 353–397 µs (26.5–29.8 %) | < 50 % (information) | **Pass** | 2.0–4.1 |
+
+**The plugin's own share.** Three rt-stats runs were interleaved with the three plain ones.
+
+- The plugin's histogram (`process_block`, nice-plug's wrapper excluded) read p50 49.2–55.3, p99 81.9–118.8 and p99.9 114.7–131.1 µs.
+- The host's view of the same calls read p50 48.1–56.6, p99 79.5–119.6 and p99.9 109.5–133.2 µs. The histogram's percentiles are bucket upper edges, up to 6.25 % high.
+- The two agree within the histogram's resolution (about 3 µs at 50 µs), so the whole call is the plugin's work; the plugin's histogram also counts the 10 s warm-up. The spread between runs (p99 79.5–123.3 µs over six steady runs, either bundle) comes from the laptop (frequency, caches, other work), not from the feature.
+- Callgrind agrees. For a 64-frame G1 block, nice-plug's `Wrapper::process` runs 405,798 instructions, 401,599 of them in `Engine::process`. The shell's own 4,199 (1.0 %) are the ledger's sweep (2,655), the host-value pass (572) and nice-plug (about 600).
+- A silent G1 instance with the editor closed costs 7,576 instructions per block in all. The telemetry tap is off while the editor is closed, so ED2's quiet rule is not in these numbers.
+
+**Max and misses.** Every steady run had a max of 0.18–1.7 ms and 2–14 deadline misses per 90,000 blocks, with wake-up lateness up to 2.5 ms. That is this laptop's noise, as research 03 found: max(wall − cpu) reached 200 µs, and the CPU time charged to the thread includes interrupts.
+
+**Swaps** (`--swap-state`). The host's main thread loads the G1 state and a variant alternately every 250 ms: `g1-value` (osc1's level changed) gives an instant swap, `g1-lfo3` (an unrouted voice LFO added) a crossfading one.
+
+- `state.load` takes p50 380–470 µs and p99 0.7–1.0 ms on the main thread (parse, compile, send).
+- The host cannot see the swap, so the swap block is taken as the largest block of each load's window: an upper bound for the instant swap.
+- The per-offset profile shows the crossfade's shape plainly. p50 at offsets −1 to +4 is 55, 225, 105, 102, 105 and 53 µs: one tall block and three raised ones.
+- Against research 03's engine-only paced numbers at load 13–17: the instant-swap block p99 went from 797 to 107–148 µs (the move, E+); the crossfading swap block from 1,052 to 337–339 µs (it still copies; the load is lower); crossfade blocks from p50 174 to 100–104 µs.
+
+**The pre-effects crossfade: do not reopen it for P1b.**
+
+- The crossfading swap block is the one block that reaches 25 %: p99 337–339 µs (25.2–25.4 %) and max 484–521 µs (36–39 %), on a quiet machine.
+- It happens once per edit that adds or removes a module while a reverb survives.
+- It costs a single instance no deadline: the two crossfade runs had 2 and 5 misses, as many as steady runs.
+- It is memory bandwidth, so it grows with memory contention: research 03 measured up to 1,057 µs at load 13–17.
+- Keep it reported, and reopen the pre-effects crossfade (or effect state held outside plans) when any of these happens:
+  - a second large-state effect lands (S2: a delay or a chorus adds its own copy to the same block);
+  - the host-level xrun check attributes an xrun to an edit;
+  - `benches/swap.rs`'s `crossfade_swap` budget has to grow.
+
+**Event floods** (`--flood N`). One flood every 250 ms for 60 s, at load 4–7. Each flood block also presses the chord again (16 note-ons).
+
+| Note events in one block | Flood block p50 / p99 / max | Next block p50 / p99 | Misses (of 45,000 blocks) |
+| --- | --- | --- | --- |
+| 1,000 | 330 / 626 / 640 µs | 248 / 483 µs | 1 |
+| 2,000 | 554 / 1,047 / 1,069 µs | 372 / 679 µs | 2 |
+| 4,000 | 1,042 / 1,913 / 1,946 µs | 580 / 1,088 µs | 80 |
+
+- The cost is linear, about 0.25 µs per event in the flood block. The next block pays for the notes in the flood block's second half, which apply at the next segment boundary.
+- Callgrind, over 12 floods of 4,016 events, gives 11.9 M instructions per flood (2,960 per event):
+  - the engine's note handling is most of it: `NoteCx::apply`, 5.7 M a flood. Every note-on steals a voice, and `Plan::start_voice` prepares it, though only the last 16 survive to render;
+  - the plugin's `push_note` takes 1.4 M: its same-frame scan for a zero-length note is quadratic in the events per frame;
+  - then come `render_chunk` and the `NOTE_END`s (0.8 M), the ledger's sweep (0.7 M) and nice-plug's input handling (0.3 M).
+- Not a G1 condition: no host sends thousands of note events in 1.3 ms (that would be more than 700,000 events a second). If it ever matters (S1), the engine could skip preparing voices that are stolen before they render, and `push_note` could index its scan. Neither is needed now.
+
+**Instruction counts.** `crates/enth-engine/benches/swap.rs` holds research 03's three spiky blocks plus a reference block, on G1 with the held chord, 64-frame blocks, after 0.5 s:
+
+| Case | Instructions | Against a normal block | Budget (+10 %) |
+| --- | --- | --- | --- |
+| `normal` | 407,869 | 1 | 449,000 |
+| `instant` (the block an instant swap lands in) | 444,921 | 1.09× | 490,000 |
+| `crossfade_swap` (the block a crossfading swap lands in) | 2,489,265 | 6.1× (the copy: 6.0 M L1 hits against 0.55 M) | 2,739,000 |
+| `crossfade` (the 3 blocks after it) | 2,407,222 | 2.0× per block | 2,648,000 |
+| `note_ons` (16 new notes, every voice stolen) | 647,848 | 1.6× | 713,000 |
+
+The other engine budgets were re-measured on `aa0fec0` with `cargo xtask bench`, and every one holds. None of these benches attaches a tap or runs the plugin, so ED2's quiet rule and PL's ledger are not in them (the ledger is costed above).
+
+| Bench | Measured | Budget | Headroom | Against the measurement in the bench file |
+| --- | --- | --- | --- | --- |
+| `engine` saw_1v / saw_16v | 3,542,811 / 36,884,506 | 3,617,000 / 38,412,000 | **2.1 % / 4.0 %** | +7.7 % / +5.6 % |
+| `g1` g1_16v | 602,344,687 (6,274 per frame) | 650,000,000 | 7.3 % | +2.0 % |
+| `svf` lp_1v / lp_16v / drive_16v / moving_16v | 4,995,647 / 56,836,437 / 63,077,925 / 73,189,536 | 6,070,000 / 71,722,000 / 78,588,000 / 78,520,000 | 17.7 / 20.8 / 19.7 / 6.8 % | −9.5 / −12.8 / −11.7 / +2.5 % |
+| `reverb` 1v / 16v | 116,957,149 / 150,298,844 | 129,200,000 / 174,200,000 | 9.5 / 13.7 % | −0.4 / −5.1 % |
+| `comp` 1v / 16v | 12,819,819 / 46,166,700 | 14,550,000 / 59,600,000 | 11.9 / 22.5 % | −2.8 / −14.7 % |
+| `adsr` 1v / 16v | 3,782,354 / 38,709,519 | 4,732,000 / 51,779,000 | 20.1 / 25.2 % | −12.1 / −17.8 % |
+| `lfo` voice_sine 1v / 16v, voice_random_16v, global_sine_16v | 4,009,093 / 39,817,448 / 38,663,288 / 37,255,081 | 5,064,000 / 53,822,000 / 52,553,000 / 48,175,000 | 20.8 / 26.0 / 26.4 / 22.7 % | −12.9 / −18.6 / −19.1 / −14.9 % |
+| `noise` white_1v / white_16v / pink_16v | 4,822,796 / 53,714,046 / 81,665,046 | 5,710,000 / 65,660,000 / 96,400,000 | 15.5 / 18.2 / 15.3 % | (in docs/dsp/noise.md) |
+| `osc` saw_1v / saw_16v / triangle / pulse / sine / table / table_on_frame / synced_saw (16v) | 5,500,975 / 64,012,267 / 76,596,219 / 71,927,439 / 77,056,725 / 117,189,897 / 102,562,855 / 66,549,593 | 6,830,000 / 80,640,000 / 94,490,000 / 89,370,000 / 94,990,000 / 139,170,000 / 123,080,000 / 83,430,000 | 15.8–20.6 % | (in docs/dsp/osc.md) |
+
+Proposed for the coordinator; lane RT changed none of these budgets.
+
+- **Re-base `engine` to measured + 10 %: 3,898,000 and 40,573,000.** It has 2.1 % and 4.0 % left after growing 7.7 % and 5.6 % since its recorded measurement (taken when D1, D2 and S2b merged, before P1b's engine work). The next small engine change in any lane would fail it for growth that is already merged.
+- **Tighten the module budgets with 15–26 % of headroom to measured + 10 %.** The engine skeleton got cheaper under them, so each now lets a 15–25 % regression of its module through.
+
+**Reproduce:**
+
+```bash
+B=~/code/enth-scratch/bundles/<sha>/enth-plugin.clap; G=tools/test-host/golden
+flock -x /tmp/enth-quiet.lock enth-test-host process-stats $B --state $G/enth-plugin.g1.patch.json --gate g1
+flock -x /tmp/enth-quiet.lock enth-test-host process-stats $B --state $G/enth-plugin.g1.patch.json --require-rt \
+  --swap-state $G/enth-plugin.g1-lfo3.patch.json --swap-kind crossfade   # or g1-value.patch.json --swap-kind instant
+flock -x /tmp/enth-quiet.lock enth-test-host process-stats $B --state $G/enth-plugin.g1.patch.json --require-rt --secs 60 --flood 2000
+flock -x /tmp/enth-quiet.lock enth-test-host process-stats $B --state $G/enth-plugin.g1.patch.json --gate g1-multi --secs 60
+ENTH_RT_STATS=rt.jsonl enth-test-host process-stats <rt-stats bundle> …           # the plugin's own histogram, at deactivate
+GUNGRAUN_RUNNER=… flock -x /tmp/enth-quiet.lock cargo xtask bench --bench swap
+```
+
+**Not done: the private PipeWire xrun harness.** The agent tier has no JACK host for the plugin without a new dependency. The candidate is `carla-single` (VST3) over `pw-jack -r` on the private daemon (research 03's `pw/`). It needs three things: the G1 state injected through a Carla project, a MIDI source on the private graph, and a check that the client sits on the private daemon before any note plays, so nothing can reach the owner's speakers.
 
 ## Measurement hygiene
 
