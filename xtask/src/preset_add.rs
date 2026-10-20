@@ -57,8 +57,8 @@ pub mod vocab {
     use enth_patch::PatchMeta;
 
     /// What kind of sound it is. Exactly one per factory preset.
-    pub const TYPES: [&str; 9] = [
-        "bass", "lead", "pad", "pluck", "keys", "arp", "fx", "texture", "init",
+    pub const TYPES: [&str; 10] = [
+        "bass", "lead", "pad", "pluck", "keys", "arp", "perc", "fx", "texture", "init",
     ];
 
     /// How it sounds or moves. Up to [`MAX_CHARACTER`] per factory preset.

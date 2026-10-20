@@ -5,7 +5,7 @@
 ## How they were made
 
 - Each one is a list of ops applied with `enth apply` to the starter patch (`xtask/src/preset/starter.patch.json`: every P1 module, the extras switched off; the same modules as the factory Init, whose master is lower), so the whole instrument is there to tweak. Then `enth render` and `enth describe` checked it, and `cargo xtask preset-add` wrote it here in the exact preset form (`Patch::to_json()`, a name, tags from the factory vocabulary, the engine stamp). `enth diff xtask/src/preset/starter.patch.json <file>` lists the ops behind any of them.
-- Folders are the type tag: `bass`, `lead`, `pad`, `pluck`, `keys`, `arp`, `fx`, `texture`.
+- Folders are the type tag: `bass`, `lead`, `pad`, `pluck`, `keys`, `arp`, `perc`, `fx`, `texture`.
 - **Macros** follow the G1 naming: 1 **Bright**, 2 **Pluck**, 3 **Space**, 4 **Drive**. They sit at 0 in the saved sound and add as you turn them up. Pluck makes the sound shorter and snappier (less sustain, a shorter decay or swell). Space raises the reverb's wet level; the basses have no Space. Drive raises the filter's drive *and* the compressor's makeup, with the compressor on at 1:1 as a clean gain stage (Poly Stab uses it for real): the filter's saturator loses about 1 dB of level per dB of drive, so drive alone would mostly make the sound quieter. Macro 5 is **Rate** on the three modulation showcases (Wobble Machine, Gate Keeper, Octave Arp).
 - **Headroom.** Every candidate peaks at or below −1.5 dBFS on a single note and on a four-note chord (C–E–G–B) at velocity 127, from C1 to C6, over several render seeds. Poly sounds are gain-staged for chords, so their single notes are quieter (about −10 dBFS). The kick, snare and riser are mono (a new note retriggers), like drum voices.
 - Short and percussive sounds are kept as they are; nothing was filtered by duration.
@@ -32,8 +32,8 @@
 | Tremolo Keys | keys | keys, soft, warm, vintage | E-piano-like: sine + fading bell partial, 5 Hz tremolo | Bright: more bell · Pluck: shorter · Space: room · Drive: warmer |
 | Soft Bell | keys | keys, metallic, soft | Shimmering sine pair + inharmonic partial, long ring | Bright: louder partial · Pluck: shorter ring · Space: more hall · Drive: grit |
 | Octave Arp | arp | arp, rhythmic | Hold a note: root/octave arpeggio, each step plucked | Bright: opens the filter · Pluck: snappier steps · Space: room · Drive: bite · Rate (5): speed |
-| Thump Kick | fx | fx, hard, dark | Kick: sine with a fast pitch drop and a click; mono | Bright: more click · Pluck: shorter · Space: room · Drive: saturates |
-| Snare Crack | fx | fx, noisy, hard, bright | Snare: white-noise burst over a short tonal body; mono | Bright: more sizzle · Pluck: tighter · Space: room · Drive: saturates |
+| Thump Kick | perc | perc, hard, dark | Kick: sine with a fast pitch drop and a click; mono | Bright: more click · Pluck: shorter · Space: room · Drive: saturates |
+| Snare Crack | perc | perc, noisy, hard, bright | Snare: white-noise burst over a short tonal body; mono | Bright: more sizzle · Pluck: tighter · Space: room · Drive: saturates |
 | Noise Riser | fx | fx, noisy, evolving, bright | White-noise riser: swells and brightens over the note; mono | Bright: higher end point · Pluck: rises faster · Space: more hall · Drive: rougher |
 | Wind Tunnel | texture | texture, noisy, evolving, soft | Wind: noise through a band-pass swept slowly by an LFO | Bright: higher band · Pluck: gusty, less sustain · Space: more hall · Drive: rougher |
 
@@ -72,7 +72,7 @@ Reading notes ([docs/dsp/analysis.md](../../docs/dsp/analysis.md) has the limits
 - Soft Bell's "tremolo" is the beat between its two detuned sines. Night Drift's random filter wander is not periodic, so describe reports no movement.
 - Acid Snap's 30 ms attack and Wobble Machine's 455 ms are the filter, not the amplitude envelope (both envelopes start in 2–3 ms): the resonance crosses the low harmonics, and the LFO starts with the filter closed.
 - A resonant filter sweep reads as noisiness (Wobble Machine 0.40); there is no noise source in it.
-- The kick and the snare are tagged `fx`: the vocabulary has no percussion type.
+- The kick and the snare are tagged `perc`, the percussion type added to the vocabulary after they were made (R1/S1 lane INT; they were `fx`).
 
 ## Auditioning
 

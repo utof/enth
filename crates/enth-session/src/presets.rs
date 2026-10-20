@@ -84,9 +84,10 @@ mod embedded {
 pub mod tags {
     use super::PatchMeta;
 
-    /// What kind of sound it is. Exactly one per factory preset. `init` is the empty starting sound.
-    pub const TYPES: [&str; 9] = [
-        "bass", "lead", "pad", "pluck", "keys", "arp", "fx", "texture", "init",
+    /// What kind of sound it is. Exactly one per factory preset. `perc` is a drum or percussion hit (R1/S1 lane INT;
+    /// the kick and snare candidates were `fx` before it); `init` is the empty starting sound.
+    pub const TYPES: [&str; 10] = [
+        "bass", "lead", "pad", "pluck", "keys", "arp", "perc", "fx", "texture", "init",
     ];
 
     /// How it sounds or moves. Up to [`MAX_CHARACTER`] per factory preset.
