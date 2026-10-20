@@ -39,8 +39,10 @@
 pub mod cmaes;
 pub mod coach;
 pub mod eval;
+pub mod heuristic;
 pub mod hint;
 pub mod nearest;
+pub mod search;
 pub mod sensitivity;
 
 pub use eval::{EvalError, Evaluator, Job, Serial, measure, note_timing};
