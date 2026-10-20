@@ -33,6 +33,9 @@ serde_json = { workspace = true, features = ["raw_value"] }
 # A timing histogram of `process()` inside the plugin (src/rt_stats.rs, docs/plugin.md "rt-stats"): off by default;
 # without it `process()` reads no clock and the module is not compiled.
 rt-stats = []
+# Editor lifecycle counters for the leak gate (src/editor_counts.rs, `cargo xtask leak-test`): off by default; with it
+# the plugin counts `build()` and `editor_closed()` and appends them to the file `$ENTH_EDITOR_COUNTS` names.
+editor-counts = []
 
 [dev-dependencies]
 insta.workspace = true

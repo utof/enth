@@ -764,12 +764,7 @@ fn dirty_flag(report: &mut Report, format: Format, edit: &Log, control: &Log, id
 }
 
 /// What CLAP and VST3 must agree on.
-fn cross_format(
-    sb: &Sandbox,
-    report: &mut Report,
-    shared: &Shared,
-    formats: &[Format],
-) {
+fn cross_format(sb: &Sandbox, report: &mut Report, shared: &Shared, formats: &[Format]) {
     let [first, second, ..] = formats else {
         return;
     };

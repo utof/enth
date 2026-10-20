@@ -12,6 +12,7 @@ mod bundle;
 mod engine;
 mod golden;
 mod host_render;
+mod leak;
 mod plugin;
 mod reaper;
 mod validate;
@@ -110,6 +111,11 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     ENTH_BUNDLE_DIR) runs prebuilt bundles instead of building
   host-render [--package <pkg>] [--release] [--no-build] [--update]
                                     plugin-level golden: bundle <pkg>, render it offline through the test host (Linux)
+  leak-test [--package <pkg>] [--cycles 200] [--repeat 2] [--churn-cycles 200] [--only editor|churn] [--no-build]
+            [--bundle-dir <dir>]
+                                    the leak gates under Xvfb (started here): editor-cycles (at most 26 KB per open/close
+                                    cycle, threads constant, one editor_closed per open; release bundle with the
+                                    editor-counts feature) and instance churn (flat PSS, no thread or descriptor left)
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
@@ -130,6 +136,7 @@ fn main() -> ExitCode {
         Some("validate") => validate::validate(&args[1..]),
         Some("reaper-test") => reaper::reaper_test(&args[1..]),
         Some("host-render") => host_render::host_render(&args[1..]),
+        Some("leak-test") => leak::leak_test(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         Some("golden") => golden::golden(&args[1..]),
         Some("bench" | "budget") => bench::bench(&args[1..]),
