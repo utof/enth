@@ -19,6 +19,7 @@
 //! | `two-instances` | two instances keep their own patch and values, through a reload and a deleted neighbour |
 //! | `editor-smoke` | the editor opens, draws and closes five times, under Xvfb |
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
+//! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
 //! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
@@ -93,10 +94,11 @@ enum Scenario {
     DirtyFlag,
     StarterProject,
     CrossFormat,
+    PresetLoad,
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 11] = [
+    const PRODUCT: [Scenario; 12] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
@@ -108,6 +110,7 @@ impl Scenario {
         Scenario::DirtyFlag,
         Scenario::StarterProject,
         Scenario::CrossFormat,
+        Scenario::PresetLoad,
     ];
     fn name(self) -> &'static str {
         match self {
@@ -122,6 +125,7 @@ impl Scenario {
             Scenario::DirtyFlag => "dirty-flag",
             Scenario::StarterProject => "starter-project",
             Scenario::CrossFormat => "cross-format",
+            Scenario::PresetLoad => "preset-load",
         }
     }
 
@@ -672,7 +676,48 @@ fn run_scenario(
         }
         Scenario::StarterProject => starter_project(sb, report, format)?,
         Scenario::CrossFormat => {}
+        Scenario::PresetLoad => preset_load(sb, report, format, chunks)?,
     }
+    Ok(())
+}
+
+/// `preset-load` (lane PBU): the user folder (`ENTH_PRESETS_DIR`) holds one preset, the roundtrip patch as
+/// `roundtrip.patch.json`, and the crash folder (`ENTH_CRASH_DIR`) is empty, so no crash notice covers the editor; the
+/// project starts from the `state` patch. `xtask/reaper/preset.lua` clicks the browser and makes the checks.
+fn preset_load(
+    sb: &Sandbox,
+    report: &mut Report,
+    format: Format,
+    chunks: &Chunks,
+) -> Result<(), String> {
+    let tag = format.tag();
+    let presets = sb.out.join(format!("presets-{tag}"));
+    let crashes = sb.out.join(format!("crashes-{tag}"));
+    for dir in [&presets, &crashes] {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let file = presets.join("roundtrip.patch.json");
+    std::fs::write(&file, PRODUCT_ROUNDTRIP_PATCH)
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut extra = chunk_env(chunks.state.as_ref(), None);
+    extra.push(("ENTH_PRESETS_DIR", presets.display().to_string()));
+    extra.push(("ENTH_CRASH_DIR", crashes.display().to_string()));
+    let log = run_script(sb, report, format, "preset-load", "preset", "load", &extra);
+    let scope = format!("{tag}/preset-load");
+    let sounds = log
+        .data
+        .get("audition-sounds-while-stopped")
+        .map(String::as_str);
+    let peak = log.data.get("audition-peak").cloned().unwrap_or_default();
+    report.info(
+        &scope,
+        "audition-while-stopped",
+        match sounds {
+            Some("1") => format!("REAPER kept calling process() with the transport stopped: ▶ held peaked at {peak}"),
+            Some(_) => format!("silent: REAPER did not process while stopped (peak {peak}); the open check stays open"),
+            None => "not measured".to_owned(),
+        },
+    );
     Ok(())
 }
 

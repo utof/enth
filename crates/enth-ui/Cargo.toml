@@ -22,7 +22,9 @@ presets = []
 # Lane AM: the header's "+ Add" menu. On by default, since S1 ships adding and removing modules (the cards' "…" menus,
 # the region menus and the "+ Add" slots are always built); `default-features = false` drops the header button only.
 add-module = []
-default = ["add-module"]
+# Lane PBU: the header's ◀ name ▶ / Browse / Save, on by default since S1 ships the preset browser (the browser's code
+# is always built; `default-features = false` drops the header hook, and so the way to open it).
+default = ["add-module", "presets"]
 
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).

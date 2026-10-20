@@ -35,6 +35,10 @@ pub enum Grip {
 /// One thing a control asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Intent {
+    /// The preset browser (lane PBU): the header's ◀ ▶, Browse and Save, the browse panel's loads, auditions and
+    /// favorites, the Save dialog and the crash offer. The editor hands it to its preset state
+    /// ([`Presets`](crate::editor::browser::Presets)); a load is the session's one-undo-step preset load.
+    Preset(crate::editor::browser::PresetIntent),
     /// A drag started on a control: the edits up to the matching `End` are one gesture (one undo step).
     Begin(Grip),
     /// A parameter's new plain value, in real units and valid for its spec.
@@ -96,6 +100,12 @@ impl Intent {
     /// at the end of the summation order; a depth of 0 on a missing route is nothing.
     pub fn ops(&self, patch: &Patch) -> Vec<Op> {
         match self {
+            // The browser loads and saves through the session's own preset calls, never as ops (lane PBU).
+            #[allow(
+                clippy::match_same_arms,
+                reason = "lane PBU's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
+            )]
+            Intent::Preset(_) => Vec::new(),
             Intent::Set { addr, value } => vec![Op::SetParam {
                 addr: addr.clone(),
                 value: *value,
