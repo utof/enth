@@ -489,6 +489,89 @@ pub fn macro_automation(out: &Path, report: &mut Report, format: Format) {
     );
 }
 
+/// A second offline render of the `macro-automation` project is the same audio as the first from note 2 (0.25 s) on,
+/// sample for sample. REAPER restarted a CLAP plugin about 30 ms (wall clock) into every offline render until the
+/// fork's patch 9: the render went on with a fresh instance from a point that depended on the render's speed, so the
+/// note sounding there was cut somewhere else each time (the `macro-1-gets-louder` flake when the cut reached the late
+/// notes). The first two notes are left out, like everywhere here: REAPER's pre-roll before the render's reset
+/// varies, and the first note's start differed in 2 of 8 otherwise identical renders.
+pub fn render_repeatable(report: &mut Report, format: Format, first: &Path, second: &Path) {
+    let scope = format!("{}/macro-automation", format.tag());
+    let (a, b) = match (Wav::read(first), Wav::read(second)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (a, b) => {
+            report.add(
+                &scope,
+                "render-repeatable",
+                false,
+                a.err().or(b.err()).unwrap_or_default(),
+            );
+            return;
+        }
+    };
+    let from = (0.25 * f64::from(a.rate)) as usize;
+    let differ = |x: &[f32], y: &[f32], range: std::ops::Range<usize>| {
+        range
+            .filter(|&i| x.get(i).map(|v| v.to_bits()) != y.get(i).map(|v| v.to_bits()))
+            .collect::<Vec<usize>>()
+    };
+    let len = a.left.len().max(b.left.len());
+    let mut late = differ(&a.left, &b.left, from..len);
+    late.extend(differ(&a.right, &b.right, from..len));
+    late.sort_unstable();
+    let early = differ(&a.left, &b.left, 0..from.min(len)).len();
+    let seconds = |i: usize| i as f64 / f64::from(a.rate);
+    report.add(
+        &scope,
+        "render-repeatable",
+        a.rate == b.rate && late.is_empty(),
+        if late.is_empty() {
+            format!(
+                "two offline renders of the project are the same from 0.25 s on ({} frames; {early} samples differ before)",
+                a.left.len()
+            )
+        } else {
+            format!(
+                "two offline renders differ in {} samples from {:.3} s on ({} and {} frames)",
+                late.len(),
+                seconds(late[0]),
+                a.left.len(),
+                b.left.len()
+            )
+        },
+    );
+}
+
+/// `mod-wheel`: MIDI CC 1 in the project's MIDI item goes from 0 to 127 at 2 s, and the patch routes the mod wheel to
+/// osc1's level at -100 %, so the notes after 2 s are silent. Wheel down: notes 8-12 (1.0-1.5 s); wheel up: notes 22-26
+/// (2.75-3.25 s). VST3 delivers a CC only through the parameter `IMidiMapping` maps it to (the plugin maps CC 1 alone,
+/// fork patch 7); CLAP gets it as a MIDI event.
+pub fn mod_wheel(out: &Path, report: &mut Report, format: Format) {
+    let scope = format!("{}/mod-wheel", format.tag());
+    let Some(wav) = load_render(
+        out,
+        report,
+        &scope,
+        &format!("render-wheel-{}.wav", format.tag()),
+        4.0,
+    ) else {
+        return;
+    };
+    let notes = Notes::measure(&wav, NOTES);
+    let (down, up) = (
+        median_at(&notes.rms, &[8, 10, 12]),
+        median_at(&notes.rms, &[22, 24, 26]),
+    );
+    report.add(
+        &scope,
+        "wheel-turns-the-level-down",
+        down > 0.01 && up < 0.1 * down,
+        format!(
+            "level {down:.4} with the wheel down (1.0-1.5 s) -> {up:.4} with it up (2.75-3.25 s)"
+        ),
+    );
+}
+
 /// CLAP and VST3 sound the same: the notes' levels agree from the third note on (a dropped note is tolerated, up to
 /// two). The first notes are reported, not judged: see the `info` row.
 pub fn renders_agree(out: &Path, report: &mut Report, kind: &str, first: Format, second: Format) {

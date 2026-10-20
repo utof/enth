@@ -86,16 +86,16 @@ pub struct Shared {
     pub rebaseline: AtomicBool,
     /// The host values the last state load restored, for [`Shared::rebaseline`].
     pub restored: process::Restored,
-    /// Host parameter names changed (`ShellRequest::RenameParams`): [`Shared::with_session`] has set the new names
-    /// on the parameters (lane FK's fork, `Param::set_display_name`), and `process()` asks the host for a
-    /// parameter-info rescan (CLAP `rescan(INFO | TEXT)`; VST3 `kParamTitlesChanged`, which REAPER ignores).
-    pub names_dirty: AtomicBool,
     /// The editor window closed (seen by `process()` through `EguiEditorState::is_open`): the next pump releases
     /// audition notes.
     pub editor_closed: AtomicBool,
     /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
     /// persistent fields, which own this).
     params: OnceLock<Weak<EnthParams>>,
+    /// nice-plug's handle for host requests outside a context (lane FK2's fork patches 6 and 8): marking the
+    /// project dirty and the parameter-info rescan. Set once by the wrapper right after construction, before any
+    /// state load; absent in tests that do not set it.
+    host: OnceLock<HostRequests>,
     /// `process()` timings (the `rt-stats` cargo feature).
     #[cfg(feature = "rt-stats")]
     pub rt_stats: rt_stats::RtStats,
@@ -109,9 +109,9 @@ impl Shared {
             monitor_bypass: AtomicBool::new(false),
             rebaseline: AtomicBool::new(false),
             restored: process::Restored::new(),
-            names_dirty: AtomicBool::new(false),
             editor_closed: AtomicBool::new(false),
             params: OnceLock::new(),
+            host: OnceLock::new(),
             #[cfg(feature = "rt-stats")]
             rt_stats: rt_stats::RtStats::new(),
         }
@@ -132,7 +132,8 @@ impl Shared {
     /// On a `ShellRequest::RenameParams` it also sets the 72 display names from the patch **before** unlocking, so
     /// two threads that rename one after the other (the GUI's edit, the host's load) leave the later patch's names.
     /// `Param::set_display_name` only stores a string behind the parameter's own lock, which nothing else holds while
-    /// calling out, so this never calls the host under the session lock.
+    /// calling out, so this never calls the host under the session lock. The rescan request comes after unlocking
+    /// ([`Shared::settle`]).
     pub fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> (R, Vec<ShellRequest>) {
         let (result, requests, pending) = {
             let mut session = self.session.lock();
@@ -164,8 +165,20 @@ impl Shared {
         }
     }
 
-    /// After unlocking: store the monitor bypass, note renames, arm the pump flag if a compile is pending, and keep
-    /// only the host writes.
+    /// After unlocking: store the monitor bypass, ask the host to re-read renamed parameters, mark the host project
+    /// dirty after an edit the host cannot see, arm the pump flag if a compile is pending, and keep only the host
+    /// writes.
+    ///
+    /// `ShellRequest::RenameParams` becomes [`HostRequests::request_param_info_rescan`] (CLAP `rescan(INFO | TEXT)`,
+    /// VST3 `restartComponent(kParamTitlesChanged)`, which REAPER ignores while reading titles live). This runs on the
+    /// host's main thread (a state load: the fork performs the rescan there and then, before the host processes the
+    /// loaded state) or the GUI thread (an editor rename: queued for the main thread), never in `process()`, which may
+    /// run on the host's main thread in an offline render (design.md §4).
+    ///
+    /// `ShellRequest::PatchEdited` (an editor edit, undo or redo: the session pushes it once per drain) becomes
+    /// [`HostRequests::mark_dirty`]: CLAP `clap_host_state.mark_dirty`, VST3 `IComponentHandler2::setDirty(true)`, which
+    /// the fork performs on the host's main thread (queued from the GUI thread; one waiting request absorbs the next).
+    /// A slot-bound edit also moves a host parameter, which dirties the project anyway; marking it again is harmless.
     fn settle(&self, requests: Vec<ShellRequest>, compile_pending: bool) -> Vec<ShellRequest> {
         if compile_pending {
             self.pump_wanted.store(true, Ordering::Release);
@@ -174,9 +187,17 @@ impl Shared {
         for request in requests {
             match request {
                 ShellRequest::MonitorBypass(on) => self.monitor_bypass.store(on, Ordering::Release),
-                ShellRequest::RenameParams => self.names_dirty.store(true, Ordering::Release),
+                ShellRequest::RenameParams => {
+                    if let Some(requests) = self.host.get() {
+                        requests.request_param_info_rescan();
+                    }
+                }
                 ShellRequest::Host(_) => host.push(request),
-                // nice-plug never marks the host project dirty (docs/phase-1b.md, open checks).
+                ShellRequest::PatchEdited => {
+                    if let Some(requests) = self.host.get() {
+                        requests.mark_dirty();
+                    }
+                }
                 _ => {}
             }
         }
@@ -249,9 +270,9 @@ impl Plugin for Enth {
         main_output_channels: NonZeroU32::new(2),
         ..AudioIOLayout::const_default()
     }];
-    // `MidiCCs`: the mod wheel (MIDI CC 1) reaches the engine. For VST3 nice-plug adds 2,080 hidden MIDI CC
-    // parameters, which REAPER lists (2,155 parameters); CLAP pays nothing. Lane PL's decision, with the measurements,
-    // in docs/plugin.md ("MIDI CCs"); `Basic` turns the mod wheel off in both formats.
+    // `MidiCCs`: the mod wheel (MIDI CC 1) reaches the engine. For VST3 nice-plug maps each controller in
+    // `VST3_MIDI_CONTROLLERS` to a hidden parameter per MIDI channel, which REAPER lists; CLAP pays nothing. Lane PL's
+    // decision, with the measurements, in docs/plugin.md ("MIDI CCs"); `Basic` turns the mod wheel off in both formats.
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     // Required: without it plugin renders stop matching CLI renders at large host blocks (AGENTS.md).
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
@@ -269,6 +290,12 @@ impl Plugin for Enth {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    /// The fork's host requests (marking the project dirty, the parameter-info rescan), kept for [`Shared::settle`].
+    /// Called once, right after construction.
+    fn host_requests(&mut self, requests: HostRequests) {
+        let _ = self.shared.host.set(requests);
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
@@ -360,12 +387,23 @@ impl ClapPlugin for Enth {
         max_voice_capacity: enth_engine::MAX_VOICES as u32,
         supports_overlapping_voices: true,
     });
+    // No restart when the host switches to offline rendering while the plugin is active (the fork's patch 9). REAPER
+    // does that at the start of every offline render and restarts the plugin about 30 ms of wall-clock time later,
+    // mid-render: a fresh engine continues from a point that depends on the render's speed, and the note sounding
+    // there is lost (the `macro-automation` flake). The engine renders the same in both modes; only the session's
+    // audition refusal reads the mode, at activation (docs/plugin.md, "Offline renders").
+    const CLAP_RESTART_ON_RENDER_MODE_CHANGE: bool = false;
 }
 
 impl Vst3Plugin for Enth {
     const VST3_CLASS_ID: [u8; 16] = VST3_CLASS_ID;
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
+    // The MIDI controllers `notes::engine_event` reads, and no others (the fork's patch 7): VST3 delivers a CC only
+    // through a parameter that `IMidiMapping` maps it to, one per controller and MIDI channel, and REAPER lists every
+    // one. CC 1 on 16 channels is 16 parameters, where nice-plug's default (all 130 controllers) is 2,080. A test keeps
+    // this list and `engine_event` in step; add pitch bend (129) here when the engine takes it.
+    const VST3_MIDI_CONTROLLERS: &'static [u8] = &[nice_plug::midi::control_change::MODULATION_MSB];
 }
 
 /// The CLAP and VST3 entry points. In a module of their own so the allow below covers only nice-plug's expansion.
@@ -402,6 +440,99 @@ mod tests {
     #[test]
     fn sample_accurate_automation_is_on() {
         const { assert!(<Enth as Plugin>::SAMPLE_ACCURATE_AUTOMATION) };
+    }
+
+    /// A host that counts the fork's requests.
+    #[derive(Default)]
+    struct CountingHost {
+        dirty: std::sync::atomic::AtomicU32,
+    }
+
+    impl nice_plug::context::host::HostRequestsInner for CountingHost {
+        fn mark_dirty(&self) {
+            self.dirty.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn request_param_info_rescan(&self) {}
+    }
+
+    #[test]
+    fn edits_undo_and_redo_mark_the_host_project_dirty_and_loads_and_folds_do_not() {
+        let mut plugin = Enth::default();
+        let host = Arc::new(CountingHost::default());
+        plugin.host_requests(HostRequests::new(host.clone()));
+        let dirty = || host.dirty.load(Ordering::SeqCst);
+        let shared = Arc::clone(plugin.shared());
+        let level = enth_patch::ParamAddr::module(
+            enth_patch::Patch::init().generators[0].id.clone(),
+            "level",
+        )
+        .unwrap();
+        let edit = |value: f32| {
+            let (applied, writes) = shared.with_session(|s| {
+                enth_session::SessionEdit::edit(
+                    s,
+                    vec![enth_patch::Op::SetParam {
+                        addr: level.clone(),
+                        value,
+                    }],
+                    None,
+                )
+            });
+            assert!(applied.is_ok());
+            assert!(
+                writes.is_empty(),
+                "an unslotted address makes no host writes"
+            );
+        };
+        edit(40.0);
+        assert_eq!(dirty(), 1, "an editor edit the host cannot see");
+        edit(30.0);
+        assert_eq!(dirty(), 2);
+        let ((), _) = shared.with_session(|s| {
+            assert_eq!(enth_session::SessionEdit::undo(s), Ok(true));
+        });
+        assert_eq!(dirty(), 3, "undo");
+        let ((), _) = shared.with_session(|s| {
+            assert_eq!(enth_session::SessionEdit::redo(s), Ok(true));
+        });
+        assert_eq!(dirty(), 4, "redo");
+        // The host loads a state and folds its values: it knows about those, so nothing is marked.
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert("patch".to_owned(), enth_patch::Patch::init().to_json());
+        plugin.host_params().deserialize_fields(&fields);
+        let values = HostValues::default();
+        let _ = shared.with_session(|s| s.fold_host(&values));
+        assert_eq!(dirty(), 4, "a host load and a fold mark nothing");
+    }
+
+    /// Every MIDI controller the plugin turns into an engine event is one the VST3 wrapper maps (nice-plug delivers
+    /// no other CC there), and the list holds nothing the plugin ignores.
+    #[test]
+    fn the_vst3_midi_controllers_are_exactly_the_ones_the_plugin_reads() {
+        let reads = |controller: u8| {
+            let event: NoteEvent<()> = match controller {
+                0..=127 => NoteEvent::MidiCC {
+                    timing: 0,
+                    channel: 3,
+                    cc: controller,
+                    value: 0.5,
+                },
+                128 => NoteEvent::MidiChannelPressure {
+                    timing: 0,
+                    channel: 3,
+                    pressure: 0.5,
+                },
+                _ => NoteEvent::MidiPitchBend {
+                    timing: 0,
+                    channel: 3,
+                    value: 0.5,
+                },
+            };
+            notes::engine_event(&event).is_some()
+        };
+        let read: Vec<u8> = (0..130).filter(|&c| reads(c)).collect();
+        assert_eq!(read, <Enth as Vst3Plugin>::VST3_MIDI_CONTROLLERS);
     }
 
     #[test]

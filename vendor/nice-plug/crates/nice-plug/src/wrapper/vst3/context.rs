@@ -3,6 +3,7 @@ use nice_plug_core::{
     context::{
         PluginApi,
         activate::ActivateContext,
+        host::HostRequestsInner,
         process::{ProcessContext, SendEventError, Transport},
     },
     midi::{Channel, Key, MidiConfig, NoteEvent, PluginNoteEvent},
@@ -79,6 +80,26 @@ pub(crate) struct WrapperGuiContext<P: Vst3Plugin> {
     #[cfg(debug_assertions)]
     pub(super) param_gesture_checker:
         atomic_refcell::AtomicRefCell<crate::wrapper::util::context_checks::ParamGestureChecker>,
+}
+
+/// A [`HostRequestsInner`] implementation for the wrapper (vendored fork, enth patch 6). Passed to the
+/// plugin once, right after it is created; may be called from any thread except the audio thread.
+pub(crate) struct WrapperHostRequests<P: Vst3Plugin> {
+    pub(super) inner: std::sync::Weak<WrapperInner<P>>,
+}
+
+impl<P: Vst3Plugin> HostRequestsInner for WrapperHostRequests<P> {
+    fn mark_dirty(&self) {
+        if let Some(inner) = self.inner.upgrade() {
+            inner.request_mark_dirty();
+        }
+    }
+
+    fn request_param_info_rescan(&self) {
+        if let Some(inner) = self.inner.upgrade() {
+            inner.request_param_info_rescan();
+        }
+    }
 }
 
 impl<P: Vst3Plugin> Drop for WrapperActivateContext<'_, P> {

@@ -1,5 +1,6 @@
--- dirty-flag: does REAPER mark the project dirty after an edit made in the plugin's editor? (Open check, phase-1b.md:
--- nice-plug never calls CLAP `mark_dirty` or VST3 `setDirty`.)
+-- dirty-flag: does REAPER mark the project dirty after an edit made in the plugin's editor? Stock nice-plug never calls
+-- CLAP `mark_dirty` or VST3 `setDirty` (lane RH measured 0); the fork's patch 6 adds the request and the plugin makes
+-- it after every editor edit, undo and redo, so the xtask now requires 1 (`DIRTY_MARKING_EXPECTED`).
 --   edit:    a patch edit nothing else sees: no host parameter is bound to the dragged knob.
 --   control: the same drag on a knob that is bound to a host slot; the editor then writes the host parameter
 --            (begin, set, end gesture), which hosts treat as a change.

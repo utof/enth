@@ -33,10 +33,32 @@ pub trait Vst3Plugin: Plugin {
     /// truncated.
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory];
 
+    /// The MIDI controllers the wrapper maps to parameters through `IMidiMapping` when
+    /// [`Plugin::MIDI_INPUT`] is [`MidiConfig::MidiCCs`][nice_plug_core::midi::MidiConfig::MidiCCs]
+    /// or higher: CC numbers 0 to 127, 128 for channel pressure and 129 for pitch bend (VST3's
+    /// `kAfterTouch` and `kPitchBend`). Each one becomes a read-only, hidden parameter on each of the
+    /// 16 MIDI channels, and hosts may list all of them anyway (REAPER does). The default maps all
+    /// 130, which is 2,080 parameters; a plugin that reads only a few controllers lists those, and
+    /// the host then keeps the others to itself. Entries must be unique and below 130. A
+    /// controller's parameter id does not depend on this list. Vendored fork, enth patch 7.
+    const VST3_MIDI_CONTROLLERS: &'static [u8] = &ALL_VST3_MIDI_CONTROLLERS;
+
     /// [`VST3_CLASS_ID`][Self::VST3_CLASS_ID`] in the correct order for the current platform so
     /// projects and presets can be shared between platforms. This should not be overridden.
     const PLATFORM_VST3_CLASS_ID: [u8; 16] = swap_vst3_uid_byte_order(Self::VST3_CLASS_ID);
 }
+
+/// Every MIDI controller the VST3 wrapper can map: CCs 0 to 127, channel pressure (128) and pitch
+/// bend (129). The default of [`Vst3Plugin::VST3_MIDI_CONTROLLERS`].
+pub const ALL_VST3_MIDI_CONTROLLERS: [u8; 130] = {
+    let mut all = [0u8; 130];
+    let mut i = 0;
+    while i < all.len() {
+        all[i] = i as u8;
+        i += 1;
+    }
+    all
+};
 
 #[cfg(not(target_os = "windows"))]
 const fn swap_vst3_uid_byte_order(uid: [u8; 16]) -> [u8; 16] {

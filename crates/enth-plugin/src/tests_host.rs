@@ -5,7 +5,8 @@
 //! in host blocks of any size. Like nice-plug with `SAMPLE_ACCURATE_AUTOMATION = true`, it splits a block at every
 //! parameter change and sets the parameter before the slice; notes go in with timings relative to the slice; a
 //! reset is called before the block it falls in. It records what the plugin sent back (`NOTE_END`s with absolute
-//! frames, rescan requests, voice-capacity reports, background tasks).
+//! frames, voice-capacity reports, background tasks) and, like the wrapper, hands the plugin a `HostRequests` at
+//! construction that counts the rescan and dirty-marking requests (lane FK2's fork patches 6 and 8).
 //!
 //! The renders are compared with `enth_render` (what `enth render` runs) for the same patch and an equivalent
 //! performance, bit for bit: slot automation (the CLI automates the slot's target with `from_norm` of the host
@@ -14,6 +15,8 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use enth_engine::{EventKind, NoteKey};
 use enth_patch::{MacroIndex, ParamAddr, Patch, SlotIndex};
@@ -40,7 +43,6 @@ struct Ctx {
     sent: Vec<(u64, Ev)>,
     slice_start: u64,
     transport: Option<Transport>,
-    rescans: Cell<u32>,
     capacities: std::cell::RefCell<Vec<u32>>,
     /// Background tasks scheduled (`execute_background`: the pump).
     background: Cell<u32>,
@@ -78,11 +80,31 @@ impl ProcessContext<Enth> for Ctx {
     fn request_restart(&self) {}
 
     fn request_param_info_rescan(&self) {
-        self.rescans.set(self.rescans.get() + 1);
+        panic!(
+            "process() must never request a rescan (design.md §4): the shell asks through HostRequests"
+        );
     }
 
     fn set_current_voice_capacity(&self, capacity: u32) {
         self.capacities.borrow_mut().push(capacity);
+    }
+}
+
+/// The fork's `HostRequests` (patches 6 and 8), counting what the plugin asks for. The wrapper would perform each
+/// on the host's main thread.
+#[derive(Default)]
+struct Requests {
+    rescans: AtomicU32,
+    dirty: AtomicU32,
+}
+
+impl nice_plug::context::host::HostRequestsInner for Requests {
+    fn mark_dirty(&self) {
+        self.dirty.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn request_param_info_rescan(&self) {
+        self.rescans.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -167,6 +189,7 @@ struct Host {
     plugin: Enth,
     ctx: Ctx,
     act: ActCtx,
+    requests: Arc<Requests>,
     /// The next absolute frame.
     frame: u64,
 }
@@ -174,7 +197,10 @@ struct Host {
 impl Host {
     /// A plugin with `patch` (and `enth`, if given) loaded as state before activation at 48 kHz.
     fn new(patch: Option<&str>, enth: Option<&str>) -> Self {
-        let plugin = Enth::default();
+        let mut plugin = Enth::default();
+        // As the wrapper does, right after construction and before any state load.
+        let requests = Arc::new(Requests::default());
+        plugin.host_requests(HostRequests::new(requests.clone()));
         let mut fields = BTreeMap::new();
         if let Some(p) = patch {
             fields.insert("patch".to_owned(), p.to_owned());
@@ -192,10 +218,16 @@ impl Host {
                 ..Ctx::default()
             },
             act: ActCtx::default(),
+            requests,
             frame: 0,
         };
         host.activate();
         host
+    }
+
+    /// Parameter-info rescans the plugin asked for.
+    fn rescans(&self) -> u32 {
+        self.requests.rescans.load(Ordering::SeqCst)
     }
 
     fn activate(&mut self) {
@@ -765,12 +797,12 @@ fn poly_modulation_reaches_only_the_voice_with_the_hosts_voice_id_and_its_end_ca
 }
 
 #[test]
-fn a_load_renames_the_slots_and_asks_for_one_rescan_from_the_audio_thread() {
+fn a_load_renames_the_slots_and_asks_for_one_rescan_on_the_loading_thread() {
     let mut host = Host::new(None, None);
     let name = |host: &Host, p: HostParam| host.plugin.host_params().param(p).display_name();
     assert_eq!(name(&host, slot(1)), "Slot 1");
     let _ = host.render(640, 64, &[]);
-    assert_eq!(host.ctx.rescans.get(), 0, "nothing changed");
+    assert_eq!(host.rescans(), 0, "nothing changed");
 
     let mut patch = golden();
     enth_patch::apply(
@@ -790,16 +822,25 @@ fn a_load_renames_the_slots_and_asks_for_one_rescan_from_the_audio_thread() {
     assert_eq!(name(&host, slot(3)), "Slot 3");
     assert_eq!(name(&host, macro_(2)), "Bright");
     assert_eq!(name(&host, macro_(1)), "Macro 1");
+    // Asked for during the load (the fork performs it on the host's main thread there and then), not by a later
+    // `process()`: the fake process context panics on a rescan request.
+    assert_eq!(host.rescans(), 1, "one rescan per change, before any block");
     let _ = host.render(4_800, 64, &[]);
-    assert_eq!(host.ctx.rescans.get(), 1, "one rescan per change");
+    assert_eq!(host.rescans(), 1);
 
     // Back to the init patch: the names go back to the ones fixed at construction, with one more rescan.
     fields.insert("patch".to_owned(), Patch::init().to_json());
     host.plugin.host_params().deserialize_fields(&fields);
     assert_eq!(name(&host, slot(1)), "Slot 1");
     assert_eq!(name(&host, macro_(2)), "Macro 2");
+    assert_eq!(host.rescans(), 2);
     let _ = host.render(4_800, 64, &[]);
-    assert_eq!(host.ctx.rescans.get(), 2);
+    assert_eq!(host.rescans(), 2);
+    assert_eq!(
+        host.requests.dirty.load(Ordering::SeqCst),
+        0,
+        "a host load marks nothing dirty"
+    );
 }
 
 #[test]

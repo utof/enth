@@ -19,6 +19,7 @@ pub use crate::audio_setup::{
 pub use crate::buffer::Buffer;
 pub use crate::context::PluginApi;
 pub use crate::context::activate::ActivateContext;
+pub use crate::context::host::HostRequests;
 #[cfg(feature = "editor")]
 pub use crate::context::gui::{AsyncExecutor, GuiContextInner, ParamSetter};
 pub use crate::context::process::{ProcessContext, Transport};

@@ -42,7 +42,7 @@ use widestring::U16CStr;
 
 use super::inner::{ProcessEvent, WrapperInner};
 use super::note_expressions;
-use super::util::{VST3_MIDI_CCS, VST3_MIDI_NUM_PARAMS, VST3_MIDI_PARAMS_START, u16strlcpy};
+use super::util::{VST3_MIDI_CCS, VST3_MIDI_PARAMS_START, u16strlcpy};
 use super::util::{VST3_MIDI_CHANNELS, VST3_MIDI_PARAMS_END};
 use crate::util::permit_alloc;
 use crate::wrapper::state;
@@ -613,9 +613,11 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
     }
 
     unsafe fn getParameterCount(&self) -> int32 {
-        // We need to add a whole bunch of parameters if the plugin accepts MIDI CCs
+        // We need to add a parameter per channel for each MIDI controller the plugin maps if it
+        // accepts MIDI CCs (all 130 unless it lists fewer: enth patch 7)
         if P::MIDI_INPUT >= MidiConfig::MidiCCs {
-            self.inner.param_hashes.len() as i32 + VST3_MIDI_NUM_PARAMS as i32
+            self.inner.param_hashes.len() as i32
+                + (P::VST3_MIDI_CONTROLLERS.len() as u32 * VST3_MIDI_CHANNELS) as i32
         } else {
             self.inner.param_hashes.len() as i32
         }
@@ -624,7 +626,8 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
     unsafe fn getParameterInfo(&self, param_index: int32, info: *mut ParameterInfo) -> tresult {
         check_null_ptr!(info);
 
-        if param_index < 0 || param_index > unsafe { self.getParameterCount() } {
+        // Indices run from 0 to the count minus one (upstream let the count itself through).
+        if param_index < 0 || param_index >= unsafe { self.getParameterCount() } {
             return kInvalidArgument;
         }
 
@@ -635,10 +638,12 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
         // handled separately
         let num_actual_params = self.inner.param_hashes.len() as i32;
         if P::MIDI_INPUT >= MidiConfig::MidiCCs && param_index >= num_actual_params {
-            let midi_param_relative_idx = (param_index - num_actual_params) as u32;
+            // The plugin's controllers on channel 1, then on channel 2, and so on (enth patch 7)
+            let controllers = P::VST3_MIDI_CONTROLLERS;
+            let midi_param_relative_idx = (param_index - num_actual_params) as usize;
             // This goes up to 130 for the 128 CCs followed by channel pressure and pitch bend
-            let midi_cc = midi_param_relative_idx % VST3_MIDI_CCS;
-            let midi_channel = midi_param_relative_idx / VST3_MIDI_CCS;
+            let midi_cc = controllers[midi_param_relative_idx % controllers.len()] as u32;
+            let midi_channel = (midi_param_relative_idx / controllers.len()) as u32;
             let name = match midi_cc {
                 // kAfterTouch
                 128 => format!("MIDI Ch. {} Channel Pressure", midi_channel + 1),
@@ -647,7 +652,8 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
                 n => format!("MIDI Ch. {} CC {}", midi_channel + 1, n),
             };
 
-            info.id = VST3_MIDI_PARAMS_START + midi_param_relative_idx;
+            // The same id as when all 130 are mapped, so it does not depend on the list
+            info.id = VST3_MIDI_PARAMS_START + midi_cc + (midi_channel * VST3_MIDI_CCS);
             u16strlcpy(&mut info.title, &name);
             u16strlcpy(&mut info.shortTitle, &name);
             info.flags = ParameterFlags_::kIsReadOnly | (1 << 4); // kIsHidden
@@ -1677,6 +1683,7 @@ impl<P: Vst3Plugin> IMidiMappingTrait for Wrapper<P> {
             || bus_index != 0
             || !(0..VST3_MIDI_CHANNELS as i16).contains(&channel)
             || !(0..VST3_MIDI_CCS as i16).contains(&midi_cc_number)
+            || !P::VST3_MIDI_CONTROLLERS.contains(&(midi_cc_number as u8))
         {
             return kResultFalse;
         }

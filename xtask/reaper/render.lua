@@ -1,12 +1,14 @@
--- slot-automation and macro-automation (ENTH_SCENARIO = slot | macro | flat): builds a project that automates host
--- parameters under a run of short notes and saves it for the xtask to render offline with `reaper -renderproject`; the
--- xtask then measures the audio.
+-- slot-automation, macro-automation and mod-wheel (ENTH_SCENARIO = slot | macro | flat | wheel): builds a project that
+-- automates host parameters (or turns the mod wheel) under a run of short notes and saves it for the xtask to render
+-- offline with `reaper -renderproject`; the xtask then measures the audio.
 --
 --   slot:  slot 1 (the cutoff) ramps 0 -> 1 over 0-2 s, so the sound gets brighter; slot 64 (osc1's level) holds 1 until
 --          2 s and ramps down to 0.25 over 2-4 s, so it then gets quieter.
 --   macro: macro 1 (osc1's level) ramps 0 -> 1 over 0-2 s, so the sound gets louder; macro 8 (the cutoff) holds 0
 --          until 2 s and ramps to 1 over 2-4 s, so it then gets brighter.
 --   flat:  slot 64 holds 0.25 for the whole render, a lane that never moves. The patch plays 100 %, the lane says 25 %.
+--   wheel: no lanes; MIDI CC 1 (the mod wheel) is 0 from the start and 127 from 2 s, in the MIDI item itself. The patch
+--          routes the wheel to osc1's level at -100 %, so the notes after 2 s are silent.
 --
 -- The two ramps never move at the same time, so loudness and brightness are measured apart. A lane that holds still
 -- starts from the patch's own value (1 for the level, 0 for macro 8), on purpose: the plugin takes the host's values
@@ -33,10 +35,13 @@ local PLANS = {
     { MACRO_1, { { 0, 0 }, { 2, 1 }, { 4, 1 } } },
     { MACRO_8, { { 0, 0 }, { 2, 0 }, { 4, 1 } } },
   },
+  wheel = {},
 }
+-- MIDI CC 1 values in the MIDI item: { seconds, value }.
+local WHEEL = { wheel = { { 0, 0 }, { 2, 127 } } }
 
 safe(function()
-  local plan = assert(PLANS[scenario], "ENTH_SCENARIO must be slot, macro or flat")
+  local plan = assert(PLANS[scenario], "ENTH_SCENARIO must be slot, macro, flat or wheel")
   local track, fx = new_project_with_fx()
   if fx < 0 then return finish() end
   inject_state(track, fx)
@@ -54,6 +59,13 @@ safe(function()
   for i = 0, 31 do
     local start = i * 0.125
     reaper.MIDI_InsertNote(take, false, false, ppq(start), ppq(start + 0.11), 0, (i % 2 == 0) and 48 or 55, 100, true)
+  end
+  for _, cc in ipairs(WHEEL[scenario] or {}) do
+    reaper.MIDI_InsertCC(take, false, false, ppq(cc[1]), 0xB0, 0, 1, cc[2])
+  end
+  if WHEEL[scenario] then
+    local _, _, ccs = reaper.MIDI_CountEvts(take)
+    check("wheel-events", ccs == #WHEEL[scenario], ccs .. " CC 1 events in the MIDI item")
   end
   reaper.MIDI_Sort(take)
 

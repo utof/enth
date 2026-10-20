@@ -1,5 +1,5 @@
 //! The audio block (lanes SK, PL): host values and notes in, `Engine::process`, audio and `NOTE_END` out, the
-//! rate-limited background pump, the parameter-info rescan request and CLAP voice info. Nothing here allocates,
+//! rate-limited background pump and CLAP voice info. Nothing here allocates,
 //! frees, locks, logs or does I/O (nice-plug's `assert_process_allocs` aborts debug builds that do).
 //!
 //! One block, in order:
@@ -28,12 +28,13 @@
 //! 6. While [`crate::Shared::pump_wanted`] is set, at most once per [`PUMP_INTERVAL_S`] of audio: clear it and
 //!    `execute_background(Task::Pump)` (one bounded `try_send`, only while a compile is pending; never
 //!    `execute_gui`, which can run inline here).
-//! 7. While [`crate::Shared::names_dirty`] is set (the names themselves were set off the audio thread), at most once
-//!    per [`PUMP_INTERVAL_S`]: clear it and ask nice-plug for a parameter-info rescan. nice-plug runs the host call on
-//!    the host's main thread (`request_callback`); a host that calls `process()` on its main thread gets it inline,
-//!    so the call is wrapped in `permit_alloc` for the host's own work.
-//! 8. When the running plan's voice count changed (a plan swap), report it (`set_current_voice_capacity`, CLAP voice
-//!    info), the same way.
+//! 7. When the running plan's voice count changed (a plan swap), report it (`set_current_voice_capacity`, CLAP voice
+//!    info). nice-plug runs the host call on the host's main thread (`request_callback`); a host that calls
+//!    `process()` on its main thread gets it inline, so the call is wrapped in `permit_alloc` for the host's own work.
+//!
+//! The parameter-info rescan after a rename is not requested here: `Shared::settle` asks for it on the thread that
+//! renamed (the host's main thread for a state load, the GUI thread for an editor edit), through the fork's
+//! `HostRequests` (design.md §4).
 //!
 //! With the `rt-stats` cargo feature, the block's duration goes into [`crate::rt_stats`]'s histogram; without it
 //! no clock is read.
@@ -134,10 +135,6 @@ pub struct Audio {
     ledger: Ledger,
     /// A CLAP `reset` emptied the engine: the next block reports every live note at frame 0.
     reset_pending: bool,
-    /// Frames since the last parameter-info rescan request.
-    since_rescan: u64,
-    /// Rescan requests made (tests).
-    rescans: u64,
     /// The voice count last reported to the host (CLAP voice info).
     voices: u32,
     /// Times the event list filled up inside a block, so the block was rendered in chunks (tests).
@@ -162,8 +159,6 @@ impl Audio {
             editor_open: false,
             ledger: Ledger::new(),
             reset_pending: false,
-            since_rescan: 1,
-            rescans: 0,
             voices: 0,
             chunks: 0,
         }
@@ -178,7 +173,6 @@ impl Audio {
         self.now = self.last;
         self.pump_interval = ((PUMP_INTERVAL_S * f64::from(sample_rate)).round() as u64).max(1);
         self.since_pump = self.pump_interval;
-        self.since_rescan = self.pump_interval;
         // A new engine has no voices: the old one's notes are forgotten with it (the host forgets its voices at
         // deactivation, and a `NOTE_END` can only be sent from `process()`).
         self.ledger.clear();
@@ -257,11 +251,6 @@ impl Audio {
     /// The events this block hands the engine (tests).
     pub fn events(&self) -> &[Event] {
         &self.events
-    }
-
-    /// Parameter-info rescans requested so far (tests).
-    pub fn rescans(&self) -> u64 {
-        self.rescans
     }
 
     /// The voice count last reported to the host (tests).
@@ -388,24 +377,12 @@ impl Enth {
             context.execute_background(Task::Pump);
         }
 
-        // 7. Host parameter names changed (set off this thread by `Shared::with_session`): ask for a rescan,
-        //    rate-limited like the pump.
-        audio.since_rescan = audio.since_rescan.saturating_add(frames);
-        if audio.since_rescan >= audio.pump_interval
-            && self.shared.names_dirty.swap(false, Ordering::AcqRel)
-        {
-            audio.since_rescan = 0;
-            // nice-plug queues its own rescan task and calls the host's `request_callback`; only a host that calls
-            // `process()` on its main thread gets the rescan inline, and the host's work in it may allocate.
-            nice_plug::util::permit_alloc(|| context.request_param_info_rescan());
-            audio.rescans = audio.rescans.saturating_add(1);
-        }
-
-        // 8. CLAP voice info: the plan's voice count, when a plan swap changed it.
+        // 7. CLAP voice info: the plan's voice count, when a plan swap changed it. nice-plug queues its own main-thread
+        //    task and calls the host's `request_callback`; only a host that calls `process()` on its main thread gets
+        //    the host call inline, and the host's work in it may allocate.
         let voices = voice_count(engine);
         if voices != audio.voices {
             audio.voices = voices;
-            // Like the rescan: nice-plug's own main-thread task, inline only on a host's main thread.
             nice_plug::util::permit_alloc(|| context.set_current_voice_capacity(voices));
         }
 

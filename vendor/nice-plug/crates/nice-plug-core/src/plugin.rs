@@ -14,7 +14,7 @@ pub use track_info::*;
 use crate::{
     audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig},
     buffer::Buffer,
-    context::{activate::ActivateContext, process::ProcessContext},
+    context::{activate::ActivateContext, host::HostRequests, process::ProcessContext},
     midi::{MidiConfig, sysex::SysExMessage},
     params::Params,
 };
@@ -207,6 +207,12 @@ pub trait Plugin: Default + Send + 'static {
     fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         None
     }
+
+    /// Receives the handle for requests to the host outside the activate, process and GUI contexts,
+    /// such as marking the project dirty ([`HostRequests`]). Called once and only once, immediately
+    /// after the plugin instance is created (after [`editor()`][Self::editor()]), before the host can
+    /// load a state or activate the plugin. The default ignores it. (Vendored fork, enth patch 6.)
+    fn host_requests(&mut self, requests: HostRequests) {}
 
     /// This function is always called just before a [`PluginState`] is loaded. This lets you
     /// directly modify old plugin state to perform migrations based on the [`PluginState::version`]
