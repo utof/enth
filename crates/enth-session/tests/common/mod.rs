@@ -117,6 +117,8 @@ pub fn custom_instance() -> InstanceState {
             scale_percent: 150,
             advanced: true,
         },
+        game: None,
+        preset: None,
     }
 }
 

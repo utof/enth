@@ -12,6 +12,10 @@ enth-params.workspace = true
 enth-patch.workspace = true
 enth-render.workspace = true
 enth-analysis.workspace = true
+# Pre-declared by lane S0r (R1/S1): the coach scores through a challenge's scorer (SN), and match runs CMA-ES on golden
+# challenges with a seeded stream from enth-dsp's derive (MT).
+enth-challenge.workspace = true
+enth-dsp.workspace = true
 libm.workspace = true
 serde.workspace = true
 

@@ -6,6 +6,15 @@
 //! - [`eval`]: the [`Evaluator`] trait the caller implements (batches of candidate patches → descriptors, results
 //!   in job order), the one render-and-describe function [`measure`], and the single-threaded [`Serial`].
 //!
+//! R1/S1 files, pre-declared empty by lane S0r so the lanes that fill them never edit this one (`hint/` is untouched):
+//!
+//! | File | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`sensitivity`] | per-parameter sensitivity of a challenge's sound score | SN |
+//! | [`coach`] | Recreate hints: the target's descriptors as an `Expect` list for [`hint()`] | SN |
+//! | [`cmaes`] | CMA-ES ported from `spike-metric`, for `enth match` and the solver floors | MT |
+//! | [`nearest`] | the nearest reachable patch to a sound, where a match starts (R2 if late) | MT |
+//!
 //! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator,
 //! which returns results by job index, so a hint is identical for any worker count.
 //!
@@ -27,8 +36,12 @@
 //! }
 //! ```
 
+pub mod cmaes;
+pub mod coach;
 pub mod eval;
 pub mod hint;
+pub mod nearest;
+pub mod sensitivity;
 
 pub use eval::{EvalError, Evaluator, Job, Serial, measure, note_timing};
 pub use hint::{BlockReason, Blocked, Fix, HintCfg, HintError, HintResult, HintStats, Move, hint};

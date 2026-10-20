@@ -1180,11 +1180,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "enth-challenge"
+version = "0.0.0"
+dependencies = [
+ "enth-analysis",
+ "enth-dsp",
+ "enth-engine",
+ "enth-params",
+ "enth-patch",
+ "enth-render",
+ "insta",
+ "libm",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "enth-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
  "enth-analysis",
+ "enth-challenge",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1227,6 +1246,7 @@ name = "enth-golden"
 version = "0.0.0"
 dependencies = [
  "enth-analysis",
+ "enth-challenge",
  "enth-patch",
  "enth-render",
  "libm",
@@ -1281,11 +1301,13 @@ name = "enth-plugin"
 version = "0.0.0"
 dependencies = [
  "egui",
+ "enth-challenge",
  "enth-engine",
  "enth-params",
  "enth-patch",
  "enth-render",
  "enth-session",
+ "enth-solver",
  "enth-ui",
  "insta",
  "nice-plug",
@@ -1311,6 +1333,7 @@ name = "enth-session"
 version = "0.0.0"
 dependencies = [
  "assert_no_alloc",
+ "enth-challenge",
  "enth-engine",
  "enth-params",
  "enth-patch",
@@ -1326,6 +1349,8 @@ name = "enth-solver"
 version = "0.0.0"
 dependencies = [
  "enth-analysis",
+ "enth-challenge",
+ "enth-dsp",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1356,6 +1381,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui_kittest",
+ "enth-challenge",
  "enth-params",
  "enth-patch",
  "enth-session",
@@ -4969,6 +4995,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 name = "xtask"
 version = "0.0.0"
 dependencies = [
+ "enth-patch",
  "nice-plug-xtask",
  "serde",
  "serde_json",

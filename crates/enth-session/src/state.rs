@@ -9,7 +9,7 @@
 //! | Field | Text | Versioned by |
 //! | --- | --- | --- |
 //! | [`PATCH_FIELD`] `patch` | exactly `Patch::to_json()`, carried as raw JSON (never re-parsed through `serde_json::Value`, which would widen `f32`s) | the patch file's own `schema` number and `enth_patch::migrate` |
-//! | [`INSTANCE_FIELD`] `enth` | an [`InstanceState`]: `{"schema":"enth.plugin-state/1","monitor":{…},"ui":{…}}` | its `schema` string, [`STATE_SCHEMA`], and [`INSTANCE_STEPS`] |
+//! | [`INSTANCE_FIELD`] `enth` | an [`InstanceState`]: `{"schema":"enth.plugin-state/1","monitor":{…},"ui":{…}}`, plus the optional `game` and `preset` objects R1/S1 reserves (absent until used) | its `schema` string, [`STATE_SCHEMA`], and [`INSTANCE_STEPS`] |
 //!
 //! So a plugin state's `patch` and a `.patch.json` are interchangeable, and loading one goes through
 //! `enth_patch::file::load` and its migrations, the same path as `enth render`. The 64 slot assignments and the 8
@@ -74,6 +74,14 @@ pub struct InstanceState {
     pub monitor: MonitorState,
     /// Editor preferences (the editor is rebuilt on every open, so its view state lives here).
     pub ui: UiState,
+    /// The Recreate round to resume (lane SG; reserved by lane S0r for R1/S1). Optional and omitted when `None`, so
+    /// a state without a round saves the same bytes as before the field existed, and older builds ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game: Option<crate::game::GameState>,
+    /// The instance's preset bookkeeping (lane PBC; reserved by lane S0r for R1/S1). Optional and omitted when
+    /// `None`, like `game`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<crate::presets::PresetState>,
 }
 
 /// Monitoring switches (ADR-0006).

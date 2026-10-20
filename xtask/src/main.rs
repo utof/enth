@@ -11,10 +11,12 @@ mod bench;
 mod bundle;
 mod engine;
 mod golden;
+mod gr1_report;
 mod host_render;
 mod leak;
 mod plugin;
 mod preset;
+mod preset_add;
 mod reaper;
 mod validate;
 
@@ -125,6 +127,10 @@ const USAGE: &str = "usage: cargo xtask <command>
   starter-project --out FILE.rpp [--tracks bass,pad,pluck,lead] [--patch FILE] [--force]
                                     a REAPER project with one enth (CLAP) per named track, loaded with the starter patch
                                     (every P1 module; the editor cannot add modules yet): where owner build 2 starts
+  preset-add FILE --name NAME --tags T1,T2
+                                    (not built yet: R1/S1 lane PR) normalise a drafted patch into content/presets/
+                                    as exactly Patch::to_json(), with its meta and the engine stamp
+  gr1-report <round log>...         (not built yet: R1/S1 lane GK) the GR1 numbers from the friends' round logs
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
@@ -148,6 +154,8 @@ fn main() -> ExitCode {
         Some("leak-test") => leak::leak_test(&args[1..]),
         Some("extract-presets") => preset::extract_presets(&args[1..]),
         Some("starter-project") => preset::write_starter_project(&args[1..]),
+        Some("preset-add") => preset_add::preset_add(&args[1..]),
+        Some("gr1-report") => gr1_report::gr1_report(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         Some("golden") => golden::golden(&args[1..]),
         Some("bench" | "budget") => bench::bench(&args[1..]),

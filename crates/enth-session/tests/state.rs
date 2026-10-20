@@ -21,7 +21,10 @@ use enth_patch::canon::{exact_hash, identical};
 use enth_session::state::{
     INSTANCE_STEPS, MAX_FIELD_BYTES, STATE_VERSION, decode_patch, encode_patch, instance_version,
 };
-use enth_session::{InstanceState, STATE_SCHEMA, SavedState, Session, ShellRequest, StateError};
+use enth_session::{
+    GameState, InstanceState, PresetState, STATE_SCHEMA, SavedState, Session, ShellRequest,
+    StateError,
+};
 
 fn dir(version: u32) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/state/v{version}"))
@@ -274,6 +277,28 @@ fn missing_fields_default_and_unknown_fields_are_ignored() {
     assert_eq!(state.ui.scale_percent, 100);
     // Re-saving writes the current shape only.
     assert!(!state.to_json().contains("zoom"));
+}
+
+/// The R1/S1 reservations (lane S0r): `game` (lane SG) and `preset` (lane PBC) are absent from the bytes while
+/// `None`, so every v1 fixture keeps its bytes; set, they round-trip; a text without them loads with both `None`.
+#[test]
+fn the_reserved_game_and_preset_fields_are_absent_until_set() {
+    let text = InstanceState::default().to_json();
+    assert!(!text.contains("game") && !text.contains("preset"), "{text}");
+    let state = InstanceState {
+        game: Some(GameState::default()),
+        preset: Some(PresetState::default()),
+        ..InstanceState::default()
+    };
+    let text = state.to_json();
+    assert_eq!(
+        text,
+        r#"{"schema":"enth.plugin-state/1","monitor":{"fx_bypass":false},"ui":{"layout":"lanes","scale_percent":100,"advanced":false},"game":{},"preset":{}}"#
+    );
+    assert_eq!(InstanceState::from_json(&text).unwrap(), (state, 1));
+    let (old, _) =
+        InstanceState::from_json(r#"{"schema":"enth.plugin-state/1","game":null}"#).unwrap();
+    assert_eq!((old.game, old.preset), (None, None));
 }
 
 #[test]
