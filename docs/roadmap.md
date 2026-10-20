@@ -76,7 +76,7 @@ The effort figures are still unvalidated guesses; Phase 0 records actual against
   - **the gate:** at least half of the goals pass, and in a blind listen you judge at least 7 of the 10 final sounds to match their text;
   - a second, harder track where the agent writes its own expectations from the brief; reported, not gated, at G1;
   - `cargo xtask agent-eval` runs nightly or on demand, never as a merge gate (it needs API access, costs money and is not deterministic).
-- **P1b's G1 rows** (2026-10-19, from the P1b research; the checks are in [phase-1b.md](phase-1b.md#the-plugin-side-g1-checks), and their status is [p1b-g1.md](p1b-g1.md), filled in by lane INT on 2026-10-20: everything automated passes, RT's two rows and the owner's three are pending; the owner's steps are [p1b-owner.md](p1b-owner.md)):
+- **P1b's G1 rows** (2026-10-19, from the P1b research; the checks are in [phase-1b.md](phase-1b.md#the-plugin-side-g1-checks), and their status is [p1b-g1.md](p1b-g1.md), filled in by lane INT on 2026-10-20: everything automated passes, lane RT's real-time rows included, and the owner's three are pending; the owner's steps are [p1b-owner.md](p1b-owner.md)):
   - **CLI = plugin renders:** the engine's golden cases, rendered through the plugin in the test host, give the engine's own hashes (`cargo xtask host-render --package enth-plugin`);
   - the real-time row in the 16-voice bullet above, with swap blocks;
   - clap-validator with 0 failures on the debug and release bundles, and a byte-identical state round trip;

@@ -1,6 +1,6 @@
 # P1b owner sheet: your two sittings
 
-- Date: 2026-10-20 (P1b lane INT). Every P1b lane is merged except RT, which is measuring real-time performance now. The automated checks are green ([p1b-g1.md](p1b-g1.md)); what is left needs your eyes, ears and hands.
+- Date: 2026-10-20 (P1b lane INT). Every P1b lane is in, lane RT's real-time measurement included, and every automated check is green ([p1b-g1.md](p1b-g1.md)); what is left needs your eyes, ears and hands.
 - Two sittings: **owner build 1** (the real display, about 45 min) and **owner build 2** (G1: four sounds, 60–90 min, plus the real-audio check, 30 min). Do them in either order, in as many sittings as you like.
 - This page replaces sections C1, C3, C4, C5 and C6 of the Phase 0 [owner checklist](spikes/owner-checklist.md) (they used the spike plugins, which are retired). Its listening sections (A) and the dev window (B) still stand.
 
@@ -81,7 +81,7 @@ pw-jack ~/apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper
 4. Pass: no extra xruns with the editors open.
 5. Afterwards: `pw-metadata -n settings 0 clock.force-quantum 0` (and `pw-metadata -n settings 0 clock.min-quantum 1024` if you changed it).
 
-Lane RT measures `process()` itself in the test host under real-time priority; this check is the real device and the real desktop.
+Lane RT measured `process()` itself in the test host under real-time priority (p99 about 116 µs of the 1,333 µs deadline, [benchmarks.md](benchmarks.md#lane-rt-the-plugin-measured-2026-10-20)); this check is the real device and the real desktop.
 
 ## Optional
 
