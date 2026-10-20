@@ -1,0 +1,12 @@
+schema = "enth.agent-eval/1"
+id = "pad-moving-bright"
+added = "2026-10-20"
+difficulty = 5
+tags = ["pad", "detune", "lfo", "filter", "modulation", "long"]
+brief = "a lush detuned pad with a slow, breathing filter movement"
+template = "init"
+expect = "attack > 300ms, filter_lfo in [0.4Hz, 1.5Hz], filter_sweep > 0.6oct, beating in [0.8Hz, 4Hz], brightness in [700Hz, 2.5kHz], sustain > -6dB, release > 600ms, pitch.note ~ C4, peak < -1dB"
+rationale = "The modulation-heavy pad: a slow swell, two oscillators beating (0.8-4 Hz), and a filter LFO that the ear hears as breathing (`filter_lfo` 0.4-1.5 Hz, swing over 0.6 octave), on a 5 s hold so the LFO has three cycles or more in the held part. Six structural pieces (second oscillator, filter, LFO, route, both envelope times). Design notes: a 0.5 Hz LFO was not found with this hold (about 2 cycles after an 800 ms attack); a filter LFO at 1-4 times the beat rate is not reported (docs/dsp/analysis.md), so the rate window and the beat window must not line up. Witness: osc ±6 ct, 1.5 kHz low-pass, lfo1 0.8 Hz at +1 oct (filter_lfo 0.81 Hz, swing 1.34 oct, beating 1.81 Hz, attack 629 ms)."
+engine_min = "0.2.0"
+perf = { notes = [{ note = "C4", vel = 100, on_s = 0.0, off_s = 5.0 }], dur_s = 7.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
