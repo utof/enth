@@ -1,0 +1,22 @@
+# enth golden challenges, lane SKR's five (tests/golden/tests/skr_challenges.rs): per case the short code,
+# the level and seed, the phrase and the target fingerprint, then the stub scores of three answers.
+1040-1000-0000-1R level=1 seed=1 phrase=1 f=006f84878298371ac20cb02fc88cd651319a79f92f71dd6d9a1336810d850871
+  exact sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+  start sound=50.000000 structure=50.000000 combined=50.000000 pass=false
+  near  sound=50.000000 structure=50.000000 combined=50.000000 pass=false
+1080-1000-0000-PJ level=2 seed=22 phrase=1 f=0823846dea1dba80f4e0b3fe18c3878057464b96183b9bfc0b6f9e19baba8d60
+  exact sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+  start sound=33.222222 structure=33.222222 combined=33.222222 pass=false
+  near  sound=83.333333 structure=83.333333 combined=83.333333 pass=false
+10C0-1000-000A-DG level=3 seed=333 phrase=1 f=864037660f92d9359fd99df0605e88bf76f419aed6f26d637162555f154b16cd
+  exact sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+  start sound=47.815881 structure=47.815881 combined=47.815881 pass=false
+  near  sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+10G0-1000-004A-WC level=4 seed=4444 phrase=1 f=d93ceb89ff74a49e7e680f95550b9e69d86159e20998cb96dc0d1ba27a50ff47
+  exact sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+  start sound=31.621758 structure=31.621758 combined=31.621758 pass=false
+  near  sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+10M0-1000-01P8-3Q level=5 seed=55555 phrase=3 f=8cf69e4b71285545209af90460254e33eb0cdecb02ace9e4aaa511414aef8f2b
+  exact sound=100.000000 structure=100.000000 combined=100.000000 pass=true
+  start sound=21.900000 structure=21.900000 combined=21.900000 pass=false
+  near  sound=95.000000 structure=95.000000 combined=95.000000 pass=true

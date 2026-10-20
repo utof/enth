@@ -78,6 +78,64 @@ pub struct Options {
     /// Budgets, in microseconds, on the swap blocks' and the crossfade blocks' plugin p99.
     pub max_swap_p99_us: Option<f64>,
     pub max_crossfade_p99_us: Option<f64>,
+    /// A Recreate round's A/B running during the run (lane SKR, `--ab MS`): the plugin's `ab-toggle` harness flips
+    /// Target ▶ and Mine ▶ every that many ms of audio; its report is read back after the run.
+    pub ab: Option<AbHarness>,
+}
+
+/// The `--ab` run: the plugin's `ab-toggle` measurement harness (crates/enth-plugin/src/game.rs, `harness`), told
+/// through the environment before the plugin loads ([`AbHarness::arm`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AbHarness {
+    /// Milliseconds of audio between flips.
+    pub every_ms: u64,
+    /// The file the plugin appends its `enth.plugin-ab-stats/1` line to at deactivation.
+    pub report: std::path::PathBuf,
+}
+
+impl AbHarness {
+    /// Set `ENTH_AB_TOGGLE_MS` and `ENTH_AB_REPORT` for the plugin this process loads next (an empty report file
+    /// first). Call before the plugin is loaded and before any thread starts.
+    pub fn arm(every_ms: u64) -> Result<AbHarness, String> {
+        let report =
+            std::env::temp_dir().join(format!("enth-ab-stats-{}.jsonl", std::process::id()));
+        std::fs::write(&report, b"").map_err(|e| format!("{}: {e}", report.display()))?;
+        // SAFETY: the command's first step, before the plugin library is loaded and before this process starts a
+        // thread, so nothing reads the environment concurrently.
+        unsafe {
+            std::env::set_var("ENTH_AB_TOGGLE_MS", every_ms.to_string());
+            std::env::set_var("ENTH_AB_REPORT", &report);
+        }
+        Ok(AbHarness { every_ms, report })
+    }
+
+    /// The plugin's report lines (one per instance), summed: `None` when the plugin wrote none (a bundle built
+    /// without `--features ab-toggle`).
+    fn read(&self) -> Option<Value> {
+        let text = std::fs::read_to_string(&self.report).ok()?;
+        let lines: Vec<Value> = text
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
+        if lines.is_empty() {
+            return None;
+        }
+        let sum = |key: &str| {
+            lines
+                .iter()
+                .map(|l| l[key].as_u64().unwrap_or(0))
+                .sum::<u64>()
+        };
+        Some(json!({
+            "every_ms": self.every_ms,
+            "instances": lines.len(),
+            "ready": lines.iter().all(|l| l["ready"] == true),
+            "flips": sum("flips"),
+            "target_blocks": sum("target_blocks"),
+            "mine_blocks": sum("mine_blocks"),
+            "loop_frames": lines[0]["loop_frames"],
+        }))
+    }
 }
 
 impl Default for Options {
@@ -103,6 +161,7 @@ impl Default for Options {
             flood: None,
             max_swap_p99_us: None,
             max_crossfade_p99_us: None,
+            ab: None,
         }
     }
 }
@@ -797,6 +856,20 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
             ));
         }
     }
+    let ab_report = opts.ab.as_ref().map(AbHarness::read);
+    if let Some(ab) = &ab_report {
+        match ab {
+            None => failures.push(
+                "--ab: the plugin wrote no A/B report (build the bundle with --features ab-toggle)"
+                    .to_owned(),
+            ),
+            Some(r) if r["ready"] != true || r["flips"].as_u64().unwrap_or(0) == 0 => failures
+                .push(format!(
+                    "--ab: the round's target was not ready or the A/B never flipped: {r}"
+                )),
+            Some(_) => {}
+        }
+    }
     if opts.rt.is_some() && !rt_ok && opts.require_rt {
         failures.push("a thread did not get real-time scheduling (--require-rt)".to_owned());
     }
@@ -832,6 +905,7 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
             "inject": opts.inject.map(|f| format!("busy-us={} every={}", f.us, f.every)),
             "swap": opts.swap.as_ref().map(|s| json!({ "kind": s.kind.name(), "every_ms": s.every_ms, "alt_state_bytes": s.alt_state.len() })),
             "flood": opts.flood.map(|f| json!({ "note_events": f.events / 2 * 2, "every_ms": f.every_ms })),
+            "ab_every_ms": opts.ab.as_ref().map(|a| a.every_ms),
             "notes": opts.notes,
             "state_bytes": opts.state.as_ref().map(Vec::len),
             "wall_seconds": elapsed,
@@ -853,6 +927,7 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<(Value, boo
         "editor_info": editor_info,
         "swaps": swaps_report,
         "floods": floods_report,
+        "ab": ab_report.flatten(),
         "budgets": {
             "max_p99_us": opts.max_p99_us,
             "max_p999_us": opts.max_p999_us,

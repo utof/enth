@@ -39,6 +39,12 @@ pub enum Intent {
     /// favorites, the Save dialog and the crash offer. The editor hands it to its preset state
     /// ([`Presets`](crate::editor::browser::Presets)); a load is the session's one-undo-step preset load.
     Preset(crate::editor::browser::PresetIntent),
+    /// The Recreate bar (feature `recreate`; lane SKR's skeleton, lane RUI's UI): a round intent. The editor queues
+    /// it for the shell, which applies it to its `GameEdit` after the frame ([`Editor::apply_game`]); never an op.
+    ///
+    /// [`Editor::apply_game`]: crate::editor::Editor::apply_game
+    #[cfg(feature = "recreate")]
+    Game(crate::editor::recreate::bar::GameIntent),
     /// A drag started on a control: the edits up to the matching `End` are one gesture (one undo step).
     Begin(Grip),
     /// A parameter's new plain value, in real units and valid for its spec.
@@ -106,6 +112,13 @@ impl Intent {
                 reason = "lane PBU's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
             )]
             Intent::Preset(_) => Vec::new(),
+            // Round intents go to the shell's `GameEdit`, never through ops (lane SKR).
+            #[cfg(feature = "recreate")]
+            #[allow(
+                clippy::match_same_arms,
+                reason = "lane SKR's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
+            )]
+            Intent::Game(_) => Vec::new(),
             Intent::Set { addr, value } => vec![Op::SetParam {
                 addr: addr.clone(),
                 value: *value,

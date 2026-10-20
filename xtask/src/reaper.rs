@@ -20,6 +20,7 @@
 //! | `editor-smoke` | the editor opens, draws and closes five times, under Xvfb |
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
 //! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
+//! | `round` | (lane SKR) a Recreate round through the editor's Recreate bar (real clicks), the transport stopped: Start prepares the target, Target ▶ and Mine ▶ sound on the track's meter, a submit is scored, End removes the round and writes the round log |
 //! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
@@ -95,10 +96,11 @@ enum Scenario {
     StarterProject,
     CrossFormat,
     PresetLoad,
+    Round,
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 12] = [
+    const PRODUCT: [Scenario; 13] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
@@ -111,6 +113,7 @@ impl Scenario {
         Scenario::StarterProject,
         Scenario::CrossFormat,
         Scenario::PresetLoad,
+        Scenario::Round,
     ];
     fn name(self) -> &'static str {
         match self {
@@ -126,6 +129,7 @@ impl Scenario {
             Scenario::StarterProject => "starter-project",
             Scenario::CrossFormat => "cross-format",
             Scenario::PresetLoad => "preset-load",
+            Scenario::Round => "round",
         }
     }
 
@@ -677,6 +681,7 @@ fn run_scenario(
         Scenario::StarterProject => starter_project(sb, report, format)?,
         Scenario::CrossFormat => {}
         Scenario::PresetLoad => preset_load(sb, report, format, chunks)?,
+        Scenario::Round => round(sb, report, format)?,
     }
     Ok(())
 }
@@ -717,6 +722,38 @@ fn preset_load(
             Some(_) => format!("silent: REAPER did not process while stopped (peak {peak}); the open check stays open"),
             None => "not measured".to_owned(),
         },
+    );
+    Ok(())
+}
+
+/// `round` (lane SKR, F2r): a Recreate round through the editor's Recreate bar (real clicks), the transport stopped:
+/// Start prepares the target on the worker, Target ▶ and Mine ▶ sound (the track's peak meter), a submit is scored, End
+/// removes the round and writes the round log (`ENTH_ROUNDS_DIR`, per format). The crash folder is empty, so no crash
+/// notice covers the editor. `xtask/reaper/round.lua` clicks and makes the checks.
+fn round(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
+    let tag = format.tag();
+    let rounds = sb.out.join(format!("rounds-{tag}"));
+    let crashes = sb.out.join(format!("round-crashes-{tag}"));
+    for dir in [&rounds, &crashes] {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let extra = vec![
+        ("ENTH_ROUNDS_DIR", rounds.display().to_string()),
+        ("ENTH_CRASH_DIR", crashes.display().to_string()),
+    ];
+    let log = run_script(sb, report, format, "round", "round", "play", &extra);
+    let scope = format!("{tag}/round");
+    let get = |k: &str| log.data.get(k).cloned().unwrap_or_default();
+    report.info(
+        &scope,
+        "round-levels",
+        format!(
+            "prepared in {} s; Target ▶ peak {}, Mine ▶ peak {} (transport stopped)",
+            get("prepare-s"),
+            get("target-peak"),
+            get("mine-peak")
+        ),
     );
     Ok(())
 }

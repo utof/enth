@@ -8,7 +8,8 @@ mod common;
 use common::{round_trip, run};
 use enth_cli::schema::ErrorOut;
 
-const STUBS: [&str; 5] = ["compare", "suggest", "match", "explain", "challenge"];
+// `compare` and `challenge` are built (lane SKR): their tests are in `tests/challenge.rs`.
+const STUBS: [&str; 3] = ["suggest", "match", "explain"];
 
 #[test]
 fn every_r1_stub_answers_not_built_yet() {

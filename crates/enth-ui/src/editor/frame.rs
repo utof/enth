@@ -81,6 +81,10 @@ pub struct Editor {
     presets: Presets,
     /// egui's input time at the last frame (the meters fall by the time between frames).
     last_time: Option<f64>,
+    /// The Recreate bar's state (lane SKR's skeleton): the round view the shell handed over, the round intents
+    /// waiting for it, the blind-rating question.
+    #[cfg(feature = "recreate")]
+    recreate: super::recreate::bar::Recreate,
 }
 
 impl std::fmt::Debug for Editor {
@@ -119,6 +123,8 @@ impl Editor {
             output: OutputState::default(),
             presets: Presets::default(),
             last_time: None,
+            #[cfg(feature = "recreate")]
+            recreate: super::recreate::bar::Recreate::default(),
         }
     }
 
@@ -196,6 +202,39 @@ impl Editor {
     /// ([`Presets::offer_crash`]).
     pub fn presets_mut(&mut self) -> &mut Presets {
         &mut self.presets
+    }
+
+    /// Before a frame (lane SKR, the Recreate hook): the session's round, from `GameEdit::round()`. A shell that
+    /// plays rounds calls it every frame; until one does, the header shows no Recreate bar.
+    #[cfg(feature = "recreate")]
+    pub fn set_round(&mut self, round: Option<enth_session::game::RoundView>) {
+        self.recreate.set_round(round);
+    }
+
+    /// After a frame (lane SKR): apply the bar's queued round intents to the shell's `game` (the session, which the
+    /// editor otherwise sees only as a `SessionEdit`), with `seed` for a round from settings.
+    #[cfg(feature = "recreate")]
+    pub fn apply_game(
+        &mut self,
+        game: &mut dyn enth_session::game::GameEdit,
+        seed: &mut dyn FnMut() -> u64,
+    ) {
+        self.recreate.apply(game, seed);
+    }
+
+    /// Before handing worker results back to the session (lane SKR): a score waits while the blind rating is asked.
+    #[cfg(feature = "recreate")]
+    pub fn hold_scores(
+        &mut self,
+        results: Vec<(enth_session::game::JobId, enth_session::game::JobResult)>,
+    ) -> Vec<(enth_session::game::JobId, enth_session::game::JobResult)> {
+        self.recreate.hold_scores(results)
+    }
+
+    /// The Recreate bar's state (tests).
+    #[cfg(feature = "recreate")]
+    pub fn recreate(&self) -> &super::recreate::bar::Recreate {
+        &self.recreate
     }
 
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
@@ -300,6 +339,8 @@ impl Editor {
                             undo: history.next_undo().map(|e| describe::entry(patch, e)),
                             redo: history.next_redo().map(|e| describe::entry(patch, e)),
                             room: Room::all(patch),
+                            #[cfg(feature = "recreate")]
+                            recreate: self.recreate.view(),
                         };
                         let knobs: Vec<CardView> = self
                             .layout
@@ -368,9 +409,15 @@ impl Editor {
         }
         if let Some(r) = status {
             let error = session.status().last_error.map(|e| e.hint());
+            // A live Recreate round's readout (lane SKR's skeleton bar) takes the notice's place.
+            #[cfg(feature = "recreate")]
+            let round = self.recreate.readout();
+            #[cfg(not(feature = "recreate"))]
+            let round: Option<String> = None;
             let right = error
                 .as_deref()
                 .or(self.said.as_deref())
+                .or(round.as_deref())
                 .unwrap_or(&self.notice);
             Status::new(t, out.hovered.as_ref())
                 .right(right)
@@ -414,6 +461,8 @@ impl Editor {
         for intent in intents {
             match &intent {
                 Intent::Preset(p) => self.presets.apply(session, p),
+                #[cfg(feature = "recreate")]
+                Intent::Game(g) => self.recreate.push(*g),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
                 Intent::End(_) => {
                     session.end_gesture();

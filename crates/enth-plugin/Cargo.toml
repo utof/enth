@@ -41,9 +41,17 @@ rt-stats = []
 editor-counts = []
 # R1/S1 (lane S0r): forward enth-ui's header hook features, so a build can turn a hook on from the plugin. No behaviour
 # until lanes RUI, PBU and AM fill their hooks; off by default.
+# Lane SKR (F2r): `recreate` is on by default, so the plugin's editor shows the minimal Recreate bar (Start, Target ▶,
+# Mine ▶, Submit, Reveal, End and a score readout) a round is played with; lane RUI builds the real one. The round's
+# worker, A/B and round log are compiled either way (a saved round restores in any build).
 recreate = ["enth-ui/recreate"]
 presets = ["enth-ui/presets"]
 add-module = ["enth-ui/add-module"]
+default = ["recreate"]
+# Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
+# activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by
+# default; for measurement bundles only (docs/plugin.md, "The Recreate round").
+ab-toggle = []
 
 [dev-dependencies]
 insta.workspace = true
