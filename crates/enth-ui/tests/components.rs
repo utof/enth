@@ -129,6 +129,7 @@ fn region_snapshots() {
         can_redo: false,
         undo: Some("Filter 1 › Cutoff".to_owned()),
         redo: None,
+        room: enth_ui::editor::add_module::Room::all(&patch),
     };
     region_snapshot(
         r,

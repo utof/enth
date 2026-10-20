@@ -4,7 +4,9 @@
 //! never wall-clock time.
 //!
 //! - an idle editor (the tap quiet, nothing visible changing) asks for no frame: the delay is `Duration::MAX`;
-//! - while visible live data changes it asks for exactly `motion.animated_interval()` (30 Hz), never less;
+//! - while visible live data changes it asks for exactly `motion.scope_interval()` (1/60 s), never less: lane AM
+//!   (R1/S1) moved it from `motion.animated_interval()` (1/30 s), because baseview 0.4.1 paces redraws at the X
+//!   Present `msc + 2`, so a 1/30 s request drew about 20 frames a second in Phase 0 and a 1/60 s one about 30;
 //! - a stalled engine (the audio thread never runs) still gets every editor frame, and edits still apply.
 
 mod common;
@@ -141,21 +143,21 @@ fn an_idle_editor_asks_for_no_frames_and_new_data_wakes_it() {
     assert!(!(rig.wake)(), "nothing new: no wake-up");
 
     // An audition note brings new data: the next block's publish sets the wake flag the shell turns into a repaint,
-    // and the frame that follows animates at 30 Hz.
+    // and the frame that follows asks for the next one 1/60 s later.
     rig.session.audition_on(60, 0.8).unwrap();
     rig.session.pump();
     (rig.render)(4);
     assert!((rig.wake)(), "the sleeping editor is woken by the tap");
     let delay = rig.frame(Vec::new());
-    assert_eq!(delay, rig.theme.motion.animated_interval());
+    assert_eq!(delay, rig.theme.motion.scope_interval());
 }
 
 #[test]
-fn visible_live_data_animates_at_30_fps_and_no_faster() {
+fn visible_live_data_asks_for_a_frame_every_sixtieth_of_a_second_and_no_sooner() {
     // The P1 default's global LFO 2 runs in silence too: its tile and the reverb's Wet ring move.
     let mut rig = Rig::new(common::patches::p1_default());
-    let interval = rig.theme.motion.animated_interval();
-    assert_eq!(interval, Duration::from_secs_f32(1.0 / 30.0));
+    let interval = rig.theme.motion.scope_interval();
+    assert_eq!(interval, Duration::from_secs_f32(1.0 / 60.0));
     let wet = "reverb1.wet".parse().unwrap();
     let mut rings = Vec::new();
     warm_up(&mut rig);
@@ -163,7 +165,7 @@ fn visible_live_data_animates_at_30_fps_and_no_faster() {
         // A 30 Hz frame's worth of 48 kHz audio between frames.
         (rig.render)(25);
         let delay = rig.frame(Vec::new());
-        assert_eq!(delay, interval, "frame {n}: exactly 1/30 s, never sooner");
+        assert_eq!(delay, interval, "frame {n}: exactly 1/60 s, never sooner");
         assert_eq!(rig.editor.report().repaint, Some(interval));
         rings.push(
             rig.editor
@@ -198,7 +200,7 @@ fn a_closed_editor_asks_for_nothing_and_stops_the_tap() {
     assert_eq!(rig.frame(Vec::new()), Duration::MAX);
     (rig.render)(25);
     assert!((rig.wake)(), "the publish woke the sleeping editor");
-    assert_eq!(rig.frame(Vec::new()), rig.theme.motion.animated_interval());
+    assert_eq!(rig.frame(Vec::new()), rig.theme.motion.scope_interval());
     rig.editor.close();
     (rig.render)(25);
     assert_eq!(rig.frame(Vec::new()), Duration::MAX);
@@ -211,7 +213,7 @@ fn a_closed_editor_asks_for_nothing_and_stops_the_tap() {
     // Reopened, it picks up where the engine is.
     rig.editor.open(&rig.session, &rig.theme);
     (rig.render)(25);
-    assert_eq!(rig.frame(Vec::new()), rig.theme.motion.animated_interval());
+    assert_eq!(rig.frame(Vec::new()), rig.theme.motion.scope_interval());
     assert!(
         rig.editor
             .live()

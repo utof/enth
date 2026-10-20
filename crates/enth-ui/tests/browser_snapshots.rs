@@ -144,6 +144,7 @@ fn browser_snapshots() {
         can_redo: false,
         undo: Some("Load Glass Pad".to_owned()),
         redo: None,
+        room: enth_ui::editor::add_module::Room::all(&Patch::init()),
     };
     let t = theme.clone();
     let mut h = common::harness(

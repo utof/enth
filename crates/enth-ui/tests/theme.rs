@@ -133,6 +133,8 @@ fn bundled_fonts_cover_every_glyph_we_draw() {
         glyph::BULLET,
         glyph::DOT_ON,
         glyph::DOT_OFF,
+        glyph::MENU,
+        glyph::ADD,
     ]
     .concat();
     let text = "AaZz 0123456789 .,:;+-−%/·×±→ kHz dB ms ct st";

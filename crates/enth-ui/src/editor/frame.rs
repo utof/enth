@@ -19,6 +19,7 @@ use enth_patch::modulation::source_span;
 use enth_patch::{ModSource, Patch, Section, modulation_range};
 use enth_session::{SessionEdit, SessionView};
 
+use super::add_module::{self, Room};
 use super::browser::{self, Presets};
 use super::cards::view::{self, CardView};
 use super::cards::{CardKey, Intent, Intents, ids};
@@ -41,8 +42,8 @@ pub struct FrameReport {
     /// Content that reached past its region, by part (`"sources"`, …, `"overview.tiles"`, `"overview.matrix"`), in
     /// px per axis. Only entries over half a pixel are listed: an empty list means nothing scrolls.
     pub overflow: Vec<(&'static str, Vec2)>,
-    /// The next frame the editor asked egui for (lane ED2): `motion.animated_interval()` while visible live data
-    /// changes, `None` when it sleeps on the tap (0 frames until input or new data).
+    /// The next frame the editor asked egui for (lane ED2): `motion.scope_interval()` (1/60 s; lane AM, R1/S1) while
+    /// visible live data changes, `None` when it sleeps on the tap (0 frames until input or new data).
     pub repaint: Option<Duration>,
 }
 
@@ -68,6 +69,9 @@ pub struct Editor {
     overlay: Box<dyn Overlay + Send + Sync>,
     /// Shown on the status line's right end (a refused `ENTH_LAYOUT`, the dev window's layout name).
     notice: String,
+    /// What the last add or removal did ("Removed Filter 1 and 2 routes"; lane AM), shown on the status line's right
+    /// end in the notice's place until the next edit.
+    said: Option<String>,
     report: FrameReport,
     /// Telemetry and repaint gating (lane ED2).
     live: Live,
@@ -109,6 +113,7 @@ impl Editor {
             more: BTreeSet::new(),
             overlay: Box::new(NoOverlay),
             notice: String::new(),
+            said: None,
             report: FrameReport::default(),
             live: Live::default(),
             output: OutputState::default(),
@@ -294,6 +299,7 @@ impl Editor {
                             can_redo: history.can_redo(),
                             undo: history.next_undo().map(|e| describe::entry(patch, e)),
                             redo: history.next_redo().map(|e| describe::entry(patch, e)),
+                            room: Room::all(patch),
                         };
                         let knobs: Vec<CardView> = self
                             .layout
@@ -312,8 +318,10 @@ impl Editor {
                             .parts_in(placed.region)
                             .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
+                        let room = Room::of_parts(patch, self.layout.parts_in(placed.region));
                         let shown =
                             CardRegion::new(t, placed.region.name(), &cards, placed.arrange)
+                                .room(&room)
                                 .show(ui, r, &mut out);
                         overflow.push((placed.region.name(), shown.overflow));
                         mark_cards(&ctx, &cards, &mut fingerprint);
@@ -360,7 +368,10 @@ impl Editor {
         }
         if let Some(r) = status {
             let error = session.status().last_error.map(|e| e.hint());
-            let right = error.as_deref().unwrap_or(&self.notice);
+            let right = error
+                .as_deref()
+                .or(self.said.as_deref())
+                .unwrap_or(&self.notice);
             Status::new(t, out.hovered.as_ref())
                 .right(right)
                 .show(ui, r);
@@ -369,9 +380,12 @@ impl Editor {
             self.presets.show_notice(ui, t, b, &mut out);
         }
         overflow.retain(|(_, o)| o.x > 0.5 || o.y > 0.5);
+        // 1/60 s, not the 30 Hz the design system animates at: baseview 0.4.1 paces redraws at the X Present `msc + 2`
+        // (every other vblank), so a 1/30 s request draws about 20 frames a second and a 1/60 s one about 30
+        // (Phase 0; docs/editor.md, lane AM).
         let repaint = self
             .live
-            .schedule(&ctx, fingerprint.finish(), t.motion.animated_interval());
+            .schedule(&ctx, fingerprint.finish(), t.motion.scope_interval());
         self.report = FrameReport {
             regions,
             overflow,
@@ -389,6 +403,8 @@ impl Editor {
     /// host gesture per parameter, `End` closes it; clicks, toggles, typed values and menu items are one edit each.
     /// An edit the session refuses changes nothing (its error is the session's `last_error`, shown on the status
     /// line). A gesture still open when no pointer button is held is closed: the control that opened it vanished.
+    /// Adding, removing, moving, duplicating and renaming a module (lane AM) are one edit each, through the session's
+    /// structural path (a recompiled plan); an add or a removal says what it did on the status line.
     pub fn apply(
         &mut self,
         session: &mut dyn SessionEdit,
@@ -419,13 +435,15 @@ impl Editor {
                 Intent::Set { .. } | Intent::SetMacro { .. } | Intent::SetDepth { .. } => {
                     let ops = intent.ops(session.patch());
                     if !ops.is_empty() {
+                        self.said = None;
                         let _ = session.edit(ops, self.gesture);
                     }
                 }
                 _ => {
                     let ops = intent.ops(session.patch());
                     if !ops.is_empty() {
-                        let _ = session.edit(ops, None);
+                        let note = add_module::note(session.patch(), &intent);
+                        self.said = session.edit(ops, None).ok().and(note);
                     }
                 }
             }
