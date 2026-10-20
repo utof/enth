@@ -407,3 +407,55 @@ fn no_round_no_worker_and_no_change_to_the_block() {
     assert!(!host.plugin.shared().game.worker_started());
     assert!(host.plugin.player.idle());
 }
+
+/// Lane RUI: the results drawer's vote and "Disagree…" reach the round log file through the real plugin: the dispute
+/// line is written at once, with its note, and the round's `end` line carries the vote and the blind rating (the
+/// editor's side, the clicks, is `crates/enth-ui/tests/recreate.rs`).
+#[test]
+fn the_vote_and_the_dispute_reach_the_round_log_file() {
+    let logs = TempDir::new("round-log-vote");
+    let log_file = logs.0.join(game::ROUND_LOG_FILE);
+    let mut host = Host::new(SR);
+    host.plugin
+        .shared()
+        .game
+        .set_log_path(Some(log_file.clone()));
+    let spec = SpecPreset::by_id(1).unwrap().spec(LATEST_GENERATOR, 9);
+    host.frame(|s| {
+        s.game_tick(host_now(), EditorView::Opened);
+        s.game_start(RoundSource::Settings(spec)).unwrap();
+    });
+    host.until("the prepared target", |s| {
+        s.round().is_some_and(|r| r.phase == Phase::Playing)
+    });
+    // The drawer asks the blind rating first, then the score shows.
+    host.frame(|s| {
+        s.game_rate(2).unwrap();
+        s.game_submit().unwrap();
+    });
+    host.until("the first score", |s| {
+        s.round().is_some_and(|r| r.submits == 1)
+    });
+    host.frame(|s| {
+        s.game_vote(enth_challenge::Agreement::TooLow).unwrap();
+        s.game_dispute("it sounded much closer than that").unwrap();
+    });
+    let read = |file: &std::path::Path| -> Vec<serde_json::Value> {
+        std::fs::read_to_string(file)
+            .unwrap_or_default()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    };
+    let lines = read(&log_file);
+    assert_eq!(lines.len(), 1, "the dispute is written at once: {lines:?}");
+    assert_eq!(lines[0]["event"], "dispute");
+    assert_eq!(lines[0]["dispute"], "it sounded much closer than that");
+    host.frame(|s| s.game_end(EndChoice::Restore).unwrap());
+    let lines = read(&log_file);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(lines[1]["event"], "end");
+    assert_eq!(lines[1]["result"]["agreement"], "too_low");
+    assert_eq!(lines[1]["result"]["rating"], 2);
+    assert_eq!(lines[1]["dispute"], "it sounded much closer than that");
+}
