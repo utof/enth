@@ -445,7 +445,7 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 **After AM (adding and removing modules).** Left for later lanes:
 
 - The header's right end is, right to left: the inline knobs, Redo, Undo, "+ Add". PBU's ◀ name ▶ / Browse / Save and RUI's challenge bar take the rest of the row (their hooks draw on the whole header `Ui`).
-- A preset load is one `Entry::load` step (lane PBC); `describe::entry` names it by its first op until PBU teaches it "Load <name>". Add and remove steps read "add osc3", "remove filter1" there (the ids), which a later polish can turn into titles.
+- A preset load is one `Entry::load` step (lane PBC); `describe::entry` names it "Load <name>" (lane PBU). Add and remove steps read "add osc3", "remove filter1" there (the ids), which a later polish can turn into titles.
 - Reordering is the menu's Move up and down; a header drag (`CardOutput::header`, "Move <title>") still does nothing. Duplicate copies no routes; there is no kind replacement (report 03: deferred).
 - The "+ Add" slot appears only where a region has room; in layout 1 the sources and the effects lane rarely do, so the header's "+ Add" and the cards' menus are the dependable ways in. A variant with spare room shows slots by itself.
 

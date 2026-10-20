@@ -419,6 +419,8 @@ So the difference is not REAPER's FX windows or SWELL (the controls are flat), a
 
 ## For the next lanes
 
+(R1/S1 lane INT, 2026-10-20: RT, ED2, RH, RUI, CL, GK and GC are merged. Still open from the notes below: `skr-v1.txt`'s five codes in GC's format, the plugin-side `host-render` case for a target, and the **Open** line.)
+
 - **RT:** build with `--features rt-stats` and read `Shared::rt_stats` or the `ENTH_RT_STATS` report for the plugin's own share of `process()`; `process-stats` times the whole call. A block with an event flood now renders in chunks (several `Engine::process` calls, each of which renders at least the segments it needs), and the ledger sweeps once per chunk: measure a flood block, not only steady state. The voice-info report is a nice-plug task queue push plus `request_callback`, made only on a voice-count change; the rescan request is no longer made from `process()`. The pump's `try_send` is unchanged.
 - **ED2:** a `TelemetryReader` per `build()`; repaints already come from the tap's wake flag.
 - **RH:** done for the scenarios above; a new one loads any patch with `inject_state` and a chunk from `write_state_chunk`. PL changed `state.lua` (the patch's names accepted in `param-names` and checked in `param-renamed`) and flipped `CLAP_FLAT_LANE_IS_KNOWN_GAP`. FK2 flipped `DIRTY_MARKING_EXPECTED`, added `clean-without-an-edit`, `midi-cc-params` (91 VST3 parameters), the `mod-wheel` scenario and `render-repeatable`.

@@ -272,10 +272,10 @@ Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.
 
 | Now | Becomes | Touches |
 | --- | --- | --- |
-| `game::ab_gains` (attenuate the louder side by the loudness difference) | Lane SS's shared gain function (P11) | `ab_gains` (SS is in wave 3) |
+| `game::ab_gains` (attenuate the louder side by the loudness difference) | Lane SS's shared gain function (P11): **done**, SS's in-house loudness and `gain_db` (`9a0dfa2`) | `ab_gains` |
 | A reveal starts a new history line | PBC's undoable load (`ops_between`) | `game_reveal` |
 | `AssistsUsed::live_meter` is always false | The live-meter assist, if GR1 keeps it | `RoundRecord::assists` |
-| The default scorers are CT's stubs (`sound-stub/1`, `structure-stub/1`, `combined-stub/1`) | `sound/1` (SS), `structure/1` and `combined/1` (ST), each switched in `enth_challenge::model::RECREATE_SCORERS` by the lane that lands it | nothing in the session: it checks reports against whatever the challenge names |
+| The default scorers are CT's stubs (`sound-stub/1`, `structure-stub/1`, `combined-stub/1`) | `sound/1` (SS), `structure/1` and `combined/1` (ST), each switched in `enth_challenge::model::RECREATE_SCORERS` by the lane that landed it: **done** (`9a0dfa2`, `762351f`) | nothing in the session: it checks reports against whatever the challenge names |
 
 ### Decisions (lane SG)
 
@@ -299,7 +299,7 @@ Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.
 3. **The worker.** Its own thread: run each `GameRequest::Run(job)` and post `(id, result)`; drop cancelled ids; the GUI thread hands results back with `game_job_done` at the top of the frame, before the editor's edits. **Neither side ever blocks on a full queue**: two bounded queues between the GUI and the worker can deadlock them. The GUI keeps jobs it could not queue and retries them next frame; the worker keeps results it could not post and retries (or posts to an unbounded channel: the shell may use one, core crates may not).
 4. **The `Prepare` job.** `enth_challenge::prepare_round(&spec)`, kept under the job's `RoundId`; answer `JobResult::Prepared(Box::new(Prepared::from_round(&round, lufs)))`. Render the target (`round.target()`) through its phrase (`round.phrase().performance()`, `SCORING_SAMPLE_RATE`, `SCORING_SEED`) into a preallocated loop buffer and measure its loudness; the buffer goes to the audio thread like a plan (a ring with a return ring), and is dropped when `Ab.target_ready` turns false. Score jobs are `score_round(&round, &patch)` and rings `score_structure(&round, &patch)`. The editor decodes a pasted code (`ChallengeCode::decode`) and passes `RoundSource::Code`; the settings page passes `RoundSource::Settings` with a freshly drawn seed (40 bits, so a preset's code stays short; never above 2⁵³). A refused start (`too_large`, `out_of_range`, `code_too_new`) shows its hint.
 5. **A/B in `process()`.** Read the A/B atomics; play the buffer or the phrase (the shell's sequencer feeding Mine's notes), locked to one position, with a short crossfade and the gains (dB to linear in the shell). The `process-stats` A/B toggle (F2r).
-6. **Score, rings, loudness and hint jobs**, through CT's `score_round` and `score_structure` (the stubs until SS and ST land) and SN's coach.
+6. **Score, rings, loudness and hint jobs**, through CT's `score_round` and `score_structure` (`sound/1`, `structure/1` and `combined/1` since SS and ST) and SN's coach.
 7. **The blind rating.** When the player presses Submit, ask for the 1–5 rating (`game_rate`) before showing the score; hold the score back until it is given or skipped.
 8. **The round log.** Append each `GameRequest::Log` line to the local JSONL file after unlocking (GK names the path).
 9. **Dirty.** Coalesce `GameRequest::Dirty` with `ShellRequest::PatchEdited` into one `mark_dirty()` per frame.

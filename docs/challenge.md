@@ -56,7 +56,7 @@ Rules:
 
 `ScoringSpec::recreate(difficulty)` is the Recreate default: this build's `RECREATE_SCORERS`, a sound weight of `50 + 30·difficulty/100` % (50 % at difficulty 0, where structure is unambiguous and ADR-0007 asks to lean on it; 80 % at 100), and the pass mark `DEFAULT_PASS_MARK` = 90. `ScoringSpec::with_scorers` gives the same weights with named scorers (the fixtures and the golden challenges pin the v1 ids that way). The weights live in the challenge, so a later default never changes an old challenge's score.
 
-**The default scorers are stubs until SS and ST land** (F1r review S12): `RECREATE_SCORERS` was `sound-stub/1`, `structure-stub/1`, `combined-stub/1`, `time/1`; lane ST switched structure and combined to `structure/1` and `combined/1` ([below](#structure-combined-and-time-lane-st)). The stubs score in parameter space under their own ids, so no stub score is ever stored, logged or pinned as `sound/1`. Lane SS switches the sound entry to `sound/1` in the commit that lands it (and ST `structure/1` and `combined/1`). **The pass mark stays and the curve moves:** SS fits `sound/1`'s curve so that the rating-4.5 point lands on 90, GR1's refit is `sound/2` with the same mark, and the stubs use 90 as is.
+**The default scorers were stubs until SS and ST landed** (F1r review S12): `RECREATE_SCORERS` was `sound-stub/1`, `structure-stub/1`, `combined-stub/1`, `time/1`; lane ST switched structure and combined to `structure/1` and `combined/1` ([below](#structure-combined-and-time-lane-st)), and lane SS sound to `sound/1`, so it is now `sound/1`, `structure/1`, `combined/1`, `time/1`. The stubs score in parameter space under their own ids, so no stub score is ever stored, logged or pinned as `sound/1`. Each lane switched its entry in the commit that landed its scorer. **The pass mark stays and the curve moves:** SS fits `sound/1`'s curve so that the rating-4.5 point lands on 90, GR1's refit is `sound/2` with the same mark, and the stubs use 90 as is.
 
 **The scored render** is fixed by two constants in `model`: `SCORING_SAMPLE_RATE` = 48,000 Hz and `SCORING_SEED` = `0x0E17_5EED`, written out (F1r review S12) so it can never follow the CLI's default silently; a test checks it equals `enth_render::DEFAULT_SEED`. So `enth render` of a target with its phrase gives exactly the audio the scorer hears and Target ▶ plays.
 
@@ -196,7 +196,7 @@ Scorers are additive (design.md §6): each has a `ScorerId` written `name/versio
 
 | Id | What | Lane |
 | --- | --- | --- |
-| `sound-stub/1`, `structure-stub/1`, `combined-stub/1` | The stubs ([below](#scoring-a-round)): parameter space, no render; this build's default until SS and ST land | CT |
+| `sound-stub/1`, `structure-stub/1`, `combined-stub/1` | The stubs ([below](#scoring-a-round)): parameter space, no render; the default until SS and ST landed, still dispatched by id (the golden challenges' `stub` blocks, `skr-v1.txt`) | CT |
 | `sound/1` | Metric v1 with report 02's fixes and **the fitted curve** (after metric session 2) | SS |
 | `sound/2` | The same metric, the curve **refitted to GR1's blind ratings** (reserved); the pass mark stays 90 | SS, after GR1 |
 | `structure/1`, `combined/1` | Structure % and w·sound + (1 − w)·structure | ST |
@@ -552,7 +552,7 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER=/path/to/wasmtime cargo test -p enth-challenge
 
 ## Structure, combined and time (lane ST)
 
-Lane ST, 2026-10-20: `score/matching.rs`, `score/structure.rs` and `score/combined.rs`. `RECREATE_SCORERS` names `structure/1` and `combined/1`; sound stays `sound-stub/1` until lane SS lands `sound/1`. The tolerances are generator v1's just-noticeable steps (`priors::jnd`). Lane SN's measured sensitivity (`enth_solver::sensitivity`) cannot feed them: `enth-challenge` is L4 and `enth-solver` L5. A scorer that takes measured tolerances, passed in by an L5+ caller, would be `structure/2`.
+Lane ST, 2026-10-20: `score/matching.rs`, `score/structure.rs` and `score/combined.rs`. `RECREATE_SCORERS` names `structure/1` and `combined/1`; sound was still `sound-stub/1` then, and lane SS has since switched it to `sound/1`. The tolerances are generator v1's just-noticeable steps (`priors::jnd`). Lane SN's measured sensitivity (`enth_solver::sensitivity`) cannot feed them: `enth-challenge` is L4 and `enth-solver` L5. A scorer that takes measured tolerances, passed in by an L5+ caller, would be `structure/2`.
 
 ### Module matching
 
