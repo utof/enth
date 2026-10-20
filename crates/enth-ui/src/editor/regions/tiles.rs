@@ -1,5 +1,6 @@
 //! The modulation sources' live tiles: every envelope and LFO, then velocity, key and the mod wheel, each with its
-//! shape, a route-count badge and the ⊕ handle that drag-to-modulate (lane ED2) starts from.
+//! shape, a route-count badge and the ⊕ handle that drag-to-modulate (lane ED2) starts from: the handle carries a
+//! [`SourceDrag`] payload and draws a wire to the pointer while it is dragged (`editor::modulate`).
 
 use egui::{Align2, Rect, Response, Ui, pos2};
 use enth_patch::catalogue::LfoShape;
@@ -8,6 +9,7 @@ use enth_patch::{ModSource, ModuleKind, Patch};
 use super::region_ui;
 use crate::Theme;
 use crate::editor::cards::{CardView, Hovered, Intents, ParamView, ids, shapes};
+use crate::editor::modulate::{SourceDrag, wire};
 use crate::theme::glyph;
 use crate::widgets::SourceTile;
 
@@ -33,8 +35,12 @@ pub struct SourceView {
     pub shape: SourceShape,
     /// How many routes start here.
     pub routes: usize,
-    /// Where the source is in its shape now (0..1), while it runs (the engine's telemetry, lane ED2).
+    /// Where the source is in its shape now (0..1), while it runs. Reserved: the engine's tap publishes outputs, not
+    /// phases, so the editor fills [`level`](Self::level) instead.
     pub phase: Option<f32>,
+    /// The source's output now, in the tile graph's 0..1 (a bipolar LFO's −1..1 maps to 0..1), from the engine's
+    /// telemetry (lane ED2); `None` when there is no live value.
+    pub level: Option<f32>,
 }
 
 impl SourceView {
@@ -66,6 +72,7 @@ impl SourceView {
                     src,
                     shape,
                     phase: None,
+                    level: None,
                 }
             })
             .collect();
@@ -80,6 +87,7 @@ impl SourceView {
                 name: name.to_owned(),
                 shape,
                 phase: None,
+                level: None,
             });
         }
         out
@@ -137,8 +145,19 @@ impl<'a> SourceTiles<'a> {
                             .id(ids::source(&source.src))
                             .routes(source.routes)
                             .phase(source.phase)
+                            .level(source.level)
                             .show(ui);
-                        if handle.hovered() || handle.dragged() {
+                        handle.dnd_set_drag_payload(SourceDrag {
+                            src: source.src.clone(),
+                            name: source.name.clone(),
+                        });
+                        if handle.dragged() {
+                            wire(ui, t, handle.rect.center(), ids::source(&source.src));
+                        }
+                        // While its ⊕ is dragged over a control, the control's reading wins (drawn earlier; a
+                        // dragged widget also counts as hovered).
+                        let over_target = handle.dragged() && out.hovered.is_some();
+                        if (handle.hovered() || handle.dragged()) && !over_target {
                             let routes = match source.routes {
                                 1 => "1 route".to_owned(),
                                 n => format!("{n} routes"),
@@ -146,7 +165,10 @@ impl<'a> SourceTiles<'a> {
                             out.hovered = Some(Hovered {
                                 path: format!("Sources {} {}", glyph::PATH, source.name),
                                 value: routes,
-                                modulation: String::new(),
+                                modulation: format!(
+                                    "drag {} onto a knob to modulate it",
+                                    glyph::HANDLE
+                                ),
                             });
                         }
                         handles.push((source.src.clone(), handle));

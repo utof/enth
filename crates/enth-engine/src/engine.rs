@@ -32,6 +32,7 @@
 //! channel lengths, out-of-range event offsets, unknown parameter ids, NaN values, a full event queue, full rings
 //! and a full return ring are all handled (clamped, ignored, kept or dropped and counted).
 
+use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
@@ -775,15 +776,24 @@ impl Engine {
         let peak = |x: &[f32]| x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         let (pl, pr) = (peak(left), peak(right));
         let active = voices.active();
-        if pl == 0.0 && pr == 0.0 && active.is_empty() {
-            if *tap_silent >= tap.scope_len() {
-                return; // silence after silence: nothing new, the editor may sleep
+        // The quiet rule (P1b lane ED2): once the scope ring holds a full ring of silence and no voice plays, the
+        // scope has nothing new, and a publish happens only if a value the editor shows differs from the one the tap
+        // holds: a new plan's epoch, a global modulator still running, a macro or a parameter moved in silence, or a
+        // value that changed while the tap was disabled (an editor opened in silence). Otherwise the generation stays
+        // and the editor can sleep. The check reads the tap's own last stores; it allocates nothing.
+        let quiet = pl == 0.0 && pr == 0.0 && active.is_empty() && *tap_silent >= tap.scope_len();
+        if quiet {
+            if quiet_frame_is_current(tap, plan) {
+                return;
             }
+        } else if pl == 0.0 && pr == 0.0 && active.is_empty() {
             *tap_silent += left.len();
         } else {
             *tap_silent = 0;
         }
-        tap.write_scope(left, right);
+        if !quiet {
+            tap.write_scope(left, right);
+        }
 
         // The display voice: the newest held voice, else the newest releasing one, else the newest fading one.
         let newest = |state: VoiceState| {
@@ -809,22 +819,10 @@ impl Engine {
                 dropped += 1;
                 continue;
             };
-            let value = match id {
-                ParamId::Voice(i) => {
-                    let i = usize::from(i);
-                    display.map_or(plan.voice_table.base[i], |v| plan.voice_table.cur[i][v])
-                }
-                ParamId::Global(i) => plan.global_table.cur[usize::from(i)],
-            };
-            store_f32(slot, value);
+            store_f32(slot, tap_param(plan, id, display));
         }
-        let mods = plan
-            .vmod_cur
-            .iter()
-            .map(|row| display.map_or(0.0, |v| row[v]))
-            .chain(plan.gmod_cur.iter().copied());
         let mut n_mods = 0;
-        for (k, value) in mods.enumerate() {
+        for (k, value) in tap_modulators(plan, display).enumerate() {
             match tap.modulators.get(k) {
                 Some(slot) => {
                     store_f32(slot, value);
@@ -858,6 +856,58 @@ impl Engine {
         }
         tap.finish();
     }
+}
+
+/// A routed parameter's published value: for a voice-table parameter the display voice's (its base with no display
+/// voice), for a global one the current value.
+fn tap_param(plan: &Plan, id: ParamId, display: Option<VoiceIdx>) -> f32 {
+    match id {
+        ParamId::Voice(i) => {
+            let i = usize::from(i);
+            display.map_or(plan.voice_table.base[i], |v| plan.voice_table.cur[i][v])
+        }
+        ParamId::Global(i) => plan.global_table.cur[usize::from(i)],
+    }
+}
+
+/// The modulator outputs a publish stores, in tap order: the voice modulators for the display voice (0 with none),
+/// then the global ones.
+fn tap_modulators(plan: &Plan, display: Option<VoiceIdx>) -> impl Iterator<Item = f32> + '_ {
+    plan.vmod_cur
+        .iter()
+        .map(move |row| display.map_or(0.0, |v| row[v]))
+        .chain(plan.gmod_cur.iter().copied())
+}
+
+/// The quiet rule's check (P1b lane ED2): whether a publish of a silent block with no voice would store exactly what
+/// the tap already holds (the epoch, the lengths, every routed value, modulator output and macro, no voice and zero
+/// peaks), so it can be skipped. The engine's counters do not count: they move every segment. Reads only the tap's
+/// own last stores and the plan; allocation-free, at most one pass over the tap's capacities.
+fn quiet_frame_is_current(tap: &Tap, plan: &Plan) -> bool {
+    let same = |a: &AtomicU32, x: f32| a.load(Relaxed) == x.to_bits();
+    let params = plan.tap_params();
+    let n_params = params.len().min(tap.params.len());
+    let n_mods = (plan.vmod_cur.len() + plan.gmod_cur.len()).min(tap.modulators.len());
+    tap.epoch.load(Relaxed) == plan.epoch
+        && tap.params_len.load(Relaxed) as usize == n_params
+        && tap.modulators_len.load(Relaxed) as usize == n_mods
+        && tap.voices.load(Relaxed) == 0
+        && tap.held.load(Relaxed) == 0
+        && tap.display_voice.load(Relaxed) == u32::MAX
+        && same(&tap.peaks[0], 0.0)
+        && same(&tap.peaks[1], 0.0)
+        && params
+            .iter()
+            .zip(tap.params.iter())
+            .all(|(&id, a)| same(a, tap_param(plan, id, None)))
+        && tap_modulators(plan, None)
+            .zip(tap.modulators.iter())
+            .all(|(x, a)| same(a, x))
+        && tap
+            .macros
+            .iter()
+            .zip(&plan.global_table.cur[plan.macros.range()])
+            .all(|(a, &x)| same(a, x))
 }
 
 /// What step 2 needs to apply note and value events.

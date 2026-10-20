@@ -21,6 +21,8 @@ pub struct MatrixView {
     pub targets: Vec<(ParamAddr, String)>,
     /// Depths in percent, row-major (`targets.len() × sources.len()`); 0 where there is no route.
     pub depths: Vec<f32>,
+    /// The cells that hold a route (a route may have depth 0), row-major: the compact route list's rows (lane ED2).
+    pub routes: Vec<usize>,
 }
 
 impl MatrixView {
@@ -47,17 +49,21 @@ impl MatrixView {
             }
         }
         let mut depths = vec![0.0; targets.len() * sources.len()];
+        let mut routes = Vec::with_capacity(patch.routes.len());
         for r in &patch.routes {
             let row = targets.iter().position(|(a, _)| *a == r.dst);
             let col = sources.iter().position(|(s, _)| *s == r.src);
             if let (Some(row), Some(col)) = (row, col) {
                 depths[row * sources.len() + col] = r.depth;
+                routes.push(row * sources.len() + col);
             }
         }
+        routes.sort_unstable();
         MatrixView {
             sources,
             targets,
             depths,
+            routes,
         }
     }
 }
@@ -114,7 +120,10 @@ impl<'a> Matrix<'a> {
             ui.painter().text(
                 body.left_top(),
                 Align2::LEFT_TOP,
-                "No routes yet",
+                format!(
+                    "No routes yet: drag a source's {} onto a knob",
+                    crate::theme::glyph::HANDLE
+                ),
                 t.text.label.clone(),
                 t.color.text.dimmed,
             );

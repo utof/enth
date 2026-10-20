@@ -13,6 +13,8 @@
 //! | `frame.rs` | [`Editor`]: one frame from the session through a layout, intents applied at frame end | ED1 |
 //! | `overlay.rs` | the no-op [`Overlay`](overlay::Overlay) Learn and Recreate will fill (emphasis, scores) | ED1 |
 //! | `describe.rs` | undo steps in the editor's words, for the Undo and Redo tooltips | ED1 |
+//! | `live.rs` | telemetry from the engine's tap, and repaint gating | ED2 |
+//! | `modulate.rs` | drag-to-modulate: the ⊕ payload, drop targets, the depth handle | ED2 |
 //! | `reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features | ED1 |
 //!
 //! docs/editor.md describes the whole editor.
@@ -24,6 +26,8 @@ pub mod cards;
 mod describe;
 mod frame;
 pub mod layout;
+pub mod live;
+pub mod modulate;
 pub mod overlay;
 pub mod regions;
 #[cfg(any(feature = "learn", feature = "recreate"))]

@@ -1,6 +1,6 @@
 # The editor (`enth-ui::editor`, L7)
 
-**The editor is one value, [`Editor`], that draws a layout's regions from the session every frame and turns what the controls ask for into session calls at the end of the frame.** It lives in `crates/enth-ui/src/editor/`, depends on the session only through `SessionView` and `SessionEdit` ([session.md](session.md)), and runs unchanged in the plugin window, in the dev window and in kittest. Lane ED1 built it (P1b, [phase-1b.md](phase-1b.md)) on UI-C's cards and widgets; ED2 adds drag-to-modulate, telemetry rings, scopes and repaint gating; LV adds layout variants. Visual rules: [design-system.md](design-system.md). Decisions: [ADR-0002](adr/0002-ui-toolkit.md) and its 2026-10-19 note (layout as data, stable ids, keyboard focus).
+**The editor is one value, [`Editor`], that draws a layout's regions from the session every frame and turns what the controls ask for into session calls at the end of the frame.** It lives in `crates/enth-ui/src/editor/`, depends on the session only through `SessionView` and `SessionEdit` ([session.md](session.md)), and runs unchanged in the plugin window, in the dev window and in kittest. Lane ED1 built it (P1b, [phase-1b.md](phase-1b.md)) on UI-C's cards and widgets; ED2 added drag-to-modulate, depth arcs and handles, the route list, telemetry (knob rings, tile levels, the scope, spectrum and meters) and repaint gating; LV adds layout variants. Visual rules: [design-system.md](design-system.md). Decisions: [ADR-0002](adr/0002-ui-toolkit.md) and its 2026-10-19 note (layout as data, stable ids, keyboard focus).
 
 ## Files
 
@@ -8,14 +8,17 @@
 | --- | --- |
 | `editor/frame.rs` | `Editor`: the frame (regions → read models → components), `apply` (intents → session calls), the editor's view state, `FrameReport` |
 | `editor/layout.rs`, `editor/layout/<name>.json` | `LayoutSpec`, `Layout`, `Region`, `Part`, `Size`; the built-in layouts (`BUILTIN`; layout 1 is `lanes.json`) |
-| `editor/regions/` | the region components: `Header`, `Macros`, `CardRegion`, `Overview` (tiles beside the matrix), `SourceTiles`, `Matrix`, `Status` |
+| `editor/regions/` | the region components: `Header`, `Macros`, `CardRegion`, `Overview` (tiles beside the matrix), `SourceTiles`, `Matrix`, `RouteList` (ED2: the overview when the grid does not fit), `Output` (ED2: scope or spectrum, and meters), `Status` |
+| `editor/modulate.rs` | drag-to-modulate (ED2): the `SourceDrag` payload, the drop check, drop targets, the depth handle |
+| `editor/live.rs` | live feedback (ED2): the telemetry reader per open, the frame's fingerprint of visible live values, repaint gating |
+| `meter.rs` | display maths for the output region (ED2): dB, the spectrum's FFT |
 | `editor/cards/` | UI-C's catalogue cards; ED1 added `menu.rs` (right-click menu, "Type value…"), the shared `control` (also used by the header) and the overlay fields on `ParamView` |
 | `editor/overlay.rs` | the no-op `Overlay` (emphasis normal, dimmed or hidden; scores) |
 | `editor/describe.rs` | undo steps in the editor's words, for the Undo and Redo tooltips |
 | `editor/reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features |
-| `theme/sizes/editor.rs` | the editor's size tokens (below) |
+| `theme/sizes/editor.rs`, `modulation.rs`, `output.rs` | the editor's size tokens (below; the last two are ED2's) |
 | `examples/dev_window.rs` | the dev window (feature `dev-window`) |
-| `examples/frame_bench.rs` | instructions per editor frame, headless |
+| `examples/frame_bench.rs` | instructions per editor frame, headless (ED2 added the live cases) |
 | `crates/enth-plugin/src/editor.rs` | the plugin window: `EditorApp` and `Glue`, the plugin's handle on `Editor` |
 
 ## The frame
@@ -24,11 +27,11 @@ The shell owns the protocol; the editor is the middle of it ([plugin.md](plugin.
 
 1. read the host's values (plugin only);
 2. lock the session: `pump`, `fold_host`;
-3. **`Editor::frame`**: cut the window into the layout's regions, build each region's read model from `SessionView::patch` (nothing is cached across frames), draw the components, then apply the frame's intents through `SessionEdit` (`Editor::apply`);
+3. **`Editor::frame`**: read the telemetry tap (`Live::refresh`, never waiting for the audio thread), cut the window into the layout's regions, build each region's read model from `SessionView::patch` and the telemetry (nothing is cached across frames), draw the components, ask egui for the next frame only if visible live data changes (`Live::schedule`), then apply the frame's intents through `SessionEdit` (`Editor::apply`);
 4. `drain_requests` into a local buffer; **unlock**;
 5. forward `ShellRequest::Host` writes to nice-plug's `ParamSetter` (begin, set, end).
 
-`Editor::frame` never pumps, folds or drains. The plugin draws it on egui's root `Ui` (the whole window; the editor paints its own background). An editor preset load is `Session::load_patch` under the lock, never `GuiContext::set_state` (`enth-plugin/clippy.toml` bans it); the dev window's `--patch` takes that path.
+`Editor::frame` never pumps, folds or drains. The shell calls `Editor::open(session, theme)` at every `build()` (live feedback starts: a telemetry reader over the session's tap, enabled) and `Editor::close()` when the window closes (the tap stops publishing). The plugin draws it on egui's root `Ui` (the whole window; the editor paints its own background). An editor preset load is `Session::load_patch` under the lock, never `GuiContext::set_state` (`enth-plugin/clippy.toml` bans it); the dev window's `--patch` takes that path.
 
 ### Intents
 
@@ -38,11 +41,11 @@ Components never touch the session. They push `Intent`s; `apply` runs them in or
 | --- | --- |
 | `Begin(grip)` … `Set`/`SetMacro`/`SetDepth` … `End(grip)` | `begin_gesture`, edits inside the gesture (one undo step, one host gesture per slotted parameter or macro), `end_gesture` |
 | `Set` outside a gesture (double-click reset, a typed value, "Reset to default") | one `edit`, one undo step |
-| `Select`, `Toggle`, `Enable`, `Unroute`, `Automate`, `StopAutomating` | one `edit` each, no gesture |
+| `Select`, `Toggle`, `Enable`, `Unroute`, `Route`, `Automate`, `StopAutomating` | one `edit` each, no gesture |
 | `Undo`, `Redo` | `undo`, `redo` (each ends an open gesture first) |
 | `ShowMore` | editor view state only |
 
-A gesture still open when no pointer button is held is closed (the control that opened it vanished); every `build()` and `editor_closed` close it too. An edit the session refuses changes nothing; its hint shows at the right end of the status line.
+`SetDepth` comes from a matrix cell, a route-list cell or a knob's depth handle, always inside `Begin(Grip::Route)` … `End` (one undo step; the session sends depth events, so a depth drag never recompiles unless the depth goes to or from 0). `Route` is a source dropped on a control: one `InsertRoute` at `DEFAULT_ROUTE_DEPTH` (25 %). `Unroute` comes from a matrix cell's double-click, a route-list cell's double-click or menu, and every control's "Remove … modulation" item. A gesture still open when no pointer button is held is closed (the control that opened it vanished); every `build()` and `editor_closed` close it too. An edit the session refuses changes nothing; its hint shows at the right end of the status line.
 
 ### What the controls do
 
@@ -50,9 +53,12 @@ A gesture still open when no pointer button is held is closed (the control that 
   - **Type value…** floats a text field over the control, filled with the value as shown and selected. Enter parses units in either form ("1.2kHz", "1.20 kHz", "A4", "−12 st" with the U+2212 minus the editor displays) and makes one edit. A value that doesn't parse keeps the field open with the parser's hint under it ("✗ write a number in hz, e.g. …"). Escape, or a click elsewhere, cancels. The field is named "<Parameter> value" for accessibility; one is open at a time, in egui memory under `ids::entry()`.
   - **Reset to default (value)**.
   - **Automate** exposes the parameter as the lowest free host slot (`bridge::free_slot`; a slot that already drives it is reused, F1b decision 4). Then the menu reads "Automated by slot N" and offers **Stop automating**. Structural parameters (they recompile the plan) are not automatable, and the disabled item says why.
+- **Remove … modulation**: one item per route into the parameter ("Remove Env 2 modulation (+40 %)"), each one undo step (ED2).
 - **The status line** reads the hovered or dragged control: "Filter 1 › Cutoff 1.50 kHz Env 2 +40 %, Vel +10 %", plus "automation slot N" when a slot drives it. Its whole text is its accessible name ("Status: …").
 - **Header**: wordmark, patch name, Undo and Redo with the step's name in the tooltip ("Undo Filter 1 › Cutoff"), and the built-ins a layout places there as inline knobs (layout 1: master level). Keyboard undo waits for a captured-shortcut fork patch (ADR-0002), so the buttons are the way to undo on Linux.
 - **Envelope sculpting** (UI-C): the attack peak, the decay and sustain corner (one gesture over two addresses) and the release end are handles on the knobs' own power scales, so curve and knobs stay in sync both ways.
+- **Drag-to-modulate** (ED2, `editor/modulate.rs`; the layout handoff's §4). Drag a source tile's ⊕ onto a control: an orange wire follows the pointer; every parameter control checks itself against the dragged source once per frame (`modulate::check`, the patch's own route rules) and shows it: a **target** is outlined in orange (filled while the pointer is over it, and the status line says "Drop to modulate it from Env 2 by +25 %"); a parameter the source already drives is outlined faintly ("Env 2 already modulates it (+40 %)"); anything else is **refused, visibly**: drawn dimmed, and hovering it names the reason with a not-allowed cursor. A per-voice source (envelope, voice LFO, velocity, key) on a global destination (an effect, a global LFO, the master) says "LFO 1 runs per voice and Reverb 1 is global: only a global LFO, a macro or the mod wheel can modulate it"; a parameter that is not modulatable says so; the 64-route limit says so. A drop makes the route at 25 % (`enth_patch::modulation::DEFAULT_ROUTE_DEPTH`), one undo step. Escape cancels a drag (egui).
+- **Depth arcs and the depth handle** (ED2). A routed knob shows a thin orange arc on its modulation ring, the span its routes can reach (`enth_patch::modulation_range`: base plus each route's depth over its source's polarity span, clamped), and, while the engine runs, the thick live arc from the value to the modulated value now (telemetry, the display voice's). The orange dot on the ring is the **depth handle** of the knob's newest route (at value + depth): drag it up or down (Shift for fine) to set that route's depth; the other routes are edited in the overview. Its accessible name is "<label> depth from <source>" ("Cutoff depth from Vel").
 - **A disabled module dims as a whole** (UI-C, owner requirement): stripe, title, display, knobs and values at `state.disabled_opacity`; the controls stay editable.
 
 ## The layout seam
@@ -66,7 +72,10 @@ A gesture still open when no pointer button is held is closed (the control that 
   "margin": {"token": "space.gap"},
   "gap": {"token": "space.gap"},
   "root": {"rows": [
-    {"size": {"token": "size.bar.header"}, "region": "header"},
+    {"size": {"token": "size.bar.header"}, "cols": [
+      {"size": {"share": 1}, "region": "header"},
+      {"size": {"token": "size.output.width"}, "region": "output"}
+    ]},
     {"size": {"token": "size.bar.macros"}, "region": "macros"},
     {"size": {"share": 1}, "cols": [
       {"size": {"share": 1}, "rows": [
@@ -94,7 +103,7 @@ A gesture still open when no pointer button is held is closed (the control that 
 
 | Piece | Values |
 | --- | --- |
-| Regions | `header`, `macros`, `sources`, `voice_fx`, `modulators`, `effects` (the four card regions), `overview` (source tiles beside the matrix), `status`; reserved: `lesson` (feature `learn`), `challenge_bar` and `results` (feature `recreate`), which draw an empty panel in P1b |
+| Regions | `header`, `macros`, `sources`, `voice_fx`, `modulators`, `effects` (the four card regions), `overview` (source tiles beside the matrix or the route list), `output` (ED2, optional: scope or spectrum, and the stereo meter), `status`; reserved: `lesson` (feature `learn`), `challenge_bar` and `results` (feature `recreate`), which draw an empty panel in P1b |
 | Parts | `generators`, `voice_fx`, `voice`, `modulators`, `fx`, `master` |
 | `arrange` (card regions) | `strips` (full-width strips, top to bottom), `lane` (lane cards top to bottom), `band` (lane cards left to right); default per region |
 | Sizes | `{"token": "<path>"}` with an optional `"count"` (count copies with the layout's gap between them: three generator strips are 3 × 96 + 2 × 8 = 304 px), or `{"share": n}`. A token path is any number in the theme's serde form (`size.*`, `space.*`) |
@@ -118,24 +127,54 @@ The owner liked the visual design but not the placement and information architec
 | 1. The signal flow doesn't read (a filter between oscillators, an envelope among the sources) | Signal order along the top of the body: sources (strips) → the filter lane → voice settings and effects (lane), master level at the header's right end. No filter or envelope among the sources |
 | 2. Modulators are split | Envelopes and LFOs together in one band under the signal path; the source tiles (with velocity, key, the mod wheel) right under them |
 | 3. The lesson pane and the matrix take prime space | No lesson pane in Play (a Learn layout places the reserved `lesson` region); the matrix sits in the overview, bottom left |
+| 6. The scope and spectrum compete with the source tiles | (ED2) The scope or spectrum and the meter sit in their own `output` region right of the header, next to the master level; the tiles keep the bottom row |
 | 7. The generator column scrolls | Three generator strips fit; no module region scrolls at the P1 default |
 
-Hypotheses 4 (focal point), 5 (the effects lane), 6 (scope and spectrum) and 8 (the macro bar's weight) are left to the Claude Design variants (lane LV).
+Hypotheses 4 (focal point), 5 (the effects lane) and 8 (the macro bar's weight) are left to the Claude Design variants (lane LV).
 
 **Measured at 1200 × 800, the P1 default patch** (two oscillators, noise, a filter, two envelopes, two LFOs, a compressor and a reverb: the G1 reference patch), `tests/editor.rs::nothing_scrolls_at_1200_by_800_for_the_p1_default`:
 
 - No module region overflows: sources 304 px for three 96 px strips, the filter lane 304 px for a 251 px card, the effects lane 642 px for voice (159), compressor (223) and reverb (223), the modulator band 224 px for envelope cards of 223 and LFO cards of 207.
-- The overview gets 98 px. The source tiles fit in one row (85 px). **The matrix needs 161 px for the patch's 7 routed targets and scrolls by 63 px** (3 rows show). The reason: the header, macro bar and status bands (40 + 56 + 22 px and their gaps) plus the signal row (304) and the modulator band (224) leave 98 px of the 800. Taking the macro bar into the header row would give 48 px more; the matrix overview is lane ED2's to grow.
-- At the maximum patch (4 generators, 4 voice effects, 4 effects, 8 modulators) every card region scrolls on its own (sources by 104 px, the filter lane by 723, the effects lane by 440, the band by 860 sideways).
+- The overview gets 956 × 98 px: the header, macro bar and status bands (40 + 56 + 22 px and their gaps) plus the signal row (304) and the modulator band (224) leave 98 px of the 800. The source tiles fit in one row (544 × 85 px).
+- **Nothing scrolls, the overview included** (ED2; `tests/modulation.rs::the_overview_fits_the_p1_default_at_1200_by_800_as_a_route_list`). The sources × targets grid would need 320 × 161 px for the patch's 7 routed targets and 6 sources (ED1 measured it scrolling by 63 px), so the overview shows the same routes as a **compact route list** in the 404 × 98 px panel: two columns of at least `size.modulation.route_min_width` (176) px, four rows of 16 px, 97.3 px with the caption. Eight routes fit; a ninth scrolls the list by one row. The grid comes back wherever it fits (a 1200 × 1000 window, `the_maximum_patch_shows_the_grid_where_it_fits`). Moving the macro bar into the header row (48 px) was not needed.
+- At the maximum patch (4 generators, 4 voice effects, 4 effects, 8 modulators) every card region scrolls on its own (sources by 104 px, the filter lane by 723, the effects lane by 440, the band by 860 sideways), and so does the overview (the tiles by 51 px, eleven of them in two rows; the routes by 63 px).
+- The output region takes `size.output.width` (208) px of the header row, so the header's master knob sits 216 px further left than in ED1's layout 1; osc 1's Level knob (REAPER's `dirty-flag` scenario point, 366, 178) does not move.
 
 Snapshots: `crates/enth-ui/tests/snapshots/editor_lanes_p1.png` and `editor_lanes_max.png` (`tests/editor_snapshots.rs`, lavapipe, kittest's default threshold).
+
+## Live feedback and repaint gating (lane ED2)
+
+**Telemetry.** `Editor::open` (the shell's `build()`, every time) makes one `TelemetryReader` over the session's tap and enables it; while the session is detached the reader is made when the session first has a source, and after a re-activation it follows the new tap (session.md). `Editor::close` disables it. Every frame `Live::refresh` copies the tap's latest values (a seqlock with a bounded retry: it never waits for the audio thread), and `Editor::cards` and `Editor::sources` put them into the read models:
+
+| Read model | From the tap | Drawn as |
+| --- | --- | --- |
+| `ParamView::live` (routed parameters) | the modulated value now, the display voice's (newest held voice), normalised | the knob's thick live arc from the value |
+| `ParamView::range` (routed parameters) | (static) `enth_patch::modulation_range` | the knob's thin orange range arc |
+| `SourceView::level` (envelopes, LFOs, the mod wheel) | the modulator's output, mapped by its polarity span to the tile graph's 0..1 | a level line and a dot at the graph's right end |
+| the output region | the scope ring's newest 1,024 samples of `(L + R) / 2`; each channel's block peak | a scope, or (click) a Hann-windowed FFT spectrum on a log axis; two meters in dB from −60, falling 24 dB/s |
+
+The tap publishes outputs, not phases, so `SourceView::phase` stays `None` (reserved). Velocity and key are per note and not in the tap: their tiles show no level. Nothing published yet (generation 0) reads as no value, never as zeros.
+
+**The quiet rule** (engine, fixed by ED2; [dsp/engine.md](dsp/engine.md#telemetry-tap-p1b-lane-e)): in silence after a full silent scope ring, the tap publishes only when a value it shows changed (a new plan's epoch, a global modulator still running, a macro or a parameter moved in silence, a value that changed while the editor was closed). So an editor opened in silence sees the current plan at once, and silence with nothing moving costs the audio thread one comparison pass (+235 instructions per 64-frame block) and the editor nothing.
+
+**Repaint gating** (`Live::schedule`, at the end of every frame; `FrameReport::repaint` says what it asked for):
+
+- the frame hashes every live value it drew **where it can be seen** into a fingerprint, quantised to 1/512 of a range (a tenth of a pixel on a knob's ring): rings and tile levels count only if their widget's clipped rectangle is not empty (`live::is_visible`: scrolled out of its region does not count), the output region always (scope sample count, meter levels);
+- the fingerprint changed, or the tap published since the last frame: `ctx.request_repaint_after(motion.animated_interval())`, 1/30 s, never sooner (`repaint.animated_hz`);
+- otherwise the editor sleeps on the tap (`TelemetryReader::sleep`) and asks for nothing: **0 frames**. The next publish with new data sets the tap's wake flag; the plugin's `process()` (and the dev window's engine thread) turns it into a repaint. Input wakes it as always.
+
+"Visible" means open (between `open` and `close`), shown and scrolled into view. baseview 0.4.1 reports no hidden or minimised window, so "shown" is "open" in the plugin. A value that changes while scrolled out of view still wakes the editor, through the tap, at up to 30 Hz (the engine does not know what is visible); in layout 1 the tiles and the output region are always in view, so this does not arise at the P1 default.
+
+Measured (`tests/repaint.rs`, exact delays from egui's output, no clock): an idle editor reports `Duration::MAX` frame after frame and an audition note's first block sets the wake flag; the P1 default's global LFO 2 keeps the reverb's Wet ring and its tile moving, and every frame asks for exactly 33.33 ms; a closed editor asks for nothing and its reopening picks the engine up again; a stalled engine (no block rendered at all) still gets 200 frames of knob dragging, the edits land in the patch (one undo step), six structural edits leave two plans in flight and one compile pending without blocking, and everything is delivered when the audio thread resumes.
+
+**Zipper noise of a depth drag** (phase-1b.md open check): a depth event ramps over 10 ms in the engine (one step per 32-frame segment), exactly like the parameter smoothing a knob drag gets. Measured with a sine whose level an envelope route modulates, the depth swept 1 → 60 % in 1 s: at 30 events a second (an editor drag) the output differs from 750 events a second by −36.8 dB re the signal, and the same sweep as a knob drag (`SetParam`) by −37.0 dB. A depth drag is as smooth as a knob drag; no extra smoothing is needed.
 
 ## Room for Recreate and Learn
 
 - **`Overlay`** (`editor/overlay.rs`): per parameter an emphasis (normal, dimmed, hidden) and a score; per module an emphasis. The editor applies it to the read model before drawing (`overlay::apply`): a hidden parameter is not drawn, a hidden module's card is dropped, a dimmed one draws in the dimmed ink and stays editable, a score draws as the knob's ring with its glyph. P1b ships `NoOverlay` (`Editor::set_overlay` takes another). Recreate dims and scores; only a lesson hides.
 - **Reserved regions** behind the `learn` and `recreate` features of `enth-ui`: `lesson`, `challenge_bar`, `results`. A mode is a layout that places them; P1b draws an empty panel with the region's name.
 
-## Tokens (`theme/sizes/editor.rs`)
+## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`)
 
 | Token | Value | For |
 | --- | --- | --- |
@@ -143,6 +182,17 @@ Snapshots: `crates/enth-ui/tests/snapshots/editor_lanes_p1.png` and `editor_lane
 | `size.editor.header_knob` | 112 | an inline knob in the header (dial, label, "−12.0 dB") |
 | `size.editor.entry_width` | 120 | the "Type value…" field; also the menu's minimum width |
 | `size.editor.entry_hint_width` | 240 | where the field's error hint wraps |
+| `size.modulation.depth_handle` | 3 | radius of a knob's depth handle (ED2) |
+| `size.modulation.depth_reach` | 6 | its grab radius, and the wash behind it while hovered or dragged |
+| `size.modulation.route_min_width` | 176 | the narrowest column of the route list ("Env 2 → Filter 1 Cutoff +40") |
+| `size.modulation.route_source_width` | 40 | the source name at the start of a route-list row |
+| `size.output.width` | 208 | the output region in a layout (layout 1: right of the header) |
+| `size.output.meter_width` | 4 | one channel's meter bar |
+| `size.output.meter_floor_db` | −60 | the bottom of the meters and the spectrum |
+| `size.output.meter_fall_db_per_s` | 24 | how fast a meter falls back after a peak |
+| `size.output.scope_samples` | 1,024 | the samples the scope draws and the spectrum analyses (21 ms at 48 kHz; a power of two) |
+
+The depth arcs and the wire use the existing strokes and the modulation accent (`accent.modulation`, `accent.modulation_wash`); the rate is `motion.animated_hz`.
 
 ## The dev window
 
@@ -153,17 +203,23 @@ xvfb-run -a -s "-screen 0 1920x1080x24" \
   cargo run -p enth-ui --example dev_window --features dev-window -- --patch content/templates/pad_2osc.patch.json
 ```
 
-Options: `--patch FILE`, `--layout NAME|FILE` (or `ENTH_LAYOUT`), `--theme FILE` (or `ENTH_THEME`), `--frames N` (quit after N frames and print the frame report: a smoke test), `--dump-layout NAME` (a variant's starting point), `--dump-theme`. Keys: F2, F5.
+Options: `--patch FILE`, `--layout NAME|FILE` (or `ENTH_LAYOUT`), `--theme FILE` (or `ENTH_THEME`), `--frames N` (quit after N frames and print the frame report, including the repaint the last frame asked for: a smoke test), `--dump-layout NAME` (a variant's starting point), `--dump-theme`. Keys: F2, F5, and F3 (ED2) to hold or release an audition note (middle C) so the rings, tiles, scope and meters move. The engine thread turns the tap's wake flag into a repaint, as the plugin's `process()` does.
 
 ## Frame cost
 
 `examples/frame_bench.rs`: the editor's egui pass and tessellation, headless, release build, callgrind, (I(250 frames) − I(50 frames)) / 200 (research 02's method):
 
-| Case | Instructions per frame |
-| --- | --- |
-| P1 default, idle (pointer moving over the header, nothing changes) | 6.55 M |
-| P1 default, a knob drag (an edit through the session every frame) | 6.81 M |
-| Maximum patch, idle | 8.74 M |
+| Case | ED1 | ED2 |
+| --- | --- | --- |
+| P1 default, idle (pointer moving over the header, nothing changes) | 6.55 M | 6.59 M |
+| P1 default, a knob drag (an edit through the session every frame) | 6.81 M | 6.88 M |
+| Maximum patch, idle | 8.74 M | 8.84 M |
+| P1 default, live: a held note, telemetry drawn (rings, tile levels, scope, meters) | — | 6.94 M |
+| P1 default, live with the spectrum | — | 7.23 M |
+| Maximum patch, live | — | 9.09 M |
+| Maximum patch, live with the spectrum (the worst case) | — | 9.43 M |
+
+The live cases (ED2) render 1,600 frames of audio before each frame through an active session; the editor's share is that case minus `engine` (the same audio, no editor: 5.91 M per frame at the P1 default, 10.43 M at the maximum patch). ED2's additions cost +0.04 M idle at the P1 default and +0.10 M at the maximum patch (depth handles, range arcs, the route list, the output region); a `ui.scope` per control for the refused-target dimming had cost 0.25–0.4 M, so only a refused control gets one. Everything stays under the proposed 10 M limit; the maximum patch with the spectrum has 6 % to spare.
 
 Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor without the macro bar, matrix or overview, and expected 7–8 M for the real one; the spike panel was 6.69 M and 7.64 M. The top costs are epaint's tessellator (stroke and fill, 12 %), `memcpy` (12 %) and glyph hinting (4 %). The proposed gungraun case keeps a hard limit of 10 M per animating frame.
 
@@ -175,17 +231,21 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 | Layout geometry; the reserved regions with and without their features | `crates/enth-ui/tests/layout.rs` |
 | Every built-in parses, checks and round-trips; refusals name the problem; the no-op overlay changes nothing and a lesson overlay dims, hides and scores; undo step names | unit tests in `layout.rs`, `overlay.rs`, `describe.rs` |
 | Whole-editor snapshots, layout 1 at the P1 default and the maximum patch | `crates/enth-ui/tests/editor_snapshots.rs` |
+| (ED2) Through a real `Session`: dropping a source on a knob makes one route at 25 % and one undo step, and the target's status reading says so; a voice source on a global target and a non-modulatable parameter are refused with the reason on the status line; the drop check against the patch's own rules; the depth handle sets the newest route's depth as one undo step with depth events only (the epoch does not move); "Remove … modulation"; the route list fits the P1 default at 1200 × 800 with all eight routes editable; the grid comes back where it fits | `crates/enth-ui/tests/modulation.rs` |
+| (ED2) Repaint gating with exact delays through a real session and engine: 0 frames idle and a wake-up on new data; exactly 1/30 s while visible data changes; a closed editor; a stalled engine; visibility of a scrolled-out widget | `crates/enth-ui/tests/repaint.rs` |
+| (ED2) Live snapshots from synthetic telemetry: range and live arcs, the depth handle, tile levels, the output region as scope and spectrum | `crates/enth-ui/tests/live_snapshots.rs` (`region_live.png`, `region_live_spectrum.png`) |
+| (ED2) The tap's quiet rule: an editor opened in silence sees the plan sent while it was closed; a global LFO keeps publishing; a macro or value moved in silence publishes until it settles | `crates/enth-engine/tests/tap.rs` |
 | The plugin's glue: gestures, "More", the layout choice (`ENTH_LAYOUT`, the saved name, a refused file), a headless drag through the session | `crates/enth-plugin/src/editor.rs` |
 
 ## For the next lanes
 
-**ED2 (modulation and feedback).**
+**ED2 (modulation and feedback)** is done (above). Left for later lanes:
 
-- Drag-to-modulate starts from the overview's tiles: `Overview::show` returns each source's ⊕ handle response (`OverviewOutput::handles`); set the drag payload from `drag_started` and push a new intent on drop (a route is `Intent::SetDepth` on a missing route today, which inserts it; add a dedicated intent if the default depth should differ). Drop targets are the parameter controls, all drawn by `cards::control` under `ids::param(addr)`, so the outline and the "valid target" test go there once for cards and the header alike.
-- Telemetry: `ParamView::live` already feeds the knob's modulation arc and `SourceView::phase` the tile's marker; build a `TelemetryReader` per `build()` (plugin.md) and fill them in `Editor::cards` (one place for every part). The plugin's `process()` already turns the tap's wake flag into repaints.
-- The overview is yours to grow: 98 px at 1200 × 800 in layout 1 (matrix 63 px short at 7 routed targets). A scope or a spectrum is a new region (`Region` gains a variant; layouts place it) or a part of the overview.
-- Repaint gating: `Editor::frame` requests nothing today; egui repaints on input only. `FrameReport` is the place to say "an animated thing was visible".
-- `Editor::apply` is the one place intents become session calls; keep new intents' ops in `Intent::ops` so tests and the editor share them.
+- The depth handle edits a knob's newest route only; older routes are edited in the overview (grid or list). A per-source focus (hover a tile, see that source's handle on every knob it drives) would make multi-route knobs direct; nothing in the data model stops it.
+- Macros are sources the patch allows but the overview has no tiles for them, so they cannot be dragged yet (routes from macros show and edit like any other).
+- Velocity and key are not in the tap, so their tiles show no level; a per-note value in the tap (an engine change) would add them.
+- A value scrolled out of view still wakes the editor through the tap, at up to 30 Hz (the engine does not know what is visible).
+- The route list fits eight routes at 1200 × 800; a ninth scrolls it. A layout that gives the overview more height gets the grid back automatically.
 
 **LV (a layout variant).** A variant is one JSON file and two snapshots:
 
@@ -193,4 +253,4 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 2. Save it as `crates/enth-ui/src/editor/layout/<name>.json` and add one line to `layout::BUILTIN` (`("<name>", include_str!("layout/<name>.json"))`); the unit test checks that every built-in parses, passes the rules and round-trips.
 3. Add its two snapshots beside `tests/editor_snapshots.rs`'s (`editor_<name>_p1`, `editor_<name>_max`, through the same `snapshot` helper with `Editor::with_layout`), and run `tests/editor.rs`'s overflow check against it if it promises no scrolling.
 4. Sizes are tokens or shares only. A region size of its own goes into `theme/sizes/editor.rs` as a token with a serde default (an additive crossing into ED1's file; say so in the report).
-5. Regions and parts are fixed sets; a variant that needs a new kind of region (a compact "focus" card region, a scope) adds a `Region` variant and its drawing in `Editor::frame`.
+5. Regions and parts are fixed sets; a variant that needs a new kind of region (a compact "focus" card region) adds a `Region` variant and its drawing in `Editor::frame`. The `output` region (scope or spectrum, and meters) exists since ED2 and is optional: place it anywhere with a `size.output.width`-wide column or row, or leave it out.

@@ -10,15 +10,17 @@
 //! - **Automate** exposes the parameter to the host through an automation slot ([`Intent::Automate`]); once a slot
 //!   drives it, the menu names the slot and offers **Stop automating** ([`Intent::StopAutomating`]). Structural
 //!   parameters (they recompile the plan) are not automatable, and the item says so.
+//! - **Remove … modulation** (lane ED2): one item per route into the parameter ("Remove Env 2 modulation (+40 %)"),
+//!   each one [`Intent::Unroute`] (one undo step).
 //!
 //! The open field lives in egui's temporary memory under [`ids::entry`], one at a time, keyed by the parameter's
 //! address, so it follows its control through a re-layout.
 
 use egui::text::CCursorRange;
 use egui::{Area, Frame, Key, Order, Rect, Response, RichText, TextEdit, Ui};
-use enth_patch::ParamAddr;
+use enth_patch::{ParamAddr, RouteAddr};
 
-use super::format::{parse_value, value_text};
+use super::format::{parse_value, signed_percent, value_text};
 use super::ids;
 use super::intent::{Intent, Intents};
 use super::present;
@@ -72,7 +74,26 @@ pub(super) fn attach(
         }
         ui.separator();
         automate(ui, t, kind, p, out);
+        unroute(ui, p, out);
     });
+}
+
+/// One "Remove … modulation" item per route into the parameter, newest last (lane ED2).
+fn unroute(ui: &mut Ui, p: &ParamView, out: &mut Intents) {
+    if p.routes.is_empty() {
+        return;
+    }
+    ui.separator();
+    for r in &p.routes {
+        let text = format!("Remove {} modulation ({})", r.name, signed_percent(r.depth));
+        if ui.button(text).clicked() {
+            out.push(Intent::Unroute(RouteAddr {
+                src: r.src.clone(),
+                dst: p.addr.clone(),
+            }));
+            ui.close();
+        }
+    }
 }
 
 /// The automation items.

@@ -17,8 +17,10 @@
 //! | `--dump-layout NAME` | print a built-in layout's JSON (a start for a variant) and exit |
 //! | `--dump-theme` | print the dark theme's JSON and exit |
 //!
-//! Keys: F2 switches to the next built-in layout, F5 reloads the layout and theme files. The status line names the
-//! layout. Switching needs no rebuild: edit the file, press F5.
+//! Keys: F2 switches to the next built-in layout, F5 reloads the layout and theme files, F3 holds or releases an
+//! audition note (middle C), so the telemetry rings, tiles, scope and meters move. The status line names the layout.
+//! Switching needs no rebuild: edit the file, press F5. The engine thread turns the tap's wake flag into a repaint,
+//! as the plugin's `process()` does, so the window draws only on input or while visible live data changes.
 
 #![allow(
     clippy::disallowed_methods,
@@ -29,8 +31,8 @@
 )]
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
@@ -116,6 +118,8 @@ struct DevApp {
     frames: u64,
     quit_after: Option<u64>,
     running: Arc<AtomicBool>,
+    /// An audition note is held (F3).
+    holding: bool,
 }
 
 impl DevApp {
@@ -155,6 +159,14 @@ impl eframe::App for DevApp {
         if ctx.input(|i| i.key_pressed(egui::Key::F5)) {
             self.reload(&ctx);
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::F3)) {
+            self.holding = if self.holding {
+                let _ = self.session.audition_all_off();
+                false
+            } else {
+                self.session.audition_on(60, 0.8).is_ok()
+            };
+        }
         let down = ctx.input(|i| i.pointer.any_down());
         self.session.pump();
         self.editor.frame(ui, &self.theme, &mut self.session, down);
@@ -167,11 +179,12 @@ impl eframe::App for DevApp {
             if self.frames >= n {
                 let report = self.editor.report();
                 println!(
-                    "dev_window: {} frames, layout {}, {} regions, overflow {:?}",
+                    "dev_window: {} frames, layout {}, {} regions, overflow {:?}, repaint {:?}",
                     self.frames,
                     self.editor.layout().name(),
                     report.regions.len(),
-                    report.overflow
+                    report.overflow,
+                    report.repaint
                 );
                 self.running.store(false, Ordering::Release);
                 self.quit_after = None;
@@ -205,10 +218,13 @@ fn main() -> Result<(), String> {
             offline: false,
         })
         .map_err(|e| format!("activate: {e:?}"))?;
+    // The window's context, for the engine thread's wake-up repaints (set once the window exists).
+    let window: Arc<OnceLock<egui::Context>> = Arc::new(OnceLock::new());
     // The audio thread: the engine renders block after block at real-time pace into buffers nobody hears.
     let running = Arc::new(AtomicBool::new(true));
     let audio = {
         let running = Arc::clone(&running);
+        let window = Arc::clone(&window);
         std::thread::Builder::new()
             .name("enth-dev-audio".to_owned())
             .spawn(move || {
@@ -217,6 +233,12 @@ fn main() -> Result<(), String> {
                 let mut next = Instant::now();
                 while running.load(Ordering::Acquire) {
                     engine.process(&mut left, &mut right, &[]);
+                    // As the plugin's process(): new telemetry for a sleeping editor is a repaint.
+                    if engine.tap().is_some_and(|tap| tap.take_wake())
+                        && let Some(ctx) = window.get()
+                    {
+                        ctx.request_repaint();
+                    }
                     next += period;
                     if let Some(wait) = next.checked_duration_since(Instant::now()) {
                         std::thread::sleep(wait);
@@ -243,6 +265,7 @@ fn main() -> Result<(), String> {
         "enth-dev-window",
         native,
         Box::new(move |cc| {
+            let _ = window.set(cc.egui_ctx.clone());
             let mut app = DevApp {
                 editor: Editor::new(&theme),
                 theme,
@@ -252,8 +275,10 @@ fn main() -> Result<(), String> {
                 frames: 0,
                 quit_after: options.frames,
                 running: app_running,
+                holding: false,
             };
             app.reload(&cc.egui_ctx);
+            app.editor.open(&app.session, &app.theme);
             Ok(Box::new(app))
         }),
     );

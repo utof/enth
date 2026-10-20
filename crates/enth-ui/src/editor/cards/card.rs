@@ -14,6 +14,7 @@ use super::present::{self, Control};
 use super::view::{CardKey, CardKind, CardView, ParamView};
 use super::{envelope, ids, menu, shapes};
 use crate::Theme;
+use crate::editor::modulate;
 use crate::editor::overlay::Emphasis;
 use crate::widgets::{
     CardShape, Display, Emphasis as KnobEmphasis, Ink, Knob, ModuleCard, Segmented, Toggle, Trace,
@@ -290,13 +291,46 @@ pub(crate) fn control(
     if p.emphasis == Emphasis::Hidden {
         return;
     }
-    let id = ids::param(&p.addr);
     let label = match form {
         Form::Inline(_) if view.params.len() == 1 => view.title.as_str(),
         _ => present::label(view.kind, p.spec),
     };
     let dimmed = p.emphasis == Emphasis::Dimmed;
-    let response = match present::control(t, p.spec) {
+    // While a source's ⊕ is dragged, a control it cannot modulate draws dimmed (lane ED2, `editor::modulate`).
+    let response = if modulate::refused(p) {
+        ui.scope(|ui| {
+            ui.multiply_opacity(t.state.disabled_opacity);
+            control_body(ui, t, view, p, label, form, dimmed, out)
+        })
+        .inner
+    } else {
+        control_body(ui, t, view, p, label, form, dimmed, out)
+    };
+    modulate::target(ui, t, view, p, &response, out);
+    menu::attach(t, view.kind, p, &response, out);
+    menu::entry(ui, t, p, response.rect, out);
+    if response.hovered() || response.dragged() {
+        out.hovered = Some(hovered(view, p));
+    }
+}
+
+/// The control the spec asks for, and its edits.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the control's whole context: where, theme, card, parameter, label, form, dimming, intents"
+)]
+fn control_body(
+    ui: &mut Ui,
+    t: &Theme,
+    view: &CardView,
+    p: &ParamView,
+    label: &str,
+    form: Form,
+    dimmed: bool,
+    out: &mut Intents,
+) -> Response {
+    let id = ids::param(&p.addr);
+    match present::control(t, p.spec) {
         Control::Knob | Control::Stepped(_) => knob(ui, t, view, p, label, form, out),
         Control::Segmented => {
             let items = p.spec.enum_items().unwrap_or(&[]);
@@ -345,11 +379,6 @@ pub(crate) fn control(
             }
             response
         }
-    };
-    menu::attach(t, view.kind, p, &response, out);
-    menu::entry(ui, t, p, response.rect, out);
-    if response.hovered() || response.dragged() {
-        out.hovered = Some(hovered(view, p));
     }
 }
 
@@ -390,7 +419,22 @@ fn knob(
     if let Some(live) = p.live {
         knob = knob.modulated(live);
     }
+    if let Some((lo, hi)) = p.range {
+        knob = knob.range(lo, hi);
+    }
     let response = ui.add(knob);
+    if p.emphasis == Emphasis::Normal {
+        modulate::depth_handle(
+            ui,
+            t,
+            view,
+            p,
+            &response,
+            matches!(form, Form::Inline(_)),
+            label,
+            out,
+        );
+    }
     let grip = || Grip::Param(p.addr.clone());
     if response.drag_started() {
         out.push(Intent::Begin(grip()));

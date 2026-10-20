@@ -9,6 +9,7 @@ use enth_patch::{
 };
 
 use super::present;
+use crate::editor::modulate::DropCheck;
 use crate::editor::overlay::Emphasis;
 use crate::theme::{Category, Score};
 
@@ -55,6 +56,11 @@ pub struct ParamView {
     pub live: Option<f32>,
     /// The routes into this parameter, in summation order.
     pub routes: Vec<RouteView>,
+    /// The span its routes can reach, normalised (`enth_patch::modulation_range`), when they move it at all: the
+    /// knob's static modulation arc (lane ED2).
+    pub range: Option<(f32, f32)>,
+    /// While a source's ⊕ is dragged: what dropping it here would do (lane ED2, `editor::modulate`).
+    pub drop: Option<DropCheck>,
     /// The host automation slots that drive it, in slot order (the "Automate" menu and the status line).
     pub slots: Vec<SlotIndex>,
     /// How strongly it is shown (the editor's [`Overlay`](crate::editor::overlay::Overlay); normal in P1b).
@@ -229,6 +235,8 @@ fn param_view(patch: &Patch, addr: ParamAddr, spec: &'static ParamSpec, value: f
         value,
         live: None,
         routes,
+        range: None,
+        drop: None,
         slots,
         emphasis: Emphasis::Normal,
         score: None,

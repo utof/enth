@@ -20,6 +20,8 @@
 //!   `f64` text: `0.1` would print as `0.10000000149011612`).
 //! - [`migrate`](mod@migrate): pure `Value -> Value` steps, one per schema version, with fixtures under
 //!   `tests/fixtures/patch/`.
+//! - [`modulation`](mod@modulation): [`modulation_range`], how far a parameter's routes can move it (normalised, by
+//!   each source's polarity), for the editor's depth arcs and the CLI's `describe` (P1b lane ED2).
 //! - [`canon`]: [`canon::exact_hash`] ("is it the same patch?") and [`canon::canonical_hash`] ("is it the same up to
 //!   symmetry?"); the first enabled `osc` is the hard-sync master and keeps its place.
 //! - [`wire`]: the JSON form of ops the CLI speaks (`{"set": "filter1.cutoff", "to": "1.2kHz"}`), resolved against
@@ -36,6 +38,7 @@ pub mod file;
 pub mod history;
 pub mod migrate;
 pub mod model;
+pub mod modulation;
 pub mod ops;
 pub mod validate;
 pub mod wire;
@@ -46,4 +49,5 @@ pub use addr::{
 pub use catalogue::{Builtin, CATALOGUE, ModuleKind, ModuleSpec, Rate};
 pub use error::{Invalid, OpError, PatchError, Violation};
 pub use model::{Macro, ModuleInstance, Patch, PatchMeta, Route, Section, VoiceSettings};
+pub use modulation::{ModulationRange, modulation_range};
 pub use ops::{Op, apply, apply_all};

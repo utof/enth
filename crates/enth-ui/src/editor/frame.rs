@@ -11,19 +11,24 @@
 //! field) is keyed by stable ids, so it follows a control through a re-layout.
 
 use std::collections::BTreeSet;
+use std::time::Duration;
 
-use egui::{Rect, Ui, Vec2};
-use enth_patch::Section;
+use egui::{Context, DragAndDrop, Rect, Ui, Vec2};
 use enth_patch::history::GestureId;
-use enth_session::SessionEdit;
+use enth_patch::modulation::source_span;
+use enth_patch::{ModSource, Patch, Section, modulation_range};
+use enth_session::{SessionEdit, SessionView};
 
 use super::cards::view::{self, CardView};
-use super::cards::{CardKey, Intent, Intents};
+use super::cards::{CardKey, Intent, Intents, ids};
 use super::describe;
 use super::layout::{Layout, LayoutError, LayoutSpec, Part, Placed, Region};
+use super::live::{Fingerprint, Live};
+use super::modulate::{self, SourceDrag};
 use super::overlay::{self, NoOverlay, Overlay};
 use super::regions::{
-    CardRegion, Header, HeaderView, MacroView, Macros, MatrixView, Overview, SourceView, Status,
+    CardRegion, Header, HeaderView, MacroView, Macros, MatrixView, Output, OutputState, OutputView,
+    Overview, SourceView, Status,
 };
 use crate::Theme;
 
@@ -35,6 +40,9 @@ pub struct FrameReport {
     /// Content that reached past its region, by part (`"sources"`, …, `"overview.tiles"`, `"overview.matrix"`), in
     /// px per axis. Only entries over half a pixel are listed: an empty list means nothing scrolls.
     pub overflow: Vec<(&'static str, Vec2)>,
+    /// The next frame the editor asked egui for (lane ED2): `motion.animated_interval()` while visible live data
+    /// changes, `None` when it sleeps on the tap (0 frames until input or new data).
+    pub repaint: Option<Duration>,
 }
 
 impl FrameReport {
@@ -60,6 +68,12 @@ pub struct Editor {
     /// Shown on the status line's right end (a refused `ENTH_LAYOUT`, the dev window's layout name).
     notice: String,
     report: FrameReport,
+    /// Telemetry and repaint gating (lane ED2).
+    live: Live,
+    /// The output region's mode, meters and spectrum.
+    output: OutputState,
+    /// egui's input time at the last frame (the meters fall by the time between frames).
+    last_time: Option<f64>,
 }
 
 impl std::fmt::Debug for Editor {
@@ -93,6 +107,9 @@ impl Editor {
             overlay: Box::new(NoOverlay),
             notice: String::new(),
             report: FrameReport::default(),
+            live: Live::default(),
+            output: OutputState::default(),
+            last_time: None,
         }
     }
 
@@ -141,8 +158,28 @@ impl Editor {
         self.more.contains(card)
     }
 
-    /// The cards of one part of `patch`, with "More" state and the overlay applied.
-    fn cards(&self, patch: &enth_patch::Patch, part: Part) -> Vec<CardView> {
+    /// The window opened (the shell's `build()`, every time): live feedback starts from the session's telemetry tap,
+    /// now or as soon as the session has one (lane ED2). Until then the editor shows no telemetry and asks for no
+    /// frames of its own.
+    pub fn open(&mut self, session: &dyn SessionView, theme: &Theme) {
+        self.live
+            .open(session, usize::from(theme.size.output.scope_samples));
+        self.last_time = None;
+    }
+
+    /// The window closed (or hid): the tap stops publishing and the editor asks for no more frames.
+    pub fn close(&mut self) {
+        self.live.close();
+    }
+
+    /// The live state (telemetry, for tests and the dev window).
+    pub fn live(&self) -> &Live {
+        &self.live
+    }
+
+    /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
+    /// dragged source and the overlay applied.
+    fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {
         let mut cards = match part {
             Part::Generators => view::section(patch, Section::Generators),
             Part::VoiceFx => view::section(patch, Section::VoiceFx),
@@ -153,9 +190,40 @@ impl Editor {
         };
         for card in &mut cards {
             card.more_open = self.more.contains(&card.key);
+            for p in &mut card.params {
+                if !p.routes.is_empty() {
+                    p.range = modulation_range(patch, &p.addr)
+                        .filter(enth_patch::ModulationRange::is_modulated)
+                        .map(|r| (r.lo, r.hi));
+                    p.live = self.live.value(&p.addr).map(|v| p.spec.to_norm(v));
+                }
+                if let Some(src) = drag {
+                    p.drop = Some(modulate::check(patch, src, &p.addr, p.spec));
+                }
+            }
         }
         overlay::apply(self.overlay.as_ref(), &mut cards);
         cards
+    }
+
+    /// The modulation sources, with their live levels in the tiles' 0..1.
+    fn sources(&self, patch: &Patch) -> Vec<SourceView> {
+        let mut sources = SourceView::all(patch);
+        for s in &mut sources {
+            let output = match &s.src {
+                ModSource::Module(id) => self.live.modulator(id),
+                ModSource::ModWheel => self.live.wheel(),
+                _ => None,
+            };
+            s.level = output.zip(source_span(patch, &s.src)).map(|(v, (lo, hi))| {
+                if hi > lo {
+                    ((v - lo) / (hi - lo)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            });
+        }
+        sources
     }
 
     /// One frame: draw every region of the layout into `ui`'s rectangle from `session`, then apply the intents.
@@ -174,6 +242,15 @@ impl Editor {
             theme.clone_into(&mut self.resolved_for);
         }
         let t = theme;
+        self.live.refresh(&*session);
+        let ctx = ui.ctx().clone();
+        let now = ctx.input(|i| i.time);
+        let dt = self.last_time.map_or(0.0, |last| (now - last) as f32);
+        self.last_time = Some(now);
+        // A source's ⊕ being dragged (drag-to-modulate): every control checks itself against it.
+        let drag = DragAndDrop::payload::<SourceDrag>(&ctx);
+        let drag = drag.as_deref().map(|d| &d.src);
+        let mut fingerprint = Fingerprint::default();
         let rect = ui.max_rect();
         ui.painter()
             .rect_filled(rect, 0.0, t.color.surface.background);
@@ -198,9 +275,10 @@ impl Editor {
                         let knobs: Vec<CardView> = self
                             .layout
                             .parts_in(Region::Header)
-                            .flat_map(|part| self.cards(patch, part))
+                            .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
                         Header::new(t, &header).knobs(&knobs).show(ui, r, &mut out);
+                        mark_cards(&ctx, &knobs, &mut fingerprint);
                     }
                     Region::Macros => {
                         Macros::new(t, &MacroView::all(patch)).show(ui, r, &mut out);
@@ -209,19 +287,39 @@ impl Editor {
                         let cards: Vec<CardView> = self
                             .layout
                             .parts_in(placed.region)
-                            .flat_map(|part| self.cards(patch, part))
+                            .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
                         let shown =
                             CardRegion::new(t, placed.region.name(), &cards, placed.arrange)
                                 .show(ui, r, &mut out);
                         overflow.push((placed.region.name(), shown.overflow));
+                        mark_cards(&ctx, &cards, &mut fingerprint);
                     }
                     Region::Overview => {
-                        let sources = SourceView::all(patch);
+                        let sources = self.sources(patch);
                         let matrix = MatrixView::of(patch);
                         let shown = Overview::new(t, &sources, &matrix).show(ui, r, &mut out);
                         overflow.push(("overview.tiles", shown.tiles_overflow));
                         overflow.push(("overview.matrix", shown.matrix_overflow));
+                        for s in &sources {
+                            if let Some(level) = s.level {
+                                fingerprint.visible(&ctx, ids::source(&s.src), &s.src, level);
+                            }
+                        }
+                    }
+                    Region::Output => {
+                        let view = OutputView {
+                            scope: self.live.scope(),
+                            peaks: self.live.peaks(),
+                            dt,
+                        };
+                        Output::new(t, view).show(
+                            ui,
+                            r,
+                            &mut self.output,
+                            &mut fingerprint,
+                            &mut out,
+                        );
                     }
                     // Drawn last: it shows what the other regions report as hovered.
                     Region::Status => status = Some(r),
@@ -242,7 +340,14 @@ impl Editor {
                 .show(ui, r);
         }
         overflow.retain(|(_, o)| o.x > 0.5 || o.y > 0.5);
-        self.report = FrameReport { regions, overflow };
+        let repaint = self
+            .live
+            .schedule(&ctx, fingerprint.finish(), t.motion.animated_interval());
+        self.report = FrameReport {
+            regions,
+            overflow,
+            repaint,
+        };
         let intents = out.take();
         self.apply(session, intents, pointer_down);
     }
@@ -301,5 +406,16 @@ impl Editor {
     pub fn end_drag(&mut self, session: &mut dyn SessionEdit) {
         session.end_gesture();
         self.gesture = None;
+    }
+}
+
+/// Counts the live rings of `cards` that drew where they can be seen into this frame's fingerprint.
+fn mark_cards(ctx: &Context, cards: &[CardView], fingerprint: &mut Fingerprint) {
+    for card in cards {
+        for p in card.drawn() {
+            if let Some(live) = p.live {
+                fingerprint.visible(ctx, ids::param(&p.addr), &p.addr, live);
+            }
+        }
     }
 }

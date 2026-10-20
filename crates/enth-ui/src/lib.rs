@@ -4,6 +4,7 @@
 
 pub mod editor;
 pub mod gallery;
+pub mod meter;
 pub mod theme;
 pub mod widgets;
 

@@ -10,12 +10,15 @@
 //! then forward the host writes to nice-plug's `ParamSetter` (begin, set, end), so the host records automation and
 //! never sees a call made under the lock. Every `build()` is a fresh open: it applies the theme, picks the layout
 //! (`ENTH_LAYOUT`, else the one saved in the `enth` field, else layout 1) and ends any gesture the last window left
-//! open; `editor_closed` (called by lane FK's vendored nice-plug-egui) ends it too and releases audition notes.
+//! open; `editor_closed` (called by lane FK's vendored nice-plug-egui) ends it too and releases audition notes. Every
+//! `build()` also opens the editor's live feedback (a telemetry reader over the session's tap, lane ED2), and
+//! `editor_closed` stops it; the editor asks egui for frames only while visible live data changes, and `process()`
+//! turns the tap's wake flag into a repaint.
 //! Never `GuiContext::set_state`: an editor preset load calls `Session::load_patch` under the lock.
 
 use std::sync::Arc;
 
-use enth_session::{GestureStep, HostWrite, SessionEdit, ShellRequest};
+use enth_session::{GestureStep, HostWrite, SessionEdit, SessionView, ShellRequest};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
 use enth_ui::editor::cards::{CardKey, Intent};
@@ -93,6 +96,16 @@ impl Glue {
     /// Close any drag's gesture: at every `build()` (a fresh open) and when the window closes.
     pub fn end_drag(&mut self, session: &mut dyn SessionEdit) {
         self.editor.end_drag(session);
+    }
+
+    /// The window opened (every `build()`): live feedback from the session's telemetry tap starts (lane ED2).
+    pub fn open(&mut self, session: &dyn SessionView, theme: &Theme) {
+        self.editor.open(session, theme);
+    }
+
+    /// The window closed: the tap stops publishing and the editor asks for no more frames (lane ED2).
+    pub fn close(&mut self) {
+        self.editor.close();
     }
 
     /// Whether a drag's gesture is open.
@@ -185,8 +198,10 @@ impl NiceEguiApp for EditorApp {
         self.theme.apply(&egui_ctx);
         let env = layout_from_env();
         let glue = &mut self.glue;
+        let theme = &self.theme;
         let (saved, writes) = self.shared.with_session(|s| {
             glue.end_drag(s);
+            glue.open(s, theme);
             s.instance().ui.layout.clone()
         });
         self.glue.choose_layout(&self.theme, env, &saved);
@@ -203,6 +218,7 @@ impl NiceEguiApp for EditorApp {
             glue.end_drag(s);
             let _ = s.audition_all_off();
         });
+        glue.close();
         if let Some(gui) = self.gui.take() {
             forward(&gui, &self.params, writes);
         }
@@ -336,6 +352,38 @@ mod tests {
         });
         // Headless: nothing uploads textures.
         output.textures_delta.clear();
+    }
+
+    #[test]
+    fn opening_the_window_enables_the_tap_and_closing_it_stops_it() {
+        let theme = Theme::dark();
+        let mut session = Session::new(Patch::init());
+        let engine = session
+            .activate(enth_session::Activation {
+                sample_rate: 48_000.0,
+                offline: false,
+            })
+            .unwrap();
+        let tap = engine.tap().unwrap();
+        assert!(!tap.is_enabled(), "closed: the tap does not publish");
+        let mut glue = Glue::new(&theme);
+        glue.open(&session, &theme);
+        assert!(tap.is_enabled(), "build() opens live feedback");
+        glue.close();
+        assert!(!tap.is_enabled(), "editor_closed stops it");
+        // A window opened while the plugin is inactive picks the tap up when the session has one.
+        let mut detached = Session::new(Patch::init());
+        glue.open(&detached, &theme);
+        let engine = detached
+            .activate(enth_session::Activation {
+                sample_rate: 48_000.0,
+                offline: false,
+            })
+            .unwrap();
+        let ctx = egui::Context::default();
+        theme.apply(&ctx);
+        frame(&ctx, &mut glue, &mut detached, Vec::new());
+        assert!(engine.tap().unwrap().is_enabled());
     }
 
     #[test]
