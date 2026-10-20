@@ -40,7 +40,7 @@ fn the_levels_reveal_in_order() {
         assert_eq!(h.levels, 4);
         assert_eq!(h.schema, "enth.suggest/1");
         assert_eq!(h.code.as_deref(), Some(code.as_str()));
-        assert!(!h.text.is_empty());
+        assert!(!h.text.is_empty(), "level {} has no text", h.level);
         assert_ne!(h.hint, "");
         assert!(!h.close, "init is far from the target: {}", h.text);
     }

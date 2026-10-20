@@ -164,7 +164,7 @@ fn a_parameter_is_measured_on_the_patch() {
         "{p:?}"
     );
     assert!(e.text.contains("Measured on"), "{}", e.text);
-    assert!(m.skipped.is_empty());
+    assert!(m.skipped.is_empty(), "{:?}", m.skipped);
 
     // The same measurement on one worker and on several.
     let pool = |n| {

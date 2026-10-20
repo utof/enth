@@ -1,6 +1,8 @@
-//! **Owner: lane CL.** The objects of the R1 game commands: `suggest` (`enth.suggest/1`), `match` (`enth.match/1`) and
-//! `explain` (`enth.explain/1`), plus [`ScoreOut`], the three scores of a round, which `compare` shares. They live
-//! in their own file (not in [`super::types`]) so the lanes that add commands never edit one another's.
+//! **Owner: lane CL.** The objects of the R1 game commands: `suggest` (`enth.suggest/1`), `match` (`enth.match/1`),
+//! `explain` (`enth.explain/1`), `compare` (`enth.compare/2`) and `challenge decode` (`enth.challenge-decode/1`), plus
+//! [`ScoreOut`], the three scores of a round. They live in their own file (not in [`super::types`]) so the lanes that
+//! add commands never edit one another's. (`challenge new` and `show` stay with lane SKR's types in
+//! [`super::types`], at version 2.)
 //!
 //! Same rules as every output type: `Serialize + Deserialize + JsonSchema`, `deny_unknown_fields`, a shape change
 //! or a change of meaning bumps the version in [`super::ids`] and updates the snapshots. Optional fields are
@@ -9,7 +11,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::types::{ChangeOut, PerfOut, Reading};
+use super::types::{ChangeOut, PerfOut, Reading, SpecOut};
 
 // ---------------------------------------------------------------------------------------------------------------
 // suggest
@@ -367,5 +369,150 @@ pub struct ExplainOut {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub measured: Option<MeasuredOut>,
     /// The next command to try.
+    pub hint: String,
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// compare
+// ---------------------------------------------------------------------------------------------------------------
+
+/// What a patch was compared with.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompareTargetOut {
+    /// `code` (`--code`), `challenge` (`--challenge FILE`), `patch` or `wav` (`--target`).
+    pub kind: String,
+    /// The code, or the file path.
+    pub source: String,
+    /// The challenge's code (a challenge file without one: null; null for a patch or a WAV).
+    pub code: Option<String>,
+    /// The regenerated target's fingerprint (64 hex digits), for a challenge.
+    pub fingerprint: Option<String>,
+    /// The phrase both were heard through, for a challenge or a patch reference.
+    pub phrase: Option<PhraseRefOut>,
+    /// The performance both were played with, for a patch or WAV reference (a challenge's is its phrase).
+    pub perf: Option<PerfOut>,
+}
+
+/// A phrase in the table.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PhraseRefOut {
+    /// Its id (`--phrase 1`).
+    pub id: u16,
+    /// Its name (`held`, `octave_pair`, `legato_pair`).
+    pub name: String,
+}
+
+/// One descriptor that differs between the patch and the reference by more than the game tolerates in it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DifferenceOut {
+    /// The descriptor (`spectrum.centroid_hz`).
+    pub feature: String,
+    /// The aspect it belongs to (`brightness`, `pitch`, `attack`, `decay`, `sustain`, `release`, `noisiness`,
+    /// `beating`, `tremolo`, `sweep`): the coach's words.
+    pub aspect: String,
+    /// The patch relative to the reference: `higher`, `lower`, `missing` (the reference has it, the patch does not)
+    /// or `extra` (the patch has it, the reference does not).
+    pub direction: String,
+    /// The patch's reading, in the descriptor's unit (null when missing).
+    pub ours: Option<Reading>,
+    /// The reference's reading (null when extra).
+    pub target: Option<Reading>,
+    /// How far apart they are, in units of the smallest difference the game tolerates in this descriptor (null for
+    /// missing and extra). Only differences of 0.5 or more are listed.
+    pub units: Option<f64>,
+    /// `high` (4 units or more, or missing or extra), `medium` (2 or more) or `low`.
+    pub severity: String,
+    /// In words: "ours is brighter than the target".
+    pub perceptual: String,
+}
+
+/// `enth.compare/2`: a patch against a challenge's target, a reference patch or a reference WAV.
+///
+/// Version 2 (lane CL) adds `mode`, `target` (which replaces `code` and `fingerprint`), `distance`, `metric` and
+/// `differences`, and makes the game's scores optional: a WAV has no nuisance floor to scale them by, so a WAV
+/// reference gets a `distance` and the `differences`, and `sound`, `structure`, `combined`, `pass_mark`, `passed`,
+/// `margin`, `scorers` and `report` are null or empty. A challenge's `report` no longer holds the target's readings
+/// (`--reveal` brings them back): the game never shows them during a round.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompareOut {
+    /// `enth.compare/2`.
+    pub schema: String,
+    /// `challenge` (a code or a challenge file), `patch` or `wav`.
+    pub mode: String,
+    /// The patch scored.
+    pub patch: String,
+    /// What it was compared with.
+    pub target: CompareTargetOut,
+    /// Metric v1 (`logmel-l1/1`, the distance `enth match` minimises) between the patch's render and the target's:
+    /// 0 is identical, over 1 is a different sound.
+    pub distance: f64,
+    /// The metric's id.
+    pub metric: String,
+    /// Sound %, 0 to 100 (decides the pass); null for a WAV reference.
+    pub sound: Option<f64>,
+    /// Structure %, 0 to 100; null for a WAV reference.
+    pub structure: Option<f64>,
+    /// Combined %, 0 to 100; null for a WAV reference.
+    pub combined: Option<f64>,
+    /// The pass mark (sound %); null for a WAV reference.
+    pub pass_mark: Option<u8>,
+    /// Sound % at or above the pass mark; null for a WAV reference.
+    pub passed: Option<bool>,
+    /// Sound % minus the pass mark; null for a WAV reference.
+    pub margin: Option<f64>,
+    /// The scorers that scored it: sound, structure, combined (empty for a WAV reference).
+    pub scorers: Vec<String>,
+    /// The full score report (`enth.score-report/1`): components, the per-parameter verdicts; null for a WAV
+    /// reference. For a challenge it holds no target readings unless `--reveal`.
+    pub report: Option<serde_json::Value>,
+    /// The descriptors that differ, the most different first (at most eight). Empty for a challenge: the game
+    /// shows the direction and closeness in the report, never the target's readings.
+    pub differences: Vec<DifferenceOut>,
+    /// What it means and what to do next.
+    pub hint: String,
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// challenge decode
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The preset a spec is.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PresetOut {
+    /// Its id in code v1's table (1 to 5: the levels).
+    pub id: u8,
+    /// Its name (`Level 2`).
+    pub name: String,
+}
+
+/// `enth.challenge-decode/1`: what a code says, read without regenerating its target (no generation, no render).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChallengeDecodeOut {
+    /// `enth.challenge-decode/1`.
+    pub schema: String,
+    /// The code in its canonical text (upper case, hyphens every four symbols).
+    pub code: String,
+    /// `short` (a preset and a 40-bit seed) or `long` (any settings, with the engine and a fingerprint prefix).
+    pub form: String,
+    /// The preset the settings are, or null for custom settings (only a long code carries those).
+    pub preset: Option<PresetOut>,
+    /// The settings: generator, seed, difficulty, amounts per category, musical, template.
+    pub spec: SpecOut,
+    /// The categories the amounts are indexed by, in order.
+    pub categories: Vec<String>,
+    /// The engine a long code was made with (null for a short code).
+    pub engine: Option<String>,
+    /// Whether that is the engine of this build (null for a short code, which names none).
+    pub engine_current: Option<bool>,
+    /// A long code's target fingerprint prefix: 8 hex digits that `enth challenge show` checks against the
+    /// regenerated target (null for a short code).
+    pub target_prefix: Option<String>,
+    /// What to do next.
     pub hint: String,
 }

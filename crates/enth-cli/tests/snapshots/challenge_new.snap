@@ -70,7 +70,8 @@ exit: 0
       }
     ]
   },
-  "schema": "enth.challenge-new/1",
+  "preset": "Level 2",
+  "schema": "enth.challenge-new/2",
   "spec": {
     "amounts": [
       null,

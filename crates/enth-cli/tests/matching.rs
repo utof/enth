@@ -112,7 +112,7 @@ fn the_search_improves_on_the_start_and_its_ops_replay() {
     assert!(m.score.is_none(), "a patch target has no game score");
     assert_eq!(m.wrote.as_deref(), Some(best.as_str()));
     // Only free parameters moved.
-    assert!(!m.ops.is_empty());
+    assert!(!m.ops.is_empty(), "nothing moved");
     for op in &m.ops {
         let addr = op["set"].as_str().unwrap();
         assert!(
@@ -298,7 +298,7 @@ fn the_free_set_is_named_in_four_ways() {
     assert_eq!(l1.free.how, "level 1");
     let drawn = free(&["--free", "drawn"]);
     assert_eq!(drawn.free.how, "drawn");
-    assert!(!drawn.free.addrs.is_empty());
+    assert!(!drawn.free.addrs.is_empty(), "no drawn parameters");
     for a in &drawn.free.addrs {
         assert!(
             round.params().iter().any(|p| &p.to_string() == a),

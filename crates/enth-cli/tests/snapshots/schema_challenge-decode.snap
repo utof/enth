@@ -1,0 +1,168 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "PresetOut": {
+      "additionalProperties": false,
+      "description": "The preset a spec is.",
+      "properties": {
+        "id": {
+          "description": "Its id in code v1's table (1 to 5: the levels).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Its name (`Level 2`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SpecOut": {
+      "additionalProperties": false,
+      "description": "A challenge's settings (`enth_challenge::RandomSpec`): integers only.",
+      "properties": {
+        "amounts": {
+          "description": "Per category (oscillators, filter, envelopes, modulation, effects, structure): 0-100, or null to follow the\ndifficulty.",
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "type": "array"
+        },
+        "difficulty": {
+          "description": "0-100: picks the level.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generator": {
+          "description": "The generator version (frozen: the same target for the same settings, forever).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "musical": {
+          "description": "0-100: 100 = priors only, 0 = uniform draws.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seed": {
+          "description": "The seed (a short code holds 40 bits; at most 2^53 - 1).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "template": {
+          "description": "The start template (0 = the starter superset).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "generator",
+        "seed",
+        "difficulty",
+        "amounts",
+        "musical",
+        "template"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.challenge-decode/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.challenge-decode/1`: what a code says, read without regenerating its target (no generation, no render).",
+  "properties": {
+    "categories": {
+      "description": "The categories the amounts are indexed by, in order.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "code": {
+      "description": "The code in its canonical text (upper case, hyphens every four symbols).",
+      "type": "string"
+    },
+    "engine": {
+      "description": "The engine a long code was made with (null for a short code).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "engine_current": {
+      "description": "Whether that is the engine of this build (null for a short code, which names none).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "form": {
+      "description": "`short` (a preset and a 40-bit seed) or `long` (any settings, with the engine and a fingerprint prefix).",
+      "type": "string"
+    },
+    "hint": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "preset": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PresetOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The preset the settings are, or null for custom settings (only a long code carries those)."
+    },
+    "schema": {
+      "const": "enth.challenge-decode/1",
+      "description": "`enth.challenge-decode/1`.",
+      "type": "string"
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecOut",
+      "description": "The settings: generator, seed, difficulty, amounts per category, musical, template."
+    },
+    "target_prefix": {
+      "description": "A long code's target fingerprint prefix: 8 hex digits that `enth challenge show` checks against the\nregenerated target (null for a short code).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "code",
+    "form",
+    "spec",
+    "categories",
+    "hint"
+  ],
+  "title": "ChallengeDecodeOut",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+---
+source: crates/enth-cli/tests/compare.rs
+expression: "gamekit::record(&s, &o, &[], &hide)"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [
+    "octave_pair"
+  ],
+  "error": "unknown_phrase",
+  "exit": 2,
+  "hint": "the phrases are 1 (held), 2 (octave_pair), 3 (legato_pair)",
+  "known": [
+    "held",
+    "octave_pair",
+    "legato_pair"
+  ],
+  "message": "'octave' is not a phrase",
+  "schema": "enth.error/1"
+}
+--- stderr

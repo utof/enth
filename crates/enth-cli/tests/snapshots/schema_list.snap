@@ -120,17 +120,22 @@ exit: 0
     },
     {
       "describes": "the output of enth challenge new",
-      "id": "enth.challenge-new/1",
+      "id": "enth.challenge-new/2",
       "name": "challenge-new"
     },
     {
       "describes": "the output of enth challenge show",
-      "id": "enth.challenge-show/1",
+      "id": "enth.challenge-show/2",
       "name": "challenge-show"
     },
     {
+      "describes": "the output of enth challenge decode",
+      "id": "enth.challenge-decode/1",
+      "name": "challenge-decode"
+    },
+    {
       "describes": "the output of enth compare",
-      "id": "enth.compare/1",
+      "id": "enth.compare/2",
       "name": "compare"
     }
   ]

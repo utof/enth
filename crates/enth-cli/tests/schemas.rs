@@ -50,6 +50,32 @@ fn every_output_schema_id_matches_its_objects() {
         ("get", vec!["get".into(), p.clone()]),
         ("diff", vec!["diff".into(), p.clone(), p.clone()]),
         ("schema", vec!["schema".into()]),
+        ("explain", vec!["explain".into(), "svf".into()]),
+        (
+            "challenge-new",
+            vec![
+                "challenge".into(),
+                "new".into(),
+                "--seed".into(),
+                "7".into(),
+            ],
+        ),
+        (
+            "challenge-show",
+            vec![
+                "challenge".into(),
+                "show".into(),
+                "1040-1000-0000-7M".into(),
+            ],
+        ),
+        (
+            "challenge-decode",
+            vec![
+                "challenge".into(),
+                "decode".into(),
+                "1040-1000-0000-7M".into(),
+            ],
+        ),
     ];
     for (name, args) in cases {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();

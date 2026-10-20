@@ -55,12 +55,14 @@ pub mod ids {
     pub const EXPLAIN: &str = "enth.explain/1";
     /// `enth bench`.
     pub const BENCH: &str = "enth.bench/1";
-    /// `enth challenge new` (lane SKR).
-    pub const CHALLENGE_NEW: &str = "enth.challenge-new/1";
-    /// `enth challenge show` (lane SKR).
-    pub const CHALLENGE_SHOW: &str = "enth.challenge-show/1";
-    /// `enth compare` (lane SKR, then CL).
-    pub const COMPARE: &str = "enth.compare/1";
+    /// `enth challenge new` (lane SKR; /2 adds `preset`, lane CL).
+    pub const CHALLENGE_NEW: &str = "enth.challenge-new/2";
+    /// `enth challenge show` (lane SKR; /2 adds `preset`, lane CL).
+    pub const CHALLENGE_SHOW: &str = "enth.challenge-show/2";
+    /// `enth challenge decode` (lane CL).
+    pub const CHALLENGE_DECODE: &str = "enth.challenge-decode/1";
+    /// `enth compare` (lane SKR; /2 compares with a patch or a WAV too, lane CL).
+    pub const COMPARE: &str = "enth.compare/2";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -237,6 +239,12 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::CHALLENGE_SHOW,
         describes: "the output of enth challenge show",
         generate: gen_schema::<ChallengeShowOut>,
+    },
+    Entry {
+        name: "challenge-decode",
+        id: ids::CHALLENGE_DECODE,
+        describes: "the output of enth challenge decode",
+        generate: gen_schema::<ChallengeDecodeOut>,
     },
     Entry {
         name: "compare",

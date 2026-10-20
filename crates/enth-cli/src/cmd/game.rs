@@ -8,17 +8,22 @@
 
 use std::path::{Path, PathBuf};
 
+use enth_challenge::model::Phrase;
+use enth_challenge::phrases::{self, HELD};
 use enth_challenge::{
     Challenge, ChallengeCode, EngineVersion, PreparedRound, RoundError, ScoreError, ScoreReport,
-    prepare_challenge, prepare_round,
+    SpecError, prepare_challenge, prepare_round,
 };
+use enth_patch::Patch;
+use enth_render::DEFAULT_SEED;
 use enth_solver::coach::CoachError;
 use enth_solver::search::SearchError;
 use enth_solver::sensitivity::SensitivityError;
 
 use crate::error::{self, CliError};
-use crate::patchio;
+use crate::perf::{Perf, Source};
 use crate::schema::ScoreOut;
+use crate::{patchio, templates, wav};
 
 /// The most workers `--workers` accepts: rayon's pool is cheap, but a typo should not ask for a million threads.
 pub const MAX_WORKERS: usize = 256;
@@ -61,6 +66,17 @@ pub fn resolve(which: &WhichChallenge) -> Result<Resolved, CliError> {
 /// another engine warns).
 pub fn from_code(text: &str) -> Result<Resolved, CliError> {
     let code = decode(text)?;
+    let (round, notes) = regenerate(&code)?;
+    Ok(Resolved {
+        round,
+        code: Some(code.to_string()),
+        notes,
+    })
+}
+
+/// The round a decoded code names, regenerated and checked against the code: a long code's fingerprint prefix
+/// refuses (`target_mismatch`), another engine warns. Returns the round and the warnings, as notes for humans.
+pub fn regenerate(code: &ChallengeCode) -> Result<(PreparedRound, Vec<String>), CliError> {
     let round = prepare_round(code.spec()).map_err(|e| from_round(&e))?;
     let notes = code
         .verify(&round.fingerprint(), EngineVersion::CURRENT)
@@ -74,11 +90,7 @@ pub fn from_code(text: &str) -> Result<Resolved, CliError> {
         .iter()
         .map(|w| format!("{}: {}", w.code(), w.hint()))
         .collect();
-    Ok(Resolved {
-        round,
-        code: Some(code.to_string()),
-        notes,
-    })
+    Ok((round, notes))
 }
 
 fn from_file(file: &Path) -> Result<Resolved, CliError> {
@@ -126,6 +138,11 @@ pub fn from_round(e: &RoundError) -> CliError {
         "render_failed" | "analysis_failed" => error::failed(e.code(), message, e.hint()),
         code => error::invalid(code, message, e.hint()),
     }
+}
+
+/// Settings the generator refuses (exit 3).
+pub fn from_spec_error(e: &SpecError) -> CliError {
+    error::invalid(e.code(), format!("the settings are refused: {e}"), e.hint())
 }
 
 /// A patch that could not be scored (exit 4).
@@ -223,4 +240,86 @@ pub fn with_workers<T: Send>(
             )
         })?;
     Ok(pool.install(f))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Targets that are not challenges
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The `init` template: what a search starts from when nothing else is named.
+pub fn init_patch() -> Patch {
+    templates::find("init")
+        .unwrap_or_else(|| unreachable!("the init template exists"))
+        .patch()
+}
+
+/// The held-note phrase (phrase 1): what a patch or WAV target is heard through when no phrase is named.
+pub fn held() -> &'static Phrase {
+    phrases::phrase(HELD).unwrap_or_else(|| unreachable!("the held phrase exists"))
+}
+
+/// A WAV ready to compare with: the mid signal, its rate, the performance that made it and the render seed.
+pub struct Audio {
+    /// The mean of the channels.
+    pub mono: Vec<f32>,
+    /// Frames per second.
+    pub sample_rate: u32,
+    /// The notes that made it (`--perf` over the `enth` chunk), with the clip's length.
+    pub perf: Perf,
+    /// The seed it was rendered with when the file says (oscillators in free phase mode start where the target's
+    /// did), else the default.
+    pub seed: u64,
+}
+
+/// Read a WAV target. Its performance comes from the flags, else from the `enth` chunk `enth render` writes; a WAV
+/// that says neither is refused (`perf_required`), because comparing means playing the same notes. `who` names the
+/// command for the hint.
+pub fn load_audio(
+    bytes: &[u8],
+    name: &str,
+    flag: Option<Perf>,
+    who: &str,
+) -> Result<Audio, CliError> {
+    let d = wav::decode(bytes).map_err(|why| {
+        error::failed(
+            "unsupported_wav",
+            format!("cannot read {name}: {why}"),
+            format!("{who} reads 8-32 bit integer or 32-bit float WAVs at 8-192 kHz"),
+        )
+        .in_file(name)
+    })?;
+    if !(8_000..192_000).contains(&d.sample_rate) {
+        return Err(error::failed(
+            "unsupported_wav",
+            format!(
+                "{name} is at {} Hz; the analysis runs at 8 to 192 kHz",
+                d.sample_rate
+            ),
+            "resample the file",
+        )
+        .in_file(name));
+    }
+    let dur_s = d.mono.len() as f64 / f64::from(d.sample_rate);
+    let mut perf = if let Some(p) = flag {
+        p
+    } else if let Some(meta) = &d.meta {
+        Perf::from_file(&meta.perf, Source::Wav)?
+    } else {
+        return Err(error::usage(
+            "perf_required",
+            format!(
+                "{name} has no enth chunk, so the notes that made it are unknown, and {who} plays them on every candidate"
+            ),
+            "pass the performance: --perf note=A3,vel=100,hold=1.5s,dur=3s (or --note, --hold, --dur); files written by `enth render` carry theirs",
+        )
+        .in_file(name));
+    };
+    perf.dur_s = dur_s;
+    let seed = d.meta.as_ref().map_or(DEFAULT_SEED, |m| m.seed);
+    Ok(Audio {
+        mono: d.mono,
+        sample_rate: d.sample_rate,
+        perf,
+        seed,
+    })
 }

@@ -25,7 +25,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
-use enth_challenge::phrases::{self, HELD};
 use enth_challenge::random::{self, Mask, unlock_level};
 use enth_challenge::{Category, Phrase, PreparedRound, score_round};
 use enth_patch::catalogue::{Builtin, ModuleKind};
@@ -43,11 +42,11 @@ use super::game::{self, Resolved};
 use super::{Reply, Res};
 use crate::error::{self, CliError, Ctx};
 use crate::out::round4;
-use crate::perf::{Perf, PerfArgs, Source};
+use crate::perf::{Perf, PerfArgs};
 use crate::schema::{
     FreeOut, MatchOut, MatchSettingsOut, MatchTargetOut, TraceOut, TraceStepOut, ids,
 };
-use crate::{aliases, patchio, templates, wav};
+use crate::{aliases, patchio, templates};
 
 /// The default render budget (`SearchCfg::default()`'s).
 const DEFAULT_BUDGET: usize = 1500;
@@ -313,16 +312,6 @@ fn load_target(args: &Args, stdin: &str) -> Result<Loaded, CliError> {
     Ok(loaded)
 }
 
-fn init_patch() -> Patch {
-    templates::find("init")
-        .unwrap_or_else(|| unreachable!("the init template exists"))
-        .patch()
-}
-
-fn held() -> &'static Phrase {
-    phrases::phrase(HELD).unwrap_or_else(|| unreachable!("the held phrase exists"))
-}
-
 fn code_target(text: &str) -> Result<Loaded, CliError> {
     let Resolved { round, code, notes } = game::from_code(text).map_err(|mut e| {
         e.0.hint = format!(
@@ -363,62 +352,26 @@ fn patch_target(bytes: &[u8], name: &str, flag: Option<Perf>) -> Result<Loaded, 
         fingerprint: None,
         round: None,
         metric,
-        start: init_patch(),
+        start: game::init_patch(),
         start_label: "init".to_owned(),
-        phrase: held(),
+        phrase: game::held(),
         notes,
     })
 }
 
 fn wav_target(bytes: &[u8], name: &str, flag: Option<Perf>) -> Result<Loaded, CliError> {
-    let d = wav::decode(bytes).map_err(|why| {
-        error::failed(
-            "unsupported_wav",
-            format!("cannot read {name}: {why}"),
-            "match reads 8-32 bit integer or 32-bit float WAVs at 8-192 kHz",
-        )
-        .in_file(name)
-    })?;
-    if !(8_000..192_000).contains(&d.sample_rate) {
-        return Err(error::failed(
-            "unsupported_wav",
-            format!(
-                "{name} is at {} Hz; the analysis runs at 8 to 192 kHz",
-                d.sample_rate
-            ),
-            "resample the file",
-        )
-        .in_file(name));
-    }
-    let dur_s = d.mono.len() as f64 / f64::from(d.sample_rate);
-    let mut perf = if let Some(p) = flag {
-        p
-    } else if let Some(meta) = &d.meta {
-        Perf::from_file(&meta.perf, Source::Wav)?
-    } else {
-        return Err(error::usage(
-            "perf_required",
-            format!(
-                "{name} has no enth chunk, so the notes that made it are unknown, and a match plays them on every candidate"
-            ),
-            "pass the performance: --perf note=A3,vel=100,hold=1.5s,dur=3s (or --note, --hold, --dur); files written by `enth render` carry theirs",
-        )
-        .in_file(name));
-    };
-    perf.dur_s = dur_s;
-    // The seed the WAV was rendered with, when it says: oscillators in free phase mode start where the target's did.
-    let seed = d.meta.as_ref().map_or(DEFAULT_SEED, |m| m.seed);
-    let spec = RenderSpec::new(d.sample_rate, seed);
-    let metric = MetricTarget::from_audio(&d.mono, &perf.to_render(), &spec);
+    let audio = game::load_audio(bytes, name, flag, "a match")?;
+    let spec = RenderSpec::new(audio.sample_rate, audio.seed);
+    let metric = MetricTarget::from_audio(&audio.mono, &audio.perf.to_render(), &spec);
     Ok(Loaded {
         kind: "wav",
         source: name.to_owned(),
         fingerprint: None,
         round: None,
         metric,
-        start: init_patch(),
+        start: game::init_patch(),
         start_label: "init".to_owned(),
-        phrase: held(),
+        phrase: game::held(),
         notes: Vec::new(),
     })
 }

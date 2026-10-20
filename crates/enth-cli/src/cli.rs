@@ -204,8 +204,7 @@ pub enum Cmd {
         #[arg(long, value_name = "SECONDS", default_value_t = 10.0)]
         seconds: f64,
     },
-    // R1 commands, pre-declared by lane S0r: hidden, and each answers `not_built_yet` until its lane builds it in
-    // its own file under `cmd/` (which also holds its arguments) and removes `hide` here.
+    // The R1 game commands (lanes SKR and CL), each in its own file under `cmd/`, which also holds its arguments.
     /// Score a patch against a challenge's target (lanes SKR, then CL).
     Compare(crate::cmd::compare::Args),
     /// A graded hint towards a challenge's target (level 1 to 4).

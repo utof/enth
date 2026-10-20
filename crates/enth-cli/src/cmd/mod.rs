@@ -171,21 +171,12 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
             voices,
             seconds,
         } => sound::bench(patch.as_deref(), voices, seconds),
-        Cmd::Compare(args) => compare::run(&args),
+        Cmd::Compare(args) => compare::run(&args, stdin),
         Cmd::Suggest(args) => suggest::run(&args),
         Cmd::Match(args) => matching::run(&args, stdin),
         Cmd::Explain(args) => explain::run(&args, stdin),
         Cmd::Challenge(args) => challenge::run(&args),
     }
-}
-
-/// The answer of an R1 command this build does not have yet (lane S0r's hidden stubs): `not_built_yet`, exit 2.
-fn not_built(command: &str, lanes: &str) -> CliError {
-    crate::error::usage(
-        "not_built_yet",
-        format!("`enth {command}` is not built yet (R1/S1 lane {lanes})"),
-        "`enth --help` lists the commands this build has; `enth guide` shows the workflow",
-    )
 }
 
 /// `--format` read before clap runs, so clap's own errors honour it.
