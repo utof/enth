@@ -447,6 +447,7 @@ pub enum Listen {
 
 impl Listen {
     /// The other side of an A/B flip (`Off` flips to `Target`).
+    #[must_use]
     pub fn flipped(self) -> Listen {
         match self {
             Listen::Target => Listen::Mine,
@@ -522,7 +523,7 @@ pub enum JobKind {
         /// The target the prepare job returned.
         target: Arc<Patch>,
         /// The player's patch at the moment they pressed Submit.
-        patch: Patch,
+        patch: Box<Patch>,
         /// Which submit this is (1 = the first).
         submit: u32,
     },
@@ -533,7 +534,7 @@ pub enum JobKind {
         /// The target.
         target: Arc<Patch>,
         /// The player's patch after the last settled edit.
-        patch: Patch,
+        patch: Box<Patch>,
     },
     /// Render the scored phrase through `patch` and measure its loudness, for Mine ▶'s gain. Answer
     /// [`JobResult::Loudness`].
@@ -541,7 +542,7 @@ pub enum JobKind {
         /// The challenge (its phrase).
         challenge: Arc<Challenge>,
         /// The player's patch after the last settled edit.
-        patch: Patch,
+        patch: Box<Patch>,
     },
     /// A coach hint at `level` for `patch` (lane SN). Answer [`JobResult::Hint`].
     Hint {
@@ -550,7 +551,7 @@ pub enum JobKind {
         /// The target.
         target: Arc<Patch>,
         /// The player's patch when they asked.
-        patch: Patch,
+        patch: Box<Patch>,
         /// 1 ..= [`HINT_LEVELS`].
         level: u8,
     },
@@ -576,9 +577,9 @@ pub enum JobResult {
     /// For [`JobKind::Prepare`]: the start and target patches and the target's loudness (LUFS; `None` if silent).
     Prepared {
         /// The patch the player starts from.
-        start: Patch,
+        start: Box<Patch>,
         /// The target (kept in memory only; never saved).
-        target: Patch,
+        target: Box<Patch>,
         /// The target loop's integrated loudness.
         target_lufs: Option<f32>,
     },
@@ -1122,8 +1123,7 @@ impl Session {
 
     /// The A/B state the shell's audio side follows.
     pub fn game_ab(&self) -> AbState {
-        let (target_gain_db, mine_gain_db) =
-            ab_gains(self.game.target_lufs, self.game.mine_lufs);
+        let (target_gain_db, mine_gain_db) = ab_gains(self.game.target_lufs, self.game.mine_lufs);
         AbState {
             listen: self.game.listen,
             target_ready: self.game.target.is_some(),
@@ -1136,7 +1136,9 @@ impl Session {
     /// lines, dirty marks. Drain it with [`Session::drain_requests`], under the lock, and act **after unlocking**.
     pub fn drain_game_requests(&mut self) -> std::vec::Drain<'_, GameRequest> {
         let ab = self.game_ab();
-        if self.game.ab_sent != Some(ab) && (self.game.ab_sent.is_some() || ab != AbState::default()) {
+        if self.game.ab_sent != Some(ab)
+            && (self.game.ab_sent.is_some() || ab != AbState::default())
+        {
             self.game.ab_sent = Some(ab);
             self.game.requests.push(GameRequest::Ab(ab));
         }
@@ -1151,8 +1153,8 @@ impl Session {
     /// latest tick's time. Cheap, and a no-op beyond the clock when no round is live.
     pub fn game_tick(&mut self, now_ms: u64, view: EditorView) {
         let now = self.game.clock_last.map_or(now_ms, |last| now_ms.max(last));
-        let counting = self.game.target.is_some()
-            && self.game_record().is_some_and(|r| r.phase.is_live());
+        let counting =
+            self.game.target.is_some() && self.game_record().is_some_and(|r| r.phase.is_live());
         if view != EditorView::Opened
             && self.game.visible
             && counting
@@ -1191,7 +1193,7 @@ impl Session {
         if self.game.jobs.loudness.is_none() {
             let id = self.game.job(JobKind::Loudness {
                 challenge: Arc::clone(&challenge),
-                patch: self.patch.clone(),
+                patch: Box::new(self.patch.clone()),
             });
             self.game.jobs.loudness = Some((id, revision));
         }
@@ -1199,7 +1201,7 @@ impl Session {
             let id = self.game.job(JobKind::Rings {
                 challenge,
                 target,
-                patch: self.patch.clone(),
+                patch: Box::new(self.patch.clone()),
             });
             self.game.jobs.rings = Some((id, revision));
         }
@@ -1301,7 +1303,7 @@ impl Session {
         self.game.error = Some(err);
     }
 
-    fn game_prepared(&mut self, start: Patch, target: Patch, target_lufs: Option<f32>) {
+    fn game_prepared(&mut self, start: Box<Patch>, target: Box<Patch>, target_lufs: Option<f32>) {
         let hash = canonical_hash(&target).to_hex();
         let Some(record) = self.record_mut() else {
             return;
@@ -1320,11 +1322,11 @@ impl Session {
         }
         record.target_hash = Some(hash);
         let fresh = record.phase == Phase::Preparing;
-        self.game.target = Some(Arc::new(target));
+        self.game.target = Some(Arc::from(target));
         self.game.target_lufs = target_lufs;
         self.game.error = None;
         if fresh {
-            self.game_begin(start);
+            self.game_begin(*start);
         }
         // Time counts from now, not from the start of the preparation; Mine's loudness (and, for a resumed round
         // that was scored, the rings) are measured at the next tick.
@@ -1432,7 +1434,12 @@ impl Session {
         Some((record, history))
     }
 
-    fn log_entry(&self, record: &RoundRecord, event: LogEvent, ended_by: Option<EndedBy>) -> RoundLogEntry {
+    fn log_entry(
+        &self,
+        record: &RoundRecord,
+        event: LogEvent,
+        ended_by: Option<EndedBy>,
+    ) -> RoundLogEntry {
         RoundLogEntry {
             schema: ROUND_LOG_SCHEMA.to_owned(),
             event,
@@ -1680,7 +1687,7 @@ impl GameEdit for Session {
         }
         let submit = record.submits.len() as u32 + 1;
         let at_ms = record.active_ms;
-        let patch = self.patch.clone();
+        let patch = Box::new(self.patch.clone());
         let text = patch.to_json();
         let id = self.game.job(JobKind::Score {
             challenge,
@@ -1705,7 +1712,7 @@ impl GameEdit for Session {
             return Err(GameError::NoMoreHints);
         }
         let level = record.hints + 1;
-        let patch = self.patch.clone();
+        let patch = Box::new(self.patch.clone());
         let id = self.game.job(JobKind::Hint {
             challenge,
             target,
@@ -1814,8 +1821,14 @@ mod tests {
             (s.passed, s.sound, s.structure, s.combined),
             (true, 8746, 0, 0)
         );
-        assert_eq!(ScoreSummary::from_percent(false, 250.0, 100.0, 0.004).sound, 10000);
-        assert_eq!(ScoreSummary::from_percent(false, 0.0, 100.0, 0.004).structure, 10000);
+        assert_eq!(
+            ScoreSummary::from_percent(false, 250.0, 100.0, 0.004).sound,
+            10000
+        );
+        assert_eq!(
+            ScoreSummary::from_percent(false, 0.0, 100.0, 0.004).structure,
+            10000
+        );
     }
 
     #[test]
