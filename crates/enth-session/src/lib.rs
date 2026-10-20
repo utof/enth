@@ -15,6 +15,8 @@
 //! | [`state`] | the saved state v1: the `patch` field and the `enth` field ([`InstanceState`], `enth.plugin-state/1`), fixtures, migrations, the host-load history policy ([`state::HistoryFate`]) | S1s; S2s |
 //! | [`link`] | activation, the pump, epochs, bounded queues, audition notes, who drains the return ring | S1s contract; SK bodies |
 //! | [`telemetry`] | the tap's reader side ([`TelemetrySource`], [`TelemetryReader`], [`TelemetryMap`]) | S1s; ED2 |
+//! | [`game`] | the pure Recreate round: states, stash, submit, reveal, jobs for the shell; [`GameState`] in the saved state | SG (R1/S1; pre-declared by S0r) |
+//! | [`presets`] | preset format, index, tags, search, the undoable editor load; [`PresetState`] in the saved state | PBC (R1/S1; pre-declared by S0r) |
 //!
 //! P1b stubs (lane S1s): [`Session::activate`], [`Session::pump`]'s active case, [`Session::edit`] and the audition
 //! calls return [`SessionError::Unsupported`] (or `Inactive`) until lane SK fills them in. Everything else is
@@ -24,8 +26,10 @@
 
 pub mod apply;
 pub mod bridge;
+pub mod game;
 pub mod link;
 pub mod model;
+pub mod presets;
 pub mod state;
 pub mod telemetry;
 
@@ -35,11 +39,13 @@ mod tests;
 pub use apply::{Delivery, Routing};
 pub use bridge::{FoldReport, GestureStep, HostParam, HostValues, HostWrite, SlotTarget};
 pub use enth_patch::history::GestureId;
+pub use game::GameState;
 pub use link::PumpReport;
 pub use model::{
     AUDITION_PORT, Activation, Applied, HistoryView, RENDER_SEED, Session, SessionConfig,
     SessionEdit, SessionError, SessionStatus, SessionView, ShellRequest,
 };
+pub use presets::PresetState;
 pub use state::{
     InstanceState, LoadReport, MonitorState, STATE_SCHEMA, SavedState, StateError, UiState,
 };
