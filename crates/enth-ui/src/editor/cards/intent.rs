@@ -9,7 +9,10 @@
 //! [`Intent::ops`] gives the patch ops of the edits, so the editor and the tests don't each re-derive them.
 
 use enth_params::DEPTH;
-use enth_patch::{MacroIndex, ModuleId, Op, ParamAddr, Patch, Route, RouteAddr};
+use enth_patch::{
+    MacroIndex, ModuleId, ModuleInstance, ModuleKind, Op, ParamAddr, Patch, Position, Route,
+    RouteAddr,
+};
 use enth_session::bridge;
 
 use super::view::CardKey;
@@ -67,6 +70,24 @@ pub enum Intent {
     Undo,
     /// The header's Redo button.
     Redo,
+    /// Add a module of `kind` at `index` of its section, with every parameter at its default and the lowest free id
+    /// (`Patch::free_id`). From the header's Add menu, a region's right-click menu, the dashed "+ Add" slot and a card's
+    /// "Add after" (lane AM). One edit (one undo step), no gesture; a full section is refused by the session
+    /// (`too_many`, the status line's hint).
+    AddModule { kind: ModuleKind, index: usize },
+    /// Remove a module with its routes and slot assignments (a card's "Remove"; undo puts them back). The amplitude
+    /// envelope is refused (`in_use_as_amp_env`). One edit, no gesture (lane AM).
+    RemoveModule(ModuleId),
+    /// Move a module to `index` of its section (a card's "Move up" or "Move down"). One edit, no gesture (lane AM).
+    MoveModule { id: ModuleId, index: usize },
+    /// Add a copy of a module right after it: its kind, values and switch, a new id and no label. One edit, no
+    /// gesture; its routes are not copied (lane AM).
+    Duplicate(ModuleId),
+    /// Set a module's label, or clear it (`None`: the card shows its kind and number again). One edit, no gesture
+    /// (lane AM).
+    Rename { id: ModuleId, label: Option<String> },
+    /// Make an envelope the voice's amplitude envelope (a card's "Make amp envelope"). One edit, no gesture (lane AM).
+    MakeAmpEnv(ModuleId),
 }
 
 impl Intent {
@@ -153,6 +174,53 @@ impl Intent {
             Intent::StopAutomating(addr) => bridge::slots_for(patch, addr)
                 .map(|slot| Op::SetSlot { slot, addr: None })
                 .collect(),
+            Intent::AddModule { kind, index } => vec![Op::AddModule {
+                at: Position {
+                    section: kind.section(),
+                    index: *index,
+                },
+                module: ModuleInstance::new(patch.free_id(*kind), *kind),
+            }],
+            Intent::RemoveModule(id) => vec![Op::RemoveModule { id: id.clone() }],
+            Intent::MoveModule { id, index } => match patch.find(id) {
+                Some((from, _)) if from.index != *index => vec![Op::Move {
+                    id: id.clone(),
+                    to: Position {
+                        section: from.section,
+                        index: *index,
+                    },
+                }],
+                _ => Vec::new(),
+            },
+            Intent::Duplicate(id) => match patch.find(id) {
+                Some((at, original)) => {
+                    let mut copy = original.clone();
+                    copy.id = patch.free_id(original.kind);
+                    copy.label = None;
+                    vec![Op::AddModule {
+                        at: Position {
+                            section: at.section,
+                            index: at.index + 1,
+                        },
+                        module: copy,
+                    }]
+                }
+                None => Vec::new(),
+            },
+            Intent::Rename { id, label } => match patch.find(id) {
+                Some((_, m)) if m.label != *label => vec![Op::SetLabel {
+                    id: id.clone(),
+                    label: label.clone(),
+                }],
+                _ => Vec::new(),
+            },
+            Intent::MakeAmpEnv(id) => {
+                if patch.voice.amp_env == *id {
+                    Vec::new()
+                } else {
+                    vec![Op::SetAmpEnv { id: id.clone() }]
+                }
+            }
             Intent::Begin(_)
             | Intent::End(_)
             | Intent::ShowMore { .. }

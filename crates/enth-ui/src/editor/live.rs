@@ -12,8 +12,9 @@
 //!
 //! - the frame hashes every live value it drew **where it can be seen** (a control or tile scrolled out of its region
 //!   does not count; the window being open is the shell's part) into a fingerprint, quantised to well under a pixel;
-//! - the fingerprint changed, or the tap published since the last frame: the next frame comes after
-//!   `motion.animated_interval()` (30 Hz), never sooner;
+//! - the fingerprint changed, or the tap published since the last frame: the next frame comes after the interval
+//!   the editor passes, `motion.scope_interval()` (1/60 s, lane AM: baseview 0.4.1 paces redraws at the X Present
+//!   `msc + 2`, so a 1/60 s request draws about 30 frames a second and 1/30 s about 20), never sooner;
 //! - nothing changed: the editor sleeps on the tap ([`TelemetryReader::sleep`]) and asks for nothing, so an idle
 //!   editor draws **0 frames**. The next publish with new data sets the tap's wake flag, which the shell's `process()`
 //!   turns into a repaint (lock-free); input wakes it as always.

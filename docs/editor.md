@@ -16,7 +16,8 @@
 | `editor/overlay.rs` | the no-op `Overlay` (emphasis normal, dimmed or hidden; scores) |
 | `editor/describe.rs` | undo steps in the editor's words, for the Undo and Redo tooltips |
 | `editor/reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features |
-| `theme/sizes/editor.rs`, `modulation.rs`, `output.rs` | the editor's size tokens (below; the last two are ED2's) |
+| `editor/add_module.rs` | (lane AM) adding and removing modules: the card's "…" menu, the region menu, the dashed "+ Add" slot, the header's Add hook, the "Rename…" field, the status line's notes ([below](#adding-and-removing-modules-lane-am)) |
+| `theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs` | the editor's size tokens (below; the middle two are ED2's, the last AM's) |
 | `examples/dev_window.rs` | the dev window (feature `dev-window`) |
 | `examples/frame_bench.rs` | instructions per editor frame, headless (ED2 added the live cases) |
 | `crates/enth-plugin/src/editor.rs` | the plugin window: `EditorApp` and `Glue`, the plugin's handle on `Editor` |
@@ -44,6 +45,7 @@ Components never touch the session. They push `Intent`s; `apply` runs them in or
 | `Select`, `Toggle`, `Enable`, `Unroute`, `Route`, `Automate`, `StopAutomating` | one `edit` each, no gesture |
 | `Undo`, `Redo` | `undo`, `redo` (each ends an open gesture first) |
 | `ShowMore` | editor view state only |
+| (lane AM) `AddModule`, `RemoveModule`, `MoveModule`, `Duplicate`, `Rename`, `MakeAmpEnv` | one `edit` each, no gesture: one op (`AddModule`, `RemoveModule`, `Move`, `AddModule` of a copy, `SetLabel`, `SetAmpEnv`) and one undo step, through the session's structural path (a recompiled plan) |
 
 `SetDepth` comes from a matrix cell, a route-list cell or a knob's depth handle, always inside `Begin(Grip::Route)` … `End` (one undo step; the session sends depth events, so a depth drag never recompiles unless the depth goes to or from 0). `Route` is a source dropped on a control: one `InsertRoute` at `DEFAULT_ROUTE_DEPTH` (25 %). `Unroute` comes from a matrix cell's double-click, a route-list cell's double-click or menu, and every control's "Remove … modulation" item. A gesture still open when no pointer button is held is closed (the control that opened it vanished); every `build()` and `editor_closed` close it too. An edit the session refuses changes nothing; its hint shows at the right end of the status line.
 
@@ -160,12 +162,12 @@ The tap publishes outputs, not phases, so `SourceView::phase` stays `None` (rese
 **Repaint gating** (`Live::schedule`, at the end of every frame; `FrameReport::repaint` says what it asked for):
 
 - the frame hashes every live value it drew **where it can be seen** into a fingerprint, quantised to 1/512 of a range (a tenth of a pixel on a knob's ring): rings and tile levels count only if their widget's clipped rectangle is not empty (`live::is_visible`: scrolled out of its region does not count), the output region always (scope sample count, meter levels);
-- the fingerprint changed, or the tap published since the last frame: `ctx.request_repaint_after(motion.animated_interval())`, 1/30 s, never sooner (`repaint.animated_hz`);
+- the fingerprint changed, or the tap published since the last frame: `ctx.request_repaint_after(motion.scope_interval())`, 1/60 s, never sooner (`repaint.scope_hz`; lane AM, R1/S1: it was `motion.animated_interval()`, 1/30 s). baseview 0.4.1 paces redraws at the X Present `msc + 2`, every other vblank, so a 1/30 s request drew about 20 frames a second in Phase 0 and a 1/60 s request about 30, the design system's 30 Hz. The plugin's `editor-counts` feature counts the frames the window really gets ([plugin.md](plugin.md#leak-gates)); under Xvfb, in `leak-test`'s 200 editor cycles, the live frame rate was 26.0 and 27.8 fps with the 1/60 s request against 23.0 and 23.8 with 1/30 s (two runs each); owner check 1.3 reads it on the real display;
 - otherwise the editor sleeps on the tap (`TelemetryReader::sleep`) and asks for nothing: **0 frames**. The next publish with new data sets the tap's wake flag; the plugin's `process()` (and the dev window's engine thread) turns it into a repaint. Input wakes it as always.
 
-"Visible" means open (between `open` and `close`), shown and scrolled into view. baseview 0.4.1 reports no hidden or minimised window, so "shown" is "open" in the plugin. A value that changes while scrolled out of view still wakes the editor, through the tap, at up to 30 Hz (the engine does not know what is visible); in layout 1 the tiles and the output region are always in view, so this does not arise at the P1 default.
+"Visible" means open (between `open` and `close`), shown and scrolled into view. baseview 0.4.1 reports no hidden or minimised window, so "shown" is "open" in the plugin. A value that changes while scrolled out of view still wakes the editor, through the tap, at up to 60 requests a second (the engine does not know what is visible); in layout 1 the tiles and the output region are always in view, so this does not arise at the P1 default.
 
-Measured (`tests/repaint.rs`, exact delays from egui's output, no clock): an idle editor reports `Duration::MAX` frame after frame and an audition note's first block sets the wake flag; the P1 default's global LFO 2 keeps the reverb's Wet ring and its tile moving, and every frame asks for exactly 33.33 ms; a closed editor asks for nothing and its reopening picks the engine up again; a stalled engine (no block rendered at all) still gets 200 frames of knob dragging, the edits land in the patch (one undo step), six structural edits leave two plans in flight and one compile pending without blocking, and everything is delivered when the audio thread resumes.
+Measured (`tests/repaint.rs`, exact delays from egui's output, no clock): an idle editor reports `Duration::MAX` frame after frame and an audition note's first block sets the wake flag; the P1 default's global LFO 2 keeps the reverb's Wet ring and its tile moving, and every frame asks for exactly 16.67 ms (33.33 ms before lane AM); a closed editor asks for nothing and its reopening picks the engine up again; a stalled engine (no block rendered at all) still gets 200 frames of knob dragging, the edits land in the patch (one undo step), six structural edits leave two plans in flight and one compile pending without blocking, and everything is delivered when the audio thread resumes.
 
 **Zipper noise of a depth drag** (phase-1b.md open check): a depth event ramps over 10 ms in the engine (one step per 32-frame segment), exactly like the parameter smoothing a knob drag gets. Measured with a sine whose level an envelope route modulates, the depth swept 1 → 60 % in 1 s: at 30 events a second (an editor drag) the output differs from 750 events a second by −36.8 dB re the signal, and the same sweep as a knob drag (`SetParam`) by −37.0 dB. A depth drag is as smooth as a knob drag; no extra smoothing is needed.
 
@@ -179,13 +181,7 @@ Measured (`tests/repaint.rs`, exact delays from egui's output, no clock): an idl
 
 Decided by the R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/`, report 03 and the summary); built by the lanes named in [phase-2.md](phase-2.md). Lane S0r declares three no-op hooks in the header (Recreate, Presets, Add), so AM, PBU and RUI each fill their own. Each lane adds its own section here when it lands.
 
-**Adding and removing modules (lane AM).** The patch ops exist (`AddModule`, `RemoveModule`, `Move`, `SetLabel`, `SetAmpEnv`, each with an exact inverse); only the intents are missing. Add, remove, move, duplicate and rename are one op and one undo step each, through one `session.edit`, and a refusal (`TooMany`, `InUseAsAmpEnv`) shows as the status line's hint. Three entry points:
-
-- a **"⋯" menu on every card**: Add after ▸ (the kinds valid for the section), Duplicate, Move up and down, Rename…, Make amp envelope, Remove;
-- **right-click on empty region space** opens Add;
-- a **dashed "+ Add" slot** while a section is under its limit, only where there is room: at 1200 × 800 the P1 default's sources region holds exactly three 96 px strips (304 px), so a ghost slot there would scroll.
-
-The status line reports what a removal took with it ("Removed Filter 1, 2 routes and automation slot 3"). Every add, remove or enable recompiles the plan; the crossfading swap block is reported, not gated ([benchmarks.md](benchmarks.md#lane-rt-the-plugin-measured-2026-10-20)). The same lane makes a fresh instance play the starter patch as "Init" (gain-staged) and measures the minimum window (below).
+**Adding and removing modules (lane AM).** Built: see [Adding and removing modules](#adding-and-removing-modules-lane-am) below.
 
 **The preset header and browse panel (lanes PBC and PBU).** The header's patch name becomes **◀ Name ▶ Browse Save**. The browse panel is editor view state drawn over the body, not a layout region, so it works in every layout, and while it is open it replaces the cards (the frame gets cheaper). Report 03's design: Factory, User and Favorites; a word search over name, description, author and tags; click loads, double-click loads and closes, Escape closes; ◀ ▶ step through the current list (they come first because arrow keys may reach the host); Save never offers a read-only folder. A load is `Session::load_preset`: one undo step from `ops_between(current, preset)`, delivered like a load (no per-slot or per-macro host writes, the nih-plug #92 crash class), and it marks the project dirty. A preset file is exactly `Patch::to_json()`; user presets live in `Documents/enth/Presets` (`ENTH_PRESETS_DIR` overrides it). The search field relies on the keyboard-focus fork patch inside REAPER (owner check 1.5).
 
@@ -202,9 +198,55 @@ The status line reports what a removal took with it ("Removed Filter 1, 2 routes
 
 So Recreate's bar shares the header row (the patch name hides; the target is unknown anyway), and after Submit the results drawer (scores, time, Retry, New, Show target) replaces the overview, while the per-control rings draw on the knobs through `Overlay`. A Learn step names its layout and its overlay, and hides what it doesn't use.
 
-**The minimum window (open: lane AM measures, then LV).** At `size.window.min` (1000 × 680) layout 1 has no overview region, so the source tiles and the route list vanish and nothing can be dragged from; the band scrolls 148 × 21 px and the effects lane 98 px, and the sources region is 528 px wide while the oscillator strip's content reaches about 625 px (probably clipped; inferred, not rendered). Either the minimum rises, or the variants handle it. Claude Design gets the `enth.layout/1` vocabulary (regions, parts, `arrange` values, token names with their values) and both sizes, and every variant gets its snapshots and an overflow report at 1200 × 800 and at 1000 × 680.
+**The minimum window.** Decided by lane AM: `size.window.min` rose to 1200 × 800 ([below](#the-minimum-window)). Every layout variant still gets its snapshots and an overflow report, at 1200 × 800 and at whatever smaller size it promises to handle; Claude Design gets the `enth.layout/1` vocabulary (regions, parts, `arrange` values, token names with their values).
 
-## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`)
+## Adding and removing modules (lane AM)
+
+**Every structural edit is one intent, one op and one undo step**, through one `session.edit` (the session's structural path: a recompiled plan, swapped with state carry, crossfaded when modules come or go; the swap block is reported, not gated, [benchmarks.md](benchmarks.md#lane-rt-the-plugin-measured-2026-10-20)). `editor/add_module.rs` holds the entry points; the intents are in `cards/intent.rs`:
+
+| Intent | Op | From |
+| --- | --- | --- |
+| `AddModule { kind, index }` | `AddModule` of a module at its defaults, id `Patch::free_id(kind)` | the header's Add menu, a region's right-click menu and its "+ Add" slot (appended), a card's Add after ▸ (right after the card) |
+| `RemoveModule(id)` | `RemoveModule`: its routes and slot assignments go with it, and undo puts them back at their places | a card's Remove |
+| `MoveModule { id, index }` | `Move` within the section | a card's Move up / Move down (Move left / Move right in a band) |
+| `Duplicate(id)` | `AddModule` of a copy right after it: kind, values and switch; a new id, no label, no routes | a card's Duplicate |
+| `Rename { id, label }` | `SetLabel` (an empty name clears the label: the card shows its kind and number again) | a card's Rename…, a field over the title row; Enter commits, Escape or a click elsewhere cancels; named "<title> name" for accessibility |
+| `MakeAmpEnv(id)` | `SetAmpEnv` | an envelope card that is not the amp envelope, while it is switched on |
+
+The entry points:
+
+- **The card's "…" menu.** Every module card ends its title row with a "…" button (`glyph::MENU`, U+2026: Inter has no U+22EF), named "<title> menu"; a right-click on the title row opens the same menu. Built-in cards (voice, master) have none.
+- **A right-click on empty region space** opens the Add menu of the sections the layout places in that region (the region registers a click area under its cards, so cards and controls keep their own clicks; a right-click on a card's body is not empty space).
+- **The dashed "+ Add" slot** follows a region's cards when the region has room for it and one of its sections is under its limit, and never makes the region scroll: `size.add_module.slot_height` (32) tall in a strip or lane region, `slot_width` (40) wide and the band's height in a band. A click opens the region's Add menu. Its accessible name says what it adds ("Add voice effect", "Add modulator"). At 1200 × 800 with the P1 default the filter lane and the modulator band have room; the three strips and the effects lane do not, and nothing scrolls (tested).
+- **The header's "+ Add" menu**, the Add hook (feature `add-module`, a default feature of `enth-ui`; without it only this button goes): every section, so any kind can be added however full the regions are drawn.
+
+An Add menu lists each section's kinds by their catalogue names (Oscillator, Noise; Filter; Reverb, Compressor; Envelope, LFO), under a heading per section when it shows several. A full section's items (4 generators, 4 voice effects, 4 effects, 8 modulators) and its cards' Add after and Duplicate are disabled and say why ("A patch holds at most 4 sources"); the amp envelope's Remove is disabled ("make another envelope the amp envelope first"). Anything the session still refuses (`too_many`, `in_use_as_amp_env`) shows as the status line's hint. The status line's right end names what an add or a removal did until the next edit: "Added Osc 3", "Added Filter 2, a copy of Filter 1", "Removed Filter 1, 2 routes and automation slot 3".
+
+Closed menus are not built (`Popup::is_id_open` first), and the slot's dashes are one mesh: `Shape::dashed_line` makes a shape per dash and cost the P1 default's two slots about 0.28 M instructions a frame ([Frame cost](#frame-cost)).
+
+### The minimum window
+
+**`size.window.min` is 1200 × 800, the default** (it was about 1000 × 680). Measured with the P1 default and layout 1 (kittest, `Editor::report()`):
+
+| Window | What does not fit |
+| --- | --- |
+| 1200 × 800 | nothing |
+| 1200 × 790 | the tiles by 1 px, the route list by 9 |
+| 1200 × 760 | the tiles by 31 px, the route list by 39, the effects lane by 18 |
+| 1150 × 800 | the route list by 63 px (two route columns need the overview 956 px wide) |
+| 1100 × 800 | the band by 48 px sideways, the tiles by 51, the route list by 63 |
+| 1000 × 800 | the band by 148 px sideways, the tiles by 51, the route list by 63 |
+| 1000 × 680 | **no overview at all**: the source tiles and their ⊕ handles, the only drag sources, are gone; the band by 148 × 21 px, the effects lane by 98 |
+
+So layout 1 needs all of 1200 × 800: the band of lane cards needs 1,148 px of width, two route-list columns need 1,200, and the column of signal row (304), band (224) and one row of tiles (85) with the three bars needs about 790 px of height whatever the arrangement. Two options were open: raise the minimum, or make layout 1 keep the sources at 1000 × 680 (a fixed overview row with the band as the share). The second keeps the tiles but leaves the band about 104 px tall, so every modulator card scrolls to its knobs; it also stops the overview growing in taller windows (the route grid comes back only there). **Raised**, because:
+
+- the plugin window is already fixed at `size.window.default` (`EguiEditorState::from_size`; hosts cannot shrink it), so the minimum binds only the dev window and a future UI-scale menu;
+- a small screen is the UI scale's job, not a smaller logical layout: at 75 % (`scale_percent` in `enth.plugin-state/1`) 1200 × 800 draws in 900 × 600 pixels with layout 1 intact; a scale over 100 % grows the window (default × scale), never the reverse;
+- a compact layout is a variant's (lane LV), with its own overflow report.
+
+`tests/add_module.rs::the_minimum_window_keeps_every_region_of_layout_1` checks that the minimum equals the default and that every region, the overview and every tile's handle are there at it, so `editor_lanes_p1.png` (1200 × 800) is also the snapshot at the minimum.
+
+## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 
 | Token | Value | For |
 | --- | --- | --- |
@@ -221,8 +263,13 @@ So Recreate's bar shares the header row (the patch name hides; the target is unk
 | `size.output.meter_floor_db` | −60 | the bottom of the meters and the spectrum |
 | `size.output.meter_fall_db_per_s` | 24 | how fast a meter falls back after a peak |
 | `size.output.scope_samples` | 1,024 | the samples the scope draws and the spectrum analyses (21 ms at 48 kHz; a power of two) |
+| `size.add_module.menu_width` | 20 | a card's "…" menu button at the right end of its title row (lane AM) |
+| `size.add_module.slot_height` | 32 | the dashed "+ Add" slot under a strip or lane region's cards |
+| `size.add_module.slot_width` | 40 | the dashed "+ Add" slot after a band's cards |
+| `size.add_module.dash`, `dash_gap` | 4, 4 | the slot outline's dashes and the space between them |
+| `size.window.min` | 1200 × 800 | the smallest logical window (lane AM raised it from 1000 × 680; [above](#the-minimum-window)) |
 
-The depth arcs and the wire use the existing strokes and the modulation accent (`accent.modulation`, `accent.modulation_wash`); the rate is `motion.animated_hz`.
+The depth arcs and the wire use the existing strokes and the modulation accent (`accent.modulation`, `accent.modulation_wash`); the editor asks for live frames at `motion.scope_hz` (lane AM). The "+ Add" slot is a `stroke.thin` outline in `line.grid` (`text.label` while hovered), no fill; its glyphs are `glyph::ADD` and `glyph::MENU`.
 
 ## The dev window
 
@@ -251,6 +298,16 @@ Options: `--patch FILE`, `--layout NAME|FILE` (or `ENTH_LAYOUT`), `--theme FILE`
 
 The live cases (ED2) render 1,600 frames of audio before each frame through an active session; the editor's share is that case minus `engine` (the same audio, no editor: 5.91 M per frame at the P1 default, 10.43 M at the maximum patch). ED2's additions cost +0.04 M idle at the P1 default and +0.10 M at the maximum patch (depth handles, range arcs, the route list, the output region); a `ui.scope` per control for the refused-target dimming had cost 0.25–0.4 M, so only a refused control gets one. Everything stays under the proposed 10 M limit; the maximum patch with the spectrum has 6 % to spare.
 
+**Lane AM** (R1/S1; the "…" button on every module card, the region menus, the "+ Add" slots), measured against F0r (`513a22d`) on the same machine and toolchain:
+
+| Case | F0r | AM |
+| --- | --- | --- |
+| P1 default, idle | 6.61 M | 6.73 M |
+| Maximum patch, idle | 8.83 M | 8.97 M |
+| Maximum patch, live with the spectrum, minus `engine` (10.43 M) (the worst case) | 9.45 M | 9.58 M |
+
+The worst case keeps 4.2 % of the proposed 10 M limit (5.5 % before). A first cut with `Shape::dashed_line` cost 6.98 M at the P1 default: one shape per dash.
+
 Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor without the macro bar, matrix or overview, and expected 7–8 M for the real one; the spike panel was 6.69 M and 7.64 M. The top costs are epaint's tessellator (stroke and fill, 12 %), `memcpy` (12 %) and glyph hinting (4 %). The proposed gungraun case keeps a hard limit of 10 M per animating frame.
 
 ## Tests
@@ -262,7 +319,8 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 | Every built-in parses, checks and round-trips; refusals name the problem; the no-op overlay changes nothing and a lesson overlay dims, hides and scores; undo step names | unit tests in `layout.rs`, `overlay.rs`, `describe.rs` |
 | Whole-editor snapshots, layout 1 at the P1 default and the maximum patch | `crates/enth-ui/tests/editor_snapshots.rs` |
 | (ED2) Through a real `Session`: dropping a source on a knob makes one route at 25 % and one undo step, and the target's status reading says so; a voice source on a global target and a non-modulatable parameter are refused with the reason on the status line; the drop check against the patch's own rules; the depth handle sets the newest route's depth as one undo step with depth events only (the epoch does not move); "Remove … modulation"; the route list fits the P1 default at 1200 × 800 with all eight routes editable; the grid comes back where it fits | `crates/enth-ui/tests/modulation.rs` |
-| (ED2) Repaint gating with exact delays through a real session and engine: 0 frames idle and a wake-up on new data; exactly 1/30 s while visible data changes; a closed editor; a stalled engine; visibility of a scrolled-out widget | `crates/enth-ui/tests/repaint.rs` |
+| (ED2) Repaint gating with exact delays through a real session and engine: 0 frames idle and a wake-up on new data; exactly 1/60 s while visible data changes (1/30 s until lane AM); a closed editor; a stalled engine; visibility of a scrolled-out widget | `crates/enth-ui/tests/repaint.rs` |
+| (AM) Through a real `Session`, by accessibility label: every module kind added from the header and removed from its card's menu, each one op and one undo step, with Undo and Redo; a removal takes its routes and automation slot, says so on the status line, and undo puts them back in place; a right-click on empty region space opens that region's Add menu (and not over a card); the "+ Add" slot only where there is room, nothing scrolling, and adding there; Duplicate, Move up, Rename… and an empty rename, the amp envelope's refused Remove and Make amp envelope; Add after; a full section's items disabled; an add on an active session is one plan, its undo another; the minimum window keeps every region and every tile's handle | `crates/enth-ui/tests/add_module.rs` |
 | (ED2) Live snapshots from synthetic telemetry: range and live arcs, the depth handle, tile levels, the output region as scope and spectrum | `crates/enth-ui/tests/live_snapshots.rs` (`region_live.png`, `region_live_spectrum.png`) |
 | (ED2) The tap's quiet rule: an editor opened in silence sees the plan sent while it was closed; a global LFO keeps publishing; a macro or value moved in silence publishes until it settles | `crates/enth-engine/tests/tap.rs` |
 | The plugin's glue: gestures, "More", the layout choice (`ENTH_LAYOUT`, the saved name, a refused file), a headless drag through the session | `crates/enth-plugin/src/editor.rs` |
@@ -276,6 +334,13 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 - Velocity and key are not in the tap, so their tiles show no level; a per-note value in the tap (an engine change) would add them.
 - A value scrolled out of view still wakes the editor through the tap, at up to 30 Hz (the engine does not know what is visible).
 - The route list fits eight routes at 1200 × 800; a ninth scrolls it. A layout that gives the overview more height gets the grid back automatically.
+
+**After AM (adding and removing modules).** Left for later lanes:
+
+- The header's right end is, right to left: the inline knobs, Redo, Undo, "+ Add". PBU's ◀ name ▶ / Browse / Save and RUI's challenge bar take the rest of the row (their hooks draw on the whole header `Ui`).
+- A preset load is one `Entry::load` step (lane PBC); `describe::entry` names it by its first op until PBU teaches it "Load <name>". Add and remove steps read "add osc3", "remove filter1" there (the ids), which a later polish can turn into titles.
+- Reordering is the menu's Move up and down; a header drag (`CardOutput::header`, "Move <title>") still does nothing. Duplicate copies no routes; there is no kind replacement (report 03: deferred).
+- The "+ Add" slot appears only where a region has room; in layout 1 the sources and the effects lane rarely do, so the header's "+ Add" and the cards' menus are the dependable ways in. A variant with spare room shows slots by itself.
 
 **LV (a layout variant).** A variant is one JSON file and two snapshots:
 

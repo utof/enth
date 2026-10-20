@@ -126,7 +126,7 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     content/presets/<track or FX name>.patch.json, byte for byte (owner build 2)
   starter-project --out FILE.rpp [--tracks bass,pad,pluck,lead] [--patch FILE] [--force]
                                     a REAPER project with one enth (CLAP) per named track, loaded with the starter patch
-                                    (every P1 module; the editor cannot add modules yet): where owner build 2 starts
+                                    (Init: every P1 module, the extras off, gain-staged): where owner build 2 starts
   preset-add FILE [--name NAME] [--tags TYPE,WORD,...] [--out DIR] [--folder SUB] [--force] [--move]
   preset-add --promote NAME[,NAME...] | --picks PICKS.md [--to DIR] [--force] [--move]
                                     normalise a CLI-drafted patch into a preset (exactly Patch::to_json(), name,

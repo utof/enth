@@ -19,10 +19,10 @@
 //! ```
 //!
 //! **`cargo xtask starter-project --out FILE`** writes the other end: a REAPER project with four tracks named `bass`,
-//! `pad`, `pluck` and `lead`, each holding enth (CLAP) loaded with the [starter patch](STARTER_PATCH). A fresh
-//! instance plays `Patch::init()` (one oscillator, one envelope) and the editor cannot add modules yet, so owner
-//! build 2 starts from this project instead: every P1 module is there, the extra ones switched off. `--tracks a,b,c`
-//! and `--patch FILE` change the tracks and the patch.
+//! `pad`, `pluck` and `lead`, each holding enth (CLAP) loaded with the [starter patch](STARTER_PATCH), which is Init,
+//! the patch a fresh instance plays (lane AM, R1/S1): every P1 module, the extra ones switched off, gain-staged. Owner
+//! build 2 starts from this project for its four named tracks. `--tracks a,b,c` and `--patch FILE` change the tracks
+//! and the patch.
 
 use std::path::{Path, PathBuf};
 
@@ -39,11 +39,13 @@ const VST3_CLASS_HEX: &str = "55555EADAA77C9FAF878DDDDB0B9D9BD";
 /// Where presets live in the repository.
 pub const PRESET_DIR: &str = "content/presets";
 
-/// The patch a starter project loads on every track, in the plugin's own serialisation (the plugin saved it: it
-/// loads and saves back byte for byte): every P1 module at its catalogue defaults, `osc1` into `filter1` with `env1`
-/// on the amp; `osc2`, `noise1`, `comp1` and `reverb1` switched off; `env2`, `lfo1` and `lfo2` unrouted; no routes, no
-/// slots, macros at 0.
-pub const STARTER_PATCH: &str = include_str!("preset/starter.patch.json");
+/// The patch a starter project loads on every track, in the plugin's own serialisation (it loads and saves back byte
+/// for byte): Init, the factory preset a fresh instance plays (lane AM): every P1 module at its catalogue defaults,
+/// `osc1` into `filter1` with `env1` on the amp; `osc2`, `noise1`, `comp1` and `reverb1` switched off; `env2`, `lfo1`
+/// and `lfo2` unrouted; no routes, no slots, macros at 0; the master at −12 dB, so a four-note chord peaks below
+/// −1 dBFS. (`preset/starter.patch.json`, the same modules with the master at 0 dB, stays as the randomizer's
+/// "starter superset" reference, docs/design.md §9.)
+pub const STARTER_PATCH: &str = include_str!("../../content/presets/init.patch.json");
 /// The starter project's tracks: the four G1 sounds.
 pub const STARTER_TRACKS: [&str; 4] = ["bass", "pad", "pluck", "lead"];
 
@@ -595,8 +597,14 @@ mod tests {
                 .all(|f| f.patch == STARTER_PATCH && f.kind == Kind::Clap)
         );
         let starter: serde_json::Value = serde_json::from_str(STARTER_PATCH).unwrap();
-        assert_eq!(starter["meta"]["name"], "Starter");
+        assert_eq!(starter["meta"]["name"], "Init");
         assert_eq!(starter["generators"].as_array().map(Vec::len), Some(3));
+        // The randomizer's starter superset holds the same modules; Init only lowers the master.
+        let superset: serde_json::Value =
+            serde_json::from_str(include_str!("preset/starter.patch.json")).unwrap();
+        for section in ["generators", "voice_fx", "fx", "modulators", "routes"] {
+            assert_eq!(starter[section], superset[section], "{section}");
+        }
     }
 
     #[test]

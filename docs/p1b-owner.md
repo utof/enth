@@ -22,7 +22,7 @@ Start REAPER (`~/apps/reaper-7.82/reaper_linux_x86_64/REAPER/reaper`). Once: *Op
 
 For live notes: arm the track, set its input to your MIDI keyboard or REAPER's virtual keyboard (*View → Virtual MIDI keyboard*, Alt+B), and turn monitoring on.
 
-A fresh enth plays the smallest patch (one oscillator, one envelope: no filter, no LFO, no reverb), and the editor cannot add modules yet. Checks 1.8, 1.10 and 1.11 need more, so make a project with every module for them (it refuses to overwrite a file):
+A fresh enth now plays "Init" (every P1 module; osc 2, noise, compressor and reverb switched off), and the editor can add and remove modules ("+ Add" in the header, "…" on each card; 2026-10-20, lane AM). The starter project below is still the quickest way to get four named tracks for checks 1.8, 1.10 and 1.11 (it refuses to overwrite a file):
 
 ```bash
 cargo xtask starter-project --out ~/enth-g1/build1.rpp
@@ -36,7 +36,7 @@ Do each check in CLAP first, then VST3 where the row says so.
 | --- | --- | --- | --- | --- |
 | 1.1 | First open, ×10 per format | Insert "CLAPi: enth (enth)" on a new track (the editor opens). Close the FX window, wait 10 s, insert again. 10 times; then 10 times with the VST3 | Every open draws the whole editor at once: never a blank, grey or black window, no crash. Write down how many of the 10 drew, per format | 10 min |
 | 1.2 | Idle CPU | One editor open, nothing playing, 60 s; then the same with the editor closed. In a terminal: `pidstat -t -p "$(pgrep -x reaper)" 1 60 \| grep Average` and `nvidia-smi pmon -s um -d 1 -c 60` | Open and idle costs about what closed costs (the editor draws nothing while nothing changes): under 1 % of a core for the editor's thread, GPU SM near 0 | 4 min |
-| 1.3 | Play and watch | Play notes for 30 s with the editor open, then stop. Run `pidstat` again while playing | The knob rings, tiles, scope and meters move smoothly and stop when the notes end. Say how smooth the scope looks: the editor asks for 30 frames a second, which baseview delivered as about 20 in Phase 0. Under 5 % of a core and under 5 % GPU SM while playing | 3 min |
+| 1.3 | Play and watch | Play notes for 30 s with the editor open, then stop. Run `pidstat` again while playing | The knob rings, tiles, scope and meters move smoothly and stop when the notes end. Say how smooth the scope looks: the editor asks for 60 frames a second while data changes, which baseview delivers as about 30 (26–28 measured under Xvfb, 2026-10-20). Under 5 % of a core and under 5 % GPU SM while playing | 3 min |
 | 1.4 | Resize | Drag the FX window's corner bigger and smaller | The editor stays drawn and usable (it may keep its own size); no garbage, no crash. Note what it does | 2 min |
 | 1.5 | Space after clicking the editor | Click an empty part of the editor, press Space. Click a knob, press Space. Right-click a knob, *Type value…*, type `a b`, then Escape. Click REAPER's arrange view, press Space | Space starts and stops REAPER's transport after each click in the editor. While typing, `a b` appears in the field and the transport does not move. (This decides whether the keyboard-focus patch works in REAPER's windows) | 3 min |
 | 1.6 | HiDPI | `echo "Xft.dpi: 192" \| xrdb -merge`, restart REAPER, open enth. Afterwards `echo "Xft.dpi: 96" \| xrdb -merge` and restart REAPER again | The editor is sharp and whole: REAPER does not clip it to its top-left quarter (baseview #359 under Xvfb) | 6 min |
@@ -51,7 +51,7 @@ Do each check in CLAP first, then VST3 where the row says so.
 
 The last row of G1: **"you can make a bass, pad, pluck and lead you like"** through the editor.
 
-1. **Start from the starter project, not a fresh instance.** A fresh enth plays the smallest patch (one oscillator, one envelope) and the editor cannot add modules yet. The starter project has four tracks, `bass`, `pad`, `pluck` and `lead`, each with enth (CLAP) holding every P1 module: osc 1 into the filter with env 1 on the amp; osc 2, the noise, the compressor and the reverb switched off (switch a card on with the toggle in its title); env 2 and both LFOs do nothing until you drag them onto a knob. Make it once (it refuses to overwrite a file):
+1. **Start from the starter project** (a fresh instance plays the same "Init" patch, and you can add or remove modules, but the project gives you the four named tracks). The starter project has four tracks, `bass`, `pad`, `pluck` and `lead`, each with enth (CLAP) holding every P1 module: osc 1 into the filter with env 1 on the amp; osc 2, the noise, the compressor and the reverb switched off (switch a card on with the toggle in its title); env 2 and both LFOs do nothing until you drag them onto a knob. Make it once (it refuses to overwrite a file):
 
    ```bash
    cd ~/code/enth && cargo xtask starter-project --out ~/enth-g1/g1-sounds.rpp
