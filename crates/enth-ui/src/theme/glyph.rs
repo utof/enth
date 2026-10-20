@@ -11,6 +11,14 @@ pub const BAD: &str = "✗";
 pub const HANDLE: &str = "⊕";
 /// Play / audition.
 pub const PLAY: &str = "▶";
+/// The previous and the next item of a list (the header's preset stepping, lane PBU).
+pub const PREVIOUS: &str = "◀";
+pub const NEXT: &str = "▶";
+/// A favorite, and not one (the preset browser, lane PBU).
+pub const FAVORITE: &str = "★";
+pub const NOT_FAVORITE: &str = "☆";
+/// Close a panel or a dialog (lane PBU). The multiplication sign: Inter has no U+2715.
+pub const CLOSE: &str = "×";
 /// Separator in a parameter path ("Filter › Cutoff").
 pub const PATH: &str = "›";
 /// Flow to the next stage ("Send to › Master").

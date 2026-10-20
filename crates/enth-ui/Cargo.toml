@@ -20,6 +20,9 @@ recreate = []
 # editor/add_module.rs). The lanes decide whether a feature stays, becomes a default, or goes.
 presets = []
 add-module = []
+# Lane PBU: the header's ◀ name ▶ / Browse / Save, on by default since S1 ships the preset browser (the browser's code
+# is always built; `default-features = false` drops the header hook, and so the way to open it).
+default = ["presets"]
 
 [dependencies]
 # No `default_fonts`: Theme::apply installs Inter and nothing else (assets/fonts).
