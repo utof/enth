@@ -26,6 +26,8 @@
 //! | [`editor`] | the `NiceEguiApp` window around the `enth-ui` editor | SK, ED1 |
 //! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
 //! | `editor_counts` | with the `editor-counts` cargo feature: editor opens and `editor_closed` calls, for the leak gate | INT |
+//! | [`game`] | a Recreate round's clock, worker, target and phrase players, A/B crossfade, round log | SKR (R1/S1; pre-declared by S0r) |
+//! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 #![allow(
     unsafe_code,
     reason = "nice_export_clap! and nice_export_vst3! expand to extern \"C\" entry points"
@@ -34,9 +36,11 @@
 pub mod editor;
 #[cfg(feature = "editor-counts")]
 pub mod editor_counts;
+pub mod game;
 pub mod ledger;
 pub mod notes;
 pub mod params;
+pub mod presets;
 pub mod process;
 #[cfg(feature = "rt-stats")]
 pub mod rt_stats;

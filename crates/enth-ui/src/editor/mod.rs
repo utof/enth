@@ -16,12 +16,20 @@
 //! | `live.rs` | telemetry from the engine's tap, and repaint gating | ED2 |
 //! | `modulate.rs` | drag-to-modulate: the ⊕ payload, drop targets, the depth handle | ED2 |
 //! | `reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features | ED1 |
+//! | `add_module.rs` | adding and removing modules: menus, the "+ Add" slot, the header's Add hook (`add-module`) | AM (R1/S1) |
+//! | `browser.rs` | the preset browser: the header's Presets hook (`presets`) and the browse panel | PBU (R1/S1) |
+//! | `recreate/` | the Recreate UI behind `recreate`: challenge bar and the header's Recreate hook, results, settings | RUI (R1/S1) |
+//!
+//! Lane S0r (R1/S1) declared the last three, and three header hook points: `regions/header.rs` calls one no-op
+//! function in each of them, behind its feature, so AM, PBU and RUI fill their header controls in their own files.
 //!
 //! docs/editor.md describes the whole editor.
 //!
 //! Colours, sizes, spacing, radii, strokes, fonts and rates come from `theme` tokens only; a new value is a new
 //! token in the file of its area (`theme/`), never a literal here.
 
+pub mod add_module;
+pub mod browser;
 pub mod cards;
 mod describe;
 mod frame;
@@ -29,6 +37,8 @@ pub mod layout;
 pub mod live;
 pub mod modulate;
 pub mod overlay;
+#[cfg(feature = "recreate")]
+pub mod recreate;
 pub mod regions;
 #[cfg(any(feature = "learn", feature = "recreate"))]
 mod reserved;

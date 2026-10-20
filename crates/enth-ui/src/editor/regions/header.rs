@@ -1,6 +1,10 @@
 //! The header band: the wordmark, the patch name, and the Undo and Redo buttons (keyboard undo waits for the
 //! fork's captured-shortcut hook, report 02 D6, so the buttons are the way to undo in every host). Built-in cards a
 //! layout places here (layout 1: master) draw as inline knobs at the right end, with every control's menu.
+//!
+//! Three hook points end [`Header::show`] (lane S0r, R1/S1): Add (`editor/add_module.rs`, feature `add-module`, lane
+//! AM), Presets (`editor/browser.rs`, feature `presets`, lane PBU) and Recreate (`editor/recreate/bar.rs`, feature
+//! `recreate`, lane RUI). Each is a no-op until its lane fills it.
 
 use egui::{Align, Align2, Button, Layout, Rect, RichText, Ui, UiBuilder, pos2};
 
@@ -111,5 +115,13 @@ impl<'a> Header<'a> {
         if redo.clicked() {
             out.push(Intent::Redo);
         }
+        // R1/S1 header hook points (lane S0r): each lane draws its header controls from its own file, behind its
+        // feature, so AM, PBU and RUI never edit this one to add them. No-ops until those lanes fill them.
+        #[cfg(feature = "add-module")]
+        crate::editor::add_module::header(&mut buttons, t, inner, self.view, out);
+        #[cfg(feature = "presets")]
+        crate::editor::browser::header(&mut ui, t, inner, self.view, out);
+        #[cfg(feature = "recreate")]
+        crate::editor::recreate::bar::header(&mut ui, t, inner, self.view, out);
     }
 }
