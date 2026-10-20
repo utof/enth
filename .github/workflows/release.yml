@@ -232,6 +232,7 @@ jobs:
             $deps | ForEach-Object { Write-Host $_ }
             if ($deps -match '(?i)vcruntime|msvcp|concrt|vcomp') { throw 'enth-plugin.clap imports the Visual C++ runtime DLLs: +crt-static did not take effect' }
           }
+          exit 0   # a step's status is the last native command's exit code; only the throws above fail it
 
       - name: clap-validator on the release bundle
         if: github.event_name == 'push' || inputs.validate
