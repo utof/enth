@@ -2047,6 +2047,7 @@ fn t3_the_largest_round_fits_the_enth_field() {
         submitted_patch: Some(worst(MAX_SUBMITTED_PATCH_BYTES)),
         edits,
         edits_dropped: u32::MAX,
+        origin: enth_session::game::RoundOrigin::Game, // lane SL: a game round, whose origin is omitted
     };
     let instance = InstanceState {
         ui: enth_session::UiState {

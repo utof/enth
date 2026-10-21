@@ -1,6 +1,6 @@
 # The session (`enth-session`, L6)
 
-**One single-threaded `Session` owns the live patch.** It holds the `Patch`, its `History`, the engine's `Link`, the `PlanMap` of the latest plan it sent, and the per-instance state outside the patch. The editor and the plugin shell change the patch only through it. It does no I/O, spawns no threads, reads no clocks and takes no locks; the plugin wraps it in one mutex. Lane S1s wrote this page and the crate's public API (freeze point F1b, [phase-1b.md](phase-1b.md)); lanes SK and S2s fill in the bodies that talk to the engine. Sources: research report 01 (R2, R3, R7, R8) and 02 (D5, D7) in `_local/sessions/2026-10-19-p1b-plugin-editor/`, [design.md §3–§4](design.md#4-host-parameters-macros--automation-slots), and the engine seams in [dsp/engine.md](dsp/engine.md#p1b-seams-lane-e-what-the-session-plugin-and-editor-lanes-rely-on). Lane SG (R1, freeze point F1r, [phase-2.md](phase-2.md)) added the Recreate round: its API, threading contract and saved state are in ["The Recreate round"](#the-recreate-round-lane-sg-r1).
+**One single-threaded `Session` owns the live patch.** It holds the `Patch`, its `History`, the engine's `Link`, the `PlanMap` of the latest plan it sent, and the per-instance state outside the patch. The editor and the plugin shell change the patch only through it. It does no I/O, spawns no threads, reads no clocks and takes no locks; the plugin wraps it in one mutex. Lane S1s wrote this page and the crate's public API (freeze point F1b, [phase-1b.md](phase-1b.md)); lanes SK and S2s fill in the bodies that talk to the engine. Sources: research report 01 (R2, R3, R7, R8) and 02 (D5, D7) in `_local/sessions/2026-10-19-p1b-plugin-editor/`, [design.md §3–§4](design.md#4-host-parameters-macros--automation-slots), and the engine seams in [dsp/engine.md](dsp/engine.md#p1b-seams-lane-e-what-the-session-plugin-and-editor-lanes-rely-on). Lane SG (R1, freeze point F1r, [phase-2.md](phase-2.md)) added the Recreate round: its API, threading contract and saved state are in ["The Recreate round"](#the-recreate-round-lane-sg-r1). Lane SL (R2, freeze point F1l, [phase-3.md](phase-3.md)) added the Learn binding (the stash, step loads, locks in the edit path, lesson rounds, the `learn` object): ["Learn"](#learn-lane-sl-r2).
 
 ## The API in brief
 
@@ -22,6 +22,8 @@
 | `GameEdit`, `RoundView`, `RoundSource`, `Listen`, `EndChoice` | `game` | The editor's round intents (start from settings or a code, A/B, submit, hint, reveal, vote with CT's `Agreement`, dispute, end) and its read model; `Session` implements the trait, a kittest fake can | Lane SG (R1, freeze point F1r); [below](#the-recreate-round-lane-sg-r1) |
 | `Session::{game_tick, game_job_done, drain_game_requests, game_ab, game_record}`, `Job`, `JobKind`, `JobResult`, `GameRequest`, `EditorView` | `game` | The shell's side of a round: the injected clock, the jobs its worker runs, the round's outbox | Lane SG |
 | `GameState`, `RoundRecord`, `RoundLogEntry` | `game` | The `enth` field's `game` object (absent while no round is live) and the round log's line (`enth.round-log/1`, carrying CT's `enth.round-result/1`) | Lane SG; fixture `tests/fixtures/state/v1/round.*.json` |
+| `LearnEdit`, `LearnView`, `Session::{learn_job_done, drain_learn_requests, learn_record, learn_player, locks, checked_patch}`, `LearnJob`, `LearnResult`, `LearnRequest`, `LearnError` | `learn` | The editor's lesson intents and read model, and the shell's side of a lesson: jobs, progress records, the Listen state | Lane SL (R2, freeze point F1l); [below](#learn-lane-sl-r2) |
+| `LearnState`, `LessonRef`, `Selector`, `SessionError::{Locked, LessonLive}`, `RoundSource::Challenge`, `JobKind::PrepareChallenge`, `RoundOrigin` | `learn`, `model`, `game` | The `enth` field's `learn` object, the lock selectors and refusals, and lesson rounds | Lane SL; the selector and `LessonRef` are stand-ins for lanes CV2's and LM's types until they merge |
 
 Stubs return `SessionError::Unsupported { what, lane }` (or `Inactive` while detached), never panic, and name the lane that fills them in.
 
@@ -145,7 +147,7 @@ Two nice-plug persistent fields, both permanent names ([naming.md](naming.md)):
 | Field | Text | Versioned by |
 | --- | --- | --- |
 | `patch` | Exactly `Patch::to_json()`, carried raw (never re-parsed through `serde_json::Value`) | The patch file's `schema` number and `enth_patch::migrate`, the same path as `enth render` |
-| `enth` | `{"schema":"enth.plugin-state/1","monitor":{"fx_bypass":false},"ui":{"layout":"lanes","scale_percent":100,"advanced":false}}`, plus `"game":{"round":{…}}` while a Recreate round is live ([below](#what-a-round-saves)) and PBC's `preset` | Its `schema` string and `state::INSTANCE_STEPS` |
+| `enth` | `{"schema":"enth.plugin-state/1","monitor":{"fx_bypass":false},"ui":{"layout":"lanes","scale_percent":100,"advanced":false}}`, plus `"game":{"round":{…}}` while a Recreate round is live ([below](#what-a-round-saves)) and PBC's `preset`, and SL's `learn` while a lesson is live ([below](#what-a-lesson-saves)) | Its `schema` string and `state::INSTANCE_STEPS` |
 
 - The slot assignments and the macros (values and names) live in the patch; the 72 host values are nice-plug's own `params` and are never needed to rebuild the sound.
 - Byte-deterministic (clap-validator's `state-reproducibility-binary`); each field at most 1 MiB; the two fields load independently (nice-plug sets `enth` before `patch`).
@@ -334,6 +336,132 @@ Each played round ends with one `GameRequest::Log(RoundLogEntry)`, schema `enth.
 | Gains, score rounding, unknown phases, escaped lengths, `Send` | `src/game.rs` unit tests |
 | The F1r fixes: newer enum values and an undecodable round keep the preferences and the stash (T3); the largest round fits the field (T3); a stash too large refuses the start; inconsistent reports refused, seeds from 2⁵³ refused (T6); `params`, the blind rating, `wake_at_ms`, the log line's fingerprint, engine and edit log, rings on the player's control, a fingerprint drift | `tests/game.rs` (`t3_*`, `t6_*`, `s*_*`, `m1_*`) |
 | **T5:** a state machine of random intents, edits, ticks, saves, host loads and job results in any order (right, failed, wrong kind, stale, inconsistent): no panic, every log line's `RoundResult` reads back, `time_to_pass_ms ≤ active_ms`, no submit after a reveal, at most one job of each kind in flight, the outbox drains, nothing left in flight after the end | `tests/game_props.rs` |
+
+## Learn (lane SL, R2)
+
+`enth-session`'s `learn` module binds a lesson to the live patch ([learn.md](learn.md#the-lesson-model-sketch), [phase-3.md](phase-3.md), freeze point F1l). Like `game`, it does no I/O, spawns no threads and reads no clocks: **time comes from the timestamps the shell passes to `game_tick`** (the round and the lesson share that clock), and **background work runs as `LearnJob`s the shell's worker executes** and hands back. The audio thread never touches any of it: a lesson reaches the engine only by replacing the patch, **one plan per step load**.
+
+**Who does what.** Lane LM's player (`enth_learn::player::Player`) owns the lesson: its steps, checks, hints, phases and progress records. It is pure, and every mutating call answers with effects, in order: `LoadPatch`, `StartRound`, `EndRound`, `View`, `Examples`, `Check`, `HintJob`, `Hint`, `Measured`, `Apply`, `Chose`, `Reveal`, `Passed`, `Record`, `Finished`, `End`. The session acts on them and does the rest: the stash, step loads, locks, the round, job bookkeeping, the saved state and the read model. **Until LM's player and CV2's selector merge, `learn.rs` carries stand-ins** mirroring the types on their branches (checked against `r2/lm` at `b9f511f` and `r2/cv2` at `3219eaf`): `LessonRef`, `Selector`, `Touch`, `StepView`, `StepPhase`, `PlayerEffect` and the others, and a `LessonPlayer` trait whose methods mirror LM's `Player` one to one. It adds one accessor, `round_challenge()` (below, under reloads). Lane F1L swaps the stand-ins for re-exports and implements the trait for `Player`, or holds `Player` directly.
+
+### The lifecycle
+
+| Entry | Does |
+| --- | --- |
+| `LearnEdit::learn_start(player)` | Stashes your patch (as patch-file text, so an unreadable one survives) and your undo history, saves `{lesson, stash}`, and loads the first step. Refused over a game round of its own (`round_live`: two stashes would not fit the field) and for a patch too large to stash or a reference too long to save (`too_large`). A new lesson while one is live keeps the original stash |
+| A step load (start, `learn_next`, `learn_back`, or the player moving on by itself) | Ends the step that was: its round (logged, `ended_by: keep`), its jobs (cancelled), its examples. Then a fresh history (**undo never leaves the step**), the step's view and locks, and its start seated like a load: one plan. A Recreate step's start comes from its round instead, which is still one plan; a step without a start keeps the patch (no plan) |
+| `learn_hint` | The player's authored text at once (`Hint`), or a measured-hint job (`HintJob`, its answer shown as `Measured`); `no_hint` when none is left |
+| `learn_show` | The witness's next op (`Apply`), applied **through `Session::edit`**: one undo step, and the locks hold. For an ear question, its answer (`Reveal`) |
+| `learn_choose(i)` | An ear question's answer |
+| `learn_listen(Some(i) \| None)` | Plays an example once the examples are rendered (`no_example` before) |
+| `learn_end(Restore \| Keep)` | The step's round ends first (logged with the same choice). Restore seats the stash with your own history (one plan); Keep keeps the lesson's patch and the step's history. The `learn` object goes, so the field keeps its earlier bytes |
+
+The read model is `LearnEdit::lesson()` (`LearnView`, rebuilt every frame): the lesson reference and step, the step count, the phase, the step's view (highlight, hide, lock), whether the step's round is live (draw the Recreate view through `GameEdit::round`, whose new `lesson` flag hides the round's own end and new-round controls), pending jobs, the latest authored hint, the Listen state, `finished`, `broken` and the last error. `Session::learn_player()` gives the editor the player for the step's text.
+
+### Who calls what
+
+| Entry | Thread | Does |
+| --- | --- | --- |
+| `game_tick(now, view)` | GUI, once per frame (unchanged) | Also the lesson's clock: the player's `tick` may ask for a sound check once the patch has settled |
+| `LearnEdit::*` | GUI, at the end of the frame like `SessionEdit` | The editor's intents and read model |
+| `learn_job_done(id, result)` | GUI (or host main), under the lock | Hands a job's result back. A result for a job the lesson no longer waits for, or one that measured an older revision of the patch, is `stale_job` and changes nothing |
+| `drain_learn_requests()` | Wherever `drain_requests` is drained | `Run(job)`, `Cancel(id)`, `Record { lesson, record }` (merge into the progress file), `Listen(state)`, `Dirty`; acted on **after unlocking** |
+| `load_instance` / `save_instance` | Host main | Restore or reconcile the lesson (below); save its object |
+
+Edits, undo, redo, host folds and host loads need no new entry: the edit path, `fold_host` and `load_patch` tell the player (as `Player`, `Host` and `Load` edits), each with a revision that counts every change of the patch over the whole lesson. The player's jobs carry that revision.
+
+### Locks
+
+**The session refuses, the overlay only draws.** `Session::edit` checks the step's lock selectors **before anything changes**, so the editor, Show me and every shell get the rule: a transaction in which any op touches a locked control is refused whole, `SessionError::Locked { op, touched, lock }` (code `locked`, with a hint), shown in the status line through `last_error`. Each op is judged against the patch as the ops before it leave it. A selector is lane CV2's `Selector`, in LM's text grammar: `filter1.cutoff`, `filter1.*` (also `voice.*` and `master.*`: the parameters, the module itself and the routes from or into it), `lfo1 -> filter1.cutoff`, `macro3` (its knob; a macro's routes are touches of their own, so a route or parameter lock holds against the knob). What an op touches is `learn::touches`:
+
+| Op | Touches |
+| --- | --- |
+| `SetParam` | the parameter |
+| `InsertRoute`, `RemoveRoute`, `SetDepth` | the route, and its destination parameter (modulation moves it) |
+| `SetMacro` | the macro, and each route from it with its destination |
+| `SetMacroName` | the macro |
+| `AddModule`, `RemoveModule`, `SetEnabled` | the module, every parameter it has, every route from or into it |
+| `Move`, `SetLabel` | the module |
+| `SetAmpEnv` | the new amplitude envelope and the old one |
+| `SetSlot` | the slot's new target and its old one (a slot lets the host move a parameter) |
+| `SetMeta` | nothing |
+| a kind this build does not know (`Op` is `non_exhaustive`) | refused while anything is locked (fail closed) |
+
+**The policy, for the F1l judge:**
+
+- **Only `locked` is enforced.** `Constraints.editable` is advisory: the editor dims, and lane CLS uses it as `closest`'s free set. A Recreate step's locks come from its challenge's `Constraints.locked`, which the player copies into the step's view, so the session has one channel.
+- **Host automation of a locked parameter folds but never counts.** The patch-wins rules hold, and the host is never refused. Every check (the player's patch predicates, its sound checks, a lesson round's score and rings) sees `Session::checked_patch()`, the live patch with each locked control at its value from the step load. A host state load is treated the same way.
+- **Undo never leaves the step:** every step load starts a fresh history; your own history waits with the stash.
+- **A preset load asks Restore or Keep:** `Session::load_preset` is refused while a lesson is live (`SessionError::LessonLive`, code `lesson_live`). The editor asks, ends the lesson, then loads.
+- **One stash at a time:** `learn_start` is refused over a game round of its own, and the editor's `game_start` is refused while a lesson is live (`GameError::LessonLive`), as is `game_end` on the lesson's own round (`GameError::LessonRound`).
+- **While a lesson is reopening after a reload,** its locks are not known yet and edits are allowed (a frame or two; if the lesson cannot be found, it breaks and only ending it is left).
+
+### Jobs
+
+| Job | When | The worker | Result |
+| --- | --- | --- | --- |
+| `Open { lesson }` | After a reload | Finds the lesson in the installed packs and resumes its player at the saved step (`Player::resume(bundle, step)`) | `Opened { player, effects }` (`effects` is what the resume returned), or `Failed` (the pack is gone: the lesson breaks, and Restore still brings your patch back). A player for another lesson is refused (`other_lesson`) |
+| `Check(request)` | The player's `Check` effect, from `tick`, once the patch settled | Runs the sound check (`enth_learn`'s evaluation) | `Checked(verdict)` |
+| `Hint(request)` | The player's `HintJob` effect, past the authored hints | `enth_solver::hint` | `Hinted(hint)` |
+| `Examples { examples }` | A Listen or Choose step loads | Renders each example into the Target ▶ slot, as one loop each, and measures their loudness | `Examples { lufs }` |
+
+At most one job of each kind is in flight; a step load cancels the step's jobs. **Stale results are refused twice:** by the session, by job id and revision, before the player sees them, and by the player, by revision.
+
+### Lesson rounds
+
+A Recreate step starts a real game round through the additive `RoundSource::Challenge(Box<Challenge>)` (so `RoundSource` is no longer `Copy`). The worker answers the new `JobKind::PrepareChallenge { challenge }` with `Prepared::from_round(&enth_challenge::prepare_challenge(challenge)?, lufs)`, and the session checks that the prepared challenge is the one it asked for. The round's record and its log line carry `origin: "lesson"` (`RoundOrigin`, omitted for a game round, so game rounds keep their bytes and older lines read as game rounds; a newer origin reads as `other`). `gr1-report` leaves such lines out. **A lesson round never stashes**: the `learn` object holds the only stash. It has a code only when its challenge has a seed target, and its log line's `result` is `None` without one. When the round first passes, the player hears `round_ended { passed: true, assisted, best_sound_pct }` (the best sound %, rounded down), and on a reveal `round_ended { passed: false, assisted: true }`. The round stays live until the step moves, or until the player's `EndRound`. Outside a lesson, `RoundSource::Challenge` starts an ordinary round that stashes; one with a non-seed target has no code, so it does not survive a project reload (it restores `Broken`, its stash kept).
+
+### What a lesson saves
+
+The `enth` field's optional `learn` object holds the in-flight `LessonRef` (pack, version, lesson, step and the 16-hex-digit content prefix) and the stash: `{"lesson":{"pack":"basics","version":"1.0.0","lesson":"02-filter","step":1,"content":"0123456789abcdef"},"stash":"…"}`. It is **absent while no lesson is live**, so every state without a lesson keeps its bytes (the v1 fixtures are re-checked without a lesson and after one ended with Restore). It stays within `enth.plugin-state/1`. Per-user progress is not here: it is the shell's file, fed by `LearnRequest::Record`.
+
+- **Read leniently, keeping the stash** (S0l's open item, decided): a `learn` object this build cannot decode keeps its stash, as `GameState::lenient` keeps a round's. The lesson restores broken, and Restore brings your patch back.
+- **A reload** restores the object and asks for `Open`. When the player comes back at the saved step with the same content, the step **resumes** with the effects its resume gave (its view and examples, never a start patch or a round): the locks come back, the start patch is not seated (the `patch` field holds the step's patch), and a saved lesson round is prepared again from the player's `round_challenge()`, under its own id, and checked against its saved fingerprint. When the lesson changed (another content prefix), the session calls the player's `start()` and loads step 0 normally; the old step's round ends. A lesson round whose lesson does not come back breaks; it never stashed, so ending it changes nothing.
+- **A host state load during a lesson.** The same lesson at the same step with the same stash (REAPER's Undo within a step) goes on with its player. Anything else is the host's: the live lesson ends without a restore (the patch is the host's), nothing is marked dirty, and the loaded lesson, if any, is reopened.
+
+**The budget** (the F1l named check). The field is 1 MiB. A game round reserves `ROUND_BYTES` (768 KiB, a 384 KiB stash included). A lesson round never stashes, so it takes at most `LESSON_ROUND_BYTES` (384 KiB). The `learn` object takes at most `LEARN_BYTES`: the stash, a reference of at most `LESSON_REF_BYTES` (1 KiB; a longer one is refused at the start), and 1 KiB of keys. A compile-time check keeps the two plus 64 KiB for the rest of the field under 1 MiB. Measured by `tests/learn.rs::the_largest_lesson_and_its_round_fit_the_enth_field`, with every part at its cap and escaped at its worst:
+
+| Part | Bytes | Budget |
+| --- | --- | --- |
+| The `learn` object | 394,252 | 395,264 |
+| The lesson round | 292,965 | 393,216 |
+| The whole field (with a 64-character layout and a 4 KiB preset key) | 691,543 | 1,048,576 |
+
+### Listen examples and the Target ▶ slot
+
+**They can share it, by time.** The open check from [phase-3.md](phase-3.md#open-checks) is answered as follows. A Listen or Choose step never has a round, and the session ends a step's round before the next step loads, so the slot is free whenever examples play. An A/B pair must flip position-locked like Target ▶ and Mine ▶, so the slot's payload becomes **a set of loops, one per example** (2 to 4), with the playing one picked in the Listen state (`ListenState { example, ready, gains_db }`, pushed like the round's A/B state). The louder level-matched examples are attenuated to the quietest and never boosted (`level_match`, default on). The shell drops the loops when `ready` turns false. The session side is built and tested; the shell's (lane SKL) is not.
+
+### What lanes SKL and LUI must wire
+
+1. **The player.** Build it from the pack the shell read (`Player::new(bundle)`) and pass it to `learn_start`. Answer `Open` with `Player::resume(bundle, step)`'s player and effects. If the resume refuses the step (an updated lesson with fewer steps), answer with `Player::new(bundle)` and no effects: its other content prefix makes the session start it at step 0.
+2. **The worker.** Run `LearnRequest::Run` jobs like the game's (never blocking on a full queue), and answer `JobKind::PrepareChallenge` with `prepare_challenge`. Results come back through `learn_job_done` on the GUI thread.
+3. **The progress file.** Merge each `LearnRequest::Record` after unlocking (re-read, `Progress::merge`, temporary file, rename).
+4. **Listen.** Store `LearnRequest::Listen` where `process()` reads it, and play the example loops from the Target ▶ slot.
+5. **The editor.** Draw `LearnView`. Ask Restore or Keep before a preset load (on `lesson_live`). Show a `locked` refusal on the status line.
+6. **Dirty.** Coalesce `LearnRequest::Dirty` with `ShellRequest::PatchEdited` and `GameRequest::Dirty`.
+
+### Tests (lane SL)
+
+| What | Where |
+| --- | --- |
+| The lifecycle: the stash, step loads, Next, Back, Finished, Restore with your history, Keep, a new lesson keeping the first stash, `too_large` refusals | `tests/learn.rs` |
+| Every op kind on a locked control refused, changing nothing and delivering nothing (13 kinds, plus a macro route and a cleared slot); a transaction refused whole; free controls and `SetMeta` stay editable; Show me through the locks; a negative control (the check disabled) fails these tests | `tests/learn.rs` |
+| One plan per step load against a running engine (a patch step, a Recreate step, a step without a start, Back, Restore), and no other learn entry reaching the engine | `tests/learn.rs` |
+| No audio-thread contact: six lessons while a test audio thread renders under `assert_no_alloc` | `tests/learn.rs` |
+| Jobs: a settled sound check, a stale result refused after an edit, wrong and failed results, cancellation on a step change, hints, Listen examples level-matched | `tests/learn.rs` |
+| The lesson round: `prepare_challenge`, no stash, `origin: lesson` on the log line, `game_end` refused, a pass reaching the player, resumed after a reload, broken without its lesson; a game round's bytes unchanged; a challenge round outside a lesson | `tests/learn.rs` |
+| The saved state: a mid-lesson save keeps the stash and resumes at its step; a lesson not found again (or another lesson, or an unreadable object) keeps its stash; an updated lesson restarts at step 0; the v1 fixtures byte-identical; the budget; host folds of locked controls never counting; host loads | `tests/learn.rs`, `tests/state.rs` |
+| The selector grammar, covering rules, the lenient reader, `Send` | `src/learn.rs` unit tests |
+
+### Decisions (lane SL, for the F1l judge)
+
+1. **The lock check sits at the head of the edit path**, before the history applies anything, rather than in `deliver`, which runs after the patch has changed. Undo and redo need no check: a step's history only ever holds ops that passed it.
+2. **Locks are judged on touches**, and a parameter lock also covers routes into that parameter and the module's enable flag and removal. Only `locked` is enforced.
+3. **Checks see the checked patch**, with locked controls pinned at their step-load values, so the host can automate a locked control without it counting.
+4. **One stash at a time**, kept by refusals both ways between lessons and game rounds.
+5. **An unreadable `learn` object keeps its stash.**
+6. **Lesson rounds resume from the lesson**, by its reference and the round's saved fingerprint, not from a code (non-seed targets have none).
+7. **The session refuses stale results itself**, by job id and revision, and the player's own check stays as a second guard.
+8. **A host load other than the same lesson's ends the live lesson without a restore**, like a host load of another round.
 
 ## Decisions
 

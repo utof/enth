@@ -288,7 +288,7 @@ pub fn load(sources: &[Source]) -> Loaded {
                 out.stats.other_schema += 1;
             }
             let Some(entry) = parsed.entry else {
-                if !parsed.other_schema {
+                if !parsed.other_schema && !parsed.not_a_game_round {
                     out.stats.unusable += 1;
                 }
                 continue;

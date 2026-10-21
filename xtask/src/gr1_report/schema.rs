@@ -242,6 +242,9 @@ pub struct Parsed {
     pub issues: Vec<Issue>,
     /// The line has another schema version (skipped; counted by the caller).
     pub other_schema: bool,
+    /// The line is not a game round's (`origin` other than `game`, such as a lesson's Recreate step; lane SL, R2):
+    /// skipped with a note, and not counted as unusable. GR1 counts game rounds only.
+    pub not_a_game_round: bool,
 }
 
 pub(super) const TOP_FIELDS: &[&str] = &[
@@ -260,6 +263,7 @@ pub(super) const TOP_FIELDS: &[&str] = &[
     "fingerprint",
     "engine",
     "edit_log",
+    "origin",
 ];
 pub(super) const RESULT_FIELDS: &[&str] = &[
     "schema",
@@ -378,6 +382,18 @@ pub fn parse_line(text: &str) -> Parsed {
                 .push(issue(Severity::Error, "no `schema` string"));
             return out;
         }
+    }
+    // Lane SL (R2): a lesson's round writes `"origin":"lesson"` (a game round writes no origin), and GR1 is about the
+    // game, so any other origin is left out.
+    if let Some(origin) = obj.get("origin")
+        && origin.as_str() != Some("game")
+    {
+        out.not_a_game_round = true;
+        out.issues.push(issue(
+            Severity::Note,
+            format!("a round with origin {origin} (not the game's), left out"),
+        ));
+        return out;
     }
     let mut r = Reader { issues: Vec::new() };
     let entry = read_entry(&obj, &mut r);
@@ -854,6 +870,21 @@ mod tests {
                 p.issues[0].message
             );
         }
+    }
+
+    /// Lane SL (R2): a lesson round's line (`"origin":"lesson"`) is left out with a note; a line with no origin or
+    /// `"origin":"game"` reads as before.
+    #[test]
+    fn a_lesson_rounds_line_is_left_out_with_a_note() {
+        let mut v = end_line();
+        v["origin"] = json!("lesson");
+        let p = parse(&v);
+        assert!(p.entry.is_none() && p.not_a_game_round && !p.other_schema);
+        assert_eq!(severities(&p), vec![Severity::Note]);
+        v["origin"] = json!("game");
+        let p = parse(&v);
+        assert!(p.issues.is_empty(), "{:?}", p.issues);
+        assert!(p.entry.is_some() && !p.not_a_game_round);
     }
 
     #[test]

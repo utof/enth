@@ -46,6 +46,17 @@
 //! code's prefix refuses, another engine version warns) and, on a resumed round, the full fingerprint it saved. It
 //! checks each worker report against the challenge too (scorer ids, pass mark, the pass recomputed from the sound
 //! %). Scores are CT's [`ScoreReport`]; the round log carries CT's [`RoundResult`] (`enth.round-result/1`).
+//!
+//! # Lesson rounds (lane SL, R2)
+//!
+//! A round may also start from a given [`Challenge`] ([`RoundSource::Challenge`], additive), which the worker
+//! prepares with `enth_challenge::prepare_challenge` ([`JobKind::PrepareChallenge`]). A lesson's Recreate step starts
+//! one through the session's `learn` module: its record and its log line carry [`RoundOrigin::Lesson`] (`"origin":
+//! "lesson"`, omitted for a game round, so `gr1-report` can leave lesson rounds out), and it **never stashes**: the
+//! `learn` object holds the only stash, so a lesson and its round fit the `enth` field together. A lesson round has
+//! no code unless its challenge is a seed challenge; after a reload it waits for the lesson to reopen and hand its
+//! challenge back. While a lesson is live, the editor's `game_start` is refused ([`GameError::LessonLive`]), and so is
+//! `game_end` on the lesson's round ([`GameError::LessonRound`]): the lesson's Next, Back and End move it.
 
 use std::sync::Arc;
 
@@ -195,14 +206,47 @@ pub fn rings(structure: &StructureScore) -> Vec<Ring> {
         .collect()
 }
 
-/// Where a round starts from ([`GameEdit::game_start`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Where a round starts from ([`GameEdit::game_start`]). Not `Copy` since lane SL added
+/// [`RoundSource::Challenge`] (a challenge owns patches).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RoundSource {
     /// The settings page: the shell drew the seed (a short code holds 40 bits of it). A preset's spec has its short
     /// code at once; a custom spec gets its long code when the target exists (it carries the target's fingerprint prefix).
     Settings(RandomSpec),
     /// A code the player pasted, or a daily's.
     Code(ChallengeCode),
+    /// A given challenge (lane SL, R2; additive): a lesson's Recreate step, or a challenge file. The worker prepares it
+    /// with `enth_challenge::prepare_challenge` ([`JobKind::PrepareChallenge`]); the session checks that the prepared
+    /// challenge is this one. A seed challenge gets its code when the target exists; any other target has none, so
+    /// such a round outside a lesson does not survive a project reload (it restores [`Phase::Broken`], its stash kept;
+    /// a lesson resumes its round from the lesson instead).
+    Challenge(Box<Challenge>),
+}
+
+/// Who started a round (lane SL, R2). Saved in the record and written on the round-log line only when it is not
+/// [`RoundOrigin::Game`], so a game round keeps its bytes and older lines read as game rounds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoundOrigin {
+    /// The Recreate game: from settings, a code or a challenge file. Counts for GR1.
+    #[default]
+    Game,
+    /// A lesson's Recreate step (the session's `learn` module). Never stashes; `gr1-report` leaves it out.
+    Lesson,
+    /// An origin from a newer build: not a game round either.
+    #[serde(other)]
+    Other,
+}
+
+impl RoundOrigin {
+    /// The default origin, which the saved record and the log line omit.
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if passes the field by reference"
+    )]
+    pub fn is_game(&self) -> bool {
+        *self == RoundOrigin::Game
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -337,6 +381,10 @@ pub struct RoundRecord {
     pub edits: Vec<EditRecord>,
     /// Log entries not kept because the log reached its byte budget.
     pub edits_dropped: u32,
+    /// Who started the round (lane SL, R2): omitted for a game round, so a game round keeps its bytes. A lesson round
+    /// ([`RoundOrigin::Lesson`]) never stashes, and after a reload it waits for its lesson to hand the challenge back.
+    #[serde(skip_serializing_if = "RoundOrigin::is_game")]
+    pub origin: RoundOrigin,
 }
 
 /// `skip_serializing_if` for a flag the record writes only when set.
@@ -814,6 +862,15 @@ pub enum JobKind {
         /// The player's patch after the last settled edit.
         patch: Box<Patch>,
     },
+    /// Prepare a given challenge (lane SL, R2; [`RoundSource::Challenge`]): `enth_challenge::prepare_challenge` (seed,
+    /// patch and draw targets: the target, start, randomized parameters and fingerprint, every scorer it names
+    /// prepared), kept under the job's round like [`JobKind::Prepare`]'s; render and keep the target's loop the same
+    /// way. Answer [`JobResult::Prepared`] with [`Prepared::from_round`]; the session checks that the prepared
+    /// challenge is the one it asked for, and a resumed round's fingerprint.
+    PrepareChallenge {
+        /// The challenge.
+        challenge: Arc<Challenge>,
+    },
     /// Render the scored phrase through `patch` and measure its loudness, for Mine ▶'s gain. Answer
     /// [`JobResult::Loudness`].
     Loudness {
@@ -840,6 +897,7 @@ impl JobKind {
     pub fn name(&self) -> &'static str {
         match self {
             JobKind::Prepare { .. } => "prepare",
+            JobKind::PrepareChallenge { .. } => "prepare_challenge",
             JobKind::Score { .. } => "score",
             JobKind::Rings { .. } => "rings",
             JobKind::Loudness { .. } => "loudness",
@@ -1034,6 +1092,10 @@ pub struct RoundLogEntry {
     /// active time, up to [`EDIT_LOG_BYTES`] (F1r review S8).
     #[serde(default)]
     pub edit_log: Vec<EditRecord>,
+    /// Who started the round (lane SL, R2): `"origin":"lesson"` for a lesson's Recreate step, which `gr1-report`
+    /// leaves out. Omitted for a game round, so game lines keep their bytes, and a line without it reads as one.
+    #[serde(default, skip_serializing_if = "RoundOrigin::is_game")]
+    pub origin: RoundOrigin,
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1139,6 +1201,9 @@ pub struct RoundView {
     pub warnings: Vec<CodeWarning>,
     /// The last thing that went wrong in the round.
     pub error: Option<GameError>,
+    /// The round is a lesson's Recreate step (lane SL, R2): the lesson's Next, Back and End move it, so the editor
+    /// leaves out the round's own end and new-round controls.
+    pub lesson: bool,
 }
 
 /// The editor's round intents (lane RUI). [`Session`] implements it; a kittest fake may too. Object-safe. Every
@@ -1146,8 +1211,10 @@ pub struct RoundView {
 pub trait GameEdit {
     /// The round, if one is live.
     fn round(&self) -> Option<RoundView>;
-    /// Start a round from settings or a code (a round already live ends first, logged; its stash carries over).
-    /// Refused settings change nothing. Asks for a [`JobKind::Prepare`]; the patch changes only when it is done.
+    /// Start a round from settings, a code or a challenge (a round already live ends first, logged; its stash carries
+    /// over). Refused settings change nothing, and so does a start while a lesson is live
+    /// ([`GameError::LessonLive`]: the lesson starts its own rounds). Asks for a [`JobKind::Prepare`] (or a
+    /// [`JobKind::PrepareChallenge`]); the patch changes only when it is done.
     fn game_start(&mut self, source: RoundSource) -> Result<(), GameError>;
     /// Set the A/B switch. `Target` needs the target ready; `Target` and `Mine` need a live round.
     fn game_listen(&mut self, listen: Listen) -> Result<(), GameError>;
@@ -1170,7 +1237,8 @@ pub trait GameEdit {
     fn game_vote(&mut self, agreement: Agreement) -> Result<(), GameError>;
     /// The Disagree button (after a scored submit): keeps the note and logs a dispute line at once.
     fn game_dispute(&mut self, note: &str) -> Result<(), GameError>;
-    /// End the round (logged if it was played).
+    /// End the round (logged if it was played). Refused for a lesson's round while its lesson is live
+    /// ([`GameError::LessonRound`]).
     fn game_end(&mut self, choice: EndChoice) -> Result<(), GameError>;
 }
 
@@ -1249,6 +1317,10 @@ pub enum GameError {
     BadRating(u8),
     /// The first score is recorded: a rating now would not be blind.
     AlreadyScored,
+    /// A lesson is live (lane SL, R2): a round of the game's own would stash a second patch, so end the lesson first.
+    LessonLive,
+    /// The round belongs to the live lesson (lane SL, R2): the lesson's Next, Back and End move it.
+    LessonRound,
 }
 
 impl GameError {
@@ -1273,6 +1345,8 @@ impl GameError {
             GameError::SilentTarget => "silent_target",
             GameError::BadRating(_) => "bad_rating",
             GameError::AlreadyScored => "already_scored",
+            GameError::LessonLive => "lesson_live",
+            GameError::LessonRound => "lesson_round",
         }
     }
 
@@ -1313,6 +1387,12 @@ impl GameError {
             GameError::AlreadyScored => {
                 "the rating is asked before the score shows, so it cannot change now".to_owned()
             }
+            GameError::LessonLive => {
+                "a lesson is in progress: end it first (Restore brings your own patch back)".to_owned()
+            }
+            GameError::LessonRound => {
+                "this round is the lesson's step: use Next, Back or End lesson".to_owned()
+            }
         }
     }
 }
@@ -1351,6 +1431,8 @@ impl std::fmt::Display for GameError {
             GameError::SilentTarget => f.write_str("the target is silent"),
             GameError::BadRating(r) => write!(f, "rating {r} is not 1 to {RATING_MAX}"),
             GameError::AlreadyScored => f.write_str("the first score is already recorded"),
+            GameError::LessonLive => f.write_str("a lesson is live"),
+            GameError::LessonRound => f.write_str("the round belongs to the live lesson"),
         }
     }
 }
@@ -1408,8 +1490,10 @@ impl MergeKey {
 /// [`RoundRecord`] (in `InstanceState::game`).
 #[derive(Default)]
 pub(crate) struct GameLive {
-    /// The round's settings (from its code, or the settings page).
+    /// The round's settings (from its code, or the settings page; a seed challenge's spec).
     spec: Option<RandomSpec>,
+    /// The challenge a [`RoundSource::Challenge`] round was started from (lane SL): the prepared one must equal it.
+    source: Option<Arc<Challenge>>,
     /// The challenge the prepare job built (with the generator's phrase).
     challenge: Option<Arc<Challenge>>,
     /// What the code check reported without stopping the round.
@@ -1528,6 +1612,57 @@ impl Session {
         self.instance.game.as_mut()?.round.as_mut()
     }
 
+    /// The latest shell timestamp ([`Session::game_tick`]'s clock, which the lesson shares; lane SL).
+    pub(crate) fn game_now(&self) -> u64 {
+        self.game.now
+    }
+
+    /// The live round is a lesson's (lane SL).
+    pub(crate) fn lesson_round_live(&self) -> bool {
+        self.game_record()
+            .is_some_and(|r| r.origin == RoundOrigin::Lesson)
+    }
+
+    /// A lesson round that can no longer be resumed (its lesson did not come back after a reload): only ending it is
+    /// left. It never stashed, so ending it changes nothing (lane SL).
+    pub(crate) fn game_break_lesson_round(&mut self) {
+        if let Some(record) = self.record_mut()
+            && record.origin == RoundOrigin::Lesson
+            && record.phase != Phase::Broken
+        {
+            record.phase = Phase::Broken;
+            self.game.jobs.prepare = None;
+            self.game.listen = Listen::Off;
+        }
+    }
+
+    /// A restored lesson round waits for its lesson to hand the challenge back: nothing prepares it, and its target
+    /// is not here (lane SL).
+    pub(crate) fn lesson_round_waiting(&self) -> bool {
+        self.game_record()
+            .is_some_and(|r| r.origin == RoundOrigin::Lesson && r.phase != Phase::Broken)
+            && self.game.jobs.prepare.is_none()
+            && self.game.target.is_none()
+    }
+
+    /// Resume a lesson round restored from the saved state (lane SL): its lesson reopened and handed its challenge
+    /// back, so ask for it to be prepared again. The prepared target must match the saved fingerprint, and the patch
+    /// is not touched (the `patch` field holds the round's). Returns `false` if no restored lesson round waits.
+    pub(crate) fn game_resume_lesson_round(&mut self, challenge: Challenge) -> bool {
+        if !self.lesson_round_waiting() {
+            return false;
+        }
+        let Some(id) = self.game_record().map(|r| r.id) else {
+            return false;
+        };
+        let challenge = Arc::new(challenge);
+        self.game.spec = challenge.spec().copied();
+        self.game.source = Some(Arc::clone(&challenge));
+        let job = self.game.job(id, JobKind::PrepareChallenge { challenge });
+        self.game.jobs.prepare = Some(job);
+        true
+    }
+
     /// The A/B state the shell's audio side follows.
     pub fn game_ab(&self) -> AbState {
         let (target_gain_db, mine_gain_db) = ab_gains(self.game.target_lufs, self.game.mine_lufs);
@@ -1578,6 +1713,7 @@ impl Session {
         {
             self.game_settle();
         }
+        self.learn_tick(now); // the lesson's sound checks share this clock (lane SL, crate::learn)
     }
 
     /// The settled jobs: Mine's loudness always, the rings after the first submit; each only if none of its kind is
@@ -1614,7 +1750,9 @@ impl Session {
                 JobKind::Rings {
                     challenge,
                     target,
-                    patch: Box::new(self.patch.clone()),
+                    // In a lesson, what the step locks counts at its step value (lane SL: host automation of a
+                    // locked parameter never counts toward a check); otherwise the patch itself.
+                    patch: Box::new(self.checked_patch()),
                 },
             );
             self.game.jobs.rings = Some((id, revision));
@@ -1763,6 +1901,17 @@ impl Session {
             );
             return;
         }
+        // A round from a given challenge must get that challenge back (lane SL).
+        if let Some(source) = &self.game.source
+            && **source != challenge
+        {
+            self.game_job_failed(
+                "prepare",
+                "the prepared challenge is not the one the round asked for".to_owned(),
+            );
+            return;
+        }
+        let given = self.game.source.is_some();
         // A fresh round stashes the player's patch: it must fit the saved state (it may have grown while the target
         // was prepared, through a host load).
         let own_bytes = self.own_patch_bytes();
@@ -1778,6 +1927,7 @@ impl Session {
             })
         } else if record.phase == Phase::Preparing
             && record.stash.is_none()
+            && record.origin != RoundOrigin::Lesson
             && own_bytes > STASH_BYTES
         {
             Err(GameError::TooLarge {
@@ -1786,12 +1936,14 @@ impl Session {
                 max: STASH_BYTES,
             })
         } else if record.code.is_empty() {
-            // Custom settings: the long code carries the target's fingerprint prefix, so it exists only now.
+            // Custom settings: the long code carries the target's fingerprint prefix, so it exists only now. A given
+            // challenge whose target is not a seed has no code at all (lane SL), and plays without one.
             match challenge.code(fingerprint.prefix()) {
                 Some(code) => {
                     record.code = code.to_string();
                     Ok(Vec::new())
                 }
+                None if given => Ok(Vec::new()),
                 None => Err(GameError::JobFailed {
                     job: "prepare",
                     message: "this challenge has no code".to_owned(),
@@ -1829,7 +1981,7 @@ impl Session {
     }
 
     /// The player's own patch text as a stash would save it (escaped): what [`STASH_BYTES`] bounds.
-    fn own_patch_bytes(&self) -> usize {
+    pub(crate) fn own_patch_bytes(&self) -> usize {
         match &self.unloaded_patch {
             Some(text) => escaped_len(text),
             None => escaped_len(&self.patch.to_json()),
@@ -1859,7 +2011,10 @@ impl Session {
         let Some(record) = self.instance.game.as_mut().and_then(|g| g.round.as_mut()) else {
             return;
         };
-        if record.stash.is_none() {
+        // A lesson round never stashes: the `learn` object holds the only stash (lane SL). The step's history is
+        // dropped, as a round's start always gives the round a history of its own.
+        let lesson = record.origin == RoundOrigin::Lesson;
+        if record.stash.is_none() && !lesson {
             record.stash = Some(own);
             self.game.stash_history = Some(history);
         }
@@ -1868,6 +2023,9 @@ impl Session {
         self.game.merge = None;
         self.game.dirty();
         self.seat_patch(start, None);
+        if lesson {
+            self.learn_round_seated(); // the step's one plan: the lesson pins its locks and sees the patch
+        }
     }
 
     fn game_scored(&mut self, report: ScoreReport) {
@@ -1891,7 +2049,8 @@ impl Session {
         });
         record.submitted_patch =
             (escaped_len(&pending.patch) <= MAX_SUBMITTED_PATCH_BYTES).then_some(pending.patch);
-        if score.passed && record.time_to_pass_ms.is_none() {
+        let first_pass = score.passed && record.time_to_pass_ms.is_none();
+        if first_pass {
             record.time_to_pass_ms = Some(pending.at_ms);
         }
         if record.phase != Phase::Revealed {
@@ -1901,16 +2060,26 @@ impl Session {
                 Phase::Submitted
             };
         }
+        // A lesson's step passes when its round first passes (lane SL); the round stays live until the step moves.
+        let lesson_pass = (first_pass && record.origin == RoundOrigin::Lesson).then(|| {
+            (
+                record.assisted(),
+                record.submits.iter().map(|s| s.score.sound).max(),
+            )
+        });
         self.game.knobs = knobs;
         self.game.rings = rings;
         self.game.report = Some(Arc::new(report));
         self.game.error = None;
         self.game.dirty();
+        if let Some((assisted, best)) = lesson_pass {
+            self.learn_round_result(true, assisted, best);
+        }
     }
 
     /// End a drag where the whole patch is about to be replaced: its history step is closed without host writes
     /// (the host gestures it opened stay open until the editor's next `end_gesture`, as on a load).
-    fn close_drag(&mut self) {
+    pub(crate) fn close_drag(&mut self) {
         self.gestures.open = None;
         self.history.end_gesture(&self.patch);
     }
@@ -1918,8 +2087,9 @@ impl Session {
     /// Replace the whole patch the way a load does (the round's start, a reveal, the end's restore): forget the
     /// engine's remembered host slot values, reset the host baseline (the next fold only records), release audition
     /// notes, send the plan (pumped at once), ask for a rename when the host would see other names, and mark the
-    /// project dirty. The caller has already set the history.
-    fn seat_patch(&mut self, patch: Patch, unloaded: Option<String>) {
+    /// project dirty. The caller has already set the history. A lesson's step loads and its end's restore seat their
+    /// patches the same way (lane SL).
+    pub(crate) fn seat_patch(&mut self, patch: Patch, unloaded: Option<String>) {
         let renamed = host_layout_changed(&self.patch, &patch);
         self.patch = patch;
         self.unloaded_patch = unloaded;
@@ -1941,7 +2111,7 @@ impl Session {
     /// End the live round, if any, for `why`: log it if it was played, cancel its jobs, switch A/B off and forget
     /// its transient state. Takes only the round from the `game` object (its other fields stay). Returns the record
     /// (with the stash) and the player's stashed history.
-    fn game_close(&mut self, why: EndedBy) -> Option<(RoundRecord, Option<History>)> {
+    pub(crate) fn game_close(&mut self, why: EndedBy) -> Option<(RoundRecord, Option<History>)> {
         let record = self.instance.game.as_mut()?.round.take()?;
         self.put_round(None);
         if record.played() {
@@ -1985,6 +2155,7 @@ impl Session {
             } else {
                 Vec::new()
             },
+            origin: record.origin,
         }
     }
 
@@ -2015,6 +2186,86 @@ impl Session {
             (Some(c), Some(t)) => Ok((record, Arc::clone(c), Arc::clone(t))),
             _ => Err(GameError::NotReady),
         }
+    }
+
+    /// Start a round from `source` for `origin`: [`GameEdit::game_start`]'s body, which the lesson calls with
+    /// [`RoundOrigin::Lesson`] for its Recreate steps (lane SL). Refused settings change nothing. A game round stashes
+    /// the player's patch (a live round's stash carries over); a lesson round never does.
+    pub(crate) fn game_open(
+        &mut self,
+        source: RoundSource,
+        origin: RoundOrigin,
+    ) -> Result<(), GameError> {
+        // Refused settings change nothing: check them before the live round ends.
+        let (spec, code, kind, given) = match source {
+            RoundSource::Settings(spec) => {
+                spec.validate().map_err(GameError::Spec)?;
+                let short = ChallengeCode::short(spec).map(|c| c.to_string());
+                (
+                    Some(spec),
+                    short.unwrap_or_default(),
+                    JobKind::Prepare { spec },
+                    None,
+                )
+            }
+            RoundSource::Code(code) => {
+                let spec = *code.spec();
+                (
+                    Some(spec),
+                    code.to_string(),
+                    JobKind::Prepare { spec },
+                    None,
+                )
+            }
+            RoundSource::Challenge(challenge) => {
+                if let Some(spec) = challenge.spec() {
+                    spec.validate().map_err(GameError::Spec)?;
+                }
+                let short = challenge.short_code().map(|c| c.to_string());
+                let spec = challenge.spec().copied();
+                let challenge = Arc::new(*challenge);
+                let kind = JobKind::PrepareChallenge {
+                    challenge: Arc::clone(&challenge),
+                };
+                (spec, short.unwrap_or_default(), kind, Some(challenge))
+            }
+        };
+        let lesson = origin == RoundOrigin::Lesson;
+        // The player's patch must fit the saved state as a stash, unless a live round already holds the stash.
+        let carried = self.game_record().is_some_and(|r| r.stash.is_some());
+        let bytes = self.own_patch_bytes();
+        if !lesson && !carried && bytes > STASH_BYTES {
+            return Err(GameError::TooLarge {
+                what: "stash",
+                bytes,
+                max: STASH_BYTES,
+            });
+        }
+        let (stash, history) = match self.game_close(EndedBy::NewRound) {
+            Some((record, history)) if !lesson => (record.stash, history),
+            _ => (None, None),
+        };
+        self.game.serial = self.game.serial.saturating_add(1);
+        let id = RoundId {
+            serial: self.game.serial,
+            nonce: self.game.now,
+        };
+        let record = RoundRecord {
+            id,
+            code,
+            stash,
+            origin,
+            ..RoundRecord::default()
+        };
+        self.put_round(Some(record));
+        self.unloaded_instance = None; // the user's own state now (a newer build's `enth` text is replaced)
+        self.game.stash_history = history;
+        self.game.spec = spec;
+        self.game.source = given;
+        let job = self.game.job(id, kind);
+        self.game.jobs.prepare = Some(job);
+        self.game.dirty();
+        Ok(())
     }
 
     // --- hooks the rest of the session calls (each one line at its call site) ----------------------------------
@@ -2123,6 +2374,12 @@ impl Session {
         if record.phase == Phase::Unknown {
             record.phase = Phase::Broken;
         }
+        if record.origin == RoundOrigin::Lesson {
+            // A lesson round waits for its lesson to reopen and hand the challenge back
+            // (`game_resume_lesson_round`); if the lesson does not come back, it breaks (lane SL).
+            self.put_round(Some(record));
+            return;
+        }
         if record.code.is_empty() {
             // Saved while a custom-settings round prepared, before its code existed. Nothing was played: without a
             // stash there is nothing to keep, and with one (a new round after a played one) only ending it is left.
@@ -2182,52 +2439,16 @@ impl GameEdit for Session {
             wake_at_ms: self.game_wake_at(record),
             warnings: self.game.warnings.clone(),
             error: self.game.error.clone(),
+            lesson: record.origin == RoundOrigin::Lesson,
         })
     }
 
     fn game_start(&mut self, source: RoundSource) -> Result<(), GameError> {
-        // Refused settings change nothing: check them before the live round ends.
-        let (spec, code) = match source {
-            RoundSource::Settings(spec) => {
-                spec.validate().map_err(GameError::Spec)?;
-                let short = ChallengeCode::short(spec).map(|c| c.to_string());
-                (spec, short.unwrap_or_default())
-            }
-            RoundSource::Code(code) => (*code.spec(), code.to_string()),
-        };
-        // The player's patch must fit the saved state as a stash, unless a live round already holds the stash.
-        let carried = self.game_record().is_some_and(|r| r.stash.is_some());
-        let bytes = self.own_patch_bytes();
-        if !carried && bytes > STASH_BYTES {
-            return Err(GameError::TooLarge {
-                what: "stash",
-                bytes,
-                max: STASH_BYTES,
-            });
+        // A lesson starts its own rounds; one of the game's would stash a second patch (lane SL).
+        if self.learn_live() {
+            return Err(GameError::LessonLive);
         }
-        let (stash, history) = match self.game_close(EndedBy::NewRound) {
-            Some((record, history)) => (record.stash, history),
-            None => (None, None),
-        };
-        self.game.serial = self.game.serial.saturating_add(1);
-        let id = RoundId {
-            serial: self.game.serial,
-            nonce: self.game.now,
-        };
-        let record = RoundRecord {
-            id,
-            code,
-            stash,
-            ..RoundRecord::default()
-        };
-        self.put_round(Some(record));
-        self.unloaded_instance = None; // the user's own state now (a newer build's `enth` text is replaced)
-        self.game.stash_history = history;
-        self.game.spec = Some(spec);
-        let job = self.game.job(id, JobKind::Prepare { spec });
-        self.game.jobs.prepare = Some(job);
-        self.game.dirty();
-        Ok(())
+        self.game_open(source, RoundOrigin::Game)
     }
 
     fn game_listen(&mut self, listen: Listen) -> Result<(), GameError> {
@@ -2257,7 +2478,9 @@ impl GameEdit for Session {
         let submit = record.submits.len() as u32 + 1;
         let at_ms = record.active_ms;
         let round = record.id;
-        let patch = Box::new(self.patch.clone());
+        // In a lesson, what the step locks is scored at its step value: host automation of a locked parameter never
+        // counts toward a check (lane SL). Outside a lesson this is the patch itself.
+        let patch = Box::new(self.checked_patch());
         let text = patch.to_json();
         let id = self.game.job(
             round,
@@ -2320,12 +2543,20 @@ impl GameEdit for Session {
         // undoable load, `ops_between`: an F1r follow-up.)
         self.history = History::with_cap(self.config.history_cap);
         self.seat_patch(Patch::clone(&target), None);
+        let mut lesson = None;
         if let Some(record) = self.record_mut() {
             record.revealed = true;
             record.phase = Phase::Revealed;
+            if record.origin == RoundOrigin::Lesson {
+                lesson = Some(record.submits.iter().map(|s| s.score.sound).max());
+            }
         }
         self.game_log(EditSource::Reveal, Value::Array(Vec::new()), None);
         self.game.dirty();
+        if let Some(best) = lesson {
+            // The lesson sees the target loaded and the step given up (lane SL).
+            self.learn_round_revealed(best);
+        }
         Ok(())
     }
 
@@ -2399,6 +2630,11 @@ impl GameEdit for Session {
             EndChoice::Restore => EndedBy::Restore,
             EndChoice::Keep => EndedBy::Keep,
         };
+        // The lesson's own round moves with the lesson (lane SL). A lesson round left behind by a lesson that did
+        // not come back after a reload ends here (it never stashed, so it changes nothing).
+        if self.lesson_round_live() && self.learn_live() {
+            return Err(GameError::LessonRound);
+        }
         let (record, history) = self.game_close(why).ok_or(GameError::NoRound)?;
         if choice == EndChoice::Keep {
             return Ok(());

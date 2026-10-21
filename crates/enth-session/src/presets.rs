@@ -1211,6 +1211,14 @@ impl Session {
         preset: &Patch,
         key: Option<&PresetKey>,
     ) -> Result<PresetLoad, SessionError> {
+        // A preset would replace the patch under a live lesson: the editor asks Restore or Keep first (lane SL).
+        if self.learn_live() {
+            let err = SessionError::LessonLive {
+                what: "load_preset",
+            };
+            self.last_error = Some(err.clone());
+            return Err(err);
+        }
         self.end_gesture();
         self.pump();
         let loaded = self.load_preset_steps(preset, key)?;
