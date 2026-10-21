@@ -234,11 +234,12 @@ fn challenges_v2() -> Vec<(&'static str, Challenge)> {
         locked: selectors(&["osc1.*", "macro1"]),
     };
     patch.assists.hint_budget = Some(0);
-    // Lesson 1.2's second Do: a level-1 round with the wave locked (a seed target needs v2 for its constraint).
+    // A unit test's level-1 round with the filter locked (a seed target needs v2 for its constraint; level 1 draws
+    // only the oscillator, so a filter lock leaves the round passable).
     let mut seed = recreate(level(1, 42), PhraseId(1));
     seed.constraints = Constraints {
-        editable: selectors(&["osc1.semi"]),
-        locked: selectors(&["osc1.wave"]),
+        editable: selectors(&["osc1.*"]),
+        locked: selectors(&["filter1.*"]),
     };
     vec![("draw", draw), ("patch", patch), ("seed-locked", seed)]
 }

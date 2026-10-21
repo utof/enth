@@ -215,7 +215,8 @@ impl Challenge {
     /// - a template start that this build has (`code_too_new`);
     /// - a draw target: its draw against the start ([`Draw::validate`]: items on the start, values that resolve,
     ///   sets a step apart);
-    /// - constraints whose selectors name things the start has (`bad_selector`);
+    /// - constraints whose selectors name things the start has, and no lock on anything the target varies (the
+    ///   round could not be passed), both `bad_selector`;
     /// - a phrase id of either phrase table (`phrase_too_new` for an id this build does not have; 0 is `bad_field`);
     /// - the scoring percentages.
     pub fn validate(&self) -> Result<(), ChallengeError> {
@@ -263,6 +264,9 @@ impl Challenge {
                 draw.validate(&start).map_err(ChallengeError::Draw)?;
             }
             self.constraints.check_against(&start)?;
+            if !self.constraints.locked.is_empty() {
+                crate::v2::check_locks(self, &start)?;
+            }
         }
         self.scoring.validate()
     }

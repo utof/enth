@@ -137,6 +137,7 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 - **`locked` is enforced:** the session refuses an op that touches anything a locked selector covers (`SessionError::Locked`, lane SL; `Constraints::lock_of` names the selector for the hint). Locked always wins.
 - **`editable` is advisory:** the step's controls. The editor emphasises them, lane CLS's "How close am I?" searches only them, and `lesson-check` requires the witness to touch only them. The session doesn't refuse an edit outside them, since the round is scored on sound either way. `Constraints::is_editable` is "not locked, and covered by `editable` or `editable` is empty".
 - **Validated at load** against the start (`bad_selector`): a parameter or module the start has, or a route from a source it has into a modulatable parameter. The route itself may be missing, because the step may be about adding it. A selector may not be listed twice in one list.
+- **No lock on what the target varies** (`bad_selector`): a seed target's draws (this seed's, whether or not a value moved), a draw's items, or a patch target's changed parameters, routes and enable flags. The session would refuse the very edit the round asks for. Lesson 1.2's planned "a level-1 round with `osc1.wave` locked" is refused this way, because level 1 draws the wave; a draw on `osc1.semi` says what the card means.
 - The session maps each op to the things it touches (`Touch::{Param, Route, Module, Macro}`): `SetParam` its parameter, a route op its route, a module op its module, `SetMacro` its macro.
 
 ### Phrases: the generator's and the lessons'
@@ -185,7 +186,7 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 | `bad_draw`, `draw_too_close` | a draw that doesn't fit its start: an item twice or not on the start, a value that doesn't resolve, a bad range or step; two set values less than a step apart |
 | `out_of_range` | a draw seed from 2⁵³ (and v1's cases) |
 | `draw_failed` | no playable target (from `prepare_challenge`, `RoundError::Draw`) |
-| `bad_selector` | a selector naming nothing on the start, or listed twice; text that isn't canonical (at decode, `bad_challenge`) |
+| `bad_selector` | a selector naming nothing on the start, listed twice, or locking what the target varies; text that isn't canonical (at decode, `bad_challenge`) |
 
 ### The seams with LM and SL (F1l)
 

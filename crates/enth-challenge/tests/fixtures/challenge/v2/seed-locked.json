@@ -26,10 +26,10 @@
   },
   "constraints": {
     "editable": [
-      "osc1.semi"
+      "osc1.*"
     ],
     "locked": [
-      "osc1.wave"
+      "filter1.*"
     ]
   },
   "assists": {

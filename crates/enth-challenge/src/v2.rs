@@ -284,6 +284,117 @@ impl Constraints {
     }
 }
 
+/// What the challenge's target varies from the start, as touches: a seed target's draws (this seed's, whether or not
+/// a value moved), a draw's items, a patch target's changed parameters, routes and enable flags.
+fn varied(challenge: &Challenge, start: &Patch) -> Result<Vec<Touch>, ChallengeError> {
+    let module = |id: &ModuleId| Touch::Module(enth_patch::Target::Module(id.clone()));
+    Ok(match &challenge.target {
+        Target::Seed(spec) => random::generate(spec, start)
+            .map_err(|e| ChallengeError::BadChallenge {
+                message: e.to_string(),
+            })?
+            .randomized
+            .iter()
+            .map(|r| match &r.drawn {
+                Drawn::Param(a) => Touch::Param(a.clone()),
+                Drawn::Route(r) => Touch::Route(r.clone()),
+                Drawn::Enable(id) => module(id),
+            })
+            .collect(),
+        Target::Draw(draw) => draw.items.iter().map(|i| i.at.touch()).collect(),
+        Target::Patch(target) => {
+            let mut out: Vec<Touch> = Vec::new();
+            for (_, m) in target.modules() {
+                match start.find(&m.id) {
+                    Some((_, s)) if s.kind == m.kind => {
+                        if s.enabled != m.enabled {
+                            out.push(module(&m.id));
+                        }
+                        for (spec, (a, b)) in
+                            m.spec().params.iter().zip(m.values.iter().zip(&s.values))
+                        {
+                            if a.to_bits() != b.to_bits() {
+                                out.extend(
+                                    ParamAddr::module(m.id.clone(), spec.key)
+                                        .ok()
+                                        .map(Touch::Param),
+                                );
+                            }
+                        }
+                    }
+                    _ => out.push(module(&m.id)),
+                }
+            }
+            for (owner, target_values, start_values, specs) in [
+                (
+                    enth_patch::Target::Voice,
+                    &target.voice.values[..],
+                    &start.voice.values[..],
+                    enth_patch::Builtin::Voice.params(),
+                ),
+                (
+                    enth_patch::Target::Master,
+                    &target.master[..],
+                    &start.master[..],
+                    enth_patch::Builtin::Master.params(),
+                ),
+            ] {
+                for (spec, (a, b)) in specs.iter().zip(target_values.iter().zip(start_values)) {
+                    if a.to_bits() != b.to_bits() {
+                        out.extend(
+                            ParamAddr::new(owner.clone(), spec.key)
+                                .ok()
+                                .map(Touch::Param),
+                        );
+                    }
+                }
+            }
+            let depth = |p: &Patch, r: &Route| {
+                p.routes
+                    .iter()
+                    .find(|x| x.src == r.src && x.dst == r.dst)
+                    .map_or(0.0, |x| x.depth)
+            };
+            for r in target.routes.iter().chain(&start.routes) {
+                if depth(target, r).to_bits() != depth(start, r).to_bits() {
+                    out.push(Touch::Route(RouteAddr {
+                        src: r.src.clone(),
+                        dst: r.dst.clone(),
+                    }));
+                }
+            }
+            out
+        }
+    })
+}
+
+/// Refuse a lock on anything the target varies: the session would refuse the very edit the round asks for
+/// (`bad_selector`). Lesson 1.2's planned "a level-1 round with `osc1.wave` locked" is such a round, since level 1
+/// draws the wave; a draw on `osc1.semi` says it instead.
+pub(crate) fn check_locks(challenge: &Challenge, start: &Patch) -> Result<(), ChallengeError> {
+    for touch in varied(challenge, start)? {
+        if let Some(lock) = challenge.constraints.lock_of(&touch) {
+            return Err(ChallengeError::Selector {
+                selector: lock.to_string(),
+                reason: format!(
+                    "it locks {}, which the target varies: the round could not be passed",
+                    touch_text(&touch)
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn touch_text(touch: &Touch) -> String {
+    match touch {
+        Touch::Param(a) => a.to_string(),
+        Touch::Route(r) => r.to_string(),
+        Touch::Module(t) => format!("the module {t}"),
+        Touch::Macro(i) => format!("macro{}", i.one_based()),
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Inline patches
 // ---------------------------------------------------------------------------------------------------------------
@@ -2229,7 +2340,7 @@ mod tests {
         let mut seed =
             Challenge::recreate(crate::spec::SpecPreset::by_id(1).unwrap().spec(1, 1), HELD);
         assert_eq!(seed.version(), 1);
-        seed.constraints.locked = vec!["osc1.wave".parse().unwrap()];
+        seed.constraints.locked = vec!["filter1.*".parse().unwrap()];
         assert_eq!(seed.version(), 2);
         assert!(
             seed.to_json()
@@ -2245,7 +2356,7 @@ mod tests {
         assert!(json.starts_with(r#"{"schema":"enth.challenge/1""#));
         let locked = json.replacen(
             r#""constraints":{}"#,
-            r#""constraints":{"locked":["osc1.wave"]}"#,
+            r#""constraints":{"locked":["filter1.*"]}"#,
             1,
         );
         assert_ne!(locked, json);
@@ -2277,6 +2388,80 @@ mod tests {
                 "bad_challenge",
                 "{to}"
             );
+        }
+    }
+
+    /// A lock on anything the target varies is refused: the session would refuse the edit the round asks for.
+    #[test]
+    fn a_lock_on_what_the_target_varies_is_refused() {
+        let lock = |c: &mut Challenge, s: &str| c.constraints.locked = vec![s.parse().unwrap()];
+        // A level-1 round draws the wave (lesson 1.2's planned "wave locked" round).
+        let mut seed =
+            Challenge::recreate(crate::spec::SpecPreset::by_id(1).unwrap().spec(1, 42), HELD);
+        lock(&mut seed, "osc1.wave");
+        let e = seed.validate().unwrap_err();
+        assert_eq!(e.code(), "bad_selector");
+        assert!(e.to_string().contains("osc1.wave"), "{e}");
+        lock(&mut seed, "osc1.*");
+        assert_eq!(seed.validate().unwrap_err().code(), "bad_selector");
+        lock(&mut seed, "filter1.*");
+        assert_eq!(seed.validate(), Ok(()));
+        // A draw's items.
+        let mut draw = lesson_draw();
+        lock(&mut draw, "filter1.cutoff");
+        assert_eq!(draw.validate().unwrap_err().code(), "bad_selector");
+        lock(&mut draw, "filter1.*");
+        assert_eq!(draw.validate().unwrap_err().code(), "bad_selector");
+        lock(&mut draw, "osc1.*");
+        assert_eq!(draw.validate(), Ok(()));
+        // A patch target's changes: a parameter, a route (through its module), but not what it leaves alone.
+        let start = starter();
+        let mut target = start.clone();
+        apply(
+            &mut target,
+            Op::SetParam {
+                addr: addr("osc1.semi"),
+                value: 7.0,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut target,
+            Op::InsertRoute {
+                index: 0,
+                route: Route {
+                    src: "lfo1".parse().unwrap(),
+                    dst: addr("filter1.cutoff"),
+                    depth: 20.0,
+                },
+            },
+        )
+        .unwrap();
+        let mut patch = Challenge::new(
+            Target::Patch(InlinePatch::new(target)),
+            Start::Patch {
+                patch: InlinePatch::new(start),
+            },
+            HELD,
+            scoring(),
+        );
+        for bad in [
+            "osc1.semi",
+            "osc1.*",
+            "lfo1 -> filter1.cutoff",
+            "lfo1.*",
+            "filter1.*",
+        ] {
+            lock(&mut patch, bad);
+            assert_eq!(
+                patch.validate().unwrap_err().code(),
+                "bad_selector",
+                "{bad}"
+            );
+        }
+        for fine in ["osc1.wave", "filter1.cutoff", "macro1", "voice.*"] {
+            lock(&mut patch, fine);
+            assert_eq!(patch.validate(), Ok(()), "{fine}");
         }
     }
 
