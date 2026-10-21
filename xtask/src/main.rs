@@ -154,14 +154,17 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     rate by level, time to pass, assists, agreement, blind rating vs score, disputes,
                                     want more, and the agent baseline beside the no-op and CMA-ES floors; --json,
                                     --validate, --codes; `gr1-report --help`, docs/gr1.md (R1/S1 lane GK)
-  lesson-check [--cross] [--solve] [<pack>...]
-                                    (placeholder: checks nothing and passes until R2 lane LCK builds it) every lesson of
-                                    content/lessons/ honest: schemas, text, the witness plays through a session, reachable
-  lesson-coverage                   (not built yet: R2 lane LCK) every P1 module and Basic-tier parameter has a lesson
-                                    step and a non-patch check
-  lesson new <pack> <id>            (not built yet: R2 lane LCK) scaffold a lesson in the authoring layout
+  lesson-check [--cross] [--solve] [--budget N] [--jobs N] [--lesson ID]... [<pack>...]
+                                    every lesson of content/lessons/ honest: the files, each step's check fails at its
+                                    start and passes after its witness through a session, --cross, --solve (R2 lane LCK)
+  lesson-coverage [--all] [<pack>...]
+                                    every P1 module and Basic-tier parameter taught, a non-patch check per module;
+                                    fails on a hole (R2 lane LCK)
+  lesson new [--in DIR] <pack> <id> scaffold a lesson in the authoring layout (R2 lane LCK)
   lesson-gen deconstruct <preset>   (not built yet: R2 lane DEC) a deconstruct lesson from a preset, by ablation
-  pack [<pack>...]                  (not built yet: R2 lane LCK) build content/lessons/<pack> into a reproducible .enthpack
+  pack [--out DIR] [--check] [<pack>...]
+                                    build content/lessons/<pack> into a reproducible .enthpack and compare it with its
+                                    pins (R2 lane LCK)
   gr2-report <progress file>...     (not built yet: R2 lane INT2) the GR2 numbers from the progress files
   gr3-run [options] <set>           (not built yet: R3 lane EVK) GR3's four arms over a held-out set of content/gr3/,
                                     appended to content/gr3/runs.jsonl

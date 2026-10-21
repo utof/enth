@@ -1,0 +1,16 @@
+# A seeded-bad pack for lesson-check's tests (tools/lesson/tests/check.rs): the Do step's witness turns the cutoff, which its editable list leaves out.
+schema = "enth.pack/1"
+id = "witness-not-editable"
+version = "0.1.0"
+title = "Fixture: witness-not-editable"
+authors = ["enth contributors"]
+covers = ["svf"]
+lessons = ["l"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+[requires]
+lesson = 1
+patch = 1

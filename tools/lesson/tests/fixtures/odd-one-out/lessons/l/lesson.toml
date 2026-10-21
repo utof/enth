@@ -1,0 +1,25 @@
+# a GOOD pack: the ear question's two distractors are the same sound, its answer stands apart (passes, noted).
+schema = "enth.lesson/1"
+id = "l"
+title = "Fixture lesson"
+tier = "basic"
+objective = "Exercise one rule of lesson-check."
+teaches = ["svf.cutoff"]
+
+[[steps]]
+id = "odd"
+kind = "choose"
+text = "text.md"
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/dark.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/saw.patch.json"

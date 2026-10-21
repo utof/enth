@@ -1,0 +1,22 @@
+# the Do step's witness turns the cutoff, which the step locks.
+schema = "enth.lesson/1"
+id = "l"
+title = "Fixture lesson"
+tier = "basic"
+objective = "Exercise one rule of lesson-check."
+teaches = ["svf.cutoff"]
+
+[[steps]]
+id = "try"
+kind = "do"
+text = "text.md"
+witness = "patches/dark.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+locked = ["filter1.cutoff"]
+
+[steps.check]
+kind = "sound"
+phrase = 1
+expect = ["brightness<500Hz"]
