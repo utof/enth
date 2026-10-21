@@ -12,6 +12,7 @@
 //! | `ds1` | `ds1.rs` | the versioned sampler `ds1`: the mixture, the phrase sampler, the labels, the filters and the splits by stream key (docs/r3.md, "`ds1`") | DG |
 //! | `shards` | `shards.rs` | deterministic shards of clean renders and their labels, for `ml/` to read as files | DG |
 //! | `exclude` | `exclude.rs` | asserts that no training item is on `content/gr3/`'s exclusion lists | DG |
+//! | `gr3` | `gr3.rs`, `gr3/` | GR3 clause 1's arms over a job `cargo xtask gr3-run` writes; appends the runs (docs/gr3.md) | EVK; `EVb` |
 //!
 //! Renders are bit-exact, so a dataset is a manifest (a sampler version, seeds, a phrase sampler, an augmentation config)
 //! and clean audio never needs shipping or backing up. Features are computed by `enth-analysis`, never re-implemented in
@@ -25,6 +26,7 @@
 mod bank;
 mod ds1;
 mod exclude;
+mod gr3;
 mod shards;
 
 use std::process::ExitCode;
@@ -36,6 +38,7 @@ const USAGE: &str = "usage: enth-datagen <command> [args...]
   ds1                 (not built yet: R3 lane DG) the training sampler's manifest
   shards              (not built yet: R3 lane DG) deterministic shards of clean renders and labels
   exclude             (not built yet: R3 lane DG) assert that training excludes the GR3 sets
+  gr3 run --job FILE  GR3 clause 1's arms over a job (R3 lane EVK; run it through `cargo xtask gr3-run`)
 Run `bank` through `cargo xtask bank`.";
 
 fn main() -> ExitCode {
@@ -45,6 +48,7 @@ fn main() -> ExitCode {
         Some("ds1") => ds1::run(&args[1..]),
         Some("shards") => shards::run(&args[1..]),
         Some("exclude") => exclude::run(&args[1..]),
+        Some("gr3") => gr3::run(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
     match result {
