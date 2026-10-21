@@ -38,10 +38,13 @@ fn studies_dir() -> PathBuf {
 /// The pack's files as `cargo xtask pack` will write them.
 fn pack_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     let text = fs::read_to_string(dir.join("pack.toml")).unwrap();
-    let manifest =
-        Manifest::from_json(&common::toml_as_json(&text)).unwrap_or_else(|e| panic!("pack.toml: {e}"));
+    let manifest = Manifest::from_json(&common::toml_as_json(&text))
+        .unwrap_or_else(|e| panic!("pack.toml: {e}"));
     let mut files = BTreeMap::new();
-    files.insert("CREDITS.md".to_owned(), fs::read(dir.join("CREDITS.md")).unwrap());
+    files.insert(
+        "CREDITS.md".to_owned(),
+        fs::read(dir.join("CREDITS.md")).unwrap(),
+    );
     for entry in fs::read_dir(dir.join("patches")).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_str().unwrap().to_owned();
@@ -77,7 +80,11 @@ fn the_studies_pack_reads_and_builds_reproducibly() {
     assert_eq!(pack.id().as_str(), "studies");
     assert_eq!(pack.lessons().count(), 6, "PLAN.md's six studies");
     let archive = write_archive(&files);
-    assert_eq!(archive, write_archive(&files), "the archive is reproducible");
+    assert_eq!(
+        archive,
+        write_archive(&files),
+        "the archive is reproducible"
+    );
     let back = read_archive(&archive).unwrap_or_else(|e| panic!("studies.enthpack: {e}"));
     assert_eq!(back.manifest(), pack.manifest());
 }
@@ -87,12 +94,19 @@ fn every_patch_is_canonical_used_and_each_preset_is_its_candidate() {
     let (pack, files) = pack();
     let used: BTreeSet<String> = pack
         .lessons()
-        .flat_map(|l| l.patches().map(|r| r.as_str().to_owned()).collect::<Vec<_>>())
+        .flat_map(|l| {
+            l.patches()
+                .map(|r| r.as_str().to_owned())
+                .collect::<Vec<_>>()
+        })
         .collect();
     for (path, bytes) in files.iter().filter(|(p, _)| p.starts_with("patches/")) {
         let text = std::str::from_utf8(bytes).unwrap();
         let loaded = enth_patch::file::load(text).unwrap_or_else(|e| panic!("{path}: {e:?}"));
-        assert!(loaded.patch.to_json() == text, "{path} is not exactly Patch::to_json()");
+        assert!(
+            loaded.patch.to_json() == text,
+            "{path} is not exactly Patch::to_json()"
+        );
         assert!(used.contains(path), "{path} is not used by any lesson");
     }
     let candidates = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/presets-candidates");
@@ -106,7 +120,10 @@ fn every_patch_is_canonical_used_and_each_preset_is_its_candidate() {
     ] {
         let ours = &files[&format!("patches/{lesson}.patch.json")];
         let theirs = fs::read(candidates.join(format!("{candidate}.patch.json"))).unwrap();
-        assert!(ours == &theirs, "patches/{lesson}.patch.json is not a byte copy of {candidate}");
+        assert!(
+            ours == &theirs,
+            "patches/{lesson}.patch.json is not a byte copy of {candidate}"
+        );
     }
 }
 
@@ -122,7 +139,9 @@ fn every_text_lints_clean_and_resolves() {
             assert!(issues.is_empty(), "{path}: {issues:?}");
             let start = match (&step.view.start, &step.kind) {
                 (Some(r), _) => Some(pack.patch(r).unwrap().as_ref().clone()),
-                (None, StepKind::Recreate { challenge, .. }) => Some(challenge.start_patch().unwrap()),
+                (None, StepKind::Recreate { challenge, .. }) => {
+                    Some(challenge.start_patch().unwrap())
+                }
                 _ => None,
             };
             let examples = match &step.kind {
@@ -159,16 +178,29 @@ fn do_steps_fail_at_their_start_and_pass_for_their_witness() {
     let mut checked = 0;
     for lesson in pack.lessons() {
         for step in &lesson.steps {
-            let StepKind::Do { check, witness } = &step.kind else { continue };
-            let start = pack.patch(step.view.start.as_ref().expect("a Do step has a start")).unwrap();
+            let StepKind::Do { check, witness } = &step.kind else {
+                continue;
+            };
+            let start = pack
+                .patch(step.view.start.as_ref().expect("a Do step has a start"))
+                .unwrap();
             let witness = pack.patch(witness).unwrap();
             let (preds, sounds) = halves(check);
             for p in &preds {
-                assert!(p.holds(witness, &none), "{}/{}: the witness fails {p}", lesson.id, step.id);
+                assert!(
+                    p.holds(witness, &none),
+                    "{}/{}: the witness fails {p}",
+                    lesson.id,
+                    step.id
+                );
             }
             if !sounds.is_empty() {
                 let w = evaluate_sounds(&sounds, witness).unwrap();
-                assert!(w.passed, "{}/{}: the witness fails {:?}", lesson.id, step.id, w.items);
+                assert!(
+                    w.passed,
+                    "{}/{}: the witness fails {:?}",
+                    lesson.id, step.id, w.items
+                );
             }
             // The start fails the check: a predicate fails, or the sound does (context predicates hold at the start on
             // purpose, so a step with sound items fails on its sound).
@@ -183,7 +215,10 @@ fn do_steps_fail_at_their_start_and_pass_for_their_witness() {
             checked += 1;
         }
     }
-    assert!(checked >= 6, "every study has its variation goal and most have Do steps ({checked})");
+    assert!(
+        checked >= 6,
+        "every study has its variation goal and most have Do steps ({checked})"
+    );
 }
 
 #[test]
@@ -191,18 +226,36 @@ fn recreate_steps_start_below_the_pass_mark_with_something_to_change() {
     let (pack, _) = pack();
     for lesson in pack.lessons() {
         for step in &lesson.steps {
-            let StepKind::Recreate { challenge, .. } = &step.kind else { continue };
+            let StepKind::Recreate { challenge, .. } = &step.kind else {
+                continue;
+            };
             let enth_challenge::Target::Patch(target) = &challenge.target else {
-                panic!("{}/{}: a study round has a patch target", lesson.id, step.id);
+                panic!(
+                    "{}/{}: a study round has a patch target",
+                    lesson.id, step.id
+                );
             };
             let start = challenge.start_patch().unwrap();
             assert_ne!(target.patch(), &start, "{}/{}", lesson.id, step.id);
-            assert!(!challenge.constraints.editable.is_empty(), "{}/{}", lesson.id, step.id);
+            assert!(
+                !challenge.constraints.editable.is_empty(),
+                "{}/{}",
+                lesson.id,
+                step.id
+            );
             let round = enth_challenge::prepare_challenge(challenge.as_ref().clone()).unwrap();
             let s = enth_challenge::score_round(&round, &start).unwrap();
-            assert!(!s.passed, "{}/{}: the start passes at {:.1} %", lesson.id, step.id, s.sound.percent);
+            assert!(
+                !s.passed,
+                "{}/{}: the start passes at {:.1} %",
+                lesson.id, step.id, s.sound.percent
+            );
             let w = enth_challenge::score_round(&round, target.patch()).unwrap();
-            assert!(w.passed, "{}/{}: the target scores {:.1} %", lesson.id, step.id, w.sound.percent);
+            assert!(
+                w.passed,
+                "{}/{}: the target scores {:.1} %",
+                lesson.id, step.id, w.sound.percent
+            );
         }
     }
 }
