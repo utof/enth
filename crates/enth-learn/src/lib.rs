@@ -36,7 +36,6 @@ pub mod check;
 pub mod coverage;
 pub mod deconstruct;
 pub mod error;
-mod interim;
 pub mod lesson;
 pub mod markdown;
 pub mod pack;

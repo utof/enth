@@ -30,17 +30,20 @@ use enth_challenge::{Challenge, PhraseId};
 use enth_patch::{Op, ParamAddr, Patch, Target};
 
 use crate::check::{Knob, SoundCheck, TouchLog};
-use crate::lesson::{ControlCurve, Example, Lesson, Selector, Step, StepKind, StepView, Touch};
+use crate::lesson::{
+    ControlCurve, Example, Lesson, Selector, Step, StepKind, StepView, Touch, touches,
+};
 use crate::pack::{LessonBundle, LessonKey, LessonRef, StepId};
 use crate::progress::StepProgress;
 
 /// How long the patch must stay unchanged before a sound check runs, in ms (as the game's loudness job waits).
 pub const SETTLE_MS: u64 = 300;
 
-/// Where the current step is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Where the current step is. `Working` by default (the session's read model before a player is there).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum StepPhase {
     /// The player is working on it (or reading, or listening).
+    #[default]
     Working,
     /// A sound check for this revision is out; an edit sends the step back to `Working`.
     Checking {
@@ -437,6 +440,20 @@ impl Player {
         self.bundle.lesson_ref(self.step())
     }
 
+    /// How many steps the lesson has.
+    pub fn step_count(&self) -> u16 {
+        u16::try_from(self.visits.len()).unwrap_or(u16::MAX)
+    }
+
+    /// The current step's round challenge, when it is a Recreate step. A step resumed after a reload sends no
+    /// [`Effect::StartRound`], so the session prepares its saved round again from this.
+    pub fn round_challenge(&self) -> Option<Challenge> {
+        match &self.current().kind {
+            StepKind::Recreate { challenge, .. } => Some(Challenge::clone(challenge)),
+            _ => None,
+        }
+    }
+
     // --- the lifecycle -----------------------------------------------------------------------------------------
 
     /// A delivered change: the patch now at `revision` (the session's counter, rising), the ops that made it (empty
@@ -556,7 +573,7 @@ impl Player {
         if self.hint_pending == Some(self.revision) {
             return Ok(Vec::new());
         }
-        let free = free_params(&step.view, patch);
+        let free = free_params(&effective_view(step), patch);
         let request = HintRequest {
             revision: self.revision,
             patch: Box::new(sound.pinned(patch)),
@@ -588,8 +605,11 @@ impl Player {
     }
 
     /// Show: a Do step's witness's next op from `patch` ([`Effect::Apply`], one undo step; the session applies it
-    /// through its edit path and reports it with [`EditSource::Player`]), preferring an op on an editable control;
-    /// an ear question's answer ([`Effect::Reveal`], and the step passes, assisted). Marks the step assisted.
+    /// through its edit path and reports it with [`EditSource::Player`]): the first op whose every touch
+    /// ([`touches`], the session's own table) the view allows, else the first that touches no lock. A witness every
+    /// remaining op of which touches a lock is `no_witness_path` (a content bug `lesson-check` catches), never an op
+    /// the session would refuse. An ear question's answer ([`Effect::Reveal`], and the step passes, assisted). Marks
+    /// the step assisted.
     pub fn show(&mut self, patch: &Patch) -> Result<Vec<Effect>, PlayerError> {
         self.live()?;
         let step = self.current().clone();
@@ -601,15 +621,29 @@ impl Player {
                     .ok_or(PlayerError::NoWitnessPath)?;
                 let ops =
                     enth_patch::ops_between(patch, target).ok_or(PlayerError::NoWitnessPath)?;
-                self.visits[self.step].assisted = true;
-                let pick = ops
+                let view = &effective_view(&step);
+                // The ops that change something a control shows (an unknown kind counts; metadata does not).
+                let moves: Vec<(&Op, Option<Vec<Touch>>)> = ops
                     .iter()
-                    .find(|op| {
-                        touches(op).iter().all(|t| step.view.allows(t)) && !touches(op).is_empty()
-                    })
-                    .or_else(|| ops.first())
-                    .cloned();
-                Ok(pick.map(Effect::Apply).into_iter().collect())
+                    .map(|op| (op, touches(patch, op)))
+                    .filter(|(_, t)| t.as_ref().is_none_or(|t| !t.is_empty()))
+                    .collect();
+                if moves.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let allowed = |(_, t): &&(&Op, Option<Vec<Touch>>)| {
+                    t.as_ref().is_some_and(|t| t.iter().all(|t| view.allows(t)))
+                };
+                let unlocked = |(_, t): &&(&Op, Option<Vec<Touch>>)| {
+                    t.as_ref().is_some_and(|t| !t.iter().any(|t| view.locks(t)))
+                };
+                let (pick, _) = moves
+                    .iter()
+                    .find(allowed)
+                    .or_else(|| moves.iter().find(unlocked))
+                    .ok_or(PlayerError::NoWitnessPath)?;
+                self.visits[self.step].assisted = true;
+                Ok(vec![Effect::Apply(Op::clone(pick))])
             }
             StepKind::Choose { answer, .. } => {
                 self.visits[self.step].assisted = true;
@@ -748,10 +782,9 @@ impl Player {
         self.edited_at = None;
         let step = self.bundle.lesson.steps[i].clone();
         let mut out = Vec::new();
-        let mut view = step.view.clone();
+        let view = effective_view(&step);
         match &step.kind {
             StepKind::Recreate { challenge, .. } => {
-                view.lock = challenge_locks(challenge);
                 if load {
                     out.push(Effect::StartRound(challenge.clone()));
                 }
@@ -835,46 +868,36 @@ impl Player {
     }
 }
 
-/// A Recreate step's effective locks: its challenge's `Constraints.locked`.
-///
-/// Interim: Challenge v1's `Constraints` is empty, so this is empty until lane CV2's v2 merges; then it returns
-/// `challenge.constraints.locked.clone()` (a one-line change at the F1l merge).
-fn challenge_locks(challenge: &Challenge) -> Vec<Selector> {
-    let _ = &challenge.constraints;
-    Vec::new()
+/// A step's effective view: its own, and on a Recreate step its challenge's constraints as `locked` and `editable`
+/// (F1l review M4): the session enforces `locked`, the editor and the measured hints read `editable`.
+fn effective_view(step: &Step) -> StepView {
+    let mut view = step.view.clone();
+    if let StepKind::Recreate { challenge, .. } = &step.kind {
+        view.locked.clone_from(&challenge.constraints.locked);
+        view.editable.clone_from(&challenge.constraints.editable);
+    }
+    view
 }
 
-/// What an op changes, for the view's rules.
-fn touches(op: &Op) -> Vec<Touch> {
-    match op {
-        Op::SetParam { addr, .. } => vec![Touch::Param(addr.clone())],
-        Op::InsertRoute { route, .. } => vec![Touch::Route(enth_patch::RouteAddr {
-            src: route.src.clone(),
-            dst: route.dst.clone(),
-        })],
-        Op::RemoveRoute { route } | Op::SetDepth { route, .. } => vec![Touch::Route(route.clone())],
-        Op::AddModule { module, .. } => vec![Touch::Module(module.id.clone())],
-        Op::RemoveModule { id }
-        | Op::Move { id, .. }
-        | Op::SetEnabled { id, .. }
-        | Op::SetAmpEnv { id } => {
-            vec![Touch::Module(id.clone())]
-        }
-        Op::SetMacro { index, .. } => vec![Touch::Macro(*index)],
-        _ => Vec::new(),
-    }
+/// Whether the view allows setting `addr` in `patch`, by the session's table ([`touches`]).
+fn allows_param(view: &StepView, patch: &Patch, addr: &ParamAddr) -> bool {
+    let op = Op::SetParam {
+        addr: addr.clone(),
+        value: patch.value(addr).unwrap_or(0.0),
+    };
+    touches(patch, &op).is_some_and(|t| t.iter().all(|t| view.allows(t)))
 }
 
 /// The parameters a measured hint may move: those the view allows in `patch` (every one when nothing restricts).
 fn free_params(view: &StepView, patch: &Patch) -> Vec<ParamAddr> {
-    if view.editable.is_empty() && view.lock.is_empty() {
+    if view.editable.is_empty() && view.locked.is_empty() {
         return Vec::new();
     }
     let mut out = Vec::new();
     for (_, m) in patch.modules() {
         for spec in m.kind.params() {
             if let Ok(a) = ParamAddr::new(Target::Module(m.id.clone()), spec.key)
-                && view.allows(&Touch::Param(a.clone()))
+                && allows_param(view, patch, &a)
             {
                 out.push(a);
             }
@@ -886,7 +909,7 @@ fn free_params(view: &StepView, patch: &Patch) -> Vec<ParamAddr> {
     ] {
         for spec in params {
             if let Ok(a) = ParamAddr::new(target.clone(), spec.key)
-                && view.allows(&Touch::Param(a.clone()))
+                && allows_param(view, patch, &a)
             {
                 out.push(a);
             }

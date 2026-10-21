@@ -94,8 +94,9 @@ fn progress() -> impl Strategy<Value = Progress> {
             0..2,
         ),
         extra(),
+        1_u32..=3,
     )
-        .prop_map(|(lessons, mut unread, extra)| {
+        .prop_map(|(lessons, mut unread, extra, version)| {
             let lessons: BTreeMap<LessonKey, LessonProgress> = lessons
                 .into_iter()
                 .map(|((p, l), v)| (format!("{p}/{l}").parse().unwrap(), v))
@@ -105,6 +106,7 @@ fn progress() -> impl Strategy<Value = Progress> {
                 lessons,
                 unread,
                 extra,
+                version,
             }
         })
 }
@@ -129,6 +131,7 @@ fn covers(big: &Progress, small: &Progress) -> bool {
             }) && l.extra.keys().all(|k| bl.extra.contains_key(k))
         })
     }) && small.extra.keys().all(|k| big.extra.contains_key(k))
+        && big.version >= small.version
 }
 
 proptest! {
@@ -166,9 +169,9 @@ proptest! {
     #[test]
     fn json_round_trips(a in progress()) {
         let text = a.to_json();
+        let head = format!(r#"{{"schema":"enth.progress/{}","lessons":"#, a.version);
         prop_assert_eq!(Progress::from_json(&text).unwrap(), a);
-        let head = r#"{"schema":"enth.progress/1","lessons":"#;
-        prop_assert!(text.starts_with(head), "schema first");
+        prop_assert!(text.starts_with(&head), "schema first, at the highest version read");
     }
 
     #[test]

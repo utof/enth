@@ -88,7 +88,7 @@ pub fn test_manifest(lessons: &[&str]) -> Manifest {
     Manifest::from_json(&format!(
         r#"{{"schema":"enth.pack/1","id":"test","version":"1.0.0","title":"Test pack","authors":["enth contributors"],
         "license":{{"text":"CC-BY-4.0","patches":"CC0-1.0"}},
-        "requires":{{"lesson":1,"challenge":1,"patch":1,"generator":1,"scorers":["combined/1","sound/1","structure/1","time/1"]}},
+        "requires":{{"lesson":1,"challenge":2,"patch":1,"generator":1,"scorers":["combined/1","sound/1","structure/1","time/1"]}},
         "lessons":[{}]}}"#,
         list.join(",")
     ))
@@ -116,4 +116,50 @@ pub fn test_files(lessons: &[(&str, &str)]) -> BTreeMap<String, Vec<u8>> {
 /// The fixture directory of a kind (`pack`, `lesson`, `progress`, `lesson-ref`), version 1.
 pub fn fixture_dir(kind: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{kind}/v1"))
+}
+
+/// A Challenge v2 draw over the starter template, with a control to change and locks (F1l review M4): the cutoff
+/// from a set, `filter1.cutoff` editable, the oscillator and the resonance locked. Its JSON, as a lesson embeds it.
+pub fn draw_challenge() -> enth_challenge::Challenge {
+    use enth_challenge::model::{Start, Target};
+    use enth_challenge::v2::{Constraints, Draw, DrawAt, DrawItem, DrawValue, DrawValues};
+    use enth_challenge::{PhraseId, ScorerId, ScoringSpec};
+    let mut c = enth_challenge::Challenge::new(
+        Target::Draw(Draw {
+            seed: 7,
+            items: vec![DrawItem {
+                at: DrawAt::Param("filter1.cutoff".parse().unwrap()),
+                values: DrawValues::Set(vec![
+                    DrawValue::Number(300.0),
+                    DrawValue::Number(1200.0),
+                    DrawValue::Text("4kHz".to_owned()),
+                ]),
+            }],
+        }),
+        Start::Template { template: 0 },
+        PhraseId(1),
+        ScoringSpec::with_scorers(
+            0,
+            ScorerId::SOUND_V1,
+            ScorerId::STRUCTURE_V1,
+            ScorerId::COMBINED_V1,
+            ScorerId::TIME_V1,
+        ),
+    );
+    c.constraints = Constraints {
+        editable: vec!["filter1.cutoff".parse().unwrap()],
+        locked: vec![
+            "osc1.*".parse().unwrap(),
+            "filter1.resonance".parse().unwrap(),
+        ],
+    };
+    c
+}
+
+/// A lesson whose one step is a Recreate round on [`draw_challenge`] (`enth.challenge/2` embedded).
+pub fn recreate_v2_lesson(id: &str) -> String {
+    format!(
+        r#"{{"schema":"enth.lesson/1","id":"{id}","title":"Recreate a drawn cutoff","tier":"basic","objective":"Find the cutoff by ear.","teaches":["svf.cutoff"],"steps":[{{"id":"round","kind":"recreate","text":"text.md","view":{{"highlight":["filter1.cutoff"],"hide":["noise1.*"]}},"challenge":{}}}]}}"#,
+        draw_challenge().to_json()
+    )
 }

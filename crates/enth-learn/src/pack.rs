@@ -262,8 +262,10 @@ impl<'de> Deserialize<'de> for LessonKey {
     }
 }
 
-/// The first 8 bytes of a lesson file's SHA-256, written as 16 lower-case hex digits: tells a saved lesson whether
-/// the pack under it changed.
+/// What a saved lesson checks to tell whether the pack under it changed: the first 8 bytes of a SHA-256, written as
+/// 16 lower-case hex digits. A lesson's ([`ContentId::of_lesson`]) covers its `lesson.json` **and every file it
+/// names** (patches and texts), by their manifest hashes (F1l review, should-fix 8): a pack update that only edits a
+/// step's start patch or its text restarts a saved lesson too, rather than resuming it on content it never saw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContentId(pub [u8; 8]);
 
@@ -274,6 +276,28 @@ impl ContentId {
         let mut p = [0; 8];
         p.copy_from_slice(&d[..8]);
         ContentId(p)
+    }
+
+    /// A lesson's content id: the prefix of the SHA-256 of one line per file, `<path> <sha256>\n`, in path order,
+    /// for `lessons/<id>/lesson.json` and every patch and text the lesson names, each with the SHA-256 its manifest
+    /// lists. A file the manifest does not list (refused when the pack loads) counts with an empty hash.
+    pub fn of_lesson(manifest: &Manifest, id: &LessonId, lesson: &Lesson) -> ContentId {
+        let mut paths: BTreeSet<String> = BTreeSet::new();
+        paths.insert(lesson_path(id));
+        paths.extend(lesson.patches().map(|r| r.as_str().to_owned()));
+        paths.extend(lesson.texts().map(|t| t.path_in(id)));
+        let mut lines = String::new();
+        for path in &paths {
+            let hash = manifest
+                .file(path)
+                .map(|f| f.sha256.to_string())
+                .unwrap_or_default();
+            lines.push_str(path);
+            lines.push(' ');
+            lines.push_str(&hash);
+            lines.push('\n');
+        }
+        ContentId::of(lines.as_bytes())
     }
 }
 
@@ -307,8 +331,8 @@ impl<'de> Deserialize<'de> for ContentId {
 }
 
 /// The lesson in flight, as the session saves it in the `enth` field's `learn` object (lane SL): the pack, its
-/// version, the lesson, the step and the content prefix of the lesson file. On reload the shell loads the pack and
-/// the session resumes the player at `step`; when the content prefix differs (the pack was updated) it restarts
+/// version, the lesson, the step and the lesson's content id. On reload the shell loads the pack and
+/// the session resumes the player at `step`; when the content id differs (the pack was updated) it restarts
 /// the lesson at step 0, and the stash is kept either way.
 ///
 /// JSON: `{"pack":"basics","version":"1.2.0","lesson":"cutoff","step":1,"content":"0123456789abcdef"}`. Saved state
@@ -323,7 +347,7 @@ pub struct LessonRef {
     pub lesson: LessonId,
     /// The step, 0-based.
     pub step: u16,
-    /// The first 8 bytes of the lesson file's SHA-256.
+    /// The lesson's content id ([`ContentId::of_lesson`]: its file and every file it names).
     pub content: ContentId,
 }
 
@@ -579,7 +603,7 @@ impl Requires {
         }
         self.scorers
             .iter()
-            .find(|s| !crate::interim::is_known_scorer(s))
+            .find(|s| !enth_challenge::score::is_known(s))
             .map(|s| Need::Scorer(s.to_string()))
     }
 }
@@ -1002,8 +1026,10 @@ impl Pack {
                 used.patch = used.patch.max(loaded.from_schema);
                 patches.insert(r.clone(), Arc::new(loaded.patch));
             }
+            check_views(&lesson, &patches, &path)?;
             used.note(&lesson);
-            lessons.push((Arc::new(lesson), ContentId::of(bytes)));
+            let content = ContentId::of_lesson(&manifest, id, &lesson);
+            lessons.push((Arc::new(lesson), content));
         }
         used.check(&manifest)?;
         Ok(Pack {
@@ -1077,7 +1103,7 @@ pub struct LessonBundle {
     pub pack: PackId,
     /// The pack's version.
     pub version: PackVersion,
-    /// The lesson file's content id.
+    /// The lesson's content id ([`ContentId::of_lesson`]).
     pub content: ContentId,
     /// The lesson.
     pub lesson: Arc<Lesson>,
@@ -1123,7 +1149,11 @@ impl LessonBundle {
 struct Used {
     lesson: u32,
     patch: u32,
-    challenge: bool,
+    /// The highest challenge version a Recreate step's challenge needs ([`Challenge::version`]: 1 for a generated
+    /// round, 2 with any v2 piece), when the pack has one (F1l review M3).
+    ///
+    /// [`Challenge::version`]: enth_challenge::Challenge::version
+    challenge: Option<u32>,
     generator: Option<u16>,
     scorers: BTreeSet<ScorerId>,
 }
@@ -1132,7 +1162,7 @@ impl Used {
     fn note(&mut self, lesson: &Lesson) {
         for step in &lesson.steps {
             if let StepKind::Recreate { challenge, .. } = &step.kind {
-                self.challenge = true;
+                self.challenge = self.challenge.max(Some(challenge.version()));
                 self.generator = self.generator.max(challenge.generator());
                 let s = &challenge.scoring;
                 for id in [&s.sound, &s.structure, &s.combined, &s.time] {
@@ -1157,10 +1187,20 @@ impl Used {
                 r.patch, self.patch
             )));
         }
-        if self.challenge && r.challenge.is_none() {
-            return Err(over(
-                "names no challenge schema, and a lesson has a Recreate step".to_owned(),
-            ));
+        // A pack that under-declares fails inside a lesson on an older build (its embedded challenge is too new
+        // there), so it is refused here, as an over-used lesson or patch schema is: the pack's `requires` is wrong.
+        match (self.challenge, r.challenge) {
+            (Some(_), None) => {
+                return Err(over(
+                    "names no challenge schema, and a lesson has a Recreate step".to_owned(),
+                ));
+            }
+            (Some(used), Some(declared)) if used > declared => {
+                return Err(over(format!(
+                    "says challenge {declared}, a Recreate step's challenge uses {used}"
+                )));
+            }
+            _ => {}
         }
         if let Some(g) = self.generator
             && r.generator.is_none_or(|have| have < g)
@@ -1174,6 +1214,49 @@ impl Used {
         }
         Ok(())
     }
+}
+
+/// Each step's view names only what its start has (F1l review, should-fix 3), as a challenge's constraints must
+/// ([`Selector::check_against`](enth_challenge::v2::Selector::check_against)): `highlight`, `hide`, `editable` and
+/// `locked` against the step's own start patch, or a Recreate step's against its challenge's start; no selector twice
+/// in one list. A step with no start carries the patch over (perhaps edited), so it has no start to check against.
+fn check_views(
+    lesson: &Lesson,
+    patches: &BTreeMap<PatchRef, Arc<Patch>>,
+    path: &str,
+) -> Result<(), LearnError> {
+    for (i, step) in lesson.steps.iter().enumerate() {
+        let start = match (&step.kind, &step.view.start) {
+            (StepKind::Recreate { challenge, .. }, _) => challenge.start_patch().ok(),
+            (_, Some(r)) => patches.get(r).map(|p| Patch::clone(p)),
+            (_, None) => None,
+        };
+        let Some(start) = start else {
+            continue;
+        };
+        let v = &step.view;
+        for (name, list) in [
+            ("highlight", &v.highlight),
+            ("hide", &v.hide),
+            ("editable", &v.editable),
+            ("locked", &v.locked),
+        ] {
+            let field = || format!("{path}: steps[{i}].view.{name}");
+            for (n, selector) in list.iter().enumerate() {
+                selector
+                    .check_against(&start)
+                    .map_err(|e| bad_field(Doc::Lesson, field(), e.to_string()))?;
+                if list[..n].contains(selector) {
+                    return Err(bad_field(
+                        Doc::Lesson,
+                        field(),
+                        format!("lists {selector} twice"),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Every file listed and every listed file present, with its size and hash.

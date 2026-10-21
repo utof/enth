@@ -33,7 +33,7 @@ const EVERY_FIELD: &str = r#"{"schema":"enth.lesson/1","id":"every-field","title
    {"label":"Low","patch":"patches/dark.patch.json","phrase":2,"transpose":-12,"level_match":false,"seed":7,
     "curve":{"source":"modwheel","points":[{"ms":0,"pct":0},{"ms":1500,"pct":100}]}}]},
  {"id":"try","kind":"do","text":"text.md","hints":["Turn the cutoff down.","Below 1 kHz."],
-  "view":{"start":"patches/saw.patch.json","editable":["filter1.cutoff"],"lock":["osc1.*","lfo1 -> filter1.cutoff","macro2"]},
+  "view":{"start":"patches/saw.patch.json","editable":["filter1.cutoff"],"locked":["osc1.*","lfo1 -> filter1.cutoff","macro2"]},
   "check":{"kind":"all","checks":[
     {"kind":"patch","predicates":[
       {"kind":"value","knob":"filter1.cutoff","cmp":"<","value":"1kHz"},
@@ -94,6 +94,11 @@ fn every_field() -> Lesson {
     Lesson::from_json(EVERY_FIELD).unwrap()
 }
 
+/// A Recreate step embedding a Challenge v2 draw with `editable` and `locked` (F1l review, swap item 10).
+fn recreate_v2() -> Lesson {
+    Lesson::from_json(&common::recreate_v2_lesson("recreate-v2")).unwrap()
+}
+
 fn lesson_ref() -> LessonRef {
     LessonRef {
         pack: "space-and-dynamics".parse().unwrap(),
@@ -148,6 +153,7 @@ fn lesson_v1_is_what_this_build_writes() {
     for (name, lesson) in [
         ("cutoff.json", example_lesson()),
         ("every-field.json", every_field()),
+        ("recreate-v2.json", recreate_v2()),
     ] {
         assert_eq!(read("lesson", name), lesson.to_json(), "{name}");
         assert_eq!(
@@ -170,6 +176,25 @@ fn every_field_holds_every_kind_and_defaults_are_not_written() {
     let json = l.to_json();
     assert!(!json.contains(r#""level_match":true"#) && !json.contains(r#""phrase":1,"transpose""#));
     assert!(json.contains(r#""hi":"0""#), "a number reads as its text");
+}
+
+/// The v2 challenge a Recreate step embeds keeps its version and its constraints through the lesson's bytes.
+#[test]
+fn a_recreate_step_embeds_a_v2_challenge_with_its_constraints() {
+    let l = recreate_v2();
+    let StepKind::Recreate { challenge, .. } = &l.steps[0].kind else {
+        panic!("a recreate step")
+    };
+    assert_eq!(challenge.version(), 2);
+    assert_eq!(**challenge, common::draw_challenge());
+    let json = l.to_json();
+    assert!(
+        json.contains(r#""challenge":{"schema":"enth.challenge/2","target":{"kind":"draw""#),
+        "{json}"
+    );
+    assert!(json.contains(
+        r#""constraints":{"editable":["filter1.cutoff"],"locked":["osc1.*","filter1.resonance"]}"#
+    ));
 }
 
 #[test]
@@ -261,6 +286,7 @@ fn regenerate() {
     );
     write("lesson", "cutoff.json", &example_lesson().to_json());
     write("lesson", "every-field.json", &every_field().to_json());
+    write("lesson", "recreate-v2.json", &recreate_v2().to_json());
     write(
         "lesson-ref",
         "ref.json",

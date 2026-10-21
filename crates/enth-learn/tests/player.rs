@@ -17,7 +17,7 @@ fn lesson() -> String {
         "steps":[
           {{"id":"intro","kind":"read","text":"text.md"}},
           {{"id":"turn","kind":"do","text":"text.md","hints":["Turn it left.","Further."],
-            "view":{{"start":"patches/saw.patch.json","editable":["filter1.cutoff"],"lock":["osc1.*"]}},
+            "view":{{"start":"patches/saw.patch.json","editable":["filter1.cutoff"],"locked":["osc1.*"]}},
             "check":{{"kind":"patch","predicates":[{{"kind":"value","knob":"filter1.cutoff","cmp":"<","value":"1kHz"}}]}},
             "witness":"patches/dark.patch.json"}},
           {{"id":"darker","kind":"do","view":{{"start":"patches/saw.patch.json","editable":["filter1.cutoff"]}},
@@ -102,7 +102,7 @@ fn a_read_step_loads_no_plan_and_passes_on_next() {
         Effect::View(v) => Some(v),
         _ => None,
     });
-    assert_eq!(view.unwrap().lock[0].to_string(), "osc1.*");
+    assert_eq!(view.unwrap().locked[0].to_string(), "osc1.*");
 }
 
 #[test]
@@ -426,5 +426,74 @@ fn touched_counts_player_edits_only() {
     assert!(
         passed(&fx).is_some(),
         "2 kHz down to 200 Hz is well over 20 % of the cutoff's range"
+    );
+}
+
+/// A Recreate step's view carries its challenge's `locked` and `editable` (F1l review M4): the session enforces the
+/// one and the editor and the measured hints read the other. A resume carries them too, and the player hands the
+/// round's challenge back for the session to prepare again.
+#[test]
+fn a_recreate_steps_view_carries_its_challenges_constraints() {
+    let files = common::test_files(&[("drawn", &common::recreate_v2_lesson("drawn"))]);
+    let pack = Pack::from_files(&files).unwrap();
+    let bundle = pack.bundle(&"drawn".parse().unwrap()).unwrap();
+    let mut p = Player::new(bundle.clone());
+    assert_eq!(p.step_count(), 1);
+    let fx = p.start().unwrap();
+    let round = fx.iter().find_map(|e| match e {
+        Effect::StartRound(c) => Some(c.clone()),
+        _ => None,
+    });
+    assert_eq!(round.as_deref(), Some(&common::draw_challenge()));
+    let view = fx
+        .iter()
+        .find_map(|e| match e {
+            Effect::View(v) => Some(v.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let texts = |list: &[enth_learn::Selector]| -> Vec<String> {
+        list.iter().map(ToString::to_string).collect()
+    };
+    assert_eq!(texts(&view.locked), ["osc1.*", "filter1.resonance"]);
+    assert_eq!(texts(&view.editable), ["filter1.cutoff"]);
+    assert_eq!(
+        texts(&view.highlight),
+        ["filter1.cutoff"],
+        "the step's own view stays"
+    );
+    assert_eq!(p.round_challenge(), Some(common::draw_challenge()));
+    let (resumed, fx) = Player::resume(bundle, 0).unwrap();
+    assert_eq!(fx, vec![Effect::View(view)]);
+    assert_eq!(resumed.round_challenge(), Some(common::draw_challenge()));
+    assert_eq!(at(1).round_challenge(), None, "not a recreate step");
+}
+
+/// Show never offers an op the session would refuse (F1l review M1): an op touching a lock, by the session's own
+/// table, is passed over, and a witness only a locked edit reaches is `no_witness_path`, not a refused edit.
+#[test]
+fn show_never_offers_a_locked_op() {
+    let locked_cutoff = lesson().replace(
+        r#""editable":["filter1.cutoff"],"locked":["osc1.*"]"#,
+        r#""locked":["filter1.cutoff"]"#,
+    );
+    assert_ne!(locked_cutoff, lesson());
+    let files = common::test_files(&[("play", &locked_cutoff)]);
+    let pack = Pack::from_files(&files).unwrap();
+    let mut p = Player::new(pack.bundle(&"play".parse().unwrap()).unwrap());
+    p.start().unwrap();
+    p.next().unwrap();
+    let saw = patch("saw.patch.json");
+    assert_eq!(p.show(&saw).unwrap_err(), PlayerError::NoWitnessPath);
+    assert!(!p.assisted(), "nothing was shown");
+    // With the cutoff free, Show gives the cutoff (not the witness's metadata, which no control shows).
+    let mut p = at(1);
+    let fx = p.show(&saw).unwrap();
+    assert_eq!(fx, vec![Effect::Apply(cutoff(400.0))]);
+    let dark = patch("dark.patch.json");
+    assert_eq!(
+        p.show(&dark).unwrap(),
+        NONE,
+        "at the witness: nothing to show"
     );
 }

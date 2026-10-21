@@ -15,11 +15,16 @@
 //! merging, writing a temporary file and renaming it, so two instances never lose each other's progress.
 //!
 //! **A lenient output.** A newer version is read, not refused. A field this build does not know, at any level, and
-//! an entry it cannot decode (a lesson key or a step in a newer form) are **kept verbatim** and written back, so an
-//! older build that merges and rewrites a newer file loses nothing of it. Where both sides hold different unknown
+//! an entry it cannot decode (a lesson key or a step in a newer form) are **kept verbatim** and written back, with
+//! the highest version read ([`Progress::version`], F1l review should-fix 2), so an older build that merges and
+//! rewrites a newer file loses nothing of it, its version number included. Where both sides hold different unknown
 //! values under one key, the merge keeps the greater by canonical JSON text (deterministic, and still a join); where
 //! one side can read an entry the other cannot, the readable one wins. Only text that is not a JSON object with an
 //! `enth.progress/<N>` schema is refused: the shell must keep such a file aside, never overwrite it.
+//!
+//! **Progress changes are additive only.** A later progress version may add fields and entries, never change what
+//! one of these means or how it is written: that is what makes keeping the unknown and writing the newer number back
+//! correct. A change that is not additive needs a new file, not a new version of this one.
 
 use std::collections::BTreeMap;
 
@@ -179,7 +184,7 @@ impl Serialize for LessonProgress {
 }
 
 /// Per-user progress v1. See the [module docs](self).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Progress {
     /// The lessons by key.
     pub lessons: BTreeMap<LessonKey, LessonProgress>,
@@ -187,6 +192,21 @@ pub struct Progress {
     pub unread: Extra,
     /// Fields from a newer build, kept.
     pub extra: Extra,
+    /// The highest `enth.progress/<N>` read into this or merged in, at least [`PROGRESS_VERSION`]: what
+    /// [`to_json`](Self::to_json) writes, so a newer file an older build rewrites keeps its version (progress changes
+    /// are additive only, so nothing it holds is misread under that number).
+    pub version: u32,
+}
+
+impl Default for Progress {
+    fn default() -> Self {
+        Progress {
+            lessons: BTreeMap::new(),
+            unread: Extra::new(),
+            extra: Extra::new(),
+            version: PROGRESS_VERSION,
+        }
+    }
 }
 
 impl Progress {
@@ -201,8 +221,11 @@ impl Progress {
     pub fn from_json(text: &str) -> Result<Progress, LearnError> {
         let value: Value =
             serde_json::from_str(text).map_err(|e| syntax(Doc::Progress, e.to_string()))?;
-        schema_version(Doc::Progress, &value)?;
-        let mut p = Progress::default();
+        let version = schema_version(Doc::Progress, &value)?;
+        let mut p = Progress {
+            version: version.max(PROGRESS_VERSION),
+            ..Progress::default()
+        };
         for (k, v) in value.as_object().into_iter().flatten() {
             match k.as_str() {
                 "schema" => {}
@@ -231,7 +254,7 @@ impl Progress {
         Ok(p)
     }
 
-    /// The JSON text: compact, schema first, keys in order, byte-deterministic.
+    /// The JSON text: compact, schema first (`enth.progress/<version>`), keys in order, byte-deterministic.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
     }
@@ -242,8 +265,9 @@ impl Progress {
     }
 
     /// The join with `other`: the union of lessons and steps, `done` and `clean` or-ed, the maximum of bests, kept
-    /// fields united. Commutative, associative, idempotent, and never shrinks either side.
+    /// fields united, the higher version. Commutative, associative, idempotent, and never shrinks either side.
     pub fn merge(&mut self, other: &Progress) {
+        self.version = self.version.max(other.version);
         for (key, l) in &other.lessons {
             self.lessons.entry(key.clone()).or_default().merge(l);
         }
@@ -278,7 +302,12 @@ impl Progress {
 impl Serialize for Progress {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut m = s.serialize_map(None)?;
-        m.serialize_entry("schema", PROGRESS_SCHEMA)?;
+        let schema = if self.version <= PROGRESS_VERSION {
+            PROGRESS_SCHEMA.to_owned()
+        } else {
+            format!("enth.progress/{}", self.version)
+        };
+        m.serialize_entry("schema", &schema)?;
         m.serialize_entry("lessons", &Merged(&self.lessons, &self.unread))?;
         for (k, v) in &self.extra {
             m.serialize_entry(k, v)?;
@@ -355,8 +384,17 @@ mod tests {
         assert_eq!(again, p, "what was kept is written back");
         assert!(
             p.to_json()
-                .starts_with(r#"{"schema":"enth.progress/1","lessons":"#)
+                .starts_with(r#"{"schema":"enth.progress/3","lessons":"#),
+            "the highest version read is written back"
         );
+        assert_eq!(p.version, 3);
+        let mut mine = Progress::new();
+        assert!(
+            mine.to_json()
+                .starts_with(r#"{"schema":"enth.progress/1","#)
+        );
+        mine.merge(&p);
+        assert_eq!(mine.version, 3, "a merge keeps the higher version");
     }
 
     #[test]

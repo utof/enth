@@ -25,7 +25,7 @@ label = "Closed"
 patch = "patches/dark.patch.json"
 
 # Step 2, Try: "make it darker than this", checked live from the start patch. `editable` is advisory (the UI, the
-# measured hints' free set); `lock` is what the session refuses.
+# measured hints' free set); `locked` is what the session refuses.
 [[steps]]
 id = "try"
 kind = "do"
@@ -38,7 +38,7 @@ witness = "patches/dark.patch.json"
 start = "patches/saw.patch.json"
 highlight = ["filter1.cutoff"]
 editable = ["filter1.cutoff"]
-lock = ["osc1.*"]
+locked = ["osc1.*"]
 
 # A sound check: the phrase HELD (C3 for 1.5 s), with the expectation grammar of `enth check`. The start must fail it
 # and the witness pass it by a margin of at least 1e-3. Measured on the engine at 0.3.0 with `enth check`: the start's

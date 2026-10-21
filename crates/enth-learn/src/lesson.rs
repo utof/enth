@@ -30,7 +30,7 @@ use crate::check::Check;
 use crate::error::{Doc, LearnError, bad_field};
 use crate::pack::{LessonId, PatchRef, StepId, TextRef, check_schema, fields, syntax, unique};
 
-pub use crate::interim::{Selector, Touch};
+pub use enth_challenge::v2::{Selector, Touch, touches};
 
 /// The lesson schema family.
 pub const LESSON_KIND: &str = "enth.lesson";
@@ -127,15 +127,20 @@ impl Layout {
 }
 
 /// What the editor shows and allows during a step. Selectors are `enth_challenge::v2::Selector`'s text form
-/// (`filter1.cutoff`, `filter1.*`, `macro3`, `lfo1 -> filter1.cutoff`).
+/// (`filter1.cutoff`, `filter1.*`, `macro3`, `lfo1 -> filter1.cutoff`), each checked against the step's start when
+/// the pack loads (it must name something the start has; no selector twice in one list).
 ///
 /// - `start`: the patch the step loads (none: the patch carries over from the step before, or the player's own on
 ///   the first step). A Recreate step's start is its challenge's.
 /// - `highlight`: the static accent outline on the new controls.
 /// - `hide`: what the editor hides (usually unused modules, `noise1.*`).
 /// - `editable`: **advisory**, for the UI, the measured hints' free set and `closest` (empty: no restriction).
-/// - `lock`: **enforced** by the session's edit path (`SessionError::Locked`); `lesson-check` checks the witness
+/// - `locked`: **enforced** by the session's edit path (`SessionError::Locked`); `lesson-check` checks the witness
 ///   touches neither a locked nor, when `editable` is set, a non-editable control.
+///
+/// `editable` and `locked` are named as the challenge's `Constraints` names them (the F1l decision: the lesson's
+/// `lock` became `locked`), so a step and a Recreate step's challenge read alike; on a Recreate step the player
+/// fills both from the challenge.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepView {
@@ -156,7 +161,7 @@ pub struct StepView {
     pub editable: Vec<Selector>,
     /// What the session refuses to change.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub lock: Vec<Selector>,
+    pub locked: Vec<Selector>,
 }
 
 impl StepView {
@@ -166,7 +171,7 @@ impl StepView {
 
     /// Whether the lock list covers `touch` (the session's rule, `SessionError::Locked`).
     pub fn locks(&self, touch: &Touch) -> bool {
-        self.lock.iter().any(|s| s.covers(touch))
+        self.locked.iter().any(|s| s.covers(touch))
     }
 
     /// Whether `touch` is something the player is meant to change: not locked, and covered by `editable` when it
@@ -260,7 +265,7 @@ impl Example {
     fn validate(&self, field: &str) -> Result<(), LearnError> {
         let f = |name: &str| format!("{field}.{name}");
         check_line(&self.label, &f("label"))?;
-        if crate::interim::phrase(self.phrase).is_none() {
+        if enth_challenge::phrases::phrase(self.phrase).is_none() {
             return Err(bad_field(
                 Doc::Lesson,
                 f("phrase"),
@@ -518,7 +523,7 @@ impl Lesson {
                 StepKind::Recreate { .. } => {
                     if s.view.start.is_some()
                         || !s.view.editable.is_empty()
-                        || !s.view.lock.is_empty()
+                        || !s.view.locked.is_empty()
                     {
                         return Err(bad_field(
                             Doc::Lesson,

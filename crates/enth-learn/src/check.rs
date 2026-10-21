@@ -520,7 +520,7 @@ impl Check {
                 expect,
                 macros,
             } => {
-                if crate::interim::phrase(*phrase).is_none() {
+                if enth_challenge::phrases::phrase(*phrase).is_none() {
                     return Err(bad(
                         "phrase",
                         format!("phrase {} is not in this build", phrase.0),

@@ -369,6 +369,120 @@ fn lessons_are_strict_inputs_too() {
     }
 }
 
+/// A step's view names only what its start has, as a challenge's constraints must (F1l review, should-fix 3).
+#[test]
+fn a_view_selector_must_name_something_its_start_has() {
+    let base: serde_json::Value =
+        serde_json::from_slice(&common::example_files()["lessons/cutoff/lesson.json"]).unwrap();
+    for (list, value, what) in [
+        ("locked", serde_json::json!(["osc9.*"]), "osc9"),
+        (
+            "highlight",
+            serde_json::json!(["filter1.rate"]),
+            "filter1.rate",
+        ),
+        ("hide", serde_json::json!(["lfo7.rate"]), "lfo7"),
+        (
+            "editable",
+            serde_json::json!(["lfo7 -> filter1.cutoff"]),
+            "lfo7",
+        ),
+        ("locked", serde_json::json!(["osc1.*", "osc1.*"]), "twice"),
+    ] {
+        let mut v = base.clone();
+        v["steps"][1]["view"][list] = value;
+        let e = Pack::from_files(&with_lesson(&v.to_string())).unwrap_err();
+        assert_eq!(e.code(), "bad_field", "{list}");
+        let text = e.to_string();
+        assert!(text.contains(&format!("steps[1].view.{list}")), "{text}");
+        assert!(text.contains(what), "{text}");
+    }
+    // A step with no start of its own carries the patch over: nothing to check its view against.
+    let mut v = base.clone();
+    v["steps"][2]["view"] = serde_json::json!({"highlight": ["lfo7.rate"]});
+    assert!(Pack::from_files(&with_lesson(&v.to_string())).is_ok());
+    // A Recreate step's view is checked against its challenge's start.
+    let lesson = common::recreate_v2_lesson("drawn")
+        .replace(r#""hide":["noise1.*"]"#, r#""hide":["noise9.*"]"#);
+    let files = common::test_files(&[("drawn", &lesson)]);
+    assert_eq!(code(Pack::from_files(&files)), "bad_field");
+}
+
+/// `requires.challenge` must cover the highest challenge version a Recreate step uses (F1l review M3).
+#[test]
+fn requires_must_cover_the_challenge_version_used() {
+    let lesson = common::recreate_v2_lesson("drawn");
+    let mut files = common::test_files(&[("drawn", &lesson)]);
+    assert!(Pack::from_files(&files).is_ok(), "requires challenge 2");
+    let mut manifest = common::test_manifest(&["drawn"]);
+    manifest.requires.challenge = Some(1);
+    files = common::seal(&manifest, files);
+    let e = Pack::from_files(&files).unwrap_err();
+    assert_eq!(e.code(), "bad_field");
+    assert!(e.to_string().contains("challenge 1"), "{e}");
+    assert!(e.to_string().contains("uses 2"), "{e}");
+    // A generated (v1) round is covered by challenge 1.
+    let v1 = common::recreate_v2_lesson("drawn").replace(
+        &common::draw_challenge().to_json(),
+        &enth_challenge::Challenge::recreate(
+            enth_challenge::SpecPreset::by_id(1).unwrap().spec(1, 42),
+            enth_challenge::PhraseId(1),
+        )
+        .to_json(),
+    );
+    let files = common::seal(&manifest, common::test_files(&[("drawn", &v1)]));
+    let pack = Pack::from_files(&files);
+    assert!(
+        !matches!(&pack, Err(e) if e.to_string().contains("uses 2")),
+        "{pack:?}"
+    );
+}
+
+/// A lesson's content id covers the files it names, not only its own file (F1l review, should-fix 8): an update
+/// that changes only a start patch restarts a saved lesson instead of resuming it.
+#[test]
+fn the_content_id_covers_the_files_a_lesson_names() {
+    let id: enth_learn::pack::LessonId = "cutoff".parse().unwrap();
+    let before = Pack::from_files(&common::example_files())
+        .unwrap()
+        .bundle(&id)
+        .unwrap()
+        .content;
+    let mut files = common::example_files();
+    let saw = String::from_utf8(files["patches/saw.patch.json"].clone()).unwrap();
+    let edited = saw.replacen("2000.0", "2100.0", 1);
+    assert_ne!(edited, saw);
+    files.insert("patches/saw.patch.json".to_owned(), edited.into_bytes());
+    let files = common::seal(&common::example_manifest(), files);
+    let after = Pack::from_files(&files)
+        .unwrap()
+        .bundle(&id)
+        .unwrap()
+        .content;
+    assert_ne!(before, after, "a start patch changed");
+    let mut files = common::example_files();
+    files.insert(
+        "lessons/cutoff/step-2.md".to_owned(),
+        b"# Changed\n".to_vec(),
+    );
+    let files = common::seal(&common::example_manifest(), files);
+    let text = Pack::from_files(&files)
+        .unwrap()
+        .bundle(&id)
+        .unwrap()
+        .content;
+    assert_ne!(before, text, "a step's text changed");
+    let mut files = common::example_files();
+    files.insert("CREDITS.md".to_owned(), b"# Other credits\n".to_vec());
+    let files = common::seal(&common::example_manifest(), files);
+    let credits = Pack::from_files(&files)
+        .unwrap()
+        .bundle(&id)
+        .unwrap()
+        .content;
+    assert_eq!(before, credits, "a file the lesson does not name");
+}
+
 #[test]
 fn a_patch_that_does_not_load_is_refused() {
     let mut files = common::example_files();

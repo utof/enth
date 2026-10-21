@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc d85952a260ada5527e53ba6a18b8e39f9648815b9d573902270ace01d103c62e # shrinks to a = Progress { lessons: {LessonKey { pack: PackId("basics"), lesson: LessonId("cutoff") }: LessonProgress { steps: {}, unread: {"try": Object {"box": Number(2)}}, extra: {} }}, unread: {}, extra: {} }
+cc b31c3201a02d1037aed1392ad0ce6e4803caef71b012c20b44a07c4b11f46b39 # shrinks to a = Progress { lessons: {}, unread: {}, extra: {}, version: 2 }
