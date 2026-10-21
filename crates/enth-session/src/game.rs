@@ -1096,6 +1096,15 @@ pub struct RoundLogEntry {
     /// leaves out. Omitted for a game round, so game lines keep their bytes, and a line without it reads as one.
     #[serde(default, skip_serializing_if = "RoundOrigin::is_game")]
     pub origin: RoundOrigin,
+    /// A lesson round's lesson and step (`enth_learn::LessonRef`, F1l review should-fix 4), so `gr2-report` can tell
+    /// which step a line belongs to: a lesson round on a patch or draw target has no code. Omitted otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lesson: Option<enth_learn::LessonRef>,
+    /// How the round ended, when [`RoundLogEntry::result`] is `None` (a round with no code, such as a lesson round on
+    /// a patch or draw target, whose `enth.round-result/1` cannot be written without one): passed, gave up or not
+    /// passed. Omitted when the result says it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2135,6 +2144,7 @@ impl Session {
         event: LogEvent,
         ended_by: Option<EndedBy>,
     ) -> RoundLogEntry {
+        let result = record.result();
         RoundLogEntry {
             schema: ROUND_LOG_SCHEMA.to_owned(),
             event,
@@ -2142,7 +2152,6 @@ impl Session {
             code: record.code.clone(),
             ended_by,
             broken: record.phase == Phase::Broken,
-            result: record.result(),
             submits: record.submits.clone(),
             dispute: record.dispute.clone(),
             edits: (record.edits.len() as u32).saturating_add(record.edits_dropped),
@@ -2156,6 +2165,13 @@ impl Session {
                 Vec::new()
             },
             origin: record.origin,
+            // The step the round belongs to: the saved reference still names it while the round closes (a step
+            // change, the lesson's end or a new lesson saves its new reference only after the round is closed).
+            lesson: (record.origin == RoundOrigin::Lesson)
+                .then(|| self.instance.learn.as_ref().and_then(|l| l.lesson.clone()))
+                .flatten(),
+            outcome: result.is_none().then(|| record.outcome()),
+            result,
         }
     }
 

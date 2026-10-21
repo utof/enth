@@ -1428,7 +1428,7 @@ fn the_largest_lesson_and_its_round_fit_the_enth_field() {
             round: Some(round.clone()),
         }),
         preset: Some(enth_session::PresetState {
-            last: Some("p".repeat(4096)),
+            last: Some("p".repeat(enth_session::presets::MAX_LAST_BYTES)),
         }),
         learn: Some(LearnState {
             lesson: Some(lesson),
@@ -1463,6 +1463,17 @@ fn the_largest_lesson_and_its_round_fit_the_enth_field() {
         Some(stash.as_str())
     );
     assert_eq!(s.game_record().unwrap().origin, RoundOrigin::Lesson);
+    // The rest of the field is bounded too: a preset bookmark past its cap is never saved (review nit 9).
+    let mut long = instance.clone();
+    long.preset = Some(enth_session::PresetState {
+        last: Some("p".repeat(enth_session::presets::MAX_LAST_BYTES + 1)),
+    });
+    let text = long.to_json();
+    assert!(!text.contains("ppp"), "the bookmark is not written");
+    assert_eq!(
+        InstanceState::from_json(&text).unwrap().0.preset,
+        Some(enth_session::PresetState::default())
+    );
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1715,8 +1726,16 @@ fn a_recreate_step_is_a_real_round_that_never_stashes_and_logs_origin_lesson() {
     let lines = logs(&drain_game(&mut s));
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0].origin, RoundOrigin::Lesson);
+    // The line names the round's own step (should-fix 4), not the step Next moved to; a coded round's result says
+    // its outcome, so no separate one is written.
+    assert_eq!(lines[0].lesson, Some(lesson_ref()));
+    assert_eq!(lines[0].outcome, None);
+    assert!(lines[0].result.is_some());
     let json = serde_json::to_string(&lines[0]).unwrap();
-    assert!(json.ends_with(r#","origin":"lesson"}"#), "{json}");
+    assert!(
+        json.ends_with(r#","origin":"lesson","lesson":{"pack":"basics","version":"1.0.0","lesson":"02-filter","step":0,"content":"0123456789abcdef"}}"#),
+        "{json}"
+    );
     let back: RoundLogEntry = serde_json::from_str(&json).unwrap();
     assert_eq!(back, lines[0]);
     // Restore at the end brings your patch back (the round never stashed).
