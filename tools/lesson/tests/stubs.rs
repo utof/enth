@@ -17,15 +17,15 @@ fn run(args: &[&str]) -> Output {
 
 #[test]
 fn every_stub_refuses_and_names_its_lane() {
-    for (args, lane) in [(vec!["gr2", "progress.json"], "INT2")] {
-        let out = run(&args);
-        assert_eq!(out.status.code(), Some(1), "{args:?}: {out:?}");
-        let text = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            text.contains("not built yet") && text.contains(lane),
-            "{args:?}: {text}"
-        );
-    }
+    // One stub is left (a loop over one row would be clippy's `single_element_loop`).
+    let (args, lane) = (["gr2", "progress.json"], "INT2");
+    let out = run(&args);
+    assert_eq!(out.status.code(), Some(1), "{args:?}: {out:?}");
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        text.contains("not built yet") && text.contains(lane),
+        "{args:?}: {text}"
+    );
 }
 
 #[test]
