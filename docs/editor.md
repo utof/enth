@@ -453,13 +453,19 @@ Additive in `overlay.rs` (docs at the top of the file):
 
 Glyphs: `STOP` ■ (new, Inter covers it), `PLAY` ▶, `PREVIOUS` ◀, `NEXT` ▶, `DOT_ON` ●, `DOT_OFF` ○, `BULLET` •, `GOOD` ✓, `BAD` ✗.
 
+**Lane LFU's follow-ups (2026-10-21):**
+
+- **"How close am I?"** joins a lesson's Recreate step after a Submit that did not pass (`LearnView::closest`, the session's `LearnJobKind::Closest`; [learn.md](learn.md#learn-follow-ups-lane-lfu)). From the bottom up, in rows that fit: **How close am I?** (enabled while `closest.available`), **Look harder** once it has answered (about 1,000 renders), **■ Stop** while it searches ("Stop searching"; cancels), and **Try a new one** when a sibling redo is due (after a reveal, the coach's last hint or a passing answer). Above them, in the value accent: "Looking for the nearest passing sound… 42 of 300 renders" while it runs, then "N moves away: Cutoff (filter1.cutoff) down a little; …" (the session's `move_size`: a touch, a little, a lot, or change for a switch), with each control's exact values ("1.20 kHz → 850 Hz") only once the round is revealed, or "No passing sound found near yours…" when it found none. **On the cards**, `LessonOverlay` rings each control the answer would move (Good when it stays, Near for a touch or a little, Bad for a lot or a switch) with the hint's pointer (↑, ↓, or the outline alone); in `overlay::Layered` the step's ring and pointer now read over the round's when it has one. Labels: "How close am I?", "Look harder", "Stop searching", "Try a new one". `tests/learn_view.rs`'s `how_close_am_i_after_a_failed_submit` plays it by label, no value before Reveal.
+- **The browser's bottom row:** **Open packs folder** (`LearnIntent::OpenPacksFolder`; the shell, which knows the folder through `Editor::set_packs_folder`, makes it if missing and opens it through egui's `OpenUrl`, read with `Editor::take_open_packs_folder` after the frame, since the editor does no I/O; disabled without a folder) and **Get more lessons** (`OpenUrl` to the releases page, `browser::RELEASES_URL`). The list scrolls above them, so its first row stays where it was. Snapshot `learn_browser.png` updated, and `learn_round.png` for the pane's line about the button.
+- The plugin bundles the basics pack and turns `learn` on by default ([plugin.md](plugin.md#learn-lane-skl-r2)).
+- One Show me now satisfies a `touched` predicate (the player notes the knob's value before its op).
+- The basics ear questions after a round are focus steps with nothing highlighted, so they fit beside the pane.
+
 **Left for later:**
 
-- **"How close am I?"** is not built: the session's `LearnJobKind` has no `Closest` job (lane SL's file), and the plugin's worker would run it (lane SKL's); with both, the button joins the Recreate step's controls with progress and cancel.
-- "Open packs folder" and "Get more lessons" (the browser's buttons in learn.md) need the shell's folder and the releases page's address; Review waits for lane REV.
-- The plugin bundles only the example pack (`enth-plugin/src/learn.rs`'s `BUNDLED`, lane SKL's), so the basics pack and its tour reach the plugin once a lane bundles it.
+- Review waits for lane REV.
 - A route selector in a link outlines its destination and its source's card, not its matrix cell or route-list row; a macro selector outlines nothing (the macro bar takes no overlay).
-- A one-op Show me never satisfies a `touched` predicate: the touch log spans the values the player's edits reached, starting at the first edit's (enth-learn's `TouchLog`), so a single jump spans nothing (How a lesson works' Try step passes by a drag, not by Show me).
+- A Name step on the player's own patch (no start of its own) still carries a full starter over and overflows beside the pane (LUI's report); a content lane can give it a `hide` list or `layout = "focus"`.
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 
