@@ -76,6 +76,16 @@ fn run(job: &LearnJob, witness: f32) -> LearnResult {
 }
 
 fn harness() -> Harness<'static, App> {
+    harness_with(Patch::init())
+}
+
+/// The plugin's Init patch (`content/presets/init.patch.json`): what a fresh instance in REAPER plays.
+fn plugin_init() -> Patch {
+    let text = include_str!("../../../content/presets/init.patch.json");
+    enth_patch::file::load(text).unwrap().patch
+}
+
+fn harness_with(patch: Patch) -> Harness<'static, App> {
     let theme = Theme::dark();
     let bundle = example();
     let witness = bundle
@@ -88,7 +98,7 @@ fn harness() -> Harness<'static, App> {
     let app = App {
         editor,
         theme: theme.clone(),
-        session: Session::new(Patch::init()),
+        session: Session::new(patch),
         now: 0,
         jobs: Vec::new(),
         results: Vec::new(),
@@ -115,6 +125,9 @@ fn harness() -> Harness<'static, App> {
                 for (id, result) in std::mem::take(&mut app.results) {
                     let _ = app.session.learn_job_done(id, result);
                 }
+                // The plugin's glue hands over the round too (its header entry stands right of Learn).
+                app.editor
+                    .set_round(enth_session::game::GameEdit::round(&app.session));
                 app.editor.set_lesson(LearnEdit::lesson(&app.session));
                 app.editor
                     .frame(&mut root, &app.theme, &mut app.session, down);
@@ -316,4 +329,41 @@ fn a_settled_lesson_asks_for_no_frames() {
         );
     }
     assert_eq!(h.state().editor.report().repaint, None);
+}
+
+/// The REAPER `lesson` scenario (`xtask/reaper/lesson.lua`) clicks the panel by position in the plugin's window (the
+/// default 1200 x 800, a fresh instance on the plugin's Init patch): these are its points, so a layout change fails
+/// here first.
+#[test]
+fn reaper_points_hit_their_controls() {
+    const LEARN: (f32, f32) = (551.0, 28.0);
+    const START: (f32, f32) = (909.0, 44.0);
+    const LISTEN_OPEN: (f32, f32) = (918.0, 82.0);
+    const STOP: (f32, f32) = (1055.0, 82.0);
+    const NEXT: (f32, f32) = (982.0, 54.0);
+    const SHOW: (f32, f32) = (969.0, 82.0);
+    let hits = |h: &Harness<'_, App>, label: &str, (x, y): (f32, f32)| {
+        let rect = h.get_by_label(label).rect();
+        assert!(
+            rect.contains(egui::pos2(x, y)),
+            "{label} is at {rect:?}, not under ({x}, {y}): update lesson.lua's POINTS and these"
+        );
+    };
+    let mut h = harness_with(plugin_init());
+    h.run_steps(2);
+    hits(&h, "Learn", LEARN);
+    click(&mut h, "Learn");
+    hits(&h, "Start The low-pass cutoff", START);
+    click(&mut h, "Start The low-pass cutoff");
+    h.run_steps(3);
+    hits(&h, "Listen Open", LISTEN_OPEN);
+    hits(&h, "Stop listening", STOP);
+    hits(&h, "Next", NEXT);
+    click(&mut h, "Next");
+    hits(&h, "Show me", SHOW);
+    hits(&h, "Next", NEXT);
+    click(&mut h, "Show me");
+    h.run_steps(30);
+    assert_eq!(phase(&h), Some(StepPhase::Passed));
+    hits(&h, "Next", NEXT);
 }

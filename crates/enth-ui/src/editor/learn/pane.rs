@@ -211,7 +211,9 @@ fn list(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
     }
 }
 
-/// A lesson live: the step and its controls.
+/// A lesson live: the step and its controls. The controls come before the step's text, in a fixed order (Back and
+/// Next; the step's Listen, Choose, Hint and Show me), so they stand at the same place whatever the text's length
+/// (the REAPER `lesson` scenario clicks them by position; `tests/learn_panel.rs` pins the points).
 fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
     let Some(view) = learn.view() else {
         return;
@@ -249,140 +251,8 @@ fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
             .font(t.text.label.clone())
             .color(t.color.text.label),
     );
-    named(&status, &format!("{place} {state}").trim().to_owned());
-    if let Some((bundle, _, s)) = step
-        && let Some(text) = s.text.as_ref().and_then(|r| bundle.text(r))
-    {
-        for (heading, line) in plain(text) {
-            let font = if heading {
-                t.text.strong.clone()
-            } else {
-                t.text.body.clone()
-            };
-            ui.add(Label::new(RichText::new(line).font(font).color(t.color.text.primary)).wrap());
-        }
-    }
+    named(&status, format!("{place} {state}").trim());
     let live = !view.broken && !view.pending.opening && !view.finished;
-    // The step's own controls.
-    if let Some((_, _, s)) = step
-        && live
-    {
-        match &s.kind {
-            StepKind::Listen { examples } => {
-                ui.horizontal_wrapped(|ui| {
-                    for (i, e) in examples.iter().enumerate() {
-                        let i = u8::try_from(i).unwrap_or(u8::MAX);
-                        let playing = view.listen.example == Some(i);
-                        let text = format!("{} {}", if playing { "■" } else { "▶" }, e.label);
-                        button(
-                            ui,
-                            t,
-                            &text,
-                            &format!("Listen {}", e.label),
-                            view.listen.ready,
-                            LearnIntent::Listen(if playing { None } else { Some(i) }),
-                            out,
-                        );
-                    }
-                    button(
-                        ui,
-                        t,
-                        "Stop",
-                        "Stop listening",
-                        view.listen.example.is_some(),
-                        LearnIntent::Listen(None),
-                        out,
-                    );
-                });
-            }
-            StepKind::Choose { options, .. } => {
-                ui.horizontal_wrapped(|ui| {
-                    for (i, e) in options.iter().enumerate() {
-                        let i = u8::try_from(i).unwrap_or(u8::MAX);
-                        let playing = view.listen.example == Some(i);
-                        button(
-                            ui,
-                            t,
-                            &format!("{} {}", if playing { "■" } else { "▶" }, e.label),
-                            &format!("Listen {}", e.label),
-                            view.listen.ready,
-                            LearnIntent::Listen(if playing { None } else { Some(i) }),
-                            out,
-                        );
-                    }
-                });
-                ui.horizontal_wrapped(|ui| {
-                    for (i, e) in options.iter().enumerate() {
-                        let i = u8::try_from(i).unwrap_or(u8::MAX);
-                        button(
-                            ui,
-                            t,
-                            &e.label,
-                            &format!("Choose {}", e.label),
-                            view.phase != StepPhase::Passed,
-                            LearnIntent::Choose(i),
-                            out,
-                        );
-                    }
-                });
-                let verdict = match (view.chose, view.answer) {
-                    (_, Some(a)) => options
-                        .get(usize::from(a))
-                        .map(|o| format!("The answer is {}.", o.label)),
-                    (Some((_, true)), _) => Some("✓ Right.".to_owned()),
-                    (Some((_, false)), _) => Some("✗ Not that one: listen again.".to_owned()),
-                    _ => None,
-                };
-                if let Some(v) = verdict {
-                    ui.label(
-                        RichText::new(v)
-                            .font(t.text.body.clone())
-                            .color(t.color.text.primary),
-                    );
-                }
-            }
-            _ => {}
-        }
-        if matches!(s.kind, StepKind::Do { .. } | StepKind::Choose { .. }) {
-            ui.horizontal(|ui| {
-                let open = view.phase != StepPhase::Passed;
-                button(
-                    ui,
-                    t,
-                    "Hint",
-                    "Hint",
-                    open && !view.pending.hinting,
-                    LearnIntent::Hint,
-                    out,
-                );
-                button(ui, t, "Show me", "Show me", open, LearnIntent::Show, out);
-            });
-        }
-        if matches!(s.kind, StepKind::Recreate { .. }) {
-            ui.label(
-                RichText::new("Recreate the target with the round's controls above.")
-                    .font(t.text.label.clone())
-                    .color(t.color.text.label),
-            );
-        }
-    }
-    if let Some(hint) = view.hint.as_deref() {
-        ui.add(
-            Label::new(
-                RichText::new(hint)
-                    .font(t.text.body.clone())
-                    .color(t.color.accent.value),
-            )
-            .wrap(),
-        );
-    }
-    if view.pending.hinting {
-        ui.label(
-            RichText::new("Working out a hint…")
-                .font(t.text.label.clone())
-                .color(t.color.text.label),
-        );
-    }
     ui.horizontal(|ui| {
         button(
             ui,
@@ -405,7 +275,131 @@ fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
             out,
         );
     });
-    ui.horizontal(|ui| {
+    // The step's own controls.
+    if let Some((_, _, s)) = step
+        && live
+    {
+        let listen = |ui: &mut Ui, out: &mut Intents, labels: &[String], stop: bool| {
+            ui.horizontal_wrapped(|ui| {
+                for (i, label) in labels.iter().enumerate() {
+                    let i = u8::try_from(i).unwrap_or(u8::MAX);
+                    let playing = view.listen.example == Some(i);
+                    button(
+                        ui,
+                        t,
+                        &format!("{} {label}", if playing { "■" } else { "▶" }),
+                        &format!("Listen {label}"),
+                        view.listen.ready,
+                        LearnIntent::Listen(if playing { None } else { Some(i) }),
+                        out,
+                    );
+                }
+                if stop {
+                    button(
+                        ui,
+                        t,
+                        "Stop",
+                        "Stop listening",
+                        view.listen.example.is_some(),
+                        LearnIntent::Listen(None),
+                        out,
+                    );
+                }
+            });
+        };
+        match &s.kind {
+            StepKind::Listen { examples } => {
+                let labels: Vec<String> = examples.iter().map(|e| e.label.clone()).collect();
+                listen(ui, out, &labels, true);
+            }
+            StepKind::Choose { options, .. } => {
+                let labels: Vec<String> = options.iter().map(|e| e.label.clone()).collect();
+                listen(ui, out, &labels, true);
+                ui.horizontal_wrapped(|ui| {
+                    for (i, label) in labels.iter().enumerate() {
+                        let i = u8::try_from(i).unwrap_or(u8::MAX);
+                        button(
+                            ui,
+                            t,
+                            label,
+                            &format!("Choose {label}"),
+                            view.phase != StepPhase::Passed,
+                            LearnIntent::Choose(i),
+                            out,
+                        );
+                    }
+                });
+                let verdict = match (view.chose, view.answer) {
+                    (_, Some(a)) => labels
+                        .get(usize::from(a))
+                        .map(|l| format!("The answer is {l}.")),
+                    (Some((_, true)), _) => Some("✓ Right.".to_owned()),
+                    (Some((_, false)), _) => Some("✗ Not that one: listen again.".to_owned()),
+                    _ => None,
+                };
+                if let Some(v) = verdict {
+                    ui.label(
+                        RichText::new(v)
+                            .font(t.text.body.clone())
+                            .color(t.color.text.primary),
+                    );
+                }
+            }
+            StepKind::Recreate { .. } => {
+                ui.label(
+                    RichText::new("Recreate the target with the round's controls above.")
+                        .font(t.text.label.clone())
+                        .color(t.color.text.label),
+                );
+            }
+            _ => {}
+        }
+        if matches!(s.kind, StepKind::Do { .. } | StepKind::Choose { .. }) {
+            ui.horizontal(|ui| {
+                let open = view.phase != StepPhase::Passed;
+                button(
+                    ui,
+                    t,
+                    "Hint",
+                    "Hint",
+                    open && !view.pending.hinting,
+                    LearnIntent::Hint,
+                    out,
+                );
+                button(ui, t, "Show me", "Show me", open, LearnIntent::Show, out);
+            });
+        }
+    }
+    if let Some(hint) = view.hint.as_deref() {
+        ui.add(
+            Label::new(
+                RichText::new(hint)
+                    .font(t.text.body.clone())
+                    .color(t.color.accent.value),
+            )
+            .wrap(),
+        );
+    }
+    if view.pending.hinting {
+        ui.label(
+            RichText::new("Working out a hint…")
+                .font(t.text.label.clone())
+                .color(t.color.text.label),
+        );
+    }
+    if let Some((bundle, _, s)) = step
+        && let Some(text) = s.text.as_ref().and_then(|r| bundle.text(r))
+    {
+        for (heading, line) in plain(text) {
+            let font = if heading {
+                t.text.strong.clone()
+            } else {
+                t.text.body.clone()
+            };
+            ui.add(Label::new(RichText::new(line).font(font).color(t.color.text.primary)).wrap());
+        }
+    }
+    ui.horizontal_wrapped(|ui| {
         ui.label(
             RichText::new("End lesson:")
                 .font(t.text.label.clone())
