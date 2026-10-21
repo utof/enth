@@ -755,6 +755,10 @@ pub enum Outcome {
 /// and a field this build added later (`dim_unused`) defaults when missing, so every older result still reads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent assists a round may have used, each persisted as its own flag"
+)]
 pub struct AssistsUsed {
     /// Hints revealed.
     pub hints: u8,

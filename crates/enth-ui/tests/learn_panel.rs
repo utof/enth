@@ -391,17 +391,12 @@ fn reaper_points_hit_their_controls() {
     const STOP: (f32, f32) = (908.0, 608.0);
     const NEXT: (f32, f32) = (1155.0, 636.0);
     const SHOW: (f32, f32) = (957.0, 608.0);
-    let print = std::env::var_os("ENTH_PRINT_POINTS").is_some();
     let hits = |h: &Harness<'_, App>, label: &str, (x, y): (f32, f32)| {
         let rect = h
             .query_all_by_label(label)
             .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
             .unwrap_or_else(|| panic!("no button {label}"))
             .rect();
-        if print {
-            println!("{label}: {rect:?} (centre {:?})", rect.center());
-            return;
-        }
         assert!(
             rect.contains(egui::pos2(x, y)),
             "{label} is at {rect:?}, not under ({x}, {y}): update lesson.lua's POINTS and these"

@@ -460,7 +460,7 @@ pub enum LearnJobKind {
     },
     /// "How close am I?" (lane LFU): `enth_solver::closest` from the player's patch on the round the game worker
     /// holds, on its parallel evaluator, with progress and cancel. Answer [`LearnResult::Closest`].
-    Closest(ClosestRequest),
+    Closest(Box<ClosestRequest>),
 }
 
 impl LearnJobKind {
@@ -521,6 +521,10 @@ pub struct ClosestProgress {
 /// Cancel while `running`, then the answer in words and rings; exact values only once the round is `revealed`.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "a view model: independent facts the Learn view shows"
+)]
 pub struct ClosestView {
     /// The button applies: the step's round is live and its last scored submit did not pass (no reveal), and no
     /// search runs.
@@ -2020,7 +2024,7 @@ impl LearnEdit for Session {
             CLOSEST_BUDGET
         };
         let revision = self.learn.revision;
-        let id = self.learn_job(LearnJobKind::Closest(ClosestRequest {
+        let id = self.learn_job(LearnJobKind::Closest(Box::new(ClosestRequest {
             round,
             challenge,
             revision,
@@ -2028,7 +2032,7 @@ impl LearnEdit for Session {
             free,
             budget,
             cfg: closest_cfg(harder),
-        }));
+        })));
         self.learn.jobs.closest = Some(InFlight { id, revision });
         self.learn.closest_progress = Some(ClosestProgress {
             renders: 0,

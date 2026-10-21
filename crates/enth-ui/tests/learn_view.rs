@@ -1065,7 +1065,7 @@ fn how_close_am_i_after_a_failed_submit() {
 }
 
 /// The browser's Open packs folder and Get more lessons (lane LFU): the first asks the shell (which makes and opens the
-/// folder), the second opens the releases page through egui's OpenUrl.
+/// folder), the second opens the releases page through egui's `OpenUrl`.
 #[test]
 fn the_browser_opens_the_packs_folder_and_the_releases_page() {
     let mut h = harness();

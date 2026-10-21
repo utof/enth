@@ -2161,7 +2161,7 @@ fn closest_job(s: &mut Session) -> (LearnJob, enth_session::learn::ClosestReques
     let LearnJobKind::Closest(request) = job.kind.clone() else {
         panic!("{job:?}");
     };
-    (job, request)
+    (job, *request)
 }
 
 /// What the worker would answer: the cutoff moved to 800 Hz, passing (or not).
@@ -2222,7 +2222,7 @@ fn how_close_am_i_answers_after_a_failed_submit_with_progress_and_marks_the_roun
     assert_eq!(s.lesson().unwrap().closest.running.unwrap().renders, 42);
     // A second press while it runs asks for nothing more.
     s.learn_closest(false).unwrap();
-    assert!(learn_jobs(&drain_learn(&mut s)).is_empty());
+    assert_eq!(learn_jobs(&drain_learn(&mut s)), Vec::<LearnJob>::new());
     // The answer: shown, the round assisted like a reveal, the step told (assisted, not passed), a redo due.
     s.learn_job_done(job.id, found(&request, true)).unwrap();
     let view = s.lesson().unwrap().closest;

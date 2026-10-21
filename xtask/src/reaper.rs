@@ -294,8 +294,6 @@ struct Log {
 struct Sandbox {
     /// How REAPER lists the plugin (the scripts add it with `TrackFX_AddByName`).
     plugin_name: String,
-    /// The bundles the scenarios load (REAPER's plugin path).
-    bundled: PathBuf,
     reaper: PathBuf,
     home: PathBuf,
     out: PathBuf,
@@ -447,7 +445,6 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
 
     let sandbox = Sandbox {
         plugin_name: options.plugin_name.clone(),
-        bundled: bundled.clone(),
         reaper,
         home: work.join("home"),
         out: work.join("out"),
