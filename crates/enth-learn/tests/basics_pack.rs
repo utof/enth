@@ -31,7 +31,7 @@ fn basics_dir() -> PathBuf {
 }
 
 /// The pack's files as `cargo xtask pack` will write them (canonical JSON, texts, patches, credits, the sealed
-/// `pack.json`). Authoring-only files at the pack's root (`TASTE.md`, notes) are not part of the pack.
+/// `pack.json`). A pack directory holds only what the manifest lists.
 fn pack_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     let text = fs::read_to_string(dir.join("pack.toml")).unwrap();
     let manifest = Manifest::from_json(&common::toml_as_json(&text))

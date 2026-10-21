@@ -1,14 +1,14 @@
-# Taste check: two lessons of the basics pack
+# Taste check: two lessons of the basics pack (lane C1)
 
 Before the rest of the pack is written, taste two lessons (about 20 to 30 minutes; docs/phase-3.md, "Your part"):
 
 | Lesson | Directory | Why these two |
 | --- | --- | --- |
-| 1.1 Waveforms | [`lessons/waveforms/`](lessons/waveforms/) | An enum control (the wave), drawn from a set |
-| 2.1 Low-pass cutoff | [`lessons/cutoff/`](lessons/cutoff/) | A continuous control, with a sound check and a drawn range |
+| 1.1 Waveforms | [`basics/lessons/waveforms/`](basics/lessons/waveforms/) | An enum control (the wave), drawn from a set |
+| 2.1 Low-pass cutoff | [`basics/lessons/cutoff/`](basics/lessons/cutoff/) | A continuous control, with a sound check and a drawn range |
 
-This file is an authoring note, not part of the pack: the pack tool ships `pack.toml`, `CREDITS.md`, `lessons/` and
-`patches/` only.
+This note sits beside the pack, not in it: a pack directory holds only what its manifest lists (`pack.toml`,
+`CREDITS.md`, `lessons/`, `patches/`).
 
 ## Reading them as markdown
 
@@ -16,8 +16,8 @@ Open the lesson's `lesson.toml`: its steps are in playing order, and the comment
 what was measured. Each step names its text, a markdown file in the same directory (`hear.md`, `name.md`, …), which is
 what the player reads. A lesson runs:
 
-1. **Hear**: two `listen` steps (the labels are the buttons; the patches are in [`patches/`](patches/)), then a
-   `choose` step, the first ear question.
+1. **Hear**: two `listen` steps (the labels are the buttons; the patches are in
+   [`basics/patches/`](basics/patches/)), then a `choose` step, the first ear question.
 2. **Name**: `name.md`, at most about 80 words.
 3. **Try**: a `do` step with a goal checked live (`[steps.check]`), and `hints` shown on request.
 4. **Do**: three `recreate` steps, real game rounds on a hidden target drawn from the values in
