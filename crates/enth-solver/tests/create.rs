@@ -499,6 +499,16 @@ fn a_short_clip_is_kept_and_searched_without_the_heuristic() {
 }
 
 #[test]
+fn a_job_moves_to_the_shells_thread_and_a_bank_is_shared() {
+    fn send<T: Send>() {}
+    fn send_sync<T: Send + Sync>() {}
+    send::<CreateJob>();
+    send_sync::<Bank>();
+    send_sync::<Target>();
+    send_sync::<CreateResult>();
+}
+
+#[test]
 fn bad_targets_and_settings_are_errors_not_panics() {
     let mut t = target();
     t.audio.clear();

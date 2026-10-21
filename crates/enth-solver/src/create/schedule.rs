@@ -472,7 +472,9 @@ impl CreateJob {
     }
 
     /// The distances of the batch the last [`CreateJob::ask`] returned, in the same order. A non-finite distance
-    /// counts as failed.
+    /// counts as failed. A shell cancelling in the middle of a batch (its pool checks the flag per job) passes a
+    /// non-finite distance for every job it skipped, then calls [`cancel`](Self::cancel): those count as renders,
+    /// and can only lose to what was found.
     ///
     /// # Errors
     /// [`CreateError::ObjectiveCount`] if `distances` does not match the batch (nothing changes), or
