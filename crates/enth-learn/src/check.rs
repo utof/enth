@@ -205,8 +205,10 @@ impl Cmp {
     }
 }
 
-/// One fact about the live patch. JSON: `{"kind":"value","knob":"filter1.cutoff","cmp":"<","value":"1kHz"}`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One fact about the live patch. JSON: `{"kind":"value","knob":"filter1.cutoff","cmp":"<","value":"1kHz"}`. It
+/// also reads from its one-line form (`"filter1.cutoff < 1kHz"`, lane PLY's grammar in [`crate::predicate`]), and is
+/// always written as the object.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Predicate {
     /// A control compared with a value in its unit.
@@ -290,13 +292,17 @@ impl TouchLog {
 }
 
 impl Predicate {
-    /// Whether it holds for `patch`, given what the player touched. The basic evaluation (lane LM); PLY owns its
-    /// refinement. A control the patch lacks fails every comparison.
+    /// Whether it holds for `patch`, given what the player touched. A control the patch lacks fails every
+    /// comparison. Thresholds are exact; `==` and `!=` on a continuous control are one just-noticeable step wide, on
+    /// a route depth 2.5 points (lane PLY's tolerances, [`crate::predicate`]).
     pub fn holds(&self, patch: &Patch, touched: &TouchLog) -> bool {
         match self {
-            Predicate::Value { knob, cmp, value } => {
-                compare(knob, patch, value).is_some_and(|(have, want)| cmp.holds(have, want))
-            }
+            Predicate::Value { knob, cmp, value } => (|| {
+                let spec = knob.spec(patch)?;
+                let (have, want) = compare(knob, patch, value)?;
+                Some(crate::predicate::compare_value(spec, *cmp, have, want))
+            })()
+            .unwrap_or(false),
             Predicate::Within { knob, lo, hi } => (|| {
                 let spec = knob.spec(patch)?;
                 let have = knob.value(patch)?;
@@ -309,7 +315,8 @@ impl Predicate {
                     .iter()
                     .find(|r| r.src == route.src && r.dst == route.dst)
                     .map_or(0.0, |r| r.depth);
-                depth.depth().is_some_and(|want| cmp.holds(have, want))
+                crate::predicate::resolve_depth(patch, &route.dst, depth)
+                    .is_some_and(|want| crate::predicate::compare_depth(*cmp, have, want))
             }
             Predicate::Has { module_kind } => patch
                 .modules()
@@ -323,7 +330,7 @@ impl Predicate {
         }
     }
 
-    fn validate(&self, field: &str) -> Result<(), LearnError> {
+    pub(crate) fn validate(&self, field: &str) -> Result<(), LearnError> {
         let bad = |m: String| bad_field(Doc::Lesson, field, m);
         let check_value = |knob: &Knob, v: &Plain| -> Result<(), LearnError> {
             if parses_somewhere(knob, v) {
@@ -338,13 +345,17 @@ impl Predicate {
                 check_value(knob, lo)?;
                 check_value(knob, hi)
             }
-            Predicate::Route { depth, .. } => match depth.depth() {
-                Some(_) => Ok(()),
-                None => Err(bad(format!(
-                    "depth {:?} is not −100 to 100 %",
-                    depth.as_str()
-                ))),
-            },
+            Predicate::Route { route, depth, .. } => {
+                if crate::predicate::depth_parses_somewhere(&route.dst, depth) {
+                    Ok(())
+                } else {
+                    Err(bad(format!(
+                        "depth {:?} is not −100 to 100 % (or an interval such as +1oct on {})",
+                        depth.as_str(),
+                        route.dst
+                    )))
+                }
+            }
             Predicate::Touched { min_span_pct, .. } if !(1..=100).contains(min_span_pct) => {
                 Err(bad("min_span_pct is 1 to 100".to_owned()))
             }
