@@ -4,7 +4,8 @@
 //! What it checks, in the authoring layout, as `common::example_files` does for the example pack:
 //! - every `lesson.toml` and `pack.toml` turns into canonical JSON through the same serde types, the manifest seals,
 //!   and `Pack::from_files` accepts the whole pack (schemas, `requires`, views against their starts, every embedded
-//!   challenge validated against its start, every patch loading);
+//!   challenge validated against its start, every patch loading), and the same files written as a canonical
+//!   `.enthpack` read back through the zip reader;
 //! - every patch file is exactly `Patch::to_json()` (docs/learn.md, `lesson-check` step 1), and every one is used;
 //! - every Read step (the Name text) keeps to about 80 words (report 01 §3; 90 words is the hard limit here).
 //!
@@ -23,6 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use enth_learn::pack::lesson_path;
+use enth_learn::reader::{read_archive, write_archive};
 use enth_learn::{Lesson, Manifest, Pack, StepKind};
 
 /// `content/lessons/basics/`.
@@ -77,13 +79,33 @@ fn the_basics_pack_reads() {
 }
 
 #[test]
+fn the_basics_pack_reads_as_an_enthpack() {
+    let files = pack_files(&basics_dir());
+    let archive = write_archive(&files);
+    assert_eq!(
+        archive,
+        write_archive(&files),
+        "the archive is reproducible"
+    );
+    let pack = read_archive(&archive).unwrap_or_else(|e| panic!("basics.enthpack: {e}"));
+    assert_eq!(
+        pack.manifest(),
+        Pack::from_files(&files).unwrap().manifest()
+    );
+}
+
+#[test]
 fn every_patch_is_canonical_and_used() {
     let dir = basics_dir();
     let files = pack_files(&dir);
     let pack = Pack::from_files(&files).unwrap_or_else(|e| panic!("the basics pack: {e}"));
     let used: BTreeSet<String> = pack
         .lessons()
-        .flat_map(|l| l.patches().map(|r| r.as_str().to_owned()).collect::<Vec<_>>())
+        .flat_map(|l| {
+            l.patches()
+                .map(|r| r.as_str().to_owned())
+                .collect::<Vec<_>>()
+        })
         .collect();
     for (path, bytes) in files.iter().filter(|(p, _)| p.starts_with("patches/")) {
         let text = std::str::from_utf8(bytes).unwrap();
@@ -101,7 +123,11 @@ fn name_steps_keep_to_about_eighty_words() {
     let files = pack_files(&basics_dir());
     let pack = Pack::from_files(&files).unwrap_or_else(|e| panic!("the basics pack: {e}"));
     for lesson in pack.lessons() {
-        for step in lesson.steps.iter().filter(|s| matches!(s.kind, StepKind::Read)) {
+        for step in lesson
+            .steps
+            .iter()
+            .filter(|s| matches!(s.kind, StepKind::Read))
+        {
             let text = step.text.as_ref().unwrap();
             let path = text.path_in(&lesson.id);
             let body = std::str::from_utf8(&files[&path]).unwrap();
@@ -110,7 +136,10 @@ fn name_steps_keep_to_about_eighty_words() {
                 .filter(|l| !l.starts_with('#'))
                 .flat_map(str::split_whitespace)
                 .count();
-            assert!(words <= 90, "{path}: {words} words (a Name step keeps to about 80)");
+            assert!(
+                words <= 90,
+                "{path}: {words} words (a Name step keeps to about 80)"
+            );
         }
     }
 }
