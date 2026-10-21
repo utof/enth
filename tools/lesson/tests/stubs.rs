@@ -1,6 +1,6 @@
 //! The commands lane S0l pre-declared in `enth-lesson-tool` that are still stubs: each refuses to run (exit 1) and names
 //! its lane, and an unknown command prints the usage. The lane that builds a command removes its row here and gives it
-//! real tests (lane LCK's four: `tests/check.rs`, `tests/commands.rs`).
+//! real tests (lane LCK's four: `tests/check.rs`, `tests/commands.rs`; lane DEC's `gen`: `tests/gen.rs`).
 #![allow(
     clippy::disallowed_methods,
     reason = "the test runs the tool's own binary"
@@ -17,10 +17,7 @@ fn run(args: &[&str]) -> Output {
 
 #[test]
 fn every_stub_refuses_and_names_its_lane() {
-    for (args, lane) in [
-        (vec!["gen", "deconstruct", "x"], "DEC"),
-        (vec!["gr2", "progress.json"], "INT2"),
-    ] {
+    for (args, lane) in [(vec!["gr2", "progress.json"], "INT2")] {
         let out = run(&args);
         assert_eq!(out.status.code(), Some(1), "{args:?}: {out:?}");
         let text = String::from_utf8_lossy(&out.stderr);
