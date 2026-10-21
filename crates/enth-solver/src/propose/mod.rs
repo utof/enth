@@ -12,7 +12,7 @@
 //! | File | Holds |
 //! | --- | --- |
 //! | [`pack`] | `ModelPack::parse(&[u8])`: the versioned header, sha256, fixture tests |
-//! | [`ops`] | Conv1d and Conv2d, Linear, LayerNorm, the activations, pooling, softmax, residual add and concat, attention as Linear + matmul + softmax: a fixed summation order |
+//! | [`ops`] | `Conv1d` and `Conv2d`, `Linear`, `LayerNorm`, the activations, pooling, softmax, residual add and concat, attention as Linear + matmul + softmax: a fixed summation order |
 //! | [`net`] | `Net::run`: the layers listed in the pack |
 //! | [`features`] | the model's input from `enth-analysis`'s log-mel on the scalar FFT path |
 //! | [`decode`] | outputs to patches: normalised to plain through `ParamSpec`, onto the template's free set |
