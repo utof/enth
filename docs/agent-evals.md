@@ -127,7 +127,21 @@ No model is called; each makes the calls an agent would through the same wrapper
 
 ### Results
 
-FLOOR_AND_WITNESS
+Track version 1, engine 0.3.0, measured 2026-10-21 on the debug `enth` of the commit named in each file's header, one trial each (both fakes are deterministic). **No model has run on this track**: the paid run is [pending the owner's OK](#running-it). 107 graded steps in 16 lessons: 19 do steps, 45 rounds and 43 ear questions (the other 43 steps of the 150 are read or listen steps, which have nothing to hand in).
+
+| Agent | Model | Date | Cost | Lessons passed | Steps passed | Do | Rounds | Ear questions | Units a lesson |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `witness` (ceiling; reachability proof) | none | 2026-10-21 | $0 | **16 of 16** | 107 of 107 | 19 of 19 | 45 of 45 | 43 of 43 | median 34, 12 to 35 |
+| `follower` (**the floor**) | `follower` | 2026-10-21 | $0 | **0 of 16** | 32 of 107 | 7 of 19 | 11 of 45 | 14 of 43 | median 12, 5 to 50 |
+
+The follower's summary is saved as `results/2026-10-21-lesson-follower.json` (model `follower`, cost 0; `--save-floor`). The witness's is not saved (nothing to compare it to; a rerun takes about 12 minutes). A model has to beat the follower on every column, and on the ear questions it has to beat **chance**: the follower's 14 of 43 is the first-option rate, a third of 43.
+
+Where the follower is lost, so a model's result reads against it:
+
+- **Do steps, 7 of 19.** It passes `attack-and-release/try`, `cutoff/try`, `decay-and-sustain/try` and `e-piano`, `how-a-lesson-works/try`, `two-oscillators/balance` and `wavetables/try`: steps whose sound check one numeric move over the editable controls satisfies. It fails where a measured hint cannot help: the check asks for a wave, a filter mode or a noise colour (an enum the solver does not move: `waveforms/try`, `filter-modes/try`, `noise/try`); the step has no sound item, only a patch predicate, so there is no measured rung (`pulse-width/try`); or a patch predicate asks for more than the sound check does (`resonance/try`: the hint stops at 66.55 %, the patch predicate wants more). The measured hint reads the step's sound items only (finding 7).
+- **Rounds, 11 of 45.** It passes all three rounds of `attack-and-release` and `two-oscillators`, and single rounds of five other lessons. The coach's last hint names a control and a range; the middle of the range is often just short of the pass mark (six of the 34 failed rounds end within 5 points of it, e.g. `cutoff/round-3` at 89.6 of 90), and a round with several free controls needs several moves it does not make. `lesson closest` (the witness) passes all 45, so the rounds are reachable; the follower shows what the hints alone give.
+- **Ear questions, 14 of 43,** chance.
+- It never finishes a lesson, so the track's per-lesson pass is 0 of 16; the step counts are the sensitive measure at this level.
 
 ### Findings for the CLI and lesson owners
 
@@ -141,6 +155,7 @@ Found while making every lesson reachable. None is a bug in the track; each deci
 | 4 | **`enth guide` does not mention lessons** | The track's system prompt teaches them; a guide topic (`enth guide --topic lessons`) would let the guide alone do it | Add a topic page (the main page is 6 106 of its 6 144 bytes) |
 | 5 | **An ear question is answerable by measurement only if `describe` measures what the question asks**: "which is darker" is `spectrum.centroid_hz` (checked in a CLI test); whether the others have a descriptor (an attack time for "which swells", and so on) is not checked | A model can only answer the choose steps whose question a descriptor reads; the follower answers them at chance | The first paid run shows which choose steps models get wrong; a descriptor per question is the fix |
 | 6 | **The pass mark is the sound score alone**: a round with `combined` 75 and `sound` 90.5 passes (`structure` is weighed in `combined`, not in the verdict) | The judge reports the sound score | Documented in `enth compare`'s hint |
+| 7 | **The measured hint reads a do step's sound items, not its patch predicates.** `resonance/try` passes its sound check at 66.55 % resonance and still fails a patch predicate; the hint, asked again, says the same move | A hint-follower stops short; so does a player who trusts `pass_all: true` (it means every *sound* item) | The hint request could carry the predicates, or `pass_all` could say "sound items". Not changed (the player builds the request) |
 
 ### Running it
 
