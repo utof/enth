@@ -16,3 +16,18 @@ tests/golden/structure/** text eol=lf
 # reproducibly, and `lesson-check` compares the patches with `Patch::to_json()` as text): keep LF on every platform, or a
 # Windows checkout (core.autocrlf) changes every hash (lane S0l, R2).
 content/lessons/** text eol=lf
+
+# GR3's held-out sets are hashed byte for byte (`hashes.txt` lists the SHA-256 of each set file, and the exclusion lists are
+# compared as text): keep LF on every platform, or a Windows checkout (core.autocrlf) changes every hash (lane S0s, R3).
+# `text=auto` so a clip (audio is committed only when it is CC0 or the owner's) is never rewritten.
+content/gr3/** text=auto eol=lf
+content/gr3/**/*.wav binary
+content/gr3/**/*.flac binary
+content/gr3/**/*.mp3 binary
+content/gr3/**/*.ogg binary
+content/gr3/**/*.aif binary
+content/gr3/**/*.aiff binary
+
+# ml/ is Python and text, LF everywhere (a script that fails on a CRLF shebang is a bad afternoon). `text=auto` so a binary
+# artefact somebody commits by choice (a tiny fixture, a model file) is left alone.
+ml/** text=auto eol=lf

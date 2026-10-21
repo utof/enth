@@ -7,11 +7,13 @@ on:
       - "**/*.md"
       - "docs/**"
       - "_local/**"
+      - "ml/**"      # R3b's Python (lane S0s): in no cargo or CI build, ever (docs/phase-3.md, "ML rules")
   pull_request:
     paths-ignore:  # docs-only changes run nothing (69 of the first 107 commits on main changed only Markdown)
       - "**/*.md"
       - "docs/**"
       - "_local/**"
+      - "ml/**"      # R3b's Python (lane S0s): in no cargo or CI build, ever (docs/phase-3.md, "ML rules")
   workflow_dispatch:
   schedule:
     - cron: "23 5 * * 1"   # weekly, so new RustSec advisories surface without a push
@@ -94,7 +96,9 @@ jobs:
   # `presets`, `add-module`). The `check` job builds default features only, so it never compiles the Presets and
   # Recreate hooks or the Recreate views (`add-module` is a default feature since lane AM). Lane AM's hook was the first
   # with content, so the job runs. R2 (lane S0l) adds the plugin's `learn` feature (src/learn.rs), which builds nothing
-  # without it, to the clippy line; enth-ui's own `learn` tests (the Learn header hook) run in the test line.
+  # without it, to the clippy line; enth-ui's own `learn` tests (the Learn header hook) run in the test line. R3 (lane S0s)
+  # does the same for `create`: the plugin's src/create.rs (with the audio decoders and rayon, optional) and enth-ui's
+  # Create hook and views.
   editor-features:
     name: editor features (lanes AM, PBU, RUI)
     runs-on: ubuntu-24.04
@@ -117,8 +121,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: >-
           cargo clippy --locked -p enth-ui -p enth-plugin --all-targets
-          --features enth-ui/learn,enth-ui/recreate,enth-ui/presets,enth-ui/add-module,enth-plugin/learn -- -D warnings
-      - run: cargo test --locked -p enth-ui --features learn,recreate,presets,add-module
+          --features enth-ui/learn,enth-ui/create,enth-ui/recreate,enth-ui/presets,enth-ui/add-module,enth-plugin/learn,enth-plugin/create
+          -- -D warnings
+      - run: cargo test --locked -p enth-ui --features learn,create,recreate,presets,add-module
 
   deny:
     name: cargo-deny ${{ matrix.checks }}

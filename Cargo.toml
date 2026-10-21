@@ -9,7 +9,9 @@ default-members = ["crates/*", "xtask", "tests/golden"]   # plain `cargo build/t
 # Vendored third-party crates (P1b lane FK, `[patch.crates-io]` below) are path dependencies inside the workspace
 # directory, which cargo would otherwise adopt as members: clippy, fmt and `--workspace` would then lint them. The
 # retired spikes are excluded so that no later glob adopts them again.
-exclude = ["vendor", "spikes/spike-shell", "spikes/spike-ui", "spikes/spike-ui-plugin"]
+# `ml/` (R3b, Python, lane S0s) is not a Rust directory and never will be one: it is excluded by name, so that no glob and
+# no stray Cargo.toml can ever put it in a cargo build (docs/phase-3.md, "ML rules").
+exclude = ["vendor", "ml", "spikes/spike-shell", "spikes/spike-ui", "spikes/spike-ui-plugin"]
 
 [workspace.package]
 version = "0.0.0"

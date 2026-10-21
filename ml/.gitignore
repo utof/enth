@@ -1,0 +1,21 @@
+# The environment, bytecode, caches and run artefacts stay local (docs/phase-3.md, "ML rules": logs stay local).
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# Training caches, checkpoints, logs and exported models are big and local; a run's manifest is what is kept.
+/cache/
+/runs/
+/logs/
+/checkpoints/
+*.pt
+*.ckpt
+*.npy
+*.npz
+*.safetensors
+*.onnx
+*.wav
+*.flac
+*.mp3
+*.ogg
