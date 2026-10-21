@@ -115,7 +115,10 @@ fn a_record_replays_a_run_stopped_by_the_clock_under_the_settings_it_ran_under()
     })
     .unwrap();
     let result = job.result();
-    assert_eq!(result.cfg, shell_cfg, "the result carries the settings it ran under");
+    assert_eq!(
+        result.cfg, shell_cfg,
+        "the result carries the settings it ran under"
+    );
     assert_eq!(result.stop, CreateStop::Cancelled);
     let names: Vec<String> = tpl.iter().map(|x| x.name.clone()).collect();
     let rec = CreateRecord::new(

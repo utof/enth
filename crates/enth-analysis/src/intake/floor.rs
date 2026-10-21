@@ -159,7 +159,16 @@ pub(crate) fn estimate(
                 .filter(|(_, m)| **m)
                 .map(|(d, _)| *d)
                 .collect();
-            quiet = check(&picked, run, peak, levels, x, sr, planner, FloorSource::Quiet);
+            quiet = check(
+                &picked,
+                run,
+                peak,
+                levels,
+                x,
+                sr,
+                planner,
+                FloorSource::Quiet,
+            );
         }
     }
     // (2) The lead-in: the frames before the level first rises 6 dB over their running median. It is before the
@@ -492,7 +501,11 @@ mod tests {
         }
         .apply(&mut x, SR, 10.0);
         let f = floor_of(&x).expect("the sustain reads as a floor");
-        assert_eq!((f.source, f.confirmed), (FloorSource::Quiet, false), "{f:?}");
+        assert_eq!(
+            (f.source, f.confirmed),
+            (FloorSource::Quiet, false),
+            "{f:?}"
+        );
         // The same after 0.3 s of a quieter background: the lead-in holds the floor.
         let mut y = white_noise(SR, 0.002, 0.3, 5);
         y.extend(mix(&x, &white_noise(SR, 0.002, 3.0, 6)));

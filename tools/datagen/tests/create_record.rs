@@ -151,7 +151,11 @@ fn the_record_round_trips_through_json_and_replays() {
 
     // Tolerant: an enum value a newer build wrote reads as `unknown` rather than refusing the record.
     let newer = text
-        .replacen(r#""kind": "heuristic""#, r#""kind": "preset", "name": "x""#, 1)
+        .replacen(
+            r#""kind": "heuristic""#,
+            r#""kind": "preset", "name": "x""#,
+            1,
+        )
         .replacen(r#""stop": ""#, r#""stop": "deadline", "was": ""#, 1);
     let read: CreateRecord = serde_json::from_str(&newer).unwrap();
     assert_eq!(read.starts[0].provenance, Provenance::Unknown);
@@ -294,7 +298,10 @@ fn the_intake_report_goes_in_whole_and_reads_back() {
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["intake"]["version"], 1);
     assert_eq!(v["intake"]["cfg"]["max_len_s"], 5.0);
-    assert_eq!(v["input"]["perf"]["key"], v["intake"]["perf"]["key"].as_u64().unwrap() + 12);
+    assert_eq!(
+        v["input"]["perf"]["key"],
+        v["intake"]["perf"]["key"].as_u64().unwrap() + 12
+    );
     // A record without an intake (a target built another way) reads with `intake` absent.
     let bare = text.replacen(r#""intake": {"#, r#""intake_was": {"#, 1);
     let read: CreateRecord = serde_json::from_str(&bare).unwrap();

@@ -399,7 +399,9 @@ impl CreateRecord {
 }
 
 /// An intake report, or nothing when it is absent, `null` or not one this build reads.
-fn lenient_intake<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IntakeReport>, D::Error> {
+fn lenient_intake<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<IntakeReport>, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Maybe {

@@ -593,7 +593,14 @@ fn proposals_follow_the_neighbours_in_their_order() {
     assert_eq!(
         kinds,
         [
-            "heuristic", "template", "template", "template", "knn", "knn", "knn", "model"
+            "heuristic",
+            "template",
+            "template",
+            "template",
+            "knn",
+            "knn",
+            "knn",
+            "model"
         ],
         "the second proposal duplicates a template and is skipped"
     );

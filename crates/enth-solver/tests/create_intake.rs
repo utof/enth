@@ -48,7 +48,11 @@ fn the_intakes_segment_is_the_engines() {
     };
     let s = SEGMENT_FRAMES;
     let base = at(s);
-    assert_eq!(at(1), base, "a note at frame 1 waits for the first boundary");
+    assert_eq!(
+        at(1),
+        base,
+        "a note at frame 1 waits for the first boundary"
+    );
     assert_eq!(at(s - 1), base);
     assert_eq!(at(s + 1), base + s, "one frame later is one segment later");
     assert_eq!(at(2 * s), base + s);
@@ -84,8 +88,14 @@ fn a_rendered_note_round_trips_sample_aligned() {
         let t = Target::from_intake(&it, DEFAULT_SEED);
         assert_eq!(t.perf.key, key, "{sr} Hz");
         let on_frame = (t.perf.on_s * f64::from(sr)).round() as usize;
-        assert_eq!(on_frame % SEGMENT_FRAMES, 0, "{sr} Hz: the note-on is on the grid");
-        let again = render(&p, &t.performance(), &t.render_spec()).unwrap().mid();
+        assert_eq!(
+            on_frame % SEGMENT_FRAMES,
+            0,
+            "{sr} Hz: the note-on is on the grid"
+        );
+        let again = render(&p, &t.performance(), &t.render_spec())
+            .unwrap()
+            .mid();
         assert_eq!(again.len(), t.audio.len(), "{sr} Hz");
         // From the clip's first sample to the note-off: the same samples.
         let off = on_frame + (0.4 * f64::from(sr)) as usize;
@@ -109,9 +119,15 @@ fn from_intake_maps_the_report_and_scores_three_seconds() {
     let file = mid(&p, &held(52, 0.2, 7.0), SR);
     let it = Intake::new(&file, 1, SR).unwrap();
     let r = &it.report;
-    assert!(it.audio.len() > (4.9 * f64::from(SR)) as usize, "the intake keeps 5 s");
+    assert!(
+        it.audio.len() > (4.9 * f64::from(SR)) as usize,
+        "the intake keeps 5 s"
+    );
     let t = Target::from_intake(&it, 7);
-    assert!((SCORE_S - 3.0).abs() < 1e-12, "the coordinator's 3 s window");
+    assert!(
+        (SCORE_S - 3.0).abs() < 1e-12,
+        "the coordinator's 3 s window"
+    );
     assert_eq!(t.audio.len(), (SCORE_S * f64::from(SR)).round() as usize);
     assert_eq!(t.audio[..], it.audio[..t.audio.len()]);
     assert_eq!(
@@ -121,21 +137,36 @@ fn from_intake_maps_the_report_and_scores_three_seconds() {
     assert_eq!(t.sample_rate, r.sample_rate);
     assert_eq!(t.render_seed, 7);
     assert_eq!(
-        (t.perf.key, t.perf.velocity, t.perf.on_s, t.perf.hold_s, t.perf.f0_hz),
-        (r.perf.key, r.perf.velocity, r.perf.on_s, r.perf.hold_s, r.perf.f0_hz)
+        (
+            t.perf.key,
+            t.perf.velocity,
+            t.perf.on_s,
+            t.perf.hold_s,
+            t.perf.f0_hz
+        ),
+        (
+            r.perf.key,
+            r.perf.velocity,
+            r.perf.on_s,
+            r.perf.hold_s,
+            r.perf.f0_hz
+        )
     );
     assert_eq!(t.bandwidth_hz, r.degradation.bandwidth_hz);
-    assert!(!t.perf.release_heard(), "held past the window: no release to search");
+    assert!(
+        !t.perf.release_heard(),
+        "held past the window: no release to search"
+    );
     let rendered = render(&p, &t.performance(), &t.render_spec()).unwrap();
-    assert_eq!(rendered.frames(), t.audio.len(), "a candidate renders the window exactly");
+    assert_eq!(
+        rendered.frames(),
+        t.audio.len(),
+        "a candidate renders the window exactly"
+    );
     // Another window (the CLI's --score-seconds), and a clip shorter than the window, scored whole.
     let five = Target::from_intake_scored(&it, 7, 5.0);
     assert_eq!(five.audio.len(), it.audio.len().min(5 * SR as usize));
-    let short = mid(
-        &p,
-        &Performance::note(60, 0.8, 0.3, 0.9),
-        SR,
-    );
+    let short = mid(&p, &Performance::note(60, 0.8, 0.3, 0.9), SR);
     let it = Intake::new(&short, 1, SR).unwrap();
     let t = Target::from_intake(&it, 7);
     assert_eq!(t.audio, it.audio);
@@ -155,8 +186,14 @@ fn from_intake_maps_the_report_and_scores_three_seconds() {
     let it = Intake::new(&noisy, 1, SR).unwrap();
     let d = &it.report.degradation;
     assert!(d.floor_confirmed, "{d:?}");
-    assert!(matches!(d.floor_source, Some(FloorSource::LeadIn | FloorSource::Both)));
-    assert_eq!(Target::from_intake(&it, 1).noise_floor_dbfs, d.noise_floor_dbfs);
+    assert!(matches!(
+        d.floor_source,
+        Some(FloorSource::LeadIn | FloorSource::Both)
+    ));
+    assert_eq!(
+        Target::from_intake(&it, 1).noise_floor_dbfs,
+        d.noise_floor_dbfs
+    );
 }
 
 /// The F1s judge's M4: white and pink noise decaying to a 10–40 % sustain held to the end of a 3 s file was cut to its
@@ -254,7 +291,9 @@ fn the_engines_square_is_not_clipped_and_a_clipped_saw_is() {
 /// at C5 raised a spurious `Phrase { onsets: 2 }` (its slow swell and its LFO opening the filter).
 #[test]
 fn a_held_pad_keeps_its_length_and_is_one_note() {
-    let pad = load(include_str!("../../../content/templates/pad_2osc.patch.json"));
+    let pad = load(include_str!(
+        "../../../content/templates/pad_2osc.patch.json"
+    ));
     for (key, seed) in [(36u8, 3), (48, 3), (72, 3), (72, DEFAULT_SEED), (84, 3)] {
         let x = render(&pad, &held(key, 0.0, 3.0), &RenderSpec::new(SR, seed))
             .unwrap()

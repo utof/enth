@@ -60,7 +60,10 @@ pub(crate) fn detect(x: &[f32], sr: f64) -> Option<Clipping> {
     let range = hi - lo;
     // Whether `x[a..b]` holds a sample far from `ext` (the clip's edge counts as one).
     let jump = |a: usize, b: usize, ext: f32| {
-        a >= b || x[a..b].iter().any(|v| (v - ext).abs() >= JUMP_SHARE * range)
+        a >= b
+            || x[a..b]
+                .iter()
+                .any(|v| (v - ext).abs() >= JUMP_SHARE * range)
     };
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut level = 0.0f32;
@@ -165,12 +168,20 @@ mod tests {
             assert!(detect(&half, SR).is_none(), "square at {f} Hz, -6 dB");
         }
         // a saw clipped at +12 dB: entered by its ramp, left by its step; a sine clipped likewise
-        for (wave, f) in [(Wave::Saw, 110.0), (Wave::Saw, 440.0), (Wave::Triangle, 220.0)] {
+        for (wave, f) in [
+            (Wave::Saw, 110.0),
+            (Wave::Saw, 440.0),
+            (Wave::Triangle, 220.0),
+        ] {
             let x: Vec<f32> = oscillator(SR, wave, f, 0.5, 0.1)
                 .iter()
                 .map(|v| (4.0 * v).clamp(-1.0, 1.0))
                 .collect();
-            assert!(detect(&x, SR).is_some(), "{} at {f} Hz clipped", wave.name());
+            assert!(
+                detect(&x, SR).is_some(),
+                "{} at {f} Hz clipped",
+                wave.name()
+            );
         }
         for f in [100.0, 1000.0] {
             let x: Vec<f32> = sine(SR, f, 4.0, 0.5)

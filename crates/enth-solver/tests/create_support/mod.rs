@@ -25,7 +25,9 @@ pub fn load(text: &str) -> Patch {
 }
 
 pub fn init() -> Patch {
-    load(include_str!("../../../../content/templates/init.patch.json"))
+    load(include_str!(
+        "../../../../content/templates/init.patch.json"
+    ))
 }
 
 pub fn templates() -> Vec<Template> {

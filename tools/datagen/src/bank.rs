@@ -63,8 +63,8 @@ use enth_dsp::util::rng::{derive, fnv1a64};
 use enth_patch::{Op, Patch, apply, file};
 use enth_render::{Performance, RenderSpec, render};
 use enth_solver::nearest::{
-    BANK_FORMAT, Bank, BankEntry, BankHeader, EMBEDDING_ID, EMBEDDING_VERSION, ENTRY_LEN, Embedding,
-    REF_NOTE, embed, pitch_cents, reference_hz,
+    BANK_FORMAT, Bank, BankEntry, BankHeader, EMBEDDING_ID, EMBEDDING_VERSION, ENTRY_LEN,
+    Embedding, REF_NOTE, embed, pitch_cents, reference_hz,
 };
 use enth_solver::search::{MetricTarget, Objective};
 use rayon::prelude::*;
@@ -732,9 +732,7 @@ fn assert_bank(
                     ));
                 }
                 if let Some((code, _)) = targets.iter().find(|(_, t)| near_duplicate(&g, t)) {
-                    return Err(format!(
-                        "entry {i}: a near duplicate of GR3 target {code}"
-                    ));
+                    return Err(format!("entry {i}: a near duplicate of GR3 target {code}"));
                 }
                 if let Some((name, d)) = near_render(&e.embedding, renders) {
                     return Err(format!(
@@ -1056,7 +1054,10 @@ mod tests {
         let mut other_phrase = t.clone();
         other_phrase.phrase = enth_challenge::model::PhraseId(other_phrase.phrase.0 % 3 + 1);
         assert_ne!(other_phrase.phrase, t.phrase);
-        assert!(near_duplicate(&other_phrase, t), "{code}: the phrase is not a reason");
+        assert!(
+            near_duplicate(&other_phrase, t),
+            "{code}: the phrase is not a reason"
+        );
 
         // The bank's own stream holds near duplicates of GR3 targets (46 of the first 20,096 candidates): the first
         // one, put in a bank by hand, is refused by the independent check.
@@ -1065,8 +1066,8 @@ mod tests {
             .map(candidate_spec)
             .find_map(|spec| {
                 let g = random::target(&spec).ok()?;
-                let listed = ex.seed_listed(spec.seed)
-                    || ex.fingerprints.contains(&g.fingerprint.to_hex());
+                let listed =
+                    ex.seed_listed(spec.seed) || ex.fingerprints.contains(&g.fingerprint.to_hex());
                 (!listed && targets.iter().any(|(_, t)| near_duplicate(&g, t))).then_some((spec, g))
             })
             .expect("a near duplicate in the first 5,000 candidates");
@@ -1077,7 +1078,9 @@ mod tests {
             musical: spec.musical,
             pitch_cents: 0,
             fingerprint_prefix: g.fingerprint.prefix().0,
-            embedding: Embedding { codes: [codes; enth_solver::nearest::DIMS] },
+            embedding: Embedding {
+                codes: [codes; enth_solver::nearest::DIMS],
+            },
         };
         let bank = Bank::new(header(&ex), vec![entry(60)]);
         let err = assert_bank(&bank, &ex, &targets, &[], &pool).unwrap_err();
@@ -1087,14 +1090,24 @@ mod tests {
         let far = Bank::new(header(&ex), vec![entry(60)]);
         let renders = [Gr3Render {
             name: "content/gr3/presets/x.patch.json".to_owned(),
-            embedding: Embedding { codes: [62; enth_solver::nearest::DIMS] },
+            embedding: Embedding {
+                codes: [62; enth_solver::nearest::DIMS],
+            },
         }];
         let err = assert_bank(&far, &ex, &[], &renders, &pool).unwrap_err();
-        assert!(err.contains("near render of GR3 target content/gr3/presets/x"), "{err}");
+        assert!(
+            err.contains("near render of GR3 target content/gr3/presets/x"),
+            "{err}"
+        );
         let clear = [Gr3Render {
             name: "y".to_owned(),
-            embedding: Embedding { codes: [63; enth_solver::nearest::DIMS] },
+            embedding: Embedding {
+                codes: [63; enth_solver::nearest::DIMS],
+            },
         }];
-        assert!(assert_bank(&far, &ex, &[], &clear, &pool).is_ok(), "3 steps apart is not near");
+        assert!(
+            assert_bank(&far, &ex, &[], &clear, &pool).is_ok(),
+            "3 steps apart is not near"
+        );
     }
 }
