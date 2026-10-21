@@ -3,6 +3,8 @@
 use std::sync::Weak;
 
 mod background_thread;
+// Vendored fork, enth patch 10: a thread identity that never allocates, for `is_main_thread()`.
+mod os_thread;
 
 #[cfg(all(target_family = "unix", not(target_os = "macos")))]
 mod linux;
@@ -12,6 +14,9 @@ mod macos;
 mod windows;
 
 pub(crate) use self::background_thread::BackgroundThread;
+pub(crate) use self::os_thread::OsThreadId;
+#[cfg(target_os = "macos")]
+pub(crate) use self::os_thread::is_process_main_thread;
 
 #[cfg_attr(not(feature = "vst3"), allow(unused_imports))]
 #[cfg(all(target_family = "unix", not(target_os = "macos")))]
@@ -66,7 +71,8 @@ where
     fn schedule_background(&self, task: T) -> bool;
 
     /// Whether the calling thread is the event loop's main thread. This is usually the thread the
-    /// event loop instance was initialized on.
+    /// event loop instance was initialized on. Callable from `process()`: it never allocates,
+    /// locks or touches thread-local storage (enth patch 10, [`OsThreadId`]).
     fn is_main_thread(&self) -> bool;
 }
 

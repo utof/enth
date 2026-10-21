@@ -132,6 +132,12 @@ Four more fork patches (one commit each; `vendor/README.md` lists them with size
 
 **Candidates for the owner's own upstream issues:** the restart on a render-mode change (REAPER honours it mid-render and a note drops in every CLAP bounce), no dirty marking, the 2,080 MIDI CC parameters hosts list despite `kIsHidden`, and `getParameterInfo` accepting an index equal to the count.
 
+## Note — 2026-10-21 (FU1 lane FK): patch 10, a main-thread check that never allocates
+
+Lane INT's `cargo xtask rtsan` found nice-plug allocating inside `process()` in a host without CLAP's thread-check extension: `schedule_gui()` asks `is_main_thread()`, whose fallback compared `std::thread::current().id()` (under `permit_alloc`, upstream's FIXME). The stack named the cost: glibc creates a `dlopen`ed library's thread-local block for a thread on its first access, under the loader's TLS lock, and the host's audio thread had never touched ours. So no `thread_local!` can answer the question either. Patch 10 compares the identity the OS keeps in the thread's control block (`pthread_self`/`pthread_equal`, `GetCurrentThreadId`; `pthread_main_np` replaces the `NSThread` message in the macOS event loop) with no new dependency. The VST3 wrapper asked the same fallback in every host, REAPER included, at each parameter change inside `process()`. Under `--cfg enth_rtsan` the CLAP `process` entry is now itself a RealtimeSanitizer context, so the sanitizer sees nice-plug's event handling too; the two `no-thread-check` scenarios are required clean and abort without the fix. `vendor/README.md` has the details and the citations.
+
+The 2026-10-19 pump decision above still stands, but its cost is now known more exactly: when the worker waits, the pump's crossbeam `try_send` also calls `std::thread::current()` (crossbeam's thread id, once per audio thread) besides the wake-up, and RTSan intercepts the wake-up (`syscall`, the futex). No scenario reaches it yet; [plugin.md](../plugin.md#realtimesanitizer-lane-int-r1s1) lists it as open, with the VST3 queueing paths.
+
 ## Consequences
 
 - Fastest path to a working CLAP/VST3 synth with an egui editor in REAPER. The spike's shell is about 800 lines for 72 params, poly-mod ids, state and an 8-voice synth, and incremental rebuilds take 1–7 s.

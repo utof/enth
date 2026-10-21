@@ -240,3 +240,5 @@ features = [
 # crates.io dependency gets. Pristine nice-plug already warns in release builds (two unused variables in state.rs).
 [lints.rust]
 warnings = "allow"
+# Fork patch 10: the CLAP process() is a RealtimeSanitizer context under `--cfg enth_rtsan` (enth's `cargo xtask rtsan`).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(enth_rtsan)"] }
