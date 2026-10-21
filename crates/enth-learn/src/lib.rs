@@ -11,7 +11,7 @@
 //! [`PackStore`](store) the shell supplies. Nothing here depends on the editor's `learn` feature or the plugin's:
 //! a saved lesson restores in any build.
 //!
-//! **Owner: lane LM** (re-exports at F1l). Lane S0l (R2, freeze point F0l) created the crate and declared every file up
+//! **Owner: lane LM** (re-exports at F1l; the main types are re-exported at the root). Lane S0l (R2, freeze point F0l) created the crate and declared every file up
 //! front, so the lanes that fill them never edit this one: PLY, LCK, DEC and REV name their items by module path
 //! (`enth_learn::predicate::…`) rather than adding re-exports here. Each file names its owner at the top. The
 //! reference is docs/learn.md; every body is a stub until its lane lands (the freeze order is in docs/phase-3.md).
@@ -45,3 +45,13 @@ pub mod progress;
 pub mod reader;
 pub mod review;
 pub mod store;
+
+pub use check::{Check, Cmp, Knob, MacroPin, Plain, Predicate, SoundCheck};
+pub use error::{LearnError, PackName};
+pub use lesson::{Example, Lesson, Selector, Step, StepKind, StepView, Touch};
+pub use pack::{
+    LessonBundle, LessonKey, LessonRef, Manifest, Pack, PackId, PackVersion, Requires, StepId,
+};
+pub use player::{EditSource, Effect, EndChoice, Player, PlayerError, RoundEnd, StepPhase};
+pub use progress::{Progress, StepProgress};
+pub use store::{MemStore, PackStore};

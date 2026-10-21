@@ -173,6 +173,126 @@ fn bits(v: f32) -> u32 {
     if v == 0.0 { 0 } else { v.to_bits() }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Patch targets (Challenge v2, lane CV2)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The magic of the patch-target preimage (Challenge v2, lane CV2, R2): the fingerprint of a target that no generator
+/// version made, a `Target::Patch` or the patch a `Target::Draw` drew over its start.
+pub const MAGIC_PATCH_V1: &[u8] = b"enth-target-patch-v1";
+
+/// One value of a patch-target entry.
+enum PatchValue {
+    /// `p` (a parameter or a macro knob) or `r` (a route depth): an f32's bits.
+    Bits(u8, f32),
+    /// `e`: a module's enable flag.
+    Flag(bool),
+    /// `t`: text (a module's kind key, its place `voice_fx[0]`, the amplitude envelope's id).
+    Text(String),
+}
+
+/// The fingerprint of a target given as a patch, heard through `phrase` (Challenge v2's `Target::Patch`, and the
+/// target a `Target::Draw` draws). No generator decided it, so it hashes what makes the patch sound as it does, by
+/// name, under its own magic ([`MAGIC_PATCH_V1`]):
+///
+/// ```text
+/// SHA-256( "enth-target-patch-v1" | phrase u16 | entry count u32 | each entry in byte order of its key:
+///          key length u16 | key | tag | value )
+/// p  <address> or macro<N>   an f32's bits: every parameter and macro knob NOT at its catalogue default
+/// r  <src>-><dst>            an f32's bits: every route with a non-zero depth (depth 0 is no route)
+/// e  <id>.enabled            0 or 1: every module
+/// t  <id>.kind, <id>.at, voice.amp_env   u16 length and UTF-8: the module's kind key, its place
+///                                         (`voice_fx[0]`), the amplitude envelope's id
+/// ```
+///
+/// Parameters at their default are left out, so a catalogue change that adds a parameter (at a default that keeps
+/// the sound) keeps every fingerprint, as generator v1's does; a schema migration that keeps the values keeps it too.
+/// Labels, metadata and automation slots never change the sound, so they are not in it.
+pub fn of_patch(patch: &enth_patch::Patch, phrase: PhraseId) -> TargetFingerprint {
+    TargetFingerprint(Sha256::digest(patch_preimage(patch, phrase)).into())
+}
+
+/// The bytes [`of_patch`] hashes.
+pub fn patch_preimage(patch: &enth_patch::Patch, phrase: PhraseId) -> Vec<u8> {
+    use enth_patch::catalogue::{Builtin, MACRO_VALUE};
+    let mut entries: Vec<(String, PatchValue)> = Vec::new();
+    let mut params = |owner: &str, specs: &[enth_params::ParamSpec], values: &[f32]| {
+        for (spec, v) in specs.iter().zip(values) {
+            if v.to_bits() != spec.default.to_bits() {
+                entries.push((format!("{owner}.{}", spec.key), PatchValue::Bits(b'p', *v)));
+            }
+        }
+    };
+    params(
+        Builtin::Voice.key(),
+        Builtin::Voice.params(),
+        &patch.voice.values,
+    );
+    params(
+        Builtin::Master.key(),
+        Builtin::Master.params(),
+        &patch.master,
+    );
+    for (_, m) in patch.modules() {
+        params(m.id.as_str(), m.spec().params, &m.values);
+    }
+    for (i, m) in patch.macros.iter().enumerate() {
+        if m.value.to_bits() != MACRO_VALUE.default.to_bits() {
+            entries.push((format!("macro{}", i + 1), PatchValue::Bits(b'p', m.value)));
+        }
+    }
+    for r in &patch.routes {
+        if r.depth != 0.0 {
+            entries.push((
+                format!("{}->{}", r.src, r.dst),
+                PatchValue::Bits(b'r', r.depth),
+            ));
+        }
+    }
+    for (at, m) in patch.modules() {
+        let id = m.id.as_str();
+        entries.push((format!("{id}.enabled"), PatchValue::Flag(m.enabled)));
+        entries.push((
+            format!("{id}.kind"),
+            PatchValue::Text(m.spec().key.to_owned()),
+        ));
+        entries.push((format!("{id}.at"), PatchValue::Text(at.to_string())));
+    }
+    entries.push((
+        "voice.amp_env".to_owned(),
+        PatchValue::Text(patch.voice.amp_env.as_str().to_owned()),
+    ));
+    entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let mut out = Vec::with_capacity(MAGIC_PATCH_V1.len() + 6 + 24 * entries.len());
+    out.extend_from_slice(MAGIC_PATCH_V1);
+    out.extend_from_slice(&phrase.0.to_be_bytes());
+    out.extend_from_slice(&(entries.len() as u32).to_be_bytes());
+    let text = |out: &mut Vec<u8>, t: &[u8]| {
+        // Keys and texts are ids, addresses and kind keys: far below 64 KiB.
+        let n = t.len().min(usize::from(u16::MAX));
+        out.extend_from_slice(&(n as u16).to_be_bytes());
+        out.extend_from_slice(&t[..n]);
+    };
+    for (key, value) in &entries {
+        text(&mut out, key.as_bytes());
+        match value {
+            PatchValue::Bits(tag, v) => {
+                out.push(*tag);
+                out.extend_from_slice(&bits(*v).to_be_bytes());
+            }
+            PatchValue::Flag(on) => {
+                out.push(b'e');
+                out.push(u8::from(*on));
+            }
+            PatchValue::Text(t) => {
+                out.push(b't');
+                text(&mut out, t.as_bytes());
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +348,87 @@ mod tests {
             Preimage::new(1, PhraseId(1)).finish(),
             Preimage::new(1, PhraseId(2)).finish(),
             "the phrase is part of the target"
+        );
+    }
+
+    /// The patch-target preimage is a persisted contract too (Challenge v2): its bytes are pinned on `Patch::init()`
+    /// (every value at its default: only the modules and the amplitude envelope enter), and its hash with them.
+    #[test]
+    fn the_patch_preimage_is_pinned() {
+        let init = enth_patch::Patch::init();
+        let mut want = Vec::new();
+        want.extend_from_slice(b"enth-target-patch-v1");
+        want.extend_from_slice(&[0, 1, 0, 0, 0, 7]);
+        for (key, rest) in [
+            ("env1.at", &b"t\0\x0dmodulators[0]"[..]),
+            ("env1.enabled", b"e\x01"),
+            ("env1.kind", b"t\0\x04adsr"),
+            ("osc1.at", b"t\0\x0dgenerators[0]"),
+            ("osc1.enabled", b"e\x01"),
+            ("osc1.kind", b"t\0\x03osc"),
+            ("voice.amp_env", b"t\0\x04env1"),
+        ] {
+            want.extend_from_slice(&(key.len() as u16).to_be_bytes());
+            want.extend_from_slice(key.as_bytes());
+            want.extend_from_slice(rest);
+        }
+        assert_eq!(patch_preimage(&init, PhraseId(1)), want);
+        assert_eq!(
+            of_patch(&init, PhraseId(1)).to_hex(),
+            "fc33c9f63f7340878eb873174ec22699ef331ab647a937e62537369738e7762a",
+            "update this literal only together with a new magic"
+        );
+    }
+
+    /// What enters a patch target's fingerprint: moved values, routes and macros by name; not a depth-0 route,
+    /// labels, metadata or slots.
+    #[test]
+    fn a_patch_fingerprint_holds_what_sounds() {
+        use enth_patch::{ModSource, Op, ParamAddr, Route, apply};
+        let mut p = enth_patch::Patch::init();
+        let init = of_patch(&p, PhraseId(1));
+        let semi: ParamAddr = "osc1.semi".parse().unwrap();
+        apply(
+            &mut p,
+            Op::SetParam {
+                addr: semi,
+                value: 7.0,
+            },
+        )
+        .unwrap();
+        let moved = of_patch(&p, PhraseId(1));
+        assert_ne!(moved, init, "a moved value");
+        assert_ne!(
+            of_patch(&p, PhraseId(2)),
+            moved,
+            "the phrase is part of the target"
+        );
+        let mut q = p.clone();
+        q.routes.push(Route {
+            src: ModSource::Velocity,
+            dst: "osc1.level".parse().unwrap(),
+            depth: 0.0,
+        });
+        assert_eq!(
+            of_patch(&q, PhraseId(1)),
+            moved,
+            "a depth-0 route is no route"
+        );
+        q.routes[0].depth = 10.0;
+        assert_ne!(of_patch(&q, PhraseId(1)), moved, "a route");
+        let mut m = p.clone();
+        m.macros[2].value = 0.5;
+        assert_ne!(of_patch(&m, PhraseId(1)), moved, "a macro knob");
+        let mut off = p.clone();
+        off.generators[0].enabled = false;
+        assert_ne!(of_patch(&off, PhraseId(1)), moved, "an enable flag");
+        let mut labelled = p.clone();
+        labelled.generators[0].label = Some("Lead".to_owned());
+        labelled.meta.name = "renamed".to_owned();
+        assert_eq!(
+            of_patch(&labelled, PhraseId(1)),
+            moved,
+            "labels and meta are not sound"
         );
     }
 

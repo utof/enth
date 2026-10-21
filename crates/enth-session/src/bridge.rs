@@ -512,6 +512,9 @@ impl Session {
                 }
             }
         }
+        if report.written > 0 {
+            self.learn_note_fold(); // a live lesson's player sees host automation (lane SL, crate::learn)
+        }
         report
     }
 

@@ -11,6 +11,10 @@
 //! `Performance`: target generation works in parameter space and never reaches `enth-render` (RG's acceptance;
 //! `tests/rg_render_free.rs`).
 //!
+//! **The generator's table.** [`TABLE`] holds the phrases generator v1 picks (ids 1-3); the lesson-only phrases (ids
+//! 4 and up, short holds and chords) are lane CV2's [`crate::lesson_phrases`], with their own invariants (R2, Q8).
+//! [`entry`] and [`phrase`] look in both.
+//!
 //! **Append-only.** A released phrase never changes (codes, golden challenges and duels depend on it); a new phrase
 //! is a new id. Every phrase here shares two facts the v1 priors rely on: its lowest key is [`REFERENCE_KEY`] (C3),
 //! and every note is held at least [`MIN_HOLD_MS`] with at least [`MIN_TAIL_MS`] after the last note-off. So the
@@ -90,12 +94,17 @@ pub const TABLE: [Entry; 3] = [
     },
 ];
 
-/// The table entry with this id.
+/// The released phrase with this id: the generator's table first, then the lesson-only phrases
+/// ([`crate::lesson_phrases`], ids 4 and up; lane CV2, R2). One id sequence spans both tables, so a lesson
+/// challenge's phrase resolves wherever a generated one does.
 pub fn entry(id: PhraseId) -> Option<&'static Entry> {
-    TABLE.iter().find(|e| e.id == id)
+    TABLE
+        .iter()
+        .find(|e| e.id == id)
+        .or_else(|| crate::lesson_phrases::entry(id))
 }
 
-/// The phrase with this id.
+/// The phrase with this id, from either table ([`entry`]).
 pub fn phrase(id: PhraseId) -> Option<&'static Phrase> {
     entry(id).map(|e| &e.phrase)
 }
@@ -208,7 +217,8 @@ mod tests {
             assert_eq!(phrase(e.id), Some(&e.phrase));
         }
         assert_eq!(phrase(PhraseId(0)), None);
-        assert_eq!(phrase(PhraseId(4)), None);
+        // Ids 4-7 are the lesson-only phrases (lane CV2, `lesson_phrases`): the lookup finds them too.
+        assert_eq!(phrase(PhraseId(8)), None);
     }
 
     /// The facts the v1 priors rely on hold for every phrase: the same reference key, notes in time order, every

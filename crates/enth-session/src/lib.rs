@@ -17,7 +17,7 @@
 //! | [`telemetry`] | the tap's reader side ([`TelemetrySource`], [`TelemetryReader`], [`TelemetryMap`]) | S1s; ED2 |
 //! | [`game`] | the pure Recreate round: states, stash, submit, reveal, jobs for the shell; [`GameState`] in the saved state | SG (R1/S1; pre-declared by S0r) |
 //! | [`presets`] | preset format, index, tags, search, the undoable editor load; [`PresetState`] in the saved state | PBC (R1/S1; pre-declared by S0r) |
-//! | [`learn`] | the pure Learn API: stash, step loads, locks in the edit path, jobs, the read model; [`LearnState`] in the saved state. Empty but for that state until F1l | SL (R2; pre-declared by S0l) |
+//! | [`learn`] | the pure Learn API: stash, step loads, locks in the edit path, jobs, the read model ([`LearnEdit`], [`LearnView`]); [`LearnState`] in the saved state | SL (R2; pre-declared by S0l) |
 //! | [`create`] | the pure create state: jobs out to the shell and results back, the K candidates' read model, "Use this" as one undo step with no host writes; **no saved state** (a create job is not saved). Empty until F2s | SK3 (R3; pre-declared by S0s) |
 //!
 //! P1b stubs (lane S1s): [`Session::activate`], [`Session::pump`]'s active case, [`Session::edit`] and the audition
@@ -44,7 +44,7 @@ pub use apply::{Delivery, Routing};
 pub use bridge::{FoldReport, GestureStep, HostParam, HostValues, HostWrite, SlotTarget};
 pub use enth_patch::history::GestureId;
 pub use game::GameState;
-pub use learn::LearnState;
+pub use learn::{LearnEdit, LearnState, LearnView};
 pub use link::PumpReport;
 pub use model::{
     AUDITION_PORT, Activation, Applied, HistoryView, RENDER_SEED, Session, SessionConfig,

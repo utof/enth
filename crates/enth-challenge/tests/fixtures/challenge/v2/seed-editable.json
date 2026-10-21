@@ -1,0 +1,49 @@
+{
+  "schema": "enth.challenge/2",
+  "target": {
+    "kind": "seed",
+    "spec": {
+      "generator": 1,
+      "seed": 42,
+      "difficulty": 0,
+      "amounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "musical": 100,
+      "template": 0
+    }
+  },
+  "answer": "patch",
+  "phrase": 1,
+  "start": {
+    "kind": "template",
+    "template": 0
+  },
+  "constraints": {
+    "editable": [
+      "osc1.*"
+    ]
+  },
+  "assists": {
+    "live_meter": false,
+    "dim_unused": false,
+    "hint_budget": null
+  },
+  "scoring": {
+    "sound": "sound/1",
+    "structure": "structure/1",
+    "combined": "combined/1",
+    "time": "time/1",
+    "sound_weight": 50,
+    "pass_mark": 90
+  },
+  "meta": {
+    "title": "",
+    "tags": []
+  }
+}

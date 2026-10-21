@@ -271,7 +271,8 @@ pub fn match_modules(target: &Patch, answer: &Patch) -> ModuleMatching {
 pub struct Draws {
     /// The randomized parameters, in address order.
     pub params: Vec<ParamAddr>,
-    /// The randomized routes that are heard in the target (non-zero depth), in route order.
+    /// The randomized routes that are heard in the target (non-zero depth), in route order; for a drawn challenge,
+    /// the drawn routes heard in the target or the start.
     pub routes: Vec<RouteAddr>,
     /// The modules whose enable flag was drawn (on or off), in id order.
     pub enables: Vec<ModuleId>,
@@ -279,12 +280,36 @@ pub struct Draws {
 
 impl Draws {
     /// What `ctx`'s generator drew. For a generated challenge the generator runs again on the start (pure, about
-    /// 0.3 ms) and its draws are read when it gives `ctx.target` exactly; otherwise (a hand-made context) the routes
-    /// and enable flags are what the target changed from the start.
+    /// 0.3 ms) and its draws are read when it gives `ctx.target` exactly; for a drawn challenge (Challenge v2, lane
+    /// CV2) the draw runs again the same way, and its routes are compared when the target or the start hears them (a
+    /// route drawn to depth 0 is compared as absent); otherwise (a hand-made context) the routes and enable flags are
+    /// what the target changed from the start.
     pub fn of(ctx: &TargetContext<'_>) -> Draws {
         let mut params = ctx.randomized.to_vec();
         params.sort();
         params.dedup();
+        if let Some(draw) = ctx.challenge.draw()
+            && let Ok(drawing) = draw.draw(ctx.start, ctx.phrase)
+            && identical(&drawing.patch, ctx.target)
+        {
+            let heard = |patch: &Patch, r: &RouteAddr| {
+                observable(patch, ctx.phrase)
+                    .route(r)
+                    .is_some_and(Visibility::is_observable)
+            };
+            let mut routes: Vec<RouteAddr> = drawing
+                .routes()
+                .into_iter()
+                .filter(|r| heard(ctx.target, r) || heard(ctx.start, r))
+                .collect();
+            routes.sort();
+            routes.dedup();
+            return Draws {
+                params,
+                routes,
+                enables: Vec::new(),
+            };
+        }
         let generated = ctx
             .challenge
             .spec()

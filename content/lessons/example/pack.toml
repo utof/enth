@@ -1,35 +1,42 @@
-# The example pack: one tiny lesson in the authoring layout (docs/learn.md, "Packs"). It exists so the layout, the
-# CI workflow and the lessons' lane-by-lane tooling have something real to read from the freeze on (lane S0l, R2,
-# freeze point F0l). It is NOT bundled and NOT a lesson to ship; lanes C1 to C3 write the real packs beside it.
+# The example pack: one tiny lesson in the authoring layout (docs/learn.md, "The lesson model (lane LM)"). It exists so
+# the layout, the CI workflow and the lesson tooling have something real to read. It is NOT bundled and NOT a lesson to
+# ship; lanes C1 to C3 write the real packs beside it. Lane LM froze the schema at F1l and rewrote this file to it;
+# `crates/enth-learn/tests/example_pack.rs` reads this directory, seals it and plays it, so it stays valid.
 #
-# A SKETCH: every field name here follows docs/learn.md's manifest and lesson sketches, and lane LM freezes the real
-# schema at F1l (then rewrites this file to it; `cargo xtask lesson-check` fails on a field it does not know). Authors
-# write TOML (comments, multi-line text); `cargo xtask pack` writes the canonical JSON into a reproducible .enthpack.
+# Authors write TOML (comments, multi-line text); `cargo xtask pack` turns each file into canonical JSON and seals the
+# manifest (`Manifest::seal`: every file with its size and SHA-256, the engine stamped) into a reproducible .enthpack.
 #
-# Layout:
-#   pack.toml                       this manifest (built into pack.json, `enth.pack/1`)
-#   lessons/<NN-name>/lesson.toml   one lesson: its steps, checks and witnesses (built into lesson.json)
-#   lessons/<NN-name>/step-<N>.md   the text of step N, a small markdown subset (headings, bold, bullets, `enth:` links)
-#   patches/*.patch.json            exactly Patch::to_json(): starts, Hear examples and witnesses
-#   CREDITS.md                      authors and licences, shown in the app
-#   media/                          reserved, empty in v1 (no audio, no images)
+# Layout (one owner per pack directory):
+#   pack.toml                    this manifest (built into pack.json, `enth.pack/1`); it lists no files
+#   lessons/<id>/lesson.toml     one lesson (built into lessons/<id>/lesson.json, `enth.lesson/1`); <id> is its id
+#   lessons/<id>/<name>.md       the texts of its steps, a small markdown subset (headings, bold, bullets, `enth:` links)
+#   patches/<name>.patch.json    exactly Patch::to_json(): starts, examples, options and witnesses
+#   CREDITS.md                   authors and licences, shown in the app (required)
+#   media/                       reserved, empty in v1 (no audio, no images)
 
+schema = "enth.pack/1"
 id = "example"
 version = "0.1.0"
 title = "Example pack"
 authors = ["enth contributors"]
 covers = ["svf"]
-# The order the app offers the lessons in; lesson ids are append-only (progress is keyed by pack, lesson and step ids).
+# The order the app offers the lessons in. Lesson ids are append-only: progress is keyed by pack, lesson and step ids.
 lessons = ["cutoff"]
 
 [license]
 text = "CC-BY-4.0"
 patches = "CC0-1.0"
 
-# The highest schema, generator and scorer ids this pack uses (the pack loads only if the build has them all).
+# The highest schemas, generator and scorers this pack uses: the pack loads only if the build has them all, and the
+# reader refuses a pack whose lessons use more than it declares. No Recreate step here, so no challenge, generator or
+# scorer. `patch` is the patch file's `schema` (1), not the engine version.
 [requires]
 lesson = 1
-challenge = 1
 patch = 1
-generator = 1
-scorers = ["sound/1", "structure/1"]
+
+# A track (Q1): an ordered list of lessons the app plays across installed packs, `pack/lesson`. The 12-lesson tour is
+# one, carried by the pack that starts it; a lesson whose pack is missing is shown as missing.
+[[tracks]]
+id = "tour"
+title = "The example tour"
+lessons = ["example/cutoff"]

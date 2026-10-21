@@ -1158,9 +1158,25 @@ pub fn load_from(
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PresetState {
-    /// [`PresetKey::to_text`] of the preset last loaded or saved by the editor.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// [`PresetKey::to_text`] of the preset last loaded or saved by the editor. Saved only up to
+    /// [`MAX_LAST_BYTES`]: the session bookmarks no longer key, and a longer one is never written.
+    #[serde(skip_serializing_if = "last_unsaved")]
     pub last: Option<String>,
+}
+
+/// The longest "last loaded" bookmark the `enth` field saves, in bytes (F1l review, nit 9): the Learn budget
+/// (`crate::learn::LEARN_BYTES` plus a lesson round) leaves the rest of the 1 MiB field at least 64 KiB, and that
+/// rest holds this bookmark, so it must be bounded. 4 KiB is the longest path Linux takes; a key past it is not
+/// remembered (stepping with ◀ ▶ then starts from the list's ends).
+pub const MAX_LAST_BYTES: usize = 4096;
+
+/// `skip_serializing_if` for the bookmark: none, or longer than [`MAX_LAST_BYTES`].
+#[allow(
+    clippy::ref_option,
+    reason = "serde's skip_serializing_if passes the field by reference"
+)]
+fn last_unsaved(last: &Option<String>) -> bool {
+    last.as_ref().is_none_or(|text| text.len() > MAX_LAST_BYTES)
 }
 
 impl PresetState {
@@ -1211,6 +1227,14 @@ impl Session {
         preset: &Patch,
         key: Option<&PresetKey>,
     ) -> Result<PresetLoad, SessionError> {
+        // A preset would replace the patch under a live lesson: the editor asks Restore or Keep first (lane SL).
+        if self.learn_live() {
+            let err = SessionError::LessonLive {
+                what: "load_preset",
+            };
+            self.last_error = Some(err.clone());
+            return Err(err);
+        }
         self.end_gesture();
         self.pump();
         let loaded = self.load_preset_steps(preset, key)?;
@@ -1294,9 +1318,12 @@ impl Session {
         Ok(plan.key)
     }
 
-    /// The "last loaded" bookmark follows `key`; a load without one forgets it.
+    /// The "last loaded" bookmark follows `key`; a load without one forgets it, and so does a key longer than
+    /// [`MAX_LAST_BYTES`] (never saved).
     fn remember_preset(&mut self, key: Option<&PresetKey>) {
-        let last = key.map(PresetKey::to_text);
+        let last = key
+            .map(PresetKey::to_text)
+            .filter(|text| text.len() <= MAX_LAST_BYTES);
         match (&mut self.instance.preset, last) {
             (Some(state), last) => state.last = last,
             (slot @ None, Some(last)) => *slot = Some(PresetState { last: Some(last) }),
