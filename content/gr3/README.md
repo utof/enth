@@ -19,7 +19,7 @@ This folder holds the sets that clauses 1 and 2 are measured on, **frozen and ha
 | `exclude-synth.txt`, `exclude-real.txt`, `exclude-degraded.txt` | What training must never contain: seed ranges, codes, fingerprints, preset stems and file hashes; Freesound ids, packs and audio hashes; the held-out pool, its variants and seeds |
 | `hashes.txt` | The SHA-256 of every frozen file above (`sha256sum -c` format, paths relative to this folder) |
 | `check.py` | The check: recomputes the hashes and re-derives every rule (below). Standard library only |
-| `runs.jsonl` | **Not created yet.** Every test run, appended (build, date, load, the input and output hashes of degraded files), never dropped or rewritten. Lane EVK creates it on the first run; EVK and EVb append to it |
+| `runs.jsonl` | Every test run, appended (build, date, load, the input and output hashes of degraded files), never dropped or rewritten: `enth.gr3-run/1` lines that `cargo xtask gr3-run` writes and `gr3-report` reads ([docs/gr3.md](../../docs/gr3.md)). Lane EVK created it on 2026-10-21 with the arm-A core baseline (a render-equivalent estimate: no G1 or owner item, so amendment 1 stays open); EVK and EVb append to it. Not in `hashes.txt`: it grows |
 
 ## The sets
 
@@ -69,11 +69,13 @@ Each type folder splits evenly (bass 2/2, lead 2/2, pad 2/2, keys 2/1, perc and 
 ## The freeze
 
 - **Frozen on 2026-10-21, before any training.** `hashes.txt` pins every frozen file. After this, an entry changes only through a new, named set version (`set_version = 2` in new files beside these), and the old version stays so earlier results stay checkable. Reserves replace a reference only if its source disappears before the first test run, and that replacement is a new version too.
-- **One amendment is allowed, before the first test run in `runs.jsonl`.** It fills placeholders and nothing else:
+- **One amendment is allowed, until the first test run that includes an item it fills.** It fills placeholders and nothing else:
   - the four G1 entries' `sha256` (and their `status`), with the extracted files' hashes added to `exclude-synth.txt`;
   - each owner slot `owner-NN`: its file's `sha256`, `licence` and source, or "uses owner-default-NN".
 
   Its commit changes only those fields and `hashes.txt`, says "GR3 amendment 1" in its message, and is recorded in a line at the end of this README.
+- **A test run never includes an amendable item while its entry is unfilled** (a G1 target whose `sha256` is still `pending`, an owner slot not yet filled). `cargo xtask gr3-run` refuses one. A test run that leaves out every amendable item (the arm-A core baseline: 32 generator targets and 8 test-preset renders) does not close the amendment; the first test run that includes a filled amendable item does.
+- *Ruled by the coordinator on 2026-10-21, before any test run, while `runs.jsonl` was empty* (lane EVK raised it). The rule first read "before the first test run in `runs.jsonl`", which the arm-A baseline would have closed before the owner's G1 files exist. Nothing a run leaving out the amendable items can show depends on them, so the amendment's content stays independent of every result.
 - **Tuning happens on dev only.** No search setting, threshold or prior is tuned on a test item.
 - **Every test run is appended** to `runs.jsonl`, whatever it showed. That includes runs on degraded items, with the ffmpeg version and the input and output SHA-256 from DEG's record, since a degraded file's bytes depend on the ffmpeg build.
 - **The listening key stays closed** until every listener is done, and whoever prepares the stimuli does not audition them.
@@ -147,3 +149,7 @@ Lane DG implements this in `enth-datagen exclude`, and every pipeline that build
 ## Amendments
 
 None yet.
+
+Rule changes (not amendments: no set entry changed):
+
+- 2026-10-21, ruled by the coordinator before any test run, `runs.jsonl` empty: amendment 1 stays allowed until the first test run that includes an item it fills, and no test run includes an unfilled amendable item ("The freeze" above).

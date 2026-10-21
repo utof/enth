@@ -46,6 +46,7 @@ It is also built to be **driven by AI agents through a CLI**: an LLM can create 
 | [friends-install.md](friends-install.md) | The short install sheet to forward to friends |
 | [gr1.md](gr1.md) | Gate GR1: the protocol, the round-log fields, `cargo xtask gr1-report` and how to read it, the proposed thresholds, the agent and floor baselines |
 | [gr1-owner.md](gr1-owner.md) / [gr1-friends.md](gr1-friends.md) | The owner's and the friends' GR1 sheets: collect logs and decide; play 20 rounds and send the log |
+| [gr3.md](gr3.md) | Gate GR3's clause 1 (R3): the protocol as built, `cargo xtask gr3-run` (four arms, wall-clock and render modes, twins, the idle-rate probe) and `gr3-report` (exact McNemar, Wilcoxon, Hodges–Lehmann, Kaplan–Meier; the decision fixed in advance), the dev tuning and the arm-A baseline |
 | [phase-0.md](phase-0.md) | The Phase 0 lanes and tasks, with acceptance criteria (done) |
 | [spikes/summary.md](spikes/summary.md) | What Phase 0 measured and changed, the G0 results, and the owner's [checklist](spikes/owner-checklist.md) |
 | [benchmarks.md](benchmarks.md) | How we measure UI stacks, the engine, and the agent loop — and the pass/fail thresholds |
