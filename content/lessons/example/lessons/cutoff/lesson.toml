@@ -1,0 +1,64 @@
+# One lesson in the authoring layout (`enth.lesson/1`, docs/learn.md "The lesson model (lane LM)"). The shape is
+# Hear (a listen step), Try (a do step: a goal checked live) and an ear question (a choose step). Each step's text is a
+# markdown file beside this one. A field a step's kind does not have is refused, never ignored.
+
+schema = "enth.lesson/1"
+id = "cutoff"
+title = "The low-pass cutoff"
+tier = "basic"
+objective = "Turn the low-pass filter's cutoff down and hear the sound get darker."
+teaches = ["svf.cutoff"]
+
+# Step 1, Hear: two renders that differ only in the cutoff, before anything is explained. Examples are level-matched
+# and play the phrase HELD (1) unless they say otherwise (`phrase`, `transpose`, `level_match`, `seed`, `curve`).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "step-1.md"
+
+[[steps.examples]]
+label = "Open"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "Closed"
+patch = "patches/dark.patch.json"
+
+# Step 2, Try: "make it darker than this", checked live from the start patch. `editable` is advisory (the UI, the
+# measured hints' free set); `lock` is what the session refuses.
+[[steps]]
+id = "try"
+kind = "do"
+text = "step-2.md"
+hints = ["The cutoff knob is on the filter. Turn it to the left."]
+# The reference solution `lesson-check` plays through a session, and Show's source: it touches editable controls only.
+witness = "patches/dark.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+highlight = ["filter1.cutoff"]
+editable = ["filter1.cutoff"]
+lock = ["osc1.*"]
+
+# A sound check: the phrase HELD (C3 for 1.5 s), with the expectation grammar of `enth check`. The start must fail it
+# and the witness pass it by a margin of at least 1e-3. Measured on the engine at 0.3.0 with `enth check`: the start's
+# spectral centroid is 894 Hz (fails), the witness's is 321 Hz (passes by 179 Hz).
+[steps.check]
+kind = "sound"
+phrase = 1
+expect = ["brightness<500Hz"]
+
+# Step 3, an ear question: pick the option that answers the text. `answer` is 0-based.
+[[steps]]
+id = "which"
+kind = "choose"
+text = "step-3.md"
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/dark.patch.json"
