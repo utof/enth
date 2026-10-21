@@ -122,7 +122,7 @@ fn answer(job: &Job, sound: f64) -> JobResult {
         JobKind::Score { .. } => JobResult::Scored(Box::new(report(sound))),
         JobKind::Rings { .. } => JobResult::Rings(Box::new(structure(sound))),
         JobKind::Loudness { .. } => JobResult::Loudness { lufs: Some(-18.0) },
-        JobKind::Hint { level, .. } => JobResult::Hint(CoachHint::new(*level, "a hint")),
+        JobKind::Hint { level, .. } => JobResult::Hint(Box::new(CoachHint::new(*level, "a hint"))),
         _ => JobResult::Failed {
             message: "unknown job".to_owned(),
         },
@@ -298,7 +298,7 @@ fn run(steps: &[Step]) -> Result<(), TestCaseError> {
                         2 => JobResult::Failed {
                             message: "worker failed".to_owned(),
                         },
-                        3 => JobResult::Hint(CoachHint::new(1, "wrong kind")),
+                        3 => JobResult::Hint(Box::new(CoachHint::new(1, "wrong kind"))),
                         4 => {
                             let mut r = report(sound);
                             r.passed = !r.passed;

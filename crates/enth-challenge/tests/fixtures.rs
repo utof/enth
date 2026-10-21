@@ -262,6 +262,7 @@ fn round() -> RoundResult {
             hints: 1,
             live_meter: false,
             revealed: false,
+            dim_unused: false,
         },
         agreement: Some(Agreement::AboutRight),
         rating: Some(4),
@@ -281,9 +282,28 @@ fn gave_up() -> RoundResult {
             hints: 0,
             live_meter: true,
             revealed: true,
+            dim_unused: false,
         },
         agreement: None,
         rating: None,
+    }
+}
+
+/// A round passed with the `dim_unused` assist and nothing else (lane HINT, FU1): assisted by the dimming alone.
+fn dimmed() -> RoundResult {
+    RoundResult {
+        code: ChallengeCode::short(level(3, 7)).unwrap(),
+        outcome: Outcome::Passed,
+        first_submit: Some(report()),
+        submits: 1,
+        time_to_pass_ms: Some(61_000),
+        active_ms: 64_500,
+        assists: AssistsUsed {
+            dim_unused: true,
+            ..AssistsUsed::default()
+        },
+        agreement: Some(Agreement::TooLow),
+        rating: Some(3),
     }
 }
 
@@ -318,6 +338,11 @@ fn regenerate() {
         "round",
         "gave-up.json",
         &serde_json::to_string_pretty(&gave_up()).unwrap(),
+    );
+    write(
+        "round",
+        "dimmed.json",
+        &serde_json::to_string_pretty(&dimmed()).unwrap(),
     );
 }
 
@@ -467,7 +492,11 @@ fn score_reports_read_tolerantly() {
 
 #[test]
 fn round_result_v1_fixtures_are_what_this_build_writes_and_reads() {
-    for (name, r) in [("passed", round()), ("gave-up", gave_up())] {
+    for (name, r) in [
+        ("passed", round()),
+        ("gave-up", gave_up()),
+        ("dimmed", dimmed()),
+    ] {
         let text = read("round", &format!("{name}.json"));
         assert_eq!(
             text,
@@ -479,6 +508,24 @@ fn round_result_v1_fixtures_are_what_this_build_writes_and_reads() {
     let json = serde_json::to_string(&round()).unwrap();
     let inconsistent = json.replacen("\"time_to_pass_ms\":95250", "\"time_to_pass_ms\":null", 1);
     assert!(serde_json::from_str::<RoundResult>(&inconsistent).is_err());
+}
+
+/// Old results still read (lane HINT, FU1): `passed.json` and `gave-up.json` were written before `AssistsUsed` had
+/// `dim_unused`, and they are still exactly what this build writes for a round without the dim assist (the field is
+/// written only when set), so every older round log keeps its bytes and reads with the flag off. `dimmed.json` is a
+/// round assisted by the dimming alone.
+#[test]
+fn round_results_from_before_the_dim_assist_read_and_keep_their_bytes() {
+    for name in ["passed", "gave-up"] {
+        let text = read("round", &format!("{name}.json"));
+        assert!(!text.contains("dim_unused"), "{name} predates the field");
+        let r: RoundResult = serde_json::from_str(&text).unwrap();
+        assert!(!r.assists.dim_unused, "{name}");
+    }
+    let text = read("round", "dimmed.json");
+    let r: RoundResult = serde_json::from_str(&text).unwrap();
+    assert!(r.assists.dim_unused && r.assists.any());
+    assert_eq!((r.assists.hints, r.assists.revealed), (0, false));
 }
 
 /// The JSON forms hold no float except the scores: every number in a challenge is an integer.

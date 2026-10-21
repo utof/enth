@@ -170,12 +170,14 @@ pub struct Assists {
     pub live_meter: bool,
     /// The target was revealed.
     pub revealed: bool,
+    /// The `dim_unused` assist was on (lane HINT, FU1: written only when true, so an older line reads as false).
+    pub dim_unused: bool,
 }
 
 impl Assists {
     /// Any help at all.
     pub fn any(&self) -> bool {
-        self.hints > 0 || self.live_meter || self.revealed
+        self.hints > 0 || self.live_meter || self.revealed || self.dim_unused
     }
 }
 
@@ -271,7 +273,7 @@ pub(super) const RESULT_FIELDS: &[&str] = &[
     "agreement",
     "rating",
 ];
-pub(super) const ASSIST_FIELDS: &[&str] = &["hints", "live_meter", "revealed"];
+pub(super) const ASSIST_FIELDS: &[&str] = &["hints", "live_meter", "revealed", "dim_unused"];
 const ROUND_FIELDS: &[&str] = &["serial", "nonce"];
 
 /// Collects issues while a line is read.
@@ -617,6 +619,9 @@ fn read_result(res: &Map<String, Value>, code: &str, r: &mut Reader) -> Option<R
                     .boolean(a, "live_meter", "result.assists.")
                     .unwrap_or(false),
                 revealed: r.boolean(a, "revealed", "result.assists.").unwrap_or(false),
+                dim_unused: r
+                    .boolean(a, "dim_unused", "result.assists.")
+                    .unwrap_or(false),
             }
         }
         None | Some(Value::Null) => {
@@ -799,6 +804,22 @@ mod tests {
         );
         assert_eq!(first.scorers[0].as_deref(), Some("sound/1"));
         assert!(res.assists.any());
+    }
+
+    /// Lane HINT (FU1): the dim assist is a known field (no note) and marks the round assisted; a line without it reads
+    /// as before.
+    #[test]
+    fn the_dim_assist_reads_without_an_issue_and_counts_as_an_assist() {
+        let mut v = end_line();
+        v["result"]["assists"] =
+            json!({"hints": 0, "live_meter": false, "revealed": false, "dim_unused": true});
+        let p = parse(&v);
+        assert!(p.issues.is_empty(), "{:?}", p.issues);
+        let a = p.entry.unwrap().result.unwrap().assists;
+        assert!(a.dim_unused && a.any());
+        v["result"]["assists"] = json!({"hints": 0, "live_meter": false, "revealed": false});
+        let a = parse(&v).entry.unwrap().result.unwrap().assists;
+        assert!(!a.dim_unused && !a.any());
     }
 
     #[test]

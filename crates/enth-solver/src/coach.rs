@@ -29,7 +29,8 @@
 //! | 4 | a concrete value range | "…: set Cutoff on the filter (filter1) to between 1.6kHz and 2.6kHz." |
 //!
 //! **No early leak.** Levels 1 to 3 carry no number at all (a module id such as `filter1` is a name, not a value),
-//! and the structured fields are empty until their level: `module` from 2, `param` and `turn` from 3, `range` at 4.
+//! and the structured fields are empty until their level: `module` from 2, `param` and `turn` from 3, `range` at 4,
+//! and for a route hint `route` (its source and destination) at 4, the level whose text names the source.
 //! The text is built from the player's patch, the target's descriptors and the verified fix; the target *patch* is
 //! read for two things only, which parameters the player may be told about, and whether a measured move is merely
 //! compensating for a categorical difference (below), and never quoted before level 4. Even level 4 gives a
@@ -68,7 +69,7 @@ use enth_analysis::margin::Interval;
 use enth_challenge::{PreparedRound, model::SCORING_SAMPLE_RATE, model::SCORING_SEED};
 use enth_params::{Kind, ParamSpec};
 use enth_patch::catalogue::ModuleKind;
-use enth_patch::{ModSource, ModuleId, Op, ParamAddr, Patch, Target, ops_between};
+use enth_patch::{ModSource, ModuleId, Op, ParamAddr, Patch, RouteAddr, Target, ops_between};
 use enth_render::{Performance, RenderSpec};
 
 use crate::eval::Evaluator;
@@ -333,6 +334,10 @@ pub struct Hint {
     /// Level 4: the plain values the parameter should land between, rounded outward to two significant digits
     /// (none for a categorical parameter, whose level-4 text names the setting).
     pub range: Option<(f32, f32)>,
+    /// Level 4 of a route hint (lane HINT, FU1): the route to add, remove or re-weigh, source and destination, as the
+    /// level-4 text names them; level 3 names only its destination ([`param`](Self::param)). The depth is the text's
+    /// range and never a field.
+    pub route: Option<RouteAddr>,
     /// The hint comes from a verified render ([`hint`](crate::hint())'s fix), not from a comparison of patches or
     /// general advice.
     pub measured: bool,
@@ -349,6 +354,7 @@ impl Hint {
             param: None,
             turn: None,
             range: None,
+            route: None,
             measured: false,
         }
     }
@@ -1167,6 +1173,10 @@ impl CoachTarget {
                     for h in &mut hints[2..] {
                         h.param = Some(dst.clone());
                     }
+                    hints[3].route = Some(RouteAddr {
+                        src: src.clone(),
+                        dst: dst.clone(),
+                    });
                 }
             },
             Subject::Advice { finding } => {

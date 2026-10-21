@@ -58,7 +58,6 @@ use enth_session::game::{
     AbState, CoachHint, GameRequest, Job, JobId, JobKind, JobResult, Listen, Prepared, RoundId,
     RoundLogEntry,
 };
-use enth_solver::Serial;
 use enth_solver::coach::{CoachCfg, CoachPlan, CoachTarget};
 use parking_lot::{Condvar, Mutex};
 
@@ -375,6 +374,8 @@ pub struct Runner {
     /// Lane SN's coach for the round: its target measured once (`CoachTarget::for_round`), and the last patch's plan,
     /// so levels 2–4 of an unchanged patch cost nothing.
     coach: Option<Coach>,
+    /// The coach's evaluator (lane HINT, FU1): [`crate::hint_eval::Workers`], half the logical CPUs within 1 to 4.
+    eval: crate::hint_eval::Workers,
 }
 
 /// The coach's state for one round.
@@ -390,6 +391,7 @@ impl std::fmt::Debug for Runner {
         f.debug_struct("Runner")
             .field("round", &self.round.as_ref().map(|r| r.0))
             .field("coach", &self.coach.as_ref().map(|c| c.round))
+            .field("hint_workers", &self.eval.count())
             .finish()
     }
 }
@@ -402,6 +404,15 @@ fn failed(what: &str, e: impl std::fmt::Display) -> JobResult {
 }
 
 impl Runner {
+    /// A runner whose hints use `n` worker threads (tests and the latency measurement; the shell's default is
+    /// [`crate::hint_eval::hint_workers`] for the machine).
+    pub fn with_hint_workers(n: usize) -> Runner {
+        Runner {
+            eval: crate::hint_eval::Workers::new(n),
+            ..Runner::default()
+        }
+    }
+
     /// Run `job`. A `Prepare` also returns the target's loop, rendered at `host_rate` (the scored rate when 0).
     pub fn run(&mut self, job: Job, host_rate: u32) -> (JobResult, Option<Box<TargetLoop>>) {
         match job.kind {
@@ -526,10 +537,10 @@ impl Runner {
     }
 
     /// Lane SN's coach at `level` for `patch` (docs/dsp/hints.md): the target measured once per round, one plan per
-    /// patch, then that plan's hint at the level. Only the hint's text reaches the session (`CoachHint`); the plan's
-    /// verified fix holds exact values and is never shown. The evaluator is `enth_solver::Serial`: a parallel one
-    /// needs `enth-analysis`'s `Descriptors` in the plugin's dependencies (a coordinator edit); the job runs on the
-    /// worker either way, so the editor never waits for it.
+    /// patch, then that plan's hint at the level. Only the hint's text and what it points at reach the session
+    /// (`CoachHint`, [`coach_hint`]); the plan's verified fix holds exact values and is never shown. The renders go
+    /// through [`crate::hint_eval::Workers`] (lane HINT, FU1): parallel, results by job index, so the hint is the
+    /// same for any worker count; the job runs on the game worker either way, so the editor never waits for it.
     fn hint(
         &mut self,
         id: RoundId,
@@ -542,9 +553,9 @@ impl Runner {
             Err(e) => return e,
         };
         let cfg = CoachCfg::default();
-        let mut eval = Serial::default();
+        let eval = &mut self.eval;
         if self.coach.as_ref().is_none_or(|c| c.round != id) {
-            match CoachTarget::for_round(&round, &mut eval, &cfg) {
+            match CoachTarget::for_round(&round, eval, &cfg) {
                 Ok(target) => {
                     self.coach = Some(Coach {
                         round: id,
@@ -559,7 +570,7 @@ impl Runner {
             return failed("hints", "no coach");
         };
         if coach.plan.as_ref().is_none_or(|(p, _)| p != patch) {
-            match coach.target.plan(patch, &mut eval, &cfg) {
+            match coach.target.plan(patch, eval, &cfg) {
                 Ok(plan) => coach.plan = Some((patch.clone(), plan)),
                 Err(e) => return failed("the hint", e),
             }
@@ -567,9 +578,41 @@ impl Runner {
         let Some((_, plan)) = coach.plan.as_ref() else {
             return failed("hints", "no plan");
         };
-        let h = plan.hint(level);
-        JobResult::Hint(CoachHint::new(h.level, h.text.clone()))
+        JobResult::Hint(Box::new(coach_hint(plan.hint(level))))
     }
+}
+
+/// The session's `CoachHint` for one of the coach's hints (lane HINT, FU1): the text, and what it is about (the
+/// aspect, the module, the parameter and its turn, a route), each as the coach filled it for the hint's level. Never
+/// the level-4 range or any value: the plan's verified fix stays in the worker.
+fn coach_hint(h: &enth_solver::coach::Hint) -> CoachHint {
+    use enth_session::game::{Direction, HintTurn};
+    use enth_solver::coach::{Difference, Turn};
+    let mut c = CoachHint::new(h.level, h.text.clone());
+    if let Some(aspect) = h.aspect {
+        let difference = h.difference.map(|d| match d {
+            Difference::Higher => Direction::Higher,
+            Difference::Lower => Direction::Lower,
+            Difference::Missing => Direction::Missing,
+            Difference::Extra => Direction::Extra,
+            _ => Direction::Unknown,
+        });
+        c = c.with_aspect(aspect.code(), difference);
+    }
+    if let Some(module) = &h.module {
+        c = c.with_module(module.clone());
+    }
+    if let Some(param) = &h.param {
+        let turn = h.turn.map(|t| match t {
+            Turn::Raise => HintTurn::Raise,
+            Turn::Lower => HintTurn::Lower,
+        });
+        c = c.with_param(param.clone(), turn);
+    }
+    if let Some(route) = &h.route {
+        c = c.with_route(route.clone());
+    }
+    c
 }
 
 /// `patch` playing `phrase` at `sample_rate` with the scored seed: what the scorer hears at the scored rate.
@@ -1747,6 +1790,256 @@ mod tests {
             planned,
             "the same patch reuses its plan"
         );
+    }
+
+    /// Lane HINT (FU1): the hint job's parallel evaluator gives the same hints, every level, for one worker and for
+    /// several, on the start patch and on a patch the player moved (the coach's sensitivity batch and the solver's
+    /// probe batch both run in parallel).
+    #[test]
+    fn the_worker_count_never_changes_the_hint() {
+        let spec = SpecPreset::by_id(2).unwrap().spec(LATEST_GENERATOR, 11);
+        let id = round_id(5);
+        let hints = |workers: usize| {
+            let mut runner = Runner::with_hint_workers(workers);
+            let (result, _) = runner.run(
+                Job {
+                    id: JobId(1),
+                    round: id,
+                    kind: JobKind::Prepare { spec },
+                },
+                48_000,
+            );
+            let JobResult::Prepared(prepared) = result else {
+                panic!("{result:?}")
+            };
+            let challenge = Arc::new(prepared.challenge.clone());
+            let mut moved = prepared.start.clone();
+            if let Some(addr) = prepared.params.first() {
+                let spec = moved.spec(addr).unwrap();
+                let value = spec.from_norm((spec.to_norm(moved.value(addr).unwrap()) + 0.3) % 1.0);
+                enth_patch::apply(
+                    &mut moved,
+                    &enth_patch::Op::SetParam {
+                        addr: addr.clone(),
+                        value,
+                    },
+                )
+                .unwrap();
+            }
+            let mut out = Vec::new();
+            for patch in [&prepared.start, &moved] {
+                for level in 1..=4 {
+                    let (r, _) = runner.run(
+                        Job {
+                            id: JobId(2),
+                            round: id,
+                            kind: JobKind::Hint {
+                                challenge: Arc::clone(&challenge),
+                                target: Arc::new(prepared.target.clone()),
+                                patch: Box::new(patch.clone()),
+                                level,
+                            },
+                        },
+                        48_000,
+                    );
+                    let JobResult::Hint(h) = r else {
+                        panic!("{r:?}")
+                    };
+                    out.push(*h);
+                }
+            }
+            out
+        };
+        let serial = hints(1);
+        assert_eq!(serial.len(), 8);
+        assert_eq!(hints(3), serial, "3 workers");
+        // What each hint points at follows the coach's ladder, and the session keeps it as it came.
+        for h in &serial {
+            assert!(
+                h.aspect.is_some(),
+                "level {}: the aspect from level 1",
+                h.level
+            );
+            assert!(h.level >= 2 || h.module.is_none(), "{h:?}");
+            assert!(
+                h.level >= 3 || (h.param.is_none() && h.turn.is_none()),
+                "{h:?}"
+            );
+            assert!(h.level >= 4 || h.route.is_none(), "{h:?}");
+            assert_eq!(&h.clone().laddered(), h, "already on the ladder");
+        }
+    }
+
+    /// Lane HINT (FU1): hint latency, serial against parallel, printed as a Markdown table (docs/plugin.md, "The hint
+    /// evaluator"). Run on purpose, in release:
+    /// `cargo test --release -p enth-plugin --lib -- --ignored hint_latency --nocapture --test-threads 1`
+    /// (under `flock -x` when the machine can be had quiet; under load the numbers are upper bounds).
+    ///
+    /// Each round (preset levels 1–4, three seeds) plays the same flow with one worker and with the shell's default
+    /// ([`crate::hint_eval::hint_workers`]): hint 1 on the start patch (the target's sensitivity and a plan), hint 2 on
+    /// the same patch (the cached plan), hint 3 after the player moved a randomized knob (a new plan), hint 4 cached.
+    /// The two worker counts are interleaved, the order alternating each repeat (serial, parallel, parallel, serial,
+    /// …), so a drifting machine load falls on both; the table gives each count's median over [`REPEATS`] runs and the
+    /// serial/parallel ratio. Every run must give the same four hints.
+    #[test]
+    #[ignore = "a timing run: release build"]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a timing measurement reads the clock and the load average and prints its table"
+    )]
+    fn hint_latency() {
+        use std::time::Instant;
+        const REPEATS: usize = 4;
+        let load = || {
+            std::fs::read_to_string("/proc/loadavg")
+                .map(|l| l.split_whitespace().take(3).collect::<Vec<_>>().join(" "))
+                .unwrap_or_default()
+        };
+        let median = |mut v: Vec<f64>| {
+            v.sort_by(f64::total_cmp);
+            let n = v.len();
+            if n % 2 == 1 {
+                v[n / 2]
+            } else {
+                f64::midpoint(v[n / 2 - 1], v[n / 2])
+            }
+        };
+        let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let parallel = crate::hint_eval::hint_workers(cpus);
+        println!(
+            "cpus {cpus}; serial = 1 worker, parallel = the shell's default, {parallel}; load average (1, 5, 15 min) at the start: {}",
+            load()
+        );
+        // One run of the flow: the times of hints 1 and 3 (ms), the four hints, and the renders of the target and the
+        // two plans.
+        let flow = |spec: enth_challenge::RandomSpec, id: RoundId, workers: usize| {
+            let mut runner = Runner::with_hint_workers(workers);
+            let (result, _) = runner.run(
+                Job {
+                    id: JobId(1),
+                    round: id,
+                    kind: JobKind::Prepare { spec },
+                },
+                48_000,
+            );
+            let JobResult::Prepared(prepared) = result else {
+                panic!("{result:?}")
+            };
+            let challenge = Arc::new(prepared.challenge.clone());
+            let target = Arc::new(prepared.target.clone());
+            let mut moved = prepared.start.clone();
+            if let Some(addr) = prepared.params.first() {
+                let spec = moved.spec(addr).unwrap();
+                let u = spec.to_norm(moved.value(addr).unwrap());
+                enth_patch::apply(
+                    &mut moved,
+                    &enth_patch::Op::SetParam {
+                        addr: addr.clone(),
+                        value: spec.from_norm((u + 0.3) % 1.0),
+                    },
+                )
+                .unwrap();
+            }
+            let (mut times, mut hints, mut renders) = (Vec::new(), Vec::new(), Vec::new());
+            for (level, patch) in [
+                (1, &prepared.start),
+                (2, &prepared.start),
+                (3, &moved),
+                (4, &moved),
+            ] {
+                let t = Instant::now();
+                let (r, _) = runner.run(
+                    Job {
+                        id: JobId(2),
+                        round: id,
+                        kind: JobKind::Hint {
+                            challenge: Arc::clone(&challenge),
+                            target: Arc::clone(&target),
+                            patch: Box::new(patch.clone()),
+                            level,
+                        },
+                    },
+                    48_000,
+                );
+                times.push(t.elapsed().as_secs_f64() * 1000.0);
+                let JobResult::Hint(h) = r else {
+                    panic!("{r:?}")
+                };
+                hints.push(*h);
+                let coach = runner.coach.as_ref().unwrap();
+                if level == 1 {
+                    renders.push(coach.target.sensitivity().renders);
+                }
+                if level % 2 == 1 {
+                    renders.push(coach.plan.as_ref().map_or(0, |p| p.1.renders()));
+                }
+            }
+            assert!(
+                times[1] < 5.0 && times[3] < 5.0,
+                "levels 2 and 4 reuse the plan: {times:?}"
+            );
+            (times[0], times[2], hints, renders)
+        };
+        println!(
+            "| Round | Renders (target, plan 1, plan 3) | Hint 1 serial (ms) | Hint 1 parallel (ms) | Ratio | Hint 3 serial (ms) | Hint 3 parallel (ms) | Ratio |"
+        );
+        println!("| --- | --- | --- | --- | --- | --- | --- | --- |");
+        let mut totals = [[0.0_f64; 2]; 2]; // [hint 1, hint 3] × [serial, parallel]
+        for level in 1..=4_u8 {
+            for seed in [3_u64, 11, 29] {
+                let spec = SpecPreset::by_id(level)
+                    .unwrap()
+                    .spec(LATEST_GENERATOR, seed);
+                let id = round_id(u32::from(level) * 100 + seed as u32);
+                let mut reference: Option<Vec<CoachHint>> = None;
+                let mut renders = Vec::new();
+                let mut samples = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
+                for r in 0..REPEATS {
+                    let order = if r % 2 == 0 { [0, 1] } else { [1, 0] };
+                    for which in order {
+                        let workers = if which == 0 { 1 } else { parallel };
+                        let (t1, t3, hints, n) = flow(spec, id, workers);
+                        match &reference {
+                            Some(h) => assert_eq!(
+                                &hints, h,
+                                "level {level} seed {seed}: {workers} workers"
+                            ),
+                            None => reference = Some(hints),
+                        }
+                        renders = n;
+                        samples[0][which].push(t1);
+                        samples[1][which].push(t3);
+                    }
+                }
+                let m = samples.map(|per| per.map(&median));
+                for (hint, row) in m.iter().enumerate() {
+                    totals[hint][0] += row[0];
+                    totals[hint][1] += row[1];
+                }
+                println!(
+                    "| L{level} seed {seed} | {}, {}, {} | {:.0} | {:.0} | {:.2} | {:.0} | {:.0} | {:.2} |",
+                    renders[0],
+                    renders[1],
+                    renders[2],
+                    m[0][0],
+                    m[0][1],
+                    m[0][0] / m[0][1],
+                    m[1][0],
+                    m[1][1],
+                    m[1][0] / m[1][1]
+                );
+            }
+        }
+        println!(
+            "| All 12 rounds (sum of medians) | | {:.0} | {:.0} | {:.2} | {:.0} | {:.0} | {:.2} |",
+            totals[0][0],
+            totals[0][1],
+            totals[0][0] / totals[0][1],
+            totals[1][0],
+            totals[1][1],
+            totals[1][0] / totals[1][1]
+        );
+        println!("load average at the end: {}", load());
     }
 
     #[test]

@@ -23,6 +23,9 @@ pub const CLOSE: &str = "×";
 pub const PATH: &str = "›";
 /// Flow to the next stage ("Send to › Master").
 pub const SEND: &str = "→";
+/// A revealed hint's way to turn a control (lane HINT, FU1): up and down.
+pub const RAISE: &str = "↑";
+pub const LOWER: &str = "↓";
 /// Bullet in lists.
 pub const BULLET: &str = "•";
 /// Filled and empty dots (difficulty).

@@ -452,7 +452,10 @@ fn hints_are_levels_that_mark_the_round_assisted() {
         let text = format!("level {level}");
         s.game_job_done(
             hint.id,
-            JobResult::Hint(enth_session::game::CoachHint::new(level, text.clone())),
+            JobResult::Hint(Box::new(enth_session::game::CoachHint::new(
+                level,
+                text.clone(),
+            ))),
         )
         .unwrap();
         let v = view(&s);
@@ -460,6 +463,47 @@ fn hints_are_levels_that_mark_the_round_assisted() {
         assert_eq!(v.hint.unwrap().text, text);
     }
     assert_eq!(s.game_hint(), Err(GameError::NoMoreHints));
+}
+
+/// Lane HINT (FU1): the session keeps each hint on the coach's ladder. A shell that fills every structured field at
+/// every level still shows the editor only what the level's text names: the aspect from 1, the module from 2, the
+/// parameter and its turn from 3, the route at 4. The next hint replaces the last; ending the round clears it.
+#[test]
+fn hints_keep_only_the_fields_their_level_names() {
+    use enth_session::game::{CoachHint, HintTurn};
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    drain(&mut s);
+    let full = |level: u8| {
+        CoachHint::new(level, format!("level {level}"))
+            .with_aspect("brightness", Some(enth_session::game::Direction::Lower))
+            .with_module(enth_patch::ModuleId::new("filter1").unwrap())
+            .with_param(addr(CUTOFF), Some(HintTurn::Raise))
+            .with_route("lfo1 -> filter1.cutoff".parse().unwrap())
+    };
+    for level in 1..=4u8 {
+        s.game_hint().unwrap();
+        let hint = job(&drain(&mut s), "hint");
+        s.game_job_done(hint.id, JobResult::Hint(Box::new(full(level))))
+            .unwrap();
+        let h = view(&s).hint.unwrap();
+        assert_eq!(
+            h.text,
+            format!("level {level}"),
+            "the next hint replaces the last"
+        );
+        assert_eq!(h.aspect.as_deref(), Some("brightness"));
+        assert_eq!(h.module.is_some(), level >= 2, "level {level}");
+        assert_eq!(h.param.is_some(), level >= 3, "level {level}");
+        assert_eq!(
+            h.turn,
+            (level >= 3).then_some(HintTurn::Raise),
+            "level {level}"
+        );
+        assert_eq!(h.route.is_some(), level == 4, "level {level}");
+    }
+    s.game_end(EndChoice::Keep).unwrap();
+    assert_eq!(s.round(), None, "no round, no hint to mark");
 }
 
 #[test]
@@ -1202,7 +1246,7 @@ fn mid_round() -> Session {
     let hint = job(&drain(&mut s), "hint");
     s.game_job_done(
         hint.id,
-        JobResult::Hint(enth_session::game::CoachHint::new(1, "brighter")),
+        JobResult::Hint(Box::new(enth_session::game::CoachHint::new(1, "brighter"))),
     )
     .unwrap();
     s.game_tick(7_000, EditorView::Visible);
@@ -1543,6 +1587,117 @@ fn the_round_fixture_is_what_this_build_writes_and_loads() {
     assert_eq!(view(&t).phase, Phase::Submitted);
 }
 
+/// Lane HINT (FU1): a round saved before `RoundRecord::dim_unused` existed (the round fixture has no such key) loads
+/// with the dim assist off and saves back byte for byte; its log line reads too.
+#[test]
+fn a_round_saved_before_the_dim_assist_loads_with_it_off() {
+    let fixture = round_fixture();
+    assert!(
+        !fixture.instance.contains("dim_unused"),
+        "predates the field"
+    );
+    let mut t = Session::default();
+    assert_eq!(t.load(&fixture).errors, []);
+    let v = view(&t);
+    assert!(!v.dim_unused);
+    assert!(!t.game_record().unwrap().dim_unused);
+    assert_eq!(t.save(None), fixture);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The dim assist (lane HINT, FU1)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The editor reports the `dim_unused` assist once it shows: the round is assisted for good, the saved record and the
+/// round log's result carry it, and it is refused without a playable target.
+#[test]
+fn the_dim_assist_marks_the_round_assisted_and_reaches_the_save_and_the_log() {
+    let mut s = Session::new(custom_patch());
+    assert_eq!(s.game_dim_unused(), Err(GameError::NoRound));
+    s.game_tick(0, EditorView::Opened);
+    s.game_start(source()).unwrap();
+    assert_eq!(
+        s.game_dim_unused(),
+        Err(GameError::NotReady),
+        "nothing is dimmed before the target is ready"
+    );
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    let v = view(&s);
+    assert!(!v.dim_unused && !v.assisted);
+    drain(&mut s);
+    s.game_dim_unused().unwrap();
+    let v = view(&s);
+    assert!(
+        v.dim_unused && v.assisted,
+        "the dim assist counts as an assist"
+    );
+    assert!(
+        drain(&mut s).contains(&GameRequest::Dirty),
+        "the record changed: the project is dirty"
+    );
+    s.game_dim_unused().unwrap();
+    assert!(
+        !drain(&mut s).contains(&GameRequest::Dirty),
+        "a second report changes nothing"
+    );
+    // Saved mid-round, it comes back with the record.
+    let saved = s.save(None);
+    assert!(
+        saved.instance.contains(r#""dim_unused":true"#),
+        "{}",
+        saved.instance
+    );
+    let mut t = Session::default();
+    assert_eq!(t.load(&saved).errors, []);
+    assert!(t.game_record().unwrap().dim_unused);
+    // The round log's result carries it.
+    s.game_end(EndChoice::Restore).unwrap();
+    let r = result(&logs(&drain(&mut s))[0]);
+    assert!(r.assists.dim_unused && r.assists.any());
+    assert_eq!((r.assists.hints, r.assists.revealed), (0, false));
+}
+
+/// A round-log line written before `AssistsUsed::dim_unused` existed still reads, with the assist off.
+#[test]
+fn a_log_line_from_before_the_dim_assist_reads() {
+    let mut s = Session::new(custom_patch());
+    play(&mut s, 0);
+    s.game_dim_unused().unwrap();
+    s.game_end(EndChoice::Keep).unwrap();
+    let line = logs(&drain(&mut s)).pop().unwrap();
+    let mut old = serde_json::to_value(&line).unwrap();
+    let assists = old
+        .pointer_mut("/result/assists")
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap();
+    assert_eq!(
+        assists.remove("dim_unused"),
+        Some(serde_json::Value::Bool(true))
+    );
+    let back: RoundLogEntry = serde_json::from_value(old).unwrap();
+    let assists = back.result.unwrap().assists;
+    assert!(!assists.dim_unused && !assists.any());
+}
+
+/// A broken round refuses the report (the editor never sends it there).
+#[test]
+fn the_dim_assist_is_refused_for_a_broken_round() {
+    let mut s = Session::new(custom_patch());
+    s.game_tick(0, EditorView::Opened);
+    s.game_start(source()).unwrap();
+    let prepare = job(&drain(&mut s), "prepare");
+    s.game_job_done(
+        prepare.id,
+        JobResult::Failed {
+            message: "a stand-in".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(view(&s).phase, Phase::Broken);
+    assert_eq!(s.game_dim_unused(), Err(GameError::Broken));
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The editor's trait
 // ---------------------------------------------------------------------------------------------------------------
@@ -1574,6 +1729,9 @@ impl GameEdit for Fake {
         Err(GameError::NotReady)
     }
     fn game_reveal(&mut self) -> Result<(), GameError> {
+        Err(GameError::NotReady)
+    }
+    fn game_dim_unused(&mut self) -> Result<(), GameError> {
         Err(GameError::NotReady)
     }
     fn game_rate(&mut self, _: u8) -> Result<(), GameError> {
@@ -1687,7 +1845,7 @@ fn only_patch_replacements_reach_the_engine_one_plan_each() {
     let hint = job(&drain(&mut s), "hint");
     s.game_job_done(
         hint.id,
-        JobResult::Hint(enth_session::game::CoachHint::new(1, "x")),
+        JobResult::Hint(Box::new(enth_session::game::CoachHint::new(1, "x"))),
     )
     .unwrap();
     s.game_vote(Agreement::AboutRight).unwrap();
@@ -1881,6 +2039,7 @@ fn t3_the_largest_round_fits_the_enth_field() {
         time_to_pass_ms: Some(u64::MAX),
         hints: u8::MAX,
         revealed: true,
+        dim_unused: true,
         rating: Some(5),
         agreement: Some(Agreement::AboutRight),
         dispute: Some("\u{1}".repeat(DISPUTE_CHARS)),

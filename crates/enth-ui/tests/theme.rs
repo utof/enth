@@ -130,6 +130,8 @@ fn bundled_fonts_cover_every_glyph_we_draw() {
         glyph::CLOSE,
         glyph::PATH,
         glyph::SEND,
+        glyph::RAISE,
+        glyph::LOWER,
         glyph::BULLET,
         glyph::DOT_ON,
         glyph::DOT_OFF,

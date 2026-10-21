@@ -645,7 +645,8 @@ pub enum Outcome {
     Unknown,
 }
 
-/// The help a round used. Any of it marks the round as assisted. Read tolerantly: a newer build's assist is ignored.
+/// The help a round used. Any of it marks the round as assisted. Read tolerantly: a newer build's assist is ignored,
+/// and a field this build added later (`dim_unused`) defaults when missing, so every older result still reads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AssistsUsed {
@@ -655,12 +656,26 @@ pub struct AssistsUsed {
     pub live_meter: bool,
     /// Whether the target was revealed (also [`Outcome::GaveUp`] when it came before a pass).
     pub revealed: bool,
+    /// Whether the `dim_unused` assist ([`Assists::dim_unused`]: the modules the target leaves alone are dimmed) was
+    /// on at any time while the round could be played (lane HINT, FU1; additive). Written only when true, so a round
+    /// without it keeps the bytes it had before the field existed.
+    #[serde(skip_serializing_if = "is_false")]
+    pub dim_unused: bool,
+}
+
+/// `skip_serializing_if` for an additive flag that is written only when set.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes the field by reference"
+)]
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl AssistsUsed {
     /// Whether the round was assisted.
     pub fn any(&self) -> bool {
-        self.hints > 0 || self.live_meter || self.revealed
+        self.hints > 0 || self.live_meter || self.revealed || self.dim_unused
     }
 }
 
@@ -1081,5 +1096,31 @@ mod tests {
             }
             .any()
         );
+        let dimmed = AssistsUsed {
+            dim_unused: true,
+            ..AssistsUsed::default()
+        };
+        assert!(dimmed.any(), "the dim assist marks the round assisted");
+    }
+
+    /// `dim_unused` is additive (lane HINT, FU1): written only when set, so a result without it keeps its bytes, and a
+    /// result written before the field existed reads with it false.
+    #[test]
+    fn the_dim_assist_is_written_only_when_used_and_old_results_read() {
+        let plain = serde_json::to_string(&AssistsUsed::default()).unwrap();
+        assert_eq!(plain, r#"{"hints":0,"live_meter":false,"revealed":false}"#);
+        let dimmed = AssistsUsed {
+            dim_unused: true,
+            ..AssistsUsed::default()
+        };
+        let text = serde_json::to_string(&dimmed).unwrap();
+        assert_eq!(
+            text,
+            r#"{"hints":0,"live_meter":false,"revealed":false,"dim_unused":true}"#
+        );
+        assert_eq!(serde_json::from_str::<AssistsUsed>(&text).unwrap(), dimmed);
+        let old: AssistsUsed =
+            serde_json::from_str(r#"{"hints":2,"live_meter":false,"revealed":true}"#).unwrap();
+        assert!(!old.dim_unused && old.any());
     }
 }

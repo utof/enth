@@ -11,7 +11,7 @@ use enth_patch::{
 use super::present;
 use crate::editor::add_module::Place;
 use crate::editor::modulate::DropCheck;
-use crate::editor::overlay::Emphasis;
+use crate::editor::overlay::{Emphasis, Pointer};
 use crate::theme::{Category, Score};
 
 /// Which card: a module by its id, or one of the built-ins. Stable across moves, relabels and layouts.
@@ -68,6 +68,9 @@ pub struct ParamView {
     pub emphasis: Emphasis,
     /// A score ring from a challenge's results (none in P1b).
     pub score: Option<Score>,
+    /// A revealed hint points here (a Recreate round, lane HINT; from the editor's
+    /// [`Overlay`](crate::editor::overlay::Overlay)): drawn as an outline, with the way to turn it when the hint says.
+    pub hint: Option<Pointer>,
 }
 
 impl ParamView {
@@ -100,6 +103,9 @@ pub struct CardView {
     /// A score ring on the module's enable toggle (a Recreate round's enable-flag row, lane RUI; from the editor's
     /// [`Overlay`](crate::editor::overlay::Overlay)). None outside a round.
     pub enable_score: Option<Score>,
+    /// A revealed hint points at this module (a Recreate round, lane HINT; from the editor's
+    /// [`Overlay`](crate::editor::overlay::Overlay)): the card is outlined. False outside a round.
+    pub hinted: bool,
 }
 
 impl CardView {
@@ -129,6 +135,7 @@ impl CardView {
             more_open: false,
             place: Place::of(patch, &module.id),
             enable_score: None,
+            hinted: false,
         }
     }
 
@@ -167,6 +174,7 @@ impl CardView {
             more_open: false,
             place: None,
             enable_score: None,
+            hinted: false,
         }
     }
 
@@ -194,6 +202,12 @@ impl CardView {
         self.params
             .iter()
             .filter(|p| p.spec.learn.tier > self.visible)
+    }
+
+    /// A revealed hint points at one of its controls that "More" hides now: the card is outlined instead, so the
+    /// player knows where to look (lane HINT).
+    pub fn hint_behind_more(&self) -> bool {
+        !self.more_open && self.hidden().any(|p| p.hint.is_some())
     }
 
     /// Whether the card has a "More" disclosure.
@@ -251,6 +265,7 @@ fn param_view(patch: &Patch, addr: ParamAddr, spec: &'static ParamSpec, value: f
         slots,
         emphasis: Emphasis::Normal,
         score: None,
+        hint: None,
     }
 }
 

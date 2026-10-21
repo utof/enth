@@ -28,6 +28,7 @@
 //! | `rt_stats` | with the `rt-stats` cargo feature: a timing histogram of `process()` | PL |
 //! | `editor_counts` | with the `editor-counts` cargo feature: editor opens, `editor_closed` calls and drawn frames, for the leak gate and owner check 1.3 | INT, AM |
 //! | [`game`] | a Recreate round's job worker, target loop and phrase player, A/B crossfade, round log (the clock is in [`editor`]) | SKR (R1/S1) |
+//! | [`hint_eval`] | the hint job's evaluator: `enth_solver::measure` on a few scoped threads, results by job index, so a hint is the same for any worker count | HINT (FU1) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 //! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
@@ -43,6 +44,7 @@ pub mod editor;
 #[cfg(feature = "editor-counts")]
 pub mod editor_counts;
 pub mod game;
+pub mod hint_eval;
 pub mod init;
 pub mod ledger;
 pub mod notes;

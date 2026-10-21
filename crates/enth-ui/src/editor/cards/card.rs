@@ -122,6 +122,15 @@ impl<'a> Card<'a> {
                 );
                 crate::editor::overlay::paint_score(ui.painter(), t, toggle, score);
             }
+            // A revealed hint (lane HINT): the module it names, or one of its controls that "More" hides now.
+            if view.hinted || view.hint_behind_more() {
+                crate::editor::overlay::paint_hint(
+                    ui.painter(),
+                    t,
+                    response.rect,
+                    crate::editor::overlay::Pointer::Here,
+                );
+            }
             if response.toggled
                 && let CardKey::Module(module) = &view.key
             {
@@ -351,6 +360,10 @@ pub(crate) fn control(
         )
     {
         crate::editor::overlay::paint_score(ui.painter(), t, response.rect, score);
+    }
+    // A revealed hint points here (lane HINT): an outline, and ↑ or ↓ when the hint says which way.
+    if let Some(pointer) = p.hint {
+        crate::editor::overlay::paint_hint(ui.painter(), t, response.rect, pointer);
     }
     modulate::target(ui, t, view, p, &response, out);
     menu::attach(t, view.kind, p, &response, out);

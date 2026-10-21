@@ -19,7 +19,8 @@
 //!
 //! From any phase: [`GameEdit::game_end`] ([`EndChoice::Restore`] brings back the stashed patch and its undo
 //! history, [`EndChoice::Keep`] keeps the round's patch), or `game_start` again (a new round keeps the original
-//! stash). Hints ([`GameEdit::game_hint`]) and a reveal mark the round assisted. The agreement vote
+//! stash). Hints ([`GameEdit::game_hint`]), a reveal and the editor's dim assist ([`GameEdit::game_dim_unused`]) mark
+//! the round assisted. The agreement vote
 //! ([`GameEdit::game_vote`]) and a dispute ([`GameEdit::game_dispute`]) need a scored submit. Each round that was
 //! played ends with one [`RoundLogEntry`] in the outbox ([`GameRequest::Log`]); lane GK writes the exporter.
 //!
@@ -50,9 +51,9 @@ use std::sync::Arc;
 
 use enth_challenge::model::RATING_MAX;
 pub use enth_challenge::{
-    Agreement, AssistsUsed, Challenge, ChallengeCode, CodeError, CodeWarning, EngineVersion,
-    Outcome, PreparedRound, RandomSpec, RoundResult, ScoreReport, SpecError, StructureScore,
-    TargetFingerprint, Verdict,
+    Agreement, AssistsUsed, Challenge, ChallengeCode, CodeError, CodeWarning, Direction,
+    EngineVersion, Outcome, PreparedRound, RandomSpec, RoundResult, ScoreReport, SpecError,
+    StructureScore, TargetFingerprint, Verdict,
 };
 use enth_patch::history::{GestureId, History};
 use enth_patch::{MacroIndex, ModuleId, Op, ParamAddr, Patch, RouteAddr};
@@ -307,6 +308,11 @@ pub struct RoundRecord {
     pub hints: u8,
     /// The target was revealed (gave up). Marks the round assisted.
     pub revealed: bool,
+    /// The editor's `dim_unused` assist (Challenge v1's: the modules the target leaves alone are dimmed) was on at
+    /// some time while the round could be played ([`GameEdit::game_dim_unused`]; lane HINT, FU1). Marks the round
+    /// assisted. Omitted when false, so a round without it keeps its bytes and an older record reads with it off.
+    #[serde(skip_serializing_if = "is_false")]
+    pub dim_unused: bool,
     /// The blind rating (1–5) of the first submit, given before its score showed (F1r review S9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rating: Option<u8>,
@@ -333,6 +339,15 @@ pub struct RoundRecord {
     pub edits_dropped: u32,
 }
 
+/// `skip_serializing_if` for a flag the record writes only when set.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes the field by reference"
+)]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 impl RoundRecord {
     /// The help used, in CT's terms (R1 has no live meter yet).
     pub fn assists(&self) -> AssistsUsed {
@@ -340,10 +355,11 @@ impl RoundRecord {
             hints: self.hints,
             live_meter: false,
             revealed: self.revealed,
+            dim_unused: self.dim_unused,
         }
     }
 
-    /// Hints or a reveal were used.
+    /// Hints, a reveal or the dim assist were used.
     pub fn assisted(&self) -> bool {
         self.assists().any()
     }
@@ -568,6 +584,18 @@ pub struct Ring {
 }
 
 /// A coach hint, as the shell's hint job returns it (lane SN fills it from `enth-solver`'s coach).
+///
+/// Besides the text, the structured fields say what the hint is about, so the editor can mark the control (lane HINT,
+/// FU1). They follow the coach's level ladder (docs/dsp/hints.md, "The coach"): each is filled only from the level
+/// whose text already says it, and **none ever holds a value** (no target value, no fix, no range: the plan's verified
+/// fix stays in the worker). All are additive and serde-default, so a hint without them reads as before.
+///
+/// | Field | From level | What |
+/// | --- | --- | --- |
+/// | [`aspect`](Self::aspect), [`difference`](Self::difference) | 1 | the aspect that is off (the coach's aspect code: `brightness`, `attack`…) and how the player's sound differs |
+/// | [`module`](Self::module) | 2 | the module to look at (none for a region: the voice settings, the routes, advice) |
+/// | [`param`](Self::param), [`turn`](Self::turn) | 3 | the parameter, and which way to turn it (no turn for a categorical parameter or a route) |
+/// | [`route`](Self::route) | 4 | a route hint's route, source and destination (level 3 names only its destination, as `param`) |
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct CoachHint {
@@ -575,15 +603,106 @@ pub struct CoachHint {
     pub level: u8,
     /// What to show.
     pub text: String,
+    /// Level 1 on: the aspect that is off, as the coach's stable code (`enth_solver::coach::Aspect::code`). Text, so a
+    /// newer build's aspect never fails the hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aspect: Option<String>,
+    /// Level 1 on: how the player's sound differs from the target's in that aspect (`higher`, `lower`, `missing`,
+    /// `extra`; a newer build's reads as `unknown`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difference: Option<Direction>,
+    /// Level 2 on: the module to look at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<ModuleId>,
+    /// Level 3 on: the parameter to change (a route hint's destination).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub param: Option<ParamAddr>,
+    /// Level 3 on: which way to turn [`param`](Self::param), when the text says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<HintTurn>,
+    /// Level 4 of a route hint: the route to add, remove or re-weigh (never its depth).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<RouteAddr>,
+}
+
+/// Which way a hint says to turn a control ([`CoachHint::turn`]; lane HINT, FU1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HintTurn {
+    /// Up: a larger plain value ("raise").
+    Raise,
+    /// Down: a smaller plain value ("lower").
+    Lower,
+    /// A turn from a newer build (read tolerantly; never written by this one).
+    #[serde(other)]
+    Unknown,
 }
 
 impl CoachHint {
-    /// A hint at `level` saying `text`.
+    /// A hint at `level` saying `text`, with no structured field.
     pub fn new(level: u8, text: impl Into<String>) -> Self {
         CoachHint {
             level,
             text: text.into(),
+            ..CoachHint::default()
         }
+    }
+
+    /// With the aspect that is off (its code) and how the player's sound differs (level 1 on).
+    #[must_use]
+    pub fn with_aspect(mut self, aspect: impl Into<String>, difference: Option<Direction>) -> Self {
+        self.aspect = Some(aspect.into());
+        self.difference = difference;
+        self
+    }
+
+    /// With the module to look at (level 2 on).
+    #[must_use]
+    pub fn with_module(mut self, module: ModuleId) -> Self {
+        self.module = Some(module);
+        self
+    }
+
+    /// With the parameter to change, and which way when the text says so (level 3 on).
+    #[must_use]
+    pub fn with_param(mut self, param: ParamAddr, turn: Option<HintTurn>) -> Self {
+        self.param = Some(param);
+        self.turn = turn;
+        self
+    }
+
+    /// With a route hint's route (level 4).
+    #[must_use]
+    pub fn with_route(mut self, route: RouteAddr) -> Self {
+        self.route = Some(route);
+        self
+    }
+
+    /// The hint with every structured field its level does not reveal yet dropped (the coach's ladder, the table
+    /// above): the session keeps hints this way, so a shell that filled too much can never make the editor mark a
+    /// control before the text names it.
+    #[must_use]
+    pub fn laddered(mut self) -> Self {
+        if self.level < 1 {
+            self.aspect = None;
+            self.difference = None;
+        }
+        if self.level < 2 {
+            self.module = None;
+        }
+        if self.level < 3 {
+            self.param = None;
+            self.turn = None;
+        }
+        if self.level < HINT_LEVELS {
+            self.route = None;
+        }
+        self
+    }
+
+    /// Whether it points at anything the editor can mark (a module, a parameter or a route).
+    pub fn points(&self) -> bool {
+        self.module.is_some() || self.param.is_some() || self.route.is_some()
     }
 }
 
@@ -799,8 +918,8 @@ pub enum JobResult {
         /// The phrase's integrated loudness through the player's patch.
         lufs: Option<f32>,
     },
-    /// For [`JobKind::Hint`].
-    Hint(CoachHint),
+    /// For [`JobKind::Hint`] (boxed since lane HINT gave the hint its structured fields).
+    Hint(Box<CoachHint>),
     /// Any job that could not finish.
     Failed {
         /// Why, for the status line.
@@ -995,10 +1114,13 @@ pub struct RoundView {
     pub hints: u8,
     /// The latest hint.
     pub hint: Option<CoachHint>,
-    /// Hints or a reveal were used.
+    /// Hints, a reveal or the dim assist were used.
     pub assisted: bool,
     /// The target was revealed.
     pub revealed: bool,
+    /// The `dim_unused` assist is recorded for this round ([`GameEdit::game_dim_unused`]; lane HINT, FU1): the editor
+    /// reports it once, when the dimming first shows.
+    pub dim_unused: bool,
     /// The blind rating (1–5), once given.
     pub rating: Option<u8>,
     /// The agreement vote.
@@ -1035,6 +1157,11 @@ pub trait GameEdit {
     fn game_hint(&mut self) -> Result<u8, GameError>;
     /// Give up: load the target (marks the round assisted; no more submits).
     fn game_reveal(&mut self) -> Result<(), GameError>;
+    /// The editor's `dim_unused` assist is showing (Challenge v1's: the modules the target leaves alone are dimmed;
+    /// lane HINT, FU1): marks the round assisted ([`AssistsUsed::dim_unused`]), for good. Turning the assist off later
+    /// does not unmark it. Needs the target ready (the dimming reads its randomized parameters): `not_ready` while
+    /// preparing, `broken` for a broken round.
+    fn game_dim_unused(&mut self) -> Result<(), GameError>;
     /// The blind rating of the first submit, 1–5 ("nothing like it" to "can't tell them apart"), asked **before its
     /// score shows** so the score cannot anchor it (ADR-0007's note, review point (a); GR1 refits the curve with it).
     /// Accepted from the start of play until the first score is recorded; a later rating replaces an earlier one.
@@ -1564,7 +1691,7 @@ impl Session {
                 Ok(())
             }
             ("hint", JobResult::Hint(hint)) => {
-                self.game.hint = Some(hint);
+                self.game.hint = Some((*hint).laddered());
                 Ok(())
             }
             (job, result) => {
@@ -2047,6 +2174,7 @@ impl GameEdit for Session {
             hint: self.game.hint.clone(),
             assisted: record.assisted(),
             revealed: record.revealed,
+            dim_unused: record.dim_unused,
             rating: record.rating,
             agreement: record.agreement,
             difficulty: self.game.spec.map(|s| s.difficulty),
@@ -2197,6 +2325,27 @@ impl GameEdit for Session {
             record.phase = Phase::Revealed;
         }
         self.game_log(EditSource::Reveal, Value::Array(Vec::new()), None);
+        self.game.dirty();
+        Ok(())
+    }
+
+    fn game_dim_unused(&mut self) -> Result<(), GameError> {
+        let record = self.game_record().ok_or(GameError::NoRound)?;
+        match record.phase {
+            Phase::Preparing => return Err(GameError::NotReady),
+            Phase::Broken | Phase::Unknown => return Err(GameError::Broken),
+            Phase::Playing | Phase::Submitted | Phase::Passed | Phase::Revealed => {}
+        }
+        // The dimming reads the target's randomized parameters: nothing is dimmed before the target is ready.
+        if self.game.target.is_none() {
+            return Err(GameError::NotReady);
+        }
+        if record.dim_unused {
+            return Ok(());
+        }
+        if let Some(record) = self.record_mut() {
+            record.dim_unused = true;
+        }
         self.game.dirty();
         Ok(())
     }
@@ -2408,6 +2557,40 @@ mod tests {
         assert_eq!(Listen::Off.flipped(), Listen::Target);
         assert_eq!(Listen::Target.flipped(), Listen::Mine);
         assert_eq!(Listen::Mine.flipped(), Listen::Target);
+    }
+
+    /// Lane HINT (FU1): the structured fields are additive. A hint from before them reads with none, a plain hint
+    /// writes none of them, a structured one round-trips, and a newer build's turn or difference reads as `unknown`.
+    #[test]
+    fn a_coach_hints_structured_fields_are_additive() {
+        let old: CoachHint =
+            serde_json::from_str(r#"{"level":2,"text":"Look at the filter."}"#).unwrap();
+        assert_eq!(old, CoachHint::new(2, "Look at the filter."));
+        assert!(!old.points());
+        assert_eq!(
+            serde_json::to_string(&old).unwrap(),
+            r#"{"level":2,"text":"Look at the filter."}"#
+        );
+        let full = CoachHint::new(4, "Add a route.")
+            .with_aspect("sweep", Some(Direction::Missing))
+            .with_module(ModuleId::new("filter1").unwrap())
+            .with_param("filter1.cutoff".parse().unwrap(), Some(HintTurn::Raise))
+            .with_route("env2 -> filter1.cutoff".parse().unwrap());
+        assert!(full.points());
+        let text = serde_json::to_string(&full).unwrap();
+        assert_eq!(
+            text,
+            r#"{"level":4,"text":"Add a route.","aspect":"sweep","difference":"missing","module":"filter1","param":"filter1.cutoff","turn":"raise","route":"env2 -> filter1.cutoff"}"#
+        );
+        assert_eq!(serde_json::from_str::<CoachHint>(&text).unwrap(), full);
+        let newer = text
+            .replace(r#""turn":"raise""#, r#""turn":"nudge""#)
+            .replace(r#""difference":"missing""#, r#""difference":"sideways""#);
+        let back: CoachHint = serde_json::from_str(&newer).unwrap();
+        assert_eq!(
+            (back.turn, back.difference),
+            (Some(HintTurn::Unknown), Some(Direction::Unknown))
+        );
     }
 
     #[test]

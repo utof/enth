@@ -152,7 +152,7 @@ The levels, with the structured `Hint` fields each fills (empty before their lev
 | 1 | Which aspect is off, and how | `aspect`, `difference` | "Check the brightness: your sound is darker than the target." |
 | 2 | Which module or region | `module` | "Your sound is darker than the target: look at the filter (filter1)." |
 | 3 | Which parameter, and which way | `param`, `turn` | "…: raise Cutoff on the filter (filter1)." |
-| 4 | A concrete value range | `range` | "…: set Cutoff on the filter (filter1) to between 1.6kHz and 2.6kHz." |
+| 4 | A concrete value range | `range`; for a route hint `route` (lane HINT, FU1: its source and destination, which level 4's text names; level 3 names only the destination, `param`) | "…: set Cutoff on the filter (filter1) to between 1.6kHz and 2.6kHz." |
 
 A categorical parameter has no `turn` or `range`: its level-3 text says to change it, level 4 names the setting. `Hint::measured` is true when the text comes from a verified render of the solver's fix and false for a categorical or advice hint.
 
@@ -183,8 +183,8 @@ The sensitivity and the plan send every render through the caller's `Evaluator` 
 
 ### What a caller needs
 
-- **The Hint job (lane SKR):** keep one `CoachTarget` per round, built lazily at the first hint (`for_round`, which plays the round's phrase at the scoring rate and seed, so the coach hears what the scorer hears). On a `Hint` request run `ct.plan(&patch, eval, &cfg)?.hint(level)` and map it with `CoachHint::new(h.level, h.text.clone())` (`CoachHint` lives in `enth-session`, above the solver). Cache the plan per patch revision: levels 2 to 4 of the same patch are then free. The evaluator must call `enth_solver::measure` (for example rayon `par_iter().map_init`) so the probes run in parallel. A hint makes the round *assisted* (the session's bookkeeping). `plan.result.fix` holds the exact ops for a future "apply this move"; do not show it to a player.
-- **The UI (lane RUI):** show `Hint::text`; it is self-contained at every level. The structured fields (`aspect`, `difference`, `module`, `param`, `turn`, `range`) may be used to highlight the module or knob, but only the fields of the levels the player has asked for are filled. At `Close` the text is the same at every level.
+- **The Hint job (lane SKR):** keep one `CoachTarget` per round, built lazily at the first hint (`for_round`, which plays the round's phrase at the scoring rate and seed, so the coach hears what the scorer hears). On a `Hint` request run `ct.plan(&patch, eval, &cfg)?.hint(level)` and map it with `CoachHint::new(h.level, h.text.clone())` plus what it points at (`CoachHint` lives in `enth-session`, above the solver; since FU1 the plugin's `coach_hint` copies `aspect`, `difference`, `module`, `param`, `turn` and `route`, never `range`: docs/session.md, "What a hint points at"). Cache the plan per patch revision: levels 2 to 4 of the same patch are then free. The evaluator must call `enth_solver::measure` (for example rayon `par_iter().map_init`) so the probes run in parallel. A hint makes the round *assisted* (the session's bookkeeping). `plan.result.fix` holds the exact ops for a future "apply this move"; do not show it to a player.
+- **The UI (lane RUI):** show `Hint::text`; it is self-contained at every level. The structured fields (`aspect`, `difference`, `module`, `param`, `turn`, `route`; `range` stays in the worker) highlight the module or knob (lane HINT, FU1: docs/editor.md, "Hint highlighting"), but only the fields of the levels the player has asked for are filled. At `Close` the text is the same at every level and nothing is highlighted.
 - **Lane ST:** `sensitivity(...)`, `ParamSensitivity::{inert, reach, tolerance_norm, slope}`, `Sensitivity::tolerance` and `tolerance_bounds` give the structure and time tolerances without a second measurement.
 
 ### Limits
