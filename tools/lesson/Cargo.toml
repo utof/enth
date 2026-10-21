@@ -1,0 +1,28 @@
+[package]
+name = "enth-lesson-tool"
+description = "Tooling for R2's lessons: lesson-check, lesson-coverage, lesson new, pack, lesson-gen and the GR2 report. Driven by `cargo xtask`, which stays light (docs/learn.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "enth-lesson-tool"
+path = "src/main.rs"
+
+[dependencies]
+# Pre-declared by lane S0l (R2, freeze point F0l) so Cargo.lock is resolved before the lanes fan out; lanes use what
+# they need. This is the one place the lesson tooling's heavy dependencies live, so `xtask` keeps S0r's "no engine
+# crate" rule and drives this package the way it drives `enth-golden`. A tooling package, exempt from the layer rules
+# (xtask/layers.toml), like the other `tools/*` packages.
+#
+# Packs are read in their authoring layout (TOML), every lesson's reference solution is played through a headless
+# `Session` with jobs run inline, and the solver is reached for `--solve` (docs/learn.md, "`lesson-check` and the
+# authoring loop").
+enth-learn = { workspace = true, features = ["toml"] }
+enth-session.workspace = true
+enth-solver.workspace = true
+enth-challenge.workspace = true
+
+[lints]
+workspace = true

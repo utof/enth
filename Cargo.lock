@@ -1281,6 +1281,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "enth-lesson-tool"
+version = "0.0.0"
+dependencies = [
+ "enth-challenge",
+ "enth-learn",
+ "enth-session",
+ "enth-solver",
+]
+
+[[package]]
 name = "enth-listen"
 version = "0.0.0"
 dependencies = [
@@ -5045,11 +5055,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 name = "xtask"
 version = "0.0.0"
 dependencies = [
- "enth-challenge",
- "enth-learn",
  "enth-patch",
- "enth-session",
- "enth-solver",
  "nice-plug-xtask",
  "serde",
  "serde_json",
