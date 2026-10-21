@@ -163,6 +163,8 @@ fn load_lessons(
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.join("pack.toml").is_file())
+        // The `example` pack is a layout example (as `lesson-coverage` treats it), with a one-lesson `tour` of its own.
+        .filter(|p| p.file_name().is_none_or(|n| n != "example"))
         .collect();
     packs.sort();
     let mut lessons = BTreeMap::new();

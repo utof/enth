@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use super::input::{Coded, Form, Protocol};
+use super::input::{Answers, Coded, Form, Forms, Protocol};
 use super::numbers::{self, Inputs, Report, Thresholds, Verdict};
 use super::{Options, header, load, render};
 
@@ -340,6 +340,62 @@ fn the_json_report_carries_its_schema() {
     assert_eq!(v["schema"], "enth.gr2-report/1");
     assert_eq!(v["people"][1]["families"][0]["change"], -1);
     assert_eq!(v["criteria"][2]["verdict"], "pass");
+}
+
+#[test]
+fn the_committed_gr2_files_read_against_the_real_tour() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |p: &str| std::fs::read_to_string(root.join(p)).unwrap();
+    let forms = Forms::from_toml(&read("content/gr2/forms.toml")).unwrap();
+    let mut findings = Vec::new();
+    let (lessons, tour) =
+        super::load_lessons(&root.join("content/lessons"), &mut findings).unwrap();
+    assert!(
+        findings.is_empty(),
+        "{:?}",
+        findings.iter().map(|f| &f.message).collect::<Vec<_>>()
+    );
+    assert_eq!(tour.len(), 13);
+    assert!(tour.iter().all(|k| lessons.contains_key(k)));
+    // The mid-test comes right after Low-pass cutoff, the tour's first third (lesson 0.1 included).
+    assert_eq!(tour[forms.mid_after - 1], "basics/cutoff");
+    let ids: Vec<&str> = forms.families.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "oscillators",
+            "sources",
+            "filter",
+            "envelopes",
+            "modulation",
+            "effects"
+        ]
+    );
+    for f in &forms.families {
+        assert!(f.lessons.iter().all(|l| tour.contains(l)), "{}", f.id);
+        assert_eq!(f.codes.len(), 4, "{}: one code per form A, B, M, D", f.id);
+        for c in f.codes.values() {
+            let info = crate::gr1_report::code::decode(c).unwrap();
+            assert!(info.long && info.check_ok && info.level.is_some(), "{c}");
+        }
+    }
+    // The answers template reads as a tour-protocol file, lists the tour in order and asks confidence per family.
+    let text = read("content/gr2/answers-template.toml");
+    let a = Answers::from_toml(&text).unwrap();
+    assert_eq!(a.protocol, Protocol::Tour);
+    let keys: Vec<&str> = a.lessons.iter().map(|l| l.key.as_str()).collect();
+    assert_eq!(keys, tour);
+    assert!(a.notes.is_empty() && a.confidence.is_empty() && a.years.is_none());
+    let raw: toml::Table = toml::from_str(&text).unwrap();
+    let conf: Vec<&str> = raw["intake"]["confidence"]
+        .as_table()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let mut sorted = ids.clone();
+    sorted.sort_unstable();
+    assert_eq!(conf, sorted);
 }
 
 #[test]

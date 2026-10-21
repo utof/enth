@@ -287,8 +287,9 @@ struct AnswersFile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IntakeFile {
+    /// A number, or `""` (not answered).
     #[serde(default)]
-    years: Option<f64>,
+    years: Option<toml::Value>,
     #[serde(default)]
     synths: Option<String>,
     #[serde(default)]
@@ -410,13 +411,21 @@ impl Answers {
             None => (None, BTreeMap::new()),
             Some(intake) => {
                 let _ = intake.synths; // free text for the reader's eyes; not counted
-                if let Some(y) = intake.years
+                let years = match intake.years {
+                    None => None,
+                    Some(toml::Value::String(s)) if s.trim().is_empty() => None,
+                    Some(toml::Value::Integer(y)) => Some(y as f64),
+                    Some(toml::Value::Float(y)) => Some(y),
+                    Some(other) => return Err(format!("intake: years {other} is not a number")),
+                };
+                if let Some(y) = years
                     && !(y.is_finite() && (0.0..=80.0).contains(&y))
                 {
                     return Err(format!("intake: years {y} is not between 0 and 80"));
                 }
                 let mut conf = BTreeMap::new();
-                for (family, c) in intake.confidence {
+                // 0 is "not answered" (the template's value).
+                for (family, c) in intake.confidence.into_iter().filter(|(_, c)| *c != 0) {
                     let c = u8::try_from(c)
                         .ok()
                         .filter(|c| (1..=5).contains(c))
@@ -425,7 +434,7 @@ impl Answers {
                         })?;
                     conf.insert(family, c);
                 }
-                (intake.years, conf)
+                (years, conf)
             }
         };
         let mut lessons = Vec::new();
