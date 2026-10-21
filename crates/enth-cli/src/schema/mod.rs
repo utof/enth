@@ -6,6 +6,7 @@
 //! tests keeps the schemas honest instead.
 
 pub mod game;
+pub mod lesson;
 pub mod types;
 
 use schemars::JsonSchema;
@@ -13,6 +14,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::Value;
 
 pub use game::*;
+pub use lesson::*;
 pub use types::*;
 
 /// The schema id of every object, `enth.<name>/<version>`. A shape change or a change of meaning bumps the
@@ -63,6 +65,10 @@ pub mod ids {
     pub const CHALLENGE_DECODE: &str = "enth.challenge-decode/1";
     /// `enth compare` (lane SKR; /2 compares with a patch or a WAV too, lane CL).
     pub const COMPARE: &str = "enth.compare/2";
+    /// `enth lesson show` (lane SKL).
+    pub const LESSON_SHOW: &str = "enth.lesson-show/1";
+    /// `enth lesson check` (lane SKL).
+    pub const LESSON_CHECK: &str = "enth.lesson-check/1";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -251,6 +257,18 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::COMPARE,
         describes: "the output of enth compare",
         generate: gen_schema::<CompareOut>,
+    },
+    Entry {
+        name: "lesson-show",
+        id: ids::LESSON_SHOW,
+        describes: "the output of enth lesson show",
+        generate: gen_schema::<LessonShowOut>,
+    },
+    Entry {
+        name: "lesson-check",
+        id: ids::LESSON_CHECK,
+        describes: "the output of enth lesson check",
+        generate: gen_schema::<LessonCheckOut>,
     },
 ];
 

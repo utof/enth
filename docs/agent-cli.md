@@ -59,6 +59,7 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth step p.patch.json --ops '<json>' \| --set k=v[,…] [--expect …\|--target …] --out p2.patch.json` | apply + render + describe + check/compare in one call (fewest round trips). It echoes only the features named in `--expect` plus a headline, unless `--full` |
 | `enth explain <addr\|module\|kind> [--patch p]` | Plain text and JSON from the catalogue for a parameter, a module or a kind; with `--patch`, what a just-noticeable step of the parameter does in that patch (`enth.explain/1`) |
 | `enth challenge new\|show\|decode` | Make, regenerate and read Recreate challenges and their codes (`enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`) |
+| `enth lesson show\|check <pack> …` | A lesson pack's steps; one do step's check run against a patch file (`enth.lesson-show/1`, `enth.lesson-check/1`; [below](#lessons-on-the-command-line-enth-lesson)) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
 | `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
@@ -256,7 +257,7 @@ enth challenge decode 1080-1000-0000-7N
 | Target | Scores | Exit 1 when |
 | --- | --- | --- |
 | `--code X` / `--challenge FILE` | `sound`, `structure`, `combined` %, `pass_mark`, `passed`, `margin`, `scorers` and the full `enth.score-report/1` as the game's results drawer shows it (each aspect's direction and closeness, **not** the target's readings: `--reveal` adds them) | the patch does not pass |
-| `--target REF.patch.json [--phrase N\|name]` | the same scores, on a hand-made round: the reference stands for the target, heard through a phrase of the table (default: the held note), the parameters it moved off their defaults stand for the randomized ones, the pass mark is the game's (90) | the patch does not pass |
+| `--target REF.patch.json [--phrase N\|name]` | the same scores, on a hand-made round: the reference stands for the target, heard through a phrase of the table (default: the held note; the generator's phrases 1–3 and the lesson phrases 4–7, `chord`, `long_hold`, `staccato`, `staccato_run`, lane SKL), the parameters it moved off their defaults stand for the randomized ones, the pass mark is the game's (90) | the patch does not pass |
 | `--target REF.wav [--perf …]` | none (`sound`, `structure`, `combined`, `pass_mark`, `passed`, `margin` and `report` are null): the game's scores scale by re-rendering the target with nuisance changes, which needs a patch behind it. The notes that made the WAV come from `--perf` or its `enth` chunk (`perf_required` when neither says) | never (exit 0) |
 
 ```json
@@ -342,6 +343,29 @@ Asking for a module (`params`) or a kind lists its parameters; a module with `--
 ### Errors and exits
 
 All errors are `enth.error/1` with a stable `code` and a `hint`. Usage mistakes are exit 2 (`bad_level`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_workers`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase`), a code or file the build refuses is exit 3 (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, `silent_target`, `out_of_range`, `unknown_category`, `unknown_kind`, `unknown_param`, `nothing_to_search`), a render or analysis failure exit 4, a missing file exit 5. `compare` exits 1 when a scored patch does not pass, like `check`; `suggest`, `match`, `explain` and `challenge` exit 0 when they ran.
+
+## Lessons on the command line (`enth lesson`)
+
+R2 (lane SKL, freeze point F2l; lane EV3 adds `list`, `hint` and `closest` beside them). Stateless like `enth check`: a pack is read from a path, and the lesson logic is `enth-learn`'s, so the CLI judges what the plugin's Learn view judges ([learn.md](learn.md)). A pack is a folder in the authoring layout (`content/lessons/<pack>/` with `pack.toml`; the CLI turns each TOML file into its canonical JSON and seals the manifest, as `cargo xtask pack` will), a built folder (`pack.json`) or an `.enthpack` archive; every one goes through `enth-learn`'s verified reader, and a refused pack is exit 3 with the reader's code (`hash_mismatch`, `bad_field`, `pack_too_new`, …) and hint.
+
+| Command | Output | Does |
+| --- | --- | --- |
+| `enth lesson show <pack> [--lesson ID] [--reveal]` | `enth.lesson-show/1` | The pack (id, version, title, the engine it was sealed on) and its lessons (one with `--lesson`): each lesson's key (`pack/lesson`), title, tier, objective and `teaches`, and each step's number (1-based), id, kind, text (markdown), hints, view (`start`, `highlight`, `hide`, `editable`, `locked`), a do step's check (as the lesson file holds it), the labels of a listen step's examples or a choose step's options, a recreate step's challenge. **No answers** (a choose step's answer, a witness patch) unless `--reveal` |
+| `enth lesson check <pack> --lesson ID --step ID\|N <patch>` | `enth.lesson-check/1` | One do step's check against a patch file: its patch predicates (each with `pass`; a `touched` predicate reads the editor's edit log, which a file has not, so it fails here and `note` says so) and its sound checks (each item rendered through its phrase at the scored rate and seed and judged, with its margin). `pass` when every predicate and item passes; **exit 1** otherwise, like `check` |
+
+```sh
+enth lesson show content/lessons/example --lesson cutoff
+enth lesson check content/lessons/example --lesson cutoff --step try content/lessons/example/patches/dark.patch.json
+```
+
+```json
+{"schema":"enth.lesson-check/1","lesson":"example/cutoff","step":"try","number":2,
+ "patch":"content/lessons/example/patches/dark.patch.json","pass":true,"predicates":[],
+ "sounds":[{"phrase":1,"item":"brightness<500Hz","pass":true,"margin":178.9}],
+ "note":null,"next":"the step passes with this patch"}
+```
+
+Errors: `unknown_lesson` and `unknown_step` (exit 2, with `did_you_mean` and `known`), `not_checkable` (exit 2: a read, listen, choose or recreate step has no patch check; a recreate step is scored with `enth compare --challenge`), `not_a_pack` (exit 3: a folder with neither `pack.toml` nor `pack.json`), a render that fails exit 4, a missing file exit 5.
 
 ## Three typical workflows
 

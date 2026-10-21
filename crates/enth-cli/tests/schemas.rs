@@ -42,6 +42,10 @@ fn every_output_schema_id_matches_its_objects() {
     // Each command's object carries the id its schema publishes.
     let s = Scratch::new("schema_ids");
     let p = s.new_patch("init", "p.patch.json");
+    let example = format!(
+        "{}/../../content/lessons/example",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let cases: Vec<(&str, Vec<String>)> = vec![
         ("modules", vec!["modules".into()]),
         ("params", vec!["params".into(), "osc".into()]),
@@ -74,6 +78,24 @@ fn every_output_schema_id_matches_its_objects() {
                 "challenge".into(),
                 "decode".into(),
                 "1040-1000-0000-7M".into(),
+            ],
+        ),
+        // Lane SKL: `enth lesson show|check` on the example pack.
+        (
+            "lesson-show",
+            vec!["lesson".into(), "show".into(), example.clone()],
+        ),
+        (
+            "lesson-check",
+            vec![
+                "lesson".into(),
+                "check".into(),
+                example.clone(),
+                "--lesson".into(),
+                "cutoff".into(),
+                "--step".into(),
+                "try".into(),
+                format!("{example}/patches/dark.patch.json"),
             ],
         ),
     ];

@@ -10,7 +10,7 @@ R2 teaches sound design on the instrument you keep: lessons of 5–10 minutes, o
 | Challenge v2 | `enth-challenge` (L4) | CV2 | Built and judged at F1l ([challenge.md](challenge.md#challenge-v2-lane-cv2-r2)) |
 | Live binding, locks, the `learn` field | `enth-session::learn` (L6) | SL | Built and judged at F1l, on LM's player and CV2's selectors since lane F1L's swap ([session.md](session.md#learn-lane-sl-r2)) |
 | `closest` (the nearest passing patch) | `enth-solver::closest` (L5) | CLS | Planned |
-| One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | Planned (F2l) |
+| One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | SKL's part built (F2l): [plugin.md](plugin.md#learn-lane-skl-r2), [agent-cli.md](agent-cli.md#lessons-on-the-command-line-enth-lesson); EV3's `list`, `hint`, `closest` planned |
 | `lesson-check`, coverage, `pack`, `lessons.yml` | `xtask` | LCK | Planned |
 | The Learn view | `enth-ui::editor::learn` (L7) | LUI | Planned |
 | Deconstruct lessons, the studies | `enth-learn::deconstruct`, `xtask` | DEC | Planned |
@@ -236,6 +236,87 @@ Sound alone cannot check every P1 module (report 03 §4, from the [agent-evals f
 | Macros | No | No | Yes | Yes |
 
 GR2's "every P1 module" needs all four kinds, and an ear question counts as a non-patch check (Q6, decided by the summary). `lesson-coverage` makes it mechanical: every module, its Basic-tier parameters, and at least one non-patch check, with "E only" reported separately. A control no ear question resolves (early reflections, detune, damping, the knee, phase) becomes "taught, not checked" and is listed for you to accept at GR2 (Q9, provisional). Numbers in sound checks keep a margin of at least 1e-3 against the start and the witness, as the golden challenges do.
+
+## Player and checks (lane PLY)
+
+**Built (2026-10-21, lane PLY, after F1l; additive only).** The predicate grammar and its tolerances, sound checks, the ear question's audibility gate, the markdown block AST and its lint, the player's properties, and the "needs a newer enth" refusal (F1l review should-fix 6). The code is the reference: `crates/enth-learn/src/predicate.rs`, `check/sound.rs`, `check/choice.rs`, `markdown.rs`, and the tests `tests/predicate.rs`, `checks.rs`, `player_props.rs` and `newer_pack.rs`. No persisted shape changed: a predicate is still LM's structured object, and the grammar reads into it.
+
+### The predicate grammar (lane PLY)
+
+One line per predicate, read strictly into the same [`Predicate`](#the-lesson-model-lane-lm) value as the object, and printed canonically. It follows `enth check`'s expectation grammar (`feature op value`, `feature in [lo, hi]`):
+
+```text
+predicate := value | within | route | has | enabled | touched
+value     := knob cmp plain                       filter1.cutoff < 1kHz    osc1.wave == saw    macro1 >= 0.5
+within    := knob "in" "[" plain "," plain "]"     master.level in [-24dB, 0dB]
+route     := source "->" param cmp depth            macro1 -> filter1.cutoff > 20%    env2 -> filter1.cutoff >= +1oct
+has       := "has" kind                             has svf
+enabled   := ("enabled" | "disabled") module        enabled osc2    disabled noise1
+touched   := "touched" knob ">=" span               touched filter1.resonance >= 30%
+knob      := module "." param | "voice." param | "master." param | "macro" 1–8
+cmp       := "<" | "<=" | ">" | ">=" | "==" | "!="  ("=" reads as "==")
+```
+
+- **Values** are the rest of the line, read by the control's `ParamSpec::parse`: every unit form the CLI accepts (`800Hz`, `1.2kHz`, `A4`, `0.5s`, `-6dB`, `+7st`, `50ct`, `+1oct`, `30%`, `4:1`, `90deg`, `−12 st` with the display's minus), enum keys and `on`/`off`. **Route depths** read as the CLI reads them: percent (`20`, `20%`), or an interval on the destination (`+1oct`, `-12st`, `+200Hz`), converted at its current value (`ParamSpec::depth_from_text`). A **span** is 1–100 % of the control's normalised travel. PLAN.md's "span ≥ 6 dB" is written as a percentage: 6 dB of `master.level`'s 48 dB is `touched master.level >= 13%`.
+- **Strict:** every atom must parse (an address, a kind, a value that parses for some parameter the knob can name, a depth within ±100 %, a whole-number span), or the line is refused (`bad_predicate`, with a hint). Spaces around operators are optional (`osc1.pw<30`), and `→` reads as `->`. **Canonical print:** single spaces, `==`, ` -> `, a span with `%`, values as written. `parse(print(p)) == p` for every valid predicate (a proptest), and any text either parses or is refused, never a panic.
+- **In a lesson,** a predicate may be written as the line wherever it is written as the object: `predicates = ["filter1.cutoff < 1kHz", "touched filter1.resonance >= 30%"]` in `lesson.toml`. It is always written back as the object, so a built pack's `lesson.json` holds only the frozen shape and an F1l build reads it. **`cargo xtask pack` (LCK) must write `lesson.json` through `Lesson::to_json`**, as the tests' pack builder does, never by copying the authoring text.
+
+**Tolerances.** No exact `==` on a real value. This supersedes the basic evaluation's exact `==` described in [Lessons and steps](#lessons-and-steps):
+
+| Comparison | Continuous control | Enum, integer, toggle |
+| --- | --- | --- |
+| `<`, `<=`, `>`, `>=` | Exact thresholds on the plain value. `lesson-check` keeps the start and the witness at least a step away | Exact |
+| `==` | Within one just-noticeable step of the value: `sound/1`'s calibration step (`enth_challenge::calibrate::step`: 10 % for Hz and ms, 2 dB, 10 ct, 0.1 st, 5 points of a percentage, 2 dB on levels, 10 % for ratios and unitless values, 10°), and never narrower than 1 % of the normalised travel (`EQ_FLOOR_NORM`, because a ratio step has no width at 0, e.g. `macro1 == 0`) | Exact |
+| `!=` | Not `==` | Exact |
+| `in [lo, hi]` | Both ends included: the explicit tolerance | Exact |
+| Route `==`, `!=` | Within 2.5 points of depth (`sound/1`'s route step) | — |
+
+The bands are `predicate::equal_band(spec, value)`, so the editor can draw what `==` accepts. Acceptance: `tests/predicate.rs` parses every unit form of every catalogue parameter (with long suffixes, spaces, scaled forms, note names and the typographic minus) in a predicate, and checks it reads the value `ParamSpec::parse` reads.
+
+### Sound and choice checks (lane PLY)
+
+**Sound checks: the seam agreed with SKL (through the coordinator).** `enth-render` and `enth-analysis` sit at L3, below `enth-learn`, so the render happens here, and the plugin's worker, `enth lesson check` and `lesson-check` all reach the same verdict:
+
+| Item | What it does |
+| --- | --- |
+| `check::evaluate_sounds(&[SoundCheck], &Patch) -> Result<CheckVerdict, SoundError>` | For each sound check, renders `sound.pinned(patch)` (macro pins applied) playing its phrase at `SCORING_SAMPLE_RATE` and `SCORING_SEED`, describes the mid signal with the first note's timing and only the groups its items need, and judges with `enth_analysis::check`. These are `enth_solver::measure`'s steps, so a check reads what `enth check --phrase N` reads. Passes when every item of every check holds; the items come in order, as written, with their signed margins. One render per check (about 15–30 ms) |
+| `check::evaluate_sounds_report(sounds, patch, SoundOptions { nuisance })` | The full `enth_analysis::CheckReport` per check. With `nuisance` it also renders at `enth check`'s two nuisance seeds, so each item carries its noise and `thin` verdict (`lesson-check`'s margin rule); the verdict stays the judged render's |
+| `SoundError` | `unknown_phrase`, `bad_expect` (both refused when the pack loads), `render_failed`, `analysis_failed`, `score_failed`. **On an error the worker still answers the player, with a failed verdict** (`CheckVerdict::default()`), so the step does not wait in `Checking` |
+
+The session wraps `Effect::Check(CheckRequest)` in a job; the worker calls `evaluate_sounds(&request.sounds, &request.patch)` and hands the verdict back with the request's revision.
+
+**Choice checks: the audibility gate** (for LCK's `--solve`). `check::choice_audibility(&[Audition]) -> Audibility` measures every pair of an ear question's options with `sound/1`, as `enth compare --target a --phrase N b` scores it, in both directions, and keeps the smaller distance in JND units. When both options play without the level match (0.1, 7.3), their loudness difference is added in 2 dB steps (`LEVEL_STEP_DB`). `Audibility::passes(MIN_JND)` is the gate: every pair measured and at least 2 JND apart (PLAN.md §1.2). `failing(k)` and `closest()` name the problem pairs. `check::auditions(bundle, examples)` resolves a step's options. `sound/1` renders a table phrase at the scoring seed, untransposed and with no curve, so **a pair whose options differ in phrase, or where either has a transpose, a render seed or a control curve, is `NotMeasured` with the reason**, and such a step fails the gate on its own (a listening review, or "taught, not checked", Q9). Measured on Init: saw against sine 73 JND, two identical options 0, a 12 dB level change 0 when level-matched and 6 when not, a 20 ct detune 1.07. The cost is about 19 renders an option and one a pair: an authoring-time check.
+
+### The markdown block AST (lane PLY)
+
+`markdown::parse(text) -> Parsed { doc, issues }`, on `pulldown-cmark` with no extensions. `LessonPane` (LUI) draws the `Doc` with design tokens and never sees markdown:
+
+| Markdown | AST |
+| --- | --- |
+| `#`, `##`, `###` | `Block::Heading { level: 1–3, inlines }` |
+| Paragraphs; `-` and `1.` lists, nested | `Block::Paragraph(inlines)`; `Block::List { start, items }` (each item a list of blocks) |
+| `*em*`, `**strong**`, `` `code` ``, hard breaks | `Inline::Emphasis`, `Strong`, `Code` (a monospaced chip), `LineBreak`; text runs are merged, soft breaks read as a space |
+| `[Cutoff](enth:filter1.cutoff)` | `Inline::Link` to `LinkTarget::Control(Selector)`: highlights on hover. Any selector (`filter1.*`, `macro3`); a route may be written compactly, `enth:lfo1->filter1.cutoff` |
+| `[hear it](enth:play/2)` | `LinkTarget::Play(2)`: plays the step's example or option 2 (1-based) |
+| `[more](https://…)` | `LinkTarget::Web` |
+| A fenced block with the info string `enth` | `Block::Widgets`, one per line: `play 2`, `control filter1.cutoff` (the live control in the text), `scope`, `shape env2` (a modulator's shape) |
+
+**The lint** (`markdown::lint(text, budget)`): `html`, `image`, `code_block` (any fenced or indented block but `enth`), `quote`, `rule`, `link_scheme` (only `https:` and `enth:`; no e-mail), `bad_enth_link`, `bad_widget`, `heading_level` (deeper than 3), `too_long` (more than `STEP_WORD_BUDGET`, 120 words, a Name step's 80 plus a cue and a link; `lesson-check` may pass a tighter budget). `Parsed::resolve(start, examples)` adds `unresolved` for a link or widget that names a control, route, macro or module the step's start lacks, or an example the step does not have. Each `Issue` has its byte range and `line()`. The parse is lenient, so the pane always draws: refused content is dropped (HTML, code, images, rules) or kept as plain content (a link to another scheme keeps its text, a quote its blocks). `Doc::plain()` gives the visible text (for word counts and for agents reading a lesson through the CLI). The example pack's three texts lint clean and resolve.
+
+### The player's properties (lane PLY)
+
+`tests/player_props.rs` drives a lesson with every step and check kind (patch, touched, sound, all, choose, a v2 draw round with locks) through a harness that plays the session's part: it applies loads and Show's op, refuses a player's edit that touches a lock, and counts revisions. The intents are random: edits from every source, ticks, right, stale and failed results, hints, Show, picks, round ends, Next, Back, End and resumes. After every call it checks four properties:
+
+1. **No panic**; a refused call names its code and hint, and after End every call is `lesson_ended`.
+2. **No pass without a passing result for the current revision.** A Do step with a sound check passes exactly on `check_done` with a passing verdict for the check out for the latest revision; every other result is `stale_result`. A check is asked only while the step's patch part holds (so an `all` cannot pass on sound alone). A patch-only Do step passes exactly on an edit whose patch satisfies its predicates. Choose passes on the right pick or Show, Recreate on a passing round, Read and Listen on Next, and nothing else passes.
+3. **Progress never shrinks:** each `Record` comes with its `Passed`, merging records never lowers `done`, `clean` or `best`, and a passed step stays passed.
+4. **Locks hold:** Show never asks for an op that touches a lock of the step's effective view, a step load sends at most one plan, and a Recreate step's view carries its challenge's locks.
+
+It is green at the gate's fixed seed, at 4,000 cases and at another seed. Five deliberate mutations of the player each fail it: accepting a stale result, Show ignoring locks, forgetting a pass on re-entry, a patch pass without its predicates, and asking for sound while the patch part fails.
+
+### A newer pack (F1l review should-fix 6)
+
+A pack whose recorded `engine` is newer than this build's, and that fails on its content, is refused as `needs_newer_enth` (`LearnError::NeedsNewer { name, engine, cause }`, hint "update enth"), never as `bad_lesson`, `bad_field` or `bad_content`. Content failures include an unknown module kind, parameter key, phrase or expectation feature, a newer patch file or inline patch schema, and a manifest that does not decode. The refusal it met is kept as `cause` for `lesson-check` and logs. Integrity failures (sizes, hashes, the archive), `requires` (already "needs a newer enth") and text that is not UTF-8 keep their own codes. `LearnError::needs_newer_enth()` groups it with `pack_too_new`, `lesson_too_new` and `requires_unmet`, so the browser lists all four the same way. `pack::engine_is_newer` compares the stamps.
 
 ## Knob feedback
 

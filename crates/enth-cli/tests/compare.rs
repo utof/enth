@@ -187,6 +187,19 @@ fn a_phrase_is_named_by_id_or_name() {
         "{:?}",
         e.did_you_mean
     );
+    // The lesson phrases (ids 4-7) resolve too (lane SKL; the F1l review's nit 9).
+    let chord = run(&["compare", &pluck, "--target", &pluck, "--phrase", "chord"]);
+    let four = run(&["compare", &pluck, "--target", &pluck, "--phrase", "4"]);
+    assert_eq!(chord.code, 0, "{}", chord.stdout);
+    assert_eq!(chord.stdout, four.stdout);
+    let out: CompareOut = round_trip(&chord);
+    let phrase = out.target.phrase.unwrap();
+    assert_eq!((phrase.id, phrase.name.as_str()), (4, "chord"));
+    assert!(
+        e.known.contains(&"staccato_run".to_owned()),
+        "{:?}",
+        e.known
+    );
 }
 
 #[test]

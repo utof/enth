@@ -212,13 +212,39 @@ impl Glue {
             // A result the round no longer waits for is refused as stale, harmlessly.
             let _ = session.game_job_done(id, result);
         }
+        // A lesson's job results (lane SKL): a stale one is refused by the session, harmlessly.
+        #[cfg(feature = "learn")]
+        for (id, result) in game.take_learn_results() {
+            let _ = session.learn_job_done(id, result);
+        }
         game.follow_rate();
         #[cfg(feature = "recreate")]
         self.set_round(session.round());
+        #[cfg(feature = "learn")]
+        self.editor
+            .set_lesson(enth_session::learn::LearnEdit::lesson(session));
         self.frame(ui, theme, session, pointer_down);
         #[cfg(feature = "recreate")]
         self.apply_game(session);
-        session.round().and_then(|r| r.wake_at_ms)
+        #[cfg(feature = "learn")]
+        self.editor.apply_learn(session);
+        let round = session.round().and_then(|r| r.wake_at_ms);
+        // The lesson's settle moment (its sound check waits for it), else nothing: Learn asks for no other frames.
+        #[cfg(feature = "learn")]
+        let lesson = enth_session::learn::LearnEdit::lesson(session).and_then(|l| l.wake_at_ms);
+        #[cfg(not(feature = "learn"))]
+        let lesson: Option<u64> = None;
+        match (round, lesson) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// When the window opens (lane SKL): the installed lessons (the packs rescanned) for the Learn panel.
+    #[cfg(feature = "learn")]
+    pub fn set_lessons(&mut self, lessons: &crate::learn::Lessons) {
+        self.editor
+            .set_lessons(lessons.catalogue(), lessons.problems());
     }
 
     /// The editor's preset browser (lane PBU): its store and its crash offer.
@@ -334,6 +360,9 @@ impl NiceEguiApp for EditorApp {
         self.shared.editor_counts.built();
         self.theme.apply(&egui_ctx);
         self.glue.presets_mut().offer_crash(crash_offer());
+        // The Learn panel's lessons, the packs rescanned at every open (lane SKL).
+        #[cfg(feature = "learn")]
+        self.glue.set_lessons(&self.shared.game.lessons());
         // The round's worker asks this window for a repaint whenever it posts a result (lane SKR).
         self.shared.game.set_repaint(Some(egui_ctx.clone()));
         let env = layout_from_env();

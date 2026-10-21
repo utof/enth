@@ -216,7 +216,7 @@ PERFORMANCE OF THIS SOFTWARE.
 - Licence: MIT OR Apache-2.0, used under the MIT licence; both licence files stay in the vendored directories
 - Copyright: baseview's `LICENSE-MIT` states no copyright line (the package lists its authors in `vendor/baseview/Cargo.toml`); egui-baseview: Copyright (c) 2021 Billy Messenger
 - Derived enth files: `vendor/baseview/`, `vendor/egui-baseview/` (compiled into the plugin through `[patch.crates-io]`)
-- Changes from upstream (one git commit each, `vendor/README.md` lists them): baseview releases the xkb keymap reference after creating the state; baseview and egui-baseview take the keyboard only while a text field is edited (`WindowContext::set_keyboard_input`, `KeyboardFocus`); each manifest caps lints with `[lints.rust] warnings = "allow"`
+- Changes from upstream (one git commit each, `vendor/README.md` lists them): baseview releases the xkb keymap reference after creating the state; baseview and egui-baseview take the keyboard only while a text field is edited (`WindowContext::set_keyboard_input`, `KeyboardFocus`); egui-baseview hands baseview's file drags to egui (`RawInput::hovered_files`, `dropped_files`) and accepts them as a copy; each manifest caps lints with `[lints.rust] warnings = "allow"`
 
 baseview's `LICENSE-MIT`:
 

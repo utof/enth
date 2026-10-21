@@ -34,7 +34,7 @@ use crate::lesson::{
     ControlCurve, Example, Lesson, Selector, Step, StepKind, StepView, Touch, touches,
 };
 use crate::pack::{LessonBundle, LessonKey, LessonRef, StepId};
-use crate::progress::StepProgress;
+use crate::progress::{LessonProgress, StepProgress};
 
 /// How long the patch must stay unchanged before a sound check runs, in ms (as the game's loudness job waits).
 pub const SETTLE_MS: u64 = 300;
@@ -866,6 +866,35 @@ impl Player {
             self.touched.note(knob, spec, value);
         }
     }
+
+    // --- resuming with the progress file (lane SKL, F2l; phase-3's open check "a resumed lesson forgets which
+    // steps passed", F1l review should-fix 7) ---------------------------------------------------------------------
+
+    /// Bring back what the per-user progress file knows about this lesson (the shell reads it and calls this right
+    /// after [`resume`](Player::resume), before the session sees the player): each step whose id is `done` there is
+    /// passed again (assisted unless it was ever `clean`, its best sound % kept), and the current step's phase is
+    /// `Passed` if it is one. It never un-passes a step and emits nothing: a passed step stays passed, so after a
+    /// reload a step passed earlier neither looks unpassed nor records again. Steps the lesson no longer has are
+    /// ignored.
+    pub fn restore(&mut self, progress: &LessonProgress) {
+        for (i, step) in self.bundle.lesson.steps.iter().enumerate() {
+            let Some(p) = progress.steps.get(&step.id) else {
+                continue;
+            };
+            if !p.done {
+                continue;
+            }
+            let v = &mut self.visits[i];
+            if !v.passed {
+                v.assisted |= !p.clean;
+            }
+            v.passed = true;
+            v.best = v.best.max(p.best);
+        }
+        if self.visits[self.step].passed && !self.ended {
+            self.phase = StepPhase::Passed;
+        }
+    }
 }
 
 /// A step's effective view: its own, and on a Recreate step its challenge's constraints as `locked` and `editable`
@@ -916,4 +945,88 @@ fn free_params(view: &StepView, patch: &Patch) -> Vec<ParamAddr> {
         }
     }
     out
+}
+
+/// [`Player::restore`] (lane SKL, F2l).
+#[cfg(test)]
+mod restore_tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::pack::{ContentId, PackVersion, TextRef};
+    use crate::progress::LessonProgress;
+
+    fn bundle() -> LessonBundle {
+        let lesson = Lesson::from_json(
+            r#"{"schema":"enth.lesson/1","id":"three","title":"Three","tier":"basic","objective":"Read three steps.",
+            "teaches":["svf.cutoff"],"steps":[{"id":"a","kind":"read","text":"t.md"},{"id":"b","kind":"read","text":"t.md"},
+            {"id":"c","kind":"read","text":"t.md"}]}"#,
+        )
+        .unwrap();
+        let mut texts = BTreeMap::new();
+        texts.insert(TextRef::new("t.md").unwrap(), Arc::<str>::from("# Text"));
+        LessonBundle {
+            pack: "example".parse().unwrap(),
+            version: PackVersion::new(0, 1, 0),
+            content: ContentId([0; 8]),
+            lesson: Arc::new(lesson),
+            patches: BTreeMap::new(),
+            texts,
+        }
+    }
+
+    fn progress(steps: &[(&str, bool, bool)]) -> LessonProgress {
+        let mut p = LessonProgress::default();
+        for (id, done, clean) in steps {
+            p.steps.insert(
+                id.parse().unwrap(),
+                StepProgress {
+                    done: *done,
+                    clean: *clean,
+                    best: None,
+                    extra: BTreeMap::new(),
+                },
+            );
+        }
+        p
+    }
+
+    #[test]
+    fn a_resumed_step_passed_before_stays_passed_and_records_nothing_again() {
+        let (mut p, _) = Player::resume(bundle(), 1).unwrap();
+        assert_eq!(p.phase(), StepPhase::Working, "resume alone forgets");
+        p.restore(&progress(&[
+            ("a", true, true),
+            ("b", true, false),
+            ("gone", true, true),
+        ]));
+        assert!(p.passed(0) && p.passed(1) && !p.passed(2));
+        assert_eq!(
+            p.phase(),
+            StepPhase::Passed,
+            "the current step passed before the reload"
+        );
+        assert!(p.assisted(), "b was never clean");
+        // Next leaves a passed step without passing (and recording) it again.
+        let effects = p.next().unwrap();
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, Effect::Record(_) | Effect::Passed { .. })),
+            "{effects:?}"
+        );
+        assert_eq!(p.phase(), StepPhase::Working, "c was not passed");
+    }
+
+    #[test]
+    fn restore_never_unpasses_and_ignores_steps_not_done() {
+        let mut p = Player::new(bundle());
+        let _ = p.start().unwrap();
+        let _ = p.next().unwrap(); // a passes (a read step left forward)
+        p.restore(&progress(&[("a", false, false), ("b", false, false)]));
+        assert!(p.passed(0), "a step passed in this session stays passed");
+        assert!(!p.passed(1));
+        assert_eq!(p.phase(), StepPhase::Working);
+    }
 }

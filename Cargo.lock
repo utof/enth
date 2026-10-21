@@ -1316,8 +1316,11 @@ dependencies = [
 name = "enth-lesson-tool"
 version = "0.0.0"
 dependencies = [
+ "enth-analysis",
  "enth-challenge",
  "enth-learn",
+ "enth-params",
+ "enth-patch",
  "enth-session",
  "enth-solver",
 ]
