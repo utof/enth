@@ -339,6 +339,27 @@ fn a_long_file_is_capped_and_says_so() {
     );
 }
 
+#[test]
+fn a_sound_late_in_a_long_file_is_found() {
+    // 40 s of silence, then a note, at 8 kHz: only 30 s are looked at, from a second before the sound
+    let sr = 8_000u32;
+    let x = render_toy(
+        f64::from(sr),
+        &ToyPatch::default(),
+        &ToyPerf::default(),
+        (0.0, 0.37),
+        0.0,
+    );
+    let mut y = vec![0.0f32; 40 * sr as usize];
+    y.extend_from_slice(&x);
+    let r = Intake::new(&y, 1, sr).unwrap().report;
+    assert!((r.span.onset_s - 40.0).abs() < 0.005, "{:?}", r.span);
+    assert!(
+        (r.source_s - 42.0).abs() < 1e-9 && r.span.end_s > 41.0,
+        "{r:?}"
+    );
+}
+
 /// The report's shape is emitted (`enth.create/1` embeds it): a fixture pins its field names, tags and whole numbers.
 /// Floats are masked, so the fixture does not pin their last bits (the tests above check the values). This crate has
 /// no JSON reader (`serde_json` is not among its dependencies, and the lock file is the coordinator's), so the read-back

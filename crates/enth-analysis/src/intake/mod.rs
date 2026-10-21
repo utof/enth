@@ -57,6 +57,9 @@ pub const SAMPLE_RATES: core::ops::Range<u32> = 8_000..192_000;
 pub const SILENT_PEAK: f32 = 1e-5;
 /// The mono mix losing more than this (dB) against the channels raises [`Warning::ChannelsCancel`].
 pub const CANCEL_DB: f64 = 6.0;
+/// The intake looks at this many seconds of a file, from a second before its first sample that is not silent (the
+/// clip is at most `max_len_s` from the onset).
+pub const MAX_SOURCE_S: f64 = 30.0;
 
 /// How the clip is conditioned. [`IntakeCfg::default`] is the product's setting.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -224,26 +227,30 @@ impl Intake {
         if let Some(index) = interleaved.iter().position(|s| !s.is_finite()) {
             return Err(IntakeError::NonFinite { index });
         }
-        let src = trim::mono(interleaved, channels);
-        if src.is_empty() {
+        let mono = trim::mono(interleaved, channels);
+        if mono.is_empty() {
             return Err(IntakeError::Empty);
         }
-        if src.iter().fold(0.0f32, |m, s| m.max(s.abs())) < SILENT_PEAK {
-            return Err(IntakeError::Silent);
-        }
         let sr = f64::from(sample_rate);
+        // `MAX_SOURCE_S` are looked at, from a second before the first sample that is not silent: the clip is at
+        // most `max_len_s` from the onset, and work and memory stay bounded for any file.
+        let Some(first) = mono.iter().position(|s| s.abs() >= SILENT_PEAK) else {
+            return Err(IntakeError::Silent);
+        };
+        let skip = first.saturating_sub(sample_rate as usize);
+        let src = &mono[skip..mono.len().min(skip + (MAX_SOURCE_S * sr) as usize)];
         let mut planner = FftPlanner::new(FftPath::Scalar);
         let mut warnings = Vec::new();
-        if let Some(loss_db) = trim::mono_loss_db(interleaved, channels, &src)
+        if let Some(loss_db) = trim::mono_loss_db(interleaved, channels, &mono)
             && loss_db > CANCEL_DB
         {
             warnings.push(Warning::ChannelsCancel { loss_db });
         }
 
         // Floor first: the onset and the end sit just above it when it is above the silence threshold.
-        let levels = trim::Levels::standard(&src, sr);
+        let levels = trim::Levels::standard(src, sr);
         let peak = levels.peak_db();
-        let fl = floor::estimate(&levels, &src, sr, &mut planner);
+        let fl = floor::estimate(&levels, src, sr, &mut planner);
         let quiet = peak - cfg.silence_db;
         // Above the floor by a margin that grows with its spread (brown noise wanders more than white), capped, and
         // never above 6 dB under the loudest frame, so the loudest frame always qualifies.
@@ -255,7 +262,7 @@ impl Intake {
             None => (quiet, quiet),
         };
         let (thr_on, thr_end) = (thr_on.min(peak - 6.0), thr_end.min(peak - 6.0));
-        let onset = trim::onset(&src, sr, &levels, thr_on);
+        let onset = trim::onset(src, sr, &levels, thr_on);
         let sig_end = trim::signal_end(&levels, src.len(), thr_end, onset);
         let frames = trim::CutFrames::new(
             sr,
@@ -264,10 +271,15 @@ impl Intake {
             cfg.max_len_s,
             cfg.min_len_s,
         );
-        let (audio, span) = trim::cut(&src, sr, onset, sig_end, frames);
+        let (audio, mut span) = trim::cut(src, sr, onset, sig_end, frames);
+        let shift = skip as f64 / sr;
+        span.onset_s += shift;
+        span.start_s += shift;
+        span.end_s += shift;
+        span.signal_end_s += shift;
         if span.capped {
             warnings.push(Warning::Capped {
-                source_s: src.len() as f64 / sr,
+                source_s: mono.len() as f64 / sr,
             });
         }
 
@@ -275,7 +287,7 @@ impl Intake {
         let on = frames.preroll;
         let to_clip = |s: usize| (s + frames.preroll).saturating_sub(onset).min(audio.len());
         let end_c = to_clip(sig_end).max((on + 1).min(audio.len()));
-        let hum = fl.and_then(|f| floor::hum(&src, sr, f.run, &mut planner));
+        let hum = fl.and_then(|f| floor::hum(src, sr, f.run, &mut planner));
         let bandwidth_hz = bandwidth::estimate(&audio, sr, (on, end_c), &mut planner);
         let clipping = clip::detect(&audio, sr);
         let clip_levels = trim::Levels::standard(&audio, sr);
@@ -307,7 +319,7 @@ impl Intake {
             version: INTAKE_VERSION,
             sample_rate,
             channels,
-            source_s: src.len() as f64 / sr,
+            source_s: mono.len() as f64 / sr,
             span,
             degradation: Degradation {
                 noise_floor_dbfs: fl.map(|f| f.level_db),

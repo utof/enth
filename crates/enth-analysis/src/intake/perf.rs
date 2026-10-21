@@ -23,7 +23,7 @@
 //!   harmonic series that the first does not explain carries at least 10 % of the peaks' power at an unrelated
 //!   pitch, or the best series is a virtual pitch, with its fundamental and second harmonic missing and gaps in its
 //!   harmonics (a major triad in 12-TET reads as harmonics 4, 5, 6, 8, 10, 12 of a note two octaves below the root).
-//!   For a chord the key is its lowest tone.
+//!   For a chord the key is its lowest tone, and for several notes the first.
 
 use serde::{Deserialize, Serialize};
 
@@ -50,9 +50,9 @@ const LOUD_DB: f64 = 30.0;
 const ABOVE_FLOOR_DB: f64 = 10.0;
 /// A clip is pitched when at least this share of its loud frames is voiced.
 const MIN_VOICED: f64 = 0.4;
-/// Onsets (the super flux): frames of at least 30 ms and four periods of the note, rounded up to a power of two, every
-/// 10 ms, the rise over two frames back, bins to 8 kHz, the log's
-/// gain, the rise above the local median that makes an onset (natural-log units per bin), and the shortest gap.
+/// Onsets (the super flux): frames of at least 30 ms and four periods of the note (rounded up to a power of two)
+/// every 10 ms; each bin's rise over two frames back; bins up to 8 kHz; the gain inside the log; the rise above the
+/// local median that makes an onset (natural-log units, averaged over the bins); and the shortest gap between onsets.
 const FLUX_FRAME_S: f64 = 0.03;
 const FLUX_PERIODS: f64 = 4.0;
 const FLUX_HOP_S: f64 = 0.01;
@@ -80,9 +80,11 @@ const MIN_TONAL: f64 = 0.6;
 /// What every candidate plays: one note. Times are clip time (seconds from the conditioned clip's first sample).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InferredPerf {
-    /// The MIDI key: the nearest note to `f0_hz` (a chord's lowest tone; [`UNPITCHED_KEY`] when unpitched).
+    /// The MIDI key: the nearest note to `f0_hz`; a chord's lowest tone; the first of several notes;
+    /// [`UNPITCHED_KEY`] when unpitched.
     pub key: u8,
-    /// The median YIN f0 of the voiced frames (Hz); `None` when unpitched.
+    /// The median YIN f0 of the voiced frames, or the harmonic peaks' pitch when YIN finds none (Hz); `None` when
+    /// unpitched.
     pub f0_hz: Option<f64>,
     /// Share of the loud frames YIN found voiced, 0 to 1.
     pub voiced: f64,
@@ -247,15 +249,17 @@ fn notes(track: &[Option<f64>]) -> Vec<u8> {
 }
 
 /// Onsets after the first (clip time), by the super flux of Böck and Widmer ("Maximum filter vibrato suppression
-/// for onset detection", 2013), on frames of at least four periods of the note, so that a low note's neighbouring
-/// harmonics are resolved and do not flicker as the frame slides over its period: each bin's
-/// log-magnitude rise over the largest of its three neighbours two frames back,
-/// averaged over the bins from 30 Hz to 8 kHz. A new note over a held one adds partials where there were none, so it
-/// shows here where the level barely moves; beating and vibrato barely show. A peak is an onset when it is the
-/// largest within ±15 ms, stands [`FLUX_RISE`] above the median of the surrounding 200 ms, the level rises at least
-/// [`LEVEL_RISE_DB`] across it (a note-off, a reopening filter or vibrato add partials but no energy), its frame is
-/// loud (within 30 dB of the loudest and 10 dB above the floor), and it comes at least 100 ms after the previous
-/// onset.
+/// for onset detection", 2013): each bin's log-magnitude rise over the largest of its three neighbours two frames
+/// back, averaged over the bins from 30 Hz to 8 kHz. The frames hold at least four periods of the note, so a low
+/// note's neighbouring harmonics are resolved and do not flicker as the frame slides over its period. A new note over
+/// a held one adds partials where there were none, so it shows here where the level barely moves; beating and vibrato
+/// barely show. A peak is an onset when:
+///
+/// - it is the largest within ±15 ms and stands [`FLUX_RISE`] above the median of the surrounding 200 ms;
+/// - the level rises at least [`LEVEL_RISE_DB`] across it (a note-off, a reopening filter or vibrato add partials but
+///   no energy);
+/// - its frame is loud (within 30 dB of the loudest and 10 dB above the floor);
+/// - it comes at least 100 ms after the previous onset.
 fn onsets(
     clip: &[f32],
     sr: f64,

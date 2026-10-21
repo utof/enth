@@ -99,13 +99,17 @@ impl Levels {
     pub fn new(x: &[f32], sr: f64, frame_s: f64, hop_s: f64) -> Levels {
         let hop = (libm::round(sr * hop_s) as usize).max(1);
         let win = (libm::round(sr * frame_s) as usize).max(hop);
-        let pre = prefix_squares(x);
         let frames = x.len().div_ceil(hop).max(1);
         let db = (0..frames)
             .map(|i| {
                 let a = (i * hop).min(x.len());
                 let b = (a + win).min(x.len());
-                rms_db(&pre, a, b)
+                let e: f64 = x[a..b].iter().map(|v| f64::from(*v) * f64::from(*v)).sum();
+                if b > a && e > 0.0 {
+                    (10.0 * libm::log10(e / (b - a) as f64)).max(FLOOR_DB)
+                } else {
+                    FLOOR_DB
+                }
             })
             .collect();
         Levels { db, hop, win }
@@ -168,12 +172,16 @@ pub(crate) fn onset(x: &[f32], sr: f64, levels: &Levels, thr_db: f64) -> usize {
     let from = a.saturating_sub(levels.hop);
     let w = (libm::round(sr * FINE_S) as usize).max(8);
     let step = (w / 4).max(1);
-    let pre = prefix_squares(x);
+    // Running sums over the stretch searched only: from one hop before the frame to the pre-echo guard's reach.
+    let base = from;
+    let stop = (b + w + (libm::round(sr * ATTACK_S) as usize)).min(x.len());
+    let pre_local = prefix_squares(&x[base..stop]);
+    let energy = |a: usize, e: usize| rms_db(&pre_local, a - base, e.min(stop) - base);
     let first = |from: usize, to: usize, thr_db: f64| {
         let mut j = from;
         while j < to {
-            let e = (j + w).min(x.len());
-            if rms_db(&pre, j, e) >= thr_db {
+            let e = (j + w).min(stop);
+            if energy(j, e) >= thr_db {
                 let thr = amp(thr_db) as f32;
                 return Some((j..e).find(|&s| x[s].abs() >= thr).unwrap_or(j));
             }
@@ -188,11 +196,11 @@ pub(crate) fn onset(x: &[f32], sr: f64, levels: &Levels, thr_db: f64) -> usize {
     // MP3 at 48 kHz): when the level within the next 15 ms climbs far above the crossing, the onset is the first
     // 1 ms window within 25 dB of that climb. A clean attack moves by under a millisecond (a linear one of any
     // length by 15 ms × 10^(−25/20) = 0.84 ms).
-    let reach = (s0 + (libm::round(sr * ATTACK_S) as usize)).min(x.len());
+    let reach = (s0 + (libm::round(sr * ATTACK_S) as usize)).min(stop);
     let mut top = FLOOR_DB;
     let mut j = s0;
-    while j + w <= reach.max(s0 + 1) && j < x.len() {
-        top = top.max(rms_db(&pre, j, (j + w).min(x.len())));
+    while j + w <= reach.max(s0 + 1) && j < stop {
+        top = top.max(energy(j, j + w));
         j += step;
     }
     let climb = top - ATTACK_DB;

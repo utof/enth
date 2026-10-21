@@ -60,6 +60,8 @@ const MAX_TREND_DB_PER_S: f64 = 20.0;
 const YIN_FRAME_S: f64 = 0.1;
 const YIN_MIN_HZ: f64 = 45.0;
 const VOICED_NOTE: f64 = 0.5;
+/// YIN looks at the first this many seconds of a run, and hum at the first `2 × PROBE_S`.
+const PROBE_S: f64 = 2.0;
 /// Mains frequencies, and how far a harmonic may sit from its nominal frequency (share of it).
 const MAINS_HZ: [f64; 2] = [50.0, 60.0];
 const MAINS_TOL: f64 = 0.08;
@@ -214,7 +216,8 @@ fn check(
         levels.range(run.0, x.len()).0,
         levels.range(run.1 - 1, x.len()).1,
     );
-    if is_a_note(&x[samples.0..samples.1], sr, planner) {
+    let probe = samples.1.min(samples.0 + (sr * PROBE_S) as usize);
+    if is_a_note(&x[samples.0..probe], sr, planner) {
         return None;
     }
     Some(Floor {
@@ -256,6 +259,7 @@ pub(crate) fn hum(
     run: (usize, usize),
     planner: &mut FftPlanner,
 ) -> Option<Hum> {
+    let run = (run.0, run.1.min(run.0 + (2.0 * PROBE_S * sr) as usize));
     let len = run.1 - run.0;
     let mut n = 1usize;
     while n * 2 <= len.min(1 << 16) {
