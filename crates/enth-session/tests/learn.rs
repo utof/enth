@@ -23,10 +23,10 @@ use enth_session::game::{
     StructureScore, Verdict,
 };
 use enth_session::learn::{
-    CheckJob, CheckVerdict, EditSource, Example, HintAction, HintJob, LEARN_BYTES,
-    LESSON_REF_BYTES, LESSON_ROUND_BYTES, LearnEdit, LearnError, LearnJob, LearnJobKind,
-    LearnRequest, LearnResult, LearnState, LessonPlayer, LessonRef, ListenState, MeasuredHint,
-    PlayerEffect, PlayerError, RoundEnd, Selector, StepPhase, StepRecord, StepView,
+    Audition, CheckRequest, CheckVerdict, EditSource, HintRequest, LEARN_BYTES, LESSON_REF_BYTES,
+    LESSON_ROUND_BYTES, LearnEdit, LearnError, LearnJob, LearnJobKind, LearnRequest, LearnResult,
+    LearnState, LessonPlayer, LessonRef, ListenState, MeasuredHint, PlayerEffect, PlayerError,
+    RoundEnd, Selector, StepPhase, StepRecord, StepView,
 };
 use enth_session::{Activation, InstanceState, SavedState, Session, SessionError, ShellRequest};
 
@@ -165,7 +165,7 @@ fn report(sound: f64) -> ScoreReport {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// A scripted player (lane LM's `Player` stands here)
+// A scripted player (lane LM's `Player` stands here, with its effect stream)
 // ---------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -205,7 +205,6 @@ struct Seen {
     rounds: Vec<RoundEnd>,
     ends: Vec<EndChoice>,
     starts: u32,
-    hints_done: u32,
 }
 
 #[allow(
@@ -222,9 +221,8 @@ struct Fake {
     log: Log,
     last: Option<(u64, Patch)>,
     settle_at: Option<u64>,
-    jobs: u64,
-    pending: Option<(u64, u64)>,
     hints: u8,
+    hint_pending: Option<u64>,
 }
 
 fn lesson_ref() -> LessonRef {
@@ -237,60 +235,77 @@ fn lesson_ref() -> LessonRef {
     }
 }
 
+fn refused(code: &'static str) -> PlayerError {
+    PlayerError {
+        code,
+        hint: "not here".to_owned(),
+    }
+}
+
 impl Fake {
     fn new(steps: Vec<Step>) -> (Box<Fake>, Log) {
         let log = Log::default();
         let fake = Fake {
             lesson: lesson_ref(),
             steps,
-            phase: StepPhase::Intro,
+            phase: StepPhase::Working,
             log: Arc::clone(&log),
             last: None,
             settle_at: None,
-            jobs: 0,
-            pending: None,
             hints: 0,
+            hint_pending: None,
         };
         (Box::new(fake), log)
     }
 
-    fn at_step(mut self: Box<Self>, step: u16) -> Box<Self> {
-        self.lesson.step = step;
-        self
+    /// LM's `Player::resume(bundle, step)`: at `step`, with the step's view and examples only.
+    fn resumed(steps: Vec<Step>, step: u16) -> (Box<Fake>, Vec<PlayerEffect>, Log) {
+        let (mut fake, log) = Fake::new(steps);
+        fake.lesson.step = step;
+        let effects = fake.enter(false);
+        (fake, effects, log)
     }
 
     fn current(&self) -> &Step {
         &self.steps[usize::from(self.lesson.step)]
     }
 
-    fn record(&self, assisted: bool) -> PlayerEffect {
-        PlayerEffect::Record(StepRecord {
-            step: self.lesson.step,
-            passed: true,
-            assisted,
-        })
+    fn pass(&mut self, assisted: bool) -> Vec<PlayerEffect> {
+        self.phase = StepPhase::Passed;
+        let step = self.lesson.step;
+        vec![
+            PlayerEffect::Passed { step, assisted },
+            PlayerEffect::Record(StepRecord {
+                step,
+                passed: true,
+                assisted,
+            }),
+        ]
     }
 
-    /// The current step's load: its view, then its start (a round's challenge, or a patch), then its examples.
-    fn load(&mut self) -> Vec<PlayerEffect> {
+    /// Enter the current step: its start (a round's challenge, or a patch) when `load`, its view, its examples.
+    fn enter(&mut self, load: bool) -> Vec<PlayerEffect> {
         self.phase = StepPhase::Working;
-        self.pending = None;
         self.settle_at = None;
+        self.hints = 0;
+        self.hint_pending = None;
         let step = self.current().clone();
-        let mut out = vec![PlayerEffect::View(StepView {
-            lock: step.lock.iter().map(|t| t.parse().unwrap()).collect(),
-            ..StepView::default()
-        })];
+        let mut out = Vec::new();
         match step.kind {
-            Kind::Recreate => out.push(PlayerEffect::StartRound(Box::new(challenge()))),
+            Kind::Recreate if load => out.push(PlayerEffect::StartRound(Box::new(challenge()))),
+            Kind::Recreate => {}
             _ => {
-                if let Some(start) = step.start {
+                if let (true, Some(start)) = (load, step.start) {
                     out.push(PlayerEffect::LoadPatch(Arc::new(start)));
                 }
             }
         }
+        out.push(PlayerEffect::View(StepView {
+            lock: step.lock.iter().map(|t| t.parse().unwrap()).collect(),
+            ..StepView::default()
+        }));
         if let Kind::Choose { .. } = step.kind {
-            let example = |label: &str, cutoff: f32| Example {
+            let example = |label: &str, cutoff: f32| Audition {
                 label: label.to_owned(),
                 patch: Arc::new(lesson_patch_with(cutoff)),
                 level_match: true,
@@ -301,6 +316,14 @@ impl Fake {
             ])));
         }
         out
+    }
+
+    /// Leave the current step: a live round ends.
+    fn leave(&self) -> Vec<PlayerEffect> {
+        match self.current().kind {
+            Kind::Recreate => vec![PlayerEffect::EndRound],
+            _ => Vec::new(),
+        }
     }
 }
 
@@ -317,9 +340,14 @@ impl LessonPlayer for Fake {
         self.phase
     }
 
-    fn start(&mut self, _now_ms: u64) -> Vec<PlayerEffect> {
+    fn round_challenge(&self) -> Option<Challenge> {
+        matches!(self.current().kind, Kind::Recreate).then(challenge)
+    }
+
+    fn start(&mut self) -> Result<Vec<PlayerEffect>, PlayerError> {
         self.log.lock().unwrap().starts += 1;
-        self.load()
+        self.lesson.step = 0;
+        Ok(self.enter(true))
     }
 
     fn edited(
@@ -329,7 +357,7 @@ impl LessonPlayer for Fake {
         patch: &Patch,
         _ops: &[Op],
         source: EditSource,
-    ) -> Vec<PlayerEffect> {
+    ) -> Result<Vec<PlayerEffect>, PlayerError> {
         let cutoff = patch.value(&addr(CUTOFF));
         self.log
             .lock()
@@ -337,144 +365,146 @@ impl LessonPlayer for Fake {
             .edits
             .push((revision, source, cutoff, patch.macros[0].value));
         self.last = Some((revision, patch.clone()));
-        match self.current().kind {
+        if let StepPhase::Checking { .. } = self.phase {
+            self.phase = StepPhase::Working;
+        }
+        if self.phase != StepPhase::Working {
+            return Ok(Vec::new());
+        }
+        Ok(match self.current().kind {
             Kind::Do { below }
-                if source == EditSource::Player
-                    && self.phase != StepPhase::Passed
-                    && cutoff.is_some_and(|c| c < below) =>
+                if source == EditSource::Player && cutoff.is_some_and(|c| c < below) =>
             {
-                self.phase = StepPhase::Passed;
-                vec![self.record(false)]
+                self.pass(false)
             }
             Kind::Sound => {
                 self.settle_at = Some(now_ms + 300);
                 Vec::new()
             }
             _ => Vec::new(),
-        }
+        })
     }
 
-    fn tick(&mut self, now_ms: u64) -> Option<CheckJob> {
-        let at = self.settle_at?;
-        if now_ms < at {
-            return None;
+    fn tick(&mut self, now_ms: u64) -> Result<Vec<PlayerEffect>, PlayerError> {
+        let Some(at) = self.settle_at else {
+            return Ok(Vec::new());
+        };
+        if now_ms < at || self.phase != StepPhase::Working {
+            return Ok(Vec::new());
         }
         self.settle_at = None;
-        let (revision, patch) = self.last.clone()?;
-        self.jobs += 1;
-        self.pending = Some((self.jobs, revision));
-        self.phase = StepPhase::Checking;
-        Some(CheckJob {
-            id: self.jobs,
+        let Some((revision, patch)) = self.last.clone() else {
+            return Ok(Vec::new());
+        };
+        self.phase = StepPhase::Checking { revision };
+        Ok(vec![PlayerEffect::Check(CheckRequest {
             revision,
             patch: Box::new(patch),
-        })
+        })])
     }
 
     fn check_done(
         &mut self,
-        job: u64,
         revision: u64,
-        verdict: CheckVerdict,
+        verdict: &CheckVerdict,
     ) -> Result<Vec<PlayerEffect>, PlayerError> {
-        if self.pending != Some((job, revision)) {
-            return Err(PlayerError {
-                code: "stale_result",
-                hint: "ignore it".to_owned(),
-            });
+        if self.phase != (StepPhase::Checking { revision }) {
+            return Err(refused("stale_result"));
         }
-        self.pending = None;
         if verdict.passed {
-            self.phase = StepPhase::Passed;
-            Ok(vec![self.record(false)])
+            Ok(self.pass(false))
         } else {
             self.phase = StepPhase::Working;
             Ok(Vec::new())
         }
     }
 
-    fn choose(&mut self, option: u8) -> Result<Vec<PlayerEffect>, PlayerError> {
-        match self.current().kind {
-            Kind::Choose { answer } if option == answer => {
-                self.phase = StepPhase::Passed;
-                Ok(vec![self.record(false)])
-            }
-            Kind::Choose { .. } => Ok(Vec::new()),
-            _ => Err(PlayerError {
-                code: "no_choice",
-                hint: "this step asks no question".to_owned(),
-            }),
-        }
-    }
-
-    fn round_ended(&mut self, end: RoundEnd) -> Vec<PlayerEffect> {
-        self.log.lock().unwrap().rounds.push(end);
-        if end.passed {
-            self.phase = StepPhase::Passed;
-            vec![self.record(end.assisted)]
-        } else {
-            self.phase = StepPhase::Shown;
-            Vec::new()
-        }
-    }
-
-    fn hint(&mut self) -> Option<HintAction> {
+    fn hint(&mut self) -> Result<Vec<PlayerEffect>, PlayerError> {
         self.hints += 1;
-        match self.hints {
-            1 => Some(HintAction::Text("Turn the cutoff down.".to_owned())),
+        Ok(match self.hints {
+            1 => vec![PlayerEffect::Hint("Turn the cutoff down.".to_owned())],
             2 => {
-                let (revision, patch) = self.last.clone()?;
-                self.jobs += 1;
-                Some(HintAction::Measure(HintJob {
-                    id: self.jobs,
+                let Some((revision, patch)) = self.last.clone() else {
+                    return Ok(Vec::new());
+                };
+                self.hint_pending = Some(revision);
+                vec![PlayerEffect::HintJob(HintRequest {
                     revision,
                     patch: Box::new(patch),
-                }))
+                })]
             }
-            _ => None,
-        }
+            _ => Vec::new(),
+        })
     }
 
     fn hint_done(
         &mut self,
-        _job: u64,
-        _revision: u64,
-        _hint: MeasuredHint,
+        revision: u64,
+        hint: MeasuredHint,
     ) -> Result<Vec<PlayerEffect>, PlayerError> {
-        self.log.lock().unwrap().hints_done += 1;
-        Ok(Vec::new())
+        if self.hint_pending != Some(revision) {
+            return Err(refused("stale_result"));
+        }
+        self.hint_pending = None;
+        Ok(vec![PlayerEffect::Measured(hint)])
     }
 
-    fn show(&mut self, patch: &Patch) -> Option<Op> {
-        match self.current().kind {
+    fn show(&mut self, patch: &Patch) -> Result<Vec<PlayerEffect>, PlayerError> {
+        Ok(match self.current().kind {
             Kind::Do { below } if patch.value(&addr(CUTOFF)).is_some_and(|c| c >= below) => {
-                self.phase = StepPhase::Shown;
-                Some(set(CUTOFF, below - 100.0))
+                vec![PlayerEffect::Apply(set(CUTOFF, below - 100.0))]
             }
-            _ => None,
+            _ => Vec::new(),
+        })
+    }
+
+    fn choose(&mut self, option: u8) -> Result<Vec<PlayerEffect>, PlayerError> {
+        let Kind::Choose { answer } = self.current().kind else {
+            return Err(refused("not_here"));
+        };
+        let correct = option == answer;
+        let mut out = vec![PlayerEffect::Chose { option, correct }];
+        if correct && self.phase != StepPhase::Passed {
+            out.extend(self.pass(false));
+        }
+        Ok(out)
+    }
+
+    fn round_ended(&mut self, end: RoundEnd) -> Result<Vec<PlayerEffect>, PlayerError> {
+        self.log.lock().unwrap().rounds.push(end);
+        if end.passed && self.phase != StepPhase::Passed {
+            Ok(self.pass(end.assisted))
+        } else {
+            Ok(Vec::new())
         }
     }
 
-    fn next(&mut self) -> Vec<PlayerEffect> {
+    fn next(&mut self) -> Result<Vec<PlayerEffect>, PlayerError> {
+        let mut out = self.leave();
         if usize::from(self.lesson.step) + 1 < self.steps.len() {
             self.lesson.step += 1;
-            self.load()
+            out.extend(self.enter(true));
         } else {
-            vec![PlayerEffect::Finished]
+            out.push(PlayerEffect::Finished);
         }
+        Ok(out)
     }
 
-    fn back(&mut self) -> Vec<PlayerEffect> {
+    fn back(&mut self) -> Result<Vec<PlayerEffect>, PlayerError> {
         if self.lesson.step == 0 {
-            return Vec::new();
+            return Err(refused("out_of_range"));
         }
+        let mut out = self.leave();
         self.lesson.step -= 1;
-        self.load()
+        out.extend(self.enter(true));
+        Ok(out)
     }
 
-    fn end(&mut self, choice: EndChoice) -> Vec<PlayerEffect> {
+    fn end(&mut self, choice: EndChoice) -> Result<Vec<PlayerEffect>, PlayerError> {
         self.log.lock().unwrap().ends.push(choice);
-        Vec::new()
+        let mut out = self.leave();
+        out.push(PlayerEffect::End(choice));
+        Ok(out)
     }
 }
 
@@ -1084,7 +1114,7 @@ fn the_stash_survives_a_mid_lesson_save_and_the_lesson_resumes_at_its_step() {
     assert_eq!(cutoff(&t), 2800.0, "the patch field holds the step's patch");
     let v = t.lesson().unwrap();
     assert!(v.pending.opening);
-    assert_eq!((v.lesson.step, v.steps), (1, 0));
+    assert_eq!((v.lesson.as_ref().unwrap().step, v.steps), (1, 0));
     assert_eq!(t.learn_next(), Err(LearnError::NotReady));
     let open = learn_job(&drain_learn(&mut t), "open");
     match &open.kind {
@@ -1093,12 +1123,15 @@ fn the_stash_survives_a_mid_lesson_save_and_the_lesson_resumes_at_its_step() {
     }
     // The shell found the lesson: it resumes at its step without reloading the start (your work stays).
     t.game_tick(5_000, EditorView::Opened);
-    let (fake, log) = Fake::new(three_steps());
-    t.learn_job_done(open.id, LearnResult::Opened(fake.at_step(1)))
+    let (player, effects, log) = Fake::resumed(three_steps(), 1);
+    t.learn_job_done(open.id, LearnResult::Opened { player, effects })
         .unwrap();
     assert_eq!(cutoff(&t), 2800.0);
     let v = t.lesson().unwrap();
-    assert_eq!((v.lesson.step, v.steps, v.pending.opening), (1, 3, false));
+    assert_eq!(
+        (v.lesson.as_ref().unwrap().step, v.steps, v.pending.opening),
+        (1, 3, false)
+    );
     assert_eq!(
         log.lock().unwrap().edits.last().unwrap().1,
         EditSource::Load
@@ -1146,7 +1179,13 @@ fn a_lesson_that_cannot_be_found_again_keeps_its_stash() {
     let (mut other, _) = Fake::new(three_steps());
     other.lesson.lesson = "03-env".to_owned();
     let e = t
-        .learn_job_done(open.id, LearnResult::Opened(other))
+        .learn_job_done(
+            open.id,
+            LearnResult::Opened {
+                player: other,
+                effects: Vec::new(),
+            },
+        )
         .unwrap_err();
     assert_eq!(e.code(), "other_lesson");
     assert!(t.lesson().unwrap().broken);
@@ -1182,10 +1221,11 @@ fn an_updated_lesson_restarts_at_its_first_step() {
     let mut t = Session::default();
     t.load(&saved);
     let open = learn_job(&drain_learn(&mut t), "open");
-    // LM's resume restarts a changed lesson at step 0: the session loads that step's start.
-    let (mut fake, _) = Fake::new(three_steps());
-    fake.lesson.content = "fedcba9876543210".to_owned();
-    t.learn_job_done(open.id, LearnResult::Opened(fake))
+    // The shell resumed the updated lesson at the saved step; its content differs, so the session starts it again
+    // at step 0 and loads that step's start.
+    let (mut player, effects, _) = Fake::resumed(three_steps(), 1);
+    player.lesson.content = "fedcba9876543210".to_owned();
+    t.learn_job_done(open.id, LearnResult::Opened { player, effects })
         .unwrap();
     assert_eq!(cutoff(&t), 2000.0);
     let lesson = t.learn_record().unwrap().lesson.clone().unwrap();
@@ -1424,7 +1464,7 @@ fn a_step_change_cancels_its_jobs_and_wrong_or_failed_results_are_handled() {
 
 #[test]
 fn hints_give_text_first_then_a_measured_job() {
-    let (mut s, log) = started(vec![step(
+    let (mut s, _) = started(vec![step(
         Kind::Do { below: 1000.0 },
         Some(lesson_patch_with(2000.0)),
         &[],
@@ -1444,7 +1484,12 @@ fn hints_give_text_first_then_a_measured_job() {
         }),
     )
     .unwrap();
-    assert_eq!(log.lock().unwrap().hints_done, 1);
+    assert_eq!(
+        s.lesson().unwrap().hint.as_deref(),
+        Some("lower the cutoff by an octave"),
+        "the measured hint replaces the authored one"
+    );
+    assert!(!s.lesson().unwrap().pending.hinting);
     assert_eq!(s.learn_hint(), Err(LearnError::NoHint));
 }
 
@@ -1482,9 +1527,11 @@ fn listen_examples_share_the_target_slot_and_are_level_matched() {
     assert!(requests.contains(&LearnRequest::Listen(listen)));
     // The ear question: a wrong answer changes nothing, the right one passes.
     s.learn_choose(0).unwrap();
-    assert_ne!(s.lesson().unwrap().phase, StepPhase::Passed);
+    let v = s.lesson().unwrap();
+    assert_eq!((v.phase, v.chose), (StepPhase::Working, Some((0, false))));
     s.learn_choose(1).unwrap();
-    assert_eq!(s.lesson().unwrap().phase, StepPhase::Passed);
+    let v = s.lesson().unwrap();
+    assert_eq!((v.phase, v.chose), (StepPhase::Passed, Some((1, true))));
     // Leaving the step drops the loops: the shell hears `ready: false`.
     s.learn_next().unwrap();
     let requests = drain_learn(&mut s);
@@ -1493,7 +1540,7 @@ fn listen_examples_share_the_target_slot_and_are_level_matched() {
         "{requests:?}"
     );
     let e = s.learn_choose(0).unwrap_err();
-    assert_eq!(e.code(), "no_choice");
+    assert_eq!(e.code(), "not_here");
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1554,7 +1601,7 @@ fn a_recreate_step_is_a_real_round_that_never_stashes_and_logs_origin_lesson() {
         [RoundEnd {
             passed: true,
             assisted: false,
-            best_sound_pct: Some(95.0)
+            best_sound_pct: Some(95)
         }]
     );
     assert_eq!(records(&drain_learn(&mut s)).len(), 1);
@@ -1658,8 +1705,14 @@ fn a_lesson_round_resumes_after_a_reload_from_its_lesson() {
     assert_eq!((v.phase, v.lesson, v.submits), (Phase::Submitted, true, 1));
     assert_eq!(game_job_kinds(&drain_game(&mut t)), Vec::<&str>::new());
     let open = learn_job(&drain_learn(&mut t), "open");
-    let (fake, _) = Fake::new(steps);
-    t.learn_job_done(open.id, LearnResult::Opened(fake))
+    let (player, effects, _) = Fake::resumed(steps, 0);
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, PlayerEffect::StartRound(_))),
+        "a resume brings no round of its own"
+    );
+    t.learn_job_done(open.id, LearnResult::Opened { player, effects })
         .unwrap();
     // The lesson hands the challenge back; the round is prepared again, under its own id, and resumes.
     let prepare = game_job(&drain_game(&mut t), "prepare_challenge");

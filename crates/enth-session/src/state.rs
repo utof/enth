@@ -93,8 +93,8 @@ pub struct InstanceState {
     /// The lesson in flight (lane SL; reserved by lane S0l for R2): its reference, its step and the stash of the
     /// player's own patch, so a reload resumes the lesson. Optional and omitted when `None`, like `game`, so a state
     /// without a lesson saves the same bytes as before the field existed (state version 1: an optional field with a
-    /// default), and older builds ignore it. Read leniently ([`crate::learn::lenient_learn`]): a `learn` object this
-    /// build cannot decode never fails the rest of the field.
+    /// default), and older builds ignore it. Read leniently ([`LearnState::lenient`](crate::learn::LearnState::lenient)): a
+    /// `learn` object this build cannot decode keeps its stash and never fails the rest of the field.
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::learn::lenient_learn"

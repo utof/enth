@@ -55,11 +55,14 @@
 //! # The seam with lanes LM and CV2
 //!
 //! Until LM's `enth_learn::player` and CV2's `enth_challenge::v2::Selector` merge, this module carries **stand-ins**
-//! with their agreed names and shapes (the coordinator's F1l ruling): [`LessonRef`], [`Selector`], [`Touch`],
-//! [`StepView`], [`StepPhase`], [`EditSource`], [`Example`], [`StepRecord`], [`CheckJob`], [`CheckVerdict`],
-//! [`HintJob`], [`MeasuredHint`], [`HintAction`], [`RoundEnd`], [`PlayerError`], [`PlayerEffect`], and the trait
-//! [`LessonPlayer`], whose methods mirror LM's player one to one. The swap at F1L replaces each stand-in with a
-//! re-export and implements the trait for LM's `Player` (or holds it directly).
+//! mirroring the types on their branches (checked against `r2/lm` at `b9f511f` and `r2/cv2` at `3219eaf`; the
+//! coordinator's F1l ruling): [`LessonRef`], [`Selector`], [`Touch`], [`StepView`], [`StepPhase`], [`EditSource`],
+//! [`Audition`], [`StepRecord`], [`CheckRequest`], [`CheckVerdict`], [`HintRequest`], [`MeasuredHint`],
+//! [`RoundEnd`], [`PlayerError`], [`PlayerEffect`] (LM's `Effect`), and the trait [`LessonPlayer`], whose methods
+//! mirror LM's `Player` one to one plus `round_challenge` (a resumed step brings no `StartRound`). The swap at F1L
+//! replaces each stand-in with a re-export (the stand-ins carry only the fields the session reads; LM's carry more)
+//! and implements the trait for LM's `Player` (or holds it directly). The session's `EndChoice` is the game's; LM's
+//! has the same two variants.
 
 use std::fmt;
 use std::str::FromStr;
@@ -68,8 +71,7 @@ use std::sync::Arc;
 use enth_challenge::Challenge;
 use enth_patch::history::History;
 use enth_patch::{
-    AddrError, Builtin, MacroIndex, ModSource, ModuleId, ModuleKind, Op, ParamAddr, Patch,
-    RouteAddr, Target,
+    Builtin, MacroIndex, ModSource, ModuleId, ModuleKind, Op, ParamAddr, Patch, RouteAddr, Target,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -108,45 +110,43 @@ const MAX_EFFECT_DEPTH: u8 = 8;
 // The seam with lanes LM and CV2 (stand-ins until they merge)
 // ---------------------------------------------------------------------------------------------------------------
 
-/// Which lesson, at which step. **Stand-in** for lane LM's `enth_learn::pack::LessonRef` (the F1l ruling: pack id,
-/// pack version, lesson id, step index, and 16 hex digits of the lesson's SHA-256). Saved in the `learn` object, so
-/// it is text and integers only, and every field defaults.
+/// Which lesson, at which step. **Stand-in** for lane LM's `enth_learn::pack::LessonRef` (pack id, pack version,
+/// lesson id, step index, and the first 8 bytes of the lesson file's SHA-256 as 16 hex digits), with the same JSON:
+/// `{"pack":"basics","version":"1.2.0","lesson":"cutoff","step":1,"content":"0123456789abcdef"}`. LM's fields are
+/// typed ids that read and write as these strings.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LessonRef {
     /// The pack's id (`basics`).
     pub pack: String,
-    /// The pack's version (semver text, `1.2.0`).
+    /// The pack's version when the lesson started (semver text).
     pub version: String,
     /// The lesson's id within the pack.
     pub lesson: String,
     /// The step, 0-based.
     pub step: u16,
-    /// The first 16 hex digits of the lesson's SHA-256: a reload of an updated lesson restarts it at step 0.
+    /// The first 16 hex digits of the lesson file's SHA-256: a reload of an updated lesson restarts it at step 0.
     pub content: String,
 }
 
-impl LessonRef {
-    /// The same lesson (pack and lesson id), whatever its step, version or content.
-    pub fn same_lesson(&self, other: &LessonRef) -> bool {
-        self.pack == other.pack && self.lesson == other.lesson
-    }
+/// The same lesson (pack and lesson id; LM's `LessonRef::key`), whatever its step, version or content.
+fn same_lesson(a: &LessonRef, b: &LessonRef) -> bool {
+    a.pack == b.pack && a.lesson == b.lesson
 }
 
-/// What a lesson locks, highlights or hides: a parameter, a whole module (or `voice` or `master`), a route or a
-/// macro. **Stand-in** for lane CV2's `enth_challenge::v2::Selector`, with the same variants and LM's text grammar as
-/// its parse and print form: `filter1.cutoff`, `filter1.*` (also `voice.*`, `master.*`), `lfo1 -> filter1.cutoff`,
-/// `macro3`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// What a lesson locks, highlights or hides. **Stand-in** for lane CV2's `enth_challenge::v2::Selector`: the same
+/// variants, the same covering rules and the same strict text form, `filter1.cutoff`, `filter1.*` (also `voice.*`,
+/// `master.*`), `lfo1 -> filter1.cutoff`, `macro3`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Selector {
     /// One parameter.
     Param(ParamAddr),
-    /// A whole module or built-in: its parameters, the module itself (enable, remove, move, label) and the routes
-    /// from it or into it.
+    /// A whole module, `voice` or `master`: its parameters, the module itself (enable, remove, move, label), the
+    /// routes from it and the routes into its parameters.
     Module(Target),
-    /// One route: its depth and its existence.
+    /// One route: adding it, removing it, its depth.
     Route(RouteAddr),
-    /// A macro: its knob, its name and the routes from it.
+    /// One macro's knob.
     Macro(MacroIndex),
 }
 
@@ -154,16 +154,15 @@ impl Selector {
     /// Whether this selector covers `touch` (lane CV2's `Selector::covers`).
     pub fn covers(&self, touch: &Touch) -> bool {
         match (self, touch) {
-            (Selector::Param(p), Touch::Param(a)) => p == a,
+            (Selector::Param(a), Touch::Param(b)) => a == b,
+            (Selector::Route(a), Touch::Route(b)) => a == b,
+            (Selector::Macro(a), Touch::Macro(b)) => a == b,
+            (Selector::Module(t), Touch::Module(u)) => t == u,
             (Selector::Module(t), Touch::Param(a)) => a.target() == t,
-            (Selector::Module(Target::Module(m)), Touch::Module(id)) => m == id,
             (Selector::Module(t), Touch::Route(r)) => {
                 r.dst.target() == t
-                    || matches!((t, &r.src), (Target::Module(m), ModSource::Module(s)) if m == s)
+                    || matches!((t, &r.src), (Target::Module(id), ModSource::Module(src)) if id == src)
             }
-            (Selector::Route(r), Touch::Route(x)) => r == x,
-            (Selector::Macro(i), Touch::Macro(j)) => i == j,
-            (Selector::Macro(i), Touch::Route(r)) => r.src == ModSource::Macro(*i),
             _ => false,
         }
     }
@@ -181,38 +180,48 @@ impl fmt::Display for Selector {
 }
 
 impl FromStr for Selector {
-    type Err = AddrError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let t = s.trim();
-        if t.contains("->") {
-            return t.parse().map(Selector::Route);
-        }
-        if let Some(target) = t.strip_suffix(".*") {
-            return Ok(Selector::Module(match target {
+    type Err = String;
+
+    /// Strict, as lane CV2's: the text must be the canonical form [`Display`](fmt::Display) prints.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let parsed = if text.contains("->") {
+            text.parse::<RouteAddr>()
+                .map(Selector::Route)
+                .map_err(|e| e.to_string())?
+        } else if let Some(owner) = text.strip_suffix(".*") {
+            Selector::Module(match owner {
                 "voice" => Target::Voice,
                 "master" => Target::Master,
-                id => Target::Module(ModuleId::new(id)?),
-            }));
+                id => Target::Module(ModuleId::new(id).map_err(|e| e.to_string())?),
+            })
+        } else if !text.contains('.') && text.starts_with("macro") {
+            match text.parse::<ModSource>().map_err(|e| e.to_string())? {
+                ModSource::Macro(i) => Selector::Macro(i),
+                _ => return Err(format!("'{text}' is not a selector")),
+            }
+        } else {
+            text.parse::<ParamAddr>()
+                .map(Selector::Param)
+                .map_err(|e| e.to_string())?
+        };
+        let canonical = parsed.to_string();
+        if canonical != text {
+            return Err(format!("write '{text}' as '{canonical}'"));
         }
-        if !t.contains('.')
-            && let Ok(ModSource::Macro(index)) = t.parse::<ModSource>()
-        {
-            return Ok(Selector::Macro(index));
-        }
-        t.parse().map(Selector::Param)
+        Ok(parsed)
     }
 }
 
 /// One thing an op changes ([`touches`]). **Stand-in** for lane CV2's `enth_challenge::v2::Touch`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Touch {
-    /// A parameter's value or its effect.
+    /// A parameter's value (or its effect).
     Param(ParamAddr),
-    /// A route's depth or existence.
+    /// A route: added, removed, or its depth.
     Route(RouteAddr),
-    /// A module itself: its existence, enable flag, place, label or role.
-    Module(ModuleId),
-    /// A macro's knob or name.
+    /// A module itself (enabled, removed, moved, relabelled, its role) or a built-in.
+    Module(Target),
+    /// A macro's knob (or its name).
     Macro(MacroIndex),
 }
 
@@ -221,7 +230,7 @@ impl fmt::Display for Touch {
         match self {
             Touch::Param(addr) => write!(f, "{addr}"),
             Touch::Route(route) => write!(f, "{route}"),
-            Touch::Module(id) => write!(f, "{id}"),
+            Touch::Module(target) => write!(f, "{target}"),
             Touch::Macro(index) => write!(f, "macro{}", index.one_based()),
         }
     }
@@ -251,10 +260,12 @@ pub fn touches(before: &Patch, op: &Op) -> Option<Vec<Touch>> {
         Op::RemoveModule { id } | Op::SetEnabled { id, .. } => {
             module_whole(&mut out, before, id, None);
         }
-        Op::Move { id, .. } | Op::SetLabel { id, .. } => out.push(Touch::Module(id.clone())),
+        Op::Move { id, .. } | Op::SetLabel { id, .. } => {
+            out.push(Touch::Module(Target::Module(id.clone())));
+        }
         Op::SetAmpEnv { id } => {
-            out.push(Touch::Module(id.clone()));
-            out.push(Touch::Module(before.voice.amp_env.clone()));
+            out.push(Touch::Module(Target::Module(id.clone())));
+            out.push(Touch::Module(Target::Module(before.voice.amp_env.clone())));
         }
         Op::InsertRoute { route, .. } => route_touches(
             &mut out,
@@ -298,7 +309,7 @@ fn route_touches(out: &mut Vec<Touch>, route: &RouteAddr) {
 
 /// A module, all its parameters (from `kind`, or its kind in `before`) and every route from or into it.
 fn module_whole(out: &mut Vec<Touch>, before: &Patch, id: &ModuleId, kind: Option<ModuleKind>) {
-    out.push(Touch::Module(id.clone()));
+    out.push(Touch::Module(Target::Module(id.clone())));
     let kind = kind.or_else(|| before.find(id).map(|(_, m)| m.kind));
     if let Some(kind) = kind {
         out.extend(
@@ -339,9 +350,9 @@ fn target_params(patch: &Patch, target: &Target) -> Vec<ParamAddr> {
         .collect()
 }
 
-/// What a step shows: what it highlights, hides and locks. **Stand-in** for lane LM's `enth_learn::lesson::StepView`
-/// (which also names the layout and the start); the session enforces `lock` and passes the rest to the editor. On a
-/// Recreate step, `lock` carries the challenge's `Constraints.locked` (one source in the content, one channel here).
+/// What a step shows. **Stand-in** for lane LM's `enth_learn::lesson::StepView` (which also names the layout, the
+/// start and the advisory `editable` list). The session enforces `lock`, the step's **effective** locks (on a
+/// Recreate step, its challenge's `Constraints.locked`), and passes the rest to the editor.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StepView {
     /// Controls to outline.
@@ -352,118 +363,104 @@ pub struct StepView {
     pub lock: Vec<Selector>,
 }
 
-/// Where a step stands. **Stand-in** for lane LM's `StepPhase` (docs/learn.md's sketch).
+/// Where the current step is. **Stand-in** for lane LM's `StepPhase`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum StepPhase {
-    /// The step's text, before any work.
+    /// The player is working on it (or reading, or listening).
     #[default]
-    Intro,
-    /// The player works; patch predicates re-run after each change.
     Working,
-    /// A sound check is out.
-    Checking,
-    /// The step's check passed.
+    /// A sound check for this revision is out.
+    Checking {
+        /// The revision the check is for.
+        revision: u64,
+    },
+    /// It passed (sticky until the lesson ends).
     Passed,
-    /// The player asked to be shown.
-    Shown,
-    /// The player skipped it.
-    Skipped,
 }
 
-/// What changed the patch, as the player sees it. **Stand-in** for lane LM's `EditSource`: `Touched` counts
-/// `Player` only, and host automation never makes a step pass by itself.
+/// Where an edit came from. **Stand-in** for lane LM's `EditSource`: `Touched` counts `Player` only, and host
+/// automation never makes a step pass by itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum EditSource {
-    /// An editor edit, undo, redo, or Show me's op (the edit path).
+    /// An editor edit, undo, redo, or Show's op (the edit path).
     Player,
-    /// Host automation folded into the patch.
+    /// Host automation folded into the patch (the session passes the checked patch: locked controls pinned).
     Host,
     /// The whole patch was replaced: a step's start, a round's start, a reveal, a host state load, a resume.
     Load,
 }
 
-/// One Listen or Choose example the shell renders. **Stand-in** for lane LM's `Example` (which also has a phrase, a
+/// A Listen or Choose example, ready to render. **Stand-in** for lane LM's `Audition` (which also has the phrase, a
 /// transpose, a render seed and a control curve, Q7); the session reads only `level_match` (the gains).
 #[derive(Clone, Debug, PartialEq)]
-pub struct Example {
+pub struct Audition {
     /// What the editor calls it.
     pub label: String,
     /// The patch it plays.
     pub patch: Arc<Patch>,
-    /// Level-match it with the step's other examples (default on).
+    /// Level-matched with the step's other examples (default on).
     pub level_match: bool,
 }
 
-/// A step's outcome for the per-user progress file. **Stand-in** for lane LM's `StepRecord`.
+/// A step's outcome for the progress file. **Stand-in** for lane LM's `StepRecord` (the lesson key, the step id and
+/// its `StepProgress`); the shell merges it with `Progress::record`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct StepRecord {
     /// The step.
     pub step: u16,
     /// Its check passed.
     pub passed: bool,
-    /// With help (a hint, Show me, a reveal).
+    /// With help.
     pub assisted: bool,
 }
 
-/// A sound check the player asks for once the patch has settled. **Stand-in** for lane LM's `CheckJob` (which also
-/// carries the check: the phrase and the expectations).
+/// A sound check to run. **Stand-in** for lane LM's `CheckRequest` (which also carries the sound checks).
 #[derive(Clone, Debug, PartialEq)]
-pub struct CheckJob {
-    /// The player's id for it.
-    pub id: u64,
-    /// The patch revision it measures.
+pub struct CheckRequest {
+    /// The revision it is for.
     pub revision: u64,
     /// The checked patch at that revision.
     pub patch: Box<Patch>,
 }
 
-/// A sound check's answer. **Stand-in** for lane LM's `CheckVerdict`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// A sound check's verdict. **Stand-in** for lane LM's `CheckVerdict` (which also has per-item results).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckVerdict {
-    /// Every expectation met with its margin.
+    /// Every item of every sound check held.
     pub passed: bool,
 }
 
-/// A measured hint the player asks for (`enth_solver::hint`). **Stand-in** for lane LM's job payload
-/// `{patch, phrase, expect, free}`.
+/// A measured hint to compute (`enth_solver::hint`). **Stand-in** for lane LM's `HintRequest` (which also carries
+/// the phrase, the expectation items and the free parameters).
 #[derive(Clone, Debug, PartialEq)]
-pub struct HintJob {
-    /// The player's id for it.
-    pub id: u64,
-    /// The patch revision it measures.
+pub struct HintRequest {
+    /// The revision it is for.
     pub revision: u64,
     /// The checked patch at that revision.
     pub patch: Box<Patch>,
 }
 
-/// A measured hint's answer, which the player turns into its own text and highlight. **Stand-in**.
+/// A measured hint, as the Learn view shows it. **Stand-in** for lane LM's `MeasuredHint` (which also says what to
+/// point at).
 #[derive(Clone, Debug, PartialEq)]
 pub struct MeasuredHint {
     /// What to say.
     pub text: String,
 }
 
-/// What the player's `hint()` gives: authored text first, then a job for a measured hint. **Stand-in**.
-#[derive(Clone, Debug, PartialEq)]
-pub enum HintAction {
-    /// An authored hint, shown at once.
-    Text(String),
-    /// A measured hint to compute on the worker.
-    Measure(HintJob),
-}
-
-/// How a step's round went, for the player (`round_ended`). **Stand-in** for lane LM's `RoundEnd`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// How a Recreate step's round went. **Stand-in** for lane LM's `RoundEnd`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RoundEnd {
-    /// The round passed.
+    /// A submit passed.
     pub passed: bool,
-    /// With hints, the dim assist or a reveal.
+    /// The round used help.
     pub assisted: bool,
-    /// The best sound score of its submits, in percent.
-    pub best_sound_pct: Option<f64>,
+    /// The best sound % of its submits, rounded down.
+    pub best_sound_pct: Option<u8>,
 }
 
-/// The player refused a call. **Stand-in** for lane LM's `PlayerError` (`stale_result`, `no_choice`, …).
+/// The player refused a call. **Stand-in** for lane LM's `PlayerError` (`stale_result`, `not_here`,
+/// `out_of_range`, `lesson_ended`, `no_witness_path`, each with a hint).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlayerError {
     /// A stable snake-case code.
@@ -472,38 +469,75 @@ pub struct PlayerError {
     pub hint: String,
 }
 
-/// What the player asks the session to do. **Stand-in** for lane LM's `Effect`, plus `Examples` (SL's counter h:
-/// the examples a Listen or Choose step renders, so the worker gets a self-contained job).
+/// What the session does after a player call, in order. **Stand-in** for lane LM's `Effect`, variant for variant.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerEffect {
-    /// Seat this patch as the step's start (one plan). Ignored when the step has a round (its start comes from the
-    /// round) and when a reload resumes the step (the `patch` field holds the step's patch).
+    /// Seat this patch as the step's start: one plan, a fresh history. A step load carries at most one, and a
+    /// Recreate step none (its round brings its start).
     LoadPatch(Arc<Patch>),
-    /// Start the step's Recreate round from this challenge.
+    /// Start the step's Recreate round (`RoundSource::Challenge`, origin `lesson`).
     StartRound(Box<Challenge>),
-    /// The step's view: what to highlight, hide and lock.
+    /// End the live round: its step was left.
+    EndRound,
+    /// The step's view, with the effective locks the session enforces.
     View(StepView),
-    /// The step's examples, for the shell to render.
-    Examples(Arc<[Example]>),
-    /// A step outcome for the progress file.
+    /// A Listen or Choose step's examples, for the shell to render into the Target ▶ slot.
+    Examples(Arc<[Audition]>),
+    /// Run this sound check (a job).
+    Check(CheckRequest),
+    /// Compute this measured hint (a job).
+    HintJob(HintRequest),
+    /// Show an authored hint.
+    Hint(String),
+    /// Show a measured hint.
+    Measured(MeasuredHint),
+    /// Apply this op through the edit path as one undo step (Show): the locks hold.
+    Apply(Op),
+    /// The player picked an option.
+    Chose {
+        /// Which.
+        option: u8,
+        /// Whether it is the answer.
+        correct: bool,
+    },
+    /// Show an ear question's answer.
+    Reveal {
+        /// The right option.
+        answer: u8,
+    },
+    /// The step passed.
+    Passed {
+        /// Which step.
+        step: u16,
+        /// With help.
+        assisted: bool,
+    },
+    /// Merge this into the progress file.
     Record(StepRecord),
-    /// The lesson is done (it stays live until the editor ends it with Restore or Keep).
+    /// The last step was left forward: the lesson is complete (it stays live until the editor ends it).
     Finished,
+    /// The lesson ended (the session restores its stash or keeps the patch itself).
+    End(EndChoice),
 }
 
 /// The lesson player, as the session drives it. **A stand-in trait** whose methods mirror lane LM's concrete
 /// `enth_learn::player::Player` one to one (the F1l ruling), so the session, its tests and a kittest fake can drive
-/// any player until LM's merges. Pure: `&mut self`, times from the shell, no I/O.
+/// any player until LM's merges; then F1L implements it for `Player` (each method delegates; `round_challenge` reads
+/// the current step's `StepKind::Recreate { challenge }`) or holds `Player` directly. Pure: `&mut self`, times from
+/// the shell, no I/O. Every mutating call answers with effects, in order.
 pub trait LessonPlayer: Send + fmt::Debug {
-    /// The lesson and the current step.
+    /// The lesson and the current step (what the session saves).
     fn lesson_ref(&self) -> LessonRef;
     /// How many steps the lesson has.
     fn steps(&self) -> u16;
-    /// Where the current step stands.
+    /// Where the current step is.
     fn phase(&self) -> StepPhase;
-    /// Begin (or, after a reload, resume) the current step: its view and its start.
-    fn start(&mut self, now_ms: u64) -> Vec<PlayerEffect>;
-    /// The patch changed: `patch` is the checked patch ([`Session::checked_patch`]) at `revision`.
+    /// The current step's round challenge, when it is a Recreate step: a step resumed after a reload brings no
+    /// `StartRound`, so the session prepares its saved round again from this.
+    fn round_challenge(&self) -> Option<Challenge>;
+    /// Load step 0.
+    fn start(&mut self) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// A delivered change: `patch` is the checked patch ([`Session::checked_patch`]) at `revision`.
     fn edited(
         &mut self,
         now_ms: u64,
@@ -511,37 +545,36 @@ pub trait LessonPlayer: Send + fmt::Debug {
         patch: &Patch,
         ops: &[Op],
         source: EditSource,
-    ) -> Vec<PlayerEffect>;
-    /// A sound check to run, once the patch has settled.
-    fn tick(&mut self, now_ms: u64) -> Option<CheckJob>;
-    /// A sound check's verdict (the session has refused stale ones first; the player checks again).
+    ) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// Time passes: a sound check once the patch has settled ([`PlayerEffect::Check`]).
+    fn tick(&mut self, now_ms: u64) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// A sound check's verdict for `revision` (the session refused stale ones first; the player checks again).
     fn check_done(
         &mut self,
-        job: u64,
         revision: u64,
-        verdict: CheckVerdict,
+        verdict: &CheckVerdict,
     ) -> Result<Vec<PlayerEffect>, PlayerError>;
-    /// The player picked an option of an ear question.
-    fn choose(&mut self, option: u8) -> Result<Vec<PlayerEffect>, PlayerError>;
-    /// The step's round first passed, or was revealed.
-    fn round_ended(&mut self, end: RoundEnd) -> Vec<PlayerEffect>;
-    /// The next hint: authored text, or a measured-hint job.
-    fn hint(&mut self) -> Option<HintAction>;
-    /// A measured hint's answer.
+    /// The next hint: authored text ([`PlayerEffect::Hint`]), then a measured one ([`PlayerEffect::HintJob`]);
+    /// nothing when none is left.
+    fn hint(&mut self) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// A measured hint for `revision`.
     fn hint_done(
         &mut self,
-        job: u64,
         revision: u64,
         hint: MeasuredHint,
     ) -> Result<Vec<PlayerEffect>, PlayerError>;
-    /// The witness's next op, which the session applies through the edit path as one undo step.
-    fn show(&mut self, patch: &Patch) -> Option<Op>;
-    /// Go to the next step.
-    fn next(&mut self) -> Vec<PlayerEffect>;
-    /// Go back a step.
-    fn back(&mut self) -> Vec<PlayerEffect>;
-    /// The lesson ends.
-    fn end(&mut self, choice: EndChoice) -> Vec<PlayerEffect>;
+    /// Show: the witness's next op ([`PlayerEffect::Apply`]) or an ear question's answer.
+    fn show(&mut self, patch: &Patch) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// Answer an ear question.
+    fn choose(&mut self, option: u8) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// The step's round reached its first passing submit, or was revealed.
+    fn round_ended(&mut self, end: RoundEnd) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// The next step (or Finished).
+    fn next(&mut self) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// The previous step.
+    fn back(&mut self) -> Result<Vec<PlayerEffect>, PlayerError>;
+    /// End the lesson.
+    fn end(&mut self, choice: EndChoice) -> Result<Vec<PlayerEffect>, PlayerError>;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -626,23 +659,23 @@ pub struct LearnJob {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum LearnJobKind {
-    /// After a reload: find the lesson in the installed packs, build its player at the saved step (LM's
-    /// `Player::resume(bundle, step)`) and answer [`LearnResult::Opened`]; [`LearnResult::Failed`] if the pack is
-    /// gone (the lesson breaks; ending it still brings your patch back).
+    /// After a reload: find the lesson in the installed packs and resume its player at the saved step (LM's
+    /// `Player::resume(bundle, step)`, which also gives the step's effects); answer [`LearnResult::Opened`], or
+    /// [`LearnResult::Failed`] if the pack is gone (the lesson breaks; ending it still brings your patch back).
     Open {
         /// The saved reference.
         lesson: LessonRef,
     },
     /// Run a sound check (`enth_learn`'s evaluation: render the phrase, measure, compare). Answer
     /// [`LearnResult::Checked`].
-    Check(CheckJob),
+    Check(CheckRequest),
     /// Compute a measured hint (`enth_solver::hint`). Answer [`LearnResult::Hinted`].
-    Hint(HintJob),
+    Hint(HintRequest),
     /// Render the step's examples into the Target ▶ slot as a set of loops, one per example, and measure each
     /// one's loudness. Answer [`LearnResult::Examples`]. Drop the loops when [`ListenState::ready`] turns false.
     Examples {
         /// The examples, in order.
-        examples: Arc<[Example]>,
+        examples: Arc<[Audition]>,
     },
 }
 
@@ -662,8 +695,14 @@ impl LearnJobKind {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum LearnResult {
-    /// For [`LearnJobKind::Open`]: the lesson's player, at the saved step (or at step 0 if the lesson changed).
-    Opened(Box<dyn LessonPlayer>),
+    /// For [`LearnJobKind::Open`]: the lesson's player at the saved step, and the effects its resume gave (the
+    /// step's view and examples; never a start patch or a round, which the session already holds).
+    Opened {
+        /// The player.
+        player: Box<dyn LessonPlayer>,
+        /// What `Player::resume` returned beside it.
+        effects: Vec<PlayerEffect>,
+    },
     /// For [`LearnJobKind::Check`].
     Checked(CheckVerdict),
     /// For [`LearnJobKind::Hint`].
@@ -684,7 +723,7 @@ impl LearnResult {
     /// The result's name, for errors.
     pub fn name(&self) -> &'static str {
         match self {
-            LearnResult::Opened(_) => "opened",
+            LearnResult::Opened { .. } => "opened",
             LearnResult::Checked(_) => "checked",
             LearnResult::Hinted(_) => "hinted",
             LearnResult::Examples { .. } => "examples",
@@ -757,8 +796,9 @@ pub struct LearnPending {
     reason = "a view model: independent facts the Learn view shows"
 )]
 pub struct LearnView {
-    /// The lesson and its current step (the saved reference while the lesson is being found again).
-    pub lesson: LessonRef,
+    /// The lesson and its current step (the saved reference while the lesson is being found again; none when the
+    /// saved one could not be read).
+    pub lesson: Option<LessonRef>,
     /// How many steps (0 until the player is there).
     pub steps: u16,
     /// Where the step stands.
@@ -769,8 +809,12 @@ pub struct LearnView {
     pub round: bool,
     /// What the lesson waits for.
     pub pending: LearnPending,
-    /// The latest authored hint.
+    /// The latest hint, authored or measured.
     pub hint: Option<String>,
+    /// The ear question's last pick, and whether it was right.
+    pub chose: Option<(u8, bool)>,
+    /// The ear question's answer, once shown.
+    pub answer: Option<u8>,
     /// The examples' playback.
     pub listen: ListenState,
     /// The lesson is done; ending it (Restore or Keep) is what is left.
@@ -964,11 +1008,10 @@ pub trait LearnEdit {
 // The session's transient lesson state
 // ---------------------------------------------------------------------------------------------------------------
 
-/// A job out for the player, with the player's own id and the revision it measures.
+/// A job out for the player, with the revision it measures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct InFlight {
     id: LearnJobId,
-    job: u64,
     revision: u64,
 }
 
@@ -995,15 +1038,17 @@ pub(crate) struct LearnLive {
     /// Counts changes to the patch over the whole lesson; jobs measure one revision.
     revision: u64,
     jobs: LearnJobs,
-    examples: Option<Arc<[Example]>>,
+    examples: Option<Arc<[Audition]>>,
     lufs: Option<Vec<Option<f32>>>,
     listen: Option<u8>,
     /// The Listen state last pushed to the shell.
     listen_sent: Option<ListenState>,
     hint: Option<String>,
+    chose: Option<(u8, bool)>,
+    answer: Option<u8>,
     finished: bool,
     broken: bool,
-    /// The next step effects resume the saved step after a reload: no start patch, the saved round resumed.
+    /// The step's effects resume the saved step after a reload: no start patch, the saved round resumed.
     resuming: bool,
     /// How deep effects are calling back into the player.
     depth: u8,
@@ -1092,9 +1137,9 @@ impl Session {
     }
 
     /// Hand back a Learn job's result. Called on the GUI thread (or the host main thread), under the lock, **never on
-    /// the worker**: an opened lesson loads its step, which may send a plan. A result for a job the lesson no longer
-    /// waits for, or a check or hint that measured an older revision of the patch, is [`LearnError::StaleJob`] and
-    /// changes nothing (the player asks again once the patch settles).
+    /// the worker**: an opened lesson resumes its step, which may prepare a round. A result for a job the lesson no
+    /// longer waits for, or a check or hint that measured an older revision of the patch, is
+    /// [`LearnError::StaleJob`] and changes nothing (the player asks again once the patch settles).
     pub fn learn_job_done(
         &mut self,
         id: LearnJobId,
@@ -1117,30 +1162,17 @@ impl Session {
                 self.learn_job_failed(job, message);
                 Ok(())
             }
-            ("open", LearnResult::Opened(player)) => {
+            ("open", LearnResult::Opened { player, effects }) => {
                 self.learn.jobs.open = None;
-                self.learn_opened(player)
+                self.learn_opened(player, effects)
             }
             ("check", LearnResult::Checked(verdict)) => {
-                let Some(flight) = self.learn.jobs.check.take() else {
-                    return Err(LearnError::StaleJob(id));
-                };
-                if flight.revision != self.learn.revision {
-                    return Err(LearnError::StaleJob(id));
-                }
-                self.learn_drive(
-                    |p| p.check_done(flight.job, flight.revision, verdict),
-                    false,
-                )
+                let flight = self.learn_take_fresh(id, |jobs| &mut jobs.check)?;
+                self.learn_drive(|p| p.check_done(flight.revision, &verdict), false)
             }
             ("hint", LearnResult::Hinted(hint)) => {
-                let Some(flight) = self.learn.jobs.hint.take() else {
-                    return Err(LearnError::StaleJob(id));
-                };
-                if flight.revision != self.learn.revision {
-                    return Err(LearnError::StaleJob(id));
-                }
-                self.learn_drive(|p| p.hint_done(flight.job, flight.revision, hint), false)
+                let flight = self.learn_take_fresh(id, |jobs| &mut jobs.hint)?;
+                self.learn_drive(|p| p.hint_done(flight.revision, hint), false)
             }
             ("examples", LearnResult::Examples { lufs }) => {
                 let count = self.learn.examples.as_ref().map_or(0, |e| e.len());
@@ -1206,7 +1238,7 @@ impl Session {
         Ok(())
     }
 
-    /// The edit path delivered `ops` (an edit, undo, redo or Show me's op). Called last in [`Session::deliver`].
+    /// The edit path delivered `ops` (an edit, undo, redo or Show's op). Called last in [`Session::deliver`].
     pub(crate) fn learn_note_edit(&mut self, ops: &[Op]) {
         self.learn_changed(ops, EditSource::Player);
     }
@@ -1221,28 +1253,13 @@ impl Session {
         self.learn_changed(&[], EditSource::Load);
     }
 
-    /// The lesson's clock: a sound check once the player says the patch has settled. Called from
+    /// The lesson's clock: the player may ask for a sound check once the patch has settled. Called from
     /// [`Session::game_tick`], once per editor frame.
     pub(crate) fn learn_tick(&mut self, now: u64) {
-        if self.learn.broken {
+        if self.learn.broken || self.learn.player.is_none() {
             return;
         }
-        let Some(player) = self.learn.player.as_mut() else {
-            return;
-        };
-        let Some(job) = player.tick(now) else {
-            return;
-        };
-        if let Some(old) = self.learn.jobs.check.take() {
-            self.learn.requests.push(LearnRequest::Cancel(old.id));
-        }
-        let (job_id, revision) = (job.id, job.revision);
-        let id = self.learn_job(LearnJobKind::Check(job));
-        self.learn.jobs.check = Some(InFlight {
-            id,
-            job: job_id,
-            revision,
-        });
+        let _ = self.learn_drive(|p| p.tick(now), false);
     }
 
     /// A lesson round's start patch was seated (the step's one plan): pin the locks and show the player the patch.
@@ -1251,14 +1268,15 @@ impl Session {
         self.learn_changed(&[], EditSource::Load);
     }
 
-    /// The lesson round first passed (`passed`), with its assists and best sound score in hundredths.
+    /// The lesson round first passed (`passed`) or was revealed, with its assists and best sound score in
+    /// hundredths of a percent.
     pub(crate) fn learn_round_result(&mut self, passed: bool, assisted: bool, best: Option<u16>) {
         let end = RoundEnd {
             passed,
             assisted,
-            best_sound_pct: best.map(|b| f64::from(b) / 100.0),
+            best_sound_pct: best.map(|b| u8::try_from(b / 100).unwrap_or(u8::MAX)),
         };
-        let _ = self.learn_drive(|p| Ok(p.round_ended(end)), false);
+        let _ = self.learn_drive(|p| p.round_ended(end), false);
     }
 
     /// The lesson round was revealed: the target is the patch now, and the step is given up.
@@ -1279,12 +1297,8 @@ impl Session {
             && l.is_live()
         {
             self.instance.learn = live;
-            // The round the host restored may be another of this step's: let the player hand its challenge back.
-            if self.lesson_round_waiting() && self.learn.player.is_some() {
-                self.learn.resuming = true;
-                let now = self.game_now();
-                let _ = self.learn_drive(|p| Ok(p.start(now)), true);
-            }
+            // The round the host restored may be another of this step's: prepare it again from the step.
+            self.learn_resume_round();
             return;
         }
         if live.as_ref().is_some_and(LearnState::is_live) {
@@ -1310,6 +1324,22 @@ impl Session {
             .requests
             .push(LearnRequest::Run(LearnJob { id, kind }));
         id
+    }
+
+    /// Take the awaited check or hint `id` from its slot, refusing it as stale when it measured an older revision.
+    fn learn_take_fresh(
+        &mut self,
+        id: LearnJobId,
+        slot: impl FnOnce(&mut LearnJobs) -> &mut Option<InFlight>,
+    ) -> Result<InFlight, LearnError> {
+        let flight = slot(&mut self.learn.jobs)
+            .take()
+            .ok_or(LearnError::StaleJob(id))?;
+        if flight.revision == self.learn.revision {
+            Ok(flight)
+        } else {
+            Err(LearnError::StaleJob(id))
+        }
     }
 
     /// Cancel the step's jobs (and reopening, with `all`).
@@ -1355,8 +1385,8 @@ impl Session {
         }
     }
 
-    /// Call the player and act on its effects. `step_load` forces a step load (a start or a resume); otherwise a
-    /// step load is a change of the player's step.
+    /// Call the player and act on its effects. `step_load` forces a step load (the start); otherwise a step load is
+    /// a change of the player's step.
     fn learn_drive<F>(&mut self, call: F, step_load: bool) -> Result<(), LearnError>
     where
         F: FnOnce(&mut dyn LessonPlayer) -> Result<Vec<PlayerEffect>, PlayerError>,
@@ -1378,9 +1408,9 @@ impl Session {
         match answer {
             Ok(effects) => {
                 self.learn.depth += 1;
-                self.learn_effects(effects, step_load || before != after);
+                let applied = self.learn_effects(effects, step_load || before != after);
                 self.learn.depth -= 1;
-                Ok(())
+                applied
             }
             Err(e) => {
                 let err = LearnError::Player(e);
@@ -1399,17 +1429,23 @@ impl Session {
         let revision = self.learn.revision;
         let patch = self.checked_patch();
         let now = self.game_now();
-        let _ = self.learn_drive(|p| Ok(p.edited(now, revision, &patch, ops, source)), false);
+        let _ = self.learn_drive(|p| p.edited(now, revision, &patch, ops, source), false);
     }
 
-    /// Act on the player's effects. A step load ends the step that was (its round, its jobs, its history) and
-    /// seats the new step's start: one plan, from the round when the step has one.
-    fn learn_effects(&mut self, effects: Vec<PlayerEffect>, step_load: bool) {
+    /// Act on the player's effects, in order. A step load ends the step that was (its round, its jobs, its
+    /// history) and seats the new step's start: one plan, from the round when the step has one. Show's op goes
+    /// through the edit path last, so its refusal is the call's error.
+    fn learn_effects(
+        &mut self,
+        effects: Vec<PlayerEffect>,
+        step_load: bool,
+    ) -> Result<(), LearnError> {
         if step_load {
             self.learn_leave_step();
         }
         let mut load = None;
         let mut round = None;
+        let mut apply = Vec::new();
         let mut viewed = false;
         for effect in effects {
             match effect {
@@ -1419,47 +1455,92 @@ impl Session {
                 }
                 PlayerEffect::LoadPatch(patch) => load = Some(patch),
                 PlayerEffect::StartRound(challenge) => round = Some(challenge),
+                PlayerEffect::EndRound => {
+                    if self.lesson_round_live() {
+                        let _ = self.game_close(EndedBy::Keep);
+                    }
+                }
                 PlayerEffect::Examples(examples) => self.learn_examples(examples),
+                PlayerEffect::Check(request) => {
+                    if let Some(old) = self.learn.jobs.check.take() {
+                        self.learn.requests.push(LearnRequest::Cancel(old.id));
+                    }
+                    let revision = request.revision;
+                    let id = self.learn_job(LearnJobKind::Check(request));
+                    self.learn.jobs.check = Some(InFlight { id, revision });
+                }
+                PlayerEffect::HintJob(request) => {
+                    if let Some(old) = self.learn.jobs.hint.take() {
+                        self.learn.requests.push(LearnRequest::Cancel(old.id));
+                    }
+                    let revision = request.revision;
+                    let id = self.learn_job(LearnJobKind::Hint(request));
+                    self.learn.jobs.hint = Some(InFlight { id, revision });
+                }
+                PlayerEffect::Hint(text) => self.learn.hint = Some(text),
+                PlayerEffect::Measured(hint) => self.learn.hint = Some(hint.text),
+                PlayerEffect::Apply(op) => apply.push(op),
+                PlayerEffect::Chose { option, correct } => {
+                    self.learn.chose = Some((option, correct));
+                }
+                PlayerEffect::Reveal { answer } => self.learn.answer = Some(answer),
                 PlayerEffect::Record(record) => {
-                    let lesson = self.learn_current_ref();
-                    self.learn
-                        .requests
-                        .push(LearnRequest::Record { lesson, record });
+                    if let Some(lesson) = self.learn_current_ref() {
+                        self.learn
+                            .requests
+                            .push(LearnRequest::Record { lesson, record });
+                    }
                 }
                 PlayerEffect::Finished => self.learn.finished = true,
+                // The step's pass shows through the player's phase and reaches the progress file as a `Record`; the
+                // lesson's end is `learn_end`'s, which restores or keeps.
+                PlayerEffect::Passed { .. } | PlayerEffect::End(_) => {}
             }
         }
         let resuming = std::mem::take(&mut self.learn.resuming);
-        match (round, load) {
-            (Some(challenge), _) => {
-                // The round's start is the step's one plan; a resumed step picks up its saved round instead.
-                let resumed = resuming && self.game_resume_lesson_round((*challenge).clone());
-                if !resumed
-                    && let Err(e) =
-                        self.game_open(RoundSource::Challenge(challenge), RoundOrigin::Lesson)
-                {
-                    self.learn.error = Some(LearnError::Round(e));
-                }
-                if resuming {
-                    self.learn_pin();
-                    self.learn_changed(&[], EditSource::Load);
-                }
+        if resuming {
+            // A step resumed after a reload: the `patch` field holds its patch (and the saved round its own).
+            self.learn_resume_round();
+            self.learn_pin();
+            self.learn_changed(&[], EditSource::Load);
+        } else if let Some(challenge) = round {
+            // The round's start is the step's one plan.
+            if let Err(e) = self.game_open(RoundSource::Challenge(challenge), RoundOrigin::Lesson) {
+                self.learn.error = Some(LearnError::Round(e));
             }
-            (None, Some(patch)) if !resuming => self.learn_seat(Patch::clone(&patch)),
-            _ => {
-                if step_load || viewed {
-                    self.learn_pin();
-                }
-                if resuming {
-                    self.learn_changed(&[], EditSource::Load);
-                }
-            }
+        } else if let Some(patch) = load {
+            self.learn_seat(Patch::clone(&patch));
+        } else if step_load || viewed {
+            self.learn_pin();
         }
         self.learn_save_ref();
+        for op in apply {
+            if let Err(e) = self.edit(vec![op], None) {
+                let err = LearnError::Edit(e);
+                self.learn.error = Some(err.clone());
+                return Err(err);
+            }
+        }
+        Ok(())
     }
 
-    /// End the step that was: its round (logged, origin `lesson`), its jobs, its examples; a fresh history and no
-    /// locks until the new step's view arrives. A resume keeps the restored round and the history.
+    /// A restored lesson round waits for its challenge: the current step's, from the player.
+    fn learn_resume_round(&mut self) {
+        if !self.lesson_round_waiting() {
+            return;
+        }
+        let challenge = self.learn.player.as_ref().and_then(|p| p.round_challenge());
+        match challenge {
+            Some(challenge) => {
+                self.game_resume_lesson_round(challenge);
+            }
+            None => self.game_break_lesson_round(),
+        }
+    }
+
+    /// End the step that was: its round (logged, origin `lesson`), its jobs, its examples, its hint and pick; a
+    /// fresh history and no locks until the new step's view arrives. A resume keeps the restored round and the
+    /// history.
     fn learn_leave_step(&mut self) {
         if !self.learn.resuming {
             if self.lesson_round_live() {
@@ -1472,6 +1553,8 @@ impl Session {
         self.learn.view = StepView::default();
         self.learn.pins.clear();
         self.learn.hint = None;
+        self.learn.chose = None;
+        self.learn.answer = None;
         self.learn.examples = None;
         self.learn.lufs = None;
         self.learn.listen = None;
@@ -1538,7 +1621,7 @@ impl Session {
     }
 
     /// The step's examples: render them (the loops replace any earlier set).
-    fn learn_examples(&mut self, examples: Arc<[Example]>) {
+    fn learn_examples(&mut self, examples: Arc<[Audition]>) {
         if let Some(old) = self.learn.jobs.examples.take() {
             self.learn.requests.push(LearnRequest::Cancel(old));
         }
@@ -1556,7 +1639,7 @@ impl Session {
         let (Some(examples), Some(lufs)) = (&self.learn.examples, &self.learn.lufs) else {
             return ListenState::default();
         };
-        let measured = |example: &Example, lufs: &Option<f32>| {
+        let measured = |example: &Audition, lufs: &Option<f32>| {
             lufs.filter(|l| example.level_match && l.is_finite())
         };
         let quietest = examples
@@ -1580,15 +1663,10 @@ impl Session {
     }
 
     /// The lesson's current reference: the player's, or the saved one while it is being found again.
-    fn learn_current_ref(&self) -> LessonRef {
+    fn learn_current_ref(&self) -> Option<LessonRef> {
         match &self.learn.player {
-            Some(player) => player.lesson_ref(),
-            None => self
-                .instance
-                .learn
-                .as_ref()
-                .and_then(|l| l.lesson.clone())
-                .unwrap_or_default(),
+            Some(player) => Some(player.lesson_ref()),
+            None => self.instance.learn.as_ref().and_then(|l| l.lesson.clone()),
         }
     }
 
@@ -1622,14 +1700,19 @@ impl Session {
         }
     }
 
-    /// The shell found the lesson again: check it is the saved one, then resume its step (or restart it at step 0
-    /// when the lesson changed: the player reports where it is).
-    fn learn_opened(&mut self, player: Box<dyn LessonPlayer>) -> Result<(), LearnError> {
+    /// The shell found the lesson again: check it is the saved one, then resume its step with the effects its
+    /// resume gave (the view and examples), or, when the lesson changed (another content prefix), start it again at
+    /// step 0.
+    fn learn_opened(
+        &mut self,
+        player: Box<dyn LessonPlayer>,
+        effects: Vec<PlayerEffect>,
+    ) -> Result<(), LearnError> {
         let Some(saved) = self.instance.learn.as_ref().and_then(|l| l.lesson.clone()) else {
             return Err(LearnError::NoLesson);
         };
         let found = player.lesson_ref();
-        if !found.same_lesson(&saved) {
+        if !same_lesson(&found, &saved) {
             let err = LearnError::OtherLesson {
                 expected: format!("{}/{}", saved.pack, saved.lesson),
                 found: format!("{}/{}", found.pack, found.lesson),
@@ -1639,11 +1722,18 @@ impl Session {
             self.game_break_lesson_round();
             return Err(err);
         }
-        self.learn.resuming = found.content == saved.content && found.step == saved.step;
         self.learn.player = Some(player);
         self.learn.error = None;
-        let now = self.game_now();
-        self.learn_drive(|p| Ok(p.start(now)), true)
+        if found.content == saved.content && found.step == saved.step {
+            self.learn.resuming = true;
+            self.learn.depth += 1;
+            let resumed = self.learn_effects(effects, true);
+            self.learn.depth -= 1;
+            resumed
+        } else {
+            // The lesson changed under its saved step: it starts again, and the round of the old step ends.
+            self.learn_drive(|p| p.start(), true)
+        }
     }
 }
 
@@ -1652,10 +1742,7 @@ impl LearnEdit for Session {
         let state = self.learn_record()?;
         let player = self.learn.player.as_deref();
         Some(LearnView {
-            lesson: player.map_or_else(
-                || state.lesson.clone().unwrap_or_default(),
-                LessonPlayer::lesson_ref,
-            ),
+            lesson: self.learn_current_ref(),
             steps: player.map_or(0, LessonPlayer::steps),
             phase: player.map_or_else(StepPhase::default, LessonPlayer::phase),
             view: self.learn.view.clone(),
@@ -1667,9 +1754,11 @@ impl LearnEdit for Session {
                 examples: self.learn.jobs.examples.is_some(),
             },
             hint: self.learn.hint.clone(),
+            chose: self.learn.chose,
+            answer: self.learn.answer,
             listen: self.learn_listen_state(),
             finished: self.learn.finished,
-            broken: self.learn.broken,
+            broken: self.learn.broken || state.lesson.is_none(),
             error: self.learn.error.clone(),
         })
     }
@@ -1731,61 +1820,53 @@ impl LearnEdit for Session {
         self.learn.stash_history = history;
         self.learn.player = Some(player);
         self.learn.dirty();
-        let now = self.game_now();
-        self.learn_drive(|p| Ok(p.start(now)), true)
+        self.learn_drive(|p| p.start(), true)
     }
 
     fn learn_next(&mut self) -> Result<(), LearnError> {
         self.learn_ready()?;
-        self.learn_drive(|p| Ok(p.next()), false)
+        self.learn_drive(|p| p.next(), false)
     }
 
     fn learn_back(&mut self) -> Result<(), LearnError> {
         self.learn_ready()?;
-        self.learn_drive(|p| Ok(p.back()), false)
+        self.learn_drive(|p| p.back(), false)
     }
 
     fn learn_hint(&mut self) -> Result<(), LearnError> {
         self.learn_ready()?;
-        let action = self.learn.player.as_mut().and_then(|p| p.hint());
-        match action {
-            None => Err(LearnError::NoHint),
-            Some(HintAction::Text(text)) => {
-                self.learn.hint = Some(text);
-                Ok(())
-            }
-            Some(HintAction::Measure(job)) => {
-                if let Some(old) = self.learn.jobs.hint.take() {
-                    self.learn.requests.push(LearnRequest::Cancel(old.id));
-                }
-                let (job_id, revision) = (job.id, job.revision);
-                let id = self.learn_job(LearnJobKind::Hint(job));
-                self.learn.jobs.hint = Some(InFlight {
-                    id,
-                    job: job_id,
-                    revision,
-                });
-                Ok(())
-            }
+        let mut none_left = false;
+        self.learn_drive(
+            |p| {
+                let effects = p.hint()?;
+                none_left = effects.is_empty();
+                Ok(effects)
+            },
+            false,
+        )?;
+        if none_left {
+            Err(LearnError::NoHint)
+        } else {
+            Ok(())
         }
     }
 
     fn learn_show(&mut self) -> Result<(), LearnError> {
         self.learn_ready()?;
         let patch = self.patch.clone();
-        let op = self
-            .learn
-            .player
-            .as_mut()
-            .and_then(|p| p.show(&patch))
-            .ok_or(LearnError::NothingToShow)?;
-        match self.edit(vec![op], None) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                let err = LearnError::Edit(e);
-                self.learn.error = Some(err.clone());
-                Err(err)
-            }
+        let mut nothing = false;
+        self.learn_drive(
+            |p| {
+                let effects = p.show(&patch)?;
+                nothing = effects.is_empty();
+                Ok(effects)
+            },
+            false,
+        )?;
+        if nothing {
+            Err(LearnError::NothingToShow)
+        } else {
+            Ok(())
         }
     }
 
@@ -1820,9 +1901,10 @@ impl LearnEdit for Session {
             };
             let _ = self.game_close(why);
         }
+        // The player's last word: its records reach the progress file; the rest is the session's to do.
         if let Some(player) = self.learn.player.as_mut() {
             let lesson = player.lesson_ref();
-            for effect in player.end(choice) {
+            for effect in player.end(choice).unwrap_or_default() {
                 if let PlayerEffect::Record(record) = effect {
                     self.learn.requests.push(LearnRequest::Record {
                         lesson: lesson.clone(),
@@ -1880,7 +1962,7 @@ mod tests {
     }
 
     #[test]
-    fn selectors_read_and_print_the_lesson_grammar() {
+    fn selectors_read_and_print_the_lesson_grammar_strictly() {
         for text in [
             "filter1.cutoff",
             "voice.glide",
@@ -1893,37 +1975,50 @@ mod tests {
         ] {
             assert_eq!(sel(text).to_string(), text, "{text}");
         }
-        assert_eq!(
-            sel(" macro8 "),
-            Selector::Macro(MacroIndex::new(7).unwrap())
-        );
+        assert_eq!(sel("macro8"), Selector::Macro(MacroIndex::new(7).unwrap()));
         assert!(matches!(
             sel("filter1.*"),
             Selector::Module(Target::Module(_))
         ));
-        for bad in ["", "filter1", "macro9", "filter1.nope", "Bad.*", "lfo1 ->"] {
+        for bad in [
+            "",
+            "filter1",
+            "macro9",
+            "filter1.nope",
+            "Bad.*",
+            "lfo1 ->",
+            " macro8 ",
+            "lfo1->filter1.cutoff",
+        ] {
             assert!(bad.parse::<Selector>().is_err(), "{bad:?}");
         }
+        assert_eq!(
+            "lfo1->filter1.cutoff".parse::<Selector>().unwrap_err(),
+            "write 'lfo1->filter1.cutoff' as 'lfo1 -> filter1.cutoff'"
+        );
     }
 
     #[test]
     fn a_module_selector_covers_its_parameters_itself_and_its_routes() {
         let module = sel("filter1.*");
-        let id = ModuleId::new("filter1").unwrap();
+        let filter1 = Target::Module(ModuleId::new("filter1").unwrap());
         assert!(module.covers(&Touch::Param(addr("filter1.cutoff"))));
-        assert!(module.covers(&Touch::Module(id)));
+        assert!(module.covers(&Touch::Module(filter1.clone())));
         assert!(module.covers(&Touch::Route("lfo1 -> filter1.cutoff".parse().unwrap())));
         assert!(sel("lfo1.*").covers(&Touch::Route("lfo1 -> filter1.cutoff".parse().unwrap())));
         assert!(!module.covers(&Touch::Param(addr("osc1.level"))));
         assert!(sel("voice.*").covers(&Touch::Param(addr("voice.glide"))));
+        assert!(sel("voice.*").covers(&Touch::Module(Target::Voice)));
         assert!(!sel("voice.*").covers(&Touch::Param(addr("master.level"))));
         let param = sel("filter1.cutoff");
         assert!(param.covers(&Touch::Param(addr("filter1.cutoff"))));
         assert!(!param.covers(&Touch::Param(addr("filter1.resonance"))));
-        assert!(!param.covers(&Touch::Module(ModuleId::new("filter1").unwrap())));
+        assert!(!param.covers(&Touch::Module(filter1)));
+        // A macro selector covers the knob only (lane CV2's rule); `touches` adds a macro's routes as their own
+        // touches, so a route or parameter lock still holds against the knob.
         let m3 = MacroIndex::new(2).unwrap();
         assert!(sel("macro3").covers(&Touch::Macro(m3)));
-        assert!(sel("macro3").covers(&Touch::Route("macro3 -> osc1.pw".parse().unwrap())));
+        assert!(!sel("macro3").covers(&Touch::Route("macro3 -> osc1.pw".parse().unwrap())));
         assert!(!sel("macro3").covers(&Touch::Macro(MacroIndex::new(0).unwrap())));
         let route = sel("lfo1 -> filter1.cutoff");
         assert!(route.covers(&Touch::Route("lfo1 -> filter1.cutoff".parse().unwrap())));
