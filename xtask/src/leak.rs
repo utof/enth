@@ -189,6 +189,12 @@ pub fn leak_test(args: &[String]) -> Result<(), String> {
         let counts = read_counts(&out.join("editor-counts.jsonl"))?;
         let frames = read_frames(&out.join("editor-counts.jsonl"))?;
         let (editor_checks, mut facts) = judge_editor(&report, &counts, &options);
+        if editor_checks.iter().any(|c| !c.ok) {
+            // The CI log is often all there is to read (lane NTF, FU1): say what the runs looked like.
+            for line in editor_details(&report, &frames) {
+                println!("leak-test: {line}");
+            }
+        }
         facts["plugin_frames"] = frames;
         checks.extend(editor_checks);
         summary["editor_cycles"] = facts;
@@ -554,6 +560,45 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         "loadavg": report["environment"]["loadavg"],
     });
     (checks, facts)
+}
+
+/// What each run looked like, for a failed editor gate: frames drawn, the anonymous footprint's steps between samples
+/// (the first ones and the typical one after the warm-up), the threads alive with the editor open, and with
+/// `ENTH_LEAK_DIAG` set the mappings behind the first steps of more than 2 MB.
+fn editor_details(report: &Value, frames: &Value) -> Vec<String> {
+    let runs = report["runs"].as_array().cloned().unwrap_or_default();
+    let frames = frames.as_array().cloned().unwrap_or_default();
+    let mut lines = Vec::new();
+    for (i, run) in runs.iter().enumerate() {
+        let foot = footprint(run);
+        let steps: Vec<i64> = foot.windows(2).map(|w| (w[1] - w[0]) as i64).collect();
+        let mut tail: Vec<i64> = steps.iter().skip(WARMUP).copied().collect();
+        tail.sort_unstable();
+        let median = tail.get(tail.len() / 2).copied();
+        let first: Vec<i64> = steps.iter().take(12).copied().collect();
+        let frames = frames.get(i).filter(|_| frames.len() == runs.len());
+        lines.push(format!(
+            "run {i} ({}): footprint {} -> {} KB, steps {first:?}..., median step after the warm-up {median:?} KB; \
+             frames {}; threads with the editor open {}",
+            run["mode"].as_str().unwrap_or("?"),
+            foot.first().copied().unwrap_or(0.0),
+            foot.last().copied().unwrap_or(0.0),
+            frames.map_or(Value::Null, |f| f["frames"].clone()),
+            run["thread_names_open_first_cycle"],
+        ));
+        for step in run["diag"]["anon_steps"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .take(3)
+        {
+            lines.push(format!(
+                "run {i} diag: cycle {} step {} KB; by kind {}; mappings {}",
+                step["cycle"], step["delta_kb"], step["by_kind"], step["mappings"]
+            ));
+        }
+    }
+    lines
 }
 
 /// Runs `churn` and returns (passed, facts).

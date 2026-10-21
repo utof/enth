@@ -17,6 +17,11 @@ on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      leak_diag:
+        description: "Leak job: ENTH_LEAK_DIAG=1, and the editor gate once more with transparent huge pages off"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -123,15 +128,33 @@ jobs:
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             xvfb xauth libgl1-mesa-dri libglx-mesa0 libegl1 libegl-mesa0 mesa-utils
-      # What the editor will find under Xvfb, in the log: the EGL platform it tries first and the GLX fallback.
-      - name: Software OpenGL under Xvfb
+      # What the editor will find under Xvfb, in the log: the EGL platform it tries first and the GLX fallback; and the
+      # kernel's transparent huge page settings, which decide how anonymous memory is counted (2 MB pages).
+      - name: Software OpenGL under Xvfb, memory settings
         run: |
           xvfb-run -a -s "-screen 0 1920x1080x24" sh -c 'eglinfo -B -p x11; glxinfo -B' 2>&1 | head -60
+          grep -H . /sys/kernel/mm/transparent_hugepage/enabled /sys/kernel/mm/transparent_hugepage/defrag \
+            /sys/kernel/mm/transparent_hugepage/khugepaged/max_ptes_none || true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: leak
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo xtask leak-test
+      - name: Leak gates
+        env:
+          LEAK_DIAG: ${{ inputs.leak_diag }}
+        run: |
+          if [ "$LEAK_DIAG" = true ]; then export ENTH_LEAK_DIAG=1; fi
+          cargo xtask leak-test
+      # Diagnostic (dispatch input leak_diag): the editor gate again, 60 cycles, with transparent huge pages off for
+      # every process it starts (prctl PR_SET_THP_DISABLE, 41, is inherited across fork and exec). The first run's
+      # reports are kept in default-thp/.
+      - name: Editor gate with transparent huge pages off (diagnostic)
+        if: always() && inputs.leak_diag
+        run: |
+          mkdir -p target/leak-test/default-thp
+          cp target/leak-test/*.json* target/leak-test/*.log target/leak-test/default-thp/ || true
+          python3 -I -c 'import ctypes, os, sys; assert ctypes.CDLL(None).prctl(41, 1, 0, 0, 0) == 0; os.execvp(sys.argv[1], sys.argv[1:])' \
+            sh -c 'grep THP_enabled /proc/self/status; exec cargo xtask leak-test --no-build --only editor --cycles 60 --repeat 1'
       # The JSON reports and the test host's logs (the plugin bundle stays out: 16 MB).
       - name: Keep the reports
         if: always()
@@ -141,4 +164,5 @@ jobs:
           path: |
             target/leak-test/*.json*
             target/leak-test/*.log
+            target/leak-test/default-thp/*
           if-no-files-found: ignore
