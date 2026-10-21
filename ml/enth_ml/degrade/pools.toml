@@ -1,0 +1,511 @@
+# The degradation pools (lane DEG, R3). Data, not code: lane DS's GR3 manifests and lane AUG's configs reference a
+# setting by name, as "<pool>/<stage>/<variant>" (for example "heldout/codec/shine-cbr") or "<pool>/profile/<name>".
+#
+# TWO POOLS, DISJOINT BY CONSTRUCTION (tested in ml/tests/test_degrade_pools.py):
+#   train    the settings training may draw (lane AUG, lane TR).
+#   heldout  evaluation only: GR3's degraded sets and the degraded synth sets (docs/r3.md, "GR3 and its hygiene").
+# Two variants of the same stage are disjoint when they differ in at least one shared parameter whose sets or
+# intervals do not meet; "kind" (the generator, the encoder and its mode, the noise colour) is such a parameter.
+# Instance seeds (noise sources, impulse responses, dither) carry the pool in their lowest bit, so the two pools
+# can never draw the same instance.
+#
+# A parameter is written as: a number, string or boolean (a constant); [lo, hi] (uniform; integers when both bounds are
+# integers); { log = [lo, hi] } (log-uniform); { choice = [a, b, ...] } (one of). `weight` (default 1) picks among a
+# stage's variants. Every variant has a `kind`. Reference: ml/README.md, "DEG".
+#
+# Stages run in this order: attack_cut, tail_trunc, lead_pad, room, eq, noise, hum, dynamics, mono, band_limit, codec,
+# bit_depth; then loudness normalisation, always. (Report 02's layer/mix-in stage needs a second clip and belongs to
+# lane AUG.)
+
+schema = "enth.degrade-pools/1"
+version = 1
+
+# ====================================================================================================================
+# train
+# ====================================================================================================================
+[pool.train]
+description = "Settings training may draw: report 02 section 4's chain with stable, common damage."
+instance_parity = 0
+p_clean = 0.15
+target_lufs = -23.0
+
+[pool.train.stage.attack_cut]
+p = 0.1
+[pool.train.stage.attack_cut.variant.cut]
+kind = "cut"
+cut_ms = [0.0, 50.0]
+
+[pool.train.stage.tail_trunc]
+p = 0.3
+[pool.train.stage.tail_trunc.variant.truncate]
+kind = "truncate"
+keep_s = [0.3, 1.5]
+fade_ms = [5.0, 50.0]
+
+[pool.train.stage.lead_pad]
+p = 0.3
+[pool.train.stage.lead_pad.variant.silence]
+kind = "silence"
+pad_ms = [0.0, 300.0]
+
+# Synthetic rooms: a direct impulse, early reflections, and a decaying noise tail that damps faster at high
+# frequencies (hf_ratio = the high band's RT60 as a share of the low band's).
+[pool.train.stage.room]
+p = 0.3
+[pool.train.stage.room.variant.small]
+kind = "diffuse"
+rt60_s = [0.15, 0.35]
+predelay_ms = [0.0, 6.0]
+wet_db = [-20.0, 0.0]
+n_early = [6, 12]
+early_ms = [8.0, 25.0]
+er_fraction = [0.25, 0.45]
+hf_ratio = [0.4, 0.7]
+damp_hz = [2000.0, 6000.0]
+[pool.train.stage.room.variant.medium]
+kind = "diffuse"
+rt60_s = [0.7, 1.0]
+predelay_ms = [4.0, 15.0]
+wet_db = [-20.0, 0.0]
+n_early = [8, 16]
+early_ms = [20.0, 45.0]
+er_fraction = [0.2, 0.4]
+hf_ratio = [0.35, 0.65]
+damp_hz = [2000.0, 6000.0]
+[pool.train.stage.room.variant.large]
+kind = "diffuse"
+rt60_s = [1.5, 1.9]
+predelay_ms = [10.0, 30.0]
+wet_db = [-20.0, 0.0]
+n_early = [10, 20]
+early_ms = [30.0, 70.0]
+er_fraction = [0.15, 0.35]
+hf_ratio = [0.3, 0.6]
+damp_hz = [2000.0, 6000.0]
+
+# Device EQ: high-pass 80-400 Hz, low-pass 3-12 kHz, 1-3 peaks of +-9 dB, tilt +-3 dB/oct. A component is present with
+# its p_* chance (absent p_* = always); a component with no parameters is never present.
+[pool.train.stage.eq]
+p = 0.4
+[pool.train.stage.eq.variant.device]
+kind = "device"
+p_hp = 0.7
+hp_hz = { log = [80.0, 400.0] }
+hp_order = 2
+p_lp = 0.7
+lp_hz = { log = [3000.0, 12000.0] }
+lp_order = 2
+n_peaks = [1, 3]
+peak_hz = { log = [200.0, 6000.0] }
+peak_gain_db = [-9.0, 9.0]
+peak_q = [0.7, 3.0]
+p_tilt = 0.5
+tilt_db_oct = [-3.0, 3.0]
+
+# Noise at a signal-to-noise ratio measured against the whole clip's RMS.
+[pool.train.stage.noise]
+p = 0.3
+[pool.train.stage.noise.variant.white]
+kind = "white"
+color = "white"
+snr_db = [15.0, 50.0]
+[pool.train.stage.noise.variant.pink]
+kind = "pink"
+color = "pink"
+snr_db = [15.0, 50.0]
+[pool.train.stage.noise.variant.brown]
+kind = "brown"
+color = "brown"
+snr_db = [15.0, 50.0]
+
+# Mains hum: a fundamental and harmonics k = 1..n_harm with amplitude k^-slope; snr_db against the clip's RMS.
+[pool.train.stage.hum]
+p = 0.1
+[pool.train.stage.hum.variant.mains]
+kind = "mains"
+f0_hz = { choice = [50.0, 60.0] }
+n_harm = [2, 4]
+slope = [0.8, 2.0]
+snr_db = [30.0, 60.0]
+
+# Dynamics: the clip is first brought to 0 dBFS peak, then gain_db is added before a clip or limiter at 0 dBFS (our own
+# compressor, through enth-py, is lane AUG's; ffmpeg's acompressor stands in here).
+[pool.train.stage.dynamics]
+p = 0.45
+[pool.train.stage.dynamics.variant.limiter]
+kind = "limiter"
+gain_db = [3.0, 12.0]
+attack_ms = [1.0, 10.0]
+release_ms = [20.0, 200.0]
+[pool.train.stage.dynamics.variant.hard-clip]
+kind = "hard"
+gain_db = [3.0, 12.0]
+[pool.train.stage.dynamics.variant.tanh-clip]
+kind = "tanh"
+gain_db = [3.0, 12.0]
+[pool.train.stage.dynamics.variant.compressor]
+kind = "compressor"
+thr_below_peak_db = [6.0, 20.0]
+ratio = [2.0, 6.0]
+attack_ms = [5.0, 30.0]
+release_ms = [50.0, 300.0]
+makeup_db = [0.0, 6.0]
+
+# Stereo to mono: mono = 0.5 * (gL * L + r * gR * R); the louder side is picked at random, r < 1 cancels part of the
+# centre. A mono input skips the stage.
+[pool.train.stage.mono]
+p = 0.1
+[pool.train.stage.mono.variant.imbalanced]
+kind = "downmix-imbalanced"
+imbalance_db = [1.0, 6.0]
+r_polarity = [0.3, 1.0]
+
+[pool.train.stage.band_limit]
+p = 0.3
+[pool.train.stage.band_limit.variant.resample]
+kind = "resample"
+sr_hz = { choice = [8000, 11025, 12000, 16000, 22050, 24000] }
+
+# Codecs are encoded and decoded back with the system ffmpeg: LAME, ffmpeg's native AAC-LC encoder, libopus.
+[pool.train.stage.codec]
+p = 0.4
+[pool.train.stage.codec.variant.lame-cbr]
+kind = "libmp3lame-cbr"
+weight = 0.4
+encoder = "libmp3lame"
+mode = "cbr"
+bitrate_kbps = { choice = [32, 40, 48, 56, 64, 80, 96, 112, 128] }
+ext = "mp3"
+[pool.train.stage.codec.variant.aac-lc]
+kind = "aac-twoloop"
+weight = 0.3
+encoder = "aac"
+aac_coder = "twoloop"
+bitrate_kbps = { choice = [32, 40, 48, 64, 80, 96] }
+ext = "m4a"
+[pool.train.stage.codec.variant.opus]
+kind = "libopus-audio"
+weight = 0.3
+encoder = "libopus"
+application = "audio"
+bitrate_kbps = { choice = [12, 16, 24, 32, 48, 64] }
+ext = "opus"
+
+[pool.train.stage.bit_depth]
+p = 0.1
+[pool.train.stage.bit_depth.variant.quantise]
+kind = "quantise"
+bits = [8, 12]
+dither = { choice = [true, false] }
+[pool.train.stage.bit_depth.variant.mulaw]
+kind = "law"
+law = "mulaw"
+
+# Profiles force stages on (every other stage off) and may restrict the variants. The family profiles below exist in
+# both pools under the same name, so a result on a held-out family has an in-distribution control.
+[pool.train.profile.trim]
+stages = ["attack_cut", "tail_trunc", "lead_pad"]
+[pool.train.profile.reverb]
+stages = ["room"]
+[pool.train.profile.eq]
+stages = ["eq"]
+[pool.train.profile.noise-hum]
+stages = ["noise", "hum"]
+[pool.train.profile.clip-limit]
+stages = ["dynamics"]
+[pool.train.profile.clip-limit.variants]
+dynamics = ["limiter", "hard-clip", "tanh-clip"]
+[pool.train.profile.mono]
+stages = ["mono"]
+[pool.train.profile.band-bit]
+stages = ["band_limit", "bit_depth"]
+[pool.train.profile.mp3]
+stages = ["codec"]
+[pool.train.profile.mp3.variants]
+codec = ["lame-cbr"]
+[pool.train.profile.codec]
+stages = ["codec"]
+
+# ====================================================================================================================
+# heldout
+# ====================================================================================================================
+[pool.heldout]
+description = "Evaluation only (GR3 and the degraded synth sets): other encoders and modes, other rooms and noises, harsher levels."
+instance_parity = 1
+p_clean = 0.0
+target_lufs = -23.0
+
+[pool.heldout.stage.attack_cut]
+p = 0.1
+[pool.heldout.stage.attack_cut.variant.cut-deep]
+kind = "cut"
+cut_ms = [51.0, 120.0]
+
+[pool.heldout.stage.tail_trunc]
+p = 0.3
+[pool.heldout.stage.tail_trunc.variant.truncate-late]
+kind = "truncate"
+keep_s = [1.6, 2.4]
+fade_ms = [51.0, 150.0]
+
+[pool.heldout.stage.lead_pad]
+p = 0.3
+[pool.heldout.stage.lead_pad.variant.silence-long]
+kind = "silence"
+pad_ms = [320.0, 700.0]
+
+# GR3: reverb at RT60 0.4-2.5 s. Other room sizes than training's, plus a generator training never has: a flutter echo
+# between parallel walls (a periodic reflection train under a weak tail).
+[pool.heldout.stage.room]
+p = 0.3
+[pool.heldout.stage.room.variant.living-room]
+kind = "diffuse"
+rt60_s = [0.4, 0.6]
+predelay_ms = [0.0, 8.0]
+wet_db = [-18.0, 0.0]
+n_early = [10, 20]
+early_ms = [10.0, 30.0]
+er_fraction = [0.3, 0.5]
+hf_ratio = [0.3, 0.6]
+damp_hz = [1500.0, 5000.0]
+[pool.heldout.stage.room.variant.hall]
+kind = "diffuse"
+rt60_s = [1.1, 1.4]
+predelay_ms = [15.0, 35.0]
+wet_db = [-18.0, 0.0]
+n_early = [12, 24]
+early_ms = [40.0, 90.0]
+er_fraction = [0.15, 0.3]
+hf_ratio = [0.25, 0.5]
+damp_hz = [1500.0, 5000.0]
+[pool.heldout.stage.room.variant.cathedral]
+kind = "diffuse"
+rt60_s = [2.0, 2.5]
+predelay_ms = [25.0, 60.0]
+wet_db = [-18.0, 0.0]
+n_early = [14, 28]
+early_ms = [60.0, 140.0]
+er_fraction = [0.1, 0.25]
+hf_ratio = [0.2, 0.45]
+damp_hz = [1500.0, 5000.0]
+[pool.heldout.stage.room.variant.flutter]
+kind = "flutter"
+rt60_s = [0.8, 1.6]
+predelay_ms = [0.0, 10.0]
+wet_db = [-18.0, -3.0]
+n_early = [12, 30]
+flutter_ms = [18.0, 55.0]
+er_fraction = [0.7, 0.9]
+hf_ratio = [0.3, 0.6]
+damp_hz = [2000.0, 6000.0]
+
+# GR3: phone-speaker EQ (the default stand-in for the owner's phone re-recordings), plus boxy laptop speakers and
+# steeper tilts than training's +-3 dB/oct.
+[pool.heldout.stage.eq]
+p = 0.4
+[pool.heldout.stage.eq.variant.phone-speaker]
+kind = "phone-speaker"
+hp_hz = { log = [420.0, 800.0] }
+hp_order = 4
+lp_hz = { log = [2400.0, 2990.0] }
+lp_order = 4
+n_peaks = 1
+peak_hz = { log = [1200.0, 2200.0] }
+peak_gain_db = [4.0, 9.0]
+peak_q = [1.5, 3.0]
+[pool.heldout.stage.eq.variant.laptop-box]
+kind = "laptop-box"
+hp_hz = { log = [500.0, 900.0] }
+hp_order = 2
+lp_hz = { log = [12500.0, 16000.0] }
+lp_order = 2
+n_peaks = [2, 3]
+peak_hz = { log = [700.0, 1400.0] }
+peak_gain_db = [6.0, 12.0]
+peak_q = [4.0, 8.0]
+[pool.heldout.stage.eq.variant.tilt-dull]
+kind = "tilt"
+tilt_db_oct = [-6.0, -3.5]
+[pool.heldout.stage.eq.variant.tilt-bright]
+kind = "tilt"
+tilt_db_oct = [3.5, 6.0]
+
+# GR3: noise at 5-20 dB SNR. Colours training never has (blue, violet, velvet) and an amplitude-modulated, band-limited
+# pink "babble" at the harshest SNRs.
+[pool.heldout.stage.noise]
+p = 0.3
+[pool.heldout.stage.noise.variant.blue-hiss]
+kind = "blue"
+color = "blue"
+snr_db = [5.0, 20.0]
+[pool.heldout.stage.noise.variant.violet-hiss]
+kind = "violet"
+color = "violet"
+snr_db = [5.0, 20.0]
+[pool.heldout.stage.noise.variant.velvet-crackle]
+kind = "velvet"
+color = "velvet"
+snr_db = [5.0, 20.0]
+[pool.heldout.stage.noise.variant.babble-am]
+kind = "babble"
+color = "pink"
+bp_lo_hz = [200.0, 300.0]
+bp_hi_hz = [2800.0, 3600.0]
+am_hz = [3.0, 6.0]
+am_depth = [0.6, 0.9]
+snr_db = [5.0, 14.9]
+
+# GR3: plus hum. Louder than any training hum, with more and flatter harmonics (a buzz).
+[pool.heldout.stage.hum]
+p = 0.1
+[pool.heldout.stage.hum.variant.buzz]
+kind = "buzz"
+f0_hz = { choice = [50.0, 60.0] }
+n_harm = [6, 12]
+slope = [0.0, 0.6]
+snr_db = [15.0, 29.0]
+
+# GR3: clipping and limiting at +6 to +18 dB. Hotter than training's hard and tanh clips, other soft-clip curves,
+# a harder compressor.
+[pool.heldout.stage.dynamics]
+p = 0.45
+[pool.heldout.stage.dynamics.variant.limiter-hot]
+kind = "limiter"
+gain_db = [13.0, 18.0]
+attack_ms = [0.5, 10.0]
+release_ms = [20.0, 200.0]
+[pool.heldout.stage.dynamics.variant.hard-clip-hot]
+kind = "hard"
+gain_db = [13.0, 18.0]
+[pool.heldout.stage.dynamics.variant.atan-clip]
+kind = "atan"
+gain_db = [6.0, 18.0]
+[pool.heldout.stage.dynamics.variant.cubic-clip]
+kind = "cubic"
+gain_db = [6.0, 18.0]
+[pool.heldout.stage.dynamics.variant.compressor-crush]
+kind = "compressor"
+thr_below_peak_db = [12.0, 30.0]
+ratio = [8.0, 20.0]
+attack_ms = [1.0, 10.0]
+release_ms = [50.0, 300.0]
+makeup_db = [0.0, 6.0]
+
+# GR3: stereo to mono. The plain downmix, and one that cancels part of the centre.
+[pool.heldout.stage.mono]
+p = 0.1
+[pool.heldout.stage.mono.variant.plain]
+kind = "downmix-plain"
+imbalance_db = [0.0, 0.5]
+r_polarity = [0.95, 1.0]
+[pool.heldout.stage.mono.variant.cancel]
+kind = "downmix-cancel"
+imbalance_db = [0.0, 3.0]
+r_polarity = [-0.5, -0.1]
+
+[pool.heldout.stage.band_limit]
+p = 0.3
+[pool.heldout.stage.band_limit.variant.resample-narrow]
+kind = "resample"
+sr_hz = { choice = [4000, 5512, 6000, 7000] }
+
+# GR3 and report 02 set C: shine, an MP3 encoder training never has (libshine is present in this ffmpeg build); LAME in
+# the VBR and ABR modes training does not use; the native AAC encoder with its fast coder; Opus in its voice mode at
+# low rates; the phone codecs AMR-NB and GSM (8 kHz mono, then back to the clip's rate and channels).
+[pool.heldout.stage.codec]
+p = 0.4
+[pool.heldout.stage.codec.variant.shine-cbr]
+kind = "libshine-cbr"
+weight = 0.25
+encoder = "libshine"
+mode = "cbr"
+bitrate_kbps = { choice = [32, 40, 48, 56, 64, 80, 96, 112, 128] }
+ext = "mp3"
+[pool.heldout.stage.codec.variant.lame-vbr]
+kind = "libmp3lame-vbr"
+weight = 0.15
+encoder = "libmp3lame"
+mode = "vbr"
+qscale = { choice = [5, 6, 7, 8, 9] }
+ext = "mp3"
+[pool.heldout.stage.codec.variant.lame-abr]
+kind = "libmp3lame-abr"
+weight = 0.15
+encoder = "libmp3lame"
+mode = "abr"
+bitrate_kbps = { choice = [32, 40, 48, 56, 64, 80, 96] }
+ext = "mp3"
+[pool.heldout.stage.codec.variant.aac-fast]
+kind = "aac-fast"
+weight = 0.15
+encoder = "aac"
+aac_coder = "fast"
+bitrate_kbps = { choice = [24, 32, 40, 48, 64] }
+ext = "m4a"
+[pool.heldout.stage.codec.variant.opus-voip]
+kind = "libopus-voip"
+weight = 0.1
+encoder = "libopus"
+application = "voip"
+bitrate_kbps = { choice = [6, 8, 10, 12, 16, 24] }
+ext = "opus"
+[pool.heldout.stage.codec.variant.amr-nb]
+kind = "libopencore_amrnb"
+weight = 0.1
+encoder = "libopencore_amrnb"
+bitrate_bps = { choice = [4750, 5150, 5900, 6700, 7400, 7950, 10200, 12200] }
+enc_rate_hz = 8000
+enc_mono = true
+ext = "amr"
+[pool.heldout.stage.codec.variant.gsm]
+kind = "libgsm"
+weight = 0.1
+encoder = "libgsm"
+enc_rate_hz = 8000
+enc_mono = true
+ext = "gsm"
+
+[pool.heldout.stage.bit_depth]
+p = 0.1
+[pool.heldout.stage.bit_depth.variant.quantise-low]
+kind = "quantise"
+bits = [5, 7]
+dither = { choice = [true, false] }
+[pool.heldout.stage.bit_depth.variant.alaw]
+kind = "law"
+law = "alaw"
+
+[pool.heldout.profile.trim]
+stages = ["attack_cut", "tail_trunc", "lead_pad"]
+[pool.heldout.profile.reverb]
+stages = ["room"]
+[pool.heldout.profile.eq]
+stages = ["eq"]
+[pool.heldout.profile.eq.variants]
+eq = ["phone-speaker"]
+[pool.heldout.profile.eq-other]
+stages = ["eq"]
+[pool.heldout.profile.eq-other.variants]
+eq = ["laptop-box", "tilt-dull", "tilt-bright"]
+[pool.heldout.profile.noise-hum]
+stages = ["noise", "hum"]
+[pool.heldout.profile.clip-limit]
+stages = ["dynamics"]
+[pool.heldout.profile.clip-limit.variants]
+dynamics = ["limiter-hot", "hard-clip-hot", "atan-clip", "cubic-clip"]
+[pool.heldout.profile.mono]
+stages = ["mono"]
+[pool.heldout.profile.band-bit]
+stages = ["band_limit", "bit_depth"]
+[pool.heldout.profile.mp3]
+stages = ["codec"]
+[pool.heldout.profile.mp3.variants]
+codec = ["shine-cbr", "lame-vbr", "lame-abr"]
+[pool.heldout.profile.codec-other]
+stages = ["codec"]
+[pool.heldout.profile.codec-other.variants]
+codec = ["aac-fast", "opus-voip"]
+[pool.heldout.profile.phone-codec]
+stages = ["codec"]
+[pool.heldout.profile.phone-codec.variants]
+codec = ["amr-nb", "gsm"]
