@@ -172,7 +172,7 @@ kind = "patch"
 [steps.challenge.start.patch]
 schema = 1
 engine = "0.3.0"
-meta = { name = "Filter attack 150 ms", description = "The 300 Hz saw; env2 (attack 150 ms, no sustain) on the cutoff at 50 %." }
+meta = { name = "Filter attack 150 ms", description = "The 300 Hz saw; env2 (attack 150 ms) on the cutoff at 50 %." }
 master = { level = -12.0 }
 generators = [
   { id = "osc1", kind = "osc" },
@@ -243,7 +243,7 @@ kind = "patch"
 [steps.challenge.start.patch]
 schema = 1
 engine = "0.3.0"
-meta = { name = "Filter sustain 25 %", description = "The 300 Hz saw; env2 (attack 2 ms, sustain 25 %) on the cutoff at 50 %." }
+meta = { name = "Filter sustain 25 %", description = "The 300 Hz saw; env2 (sustain 25 %) on the cutoff at 50 %." }
 master = { level = -12.0 }
 generators = [
   { id = "osc1", kind = "osc" },

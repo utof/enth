@@ -92,8 +92,8 @@ id = "try"
 kind = "do"
 text = "try.md"
 hints = [
-  "Drag the ⊕ on env2's tile onto the Semi knob of osc1's card.",
-  "Deepen the route with the orange dot on the Semi knob's ring: 12.5 % is an octave, and a kick wants two or more.",
+  "Drag the ⊕ on env2's tile onto the Semitones knob of osc1's card.",
+  "Deepen it with the orange dot on the Semitones knob's ring: 12.5 % is an octave; a kick wants two or more.",
 ]
 witness = "patches/kick-24st.patch.json"
 

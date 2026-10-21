@@ -12,10 +12,16 @@
 #   - steps that follow a round and carry its patch over hide the modules the lesson does not use (LUI's overflow
 #     report at 1200 x 800).
 #
-# Two findings shape this pack (measured on engine 0.3.0; see each lesson's header): sound/1 hears filter sweeps only
-# when they are slow, and is nearly deaf to vibrato and glide, so those lessons check by descriptors (pitch
-# stability, the median pitch) and ear questions instead of rounds; and `closest` moves parameters only, so no round
-# draws a route depth.
+# Three findings shape this pack (measured on engine 0.3.0; each lesson's header has its numbers):
+#   - sound/1 hears slow filter sweeps, the number of notes in a chord and PWM, but is nearly deaf to motion inside
+#     a note: vibrato, tremolo shape and rate, filter LFOs, glide, pitch envelopes and short filter envelopes. Rounds
+#     appear only where it hears the control (4.1, 4.2, 6.1); elsewhere the Do steps check a descriptor that reads
+#     the control (pitch stability, the tremolo's rate and depth, the filter sweep's rate and depth, the clip's pitch
+#     and brightness), and the ear questions pass the audibility gate on those descriptors;
+#   - `closest` moves parameters only, so no round draws a route depth: depths are Do steps and ear questions;
+#   - the measured hint probes spectral items on a 0.5 s clip and a parameter a tenth of its range toward the middle,
+#     so a pitch goal on a second note cannot be followed (6.2's slower glide is a patch goal), and rate goals start
+#     above their band.
 
 schema = "enth.pack/1"
 id = "shaping"
@@ -24,7 +30,21 @@ title = "Shaping the sound"
 authors = ["enth contributors"]
 covers = ["adsr", "lfo", "osc", "svf"]
 # The order the app offers them in (the curriculum's order). Lesson ids are append-only.
-lessons = ["routes-and-depth", "filter-envelope-shapes", "pitch-envelope", "negative-depth", "vibrato", "shapes-and-tremolo", "wobble-and-sweeps", "poly-mono-legato", "glide"]
+lessons = [
+  "routes-and-depth",
+  "filter-envelope-shapes",
+  "pitch-envelope",
+  "negative-depth",
+  "vibrato",
+  "shapes-and-tremolo",
+  "wobble-and-sweeps",
+  "pwm-and-table-scanning",
+  "polarity-and-scope",
+  "retrigger-or-free",
+  "poly-mono-legato",
+  "glide",
+  "playing-sources",
+]
 
 [license]
 text = "CC-BY-4.0"

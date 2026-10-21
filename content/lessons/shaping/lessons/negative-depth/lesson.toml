@@ -124,7 +124,7 @@ id = "pitch"
 kind = "do"
 text = "pitch.md"
 hints = [
-  "env2 drives osc1's Semi. Drag the orange dot on the Semi knob's ring below the knob.",
+  "env2 drives osc1's Semitones. Drag the orange dot on the Semitones knob's ring below the knob.",
   "A depth of -12.5 % starts each note an octave low.",
 ]
 witness = "patches/kick-rise-12st.patch.json"
