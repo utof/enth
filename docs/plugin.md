@@ -329,6 +329,20 @@ The machine was loaded throughout (other lanes' gates: load average 35–45 on 1
 | `cargo xtask reaper-test --package enth-plugin` | the create bundles (`--bundle-dir`, with a `learn,create` bundle for the `lesson` scenario): exit 0, 321 checks. The default bundles: 320 of 321, the VST3 `dirty-flag` drag missed under load (64 s against 35 s for CLAP); that scenario alone again: exit 0, 36 checks |
 | `cargo xtask leak-test` | `--features editor-counts,create` (`--no-build --bundle-dir`), load about 35: exit 0, 13.01 KB per cycle (limit 26), 3 threads after every close, 200 of 200 drawn and closed twice, churn 0.43 KB per cycle. The default bundle at load 37–45: the memory, thread and churn checks pass (13.22 and 13.43 KB per cycle, churn 0.48–0.53) but "every open drew its first frame in time" (1 s) failed, 198 and 169–191 of 200; the create bundle, run again at load 41, failed it the same way (189 and 188), so the load, not the change, misses that deadline |
 
+### After the merge with main (lane SK3M)
+
+Lane SK3M merged main (`77e0e5c`: Learn on by default and LUI's Learn layout, EVK's GR3 kit) into `r3/sk3`, switched the objective to the robust distance and ran the checks again on the merged tree, on 2026-10-21 (load average 11–22 from other lanes):
+
+| Check | Result |
+| --- | --- |
+| `scripts/gate.sh lane .` | exit 0, 1,465 tests passed, 1,146 s |
+| `cargo test -p enth-plugin --features create` | exit 0: 133 passed (1 ignored), `tests_create` 15 of 15, the intake post naming `objective: logmel-pool85-robust/1` |
+| `cargo test -p enth-ui --features learn,create` | exit 0; `create_panel` 2, `learn_panel` 4, `learn_view` 13 and `learn_create` 4 (the lesson pane and the Create panel together, [editor.md](editor.md#where-the-pane-goes)) |
+| `cargo test -p enth-cli --test create` | exit 0, 7 passed (`settings.objective` is `logmel-pool85-robust/1`) |
+| `cargo xtask reaper-test --package enth-plugin` (Xvfb) | the default debug bundle (recreate and learn): exit 0, 321 checks (`lesson` 12 of 12 on CLAP and VST3); a debug `create` bundle (`--bundle-dir`): exit 0, 321 checks |
+| `cargo xtask leak-test` | the default bundle: exit 0, 14.49 KB per cycle, 3 threads after every close, 200 of 200 first frames twice, churn 0.36 KB per cycle; the `editor-counts,create` release bundle (`--no-build --bundle-dir`): exit 0, 13.99 KB per cycle, 3 threads, 200 of 200 twice, churn 0.44 KB per cycle |
+| Time to the first candidate under the robust objective (`enth create`, release, the 4 s pad, the F1S bank, 6 workers, `flock -s`, load 14–19) | the screening round's 20 starts at **0.69 s**; 2,399 renders in the 60 s cap; best `pad_2osc` at 0.0146. Not a like-for-like speed comparison with metric v1's 3.1 s and 935 renders above, which ran at load 42 |
+
 ### The harness
 
 `cargo xtask bundle enth-plugin --release --features create-harness` (never a shipped build): with `ENTH_CREATE_HARNESS` naming a sound file, activation starts create jobs on it one after the other (each capped at `ENTH_CREATE_SECONDS`, 60 by default) until deactivation, which stops them and appends an `enth.plugin-create-stats/1` line (jobs started and finished, rounds, renders, workers) to `ENTH_CREATE_REPORT`. `enth-test-host process-stats` loads the plugin in process, so the variables set in its environment reach it.
