@@ -5,6 +5,7 @@
 //! ```text
 //! cargo xtask gr3-report                          # list the runs in the file
 //! cargo xtask gr3-report --run RUN                # one arm: pass rate, JND, anytime curve, time to pass, strata
+//! cargo xtask gr3-report --run RUN --rate-from P  # a render run read at the renders a measured idle rate gives
 //! cargo xtask gr3-report --a RUN_A --b RUN_B      # clause 1: B against A, paired by target, and the decision
 //!            [--at 60] [--long-a RUN --long-b RUN] [--long-at 300] [--runs PATH] [--json]
 //! ```
@@ -281,8 +282,51 @@ fn mark_of(run: &runs::RunLine, at: Option<f64>) -> f64 {
     match at {
         Some(a) => a,
         None if run.mode == "wall" => PRIMARY_AT.min(cap),
-        None => cap,
+        // A render run that stands for a timed one: its endpoint is the renders it stands for.
+        None => equivalence(run)
+            .and_then(|e| e.get("renders").and_then(Value::as_f64))
+            .unwrap_or(cap),
     }
+}
+
+/// The run header's render-equivalence flag (`gr3-run --equivalent-seconds`), if any.
+fn equivalence(run: &runs::RunLine) -> Option<&Value> {
+    run.raw
+        .pointer("/header/equivalence")
+        .filter(|v| !v.is_null())
+}
+
+/// The idle rate a probe run measured (`gr3-run --rate-probe`): the median over its targets of the renders at its
+/// 60 s checkpoint, over 60 s; with how many targets were under the exclusive lock.
+pub fn probe_rate(runs: &Runs, probe: &str) -> Result<(f64, usize, usize), String> {
+    let lines = runs
+        .targets
+        .get(probe)
+        .ok_or_else(|| format!("the probe run {probe} has no target lines"))?;
+    let r: Vec<f64> = lines
+        .iter()
+        .filter_map(|t| t.at(PRIMARY_AT).map(|c| c.renders as f64 / PRIMARY_AT))
+        .collect();
+    if r.is_empty() {
+        return Err(format!(
+            "the probe run {probe} has no checkpoint at {PRIMARY_AT} s"
+        ));
+    }
+    let locked = lines.iter().filter(|t| t.machine.locked).count();
+    Ok((stats::median(&r), locked, lines.len()))
+}
+
+/// The largest mark at or below `renders` that every line has.
+fn common_mark_at_most(lines: &[&TargetLine], renders: f64) -> Option<f64> {
+    let first = lines.first()?;
+    first
+        .checkpoints
+        .iter()
+        .map(|c| c.mark)
+        .filter(|m| *m <= renders && lines.iter().all(|t| t.at(*m).is_some()))
+        .fold(None, |best: Option<f64>, m| {
+            Some(best.map_or(m, |b| b.max(m)))
+        })
 }
 
 fn run_text(runs: &Runs, id: &str) -> Result<String, String> {
@@ -321,7 +365,12 @@ fn run_text(runs: &Runs, id: &str) -> Result<String, String> {
 }
 
 /// The single-arm report.
-pub fn single(runs: &Runs, id: &str, at: Option<f64>) -> Result<(String, Value), String> {
+pub fn single(
+    runs: &Runs,
+    id: &str,
+    at: Option<f64>,
+    rate_from: Option<&str>,
+) -> Result<(String, Value), String> {
     let run = runs
         .headers
         .iter()
@@ -332,9 +381,42 @@ pub fn single(runs: &Runs, id: &str, at: Option<f64>) -> Result<(String, Value),
         .get(id)
         .map(|v| v.iter().collect())
         .unwrap_or_default();
-    let mark = mark_of(run, at);
+    let mut mark = mark_of(run, at);
     let mut s = String::new();
     let _ = writeln!(s, "{}", run_text(runs, id)?);
+    if let Some(e) = equivalence(run) {
+        let _ = writeln!(
+            s,
+            "**Render-equivalent estimate:** {} renders stand for {} s at an assumed {} renders/s ({}); not a timed run.",
+            e.get("renders").map_or_else(String::new, Value::to_string),
+            e.get("seconds").map_or_else(String::new, Value::to_string),
+            e.get("rate_renders_per_s")
+                .and_then(Value::as_f64)
+                .map_or_else(String::new, |r| f(r, 1)),
+            e.get("source")
+                .and_then(Value::as_str)
+                .unwrap_or("no source given"),
+        );
+    }
+    if let Some(probe) = rate_from {
+        if run.mode == "wall" {
+            return Err("--rate-from converts a render-capped run; this one is timed".to_owned());
+        }
+        let (rate, locked, n) = probe_rate(runs, probe)?;
+        let secs = equivalence(run)
+            .and_then(|e| e.get("seconds").and_then(Value::as_f64))
+            .unwrap_or(PRIMARY_AT);
+        let want = rate * secs;
+        mark = common_mark_at_most(&lines, want).ok_or_else(|| {
+            format!("no checkpoint at or below {want:.0} renders: run a twin with a larger budget")
+        })?;
+        let _ = writeln!(
+            s,
+            "**Converted with a measured idle rate:** probe {probe} ({locked} of {n} targets under the exclusive lock) \
+             measured a median {} renders/s, so {secs} s is {want:.0} renders; reported at the checkpoint {mark}.",
+            f(rate, 1)
+        );
+    }
     let failed = runs.failed.get(id).map_or(0, Vec::len);
     let _ = writeln!(
         s,
@@ -635,7 +717,7 @@ pub fn gr3_report(args: &[String]) -> Result<(), String> {
                 return Ok(());
             }
             k @ ("--runs" | "--run" | "--a" | "--b" | "--at" | "--long-a" | "--long-b"
-            | "--long-at") => {
+            | "--long-at" | "--rate-from") => {
                 let v = args
                     .get(i + 1)
                     .ok_or_else(|| format!("{k} needs a value"))?;
@@ -665,7 +747,7 @@ pub fn gr3_report(args: &[String]) -> Result<(), String> {
             .map_err(|_| format!("--long-at: not a number: {v}"))
     })?;
     let (text, j) = match (kv.get("--run"), kv.get("--a"), kv.get("--b")) {
-        (Some(id), None, None) => single(&runs, id, at)?,
+        (Some(id), None, None) => single(&runs, id, at, kv.get("--rate-from").map(String::as_str))?,
         (None, Some(a), Some(b)) => {
             let long = match (kv.get("--long-a"), kv.get("--long-b")) {
                 (Some(x), Some(y)) => Some((x.as_str(), y.as_str(), long_at)),
@@ -756,7 +838,7 @@ mod tests {
         assert!((sm.km[0].survival - 0.7).abs() < 1e-12);
         assert!((sm.km[1].survival - 0.5).abs() < 1e-12);
         assert_eq!(sm.km_median, Some(60.0));
-        let (out, _) = single(&runs, "a", None).unwrap();
+        let (out, _) = single(&runs, "a", None, None).unwrap();
         assert!(out.contains("| all | 10 | 5 | 50.0 %"), "{out}");
         assert!(out.contains("NO run_end line"));
     }
@@ -794,6 +876,52 @@ mod tests {
         let (out, j) = paired(&runs, "a", "b", None, None).unwrap();
         assert!(out.contains("B beats A: no"), "{out}");
         assert_eq!(j["decision"]["beats"], json!(false));
+    }
+
+    #[test]
+    fn a_render_run_converts_with_a_measured_idle_rate() {
+        // The probe: three targets with 3,000, 3,600 and 4,200 renders at 60 s: rates 50, 60, 70, median 60 renders/s,
+        // so 60 s is 3,600 renders; a render run with marks every 250 is read at 3,500.
+        let mut text = String::from(
+            "{\"schema\":\"enth.gr3-run/1\",\"record\":\"run\",\"run_id\":\"p\",\"arm\":\"A\",\"mode\":\"wall\",\"seconds\":60.0}\n",
+        );
+        for (i, r) in [3000, 3600, 4200].iter().enumerate() {
+            let _ = writeln!(
+                text,
+                "{{\"schema\":\"enth.gr3-run/1\",\"record\":\"target\",\"run_id\":\"p\",\"arm\":\"A\",\"mode\":\"wall\",\"cap\":60.0,\
+                 \"target\":{{\"id\":\"d{i}\"}},\"machine\":{{\"locked\":true}},\"checkpoints\":[{{\"mark\":60.0,\"renders\":{r}}}]}}"
+            );
+        }
+        let _ = writeln!(
+            text,
+            "{{\"schema\":\"enth.gr3-run/1\",\"record\":\"run\",\"run_id\":\"c\",\"arm\":\"A\",\"mode\":\"renders\",\"budget\":8000,\
+             \"header\":{{\"equivalence\":{{\"kind\":\"estimate\",\"seconds\":60.0,\"renders\":4000,\"rate_renders_per_s\":66.7,\"source\":\"TP\"}}}}}}"
+        );
+        let marks: Vec<String> = (1..=32)
+            .map(|k| {
+                let m = 250 * k;
+                format!("{{\"mark\":{m}.0,\"renders\":{m},\"score\":{{\"percent\":95.0,\"jnd\":0.5,\"passed\":true}}}}")
+            })
+            .collect();
+        let _ = writeln!(
+            text,
+            "{{\"schema\":\"enth.gr3-run/1\",\"record\":\"target\",\"run_id\":\"c\",\"arm\":\"A\",\"mode\":\"renders\",\"cap\":8000.0,\
+             \"target\":{{\"id\":\"t\"}},\"checkpoints\":[{}]}}",
+            marks.join(",")
+        );
+        let (runs, _) = parse_runs(&text).unwrap();
+        let (rate, locked, n) = probe_rate(&runs, "p").unwrap();
+        assert!((rate - 60.0).abs() < 1e-12);
+        assert_eq!((locked, n), (3, 3));
+        // Without a probe the endpoint is the equivalence's 4,000 renders, flagged as an estimate.
+        let (out, j) = single(&runs, "c", None, None).unwrap();
+        assert!(out.contains("Render-equivalent estimate"), "{out}");
+        assert_eq!(j["mark"], json!(4000.0));
+        let (out, j) = single(&runs, "c", None, Some("p")).unwrap();
+        assert_eq!(j["mark"], json!(3500.0), "{out}");
+        assert!(out.contains("3600 renders"), "{out}");
+        // A timed run is not converted.
+        assert!(single(&runs, "p", None, Some("p")).is_err());
     }
 
     #[test]
