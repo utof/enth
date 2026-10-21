@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &patch], 3, \"unknown_format\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "unknown_format",
+  "exit": 3,
+  "file": "[TMP]/p.patch.json",
+  "hint": "`enth create` takes a recording (WAV, FLAC, Ogg Vorbis or MP3); to search for a patch that matches another patch, use `enth match --target PATCH`",
+  "message": "[TMP]/p.patch.json is JSON, not a sound file",
+  "schema": "enth.error/1"
+}
+--- stderr

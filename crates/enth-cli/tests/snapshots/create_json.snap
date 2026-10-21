@@ -1,0 +1,256 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "record_create(&s, &o)"
+---
+exit: 0
+--- stdout
+{
+  "best": "<num>",
+  "candidates": [
+    {
+      "branch": "<num>",
+      "distance": "<num>",
+      "patch": "<patch>",
+      "proposal_distance": "<num>",
+      "provenance": "<provenance>",
+      "renders": "<num>",
+      "rung": "<num>",
+      "runs": "<num>",
+      "start": "<num>",
+      "state": "<state>",
+      "trace": [
+        {
+          "best": "<num>",
+          "job_renders": "<num>",
+          "renders": "<num>",
+          "round": "<num>"
+        },
+        {
+          "best": "<num>",
+          "job_renders": "<num>",
+          "renders": "<num>",
+          "round": "<num>"
+        },
+        {
+          "best": "<num>",
+          "job_renders": "<num>",
+          "renders": "<num>",
+          "round": "<num>"
+        }
+      ]
+    },
+    {
+      "branch": "<num>",
+      "distance": "<num>",
+      "patch": "<patch>",
+      "proposal_distance": "<num>",
+      "provenance": "<provenance>",
+      "renders": "<num>",
+      "rung": "<num>",
+      "runs": "<num>",
+      "start": "<num>",
+      "state": "<state>",
+      "trace": [
+        {
+          "best": "<num>",
+          "job_renders": "<num>",
+          "renders": "<num>",
+          "round": "<num>"
+        },
+        {
+          "best": "<num>",
+          "job_renders": "<num>",
+          "renders": "<num>",
+          "round": "<num>"
+        }
+      ]
+    }
+  ],
+  "cap_s": 60.0,
+  "decoded": "WAV, 16-bit, 48000 Hz, mono",
+  "elapsed_s": "<num>",
+  "hint": "the closest is candidates[N] (<start>, distance <d>), written to [TMP]/best.patch.json; `played` is how every candidate was played: pass it as --perf to `enth render`, `enth describe` or `enth compare --target [TMP]/tone.wav` (their distances are `compare`'s, not this objective's)",
+  "input": {
+    "audio_sha256": "<sha256>",
+    "bandwidth_hz": null,
+    "features_sha256": "<sha256>",
+    "frames": "<num>",
+    "noise_floor_dbfs": null,
+    "perf": {
+      "duration_s": "<num>",
+      "f0_hz": "<num>",
+      "hold_s": "<num>",
+      "key": "<num>",
+      "on_s": "<num>",
+      "velocity": "<num>"
+    },
+    "render_seed": 236412653,
+    "sample_rate": 48000
+  },
+  "intake": {
+    "cfg": {
+      "codec": {
+        "codec": "pcm",
+        "lossy": false
+      },
+      "max_len_s": "<num>",
+      "min_len_s": "<num>",
+      "preroll_ms": "<num>",
+      "silence_db": "<num>",
+      "tail_ms": "<num>"
+    },
+    "channels": 1,
+    "degradation": {
+      "bandwidth_hz": null,
+      "clipping": null,
+      "floor_confirmed": false,
+      "floor_source": null,
+      "hum": null,
+      "noise_floor_dbfs": null,
+      "snr_db": null,
+      "tail_t60_s": "<num>"
+    },
+    "perf": {
+      "duration_s": "<num>",
+      "f0_hz": "<num>",
+      "hold_s": "<num>",
+      "key": "<num>",
+      "off_s": null,
+      "on_s": "<num>",
+      "onsets_s": [
+        "<num>"
+      ],
+      "velocity": "<num>",
+      "voiced": "<num>"
+    },
+    "sample_rate": 48000,
+    "source_s": "<num>",
+    "span": {
+      "capped": false,
+      "end_s": "<num>",
+      "lead_pad_s": "<num>",
+      "onset_s": "<num>",
+      "signal_end_s": "<num>",
+      "start_s": "<num>",
+      "tail_pad_s": "<num>"
+    },
+    "version": 1,
+    "warnings": []
+  },
+  "notes": [
+    "no --bank: running on the heuristic and the templates (k-NN needs enth-bank-v1.bin from `cargo xtask bank`)"
+  ],
+  "played": {
+    "dur_s": "<num>",
+    "notes": [
+      {
+        "note": "A3",
+        "off_s": "<num>",
+        "on_s": "<num>",
+        "vel": "<num>"
+      }
+    ],
+    "schema": "enth.perf/1"
+  },
+  "renders": "<num>",
+  "rounds": [
+    {
+      "live": "<num>",
+      "renders": "<num>",
+      "round": "<num>",
+      "rung": null,
+      "seconds": "<num>"
+    },
+    {
+      "live": "<num>",
+      "renders": "<num>",
+      "round": "<num>",
+      "rung": "<num>",
+      "seconds": "<num>"
+    },
+    {
+      "live": "<num>",
+      "renders": "<num>",
+      "round": "<num>",
+      "rung": "<num>",
+      "seconds": "<num>"
+    },
+    {
+      "live": "<num>",
+      "renders": "<num>",
+      "round": "<num>",
+      "rung": "<num>",
+      "seconds": "<num>"
+    }
+  ],
+  "schema": "enth.create/1",
+  "score_s": 3.0,
+  "settings": {
+    "bank": null,
+    "budget": 60,
+    "embedding": "knn-logmel-rel/1",
+    "eta": 2,
+    "finalists": 2,
+    "first_rung": 50,
+    "k": 2,
+    "lambda": 0,
+    "min_spread": 0.25,
+    "neighbours": 16,
+    "objective": "logmel-pool85-robust/1",
+    "seed": 1,
+    "stop_at": null,
+    "templates": [
+      "pluck_1osc",
+      "pad_2osc",
+      "bass_sub"
+    ]
+  },
+  "starts": [
+    {
+      "branch": "<num>",
+      "index": 0,
+      "patch": "<patch>",
+      "provenance": {
+        "kind": "heuristic"
+      },
+      "screen_distance": "<num>"
+    },
+    {
+      "branch": "<num>",
+      "index": 1,
+      "patch": "<patch>",
+      "provenance": {
+        "kind": "template",
+        "name": "pluck_1osc"
+      },
+      "screen_distance": "<num>"
+    },
+    {
+      "branch": null,
+      "index": 2,
+      "patch": "<patch>",
+      "provenance": {
+        "kind": "template",
+        "name": "pad_2osc"
+      },
+      "screen_distance": "<num>"
+    },
+    {
+      "branch": null,
+      "index": 3,
+      "patch": "<patch>",
+      "provenance": {
+        "kind": "template",
+        "name": "bass_sub"
+      },
+      "screen_distance": "<num>"
+    }
+  ],
+  "stop": "budget",
+  "wrote": [
+    "[TMP]/best.patch.json",
+    "[TMP]/run.json"
+  ]
+}
+--- stderr
+note: no --bank: running on the heuristic and the templates (k-NN needs enth-bank-v1.bin from `cargo xtask bank`)

@@ -1,0 +1,69 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: flags
+---
+ enth create [OPTIONS] --target <FILE>
+
+Options:
+      --format <FORMAT>
+          Output format (default: json when stdout is not a terminal, table when it is)
+
+          Possible values:
+          - json:  One JSON object (the default when stdout is not a terminal)
+          - table: Tables for people (the default on a terminal)
+
+      --target <FILE>
+          The sound: a WAV, FLAC, Ogg Vorbis or MP3 file (192 kHz and above are decimated 2:1)
+
+      --candidates <K>
+          K: the candidates refined at once (1 to 16). Fewer come back when the portfolio holds fewer starts (the heuristic and the templates are 4; `--bank` adds up to 16 neighbours)
+          
+          [default: 8]
+
+      --seconds <SECONDS>
+          The wall-clock cap in seconds (above 0, at most 300), from decoding to the last candidate. A capped run depends on the machine's speed; the record's renders replay it exactly
+          
+          [default: 60]
+
+      --budget <N>
+          The most renders (default 4000): only a cap, the schedule never depends on it
+
+      --stop-at <D>
+          Stop the job as soon as a candidate's distance is at or below this (`stop` reads `goal`). The distance is the objective's, `settings.objective` (`logmel-pool85-robust/1`: 0 is identical, and the patch that made a clean sound scores under 0.02), not `enth compare`'s
+
+      --score-seconds <SECONDS>
+          The scored window in seconds: the first part of the clip (the intake keeps up to 5 s) that every candidate is rendered for and compared over. A shorter window is cheaper per render, a longer one hears more of the decay. Default 3, the product's setting
+          
+          [default: 3]
+
+      --bank <FILE>
+          The k-NN bank (`enth-bank-v1.bin`, from `cargo xtask bank`). Without it the job runs on the heuristic and the templates
+
+      --seed <SEED>
+          The search's seed. The same seed, file and renders repeat a run exactly
+          
+          [default: 1]
+
+      --workers <N>
+          Worker threads (default: every core). The output is the same for any number at the same renders
+
+      --out <PATCH>
+          Write the best candidate's patch here (named after the file)
+
+      --record <FILE>
+          Write the `enth.create/1` record here as well (what is printed)
+
+      --perf <PERF>
+          Override the performance the intake inferred. A file, inline JSON (`enth schema perf`) or `-` (stdin) is a whole performance and replaces the key, velocity and hold of its one note (several notes: the first by note-on); `note=A3,hold=0.4s` replaces only what it names, the rest staying the intake's. The onset and the clip stay the intake's
+
+      --note <NOTE>
+          Override only the note played (`A3`, `C#4`, or a MIDI number)
+
+      --vel <VEL>
+          Override only the MIDI velocity, 1 to 127
+
+      --hold <TIME>
+          Override only how long the note is held (`0.4s`, `400ms`, or seconds)
+
+  -h, --help
+          Print help (see a summary with '-h')

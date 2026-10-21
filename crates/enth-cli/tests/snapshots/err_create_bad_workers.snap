@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--workers\", \"0\"]), 2, \"bad_workers\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_workers",
+  "exit": 2,
+  "hint": "leave --workers out to use every core; the result is the same for any number",
+  "message": "--workers 0: the number of worker threads must be 1 to 256",
+  "schema": "enth.error/1"
+}
+--- stderr

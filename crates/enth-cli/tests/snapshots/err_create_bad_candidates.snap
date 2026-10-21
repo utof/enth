@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--candidates\", \"0\"]), 2, \"bad_candidates\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_candidates",
+  "exit": 2,
+  "hint": "leave it out for 8",
+  "message": "--candidates 0: K must be 1 to 16",
+  "schema": "enth.error/1"
+}
+--- stderr

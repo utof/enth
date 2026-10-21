@@ -43,7 +43,8 @@ exit: 3
     "lesson-list",
     "lesson-start",
     "lesson-hint",
-    "lesson-closest"
+    "lesson-closest",
+    "create"
   ],
   "message": "no schema named 'chek'",
   "schema": "enth.error/1"

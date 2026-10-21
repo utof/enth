@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--budget\", \"0\"]), 2, \"bad_budget\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_budget",
+  "exit": 2,
+  "hint": "leave it out for 4000",
+  "message": "--budget 0: the render cap must be at least 1",
+  "schema": "enth.error/1"
+}
+--- stderr

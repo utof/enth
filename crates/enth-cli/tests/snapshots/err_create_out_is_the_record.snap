@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--out\", &same, \"--record\", &same]), 2, \"bad_out\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_out",
+  "exit": 2,
+  "hint": "--out takes the best candidate's patch file, --record the whole enth.create/1 record: name two files",
+  "message": "--out and --record are both [TMP]/both.json",
+  "schema": "enth.error/1"
+}
+--- stderr

@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--seconds\", \"301\"]), 2, \"bad_seconds\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_seconds",
+  "exit": 2,
+  "hint": "every result arrives in under 5 minutes; leave it out for 60",
+  "message": "--seconds 301: the cap must be above 0 and at most 300",
+  "schema": "enth.error/1"
+}
+--- stderr

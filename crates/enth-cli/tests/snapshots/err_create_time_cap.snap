@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &wav, \"--seconds\", \"0.001\"], 4, \"time_cap\")"
+---
+exit: 4
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "time_cap",
+  "exit": 4,
+  "hint": "give it more --seconds: decoding, the intake and the first round (every start rendered once) take a few seconds on a long file or few cores",
+  "message": "the --seconds cap (0.001 s) passed before the first candidate was made",
+  "schema": "enth.error/1"
+}
+--- stderr

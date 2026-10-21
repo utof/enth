@@ -167,6 +167,11 @@ exit: 0
       "describes": "the output of enth lesson closest",
       "id": "enth.lesson-closest/1",
       "name": "lesson-closest"
+    },
+    {
+      "describes": "the output of enth create (R3: candidates from a sound file)",
+      "id": "enth.create/1",
+      "name": "create"
     }
   ]
 }

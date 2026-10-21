@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &wav, \"--bank\", &s.path(\"missing.bin\")], 5,\n\"file_not_found\")"
+---
+exit: 5
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "file_not_found",
+  "exit": 5,
+  "file": "[TMP]/missing.bin",
+  "hint": "build it with `cargo xtask bank` (it writes enth-bank-v1.bin), or leave --bank out to run on the heuristic and the templates",
+  "message": "no such file: [TMP]/missing.bin",
+  "schema": "enth.error/1"
+}
+--- stderr

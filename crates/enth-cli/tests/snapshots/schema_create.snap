@@ -1,0 +1,1118 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "CreateBankOut": {
+      "additionalProperties": false,
+      "description": "The k-NN bank a job retrieved from.",
+      "properties": {
+        "entries": {
+          "description": "Its entries.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generator": {
+          "description": "Its generator version.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sha256": {
+          "description": "SHA-256 of the bank file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "entries",
+        "generator"
+      ],
+      "type": "object"
+    },
+    "CreateCandidateOut": {
+      "additionalProperties": false,
+      "description": "One candidate: a start, refined.",
+      "properties": {
+        "branch": {
+          "description": "Its branch (equal to its index in `candidates`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distance": {
+          "description": "Its distance to the upload (smaller is closer); null when it never rendered.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "patch": {
+          "$ref": "#/$defs/PatchDoc",
+          "description": "The refined patch, as a patch file."
+        },
+        "proposal_distance": {
+          "description": "The start's own distance (what the proposal gave before the search).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/CreateProvenanceOut",
+          "description": "Where that start came from."
+        },
+        "renders": {
+          "description": "Renders its search used.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rung": {
+          "description": "The last rung it took part in.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runs": {
+          "description": "CMA-ES runs begun.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "description": "The index in `starts` of the start it began from.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/CreateStateOut",
+          "description": "Where it stands."
+        },
+        "trace": {
+          "description": "One step per round it took part in.",
+          "items": {
+            "$ref": "#/$defs/CreateStepOut"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "branch",
+        "start",
+        "provenance",
+        "patch",
+        "state",
+        "rung",
+        "renders",
+        "runs",
+        "trace"
+      ],
+      "type": "object"
+    },
+    "CreateInputOut": {
+      "additionalProperties": false,
+      "description": "What the job was given.",
+      "properties": {
+        "audio_sha256": {
+          "description": "SHA-256 of the scored mono clip (`f32` little-endian samples): a lossy decoder may differ in its last bits\nacross CPUs, so a replay checks this.",
+          "type": "string"
+        },
+        "bandwidth_hz": {
+          "description": "The highest frequency the upload still carries, when the intake found a steep low-pass.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "features_sha256": {
+          "description": "SHA-256 of the input features (the k-NN embedding, then the log-mel).",
+          "type": "string"
+        },
+        "frames": {
+          "description": "Frames in the scored clip.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "noise_floor_dbfs": {
+          "description": "The noise floor in dBFS, when the intake measured one and its lead-in confirms it.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "perf": {
+          "$ref": "#/$defs/CreatePerfOut",
+          "description": "The performance played: the intake's inference, or the override."
+        },
+        "render_seed": {
+          "description": "The render seed of every candidate.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sample_rate": {
+          "description": "The file's own rate (Hz): the clip's, and every candidate's render rate (no resampling).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "audio_sha256",
+        "features_sha256",
+        "sample_rate",
+        "frames",
+        "render_seed",
+        "perf"
+      ],
+      "type": "object"
+    },
+    "CreatePerfOut": {
+      "additionalProperties": false,
+      "description": "The performance a job played, under the intake's names. All times are clip time.",
+      "properties": {
+        "duration_s": {
+          "description": "The scored clip's length, which is the render's.",
+          "format": "double",
+          "type": "number"
+        },
+        "f0_hz": {
+          "description": "The measured fundamental, when the clip is pitched.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hold_s": {
+          "description": "How long the note is held; the note-off may fall after the clip's end (the note is then held throughout).",
+          "format": "double",
+          "type": "number"
+        },
+        "key": {
+          "description": "The MIDI key (the note nearest the measured pitch; 48 when unpitched).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "on_s": {
+          "description": "The note-on, on the engine's 32-frame grid (a pre-roll of about 5 ms precedes the sound).",
+          "format": "double",
+          "type": "number"
+        },
+        "velocity": {
+          "description": "Velocity, 0 to 1 (the intake fixes it at 100/127).",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "velocity",
+        "on_s",
+        "hold_s",
+        "duration_s"
+      ],
+      "type": "object"
+    },
+    "CreateProvenanceOut": {
+      "description": "Where a start came from.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The init template with the upload's descriptors applied (pitch to tuning, envelope to ADSR, centroid to\ncutoff). Always kept.",
+          "properties": {
+            "kind": {
+              "const": "heuristic",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A template, its structure kept and its parameters searched.",
+          "properties": {
+            "kind": {
+              "const": "template",
+              "type": "string"
+            },
+            "name": {
+              "description": "The template's name (`pluck_1osc`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A neighbour from the k-NN bank, regenerated from its generator spec and transposed to the upload's note.",
+          "properties": {
+            "bank_index": {
+              "description": "Its index in the bank.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "difficulty": {
+              "description": "...the difficulty...",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "embedding_distance": {
+              "description": "Its embedding distance to the upload, in nepers.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "knn",
+              "type": "string"
+            },
+            "musical": {
+              "description": "...and `musical`.",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rank": {
+              "description": "Its rank among the neighbours proposed (0 is the nearest).",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seed": {
+              "description": "Its generator spec: the seed...",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "rank",
+            "bank_index",
+            "seed",
+            "difficulty",
+            "musical",
+            "embedding_distance"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One of a model's hypotheses (R3b; not produced yet).",
+          "properties": {
+            "confidence": {
+              "description": "The model's confidence in it, when it has one.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "hypothesis": {
+              "description": "Which of its hypotheses.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "model",
+              "type": "string"
+            },
+            "model": {
+              "description": "The model file's id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "model",
+            "hypothesis"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CreateRoundOut": {
+      "additionalProperties": false,
+      "description": "One round of the job.",
+      "properties": {
+        "live": {
+          "description": "The branches (or starts) that evaluated a batch in it.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "renders": {
+          "description": "The job's renders after it.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "round": {
+          "description": "Its number (0 is the screening round).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rung": {
+          "description": "Its rung (null for the screening round).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "seconds": {
+          "description": "Seconds since the job started when the round ended.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "round",
+        "renders",
+        "live"
+      ],
+      "type": "object"
+    },
+    "CreateSettingsOut": {
+      "additionalProperties": false,
+      "description": "The settings a job ran under.",
+      "properties": {
+        "bank": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateBankOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The bank, when `--bank` gave one."
+        },
+        "budget": {
+          "description": "The render cap (`--budget`; default 4000): only a cap, the schedule never depends on it.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "embedding": {
+          "description": "The k-NN embedding's id: `knn-logmel-rel/1`.",
+          "type": "string"
+        },
+        "eta": {
+          "description": "The halving factor (2).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "finalists": {
+          "description": "How many branches pruning keeps at least (2).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "first_rung": {
+          "description": "The first rung, in a branch's own renders (50): rung `r` ends at `first_rung * eta^r`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "k": {
+          "description": "K: the branches refined at once (`--candidates`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lambda": {
+          "description": "The population of each branch's first CMA-ES run (0 is Hansen's default).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_spread": {
+          "description": "Neighbours closer than this to one already proposed are skipped (nepers).",
+          "format": "double",
+          "type": "number"
+        },
+        "neighbours": {
+          "description": "How many k-NN neighbours were proposed (16).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "objective": {
+          "description": "The objective's metric id: `logmel-pool85-robust/1`.",
+          "type": "string"
+        },
+        "seed": {
+          "description": "The search's seed (`--seed`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stop_at": {
+          "description": "The goal distance (`--stop-at`), when one was given.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "templates": {
+          "description": "The templates proposed as starts, by name.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "k",
+        "budget",
+        "seed",
+        "neighbours",
+        "min_spread",
+        "lambda",
+        "first_rung",
+        "eta",
+        "finalists",
+        "objective",
+        "embedding",
+        "templates"
+      ],
+      "type": "object"
+    },
+    "CreateStartOut": {
+      "additionalProperties": false,
+      "description": "One start.",
+      "properties": {
+        "branch": {
+          "description": "The branch it became, or null if screening dropped it.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Its index in `starts`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "patch": {
+          "$ref": "#/$defs/PatchDoc",
+          "description": "The start, as a patch file (`enth schema patch`)."
+        },
+        "provenance": {
+          "$ref": "#/$defs/CreateProvenanceOut",
+          "description": "Where it came from."
+        },
+        "screen_distance": {
+          "description": "Its screening distance, when it was screened (the budget may end the screening round first).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "provenance",
+        "patch"
+      ],
+      "type": "object"
+    },
+    "CreateStateOut": {
+      "description": "Where a branch stands.",
+      "oneOf": [
+        {
+          "const": "proposed",
+          "description": "Kept as a branch, not evaluated yet.",
+          "type": "string"
+        },
+        {
+          "const": "searching",
+          "description": "Its search is running.",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Its search ended (the job's end, its own exhaustion, or the budget's final cut).",
+          "type": "string"
+        },
+        {
+          "const": "pruned",
+          "description": "Successive halving dropped it after `rung`.",
+          "type": "string"
+        }
+      ]
+    },
+    "CreateStepOut": {
+      "additionalProperties": false,
+      "description": "One round a branch took part in.",
+      "properties": {
+        "best": {
+          "description": "The branch's best distance so far.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "job_renders": {
+          "description": "The job's renders so far.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "renders": {
+          "description": "The branch's renders so far.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "round": {
+          "description": "The job's round (0 is the screening round).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "round",
+        "renders",
+        "job_renders"
+      ],
+      "type": "object"
+    },
+    "CreateStopOut": {
+      "description": "Why a job ended.",
+      "oneOf": [
+        {
+          "const": "budget",
+          "description": "The render budget was reached (the normal end of a render-capped run).",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "description": "The `--seconds` cap stopped it (a result: the rounds that finished).",
+          "type": "string"
+        },
+        {
+          "const": "exhausted",
+          "description": "Every branch's search ended on its own before the budget.",
+          "type": "string"
+        },
+        {
+          "const": "goal",
+          "description": "A candidate reached `--stop-at`.",
+          "type": "string"
+        }
+      ]
+    },
+    "MacroDoc": {
+      "additionalProperties": false,
+      "description": "One macro in a file.",
+      "properties": {
+        "name": {
+          "description": "Display name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Knob position, 0-1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ModuleDoc": {
+      "additionalProperties": false,
+      "description": "One module in a file.",
+      "properties": {
+        "enabled": {
+          "description": "False when bypassed; omitted when true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Module id (`osc1`, `filter1`).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind key (`osc`, `noise`, `svf`, `adsr`, `lfo`, `reverb`, `comp`).",
+          "type": "string"
+        },
+        "label": {
+          "description": "A display label.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Reading"
+          },
+          "description": "Parameter values by key (sparse on input).",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "NoteRef": {
+      "anyOf": [
+        {
+          "description": "A MIDI key number, 0-127.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "description": "A note name such as `C3`.",
+          "type": "string"
+        }
+      ],
+      "description": "A note name or a MIDI key number."
+    },
+    "PatchDoc": {
+      "additionalProperties": false,
+      "description": "A patch file (`*.patch.json`, schema 1). Reading accepts sparse parameters (defaults fill in) and any key\norder; writing is dense, in spec order. Parameter values are plain numbers in each parameter's unit (`enth params\n<kind>`), unit strings (`\"1.2kHz\"`), enum keys or booleans.",
+      "properties": {
+        "engine": {
+          "description": "The engine version the patch was written by.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fx": {
+          "description": "Global effects (reverb, compressor), in series.",
+          "items": {
+            "$ref": "#/$defs/ModuleDoc"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "generators": {
+          "description": "Oscillators and noise, summed per voice.",
+          "items": {
+            "$ref": "#/$defs/ModuleDoc"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "macros": {
+          "description": "Macros 1-8.",
+          "items": {
+            "$ref": "#/$defs/MacroDoc"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "master": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Reading"
+          },
+          "description": "The built-in master: `level` (dB).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "meta": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PatchMetaDoc"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Name, author, description, tags."
+        },
+        "modulators": {
+          "description": "Envelopes and LFOs.",
+          "items": {
+            "$ref": "#/$defs/ModuleDoc"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "routes": {
+          "description": "Modulation routes, in summation order.",
+          "items": {
+            "$ref": "#/$defs/RouteDoc"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "schema": {
+          "description": "The patch file schema version, 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "slots": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Host automation slots: 1-based slot number to address.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "voice": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Reading"
+          },
+          "description": "The built-in voice: its parameters plus `amp_env`, the id of the amplitude envelope.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "voice_fx": {
+          "description": "Per-voice effects (filters), in series.",
+          "items": {
+            "$ref": "#/$defs/ModuleDoc"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schema"
+      ],
+      "type": "object"
+    },
+    "PatchMetaDoc": {
+      "additionalProperties": false,
+      "description": "Patch metadata in a file.",
+      "properties": {
+        "author": {
+          "description": "Author.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Free text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "description": "Tags.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "PerfFile": {
+      "additionalProperties": false,
+      "description": "`enth.perf/1`: what is played. Given to `--perf` as a file or inline JSON (`schema` may be left out), and stored\nin the `enth` chunk of every WAV that `enth render` writes.",
+      "properties": {
+        "dur_s": {
+          "description": "Length of the render in seconds; it should cover the release you want measured.",
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "description": "The notes, at least one.",
+          "items": {
+            "$ref": "#/$defs/PerfNote"
+          },
+          "type": "array"
+        },
+        "schema": {
+          "description": "`enth.perf/1`; optional on input.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "notes",
+        "dur_s"
+      ],
+      "type": "object"
+    },
+    "PerfNote": {
+      "additionalProperties": false,
+      "description": "One note of a performance.",
+      "properties": {
+        "note": {
+          "$ref": "#/$defs/NoteRef",
+          "description": "A note name (`C3`, `A#4`, `Db2`; A4 = 440 Hz) or a MIDI key number (60 = C4)."
+        },
+        "off_s": {
+          "description": "Note-off time in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "on_s": {
+          "default": 0,
+          "description": "Note-on time in seconds (default 0).",
+          "format": "double",
+          "type": "number"
+        },
+        "vel": {
+          "default": 100,
+          "description": "MIDI velocity 1-127 (default 100).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "note",
+        "off_s"
+      ],
+      "type": "object"
+    },
+    "Reading": {
+      "anyOf": [
+        {
+          "description": "A boolean (`loudness.clipping`, a toggle with `--plain`).",
+          "type": "boolean"
+        },
+        {
+          "description": "A number in the stated unit.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "Text: a unit string, an enum key or a note name.",
+          "type": "string"
+        }
+      ],
+      "description": "A value that is a number, a text (a unit string such as `900Hz`, an enum key, a note name) or a boolean."
+    },
+    "RouteDoc": {
+      "additionalProperties": false,
+      "description": "One route in a file.",
+      "properties": {
+        "depth": {
+          "description": "Percent of the destination's range, -100..100.",
+          "format": "double",
+          "type": "number"
+        },
+        "dst": {
+          "description": "Destination address (`filter1.cutoff`).",
+          "type": "string"
+        },
+        "src": {
+          "description": "Source: a modulator id, `velocity`, `key`, `modwheel` or `macro1`..`macro8`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "src",
+        "dst",
+        "depth"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.create/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.create/1`: a sound file in, K candidate patches out, and everything needed to replay the run.\n\nNumbers are printed exactly. Distances are the objective's (`settings.objective`, lane OBJ's\n`logmel-pool85-robust/1`: 0 is identical, smaller is closer) and are **not** on `enth compare`'s or\n`enth match`'s scale (`logmel-l1/1`). The run is a pure function of the decoded clip (`input.audio_sha256`), the\nsettings and the renders: the same for any `--workers`, and `rounds[].seconds`, `elapsed_s` and `cap_s` are the\nonly clock. A run stopped by `--seconds` repeats on any machine as the same job with its `renders` as the budget.",
+  "properties": {
+    "best": {
+      "description": "The closest candidate: its index in `candidates` (null when no candidate has a distance).",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "candidates": {
+      "description": "The K candidates (fewer when the portfolio held fewer starts, or the budget ended the screening), in branch\norder.",
+      "items": {
+        "$ref": "#/$defs/CreateCandidateOut"
+      },
+      "type": "array"
+    },
+    "cap_s": {
+      "description": "The `--seconds` cap.",
+      "format": "double",
+      "type": "number"
+    },
+    "decoded": {
+      "description": "How the file was read: `WAV, 16-bit, 48000 Hz, mono`.",
+      "type": "string"
+    },
+    "elapsed_s": {
+      "description": "Wall-clock seconds from the start to the end of the command.",
+      "format": "double",
+      "type": "number"
+    },
+    "hint": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "input": {
+      "$ref": "#/$defs/CreateInputOut",
+      "description": "What the job was given: the scored clip, the performance **played**, the intake's bandwidth and floor."
+    },
+    "intake": {
+      "description": "FE's intake report, whole: its settings, the performance it **inferred** (before any `--perf`, `--note`,\n`--vel` or `--hold`), the span kept, the degradation it found (bandwidth, floor, clipping, hum, SNR, tail) and\nits warnings. Open here: see docs/r3.md."
+    },
+    "notes": {
+      "description": "Notices, in the order they arose: what the file's decoding found, a performance override, a missing bank, a\nwindow that cut the clip, fewer candidates than K, a stop at the cap. The same lines go to stderr as `note:`.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "played": {
+      "$ref": "#/$defs/PerfFile",
+      "description": "The performance every candidate was played with, as `enth.perf/1`: pass it as `--perf` to `enth render`,\n`enth describe`, `enth compare --target FILE` or `enth match`."
+    },
+    "renders": {
+      "description": "The renders the job used (at most `settings.budget`).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "rounds": {
+      "description": "Every round, in order.",
+      "items": {
+        "$ref": "#/$defs/CreateRoundOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.create/1",
+      "description": "`enth.create/1`.",
+      "type": "string"
+    },
+    "score_s": {
+      "description": "The `--score-seconds` window asked for (the scored clip is `input.frames` long: shorter when the file is).",
+      "format": "double",
+      "type": "number"
+    },
+    "settings": {
+      "$ref": "#/$defs/CreateSettingsOut",
+      "description": "Every setting the job ran under, as the job reports them."
+    },
+    "starts": {
+      "description": "Every start, as a patch: the heuristic start, the templates, the k-NN neighbours.",
+      "items": {
+        "$ref": "#/$defs/CreateStartOut"
+      },
+      "type": "array"
+    },
+    "stop": {
+      "$ref": "#/$defs/CreateStopOut",
+      "description": "Why it ended. Exit 0 for every cause: a run the cap stopped is a result."
+    },
+    "wrote": {
+      "description": "The files written (`--out`, `--record`), in that order.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "input",
+    "settings",
+    "starts",
+    "candidates",
+    "rounds",
+    "renders",
+    "stop",
+    "notes",
+    "decoded",
+    "elapsed_s",
+    "cap_s",
+    "score_s",
+    "played",
+    "wrote",
+    "hint"
+  ],
+  "title": "CreateOut",
+  "type": "object"
+}

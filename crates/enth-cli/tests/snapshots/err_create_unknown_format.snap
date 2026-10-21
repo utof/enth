@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &junk], 3, \"unknown_format\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "unknown_format",
+  "exit": 3,
+  "file": "[TMP]/junk.wav",
+  "hint": "use a WAV, FLAC, Ogg Vorbis or MP3 file (M4A/AAC and AIFF are not read yet)",
+  "message": "[TMP]/junk.wav is not a sound file this build reads",
+  "schema": "enth.error/1"
+}
+--- stderr
