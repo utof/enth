@@ -78,6 +78,10 @@ pub enum Sub {
         step: String,
         /// The patch file to check.
         patch: PathBuf,
+        /// The patch the step started from (`enth lesson start --out`): a `touched` predicate, which reads the editor's
+        /// edit log, then reads how far the control moved from it.
+        #[arg(long, value_name = "PATCH")]
+        from: Option<PathBuf>,
     },
     /// The packs at PATH... and their lessons, steps in short (a folder of packs lists each).
     List {
@@ -165,7 +169,8 @@ pub fn run(args: &Args) -> Res {
             lesson,
             step,
             patch,
-        } => check(pack, lesson, step, patch),
+            from,
+        } => check(pack, lesson, step, patch, from.as_deref()),
         Sub::List { paths } => list::list(paths),
         Sub::Start {
             pack,
@@ -505,7 +510,7 @@ fn predicates(check: &Check) -> Vec<&Predicate> {
     }
 }
 
-fn check(path: &Path, lesson: &str, which: &str, patch_path: &Path) -> Res {
+fn check(path: &Path, lesson: &str, which: &str, patch_path: &Path, from: Option<&Path>) -> Res {
     let pack = load_pack(path)?;
     let bundle = lesson_of(&pack, lesson)?;
     let (i, step) = step_of(&bundle.lesson, which)?;
@@ -532,7 +537,21 @@ fn check(path: &Path, lesson: &str, which: &str, patch_path: &Path) -> Res {
         ));
     };
     let (patch, _notes) = patchio::load(patch_path)?;
-    let touched = TouchLog::default();
+    let mut touched = TouchLog::default();
+    // A file has no edit log. With the patch the step started from, a `touched` control counts as turned as far as it
+    // moved from there (lane EV3: otherwise a step with a `touched` predicate cannot pass on the command line).
+    if let Some(from) = from {
+        let (start, _notes) = patchio::load(from)?;
+        for p in predicates(check) {
+            if let Predicate::Touched { knob, .. } = p
+                && let (Some(spec), Some(a), Some(b)) =
+                    (knob.spec(&start), knob.value(&start), knob.value(&patch))
+            {
+                touched.note(knob.clone(), spec, a);
+                touched.note(knob.clone(), spec, b);
+            }
+        }
+    }
     let preds: Vec<LessonPredicateOut> = predicates(check)
         .into_iter()
         .map(|p| LessonPredicateOut {
@@ -576,8 +595,9 @@ fn check(path: &Path, lesson: &str, which: &str, patch_path: &Path) -> Res {
         pass,
         predicates: preds,
         sounds: sound_out,
-        note: has_touched.then(|| {
-            "a `touched` predicate reads the editor's edit log, which a patch file has not: it fails here".to_owned()
+        note: has_touched.then(|| match from {
+            Some(_) => "a `touched` predicate reads the editor's edit log, which a patch file has not: it read how far the control moved from --from".to_owned(),
+            None => "a `touched` predicate reads the editor's edit log, which a patch file has not: it fails here; pass --from <the step's start patch> to read how far the control moved from it".to_owned(),
         }),
         next: if pass {
             "the step passes with this patch".to_owned()

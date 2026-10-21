@@ -377,8 +377,12 @@ fn start_writes_the_sounds_of_an_ear_step_and_describe_answers_the_question() {
         .and_then(|a| a.iter().find(|st| st["id"] == "which-darker"))
         .cloned()
         .expect("the step exists");
-    let darker = usize::try_from(step["answer"].as_u64().expect("a choose step has an answer"))
-        .expect("an index");
+    let darker = usize::try_from(
+        step["answer"]
+            .as_u64()
+            .expect("a choose step has an answer"),
+    )
+    .expect("an index");
     let centroid = |i: usize| -> f64 {
         let e = &r.examples[i];
         let o = run(&["describe", &e.patch, "--perf", &e.perf]);
@@ -423,6 +427,68 @@ fn start_says_what_a_step_has_to_write() {
     let e: ErrorOut = round_trip(&o);
     assert_eq!((o.code, e.error.as_str()), (2, "no_examples"));
     assert!(!std::path::Path::new(&s.path("e")).exists());
+}
+
+/// A `touched` predicate reads the editor's edit log, which a file has not: `check --from START` reads how far the
+/// control moved from the start instead, so a step with one can pass on the command line.
+#[test]
+fn check_reads_a_touched_predicate_from_the_start_patch() {
+    let s = Scratch::new("lesson_check_from");
+    let start = s.path("start.patch.json");
+    let o = run(&[
+        "lesson",
+        "start",
+        &basics(),
+        "--lesson",
+        "how-a-lesson-works",
+        "--step",
+        "try",
+        "--out",
+        &start,
+    ]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    let witness = format!("{}/patches/saw-master-24.patch.json", basics());
+    let pack = basics();
+    let check = |extra: &[&str]| {
+        let mut args = vec![
+            "lesson",
+            "check",
+            &pack[..],
+            "--lesson",
+            "how-a-lesson-works",
+            "--step",
+            "try",
+            &witness[..],
+        ];
+        args.extend(extra);
+        let o = run(&args);
+        (o.code, json(&o))
+    };
+    // Without the start the predicate cannot hold, and the note says what to pass.
+    let (code, v) = check(&[]);
+    assert_eq!((code, v["pass"].clone()), (1, Value::Bool(false)));
+    assert!(
+        v["note"].as_str().is_some_and(|n| n.contains("--from")),
+        "{v}"
+    );
+    // With it, the witness moved master.level by more than the predicate asks.
+    let (code, v) = check(&["--from", &start]);
+    assert_eq!((code, v["pass"].clone()), (0, Value::Bool(true)), "{v}");
+    // A patch that did not move from the start has not touched it.
+    let o = run(&[
+        "lesson",
+        "check",
+        &basics(),
+        "--lesson",
+        "how-a-lesson-works",
+        "--step",
+        "try",
+        &start,
+        "--from",
+        &start,
+    ]);
+    assert_eq!(o.code, 1, "{}", o.stdout);
+    assert_eq!(json(&o)["predicates"][0]["pass"], false);
 }
 
 #[test]

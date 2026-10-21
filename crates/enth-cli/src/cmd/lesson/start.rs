@@ -75,7 +75,10 @@ fn prepare_sounds(
         let Some(entry) = phrases::entry(ex.phrase) else {
             return Err(error::invalid(
                 "bad_content",
-                format!("step {number} plays phrase {}, which this build lacks", ex.phrase.0),
+                format!(
+                    "step {number} plays phrase {}, which this build lacks",
+                    ex.phrase.0
+                ),
                 "run `cargo xtask lesson-check` on the pack",
             ));
         };
@@ -155,14 +158,14 @@ pub(super) fn start(
                 "has nothing to load",
                 "read its text with `enth lesson show`",
             ),
-            _ => (
-                "has a start patch",
-                "add --out FILE.patch.json to write it",
-            ),
+            _ => ("has a start patch", "add --out FILE.patch.json to write it"),
         };
         return Err(error::usage(
             "nothing_to_write",
-            format!("step {number} ({}) of {key} is a {kind} step, which {what}", step.id),
+            format!(
+                "step {number} ({}) of {key} is a {kind} step, which {what}",
+                step.id
+            ),
             hint,
         ));
     }
@@ -193,8 +196,8 @@ pub(super) fn start(
     let mut round_json = None;
     if out.is_some() {
         if let StepKind::Recreate { challenge, .. } = &step.kind {
-            let round = prepare_challenge(Challenge::clone(challenge))
-                .map_err(|e| game::from_round(&e))?;
+            let round =
+                prepare_challenge(Challenge::clone(challenge)).map_err(|e| game::from_round(&e))?;
             from = Some("challenge".to_owned());
             start_patch = Some(round.start().clone());
             round_json = Some(challenge.to_json());
@@ -234,8 +237,7 @@ pub(super) fn start(
         _ => None,
     };
     if let Some(dir) = examples_out {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| error::write_failed(&patchio::show(dir), &e))?;
+        std::fs::create_dir_all(dir).map_err(|e| error::write_failed(&patchio::show(dir), &e))?;
         for p in &prepared {
             patchio::write(&p.patch_path, &p.patch)?;
             std::fs::write(&p.perf_path, format!("{}\n", p.perf))
