@@ -1,6 +1,6 @@
 # Listening tools: what to run, how long it takes, what it decides
 
-- Date: 2026-10-19 (P1a lane T); test 4, the real-engine pairs, 2026-10-21 (FU1 lane PAIRS). Nothing in P1a waits for these; they close gates and need your ears and headphones.
+- Date: 2026-10-19 (P1a lane T); test 4, the real-engine pairs, 2026-10-21 (FU1 lane PAIRS); test 5, GR3, 2026-10-21 (R3 lane LT). Nothing in P1a waits for these; they close gates and need your ears and headphones.
 - Source: [`tools/listen`](../tools/listen) (package `enth-listen`) and, for the metric pairs test, [`spikes/spike-metric`](../spikes/spike-metric/).
 - Everything is blind: file and trial names are random, the order is shuffled and the answer key is in `manifest.json` (`pairs-manifest.json` for test 4), which you must not open. Clips are level-matched with EBU R128 (-23 LUFS, so set the volume once and leave it).
 
@@ -13,7 +13,7 @@ cargo build --release -p enth-listen -p spike-metric        # about 3 minutes th
 
 Sound goes through `pw-play --media-role=Production`, because your PipeWire keeps the default "Music" role muted. To use something else, add `--player "paplay"` (the WAV path is appended to the command). `--dry-run` skips playback entirely and answers with synthetic answers marked as such; every tool also takes `q` to quit (answers are saved after each one, so the same command resumes), `ra`/`rb`/`rx` to replay one sound and `r` to replay all.
 
-## The four tests
+## The five tests
 
 | Test | Decides | Runs | Total |
 | --- | --- | --- | --- |
@@ -21,6 +21,7 @@ Sound goes through `pw-play --media-role=Production`, because your PipeWire keep
 | 2. Blind reverb A/B | G1, ADR-0006 (our reverb or the fundsp fallback) | 1 session of 36 trials | about 15 min, plus a 10 s design |
 | 3. Metric pairs (existing) | G0 metric gate, ADR-0007 | 2 sessions of 34 trials, ideally on different days | about 30 min |
 | 4. Real-engine pairs | `sound/2`'s curve (sound % from distance) on real-engine sounds, and the pitch guard's unit (ADR-0007's 2026-10-20 notes) | 1 session of 44 trials; a retest on another day is optional | about 15-20 min, plus a 1-2 min design |
+| 5. GR3: model + search against search alone | GR3's clause 2 ([r3.md](r3.md#gr3-and-its-hygiene)): is the model's patch closer to a real or degraded sound than search alone's? | 1 session of 67 trials (60 references and 7 catch trials) for you; a kit of 37 for each of two friends | about 25 min for you, about 15 min per friend, plus 1-2 min to design |
 
 ### 1. ABX: does the search result sound the same as the target?
 
@@ -105,6 +106,85 @@ The files start with `pairs-`, so they sit beside spike-metric's in `~/enth-list
 4. The guard's units, if the data support it: replace `jnd` by `z_metric + max(0, pitch_delta_ct − pitch_floor_ct) / u_p + max(0, odd_delta − odd_floor) / u_w` and fit `c`, `q`, `u_p` (now 25 ct) and `u_w` (now 0.25) together; the `pitch` rows carry `u_p`. Change a unit only when its interval excludes the current value. No pair moves the waveform directly (it is discrete); the wave term appears where pulse widths or filters move it.
 5. GR1's blind ratings (`RoundResult::rating`, against each first submit's `jnd`) are the same kind of point: fit them alone and together with these, and report both. `sound/2` lands as a new `Curve` constant and a new arm in `score::sound::prepare`, and `sound/1` stays as it is ([challenge.md](challenge.md#how-sound2-replaces-sound1)).
 
+### 5. GR3: is model + search closer to the reference than search alone?
+
+GR3's second clause ([r3.md](r3.md#gr3-and-its-hygiene), report 04 §3.2): on real and degraded sounds, a blind listening test prefers model + search (**arm B**) to R3a's best search alone (**arm A**). The tool is `enth-listen gr3` (`tools/listen/src/gr3.rs`, lane LT). It needs the **set manifest** that lane EVK writes once the arms have run (below); until then use `--dry-run`, which builds its own synthetic set.
+
+```bash
+cd ~/code/enth
+cargo build --release -p enth-listen                                                     # if you have not yet
+./target/release/enth-listen gr3 --set <set.toml> --dir ~/enth-gr3                       # designs once (1-2 min), then your 67 trials; q quits, the same command resumes
+./target/release/enth-listen gr3 --dir ~/enth-gr3 --export-kit ~/enth-gr3-kits           # the friends' kits: ~/enth-gr3-kits/kit1 and kit2
+./target/release/enth-listen gr3 --dir ~/enth-gr3 --analyze                              # when you and both friends are done
+```
+
+**Your session: about 25 minutes** (the printed estimate uses the real clip lengths: each trial's audio once, a fifth more for replays, 7 s to answer). Each trial plays **R** (the reference), **A**, **B** with 0.8 s between them; type `a` or `b` for the one that is closer to R. There is no "same" answer: go with your first impression. `rr`, `ra`, `rb` replay one sound, `r` all three, `q` quits; the answer is saved after every trial and the same command resumes. The screen shows only `[n/67]`: no reference, stratum or arm is ever named. **Do not open `manifest.json`** (the key).
+
+**What a trial is.**
+
+| Rule | Value |
+| --- | --- |
+| Candidates | Each arm's top-ranked candidate by its own objective, from the set manifest; never a human pick |
+| Reference | The sound itself; for a **degraded** upload, the **clean original** (the arms searched the degraded file, you judge against the clean one) |
+| Level | Every clip, the reference included, at −23 LUFS (BS.1770 through the same `ebur128` pin as `enth-analysis`, stereo, the ungated fallback for very short sounds); a trial with a clip over −1 dBTP after matching is lowered **as a whole** (the key lists how far), so the clips of a trial stay level-matched |
+| Order | Which arm plays first is dealt per reference, alternating inside each (stratum, degraded) group, so half of every group has B first; a friend hears each reference in the opposite order to yours, so every reference is heard in both orders |
+| Catch trials (7 per listener) | 2 **identical pairs** (A and B are the same candidate: no right answer, they show a bias towards a position) and 5 **attention** trials (one arm's candidate against the obviously wrong one, the Init patch rendered with the same performance; the wrong one is first in two or three of them). Attention trials use clean references that have a `wrong` file. A friend's catch trials use references outside their kit when there are enough, so a candidate is not heard in a catch trial and again in a main trial |
+| Exclusion | A listener under **80 %** on the attention trials is excluded from the preference. With five of them, **one miss is 80 %: the listener is kept; two misses are 60 %: the listener is out**. (A listener who can no longer reach 80 % because of misses plus unanswered trials is out as well.) |
+| Short sounds | Never filtered by duration; a clip is not touched beyond its gain |
+
+**The set manifest** (`enth.listen.gr3-set/1`, TOML; what EVK and DS fill). Relative paths are relative to the file. Audio is WAV: PCM 16, 24 or 32 bit or float 32 or 64 bit (`enth render`'s default), mono or stereo (mono is copied to stereo). Other formats (the Ogg previews of `content/gr3`, MP3, FLAC) are converted to WAV first, for example `ffmpeg -i in.ogg out.wav`; the tool refuses anything else and names the file. **Every clip is played at 48 kHz:** a file at another rate (the arms render at their input file's own rate, so a clean 96 kHz original, a degraded upload and a phone recording rarely agree) is converted by a Kaiser-windowed sinc resampler (cutoff at 97 % of the lower Nyquist frequency, about 90 dB of stopband; a tone keeps its level to 0.01 dB), and a file already at 48 kHz is not touched. The key records each file's own rate.
+
+```toml
+schema = "enth.listen.gr3-set/1"
+name = "gr3-2026-10"                          # free text, printed in the report
+arm_a = "search alone (R3a, tuned on dev)"    # optional labels; arm B is the arm the rule tests
+arm_b = "model + search"
+
+[[item]]
+id = "r017"                                   # the reference id: unique, stable; only the key and the report show it
+stratum = "fm-wavetable"                      # reporting group, a free string: one report row per stratum
+degraded = true                               # the arms were given a degraded upload
+reference = "audio/r017-upload.wav"           # the audio the arms were given
+clean_reference = "audio/r017.wav"            # REQUIRED when degraded, forbidden otherwise: what you hear as R
+a = "cands/r017-a.wav"                        # arm A's top-ranked candidate
+b = "cands/r017-b.wav"                        # arm B's top-ranked candidate
+wrong = "cands/r017-init.wav"                 # optional: the Init patch, same performance (needed for at least 5 clean items)
+```
+
+The judged reference is `clean_reference` when there is one, else `reference`. Items judged against the **same file** (a degraded copy and its clean original) form **one cluster** of the bootstrap. The tool checks the schema, unique ids, the degraded rules and that every file exists, and records the SHA-256 of the set file and of every audio file in the key: a later run that finds a changed file refuses and names it.
+
+**The friends' kit** (`--export-kit <dir>`, about 15 minutes each). The folder is designed for two kits (`--friends 2`, the default; `--friends 0` for an owner-only test; decided when the folder is first designed). The references are dealt to the kits inside each (stratum, degraded) group, so each kit has half of every group, 30 of the 60, plus its 7 catch trials. Each of `kit1`, `kit2` holds:
+
+- `NN-K-xxxxxx.wav`: three random-named WAVs per trial, **NN** the trial number, **K** 1 for the reference, 2 for sound A, 3 for sound B, so sorting by name puts them in playing order; 24-bit stereo, already level-matched. Any player on any system works.
+- `answers.txt`: `kit: kitN`, instructions and one empty `NN:` line per trial; the friend types `a` or `b` after the colon (blank skips a trial, which keeps the result provisional; case, `=`, `-` and spaces are forgiven) and sends the file back.
+- `README.txt`: what to do, in a few sentences.
+
+Send each folder (zipped) to one friend and nothing else: never `manifest.json` or `--dir`. When a file comes back, save it as `<name>.txt` in `~/enth-gr3/friends/`; the name is the listener's label in the report (use "friend-a", not a real name). A typo in a file is reported with its line number, never guessed at.
+
+**The decision rule, fixed in advance** (`--analyze`; code in `tools/listen/src/gr3/analyze.rs` and `boot.rs`):
+
+1. Listeners under 80 % on attention are excluded; catch trials never enter the preference.
+2. The estimate is the pooled share of the included judgements where arm B's candidate was called closer.
+3. **B is preferred** when the lower end of the 95 % **cluster-bootstrap** interval is above 50 % **and** the degraded subset's point estimate is at least 50 %. Strata are reported, not gated.
+4. The bootstrap resamples **references, then listeners**, 10,000 replicates, from a fixed seed (`0x475233424f4f5453`, "GR3BOOTS"; deliberately not a flag). A replicate draws as many clusters as there are, with replacement; then, for each drawn cluster, as many of the listeners who judged it, with replacement; its value is wins over judgements. The interval is the 2.5th and 97.5th percentile (linear interpolation between order statistics); "the lower bound" is the 2.5th. With one listener per reference the second stage changes nothing, and with two it is the more cautious reading, which the report shows (the interval over references alone is printed beside it, not used).
+5. The report states the **observed design effect** and the **observed share**, next to what the plan assumed (1.2 and 65 %): the bootstrap variance of the references-only replicates over the variance of the same share if every judgement were an independent trial, `p(1 − p)/n`; and the effective sample size `n / deff`.
+
+`--analyze` shows **nothing but progress** until you and every kit have answered every trial (the listening key stays closed until every listener is done); `--partial` overrides that when a friend will not answer, and the result is then marked PROVISIONAL. It prints per-listener results (answered, attention, how often each listener picked the first sound, with an exact p-value against a fair coin: the order is balanced, so this is a position bias; the identical pairs), the pooled result with both intervals, the Wilson interval (ignoring clustering), clean and degraded, a row per stratum, each included listener's share, and writes `gr3-report.json` (`enth.listen.gr3-report/1`). "Whoever prepares stimuli does not audition them": the people who run EVK should not be the ones who listen, or should say so in the report.
+
+**Files** (in `--dir`):
+
+| File | Schema | Holds |
+| --- | --- | --- |
+| `manifest.json` | `enth.listen.gr3-manifest/1` | The key: the seed, the set file's path and hashes, every reference's stratum and cluster, every trial of every listener (which arm plays in A and B, the kind, the random clip names, the gains, the true peak), the number of kits. Do not open it before everyone is done |
+| `clips/<id>.wav` | 24-bit stereo | Your clips, random names, already scaled |
+| `answers.json` | `enth.listen.gr3-answers/1` | Your answers, saved after each one (`n`, trial id, `a`/`b`, replays, milliseconds) |
+| `friends/<name>.txt` | text | Each friend's returned `answers.txt` |
+| `gr3-report.json` | `enth.listen.gr3-report/1` | What `--analyze` prints |
+
+**Checked against Python.** `tools/listen/tests/gr3/bootstrap_ref.py` (standard library only; run it as `python3 -I`) implements the same procedure: the same `SplitMix64` stream and the same draws in the same order, so the two agree to rounding, not just statistically. `cargo test -p enth-listen --test gr3` compares the Rust bootstrap (a) with the numbers the script printed for a committed synthetic answers file (`synthetic.json` -> `expected.json`: 40 clusters, 3 listeners, 120 judgements; pooled, clean, degraded and each stratum, to 1e-12; always run), and (b) with a live run of the script, on that file and on the judgements of a dry run (skipped with a note if `python3` is missing; `ENTH_REQUIRE_PYTHON=1` turns that into a failure). To regenerate: `python3 -I bootstrap_ref.py synth > synthetic.json; python3 -I bootstrap_ref.py boot synthetic.json > expected.json`.
+
+**What it is for.** GR3's clause 2 passes when the report says `B PREFERRED`. Owner-only detects about a 70 % preference; with two friends and a design effect near 1.2, a true 65 % puts the lower bound near 55 % ([r3.md](r3.md#gr3-and-its-hygiene)). The design effect and the 65 % are assumptions: the report prints what was observed.
+
 ## Checking the tools without listening
 
 ```bash
@@ -112,10 +192,12 @@ The files start with `pairs-`, so they sit beside spike-metric's in `~/enth-list
 ./target/release/enth-listen abx --dry-run --dir /tmp/enth-abx-dry               # the full 20-target design (3-7 min) and a synthetic report
 ./target/release/enth-listen abx --dry-run --targets 4 --workers 2 --dir /tmp/enth-abx-dry-small
 ./target/release/enth-listen pairs --dry-run --dir /tmp/enth-pairs-dry          # the 40-pair design (1-2 min), synthetic answers from sound/1's own curve, the report
+./target/release/enth-listen gr3 --dry-run --dir /tmp/enth-gr3-dry                # about 20 s in a debug build, less in a release one: a synthetic 60-reference set, the design, both kits, synthetic answers, the report
+./target/release/enth-listen gr3 --dry-run --set <set.toml> --dir /tmp/enth-gr3-dry   # the same on EVK's real set: checks its files, levels and true peaks before anyone listens
 ```
 
-Dry runs live in `<dir>/dry-run`, never call a player and label the report SYNTHETIC. Do not rely on their numbers.
+Dry runs live in `<dir>/dry-run`, never call a player and label the report SYNTHETIC. Do not rely on their numbers. (GR3's dry run makes kit 2 miss two attention trials on purpose, to show the exclusion.)
 
 ## What to send back
 
-`~/enth-abx/abx-report.json`, `~/enth-reverb/reverb-report.json`, `~/enth-listen/pairs-report.json` and `~/enth-listen/pairs-fit.json`, and the printed reports. Clicks, discontinuities and level corrections found in the clips appear only in the reports (never during a session, where they would give the answer away). The agent that receives them updates ADR-0006, ADR-0007 and the roadmap, and fits `sound/2` from `pairs-fit.json` as test 4 describes.
+`~/enth-abx/abx-report.json`, `~/enth-reverb/reverb-report.json`, `~/enth-listen/pairs-report.json` and `~/enth-listen/pairs-fit.json`, `~/enth-gr3/gr3-report.json` (never `manifest.json` before everyone is done), and the printed reports. Clicks, discontinuities and level corrections found in the clips appear only in the reports (never during a session, where they would give the answer away). The agent that receives them updates ADR-0006, ADR-0007 and the roadmap, and fits `sound/2` from `pairs-fit.json` as test 4 describes.

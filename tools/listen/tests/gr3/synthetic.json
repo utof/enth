@@ -1,0 +1,965 @@
+{
+ "schema": "enth.listen.gr3-judgements/1",
+ "judgements": [
+  {
+   "listener": "owner",
+   "item": "ref-00",
+   "cluster": "ref-00",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-01",
+   "cluster": "ref-01",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-02",
+   "cluster": "ref-02",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-03",
+   "cluster": "ref-03",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-04",
+   "cluster": "ref-04",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-05",
+   "cluster": "ref-05",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-06",
+   "cluster": "ref-06",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-07",
+   "cluster": "ref-07",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-08",
+   "cluster": "ref-08",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-09",
+   "cluster": "ref-09",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-10",
+   "cluster": "ref-10",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-11",
+   "cluster": "ref-11",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-12",
+   "cluster": "ref-12",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-13",
+   "cluster": "ref-13",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-14",
+   "cluster": "ref-14",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-15",
+   "cluster": "ref-15",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-16",
+   "cluster": "ref-16",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-17",
+   "cluster": "ref-17",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-18",
+   "cluster": "ref-18",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-19",
+   "cluster": "ref-19",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-20",
+   "cluster": "ref-20",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-21",
+   "cluster": "ref-21",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-22",
+   "cluster": "ref-22",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-23",
+   "cluster": "ref-23",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-24",
+   "cluster": "ref-24",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-25",
+   "cluster": "ref-25",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-26",
+   "cluster": "ref-26",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-27",
+   "cluster": "ref-27",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-28",
+   "cluster": "ref-28",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-29",
+   "cluster": "ref-29",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-30",
+   "cluster": "ref-30",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-31",
+   "cluster": "ref-31",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-32",
+   "cluster": "ref-32",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-33",
+   "cluster": "ref-33",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-34",
+   "cluster": "ref-34",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-35",
+   "cluster": "ref-35",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-36",
+   "cluster": "ref-36",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-37",
+   "cluster": "ref-37",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "ref-38",
+   "cluster": "ref-38",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "ref-39",
+   "cluster": "ref-39",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-00",
+   "cluster": "ref-00",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-01",
+   "cluster": "ref-01",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-02",
+   "cluster": "ref-02",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-03",
+   "cluster": "ref-03",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-04",
+   "cluster": "ref-04",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-05",
+   "cluster": "ref-05",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-06",
+   "cluster": "ref-06",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-07",
+   "cluster": "ref-07",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-08",
+   "cluster": "ref-08",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-09",
+   "cluster": "ref-09",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-10",
+   "cluster": "ref-10",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-11",
+   "cluster": "ref-11",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-12",
+   "cluster": "ref-12",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-13",
+   "cluster": "ref-13",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-14",
+   "cluster": "ref-14",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-15",
+   "cluster": "ref-15",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-16",
+   "cluster": "ref-16",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "owner",
+   "item": "deg-17",
+   "cluster": "ref-17",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-18",
+   "cluster": "ref-18",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "owner",
+   "item": "deg-19",
+   "cluster": "ref-19",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-00",
+   "cluster": "ref-00",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-04",
+   "cluster": "ref-04",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-05",
+   "cluster": "ref-05",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-06",
+   "cluster": "ref-06",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-07",
+   "cluster": "ref-07",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-12",
+   "cluster": "ref-12",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-13",
+   "cluster": "ref-13",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-14",
+   "cluster": "ref-14",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-15",
+   "cluster": "ref-15",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-18",
+   "cluster": "ref-18",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-19",
+   "cluster": "ref-19",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-21",
+   "cluster": "ref-21",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-22",
+   "cluster": "ref-22",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-26",
+   "cluster": "ref-26",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-29",
+   "cluster": "ref-29",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-31",
+   "cluster": "ref-31",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-32",
+   "cluster": "ref-32",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-33",
+   "cluster": "ref-33",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-34",
+   "cluster": "ref-34",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-36",
+   "cluster": "ref-36",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-37",
+   "cluster": "ref-37",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "ref-39",
+   "cluster": "ref-39",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-07",
+   "cluster": "ref-07",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-08",
+   "cluster": "ref-08",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-12",
+   "cluster": "ref-12",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-13",
+   "cluster": "ref-13",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-14",
+   "cluster": "ref-14",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-17",
+   "cluster": "ref-17",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-18",
+   "cluster": "ref-18",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-1",
+   "item": "deg-19",
+   "cluster": "ref-19",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-01",
+   "cluster": "ref-01",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-02",
+   "cluster": "ref-02",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-03",
+   "cluster": "ref-03",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-08",
+   "cluster": "ref-08",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-09",
+   "cluster": "ref-09",
+   "stratum": "subtractive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-10",
+   "cluster": "ref-10",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-11",
+   "cluster": "ref-11",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-16",
+   "cluster": "ref-16",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-17",
+   "cluster": "ref-17",
+   "stratum": "fm-wavetable",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-20",
+   "cluster": "ref-20",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-23",
+   "cluster": "ref-23",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-24",
+   "cluster": "ref-24",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-25",
+   "cluster": "ref-25",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-27",
+   "cluster": "ref-27",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-28",
+   "cluster": "ref-28",
+   "stratum": "acoustic-percussive",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-30",
+   "cluster": "ref-30",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-35",
+   "cluster": "ref-35",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "ref-38",
+   "cluster": "ref-38",
+   "stratum": "owner-picks",
+   "degraded": false,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-00",
+   "cluster": "ref-00",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-01",
+   "cluster": "ref-01",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-02",
+   "cluster": "ref-02",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-03",
+   "cluster": "ref-03",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-04",
+   "cluster": "ref-04",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-05",
+   "cluster": "ref-05",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-06",
+   "cluster": "ref-06",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-09",
+   "cluster": "ref-09",
+   "stratum": "subtractive",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-10",
+   "cluster": "ref-10",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": false
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-11",
+   "cluster": "ref-11",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-15",
+   "cluster": "ref-15",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  },
+  {
+   "listener": "friend-2",
+   "item": "deg-16",
+   "cluster": "ref-16",
+   "stratum": "fm-wavetable",
+   "degraded": true,
+   "b": true
+  }
+ ]
+}
