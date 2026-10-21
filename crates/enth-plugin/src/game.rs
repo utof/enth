@@ -58,6 +58,8 @@ use enth_session::game::{
     AbState, CoachHint, GameRequest, Job, JobId, JobKind, JobResult, Listen, Prepared, RoundId,
     RoundLogEntry,
 };
+#[cfg(feature = "learn")]
+use enth_session::learn::{LearnJob, LearnJobId, LearnResult, ListenState};
 use enth_solver::coach::{CoachCfg, CoachPlan, CoachTarget};
 use parking_lot::{Condvar, Mutex};
 
@@ -128,6 +130,11 @@ pub struct TargetLoop {
     left: Box<[f32]>,
     right: Box<[f32]>,
     notes: Box<[LoopNote]>,
+    /// A Listen or Choose step's examples (lane SKL, feature `learn`): one loop each, all of one length (the shorter
+    /// ones padded with silence) so a flip between them keeps its position. A set of examples has no target loop
+    /// (`left` and `right` are empty), so a round's A/B never plays it.
+    #[cfg(feature = "learn")]
+    examples: Box<[(Box<[f32]>, Box<[f32]>)]>,
 }
 
 impl TargetLoop {
@@ -161,7 +168,44 @@ impl TargetLoop {
             left: left.into_boxed_slice(),
             right: right.into_boxed_slice(),
             notes,
+            #[cfg(feature = "learn")]
+            examples: Box::default(),
         }
+    }
+
+    /// A Listen or Choose step's examples as a set of loops (lane SKL): each render at its rate (all one rate),
+    /// padded with silence to the longest.
+    #[cfg(feature = "learn")]
+    pub fn examples(outs: Vec<RenderOutput>) -> TargetLoop {
+        let sample_rate = outs.first().map_or(0, |o| o.sample_rate);
+        let len = outs
+            .iter()
+            .map(|o| o.left.len().min(o.right.len()))
+            .max()
+            .unwrap_or(0);
+        let examples = outs
+            .into_iter()
+            .map(|o| {
+                let (mut l, mut r) = (o.left, o.right);
+                l.resize(len, 0.0);
+                r.resize(len, 0.0);
+                (l.into_boxed_slice(), r.into_boxed_slice())
+            })
+            .collect();
+        TargetLoop {
+            round: None,
+            sample_rate,
+            left: Box::default(),
+            right: Box::default(),
+            notes: Box::default(),
+            examples,
+        }
+    }
+
+    /// How many example loops it holds (0 for a round's loop).
+    #[cfg(feature = "learn")]
+    pub fn example_count(&self) -> usize {
+        self.examples.len()
     }
 
     /// The empty loop: handed over when the round's target goes, so the audio thread drops (hands back) its loop.
@@ -172,6 +216,8 @@ impl TargetLoop {
             left: Box::default(),
             right: Box::default(),
             notes: Box::default(),
+            #[cfg(feature = "learn")]
+            examples: Box::default(),
         }
     }
 
@@ -204,6 +250,10 @@ impl TargetLoop {
 pub struct Mailbox {
     incoming: AtomicPtr<TargetLoop>,
     retired: AtomicPtr<TargetLoop>,
+    /// Which of a set of examples plays, and its gain (lane SKL, feature `learn`): the session's Listen state as
+    /// atomics, read by the audio thread with the loops it picks from.
+    #[cfg(feature = "learn")]
+    pub(crate) listen: ListenShared,
 }
 
 impl Default for Mailbox {
@@ -218,6 +268,8 @@ impl Mailbox {
         Mailbox {
             incoming: AtomicPtr::new(ptr::null_mut()),
             retired: AtomicPtr::new(ptr::null_mut()),
+            #[cfg(feature = "learn")]
+            listen: ListenShared::default(),
         }
     }
 
@@ -280,6 +332,83 @@ impl Drop for Mailbox {
 unsafe fn take_box(p: *mut TargetLoop) -> Option<Box<TargetLoop>> {
     // SAFETY: the caller's contract.
     (!p.is_null()).then(|| unsafe { Box::from_raw(p) })
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The Listen atomics (lane SKL, feature `learn`)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The most examples a Listen or Choose step has (`enth_learn::lesson::MAX_EXAMPLES`; Choose has at most 6).
+#[cfg(feature = "learn")]
+pub const MAX_EXAMPLES: usize = 8;
+
+/// The session's [`ListenState`] as atomics the audio thread reads every block: the example playing (or none),
+/// whether the loops are the session's current examples, and each example's level-match gain (linear, at most 1;
+/// converted on the thread that drained the state, never in `process()`).
+#[cfg(feature = "learn")]
+#[derive(Debug)]
+pub struct ListenShared {
+    /// The example playing, `NO_EXAMPLE` for none.
+    example: AtomicU8,
+    ready: AtomicBool,
+    gains: [AtomicU32; MAX_EXAMPLES],
+}
+
+#[cfg(feature = "learn")]
+const NO_EXAMPLE: u8 = u8::MAX;
+
+/// One block's reading of [`ListenShared`]: the example to play and its gain, when one plays.
+#[cfg(feature = "learn")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ListenFrame {
+    /// The example playing.
+    pub example: Option<usize>,
+    /// Its gain (linear, at most 1).
+    pub gain: f32,
+}
+
+#[cfg(feature = "learn")]
+impl Default for ListenShared {
+    fn default() -> Self {
+        ListenShared {
+            example: AtomicU8::new(NO_EXAMPLE),
+            ready: AtomicBool::new(false),
+            gains: std::array::from_fn(|_| AtomicU32::new(1.0f32.to_bits())),
+        }
+    }
+}
+
+#[cfg(feature = "learn")]
+impl ListenShared {
+    /// Store the session's Listen state (the gains first, so a block that sees the new example sees its gain).
+    pub fn store(&self, state: &ListenState) {
+        for (i, g) in self.gains.iter().enumerate() {
+            let db = state.gains_db.get(i).copied().unwrap_or(0.0);
+            g.store(gain(db).to_bits(), Ordering::Relaxed);
+        }
+        let example = state
+            .example
+            .filter(|e| usize::from(*e) < MAX_EXAMPLES)
+            .unwrap_or(NO_EXAMPLE);
+        self.ready.store(state.ready, Ordering::Release);
+        self.example.store(example, Ordering::Release);
+    }
+
+    /// This block's reading (the audio thread: two or three atomic loads).
+    pub fn load(&self) -> ListenFrame {
+        let e = self.example.load(Ordering::Acquire);
+        if e == NO_EXAMPLE || !self.ready.load(Ordering::Acquire) {
+            return ListenFrame {
+                example: None,
+                gain: 1.0,
+            };
+        }
+        let i = usize::from(e);
+        ListenFrame {
+            example: Some(i),
+            gain: f32::from_bits(self.gains[i].load(Ordering::Relaxed)).min(1.0),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -420,6 +549,13 @@ impl Runner {
                 Ok((result, l)) => (result, Some(l)),
                 Err(result) => (result, None),
             },
+            // A lesson's Recreate step (lane SKL, R2): the given challenge prepared and seated like a generated one.
+            JobKind::PrepareChallenge { challenge } => {
+                match self.prepare_given(job.round, &challenge, host_rate) {
+                    Ok((result, l)) => (result, Some(l)),
+                    Err(result) => (result, None),
+                }
+            }
             JobKind::Score {
                 challenge, patch, ..
             } => {
@@ -483,6 +619,32 @@ impl Runner {
             RoundError::SilentTarget => JobResult::SilentTarget,
             e => failed("preparing the target", e),
         })?;
+        self.seat(id, round, host_rate)
+    }
+
+    /// `prepare_challenge` of a given challenge (a lesson's Recreate step, `JobKind::PrepareChallenge`), then the
+    /// same scored render, loudness and loop as [`Runner::prepare`].
+    fn prepare_given(
+        &mut self,
+        id: RoundId,
+        challenge: &enth_challenge::Challenge,
+        host_rate: u32,
+    ) -> Result<(JobResult, Box<TargetLoop>), JobResult> {
+        let round = prepare_challenge(challenge.clone()).map_err(|e| match e {
+            RoundError::SilentTarget => JobResult::SilentTarget,
+            e => failed("preparing the target", e),
+        })?;
+        self.seat(id, round, host_rate)
+    }
+
+    /// A prepared round's scored render and loudness, and its loop at the host's rate; the round is kept for its
+    /// score, rings and hint jobs.
+    fn seat(
+        &mut self,
+        id: RoundId,
+        round: PreparedRound,
+        host_rate: u32,
+    ) -> Result<(JobResult, Box<TargetLoop>), JobResult> {
         let scored = render_phrase(round.target(), round.phrase(), SCORING_SAMPLE_RATE)
             .map_err(|e| failed("rendering the target", e))?;
         let lufs = integrated_lufs(&scored);
@@ -528,6 +690,12 @@ impl Runner {
         let (id, round) = self.round.as_ref()?;
         let out = render_phrase(round.target(), round.phrase(), rate).ok()?;
         Some(Box::new(TargetLoop::new(*id, out, round.phrase())))
+    }
+
+    /// The hint evaluator, shared with the Learn jobs' measured hints (lane SKL).
+    #[cfg(feature = "learn")]
+    pub(crate) fn evaluator(&mut self) -> &mut crate::hint_eval::Workers {
+        &mut self.eval
     }
 
     /// Forget the round (its target went).
@@ -649,6 +817,12 @@ enum Msg {
     Rerender(u32),
     /// The target went (`AbState::target_ready` turned false): forget the round and clear the player.
     Clear,
+    /// A Learn job (lane SKL): [`crate::learn::run`].
+    #[cfg(feature = "learn")]
+    Learn(Box<LearnJob>),
+    /// The Listen state is no longer ready: drop a set of example loops the player holds (not a round's loop).
+    #[cfg(feature = "learn")]
+    ClearExamples,
 }
 
 /// What the worker shares with the shell's side.
@@ -667,12 +841,32 @@ struct Inner {
     loop_rate: AtomicU32,
     /// Messages taken but not finished (tests wait for 0 with an empty queue).
     busy: AtomicU32,
+    /// Learn results waiting for the GUI thread's `learn_job_done`, oldest first (lane SKL).
+    #[cfg(feature = "learn")]
+    learn_results: Mutex<Vec<(LearnJobId, LearnResult)>>,
+    /// The installed lessons and the progress file (lane SKL): `Open` jobs read them.
+    #[cfg(feature = "learn")]
+    lessons: Mutex<Arc<crate::learn::Lessons>>,
+    /// The newest loop published is a set of examples (so a Listen clear drops it, and never a round's loop).
+    #[cfg(feature = "learn")]
+    examples_live: AtomicBool,
 }
 
 impl Inner {
     fn publish(&self, l: Box<TargetLoop>) {
         self.loop_rate.store(l.sample_rate, Ordering::Release);
+        #[cfg(feature = "learn")]
+        self.examples_live
+            .store(l.example_count() > 0, Ordering::Release);
         self.mailbox.publish(l);
+    }
+
+    #[cfg(feature = "learn")]
+    fn post_learn(&self, id: LearnJobId, result: LearnResult) {
+        self.learn_results.lock().push((id, result));
+        if let Some(ctx) = self.repaint.lock().as_ref() {
+            ctx.request_repaint();
+        }
     }
 
     fn post(&self, id: JobId, result: JobResult) {
@@ -730,6 +924,33 @@ fn work(inner: &Inner) {
                 runner.clear();
                 inner.publish(Box::new(TargetLoop::empty()));
             }
+            #[cfg(feature = "learn")]
+            Msg::Learn(job) => {
+                let id = job.id;
+                let rate = inner.host_rate.load(Ordering::Acquire);
+                let lessons = Arc::clone(&inner.lessons.lock());
+                let ran = panic::catch_unwind(AssertUnwindSafe(|| {
+                    crate::learn::run(*job, &lessons, runner.evaluator(), rate)
+                }));
+                let (result, examples) = ran.unwrap_or_else(|_| {
+                    (
+                        LearnResult::Failed {
+                            message: "the game worker panicked (see the crash folder)".to_owned(),
+                        },
+                        None,
+                    )
+                });
+                if let Some(examples) = examples {
+                    inner.publish(Box::new(TargetLoop::examples(examples.outs)));
+                }
+                inner.post_learn(id, result);
+            }
+            #[cfg(feature = "learn")]
+            Msg::ClearExamples => {
+                if inner.examples_live.load(Ordering::Acquire) {
+                    inner.publish(Box::new(TargetLoop::empty()));
+                }
+            }
         }
         inner.busy.fetch_sub(1, Ordering::AcqRel);
     }
@@ -778,6 +999,12 @@ impl Game {
                 host_rate: AtomicU32::new(0),
                 loop_rate: AtomicU32::new(0),
                 busy: AtomicU32::new(0),
+                #[cfg(feature = "learn")]
+                learn_results: Mutex::new(Vec::new()),
+                #[cfg(feature = "learn")]
+                lessons: Mutex::new(Arc::new(crate::learn::Lessons::from_env())),
+                #[cfg(feature = "learn")]
+                examples_live: AtomicBool::new(false),
             }),
             thread: Mutex::new(None),
             ab: AbShared::default(),
@@ -894,6 +1121,51 @@ impl Game {
             .lock()
             .retain(|m| !matches!(m, Msg::Run(job) if job.id == id));
     }
+
+    // --- Learn (lane SKL, feature `learn`) ---------------------------------------------------------------------
+
+    /// Queue a Learn job on the worker.
+    #[cfg(feature = "learn")]
+    pub fn run_learn(&self, job: LearnJob) {
+        self.send(Msg::Learn(Box::new(job)));
+    }
+
+    /// Drop a queued Learn job (a late result is refused as stale by the session).
+    #[cfg(feature = "learn")]
+    pub fn cancel_learn(&self, id: LearnJobId) {
+        self.inner
+            .queue
+            .lock()
+            .retain(|m| !matches!(m, Msg::Learn(job) if job.id == id));
+    }
+
+    /// The session's Listen state: to the audio thread's atomics, and the example loops dropped once it is no longer
+    /// ready.
+    #[cfg(feature = "learn")]
+    pub fn listen(&self, state: &ListenState) {
+        self.inner.mailbox.listen.store(state);
+        if !state.ready && self.inner.examples_live.load(Ordering::Acquire) {
+            self.send(Msg::ClearExamples);
+        }
+    }
+
+    /// The Learn results the worker posted, oldest first, for `Session::learn_job_done` (the GUI thread).
+    #[cfg(feature = "learn")]
+    pub fn take_learn_results(&self) -> Vec<(LearnJobId, LearnResult)> {
+        std::mem::take(&mut *self.inner.learn_results.lock())
+    }
+
+    /// The installed lessons and the progress file.
+    #[cfg(feature = "learn")]
+    pub fn lessons(&self) -> Arc<crate::learn::Lessons> {
+        Arc::clone(&self.inner.lessons.lock())
+    }
+
+    /// Read lessons and progress from elsewhere (tests and the dev tools; the default follows the environment).
+    #[cfg(feature = "learn")]
+    pub fn set_lessons(&self, lessons: Arc<crate::learn::Lessons>) {
+        *self.inner.lessons.lock() = lessons;
+    }
 }
 
 impl Drop for Game {
@@ -1000,6 +1272,10 @@ pub struct Player {
     /// The note id each phrase note plays under, −1 when not held.
     held: [i32; MAX_PHRASE_NOTES],
     next_id: i32,
+    /// The example of a set that sounds (lane SKL, feature `learn`): it changes only once the loop's gain has dipped
+    /// to 0, so a flip between examples keeps its position without a click.
+    #[cfg(feature = "learn")]
+    example: Option<usize>,
     /// The `ab-toggle` measurement harness.
     #[cfg(feature = "ab-toggle")]
     pub harness: harness::Toggle,
@@ -1022,6 +1298,8 @@ impl Player {
             want: (0.0, 1.0, 1.0),
             held: [-1; MAX_PHRASE_NOTES],
             next_id: 0,
+            #[cfg(feature = "learn")]
+            example: None,
             #[cfg(feature = "ab-toggle")]
             harness: harness::Toggle::default(),
         }
@@ -1039,6 +1317,10 @@ impl Player {
         self.target_gain = 1.0;
         self.want = (0.0, 1.0, 1.0);
         self.held = [-1; MAX_PHRASE_NOTES];
+        #[cfg(feature = "learn")]
+        {
+            self.example = None;
+        }
     }
 
     /// At a CLAP reset (audio thread): the engine freed every voice, Mine's notes included.
@@ -1098,6 +1380,10 @@ impl Player {
     /// few per block).
     pub fn begin(&mut self, ab: AbFrame, frames: usize, events: &mut Vec<Event>) {
         self.poll();
+        #[cfg(feature = "learn")]
+        if self.begin_examples(events) {
+            return;
+        }
         #[cfg(feature = "ab-toggle")]
         let ab = self.harness.apply(ab, frames);
         let len = self.usable();
@@ -1122,6 +1408,54 @@ impl Player {
         if self.running {
             self.schedule(len, frames, events);
         }
+    }
+
+    /// A set of examples (lane SKL, feature `learn`): while the loops are the session's examples and one is picked,
+    /// the engine fades out and the picked loop plays at its level-match gain; a flip to another example dips the
+    /// loop's gain to 0, switches at the same position, and comes back up. Returns whether the block is the examples'
+    /// (the round's A/B is not consulted then: a set of examples and a round never share the slot).
+    #[cfg(feature = "learn")]
+    fn begin_examples(&mut self, events: &mut Vec<Event>) -> bool {
+        let count = self
+            .current
+            .as_deref()
+            .filter(|l| l.sample_rate == self.sample_rate)
+            .map_or(0, TargetLoop::example_count);
+        if count == 0 {
+            self.example = None;
+            return false;
+        }
+        if self.running {
+            self.running = false;
+            release_all(&mut self.held, events, 0);
+        }
+        let listen = self.mailbox.listen.load();
+        match listen.example.filter(|e| *e < count) {
+            Some(want) => {
+                if self.example.is_none() || self.w == 0.0 {
+                    if self.example.is_none() {
+                        self.pos = 0;
+                    }
+                    self.example = Some(want);
+                    self.target_gain = listen.gain;
+                }
+                if self.example == Some(want) {
+                    self.want = (1.0, 1.0, listen.gain);
+                } else if self.target_gain == 0.0 {
+                    self.example = Some(want);
+                    self.want = (1.0, 1.0, listen.gain);
+                } else {
+                    self.want = (1.0, 1.0, 0.0);
+                }
+            }
+            None => {
+                self.want = (0.0, 1.0, self.target_gain);
+                if self.w == 0.0 {
+                    self.example = None;
+                }
+            }
+        }
+        true
     }
 
     /// Mine's phrase notes in `[pos, pos + frames)`, wrapping at the loop's end (where any note still held is
@@ -1178,11 +1512,17 @@ impl Player {
             return;
         }
         let n = left.len().min(right.len());
-        let len = self.usable();
-        let (tl, tr): (&[f32], &[f32]) = match self.current.as_deref() {
-            Some(l) if len > 0 => (&l.left, &l.right),
-            _ => (&[], &[]),
-        };
+        #[cfg(feature = "learn")]
+        let example = self.example;
+        #[cfg(not(feature = "learn"))]
+        let example = None;
+        let (tl, tr) = loop_source(
+            self.current.as_deref(),
+            example,
+            self.sample_rate,
+            self.usable(),
+        );
+        let len = tl.len().min(tr.len());
         let (want_w, want_engine, want_target) = self.want;
         let mut p = if len > 0 { self.pos % len } else { 0 };
         for i in 0..n {
@@ -1202,6 +1542,34 @@ impl Player {
             }
         }
         self.pos = p;
+    }
+}
+
+/// The loop that plays a block: the sounding `example` of a set (lane SKL, feature `learn`), else the round's
+/// target loop when it is usable (`usable` frames), else nothing.
+#[cfg_attr(
+    not(feature = "learn"),
+    allow(
+        unused_variables,
+        reason = "examples exist only with the learn feature"
+    )
+)]
+fn loop_source(
+    current: Option<&TargetLoop>,
+    example: Option<usize>,
+    sample_rate: u32,
+    usable: usize,
+) -> (&[f32], &[f32]) {
+    #[cfg(feature = "learn")]
+    if let (Some(e), Some(l)) = (example, current)
+        && l.sample_rate == sample_rate
+        && let Some((left, right)) = l.examples.get(e)
+    {
+        return (left, right);
+    }
+    match current {
+        Some(l) if usable > 0 => (&l.left, &l.right),
+        _ => (&[], &[]),
     }
 }
 
@@ -1403,6 +1771,8 @@ mod tests {
                 off: 60,
             }]
             .into_boxed_slice(),
+            #[cfg(feature = "learn")]
+            examples: Box::default(),
         }
     }
 
@@ -1547,6 +1917,94 @@ mod tests {
         player.mix(&mut left, &mut right);
         assert!(player.idle());
         assert!(left.iter().all(|&x| x == 0.25));
+    }
+
+    /// A set of two example loops (lane SKL): example 0 holds `1.0`, example 1 holds `2.0`, each `frames` long.
+    #[cfg(feature = "learn")]
+    fn example_set(frames: usize, sample_rate: u32) -> TargetLoop {
+        let out = |v: f32| RenderOutput {
+            left: vec![v; frames],
+            right: vec![-v; frames],
+            sample_rate,
+            stats: enth_render::RenderStats::default(),
+        };
+        TargetLoop::examples(vec![out(1.0), out(2.0)])
+    }
+
+    #[cfg(feature = "learn")]
+    fn listen(example: Option<u8>, ready: bool, gains_db: Vec<f32>) -> ListenState {
+        ListenState {
+            example,
+            ready,
+            gains_db,
+        }
+    }
+
+    #[cfg(feature = "learn")]
+    #[test]
+    fn examples_play_at_their_gain_flip_at_one_position_through_a_dip_and_stop() {
+        let mailbox = Arc::new(Mailbox::new());
+        let mut player = Player::new(Arc::clone(&mailbox));
+        player.activate(48_000.0);
+        mailbox.publish(Box::new(example_set(4800, 48_000)));
+        let fade = (48_000.0 * AB_FADE_MS / 1000.0) as usize;
+        let mut events = Vec::with_capacity(16);
+        let block = |player: &mut Player, events: &mut Vec<Event>, v: f32| {
+            let mut left = vec![v; 1024];
+            let mut right = vec![v; 1024];
+            player.begin(ab(Listen::Off), 1024, events);
+            player.mix(&mut left, &mut right);
+            (left, right)
+        };
+        // Loops in, nothing picked: the block is the engine's, untouched.
+        let (left, _) = block(&mut player, &mut events, 0.5);
+        assert!(left.iter().all(|&x| x == 0.5) && player.idle());
+        // Example 0 at -6 dB: after the crossfade the loop alone, at its gain (the engine faded out).
+        mailbox
+            .listen
+            .store(&listen(Some(0), true, vec![-6.0, 0.0]));
+        let (left, right) = block(&mut player, &mut events, 0.5);
+        let g = gain(-6.0);
+        assert!((left[fade + 5] - g).abs() < 1e-6, "{}", left[fade + 5]);
+        assert!((right[fade + 5] + g).abs() < 1e-6);
+        assert!(events.is_empty(), "no phrase is played for examples");
+        // Flip to example 1: the gain dips to 0, the loop switches, and it comes back up at the same position.
+        mailbox
+            .listen
+            .store(&listen(Some(1), true, vec![-6.0, 0.0]));
+        let pos = player.pos;
+        let (left, _) = block(&mut player, &mut events, 0.5);
+        assert!(left[..fade].iter().all(|&x| x <= g + 1e-6), "the dip first");
+        let (left, _) = block(&mut player, &mut events, 0.5);
+        assert_eq!(left[fade + 5], 2.0, "example 1 at 0 dB");
+        assert_eq!(player.pos, (pos + 2048) % 4800, "one shared position");
+        // Not ready any more: back to the engine, and idle once the ramps settle.
+        mailbox.listen.store(&listen(Some(1), false, vec![]));
+        let (left, _) = block(&mut player, &mut events, 0.25);
+        assert_eq!(left[fade + 5], 0.25);
+        assert!(player.idle());
+    }
+
+    #[cfg(feature = "learn")]
+    #[test]
+    fn a_round_loop_never_plays_as_examples_and_examples_never_play_as_a_round() {
+        let mailbox = Arc::new(Mailbox::new());
+        let mut player = Player::new(Arc::clone(&mailbox));
+        player.activate(48_000.0);
+        mailbox.publish(Box::new(example_set(4800, 48_000)));
+        let mut events = Vec::with_capacity(16);
+        let mut left = vec![0.5f32; 512];
+        let mut right = vec![0.5f32; 512];
+        // Target ▶ over a set of examples: nothing to play.
+        player.begin(ab(Listen::Target), 512, &mut events);
+        player.mix(&mut left, &mut right);
+        assert!(left.iter().all(|&x| x == 0.5) && events.is_empty());
+        // An example picked over a round's loop: the round's A/B is all that counts.
+        mailbox.publish(Box::new(ramp_loop(1, 4800, 48_000)));
+        mailbox.listen.store(&listen(Some(0), true, vec![]));
+        player.begin(ab(Listen::Off), 512, &mut events);
+        player.mix(&mut left, &mut right);
+        assert!(left.iter().all(|&x| x == 0.5) && player.idle());
     }
 
     #[test]
