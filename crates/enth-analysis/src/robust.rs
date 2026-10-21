@@ -27,9 +27,11 @@
 //!      spreads, above almost every block of the noise), so what lies under the noise is neither paid nor charged.
 //!
 //!    Hum is stationary too, so its harmonics fall in the floor and are handled the same way.
-//! 3. **Clipped spans** (hard clipping only, FE decision 7: soft clipping and limiting leave no plateau and are never
-//!    inferred from `clipping`): the pooled blocks that overlap a clipped span weigh [`Settings::clip_weight`] of the
-//!    others.
+//! 3. **Clipped spans are compared like the rest** ([`Settings::clip_weight`] 1). Weighting the blocks that overlap
+//!    a hard-clipped span down (0.25) changed nothing on the 19 dev uploads with clipping found (6 better, 8 worse,
+//!    median 0): the intake finds hard clipping only (FE decision 7: soft clipping and limiting leave no plateau and
+//!    are never inferred from `clipping`), and its spans are a few samples or most of the note. [`Damage`] keeps the
+//!    spans and the setting stays, for an intake that finds more.
 //! 4. **The silence after the sound.** When the clip ends because the sound fell into the floor (not at the length
 //!    cap, the file's end or the scored window), the comparison runs [`Settings::tail_s`] past the clip's end, within
 //!    the scored window: the candidate is rendered that much longer, and its extra blocks are compared, clamped, with
@@ -144,7 +146,7 @@ pub struct Settings {
     /// Where that mean sits above the quietest block, in the same standard deviations as `floor_sigmas` (the
     /// quietest of 20 to 40 blocks lies about two under the mean).
     pub noise_sigmas: f64,
-    /// The weight of a pooled block that overlaps a hard-clipped span (1 = no change).
+    /// The weight of a pooled block that overlaps a hard-clipped span (1, the default: no change).
     pub clip_weight: f64,
     /// Seconds compared past the clip's end when it ends in the floor (0 = off), at most up to `max_end_s`.
     pub tail_s: f64,
@@ -163,7 +165,7 @@ impl Default for Settings {
             floor_offset: 0.0,
             noise_add: true,
             noise_sigmas: 2.0,
-            clip_weight: 0.25,
+            clip_weight: 1.0,
             tail_s: 0.5,
             attack_lead: true,
         }

@@ -255,7 +255,7 @@ fn damage_from_report_uses_only_a_confirmed_floor_and_hard_clipping() {
 }
 
 #[test]
-fn clipped_blocks_weigh_less() {
+fn clipped_blocks_weigh_less_only_when_asked() {
     let mut fx = fx();
     let base = ToyPatch::default();
     let t = toy(&base, &HELD);
@@ -275,7 +275,14 @@ fn clipped_blocks_weigh_less() {
         clipped_s: vec![(0.0, 0.3)],
         ..Damage::default()
     };
-    let r = robust(&mut fx, &t, &clipped, &c);
+    // the definition compares them like the rest (the dev measurement found no gain)
+    assert_eq!(robust(&mut fx, &t, &clipped, &c), plain);
+    let gentle = Settings {
+        clip_weight: 0.25,
+        ..Settings::default()
+    };
+    let rt = RobustTarget::with_settings(&mut fx, &t, &clipped, 3.0, &gentle);
+    let r = rt.distance(&rt.candidate(&mut fx, &c));
     assert!(r < 0.6 * plain, "{r} {plain}");
 }
 
