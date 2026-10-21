@@ -317,8 +317,9 @@ pass_mark = 90
 title = "Hard sync, round 3"
 tags = ["basics", "hard-sync"]
 
-# --- Check: which one is synced (osc2 synced at +7 against a plain saw, both at C3), then in which one osc2 is tuned
-# higher (synced at +7 against +15).
+# --- Check: which one is synced (osc2 synced at +17 against a plain saw, both at C3), then in which one osc2 is tuned
+# higher (synced at +7 against +15). Against a plain saw, sync at +7 is 1.50 JND under sound/1 (below the audibility gate's
+# 2) and +15 2.21; +17 (a ratio of 2.67, not near a whole number) is 3.47.
 [[steps]]
 id = "check-synced"
 kind = "choose"
@@ -328,7 +329,7 @@ answer = 0
 
 [[steps.options]]
 label = "A"
-patch = "patches/sync-on-7.patch.json"
+patch = "patches/sync-on-17.patch.json"
 
 [[steps.options]]
 label = "B"
