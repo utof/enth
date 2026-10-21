@@ -1,13 +1,13 @@
-//! The R2 command lane S0l pre-declared (`lesson`): hidden from `--help`, and it answers `not_built_yet` (exit 2,
-//! `enth.error/1` with a hint) whatever follows it. The lane that builds it (SKL) removes its row here and gives it
-//! real tests.
+//! The R2 commands pre-declared as stubs: hidden from `--help`, answering `not_built_yet` (exit 2, `enth.error/1`
+//! with a hint) whatever follows them. Lane S0l declared `lesson`; lane SKL built it (F2l, `tests/lesson.rs`) and
+//! removed its row, so the list is empty until another R2 stub joins.
 
 mod common;
 
 use common::{round_trip, run};
 use enth_cli::schema::ErrorOut;
 
-const STUBS: [&str; 1] = ["lesson"];
+const STUBS: [&str; 0] = [];
 
 #[test]
 fn every_r2_stub_answers_not_built_yet() {

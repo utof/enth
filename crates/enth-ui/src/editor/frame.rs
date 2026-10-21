@@ -85,6 +85,10 @@ pub struct Editor {
     /// waiting for it, the blind-rating question.
     #[cfg(feature = "recreate")]
     recreate: super::recreate::bar::Recreate,
+    /// The Learn state (lane SKL's minimal panel, F2l; lane LUI's view): the shell's lessons, the session's lesson
+    /// read model, the panel and the intents waiting for the session.
+    #[cfg(feature = "learn")]
+    learn: super::learn::Learn,
 }
 
 impl std::fmt::Debug for Editor {
@@ -125,6 +129,8 @@ impl Editor {
             last_time: None,
             #[cfg(feature = "recreate")]
             recreate: super::recreate::bar::Recreate::default(),
+            #[cfg(feature = "learn")]
+            learn: super::learn::Learn::default(),
         }
     }
 
@@ -237,6 +243,31 @@ impl Editor {
         &self.recreate
     }
 
+    /// Before a frame (lane SKL, F2l): the session's lesson (`LearnEdit::lesson()`), as `set_round` hands over a
+    /// round.
+    #[cfg(feature = "learn")]
+    pub fn set_lesson(&mut self, lesson: Option<enth_session::learn::LearnView>) {
+        self.learn.set_lesson(lesson);
+    }
+
+    /// When the window opens (lane SKL): the shell's installed lessons and the packs it refused.
+    #[cfg(feature = "learn")]
+    pub fn set_lessons(&mut self, lessons: Vec<enth_learn::LessonBundle>, problems: Vec<String>) {
+        self.learn.set_lessons(lessons, problems);
+    }
+
+    /// After a frame (lane SKL): the Learn view's intents, applied to the session's `LearnEdit`.
+    #[cfg(feature = "learn")]
+    pub fn apply_learn(&mut self, session: &mut dyn enth_session::learn::LearnEdit) {
+        self.learn.apply(session);
+    }
+
+    /// The Learn state (tests and the dev window).
+    #[cfg(feature = "learn")]
+    pub fn learn(&self) -> &super::learn::Learn {
+        &self.learn
+    }
+
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
     /// dragged source and the overlay applied.
     fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {
@@ -272,6 +303,11 @@ impl Editor {
         #[cfg(feature = "recreate")]
         if let Some(round) = self.recreate.overlay() {
             return round;
+        }
+        // A lesson step's highlights, locks and hidden modules (lane SKL); its round's rings come first.
+        #[cfg(feature = "learn")]
+        if let Some(lesson) = self.learn.overlay() {
+            return lesson;
         }
         self.overlay.as_ref()
     }
@@ -324,6 +360,19 @@ impl Editor {
         let rect = ui.max_rect();
         ui.painter()
             .rect_filled(rect, 0.0, t.color.surface.background);
+        // The Learn panel takes a column at the window's right edge while it is open (lane SKL's minimal panel, F2l);
+        // the layout's regions share the rest, and what no longer fits is in the overflow report.
+        #[cfg(feature = "learn")]
+        let (rect, pane) = if self.learn.panel_open() {
+            let w = t.size.learn.pane.min(rect.width());
+            let split = rect.right() - w;
+            (
+                Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
+                Some(Rect::from_min_max(egui::pos2(split, rect.top()), rect.max)),
+            )
+        } else {
+            (rect, None)
+        };
         let regions = self.layout.regions(rect);
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
@@ -357,7 +406,7 @@ impl Editor {
                             recreate: self.recreate.view(),
                             // Lane S0l (R2): lessons are not available until lane LUI hands the editor a Learn state.
                             #[cfg(feature = "learn")]
-                            learn: super::learn::HeaderLearn::default(),
+                            learn: self.learn.header(),
                             // Lane S0s (R3): create is not available until lane PUI hands the editor a create state.
                             #[cfg(feature = "create")]
                             create: super::create::HeaderCreate::default(),
@@ -435,6 +484,11 @@ impl Editor {
                     }
                 }
             }
+            #[cfg(feature = "learn")]
+            if let Some(p) = pane {
+                let over = super::learn::pane::show(&self.learn, ui, t, p, &mut out);
+                overflow.push(("learn", over));
+            }
             if let Some(b) = sheet {
                 #[cfg(feature = "recreate")]
                 if settings_page {
@@ -487,6 +541,12 @@ impl Editor {
         if self.recreate.take_changed() {
             ctx.request_repaint();
         }
+        // So do the Learn view's intents (lane SKL): the shell applies them after this frame (`apply_learn`), and the
+        // next pass shows what they did. Only after a click: never a timer.
+        #[cfg(feature = "learn")]
+        if self.learn.has_queued() {
+            ctx.request_repaint();
+        }
     }
 
     /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
@@ -506,6 +566,8 @@ impl Editor {
                 Intent::Preset(p) => self.presets.apply(session, p),
                 #[cfg(feature = "recreate")]
                 Intent::Game(g) => self.recreate.push(g.clone()),
+                #[cfg(feature = "learn")]
+                Intent::Learn(l) => self.learn.push(l.clone()),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
                 Intent::End(_) => {
                     session.end_gesture();

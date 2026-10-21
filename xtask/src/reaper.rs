@@ -21,6 +21,7 @@
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
 //! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
 //! | `round` | (lane SKR) a Recreate round through the editor's Recreate bar (real clicks), the transport stopped: Start prepares the target, Target ▶ and Mine ▶ sound on the track's meter, a submit is scored, End removes the round and writes the round log |
+//! | `lesson` | (lane SKL, on a bundle built with the `learn` feature) the bundled example lesson through the Learn panel (real clicks), the transport stopped: Start, an example sounds on the track's meter, Next, Show me passes the Do step (its sound check rendered on the worker) and the progress file records it, the project saved mid-lesson; reopened in a new process, the lesson resumes at its step and moves on |
 //! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save, each sound named and typed after its track (not "Init") |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
@@ -100,10 +101,11 @@ enum Scenario {
     CrossFormat,
     PresetLoad,
     Round,
+    Lesson,
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 13] = [
+    const PRODUCT: [Scenario; 14] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
@@ -117,6 +119,7 @@ impl Scenario {
         Scenario::CrossFormat,
         Scenario::PresetLoad,
         Scenario::Round,
+        Scenario::Lesson,
     ];
     fn name(self) -> &'static str {
         match self {
@@ -133,6 +136,7 @@ impl Scenario {
             Scenario::CrossFormat => "cross-format",
             Scenario::PresetLoad => "preset-load",
             Scenario::Round => "round",
+            Scenario::Lesson => "lesson",
         }
     }
 
@@ -290,6 +294,10 @@ struct Log {
 struct Sandbox {
     /// How REAPER lists the plugin (the scripts add it with `TrackFX_AddByName`).
     plugin_name: String,
+    /// The bundles the scenarios load (REAPER's plugin path).
+    bundled: PathBuf,
+    /// The bundles built with the `learn` feature, for the `lesson` scenario (lane SKL); `None` when there are none.
+    learn_bundled: Option<PathBuf>,
     reaper: PathBuf,
     home: PathBuf,
     out: PathBuf,
@@ -397,10 +405,32 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         "the editor scenarios send X events with xtask/reaper/xinput.py",
     )?;
 
+    let work = meta.target_directory.join("reaper-test");
+    let wants_lesson =
+        options.scenarios.is_empty() || options.scenarios.contains(&Scenario::Lesson);
+    // The `lesson` scenario (lane SKL) runs on a bundle built with the `learn` feature: bundled first and copied aside,
+    // because both builds write `target/bundled/<package>.*`; the default bundle is built after it.
+    let mut learn_bundled = None;
     if options.build && options.bundle_dir.is_none() {
         let mut build_args = vec![package.to_owned(), "--locked".to_owned()];
         if options.release {
             build_args.push("--release".to_owned());
+        }
+        if wants_lesson {
+            let mut learn_args = build_args.clone();
+            learn_args.extend(["--features".to_owned(), "learn".to_owned()]);
+            bundle::bundle(&learn_args)?;
+            let from = bundle::bundled_dir()?;
+            let to = work.join("bundled-learn");
+            if to.exists() {
+                std::fs::remove_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            }
+            std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            for format in &options.formats {
+                let name = format!("{package}.{}", format.tag());
+                bundle::copy_tree(&from.join(&name), &to.join(&name))?;
+            }
+            learn_bundled = Some(to);
         }
         bundle::bundle(&build_args)?;
     }
@@ -418,6 +448,15 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
                 artefact.display()
             ));
         }
+    }
+    // Prebuilt bundles: the `learn` ones are expected in `<bundle dir>/learn/`; without them `lesson` is skipped (info).
+    if learn_bundled.is_none() && options.bundle_dir.is_some() {
+        let dir = bundled.join("learn");
+        let present = options
+            .formats
+            .iter()
+            .all(|f| dir.join(format!("{package}.{}", f.tag())).exists());
+        learn_bundled = present.then_some(dir);
     }
 
     let mut scenarios: Vec<Scenario> = if options.scenarios.is_empty() {
@@ -437,9 +476,10 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         scenarios.dedup();
     }
 
-    let work = meta.target_directory.join("reaper-test");
     let sandbox = Sandbox {
         plugin_name: options.plugin_name.clone(),
+        bundled: bundled.clone(),
+        learn_bundled,
         reaper,
         home: work.join("home"),
         out: work.join("out"),
@@ -685,7 +725,52 @@ fn run_scenario(
         Scenario::CrossFormat => {}
         Scenario::PresetLoad => preset_load(sb, report, format, chunks)?,
         Scenario::Round => round(sb, report, format)?,
+        Scenario::Lesson => lesson(sb, report, format)?,
     }
+    Ok(())
+}
+
+/// `lesson` (lane SKL, F2l): REAPER's plugin path points at the `learn` bundles for the two launches (`play`, then
+/// `reload` in a new process), with the Learn and Packs folders (`ENTH_LEARN_DIR`, `ENTH_PACKS_DIR`) and the crash
+/// folder in the results, so the owner's Documents are never touched; then back at the default bundles.
+/// `xtask/reaper/lesson.lua` clicks the Learn panel and makes the checks.
+fn lesson(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
+    let tag = format.tag();
+    let scope = format!("{tag}/lesson");
+    let Some(learn) = sb.learn_bundled.as_ref() else {
+        report.info(
+            &scope,
+            "skipped",
+            "no bundles built with the learn feature (with --bundle-dir, put them in <dir>/learn/)",
+        );
+        return Ok(());
+    };
+    let dirs: Vec<PathBuf> = ["learn", "packs", "crashes"]
+        .iter()
+        .map(|d| sb.out.join(format!("lesson-{d}-{tag}")))
+        .collect();
+    for dir in &dirs {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let extra = vec![
+        ("ENTH_LEARN_DIR", dirs[0].display().to_string()),
+        ("ENTH_PACKS_DIR", dirs[1].display().to_string()),
+        ("ENTH_CRASH_DIR", dirs[2].display().to_string()),
+    ];
+    write_reaper_ini(sb, learn)?;
+    let play = run_script(sb, report, format, "lesson", "lesson", "play", &extra);
+    let _ = run_script(sb, report, format, "lesson", "lesson", "reload", &extra);
+    write_reaper_ini(sb, &sb.bundled)?;
+    report.info(
+        &scope,
+        "lesson-levels",
+        format!(
+            "▶ Open peaked at {} (transport stopped); progress file: {}",
+            play.data.get("example-peak").cloned().unwrap_or_default(),
+            play.data.get("progress").cloned().unwrap_or_default()
+        ),
+    );
     Ok(())
 }
 
@@ -1165,6 +1250,23 @@ fn prepare_sandbox(sb: &Sandbox, bundled: &Path) -> Result<(), String> {
     ] {
         let _ = std::fs::remove_file(sb.home.join(stale));
     }
+    write_reaper_ini(sb, bundled)?;
+    if sb.out.exists() {
+        std::fs::remove_dir_all(&sb.out).map_err(|e| format!("{}: {e}", sb.out.display()))?;
+    }
+    std::fs::create_dir_all(&sb.out).map_err(|e| format!("{}: {e}", sb.out.display()))
+}
+
+/// REAPER's settings for the sandbox, with its plugin path at `bundled` (the default bundles, or the `learn` ones for
+/// the `lesson` scenario). The plugin caches go with it, so REAPER rescans exactly those bundles.
+fn write_reaper_ini(sb: &Sandbox, bundled: &Path) -> Result<(), String> {
+    for stale in [
+        "reaper-vstplugins64.ini",
+        "reaper-clap-linux-x86_64.ini",
+        "reaper-recentfx.ini",
+    ] {
+        let _ = std::fs::remove_file(sb.home.join(stale));
+    }
     let ini = format!(
         "[REAPER]\n\
          clap_path_linux-x86_64={dir}\n\
@@ -1174,11 +1276,7 @@ fn prepare_sandbox(sb: &Sandbox, bundled: &Path) -> Result<(), String> {
          renderclosewhendone=4\n",
         dir = bundled.display()
     );
-    std::fs::write(sb.home.join("reaper.ini"), ini).map_err(|e| format!("reaper.ini: {e}"))?;
-    if sb.out.exists() {
-        std::fs::remove_dir_all(&sb.out).map_err(|e| format!("{}: {e}", sb.out.display()))?;
-    }
-    std::fs::create_dir_all(&sb.out).map_err(|e| format!("{}: {e}", sb.out.display()))
+    std::fs::write(sb.home.join("reaper.ini"), ini).map_err(|e| format!("reaper.ini: {e}"))
 }
 
 /// Runs the sandbox copy of REAPER under `xvfb-run` and waits for it. Never uses the real display.

@@ -1,0 +1,26 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, true)"
+---
+exit: 0
+--- stdout
+{
+  "lesson": "example/cutoff",
+  "next": "the step passes with this patch",
+  "note": null,
+  "number": "<num>",
+  "pass": true,
+  "patch": "[repo]/content/lessons/example/patches/dark.patch.json",
+  "predicates": [],
+  "schema": "enth.lesson-check/1",
+  "sounds": [
+    {
+      "item": "brightness<500Hz",
+      "margin": "<num>",
+      "pass": true,
+      "phrase": "<num>"
+    }
+  ],
+  "step": "try"
+}
+--- stderr

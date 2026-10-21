@@ -1,0 +1,133 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "LessonPredicateOut": {
+      "additionalProperties": false,
+      "description": "One patch predicate's result.",
+      "properties": {
+        "pass": {
+          "description": "Whether it holds for the patch.",
+          "type": "boolean"
+        },
+        "predicate": {
+          "description": "The predicate, as the lesson file holds it."
+        }
+      },
+      "required": [
+        "predicate",
+        "pass"
+      ],
+      "type": "object"
+    },
+    "LessonSoundItemOut": {
+      "additionalProperties": false,
+      "description": "One sound item's result.",
+      "properties": {
+        "item": {
+          "description": "The item as written (`brightness<500Hz`).",
+          "type": "string"
+        },
+        "margin": {
+          "description": "The signed margin in the feature's unit, when it has one.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pass": {
+          "description": "Whether it held.",
+          "type": "boolean"
+        },
+        "phrase": {
+          "description": "The phrase it is heard through (id).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "phrase",
+        "item",
+        "pass"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.lesson-check/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.lesson-check/1`: one do step's check run against a patch file: its patch predicates (no edit log, so a\n`touched` predicate cannot hold here) and its sound checks (each rendered through its phrase and judged). Exit 1\nwhen it fails.",
+  "properties": {
+    "lesson": {
+      "description": "`pack/lesson`.",
+      "type": "string"
+    },
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "note": {
+      "description": "A note for the reader (why a predicate cannot hold here), when there is one.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "number": {
+      "description": "Its place, 1-based.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "pass": {
+      "description": "Every predicate and every sound item passed.",
+      "type": "boolean"
+    },
+    "patch": {
+      "description": "The patch file checked.",
+      "type": "string"
+    },
+    "predicates": {
+      "description": "The patch predicates, in order.",
+      "items": {
+        "$ref": "#/$defs/LessonPredicateOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.lesson-check/1",
+      "description": "`enth.lesson-check/1`.",
+      "type": "string"
+    },
+    "sounds": {
+      "description": "The sound checks' items, in order.",
+      "items": {
+        "$ref": "#/$defs/LessonSoundItemOut"
+      },
+      "type": "array"
+    },
+    "step": {
+      "description": "The step's id.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "lesson",
+    "step",
+    "number",
+    "patch",
+    "pass",
+    "predicates",
+    "sounds",
+    "next"
+  ],
+  "title": "LessonCheckOut",
+  "type": "object"
+}

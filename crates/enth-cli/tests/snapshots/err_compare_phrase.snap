@@ -10,11 +10,15 @@ exit: 2
   ],
   "error": "unknown_phrase",
   "exit": 2,
-  "hint": "the phrases are 1 (held), 2 (octave_pair), 3 (legato_pair)",
+  "hint": "the phrases are 1 (held), 2 (octave_pair), 3 (legato_pair), 4 (chord), 5 (long_hold), 6 (staccato), 7 (staccato_run)",
   "known": [
     "held",
     "octave_pair",
-    "legato_pair"
+    "legato_pair",
+    "chord",
+    "long_hold",
+    "staccato",
+    "staccato_run"
   ],
   "message": "'octave' is not a phrase",
   "schema": "enth.error/1"

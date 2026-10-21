@@ -30,7 +30,7 @@
 //! | [`game`] | a Recreate round's job worker, target loop and phrase player, A/B crossfade, round log (the clock is in [`editor`]) | SKR (R1/S1) |
 //! | [`hint_eval`] | the hint job's evaluator: `enth_solver::measure` on a few scoped threads, results by job index, so a hint is the same for any worker count | HINT (FU1) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
-//! | `learn` | with the `learn` cargo feature: pack I/O (bundled packs and the Packs folder), the progress file, Learn jobs on the game worker; empty until F2l | SKL (R2; pre-declared by S0l) |
+//! | `learn` | with the `learn` cargo feature: pack I/O (bundled packs and the Packs folder), the progress file, Learn jobs on the game worker, the session's Learn requests acted on after unlocking | SKL (R2, F2l) |
 //! | `create` | with the `create` cargo feature: the `enth-create` thread, the per-job `rayon` pool, cancel, the file decoders; empty until F2s | SK3 (R3; pre-declared by S0s) |
 //! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
@@ -64,6 +64,8 @@ pub mod state;
 mod tests_game;
 #[cfg(test)]
 mod tests_host;
+#[cfg(all(test, feature = "learn"))]
+mod tests_learn;
 
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -71,6 +73,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use enth_engine::Engine;
 use enth_session::game::GameRequest;
+use enth_session::learn::LearnRequest;
 use enth_session::{Activation, HostParam, HostValues, Session, ShellRequest};
 use nice_plug::editor::dpi::LogicalSize;
 use nice_plug::prelude::*;
@@ -186,16 +189,23 @@ impl Shared {
             let result = f(&mut session);
             let requests: Vec<ShellRequest> = session.drain_requests().collect();
             let game: Vec<GameRequest> = session.drain_game_requests().collect();
+            // A lesson's requests (lane SKL): acted on with the `learn` feature, dropped without it (a saved lesson
+            // then stays in the project as it was, its stash kept).
+            let learn: Vec<LearnRequest> = session.drain_learn_requests().collect();
             if requests
                 .iter()
                 .any(|r| matches!(r, ShellRequest::RenameParams))
             {
                 self.set_names(session.patch());
             }
-            (result, (requests, game), session.status().compile_pending)
+            (
+                result,
+                (requests, game, learn),
+                session.status().compile_pending,
+            )
         };
-        let (requests, game) = requests;
-        let host = self.settle(requests, game, pending);
+        let (requests, game, learn) = requests;
+        let host = self.settle(requests, game, learn, pending);
         (result, host)
     }
 
@@ -235,12 +245,19 @@ impl Shared {
         &self,
         requests: Vec<ShellRequest>,
         game: Vec<GameRequest>,
+        learn: Vec<LearnRequest>,
         compile_pending: bool,
     ) -> Vec<ShellRequest> {
         if compile_pending {
             self.pump_wanted.store(true, Ordering::Release);
         }
         let mut dirty = self.game.act(game);
+        #[cfg(feature = "learn")]
+        {
+            dirty |= learn::act(&self.game, learn);
+        }
+        #[cfg(not(feature = "learn"))]
+        drop(learn);
         let mut host = Vec::new();
         for request in requests {
             match request {
