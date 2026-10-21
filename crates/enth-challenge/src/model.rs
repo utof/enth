@@ -26,7 +26,6 @@
 use enth_patch::Patch;
 use enth_render::{Note, Performance};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::code::{ChallengeCode, EngineVersion, TargetPrefix};
 use crate::score::{ScoreReport, ScorerId};
@@ -158,16 +157,27 @@ impl Challenge {
         if v1 { 1 } else { 2 }
     }
 
-    /// The same challenge with another seed: a sibling for a redo or a parallel test form. `None` for a patch target,
-    /// which has no seed.
-    pub fn with_seed(&self, seed: u64) -> Option<Challenge> {
+    /// The same challenge with another seed: a sibling for a redo or a parallel test form, validated (F1l review
+    /// M2). A seed target's target is generated again for the new seed, and the challenge takes the phrase the
+    /// generator picks for it (the generator picks a phrase per seed, so keeping the old one would make about a third
+    /// of the siblings `phrase_mismatch`); a draw keeps its items and draws them anew. A patch target has no seed
+    /// (`no_seed`); a seed out of range is refused as the spec or the draw refuses it.
+    pub fn with_seed(&self, seed: u64) -> Result<Challenge, ChallengeError> {
         let mut c = self.clone();
         match &mut c.target {
-            Target::Seed(spec) => spec.seed = seed,
+            Target::Seed(spec) => {
+                spec.seed = seed;
+                spec.validate().map_err(ChallengeError::Spec)?;
+                let start = crate::random::start(spec.template).map_err(gen_error)?;
+                c.phrase = crate::random::generate(spec, &start)
+                    .map_err(gen_error)?
+                    .phrase;
+            }
             Target::Draw(draw) => draw.seed = seed,
-            Target::Patch(_) => return None,
+            Target::Patch(_) => return Err(ChallengeError::NoSeed),
         }
-        Some(c)
+        c.validate()?;
+        Ok(c)
     }
 
     /// The patch the player starts from: the template's frozen start ([`crate::random::start`]) or the inline patch.
@@ -215,14 +225,22 @@ impl Challenge {
     /// - a template start that this build has (`code_too_new`);
     /// - a draw target: its draw against the start ([`Draw::validate`]: items on the start, values that resolve,
     ///   sets a step apart);
-    /// - constraints whose selectors name things the start has, and no lock on anything the target varies (the
-    ///   round could not be passed), both `bad_selector`;
+    /// - constraints whose selectors name things the start has, and no lock on anything the target's edits touch
+    ///   ([`crate::v2::touches`], the session's table: the round could not be passed), both `bad_selector`;
+    /// - no lock on a seed target (`bad_selector`: its draws change with the seed; lock with a draw target);
     /// - a phrase id of either phrase table (`phrase_too_new` for an id this build does not have; 0 is `bad_field`);
     /// - the scoring percentages.
     pub fn validate(&self) -> Result<(), ChallengeError> {
         match (&self.target, &self.start) {
             (Target::Seed(spec), start) => {
                 spec.validate().map_err(ChallengeError::Spec)?;
+                // A seed target's draws change with its seed, so no lock is safe for every sibling (F1l review M2):
+                // lock with a draw target. `editable` is advisory and stays allowed.
+                if let Some(lock) = self.constraints.locked.first() {
+                    return Err(ChallengeError::SeedLock {
+                        selector: lock.to_string(),
+                    });
+                }
                 match start {
                     Start::Template { template } if *template == spec.template => {}
                     Start::Template { template } => {
@@ -287,10 +305,22 @@ impl Challenge {
     /// types (no change of meaning), then [`validate`](Self::validate) ([`crate::v2::read`]). The embedded serde path
     /// runs the same reader.
     pub fn from_json(text: &str) -> Result<Challenge, ChallengeError> {
-        let value: Value = serde_json::from_str(text).map_err(|e| ChallengeError::BadJson {
-            message: e.to_string(),
-        })?;
+        // A repeated key anywhere is refused (F1l review, nit 9), as the embedded path refuses it.
+        let crate::v2::StrictValue(value) =
+            serde_json::from_str(text).map_err(|e| ChallengeError::BadJson {
+                message: e.to_string(),
+            })?;
         crate::v2::read(value)
+    }
+}
+
+/// A generator error as a challenge error: the spec's own refusal, or the generator's message.
+fn gen_error(e: crate::random::GenError) -> ChallengeError {
+    match e {
+        crate::random::GenError::Spec(e) => ChallengeError::Spec(e),
+        other => ChallengeError::BadChallenge {
+            message: other.to_string(),
+        },
     }
 }
 
@@ -595,6 +625,14 @@ pub enum ChallengeError {
         /// Why.
         reason: String,
     },
+    /// A lock on a seed target (`bad_selector`): its draws change with the seed, so a lock that leaves one seed's
+    /// round passable can lock what another sibling varies. Lock with a draw target (F1l review M2).
+    SeedLock {
+        /// The first locked selector, as text.
+        selector: String,
+    },
+    /// [`Challenge::with_seed`] on a patch target, which has no seed (`no_seed`).
+    NoSeed,
 }
 
 impl ChallengeError {
@@ -613,7 +651,8 @@ impl ChallengeError {
             ChallengeError::BadField { .. } => "bad_field",
             ChallengeError::UnknownPhrase { .. } => "phrase_too_new",
             ChallengeError::Draw(e) => e.code(),
-            ChallengeError::Selector { .. } => "bad_selector",
+            ChallengeError::Selector { .. } | ChallengeError::SeedLock { .. } => "bad_selector",
+            ChallengeError::NoSeed => "no_seed",
         }
     }
 
@@ -643,6 +682,13 @@ impl ChallengeError {
             ChallengeError::Draw(e) => e.hint(),
             ChallengeError::Selector { .. } => {
                 "a selector names a parameter, module (filter1.*), route or macro of the start patch".to_owned()
+            }
+            ChallengeError::SeedLock { .. } => {
+                "lock with a draw target: a seed target's draws change with its seed (editable stays allowed)"
+                    .to_owned()
+            }
+            ChallengeError::NoSeed => {
+                "a patch target has no seed: siblings come from a seed or a draw target".to_owned()
             }
         }
     }
@@ -677,6 +723,10 @@ impl core::fmt::Display for ChallengeError {
             ChallengeError::Selector { selector, reason } => {
                 write!(f, "selector '{selector}': {reason}")
             }
+            ChallengeError::SeedLock { selector } => {
+                write!(f, "selector '{selector}': a seed target takes no lock")
+            }
+            ChallengeError::NoSeed => f.write_str("a patch target has no seed"),
         }
     }
 }

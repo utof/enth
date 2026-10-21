@@ -27,9 +27,6 @@
   "constraints": {
     "editable": [
       "osc1.*"
-    ],
-    "locked": [
-      "filter1.*"
     ]
   },
   "assists": {
