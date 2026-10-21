@@ -1,5 +1,5 @@
 //! enth-learn (L5, see docs/architecture.md and docs/learn.md): lessons, content packs and the pure lesson player.
-//! R2 (Learn) puts here what the session, the CLI and xtask all share: the pack and lesson model (`enth.pack/1`,
+//! R2 (Learn) puts here what the session, the CLI and the lesson tool all share: the pack and lesson model (`enth.pack/1`,
 //! `LessonRef`, compatibility), the `.enthpack` reader, the four kinds of check and their evaluation (patch
 //! predicates; sound expectations through `enth-render` and `enth-analysis`), progress and its merge, the markdown
 //! block AST (`pulldown-cmark`), the deconstruct planner, coverage and the review boxes. The R2 research session
