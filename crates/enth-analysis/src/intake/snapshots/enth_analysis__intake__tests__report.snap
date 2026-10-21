@@ -1,0 +1,50 @@
+---
+source: crates/enth-analysis/src/intake/tests.rs
+expression: r
+---
+{
+  "version": 1,
+  "sample_rate": 48000,
+  "channels": 1,
+  "source_s": [f],
+  "span": {
+    "onset_s": [f],
+    "start_s": [f],
+    "end_s": [f],
+    "signal_end_s": [f],
+    "lead_pad_s": [f],
+    "tail_pad_s": [f],
+    "capped": false
+  },
+  "degradation": {
+    "noise_floor_dbfs": [f],
+    "snr_db": [f],
+    "hum": null,
+    "bandwidth_hz": null,
+    "clipping": {
+      "level_dbfs": [f],
+      "share": [f],
+      "spans": [
+        {
+          "start_s": [f],
+          "end_s": [f]
+        }
+      ]
+    },
+    "tail_t60_s": [f]
+  },
+  "perf": {
+    "key": 57,
+    "f0_hz": [f],
+    "voiced": [f],
+    "velocity": [f],
+    "on_s": [f],
+    "off_s": [f],
+    "hold_s": [f],
+    "duration_s": [f],
+    "onsets_s": [
+      [f]
+    ]
+  },
+  "warnings": []
+}

@@ -1,0 +1,10 @@
+---
+source: crates/enth-analysis/src/intake/tests.rs
+expression: w
+---
+[
+  {
+    "kind": "channels_cancel",
+    "loss_db": [f]
+  }
+]
