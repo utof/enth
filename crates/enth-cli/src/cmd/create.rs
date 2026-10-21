@@ -44,7 +44,7 @@ use enth_render::DEFAULT_SEED;
 use enth_solver::create::record::{CreateRecord, RecordContext};
 use enth_solver::create::{CreateCfg, CreateJob, CreateStop, Inputs, Portfolio, Target, Template};
 use enth_solver::nearest::Bank;
-use enth_solver::search::{MetricTarget, MetricWorker};
+use enth_solver::search::MetricTarget;
 use rayon::prelude::*;
 use serde_json::Value;
 
@@ -57,8 +57,33 @@ use crate::{patchio, templates};
 const MAX_SECONDS: f64 = 300.0;
 /// The most candidates.
 const MAX_CANDIDATES: usize = 16;
-/// The objective's metric id.
+/// Metric v1's id: the objective `enth create` scores with until lane OBJ's robust metric lands.
 const OBJECTIVE: &str = "logmel-l1/1";
+
+/// One pool thread's scorer: a candidate's distance to the target (lower is better).
+type Scorer<'a> = Box<dyn FnMut(&Patch) -> f64 + Send + 'a>;
+
+/// What the job scores with: the id `enth.create/1` records and a scorer per thread. **A parameter of the search**,
+/// so lane OBJ's robust metric replaces metric v1 where [`run`] builds it: `let scoring =
+/// RobustMetricTarget::from_intake(&target, &intake.report);` and `Objective { id: METRIC_ROBUST, scorer: … }` (the
+/// coordinator, 2026-10-21: once main has OBJ). The plugin's `create.rs` has the same seam.
+struct Objective<'a> {
+    id: &'static str,
+    scorer: Box<dyn Fn() -> Scorer<'a> + Sync + 'a>,
+}
+
+impl<'a> Objective<'a> {
+    /// Metric v1 against `metric` (`Target::metric_target`): one `MetricWorker` per thread.
+    fn metric_v1(metric: &'a MetricTarget) -> Self {
+        Objective {
+            id: OBJECTIVE,
+            scorer: Box::new(move || {
+                let mut w = metric.worker();
+                Box::new(move |p: &Patch| w.distance(p))
+            }),
+        }
+    }
+}
 
 /// `enth create`'s arguments.
 #[derive(Clone, Debug, PartialEq, clap::Args)]
@@ -269,11 +294,13 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let portfolio = Portfolio::build(&target, &analysis, &inputs, &ccfg);
     let mut job = CreateJob::new(&target, &analysis, portfolio, &ccfg)
         .map_err(|e| error::invalid(e.code(), e.to_string(), e.hint()))?;
-    // 4. The search on the CLI's pool, the cap checked before every render.
-    let metric = target.metric_target();
+    // 4. The search on the CLI's pool, the cap checked before every render. The objective is the one place lane
+    //    OBJ's robust metric goes in ([`Objective`]).
+    let scoring = target.metric_target();
+    let objective = Objective::metric_v1(&scoring);
     let mut stamps: Vec<f64> = Vec::new();
     let capped = game::with_workers(args.workers, || {
-        search(&mut job, &metric, &late, &mut || {
+        search(&mut job, &objective, &late, &mut || {
             stamps.push(t0.elapsed().as_secs_f64());
         })
     })?
@@ -292,7 +319,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
             target: &target,
             analysis: &analysis,
             intake: Some(&intake.report),
-            objective: OBJECTIVE,
+            objective: objective.id,
             bank: bank.as_ref(),
             templates: &names,
         },
@@ -351,12 +378,12 @@ fn named(patch: &Patch, path: &Path) -> Patch {
 /// dropped and the job cancelled), calling `round` after each told round. Returns whether the cap stopped it.
 fn search(
     job: &mut CreateJob,
-    metric: &MetricTarget,
+    objective: &Objective<'_>,
     late: &(dyn Fn() -> bool + Sync),
     round: &mut dyn FnMut(),
 ) -> Result<bool, enth_solver::create::CreateError> {
-    let workers: Vec<std::sync::Mutex<MetricWorker<'_>>> = (0..rayon::current_num_threads().max(1))
-        .map(|_| std::sync::Mutex::new(metric.worker()))
+    let workers: Vec<std::sync::Mutex<Scorer<'_>>> = (0..rayon::current_num_threads().max(1))
+        .map(|_| std::sync::Mutex::new((objective.scorer)()))
         .collect();
     loop {
         if late() {
@@ -374,12 +401,10 @@ fn search(
                     return None;
                 }
                 let i = rayon::current_thread_index().unwrap_or(0) % workers.len();
-                Some(
-                    workers[i]
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .distance(patch),
-                )
+                let mut score = workers[i]
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                Some((*score)(patch))
             })
             .collect();
         if distances.iter().any(Option::is_none) {

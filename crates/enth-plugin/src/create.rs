@@ -56,7 +56,7 @@ use enth_solver::create::{
     Candidate, CreateCfg, CreateJob, CreateStop, Inputs, Portfolio, Target, Template,
 };
 use enth_solver::nearest::Bank;
-use enth_solver::search::{MetricTarget, MetricWorker};
+use enth_solver::search::MetricTarget;
 use parking_lot::{Condvar, Mutex};
 use rayon::prelude::*;
 
@@ -64,8 +64,55 @@ use crate::presets::{Environment, Os, SystemEnv, documents_dir};
 
 /// The k-NN bank's file name (`cargo xtask bank` writes it; docs/r3.md, "The bank").
 pub const BANK_FILE: &str = "enth-bank-v1.bin";
-/// The objective's metric id (metric v1, the solver's `MetricWorker`), recorded with every job.
+/// Metric v1's id (the solver's `MetricWorker`): the objective a job scores with until lane OBJ's robust metric lands.
 pub const OBJECTIVE: &str = "logmel-l1/1";
+
+/// One pool thread's scorer: a candidate's distance to the target (lower is better).
+pub type Scorer<'a> = Box<dyn FnMut(&Patch) -> f64 + Send + 'a>;
+
+/// What a create job scores its candidates with: the objective's id (recorded) and a scorer per pool thread, each a
+/// pure function of its candidate, so a batch's distances are the same for any worker count. **A parameter of the
+/// search**, so lane OBJ's robust metric replaces metric v1 in one place (where a job builds its objective): `let
+/// scoring = RobustMetricTarget::from_intake(&target, &intake.report);` and `Objective::new(METRIC_ROBUST, ||
+/// { let mut w = scoring.worker(); Box::new(move |p| w.distance(p)) })` (the coordinator, 2026-10-21: once main has
+/// OBJ).
+pub struct Objective<'a> {
+    /// The objective's metric id, as `enth.create/1` records it.
+    pub id: &'static str,
+    scorer: Box<dyn Fn() -> Scorer<'a> + Sync + 'a>,
+}
+
+impl<'a> Objective<'a> {
+    /// An objective named `id` whose threads each score with a `scorer()`.
+    pub fn new(id: &'static str, scorer: impl Fn() -> Scorer<'a> + Sync + 'a) -> Self {
+        Objective {
+            id,
+            scorer: Box::new(scorer),
+        }
+    }
+
+    /// Metric v1 ([`OBJECTIVE`], `logmel-l1/1`) against `metric` (`Target::metric_target`): one `MetricWorker` per
+    /// thread.
+    pub fn metric_v1(metric: &'a MetricTarget) -> Self {
+        Objective::new(OBJECTIVE, move || {
+            let mut w = metric.worker();
+            Box::new(move |p: &Patch| w.distance(p))
+        })
+    }
+
+    /// A scorer for one pool thread.
+    pub fn scorer(&self) -> Scorer<'a> {
+        (self.scorer)()
+    }
+}
+
+impl std::fmt::Debug for Objective<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Objective")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
 
 /// The templates every job proposes (the heuristic start's base first), embedded from `content/templates/` as the
 /// CLI's are.
@@ -877,8 +924,10 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
             return;
         }
     };
-    // 4. The search, on a pool of its own whose threads are joined before this returns.
-    let metric = target.metric_target();
+    // 4. The search, on a pool of its own whose threads are joined before this returns. The objective is the one
+    //    place lane OBJ's robust metric goes in ([`Objective`]).
+    let scoring = target.metric_target();
+    let objective = Objective::metric_v1(&scoring);
     let workers = match inner.workers.load(Ordering::Acquire) {
         0 => search_workers(),
         n => n,
@@ -901,7 +950,7 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
                 inner,
                 id,
                 &mut job,
-                &metric,
+                &objective,
                 pool,
                 &|| stopped() || late(),
                 &progress,
@@ -955,13 +1004,13 @@ fn search(
     inner: &Inner,
     id: CreateJobId,
     job: &mut CreateJob,
-    metric: &MetricTarget,
+    objective: &Objective<'_>,
     pool: &rayon::ThreadPool,
     stop: &(dyn Fn() -> bool + Sync),
     progress: &dyn Fn(&CreateJob) -> CreateProgress,
 ) -> Result<(), enth_solver::create::CreateError> {
-    let workers: Vec<Mutex<MetricWorker<'_>>> = (0..pool.current_num_threads().max(1))
-        .map(|_| Mutex::new(metric.worker()))
+    let workers: Vec<Mutex<Scorer<'_>>> = (0..pool.current_num_threads().max(1))
+        .map(|_| Mutex::new(objective.scorer()))
         .collect();
     loop {
         if stop() {
@@ -980,7 +1029,8 @@ fn search(
                         return None;
                     }
                     let i = rayon::current_thread_index().unwrap_or(0) % workers.len();
-                    Some(workers[i].lock().distance(patch))
+                    let mut score = workers[i].lock();
+                    Some((*score)(patch))
                 })
                 .collect()
         });
