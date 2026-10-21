@@ -4,7 +4,9 @@
 #   scripts/gate.sh lane <worktree>   Fast, for a lane before it reports: fmt, workspace clippy (-D warnings),
 #                                     layers, wasm-check, and `cargo test` of the crates the change touches plus
 #                                     every crate that depends on them (`cargo xtask affected`, against the merge
-#                                     base with main; ENTH_GATE_BASE=<rev> names another base).
+#                                     base with main; ENTH_GATE_BASE=<rev> names another base). When the change
+#                                     touches content/lessons/, also `cargo xtask lesson-check` (every pack) and
+#                                     `lesson-check --cross --solve` on the packs it touches.
 #   scripts/gate.sh full <worktree>   Everything, for the coordinator before a merge: the lane checks with the
 #                                     whole workspace's tests, plus cargo-deny (bans, licenses, sources), golden,
 #                                     host-render and validate on the default plugin (`cargo xtask host-render`,
@@ -114,6 +116,22 @@ if [ "$mode" = lane ]; then
     echo "== crates to test: ${names[*]}"
     step test cargo test --locked "${packages[@]}"
     test_totals
+  fi
+  # R2 lane LCK: a change under content/lessons/ (against the same base as `affected`: committed, uncommitted and
+  # untracked) runs `lesson-check`: the files and the playthrough of every pack, then `--cross --solve` on each pack
+  # the change touches (docs/learn.md, "`lesson-check` and the authoring loop").
+  lesson_base=${ENTH_GATE_BASE:-main}
+  lesson_base=$(git merge-base HEAD "$lesson_base" 2>/dev/null || git merge-base HEAD origin/main)
+  lesson_changes=$({ git diff --name-only "$lesson_base" -- content/lessons; git ls-files --others --exclude-standard -- content/lessons; } | sort -u)
+  if [ -n "$lesson_changes" ]; then
+    lesson_packs=()
+    for pack in $(printf '%s\n' "$lesson_changes" | awk -F/ 'NF > 3 { print $3 }' | sort -u); do
+      if [ -f "content/lessons/$pack/pack.toml" ]; then lesson_packs+=("$pack"); fi
+    done
+    step lesson-check cargo xtask lesson-check
+    if [ "${#lesson_packs[@]}" -gt 0 ]; then
+      step lesson-solve cargo xtask lesson-check --cross --solve "${lesson_packs[@]}"
+    fi
   fi
 else
   step deny cargo deny --locked check bans licenses sources
