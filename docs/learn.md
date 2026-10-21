@@ -60,7 +60,7 @@ Rejected: lessons inside `enth-challenge` (11.5k lines with five owners, and pac
 
 ## The lesson model (sketch)
 
-Report 03 §3's sketch; lane LM writes the real types and the F1l judge reviews them. The file format is report 02's (below).
+Report 03 §3's sketch; lane LM wrote the real types ([below](#the-lesson-model-lane-lm)) and the F1l judge reviews them. The file format is report 02's (below).
 
 ```rust
 // enth-learn (sketch)
@@ -87,6 +87,120 @@ Provisional additions from [PLAN.md](../content/lessons/PLAN.md#9-open-questions
 **Recreate steps are real rounds.** A `Recreate` step starts a game round through an additive `RoundSource::Challenge(Box<Challenge>)` and a `JobKind::PrepareChallenge` the worker answers with `prepare_challenge`. The step passes when the round passes. Its round-log line carries `origin: lesson`, so `gr1-report` leaves it out. Lesson rounds never stash: the `learn` object holds the only stash.
 
 **Locks are the session's rule, not the overlay's.** `deliver` refuses an op that touches a locked address or module (`SessionError::Locked`, with a hint), so every shell and test gets the rule; the overlay only draws the lock. Policy to settle at F1l: host automation of a locked parameter folds into the patch but never counts toward a check; undo never leaves the step; a preset load asks Restore or Keep.
+
+## The lesson model (lane LM)
+
+**Built (2026-10-21, lane LM, to freeze F1l; the F1l judge reviews it with Challenge v2 and the session's Learn API).** `enth-learn` holds the frozen formats, the `.enthpack` reader, the player's API and a basic body, and progress v1. The code is the reference (`crates/enth-learn/src/`, one file per piece); the fixtures under `crates/enth-learn/tests/fixtures/<kind>/v1/` pin the bytes. The sketch above is superseded where they differ.
+
+| Format | Schema | Reading | Where | Fixtures |
+| --- | --- | --- | --- | --- |
+| Pack manifest | `enth.pack/1` (`pack.json`; `pack.toml` when authoring) | **Strict**: unknown fields refused, a newer schema refused and named (`pack_too_new`) | `pack.rs` | `pack/v1/pack.json`, `example.enthpack.sha256` |
+| Lesson | `enth.lesson/1` (`lessons/<id>/lesson.json`; `lesson.toml`) | **Strict**: `lesson_too_new`, unknown fields, and a field the step's kind does not have, refused | `lesson.rs`, `check.rs` | `lesson/v1/cutoff.json`, `every-field.json` |
+| Progress | `enth.progress/1` (`<Documents>/enth/Learn/progress.json`) | **Lenient**: a newer version reads; unknown fields and undecodable entries are kept verbatim and written back | `progress.rs` | `progress/v1/progress.json`, `newer.json` (input), `newer.rewritten.json` |
+| `LessonRef` | inside the session's `learn` object | Tolerant (saved state): an unknown field is ignored | `pack.rs` | `lesson-ref/v1/ref.json` |
+
+TOML and JSON are one set of serde types (`Manifest::from_toml`, `Lesson::from_toml` behind the `toml` feature), so the two forms cannot drift; `pack.toml` holds every field but `files`.
+
+### Packs
+
+```json
+{"schema":"enth.pack/1","id":"basics","version":"1.2.0","title":"Synth basics","authors":["enth contributors"],
+ "license":{"text":"CC-BY-4.0","patches":"CC0-1.0"},
+ "requires":{"lesson":1,"challenge":2,"patch":1,"generator":1,"scorers":["combined/1","sound/1","structure/1","time/1"]},
+ "engine":"0.3.0","covers":["osc","svf"],"lessons":["waveforms","cutoff"],
+ "tracks":[{"id":"tour","title":"The tour","lessons":["basics/how-a-lesson-works","basics/waveforms","shaping/vibrato"]}],
+ "files":[{"path":"lessons/cutoff/lesson.json","size":871,"sha256":"…"}]}
+```
+
+| Field | Rule |
+| --- | --- |
+| `id` | `[a-z][a-z0-9-]*`, at most 32 bytes; progress is keyed by it |
+| `version` | Semver core `MAJOR.MINOR.PATCH`; the newer of two packs with one id is kept (a tie: the bundled one) |
+| `requires` | `lesson` and `patch` (the patch **file schema**, 1 today, not the engine), and `challenge`, `generator`, `scorers` when a lesson has a Recreate step. The pack loads only if this build has them all (`requires_unmet`), and **a pack whose lessons use more than it declares is refused**, so `requires` never lies |
+| `engine` | The engine it was checked on, recorded, never a gate; `Manifest::seal` stamps it |
+| `covers` | Module-kind keys (`osc`, `svf`, …), for the browser |
+| `lessons` | The order the app offers them; each lives in `lessons/<id>/` (the directory is the id) |
+| `tracks` (Q1) | Ordered lesson lists across packs (`pack/lesson`): the tour is a track the pack that starts it carries; a missing pack's lesson shows as missing. 0.1 opening the tour (Q3) is the track's first entry |
+| `files` | Every file but `pack.json`, with size and SHA-256; `Manifest::seal` computes it |
+
+**Paths.** Relative, `/`-separated ASCII (`[A-Za-z0-9._-]`), no `.`, `..` or hidden segments, at most 160 bytes, and only `CREDITS.md` (required), `lessons/<id>/lesson.json`, `lessons/<id>/<text>.md` and `patches/<name>.patch.json`. `media/` is refused in v1. Limits: 1 MiB a file, 16 MiB a pack, 1,024 entries, 256 lessons, 32 MiB an archive.
+
+**The reader** (`reader.rs`) reads `pack.json` first, then inflates each listed file **capped at its listed size**, and refuses, each with a code and a hint: `renamed_entry` (a normalised name differs from the raw one, or the local header names another file), `duplicate_entry`, `too_many_entries`, `too_large`, `unsupported_compression` (only stored and deflate), `encrypted_entry`, `unlisted_file`, `missing_file`, `size_mismatch`, `inflate_overflow`, `corrupt_entry` (CRC), `hash_mismatch`, `bad_path`, `bad_content` (a patch that does not load, a text not UTF-8). Directory entries are skipped. A folder pack goes through the same checks (`Pack::from_files`). **The canonical writer** (`write_archive`): `pack.json` first, then path order, deflate level 9 (stored when that does not shrink), no timestamps, permissions or comments, so a pack builds to the same bytes on every platform (the fixture pins its SHA-256). `cargo xtask pack` (LCK) is TOML → JSON, `Manifest::seal`, `write_archive`.
+
+**The store** (`store.rs`): `PackStore { scan, read, write_user }` with `MemStore`; `install` verifies before it writes `<id>.enthpack`; `load_library` reads every pack through the reader, keeps one per id and lists every refusal with its reason (a newer pack is named, never hidden).
+
+### Lessons and steps
+
+A lesson: `id`, `title`, `tier` (`basic`, `intermediate`, `advanced`), `objective`, `teaches` (catalogue keys: `svf.cutoff`, `voice.glide`, `macro.value`), and 1–32 `steps`. A step: `id` (append-only; progress is keyed by it), `kind`, `text` (a `.md` beside `lesson.json`), `view`, `hints` (at most 8, shown before any measured one), and its kind's fields, flat:
+
+| `kind` | Fields | Passes when |
+| --- | --- | --- |
+| `read` | (`text` required) | Next |
+| `listen` | `examples`: 1–8 | Next |
+| `do` | `check`, `witness` (a pack patch that passes it; Show's source) | the check passes for the current revision |
+| `recreate` | `challenge` (a whole `enth_challenge::Challenge`, read by its own version-tolerant decoder), optional `witness` | its round passes |
+| `choose` | `options`: 2–6 examples, `answer` (0-based) | the right pick (clean only with no wrong pick and no help) |
+
+**`view`** (`StepView`): `layout` (`full`, `focus`), `start` (a pack patch; none: the patch carries over), `highlight`, `hide`, `editable` (**advisory**: the UI, the measured hint's free set, `closest`; empty means no restriction) and `lock` (**enforced** by the session). Selectors are `enth_challenge::v2::Selector`'s text: `filter1.cutoff`, `voice.glide`, `filter1.*` (the module, its parameters and its routes), `macro3`, `lfo1 -> filter1.cutoff`. **A Recreate step's start and locks are its challenge's**, so its view may not set `start`, `editable` or `lock`.
+
+**`Example`** (Q7, decided): `label`, `patch`, and the optional `phrase` (default 1, `HELD`), `transpose` (−36 to 36 st, for "at C2 and C4"), `level_match` (default on; off in 0.1 and 7.3), `seed` (a render seed; 5.6, 8.3) and `curve` (`{"source":"modwheel","points":[{"ms":0,"pct":0},…]}`, the mod wheel or a macro, linear between points; 6.3). Examples share the Target ▶ slot by time (SL).
+
+**`Check`** (structured, `kind` first; every atom is text the project already reads, so the shape freezes without PLY's one-line grammar, which may later read `filter1.cutoff < 1kHz` into the same value):
+
+```json
+{"kind":"all","checks":[
+  {"kind":"patch","predicates":[
+    {"kind":"value","knob":"filter1.cutoff","cmp":"<","value":"1kHz"},
+    {"kind":"within","knob":"master.level","lo":"-24dB","hi":"0"},
+    {"kind":"route","route":"macro1 -> filter1.cutoff","cmp":">","depth":"20%"},
+    {"kind":"has","module_kind":"svf"},
+    {"kind":"enabled","module":"osc2","enabled":true},
+    {"kind":"touched","knob":"filter1.resonance","min_span_pct":30}]},
+  {"kind":"sound","phrase":1,"expect":["brightness<500Hz"],"macros":[{"macro":"macro1","value":"1"}]}]}
+```
+
+Values are read by the control's `ParamSpec::parse` (every CLI unit, enum keys, `on`/`off`; a TOML number reads as its text); `==` is exact, for enums and toggles. An absent route has depth 0; an absent module fails every comparison and counts as not enabled. `touched` spans the normalised range the player's own edits covered during the step. Expectations must parse at load. **Q5, decided:** a sound check pins macro positions (`macros`), and the knob's predicate form is `macro1` (0–1). The patch evaluation here is LM's basic body; PLY owns its refinement, the sound and choice evaluation and the one-line grammar.
+
+### The player
+
+`Player` (`player.rs`) is pure: `&mut self`, times from the shell. **The session owns** the live patch, the stash, the undo history per step, the job ids and the saved state; every mutating call returns `Vec<Effect>` in order (seam agreed with SL through the coordinator):
+
+| Call | Does |
+| --- | --- |
+| `new(bundle)`, `start()` | Step 0's load |
+| `resume(bundle, step)` | After a reload: `View` and `Examples` only, never `LoadPatch` or `StartRound` |
+| `edited(now, revision, &patch, &ops, source)` | `source`: `Player` (editor, undo, redo, Show's op; counts toward `touched`), `Host` (folded, locked parameters pinned back by the session), `Load` (a step's start or a state load). Patch predicates re-run at once |
+| `tick(now)` | After `SETTLE_MS` (300 ms) without an edit, a step whose patch part holds asks `Check(CheckRequest{revision, patch, sounds})`, once per revision |
+| `check_done(revision, &verdict)` | **Refused (`stale_result`) unless it answers the check out for the current revision**; the session refuses stale job ids first |
+| `hint()` / `hint_done(revision, MeasuredHint)` | Authored hints in order, then one `HintJob` per revision (`{patch, phrase, expect, free}`, solver-native). Marks the step assisted. Recreate steps: the round's coach |
+| `show(&patch)` | A Do step: the witness's next op (`ops_between`, an editable control first) as `Apply(op)`, one undo step through the session's edit path; a choose step: `Reveal` and a pass. Marks the step assisted |
+| `choose(i)`, `round_ended(RoundEnd{passed, assisted, best_sound_pct})` | Ear questions; a Recreate step's round, at its first passing submit, a reveal, or when the step is left |
+| `next()`, `back()`, `end(Restore \| Keep)` | Next passes a Read or Listen step and skips an unpassed one; leaving an unpassed round emits `EndRound`; the last Next emits `Finished` |
+| `lesson()`, `step()`, `steps()`, `phase()`, `lesson_ref()` | Read accessors; the session saves `lesson_ref()` after every step change |
+
+Effects: `LoadPatch` (**at most one per step load**), `StartRound(challenge)` (a Recreate step, instead of `LoadPatch`), `EndRound`, `View` (the **effective locks** every step; a Recreate step's are its challenge's `Constraints.locked`), `Examples` (resolved patches), `Check`, `HintJob`, `Hint`, `Measured`, `Apply`, `Chose`, `Reveal`, `Passed`, `Record` (merge it into progress: passing is reported at once), `Finished`, `End`. A passed step stays passed. Phases: `Working`, `Checking{revision}`, `Passed`.
+
+**`LessonRef`**: `{"pack":"basics","version":"1.2.0","lesson":"cutoff","step":1,"content":"0123456789abcdef"}`, the first 8 bytes of the lesson file's SHA-256. On load the session resumes at `step`, or at 0 when `content` differs; the stash is kept either way. It is under 200 bytes with the longest ids, so it costs the 1 MiB `enth` field nothing next to the stash.
+
+### Progress v1
+
+`{"schema":"enth.progress/1","lessons":{"basics/cutoff":{"steps":{"try":{"done":true,"clean":true,"best":97}}}}}`. A step is `done` (passed or read), `clean` (passed once with no hint, Show, reveal or wrong pick) and has a `best` (a Recreate step's best sound %). **`Progress::merge` is a join**: the union of lessons and steps, `done` and `clean` or-ed, the maximum of bests; commutative, associative, idempotent, never shrinking (proptests, fixed seed). Fields and entries this build cannot read are kept and written back; between two differing kept values the greater canonical JSON text wins (still a join), and a readable entry wins over an unreadable one. `record` is a one-step merge. Only text that is not a progress file is refused, and the shell keeps such a file aside. GR2's votes and REV's boxes join additively as new fields.
+
+### Decisions for the F1l judge
+
+| Decision | Why |
+| --- | --- |
+| Ear questions are `StepKind::Choose`; Challenge v2 has no `AnswerKind::Choice` (CV2 agreed) | One representation; the player judges an index with no render |
+| Sound checks are `Check::Sound` in the lesson; Challenge v2 has no `Target::Expectations` (coordinator) | One representation of an expectation list |
+| A Recreate step embeds a whole `Challenge`, read by its own decoder (v1 migrates once CV2 lands) | A challenge stays self-contained (inline patches, CV2) |
+| Lock selectors are CV2's `Selector`; `lock` enforced, `editable` advisory (coordinator) | One matcher in the session for steps and rounds |
+| Predicates are structured objects with text atoms, not one-line strings | Frozen now without PLY's grammar; addresses, units and expectations reuse existing parsers |
+| Steps are flat objects with a `kind` tag and kind-specific fields, a foreign field refused | Natural TOML (`[[steps]]`, `[steps.check]`), and nothing silently ignored |
+| `requires` must cover what the lessons use | A pack cannot under-declare and then fail inside a lesson |
+| Progress keeps what it cannot read | An older build that merges a newer file loses nothing |
+| `Example.transpose` added beside Q7's three fields | The cards' "at C2 and C4" |
+
+**Until CV2 merges** (`interim.rs`, deleted then): `Selector`, `Touch`, `score::is_known` and the lesson-only phrase lookup are stand-ins with the same names and text form, and a Recreate step's effective locks are empty because Challenge v1's `Constraints` is; the F1l merge makes each a one-line `pub use` and `challenge.constraints.locked`.
 
 ## Challenge v2 (planned; judged at F1l)
 
@@ -159,12 +273,12 @@ basics.enthpack
 ```json
 {"schema":"enth.pack/1","id":"basics","version":"1.2.0","title":"Synth basics",
  "authors":["enth contributors"],"license":{"text":"CC-BY-4.0","patches":"CC0-1.0"},
- "requires":{"lesson":1,"challenge":2,"patch":3,"generator":1,"scorers":["sound/1","structure/1"]},
+ "requires":{"lesson":1,"challenge":2,"patch":1,"generator":1,"scorers":["sound/1","structure/1"]},
  "covers":["osc","filter","adsr"],
  "files":[{"path":"lessons/01-saw/step-1.md","size":2113,"sha256":"…"}]}
 ```
 
-(A sketch: LM freezes the fields at F1l.)
+(A sketch: the frozen fields are in [The lesson model (lane LM)](#the-lesson-model-lane-lm); `patch` is the patch file schema, 1.)
 
 | Field | Rule |
 | --- | --- |
