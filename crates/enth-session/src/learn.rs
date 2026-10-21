@@ -77,10 +77,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::game::{
-    EndChoice, EndedBy, GameError, ROUND_BYTES, RoundOrigin, RoundSource, STASH_BYTES,
+    EndChoice, EndedBy, GameError, ROUND_BYTES, RoundId, RoundOrigin, RoundSource, STASH_BYTES,
 };
 use crate::model::{Session, SessionError};
 use crate::state::{MAX_FIELD_BYTES, StateError, decode_patch};
+pub use enth_solver::closest::{Closest, ClosestCfg, ClosestStop, Delta as ClosestDelta};
 
 // ---------------------------------------------------------------------------------------------------------------
 // The budget
@@ -105,6 +106,88 @@ const _: () = assert!(LEARN_BYTES + LESSON_ROUND_BYTES + 64 * 1024 < MAX_FIELD_B
 /// How deep effects may call back into the player (a step load tells the player the new patch, which may answer
 /// with effects of its own). A player that never settles is cut off here, with an error, instead of looping.
 const MAX_EFFECT_DEPTH: u8 = 8;
+
+/// "How close am I?"'s render budget (lane LFU): lane CLS's default, `enth_solver::closest::DEFAULT_BUDGET`, which
+/// passed 57 of 59 lesson-like jobs in a median of 40–75 renders (docs/dsp/match.md, "Closest").
+pub const CLOSEST_BUDGET: usize = enth_solver::closest::DEFAULT_BUDGET;
+
+/// "Look harder": about 1,000 renders with a patient search (lane CLS's long runs, `--patience 15 --tol 0 --budget
+/// 1000`: one more pass and answers 13 % nearer on average, for about 3.4 times the renders).
+pub const CLOSEST_HARDER_BUDGET: usize = 1_000;
+
+/// The largest seed a challenge takes (`enth_challenge`'s `MAX_SEED`, 2⁵³ − 1): a sibling's seed stays below it.
+const MAX_SIBLING_SEED: u64 = (1 << 53) - 1;
+
+/// The search settings of a look: the button's default, or "look harder"'s patient one.
+pub fn closest_cfg(harder: bool) -> ClosestCfg {
+    if harder {
+        ClosestCfg {
+            tol: 0.0,
+            patience: 15,
+            ..ClosestCfg::default()
+        }
+    } else {
+        ClosestCfg::default()
+    }
+}
+
+/// How far one control moves in "How close am I?"'s answer (lane LFU): the Learn view's words ("a touch", "a little",
+/// "a lot", "switch") and rings (Good for a control that stays, Near for a touch or a little, Bad for a lot or a
+/// switch). Never a value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MoveSize {
+    /// It stays (a move under [`MOVE_STAY`] of its travel counts as staying: about one just-noticeable step).
+    Stay,
+    /// Under [`MOVE_TOUCH`] of its travel.
+    Touch,
+    /// Under [`MOVE_LITTLE`] of its travel.
+    Little,
+    /// More.
+    Lot,
+    /// A switch, a mode or a waveform changes.
+    Switch,
+}
+
+/// A move under this share of a knob's travel stays put ([`MoveSize::Stay`]).
+pub const MOVE_STAY: f64 = 0.02;
+/// A move under this share of a knob's travel is a touch ([`MoveSize::Touch`]).
+pub const MOVE_TOUCH: f64 = 0.08;
+/// A move under this share of a knob's travel is a little ([`MoveSize::Little`]); more is a lot.
+pub const MOVE_LITTLE: f64 = 0.25;
+
+/// How far `delta` moves its control ([`MoveSize`]).
+pub fn move_size(delta: &ClosestDelta) -> MoveSize {
+    let travel = delta.norm.abs();
+    if !delta.moved() {
+        MoveSize::Stay
+    } else if delta.categorical {
+        MoveSize::Switch
+    } else if travel < MOVE_STAY {
+        MoveSize::Stay
+    } else if travel < MOVE_TOUCH {
+        MoveSize::Touch
+    } else if travel < MOVE_LITTLE {
+        MoveSize::Little
+    } else {
+        MoveSize::Lot
+    }
+}
+
+/// The seed of the next sibling after `seed` (a redo): a fixed mix, so a lesson's redos are the same everywhere, never
+/// the seed itself, and within a challenge's range.
+pub fn sibling_seed(seed: u64) -> u64 {
+    // splitmix64's finaliser on the seed and a constant ("SIBLING!").
+    let mut z = seed ^ 0x5349_424c_494e_4721;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    let next = z & MAX_SIBLING_SEED;
+    if next == seed {
+        (next + 1) & MAX_SIBLING_SEED
+    } else {
+        next
+    }
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // The seam with lanes LM and CV2
@@ -375,6 +458,9 @@ pub enum LearnJobKind {
         /// The examples, in order.
         examples: Arc<[Audition]>,
     },
+    /// "How close am I?" (lane LFU): `enth_solver::closest` from the player's patch on the round the game worker
+    /// holds, on its parallel evaluator, with progress and cancel. Answer [`LearnResult::Closest`].
+    Closest(Box<ClosestRequest>),
 }
 
 impl LearnJobKind {
@@ -385,8 +471,75 @@ impl LearnJobKind {
             LearnJobKind::Check(_) => "check",
             LearnJobKind::Hint(_) => "hint",
             LearnJobKind::Examples { .. } => "examples",
+            LearnJobKind::Closest(_) => "closest",
         }
     }
+}
+
+/// A "How close am I?" job (lane LFU): solver-native, `{round, patch, free, budget}` → `enth_solver::closest`
+/// (docs/learn.md, "Where Learn lives"), so the worker composes nothing. The round's prepared target is the one the
+/// game worker already holds from the round's prepare job (`round` and `challenge` name it, as a score job's do; a
+/// worker that lost it prepares it again).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClosestRequest {
+    /// The lesson round it measures against.
+    pub round: RoundId,
+    /// That round's challenge.
+    pub challenge: Arc<Challenge>,
+    /// The lesson's revision of the patch it starts from: a result for an older one is stale.
+    pub revision: u64,
+    /// The player's patch, as the round scores it ([`Session::checked_patch`]): where the search starts and what
+    /// "closest" is measured from.
+    pub patch: Patch,
+    /// The parameters that may move: the round's editable set (else its drawn parameters), less what it locks.
+    pub free: Vec<ParamAddr>,
+    /// The most renders, the first included; hard ([`CLOSEST_BUDGET`], or [`CLOSEST_HARDER_BUDGET`] to look harder).
+    pub budget: usize,
+    /// The search's settings ([`closest_cfg`]).
+    pub cfg: ClosestCfg,
+}
+
+impl ClosestRequest {
+    /// The look is the harder one.
+    pub fn harder(&self) -> bool {
+        self.budget > CLOSEST_BUDGET
+    }
+}
+
+/// How far a running "How close am I?" got (the worker reports it after every batch).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ClosestProgress {
+    /// Renders so far.
+    pub renders: usize,
+    /// The job's budget.
+    pub budget: usize,
+    /// It is the harder look.
+    pub harder: bool,
+}
+
+/// "How close am I?" in the read model (lane LFU). The Learn view shows the button while `available`, progress and
+/// Cancel while `running`, then the answer in words and rings; exact values only once the round is `revealed`.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "a view model: independent facts the Learn view shows"
+)]
+pub struct ClosestView {
+    /// The button applies: the step's round is live and its last scored submit did not pass (no reveal), and no
+    /// search runs.
+    pub available: bool,
+    /// A search runs.
+    pub running: Option<ClosestProgress>,
+    /// The latest answer on this round (until the step, the round or a new look replaces it).
+    pub answer: Option<Arc<Closest>>,
+    /// The answer came from the harder look.
+    pub harder: bool,
+    /// The round was revealed: the answer's exact values may show (no peeking before).
+    pub revealed: bool,
+    /// "Try a new one": a sibling redo is due (after a reveal, the coach's last hint or a passing answer) and the
+    /// round's challenge has a seed to vary.
+    pub redo: bool,
 }
 
 /// A Learn job's answer.
@@ -410,6 +563,9 @@ pub enum LearnResult {
         /// One per example.
         lufs: Vec<Option<f32>>,
     },
+    /// For [`LearnJobKind::Closest`] (lane LFU): what the search found. A cancelled search is answered too (its
+    /// `stop` says so); the session drops it.
+    Closest(Box<Closest>),
     /// Any job that could not finish.
     Failed {
         /// Why, for the status line.
@@ -425,6 +581,7 @@ impl LearnResult {
             LearnResult::Checked(_) => "checked",
             LearnResult::Hinted(_) => "hinted",
             LearnResult::Examples { .. } => "examples",
+            LearnResult::Closest(_) => "closest",
             LearnResult::Failed { .. } => "failed",
         }
     }
@@ -527,6 +684,8 @@ pub struct LearnView {
     /// after the change). `None` once that tick has run: the lesson asks for no frames of its own otherwise. The shell
     /// asks the editor for a repaint at the earlier of this and the round's `wake_at_ms`.
     pub wake_at_ms: Option<u64>,
+    /// "How close am I?" on the step's round (lane LFU; additive).
+    pub closest: ClosestView,
 }
 
 /// Why a Learn call failed. Every variant has a stable snake-case [`code`](LearnError::code) and a one-line
@@ -589,6 +748,12 @@ pub enum LearnError {
     Edit(SessionError),
     /// The step's round could not start.
     Round(GameError),
+    /// "How close am I?" answers after a Submit that did not pass, on a lesson round with something free to move
+    /// (lane LFU).
+    ClosestNotNow,
+    /// "Try a new one" follows a reveal, the coach's last hint or "How close am I?", on a round whose challenge has a
+    /// seed (lane LFU).
+    NoRedo,
 }
 
 impl LearnError {
@@ -611,6 +776,8 @@ impl LearnError {
             LearnError::NoExample(_) => "no_example",
             LearnError::Edit(e) => e.code(),
             LearnError::Round(e) => e.code(),
+            LearnError::ClosestNotNow => "closest_not_now",
+            LearnError::NoRedo => "no_redo",
         }
     }
 
@@ -649,6 +816,12 @@ impl LearnError {
             LearnError::NoExample(_) => "wait for the examples to be ready, then pick one of them".to_owned(),
             LearnError::Edit(e) => e.hint(),
             LearnError::Round(e) => e.hint(),
+            LearnError::ClosestNotNow => {
+                "Submit first: How close am I? answers after a Submit that does not pass".to_owned()
+            }
+            LearnError::NoRedo => {
+                "a new sound like it comes after Reveal, the last hint or How close am I?".to_owned()
+            }
         }
     }
 }
@@ -681,6 +854,8 @@ impl fmt::Display for LearnError {
             LearnError::NoExample(i) => write!(f, "no example {i}"),
             LearnError::Edit(e) => write!(f, "Show me's edit was refused: {e}"),
             LearnError::Round(e) => write!(f, "the step's round did not start: {e}"),
+            LearnError::ClosestNotNow => f.write_str("How close am I? is not available now"),
+            LearnError::NoRedo => f.write_str("no new sound to try yet"),
         }
     }
 }
@@ -712,6 +887,23 @@ pub trait LearnEdit {
     /// End the lesson: [`EndChoice::Restore`] brings your patch and history back, [`EndChoice::Keep`] keeps the
     /// lesson's. The step's round ends first, logged.
     fn learn_end(&mut self, choice: EndChoice) -> Result<(), LearnError>;
+    /// "How close am I?" (lane LFU): after a Submit that did not pass, search for the nearest passing patch from
+    /// yours on the worker (`harder`: "look harder", about 1,000 renders). Its answer marks the round assisted, like a
+    /// reveal, and a sibling redo follows. Refused otherwise ([`LearnError::ClosestNotNow`]).
+    fn learn_closest(&mut self, harder: bool) -> Result<(), LearnError> {
+        let _ = harder;
+        Err(LearnError::ClosestNotNow)
+    }
+    /// Stop a running "How close am I?" (nothing when none runs).
+    fn learn_closest_cancel(&mut self) -> Result<(), LearnError> {
+        Ok(())
+    }
+    /// "Try a new one" (lane LFU): after a reveal, the coach's last hint or "How close am I?", the step's round ends
+    /// and a sibling challenge (the same controls, a new seed) starts in its place. Refused otherwise
+    /// ([`LearnError::NoRedo`]).
+    fn learn_redo(&mut self) -> Result<(), LearnError> {
+        Err(LearnError::NoRedo)
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -733,6 +925,7 @@ struct LearnJobs {
     check: Option<InFlight>,
     hint: Option<InFlight>,
     examples: Option<LearnJobId>,
+    closest: Option<InFlight>,
 }
 
 /// The lesson's state that is not saved: the player, your stashed history, the step's view, locks and pinned values,
@@ -766,6 +959,10 @@ pub(crate) struct LearnLive {
     depth: u8,
     /// When the patch will have settled after the last change the player was told about ([`LearnView::wake_at_ms`]).
     settle_at: Option<u64>,
+    /// "How close am I?": the running search's progress, and the latest answer with the round it answered and
+    /// whether it was the harder look (lane LFU).
+    closest_progress: Option<ClosestProgress>,
+    closest_answer: Option<(RoundId, Arc<Closest>, bool)>,
     error: Option<LearnError>,
     requests: Vec<LearnRequest>,
 }
@@ -868,6 +1065,8 @@ impl Session {
             "hint"
         } else if jobs.examples == Some(id) {
             "examples"
+        } else if jobs.closest.is_some_and(|f| f.id == id) {
+            "closest"
         } else {
             return Err(LearnError::StaleJob(id));
         };
@@ -900,10 +1099,26 @@ impl Session {
                 self.learn.lufs = Some(lufs);
                 Ok(())
             }
+            ("closest", LearnResult::Closest(found)) => {
+                self.learn_take_fresh(id, |jobs| &mut jobs.closest)?;
+                let harder = self.learn.closest_progress.take().is_some_and(|p| p.harder);
+                self.learn_closest_answered(*found, harder);
+                Ok(())
+            }
             (job, other) => Err(LearnError::WrongResult {
                 job,
                 result: other.name(),
             }),
+        }
+    }
+
+    /// A running job's progress (lane LFU): "How close am I?"'s renders so far, which the worker reports after every
+    /// batch and the shell hands over before the frame. Anything but the awaited search is ignored.
+    pub fn learn_job_progress(&mut self, id: LearnJobId, renders: usize) {
+        if self.learn.jobs.closest.is_some_and(|f| f.id == id)
+            && let Some(p) = self.learn.closest_progress.as_mut()
+        {
+            p.renders = renders.min(p.budget);
         }
     }
 
@@ -1066,10 +1281,12 @@ impl Session {
             jobs.check.take().map(|f| f.id),
             jobs.hint.take().map(|f| f.id),
             jobs.examples.take(),
+            jobs.closest.take().map(|f| f.id),
         ];
         if all {
             ids.push(jobs.open.take());
         }
+        self.learn.closest_progress = None;
         self.learn
             .requests
             .extend(ids.into_iter().flatten().map(LearnRequest::Cancel));
@@ -1084,6 +1301,10 @@ impl Session {
             }
             "check" => self.learn.jobs.check = None,
             "hint" => self.learn.jobs.hint = None,
+            "closest" => {
+                self.learn.jobs.closest = None;
+                self.learn.closest_progress = None;
+            }
             _ => self.learn.jobs.examples = None,
         }
         self.learn.error = Some(LearnError::JobFailed { job, message });
@@ -1148,6 +1369,8 @@ impl Session {
             return;
         }
         self.learn.revision += 1;
+        // A search from the patch that was would answer for an older patch: stop it (lane LFU).
+        self.learn_closest_stop();
         let revision = self.learn.revision;
         let now = self.game_now();
         self.learn.settle_at = Some(now.saturating_add(enth_learn::player::SETTLE_MS));
@@ -1248,6 +1471,96 @@ impl Session {
         Ok(())
     }
 
+    /// Stop a running "How close am I?" (lane LFU): the worker is told to cancel, and its late answer is stale.
+    fn learn_closest_stop(&mut self) {
+        if let Some(flight) = self.learn.jobs.closest.take() {
+            self.learn.requests.push(LearnRequest::Cancel(flight.id));
+        }
+        self.learn.closest_progress = None;
+    }
+
+    /// "How close am I?" answered (lane LFU). A cancelled search shows nothing. An answer that found a passing patch
+    /// (or found yours passing already) helped: the round is marked assisted, like a reveal, and so is the step (the
+    /// player's `round_ended` with `assisted`); then a sibling redo is due. An answer that found no pass says so and
+    /// helps no one: its moves are not a solution.
+    ///
+    /// A fresh answer (its revision is the patch's now) is for the live round: a new round's start and a step load
+    /// both move the revision, and both stop the search.
+    fn learn_closest_answered(&mut self, found: Closest, harder: bool) {
+        if found.stop == ClosestStop::Cancelled {
+            return;
+        }
+        let Some(round) = self
+            .game_record()
+            .filter(|r| r.origin == RoundOrigin::Lesson)
+            .map(|r| r.id)
+        else {
+            return;
+        };
+        let helped = found.passed;
+        self.learn.closest_answer = Some((round, Arc::new(found), harder));
+        if helped {
+            self.game_mark_closest(round);
+            let best = self
+                .game_record()
+                .and_then(|r| r.submits.iter().map(|s| s.score.sound).max());
+            self.learn_round_result(false, true, best);
+        }
+    }
+
+    /// The parameters "How close am I?" may move on `challenge`'s round: its editable selectors' parameters in
+    /// `patch` (else the round's drawn ones), less what it locks, each once (lane LCK's `--solve` takes the same set).
+    fn closest_free(challenge: &Challenge, patch: &Patch, drawn: &[ParamAddr]) -> Vec<ParamAddr> {
+        let c = &challenge.constraints;
+        let named: Vec<ParamAddr> = if c.editable.is_empty() {
+            drawn.to_vec()
+        } else {
+            c.editable
+                .iter()
+                .flat_map(|s| match s {
+                    Selector::Param(a) => vec![a.clone()],
+                    Selector::Module(target) => target_params(patch, target),
+                    Selector::Route(_) | Selector::Macro(_) => Vec::new(),
+                })
+                .collect()
+        };
+        let mut free: Vec<ParamAddr> = Vec::new();
+        for a in named {
+            if patch.value(&a).is_some()
+                && !c.is_locked(&Touch::Param(a.clone()))
+                && !free.contains(&a)
+            {
+                free.push(a);
+            }
+        }
+        free
+    }
+
+    /// The read model's "How close am I?" part.
+    fn learn_closest_view(&self) -> ClosestView {
+        let round = self
+            .game_record()
+            .filter(|r| r.origin == RoundOrigin::Lesson);
+        let answer = match (&self.learn.closest_answer, round) {
+            (Some((id, answer, harder)), Some(r)) if *id == r.id => {
+                Some((Arc::clone(answer), *harder))
+            }
+            _ => None,
+        };
+        let running = self.learn.closest_progress;
+        let redo = self
+            .lesson_round_redo()
+            .is_some_and(|(c, due)| due && challenge_seed(&c).is_some());
+        ClosestView {
+            available: running.is_none() && self.lesson_round_closest().is_some(),
+            running,
+            harder: answer.as_ref().is_some_and(|(_, h)| *h),
+            answer: answer.map(|(a, _)| a),
+            revealed: round.is_some_and(|r| r.revealed),
+            redo,
+        }
+    }
+
     /// A restored lesson round waits for its challenge: the current step's, from the player.
     fn learn_resume_round(&mut self) {
         if !self.lesson_round_waiting() {
@@ -1283,6 +1596,7 @@ impl Session {
         self.learn.lufs = None;
         self.learn.listen = None;
         self.learn.error = None;
+        self.learn.closest_answer = None;
     }
 
     /// Seat a step's start patch like a load: one plan, a fresh history, the locks pinned, the player told.
@@ -1502,6 +1816,7 @@ impl LearnEdit for Session {
             broken: self.learn.broken || state.lesson.is_none(),
             error: self.learn.error.clone(),
             wake_at_ms: self.learn.settle_at,
+            closest: self.learn_closest_view(),
         })
     }
 
@@ -1689,6 +2004,79 @@ impl LearnEdit for Session {
         }
         Ok(())
     }
+
+    fn learn_closest(&mut self, harder: bool) -> Result<(), LearnError> {
+        self.learn_ready()?;
+        if self.learn.jobs.closest.is_some() {
+            return Ok(()); // one search at a time: the running one answers
+        }
+        let Some((round, challenge, drawn)) = self.lesson_round_closest() else {
+            return Err(LearnError::ClosestNotNow);
+        };
+        let patch = self.checked_patch();
+        let free = Session::closest_free(&challenge, &patch, &drawn);
+        if free.is_empty() {
+            return Err(LearnError::ClosestNotNow);
+        }
+        let budget = if harder {
+            CLOSEST_HARDER_BUDGET
+        } else {
+            CLOSEST_BUDGET
+        };
+        let revision = self.learn.revision;
+        let id = self.learn_job(LearnJobKind::Closest(Box::new(ClosestRequest {
+            round,
+            challenge,
+            revision,
+            patch,
+            free,
+            budget,
+            cfg: closest_cfg(harder),
+        })));
+        self.learn.jobs.closest = Some(InFlight { id, revision });
+        self.learn.closest_progress = Some(ClosestProgress {
+            renders: 0,
+            budget,
+            harder,
+        });
+        self.learn.closest_answer = None;
+        self.learn.error = None;
+        Ok(())
+    }
+
+    fn learn_closest_cancel(&mut self) -> Result<(), LearnError> {
+        self.learn_closest_stop();
+        Ok(())
+    }
+
+    fn learn_redo(&mut self) -> Result<(), LearnError> {
+        self.learn_ready()?;
+        let Some((challenge, true)) = self.lesson_round_redo() else {
+            return Err(LearnError::NoRedo);
+        };
+        let seed = challenge_seed(&challenge).ok_or(LearnError::NoRedo)?;
+        let next = sibling_seed(seed);
+        let sibling = challenge.with_seed(next).map_err(|_| LearnError::NoRedo)?;
+        // The search and its answer belong to the round that ends.
+        self.learn_closest_stop();
+        self.learn.closest_answer = None;
+        if let Err(e) = self.game_open_sibling(sibling, next) {
+            let err = LearnError::Round(e);
+            self.learn.error = Some(err.clone());
+            return Err(err);
+        }
+        self.learn.error = None;
+        self.learn.dirty();
+        Ok(())
+    }
+}
+
+/// A challenge's seed, when it has one to vary (a seed or a draw target; a patch target has none).
+fn challenge_seed(challenge: &Challenge) -> Option<u64> {
+    challenge
+        .spec()
+        .map(|s| s.seed)
+        .or_else(|| challenge.draw().map(|d| d.seed))
 }
 
 #[cfg(test)]

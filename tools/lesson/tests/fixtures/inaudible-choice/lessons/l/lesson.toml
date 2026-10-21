@@ -1,0 +1,21 @@
+# the ear question's two options are the same sound (0 JND under sound/1).
+schema = "enth.lesson/1"
+id = "l"
+title = "Fixture lesson"
+tier = "basic"
+objective = "Exercise one rule of lesson-check."
+teaches = ["svf.cutoff"]
+
+[[steps]]
+id = "which"
+kind = "choose"
+text = "text.md"
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw.patch.json"

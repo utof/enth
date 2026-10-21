@@ -98,12 +98,58 @@ fn every_output_schema_id_matches_its_objects() {
                 format!("{example}/patches/dark.patch.json"),
             ],
         ),
+        // Lane EV3: `enth lesson list|start|hint` on the example pack.
+        (
+            "lesson-list",
+            vec!["lesson".into(), "list".into(), example.clone()],
+        ),
+        (
+            "lesson-start",
+            vec![
+                "lesson".into(),
+                "start".into(),
+                example.clone(),
+                "--lesson".into(),
+                "cutoff".into(),
+                "--step".into(),
+                "try".into(),
+                "--out".into(),
+                s.path("start.patch.json"),
+            ],
+        ),
+        (
+            "lesson-hint",
+            vec![
+                "lesson".into(),
+                "hint".into(),
+                example.clone(),
+                "--lesson".into(),
+                "cutoff".into(),
+                "--step".into(),
+                "try".into(),
+            ],
+        ),
     ];
     for (name, args) in cases {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let v = json(&run(&args));
         assert_eq!(v["schema"], schema::entry(name).unwrap().id, "{name}");
     }
+    // Lane EV3: `enth lesson closest` needs a round's start, which `start` writes.
+    let basics = format!(
+        "{}/../../content/lessons/basics",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let start = s.path("round.patch.json");
+    let o = run(&[
+        "lesson", "start", &basics, "--lesson", "cutoff", "--step", "round-1", "--out", &start,
+    ]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    let v = json(&run(&[
+        "lesson", "closest", &basics, "--lesson", "cutoff", "--step", "round-1", &start,
+        "--budget", "8",
+    ]));
+    assert_eq!(v["schema"], schema::entry("lesson-closest").unwrap().id);
 }
 
 #[test]

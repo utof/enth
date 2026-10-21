@@ -216,7 +216,7 @@ pub enum Cmd {
     /// Challenges and their codes: `new`, `show` (lanes SKR, then CL).
     Challenge(crate::cmd::challenge::Args),
     // R2 command, pre-declared by lane S0l; lane SKL built `show` and `check` (F2l) in its own file under `cmd/`.
-    /// Lessons from a pack: show its steps, check a step against a patch (lanes SKL, then EV3).
+    /// Lessons from a pack: list, show, start, check, hint, closest (lanes SKL, then EV3).
     Lesson(crate::cmd::lesson::Args),
     // R3 command, pre-declared by lane S0s; lane SK3 built it (F2s) in its own file under `cmd/`, then lane CLC.
     /// Create patches from a sound file: the intake, a start portfolio and K searched candidates (lanes SK3, then CLC).

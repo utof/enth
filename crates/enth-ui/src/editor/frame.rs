@@ -86,9 +86,13 @@ pub struct Editor {
     #[cfg(feature = "recreate")]
     recreate: super::recreate::bar::Recreate,
     /// The Learn state (lane SKL's minimal panel, F2l; lane LUI's view): the shell's lessons, the session's lesson
-    /// read model, the panel and the intents waiting for the session.
+    /// read model, the pane and the intents waiting for the session.
     #[cfg(feature = "learn")]
     learn: super::learn::Learn,
+    /// The built-in layout `learn` (lane LUI), drawn while the lesson pane shows unless `layout` places the `lesson`
+    /// region itself.
+    #[cfg(feature = "learn")]
+    learn_layout: Layout,
     /// The Create state (lane SK3's minimal panel, F2s; lane PUI's view): the session's create read model, the chosen
     /// file, the panel and the intents waiting for the session.
     #[cfg(feature = "create")]
@@ -135,6 +139,8 @@ impl Editor {
             recreate: super::recreate::bar::Recreate::default(),
             #[cfg(feature = "learn")]
             learn: super::learn::Learn::default(),
+            #[cfg(feature = "learn")]
+            learn_layout: learn_layout(theme),
             #[cfg(feature = "create")]
             create: super::create::Create::default(),
         }
@@ -256,10 +262,35 @@ impl Editor {
         self.learn.set_lesson(lesson);
     }
 
-    /// When the window opens (lane SKL): the shell's installed lessons and the packs it refused.
+    /// When the window opens (lane SKL): the shell's installed lessons and the packs it refused. Lane LUI's
+    /// [`Editor::set_library`] also gives the pack titles, the tracks and the progress file.
     #[cfg(feature = "learn")]
     pub fn set_lessons(&mut self, lessons: Vec<enth_learn::LessonBundle>, problems: Vec<String>) {
         self.learn.set_lessons(lessons, problems);
+    }
+
+    /// When the window opens (lane LUI): the shell's library (every installed pack, the refused ones as problems)
+    /// and the progress file, for the lesson browser.
+    #[cfg(feature = "learn")]
+    pub fn set_library(
+        &mut self,
+        library: &enth_learn::store::Library,
+        progress: enth_learn::Progress,
+    ) {
+        self.learn.set_library(library, progress);
+    }
+
+    /// When the window opens (lane LFU): the Packs folder, for the lesson browser's "Open packs folder".
+    #[cfg(feature = "learn")]
+    pub fn set_packs_folder(&mut self, folder: Option<String>) {
+        self.learn.set_packs_folder(folder);
+    }
+
+    /// After a frame (lane LFU): whether "Open packs folder" was clicked; the shell makes the folder if missing and
+    /// opens it (egui's `OpenUrl`), since the editor does no I/O. Asking clears it.
+    #[cfg(feature = "learn")]
+    pub fn take_open_packs_folder(&mut self) -> bool {
+        self.learn.take_open_packs_folder()
     }
 
     /// After a frame (lane SKL): the Learn view's intents, applied to the session's `LearnEdit`.
@@ -294,6 +325,30 @@ impl Editor {
         &self.create
     }
 
+    /// The Create panel (lane SK3, F2s), before the layout: takes a file dropped on the window when create is
+    /// available, and, while the panel is open, says where its column starts: `size.create.pane` wide, `space.gap` in
+    /// from the window's right edge as the layouts' margin insets their regions. Returns that left edge and whether
+    /// files are being dragged over the window.
+    #[cfg(feature = "create")]
+    fn create_column(&mut self, ctx: &Context, t: &Theme, rect: Rect) -> (Option<f32>, bool) {
+        let (dropped, hovering) = ctx.input(|i| {
+            (
+                i.raw.dropped_files.first().map(|f| f.path().to_path_buf()),
+                !i.raw.hovered_files.is_empty(),
+            )
+        });
+        if self.create.available()
+            && let Some(path) = dropped
+        {
+            self.create.push(super::create::CreateIntent::Choose(path));
+        }
+        let split = self.create.panel_open().then(|| {
+            let right = (rect.right() - t.space.gap).max(rect.left());
+            (right - t.size.create.pane).max(rect.left())
+        });
+        (split, hovering)
+    }
+
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
     /// dragged source and the overlay applied.
     fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {
@@ -319,28 +374,41 @@ impl Editor {
                 }
             }
         }
-        overlay::apply(self.active_overlay(), &mut cards);
+        self.with_overlay(|o| overlay::apply(o, &mut cards));
         cards
     }
 
-    /// The overlay laid over the cards: a live Recreate round's rings and dimming (lane RUI), else the one set with
-    /// [`Editor::set_overlay`].
-    fn active_overlay(&self) -> &dyn Overlay {
+    /// Runs `f` with the overlay laid over the cards: a live Recreate round's rings and dimming (lane RUI), a lesson
+    /// step's highlights, locks and hidden modules (lane LUI), the round's over the step's in a lesson's Recreate
+    /// step, else the one set with [`Editor::set_overlay`].
+    fn with_overlay<R>(&self, f: impl FnOnce(&dyn Overlay) -> R) -> R {
+        #[cfg(all(feature = "recreate", feature = "learn"))]
+        if let (Some(round), Some(lesson)) = (self.recreate.overlay(), self.learn.overlay()) {
+            return f(&overlay::Layered {
+                top: round,
+                base: lesson,
+            });
+        }
         #[cfg(feature = "recreate")]
         if let Some(round) = self.recreate.overlay() {
-            return round;
+            return f(round);
         }
-        // A lesson step's highlights, locks and hidden modules (lane SKL); its round's rings come first.
         #[cfg(feature = "learn")]
         if let Some(lesson) = self.learn.overlay() {
-            return lesson;
+            return f(lesson);
         }
-        self.overlay.as_ref()
+        f(self.overlay.as_ref())
     }
 
-    /// The modulation sources, with their live levels in the tiles' 0..1.
+    /// The modulation sources, with their live levels in the tiles' 0..1. A module the overlay hides (a lesson step
+    /// that does not use it, lane LUI) has no tile either.
     fn sources(&self, patch: &Patch) -> Vec<SourceView> {
         let mut sources = SourceView::all(patch);
+        self.with_overlay(|o| {
+            sources.retain(
+                |s| !matches!(&s.src, ModSource::Module(id) if o.module(id) == overlay::Emphasis::Hidden),
+            );
+        });
         for s in &mut sources {
             let output = match &s.src {
                 ModSource::Module(id) => self.live.modulator(id),
@@ -371,6 +439,10 @@ impl Editor {
             if let Ok(layout) = Layout::new(self.layout.spec().clone(), theme) {
                 self.layout = layout;
             }
+            #[cfg(feature = "learn")]
+            {
+                self.learn_layout = learn_layout(theme);
+            }
             theme.clone_into(&mut self.resolved_for);
         }
         let t = theme;
@@ -386,48 +458,34 @@ impl Editor {
         let rect = ui.max_rect();
         ui.painter()
             .rect_filled(rect, 0.0, t.color.surface.background);
-        // The Learn panel takes a column at the window's right edge while it is open (lane SKL's minimal panel, F2l);
-        // the layout's regions share the rest, and what no longer fits is in the overflow report.
-        #[cfg(feature = "learn")]
-        let (rect, pane) = if self.learn.panel_open() {
-            let w = t.size.learn.pane.min(rect.width());
-            let split = rect.right() - w;
-            (
-                Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
-                Some(Rect::from_min_max(egui::pos2(split, rect.top()), rect.max)),
-            )
-        } else {
-            (rect, None)
-        };
-        // The Create panel takes a column at the right edge too (lane SK3's minimal panel, F2s), left of Learn's. A
-        // file dropped anywhere on the window is chosen, whatever the view (lane FK3's advice), once the shell says
-        // create is available.
+        // The Create panel takes a column at the window's right edge while it is open (lane SK3's minimal panel, F2s),
+        // under the layout's top row, and the layout, Learn's included, places the rest beside it ([`beside`]): with
+        // both open, the lesson pane sits left of the Create panel. A file dropped anywhere on the window is chosen,
+        // whatever the view (lane FK3's advice), once the shell says create is available.
         #[cfg(feature = "create")]
-        let (rect, create_pane, hovering) = {
-            let (dropped, hovering) = ctx.input(|i| {
-                (
-                    i.raw.dropped_files.first().map(|f| f.path().to_path_buf()),
-                    !i.raw.hovered_files.is_empty(),
-                )
-            });
-            if self.create.available()
-                && let Some(path) = dropped
-            {
-                self.create.push(super::create::CreateIntent::Choose(path));
+        let (column, hovering) = self.create_column(&ctx, t, rect);
+        let place = |layout: &Layout| {
+            #[cfg(feature = "create")]
+            if let Some(split) = column {
+                return beside(layout, rect, split);
             }
-            if self.create.panel_open() {
-                let w = t.size.create.pane.min(rect.width());
-                let split = rect.right() - w;
-                (
-                    Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
-                    Some(Rect::from_min_max(egui::pos2(split, rect.top()), rect.max)),
-                    hovering,
-                )
+            layout.regions(rect)
+        };
+        // While the lesson pane shows, the built-in layout `learn` places it (lane LUI), unless the editor's own layout
+        // places the `lesson` region; what no longer fits is in the overflow report.
+        #[cfg(feature = "learn")]
+        let (regions, layout) = {
+            let own = place(&self.layout);
+            if self.learn.panel_open() && !own.iter().any(|p| p.region == Region::Lesson) {
+                (place(&self.learn_layout), &self.learn_layout)
             } else {
-                (rect, None, hovering)
+                (own, &self.layout)
             }
         };
-        let regions = self.layout.regions(rect);
+        #[cfg(not(feature = "learn"))]
+        let (regions, layout) = (place(&self.layout), &self.layout);
+        #[cfg(feature = "create")]
+        let create_pane = column.map(|split| create_pane(&regions, rect, split, t.space.gap));
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
         #[cfg(feature = "recreate")]
@@ -440,6 +498,22 @@ impl Editor {
         let mut status = None;
         {
             let patch = session.patch();
+            // The lesson pane first (lane LUI): the `enth:` link it finds under the pointer outlines its control on
+            // the cards drawn after it, in the same frame.
+            #[cfg(feature = "learn")]
+            if let Some(p) = regions.iter().find(|p| p.region == Region::Lesson) {
+                let shown = super::learn::pane::show(
+                    &self.learn,
+                    ui,
+                    t,
+                    p.rect,
+                    patch,
+                    &self.live,
+                    &mut out,
+                );
+                overflow.push(("learn", shown.overflow));
+                self.learn.set_pointing(shown.pointing);
+            }
             for placed in &regions {
                 if sheet.is_some_and(|b| browser::covered(placed, b)) {
                     continue;
@@ -465,8 +539,7 @@ impl Editor {
                             #[cfg(feature = "create")]
                             create: self.create.header(),
                         };
-                        let knobs: Vec<CardView> = self
-                            .layout
+                        let knobs: Vec<CardView> = layout
                             .parts_in(Region::Header)
                             .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
@@ -477,12 +550,11 @@ impl Editor {
                         Macros::new(t, &MacroView::all(patch)).show(ui, r, &mut out);
                     }
                     Region::Sources | Region::VoiceFx | Region::Modulators | Region::Effects => {
-                        let cards: Vec<CardView> = self
-                            .layout
+                        let cards: Vec<CardView> = layout
                             .parts_in(placed.region)
                             .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
-                        let room = Room::of_parts(patch, self.layout.parts_in(placed.region));
+                        let room = Room::of_parts(patch, layout.parts_in(placed.region));
                         let shown =
                             CardRegion::new(t, placed.region.name(), &cards, placed.arrange)
                                 .room(&room)
@@ -499,8 +571,21 @@ impl Editor {
                     }
                     Region::Overview => {
                         let sources = self.sources(patch);
-                        let overlay = self.active_overlay();
-                        let matrix = MatrixView::of(patch).scored(|route| overlay.route(route));
+                        let matrix = self.with_overlay(|o| {
+                            // The routes of a module the overlay hides (a lesson step, lane LUI) are not listed.
+                            let hidden = |id: &enth_patch::ModuleId| o.module(id) == overlay::Emphasis::Hidden;
+                            let gone = |r: &enth_patch::Route| {
+                                matches!(&r.src, ModSource::Module(id) if hidden(id))
+                                    || matches!(r.dst.target(), enth_patch::Target::Module(id) if hidden(id))
+                            };
+                            if patch.routes.iter().any(gone) {
+                                let mut shown = patch.clone();
+                                shown.routes.retain(|r| !gone(r));
+                                MatrixView::of(&shown).scored(|route| o.route(route))
+                            } else {
+                                MatrixView::of(patch).scored(|route| o.route(route))
+                            }
+                        });
                         let shown = Overview::new(t, &sources, &matrix).show(ui, r, &mut out);
                         #[cfg(feature = "recreate")]
                         if self.recreate.has_results() {
@@ -530,19 +615,16 @@ impl Editor {
                     }
                     // Drawn last: it shows what the other regions report as hovered.
                     Region::Status => status = Some(r),
+                    // Drawn first, above (lane LUI).
                     #[cfg(feature = "learn")]
-                    Region::Lesson => super::reserved::show(ui, t, r, placed.region),
+                    Region::Lesson => {}
                     #[cfg(feature = "recreate")]
                     Region::ChallengeBar | Region::Results => {
                         super::reserved::show(ui, t, r, placed.region);
                     }
                 }
             }
-            #[cfg(feature = "learn")]
-            if let Some(p) = pane {
-                let over = super::learn::pane::show(&self.learn, ui, t, p, &mut out);
-                overflow.push(("learn", over));
-            }
+            // The Create panel (lane SK3), in its column right of the layout.
             #[cfg(feature = "create")]
             if let Some(p) = create_pane {
                 let over =
@@ -601,8 +683,8 @@ impl Editor {
         if self.recreate.take_changed() {
             ctx.request_repaint();
         }
-        // So do the Learn view's intents (lane SKL): the shell applies them after this frame (`apply_learn`), and the
-        // next pass shows what they did. Only after a click: never a timer.
+        // So do the Learn view's intents (lanes SKL, LUI): the shell applies them after this frame (`apply_learn`), and
+        // the next pass shows what they did. Only after a click: never a timer.
         #[cfg(feature = "learn")]
         if self.learn.has_queued() {
             ctx.request_repaint();
@@ -692,4 +774,73 @@ fn mark_cards(ctx: &Context, cards: &[CardView], fingerprint: &mut Fingerprint) 
             }
         }
     }
+}
+
+/// `layout`'s regions in `rect` beside the Create panel's column, which starts at `split` (lane SK3). As the layout
+/// `learn` keeps the header row whole for a lesson's round (lane LUI), the column sits under the layout's top row: the
+/// regions of the row the header starts (the header and the output region in both built-ins) keep the window's width,
+/// and the rest are placed left of `split`. A layout whose header is not in its top row, or whose regions would
+/// overlap that way (a custom one), is placed left of `split` whole, beside a column the window's height.
+#[cfg(feature = "create")]
+fn beside(layout: &Layout, rect: Rect, split: f32) -> Vec<Placed> {
+    let narrow = layout.regions(Rect::from_min_max(
+        rect.min,
+        egui::pos2(split, rect.bottom()),
+    ));
+    let full = layout.regions(rect);
+    let top_row = full
+        .iter()
+        .find(|p| p.region == Region::Header)
+        .map(|h| h.rect)
+        .filter(|h| full.iter().all(|p| p.rect.top() >= h.top() - 0.5))
+        .map(|h| h.bottom());
+    let Some(bottom) = top_row else {
+        return narrow;
+    };
+    let mixed: Vec<Placed> = full
+        .iter()
+        .filter_map(|p| {
+            if p.rect.bottom() <= bottom + 0.5 {
+                Some(*p)
+            } else {
+                narrow.iter().find(|n| n.region == p.region).copied()
+            }
+        })
+        .collect();
+    let apart = |a: &Placed, b: &Placed| !a.rect.shrink(0.5).intersects(b.rect.shrink(0.5));
+    let clear = mixed.len() == full.len()
+        && mixed
+            .iter()
+            .enumerate()
+            .all(|(i, a)| mixed[i + 1..].iter().all(|b| apart(a, b)))
+        && mixed
+            .iter()
+            .all(|p| p.rect.bottom() <= bottom + 0.5 || p.rect.right() <= split + 0.5);
+    if clear { mixed } else { narrow }
+}
+
+/// The Create panel's rectangle beside `regions` ([`beside`]): from `split` to `gap` in from `rect`'s right edge, and
+/// from under the regions that reach past `split` (the layout's top row) to `gap` above the bottom edge, as the
+/// layouts' margin insets their regions.
+#[cfg(feature = "create")]
+fn create_pane(regions: &[Placed], rect: Rect, split: f32, gap: f32) -> Rect {
+    let top = regions
+        .iter()
+        .filter(|p| p.rect.right() > split + 0.5)
+        .map(|p| p.rect.bottom())
+        .fold(rect.top(), f32::max)
+        + gap;
+    let right = (rect.right() - gap).max(split);
+    let bottom = (rect.bottom() - gap).max(top);
+    Rect::from_min_max(egui::pos2(split, top), egui::pos2(right, bottom))
+}
+
+/// The built-in layout `learn` for `theme` (lane LUI), or layout 1 if it does not resolve (it always does: the
+/// unit test in `layout.rs` checks every built-in).
+#[cfg(feature = "learn")]
+fn learn_layout(theme: &Theme) -> Layout {
+    LayoutSpec::builtin("learn")
+        .and_then(|spec| Layout::new(spec, theme).ok())
+        .or_else(|| Layout::new(LayoutSpec::lanes(), theme).ok())
+        .unwrap_or_else(|| unreachable!("the built-in layouts check"))
 }

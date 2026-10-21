@@ -1,0 +1,249 @@
+# Lesson 5.1, Vibrato [shaping · basic · tour] (content/lessons/PLAN.md §5, U5).
+#
+# Hear (the rate at plus and minus 25 cents, on a saw and a sine at C4; then the depth), a "which one has vibrato?"
+# item → Name → Try (route lfo1 to osc1's fine tune, checked by the pitch's stability) → two Do steps (a subtler
+# depth, checked by stability; a singer's rate, checked by the loudness wobble the vibrato makes) → two ear questions.
+#
+# Changed from the card, measured on engine 0.3.0 at HELD (C3 for 1.5 s), master -12 dB: sound/1 is deaf to vibrato.
+# No vibrato against plus and minus 25 cents scores 0.2 to 0.4 JND at 1.5 to 18 Hz; rates 1.5, 4, 9 and 18 Hz at plus
+# and minus 25 or 50 cents are 0.06 to 0.78 JND apart; even plus and minus 100 cents at 2 against 4 Hz is 0.71. So the
+# card's rounds (a drawn rate, a drawn depth) cannot be scored honestly, and a drawn route depth could not be shown
+# reachable anyway (`closest` moves parameters only). This lesson checks by descriptors instead:
+#   - `stability` (pitch.stability) reads the depth, whatever the rate: none 0.9965, plus and minus 25 cents 0.652,
+#     50 cents 0.30, 100 cents 0;
+#   - `tremolo` (modulation.amp_lfo.hz) reads twice the rate on this saw at plus and minus 50 cents (each swing of the
+#     pitch moves the harmonics across the filter's slope): 5.98 Hz at 3 Hz, 8.00 at 4, 10.01 at 5, 12.03 at 6, 15.99
+#     at 8, the same at the scoring seed and both nuisance seeds; at 2 Hz and at 25 cents it reads nothing.
+# The rate of the LFO stays checked by the patch too (`lfo1.rate in [4Hz, 7Hz]`).
+
+schema = "enth.lesson/1"
+id = "vibrato"
+title = "Vibrato"
+tier = "basic"
+objective = "Add vibrato with an LFO, and set how deep and how fast it wobbles."
+teaches = ["lfo.rate", "osc.fine"]
+
+# --- Hear: the rate, at plus and minus 25 cents on the saw an octave up (C4), then the sine.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "0.5 Hz"
+patch = "patches/vib-25ct-0p5hz.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "5 Hz"
+patch = "patches/vib-25ct-5hz.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "12 Hz"
+patch = "patches/vib-25ct-12hz.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Sine, 5 Hz"
+patch = "patches/sine-vib-25ct-5hz.patch.json"
+transpose = 12
+
+# --- Hear: the depth at 5 Hz: none, plus and minus 25 cents, plus and minus 100 cents; then the sine without.
+[[steps]]
+id = "hear-depth"
+kind = "listen"
+text = "hear-depth.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "None"
+patch = "patches/saw.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "25 cents"
+patch = "patches/vib-25ct-5hz.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "100 cents"
+patch = "patches/vib-100ct-5hz.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Sine, none"
+patch = "patches/sine.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which one has vibrato? (plus and minus 50 cents at 5 Hz against none, at C3.) For the
+# audibility gate: sound/1 puts them 0.43 JND apart (deaf to vibrato); the descriptors tell them apart: the vibrato
+# makes a 10 Hz loudness wobble on every render, the plain saw none.
+[[steps]]
+id = "which-vibrato"
+kind = "choose"
+text = "which-vibrato.md"
+hints = ["Hum along with each: in one, the pitch will not sit still."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/vib-50ct-5hz.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/vib-25ct-5hz.patch.json"
+highlight = ["lfo1.rate", "lfo1 -> osc1.fine"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: add vibrato. Start: the starter saw, whose lfo1 runs at 2 Hz and drives nothing (stability 0.9965: fails
+# `stability < 0.8`). Witness: the route at 25 %, what the editor's drop makes (plus and minus 50 cents: 0.30, passing
+# by 0.50). A route is structure, so the measured hints cannot make it (noted); the witness shows it.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on lfo1's tile (in the overview, at the bottom) onto the Fine knob of osc1's card.",
+  "The drop makes a route at 25 %: plus and minus 50 cents. That is already a clear vibrato.",
+]
+witness = "patches/vib-50ct-2hz.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+highlight = ["lfo1 -> osc1.fine", "osc1.fine"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> osc1.fine", "osc1.fine"]
+locked = ["lfo1.shape", "lfo1.rate", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> osc1.fine > 5%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability < 0.8"]
+
+# --- Do: subtler. Start: the try's witness (plus and minus 50 cents, stability 0.30: fails). Witness: 12.5 % (plus
+# and minus 25 cents, 0.652: inside [0.5, 0.9] by 0.15 and 0.25). 6.25 % (0.826) also passes; none (0.9965) does not.
+[[steps]]
+id = "depth"
+kind = "do"
+text = "depth.md"
+hints = [
+  "Drag the orange dot on the Fine knob's ring down: the depth handle of lfo1's route.",
+  "Half the depth halves the wobble: try about 12 %.",
+]
+witness = "patches/vib-25ct-2hz.patch.json"
+
+[steps.view]
+start = "patches/vib-50ct-2hz.patch.json"
+highlight = ["lfo1 -> osc1.fine"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> osc1.fine", "osc1.fine"]
+locked = ["lfo1.shape", "lfo1.rate", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> osc1.fine < 20%", "lfo1 -> osc1.fine > 0%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability in [0.5, 0.9]"]
+
+# --- Do: a singer's rate. Start: plus and minus 50 cents at 10 Hz, a nervous bleat (the loudness wobble reads 20 Hz:
+# fails). Witness: 5 Hz (10.01 Hz: inside [8.5Hz, 13Hz]). The sound band is the patch band halved and narrowed
+# (4.25 to 6.5 Hz inside 4 to 7 Hz), so the measured hints never stop on a passing sound with the rate outside.
+[[steps]]
+id = "rate"
+kind = "do"
+text = "rate.md"
+hints = [
+  "Turn lfo1's Rate down: fewer wobbles each second.",
+  "A singer's vibrato is about 5 or 6 wobbles a second.",
+]
+witness = "patches/vib-50ct-5hz.patch.json"
+
+[steps.view]
+start = "patches/vib-50ct-10hz.patch.json"
+highlight = ["lfo1.rate"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.rate"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.rate in [4Hz, 7Hz]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["tremolo in [8.5Hz, 13Hz]"]
+
+# --- Check: which vibrato is faster (3 against 8 Hz at plus and minus 50 cents; the loudness wobble reads 5.98
+# against 15.99 Hz), and vibrato against tremolo (pitch against loudness, both at 5 Hz: the wobble reads 10.01 Hz and
+# 3.2 dB against 5.00 Hz and 13.6 dB). sound/1 puts both pairs under 1 JND (0.40 and 0.83), so the gate decides by
+# the descriptors.
+[[steps]]
+id = "check-faster"
+kind = "choose"
+text = "check-faster.md"
+hints = ["Count the wobbles in one second of each."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/vib-50ct-3hz.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/vib-50ct-8hz.patch.json"
+
+[[steps]]
+id = "check-tremolo"
+kind = "choose"
+text = "check-tremolo.md"
+hints = ["Vibrato moves the pitch. The other one stays on its note and gets louder and softer."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/trem-5hz.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/vib-50ct-5hz.patch.json"

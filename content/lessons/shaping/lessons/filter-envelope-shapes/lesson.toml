@@ -1,0 +1,322 @@
+# Lesson 4.2, Filter-envelope shapes [shaping · intermediate] (content/lessons/PLAN.md §5, U4).
+#
+# Hear (a filter pluck against a filter swell, at C3 and C4), a "pluck or swell?" item → Name → Try (a slower attack,
+# checked by brightness) → a Do step (a sustain that keeps the filter open) → two rounds (env2's attack, then its
+# sustain, with the route locked at 50 %) → two ear questions. The base: a saw through a 300 Hz low-pass with env2
+# routed to the cutoff at 50 %; only env2 changes.
+#
+# Measured on engine 0.3.0 at HELD (sound/1 JND; `enth describe`): with no sustain, attack 2 against 150 ms 1.90,
+# 150 against 600 ms 4.52, 2 against 600 ms 4.80; sustain 0 against 60 % 5.16 at a 2 ms attack and 3.76 at 600 ms. With
+# the sustain at 60 % the attacks blur (2 against 150 ms 0.16, 150 against 600 ms 0.77), so the attack round keeps the
+# sustain at 0. The clip's brightness (spectral centroid) follows how long the filter stays open: 302 Hz at a 2 ms
+# attack, 528 Hz at 150 ms, 914 Hz at 600 ms, 1012 Hz with a 2 ms attack and 60 % sustain. The card's sweep-time
+# check is left out: `sweep_time` reads 117 ms and 256 ms at 2 and 150 ms but nothing at 600 ms (the slow rise reads
+# as an LFO), so brightness gates the Try instead. The card's second round, a level-3 seed target, cannot be written
+# in lesson.toml (lane C1's finding: `RandomSpec.amounts` needs null), so both rounds are draws.
+
+schema = "enth.lesson/1"
+id = "filter-envelope-shapes"
+title = "Filter-envelope shapes"
+tier = "intermediate"
+objective = "Shape a filter envelope: a quick pluck, a slow swell, and how far it stays open."
+teaches = ["adsr.attack", "adsr.decay", "adsr.sustain", "adsr.release"]
+
+# --- Hear: the filter pluck and the filter swell, at C3 and an octave up.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Pluck"
+patch = "patches/fenv-a2-s0.patch.json"
+
+[[steps.examples]]
+label = "Swell"
+patch = "patches/fenv-a600-s60.patch.json"
+
+[[steps.examples]]
+label = "Pluck, high"
+patch = "patches/fenv-a2-s0.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Swell, high"
+patch = "patches/fenv-a600-s60.patch.json"
+transpose = 12
+
+# --- Hear's ear question: pluck or swell? (the swell against the pluck.)
+[[steps]]
+id = "which-swell"
+kind = "choose"
+text = "which-swell.md"
+hints = ["Listen to the start of the note: one snaps open at once, the other opens slowly."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/fenv-a2-s0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fenv-a600-s60.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/fenv-a600-s60.patch.json"
+highlight = ["env2.attack", "env2.decay", "env2.sustain", "env2.release"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: a slower attack. Start: the filter pluck (attack 2 ms, brightness 302 Hz: fails `brightness > 450Hz`).
+# Witness: attack 150 ms (528 Hz: passes by 78 Hz). The measured hints can turn the attack (env2 drives the cutoff).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Attack is on env2's card. Turn it up.",
+  "A tenth of a second or more, and the filter takes its time to open.",
+]
+witness = "patches/fenv-a150-s0.patch.json"
+
+[steps.view]
+start = "patches/fenv-a2-s0.patch.json"
+highlight = ["env2.attack"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2.attack"]
+locked = ["env2.decay", "env2.sustain", "env2.release", "env2 -> filter1.cutoff", "osc1.*", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["env2.attack > 60ms"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 450Hz"]
+
+# --- Do: keep it open. Start: the filter pluck (302 Hz: fails `brightness > 800Hz`). Witness: sustain 60 % (1012 Hz:
+# passes by 212 Hz). The Try's witness (528 Hz) does not pass it.
+[[steps]]
+id = "sustain"
+kind = "do"
+text = "sustain.md"
+hints = [
+  "Sustain is on env2's card: the level env2 holds while the note is down.",
+  "Over half way keeps the filter well open for the whole note.",
+]
+witness = "patches/fenv-a2-s60.patch.json"
+
+[steps.view]
+start = "patches/fenv-a2-s0.patch.json"
+highlight = ["env2.sustain"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2.sustain"]
+locked = ["env2.attack", "env2.decay", "env2.release", "env2 -> filter1.cutoff", "osc1.*", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["env2.sustain > 30%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 800Hz"]
+
+# Do, round 1: env2's attack, drawn from 2 and 600 ms with no sustain and the route locked at 50 %, from a 150 ms start.
+# Measured (sound/1, HELD): the start is 1.90 JND from 2 ms and 4.52 from 600 ms; 2 against 600 ms 4.80. Seed 2 draws
+# 600 ms (the start scores sound 54.1).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round-1.md"
+hints = [
+  "Does the target's filter snap open, or take its time? Turn env2's Attack that way.",
+  "A snap is a few milliseconds; a slow opening is more than half a second.",
+]
+
+[steps.view]
+highlight = ["env2.attack"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "env2.attack", set = [2.0, 600.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Filter attack 150 ms", description = "The 300 Hz saw; env2 (attack 150 ms) on the cutoff at 50 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 300.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr", params = { attack = 150.0, decay = 300.0, sustain = 0.0 } },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+routes = [{ src = "env2", dst = "filter1.cutoff", depth = 50.0 }]
+
+[steps.challenge.constraints]
+editable = ["env2.attack"]
+locked = ["osc1.*", "filter1.*", "env2.decay", "env2.sustain", "env2.release"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Filter-envelope shapes, round 1"
+tags = ["shaping", "filter-envelope-shapes"]
+
+# Do, round 2: env2's sustain, drawn from 0 and 60 % with a 2 ms attack and the route locked, from 25 %. Seed 1 draws 0
+# % (the start scores sound 33.1; against 60 % it scores 69.9).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round-2.md"
+hints = [
+  "After the first moment, is the target brighter or darker than yours? Turn env2's Sustain that way.",
+  "No sustain lets the filter close completely; more sustain holds it open.",
+]
+
+[steps.view]
+highlight = ["env2.sustain"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "env2.sustain", set = [0.0, 60.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Filter sustain 25 %", description = "The 300 Hz saw; env2 (sustain 25 %) on the cutoff at 50 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 300.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr", params = { attack = 2.0, decay = 300.0, sustain = 25.0 } },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+routes = [{ src = "env2", dst = "filter1.cutoff", depth = 50.0 }]
+
+[steps.challenge.constraints]
+editable = ["env2.sustain"]
+locked = ["osc1.*", "filter1.*", "env2.attack", "env2.decay", "env2.release"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Filter-envelope shapes, round 2"
+tags = ["shaping", "filter-envelope-shapes"]
+
+# --- Check: which opens more slowly (attack 150 against 600 ms, no sustain: 4.52 JND), and which stays open (600 ms
+# attack, sustain 0 against 60 %: 3.76 JND). After a round, so they hide what the lesson does not use.
+[[steps]]
+id = "check-slower"
+kind = "choose"
+text = "check-slower.md"
+hints = ["The slower attack takes longer to reach its brightest."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/fenv-a150-s0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fenv-a600-s0.patch.json"
+
+[[steps]]
+id = "check-open"
+kind = "choose"
+text = "check-open.md"
+hints = ["Listen to the end of the held note: is it still bright, or dark again?"]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/fenv-a600-s60.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fenv-a600-s0.patch.json"

@@ -9,15 +9,35 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LearnSizes {
-    /// The width of the Learn panel at the window's right edge (lane SKL's minimal panel, F2l): the layout's regions
-    /// take the rest while it is open. Report 03's 320 px.
+    /// The lesson pane's width: the `lesson` region's column in the built-in layout `learn` (`layout/learn.json`,
+    /// as `{"token": "size.learn.pane"}`). Report 03's 320 px.
     pub pane: f32,
+    /// The overview's height in the layout `learn` (its row spans the window under the cards and the pane, so a
+    /// Recreate step's results drawer and the route list keep their width): what layout 1 leaves its overview at
+    /// 1200 × 800 (800 − the bars, gaps, signal row and band).
+    pub overview_height: f32,
+    /// The side of the overlay's lock glyph (a shackle over a filled body), drawn inside a locked control's top right
+    /// corner.
+    pub lock: f32,
+    /// The height of an `enth` text block's `scope` widget (the live scope inside the step's text).
+    pub scope_height: f32,
+    /// The height of an `enth` text block's `shape` widget (an envelope's stages or an LFO's wave, from the live patch).
+    pub shape_height: f32,
+    /// The lesson browser's progress column ("3/11 ✓"), right of a lesson's title.
+    pub progress_width: f32,
 }
 
 impl LearnSizes {
     /// The dark theme's sizes.
     pub(super) fn dark() -> Self {
-        Self { pane: 320.0 }
+        Self {
+            pane: 320.0,
+            overview_height: 98.0,
+            lock: 9.0,
+            scope_height: 64.0,
+            shape_height: 56.0,
+            progress_width: 56.0,
+        }
     }
 }
 

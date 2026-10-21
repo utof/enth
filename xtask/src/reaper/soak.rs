@@ -635,8 +635,6 @@ pub fn reaper_soak(args: &[String]) -> Result<(), String> {
         .unwrap_or_else(|| meta.target_directory.join("reaper-soak"));
     let sandbox = Sandbox {
         plugin_name: o.plugin_name.clone(),
-        bundled: bundled.clone(),
-        learn_bundled: None,
         reaper,
         home: work.join("home"),
         out: work.join("out"),

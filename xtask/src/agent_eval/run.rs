@@ -71,6 +71,8 @@ pub struct Opts {
     pub seed: u64,
     pub blind: bool,
     pub save_summary: bool,
+    /// Lesson track only (lane EV3): a dry run of the `follower` agent saves its summary as the track's floor.
+    pub save_floor: bool,
 }
 
 impl Default for Opts {
@@ -93,6 +95,7 @@ impl Default for Opts {
             seed: 0x0E17_5EED,
             blind: true,
             save_summary: true,
+            save_floor: false,
         }
     }
 }
@@ -305,6 +308,45 @@ fn spawn_claude(
     dir: &Path,
     prompt: &str,
 ) -> Result<(Option<i32>, bool, String), String> {
+    spawn_claude_with(&ClaudeRun {
+        env,
+        model: &opts.model,
+        timeout_min: opts.timeout_min,
+        turns: goal.budget.turns,
+        usd: goal.budget.usd,
+        schema: &answer_schema(),
+        tmp,
+        dir,
+        prompt,
+    })
+}
+
+/// What one headless Claude Code run needs (lane EV3: the lesson track runs the same way as the text goals).
+pub(super) struct ClaudeRun<'a> {
+    pub env: &'a Env,
+    pub model: &'a str,
+    pub timeout_min: f64,
+    pub turns: u32,
+    pub usd: f64,
+    /// The JSON schema of the final answer.
+    pub schema: &'a str,
+    pub tmp: &'a Path,
+    pub dir: &'a Path,
+    pub prompt: &'a str,
+}
+
+pub(super) fn spawn_claude_with(r: &ClaudeRun<'_>) -> Result<(Option<i32>, bool, String), String> {
+    let ClaudeRun {
+        env,
+        model,
+        timeout_min,
+        turns,
+        usd,
+        schema,
+        tmp,
+        dir,
+        prompt,
+    } = *r;
     let system = dir.join("system.md");
     let mut cmd = Command::new(&env.claude);
     cmd.current_dir(tmp)
@@ -314,10 +356,10 @@ fn spawn_claude(
             "stream-json",
             "--verbose",
             "--model",
-            &opts.model,
+            model,
         ])
-        .args(["--max-turns", &goal.budget.turns.to_string()])
-        .args(["--max-budget-usd", &goal.budget.usd.to_string()])
+        .args(["--max-turns", &turns.to_string()])
+        .args(["--max-budget-usd", &usd.to_string()])
         .args(["--tools", "Bash", "--allowedTools", "Bash(enth *)"])
         .args([
             "--permission-mode",
@@ -328,7 +370,7 @@ fn spawn_claude(
         .arg("--no-session-persistence")
         .arg("--append-system-prompt-file")
         .arg(&system)
-        .args(["--json-schema", &answer_schema()]);
+        .args(["--json-schema", schema]);
     match env.auth {
         Auth::ApiKey => {
             cmd.arg("--bare");
@@ -377,7 +419,7 @@ fn spawn_claude(
         }
         let _ = done_tx.send(text);
     });
-    let deadline = Instant::now() + Duration::from_secs_f64(opts.timeout_min * 60.0);
+    let deadline = Instant::now() + Duration::from_secs_f64(timeout_min * 60.0);
     let (code, timed_out) = loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             break (status.code(), false);
@@ -414,7 +456,7 @@ fn new_tmp(stamp: &str, goal: &str, track: Track, trial: u32) -> Result<PathBuf,
 }
 
 #[cfg(unix)]
-fn install_wrapper(tmp: &Path, cfg: &WrapCfg, xtask: &Path) -> Result<(), String> {
+pub(super) fn install_wrapper(tmp: &Path, cfg: &WrapCfg, xtask: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     let path = tmp.join("enth");
     std::fs::write(&path, wrap::script(xtask, cfg))
@@ -424,7 +466,7 @@ fn install_wrapper(tmp: &Path, cfg: &WrapCfg, xtask: &Path) -> Result<(), String
 }
 
 #[cfg(not(unix))]
-fn install_wrapper(_tmp: &Path, _cfg: &WrapCfg, _xtask: &Path) -> Result<(), String> {
+pub(super) fn install_wrapper(_tmp: &Path, _cfg: &WrapCfg, _xtask: &Path) -> Result<(), String> {
     Err("agent-eval needs a unix shell for its enth wrapper".to_owned())
 }
 
@@ -462,6 +504,7 @@ pub fn run_trial(
         state: dir.join("budget.state"),
         enth: env.enth.clone(),
         budget: goal.budget.renders,
+        lesson: false,
     };
     let _ = std::fs::remove_file(&cfg.calls);
     let _ = std::fs::remove_file(&cfg.state);
@@ -679,7 +722,7 @@ pub fn run_trial(
     Ok(result)
 }
 
-fn git_line(root: &Path, args: &[&str]) -> Option<String> {
+pub(super) fn git_line(root: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new("git")
         .current_dir(root)
         .args(args)
@@ -690,7 +733,7 @@ fn git_line(root: &Path, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
-fn command_version(bin: &str) -> Option<String> {
+pub(super) fn command_version(bin: &str) -> Option<String> {
     let out = Command::new(bin).arg("--version").output().ok()?;
     out.status
         .success()
@@ -732,6 +775,42 @@ pub(super) fn ensure_enth(root: &Path, target: &Path, opts: &Opts) -> Result<Pat
     Ok(target.join("release/enth"))
 }
 
+/// The machine side of a run: the `enth` to test, this xtask binary (the wrapper), Claude Code and how it signs in.
+pub(super) fn build_env(
+    root: &Path,
+    target: &Path,
+    opts: &Opts,
+    eval_version: u32,
+) -> Result<Env, String> {
+    let enth = ensure_enth(root, target, opts)?;
+    let xtask =
+        std::env::current_exe().map_err(|e| format!("cannot find the xtask binary: {e}"))?;
+    let claude = std::env::var("CLAUDE_BIN").unwrap_or_else(|_| "claude".to_owned());
+    let auth = match opts.auth {
+        Auth::Auto if std::env::var_os("ANTHROPIC_API_KEY").is_some() => Auth::ApiKey,
+        Auth::Auto => Auth::Subscription,
+        other => other,
+    };
+    let env = Env {
+        enth,
+        xtask,
+        claude_version: if opts.dry_run {
+            None
+        } else {
+            command_version(&claude)
+        },
+        claude,
+        auth,
+        eval_version,
+    };
+    if !opts.dry_run && env.claude_version.is_none() {
+        return Err(
+            "cannot run `claude --version`; install Claude Code or set CLAUDE_BIN".to_owned(),
+        );
+    }
+    Ok(env)
+}
+
 /// `agent-eval run`.
 pub fn run(opts: &Opts) -> Result<(), String> {
     if !opts.dry_run && !opts.confirm_spend {
@@ -760,32 +839,7 @@ spend, add --confirm-spend"
         }
         goals.retain(|g| wanted.contains(&g.id));
     }
-    let enth = ensure_enth(&root, &meta.target_directory, opts)?;
-    let xtask =
-        std::env::current_exe().map_err(|e| format!("cannot find the xtask binary: {e}"))?;
-    let claude = std::env::var("CLAUDE_BIN").unwrap_or_else(|_| "claude".to_owned());
-    let auth = match opts.auth {
-        Auth::Auto if std::env::var_os("ANTHROPIC_API_KEY").is_some() => Auth::ApiKey,
-        Auth::Auto => Auth::Subscription,
-        other => other,
-    };
-    let env = Env {
-        enth,
-        xtask,
-        claude_version: if opts.dry_run {
-            None
-        } else {
-            command_version(&claude)
-        },
-        claude,
-        auth,
-        eval_version: set.meta.eval_version,
-    };
-    if !opts.dry_run && env.claude_version.is_none() {
-        return Err(
-            "cannot run `claude --version`; install Claude Code or set CLAUDE_BIN".to_owned(),
-        );
-    }
+    let env = build_env(&root, &meta.target_directory, opts, set.meta.eval_version)?;
 
     let now = util::now_secs();
     let stamp = util::stamp(now);

@@ -1,0 +1,12 @@
+schema = "enth.agent-eval-lesson/1"
+id = "basics-resonance"
+added = "2026-10-21"
+difficulty = 1
+tags = ["basics", "svf"]
+pack = "content/lessons/basics"
+lesson = "resonance"
+# The steps the lesson had when this goal was written (id:kind). The harness refuses a pack that has drifted, so a
+# result always names the lesson it was measured on.
+steps = ["hear:listen", "which-whistles:choose", "name:read", "try:do", "round-1:recreate", "round-2:recreate", "round-3:recreate", "check-more:choose", "check-high:choose"]
+rationale = "Resonance of the basics pack: 9 steps (1 do, 3 recreate, 3 choose, 1 listen, 1 read). The objective, in the pack's words: Add resonance to a filter, from a nasal colour to a whistling peak, and match its amount by ear. A do step is judged by `enth lesson check`, a round by `enth compare --challenge` (the pass mark of the round), an ear question by its recorded answer; a patch that changes a control the step locks does not count."
+budget = { units = 120, turns = 100, usd = 2.0 }

@@ -385,6 +385,15 @@ pub struct RoundRecord {
     /// ([`RoundOrigin::Lesson`]) never stashes, and after a reload it waits for its lesson to hand the challenge back.
     #[serde(skip_serializing_if = "RoundOrigin::is_game")]
     pub origin: RoundOrigin,
+    /// A lesson round's "How close am I?" answered with a passing patch's moves (lane LFU, R2): marks the round
+    /// assisted, like a reveal. Omitted when false, so a round without it keeps its bytes.
+    #[serde(skip_serializing_if = "is_false")]
+    pub closest: bool,
+    /// The seed of the sibling challenge a lesson round plays (a redo after a reveal, a level-4 hint or "How close am
+    /// I?"; lane LFU, R2): after a reload the session prepares the step's challenge with this seed
+    /// (`Challenge::with_seed`), so the restored target matches. Omitted for the step's own challenge.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sibling: Option<u64>,
 }
 
 /// `skip_serializing_if` for a flag the record writes only when set.
@@ -404,10 +413,11 @@ impl RoundRecord {
             live_meter: false,
             revealed: self.revealed,
             dim_unused: self.dim_unused,
+            closest: self.closest,
         }
     }
 
-    /// Hints, a reveal or the dim assist were used.
+    /// Hints, a reveal, the dim assist or (a lesson round) "How close am I?" were used.
     pub fn assisted(&self) -> bool {
         self.assists().any()
     }
@@ -1661,8 +1671,17 @@ impl Session {
         if !self.lesson_round_waiting() {
             return false;
         }
-        let Some(id) = self.game_record().map(|r| r.id) else {
+        let Some((id, sibling)) = self.game_record().map(|r| (r.id, r.sibling)) else {
             return false;
+        };
+        // A redo's round plays the step's challenge with its own seed (lane LFU).
+        let challenge = match sibling.map(|seed| challenge.with_seed(seed)) {
+            None => challenge,
+            Some(Ok(sibling)) => sibling,
+            Some(Err(_)) => {
+                self.game_break_lesson_round();
+                return false;
+            }
         };
         let challenge = Arc::new(challenge);
         self.game.spec = challenge.spec().copied();
@@ -1670,6 +1689,63 @@ impl Session {
         let job = self.game.job(id, JobKind::PrepareChallenge { challenge });
         self.game.jobs.prepare = Some(job);
         true
+    }
+
+    /// What "How close am I?" needs from the live lesson round (lane LFU): its id, its challenge and its drawn
+    /// parameters, while the round is a lesson's, its target is ready and its last scored submit did not pass
+    /// ([`Phase::Submitted`]: not passed, not revealed, no score pending).
+    pub(crate) fn lesson_round_closest(&self) -> Option<(RoundId, Arc<Challenge>, Vec<ParamAddr>)> {
+        let record = self.game_record()?;
+        if record.origin != RoundOrigin::Lesson
+            || record.phase != Phase::Submitted
+            || self.game.jobs.score.is_some()
+        {
+            return None;
+        }
+        let challenge = Arc::clone(self.game.challenge.as_ref()?);
+        self.game.target.as_ref()?;
+        Some((record.id, challenge, self.game.params.clone()))
+    }
+
+    /// "How close am I?" answered the live lesson round `round` with a passing patch's moves (lane LFU): the round is
+    /// assisted from now on, like a reveal. A round that ended meanwhile is left alone.
+    pub(crate) fn game_mark_closest(&mut self, round: RoundId) {
+        if let Some(record) = self.record_mut()
+            && record.id == round
+            && !record.closest
+        {
+            record.closest = true;
+            self.game.dirty();
+        }
+    }
+
+    /// The live lesson round's challenge, once prepared, and whether a sibling redo is due (lane LFU): the round was
+    /// revealed, reached the coach's last hint level, or had "How close am I?"'s answer (docs/learn.md, "The lesson
+    /// shape": a worked example is always followed by a problem).
+    pub(crate) fn lesson_round_redo(&self) -> Option<(Arc<Challenge>, bool)> {
+        let record = self.game_record()?;
+        if record.origin != RoundOrigin::Lesson || record.phase == Phase::Broken {
+            return None;
+        }
+        let due = record.revealed || record.hints >= HINT_LEVELS || record.closest;
+        Some((Arc::clone(self.game.challenge.as_ref()?), due))
+    }
+
+    /// Start a lesson's sibling round (lane LFU): the live lesson round ends, logged, and `sibling`, the step's
+    /// challenge with the new `seed`, starts in its place; its record keeps the seed, so a reload resumes the sibling.
+    pub(crate) fn game_open_sibling(
+        &mut self,
+        sibling: Challenge,
+        seed: u64,
+    ) -> Result<(), GameError> {
+        self.game_open(
+            RoundSource::Challenge(Box::new(sibling)),
+            RoundOrigin::Lesson,
+        )?;
+        if let Some(record) = self.record_mut() {
+            record.sibling = Some(seed);
+        }
+        Ok(())
     }
 
     /// The A/B state the shell's audio side follows.

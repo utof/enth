@@ -25,7 +25,16 @@ use crate::Theme;
 pub const LAYOUT_SCHEMA: &str = "enth.layout/1";
 
 /// The built-in layouts, by name, as JSON. Layout 1, "lanes", comes first and is the default.
+#[cfg(not(feature = "learn"))]
 pub const BUILTIN: &[(&str, &str)] = &[("lanes", include_str!("layout/lanes.json"))];
+
+/// The built-in layouts, by name, as JSON. Layout 1, "lanes", comes first and is the default. With the `learn`
+/// feature, `learn` (lane LUI) places the `lesson` region: the editor draws it while the lesson pane shows.
+#[cfg(feature = "learn")]
+pub const BUILTIN: &[(&str, &str)] = &[
+    ("lanes", include_str!("layout/lanes.json")),
+    ("learn", include_str!("layout/learn.json")),
+];
 
 /// The name of the default layout.
 pub const DEFAULT: &str = "lanes";

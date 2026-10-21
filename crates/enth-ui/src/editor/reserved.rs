@@ -7,7 +7,15 @@ use egui::{Align2, Rect, Ui};
 use super::layout::Region;
 use crate::Theme;
 
-/// Draws a reserved region's empty panel into `rect`.
+/// Draws a reserved region's empty panel into `rect`. (Since lane LUI the lesson pane fills the `lesson` region, so a
+/// build with `learn` and without `recreate` has no empty panel to draw.)
+#[cfg_attr(
+    not(feature = "recreate"),
+    allow(
+        dead_code,
+        reason = "lane LUI's pane fills the lesson region; only Recreate's are still empty panels"
+    )
+)]
 pub fn show(ui: &mut Ui, t: &Theme, rect: Rect, region: Region) {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, t.radius.medium, t.color.surface.card);

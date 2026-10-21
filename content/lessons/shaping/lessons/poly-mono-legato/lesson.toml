@@ -1,0 +1,402 @@
+# Lesson 6.1, Poly, mono, legato [shaping · intermediate] (content/lessons/PLAN.md §5, U6).
+#
+# Hear (a four-note chord in poly and mono mode, on the saw and a pluck; then two overlapping notes in mono and legato
+# mode, and the chord with one, two and eight voices), a "which one plays the chord?" item → Name → Try (play the
+# chord: poly) → two Do steps (two voices; legato) → two rounds (the polyphony, drawn on the chord, on the saw and the
+# pluck) → two ear questions. Phrases: CHORD (4: C3, E3, G3 and B3 together) and LEGATO_PAIR (3).
+#
+# Measured on engine 0.3.0 (`enth compare --phrase`, `enth describe --perf`): sound/1 hears how many notes sound
+# (the chord in poly against mono 142.3 JND; one voice against two 114.0, two against three 36.2, three against four
+# or more 64.1), and the loudness of the chord reads -24.15, -21.17, -19.41 and -18.18 LUFS with one, two, three and
+# four or more voices. Mono and legato sound the same on a chord (0.00 JND) and on the legato pair with the starter's
+# envelope (0.00) or a pluck (0.00: a pluck has died before the second note, so legato has nothing to carry on). The
+# legato steps use a decaying keys envelope (attack 2 ms, decay 400 ms, sustain 5 %, release 300 ms): in mono the
+# overlapping G3 strikes again, in legato it slides on at the sustain level, 2.12 JND apart, and the legato pair reads
+# -39.90 LUFS in mono against -44.68 in legato.
+
+schema = "enth.lesson/1"
+id = "poly-mono-legato"
+title = "Poly, mono, legato"
+tier = "intermediate"
+objective = "Play chords or one note at a time, set how many notes sound, and choose whether a new note strikes."
+teaches = ["voice.mode", "voice.polyphony"]
+
+# --- Hear: the chord in poly and mono, on the saw and on a pluck.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Saw, poly"
+patch = "patches/saw.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "Saw, mono"
+patch = "patches/saw-mono.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "Pluck, poly"
+patch = "patches/pluck.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "Pluck, mono"
+patch = "patches/pluck-mono.patch.json"
+phrase = 4
+
+# --- Hear: two overlapping notes in mono and in legato; then the chord with one, two and eight voices.
+[[steps]]
+id = "hear-legato"
+kind = "listen"
+text = "hear-legato.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Overlapping, mono"
+patch = "patches/keys-mono.patch.json"
+phrase = 3
+
+[[steps.examples]]
+label = "Overlapping, legato"
+patch = "patches/keys-legato.patch.json"
+phrase = 3
+
+[[steps.examples]]
+label = "Chord, 1 voice"
+patch = "patches/saw-voices-1.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "Chord, 2 voices"
+patch = "patches/saw-voices-2.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "Chord, 8 voices"
+patch = "patches/saw.patch.json"
+phrase = 4
+
+# --- Hear's ear question: which one plays the whole chord? (mono against poly: 142.3 JND.)
+[[steps]]
+id = "which-chord"
+kind = "choose"
+text = "which-chord.md"
+hints = ["A chord is several pitches at once; one of these is a single note."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-mono.patch.json"
+phrase = 4
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw.patch.json"
+phrase = 4
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/saw.patch.json"
+highlight = ["voice.mode", "voice.polyphony"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: play the chord. Start: mono (the chord reads -24.15 LUFS, one note: fails `loudness > -21LUFS`). Witness:
+# poly (-18.18 LUFS: passes by 2.82). The mode is a switch, so the measured hints cannot make it (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Voice mode is on the Voice card, beside the effects.",
+  "Mono and legato play one note at a time. The mode that plays chords is poly.",
+]
+witness = "patches/saw.patch.json"
+
+[steps.view]
+start = "patches/saw-mono.patch.json"
+highlight = ["voice.mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.mode"]
+locked = ["voice.polyphony", "voice.glide", "voice.glide_mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["voice.mode == poly"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 4
+expect = ["loudness > -21LUFS"]
+
+# --- Do: two voices. Start: poly with eight voices (all four notes: -18.18 LUFS, fails the band). Witness: two voices
+# (-21.17 LUFS, inside [-22.5LUFS, -20.3LUFS] by 1.33 and 0.87 LU); one voice (-24.15) and three (-19.41) fall outside.
+[[steps]]
+id = "voices"
+kind = "do"
+text = "voices.md"
+hints = [
+  "Polyphony is on the Voice card, next to the mode.",
+  "Each voice plays one note. Two voices, two notes of the chord.",
+]
+witness = "patches/saw-voices-2.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+highlight = ["voice.polyphony"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.polyphony"]
+locked = ["voice.mode", "voice.glide", "voice.glide_mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["voice.polyphony == 2"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 4
+expect = ["loudness in [-22.5LUFS, -20.3LUFS]"]
+
+# --- Do: legato. Start: the keys sound in mono (the overlapping G3 strikes again: the legato pair reads -39.90 LUFS,
+# failing `loudness < -42LUFS` by 2.10). Witness: legato (-44.68 LUFS: passes by 2.68). A switch again (noted).
+[[steps]]
+id = "legato"
+kind = "do"
+text = "legato.md"
+hints = [
+  "Set Voice mode to legato.",
+  "Play a note, and the next before letting go: in legato the second one slides on instead of striking.",
+]
+witness = "patches/keys-legato.patch.json"
+
+[steps.view]
+start = "patches/keys-mono.patch.json"
+highlight = ["voice.mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.mode"]
+locked = ["voice.polyphony", "voice.glide", "voice.glide_mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["voice.mode == legato"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 3
+expect = ["loudness < -42LUFS"]
+
+# Do, round 1: the polyphony, drawn from 1, 2 and 3 voices on the chord, from four (all four notes sound). Measured
+# (sound/1, CHORD): one voice against two 114.0 JND, two against three 36.2, three against four or more 64.1. Seed 4
+# draws 3 voices (the start scores sound 3.3). The start is four voices, not the default eight: `closest` searches an
+# integer poorly, and from eight it did not reach one voice in 300 renders.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Count the notes in the target's chord: each voice plays one.",
+  "One voice is a single note, four or more the whole chord.",
+]
+
+[steps.view]
+highlight = ["voice.polyphony"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 4
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "voice.polyphony", set = [1.0, 2.0, 3.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, 4 voices", description = "The starter saw with polyphony 4: just enough for the whole chord." }
+master = { level = -12.0 }
+voice = { polyphony = 4.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["voice.polyphony"]
+locked = ["voice.mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Poly, mono, legato, round 1"
+tags = ["shaping", "poly-mono-legato"]
+
+# Do, round 2: the polyphony on the pluck, drawn from 1 and 2 voices, from four. Seed 1 draws 2 voices (the start scores
+# sound 6.9). Three voices are left out: on this pluck sound/1 scored them 100 against eight.
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Count the notes in the target's chord: each voice plays one.",
+  "A short pluck makes the chord harder to count: listen to how full the strike is.",
+]
+
+[steps.view]
+highlight = ["voice.polyphony"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 4
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "voice.polyphony", set = [1.0, 2.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pluck, 4 voices", description = "The saw pluck (no sustain, cutoff 3 kHz) with polyphony 4." }
+master = { level = -12.0 }
+voice = { polyphony = 4.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 3000.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 2.0, decay = 250.0, sustain = 0.0, release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["voice.polyphony"]
+locked = ["voice.mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Poly, mono, legato, round 2"
+tags = ["shaping", "poly-mono-legato"]
+
+# --- Check: which strikes the second note again (the keys sound on the legato pair, legato against mono: 2.12 JND),
+# and which plays two notes of the chord (one, two and four or more voices: 114.0 and about 100 JND from the answer).
+# Both follow a round, so they hide what the lesson does not use (LUI's overflow report).
+[[steps]]
+id = "check-legato"
+kind = "choose"
+text = "check-legato.md"
+hints = ["Listen to the moment the second note comes in: does it strike, or slide on quietly?"]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-legato.patch.json"
+phrase = 3
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-mono.patch.json"
+phrase = 3
+
+[[steps]]
+id = "check-count"
+kind = "choose"
+text = "check-count.md"
+hints = ["One voice is a single note; four is the whole chord."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-voices-1.patch.json"
+phrase = 4
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-voices-2.patch.json"
+phrase = 4
+
+[[steps.options]]
+label = "C"
+patch = "patches/saw.patch.json"
+phrase = 4

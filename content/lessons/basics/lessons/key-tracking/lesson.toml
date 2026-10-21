@@ -330,6 +330,11 @@ text = "check-follows.md"
 hints = ["Listen to the second note: open, like the first, or duller?"]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/pad-keytrack-100.patch.json"

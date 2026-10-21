@@ -198,6 +198,10 @@ target/release/examples/closest_cost --levels 2,3 --rounds 5 --ks 1,2,3,4 --star
 - **Load.** Measured 2026-10-21 on a 12-thread VM under the exclusive build lock (`flock -x /tmp/enth-quiet.lock`, acquired at once), but the machine was not idle: the load average was 3.7 at the start and 5.6 at the end (other agents' sessions and the desktop do not take the lock). A render cost 42 ms serial and 13 ms effective on eight workers in this run, against 15 to 30 ms on a quiet machine, so **the seconds are upper bounds**; renders and distances do not depend on load.
 - **With a categorical parameter free** (`--mixed --ks 2,3 --budget 400`: the waveform joins the free set when the round moves fewer than `k` of the course-order knobs, which happens in 2 of the 10 rounds, level 2 seeds 1 and 2, at `k = 3`; `osc1.wave` is then free beside the cutoff and the resonance): both passed, one at 332 renders (settled) and one at the budget of 400 (first pass at render 255), with distances of 1.13 and 1.41 that the flip cost (1.0) dominates. Give such a set a budget of 400 or more.
 
+### The button (lane LFU)
+
+The plugin's "How close am I?" runs this search on a lesson's Recreate step after a Submit that did not pass: `ClosestCfg::default()` within 300 renders, or "look harder", `patience` 15 and `tol` 0 within 1,000 (the long runs [below](#open-ideas-closest)), on the game worker's `RoundPool` (scoped threads, the serial answer for any count), with its renders reported after every batch and a cancel that ends it within one. The Learn view words each move by its share of the knob's travel (the session's `move_size`: under 2 % stays, under 8 % a touch, under 25 % a little, more a lot; a categorical change is a switch) and shows exact values only after a reveal; an answer with `passed: false` is shown as "no passing sound found", never as moves (docs/learn.md, "Learn follow-ups").
+
 ### Settings (`ClosestCfg`, `Default` is what the button uses)
 
 | Field | Default | Meaning |

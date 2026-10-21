@@ -1,0 +1,1244 @@
+{
+  "goals": [
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-attack-and-release",
+      "invalid_rate": 0.0,
+      "lesson": "attack-and-release",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "do": {
+            "graded": 1,
+            "passed": 1,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 3,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-release": 1,
+          "check-swell": 1,
+          "which-swells": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 4.0,
+          "median": 4.0,
+          "min": 4.0
+        },
+        "passed_unassisted": {
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 12.0,
+        "median": 12.0,
+        "min": 12.0
+      },
+      "wall_s": {
+        "max": 72.74,
+        "median": 72.74,
+        "min": 72.74
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-cutoff",
+      "invalid_rate": 0.0,
+      "lesson": "cutoff",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 1,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-lowest": 1,
+          "round-1": 1,
+          "round-3": 1,
+          "which-darker": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 3.0,
+          "median": 3.0,
+          "min": 3.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 14.0,
+        "median": 14.0,
+        "min": 14.0
+      },
+      "wall_s": {
+        "max": 86.51,
+        "median": 86.51,
+        "min": 86.51
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-decay-and-sustain",
+      "invalid_rate": 0.0,
+      "lesson": "decay-and-sustain",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 2,
+            "passed": 2,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 2,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-decay": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "which-holds": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 3.0,
+          "median": 3.0,
+          "min": 3.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 24.0,
+        "median": 24.0,
+        "min": 24.0
+      },
+      "wall_s": {
+        "max": 118.5,
+        "median": 118.5,
+        "min": 118.5
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-filter-modes",
+      "invalid_rate": 0.0,
+      "lesson": "filter-modes",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-bp": 1,
+          "check-notch": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 8.0,
+        "median": 8.0,
+        "min": 8.0
+      },
+      "wall_s": {
+        "max": 42.44,
+        "median": 42.44,
+        "min": 42.44
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-how-a-lesson-works",
+      "invalid_rate": 0.0,
+      "lesson": "how-a-lesson-works",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "do": {
+            "graded": 1,
+            "passed": 1,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-different": 1,
+          "round": 1
+        },
+        "graded": 3,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 5.0,
+        "median": 5.0,
+        "min": 5.0
+      },
+      "wall_s": {
+        "max": 20.97,
+        "median": 20.97,
+        "min": 20.97
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-noise",
+      "invalid_rate": 0.0,
+      "lesson": "noise",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 2,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 2,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-more": 1,
+          "colour": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-hisses": 1
+        },
+        "graded": 8,
+        "passed": {
+          "max": 3.0,
+          "median": 3.0,
+          "min": 3.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 12.0,
+        "median": 12.0,
+        "min": 12.0
+      },
+      "wall_s": {
+        "max": 67.09,
+        "median": 67.09,
+        "min": 67.09
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-octaves-and-intervals",
+      "invalid_rate": 0.0,
+      "lesson": "octaves-and-intervals",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 2,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-higher": 1
+        },
+        "graded": 6,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 50.0,
+        "median": 50.0,
+        "min": 50.0
+      },
+      "wall_s": {
+        "max": 290.1,
+        "median": 290.1,
+        "min": 290.1
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-resonance",
+      "invalid_rate": 0.0,
+      "lesson": "resonance",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-high": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "try": 1,
+          "which-whistles": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 2.0,
+          "median": 2.0,
+          "min": 2.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 19.0,
+        "median": 19.0,
+        "min": 19.0
+      },
+      "wall_s": {
+        "max": 86.18,
+        "median": 86.18,
+        "min": 86.18
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-two-oscillators",
+      "invalid_rate": 0.0,
+      "lesson": "two-oscillators",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 2,
+            "passed_unassisted": 2
+          },
+          "do": {
+            "graded": 2,
+            "passed": 1,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 3,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-detune": 1,
+          "try": 1
+        },
+        "graded": 8,
+        "passed": {
+          "max": 6.0,
+          "median": 6.0,
+          "min": 6.0
+        },
+        "passed_unassisted": {
+          "max": 2.0,
+          "median": 2.0,
+          "min": 2.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 14.0,
+        "median": 14.0,
+        "min": 14.0
+      },
+      "wall_s": {
+        "max": 82.37,
+        "median": 82.37,
+        "min": 82.37
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 1,
+      "goal": "basics-waveforms",
+      "invalid_rate": 0.0,
+      "lesson": "waveforms",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-pulse": 1,
+          "check-triangle": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-brighter": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "passed_unassisted": {
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 10.0,
+        "median": 10.0,
+        "min": 10.0
+      },
+      "wall_s": {
+        "max": 53.9,
+        "median": 53.9,
+        "min": 53.9
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 2,
+      "goal": "basics-drive",
+      "invalid_rate": 0.0,
+      "lesson": "drive",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-harder": 1,
+          "round-1": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-rougher": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 2.0,
+          "median": 2.0,
+          "min": 2.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 15.0,
+        "median": 15.0,
+        "min": 15.0
+      },
+      "wall_s": {
+        "max": 79.35,
+        "median": 79.35,
+        "min": 79.35
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 2,
+      "goal": "basics-hard-sync",
+      "invalid_rate": 0.0,
+      "lesson": "hard-sync",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-higher": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-tears": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 10.0,
+        "median": 10.0,
+        "min": 10.0
+      },
+      "wall_s": {
+        "max": 48.15,
+        "median": 48.15,
+        "min": 48.15
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 2,
+      "goal": "basics-key-tracking",
+      "invalid_rate": 0.05556,
+      "lesson": "key-tracking",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 2,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-even": 1
+        },
+        "graded": 6,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 9.0,
+        "median": 9.0,
+        "min": 9.0
+      },
+      "wall_s": {
+        "max": 56.27,
+        "median": 56.27,
+        "min": 56.27
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 2,
+      "goal": "basics-pulse-width",
+      "invalid_rate": 0.0625,
+      "lesson": "pulse-width",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-narrowest": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-thinner": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 7.0,
+        "median": 7.0,
+        "min": 7.0
+      },
+      "wall_s": {
+        "max": 33.77,
+        "median": 33.77,
+        "min": 33.77
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 2,
+      "goal": "basics-velocity",
+      "invalid_rate": 0.06667,
+      "lesson": "velocity",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 2,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 0,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1,
+          "try": 1,
+          "which-softer": 1
+        },
+        "graded": 6,
+        "passed": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 7.0,
+        "median": 7.0,
+        "min": 7.0
+      },
+      "wall_s": {
+        "max": 52.07,
+        "median": 52.07,
+        "min": 52.07
+      }
+    },
+    {
+      "cost_usd": {
+        "is_estimate": false,
+        "median": 0.0,
+        "total": 0.0
+      },
+      "difficulty": 2,
+      "goal": "basics-wavetables",
+      "invalid_rate": 0.0,
+      "lesson": "wavetables",
+      "majority_pass": false,
+      "pass_at_k": false,
+      "pass_pow_k": false,
+      "passes": 0,
+      "refused_calls": 0,
+      "solve_rate": 0.0,
+      "statuses": [
+        "ok"
+      ],
+      "steps": {
+        "by_kind": {
+          "choose": {
+            "graded": 3,
+            "passed": 1,
+            "passed_unassisted": 1
+          },
+          "do": {
+            "graded": 1,
+            "passed": 1,
+            "passed_unassisted": 0
+          },
+          "recreate": {
+            "graded": 3,
+            "passed": 0,
+            "passed_unassisted": 0
+          }
+        },
+        "failed_in": {
+          "check-formant": 1,
+          "check-further": 1,
+          "round-1": 1,
+          "round-2": 1,
+          "round-3": 1
+        },
+        "graded": 7,
+        "passed": {
+          "max": 2.0,
+          "median": 2.0,
+          "min": 2.0
+        },
+        "passed_unassisted": {
+          "max": 1.0,
+          "median": 1.0,
+          "min": 1.0
+        }
+      },
+      "tokens": {
+        "median_input": 0,
+        "median_output": 0,
+        "median_total": 0
+      },
+      "trials": 1,
+      "units": {
+        "max": 13.0,
+        "median": 13.0,
+        "min": 13.0
+      },
+      "wall_s": {
+        "max": 78.16,
+        "median": 78.16,
+        "min": 78.16
+      }
+    }
+  ],
+  "header": {
+    "auth": "none",
+    "claude_code_version": null,
+    "date": "2026-10-21T10:34:40Z",
+    "dry_run": true,
+    "enth_git": "7111bc4a71f44675ed2bf4a1f3880d7ccdcaed6a",
+    "enth_git_dirty": false,
+    "enth_version": "enth",
+    "eval_version": 1,
+    "goals": [
+      "basics-attack-and-release",
+      "basics-cutoff",
+      "basics-decay-and-sustain",
+      "basics-filter-modes",
+      "basics-how-a-lesson-works",
+      "basics-noise",
+      "basics-octaves-and-intervals",
+      "basics-resonance",
+      "basics-two-oscillators",
+      "basics-waveforms",
+      "basics-drive",
+      "basics-hard-sync",
+      "basics-key-tracking",
+      "basics-pulse-width",
+      "basics-velocity",
+      "basics-wavetables"
+    ],
+    "max_usd": 20.0,
+    "model_requested": null,
+    "prompt_fingerprint": "8315c0690fc8db9d",
+    "runner": "fake:follower",
+    "schema": "enth.agent-eval-lesson.header/1",
+    "seed": 236412653,
+    "stamp": "20261021T103440Z",
+    "track": "lesson",
+    "trials": 1
+  },
+  "model": "follower",
+  "schema": "enth.agent-eval-lesson.summary/1",
+  "totals": {
+    "by_kind": {
+      "choose": {
+        "graded": 43,
+        "passed": 14,
+        "passed_unassisted": 14
+      },
+      "do": {
+        "graded": 19,
+        "passed": 7,
+        "passed_unassisted": 0
+      },
+      "recreate": {
+        "graded": 45,
+        "passed": 11,
+        "passed_unassisted": 0
+      }
+    },
+    "cost_usd": {
+      "is_estimate": false,
+      "total": 0.0
+    },
+    "goals": 16,
+    "lessons_all_pass": 0,
+    "lessons_any_pass": 0,
+    "lessons_majority_pass": 0,
+    "steps_graded": 107,
+    "steps_passed": 32,
+    "steps_passed_unassisted": 14,
+    "trials": 16,
+    "trials_passed": 0,
+    "units": {
+      "max": 50.0,
+      "median": 12.0,
+      "min": 5.0
+    }
+  },
+  "track": "lesson"
+}

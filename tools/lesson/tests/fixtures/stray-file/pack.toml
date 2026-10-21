@@ -1,0 +1,16 @@
+# A seeded-bad pack for lesson-check's tests (tools/lesson/tests/check.rs): the pack directory holds a file its manifest cannot list (notes.txt).
+schema = "enth.pack/1"
+id = "stray-file"
+version = "0.1.0"
+title = "Fixture: stray-file"
+authors = ["enth contributors"]
+covers = ["svf"]
+lessons = ["l"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+[requires]
+lesson = 1
+patch = 1

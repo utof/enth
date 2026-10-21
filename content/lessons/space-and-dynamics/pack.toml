@@ -1,0 +1,39 @@
+# The space-and-dynamics pack (lane C3, R2): effects and macros, units U7 and U8 of the lesson plan
+# (content/lessons/PLAN.md §2), in the authoring layout of docs/learn.md ("The lesson model (lane LM)").
+# `cargo xtask pack` turns it into canonical JSON and a reproducible .enthpack.
+#
+# Conventions (lane C1's, kept):
+#   - every patch is the starter (Init) with a few values, routes and macro positions changed, at master -12 dB for
+#     headroom; `patches/` is shared by the lessons;
+#   - a lesson is Hear (listen steps, one ear question), Name (a read step of about 80 words), Try (a do step: a goal
+#     checked live), Do (do steps and, where sound/1 can hear the control, recreate steps on a drawn target) and Check
+#     (ear questions), as report 01 §3 and docs/learn.md "The lesson shape" say;
+#   - a recreate step's start is inline, written sparse: every parameter not named is the catalogue default;
+#   - every step either has its own start and hides what it does not use, or is a focus step, so it fits beside the
+#     lesson pane at 1200 x 800 (LUI's overflow report); the steps after a round hide the unused modules too.
+#
+# What sound/1 can hear shapes this pack (report 03 §4, finding 7 and finding 10; measured on engine 0.3.0, see each
+# lesson's header): a reverb's tail is heard only after a short note, so the reverb lessons play the staccato phrase
+# (6); the compressor has no descriptor and sound/1 is loudness-normalised, so the compressor lessons check by the
+# peak and loudness readings on the staccato run (7), by patch state and by ear questions, with no rounds.
+
+schema = "enth.pack/1"
+id = "space-and-dynamics"
+version = "0.1.0"
+title = "Space and dynamics"
+authors = ["enth contributors"]
+covers = ["comp", "osc", "reverb"]
+# The order the app offers them in (the curriculum's order). Lesson ids are append-only.
+lessons = ["reverb-space", "reverb-tone", "compressor-level", "compressor-time", "macros", "gain-staging", "phase-and-seeds"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+# Recreate steps embed `enth.challenge/2` draws (an inline start, a drawn target, constraints), scored by the
+# Recreate scorers. No generated (seed) target, so no `generator`.
+[requires]
+lesson = 1
+challenge = 2
+patch = 1
+scorers = ["combined/1", "sound/1", "structure/1", "time/1"]

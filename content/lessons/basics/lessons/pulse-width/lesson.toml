@@ -303,8 +303,9 @@ pass_mark = 90
 title = "Pulse width, round 3"
 tags = ["basics", "pulse-width"]
 
-# --- Check: which is the 10 % pulse (of 50, 25 and 10 %), then pulse or saw (the 10 % pulse against the saw: the
-# confusable pair; they score 87.6 against each other).
+# --- Check: which is the 5 % pulse (of 30, 50 and 5 %), then square or saw. Under sound/1 narrow widths sound alike
+# (10 against 25 % is 1.94 JND, 10 % against a saw 1.19: below the audibility gate's 2), so the gaps are wide: 5 % against
+# 30 % is 2.60 JND and against 50 % 4.13, and the square (50 %) against the saw 3.71.
 [[steps]]
 id = "check-narrowest"
 kind = "choose"
@@ -312,9 +313,14 @@ text = "check-narrowest.md"
 hints = ["The narrowest pulse is the thinnest and most nasal."]
 answer = 2
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
-patch = "patches/pulse-pw-25.patch.json"
+patch = "patches/pulse-pw-30.patch.json"
 
 [[steps.options]]
 label = "B"
@@ -322,18 +328,23 @@ patch = "patches/pulse.patch.json"
 
 [[steps.options]]
 label = "C"
-patch = "patches/pulse-pw-10.patch.json"
+patch = "patches/pulse-pw-5.patch.json"
 
 [[steps]]
 id = "check-saw"
 kind = "choose"
 text = "check-saw.md"
-hints = ["A saw is full and brassy; a narrow pulse is thin and reedy."]
+hints = ["A square is hollow and woody; a saw is full and buzzy."]
 answer = 0
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"
-patch = "patches/pulse-pw-10.patch.json"
+patch = "patches/pulse.patch.json"
 
 [[steps.options]]
 label = "B"

@@ -328,8 +328,22 @@ impl Harness {
                     self.touched.clear();
                     self.deliver(&[], EditSource::Load)?;
                 }
-                Effect::Apply(op) if op.apply(&mut self.patch).is_ok() => {
-                    self.deliver(std::slice::from_ref(op), EditSource::Player)?;
+                Effect::Apply(op) => {
+                    // Show me's touch spans from the knob's value before its op (lane LFU), as the player notes it.
+                    let knob = match op {
+                        Op::SetParam { addr, .. } => Some(Knob::Param(addr.clone())),
+                        Op::SetMacro { index, .. } => Some(Knob::Macro(*index)),
+                        _ => None,
+                    };
+                    if let Some(knob) = knob
+                        && let (Some(spec), Some(v)) =
+                            (knob.spec(&self.patch), knob.value(&self.patch))
+                    {
+                        self.touched.note(knob, spec, v);
+                    }
+                    if op.apply(&mut self.patch).is_ok() {
+                        self.deliver(std::slice::from_ref(op), EditSource::Player)?;
+                    }
                 }
                 _ => {}
             }

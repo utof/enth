@@ -1,0 +1,36 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "challenge": null,
+  "examples": [
+    {
+      "label": "A",
+      "patch": "[TMP]/ears/1-a.patch.json",
+      "perf": "[TMP]/ears/1-a.perf.json",
+      "phrase": "held",
+      "seed": null,
+      "transpose": 0
+    },
+    {
+      "label": "B",
+      "patch": "[TMP]/ears/2-b.patch.json",
+      "perf": "[TMP]/ears/2-b.perf.json",
+      "phrase": "held",
+      "seed": null,
+      "transpose": 0
+    }
+  ],
+  "from": null,
+  "kind": "choose",
+  "lesson": "basics/cutoff",
+  "next": "measure each sound with `enth describe <patch> --perf <perf>` (`--seed` where the sound sets one), then answer with the label of the one that fits the step's question",
+  "number": 3,
+  "patch": null,
+  "schema": "enth.lesson-start/1",
+  "step": "which-darker"
+}
+--- stderr

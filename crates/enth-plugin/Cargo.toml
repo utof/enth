@@ -60,8 +60,8 @@ recreate = ["enth-ui/recreate"]
 presets = ["enth-ui/presets"]
 add-module = ["enth-ui/add-module"]
 # R2 (lane S0l): the Learn I/O (src/learn.rs, lane SKL: pack I/O, the progress file, Learn jobs on the worker) and the
-# editor's Learn view (enth-ui/learn). Off by default until lane SKL (F2l) decides; `enth-learn` and the session's
-# `learn` always compile, so a saved lesson restores in any build.
+# editor's Learn view (enth-ui/learn). On by default since lane LFU, with the bundled `basics` pack (packs/); `enth-learn`
+# and the session's `learn` always compile, so a saved lesson restores in any build.
 learn = ["enth-ui/learn"]
 # R3 (lane S0s): "create from sound" (src/create.rs, lane SK3: the `enth-create` thread, the per-job pool, cancel, the
 # decoders) and the editor's Create view (enth-ui/create). Off by default until lane SK3 (F2s) decides; `enth-session`'s
@@ -71,7 +71,7 @@ create = ["enth-ui/create", "dep:hound", "dep:claxon", "dep:lewton", "dep:nanomp
 # `ENTH_CREATE_HARNESS` naming a sound file, activation runs create jobs on it one after the other until deactivation,
 # which appends an `enth.plugin-create-stats/1` line to `ENTH_CREATE_REPORT`. Off by default; measurement bundles only.
 create-harness = ["create"]
-default = ["recreate"]
+default = ["recreate", "learn"]
 # Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
 # activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by
 # default; for measurement bundles only (docs/plugin.md, "The Recreate round").

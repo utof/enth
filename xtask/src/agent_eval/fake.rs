@@ -47,7 +47,7 @@ impl Kind {
 }
 
 /// A transcript under construction.
-struct Transcript {
+pub(super) struct Transcript {
     lines: Vec<Value>,
     id: u32,
     bytes_in: u64,
@@ -55,7 +55,7 @@ struct Transcript {
 }
 
 impl Transcript {
-    fn new(session: &str, prompt_bytes: usize) -> Transcript {
+    pub(super) fn new(session: &str, prompt_bytes: usize) -> Transcript {
         Transcript {
             lines: vec![json!({
                 "type": "system", "subtype": "init", "session_id": session, "model": MODEL,
@@ -67,7 +67,7 @@ impl Transcript {
         }
     }
 
-    fn call(&mut self, args: &[String], stdout: &str, is_error: bool) {
+    pub(super) fn call(&mut self, args: &[String], stdout: &str, is_error: bool) {
         self.id += 1;
         let id = format!("toolu_{}", self.id);
         let command = format!("enth {}", args.join(" "));
@@ -83,7 +83,7 @@ impl Transcript {
 
     /// The closing `result` event. Token counts are synthetic (bytes over 4) and the cost uses Sonnet 5.5's list
     /// prices, so a dry run exercises the cost guard and the medians; none of it is a measurement.
-    fn finish(mut self, session: &str, answer: &Value) -> String {
+    pub(super) fn finish(mut self, session: &str, answer: &Value) -> String {
         let input = self.bytes_in / 4 * u64::from(self.id.max(1)) / 2 + 1;
         let output = self.bytes_out / 4 + 40;
         let cost = input as f64 * 2e-6 + output as f64 * 10e-6;
@@ -104,7 +104,7 @@ impl Transcript {
     }
 }
 
-fn exec(wrapper: &Path, cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
+pub(super) fn exec(wrapper: &Path, cwd: &Path, args: &[String]) -> Result<(i32, String), String> {
     let out = Command::new(wrapper)
         .args(args)
         .current_dir(cwd)
@@ -273,7 +273,7 @@ fn follow(
     Ok(())
 }
 
-fn strings(a: &[&str]) -> Vec<String> {
+pub(super) fn strings(a: &[&str]) -> Vec<String> {
     a.iter().map(|&s| s.to_owned()).collect()
 }
 

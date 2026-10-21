@@ -168,9 +168,62 @@ pub fn trim_heap() -> bool {
     }
 }
 
-/// Number of threads in this process.
+/// Number of threads in this process, every entry of `/proc/self/task` (including a thread that is already exiting).
 pub fn thread_count() -> usize {
     std::fs::read_dir("/proc/self/task").map_or(0, Iterator::count)
+}
+
+/// `PF_EXITING`, a bit of the `flags` field of `/proc/<pid>/task/<tid>/stat` (`include/linux/sched.h`). The kernel sets
+/// it first thing in `do_exit`, after the thread's last user instruction (its start routine has returned and the
+/// thread-local destructors have run).
+pub const PF_EXITING: u64 = 0x4;
+
+/// The `flags` field (the 9th) of a `/proc/<pid>/task/<tid>/stat` line. The command (the 2nd field) may hold spaces and
+/// parentheses, so the fields are counted from the last `)`.
+pub fn parse_stat_flags(text: &str) -> Option<u64> {
+    let rest = &text[text.rfind(')')? + 1..];
+    // After the command: state, ppid, pgrp, session, tty_nr, tpgid, flags.
+    rest.split_whitespace().nth(6)?.parse().ok()
+}
+
+/// The threads of this process, split by whether the kernel is already tearing them down.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Threads {
+    /// Threads that still have user code to run, or are parked: what a leak leaves behind.
+    pub live: usize,
+    /// Threads with `PF_EXITING` set: their start routine has returned and nothing of theirs runs any more, but the
+    /// kernel still lists them until it has reaped them.
+    pub exiting: usize,
+}
+
+/// Counts this process's threads, without those that are exiting (lane CHURN).
+///
+/// A thread that was joined is not necessarily gone from `/proc/self/task`: `pthread_join` returns when the kernel
+/// clears the thread's tid word (`mm_release`, inside `do_exit`), and the thread leaves the listing only when
+/// `release_task` has run, later. On a loaded machine the thread can be descheduled in between for several
+/// milliseconds: with 3000 spawns and joins at load 50, 617 were still listed right after the join and 7 still
+/// 5 ms later, always with `PF_EXITING` set. A plain count of the entries then reads one thread too many (one run in
+/// five of the churn test failed at load 41). A thread with `PF_EXITING` has run its last instruction, so it cannot
+/// be a leak (a leaked thread is parked, never exiting), and the count leaves it out.
+pub fn threads() -> Threads {
+    let mut threads = Threads::default();
+    let Ok(dir) = std::fs::read_dir("/proc/self/task") else {
+        return threads;
+    };
+    for entry in dir.flatten() {
+        match std::fs::read_to_string(entry.path().join("stat")) {
+            // Reaped between the listing and the read (a lookup that fails, or a read that finds the task gone).
+            Err(e)
+                if e.kind() == std::io::ErrorKind::NotFound
+                    || e.raw_os_error() == Some(libc::ESRCH) => {}
+            Ok(text) if parse_stat_flags(&text).is_some_and(|f| f & PF_EXITING != 0) => {
+                threads.exiting += 1;
+            }
+            // Anything else counts, so an unreadable entry never hides a thread.
+            _ => threads.live += 1,
+        }
+    }
+    threads
 }
 
 /// Thread names (`comm`) of this process with their counts.
@@ -276,5 +329,21 @@ mod tests {
         assert!(memory().unwrap().pss_kb > 0);
         assert!(thread_count() >= 1);
         assert!(!thread_names().is_empty());
+        assert!(threads().live >= 1);
+    }
+
+    #[test]
+    fn the_flags_of_a_stat_line_are_found_after_any_command() {
+        // A running thread, and the same line with PF_EXITING (0x4) added to its flags.
+        let line = "4242 (enth-audio) R 1 4242 4242 0 -1 4194368 100 0 0 0 1 2 0 0 20 0 3 0 5 1000 100 18446744073709551615";
+        assert_eq!(parse_stat_flags(line), Some(4_194_368));
+        let exiting = "4242 (enth-audio) R 1 4242 4242 0 -1 4194372 100 0 0 0 1 2 0 0 20 0 3 0 5 1000 100 18446744073709551615";
+        assert_eq!(parse_stat_flags(exiting).map(|f| f & PF_EXITING), Some(4));
+        assert_eq!(parse_stat_flags(line).map(|f| f & PF_EXITING), Some(0));
+        // The command may hold spaces and parentheses ("a) S 1 (b"): the fields count from the last `)`.
+        let odd = "7 (a) S 1 (b) S 9 9 9 0 -1 4194368 1 2";
+        assert_eq!(parse_stat_flags(odd), Some(4_194_368));
+        assert_eq!(parse_stat_flags("7 (short) S 1 2"), None);
+        assert_eq!(parse_stat_flags("no command here"), None);
     }
 }

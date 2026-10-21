@@ -1,0 +1,33 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: shape(&o)
+---
+{
+  "authored": "<num>",
+  "coach": {
+    "aspect": "brightness",
+    "close": false,
+    "difference": "higher",
+    "hint": "`--n 4` is the next hint; any hint marks the step assisted in the player; or `enth lesson closest` for the nearest passing patch",
+    "level": "<num>",
+    "levels": "<num>",
+    "measured": true,
+    "patch": "[TMP]/round.patch.json",
+    "renders": "<num>",
+    "schema": "enth.suggest/1",
+    "text": "Check the brightness: your sound is brighter than the target."
+  },
+  "kind": "recreate",
+  "lesson": "basics/cutoff",
+  "measured": null,
+  "more": true,
+  "n": "<num>",
+  "next": "`--n 4` is the next hint; any hint marks the step assisted in the player; or `enth lesson closest` for the nearest passing patch",
+  "number": "<num>",
+  "patch": "[TMP]/round.patch.json",
+  "renders": "<num>",
+  "schema": "enth.lesson-hint/1",
+  "source": "coach",
+  "step": "round-1",
+  "text": "Check the brightness: your sound is brighter than the target."
+}

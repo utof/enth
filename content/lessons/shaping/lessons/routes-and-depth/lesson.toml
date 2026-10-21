@@ -1,0 +1,347 @@
+# Lesson 4.1, Routes and depth [shaping · intermediate · tour] (content/lessons/PLAN.md §5, U4).
+#
+# Hear (a dark saw with and without env2 on the cutoff, at C3 and C2, and a pluck; then three depths), a "which one
+# has the filter envelope?" item → Name → Try (make the route, checked by the sweep's depth) → a Do step on the depth
+# → two rounds (env2's decay, then the cutoff the sweep lands on, with the route locked) → two ear questions.
+#
+# Changed from the card, measured on engine 0.3.0 at HELD (C3 for 1.5 s): sound/1 is nearly deaf to a short filter
+# envelope (cutoff 400 Hz, env2 A 1 / D 300 / S 0: route 0 against 60 % is 1.04 JND; on a pluck 0.98), so the base is
+# a slow sweep, cutoff 300 Hz and env2 A 1 / D 1500 / S 0, which it hears (0 against 40 % 2.91 JND, 20 against 60 %
+# 2.47) and `enth describe` reads as a downward filter sweep of 0.70, 1.21, 1.97 and 2.89 octaves at 15, 25, 40 and
+# 60 %. The rounds draw parameters, not the depth: `closest` (lesson-check --solve) moves parameters only, so a drawn
+# route depth could never be shown reachable. The depth is a Do step and two ear questions instead.
+
+schema = "enth.lesson/1"
+id = "routes-and-depth"
+title = "Routes and depth"
+tier = "intermediate"
+objective = "Route an envelope to the filter cutoff, and set how far and how long it sweeps."
+teaches = ["adsr.decay", "svf.cutoff"]
+
+# --- Hear: the dark saw without and with env2 on the cutoff at 60 %, at C3 and an octave lower; then a pluck.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "No route"
+patch = "patches/sweep.patch.json"
+
+[[steps.examples]]
+label = "Route at 60 %"
+patch = "patches/sweep-60.patch.json"
+
+[[steps.examples]]
+label = "No route, low note"
+patch = "patches/sweep.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "Route at 60 %, low note"
+patch = "patches/sweep-60.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "Pluck, no route"
+patch = "patches/pluck-dark.patch.json"
+
+[[steps.examples]]
+label = "Pluck, route at 60 %"
+patch = "patches/pluck-dark-60.patch.json"
+
+# --- Hear: three depths on the same sweep.
+[[steps]]
+id = "hear-depth"
+kind = "listen"
+text = "hear-depth.md"
+
+[[steps.examples]]
+label = "20 %"
+patch = "patches/sweep-20.patch.json"
+
+[[steps.examples]]
+label = "40 %"
+patch = "patches/sweep-40.patch.json"
+
+[[steps.examples]]
+label = "60 %"
+patch = "patches/sweep-60.patch.json"
+
+# --- Hear's ear question: which one has the filter envelope? (40 % against none: 2.91 JND under sound/1.)
+[[steps]]
+id = "which-route"
+kind = "choose"
+text = "which-route.md"
+hints = ["Listen to the first half second of each note: one starts brighter and closes."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/sweep-40.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sweep.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["env2 -> filter1.cutoff", "env2.decay", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+start = "patches/sweep-40.patch.json"
+
+# --- Try: make the route. Start: the dark saw, env2 set but routed nowhere (no sweep: `sweep_depth` reads none and
+# fails). Witness: the route at 40 % (a 1.97-octave sweep, passing `sweep_depth > 1.5oct` by 0.47 octave). 25 %
+# (1.21 octaves) is not enough, and the editor's first drop makes a route at 25 %, so the player must also deepen it.
+# A route is structure, so the measured hints cannot make it (lesson-check notes it); the witness shows it.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on env2's tile (in the overview, at the bottom) onto the Cutoff knob of the filter card.",
+  "The new route starts at 25 %. Drag the orange dot on the Cutoff knob's ring upwards to deepen it.",
+  "About 40 % gives a sweep you can hear clearly from the first note.",
+]
+witness = "patches/sweep-40.patch.json"
+
+[steps.view]
+start = "patches/sweep.patch.json"
+highlight = ["env2 -> filter1.cutoff", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2 -> filter1.cutoff", "filter1.cutoff"]
+locked = ["osc1.*", "env2.attack", "env2.decay", "env2.sustain", "env2.release"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["env2 -> filter1.cutoff > 20%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["sweep_depth > 1.5oct"]
+
+# --- Do: the depth. Start: the route at 60 % (2.89 octaves: fails the band). Witness: 25 % (1.21 octaves, inside
+# [0.9oct, 1.6oct] by 0.31 and 0.39 octave). 40 % (1.97) is too deep and 15 % (0.70) too shallow, so the goal is
+# "about half as deep", not "any less".
+[[steps]]
+id = "depth"
+kind = "do"
+text = "depth.md"
+hints = [
+  "Drag the orange dot on the Cutoff knob's ring down: the depth handle of env2's route.",
+  "Half of 60 % is 30 %. Somewhere between 20 and 30 % sounds about half as deep.",
+]
+witness = "patches/sweep-25.patch.json"
+
+[steps.view]
+start = "patches/sweep-60.patch.json"
+highlight = ["env2 -> filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2 -> filter1.cutoff", "filter1.cutoff"]
+locked = ["osc1.*", "env2.attack", "env2.decay", "env2.sustain", "env2.release"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["env2 -> filter1.cutoff < 40%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["sweep_depth in [0.9oct, 1.6oct]"]
+
+# Do, round 1: env2's decay, drawn from 150 ms, 1 s and 5 s with the route locked at 40 % (cutoff 300 Hz). The start
+# decays over 2.5 s. Measured (sound/1, HELD, `enth compare --target`): 150 ms against 1 s 1.55 JND, 1 s against 5 s
+# 5.95, 150 ms against 5 s 7.29; the 2.5 s start is 2.65 JND or more from each, so it never passes, and no other set
+# value passes another's target at the 90 mark. Seed 2 draws 150 ms (the start scores sound 52.3).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round-1.md"
+hints = [
+  "Does the target's sweep close faster or slower than yours? Turn env2's Decay that way.",
+  "A short decay is a quick blip of brightness; a long one keeps opening the note for seconds.",
+]
+
+[steps.view]
+highlight = ["env2.decay"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "env2.decay", set = [150.0, 1000.0, 5000.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Long sweep", description = "The dark saw with env2 on the cutoff at 40 %, decaying over 2.5 s." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 300.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr", params = { attack = 1.0, decay = 2500.0, sustain = 0.0 } },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+routes = [{ src = "env2", dst = "filter1.cutoff", depth = 40.0 }]
+
+[steps.challenge.constraints]
+editable = ["env2.decay"]
+locked = ["osc1.*", "filter1.*", "env2.attack", "env2.sustain", "env2.release"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Routes and depth, round 1"
+tags = ["shaping", "routes-and-depth"]
+
+# Do, round 2: the cutoff knob the sweep lands on, drawn from 150, 600 and 1200 Hz with the route locked at 40 % and
+# env2's decay at 1.5 s. Measured (sound/1, HELD): the 300 Hz start is 5.49 JND from 150 Hz and 6.07 from 600 Hz; 600
+# against 1200 Hz 5.69. Seed 1 draws 1200 Hz (the start scores sound 25.0).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round-2.md"
+hints = [
+  "The route moves the cutoff up from where the knob is. Is the whole target sweep higher or lower than yours?",
+  "Listen to the end of the note, after the sweep has closed: that is the knob's own cutoff.",
+]
+
+[steps.view]
+highlight = ["filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.cutoff", set = [150.0, 600.0, 1200.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Filter sweep, 40 %", description = "The dark saw with env2 routed to the cutoff at 40 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 300.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr", params = { attack = 1.0, decay = 1500.0, sustain = 0.0 } },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+routes = [{ src = "env2", dst = "filter1.cutoff", depth = 40.0 }]
+
+[steps.challenge.constraints]
+editable = ["filter1.cutoff"]
+locked = ["osc1.*", "env2.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Routes and depth, round 2"
+tags = ["shaping", "routes-and-depth"]
+
+# --- Check: which sweep is deeper (20 against 60 %: 2.47 JND; 0.95 against 2.89 octaves), and which one has the
+# filter envelope, against a fixed cutoff about as bright on average (550 Hz: a centroid of 390 Hz against the
+# sweep's 393 Hz, so brightness alone cannot tell them apart; 5.87 JND). Both follow a round, so they hide the
+# modules the lesson does not use (LUI's overflow report: a carried-over starter overflows beside the pane).
+[[steps]]
+id = "check-deeper"
+kind = "choose"
+text = "check-deeper.md"
+hints = ["The deeper sweep starts brighter, then falls back to the same dark end."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/sweep-20.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sweep-60.patch.json"
+
+[[steps]]
+id = "check-envelope"
+kind = "choose"
+text = "check-envelope.md"
+hints = ["One stays the same from start to end; the other changes while the note is held."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/sweep-static-550.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sweep-40.patch.json"

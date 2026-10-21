@@ -1,0 +1,16 @@
+# A seeded-bad pack for lesson-check's tests (tools/lesson/tests/check.rs): the ear question's two options are the same sound (0 JND under sound/1).
+schema = "enth.pack/1"
+id = "inaudible-choice"
+version = "0.1.0"
+title = "Fixture: inaudible-choice"
+authors = ["enth contributors"]
+covers = ["svf"]
+lessons = ["l"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+[requires]
+lesson = 1
+patch = 1

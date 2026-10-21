@@ -217,6 +217,11 @@ impl Glue {
         for (id, result) in game.take_learn_results() {
             let _ = session.learn_job_done(id, result);
         }
+        // A running "How close am I?"'s progress (lane LFU): the worker asked for this frame after its batch.
+        #[cfg(feature = "learn")]
+        if let Some((id, renders)) = game.learn_progress() {
+            session.learn_job_progress(id, renders);
+        }
         game.follow_rate();
         #[cfg(feature = "recreate")]
         self.set_round(session.round());
@@ -234,6 +239,15 @@ impl Glue {
         self.editor.apply_learn(session);
         #[cfg(feature = "create")]
         self.editor.apply_create(session);
+        // "Open packs folder" (lane LFU): the folder is made if missing, then opened through egui's OpenUrl, which
+        // the vendored egui-baseview hands to the system's file manager.
+        #[cfg(feature = "learn")]
+        if self.editor.take_open_packs_folder()
+            && let Some(dir) = game.lessons().ensure_packs_dir()
+        {
+            ui.ctx()
+                .open_url(egui::OpenUrl::new_tab(dir.display().to_string()));
+        }
         let round = session.round().and_then(|r| r.wake_at_ms);
         // The lesson's settle moment (its sound check waits for it), else nothing: Learn asks for no other frames.
         #[cfg(feature = "learn")]
@@ -246,11 +260,15 @@ impl Glue {
         }
     }
 
-    /// When the window opens (lane SKL): the installed lessons (the packs rescanned) for the Learn panel.
+    /// When the window opens (lane SKL): the installed lessons (the packs rescanned) for the Learn view. Lane LUI:
+    /// the whole library (pack titles, the tracks, the refused packs) and the progress file, for the lesson browser.
     #[cfg(feature = "learn")]
     pub fn set_lessons(&mut self, lessons: &crate::learn::Lessons) {
         self.editor
-            .set_lessons(lessons.catalogue(), lessons.problems());
+            .set_library(&lessons.rescan(), lessons.progress().load());
+        // Lane LFU: the browser's "Open packs folder" (the glue creates the folder when it is asked to open it).
+        self.editor
+            .set_packs_folder(lessons.packs_dir().map(|d| d.display().to_string()));
     }
 
     /// The editor's preset browser (lane PBU): its store and its crash offer.
@@ -366,7 +384,7 @@ impl NiceEguiApp for EditorApp {
         self.shared.editor_counts.built();
         self.theme.apply(&egui_ctx);
         self.glue.presets_mut().offer_crash(crash_offer());
-        // The Learn panel's lessons, the packs rescanned at every open (lane SKL).
+        // The Learn view's lessons and progress, the packs rescanned at every open (lanes SKL, LUI).
         #[cfg(feature = "learn")]
         self.glue.set_lessons(&self.shared.game.lessons());
         // The round's worker asks this window for a repaint whenever it posts a result (lane SKR).

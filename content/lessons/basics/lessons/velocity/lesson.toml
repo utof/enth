@@ -299,7 +299,11 @@ pass_mark = 95
 title = "Velocity, round 3"
 tags = ["basics", "velocity"]
 
-# --- Check: which pad responds to how hard it is played (velocity 0 against 100 %, OCTAVE_PAIR).
+# --- Check: which pad responds to how hard it is played (velocity 0 against 100 %, OCTAVE_PAIR). Level matching is off
+# for both options (the Example's `level_match`, as in lesson 0.1): velocity is what makes a soft note quieter, and a
+# match would turn the responding pad up to the other's loudness. Level-matched, the options are 1.82 JND apart under sound/1
+# (below the audibility gate's 2), as the pad's slow attack hides the soft note; unmatched, the gate adds their
+# loudness difference in 2 dB steps and they are 3.85 JND apart.
 [[steps]]
 id = "check-responds"
 kind = "choose"
@@ -307,12 +311,19 @@ text = "check-responds.md"
 hints = ["Listen to the second, softly played note."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/pad-velocity-100.patch.json"
 phrase = 2
+level_match = false
 
 [[steps.options]]
 label = "B"
 patch = "patches/pad.patch.json"
 phrase = 2
+level_match = false

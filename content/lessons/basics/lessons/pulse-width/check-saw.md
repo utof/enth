@@ -1,3 +1,3 @@
-# Pulse or saw?
+# Square or saw?
 
-One is a narrow pulse, one is a saw. Which one is the **pulse**?
+One is a square (a pulse at 50 %), one is a saw. Which one is the **square**?

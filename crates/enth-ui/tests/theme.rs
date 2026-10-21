@@ -123,6 +123,7 @@ fn bundled_fonts_cover_every_glyph_we_draw() {
         glyph::BAD,
         glyph::HANDLE,
         glyph::PLAY,
+        glyph::STOP,
         glyph::PREVIOUS,
         glyph::NEXT,
         glyph::FAVORITE,

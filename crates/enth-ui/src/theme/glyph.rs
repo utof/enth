@@ -11,6 +11,8 @@ pub const BAD: &str = "✗";
 pub const HANDLE: &str = "⊕";
 /// Play / audition.
 pub const PLAY: &str = "▶";
+/// Stop playing (a lesson's examples, lane LUI).
+pub const STOP: &str = "■";
 /// The previous and the next item of a list (the header's preset stepping, lane PBU).
 pub const PREVIOUS: &str = "◀";
 pub const NEXT: &str = "▶";

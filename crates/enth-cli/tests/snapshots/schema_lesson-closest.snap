@@ -1,0 +1,171 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "LessonDeltaOut": {
+      "additionalProperties": false,
+      "description": "How one free parameter moved.",
+      "properties": {
+        "categorical": {
+          "description": "A switch or a choice, not a knob.",
+          "type": "boolean"
+        },
+        "from": {
+          "description": "Your value, with its unit.",
+          "type": "string"
+        },
+        "moved": {
+          "description": "It changed.",
+          "type": "boolean"
+        },
+        "norm": {
+          "description": "The signed move on the knob's 0-1 axis (0 or 1 for a switch or choice).",
+          "format": "double",
+          "type": "number"
+        },
+        "param": {
+          "description": "The address.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The answer's value.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "param",
+        "from",
+        "to",
+        "norm",
+        "categorical",
+        "moved"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.lesson-closest/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.lesson-closest/1`: \"How close am I?\" for a recreate step: the nearest patch that passes the round, found by\nCMA-ES from your patch over the step's editable controls, with how far each moved. `passed: false` means none was\nfound within the budget, and `deltas` is the nearest to passing, not a solution.",
+  "properties": {
+    "budget": {
+      "description": "The most renders (`--budget`).",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "deltas": {
+      "description": "One entry per free parameter, in order.",
+      "items": {
+        "$ref": "#/$defs/LessonDeltaOut"
+      },
+      "type": "array"
+    },
+    "distance": {
+      "description": "The knob travel from your patch to the answer: the distance on the free controls' 0-1 axes, plus 1 for each\nswitch or choice that changes.",
+      "format": "double",
+      "type": "number"
+    },
+    "first_pass_renders": {
+      "description": "The render at which a pass was first seen.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "free": {
+      "description": "The parameters that were free to move (the step's editable set, or `--free`).",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "lesson": {
+      "description": "`pack/lesson`.",
+      "type": "string"
+    },
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "number": {
+      "description": "Its place, 1-based.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "out": {
+      "description": "The answer patch file, with `--out`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "passed": {
+      "description": "The answer passes the round.",
+      "type": "boolean"
+    },
+    "patch": {
+      "description": "The patch file the search started from.",
+      "type": "string"
+    },
+    "percent": {
+      "description": "The sound score of the answer.",
+      "format": "double",
+      "type": "number"
+    },
+    "renders": {
+      "description": "Renders used.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.lesson-closest/1",
+      "description": "`enth.lesson-closest/1`.",
+      "type": "string"
+    },
+    "start_percent": {
+      "description": "The sound score of your patch, 0 to 100.",
+      "format": "double",
+      "type": "number"
+    },
+    "step": {
+      "description": "The step's id.",
+      "type": "string"
+    },
+    "stop": {
+      "description": "Why it ended: `start_passes`, `converged`, `budget` or `exhausted`.",
+      "type": "string"
+    },
+    "text": {
+      "description": "The result in a sentence.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "lesson",
+    "step",
+    "number",
+    "patch",
+    "free",
+    "budget",
+    "passed",
+    "start_percent",
+    "percent",
+    "distance",
+    "renders",
+    "stop",
+    "deltas",
+    "text",
+    "next"
+  ],
+  "title": "LessonClosestOut",
+  "type": "object"
+}

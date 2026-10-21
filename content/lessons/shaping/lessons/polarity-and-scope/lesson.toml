@@ -1,0 +1,168 @@
+# Lesson 5.5, Polarity and scope [shaping · intermediate] (content/lessons/PLAN.md §5, U5).
+#
+# Hear (a square tremolo bipolar and unipolar; a per-voice and a global tremolo on two notes; a global LFO on the
+# reverb's high cut), a "which one dips deeper?" item → Name → Try (unipolar, checked by the tremolo's depth) → a Do
+# step (a global LFO on the reverb) → an ear question. The reverb patches have reverb1 switched on, so the lesson needs
+# nothing from 7.1.
+#
+# Changed from the card, measured on engine 0.3.0: sound/1 barely hears polarity (a square tremolo at 3 Hz, saw at
+# 60 %, route 40 %: bipolar against unipolar 0.45 JND) and cannot hear scope at all on the octave pair (a per-voice
+# and a global tremolo describe the same: 2.258 Hz, 28.26 dB), so the card's round (scope by polarity) cannot be
+# scored, and "which LFO restarts on every note?" is not asked as an ear question (it would not pass the audibility
+# gate). `tremolo_depth` reads polarity: the bipolar square dips 25.07 dB, the unipolar one 5.77 dB. Scope and the
+# reverb route are patch goals.
+
+schema = "enth.lesson/1"
+id = "polarity-and-scope"
+title = "Polarity and scope"
+tier = "intermediate"
+objective = "Choose whether an LFO swings both ways or one way, and whether it runs per note or for the whole patch."
+teaches = ["lfo.polarity", "lfo.scope"]
+
+# --- Hear: a square tremolo, bipolar then unipolar.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "Bipolar"
+patch = "patches/pol-bipolar.patch.json"
+
+[[steps.examples]]
+label = "Unipolar"
+patch = "patches/pol-unipolar.patch.json"
+
+# --- Hear: per voice and global on two notes (the octave pair: the second starts 1.75 s in), then the reverb.
+[[steps]]
+id = "hear-scope"
+kind = "listen"
+text = "hear-scope.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "Per voice"
+patch = "patches/scope-voice.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Global"
+patch = "patches/scope-global.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Reverb, still"
+patch = "patches/verb-ready.patch.json"
+
+[[steps.examples]]
+label = "Reverb, LFO on its high cut"
+patch = "patches/verb-lfo.patch.json"
+
+# --- Hear's ear question: which one dips deeper? (bipolar against unipolar: the tremolo depth reads 25.07 against
+# 5.77 dB; sound/1 0.45 JND.)
+[[steps]]
+id = "which-deeper"
+kind = "choose"
+text = "which-deeper.md"
+hints = ["Both pulse at the same speed. In one, the quiet moments are much quieter."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pol-bipolar.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pol-unipolar.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/pol-bipolar.patch.json"
+highlight = ["lfo1.polarity", "lfo1.scope"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+
+# --- Try: one way only. Start: the bipolar square (25.07 dB: fails `tremolo_depth < 12dB`). Witness: unipolar (5.77
+# dB: passes by 6.2 dB). A switch (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Polarity is on lfo1's card.",
+  "Unipolar only adds to the level, so the sound never dips below where the knob is.",
+]
+witness = "patches/pol-unipolar.patch.json"
+
+[steps.view]
+start = "patches/pol-bipolar.patch.json"
+highlight = ["lfo1.polarity"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+editable = ["lfo1.polarity"]
+locked = ["lfo1.shape", "lfo1.rate", "lfo1.scope", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.polarity == unipolar"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["tremolo_depth < 12dB"]
+
+# --- Do: an LFO on the reverb. Start: reverb1 on, lfo1 per voice and routed nowhere. Witness: lfo1 global, routed to
+# the reverb's high cut at -30 %. The editor refuses a per-voice LFO on an effect, which is the point. A patch goal.
+[[steps]]
+id = "reverb"
+kind = "do"
+text = "reverb.md"
+hints = [
+  "Try dragging lfo1's ⊕ onto the reverb's High cut first: the editor says why it refuses.",
+  "Set lfo1's Scope to global, then drag again.",
+]
+witness = "patches/verb-lfo.patch.json"
+
+[steps.view]
+start = "patches/verb-ready.patch.json"
+highlight = ["lfo1.scope", "reverb1.high_cut"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+editable = ["lfo1.scope", "lfo1 -> reverb1.high_cut", "reverb1.high_cut"]
+locked = ["lfo1.shape", "lfo1.rate", "lfo1.polarity", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["lfo1.scope == global", "lfo1 -> reverb1.high_cut != 0%"]
+
+# --- Check: which one dips deeper, on a sine (bipolar against unipolar).
+[[steps]]
+id = "check-deeper"
+kind = "choose"
+text = "check-deeper.md"
+hints = ["The bipolar one swings below the knob as well as above it."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pol-sine-unipolar.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pol-sine-bipolar.patch.json"

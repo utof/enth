@@ -1,0 +1,357 @@
+# Lesson 7.2, Reverb tone [space-and-dynamics · advanced] (content/lessons/PLAN.md §5, U7).
+#
+# Hear (exaggerated pairs: the high and low cut, the high and low damping, the early reflections, and the detune on a
+# sine an octave up), a "which tail is darker?" item → Name → Try (darken the tail, checked by brightness) → a round on
+# the high and low cut together → turn the four advanced controls (touched) → four ear questions.
+#
+# The sound: a bright pluck (cutoff 12 kHz) heard only through its reverb (dry off, wet -3 dB), on the staccato phrase
+# (6), so the tail's tone is all there is. Measured on engine 0.3.0 (`enth describe --perf`, `enth compare --phrase
+# staccato`): brightness reads the high cut (12 kHz: 1812 Hz; 5 kHz: 1164; 2 kHz: 715), the low cut (500 Hz: 2738), the
+# high damping (1: 2046; 10: 1479) and the low damping (1: 1751; 10: 2272). sound/1 hears the high cut well (12 against
+# 2 kHz 4.06 JND on the pluck with its dry sound; the round's four candidates are 2.68 to 3.41 apart), the high damping
+# 1 against 10 at 2.62, the early reflections 0 against 250 % at 2.28, and the low cut and low damping a little under 2
+# (1.81, 1.99), where the brightness reading tells them apart. Detune is inaudible to both (2 against 30: 0.21 JND, no
+# reading moves but the pitch stability), so it has no ear question: taught, not checked (Q9). Changed from the card:
+# the round draws the low cut from 80 and 500 Hz (250 Hz is 1.33 JND from either), and the four advanced controls are
+# one "turn each and listen" step.
+
+schema = "enth.lesson/1"
+id = "reverb-tone"
+title = "Reverb tone"
+tier = "advanced"
+objective = "Shape the colour of a reverb's tail: cut its highs and lows, set how fast they die, and hear the first echoes."
+teaches = ["reverb.high_cut", "reverb.low_cut", "reverb.high_damp", "reverb.low_damp", "reverb.early", "reverb.detune"]
+
+# --- Hear: the high and low cut on the reverb alone.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/tail.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "As it is"
+patch = "patches/tail.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "High cut 2 kHz"
+patch = "patches/tail-high-cut-2k.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Low cut 500 Hz"
+patch = "patches/tail-low-cut-500.patch.json"
+phrase = 6
+
+# --- Hear: the high and low damping.
+[[steps]]
+id = "hear-damp"
+kind = "listen"
+text = "hear-damp.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "High damping 1"
+patch = "patches/tail-high-damp-1.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "High damping 10"
+patch = "patches/tail-high-damp-10.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Low damping 1"
+patch = "patches/tail-low-damp-1.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Low damping 10"
+patch = "patches/tail-low-damp-10.patch.json"
+phrase = 6
+
+# --- Hear: the early reflections, and the detune on a sine an octave up, where metallic ringing would show.
+[[steps]]
+id = "hear-early"
+kind = "listen"
+text = "hear-early.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "No early reflections"
+patch = "patches/tail-early-0.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Early reflections 250 %"
+patch = "patches/tail-early-250.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Sine, detune 0"
+patch = "patches/sine-tail-detune-0.patch.json"
+phrase = 6
+transpose = 12
+
+[[steps.examples]]
+label = "Sine, detune 30"
+patch = "patches/sine-tail-detune-30.patch.json"
+phrase = 6
+transpose = 12
+
+# --- Hear's ear question: which tail is darker? (high cut 12 against 2 kHz.)
+[[steps]]
+id = "which-darker"
+kind = "choose"
+text = "which-darker.md"
+hints = ["Listen to the top of the tail: one rings bright and fizzy, the other is muffled."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/tail-high-cut-2k.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/tail.patch.json"
+phrase = 6
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/tail.patch.json"
+highlight = ["reverb1.high_cut", "reverb1.low_cut", "reverb1.high_damp", "reverb1.low_damp", "reverb1.early", "reverb1.detune"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+# --- Try: darken the tail. Start: high cut 12 kHz (brightness 1812 Hz); witness: 2 kHz (715). The item passes from
+# about 3.5 kHz (5 kHz reads 1164), so it implies the predicate.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "High cut is on the reverb card. Turn it down.",
+  "Below about 4 kHz the tail loses its fizz and sounds soft and far away.",
+]
+witness = "patches/tail-high-cut-2k.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/tail.patch.json"
+highlight = ["reverb1.high_cut"]
+editable = ["reverb1.high_cut"]
+locked = ["osc1.*", "filter1.*", "env1.*", "reverb1.wet", "reverb1.dry"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["reverb1.high_cut < 5kHz"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["brightness < 1000Hz"]
+
+# Do, round: a hidden high cut (2 or 5 kHz) and low cut (80 or 500 Hz) together, on the reverb alone. The four
+# candidates are 2.68 to 3.41 JND apart under sound/1 (measured with the pluck's dry sound; alone, the tail differs
+# more). Seed 1 draws 5 kHz and 500 Hz, both moved from the start (`enth compare`: the start scores sound 55.1 and does
+# not pass; seed 4 draws 2 kHz and 80 Hz).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round-1.md"
+hints = [
+  "Start with the top: is the target's tail darker than yours? Lower High cut until the fizz matches.",
+  "Then the bottom: a low cut makes the tail thin and airy. Raise Low cut if the target sounds lighter.",
+]
+
+[steps.view]
+highlight = ["reverb1.high_cut", "reverb1.low_cut"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 6
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [
+  { param = "reverb1.high_cut", set = [2000.0, 5000.0] },
+  { param = "reverb1.low_cut", set = [80.0, 500.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Bright pluck, reverb only", description = "A bright pluck (cutoff 12 kHz) heard only through its reverb: dry off, wet -3 dB, decay 3 s." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 12000.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", params = { wet = -3.0, dry = -60.0 } },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 2.0, decay = 250.0, sustain = 0.0, release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["reverb1.high_cut", "reverb1.low_cut"]
+locked = ["osc1.*", "filter1.*", "env1.*", "reverb1.wet", "reverb1.dry"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Reverb tone, round"
+tags = ["space-and-dynamics", "reverb"]
+
+# --- Do: turn the four advanced controls, each across at least a third of its travel, and listen (the card's touched
+# checks). The witness turns them all (high and low damping to 10, early reflections off, detune 30).
+[[steps]]
+id = "explore"
+kind = "do"
+text = "explore.md"
+hints = [
+  "The four knobs are on the reverb card: High damping, Low damping, Early reflections and Detune.",
+  "Turn each one a long way, play a note, and turn it back if you like: the step counts how far you turned it.",
+]
+witness = "patches/tail-explored.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/tail.patch.json"
+highlight = ["reverb1.high_damp", "reverb1.low_damp", "reverb1.early", "reverb1.detune"]
+editable = ["reverb1.high_damp", "reverb1.low_damp", "reverb1.early", "reverb1.detune"]
+locked = ["osc1.*", "filter1.*", "env1.*", "reverb1.wet", "reverb1.dry"]
+
+[steps.check]
+kind = "patch"
+predicates = [
+  "touched reverb1.high_damp >= 30%",
+  "touched reverb1.low_damp >= 30%",
+  "touched reverb1.early >= 30%",
+  "touched reverb1.detune >= 30%",
+]
+
+# --- Check: which tail loses its highs fastest (high damping 1 against 10: 2.62 JND), which loses its lows fastest
+# (low damping 1 against 10: 1.99 JND, brightness 1751 against 2272 Hz), which has early reflections (0 against
+# 250 %: 2.28), which has its lows cut (80 against 500 Hz: 1.81 JND, brightness 1812 against 2738 Hz).
+[[steps]]
+id = "check-damp"
+kind = "choose"
+text = "check-damp.md"
+hints = ["Both start equally bright; listen to how the colour of the tail changes as it fades."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/tail-high-damp-1.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/tail-high-damp-10.patch.json"
+phrase = 6
+
+[[steps]]
+id = "check-low-damp"
+kind = "choose"
+text = "check-low-damp.md"
+hints = ["When the lows die first, the tail turns thin and bright as it fades."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/tail-low-damp-10.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/tail-low-damp-1.patch.json"
+phrase = 6
+
+[[steps]]
+id = "check-early"
+kind = "choose"
+text = "check-early.md"
+hints = ["Early reflections are the first echoes: they give the start of the tail a quick, close burst."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/tail-early-250.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/tail-early-0.patch.json"
+phrase = 6
+
+[[steps]]
+id = "check-low-cut"
+kind = "choose"
+text = "check-low-cut.md"
+hints = ["A low cut takes the body out of the tail: it sounds thinner and airier."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/tail.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/tail-low-cut-500.patch.json"
+phrase = 6

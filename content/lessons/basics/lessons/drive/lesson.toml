@@ -70,9 +70,11 @@ text = "name.md"
 highlight = ["filter1.drive"]
 
 # --- Try: "grittier than this" from the clean sine. Measured: the start's spectral centroid is 131.8 Hz (fails
-# `brightness>200Hz` by 68 Hz); the witness, drive 12 dB, reads 295.8 Hz (passes by 96 Hz); 24 dB reads 530.7 Hz. The
-# patch predicate (PLAN's `filter1.drive>10`) keeps it about the drive; the oscillator is locked (a saw would pass the
-# sound check alone).
+# `brightness>270Hz` by 138 Hz); the witness, drive 12 dB, reads 295.8 Hz (passes by 26 Hz); 24 dB reads 530.7 Hz. The
+# sound check carries PLAN's 10 dB: the centroid reads 193.7 Hz at 6 dB, 257.6 at 10, 276.3 at 11 and 295.8 at 12, so
+# 270 Hz is crossed at about 10.7 dB. A lower bar (the first draft's 200 Hz, crossed at 6.5 dB) let the measured hints
+# stop at 6.5 dB, where the sound passes and the patch predicate (`filter1.drive>10`) still fails (`lesson-check
+# --solve`: a player told it already sounds right). The oscillator is locked (a saw would pass the sound check alone).
 [[steps]]
 id = "try"
 kind = "do"
@@ -100,7 +102,7 @@ predicates = [{ kind = "value", knob = "filter1.drive", cmp = ">", value = "10dB
 [[steps.check.checks]]
 kind = "sound"
 phrase = 1
-expect = ["brightness>200Hz"]
+expect = ["brightness>270Hz"]
 
 # --- Do, round 1: a hidden drive on the sine, drawn from 12 and 24 dB (PLAN's {0, 12, 24}, the 0 dB start left out).
 # Seed 4 draws 24 dB (the start scores sound 23.7). sound/1 hears drive well at the default pass mark: on the sine,
@@ -321,6 +323,11 @@ text = "check-saw.md"
 hints = ["The driven saw is denser and rougher; the clean one smoother."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/saw-drive-24.patch.json"
@@ -335,6 +342,11 @@ kind = "choose"
 text = "check-harder.md"
 hints = ["More drive, more buzz on top of the tone."]
 answer = 1
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

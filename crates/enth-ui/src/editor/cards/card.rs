@@ -131,6 +131,23 @@ impl<'a> Card<'a> {
                     crate::editor::overlay::Pointer::Here,
                 );
             }
+            // A lesson step (lane LUI): the module it is about gets the thin highlight outline, and a module it locks
+            // as a whole carries the lock glyph on its title row, left of the "…" button.
+            if view.highlighted {
+                crate::editor::overlay::paint_highlight(ui.painter(), t, response.rect);
+            }
+            if view.locked {
+                let mut row = response.header.rect.shrink(t.space.tight);
+                if let Some(left) = response
+                    .action
+                    .as_ref()
+                    .or(response.menu.as_ref())
+                    .map(|r| r.rect.left())
+                {
+                    row.max.x = left - t.space.tight;
+                }
+                crate::editor::overlay::paint_lock(ui.painter(), t, row);
+            }
             if response.toggled
                 && let CardKey::Module(module) = &view.key
             {
@@ -365,13 +382,33 @@ pub(crate) fn control(
     if let Some(pointer) = p.hint {
         crate::editor::overlay::paint_hint(ui.painter(), t, response.rect, pointer);
     }
+    // A lesson step (lane LUI): what it is about is outlined, what it locks carries the lock glyph.
+    if p.emphasis == Emphasis::Highlighted {
+        crate::editor::overlay::paint_highlight(ui.painter(), t, response.rect);
+    }
+    if p.locked {
+        crate::editor::overlay::paint_lock(ui.painter(), t, response.rect);
+    }
     modulate::target(ui, t, view, p, &response, out);
     menu::attach(t, view.kind, p, &response, out);
     menu::entry(ui, t, p, response.rect, out);
     if response.hovered() || response.dragged() {
         out.hovered = Some(hovered(view, p));
+        // A locked control says why, as a refused drag-to-modulate target does (the session refuses its edits).
+        if p.locked && p.drop.is_none() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
+            out.hovered = Some(Hovered {
+                path: view.path(p.spec),
+                value: value_text(p.spec, p.value),
+                modulation: LOCKED.to_owned(),
+            });
+        }
     }
 }
+
+/// What the status line says over a control the lesson step locks (lane LUI).
+pub const LOCKED: &str =
+    "Locked in this step: the lesson keeps it where it is, so you hear only what it teaches";
 
 /// The control the spec asks for, and its edits.
 #[allow(
@@ -482,7 +519,7 @@ fn knob(
         knob = knob.range(lo, hi);
     }
     let response = ui.add(knob);
-    if p.emphasis == Emphasis::Normal {
+    if matches!(p.emphasis, Emphasis::Normal | Emphasis::Highlighted) && !p.locked {
         modulate::depth_handle(
             ui,
             t,

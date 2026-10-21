@@ -2048,6 +2048,9 @@ fn t3_the_largest_round_fits_the_enth_field() {
         edits,
         edits_dropped: u32::MAX,
         origin: enth_session::game::RoundOrigin::Game, // lane SL: a game round, whose origin is omitted
+        // Lane LFU: "How close am I?" used and a redo's seed, at their longest.
+        closest: true,
+        sibling: Some(u64::MAX),
     };
     let instance = InstanceState {
         ui: enth_session::UiState {
