@@ -4,7 +4,7 @@
 //! (`size.create.drop_zone` high, `surface.recessed`) takes egui's `dropped_files` wherever they land on the window
 //! (the frame reads them, whatever the view; fork patch 11, lane FK3) and lights in the value accent while files are
 //! dragged over the window. It shows what to drop, or the chosen file's name and, once the shell's intake post
-//! arrived, the clip's length and its note.
+//! arrived, the clip's length and its note (a file chosen while another file's job runs says it waits for Start).
 //!
 //! Under it, the intake's findings, in `text.label`: how the file decoded; the note (its name and f0, or "no stable
 //! pitch"), how long it is held and the clip's length; the trim (the lead-in cut before the onset, a short sound
@@ -89,7 +89,13 @@ pub(crate) fn zone(create: &Create, ui: &mut Ui, t: &Theme, hovering: bool) {
     let (first, second) = if hovering {
         ("Drop to make patches from this sound".to_owned(), None)
     } else if let Some(name) = chosen {
-        (name, view.and_then(|v| v.intake.as_ref()).map(summary))
+        // The job's findings belong to the job's file: a file chosen while another runs waits for Start.
+        let second = match view {
+            Some(v) if v.file == name => v.intake.as_ref().map(summary),
+            Some(v) if v.phase.running() => Some(format!("Start it once {} is done", v.file)),
+            _ => None,
+        };
+        (name, second)
     } else {
         (
             "Drop a sound file here".to_owned(),

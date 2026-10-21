@@ -573,6 +573,21 @@ fn cancel_goes_out_at_once_and_a_failure_says_what_to_do() {
             candidates: round(0),
         },
     );
+    // A file dropped while the job runs is only chosen: it waits for Start, and its drop zone says so.
+    let runs = |h: &Harness<'_, App>| {
+        h.state()
+            .asked
+            .iter()
+            .filter(|r| matches!(r, CreateRequest::Run(_)))
+            .count()
+    };
+    drop_file(&mut h, "/sounds/pad.flac");
+    assert_eq!(runs(&h), 1, "no second job while one runs");
+    assert!(has(
+        &h,
+        "Drop zone: pad.flac Start it once pluck.wav is done"
+    ));
+    drop_file(&mut h, "/sounds/pluck.wav");
     let before = h.state().asked.len();
     h.get_by_label("Cancel create").click();
     h.step();
@@ -616,8 +631,8 @@ fn cancel_goes_out_at_once_and_a_failure_says_what_to_do() {
     click(&mut h, "Use candidate 1");
     assert_eq!(h.state().session.patch().value(&level()), Some(40.0));
 
-    // A file that does not decode.
-    click(&mut h, "Start create");
+    // A file that does not decode (chosen while nothing runs, so it starts at once).
+    drop_file(&mut h, "/sounds/broken.wav");
     let (id, _) = run_id(&h);
     post(
         &mut h,
