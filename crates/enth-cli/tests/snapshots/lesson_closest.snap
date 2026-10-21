@@ -1,0 +1,35 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: shape(&o)
+---
+{
+  "budget": "<num>",
+  "deltas": [
+    {
+      "categorical": false,
+      "from": "<from>",
+      "moved": true,
+      "norm": "<num>",
+      "param": "filter1.cutoff",
+      "to": "<to>"
+    }
+  ],
+  "distance": "<num>",
+  "first_pass_renders": "<num>",
+  "free": [
+    "filter1.cutoff"
+  ],
+  "lesson": "basics/cutoff",
+  "next": "the round is passed with the answer; a lesson counts a pass that used this help as assisted",
+  "number": "<num>",
+  "out": "[TMP]/answer.patch.json",
+  "passed": true,
+  "patch": "[TMP]/round.patch.json",
+  "percent": "<num>",
+  "renders": "<num>",
+  "schema": "enth.lesson-closest/1",
+  "start_percent": "<num>",
+  "step": "round-1",
+  "stop": "converged",
+  "text": "The nearest passing patch found moves filter1.cutoff."
+}

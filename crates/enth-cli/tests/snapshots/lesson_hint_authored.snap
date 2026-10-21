@@ -1,0 +1,24 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "authored": 1,
+  "coach": null,
+  "kind": "do",
+  "lesson": "example/cutoff",
+  "measured": null,
+  "more": true,
+  "n": 1,
+  "next": "`--n 2` is the next hint; any hint marks the step assisted in the player",
+  "number": 2,
+  "patch": null,
+  "renders": 0,
+  "schema": "enth.lesson-hint/1",
+  "source": "authored",
+  "step": "try",
+  "text": "The cutoff knob is on the filter. Turn it to the left."
+}
+--- stderr

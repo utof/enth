@@ -69,6 +69,14 @@ pub mod ids {
     pub const LESSON_SHOW: &str = "enth.lesson-show/1";
     /// `enth lesson check` (lane SKL).
     pub const LESSON_CHECK: &str = "enth.lesson-check/1";
+    /// `enth lesson list` (lane EV3).
+    pub const LESSON_LIST: &str = "enth.lesson-list/1";
+    /// `enth lesson start` (lane EV3).
+    pub const LESSON_START: &str = "enth.lesson-start/1";
+    /// `enth lesson hint` (lane EV3).
+    pub const LESSON_HINT: &str = "enth.lesson-hint/1";
+    /// `enth lesson closest` (lane EV3).
+    pub const LESSON_CLOSEST: &str = "enth.lesson-closest/1";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -269,6 +277,30 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::LESSON_CHECK,
         describes: "the output of enth lesson check",
         generate: gen_schema::<LessonCheckOut>,
+    },
+    Entry {
+        name: "lesson-list",
+        id: ids::LESSON_LIST,
+        describes: "the output of enth lesson list",
+        generate: gen_schema::<LessonListOut>,
+    },
+    Entry {
+        name: "lesson-start",
+        id: ids::LESSON_START,
+        describes: "the output of enth lesson start",
+        generate: gen_schema::<LessonStartOut>,
+    },
+    Entry {
+        name: "lesson-hint",
+        id: ids::LESSON_HINT,
+        describes: "the output of enth lesson hint",
+        generate: gen_schema::<LessonHintOut>,
+    },
+    Entry {
+        name: "lesson-closest",
+        id: ids::LESSON_CLOSEST,
+        describes: "the output of enth lesson closest",
+        generate: gen_schema::<LessonClosestOut>,
     },
 ];
 

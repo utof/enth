@@ -1,0 +1,37 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: shape(&o)
+---
+{
+  "authored": "<num>",
+  "coach": null,
+  "kind": "do",
+  "lesson": "example/cutoff",
+  "measured": {
+    "blocked": [],
+    "highlight": [
+      "filter1.cutoff"
+    ],
+    "moves": [
+      {
+        "direction": "down",
+        "from": "<from>",
+        "name": "Cutoff",
+        "param": "filter1.cutoff",
+        "to": "<to>"
+      }
+    ],
+    "ops": "<ops>",
+    "pass_all": true
+  },
+  "more": false,
+  "n": "<num>",
+  "next": "apply the move with `enth apply [repo]/content/lessons/example/patches/saw.patch.json --ops '<ops>'`, then `enth lesson check`; that is the last hint of this step; any hint marks the step assisted in the player",
+  "number": "<num>",
+  "patch": "[repo]/content/lessons/example/patches/saw.patch.json",
+  "renders": "<num>",
+  "schema": "enth.lesson-hint/1",
+  "source": "measured",
+  "step": "try",
+  "text": "Try turning Cutoff (filter1.cutoff) down."
+}

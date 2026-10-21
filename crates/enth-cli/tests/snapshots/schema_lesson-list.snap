@@ -1,0 +1,244 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "LessonListEntryOut": {
+      "additionalProperties": false,
+      "description": "One lesson in a list.",
+      "properties": {
+        "id": {
+          "description": "The lesson's id.",
+          "type": "string"
+        },
+        "key": {
+          "description": "`pack/lesson`.",
+          "type": "string"
+        },
+        "objective": {
+          "description": "What it teaches, in a sentence.",
+          "type": "string"
+        },
+        "steps": {
+          "description": "Its steps, in order.",
+          "items": {
+            "$ref": "#/$defs/LessonStepRefOut"
+          },
+          "type": "array"
+        },
+        "teaches": {
+          "description": "The controls it teaches (catalogue keys).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tier": {
+          "description": "`basic`, `intermediate` or `advanced`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "id",
+        "title",
+        "tier",
+        "objective",
+        "teaches",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "LessonListPackOut": {
+      "additionalProperties": false,
+      "description": "One pack in a list.",
+      "properties": {
+        "covers": {
+          "description": "The module kinds it covers.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "engine": {
+          "description": "The engine it was sealed on.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "lessons": {
+          "description": "Its lessons, in the pack's order.",
+          "items": {
+            "$ref": "#/$defs/LessonListEntryOut"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "Where it was read from (a folder or an `.enthpack`).",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        },
+        "tracks": {
+          "description": "Its tracks (ordered lists of `pack/lesson` keys).",
+          "items": {
+            "$ref": "#/$defs/LessonTrackOut"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "Its version (semver).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "id",
+        "version",
+        "title",
+        "engine",
+        "covers",
+        "tracks",
+        "lessons"
+      ],
+      "type": "object"
+    },
+    "LessonRefusedOut": {
+      "additionalProperties": false,
+      "description": "A pack the build refused, found while listing a folder.",
+      "properties": {
+        "code": {
+          "description": "The reader's code (`pack_too_new`, `hash_mismatch`, …).",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do about it.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Why.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Where it was.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "code",
+        "message",
+        "hint"
+      ],
+      "type": "object"
+    },
+    "LessonStepRefOut": {
+      "additionalProperties": false,
+      "description": "A step in short.",
+      "properties": {
+        "hints": {
+          "description": "How many authored hints it has (`enth lesson hint --n 1` to `--n <hints>`).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`read`, `listen`, `do`, `recreate` or `choose`.",
+          "type": "string"
+        },
+        "number": {
+          "description": "Its place, 1-based.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "id",
+        "kind",
+        "hints"
+      ],
+      "type": "object"
+    },
+    "LessonTrackOut": {
+      "additionalProperties": false,
+      "description": "A track: an ordered list of lessons that may cross packs.",
+      "properties": {
+        "id": {
+          "description": "Its id (`tour`).",
+          "type": "string"
+        },
+        "lessons": {
+          "description": "The lessons, as `pack/lesson` keys.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "lessons"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.lesson-list/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.lesson-list/1`: the packs at the given paths and the lessons in them, each with its steps in short (number,\nid, kind and how many authored hints). A folder that holds packs lists each; one that a build refuses is named in\n`refused` with its reason and hint, not hidden.",
+  "properties": {
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "packs": {
+      "description": "The packs read, in path order.",
+      "items": {
+        "$ref": "#/$defs/LessonListPackOut"
+      },
+      "type": "array"
+    },
+    "refused": {
+      "description": "Packs found in a folder that this build refused.",
+      "items": {
+        "$ref": "#/$defs/LessonRefusedOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.lesson-list/1",
+      "description": "`enth.lesson-list/1`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "packs",
+    "refused",
+    "next"
+  ],
+  "title": "LessonListOut",
+  "type": "object"
+}

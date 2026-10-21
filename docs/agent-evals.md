@@ -2,6 +2,7 @@
 
 - Date: 2026-10-20 (R1/S1 lane EV2). Eval version 3, 30 text goals. Engine 0.2.0.
 - What it is: the set of text goals an agent designs sounds for with the `enth` CLI, and the checks that keep each goal reachable and honest. The protocol (tracks, trials, the wrapper, the judge, the blind listen) is in [agent-cli.md](agent-cli.md#evaluating-the-cli-like-a-product); the P1a history and the first paid run are in [p1a-g1.md](p1a-g1.md#6-the-agent-evaluation).
+- The lesson track (R2, lane EV3: an agent completes whole lessons of the basics pack through `enth lesson`) is a second set beside this one, [below](#the-lesson-track-r2-lane-ev3). Everything on this page above it is the text goals.
 - Files: `content/agent-evals/goals/<id>.toml` (brief, performance, designer list, rationale), `witness/<id>.toml` (a hand-picked solution, never shown to the agent), `prompts/`, `eval.toml` (the version and why it changed), `targets/targets.toml` (a placeholder for the reference sounds, [below](#reference-targets-not-built)).
 
 ## The set (eval version 3)
@@ -88,6 +89,94 @@ Properties of the current analysis found while making every goal reachable (eval
 | 9 | A **pulse and a saw** read alike (4.2 and 4.9 kHz at C5); `spectrum.harmonics_db` and `odd_even_ratio` are listed in agent-cli.md but not built | `lead-chip-pulse` cannot ask for the pulse | Build the harmonic recipe descriptors |
 | 10 | The **compressor** has no single-note goal: its audible result (a tamer peak, a louder tail) is an envelope shape an ADSR makes | No compressor goal | A dynamics or crest-factor descriptor and a phrase performance |
 | 11 | No descriptor for **resonance**, **stereo width**, **vibrato rate** or a **pitch envelope's direction** | Briefs that depend on them measure what they can (acid: the sweep; zap: the sweep and stability) | As above |
+
+## The lesson track (R2, lane EV3)
+
+- Date: 2026-10-21. Track version 1, 16 goals, one per lesson of the basics pack (`content/lessons/basics`). Engine 0.3.0.
+- What it asks: can an agent complete a lesson **from the lesson text alone**, through `enth lesson show|start|check|hint|closest` and the patch CLI, the way a player completes it in the Learn view? A lesson is a list of steps. The agent cannot hear, so what it does, per step kind: **read** and **listen**, nothing to hand in; **do**, make a patch that passes the step's check; **recreate** (a round), make a patch that passes the round's pass mark against a hidden target; **choose** (an ear question), measure each option (`lesson start --examples-out` writes them as patch and performance files, `enth describe` reads them) and answer with a label. The commands are in [agent-cli.md](agent-cli.md#lessons-on-the-command-line-enth-lesson).
+- Run it: `cargo xtask agent-eval lesson [--dry-run] [--agent witness|follower] [--goals id,...] [--trials N]`; `cargo xtask agent-eval lesson goals` lists the goals and checks each against its pack. It is the text goals' harness with a different task: the same wrapper, the same headless Claude Code run, the same `--dry-run` fakes and the same transcripts and summaries. The text goals, their eval version (3) and their wrapper accounting are untouched.
+- Files: `content/agent-evals/lesson-track.toml` (the version and why it changed), `lesson-goals/<id>.toml` (the lesson, its steps pinned as `id:kind`, a budget), `prompts/lesson-system.md` and `prompts/lesson.md`, `results/<date>-lesson-<model>.json` (a saved summary). Code: `xtask/src/agent_eval/lesson_track.rs` (goals, trials, judge, summary), `lesson_fake.rs` (the fake agents), `wrap.rs` (the wrapper's lesson mode).
+
+### What differs from the text goals
+
+| | Text goals | Lesson track |
+| --- | --- | --- |
+| Goal | A brief, a performance and a designer's expectation list; the agent builds a sound | One lesson of a pack; the agent completes its steps |
+| The agent's directory | Empty, with the `enth` wrapper | The wrapper and `pack/`, a copy of the pack (the judge uses the pristine one) |
+| Budget | 20 renders | 120 **cost units** (below) |
+| Final answer | `{patch, expect, explanation}` | `{steps: [{step, patch} or {step, choice}], explanation}`; a `do` or `recreate` step with its patch file, a `choose` step with its label; a step left out counts as not done |
+| Judge | `enth check` of the final patch with the goal's performance | Each graded step on its own (below); a lesson passes when every graded step does |
+| Tracks | Given list, self-written list | One (the lesson's text is the whole brief) |
+| Assistance | n/a | Recorded per step, not forbidden |
+
+**Cost units** (the wrapper's `--lesson` mode; any change to them is a track version change). 1 unit: `lesson check`, `compare`, `describe` or `check` of a patch, `render`, `step`, `bench`, and a measured `lesson hint` (one given a patch file). 2: `suggest`. 10: `lesson closest` and `match` (a search of tens of renders). Free: `lesson show`, `list` and `start`, an authored hint (no patch), `apply`, `get`, `diff`, `params`, `guide`, `check` of a WAV. A call the tool rejects before rendering (exit 2, 3 or 5) gives its units back. The wrapper refuses, with exit 9 and an `enth.error/1` that says why and costs nothing: a call that does not fit in the budget (`budget_exhausted`), `--reveal` (`reveal_refused`: a lesson's answers, a round's target), a path outside the working directory (`path_refused`: absolute, or with `..`), and the pack's files named to any command but `enth lesson` (`pack_refused`: the witness patches sit there). The witness spends 12 to 35 units a lesson (a check per do step, a search and a compare per round); 120 is about three times the most.
+
+**The judge** (`enth` itself, on the pristine pack, never the agent's files):
+- a **do** step: `enth lesson check --from <the step's start>` (exit 0); `--from` because two basics steps have a `touched` predicate, which reads the editor's edit log (finding 1 below);
+- a **recreate** step: `enth compare <patch> --challenge <round>` (exit 0, the round's sound score at the pass mark), where the round is written by the judge's own `lesson start`, never the agent's file;
+- a **choose** step: the label against the pack's recorded answer (`lesson show --reveal`, which only the judge runs);
+- every patch, on top: the step's `locked` and `editable` controls. `lesson check` and `compare` do not enforce them (the editor does), so the judge diffs the patch against the step's start (`enth diff`) and a change to a locked control, or to one an `editable` list leaves out, fails the step as `locked`. A step with no start of its own (it carries on from the step before) has nothing to diff with and is not lock-checked. The matching is textual (`osc1.*`, `filter1.cutoff`, a route as `lfo1 -> filter1.cutoff`), a close reading of `enth_challenge::v2::touches`, not the same code;
+- **assisted** steps are listed, not failed: the call log shows `lesson hint` or `lesson closest` on the step, or `suggest`/`match` on its round's file. The summary reports steps passed and steps passed unassisted.
+
+### The fake agents (`--dry-run --agent ...`)
+
+No model is called; each makes the calls an agent would through the same wrapper, so the unit counter, the refusals, the judge and the report are exercised.
+
+- **`witness`**, the ceiling and the proof that every graded step is reachable with this engine: a do step gets the step's witness patch; a round gets the nearest passing patch `enth lesson closest` finds; an ear question gets the pack's recorded answer.
+- **`follower`**, the floor: a scripted agent that **follows the hints and nothing else**. It reads no text and has no ear. A do step: apply the measured hint's move (`lesson hint` with a patch, then `apply --ops`) until the check passes or the hint has no move (at most 6 times). A round: apply the coach's last hint, the control and the range it names, to the geometric middle of the range, until the round passes or the hint names nothing to set (at most 8 times). An ear question: the first option. It costs no money and is deterministic, so one trial says it all (`--trials 1`).
+
+### Results
+
+Track version 1, engine 0.3.0, measured 2026-10-21 on the debug `enth` of the commit named in each file's header, one trial each (both fakes are deterministic). **No model has run on this track**: the paid run is [pending the owner's OK](#running-it). 107 graded steps in 16 lessons: 19 do steps, 45 rounds and 43 ear questions (the other 43 steps of the 150 are read or listen steps, which have nothing to hand in).
+
+| Agent | Model | Date | Cost | Lessons passed | Steps passed | Do | Rounds | Ear questions | Units a lesson |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `witness` (ceiling; reachability proof) | none | 2026-10-21 | $0 | **16 of 16** | 107 of 107 | 19 of 19 | 45 of 45 | 43 of 43 | median 34, 12 to 35 |
+| `follower` (**the floor**) | `follower` | 2026-10-21 | $0 | **0 of 16** | 32 of 107 | 7 of 19 | 11 of 45 | 14 of 43 | median 12, 5 to 50 |
+
+The follower's summary is saved as `results/2026-10-21-lesson-follower.json` (model `follower`, cost 0; `--save-floor`). The witness's is not saved (nothing to compare it to; a rerun takes about 12 minutes). A model has to beat the follower on every column, and on the ear questions it has to beat **chance**: the follower's 14 of 43 is the first-option rate, a third of 43.
+
+Where the follower is lost, so a model's result reads against it:
+
+- **Do steps, 7 of 19.** It passes `attack-and-release/try`, `cutoff/try`, `decay-and-sustain/try` and `e-piano`, `how-a-lesson-works/try`, `two-oscillators/balance` and `wavetables/try`: steps whose sound check one numeric move over the editable controls satisfies. It fails where a measured hint cannot help: the check asks for a wave, a filter mode or a noise colour (an enum the solver does not move: `waveforms/try`, `filter-modes/try`, `noise/try`); the step has no sound item, only a patch predicate, so there is no measured rung (`pulse-width/try`); or a patch predicate asks for more than the sound check does (`resonance/try`: the hint stops at 66.55 %, the patch predicate wants more). The measured hint reads the step's sound items only (finding 7).
+- **Rounds, 11 of 45.** It passes all three rounds of `attack-and-release` and `two-oscillators`, and single rounds of five other lessons. The coach's last hint names a control and a range; the middle of the range is often just short of the pass mark (six of the 34 failed rounds end within 5 points of it, e.g. `cutoff/round-3` at 89.6 of 90), and a round with several free controls needs several moves it does not make. `lesson closest` (the witness) passes all 45, so the rounds are reachable; the follower shows what the hints alone give.
+- **Ear questions, 14 of 43,** chance.
+- It never finishes a lesson, so the track's per-lesson pass is 0 of 16; the step counts are the sensitive measure at this level.
+
+### Findings for the CLI and lesson owners
+
+Found while making every lesson reachable. None is a bug in the track; each decides what the track can ask.
+
+| # | Finding | Effect | Done or suggested |
+| --- | --- | --- | --- |
+| 1 | **A `touched` predicate cannot hold on a patch file.** It reads the editor's edit log; `lesson check` gave it an empty log. Two basics steps have one: `how-a-lesson-works/try` and `decay-and-sustain/e-piano` | Both steps were unreachable from the CLI: the witness patches failed their own check | `enth lesson check --from START` (added by EV3, additive): the control counts as turned as far as it moved from the start. |
+| 2 | **`lesson check` does not enforce `locked` and `editable`**; the editor does | A patch that changes a locked oscillator passes `lesson check`; the judge has to diff for it | The judge diffs (above). A `--from` check could report the violation itself |
+| 3 | **`lesson show` prints every round's whole embedded challenge**, start patch included: about 13 KB (roughly 4 000 tokens) a lesson, mostly the start patch repeated in each round | An agent reads it once per lesson; it is the largest single output of a trial | `show` could print a round's `constraints`, `target.kind` and pass mark, and leave the start to `lesson start` |
+| 4 | **`enth guide` does not mention lessons** | The track's system prompt teaches them; a guide topic (`enth guide --topic lessons`) would let the guide alone do it | Add a topic page (the main page is 6 106 of its 6 144 bytes) |
+| 5 | **An ear question is answerable by measurement only if `describe` measures what the question asks**: "which is darker" is `spectrum.centroid_hz` (checked in a CLI test); whether the others have a descriptor (an attack time for "which swells", and so on) is not checked | A model can only answer the choose steps whose question a descriptor reads; the follower answers them at chance | The first paid run shows which choose steps models get wrong; a descriptor per question is the fix |
+| 6 | **The pass mark is the sound score alone**: a round with `combined` 75 and `sound` 90.5 passes (`structure` is weighed in `combined`, not in the verdict) | The judge reports the sound score | Documented in `enth compare`'s hint |
+| 7 | **The measured hint reads a do step's sound items, not its patch predicates.** `resonance/try` passes its sound check at 66.55 % resonance and still fails a patch predicate; the hint, asked again, says the same move | A hint-follower stops short; so does a player who trusts `pass_all: true` (it means every *sound* item) | The hint request could carry the predicates, or `pass_all` could say "sound items". Not changed (the player builds the request) |
+
+### Running it
+
+```sh
+# no model, no money (these are what the gate and the doc numbers use)
+cargo xtask agent-eval lesson goals --enth target/release/enth
+cargo xtask agent-eval lesson --dry-run --agent witness --trials 1 --enth target/release/enth
+cargo xtask agent-eval lesson --dry-run --agent follower --trials 1 --save-floor --enth target/release/enth
+
+# a model: only with the owner's approval of the spend. PENDING THE OWNER'S OK; not run.
+cargo xtask agent-eval lesson --confirm-spend --model claude-sonnet-5-5 --trials 3 --max-usd 50
+```
+
+The paid run is **pending the owner's OK**. The cost is not measured: a lesson trial is on the order of 50 tool calls with a context that grows to 60 000 tokens or so, which on Sonnet 5.5 is a guess of $0.3 to $1 a trial, so 16 lessons × 3 trials = 48 trials is $15 to $50 (above the default `--max-usd 20`, which stops starting trials at the running estimate; hence `--max-usd 50`). Measure first: `--goals basics-cutoff --trials 1` (one trial, one lesson). A real run saves `results/<date>-lesson-<model>.json` itself (`--no-save-summary` to skip).
+
+### Adding or changing a goal
+
+1. A goal is a lesson of a pack: copy a file in `lesson-goals/`, set `lesson`, and pin `steps` as `id:kind` (`cargo xtask agent-eval lesson goals` prints the pack's steps when they differ).
+2. `cargo xtask agent-eval lesson --dry-run --agent witness --goals <id> --trials 1`: the witness must pass every graded step. A step it cannot pass is a lesson or CLI problem to fix first (finding 1 was found this way).
+3. Bump `eval_version` in `lesson-track.toml` with a changelog line when a prompt, a goal's steps or budget, the wrapper's unit costs or the judge's rules change. A lesson changing under a goal is refused (the pinned steps), so a result always names the lesson it was measured on.
+4. Run the paid eval only with the owner's approval.
 
 ## Reference targets (not built)
 
