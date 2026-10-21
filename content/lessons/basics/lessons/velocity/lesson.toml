@@ -1,0 +1,318 @@
+# Lesson 3.3, Velocity [basics · intermediate] (content/lessons/PLAN.md §5, U3).
+#
+# Hear (velocity 0 and 100 % through OCTAVE_PAIR, a loud C3 then a soft C4, on the saw and the pad), an "in which is
+# the second note quieter?" item → Name → Try (a patch goal: PLAN has no S check, which would need per-note loudness)
+# → three rounds through OCTAVE_PAIR (the pair carries two velocities, which the generator needs) → one ear question.
+# Measured on engine 0.3.0.
+
+schema = "enth.lesson/1"
+id = "velocity"
+title = "Velocity"
+tier = "intermediate"
+objective = "Make a sound respond to how hard a key is played, and hear how much it does."
+teaches = ["adsr.velocity"]
+
+# --- Hear: a loud low note, then a soft high one, with env1's velocity at 0 and 100 %, on the saw and on the pad. (PLAN's
+# pluck is left out: through OCTAVE_PAIR its notes are too short for sound/1 to hear the amount; 0 % scores 99.9
+# against 100 %.)
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Saw, velocity 0 %"
+patch = "patches/saw.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Saw, velocity 100 %"
+patch = "patches/saw-velocity-100.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Pad, velocity 0 %"
+patch = "patches/pad.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Pad, velocity 100 %"
+patch = "patches/pad-velocity-100.patch.json"
+phrase = 2
+
+# --- Hear's ear question: in which is the second note quieter? (velocity 0 against 100 %.)
+[[steps]]
+id = "which-softer"
+kind = "choose"
+text = "which-softer.md"
+hints = ["The second note is played softly in both. In one, you can hear that."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-velocity-100.patch.json"
+phrase = 2
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["env1.velocity"]
+
+# --- Try: "make the soft note quieter" (PLAN: velocity above 60 %). A patch goal only.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Velocity is on the env1 card.",
+  "Turn it well past half way: at 100 % a softly played note is much quieter.",
+]
+witness = "patches/saw-velocity-100.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw.patch.json"
+highlight = ["env1.velocity"]
+editable = ["env1.velocity"]
+locked = ["env1.attack", "env1.decay", "env1.sustain", "env1.release", "osc1.*", "filter1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = [{ kind = "value", knob = "env1.velocity", cmp = ">", value = "60%" }]
+
+# --- Do, round 1: a hidden velocity amount through OCTAVE_PAIR, drawn from 50 and 100 % (PLAN's {0, 50, 100} with the 0
+# % start left out). Seed 1 draws 100 % (the start scores sound 77.2). The pass mark is 95: through OCTAVE_PAIR, sound/1
+# scores 0 against 50 % at 93.1, so at 90 a 0 % answer would pass a 50 % target. At 95, against 50 %: 25 % (96.9) and 75
+# % (95.4) pass, 0 % and 100 % (85.6) do not; against 100 %: 75 % scores 93.0 and does not.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Compare the second, softer note with the first: in the target, how much quieter is it?",
+  "No drop means 0 %; a big drop means near 100 %.",
+]
+
+[steps.view]
+highlight = ["env1.velocity"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 2
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "env1.velocity", set = [50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.velocity"]
+locked = ["env1.attack", "env1.decay", "env1.sustain", "env1.release", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Velocity, round 1"
+tags = ["basics", "velocity"]
+
+# --- Do, round 2: seed 2 draws 50 % (the start scores 93.1, below the pass mark of 95).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Compare the second, softer note with the first: in the target, how much quieter is it?",
+  "No drop means 0 %; a big drop means near 100 %.",
+]
+
+[steps.view]
+highlight = ["env1.velocity"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 2
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "env1.velocity", set = [50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.velocity"]
+locked = ["env1.attack", "env1.decay", "env1.sustain", "env1.release", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Velocity, round 2"
+tags = ["basics", "velocity"]
+
+# --- Do, round 3: the same on the pad. Seed 1 draws 100 % (the start scores 79.9; 50 % scores 88.1).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "Compare the second, softer note with the first: in the target, how much quieter is it?",
+  "No drop means 0 %; a big drop means near 100 %.",
+]
+
+[steps.view]
+highlight = ["env1.velocity"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 2
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "env1.velocity", set = [50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pad", description = "A slow saw pad: attack 600 ms, sustain 90 %, release 1.2 s, cutoff 1.5 kHz." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1500.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 600.0, sustain = 90.0, release = 1200.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.velocity"]
+locked = ["env1.attack", "env1.decay", "env1.sustain", "env1.release", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Velocity, round 3"
+tags = ["basics", "velocity"]
+
+# --- Check: which pad responds to how hard it is played (velocity 0 against 100 %, OCTAVE_PAIR).
+[[steps]]
+id = "check-responds"
+kind = "choose"
+text = "check-responds.md"
+hints = ["Listen to the second, softly played note."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/pad-velocity-100.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/pad.patch.json"
+phrase = 2
