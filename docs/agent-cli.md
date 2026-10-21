@@ -415,7 +415,7 @@ R3 (lane SK3 built the command and its engine at freeze point F2s; lane CLC fini
 | `--seconds S` | 60 | The wall-clock cap, above 0 and at most 300 (every result arrives in under 5 minutes), from decoding to the last candidate. Checked before every render; a batch it interrupts is dropped. A capped run depends on the machine's speed. If it passes before the first round ends there is no candidate to give: `time_cap`, exit 4, never an empty result |
 | `--budget N` | 4000 | The most renders, at least 1. Only a cap: the schedule never depends on it, so a run is a prefix of any longer one. The last round keeps the whole batches that fit, so `renders` can be a few under `N` |
 | `--stop-at D` | none | End the job as soon as a candidate's distance is at or below `D` (`stop` reads `goal`). `D` is in the objective's units (`settings.objective`): 0 is identical, and the patch that made a clean sound scores under 0.02. Not `compare`'s units |
-| `--score-seconds S` | 3 | The scored window, 0.1 to 5: every candidate is rendered for, and compared over, the first `S` seconds of the clip (the intake keeps up to 5 s of a file). A shorter window is cheaper per render, a longer one hears more of the decay; a window longer than the clip scores the clip. 3 is the product's setting (`create::SCORE_S`; EVK found 2 and 5 no better, [gr3.md](gr3.md)). When it cuts the clip, `notes` says so |
+| `--score-seconds S` | 3 | The scored window, 0.1 to 5: every candidate is rendered for, and compared over, the first `S` seconds of the clip (the intake keeps up to 5 s of a file). A shorter window is cheaper per render, a longer one hears more of the decay; a window longer than the clip scores the clip. 3 is the product's setting (`create::SCORE_S`; on the dev set 2 s ended farther on 13 of 30 targets and 5 s was level, [gr3.md](gr3.md)). When it cuts the clip, `notes` says so |
 | `--bank FILE` | none | The k-NN bank, `enth-bank-v1.bin` from `cargo xtask bank`. Without one the job runs on the heuristic and the templates and says so in `notes`. A missing file is `file_not_found` and a file that is not a bank is `not_a_bank` (exit 3); neither is ignored |
 | `--seed N` | 1 | The search's seed. The same seed, file and renders repeat a run exactly |
 | `--workers N` | every core | Worker threads, 1 to 256. The output is the same for any number |
@@ -519,7 +519,7 @@ Errors (all `enth.error/1` with a `hint`; every flag is checked before the file 
 | 2 | `bad_out` | `--out` is the `--target` file (it would overwrite the sound), or `--out` and `--record` are one file |
 | 3 | `unknown_format` | Not a sound this build reads. A JSON file (a patch, say) gets its own hint: to match a patch use `enth match --target PATCH` |
 | 3 | `bad_file`, `sample_rate`, `no_audio` | The decoder reads the format but the file is damaged, at a rate the analysis refuses, or has no samples |
-| 3 | `intake` | The file holds no sound: it is silent, or not finite |
+| 3 | `intake` | The file holds no sound the analysis can use: it is silent, not finite, or at a rate it refuses |
 | 3 | `not_a_bank` and the bank's other codes | `--bank` is not a k-NN bank, is a newer format, or was built for another embedding; the hint says `cargo xtask bank` |
 | 4 | `time_cap` | The `--seconds` cap passed before the first candidate was made (while decoding or in the first round) |
 | 4 | `no_candidate` | No start rendered to a distance (a bug: keep the file and the flags) |
