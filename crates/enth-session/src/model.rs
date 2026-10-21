@@ -130,6 +130,9 @@ pub struct Session {
     /// The Recreate round's state that is not saved (lane SG; the saved part is `instance.game`): see
     /// [`crate::game`].
     pub(crate) game: crate::game::GameLive,
+    /// The lesson's state that is not saved (lane SL; the saved part is `instance.learn`): the player, the step's
+    /// locks and pinned values, jobs and the outbox. See [`crate::learn`].
+    pub(crate) learn: crate::learn::LearnLive,
 }
 
 impl std::fmt::Debug for Session {
@@ -175,6 +178,7 @@ impl Session {
             telemetry: None,
             telemetry_maps: Vec::new(),
             game: crate::game::GameLive::default(),
+            learn: crate::learn::LearnLive::default(),
         }
     }
 
@@ -554,6 +558,23 @@ pub enum SessionError {
     Busy,
     /// Refused while the host renders offline (audition notes).
     Offline,
+    /// The edit touches what the lesson's step locks (lane SL, R2): nothing changed. Every op kind is checked, at
+    /// the head of the edit path ([`Session::edit`], so the editor's Show me too), against the step's lock
+    /// selectors (docs/session.md, "Learn").
+    Locked {
+        /// The op's kind (`SetParam`, `RemoveModule`, …).
+        op: &'static str,
+        /// What it would have touched (`filter1.cutoff`, `lfo1 -> filter1.cutoff`, `filter1`, `macro3`).
+        touched: String,
+        /// The lock that covers it, as the lesson wrote it (`filter1.cutoff`, `filter1.*`).
+        lock: String,
+    },
+    /// Refused while a lesson is live (lane SL, R2): the call would replace the patch under the lesson (an editor
+    /// preset load), so the editor asks first whether to end the lesson with Restore or Keep.
+    LessonLive {
+        /// What was called.
+        what: &'static str,
+    },
     /// Not implemented yet: a P1b stub that a later lane fills in.
     Unsupported {
         /// What was called.
@@ -574,6 +595,8 @@ impl SessionError {
             SessionError::Inactive => "inactive",
             SessionError::Busy => "busy",
             SessionError::Offline => "offline",
+            SessionError::Locked { .. } => "locked",
+            SessionError::LessonLive { .. } => "lesson_live",
             SessionError::Unsupported { .. } => "unsupported",
         }
     }
@@ -589,6 +612,13 @@ impl SessionError {
             SessionError::Inactive => "the host has not activated the plugin yet".to_owned(),
             SessionError::Busy => "the audio thread is behind: try again".to_owned(),
             SessionError::Offline => "audition is off while the host renders offline".to_owned(),
+            SessionError::Locked { touched, .. } => format!(
+                "{touched} is locked in this step, so you hear only what the lesson teaches: change the step's other controls"
+            ),
+            SessionError::LessonLive { .. } => {
+                "a lesson is in progress: end it first (Restore brings your own patch back, Keep keeps the lesson's)"
+                    .to_owned()
+            }
             SessionError::Unsupported { lane, .. } => format!("not built yet (lane {lane})"),
         }
     }
@@ -607,6 +637,12 @@ impl std::fmt::Display for SessionError {
             SessionError::Inactive => f.write_str("the engine is not active"),
             SessionError::Busy => f.write_str("the command ring is full"),
             SessionError::Offline => f.write_str("refused while rendering offline"),
+            SessionError::Locked { op, touched, lock } => {
+                write!(f, "{op} touches {touched}, which the step locks ({lock})")
+            }
+            SessionError::LessonLive { what } => {
+                write!(f, "{what} is refused while a lesson is live")
+            }
             SessionError::Unsupported { what, lane } => {
                 write!(f, "{what} is not implemented yet (lane {lane})")
             }

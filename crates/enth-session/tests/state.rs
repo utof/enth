@@ -342,12 +342,36 @@ fn the_reserved_learn_field_is_absent_until_set() {
         assert_eq!(old.learn, None, "{text}");
         assert!(old.monitor.fx_bypass, "{text}");
     }
-    // An object with fields a newer build added reads as the state this build knows (and is not kept).
+    // An object with fields a newer build added reads as the state this build knows (the extra fields are not kept).
     let (newer, _) = InstanceState::from_json(
+        r#"{"schema":"enth.plugin-state/1","learn":{"stash":"{}","track":[1,2]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        newer.learn,
+        Some(LearnState {
+            lesson: None,
+            stash: Some("{}".to_owned())
+        })
+    );
+    // Lane SL: one whose lesson this build cannot read keeps only its stash (`LearnState::lenient`), and with no stash
+    // there is nothing to keep.
+    let (unreadable, _) = InstanceState::from_json(
+        r#"{"schema":"enth.plugin-state/1","learn":{"lesson":"basics/01-saw","stash":"{}"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        unreadable.learn,
+        Some(LearnState {
+            lesson: None,
+            stash: Some("{}".to_owned())
+        })
+    );
+    let (nothing, _) = InstanceState::from_json(
         r#"{"schema":"enth.plugin-state/1","learn":{"lesson":"basics/01-saw","step":2}}"#,
     )
     .unwrap();
-    assert_eq!(newer.learn, Some(LearnState::default()));
+    assert_eq!(nothing.learn, None);
 }
 
 #[test]

@@ -512,6 +512,7 @@ impl Session {
         let mut report = LoadReport::default();
         self.unloaded_instance = None;
         let live_round = self.instance.game.take(); // lane SG: reconciled with the loaded round below
+        let live_lesson = self.instance.learn.take(); // lane SL: reconciled with the loaded lesson below
         self.instance = match InstanceState::from_json(text) {
             Ok((state, version)) => {
                 report.instance_version = Some(version);
@@ -527,6 +528,7 @@ impl Session {
             }
         };
         self.game_reconcile_load(live_round);
+        self.learn_reconcile_load(live_lesson);
         self.requests
             .push(ShellRequest::MonitorBypass(self.instance.monitor.fx_bypass));
         report
@@ -595,6 +597,7 @@ impl Session {
         }
         self.requests.push(ShellRequest::RenameParams);
         self.pump();
+        self.learn_note_load(); // a live lesson's player sees the host's patch (lane SL, crate::learn)
         report
     }
 

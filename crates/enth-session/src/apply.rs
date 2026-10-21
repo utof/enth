@@ -170,6 +170,7 @@ impl Session {
         if ops.is_empty() {
             return Ok(Applied::default());
         }
+        self.learn_refuse(&ops)?; // a lesson step's locks refuse the whole transaction (lane SL, crate::learn)
         let before = self.patch.clone();
         let delivered = ops.clone();
         self.history
@@ -283,6 +284,7 @@ impl Session {
         if !self.requests.contains(&ShellRequest::PatchEdited) {
             self.requests.push(ShellRequest::PatchEdited);
         }
+        self.learn_note_edit(ops); // last: a live lesson's player sees the edit (lane SL, crate::learn)
         applied
     }
 
