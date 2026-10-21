@@ -42,6 +42,17 @@ pub const LONG_AT: f64 = 300.0;
 pub const ALPHA: f64 = 0.05;
 /// The anytime marks the report reads when a run has them (s).
 pub const ANYTIME: [f64; 4] = [10.0, 30.0, 60.0, 300.0];
+/// The anytime marks of a render-capped run (renders).
+pub const ANYTIME_RENDERS: [f64; 5] = [500.0, 1000.0, 2000.0, 4000.0, 8000.0];
+
+/// The anytime marks for a run's mode, and the unit its marks are in.
+pub fn anytime_marks(mode: &str) -> (&'static [f64], &'static str) {
+    if mode == "wall" {
+        (&ANYTIME, "s")
+    } else {
+        (&ANYTIME_RENDERS, "renders")
+    }
+}
 
 const USAGE: &str =
     "usage: cargo xtask gr3-report [--runs content/gr3/runs.jsonl] [--run RUN | --a RUN --b RUN]
@@ -100,13 +111,13 @@ pub struct Summary {
     pub median_renders: f64,
 }
 
-/// Summarise `lines` at `mark`.
-pub fn summarize(lines: &[&TargetLine], mark: f64) -> Summary {
+/// Summarise `lines` at `mark`, with the anytime curve at `anytime` (the marks every line has).
+pub fn summarize(lines: &[&TargetLine], mark: f64, anytime: &[f64]) -> Summary {
     let pts: Vec<Point> = lines.iter().filter_map(|t| point(t, mark)).collect();
     let n = lines.len();
     let passed = pts.iter().filter(|p| p.passed).count();
     let jnd_or_inf = |p: Option<Point>| p.and_then(|p| p.jnd).unwrap_or(f64::INFINITY);
-    let anytime = ANYTIME
+    let anytime = anytime
         .iter()
         .filter(|m| lines.iter().all(|t| t.at(**m).is_some()) && !lines.is_empty())
         .map(|m| {
@@ -337,7 +348,8 @@ pub fn single(runs: &Runs, id: &str, at: Option<f64>) -> Result<(String, Value),
         if run.mode == "wall" { " s" } else { " renders" },
     );
     let _ = writeln!(s);
-    let any_marks: Vec<f64> = summarize(&lines, mark)
+    let (grid, unit) = anytime_marks(&run.mode);
+    let any_marks: Vec<f64> = summarize(&lines, mark, grid)
         .anytime
         .iter()
         .map(|(m, _)| *m)
@@ -347,7 +359,7 @@ pub fn single(runs: &Runs, id: &str, at: Option<f64>) -> Result<(String, Value),
         "| Stratum | n | Pass | Pass rate (95 % CI) | Median JND |"
     );
     for m in &any_marks {
-        let _ = write!(s, " JND at {m} s |");
+        let _ = write!(s, " JND at {m} {unit} |");
     }
     let _ = writeln!(
         s,
@@ -356,7 +368,7 @@ pub fn single(runs: &Runs, id: &str, at: Option<f64>) -> Result<(String, Value),
     let _ = writeln!(s, "|{}", " --- |".repeat(9 + any_marks.len()));
     let mut json_strata = Vec::new();
     for (name, v) in strata(&lines) {
-        let sm = summarize(&v, mark);
+        let sm = summarize(&v, mark, grid);
         let _ = write!(
             s,
             "| {name} | {} | {} | {} % ({}–{}) | {} |",
@@ -379,7 +391,7 @@ pub fn single(runs: &Runs, id: &str, at: Option<f64>) -> Result<(String, Value),
             s,
             " {} | {} | {} | {} |",
             sm.km_median
-                .map_or_else(|| "not reached".to_owned(), |t| format!("{t} s")),
+                .map_or_else(|| "not reached".to_owned(), |t| format!("{t} {unit}")),
             f(sm.median_mfcc, 2),
             f(sm.median_structure, 1),
             f(sm.median_renders, 0)
@@ -732,7 +744,7 @@ mod tests {
         let text = run("a", "A", 10, &|i| i < 5, &|i| i as f64);
         let (runs, _) = parse_runs(&text).unwrap();
         let lines: Vec<&TargetLine> = runs.targets["a"].iter().collect();
-        let sm = summarize(&lines, 60.0);
+        let sm = summarize(&lines, 60.0, &ANYTIME);
         assert_eq!((sm.n, sm.passed), (10, 5));
         assert!((sm.wilson.0 - 0.236_592).abs() < 1e-5);
         // JND 0..9: median 4.5; at 10 s, 2..11: 6.5; at 30 s, 1..10: 5.5.
