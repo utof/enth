@@ -9,16 +9,19 @@
 //! A cut-off is told from an instrument's own roll-off by its shape, on the energy-weighted power spectrum of the
 //! sounding part (Hann frames of about 40 ms, the peak bin of each 1/12-octave band from 1 kHz up):
 //!
-//! - **steep:** everything from 1/3 octave above the edge to the top is at least 30 dB below the 1/6 octave under it
-//!   (at least 60 dB/octave; a 4-pole filter on a saw falls about 30);
+//! - **steep:** everything from 1/3 octave above the edge to the top is at least 20 dB below the 1/6 octave under it
+//!   (at least 40 dB/octave over that half octave; a 4-pole filter on a saw falls about 30 dB/octave, so 15 dB there,
+//!   and a 48 kbps MP3 leaves its top 25 to 30 dB down, not more);
 //! - **full below:** the octave under the edge holds at least three partials (local maxima) within 35 dB of its
 //!   loudest, so an isolated partial (a sine, a high square's few harmonics) is not an edge;
-//! - **no bump:** the 1/6 octave under the edge is at most 10 dB above the median of those partials, so a resonant
+//! - **no bump:** the 1/6 octave under the edge is at most 6 dB above the median of those partials, so a resonant
 //!   filter peak, which also falls steeply, is not an edge.
 //!
-//! The highest edge from 2 to 16 kHz that passes all three wins, and the cut-off is the last bin near it still within
-//! 20 dB of the level under the edge. Edges within 1/3 octave of Nyquist cannot be tested, and edges above 16 kHz
-//! (a 128 kbps MP3 and better) cost the search nothing audible: both count as the full band.
+//! The level under the edge must also be within 80 dB of the loudest bin (lower is rounding noise, or nothing worth
+//! masking). The highest edge from 2 kHz to 16 kHz (and to 3/4 of Nyquist) that passes wins, judged on what lies
+//! above it up to 0.9 × Nyquist, where a render's own filters fall steeply (the bilinear transform puts their zero at
+//! Nyquist); the cut-off is the last bin near it still within 20 dB of the level under the edge, reported up to
+//! 16 kHz. Higher cut-offs (a 128 kbps MP3 and better) cost the search nothing audible and count as the full band.
 
 use super::welch;
 use crate::fft::FftPlanner;
@@ -32,13 +35,19 @@ const MAX_CUTOFF_HZ: f64 = 16_000.0;
 const BANDS_FROM_HZ: f64 = 1000.0;
 const BANDS_PER_OCTAVE: f64 = 12.0;
 /// The drop, in dB, from the 1/6 octave under the edge to everything from 1/3 octave above it.
-const DROP_DB: f64 = 30.0;
+const DROP_DB: f64 = 20.0;
 /// Fullness: at least this many partials (local maxima) in the octave under the edge within this many dB of its
 /// loudest.
 const FULL_DB: f64 = 35.0;
 const FULL_PARTIALS: usize = 3;
 /// No bump: the level under the edge at most this far above the median of those partials.
-const BUMP_DB: f64 = 10.0;
+const BUMP_DB: f64 = 6.0;
+/// What is under an edge is within this many dB of the loudest bin (lower is rounding noise, or nothing worth
+/// masking).
+const RANGE_DB: f64 = 80.0;
+/// Edges up to this share of Nyquist, judged on what is above them up to `NYQUIST_SHARE` of it.
+const EDGE_SHARE: f64 = 0.75;
+const NYQUIST_SHARE: f64 = 0.9;
 /// The cut-off is the last bin within this many dB of the level under the edge.
 const EDGE_DB: f64 = 20.0;
 /// Analysis frame (s), rounded up to a power of two in samples.
@@ -80,14 +89,28 @@ pub(crate) fn estimate(
         })
         .collect();
     let nb = bands.len();
+    // The loudest bin from 30 Hz up: what is under an edge must be within `RANGE_DB` of it.
+    let loudest = db[((30.0 / bin) as usize).min(db.len() - 1)..]
+        .iter()
+        .copied()
+        .fold(-300.0, f64::max);
+    // Bands that reach past 0.9 × Nyquist are left out of "above": a render's own filters fall steeply there.
+    let top = edges
+        .iter()
+        .position(|&f| f > NYQUIST_SHARE * nyq)
+        .unwrap_or(nb)
+        .min(nb);
     // Edge e sits between band e-1 and band e; it needs the octave under it and bands from e+4 to the top.
     let mut found = None;
-    for e in 12..nb.saturating_sub(4) {
-        if edges[e] < MIN_CUTOFF_HZ || edges[e] > MAX_CUTOFF_HZ {
+    for e in 12..top.saturating_sub(4) {
+        if edges[e] < MIN_CUTOFF_HZ || edges[e] > MAX_CUTOFF_HZ.min(EDGE_SHARE * nyq) {
             continue;
         }
         let under = bands[e - 2].max(bands[e - 1]);
-        let above = bands[e + 4..].iter().copied().fold(-300.0, f64::max);
+        if under < loudest - RANGE_DB {
+            continue;
+        }
+        let above = bands[e + 4..top].iter().copied().fold(-300.0, f64::max);
         if under - above < DROP_DB {
             continue;
         }
@@ -117,7 +140,8 @@ pub(crate) fn estimate(
     let a = libm::ceil(edges[e - 2] / bin) as usize;
     let b = (libm::ceil(edges[e + 4] / bin) as usize).min(db.len());
     let last = (a..b).rev().find(|&i| db[i] >= under - EDGE_DB)?;
-    Some(((last as f64 + 0.5) * bin).min(nyq))
+    let fc = ((last as f64 + 0.5) * bin).min(nyq);
+    (fc <= MAX_CUTOFF_HZ).then_some(fc)
 }
 
 #[cfg(test)]

@@ -5,14 +5,21 @@
 //! The floor and the hum (50 or 60 Hz and harmonics) are reported as `Degradation`s, and lane OBJ's robust distance
 //! compares only the levels above the floor. Pure and deterministic, on the scalar FFT path.
 //!
-//! **The floor** is what is left when the instrument is not playing, so it is read from the quietest stretch of the
-//! level track (20 ms frames every 10 ms): the frames within 6 dB of the 10th percentile, at least 100 ms of them,
-//! their power mean. It is reported only when that stretch is a background and not the instrument:
+//! **The floor** is what is left when the instrument is not playing, so it is read from two stretches of the level
+//! track (20 ms frames every 10 ms), and the quieter one that passes the checks below wins:
+//!
+//! - the quietest stretch: the sounding frames within 6 dB of their 10th percentile, at least 100 ms of them, their
+//!   power mean; skipped when the file holds 100 ms of digital silence (it is clean, and its quietest sounding
+//!   frames are the instrument's own tail);
+//! - the lead-in: the frames before the level first rises 6 dB over their running median, which precede the onset by
+//!   construction, so a floor is found even when the file ends before the sound has decayed into it.
+//!
+//! A stretch is a floor only when it is a background and not the instrument:
 //!
 //! - within 70 dB of the loudest frame (lower is clean for every purpose here) and at least 6 dB below it (otherwise
 //!   the clip has no quiet part to call a floor);
 //! - its longest run (at least 50 ms) is level, not decaying or rising by more than 20 dB/s (the end of a release
-//!   cut off by the file is not a floor);
+//!   cut off by the file is not a floor); its spread is the median absolute deviation of its frames' levels;
 //! - YIN finds no pitch in it other than the mains (a held note's quietest stretch is still the note; hum is a floor).
 //!
 //! A noise-like sound held through the whole file (a noise pad with no lead-in and no tail) cannot be told from a
@@ -26,11 +33,17 @@ use serde::{Deserialize, Serialize};
 use super::trim::Levels;
 use super::welch;
 use crate::fft::FftPlanner;
-use crate::linalg::{line_fit, quantile};
+use crate::linalg::{line_fit, median, quantile};
 use crate::pitch::Yin;
 
 /// The floor stretch: frames within this many dB of the [`QUANTILE`] of the level track.
 const BAND_DB: f64 = 6.0;
+/// Frames at or below this level (dBFS) are digital silence; [`MIN_FRAMES`] of them make a file clean.
+const DIGITAL_SILENCE_DB: f64 = -140.0;
+/// The lead-in ends where a frame rises this far over the median of the frames before it, and is searched over at
+/// most this many frames (5 s).
+const LEAD_RISE_DB: f64 = 6.0;
+const MAX_LEAD_FRAMES: usize = 500;
 const QUANTILE: f64 = 0.1;
 /// At least this many frames (100 ms) in the floor stretch.
 const MIN_FRAMES: usize = 10;
@@ -43,12 +56,13 @@ const MIN_BELOW_PEAK_DB: f64 = 6.0;
 /// The run may not trend by more than this (dB/s).
 const MAX_TREND_DB_PER_S: f64 = 20.0;
 /// YIN's frame on the run (s), its lowest frequency (Hz), and the voiced share above which the run is a note.
-const YIN_FRAME_S: f64 = 0.05;
+/// (YIN reads a 50 Hz hum 4–6 % sharp on short frames, hence the long frame and the wide mains tolerance.)
+const YIN_FRAME_S: f64 = 0.1;
 const YIN_MIN_HZ: f64 = 45.0;
 const VOICED_NOTE: f64 = 0.5;
 /// Mains frequencies, and how far a harmonic may sit from its nominal frequency (share of it).
 const MAINS_HZ: [f64; 2] = [50.0, 60.0];
-const MAINS_TOL: f64 = 0.03;
+const MAINS_TOL: f64 = 0.08;
 /// A hum harmonic stands this many dB above the median of its neighbourhood (10–30 Hz either side).
 const HUM_PEAK_DB: f64 = 10.0;
 const HUM_HARMONICS: usize = 8;
@@ -70,7 +84,7 @@ pub(crate) struct Floor {
     /// Standard deviation of the floor frames' levels (dB): small for white noise, larger for brown noise or hum
     /// that wanders. The trim's thresholds sit above the floor by a margin that grows with it.
     pub spread_db: f64,
-    /// The longest run of the floor stretch, in samples.
+    /// The longest run of the floor stretches that passed, in samples (where hum is looked for).
     pub run: (usize, usize),
 }
 
@@ -86,30 +100,58 @@ pub(crate) fn estimate(
         return None;
     }
     let peak = levels.peak_db();
-    let q = quantile(db, QUANTILE);
-    let member: Vec<bool> = db.iter().map(|&d| d <= q + BAND_DB).collect();
-    let picked: Vec<f64> = db
-        .iter()
-        .zip(&member)
-        .filter(|(_, m)| **m)
-        .map(|(d, _)| *d)
-        .collect();
-    if picked.len() < MIN_FRAMES {
+    let mut found: Option<Floor> = None;
+    // (1) The quietest stretch, unless the file holds digital silence: then it is clean, and its quietest sounding
+    // frames are the instrument's own tail.
+    let silent = db.iter().filter(|&&d| d <= DIGITAL_SILENCE_DB).count();
+    if silent < MIN_FRAMES {
+        let sounding: Vec<f64> = db
+            .iter()
+            .copied()
+            .filter(|&d| d > DIGITAL_SILENCE_DB)
+            .collect();
+        let q = quantile(&sounding, QUANTILE);
+        let member: Vec<bool> = db
+            .iter()
+            .map(|&d| d > DIGITAL_SILENCE_DB && d <= q + BAND_DB)
+            .collect();
+        if let Some(run) = longest_run(&member) {
+            let picked: Vec<f64> = db
+                .iter()
+                .zip(&member)
+                .filter(|(_, m)| **m)
+                .map(|(d, _)| *d)
+                .collect();
+            found = check(&picked, run, peak, levels, x, sr, planner);
+        }
+    }
+    // (2) The lead-in: the frames before the level first rises 6 dB over their running median. It is before the
+    // onset by construction, so it holds a floor even when the file ends before the sound has decayed into it.
+    if let Some(end) = lead_in(db)
+        && let Some(f) = check(&db[..end], (0, end), peak, levels, x, sr, planner)
+    {
+        found = Some(match found {
+            // The quieter level; the longer run, for the hum.
+            Some(g) => Floor {
+                run: if f.run.1 - f.run.0 > g.run.1 - g.run.0 {
+                    f.run
+                } else {
+                    g.run
+                },
+                ..if f.level_db < g.level_db { f } else { g }
+            },
+            None => f,
+        });
+    }
+    found
+}
+
+/// The longest run of `true` in `member` (frame indices `a..b`), when it holds at least [`MIN_RUN_FRAMES`] and the
+/// whole set at least [`MIN_FRAMES`].
+fn longest_run(member: &[bool]) -> Option<(usize, usize)> {
+    if member.iter().filter(|m| **m).count() < MIN_FRAMES {
         return None;
     }
-    let mean_pow = picked
-        .iter()
-        .map(|d| libm::pow(10.0, d / 10.0))
-        .sum::<f64>()
-        / picked.len() as f64;
-    let level_db = 10.0 * libm::log10(mean_pow.max(1e-30));
-    if level_db < peak - CLEAN_BELOW_PEAK_DB || level_db > peak - MIN_BELOW_PEAK_DB {
-        return None;
-    }
-    let m = picked.iter().sum::<f64>() / picked.len() as f64;
-    let spread_db =
-        libm::sqrt(picked.iter().map(|d| (d - m) * (d - m)).sum::<f64>() / picked.len() as f64);
-    // The longest run of consecutive floor frames.
     let (mut best, mut cur) = ((0usize, 0usize), None::<usize>);
     for (i, &is) in member.iter().chain([false].iter()).enumerate() {
         match (is, cur) {
@@ -123,25 +165,62 @@ pub(crate) fn estimate(
             _ => {}
         }
     }
-    if best.1 - best.0 < MIN_RUN_FRAMES {
+    (best.1 - best.0 >= MIN_RUN_FRAMES).then_some(best)
+}
+
+/// The lead-in's end (a frame index): the first frame more than [`LEAD_RISE_DB`] above the median of the frames
+/// before it; `None` when that leaves fewer than [`MIN_RUN_FRAMES`].
+fn lead_in(db: &[f64]) -> Option<usize> {
+    let mut end = db.len().min(MAX_LEAD_FRAMES);
+    for i in 1..end {
+        if db[i] > median(&db[..i]) + LEAD_RISE_DB {
+            end = i;
+            break;
+        }
+    }
+    (end >= MIN_RUN_FRAMES && end < db.len()).then_some(end)
+}
+
+/// A floor candidate from the levels of its frames and its longest run (frame indices), if it passes the checks of
+/// the module docs.
+fn check(
+    picked: &[f64],
+    run: (usize, usize),
+    peak: f64,
+    levels: &Levels,
+    x: &[f32],
+    sr: f64,
+    planner: &mut FftPlanner,
+) -> Option<Floor> {
+    let mean_pow = picked
+        .iter()
+        .map(|d| libm::pow(10.0, d / 10.0))
+        .sum::<f64>()
+        / picked.len().max(1) as f64;
+    let level_db = 10.0 * libm::log10(mean_pow.max(1e-30));
+    if level_db < peak - CLEAN_BELOW_PEAK_DB || level_db > peak - MIN_BELOW_PEAK_DB {
         return None;
     }
+    // A robust spread (1.4826 × the median absolute deviation), so a few odd frames do not inflate it.
+    let m = median(picked);
+    let dev: Vec<f64> = picked.iter().map(|d| (d - m).abs()).collect();
+    let spread_db = 1.4826 * median(&dev);
     let hop_s = levels.hop as f64 / sr;
-    let (slope, _) = line_fit(&db[best.0..best.1]);
+    let (slope, _) = line_fit(&levels.db[run.0..run.1]);
     if (slope / hop_s).abs() > MAX_TREND_DB_PER_S {
         return None;
     }
-    let run = (
-        levels.range(best.0, x.len()).0,
-        levels.range(best.1 - 1, x.len()).1,
+    let samples = (
+        levels.range(run.0, x.len()).0,
+        levels.range(run.1 - 1, x.len()).1,
     );
-    if is_a_note(&x[run.0..run.1], sr, planner) {
+    if is_a_note(&x[samples.0..samples.1], sr, planner) {
         return None;
     }
     Some(Floor {
         level_db,
         spread_db,
-        run,
+        run: samples,
     })
 }
 

@@ -5,8 +5,9 @@
 //!
 //! - **the key** from YIN ([`pitch`](crate::pitch)): the median f0 of the voiced frames (80 ms frames every 20 ms,
 //!   27.5 Hz to 4.5 kHz, frames within 30 dB of the loudest and 10 dB above the noise floor), rounded to the nearest
-//!   MIDI note. A clip with too few voiced frames is unpitched: the key is C3 (the CLI's default) with an `Unpitched`
-//!   warning;
+//!   MIDI note. When YIN finds too few voiced frames but the held part's spectrum is tonal, the harmonic peaks name
+//!   the pitch instead ([`tonal_pitch`](crate::pitch::tonal_pitch)); otherwise the clip is unpitched: the key is C3
+//!   (the CLI's default) with an `Unpitched` warning;
 //! - **the note-on** at the clip's onset (the pre-roll), and **the note-off** from
 //!   [`infer_note_off`](crate::envelope::infer_note_off); a sound that only decays has no detectable note-off, and the
 //!   note is then held until the signal falls into the floor;
@@ -15,8 +16,8 @@
 //!
 //! Three warnings, because one note cannot reproduce them and the CLI's `--perf` (CLC) overrides all of this:
 //!
-//! - **several onsets** ("this looks like a phrase"): a rise of at least 9 dB within 30 ms, at least 100 ms after the
-//!   previous onset, to within 30 dB of the loudest level;
+//! - **several onsets** ("this looks like a phrase"): new partials arriving with a rise in level (the super flux of
+//!   Böck and Widmer, with a level check), at least 100 ms after the previous onset, within 30 dB of the loudest level;
 //! - **several notes:** the pitch holds two different notes (not octaves) for at least 80 ms each;
 //! - **a chord** (or an inharmonic sound), from the harmonic peaks of the held part's spectrum: either a second
 //!   harmonic series that the first does not explain carries at least 10 % of the peaks' power at an unrelated
@@ -31,7 +32,7 @@ use super::welch;
 use crate::envelope::infer_note_off;
 use crate::fft::{FftPlanner, hann};
 use crate::linalg::median;
-use crate::pitch::{Peak, Yin};
+use crate::pitch::{Peak, Yin, tonal_pitch};
 use crate::units::hz_to_midi;
 use realfft::num_complex::Complex32;
 
@@ -59,6 +60,8 @@ const FLUX_LAG: usize = 2;
 const FLUX_TOP_HZ: f64 = 8000.0;
 const LOG_GAIN: f32 = 1000.0;
 const FLUX_RISE: f64 = 0.08;
+/// ...and the level just after the peak at least this far above the level 30 ms before it.
+const LEVEL_RISE_DB: f64 = 2.0;
 const GAP_S: f64 = 0.1;
 /// Notes: a run of voiced frames on one nearest note at least this long.
 const NOTE_RUN_S: f64 = 0.08;
@@ -119,8 +122,16 @@ pub(crate) fn infer(
     let (f0, voiced, runs) = pitch(clip, sr, on, sig_end, floor_db, planner);
     let off = infer_note_off(&clip[on.min(clip.len())..], sr).map(|t| on as f64 / sr + t);
     let held_end = off.map_or(sig_end, |t| (t * sr) as usize);
-    found.chord = chord(clip, sr, on, held_end.max(on + 1), planner);
+    let held = held_part(clip, sr, on, held_end.max(on + 1), planner);
+    found.chord = chord(&held);
     found.notes = notes(&runs);
+    // YIN needs the waveform itself to repeat; when it finds no pitch in a tonal spectrum (a narrow pulse through a
+    // resonant filter, say), the harmonic peaks still name it (`pitch::tonal_pitch`).
+    let f0 = f0.or_else(|| {
+        (held.tonal() && found.chord.is_empty())
+            .then(|| tonal_pitch(&held.peaks, held.share(), held.bin).map(|t| t.f0_hz))
+            .flatten()
+    });
     let key = if let Some(&low) = found.chord.first() {
         to_key(low)
     } else if let Some(&first) = found.notes.first() {
@@ -239,8 +250,10 @@ fn notes(track: &[Option<f64>]) -> Vec<u8> {
 /// log-magnitude rise over the largest of its three neighbours two frames back,
 /// averaged over the bins from 30 Hz to 8 kHz. A new note over a held one adds partials where there were none, so it
 /// shows here where the level barely moves; beating and vibrato barely show. A peak is an onset when it is the
-/// largest within ±15 ms, stands [`FLUX_RISE`] above the median of the surrounding 200 ms, its frame is loud (within
-/// 30 dB of the loudest and 10 dB above the floor), and it comes at least 100 ms after the previous onset.
+/// largest within ±15 ms, stands [`FLUX_RISE`] above the median of the surrounding 200 ms, the level rises at least
+/// [`LEVEL_RISE_DB`] across it (a note-off, a reopening filter or vibrato add partials but no energy), its frame is
+/// loud (within 30 dB of the loudest and 10 dB above the floor), and it comes at least 100 ms after the previous
+/// onset.
 fn onsets(
     clip: &[f32],
     sr: f64,
@@ -314,7 +327,14 @@ fn onsets(
             continue;
         }
         let (c, d) = (t.saturating_sub(ctx), (t + ctx).min(flux.len() - 1));
-        if flux[t] >= median(&flux[c..=d]) + FLUX_RISE {
+        // A new note adds energy: the level just after is above the level just before. A note-off, a filter that
+        // reopens or vibrato add partials without that.
+        let after = lv[t..=(t + 2).min(lv.len() - 1)]
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let before = lv[t.saturating_sub(3)];
+        if flux[t] >= median(&flux[c..=d]) + FLUX_RISE && after - before >= LEVEL_RISE_DB {
             out.push((t * hop + n / 2) as f64 / sr);
             prev = t;
         }
@@ -472,21 +492,43 @@ fn peaks(
     (ps, bin, band)
 }
 
-/// The chord's tones (Hz, ascending), or empty for a single pitch (or no harmonic content).
-fn chord(clip: &[f32], sr: f64, on: usize, end: usize, planner: &mut FftPlanner) -> Vec<f64> {
+/// The spectral peaks of the held part (from 50 ms after the onset, when it is long enough, to the note-off or the
+/// signal end), the bin width, and the power of the whole 30 Hz–5 kHz band.
+struct Held {
+    peaks: Vec<Peak>,
+    bin: f64,
+    band: f64,
+}
+
+impl Held {
+    /// The peaks' share of the band's power.
+    fn share(&self) -> f64 {
+        self.peaks.iter().map(|p| p.power).sum::<f64>() / self.band.max(1e-30)
+    }
+
+    /// Tonal enough to read pitches from: the peaks hold at least [`MIN_TONAL`] of the band (noise has peaks too).
+    fn tonal(&self) -> bool {
+        self.band > 0.0 && self.share() >= MIN_TONAL
+    }
+}
+
+fn held_part(clip: &[f32], sr: f64, on: usize, end: usize, planner: &mut FftPlanner) -> Held {
     let skip = (sr * CHORD_SKIP_S) as usize;
     let end = end.min(clip.len());
     let a = if end > on + 4 * skip { on + skip } else { on };
-    let (ps, bin, band) = peaks(clip, sr, a, end, planner);
-    if ps.len() < 2 {
+    let (peaks, bin, band) = peaks(clip, sr, a, end, planner);
+    Held { peaks, bin, band }
+}
+
+/// The chord's tones (Hz, ascending), or empty for a single pitch (or no harmonic content).
+fn chord(held: &Held) -> Vec<f64> {
+    let (ps, bin) = (&held.peaks[..], held.bin);
+    if ps.len() < 2 || !held.tonal() {
         return Vec::new();
     }
     let total: f64 = ps.iter().map(|p| p.power).sum();
-    if total < MIN_TONAL * band {
-        return Vec::new();
-    }
     let strongest = ps[0].power;
-    let Some(s1) = best_series(&ps, bin) else {
+    let Some(s1) = best_series(ps, bin) else {
         return Vec::new();
     };
     // A second, unrelated series in what the first leaves.

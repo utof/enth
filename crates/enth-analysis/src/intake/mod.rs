@@ -245,13 +245,16 @@ impl Intake {
         let peak = levels.peak_db();
         let fl = floor::estimate(&levels, &src, sr, &mut planner);
         let quiet = peak - cfg.silence_db;
+        // Above the floor by a margin that grows with its spread (brown noise wanders more than white), capped, and
+        // never above 6 dB under the loudest frame, so the loudest frame always qualifies.
         let (thr_on, thr_end) = match fl {
             Some(f) => (
-                quiet.max(f.level_db + (6.0 + 2.5 * f.spread_db).max(10.0)),
-                quiet.max(f.level_db + (3.0 + 2.0 * f.spread_db).max(6.0)),
+                quiet.max(f.level_db + (6.0 + 2.5 * f.spread_db).clamp(10.0, 20.0)),
+                quiet.max(f.level_db + (3.0 + 2.0 * f.spread_db).clamp(6.0, 12.0)),
             ),
             None => (quiet, quiet),
         };
+        let (thr_on, thr_end) = (thr_on.min(peak - 6.0), thr_end.min(peak - 6.0));
         let onset = trim::onset(&src, sr, &levels, thr_on);
         let sig_end = trim::signal_end(&levels, src.len(), thr_end, onset);
         let frames = trim::CutFrames::new(

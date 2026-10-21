@@ -7,8 +7,10 @@
 //! **A short sound is kept, never rejected**: nothing here filters by duration, and a clip shorter than
 //! [`IntakeCfg::min_len_s`](super::IntakeCfg) is padded with silence instead.
 //!
-//! The onset is found in two steps: the first 20 ms frame of the level track at or above the threshold, then the
-//! first 1 ms window inside it at or above the same level, then the first sample there whose magnitude reaches it.
+//! The onset is found in steps: the first 20 ms frame of the level track at or above the threshold, then the first
+//! 1 ms window inside it at or above the same level, then the first sample there whose magnitude reaches it; then a
+//! guard against a codec's pre-echo moves it to the first 1 ms window within 25 dB of the level the next 15 ms reach
+//! (a clean attack moves by under a millisecond).
 //! The pre-roll is a whole number of the engine's 32-frame render segments, so a note played at the clip's onset
 //! starts exactly on the render grid (docs/design.md §5).
 
@@ -23,6 +25,9 @@ pub const FRAME_S: f64 = 0.020;
 pub const HOP_S: f64 = 0.010;
 /// Window of the fine envelope that places the onset inside its frame (s).
 const FINE_S: f64 = 0.001;
+/// The pre-echo guard: how far ahead the attack is looked for (s), and how far below its level the onset sits (dB).
+const ATTACK_S: f64 = 0.015;
+const ATTACK_DB: f64 = 25.0;
 /// The engine's render segment in frames (docs/design.md §5): the pre-roll is a whole number of them.
 pub const SEGMENT_FRAMES: usize = 32;
 
@@ -164,16 +169,37 @@ pub(crate) fn onset(x: &[f32], sr: f64, levels: &Levels, thr_db: f64) -> usize {
     let w = (libm::round(sr * FINE_S) as usize).max(8);
     let step = (w / 4).max(1);
     let pre = prefix_squares(x);
-    let mut j = from;
-    while j < b {
-        let e = (j + w).min(x.len());
-        if rms_db(&pre, j, e) >= thr_db {
-            let thr = amp(thr_db) as f32;
-            return (j..e).find(|&s| x[s].abs() >= thr).unwrap_or(j);
+    let first = |from: usize, to: usize, thr_db: f64| {
+        let mut j = from;
+        while j < to {
+            let e = (j + w).min(x.len());
+            if rms_db(&pre, j, e) >= thr_db {
+                let thr = amp(thr_db) as f32;
+                return Some((j..e).find(|&s| x[s].abs() >= thr).unwrap_or(j));
+            }
+            j += step;
         }
+        None
+    };
+    let Some(s0) = first(from, b, thr_db) else {
+        return a;
+    };
+    // A lossy codec smears an attack's quantisation noise over the block before it (pre-echo, up to 12 ms for
+    // MP3 at 48 kHz): when the level within the next 15 ms climbs far above the crossing, the onset is the first
+    // 1 ms window within 25 dB of that climb. A clean attack moves by under a millisecond (a linear one of any
+    // length by 15 ms × 10^(−25/20) = 0.84 ms).
+    let reach = (s0 + (libm::round(sr * ATTACK_S) as usize)).min(x.len());
+    let mut top = FLOOR_DB;
+    let mut j = s0;
+    while j + w <= reach.max(s0 + 1) && j < x.len() {
+        top = top.max(rms_db(&pre, j, (j + w).min(x.len())));
         j += step;
     }
-    a
+    let climb = top - ATTACK_DB;
+    if climb > thr_db {
+        return first(s0, reach.max(s0 + 1), climb).unwrap_or(s0);
+    }
+    s0
 }
 
 /// Just past the last sample of the signal: the end of the last pair of consecutive frames at or above `thr_db`
