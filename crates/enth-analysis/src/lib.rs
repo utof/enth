@@ -20,7 +20,7 @@
 //!
 //! | File | Holds | Lane |
 //! | --- | --- | --- |
-//! | [`intake`] | "create from sound"'s intake: `trim`, `floor`, `bandwidth`, `clip`, `perf` (and an open `resample`); mono, the noise floor, the bandwidth, clipped spans, the inferred performance | FE |
+//! | [`intake`] | "create from sound"'s intake: `trim`, `floor`, `bandwidth`, `clip`, `perf` (no resampler: render and analysis run at the file's own rate); mono, the onset on the render grid, the noise floor and whether it is confirmed, the bandwidth, clipped spans, the inferred performance | FE, F1S |
 //! | [`robust`] | the degradation-aware distance, under a new metric id (`sound/1` and the metrics above unchanged) | OBJ |
 //!
 //! Pure functions of samples: no I/O, no clocks, no threads, no global RNG; builds for wasm32. Transcendentals go

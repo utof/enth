@@ -17,7 +17,6 @@ fn run(args: &[&str]) -> Output {
 #[test]
 fn every_command_refuses_and_names_its_lane() {
     for (args, lane) in [
-        (vec!["bank"], "TP"),
         (vec!["ds1"], "DG"),
         (vec!["shards", "--stream", "r3/train"], "DG"),
         (vec!["exclude"], "DG"),
