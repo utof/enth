@@ -398,6 +398,16 @@ The drawer costs less than the overview it replaces at the maximum patch (eleven
 
 So a lesson fits beside the pane when its steps hide what they do not use: the content lanes should give a step that carries a full starter over (the Check steps after a round, a Name step on the player's own patch) a `hide` list or `layout = "focus"`; a player can always hide the pane.
 
+**Beside the Create panel** (lane SK3's minimal panel, feature `create`; merged with this layout by lane SK3M). The Create panel is not a layout region: while it is open it takes a column `size.create.pane` (320 px) wide at the window's right edge, `space.gap` in, **under the layout's top row**, and the layout places the rest left of it (`frame.rs`, `beside`: the regions of the header's row come from the layout over the whole window, the others from the layout over what the column leaves, so the header keeps its width as it does for a lesson's round). A layout whose header is not in its top row, or whose regions would then overlap (a custom one), goes left of a column the window's height. The four cases: neither (the editor's layout over the window), Learn only (the layout `learn`), Create only (the editor's layout beside the panel) and both (the layout `learn` beside the panel: the lesson pane sits left of the Create panel). A file dropped anywhere on the window goes to Create whenever the shell says create is available, whatever is open (it opens the panel). The overflow report lists the pane's scroll as `learn` and the panel's as `create`.
+
+| At 1200 × 800 (`tests/learn_create.rs`) | What does not fit |
+| --- | --- |
+| Init, in each of the four cases | nothing; with both open the cards column is 1200 − 2 × 320 − the gaps, and the sources strip is 72 px wide, so its card is squeezed (the strips arrangement squeezes rather than scrolls, so the report does not list it) |
+| The P1 default, both open | the band by 604 px sideways, the effects lane by 84, the overview row (as narrow as the cards column) by 51 (tiles) and 63 (routes) |
+| The P1 default, Create only | the band by 276 px sideways, the overview by 111 (tiles) and 63 (routes) |
+
+Snapshot: `learn_create_open.png` (both open over Init, lavapipe). A player who wants the cards whole hides one of the two, or widens the window.
+
 ### The pane
 
 **With no lesson** (or after **Lessons** over a live one) the pane is **the lesson browser**: a tab per track, **the tour first** (its lessons in order, numbered; a lesson whose pack is missing is listed as not installed), and **All lessons** (each pack's title, id, version and lessons in order). A row is **Start** (**Restart** for the live lesson), the title, its progress ("3/10", "✓ 10/10" once every step is done, in the score ink with the glyph) and the objective. Refused packs are listed with their reasons. **Review** is there and disabled ("comes in a later update") until lane REV feeds it. The progress is the file the shell handed over, plus the steps the view saw pass since (the file stays the shell's: `LearnRequest::Record` writes it).
@@ -548,6 +558,7 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 | (PBU) The preset browser through a real `Session`: browse hides the body and Escape and × close; a click loads one undo step with no host writes and one `PatchEdited`, Undo and Redo take it back and again; a double-click loads and closes; the search with words, `#tag` and `by:`; tabs; favorites saved by the store; ◀ ▶ step and wrap and follow the search; the edited mark; the Save dialog's tags, its confirm before replacing and its refusals with hints; ▶ held loads and sounds through an active engine until release; audition without an engine says why; the crash notice never blocks and is offered once; the REAPER scenario's click points | `crates/enth-ui/tests/browser.rs` |
 | (PBU) Snapshots: the header with an edited preset, the browse panel and the Save dialog at 1200 × 800 | `crates/enth-ui/tests/browser_snapshots.rs` (`browser_header.png`, `browser_panel.png`, `browser_save.png`) |
 | (PBU) The plugin's browser over a folder store (a load, its undo step, no host writes, a save with a confirm, exactly `to_json()`), the crash folder offered once | `crates/enth-plugin/src/editor.rs` |
+| (SK3M) The lesson pane and the Create panel together over a real `Session`, by label, at 1200 × 800: neither, Learn only, both and Create only, where each pane goes (the Create column under the header row, the lesson pane left of it, nothing else in the column) and the overflow report for Init and the P1 default; a file dropped beside the lesson pane goes to Create; the snapshot of both open | `crates/enth-ui/tests/learn_create.rs` (`learn_create_open.png`) |
 
 ## For the next lanes
 

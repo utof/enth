@@ -1,8 +1,9 @@
 //! **Owner: lane PUI** (the Create view, feature `create`). **Lane SK3** wrote this minimal panel for freeze point
 //! F2s, which PUI replaces with the real view (the drop zone, the folder browser, the K tiles, A/B against the upload).
 //!
-//! The panel takes a column at the window's right edge while it is open (`size.create.pane`) and draws, in plain text
-//! with the theme's tokens, top to bottom:
+//! The panel takes a column at the window's right edge while it is open (`size.create.pane`), under the layout's top
+//! row; the layout, Learn's included, places the rest beside it (`frame.rs`, `beside`; docs/editor.md, "Beside the
+//! Create panel"). It draws, in plain text with the theme's tokens, top to bottom:
 //!
 //! - the title and **Close**;
 //! - the drop zone (`size.create.drop_zone` high): the chosen file's name, or what to drop; it lights while files are

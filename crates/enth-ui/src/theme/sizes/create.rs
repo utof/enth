@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CreateSizes {
-    /// The width of the Create panel at the window's right edge (lane SK3's minimal panel, F2s): the layout's
-    /// regions take the rest while it is open. The Learn panel's width.
+    /// The width of the Create panel at the window's right edge, under the layout's top row (lane SK3's minimal panel,
+    /// F2s): the layout's other regions take the rest while it is open, the lesson pane included. The lesson pane's
+    /// width.
     pub pane: f32,
     /// The height of the drop zone.
     pub drop_zone: f32,
