@@ -221,7 +221,8 @@ fn plugin_binary() -> Option<PathBuf> {
     let mut module: *mut c_void = ptr::null_mut();
     let here = plugin_binary as fn() -> Option<PathBuf> as *const u16;
     // SAFETY: with FROM_ADDRESS the name is an address inside this module; `module` is writable.
-    let ok = unsafe { GetModuleHandleExW(FROM_ADDRESS | UNCHANGED_REFCOUNT, here, &raw mut module) };
+    let ok =
+        unsafe { GetModuleHandleExW(FROM_ADDRESS | UNCHANGED_REFCOUNT, here, &raw mut module) };
     if ok == 0 {
         return None;
     }
@@ -422,10 +423,7 @@ impl AuditionPlayer {
 #[derive(Debug)]
 enum Msg {
     Run(CreateRun),
-    Audition {
-        id: CreateJobId,
-        patch: Box<Patch>,
-    },
+    Audition { id: CreateJobId, patch: Box<Patch> },
     StopAudition,
 }
 
@@ -502,7 +500,12 @@ impl Inner {
         match msg {
             Msg::Audition { id, patch } => {
                 let rate = self.host_rate.load(Ordering::Acquire);
-                let target = self.target.lock().as_ref().filter(|(t, _)| *t == id).map(|(_, t)| t.clone());
+                let target = self
+                    .target
+                    .lock()
+                    .as_ref()
+                    .filter(|(t, _)| *t == id)
+                    .map(|(_, t)| t.clone());
                 let (Some(target), true) = (target, (8_000..=384_000).contains(&rate)) else {
                     return;
                 };
@@ -761,7 +764,10 @@ fn failed(code: &str, message: impl Into<String>, hint: impl Into<String>) -> Cr
 /// One job, from the file to its last post.
 fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
     let t0 = Instant::now();
-    let cap = run.settings.seconds.clamp(0.001, enth_session::create::MAX_SECONDS);
+    let cap = run
+        .settings
+        .seconds
+        .clamp(0.001, enth_session::create::MAX_SECONDS);
     let id = run.id;
     let stopped = || cancel.load(Ordering::Acquire) || inner.quit.load(Ordering::Acquire);
     let late = || t0.elapsed().as_secs_f64() >= cap;
@@ -789,7 +795,12 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
         codec: Some(decoded.codec),
         ..IntakeCfg::default()
     };
-    let intake = match Intake::with_cfg(&decoded.interleaved, decoded.channels, decoded.sample_rate, &cfg) {
+    let intake = match Intake::with_cfg(
+        &decoded.interleaved,
+        decoded.channels,
+        decoded.sample_rate,
+        &cfg,
+    ) {
         Ok(i) => i,
         Err(e) => {
             inner.post(
@@ -864,13 +875,27 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
     };
     let progress = |job: &CreateJob| {
         let p = job.progress();
-        CreateProgress::new(p.rounds, p.renders, p.budget, t0.elapsed().as_secs_f64(), cap)
+        CreateProgress::new(
+            p.rounds,
+            p.renders,
+            p.budget,
+            t0.elapsed().as_secs_f64(),
+            cap,
+        )
     };
     let searched = rayon::ThreadPoolBuilder::new()
         .num_threads(workers)
         .thread_name(|i| format!("enth-search-{i}"))
         .build_scoped(rayon::ThreadBuilder::run, |pool| {
-            search(inner, id, &mut job, &metric, pool, &|| stopped() || late(), &progress)
+            search(
+                inner,
+                id,
+                &mut job,
+                &metric,
+                pool,
+                &|| stopped() || late(),
+                &progress,
+            )
         });
     let mut end_notes = Vec::new();
     match searched {

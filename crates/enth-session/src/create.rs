@@ -206,11 +206,18 @@ impl CreateIntake {
 #[must_use]
 pub fn warning_text(w: &Warning) -> String {
     match w {
-        Warning::Phrase { onsets } => format!("{onsets} onsets: this looks like a phrase; one note is matched"),
+        Warning::Phrase { onsets } => {
+            format!("{onsets} onsets: this looks like a phrase; one note is matched")
+        }
         Warning::Notes { keys } => format!("{} different notes: the first is matched", keys.len()),
-        Warning::Chord { tones_hz } => format!("{} pitches at once: a chord, or an inharmonic sound", tones_hz.len()),
+        Warning::Chord { tones_hz } => format!(
+            "{} pitches at once: a chord, or an inharmonic sound",
+            tones_hz.len()
+        ),
         Warning::Unpitched => "no stable pitch: the note is a default".to_owned(),
-        Warning::Capped { source_s } => format!("the sound runs {source_s:.1} s: its first seconds are matched"),
+        Warning::Capped { source_s } => {
+            format!("the sound runs {source_s:.1} s: its first seconds are matched")
+        }
         Warning::ChannelsCancel { loss_db } => {
             format!("the channels cancel in the mono mix ({loss_db:.1} dB lost)")
         }
@@ -409,7 +416,10 @@ impl CreateView {
     /// The best candidate's branch.
     #[must_use]
     pub fn best(&self) -> Option<usize> {
-        self.candidates.iter().find(|c| c.rank == 0).map(|c| c.branch)
+        self.candidates
+            .iter()
+            .find(|c| c.rank == 0)
+            .map(|c| c.branch)
     }
 }
 
@@ -455,9 +465,13 @@ impl CreateError {
     #[must_use]
     pub fn hint(&self) -> String {
         match self {
-            CreateError::Running => "a create job is running: cancel it first, or wait for it".to_owned(),
+            CreateError::Running => {
+                "a create job is running: cancel it first, or wait for it".to_owned()
+            }
             CreateError::NoJob => "drop a sound file and press Start first".to_owned(),
-            CreateError::NoCandidate { .. } => "wait for the candidates of the first round".to_owned(),
+            CreateError::NoCandidate { .. } => {
+                "wait for the candidates of the first round".to_owned()
+            }
             CreateError::Stale(_) => "a result for a job that is gone: nothing to do".to_owned(),
             CreateError::BadSettings(what) => format!("fix the setting: {what}"),
             CreateError::NoFile => "choose a sound file (WAV, FLAC, Ogg Vorbis or MP3)".to_owned(),
@@ -606,7 +620,11 @@ impl Session {
         Ok(())
     }
 
-    fn create_candidate(&self, branch: usize, which: Which) -> Result<(&JobLive, Patch), CreateError> {
+    fn create_candidate(
+        &self,
+        branch: usize,
+        which: Which,
+    ) -> Result<(&JobLive, Patch), CreateError> {
         let job = self.create.job.as_ref().ok_or(CreateError::NoJob)?;
         let c = job
             .candidates
@@ -687,7 +705,12 @@ impl CreateEdit for Session {
         }
         self.create.next_id += 1;
         let id = CreateJobId(self.create.next_id);
-        if self.create.job.as_ref().is_some_and(|j| j.auditioning.is_some()) {
+        if self
+            .create
+            .job
+            .as_ref()
+            .is_some_and(|j| j.auditioning.is_some())
+        {
             self.create.requests.push(CreateRequest::StopAudition);
         }
         self.create.requests.push(CreateRequest::Run(CreateRun {
@@ -815,7 +838,10 @@ mod tests {
                 ..CreateSettings::default()
             },
         ] {
-            assert_eq!(bad.check().map_err(|e| e.code()), Err("bad_create_settings"));
+            assert_eq!(
+                bad.check().map_err(|e| e.code()),
+                Err("bad_create_settings")
+            );
         }
     }
 

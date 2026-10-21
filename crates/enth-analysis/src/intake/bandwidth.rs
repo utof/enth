@@ -182,11 +182,23 @@ mod tests {
     }
 
     fn bw(x: &[f32]) -> Option<f64> {
-        estimate(x, SR, (0, x.len()), false, &mut FftPlanner::new(FftPath::Scalar))
+        estimate(
+            x,
+            SR,
+            (0, x.len()),
+            false,
+            &mut FftPlanner::new(FftPath::Scalar),
+        )
     }
 
     fn bw_lossy(x: &[f32]) -> Option<f64> {
-        estimate(x, SR, (0, x.len()), true, &mut FftPlanner::new(FftPath::Scalar))
+        estimate(
+            x,
+            SR,
+            (0, x.len()),
+            true,
+            &mut FftPlanner::new(FftPath::Scalar),
+        )
     }
 
     fn bright(note_hz: f64) -> Vec<f32> {
@@ -254,7 +266,11 @@ mod tests {
     fn the_lossy_hint_finds_a_high_notes_cut_off_and_nothing_else() {
         let x = bright(2500.0);
         let cut = brick_wall(&x, 11_000.0);
-        assert_eq!(bw(&cut), None, "the clean rule leaves a sparse high note alone");
+        assert_eq!(
+            bw(&cut),
+            None,
+            "the clean rule leaves a sparse high note alone"
+        );
         let got = bw_lossy(&cut).expect("the lossy hint finds the cut-off");
         assert!(libm::log2(got / 11_000.0).abs() < 1.0 / 3.0, "{got}");
         assert!(bw_lossy(&x).is_none(), "an open filter is the full band");
@@ -266,7 +282,10 @@ mod tests {
             for fc in [3400.0, 8000.0, 11_000.0, 16_000.0] {
                 let clean = bw(&brick_wall(&low, fc));
                 let hinted = bw_lossy(&brick_wall(&low, fc));
-                assert_eq!(clean, hinted, "{note} {fc}: a full spectrum reads the same either way");
+                assert_eq!(
+                    clean, hinted,
+                    "{note} {fc}: a full spectrum reads the same either way"
+                );
             }
         }
     }

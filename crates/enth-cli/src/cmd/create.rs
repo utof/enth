@@ -102,14 +102,20 @@ fn check(args: &Args) -> Result<(), CliError> {
     if !(1..=MAX_CANDIDATES).contains(&args.candidates) {
         return Err(error::usage(
             "bad_candidates",
-            format!("--candidates {}: K must be 1 to {MAX_CANDIDATES}", args.candidates),
+            format!(
+                "--candidates {}: K must be 1 to {MAX_CANDIDATES}",
+                args.candidates
+            ),
             "leave it out for 8",
         ));
     }
     if !(args.seconds.is_finite() && args.seconds > 0.0 && args.seconds <= MAX_SECONDS) {
         return Err(error::usage(
             "bad_seconds",
-            format!("--seconds {}: the cap must be above 0 and at most {MAX_SECONDS}", args.seconds),
+            format!(
+                "--seconds {}: the cap must be above 0 and at most {MAX_SECONDS}",
+                args.seconds
+            ),
             "every result arrives in under 5 minutes; leave it out for 60",
         ));
     }
@@ -127,8 +133,13 @@ fn check(args: &Args) -> Result<(), CliError> {
 fn from_decode(path: &Path, e: &decode::DecodeError) -> CliError {
     let shown = patchio::show(path);
     match e.code {
-        "io" => CliError::new(error::EXIT_NOT_FOUND, "file_not_found", e.message.clone(), e.hint.clone())
-            .in_file(&shown),
+        "io" => CliError::new(
+            error::EXIT_NOT_FOUND,
+            "file_not_found",
+            e.message.clone(),
+            e.hint.clone(),
+        )
+        .in_file(&shown),
         "cancelled" => error::failed(
             "time_cap",
             "the --seconds cap passed while the file was decoded",
@@ -139,7 +150,11 @@ fn from_decode(path: &Path, e: &decode::DecodeError) -> CliError {
 }
 
 /// The intake's performance with the flags' key, velocity and hold.
-fn override_perf(target: &mut Target, args: &PerfArgs, stdin: &str) -> Result<Vec<String>, CliError> {
+fn override_perf(
+    target: &mut Target,
+    args: &PerfArgs,
+    stdin: &str,
+) -> Result<Vec<String>, CliError> {
     let Some(perf) = Perf::from_args(args, stdin)? else {
         return Ok(Vec::new());
     };
@@ -186,7 +201,8 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let late = || t0.elapsed().as_secs_f64() >= cap;
 
     // 1. Decode, with the cap.
-    let decoded = decode::decode_path(&args.target, &late).map_err(|e| from_decode(&args.target, &e))?;
+    let decoded =
+        decode::decode_path(&args.target, &late).map_err(|e| from_decode(&args.target, &e))?;
     let mut notes = decoded.notes();
     let described = decoded.describe();
     // 2. The intake, with the decoder's codec hint.
@@ -257,7 +273,9 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let metric = target.metric_target();
     let mut stamps: Vec<f64> = Vec::new();
     let capped = game::with_workers(args.workers, || {
-        search(&mut job, &metric, &late, &mut || stamps.push(t0.elapsed().as_secs_f64()))
+        search(&mut job, &metric, &late, &mut || {
+            stamps.push(t0.elapsed().as_secs_f64())
+        })
     })?
     .map_err(|e| error::failed(e.code(), e.to_string(), e.hint()))?;
     let result = job.result();
@@ -319,7 +337,9 @@ pub fn run(args: &Args, stdin: &str) -> Res {
 /// The best patch named after the file (as the plugin's "Use this" names it).
 fn named(patch: &Patch, path: &Path) -> Patch {
     let mut p = patch.clone();
-    if let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().trim().to_owned())
+    if let Some(stem) = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().trim().to_owned())
         && !stem.is_empty()
     {
         p.meta.name = stem;
@@ -404,8 +424,12 @@ fn table(record: &CreateRecord, described: &str, path: &Path, elapsed: f64, cap:
         stop_name(record.stop),
         record.renders
     );
-    let _ = writeln!(s, "rank  branch  start                  state      distance  proposal");
-    let mut order: Vec<&enth_solver::create::record::CandidateRecord> = record.candidates.iter().collect();
+    let _ = writeln!(
+        s,
+        "rank  branch  start                  state      distance  proposal"
+    );
+    let mut order: Vec<&enth_solver::create::record::CandidateRecord> =
+        record.candidates.iter().collect();
     order.sort_by(|a, b| {
         a.distance
             .unwrap_or(f64::INFINITY)

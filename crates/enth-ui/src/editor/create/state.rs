@@ -10,9 +10,7 @@
 
 use std::path::PathBuf;
 
-use enth_session::create::{
-    CreateEdit, CreateSettings, CreateSource, CreateView, Which,
-};
+use enth_session::create::{CreateEdit, CreateSettings, CreateSource, CreateView, Which};
 
 use super::HeaderCreate;
 

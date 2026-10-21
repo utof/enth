@@ -56,7 +56,10 @@ fn with(patch: &Patch, a: &str, v: f32) -> Patch {
 /// Start a job on `kick.wav` and take its `Run`.
 fn started(s: &mut Session) -> CreateJobId {
     let id = s
-        .create_start(CreateSource::file("/sounds/kick.wav"), CreateSettings::default())
+        .create_start(
+            CreateSource::file("/sounds/kick.wav"),
+            CreateSettings::default(),
+        )
         .unwrap();
     let requests: Vec<CreateRequest> = s.drain_create_requests().collect();
     assert_eq!(requests.len(), 1);
@@ -88,7 +91,10 @@ fn a_job_goes_out_and_its_posts_build_the_view() {
     assert!(s.create().is_none());
     let id = started(&mut s);
     let v = s.create().unwrap();
-    assert_eq!((v.id, v.phase, v.file.as_str()), (id, CreatePhase::Starting, "kick.wav"));
+    assert_eq!(
+        (v.id, v.phase, v.file.as_str()),
+        (id, CreatePhase::Starting, "kick.wav")
+    );
     assert_eq!(v.candidates, Vec::new());
     // A second start while it runs is refused, and nothing goes out.
     assert_eq!(
@@ -101,7 +107,14 @@ fn a_job_goes_out_and_its_posts_build_the_view() {
     let p = init_patch();
     let far = with(&p, "osc1.level", 20.0);
     let near = with(&p, "osc1.level", 60.0);
-    round(&mut s, id, vec![candidate(0, far.clone(), p.clone(), 0.5), candidate(1, near.clone(), p.clone(), 0.2)]);
+    round(
+        &mut s,
+        id,
+        vec![
+            candidate(0, far.clone(), p.clone(), 0.5),
+            candidate(1, near.clone(), p.clone(), 0.2),
+        ],
+    );
     let v = s.create().unwrap();
     assert_eq!(v.phase, CreatePhase::Searching);
     assert_eq!(v.candidates.len(), 2);
@@ -115,7 +128,10 @@ fn a_job_goes_out_and_its_posts_build_the_view() {
         CreatePost::Done {
             progress: CreateProgress::new(9, 4000, 4000, 41.0, 60.0),
             stop: CreateStop::Budget,
-            candidates: vec![candidate(0, far, p.clone(), 0.4), candidate(1, near, p, 0.1)],
+            candidates: vec![
+                candidate(0, far, p.clone(), 0.4),
+                candidate(1, near, p, 0.1),
+            ],
             notes: vec!["no k-NN bank".to_owned()],
         },
     )
@@ -125,22 +141,45 @@ fn a_job_goes_out_and_its_posts_build_the_view() {
     assert_eq!(v.notes, vec!["no k-NN bank".to_owned()]);
     // A post after the end, or for another job, is stale and changes nothing.
     assert!(matches!(
-        s.create_post(id, CreatePost::Failed { code: "x".into(), message: "x".into(), hint: "x".into() }),
+        s.create_post(
+            id,
+            CreatePost::Failed {
+                code: "x".into(),
+                message: "x".into(),
+                hint: "x".into()
+            }
+        ),
         Err(CreateError::Stale(_))
     ));
     assert!(matches!(
-        s.create_post(CreateJobId(99), CreatePost::Failed { code: "x".into(), message: "x".into(), hint: "x".into() }),
+        s.create_post(
+            CreateJobId(99),
+            CreatePost::Failed {
+                code: "x".into(),
+                message: "x".into(),
+                hint: "x".into()
+            }
+        ),
         Err(CreateError::Stale(_))
     ));
-    assert_eq!(s.create().unwrap().phase, CreatePhase::Done(CreateStop::Budget));
+    assert_eq!(
+        s.create().unwrap().phase,
+        CreatePhase::Done(CreateStop::Budget)
+    );
     // A finished job lets the next one start.
-    assert!(s.create_start(CreateSource::file("b.wav"), CreateSettings::default()).is_ok());
+    assert!(
+        s.create_start(CreateSource::file("b.wav"), CreateSettings::default())
+            .is_ok()
+    );
 }
 
 #[test]
 fn cancel_and_clear_go_out_once() {
     let mut s = Session::new(init_patch());
-    assert_eq!(s.create_cancel().map_err(|e| e.code()), Err("no_create_job"));
+    assert_eq!(
+        s.create_cancel().map_err(|e| e.code()),
+        Err("no_create_job")
+    );
     let id = started(&mut s);
     s.create_cancel().unwrap();
     s.create_cancel().unwrap();
@@ -158,15 +197,27 @@ fn cancel_and_clear_go_out_once() {
         },
     )
     .unwrap();
-    assert_eq!(s.create().unwrap().phase, CreatePhase::Done(CreateStop::Cancelled));
+    assert_eq!(
+        s.create().unwrap().phase,
+        CreatePhase::Done(CreateStop::Cancelled)
+    );
 
     // Clear while running cancels it; its later posts are stale.
     let id = started(&mut s);
     s.create_clear();
     assert!(s.create().is_none());
-    assert_eq!(s.drain_create_requests().collect::<Vec<_>>(), vec![CreateRequest::Cancel(id)]);
+    assert_eq!(
+        s.drain_create_requests().collect::<Vec<_>>(),
+        vec![CreateRequest::Cancel(id)]
+    );
     assert!(matches!(
-        s.create_post(id, CreatePost::Round { progress: CreateProgress::new(0, 0, 0, 0.0, 0.0), candidates: Vec::new() }),
+        s.create_post(
+            id,
+            CreatePost::Round {
+                progress: CreateProgress::new(0, 0, 0, 0.0, 0.0),
+                candidates: Vec::new()
+            }
+        ),
         Err(CreateError::Stale(_))
     ));
 }
@@ -179,7 +230,8 @@ fn bad_settings_and_no_file_are_refused() {
         ..CreateSettings::default()
     };
     assert_eq!(
-        s.create_start(CreateSource::file("a.wav"), bad).map_err(|e| e.code()),
+        s.create_start(CreateSource::file("a.wav"), bad)
+            .map_err(|e| e.code()),
         Err("bad_create_settings")
     );
     assert_eq!(
@@ -203,7 +255,11 @@ fn use_this_is_one_undo_step_one_plan_and_no_host_writes() {
     let id = started(&mut s);
     let refined = with(&before, "osc1.level", 40.0);
     let proposal = with(&before, "osc1.level", 30.0);
-    round(&mut s, id, vec![candidate(0, refined.clone(), proposal.clone(), 0.3)]);
+    round(
+        &mut s,
+        id,
+        vec![candidate(0, refined.clone(), proposal.clone(), 0.3)],
+    );
     assert_eq!(
         s.create_use(3, Which::Refined).map_err(|e| e.code()),
         Err("no_candidate")
@@ -213,7 +269,10 @@ fn use_this_is_one_undo_step_one_plan_and_no_host_writes() {
     assert_eq!(s.patch().meta.name, "kick", "named after the file");
     assert_eq!(s.create().unwrap().used, Some((0, Which::Refined)));
     let requests: Vec<ShellRequest> = s.drain_requests().collect();
-    assert!(requests.contains(&ShellRequest::PatchEdited), "{requests:?}");
+    assert!(
+        requests.contains(&ShellRequest::PatchEdited),
+        "{requests:?}"
+    );
     assert!(
         !requests.iter().any(|r| matches!(r, ShellRequest::Host(_))),
         "no host writes: {requests:?}"
@@ -223,7 +282,10 @@ fn use_this_is_one_undo_step_one_plan_and_no_host_writes() {
 
     // One undo brings the patch back whole.
     assert_eq!(s.undo(), Ok(true));
-    assert_eq!(s.patch().value(&addr("osc1.level")), before.value(&addr("osc1.level")));
+    assert_eq!(
+        s.patch().value(&addr("osc1.level")),
+        before.value(&addr("osc1.level"))
+    );
     assert_eq!(s.patch().meta.name, before.meta.name);
     assert!(!s.history().can_undo());
 
@@ -247,7 +309,12 @@ fn audition_goes_out_with_the_patch() {
     let requests: Vec<CreateRequest> = s.drain_create_requests().collect();
     assert_eq!(requests.len(), 2);
     match &requests[0] {
-        CreateRequest::Audition { id: j, branch, which, patch } => {
+        CreateRequest::Audition {
+            id: j,
+            branch,
+            which,
+            patch,
+        } => {
             assert_eq!((*j, *branch, *which), (id, 0, Which::Refined));
             assert_eq!(**patch, p);
         }
@@ -261,7 +328,11 @@ fn a_create_job_is_not_saved() {
     let mut s = Session::new(init_patch());
     let saved = s.save_instance();
     let id = started(&mut s);
-    round(&mut s, id, vec![candidate(0, init_patch(), init_patch(), 0.3)]);
+    round(
+        &mut s,
+        id,
+        vec![candidate(0, init_patch(), init_patch(), 0.3)],
+    );
     assert_eq!(s.save_instance(), saved, "the enth field keeps its bytes");
     // A host load leaves the job alone.
     let text = s.save_patch(None);

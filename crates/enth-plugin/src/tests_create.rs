@@ -66,7 +66,11 @@ fn every_format_decodes_and_repeats_bit_for_bit() {
         let a = decode::decode_path(&fixture(name), &never).unwrap();
         let b = decode::decode_path(&fixture(name), &never).unwrap();
         assert_eq!(a.interleaved, b.interleaved, "{name}: the same bits twice");
-        assert_eq!((a.format, a.channels, a.sample_rate), (format, 1, 48_000), "{name}");
+        assert_eq!(
+            (a.format, a.channels, a.sample_rate),
+            (format, 1, 48_000),
+            "{name}"
+        );
         assert_eq!(a.codec.lossy, lossy, "{name}");
         assert_eq!(a.decimation, 1);
         let seconds = a.frames() as f64 / 48_000.0;
@@ -79,9 +83,15 @@ fn every_format_decodes_and_repeats_bit_for_bit() {
         );
     }
     let flac = decode::decode_path(&fixture("tone.flac"), &never).unwrap();
-    assert_eq!(flac.interleaved, wav.interleaved, "FLAC decodes to the WAV's samples");
     assert_eq!(
-        decode::decode_path(&fixture("tone.mp3"), &never).unwrap().codec.codec,
+        flac.interleaved, wav.interleaved,
+        "FLAC decodes to the WAV's samples"
+    );
+    assert_eq!(
+        decode::decode_path(&fixture("tone.mp3"), &never)
+            .unwrap()
+            .codec
+            .codec,
         Codec::Mp3
     );
 }
@@ -117,7 +127,11 @@ fn write_wav(path: &Path, rate: u32, bits: u16, float: bool, seconds: f64) {
     let n = (seconds * f64::from(rate)) as usize;
     for i in 0..n {
         let t = i as f64 / f64::from(rate);
-        let env = if t < 0.3 { 1.0 } else { (-(t - 0.3) * 8.0).exp() };
+        let env = if t < 0.3 {
+            1.0
+        } else {
+            (-(t - 0.3) * 8.0).exp()
+        };
         let v = (2.0 * std::f64::consts::PI * 220.0 * t).sin() * 0.5 * env;
         for _ in 0..2 {
             if float {
@@ -152,8 +166,16 @@ fn wav_depths_and_rates_up_to_384_khz_decode_and_others_are_refused_with_the_rat
         let path = scratch(&format!("w-{rate}-{bits}-{float}.wav"));
         write_wav(&path, rate, bits, float, 0.5);
         let d = decode::decode_path(&path, &never).unwrap();
-        assert_eq!((d.sample_rate, d.decimation, d.file_rate), (out_rate, factor, rate), "{rate}");
-        assert_eq!(d.frames(), (0.5 * f64::from(rate)) as usize / factor as usize, "{rate}");
+        assert_eq!(
+            (d.sample_rate, d.decimation, d.file_rate),
+            (out_rate, factor, rate),
+            "{rate}"
+        );
+        assert_eq!(
+            d.frames(),
+            (0.5 * f64::from(rate)) as usize / factor as usize,
+            "{rate}"
+        );
         if factor > 1 {
             assert!(d.notes()[0].contains("decimated"), "{:?}", d.notes());
         }
@@ -175,11 +197,17 @@ fn wav_depths_and_rates_up_to_384_khz_decode_and_others_are_refused_with_the_rat
     assert_eq!(e.code, "io");
     let junk = scratch("junk.bin");
     std::fs::write(&junk, b"not a sound at all, just some bytes").unwrap();
-    assert_eq!(decode::decode_path(&junk, &never).unwrap_err().code, "unknown_format");
+    assert_eq!(
+        decode::decode_path(&junk, &never).unwrap_err().code,
+        "unknown_format"
+    );
     // A stop is seen between chunks.
     let long = scratch("long.wav");
     write_wav(&long, 48_000, 16, false, 3.0);
-    assert_eq!(decode::decode_path(&long, &|| true).unwrap_err().code, "cancelled");
+    assert_eq!(
+        decode::decode_path(&long, &|| true).unwrap_err().code,
+        "cancelled"
+    );
 }
 
 #[test]
@@ -203,9 +231,16 @@ fn the_lossy_hint_reaches_the_intake_and_finds_a_high_notes_cut_off() {
         clean.report.degradation.bandwidth_hz,
         hinted.report.degradation.bandwidth_hz
     );
-    assert_eq!(hinted.report.cfg.codec, Some(d.codec), "the report records the hint");
+    assert_eq!(
+        hinted.report.cfg.codec,
+        Some(d.codec),
+        "the report records the hint"
+    );
     assert!(clean.report.cfg.codec.is_none());
-    assert_eq!(clean.report.degradation.bandwidth_hz, None, "two partials: the clean rule finds no cut");
+    assert_eq!(
+        clean.report.degradation.bandwidth_hz, None,
+        "two partials: the clean rule finds no cut"
+    );
     let cut = hinted
         .report
         .degradation
@@ -318,11 +353,28 @@ fn a_job_runs_from_the_file_to_k_candidates_and_its_threads_go_with_it() {
         _ => None,
     });
     let intake = intake.expect("an intake post");
-    assert!(intake.decoded.starts_with("Ogg Vorbis"), "{}", intake.decoded);
+    assert!(
+        intake.decoded.starts_with("Ogg Vorbis"),
+        "{}",
+        intake.decoded
+    );
     assert_eq!(intake.report.perf.key, 57);
-    assert!(intake.notes.iter().any(|n| n.contains("no k-NN bank")), "{:?}", intake.notes);
+    assert!(
+        intake.notes.iter().any(|n| n.contains("no k-NN bank")),
+        "{:?}",
+        intake.notes
+    );
     assert!(rounds(&posts) >= 2, "a post per round");
-    let Some((id, CreatePost::Done { stop, candidates, progress, .. })) = posts.last() else {
+    let Some((
+        id,
+        CreatePost::Done {
+            stop,
+            candidates,
+            progress,
+            ..
+        },
+    )) = posts.last()
+    else {
         panic!("ends with Done: {:?}", posts.last());
     };
     assert_eq!(*id, CreateJobId(1));
@@ -332,7 +384,10 @@ fn a_job_runs_from_the_file_to_k_candidates_and_its_threads_go_with_it() {
     assert!(c.idle());
     #[cfg(target_os = "linux")]
     {
-        assert!(saw_search_threads, "the pool's threads are named enth-search-N");
+        assert!(
+            saw_search_threads,
+            "the pool's threads are named enth-search-N"
+        );
         assert!(
             gone(|n| n.starts_with("enth-search")),
             "no search thread outlives its job: {:?}",
@@ -396,7 +451,16 @@ fn a_cancel_lands_within_one_batch_and_the_dropped_batch_is_never_told() {
     c.act(vec![CreateRequest::Cancel(CreateJobId(7))]);
     let after = collect(&c, Duration::from_secs(60), ended);
     let latency = t0.elapsed();
-    let Some((_, CreatePost::Done { stop, progress, notes, .. })) = after.last() else {
+    let Some((
+        _,
+        CreatePost::Done {
+            stop,
+            progress,
+            notes,
+            ..
+        },
+    )) = after.last()
+    else {
         panic!("{after:?}");
     };
     assert_eq!(*stop, CreateStop::Cancelled);
@@ -411,9 +475,19 @@ fn a_cancel_lands_within_one_batch_and_the_dropped_batch_is_never_told() {
             _ => None,
         })
         .unwrap_or(told);
-    assert_eq!(progress.renders, last_round, "the batch out at the cancel is dropped");
-    assert!(rounds(&after) <= 1, "at most the round in flight: {}", rounds(&after));
-    println!("cancel to Done: {:.1} ms (debug build, 2 workers)", latency.as_secs_f64() * 1000.0);
+    assert_eq!(
+        progress.renders, last_round,
+        "the batch out at the cancel is dropped"
+    );
+    assert!(
+        rounds(&after) <= 1,
+        "at most the round in flight: {}",
+        rounds(&after)
+    );
+    println!(
+        "cancel to Done: {:.1} ms (debug build, 2 workers)",
+        latency.as_secs_f64() * 1000.0
+    );
     assert!(latency < Duration::from_secs(5), "{latency:?}");
 }
 
@@ -426,7 +500,16 @@ fn the_wall_clock_cap_is_enforced() {
     c.act(vec![run(3, "tone.flac", cap, Some(1_000_000), 8)]);
     let posts = collect(&c, Duration::from_secs(60), ended);
     let took = t0.elapsed().as_secs_f64();
-    let Some((_, CreatePost::Done { stop, progress, notes, candidates })) = posts.last() else {
+    let Some((
+        _,
+        CreatePost::Done {
+            stop,
+            progress,
+            notes,
+            candidates,
+        },
+    )) = posts.last()
+    else {
         panic!("{posts:?}");
     };
     assert_eq!(*stop, CreateStop::Cancelled);
@@ -446,12 +529,29 @@ fn a_cancel_before_the_job_starts_ends_it_at_once() {
     let _serial = SERIAL.lock();
     let c = quiet();
     // The first job holds the thread; the second waits and is cancelled while queued.
-    c.act(vec![run(1, "tone.wav", 300.0, Some(1_000_000), 2), run(2, "tone.wav", 60.0, None, 2)]);
+    c.act(vec![
+        run(1, "tone.wav", 300.0, Some(1_000_000), 2),
+        run(2, "tone.wav", 60.0, None, 2),
+    ]);
     c.act(vec![CreateRequest::Cancel(CreateJobId(2))]);
-    let posts = collect(&c, Duration::from_secs(10), |p| p.iter().any(|(id, _)| *id == CreateJobId(2)));
-    let second: Vec<_> = posts.iter().filter(|(id, _)| *id == CreateJobId(2)).collect();
+    let posts = collect(&c, Duration::from_secs(10), |p| {
+        p.iter().any(|(id, _)| *id == CreateJobId(2))
+    });
+    let second: Vec<_> = posts
+        .iter()
+        .filter(|(id, _)| *id == CreateJobId(2))
+        .collect();
     assert!(
-        matches!(second.first(), Some((_, CreatePost::Done { stop: CreateStop::Cancelled, .. }))),
+        matches!(
+            second.first(),
+            Some((
+                _,
+                CreatePost::Done {
+                    stop: CreateStop::Cancelled,
+                    ..
+                }
+            ))
+        ),
         "{second:?}"
     );
     c.act(vec![CreateRequest::Cancel(CreateJobId(1))]);
@@ -485,7 +585,10 @@ fn dropping_the_shell_never_waits_for_a_running_job() {
     let t0 = Instant::now();
     drop(c);
     let took = t0.elapsed();
-    println!("drop with a job running: {:.1} ms", took.as_secs_f64() * 1000.0);
+    println!(
+        "drop with a job running: {:.1} ms",
+        took.as_secs_f64() * 1000.0
+    );
     assert!(took < Duration::from_secs(3), "{took:?}");
     // Joined; the kernel may list an exited thread for a moment after its join returns.
     #[cfg(target_os = "linux")]
@@ -524,11 +627,13 @@ fn unloading_the_plugin_never_hangs_on_a_running_job() {
                 let _ = s.create_post(pid, post);
             }
         });
-        searching = shared.with_session(|s| {
-            s.create()
-                .is_some_and(|v| v.id == id && v.phase == CreatePhase::Searching && !v.candidates.is_empty())
-        })
-        .0;
+        searching = shared
+            .with_session(|s| {
+                s.create().is_some_and(|v| {
+                    v.id == id && v.phase == CreatePhase::Searching && !v.candidates.is_empty()
+                })
+            })
+            .0;
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(searching, "the job reached its search");
@@ -536,7 +641,10 @@ fn unloading_the_plugin_never_hangs_on_a_running_job() {
     drop(shared);
     drop(plugin);
     let took = t0.elapsed();
-    println!("plugin dropped with a job running: {:.1} ms", took.as_secs_f64() * 1000.0);
+    println!(
+        "plugin dropped with a job running: {:.1} ms",
+        took.as_secs_f64() * 1000.0
+    );
     assert!(took < Duration::from_secs(3), "{took:?}");
 }
 

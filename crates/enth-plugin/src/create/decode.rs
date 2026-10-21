@@ -146,7 +146,8 @@ impl std::fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-const FORMATS_HINT: &str = "use a WAV, FLAC, Ogg Vorbis or MP3 file (M4A/AAC and AIFF are not read yet)";
+const FORMATS_HINT: &str =
+    "use a WAV, FLAC, Ogg Vorbis or MP3 file (M4A/AAC and AIFF are not read yet)";
 
 fn bad(format: Format, e: impl std::fmt::Display) -> DecodeError {
     DecodeError {
@@ -225,7 +226,10 @@ pub fn decode_path(path: &Path, stop: &dyn Fn() -> bool) -> Result<Decoded, Deco
 
 /// The format from the first bytes, else from the extension.
 fn sniff(head: &[u8], path: &Path) -> Option<Format> {
-    if head.len() >= 12 && matches!(&head[..4], b"RIFF" | b"RIFX" | b"RF64") && &head[8..12] == b"WAVE" {
+    if head.len() >= 12
+        && matches!(&head[..4], b"RIFF" | b"RIFX" | b"RF64")
+        && &head[8..12] == b"WAVE"
+    {
         return Some(Format::Wav);
     }
     if head.starts_with(b"fLaC") {
@@ -312,7 +316,10 @@ fn flac(reader: impl Read, stop: &dyn Fn() -> bool) -> Result<Raw, DecodeError> 
     let max = limit(channels, info.sample_rate);
     let scale = 1.0 / f64::from(1u32 << (info.bits_per_sample.clamp(1, 32) - 1));
     let mut out = Vec::with_capacity(
-        max.min(info.samples.map_or(0, |s| s as usize * usize::from(channels))),
+        max.min(
+            info.samples
+                .map_or(0, |s| s as usize * usize::from(channels)),
+        ),
     );
     let mut truncated = false;
     for (i, s) in r.samples().enumerate() {
@@ -340,7 +347,8 @@ fn vorbis(reader: impl Read + Seek, stop: &dyn Fn() -> bool) -> Result<Raw, Deco
     use lewton::inside_ogg::OggStreamReader;
     use lewton::samples::InterleavedSamples;
     let mut r = OggStreamReader::new(reader).map_err(|e| DecodeError {
-        hint: "only Ogg Vorbis is read (not Ogg Opus or FLAC in Ogg): export the file as WAV".to_owned(),
+        hint: "only Ogg Vorbis is read (not Ogg Opus or FLAC in Ogg): export the file as WAV"
+            .to_owned(),
         ..bad(Format::Vorbis, e)
     })?;
     let channels = u16::from(r.ident_hdr.audio_channels);
@@ -364,7 +372,10 @@ fn vorbis(reader: impl Read + Seek, stop: &dyn Fn() -> bool) -> Result<Raw, Deco
             break;
         }
     }
-    let kbps = u32::try_from(nominal).ok().filter(|&b| b > 0).map(|b| (b + 500) / 1000);
+    let kbps = u32::try_from(nominal)
+        .ok()
+        .filter(|&b| b > 0)
+        .map(|b| (b + 500) / 1000);
     Ok(Raw {
         interleaved: out,
         channels,
@@ -387,13 +398,10 @@ fn mp3(reader: impl Read + Seek, size: u64, stop: &dyn Fn() -> bool) -> Result<R
     };
     let channels = u16::from(ch.num());
     // The average bitrate over the stream, from its length: a hint, tags included.
-    let kbps = r
-        .total_samples()
-        .filter(|&n| n > 0 && rate > 0)
-        .map(|n| {
-            let seconds = n as f64 / f64::from(rate);
-            (size as f64 * 8.0 / seconds / 1000.0).round() as u32
-        });
+    let kbps = r.total_samples().filter(|&n| n > 0 && rate > 0).map(|n| {
+        let seconds = n as f64 / f64::from(rate);
+        (size as f64 * 8.0 / seconds / 1000.0).round() as u32
+    });
     let max = limit(channels, rate);
     let mut out = Vec::new();
     let mut buf = vec![0f32; POLL];
@@ -543,11 +551,21 @@ mod tests {
         };
         let rms = |y: &[f32]| -> f64 {
             let mid = &y[200..y.len() - 200];
-            (mid.iter().map(|v| f64::from(*v) * f64::from(*v)).sum::<f64>() / mid.len() as f64).sqrt()
+            (mid.iter()
+                .map(|v| f64::from(*v) * f64::from(*v))
+                .sum::<f64>()
+                / mid.len() as f64)
+                .sqrt()
         };
         let pass = rms(&decimate2(&tone(10_000.0), 1));
-        assert!((pass - 0.5 / 2f64.sqrt()).abs() < 1e-3, "10 kHz kept: {pass}");
+        assert!(
+            (pass - 0.5 / 2f64.sqrt()).abs() < 1e-3,
+            "10 kHz kept: {pass}"
+        );
         let stop = rms(&decimate2(&tone(80_000.0), 1));
-        assert!(stop < 1e-4, "80 kHz (it would alias to 16 kHz) removed: {stop}");
+        assert!(
+            stop < 1e-4,
+            "80 kHz (it would alias to 16 kHz) removed: {stop}"
+        );
     }
 }

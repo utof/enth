@@ -54,14 +54,7 @@ fn button(
 }
 
 fn line(ui: &mut Ui, t: &Theme, text: &str, color: egui::Color32) {
-    ui.add(
-        Label::new(
-            RichText::new(text)
-                .font(t.text.label.clone())
-                .color(color),
-        )
-        .wrap(),
-    );
+    ui.add(Label::new(RichText::new(text).font(t.text.label.clone()).color(color)).wrap());
 }
 
 /// Draws the panel into `rect` from `create`; `hovering`: files are being dragged over the window. Returns how far its
@@ -129,7 +122,15 @@ fn body(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut I
                 .font(t.text.title.clone())
                 .color(t.color.text.primary),
         );
-        button(ui, t, "Close", "Close create", true, CreateIntent::Toggle, out);
+        button(
+            ui,
+            t,
+            "Close",
+            "Close create",
+            true,
+            CreateIntent::Toggle,
+            out,
+        );
     });
     drop_zone(create, ui, t, hovering, out);
     let view = create.view().cloned();
@@ -149,7 +150,10 @@ fn body(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut I
             t,
             "Cancel",
             "Cancel create",
-            running && view.as_ref().is_some_and(|v| v.phase != CreatePhase::Cancelling),
+            running
+                && view
+                    .as_ref()
+                    .is_some_and(|v| v.phase != CreatePhase::Cancelling),
             CreateIntent::Cancel,
             out,
         );
@@ -167,16 +171,23 @@ fn body(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut I
     );
     named(&status, phase_text(view.phase));
     if let Some(p) = &view.progress {
-        ui.add(ProgressBar::new(p.fraction()).text(
-            RichText::new(format!(
-                "{} / {} renders · {:.0} / {:.0} s",
-                p.renders, p.budget, p.seconds, p.cap_s
-            ))
-            .font(t.text.label.clone()),
-        ));
+        ui.add(
+            ProgressBar::new(p.fraction()).text(
+                RichText::new(format!(
+                    "{} / {} renders · {:.0} / {:.0} s",
+                    p.renders, p.budget, p.seconds, p.cap_s
+                ))
+                .font(t.text.label.clone()),
+            ),
+        );
     }
     if let Some(e) = &view.error {
-        line(ui, t, &format!("{} ({})", e.message, e.code), t.color.score.bad);
+        line(
+            ui,
+            t,
+            &format!("{} ({})", e.message, e.code),
+            t.color.score.bad,
+        );
         line(ui, t, &e.hint, t.color.text.label);
     }
     if let Some(intake) = &view.intake {
@@ -273,15 +284,20 @@ fn drop_zone(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(width, t.size.create.drop_zone), Sense::hover());
     let (fill, text) = if hovering {
-        (t.color.surface.raised, "Drop to choose this file".to_owned())
+        (
+            t.color.surface.raised,
+            "Drop to choose this file".to_owned(),
+        )
     } else {
         (
             t.color.surface.recessed,
             create.file().map_or_else(
                 || "Drop a sound file here (WAV, FLAC, Ogg Vorbis, MP3)".to_owned(),
                 |f| {
-                    f.file_name()
-                        .map_or_else(|| f.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned())
+                    f.file_name().map_or_else(
+                        || f.to_string_lossy().into_owned(),
+                        |n| n.to_string_lossy().into_owned(),
+                    )
                 },
             ),
         )

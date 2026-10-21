@@ -60,14 +60,14 @@ pub mod process;
 #[cfg(feature = "rt-stats")]
 pub mod rt_stats;
 pub mod state;
+#[cfg(all(test, feature = "create"))]
+mod tests_create;
 #[cfg(test)]
 mod tests_game;
 #[cfg(test)]
 mod tests_host;
 #[cfg(all(test, feature = "learn"))]
 mod tests_learn;
-#[cfg(all(test, feature = "create"))]
-mod tests_create;
 
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};

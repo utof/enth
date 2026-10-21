@@ -28,7 +28,13 @@ pub struct HeaderCreate {
 /// The header's Create hook point (feature `create`): called by the header with its right-hand row (laid out right to
 /// left, after Learn) and its inner rectangle. Draws the **Create** entry when create is available; a click toggles
 /// the Create panel.
-pub(crate) fn header(ui: &mut Ui, theme: &Theme, _rect: Rect, view: &HeaderView, out: &mut Intents) {
+pub(crate) fn header(
+    ui: &mut Ui,
+    theme: &Theme,
+    _rect: Rect,
+    view: &HeaderView,
+    out: &mut Intents,
+) {
     if !view.create.available {
         return;
     }
