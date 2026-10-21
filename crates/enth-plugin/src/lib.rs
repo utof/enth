@@ -31,6 +31,7 @@
 //! | [`hint_eval`] | the hint job's evaluator: `enth_solver::measure` on a few scoped threads, results by job index, so a hint is the same for any worker count | HINT (FU1) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 //! | `learn` | with the `learn` cargo feature: pack I/O (bundled packs and the Packs folder), the progress file, Learn jobs on the game worker; empty until F2l | SKL (R2; pre-declared by S0l) |
+//! | `create` | with the `create` cargo feature: the `enth-create` thread, the per-job `rayon` pool, cancel, the file decoders; empty until F2s | SK3 (R3; pre-declared by S0s) |
 //! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
     unsafe_code,
@@ -41,6 +42,8 @@
 #![cfg_attr(enth_rtsan, feature(sanitize))]
 
 pub mod crash;
+#[cfg(feature = "create")]
+pub mod create;
 pub mod editor;
 #[cfg(feature = "editor-counts")]
 pub mod editor_counts;
