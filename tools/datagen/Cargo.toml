@@ -1,0 +1,36 @@
+[package]
+name = "enth-datagen"
+description = "Tooling for R3's data: ds1, the dataset shards and exclusions (R3b), and the k-NN bank builder (R3a). Driven by `cargo xtask`, which stays light (docs/r3.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "enth-datagen"
+path = "src/main.rs"
+
+[dependencies]
+# Pre-declared by lane S0s (R3, freeze point F0s) so Cargo.lock is resolved before the lanes fan out; lanes use what they
+# need. This is the one place the data tooling's heavy dependencies live, so `xtask` keeps S0r's "no engine crate" rule and
+# drives this package the way it drives `enth-golden` and `enth-lesson-tool`. A tooling package, exempt from the layer
+# rules (xtask/layers.toml), like the other `tools/*` packages.
+#
+# `ds1` reads generator v1's public pieces (keyed draws, priors, `observable()`) from `enth-challenge`, renders through
+# `enth-render` and describes with `enth-analysis`; the bank builder renders generator patches and pools their log-mel
+# (`enth_analysis::pooled`) into the file `enth_solver::nearest` reads. No PyO3 until lane DG decides at F3s (docs/r3.md,
+# "Open checks"): features reach `ml/` as files this package writes.
+enth-dsp.workspace = true
+enth-params.workspace = true
+enth-patch.workspace = true
+enth-render.workspace = true
+enth-analysis.workspace = true
+enth-challenge.workspace = true
+enth-solver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+rayon.workspace = true
+
+[lints]
+workspace = true

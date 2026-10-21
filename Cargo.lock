@@ -1235,6 +1235,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "enth-datagen"
+version = "0.0.0"
+dependencies = [
+ "enth-analysis",
+ "enth-challenge",
+ "enth-dsp",
+ "enth-params",
+ "enth-patch",
+ "enth-render",
+ "enth-solver",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "enth-dsp"
 version = "0.0.0"
 dependencies = [
@@ -1319,7 +1336,9 @@ dependencies = [
  "libm",
  "serde",
  "serde_json",
+ "sha2",
  "spike-metric",
+ "toml",
 ]
 
 [[package]]

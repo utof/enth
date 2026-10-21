@@ -4,7 +4,7 @@
 
 use clap::{Parser, Subcommand};
 use enth_listen::session::StdinLines;
-use enth_listen::{abx, pairs, reverb};
+use enth_listen::{abx, gr3, pairs, reverb};
 
 #[derive(Parser)]
 #[command(
@@ -25,6 +25,11 @@ enum Cmd {
     ReverbAb(reverb::ReverbArgs),
     /// Real-engine pairs: rate about 40 pairs at planned sound/1 distances (A, B, X, then 1-5); `pairs report` reads them
     Pairs(pairs::PairsArgs),
+    // R3 command, pre-declared by lane S0s: hidden, and it refuses to run until lane LT builds it in `gr3.rs` and removes
+    // `hide` here.
+    /// GR3: model + search against search alone, blind, on real and degraded sounds (lane LT)
+    #[command(hide = true)]
+    Gr3(gr3::Gr3Args),
 }
 
 fn main() {
@@ -35,6 +40,7 @@ fn main() {
         Cmd::Abx(a) => abx::run(&a, &mut out, &mut lines, None),
         Cmd::ReverbAb(a) => reverb::run(&a, &mut out, &mut lines, None),
         Cmd::Pairs(a) => pairs::run(&a, &mut out, &mut lines, None),
+        Cmd::Gr3(a) => gr3::run(&a, &mut out, &mut lines, None),
     };
     if let Err(e) = result {
         eprintln!("error: {e}");

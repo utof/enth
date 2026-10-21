@@ -10,6 +10,9 @@
 //!   copies at planned `sound/1` distances, rated like metric session 2 (with an X), so `sound/2`'s curve can be fitted
 //!   on real-engine sounds.
 //!
+//! R3 (lane S0s pre-declared it, lane LT builds it): [`gr3`], the blind GR3 test of model + search against search alone
+//! (`enth-listen gr3`, `--export-kit`, `--analyze`), hidden and refusing to run until then.
+//!
 //! Shared pieces: [`wav`] (24-bit PCM files), [`player`] (`pw-play --media-role=Production` by default),
 //! [`loudness`] (EBU R128 level matching), [`flags`] (clicks and discontinuities are flagged, never filtered),
 //! [`session`] (the interactive trial loop and answer files, resumable), [`stats`] (exact binomial tests).
@@ -25,6 +28,7 @@
 pub mod abx;
 pub mod files;
 pub mod flags;
+pub mod gr3;
 pub mod loudness;
 pub mod pairs;
 pub mod player;

@@ -29,6 +29,9 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 libm.workspace = true
+# Pre-declared by lane S0s (R3): `enth-listen gr3` (lane LT) reads the manifests of `content/gr3/` and the hashes it checks.
+toml.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true
