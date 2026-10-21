@@ -48,6 +48,7 @@ The writer is `RoundLogEntry` (`crates/enth-session/src/game.rs`). "Needed" mean
 | `fingerprint` | string | The target's fingerprint, 64 hex digits (added at the F1r review). | no |
 | `engine` | string | The build's engine version, `x.y.z` (added at the F1r review). | no |
 | `edit_log` | array | On `end` lines: `{t_ms, source, ops}` for every change to the round's patch, with its active time (added at the F1r review). | no |
+| `origin` | string | Who started the round: absent for a game round; `lesson` for a lesson's Recreate step (added by lane SL, R2). A line with any origin but `game` is left out of GR1 with a note, and is not counted as unusable. | no |
 
 ### The result
 
