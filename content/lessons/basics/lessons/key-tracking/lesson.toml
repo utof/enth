@@ -1,0 +1,341 @@
+# Lesson 2.4, Key tracking [basics · intermediate] (content/lessons/PLAN.md §5, U2).
+#
+# Hear (keytrack 0 and 100 % through OCTAVE_PAIR, C3 then C4, on the saw and the pad; then one note, where keytrack is
+# only a cutoff move), a "which one keeps its tone?" item → Name → Try (a patch goal: PLAN has no S check, which would
+# need per-note brightness) → three rounds through OCTAVE_PAIR (the generator reveals keytrack only with two notes) → one
+# ear question. Measured on engine 0.3.0: the cutoff knob is the value at C4, so at C3 keytrack 100 % halves it (keytrack
+# 100 % at 800 Hz scores 100 against a plain 400 Hz cutoff through HELD).
+
+schema = "enth.lesson/1"
+id = "key-tracking"
+title = "Key tracking"
+tier = "intermediate"
+objective = "Make the filter follow the keys so high and low notes keep the same tone, and hear when it does."
+teaches = ["svf.keytrack"]
+
+# --- Hear: two notes, C3 then C4, with keytrack off and full, on the saw and on the pad.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Saw, keytrack 0 %"
+patch = "patches/saw-cutoff-800.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Saw, keytrack 100 %"
+patch = "patches/saw-keytrack-100.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Pad, keytrack 0 %"
+patch = "patches/pad-cutoff-800.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Pad, keytrack 100 %"
+patch = "patches/pad-keytrack-100.patch.json"
+phrase = 2
+
+# --- Hear: one note (C3): keytrack 100 % at 800 Hz sounds exactly like no keytrack at 400 Hz.
+[[steps]]
+id = "hear-one-note"
+kind = "listen"
+text = "hear-one-note.md"
+
+[[steps.examples]]
+label = "Keytrack 100 %, cutoff 800 Hz"
+patch = "patches/saw-keytrack-100.patch.json"
+
+[[steps.examples]]
+label = "Keytrack 0 %, cutoff 400 Hz"
+patch = "patches/saw-cutoff-400.patch.json"
+
+[[steps.examples]]
+label = "Keytrack 0 %, cutoff 800 Hz"
+patch = "patches/saw-cutoff-800.patch.json"
+
+# --- Hear's ear question: which one keeps its tone on both notes? (keytrack 0 against 100 %, OCTAVE_PAIR.)
+[[steps]]
+id = "which-even"
+kind = "choose"
+text = "which-even.md"
+hints = ["In one, the high note sounds muffled next to the low one."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-cutoff-800.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-keytrack-100.patch.json"
+phrase = 2
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["filter1.keytrack"]
+
+# --- Try: "make the high note as bright as the low one" (PLAN: keytrack above 80 %). A patch goal only.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Key tracking is on the filter card.",
+  "Turn it most of the way up: 100 % moves the cutoff an octave for every octave you play.",
+]
+witness = "patches/saw-keytrack-100.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-cutoff-800.patch.json"
+highlight = ["filter1.keytrack"]
+editable = ["filter1.keytrack"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.resonance", "osc1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = [{ kind = "value", knob = "filter1.keytrack", cmp = ">", value = "80%" }]
+
+# --- Do, round 1: a hidden keytrack through OCTAVE_PAIR, drawn from 50 and 100 % (PLAN's {0, 50, 100} with the 0 %
+# start left out), the cutoff locked at 800 Hz. Seed 3 draws 100 % (the start scores sound 65.3). sound/1 hears it at
+# the default pass mark through the pair (against 50 %, 25 and 75 % score 92.2 and 92.0, 0 and 100 % 82.2 and 81.0;
+# against 100 %, 75 % scores 92.2).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Compare the second, higher note with the first: is it as open as the low one in the target, or duller?",
+  "More key tracking keeps the high note bright; none leaves it muffled.",
+]
+
+[steps.view]
+highlight = ["filter1.keytrack"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 2
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "filter1.keytrack", set = [50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, cutoff 800 Hz", description = "The starter with the low-pass at 800 Hz (resonance 10 %)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 800.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.keytrack"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Key tracking, round 1"
+tags = ["basics", "key-tracking"]
+
+# --- Do, round 2: seed 1 draws 50 % (the start scores 82.2).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Compare the second, higher note with the first: is it as open as the low one in the target, or duller?",
+  "More key tracking keeps the high note bright; none leaves it muffled.",
+]
+
+[steps.view]
+highlight = ["filter1.keytrack"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 2
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.keytrack", set = [50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, cutoff 800 Hz", description = "The starter with the low-pass at 800 Hz (resonance 10 %)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 800.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.keytrack"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Key tracking, round 2"
+tags = ["basics", "key-tracking"]
+
+# --- Do, round 3: keytrack and cutoff together (PLAN's D2: keytrack 0 or 100 %, the cutoff 500 Hz or 1.5 kHz). Seed 3
+# draws keytrack 100 % at 500 Hz (the start scores 32.9).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "First the low note: its brightness tells you the cutoff.",
+  "Then the high note: does it stay as open as the low one? Then the filter tracks the keys.",
+]
+
+[steps.view]
+highlight = ["filter1.keytrack", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 2
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [
+  { param = "filter1.keytrack", set = [0.0, 100.0] },
+  { param = "filter1.cutoff", set = [500.0, 1500.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, cutoff 800 Hz", description = "The starter with the low-pass at 800 Hz (resonance 10 %)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 800.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.keytrack", "filter1.cutoff"]
+locked = ["filter1.mode", "filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Key tracking, round 3"
+tags = ["basics", "key-tracking"]
+
+# --- Check: which one keeps the same tone on both notes, on the pad (keytrack 0 against 100 %, OCTAVE_PAIR). PLAN's
+# second item, "cutoff moved or keytrack?" on one note, cannot be answered (hear-one-note shows why), so it is a Hear
+# step rather than a question.
+[[steps]]
+id = "check-follows"
+kind = "choose"
+text = "check-follows.md"
+hints = ["Listen to the second note: open, like the first, or duller?"]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/pad-keytrack-100.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/pad-cutoff-800.patch.json"
+phrase = 2
