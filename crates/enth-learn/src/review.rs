@@ -56,7 +56,7 @@ use enth_challenge::spec::MAX_SEED;
 use enth_challenge::v2::DrawAt;
 use enth_challenge::{Challenge, StructureScore, Verdict};
 use enth_dsp::util::rng::{derive, fnv1a64};
-use enth_patch::{Builtin, ParamAddr, Patch, Target as PatchTarget};
+use enth_patch::{Builtin, ModuleKind, ParamAddr, Patch, Target as PatchTarget};
 use serde::Serialize;
 use serde::ser::SerializeMap;
 use serde_json::Value;
@@ -137,6 +137,23 @@ impl Skill {
     /// The parameter key (`cutoff`).
     pub fn key(&self) -> &str {
         self.0.split_once('.').map_or("", |(_, k)| k)
+    }
+
+    /// The skill in words, from this build's catalogue: the module's name and the parameter's (`Filter Cutoff`,
+    /// `Voice Glide`); the text itself for a kind or a key this build does not have.
+    pub fn label(&self) -> String {
+        let (module, params) = match self.kind() {
+            "voice" => ("Voice", Builtin::Voice.params()),
+            "master" => ("Master", Builtin::Master.params()),
+            kind => match ModuleKind::from_key(kind) {
+                Some(k) => (k.spec().name, k.params()),
+                None => return self.0.clone(),
+            },
+        };
+        match params.iter().find(|p| p.key == self.key()) {
+            Some(p) => format!("{module} {}", p.name),
+            None => self.0.clone(),
+        }
     }
 }
 
@@ -659,6 +676,13 @@ mod tests {
         assert_eq!(
             (s.kind(), s.key(), s.to_string()),
             ("svf", "cutoff", "svf.cutoff".to_owned())
+        );
+        assert_eq!(s.label(), "Filter Cutoff");
+        assert_eq!(Skill::parse("voice.glide").unwrap().label(), "Voice Glide");
+        assert_eq!(
+            Skill::parse("newkind.x").unwrap().label(),
+            "newkind.x",
+            "a newer build's kind"
         );
         for bad in [
             "svf",

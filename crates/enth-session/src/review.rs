@@ -4,7 +4,7 @@
 //!
 //! | The session | How |
 //! | --- | --- |
-//! | **Starts a Review item** | [`LearnEdit::review_start`](crate::learn::LearnEdit::review_start) plays the item's seeded sibling challenge as a round of origin [`RoundOrigin::Review`] (`RoundSource::Challenge`). It stashes your patch like a game round (End's Restore brings it back) and is refused while a lesson is live, whose stash is the only one |
+//! | **Starts a Review item** | [`LearnEdit::review_start`](crate::learn::LearnEdit::review_start) plays the item's seeded sibling challenge as a round of origin [`RoundOrigin::Review`] (`RoundSource::Challenge`). It stashes your patch like a game round (End's Restore brings it back; the next item takes over a live Review round's stash). It is refused while a lesson is live, whose stash is the only one, and over a game round of your own |
 //! | **No hint on the first try** | A Review round refuses a hint before its first submit ([`GameError::FirstTry`]); after it the coach's levels open as in any round (report 01 §3) |
 //! | **Feeds the rings back** | When any played round ends (the game's, a lesson's, a Review item's), its first submit's rings on its target ([`round_rings`]) go to the shell as [`LearnRequest::Rings`], which applies them to the progress file's boxes with today's day. A round a host load ended is skipped: the host may close and reopen the same round (REAPER's undo), which must not move a box twice |
 //!
@@ -49,11 +49,17 @@ pub(crate) fn refuses_hint(record: &RoundRecord) -> bool {
 
 impl Session {
     /// [`LearnEdit::review_start`](crate::learn::LearnEdit::review_start)'s body: the item's sibling challenge as a
-    /// Review round. A live game or Review round ends first, logged, and its stash carries over, as a new game round's
-    /// does.
+    /// Review round. A live Review round ends first, logged, and its stash carries over, as a new game round's does;
+    /// a live game round is the player's to end ([`LearnError::RoundLive`]), as for a lesson.
     pub(crate) fn review_open(&mut self, item: ReviewItem) -> Result<(), LearnError> {
         if self.learn_live() {
             return Err(LearnError::Round(GameError::LessonLive));
+        }
+        if self
+            .game_record()
+            .is_some_and(|r| r.origin != RoundOrigin::Review)
+        {
+            return Err(LearnError::RoundLive);
         }
         self.game_open(
             RoundSource::Challenge(Box::new(item.challenge)),

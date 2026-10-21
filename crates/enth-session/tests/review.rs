@@ -291,7 +291,10 @@ fn a_host_load_that_ends_a_round_sends_no_rings() {
     let empty = Session::new(custom_patch()).save(None);
     let _ = s.load(&empty);
     assert!(s.game_record().is_none());
-    assert!(rings(&mut s).is_empty(), "the host may reopen the same round");
+    assert!(
+        rings(&mut s).is_empty(),
+        "the host may reopen the same round"
+    );
 }
 
 #[test]
@@ -314,6 +317,26 @@ fn a_skills_box_follows_the_rings_a_round_sends() {
         assert_eq!((b.level, b.day), (level, day), "{verdict:?}");
     }
     assert_eq!(progress.review.get(&skill).rounds, 4);
+}
+
+#[test]
+fn the_next_item_takes_over_a_review_round_but_waits_for_a_game_round() {
+    let mut s = Session::new(custom_patch());
+    s.game_tick(0, EditorView::Opened);
+    s.review_start(item()).unwrap();
+    let prepare = game_job(&drain_game(&mut s), "prepare_challenge");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    s.review_start(item()).unwrap();
+    let record = s.game_record().unwrap();
+    assert_eq!(record.origin, RoundOrigin::Review);
+    assert_eq!(
+        record.stash.as_deref(),
+        Some(custom_patch().to_json().as_str()),
+        "the first item's stash carries over"
+    );
+    let mut s = ready(RoundSource::Challenge(Box::new(challenge())));
+    assert_eq!(s.review_start(item()), Err(LearnError::RoundLive));
+    assert_eq!(s.game_record().unwrap().origin, RoundOrigin::Game);
 }
 
 #[test]
