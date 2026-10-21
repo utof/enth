@@ -10,6 +10,8 @@
 use enth_patch::Patch;
 use serde::{Deserialize, Serialize};
 
+use super::CreateCfg;
+
 /// Where a start came from.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -48,6 +50,9 @@ pub enum Provenance {
         /// The model's confidence in it, when it has a confidence head.
         confidence: Option<f64>,
     },
+    /// A kind a newer build wrote, read back leniently (its fields are dropped); never produced here.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Provenance {
@@ -59,6 +64,7 @@ impl Provenance {
             Provenance::Template { .. } => "template",
             Provenance::Knn { .. } => "knn",
             Provenance::Model { .. } => "model",
+            Provenance::Unknown => "unknown",
         }
     }
 }
@@ -66,6 +72,7 @@ impl Provenance {
 /// Where a branch stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CandidateState {
     /// Kept as a branch, not evaluated yet.
     Proposed,
@@ -75,13 +82,17 @@ pub enum CandidateState {
     Done,
     /// Successive halving dropped it after [`Candidate::rung`].
     Pruned,
+    /// A state a newer build wrote, read back leniently; never produced here.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a create job ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CreateStop {
-    /// The render budget was spent (the normal end).
+    /// The render budget, a hard cap, was reached (the normal end of a render-capped run).
     Budget,
     /// The caller's progress callback said stop (a wall-clock cap or a cancel).
     Cancelled,
@@ -89,6 +100,9 @@ pub enum CreateStop {
     Exhausted,
     /// A branch reached [`CreateCfg::stop_at`](super::CreateCfg::stop_at).
     Goal,
+    /// A cause a newer build wrote, read back leniently; never produced here.
+    #[serde(other)]
+    Unknown,
 }
 
 /// One round a branch took part in.
@@ -96,7 +110,7 @@ pub enum CreateStop {
 pub struct BranchStep {
     /// The job's round (0 is the screening round when there is one).
     pub round: usize,
-    /// The branch's renders so far, this round included.
+    /// The branch's renders so far, this round included (its start's screening render is the job's).
     pub renders: usize,
     /// The job's renders so far, this round included (the x axis of an anytime curve).
     pub job_renders: usize,
@@ -111,7 +125,7 @@ pub struct RoundInfo {
     pub round: usize,
     /// The job's renders after it.
     pub renders: usize,
-    /// The rung it belonged to (0, 1, 2), or `None` for the screening round.
+    /// The rung it belonged to (0, 1, 2, …), or `None` for the screening round.
     pub rung: Option<usize>,
     /// The branches that evaluated a batch in it (the starts, for the screening round).
     pub live: usize,
@@ -149,9 +163,11 @@ pub struct Candidate {
     pub distance: f64,
     /// Where the branch stands.
     pub state: CandidateState,
-    /// The last rung of successive halving it took part in (0, 1 or 2).
+    /// The last rung of successive halving it took part in (0, 1, 2, …; milestone
+    /// [`CreateCfg::milestone`](super::CreateCfg::milestone)).
     pub rung: usize,
-    /// Renders its search used (the screening render is the job's).
+    /// Renders the job spent on its search (its start's screening render is the job's, and its distance is reused
+    /// rather than rendered again).
     pub renders: usize,
     /// CMA-ES runs its search began.
     pub runs: usize,
@@ -168,8 +184,8 @@ pub struct CreateResult {
     pub candidates: Vec<Candidate>,
     /// Renders used, the screening round included (at most the budget).
     pub renders: usize,
-    /// The budget it ran under.
-    pub budget: usize,
+    /// The settings it ran under, the budget included: what the record stores and a replay uses.
+    pub cfg: CreateCfg,
     /// Every round, in order.
     pub rounds: Vec<RoundInfo>,
     /// Why it ended.

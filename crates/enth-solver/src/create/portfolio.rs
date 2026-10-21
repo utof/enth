@@ -2,21 +2,26 @@
 //!
 //! The start portfolio (docs/r3.md, "The start portfolio and k-NN retrieval"), in this order:
 //!
-//! 1. **the heuristic start**, always kept: the init template, which each branch's search fills in from the target's
-//!    descriptors ([`heuristic`](crate::heuristic): pitch → tuning, envelope → ADSR, centroid → cutoff);
+//! 1. **the heuristic start**, always kept: the init template with the target's descriptors applied before
+//!    screening ([`heuristic`](crate::heuristic): pitch → tuning, envelope → ADSR, centroid → cutoff, on the
+//!    parameters the job searches), so its proposal and its screening distance are the heuristic's; the bare init
+//!    template when the clip is too short or quiet to describe;
 //! 2. **the templates** the caller passes (`content/templates/`: `pluck_1osc`, `pad_2osc`, `bass_sub`), because
-//!    structure is never searched otherwise (GR1's level 5 solved 0 of 4);
+//!    structure is never searched otherwise (GR1's level 5 solved 0 of 4); one equal to the init template is skipped;
 //! 3. **k-NN retrieval** over the bank ([`nearest`](crate::nearest)), nearest first, spread apart
 //!    ([`CreateCfg::min_spread`]); R3a runs without the bank;
-//! 4. later, the model's K hypotheses (R3b, lane MS: [`Portfolio::push`] with [`Provenance::Model`]).
+//! 4. **the caller's proposals** ([`Inputs::proposals`]): R3b's model hypotheses (lane MS, [`Provenance::Model`]),
+//!    in the model's order.
 //!
-//! An exact duplicate of an earlier start is skipped. Every start keeps its provenance into the result and the
-//! record. Sizing K and the budget comes from TP's measured per-evaluation cost (docs/r3.md, the cost table).
+//! The order is fixed (the screening round's ties go to the earlier start). An exact duplicate of an earlier start
+//! is skipped. Every start keeps its provenance into the result and the record. Sizing K and the budget comes from
+//! TP's measured per-evaluation cost (docs/r3.md, the cost table).
 
-use enth_patch::Patch;
+use enth_patch::{Op, Patch, apply_all};
 
 use super::candidate::Provenance;
-use super::{Analysis, CreateCfg, Inputs};
+use super::{Analysis, CreateCfg, Inputs, Target, free_set};
+use crate::heuristic::Heuristic;
 
 /// A named template patch (the caller loads `content/templates/`; the solver does no I/O).
 #[derive(Clone, Debug, PartialEq)]
@@ -46,16 +51,25 @@ pub struct Portfolio {
 }
 
 impl Portfolio {
-    /// The portfolio for a target: the heuristic start from `inputs.init`, the templates, then up to
-    /// `cfg.neighbours` k-NN neighbours from `inputs.bank` (see the [module docs](self)).
+    /// The portfolio for `target` (measured as `analysis`): the heuristic start from `inputs.init`, the templates,
+    /// up to `cfg.neighbours` k-NN neighbours from `inputs.bank`, then `inputs.proposals` (see the
+    /// [module docs](self)).
     #[must_use]
-    pub fn build(analysis: &Analysis, inputs: &Inputs<'_>, cfg: &CreateCfg) -> Portfolio {
+    pub fn build(
+        target: &Target,
+        analysis: &Analysis,
+        inputs: &Inputs<'_>,
+        cfg: &CreateCfg,
+    ) -> Portfolio {
         let mut p = Portfolio::default();
         p.push(Start {
-            patch: inputs.init.clone(),
+            patch: heuristic_start(target, analysis, inputs.init),
             provenance: Provenance::Heuristic,
         });
         for t in inputs.templates {
+            if t.patch == *inputs.init {
+                continue;
+            }
             p.push(Start {
                 patch: t.patch.clone(),
                 provenance: Provenance::Template {
@@ -87,6 +101,9 @@ impl Portfolio {
                 }
             }
         }
+        for proposal in inputs.proposals {
+            p.push(proposal.clone());
+        }
         if analysis.descriptors.is_none() {
             p.notes.push(
                 "the clip is too short or too quiet to describe: the starts are searched without the heuristic"
@@ -104,5 +121,31 @@ impl Portfolio {
         }
         self.starts.push(start);
         true
+    }
+}
+
+/// The heuristic start: `init` with the heuristic's suggestions for the target applied to the parameters a branch
+/// searches (exact plain values, through ops). `init` itself when the clip has no descriptors, nothing is free, or
+/// an op is refused.
+fn heuristic_start(target: &Target, analysis: &Analysis, init: &Patch) -> Patch {
+    let Some(desc) = analysis.descriptors.as_ref() else {
+        return init.clone();
+    };
+    let Ok(free) = free_set(init, &target.perf) else {
+        return init.clone();
+    };
+    let heuristic = Heuristic::new(desc, &target.performance());
+    let ops: Vec<Op> = heuristic
+        .suggest(init, &free)
+        .into_iter()
+        .map(|s| Op::SetParam {
+            addr: s.addr,
+            value: s.value,
+        })
+        .collect();
+    let mut patch = init.clone();
+    match apply_all(&mut patch, &ops) {
+        Ok(_) => patch,
+        Err(_) => init.clone(),
     }
 }

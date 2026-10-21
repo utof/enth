@@ -7,12 +7,14 @@ expression: states
     "proposed",
     "searching",
     "done",
-    "pruned"
+    "pruned",
+    "unknown"
   ],
   [
     "budget",
     "cancelled",
     "exhausted",
-    "goal"
+    "goal",
+    "unknown"
   ]
 ]

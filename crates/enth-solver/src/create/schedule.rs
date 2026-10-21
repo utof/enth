@@ -7,28 +7,30 @@
 //!
 //! 1. **Screening (round 0).** One batch renders every start once (at most the budget's worth, in portfolio
 //!    order), so the first K proposals have distances after a single batch. The heuristic start is always kept and
-//!    the best K − 1 others (by distance, ties to the earlier start) become the branches, in start order. Between
-//!    this round and the first rung's batch the shell may set the budget from the throughput it measured
-//!    ([`CreateJob::set_budget`]): the rungs run under that budget, and the record stores it.
+//!    the best K − 1 others (by distance, ties to the earlier start) become the branches, in start order.
 //! 2. **Branches.** Each branch is its own [`Search`] from its start, over the parameters the held phrase reveals
-//!    (`enth_challenge::random::observable`, as `enth match --free observable`), with the target's heuristic and a
-//!    seed derived from the job's seed and its start's index (so a replay from recorded starts draws the same).
+//!    (`enth_challenge::random::observable`, as `enth match --free observable`) less the envelopes' release times
+//!    when the target's note-off falls at or after the clip's end, with the target's heuristic and a seed derived
+//!    from the job's seed and its start's index (so a replay from recorded starts draws the same). A branch's search
+//!    has no render cap of its own, so what it draws never depends on the budget. Its first batch begins with its
+//!    start, already rendered in the screening round: that distance is reused rather than rendered again.
 //! 3. **Rounds.** Each round asks every eligible branch for its next batch, in branch order, concatenates them into
 //!    one batch for the caller's objective, and splits the distances back to each branch's `tell` by index: the
 //!    result is the same for any worker count, and 8 branches × λ 16 keep a pool busy.
-//! 4. **Successive halving, in renders.** The budget left after screening is split into three rungs by
-//!    [`CreateCfg::rungs`] (10 %, 30 %, the rest). In a rung each live branch gets an equal share and asks for
-//!    batches until it has used it (a share ends at a batch boundary, so it can run over by less than one batch);
-//!    when every live branch has used its share or ended, the rung ends and the branches are ranked by their best
-//!    distance (ties to the lower branch): after rung 0 the best half survive (at least
-//!    [`CreateCfg::finalists`]), after rung 1 the finalists. A rung's budget is computed from what is left when it
-//!    starts, so an overrun in one rung comes out of the next.
-//! 5. **The budget is hard.** A round whose batches would pass the budget keeps whole batches, best branch first,
-//!    while they fit, and is the last round. Nothing here depends on time: the shell's progress callback is the only
-//!    clock, and stopping there truncates the run.
+//! 4. **Successive halving, in each branch's renders and independent of the budget.** Rung `r` ends at the
+//!    milestone [`CreateCfg::milestone`]`(r)` = `first_rung · eta^r` renders per branch (50, 100, 200, … by
+//!    default): a branch asks for batches until it has reached it (a batch boundary, so it can run over by less than
+//!    one batch) and then waits; when every live branch has reached it or ended, the branches are ranked by their
+//!    best distance (ties to the lower branch) and the best `⌈live / eta⌉` survive, at least
+//!    [`CreateCfg::finalists`]. The finalists then continue through the growing rungs until the cap: from 8
+//!    branches, 4 survive their 50th render, 2 their 100th, and those 2 go on.
+//! 5. **The budget is only a hard cap.** A round whose batches would pass it keeps the whole batches that fit, in
+//!    branch order up to the first that does not, and is the last round. Nothing else depends on the budget, and
+//!    nothing here depends on time: the shell's progress callback is the only clock, and stopping there truncates
+//!    the run. **A run capped by its budget or its callback is an exact prefix of a longer one**: the evaluated
+//!    patches, in order, are the longer run's first ones, so the render-equivalent twin of a timed run is the same
+//!    job with `budget` = its renders.
 
-use enth_challenge::phrases::{self, HELD};
-use enth_challenge::random::observable;
 use enth_dsp::util::rng::derive;
 use enth_patch::Patch;
 
@@ -37,15 +39,15 @@ use super::candidate::{
     StartOutcome,
 };
 use super::portfolio::Portfolio;
-use super::{Analysis, CreateCfg, CreateError, Target};
+use super::{Analysis, CreateCfg, CreateError, Target, TargetPerf, free_set};
 use crate::heuristic::Heuristic;
-use crate::search::{FAILED, FreeSet, Search, SearchCfg, SearchError};
+use crate::search::{FAILED, Search, SearchCfg, SearchError};
 
 /// The stream a branch's search seed derives from (the job's seed, then this, then the start's index).
 const BRANCH_STREAM: u64 = 0x4352_4541_5445_4252; // "CREATEBR"
 
-/// The rungs of successive halving.
-const RUNGS: usize = 3;
+/// A branch's search has no cap of its own: the job's budget is the only one (see the module docs, point 2).
+const UNCAPPED: usize = usize::MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
@@ -54,22 +56,34 @@ enum Phase {
     Done,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// One branch's part of a round's batch.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Slice {
+    branch: usize,
+    /// The patches of the batch this branch renders.
+    rendered: usize,
+    /// The screening distance of the branch's start, which leads its first batch and is not rendered again.
+    reused: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 enum Pending {
     None,
     Screen,
-    /// `(branch, batch length)` in batch order.
-    Branches(Vec<(usize, usize)>),
+    Branches(Vec<Slice>),
 }
 
 #[derive(Debug)]
 struct Branch {
     start: usize,
-    /// `None` when the start has no parameter the held phrase reveals: the branch keeps its start.
+    /// `None` when the start has no parameter the target reveals: the branch keeps its start.
     search: Option<Search>,
     state: CandidateState,
     rung: usize,
-    rung_used: usize,
+    /// Renders the job spent on this branch (its start's screening render is the job's, and is not counted again).
+    renders: usize,
+    /// The start's screening distance, until the first batch reuses it.
+    reuse: Option<f64>,
     trace: Vec<BranchStep>,
 }
 
@@ -126,13 +140,14 @@ pub struct Progress {
 ///     if batch.is_empty() { break; }
 ///     job.tell(&pool.distances(&batch))?;   // in input order, whatever the worker count
 ///     post(job.candidates());
-///     if cancelled() { job.cancel(); }
+///     if cancelled() || past_the_cap() { job.cancel(); }
 /// }
 /// let result = job.result();
 /// ```
 #[derive(Debug)]
 pub struct CreateJob {
     cfg: CreateCfg,
+    perf: TargetPerf,
     starts: Vec<StartOutcome>,
     notes: Vec<String>,
     heuristic: Option<Heuristic>,
@@ -140,7 +155,6 @@ pub struct CreateJob {
     phase: Phase,
     used: usize,
     pending: Pending,
-    share: usize,
     rounds: Vec<RoundInfo>,
     stop: Option<CreateStop>,
     last_round: bool,
@@ -150,8 +164,7 @@ impl CreateJob {
     /// A job over `portfolio`'s starts for `target` (measured as `analysis`).
     ///
     /// # Errors
-    /// [`CreateError::BadCfg`] for a setting out of range, [`CreateError::NoStarts`] for an empty portfolio,
-    /// [`CreateError::Search`] if a branch's search refuses its setup.
+    /// [`CreateError::BadCfg`] for a setting out of range, [`CreateError::NoStarts`] for an empty portfolio.
     pub fn new(
         target: &Target,
         analysis: &Analysis,
@@ -179,6 +192,7 @@ impl CreateJob {
             .collect();
         Ok(CreateJob {
             cfg: cfg.clone(),
+            perf: target.perf,
             starts,
             notes: portfolio.notes,
             heuristic,
@@ -186,14 +200,13 @@ impl CreateJob {
             phase: Phase::Screen,
             used: 0,
             pending: Pending::None,
-            share: 0,
             rounds: Vec::new(),
             stop: None,
             last_round: false,
         })
     }
 
-    /// The settings.
+    /// The settings it runs under (fixed for the job's life: the record replays them).
     #[must_use]
     pub fn cfg(&self) -> &CreateCfg {
         &self.cfg
@@ -216,70 +229,17 @@ impl CreateJob {
         self.starts.len().min(self.cfg.budget)
     }
 
-    /// Whether the budget may still change: until the first rung's first batch is asked (so after the screening
-    /// round, whose renders the shell can time).
-    #[must_use]
-    pub fn budget_open(&self) -> bool {
-        match self.phase {
-            Phase::Screen => self.pending == Pending::None,
-            Phase::Rung(0) => {
-                self.pending == Pending::None
-                    && self
-                        .branches
-                        .iter()
-                        .all(|b| b.search.as_ref().is_none_or(|s| s.renders() == 0))
-            }
-            _ => false,
-        }
-    }
-
-    /// Set the render budget from the shell's measured throughput (renders per second of the screening round
-    /// times the seconds left), while [`budget_open`](Self::budget_open). The rungs are laid out again from it;
-    /// nothing else changes, and a replay under the recorded budget is the same run.
-    ///
-    /// # Errors
-    /// [`CreateError::BadCfg`] when the budget is no longer open, or for a budget of 0.
-    pub fn set_budget(&mut self, budget: usize) -> Result<(), CreateError> {
-        if !self.budget_open() {
-            return Err(CreateError::BadCfg(
-                "the budget can change only before the first rung's first batch",
-            ));
-        }
-        if budget == 0 {
-            return Err(CreateError::BadCfg("budget must be at least 1 render"));
-        }
-        self.cfg.budget = budget;
-        // Each branch's search was set up with the old budget as its own cap: set them up again. None has drawn
-        // anything yet, so this changes nothing but the cap.
-        if let Phase::Rung(0) = self.phase {
-            let kept: Vec<usize> = self.branches.iter().map(|b| b.start).collect();
-            self.branches.clear();
-            for s in &mut self.starts {
-                s.branch = None;
-            }
-            self.make_branches(&kept)?;
-            if self.used >= self.cfg.budget {
-                self.finish(CreateStop::Budget);
-            } else {
-                self.begin_rung(0);
-            }
-        }
-        Ok(())
-    }
-
     fn make_branches(&mut self, kept: &[usize]) -> Result<(), CreateError> {
-        let phrase = phrases::phrase(HELD)
-            .unwrap_or_else(|| unreachable!("the held phrase is in the table"));
         for (b, &si) in kept.iter().enumerate() {
             let patch = &self.starts[si].patch;
             let scfg = SearchCfg {
                 seed: derive(derive(self.cfg.seed, BRANCH_STREAM), si as u64),
-                budget: self.cfg.budget,
+                budget: UNCAPPED,
                 lambda: self.cfg.lambda,
                 stop_at: self.cfg.stop_at,
                 ..SearchCfg::default()
             };
-            let search = match FreeSet::from_mask(patch, &observable(patch, phrase)) {
+            let search = match free_set(patch, &self.perf) {
                 Ok(free) => Some(Search::new(patch, &free, self.heuristic.as_ref(), &scfg)?),
                 Err(SearchError::NoFreeParameters) => None,
                 Err(e) => return Err(e.into()),
@@ -295,7 +255,8 @@ impl CreateJob {
                 search,
                 state,
                 rung: 0,
-                rung_used: 0,
+                renders: 0,
+                reuse: self.starts[si].screen_distance,
                 trace: Vec::new(),
             });
         }
@@ -319,29 +280,17 @@ impl CreateJob {
         out
     }
 
-    fn begin_rung(&mut self, r: usize) {
-        let live: Vec<usize> = (0..self.branches.len())
+    fn live(&self) -> Vec<usize> {
+        (0..self.branches.len())
             .filter(|&b| self.branches[b].live())
-            .collect();
+            .collect()
+    }
+
+    fn begin_rung(&mut self, r: usize) {
+        let live = self.live();
         if live.is_empty() {
             self.finish(CreateStop::Exhausted);
             return;
-        }
-        let remaining = self.cfg.budget.saturating_sub(self.used);
-        let rung_budget = if r + 1 >= RUNGS {
-            remaining
-        } else {
-            let rest: f64 = self.cfg.rungs[r..].iter().sum();
-            let frac = if rest > 0.0 {
-                self.cfg.rungs[r] / rest
-            } else {
-                0.0
-            };
-            (remaining as f64 * frac) as usize
-        };
-        self.share = rung_budget.div_ceil(live.len()).max(1);
-        for b in &mut self.branches {
-            b.rung_used = 0;
         }
         for &b in &live {
             self.branches[b].rung = r;
@@ -349,24 +298,18 @@ impl CreateJob {
         self.phase = Phase::Rung(r);
     }
 
+    /// Every live branch has reached rung `r`'s milestone: keep the best `⌈live / eta⌉` (at least the finalists).
     fn end_rung(&mut self, r: usize) {
-        let live: Vec<usize> = (0..self.branches.len())
-            .filter(|&b| self.branches[b].live())
-            .collect();
+        let live = self.live();
         if live.is_empty() {
             self.finish(CreateStop::Exhausted);
             return;
         }
-        if r + 1 >= RUNGS {
-            self.finish(CreateStop::Budget);
-            return;
-        }
-        let keep = if r == 0 {
-            live.len().div_ceil(2).max(self.cfg.finalists)
-        } else {
-            self.cfg.finalists
-        }
-        .min(live.len());
+        let keep = live
+            .len()
+            .div_ceil(self.cfg.eta)
+            .max(self.cfg.finalists)
+            .min(live.len());
         for &b in &self.ranked(&live)[keep..] {
             self.branches[b].state = CandidateState::Pruned;
         }
@@ -386,7 +329,9 @@ impl CreateJob {
         self.pending = Pending::None;
     }
 
-    /// Stop now (the caller's cap or cancel): what has been found so far is the result.
+    /// Stop now (the caller's cap or cancel): what has been found so far is the result. Between rounds, after a
+    /// [`tell`](Self::tell); a shell cancelling while a batch is out drops that batch (it never calls `tell`
+    /// with it), so a cancelled run stays a prefix of the full one.
     pub fn cancel(&mut self) {
         if !self.finished() {
             self.finish(CreateStop::Cancelled);
@@ -408,63 +353,73 @@ impl CreateJob {
                         self.finish(CreateStop::Budget);
                         continue;
                     }
+                    let milestone = self.cfg.milestone(r);
                     let eligible: Vec<usize> = (0..self.branches.len())
                         .filter(|&b| {
-                            self.branches[b].live() && self.branches[b].rung_used < self.share
+                            self.branches[b].live() && self.branches[b].renders < milestone
                         })
                         .collect();
                     if eligible.is_empty() {
                         self.end_rung(r);
                         continue;
                     }
-                    let mut batches: Vec<(usize, Vec<Patch>)> = Vec::new();
+                    let mut batches: Vec<(Slice, Vec<Patch>)> = Vec::new();
                     for b in eligible {
-                        let batch = match self.branches[b].search.as_mut() {
+                        let start = self.branches[b].start;
+                        let br = &mut self.branches[b];
+                        let mut batch = match br.search.as_mut() {
                             Some(s) => s.ask(),
                             None => Vec::new(),
                         };
                         if batch.is_empty() {
-                            self.branches[b].state = CandidateState::Done;
-                        } else {
-                            batches.push((b, batch));
+                            br.state = CandidateState::Done;
+                            continue;
                         }
+                        // The first batch begins with the start itself, which the screening round rendered.
+                        let reuse = br.reuse.take();
+                        let reused = reuse
+                            .filter(|_| batch.len() > 1 && batch[0] == self.starts[start].patch);
+                        if reused.is_some() {
+                            batch.remove(0);
+                        }
+                        batches.push((
+                            Slice {
+                                branch: b,
+                                rendered: batch.len(),
+                                reused,
+                            },
+                            batch,
+                        ));
                     }
                     if batches.is_empty() {
                         continue;
                     }
                     let room = self.cfg.budget - self.used;
-                    let total: usize = batches.iter().map(|(_, p)| p.len()).sum();
+                    let total: usize = batches.iter().map(|(s, _)| s.rendered).sum();
                     if total > room {
-                        let ids: Vec<usize> = batches.iter().map(|(b, _)| *b).collect();
-                        let mut keep = vec![false; self.branches.len()];
+                        // The hard cap: the whole batches that fit, in branch order up to the first that does not.
                         let mut sum = 0usize;
-                        for b in self.ranked(&ids) {
-                            let len = batches
-                                .iter()
-                                .find(|(x, _)| *x == b)
-                                .map_or(0, |(_, p)| p.len());
-                            if sum + len <= room {
-                                keep[b] = true;
-                                sum += len;
-                            }
+                        let fit = batches
+                            .iter()
+                            .take_while(|(s, _)| {
+                                sum += s.rendered;
+                                sum <= room
+                            })
+                            .count();
+                        for (s, _) in &batches[fit..] {
+                            self.branches[s.branch].state = CandidateState::Done;
                         }
-                        for (b, _) in &batches {
-                            if !keep[*b] {
-                                self.branches[*b].state = CandidateState::Done;
-                            }
-                        }
-                        batches.retain(|(b, _)| keep[*b]);
+                        batches.truncate(fit);
                         self.last_round = true;
                         if batches.is_empty() {
                             self.finish(CreateStop::Budget);
                             continue;
                         }
                     }
-                    for (b, _) in &batches {
-                        self.branches[*b].state = CandidateState::Searching;
+                    for (s, _) in &batches {
+                        self.branches[s.branch].state = CandidateState::Searching;
                     }
-                    self.pending =
-                        Pending::Branches(batches.iter().map(|(b, p)| (*b, p.len())).collect());
+                    self.pending = Pending::Branches(batches.iter().map(|(s, _)| *s).collect());
                     return batches.into_iter().flat_map(|(_, p)| p).collect();
                 }
             }
@@ -472,9 +427,8 @@ impl CreateJob {
     }
 
     /// The distances of the batch the last [`CreateJob::ask`] returned, in the same order. A non-finite distance
-    /// counts as failed. A shell cancelling in the middle of a batch (its pool checks the flag per job) passes a
-    /// non-finite distance for every job it skipped, then calls [`cancel`](Self::cancel): those count as renders,
-    /// and can only lose to what was found.
+    /// counts as failed. To cancel while a batch is out (a shell's pool checks its flag per job), drop the batch
+    /// and call [`cancel`](Self::cancel) without telling it: the result is what the rounds before it found.
     ///
     /// # Errors
     /// [`CreateError::ObjectiveCount`] if `distances` does not match the batch (nothing changes), or
@@ -483,7 +437,7 @@ impl CreateJob {
         let expected = match &self.pending {
             Pending::None => 0,
             Pending::Screen => self.screened(),
-            Pending::Branches(s) => s.iter().map(|(_, n)| n).sum(),
+            Pending::Branches(s) => s.iter().map(|x| x.rendered).sum(),
         };
         if expected == 0 || distances.len() != expected {
             return Err(CreateError::ObjectiveCount {
@@ -531,17 +485,25 @@ impl CreateJob {
                 let mut at = 0usize;
                 let mut goal = false;
                 let live = slices.len();
-                for (b, len) in slices {
-                    let d = &distances[at..at + len];
-                    at += len;
-                    self.used += len;
-                    let br = &mut self.branches[b];
-                    br.rung_used += len;
+                for slice in slices {
+                    let d = &distances[at..at + slice.rendered];
+                    at += slice.rendered;
+                    self.used += slice.rendered;
+                    let br = &mut self.branches[slice.branch];
+                    br.renders += slice.rendered;
                     if let Some(s) = br.search.as_mut() {
-                        s.tell(d)?;
+                        match slice.reused {
+                            Some(first) => {
+                                let mut all = Vec::with_capacity(d.len() + 1);
+                                all.push(first);
+                                all.extend_from_slice(d);
+                                s.tell(&all)?;
+                            }
+                            None => s.tell(d)?,
+                        }
                         br.trace.push(BranchStep {
                             round,
-                            renders: s.renders(),
+                            renders: br.renders,
                             job_renders: 0,
                             best: s.best_distance(),
                         });
@@ -602,7 +564,7 @@ impl CreateJob {
                         provenance: self.starts[br.start].provenance.clone(),
                         state: br.state,
                         distance: self.best_of(b),
-                        renders: br.search.as_ref().map_or(0, Search::renders),
+                        renders: br.renders,
                     }
                 })
                 .collect(),
@@ -616,19 +578,13 @@ impl CreateJob {
             .map(|b| {
                 let br = &self.branches[b];
                 let start = &self.starts[br.start];
-                let (patch, distance, renders, runs, start_distance) = match &br.search {
+                let (patch, distance, runs, start_distance) = match &br.search {
                     Some(s) if s.renders() > 0 => {
                         let r = s.result();
                         let sd = r.start_distance;
-                        (
-                            r.best,
-                            r.distance,
-                            r.renders,
-                            r.runs,
-                            sd.is_finite().then_some(sd),
-                        )
+                        (r.best, r.distance, r.runs, sd.is_finite().then_some(sd))
                     }
-                    _ => (start.patch.clone(), self.best_of(b), 0, 0, None),
+                    _ => (start.patch.clone(), self.best_of(b), 0, None),
                 };
                 Candidate {
                     branch: b,
@@ -640,7 +596,7 @@ impl CreateJob {
                     distance,
                     state: br.state,
                     rung: br.rung,
-                    renders,
+                    renders: br.renders,
                     runs,
                     trace: br.trace.clone(),
                 }
@@ -648,15 +604,15 @@ impl CreateJob {
             .collect()
     }
 
-    /// What has been found: every start, the K candidates, the renders and rounds, why it ended. Called before the
-    /// job is over it is a snapshot, reported as [`CreateStop::Cancelled`].
+    /// What has been found: every start, the K candidates, the renders and rounds, the settings, why it ended.
+    /// Called before the job is over it is a snapshot, reported as [`CreateStop::Cancelled`].
     #[must_use]
     pub fn result(&self) -> CreateResult {
         CreateResult {
             starts: self.starts.clone(),
             candidates: self.candidates(),
             renders: self.used,
-            budget: self.cfg.budget,
+            cfg: self.cfg.clone(),
             rounds: self.rounds.clone(),
             stop: self.stop.unwrap_or(CreateStop::Cancelled),
             notes: self.notes.clone(),

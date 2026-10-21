@@ -1,6 +1,8 @@
 //! Lane TP: "create from sound" (`enth_solver::create`). TP's acceptance (docs/phase-3.md): K branches; identical
 //! results for 1 and 8 workers; the schedule does not depend on wall time. Plus the schedule's own rules (the
-//! heuristic start always kept, the rungs in renders, the hard budget) and the replay from a record.
+//! heuristic start always kept, the rungs in each branch's renders, the hard budget) and the replay from a record.
+//! Lane F1S's regressions of the F1s judge's findings (budget-independent rungs, the record's settings) are in
+//! `create_replay.rs`; the seam with the intake is in `create_intake.rs`.
 
 #[path = "../examples/support/pool.rs"]
 mod pool;
@@ -197,6 +199,7 @@ fn run_with(
         init: &init,
         templates: &templates,
         bank,
+        proposals: &[],
     };
     create(target, &inputs, objective, cfg, progress).unwrap()
 }
@@ -305,20 +308,22 @@ fn the_schedule_depends_on_renders_never_on_wall_time() {
 }
 
 #[test]
-fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
+fn successive_halving_runs_on_each_branchs_renders_and_the_budget_is_hard() {
     let t = target();
+    let bank = small_bank();
     let cfg = CreateCfg {
         k: 8,
-        budget: 3_000,
+        first_rung: 40,
         ..cheap_cfg(3_000)
     };
-    // 1 heuristic + 3 templates: 4 starts, all screened in round 0, and 4 branches.
-    let r = run_with(&t, None, &mut proxy, &cfg, &mut |_| true);
-    assert_eq!(r.candidates.len(), 4);
-    assert_eq!((r.rounds[0].rung, r.rounds[0].renders), (None, 4));
+    // 1 heuristic + 3 templates + 3 neighbours: 7 starts, all screened in round 0, and 7 branches.
+    let r = run_with(&t, Some(&bank), &mut proxy, &cfg, &mut |_| true);
+    let k = r.candidates.len();
+    assert_eq!(k, 7);
+    assert_eq!((r.rounds[0].rung, r.rounds[0].renders), (None, 7));
     assert!(r.rounds[1..].iter().all(|x| x.rung.is_some()));
     assert!(r.renders <= cfg.budget);
-    // Live branches never grow from one rung to the next: 4, then at most 2 (half, at least the finalists), then 2.
+    // Live branches per rung: 7, then ⌈7 / 2⌉ = 4, then 2 (the finalists), who carry on through the growing rungs.
     let max_live = |rung| {
         r.rounds
             .iter()
@@ -327,30 +332,42 @@ fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
             .max()
             .unwrap_or(0)
     };
-    assert!(
-        max_live(0) <= 4 && max_live(1) <= 2 && max_live(2) <= 2,
+    assert_eq!(
+        (max_live(0), max_live(1), max_live(2)),
+        (7, 4, 2),
         "{:?}",
         r.rounds
     );
-    // Rung 0 spends about 10 % of what screening left (299 of 2,996): it ends at the first round boundary past its
-    // shares, so by less than one batch per branch later.
-    let end0 = r
-        .rounds
-        .iter()
-        .filter(|x| x.rung == Some(0))
-        .map(|x| x.renders)
-        .max()
-        .unwrap();
-    assert!(
-        (4 + 299..4 + 299 + 4 * 64).contains(&end0),
-        "rung 0 ended at {end0}"
-    );
+    assert!(max_live(3) <= 2 && max_live(4) <= 2, "{:?}", r.rounds);
     assert_eq!(
         r.candidates
             .iter()
             .filter(|c| c.state == CandidateState::Pruned)
             .count(),
-        2
+        5
+    );
+    // A branch ends each rung it finished on the batch that took it to its milestone (40 · 2^r), so past it by less
+    // than one batch.
+    for c in &r.candidates {
+        for rung in 0..c.rung {
+            let m = cfg.milestone(rung);
+            let i = c
+                .trace
+                .iter()
+                .position(|s| s.renders >= m)
+                .expect("a finished rung reached its milestone");
+            let before = if i == 0 { 0 } else { c.trace[i - 1].renders };
+            assert!(
+                before < m,
+                "branch {} rung {rung}: {before} renders before the batch that reached {m}",
+                c.branch
+            );
+        }
+    }
+    assert_eq!(
+        r.renders,
+        7 + r.candidates.iter().map(|c| c.renders).sum::<usize>(),
+        "the job's renders are the screening round's plus every branch's"
     );
 
     for budget in [1, 7, 37, 101, 333] {
@@ -369,54 +386,35 @@ fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
 }
 
 #[test]
-fn the_shell_may_set_the_budget_after_screening_and_a_replay_under_it_is_the_same() {
+fn the_heuristic_start_is_always_kept_and_carries_the_heuristic() {
     let t = target();
+    let bank = small_bank();
     let init = init();
     let templates = templates();
     let inputs = Inputs {
         init: &init,
         templates: &templates,
-        bank: None,
+        bank: Some(&bank),
+        proposals: &[],
     };
     let analysis = t.analyse().unwrap();
-    let cfg = cheap_cfg(5_000);
-    let mut job = CreateJob::new(
-        &t,
-        &analysis,
-        Portfolio::build(&analysis, &inputs, &cfg),
-        &cfg,
-    )
-    .unwrap();
-    assert!(job.budget_open());
-    let screen = job.ask();
-    assert!(!job.budget_open(), "not while a batch is out");
-    let d: Vec<f64> = screen.iter().map(proxy).collect();
-    job.tell(&d).unwrap();
-    // The shell timed the screening round and can afford 700 renders in all.
-    assert!(job.budget_open());
-    job.set_budget(700).unwrap();
-    run(&mut job, &mut proxy, &mut |_| true).unwrap();
-    assert!(!job.budget_open());
-    assert_eq!(job.set_budget(900).unwrap_err().code(), "bad_create_cfg");
-    let shell = job.result();
-    assert!(shell.renders <= 700);
-
-    let replay = run_with(&t, None, &mut proxy, &cheap_cfg(700), &mut |_| true);
-    assert_eq!(replay, shell);
-}
-
-#[test]
-fn the_heuristic_start_is_always_kept() {
-    let t = target();
-    let bank = small_bank();
-    // An objective that hates the init template: the heuristic start screens worst, and is kept anyway.
-    let init = init();
-    let mut hate = |p: &Patch| if *p == init { 99.0 } else { proxy(p) };
     let cfg = CreateCfg {
         k: 2,
         ..cheap_cfg(200)
     };
-    let r = run_with(&t, Some(&bank), &mut hate, &cfg, &mut |_| true);
+    let portfolio = Portfolio::build(&t, &analysis, &inputs, &cfg);
+    // The heuristic start is the init template with the target's envelope and pitch applied before screening (should-fix
+    // 4): its proposal is what the heuristic gave.
+    let start = portfolio.starts[0].patch.clone();
+    assert_eq!(portfolio.starts[0].provenance, Provenance::Heuristic);
+    assert_ne!(start, init, "the heuristic changed the init template");
+    let attack: ParamAddr = "env1.attack".parse().unwrap();
+    assert_ne!(start.value(&attack), init.value(&attack));
+    // An objective that hates it: it screens worst, and is kept anyway.
+    let mut hate = |p: &Patch| if *p == start { 99.0 } else { proxy(p) };
+    let mut job = CreateJob::new(&t, &analysis, portfolio, &cfg).unwrap();
+    run(&mut job, &mut hate, &mut |_| true).unwrap();
+    let r = job.result();
     assert_eq!(r.candidates.len(), 2);
     assert!(r.starts.len() > 2);
     assert_eq!(r.starts[0].provenance, Provenance::Heuristic);
@@ -436,9 +434,10 @@ fn a_record_replays_the_run_and_keeps_every_start() {
         init: &init,
         templates: &templates,
         bank: Some(&bank),
+        proposals: &[],
     };
     let analysis = t.analyse().unwrap();
-    let portfolio = Portfolio::build(&analysis, &inputs, &cfg);
+    let portfolio = Portfolio::build(&t, &analysis, &inputs, &cfg);
     let mut job = CreateJob::new(&t, &analysis, portfolio, &cfg).unwrap();
     run(&mut job, &mut proxy, &mut |_| true).unwrap();
     let result = job.result();
@@ -449,7 +448,7 @@ fn a_record_replays_the_run_and_keeps_every_start() {
         &RecordContext {
             target: &t,
             analysis: &analysis,
-            cfg: &cfg,
+            intake: None,
             objective: "proxy/0",
             bank: Some(&bank),
             templates: &names,
@@ -519,6 +518,7 @@ fn bad_targets_and_settings_are_errors_not_panics() {
         init: &init,
         templates: &[],
         bank: None,
+        proposals: &[],
     };
     for cfg in [
         CreateCfg {
@@ -530,7 +530,15 @@ fn bad_targets_and_settings_are_errors_not_panics() {
             ..CreateCfg::default()
         },
         CreateCfg {
-            rungs: [0.0; 3],
+            first_rung: 0,
+            ..CreateCfg::default()
+        },
+        CreateCfg {
+            eta: 1,
+            ..CreateCfg::default()
+        },
+        CreateCfg {
+            finalists: 0,
             ..CreateCfg::default()
         },
         CreateCfg {

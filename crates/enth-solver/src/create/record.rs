@@ -8,20 +8,26 @@
 //! | Field | What |
 //! | --- | --- |
 //! | `schema` | `"enth.create/1"` ([`SCHEMA`]) |
-//! | `input` | the decoded clip's SHA-256, the input features' SHA-256, the rate, the frames, the render seed, the performance, the bandwidth and noise floor the intake reported |
-//! | `settings` | every [`CreateCfg`] field, the objective's metric id (the caller's), the embedding id, the bank's SHA-256 and size when one was used, the templates' names |
+//! | `input` | the scored clip's SHA-256, the input features' SHA-256, the rate, the frames, the render seed, the performance **played** (an override included), the bandwidth and the confirmed noise floor |
+//! | `intake` | FE's [`IntakeReport`] whole (its settings, the performance it **inferred**, every degradation and warning), when the shell ran the intake; absent for a target built another way |
+//! | `settings` | every [`CreateCfg`] field **the job ran under** (from the result, never the shell's copy), the objective's metric id (the caller's), the embedding id, the bank's SHA-256 and size when one was used, the templates' names |
 //! | `starts` | **every start as a patch** (patch file schema 1), with its provenance, its screening distance and the branch it became |
 //! | `candidates` | the K branches: the refined patch, its distance, the proposal's distance, state, last rung, renders, runs, trace |
 //! | `rounds` | per round: renders, rung, live branches, and `seconds` when the shell stamped its clock |
-//! | `renders`, `budget`, `stop`, `best`, `notes` | the totals, why it ended, the best candidate's index, notices |
+//! | `renders`, `stop`, `best`, `notes` | the total, why it ended, the best candidate's index, notices |
 //!
 //! **Lenient on input:** a record read back ignores fields it does not know, so a shell may add its own (the CLI's
-//! `hint`; FE's intake report, embedded whole as `intake` once FE's type lands, additively). Distances that can be
-//! non-finite (a start never evaluated) are `null`. Changing a field's meaning needs `enth.create/2`.
+//! `hint`), an enum value it does not know (a newer provenance, state or stop) reads as `unknown`, and an intake report
+//! it cannot read reads as absent. Distances that can be non-finite (a start never evaluated) are `null`. Changing a
+//! field's meaning needs `enth.create/2`.
 //!
-//! [`CreateRecord::starts`] rebuilds the starts and [`CreateRecord::cfg`] the settings, so
-//! `CreateJob::new(target, analysis, portfolio, cfg)` with the same target replays the run.
+//! [`CreateRecord::starts`] rebuilds the starts and [`CreateRecord::replay_cfg`] the settings with the budget set to
+//! the renders the run used, so `CreateJob::new(target, analysis, portfolio, cfg)` with the same target replays the
+//! run, whatever stopped it (the budget, a wall-clock cap, a cancel): rungs never depend on the budget, so a run is
+//! a prefix of any longer one. A replay needs the same clip bit for bit (the recorded `audio_sha256`); the recorded
+//! starts make retrieval and inference unnecessary, not decoding.
 
+use enth_analysis::intake::IntakeReport;
 use enth_patch::file::PatchFile;
 use enth_patch::{Invalid, Patch};
 use serde::{Deserialize, Serialize};
@@ -50,7 +56,7 @@ fn finite(v: f64) -> Option<f64> {
     v.is_finite().then_some(v)
 }
 
-/// The performance a job played, under FE's names.
+/// The performance a job played, under FE's names (the inferred one, or the shell's override).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PerfRecord {
     /// MIDI note.
@@ -70,13 +76,13 @@ pub struct PerfRecord {
 /// What the job was given.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InputRecord {
-    /// SHA-256 of the decoded mono clip (`f32` little-endian samples).
+    /// SHA-256 of the scored mono clip (`f32` little-endian samples).
     pub audio_sha256: String,
     /// SHA-256 of the input features (the k-NN embedding, then the log-mel).
     pub features_sha256: String,
     /// The file's rate.
     pub sample_rate: u32,
-    /// Frames in the clip.
+    /// Frames in the scored clip.
     pub frames: usize,
     /// The render seed.
     pub render_seed: u64,
@@ -84,7 +90,7 @@ pub struct InputRecord {
     pub perf: PerfRecord,
     /// The intake's detected bandwidth.
     pub bandwidth_hz: Option<f64>,
-    /// The intake's noise floor, dBFS.
+    /// The intake's noise floor, dBFS, when confirmed.
     pub noise_floor_dbfs: Option<f64>,
 }
 
@@ -99,12 +105,12 @@ pub struct BankRecord {
     pub generator: u16,
 }
 
-/// The settings a job ran with.
+/// The settings a job ran under.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SettingsRecord {
     /// K.
     pub k: usize,
-    /// The render budget.
+    /// The render budget (a hard cap).
     pub budget: usize,
     /// The seed.
     pub seed: u64,
@@ -116,8 +122,10 @@ pub struct SettingsRecord {
     pub lambda: usize,
     /// The goal distance, if any.
     pub stop_at: Option<f64>,
-    /// The rungs' shares.
-    pub rungs: [f64; 3],
+    /// The first milestone, in a branch's renders.
+    pub first_rung: usize,
+    /// The halving factor.
+    pub eta: usize,
     /// The finalists.
     pub finalists: usize,
     /// The objective's metric id (the caller's: `logmel-l1/1`, or OBJ's robust id).
@@ -207,6 +215,10 @@ pub struct CreateRecord {
     pub schema: String,
     /// What the job was given.
     pub input: InputRecord,
+    /// FE's intake report, whole (absent when the target did not come from the intake). Read leniently: a report
+    /// this build cannot read (a newer intake's) reads as absent rather than refusing the record.
+    #[serde(default, deserialize_with = "lenient_intake")]
+    pub intake: Option<IntakeReport>,
     /// How it ran.
     pub settings: SettingsRecord,
     /// Every start, as a patch.
@@ -217,8 +229,6 @@ pub struct CreateRecord {
     pub rounds: Vec<RoundRecord>,
     /// Renders used.
     pub renders: usize,
-    /// The budget.
-    pub budget: usize,
     /// Why it ended.
     pub stop: CreateStop,
     /// The best candidate's index in `candidates`.
@@ -227,15 +237,16 @@ pub struct CreateRecord {
     pub notes: Vec<String>,
 }
 
-/// What a record needs besides the result: the job's inputs.
+/// What a record needs besides the result: the job's inputs. The settings come from the result (what the job ran
+/// under), never from here.
 #[derive(Clone, Copy, Debug)]
 pub struct RecordContext<'a> {
     /// The target.
     pub target: &'a Target,
     /// Its analysis.
     pub analysis: &'a Analysis,
-    /// The settings.
-    pub cfg: &'a CreateCfg,
+    /// The intake's report, when the target came from the intake ([`Target::from_intake`]).
+    pub intake: Option<&'a IntakeReport>,
     /// The objective's metric id.
     pub objective: &'a str,
     /// The bank, when one was used.
@@ -249,7 +260,7 @@ impl CreateRecord {
     #[must_use]
     pub fn new(result: &CreateResult, ctx: &RecordContext<'_>) -> CreateRecord {
         let t = ctx.target;
-        let cfg = ctx.cfg;
+        let cfg = &result.cfg;
         CreateRecord {
             schema: SCHEMA.to_owned(),
             input: InputRecord {
@@ -269,6 +280,7 @@ impl CreateRecord {
                 bandwidth_hz: t.bandwidth_hz,
                 noise_floor_dbfs: t.noise_floor_dbfs,
             },
+            intake: ctx.intake.cloned(),
             settings: SettingsRecord {
                 k: cfg.k,
                 budget: cfg.budget,
@@ -277,7 +289,8 @@ impl CreateRecord {
                 min_spread: cfg.min_spread,
                 lambda: cfg.lambda,
                 stop_at: cfg.stop_at,
-                rungs: cfg.rungs,
+                first_rung: cfg.first_rung,
+                eta: cfg.eta,
                 finalists: cfg.finalists,
                 objective: ctx.objective.to_owned(),
                 embedding: EMBEDDING_ID.to_owned(),
@@ -329,14 +342,13 @@ impl CreateRecord {
                 })
                 .collect(),
             renders: result.renders,
-            budget: result.budget,
             stop: result.stop,
             best: result.best().map(|c| c.branch),
             notes: result.notes.clone(),
         }
     }
 
-    /// The settings the job ran with.
+    /// The settings the job ran under, its budget (the cap) included.
     #[must_use]
     pub fn cfg(&self) -> CreateCfg {
         let s = &self.settings;
@@ -348,8 +360,21 @@ impl CreateRecord {
             min_spread: s.min_spread,
             lambda: s.lambda,
             stop_at: s.stop_at,
-            rungs: s.rungs,
+            first_rung: s.first_rung,
+            eta: s.eta,
             finalists: s.finalists,
+        }
+    }
+
+    /// The settings that replay the run whatever stopped it: [`cfg`](Self::cfg) with the budget set to the renders it
+    /// used (the render-equivalent twin). The renders, rounds and candidates' patches and distances come back the
+    /// same; the stop reads `budget` for a run a cap or a cancel ended, and a branch an exhausted run pruned after its
+    /// last round can read `done`.
+    #[must_use]
+    pub fn replay_cfg(&self) -> CreateCfg {
+        CreateCfg {
+            budget: self.renders.max(1),
+            ..self.cfg()
         }
     }
 
@@ -371,6 +396,20 @@ impl CreateRecord {
             notes: Vec::new(),
         })
     }
+}
+
+/// An intake report, or nothing when it is absent, `null` or not one this build reads.
+fn lenient_intake<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IntakeReport>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Maybe {
+        Report(IntakeReport),
+        Other(serde::de::IgnoredAny),
+    }
+    Ok(match Maybe::deserialize(d)? {
+        Maybe::Report(r) => Some(r),
+        Maybe::Other(_) => None,
+    })
 }
 
 fn step_record(s: &BranchStep) -> StepRecord {
@@ -407,6 +446,7 @@ mod tests {
                 hypothesis: 3,
                 confidence: Some(0.5),
             },
+            Provenance::Unknown,
         ];
         insta::assert_json_snapshot!("provenance", provenance);
         let states = (
@@ -415,12 +455,14 @@ mod tests {
                 CandidateState::Searching,
                 CandidateState::Done,
                 CandidateState::Pruned,
+                CandidateState::Unknown,
             ],
             [
                 CreateStop::Budget,
                 CreateStop::Cancelled,
                 CreateStop::Exhausted,
                 CreateStop::Goal,
+                CreateStop::Unknown,
             ],
         );
         insta::assert_json_snapshot!("states", states);
