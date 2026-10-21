@@ -1,0 +1,256 @@
+# Lesson 6.2, Glide [shaping · intermediate · tour] (content/lessons/PLAN.md §5, U6).
+#
+# Hear (glide 0, 150 and 600 ms on two overlapping notes in legato mode, as a bass at C2 and a lead at C4; then the
+# glide mode on detached and overlapping notes), a "which one glides?" item → Name → Try (turn glide on) → two Do
+# steps (a slower slide; glide only on overlapping notes, checked by the pitch of the octave pair) → two ear
+# questions. Phrases: LEGATO_PAIR (3: C3, then G3 overlapping it) and OCTAVE_PAIR (2: C3, then C4 after it ends), the
+# generator's own, which reveal glide and its mode.
+#
+# Changed from the card, measured on engine 0.3.0 with `enth compare --phrase` and `enth describe`: sound/1 is deaf to
+# glide. On the legato pair in legato mode, 0 against 120 ms is 0.00 JND, 0 against 400 ms 0.14, 400 ms against
+# 1.5 s 0.59; the two glide modes on the octave pair are 0.41 apart. So the card's rounds (a drawn glide time, a drawn
+# mode) cannot be scored honestly. The descriptors hear it: `pitch` (pitch.f0_hz, the pitch over the whole clip) of
+# the legato pair sits on G3 with no or a short slide and falls as the slide takes up more of the second note
+# (0 ms 196.0 Hz, 120 ms 196.0, 250 ms 187.0, 400 ms 163.9, 800 ms 146.3, 1.5 s 139.0), and on the octave pair it
+# reads C4 (261.6 Hz) when the detached high note does not glide and about C3 (131 to 134.5 Hz over the three seeds)
+# when it glides up from C3. These readings gate the mode step and the ear questions.
+
+schema = "enth.lesson/1"
+id = "glide"
+title = "Glide"
+tier = "intermediate"
+objective = "Make the pitch slide from one note to the next, set how long the slide takes, and choose when it slides."
+teaches = ["voice.glide", "voice.glide_mode"]
+
+# --- Hear: glide off, 150 ms and 600 ms on the legato pair, a bass an octave down, then a lead an octave up.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Bass, no glide"
+patch = "patches/legato-glide-0.patch.json"
+phrase = 3
+transpose = -12
+
+[[steps.examples]]
+label = "Bass, 150 ms"
+patch = "patches/legato-glide-150.patch.json"
+phrase = 3
+transpose = -12
+
+[[steps.examples]]
+label = "Bass, 600 ms"
+patch = "patches/legato-glide-600.patch.json"
+phrase = 3
+transpose = -12
+
+[[steps.examples]]
+label = "Lead, no glide"
+patch = "patches/legato-glide-0.patch.json"
+phrase = 3
+transpose = 12
+
+[[steps.examples]]
+label = "Lead, 150 ms"
+patch = "patches/legato-glide-150.patch.json"
+phrase = 3
+transpose = 12
+
+[[steps.examples]]
+label = "Lead, 600 ms"
+patch = "patches/legato-glide-600.patch.json"
+phrase = 3
+transpose = 12
+
+# --- Hear: the glide mode at 400 ms, on detached notes (the octave pair) and on overlapping ones (the legato pair).
+[[steps]]
+id = "hear-mode"
+kind = "listen"
+text = "hear-mode.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Detached, always"
+patch = "patches/mono-glide-400.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Detached, legato only"
+patch = "patches/mono-glide-400-legato.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Overlapping, always"
+patch = "patches/mono-glide-400.patch.json"
+phrase = 3
+
+[[steps.examples]]
+label = "Overlapping, legato only"
+patch = "patches/mono-glide-400-legato.patch.json"
+phrase = 3
+
+# --- Hear's ear question: which one glides? (0 against 400 ms on the legato pair: 0.14 JND under sound/1; the pitch
+# reads 196.0 against 163.9 Hz, about 310 cents apart.)
+[[steps]]
+id = "which-glides"
+kind = "choose"
+text = "which-glides.md"
+hints = ["Listen to the moment the second note comes in: one jumps, the other slides up."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/legato-glide-0.patch.json"
+phrase = 3
+
+[[steps.options]]
+label = "B"
+patch = "patches/legato-glide-400.patch.json"
+phrase = 3
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/legato-glide-400.patch.json"
+highlight = ["voice.glide", "voice.glide_mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: turn glide on. Start: legato mode, glide 0. Witness: 400 ms. A patch goal: a short glide (under about
+# 200 ms) does not move the legato pair's pitch reading at all (0 and 120 ms both read 196.0 Hz), so a sound check here
+# would give the measured hints nothing to follow; the next step checks the slide by ear and by sound.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Glide is on the Voice card, beside the effects. Turn it up.",
+  "A few hundred milliseconds is easy to hear: play one note, then the next before you let go of the first.",
+]
+witness = "patches/legato-glide-400.patch.json"
+
+[steps.view]
+start = "patches/legato-glide-0.patch.json"
+highlight = ["voice.glide"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.glide"]
+locked = ["voice.mode", "voice.glide_mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["voice.glide >= 200ms"]
+
+# --- Do: a slower slide. Start: 250 ms. Witness: 800 ms. A patch goal, like the Try: the legato pair's pitch reading
+# does follow the glide (250 ms 187.0 Hz, 400 ms 163.9, 800 ms 146.3), but the measured hint probes pitch items on a
+# 0.5 s clip (`HintCfg::short_clip_s`), before the second note starts, so it finds no slope and a player following the
+# hints would be stuck (lesson-check --solve: "no free parameter moves pitch.f0_hz"). The ear questions check the
+# glide's length by that reading instead.
+[[steps]]
+id = "slower"
+kind = "do"
+text = "slower.md"
+hints = [
+  "Turn Glide further up: the slide should take most of a second.",
+  "Listen for the notes in between: a slow glide sweeps through them on the way up.",
+]
+witness = "patches/legato-glide-800.patch.json"
+
+[steps.view]
+start = "patches/legato-glide-250.patch.json"
+highlight = ["voice.glide"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.glide"]
+locked = ["voice.mode", "voice.glide_mode", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["voice.glide >= 600ms"]
+
+# --- Do: glide only on overlapping notes. Start: mono, 400 ms, glide mode always: on the octave pair the detached
+# high note glides up from C3 (the pitch reads about 131 to 134.5 Hz: fails `pitch > 200Hz`). Witness: glide mode
+# legato (the high note starts on C4: 261.6 Hz, passing by 61.6 Hz). The mode is a switch, so the measured hints
+# cannot make it (noted); the witness shows it.
+[[steps]]
+id = "mode"
+kind = "do"
+text = "mode.md"
+hints = [
+  "Glide mode is on the Voice card, next to Glide. Set it to legato.",
+  "With legato, only a note played while another is still held slides; a fresh note starts on its own pitch.",
+]
+witness = "patches/mono-glide-400-legato.patch.json"
+
+[steps.view]
+start = "patches/mono-glide-400.patch.json"
+highlight = ["voice.glide_mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.glide_mode"]
+locked = ["voice.mode", "voice.glide", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["voice.glide_mode == legato"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 2
+expect = ["pitch > 200Hz"]
+
+# --- Check: does it glide on detached notes (the octave pair, glide mode always against legato: the pitch reads about
+# 134 against 261.6 Hz), and which slides longer (150 ms against 800 ms on the legato pair: 196.0 against 146.3 Hz)?
+# sound/1 is deaf to both (0.41 and about 0.3 JND), so the gate decides by the pitch reading.
+[[steps]]
+id = "check-detached"
+kind = "choose"
+text = "check-detached.md"
+hints = ["The two notes do not overlap. In one, the high note still slides in from the low one."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/mono-glide-400.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/mono-glide-400-legato.patch.json"
+phrase = 2
+
+[[steps]]
+id = "check-longer"
+kind = "choose"
+text = "check-longer.md"
+hints = ["The longer glide spends more of the second note between the two pitches."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/legato-glide-150.patch.json"
+phrase = 3
+
+[[steps.options]]
+label = "B"
+patch = "patches/legato-glide-800.patch.json"
+phrase = 3

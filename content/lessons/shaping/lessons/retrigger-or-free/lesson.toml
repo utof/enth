@@ -1,0 +1,184 @@
+# Lesson 5.6, Retrigger or free [shaping · advanced] (content/lessons/PLAN.md §5, U5).
+#
+# Hear (a slow sine LFO on the cutoff in free and reset mode, each over two render seeds; random steps unseeded and
+# seeded over two render seeds), a "which one opens first?" item → Name → Try (reset) → two Do steps (start falling:
+# the phase; repeat the random steps: seeded). No round: phase mode, phase and seed are nuisances,
+# never drawn (PLAN.md §1.3), and sound/1 gives the target's nuisance values to the answer by design.
+#
+# Measured on engine 0.3.0 at HELD, a saw with lfo1 (sine, 0.5 Hz) on the cutoff at 20 %, reset mode: phase 0 starts
+# the cutoff rising and phase 180 degrees starts it falling over the 1.5 s note (the clip's brightness reads 1337
+# against 1057 Hz, and the sweep reads up against down), which gates the phase step and the ear question by
+# brightness; sound/1 cannot compare them (it copies the target's phase to the answer). The render-seed examples are
+# heard, not checked: no ear question compares two takes, because an option holds one clip and sound/1 cannot compare
+# options with a render seed.
+
+schema = "enth.lesson/1"
+id = "retrigger-or-free"
+title = "Retrigger or free"
+tier = "advanced"
+objective = "Decide where an LFO starts at each note, and make random LFOs repeat."
+teaches = ["lfo.phase_mode", "lfo.phase", "lfo.seed"]
+
+# --- Hear: free mode over render seeds 1 and 2 (they differ), then reset mode over the same seeds (they match).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Free, take 1"
+patch = "patches/lfo-free.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Free, take 2"
+patch = "patches/lfo-free.patch.json"
+seed = 2
+
+[[steps.examples]]
+label = "Reset, take 1"
+patch = "patches/lfo-reset-0.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Reset, take 2"
+patch = "patches/lfo-reset-0.patch.json"
+seed = 2
+
+# --- Hear: random steps over two render seeds, unseeded (they differ) and seeded (they repeat).
+[[steps]]
+id = "hear-seed"
+kind = "listen"
+text = "hear-seed.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Random, take 1"
+patch = "patches/sh-free.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Random, take 2"
+patch = "patches/sh-free.patch.json"
+seed = 2
+
+[[steps.examples]]
+label = "Seeded, take 1"
+patch = "patches/sh-seeded.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Seeded, take 2"
+patch = "patches/sh-seeded.patch.json"
+seed = 2
+
+# --- Hear's ear question: which one opens first? (reset at phase 0 against 180 degrees: brightness 1337 against
+# 1057 Hz.)
+[[steps]]
+id = "which-first"
+kind = "choose"
+text = "which-first.md"
+hints = ["Listen to the first half second: one gets brighter, the other darker."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/lfo-reset-0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/lfo-reset-180.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/lfo-reset-0.patch.json"
+highlight = ["lfo1.phase_mode", "lfo1.phase", "lfo1.seed"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: the same every time. Start: free mode. Witness: reset (phase 0). A patch goal.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Phase mode is on lfo1's card.",
+  "Reset starts the LFO at the Start phase knob on every note.",
+]
+witness = "patches/lfo-reset-0.patch.json"
+
+[steps.view]
+start = "patches/lfo-free.patch.json"
+highlight = ["lfo1.phase_mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.phase_mode"]
+locked = ["lfo1.shape", "lfo1.rate", "lfo1.phase", "lfo1.seed", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["lfo1.phase_mode == reset"]
+
+# --- Do: start falling. Start: reset at phase 0 (brightness 1337 Hz: fails `brightness < 1200Hz`). Witness: phase
+# 180 degrees (1057 Hz: passes by 143 Hz). The phase is periodic, which the measured hints do not move (noted).
+[[steps]]
+id = "phase"
+kind = "do"
+text = "phase.md"
+hints = [
+  "Start phase is on lfo1's card, in degrees around the cycle.",
+  "Half way round, 180 degrees, starts the sine going down.",
+]
+witness = "patches/lfo-reset-180.patch.json"
+
+[steps.view]
+start = "patches/lfo-reset-0.patch.json"
+highlight = ["lfo1.phase"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.phase"]
+locked = ["lfo1.shape", "lfo1.rate", "lfo1.phase_mode", "lfo1.seed", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.phase in [135deg, 225deg]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 1200Hz"]
+
+# --- Do: repeat the random steps. Start: sample and hold in reset mode, seed 0. Witness: seeded mode, seed 7.
+[[steps]]
+id = "seeded"
+kind = "do"
+text = "seeded.md"
+hints = [
+  "Set Phase mode to seeded.",
+  "Then pick a Seed other than 0; each seed is its own fixed pattern.",
+]
+witness = "patches/sh-seeded.patch.json"
+
+[steps.view]
+start = "patches/sh-free.patch.json"
+highlight = ["lfo1.phase_mode", "lfo1.seed"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.phase_mode", "lfo1.seed"]
+locked = ["lfo1.shape", "lfo1.rate", "lfo1.phase", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["lfo1.phase_mode == seeded", "lfo1.seed != 0"]

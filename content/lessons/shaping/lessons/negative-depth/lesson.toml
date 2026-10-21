@@ -1,0 +1,161 @@
+# Lesson 4.4, Negative depth [shaping · intermediate] (content/lessons/PLAN.md §5, U4).
+#
+# Hear (env2 on the cutoff at +30 and -30 %, on the saw and the pad; env2 on the pitch, falling and rising), a
+# "which one opens?" item → Name → Try (turn the cutoff route negative) → a Do step (turn the pitch route negative) →
+# two ear questions.
+#
+# Changed from the card, measured on engine 0.3.0 at HELD: the card's rounds draw the depth and its sign, and
+# `closest` (lesson-check --solve) moves parameters only, so a drawn route depth could never be shown reachable; and
+# the direction of a sweep has no expectation (finding 2), while a brightness goal would let the measured hints turn
+# the cutoff knob instead of the route. So the sign is a patch goal and the ear questions are the non-patch check:
+# with the cutoff at 1.5 kHz and env2 at attack 1 ms, decay 1.5 s, no sustain, +30 against -30 % is 3.01 JND under
+# sound/1 (the closing sweep's brightness reads 910 Hz, the opening one's 682 Hz). The pitch route is a Hear example
+# and a patch goal only: sound/1 is deaf to a short pitch envelope (a 24-semitone drop against a 24-semitone rise on
+# a saw pluck: 0.11 JND).
+
+schema = "enth.lesson/1"
+id = "negative-depth"
+title = "Negative depth"
+tier = "intermediate"
+objective = "Turn a route's depth below zero, so the envelope pushes its knob down instead of up."
+teaches = ["svf.cutoff", "osc.semi"]
+
+# --- Hear: the cutoff route at +30 and -30 % on the saw, then at +50 and -50 % on the pad an octave up.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "+30 %"
+patch = "patches/closes-30.patch.json"
+
+[[steps.examples]]
+label = "-30 %"
+patch = "patches/opens-30.patch.json"
+
+[[steps.examples]]
+label = "Pad, +50 %"
+patch = "patches/pad-closes-50.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, -50 %"
+patch = "patches/pad-opens-50.patch.json"
+transpose = 12
+
+# --- Hear: env2 on the pitch, falling and rising, on a low sine thump.
+[[steps]]
+id = "hear-pitch"
+kind = "listen"
+text = "hear-pitch.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "+12 semitones"
+patch = "patches/kick-drop-12st.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "-12 semitones"
+patch = "patches/kick-rise-12st.patch.json"
+transpose = -12
+
+# --- Hear's ear question: which one opens? (-30 against +30 %: 3.01 JND.)
+[[steps]]
+id = "which-opens"
+kind = "choose"
+text = "which-opens.md"
+hints = ["Listen to the start of each note: one starts dark and brightens, the other starts bright and darkens."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/closes-30.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/opens-30.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/opens-30.patch.json"
+highlight = ["env2 -> filter1.cutoff", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: make it open. Start: +30 % (closes). Witness: -30 % (opens). A patch goal (above).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the orange dot on the Cutoff knob's ring below the knob's own value: past zero, the depth turns negative.",
+  "About -30 % mirrors the sweep: dark at the start, opening to the knob.",
+]
+witness = "patches/opens-30.patch.json"
+
+[steps.view]
+start = "patches/closes-30.patch.json"
+highlight = ["env2 -> filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2 -> filter1.cutoff", "filter1.cutoff"]
+locked = ["osc1.*", "env2.attack", "env2.decay", "env2.sustain", "env2.release"]
+
+[steps.check]
+kind = "patch"
+predicates = ["env2 -> filter1.cutoff < -20%"]
+
+# --- Do: make the pitch rise. Start: the thump that drops 12 semitones. Witness: the one that rises 12. A patch goal.
+[[steps]]
+id = "pitch"
+kind = "do"
+text = "pitch.md"
+hints = [
+  "env2 drives osc1's Semitones. Drag the orange dot on the Semitones knob's ring below the knob.",
+  "A depth of -12.5 % starts each note an octave low.",
+]
+witness = "patches/kick-rise-12st.patch.json"
+
+[steps.view]
+start = "patches/kick-drop-12st.patch.json"
+highlight = ["env2 -> osc1.semi"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2 -> osc1.semi", "osc1.semi"]
+locked = ["filter1.*", "env1.*", "env2.attack", "env2.decay", "env2.sustain", "env2.release"]
+
+[steps.check]
+kind = "patch"
+predicates = ["env2 -> osc1.semi < -5%"]
+
+# --- Check: which one closes, on the pad (+50 against -50 %: 2.48 JND; at 30 % the pad's slow attack hides the
+# sweep's start, 1.57 JND, under the gate).
+[[steps]]
+id = "check-closes"
+kind = "choose"
+text = "check-closes.md"
+hints = ["The closing one is brightest at the very start."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pad-closes-50.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pad-opens-50.patch.json"

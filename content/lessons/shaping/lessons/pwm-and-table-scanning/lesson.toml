@@ -1,0 +1,175 @@
+# Lesson 5.4, PWM and table scanning [shaping · intermediate] (content/lessons/PLAN.md §5, U5).
+#
+# Hear (PWM on a pulse at 0.8 Hz over a long note, at 0, 25 and 45 %; a scan through the basic table at 0.5 Hz and
+# through the tilt table at 2 Hz), a "which one moves?" item → Name → Try (route lfo1 to the pulse width) → a Do step
+# (route lfo1 to a table's position, checked by the sweep it makes) → an ear question.
+#
+# Changed from the card, measured on engine 0.3.0 at HELD: the card's rounds draw route depths, which `closest`
+# cannot move (it moves parameters only). sound/1 hears PWM (a 50 % pulse with lfo1 at 2 Hz on its width at 25 %
+# against none: 3.98 JND), but no expectation reads it steadily (the loudness wobble reads 4.03 Hz at 25 % and
+# nothing at 45 %; the brightness moves 1.4 steps), and a brightness goal would let the measured hints turn the width
+# itself, so the PWM step is a patch goal. A table scan reads as a filter sweep: the tilt table at position 50 % with
+# lfo1 (2 Hz) on its position at 50 % gives `filter_lfo` 1.968 Hz over 3.27 octaves, while sound/1 puts it 1.25 JND
+# from no scan; the scan step checks `filter_lfo`, and the ear question passes on that reading.
+
+schema = "enth.lesson/1"
+id = "pwm-and-table-scanning"
+title = "PWM and table scanning"
+tier = "intermediate"
+objective = "Make a pulse or a wavetable move by itself, with an LFO on its width or its position."
+teaches = ["osc.pw", "osc.position"]
+
+# --- Hear: PWM at 0.8 Hz over a long note (phrase 5, C3 held 8 s): none, 25 % and 45 %.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No PWM"
+patch = "patches/pwm-ready-0p8hz.patch.json"
+phrase = 5
+
+[[steps.examples]]
+label = "PWM, 25 %"
+patch = "patches/pwm-25-0p8hz.patch.json"
+phrase = 5
+
+[[steps.examples]]
+label = "PWM, 45 %"
+patch = "patches/pwm-45-0p8hz.patch.json"
+phrase = 5
+
+[[steps.examples]]
+label = "PWM, 45 %, low"
+patch = "patches/pwm-45-0p8hz.patch.json"
+phrase = 5
+transpose = -12
+
+# --- Hear: table scans: the basic table at 0.5 Hz over a long note, the tilt table at 2 Hz.
+[[steps]]
+id = "hear-scan"
+kind = "listen"
+text = "hear-scan.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Basic table, 0.5 Hz"
+patch = "patches/scan-basic-0p5hz.patch.json"
+phrase = 5
+
+[[steps.examples]]
+label = "Tilt table, still"
+patch = "patches/scan-ready.patch.json"
+
+[[steps.examples]]
+label = "Tilt table, 2 Hz"
+patch = "patches/scan-50.patch.json"
+
+# --- Hear's ear question: which one moves? (PWM at 25 % against none: 3.98 JND.)
+[[steps]]
+id = "which-moves"
+kind = "choose"
+text = "which-moves.md"
+hints = ["One stays the same; in the other the tone shifts back and forth, like two voices drifting."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pwm-ready.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pwm-25.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/pwm-25.patch.json"
+highlight = ["lfo1 -> osc1.pw", "osc1.pw"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: PWM. Start: the pulse with lfo1 routed nowhere. Witness: lfo1 on the width at 25 %. A patch goal (above).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on lfo1's tile onto the Pulse width knob of osc1's card.",
+  "The drop makes a route at 25 %: a clear, slow shimmer.",
+]
+witness = "patches/pwm-25.patch.json"
+
+[steps.view]
+start = "patches/pwm-ready.patch.json"
+highlight = ["lfo1 -> osc1.pw", "osc1.pw"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> osc1.pw", "osc1.pw"]
+locked = ["lfo1.shape", "lfo1.rate", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["lfo1 -> osc1.pw > 10%"]
+
+# --- Do: scan a table. Start: the tilt table at 50 % with lfo1 routed nowhere (no sweep: fails). Witness: lfo1 on the
+# position at 50 % (1.968 Hz: inside [1.5Hz, 2.5Hz]). A route is structure (noted).
+[[steps]]
+id = "scan"
+kind = "do"
+text = "scan.md"
+hints = [
+  "Drag the ⊕ on lfo1's tile onto the Position knob of osc1's card.",
+  "Deepen the route to about 50 % so the scan sweeps from bright to dull and back.",
+]
+witness = "patches/scan-50.patch.json"
+
+[steps.view]
+start = "patches/scan-ready.patch.json"
+highlight = ["lfo1 -> osc1.position", "osc1.position"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> osc1.position", "osc1.position"]
+locked = ["lfo1.shape", "lfo1.rate", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> osc1.position > 20%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [1.5Hz, 2.5Hz]"]
+
+# --- Check: which one scans (the tilt table still against scanned: sound/1 1.25 JND; the sweep reads 1.968 Hz in one
+# and nothing in the other).
+[[steps]]
+id = "check-scan"
+kind = "choose"
+text = "check-scan.md"
+hints = ["The scanning one turns brighter and duller twice a second."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/scan-50.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/scan-ready.patch.json"

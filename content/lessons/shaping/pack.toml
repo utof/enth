@@ -1,0 +1,59 @@
+# The shaping pack (lane C2, R2): envelopes as modulators, LFOs, and voices and playing, units U4 to U6 of the lesson
+# plan (content/lessons/PLAN.md §2), in the authoring layout of docs/learn.md ("The lesson model (lane LM)").
+# `cargo xtask pack` turns it into canonical JSON and a reproducible .enthpack.
+#
+# Conventions (lane C1's, kept):
+#   - every patch is the starter (Init) with a few values and routes changed, at master -12 dB for headroom;
+#     `patches/` is shared by the lessons;
+#   - a lesson is Hear (listen steps, one ear question), Name (a read step of about 80 words), Try (a do step: a goal
+#     checked live), Do (do steps and, where sound/1 can hear the control, recreate steps on a drawn target) and Check
+#     (ear questions), as report 01 §3 and docs/learn.md "The lesson shape" say;
+#   - a recreate step's start is inline, written sparse: every parameter not named is the catalogue default;
+#   - steps that follow a round and carry its patch over hide the modules the lesson does not use (LUI's overflow
+#     report at 1200 x 800).
+#
+# Three findings shape this pack (measured on engine 0.3.0; each lesson's header has its numbers):
+#   - sound/1 hears slow filter sweeps, the number of notes in a chord and PWM, but is nearly deaf to motion inside
+#     a note: vibrato, tremolo shape and rate, filter LFOs, glide, pitch envelopes and short filter envelopes. Rounds
+#     appear only where it hears the control (4.1, 4.2, 6.1); elsewhere the Do steps check a descriptor that reads
+#     the control (pitch stability, the tremolo's rate and depth, the filter sweep's rate and depth, the clip's pitch
+#     and brightness), and the ear questions pass the audibility gate on those descriptors;
+#   - `closest` moves parameters only, so no round draws a route depth: depths are Do steps and ear questions;
+#   - the measured hint probes spectral items on a 0.5 s clip and a parameter a tenth of its range toward the middle,
+#     so a pitch goal on a second note cannot be followed (6.2's slower glide is a patch goal), and rate goals start
+#     above their band.
+
+schema = "enth.pack/1"
+id = "shaping"
+version = "0.1.0"
+title = "Shaping the sound"
+authors = ["enth contributors"]
+covers = ["adsr", "lfo", "osc", "svf"]
+# The order the app offers them in (the curriculum's order). Lesson ids are append-only.
+lessons = [
+  "routes-and-depth",
+  "filter-envelope-shapes",
+  "pitch-envelope",
+  "negative-depth",
+  "vibrato",
+  "shapes-and-tremolo",
+  "wobble-and-sweeps",
+  "pwm-and-table-scanning",
+  "polarity-and-scope",
+  "retrigger-or-free",
+  "poly-mono-legato",
+  "glide",
+  "playing-sources",
+]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+# Recreate steps embed `enth.challenge/2` draws (an inline start, a drawn target, constraints), scored by the
+# Recreate scorers. No generated (seed) target, so no `generator`.
+[requires]
+lesson = 1
+challenge = 2
+patch = 1
+scorers = ["combined/1", "sound/1", "structure/1", "time/1"]

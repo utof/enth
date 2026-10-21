@@ -1,0 +1,205 @@
+# Lesson 6.3, Playing sources [shaping · intermediate] (content/lessons/PLAN.md §5, U6).
+#
+# Hear (velocity on the cutoff, over a hard and a soft note; key on the pan, over a low and a high note; the mod wheel
+# opening the cutoff over a held note), a "which one responds to velocity?" item → Name → Try (route velocity to the
+# cutoff) → three Do steps (the pan; key to the pan; the mod wheel to the cutoff) → an ear question.
+#
+# Changed from the card, measured on engine 0.3.0 with the octave pair (phrase 2: C3 at velocity 100, then C4 at 50):
+# the card's rounds draw route depths, which `closest` cannot move (it moves parameters only), and a brightness goal
+# would let the measured hints turn the cutoff knob instead of the route, so the routes are patch goals. sound/1 hears
+# velocity on the cutoff (an 800 Hz saw with velocity routed to the cutoff at 30 % against none: 8.10 JND; the clip's
+# brightness reads 1247 against 553 Hz), which gates the ear questions. Pan is stereo and the analysis reads the mid
+# channel, so no check hears it (`voice.pan` is taught with a patch goal), and the mod wheel needs a control curve,
+# which sound/1 cannot compare (the wheel's ear question is noted for a listening review).
+
+schema = "enth.lesson/1"
+id = "playing-sources"
+title = "Playing sources"
+tier = "intermediate"
+objective = "Let how you play shape the sound: velocity, the key you press and the mod wheel, routed like modulators."
+teaches = ["voice.pan", "svf.cutoff"]
+
+# --- Hear: velocity on the cutoff, then key on the pan (headphones), over the octave pair.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No route"
+patch = "patches/vel-ready.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Velocity to cutoff"
+patch = "patches/vel-30.patch.json"
+phrase = 2
+
+[[steps.examples]]
+label = "Key to pan"
+patch = "patches/key-pan.patch.json"
+phrase = 2
+
+# --- Hear: the mod wheel opening the cutoff over a held note, from 0 to full in 1.5 s.
+[[steps]]
+id = "hear-wheel"
+kind = "listen"
+text = "hear-wheel.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Wheel to cutoff, wheel moving"
+patch = "patches/wheel.patch.json"
+curve = { source = "modwheel", points = [{ ms = 0, pct = 0 }, { ms = 1500, pct = 100 }] }
+
+[[steps.examples]]
+label = "No route, wheel moving"
+patch = "patches/vel-ready.patch.json"
+curve = { source = "modwheel", points = [{ ms = 0, pct = 0 }, { ms = 1500, pct = 100 }] }
+
+# --- Hear's ear question: which one responds to velocity? (8.10 JND.)
+[[steps]]
+id = "which-velocity"
+kind = "choose"
+text = "which-velocity.md"
+hints = ["Compare the two notes inside each: the second is played softly. In one, it is also darker."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/vel-ready.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/vel-30.patch.json"
+phrase = 2
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/vel-30.patch.json"
+highlight = ["velocity -> filter1.cutoff", "voice.pan"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: velocity to the cutoff. Start: the 800 Hz saw. Witness: velocity routed to the cutoff at 30 %. A patch goal.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Velocity has its own tile in the overview. Drag its ⊕ onto the Cutoff knob.",
+  "Deepen the route a little past the 25 % the drop makes.",
+]
+witness = "patches/vel-30.patch.json"
+
+[steps.view]
+start = "patches/vel-ready.patch.json"
+highlight = ["velocity -> filter1.cutoff", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["velocity -> filter1.cutoff", "filter1.cutoff"]
+locked = ["osc1.*", "env1.*", "voice.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["velocity -> filter1.cutoff > 20%"]
+
+# --- Do: the pan. Start: the starter saw, centred. Witness: 60 % left. A patch goal (no check hears stereo).
+[[steps]]
+id = "pan"
+kind = "do"
+text = "pan.md"
+hints = [
+  "Pan is on the Voice card.",
+  "Negative values are left: about -60 %.",
+]
+witness = "patches/pan-left.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+highlight = ["voice.pan"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["voice.pan"]
+locked = ["voice.mode", "voice.polyphony", "voice.glide", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["voice.pan < -30%"]
+
+# --- Do: key to the pan. Start: the starter saw. Witness: key routed to the pan at 50 %. A patch goal.
+[[steps]]
+id = "spread"
+kind = "do"
+text = "spread.md"
+hints = [
+  "Drag the ⊕ on the Key tile onto the Voice card's Pan knob.",
+  "Positive depth puts high notes to the right.",
+]
+witness = "patches/key-pan.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+highlight = ["key -> voice.pan", "voice.pan"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["key -> voice.pan", "voice.pan"]
+locked = ["voice.mode", "voice.polyphony", "voice.glide", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["key -> voice.pan > 20%"]
+
+# --- Do: the mod wheel to the cutoff. Start: the 800 Hz saw. Witness: the wheel routed to the cutoff at 30 %.
+[[steps]]
+id = "wheel"
+kind = "do"
+text = "wheel.md"
+hints = [
+  "Drag the ⊕ on the Mod wheel tile onto the Cutoff knob.",
+  "Then move your keyboard's mod wheel while you hold a note.",
+]
+witness = "patches/wheel.patch.json"
+
+[steps.view]
+start = "patches/vel-ready.patch.json"
+highlight = ["modwheel -> filter1.cutoff", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["modwheel -> filter1.cutoff", "filter1.cutoff"]
+locked = ["osc1.*", "env1.*", "voice.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["modwheel -> filter1.cutoff > 10%"]
+
+# --- Check: does the wheel brighten it? (the same moving wheel, with and without the route; noted for a listening
+# review: sound/1 cannot compare options played with a control curve.)
+[[steps]]
+id = "check-wheel"
+kind = "choose"
+text = "check-wheel.md"
+hints = ["The wheel moves the same way in both. In one, the sound opens as it moves."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/wheel.patch.json"
+curve = { source = "modwheel", points = [{ ms = 0, pct = 0 }, { ms = 1500, pct = 100 }] }
+
+[[steps.options]]
+label = "B"
+patch = "patches/vel-ready.patch.json"
+curve = { source = "modwheel", points = [{ ms = 0, pct = 0 }, { ms = 1500, pct = 100 }] }
