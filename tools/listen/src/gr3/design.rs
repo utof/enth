@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::audio::{ClipLevel, TrialLevels, decode_any, measure, scaled};
+use super::audio::{ClipLevel, TrialLevels, decode_any, measure, scaled, to_out_rate};
 use super::boot::SplitMix64;
 use super::set::{Item, Set};
 use crate::Res;
@@ -283,6 +283,8 @@ pub struct Trial {
     pub lufs_in: [f64; 3],
     /// Length of the three clips, seconds.
     pub seconds: [f64; 3],
+    /// Sample rate of the three source files, Hz (every clip is played at 48 kHz).
+    pub rates_in: [u32; 3],
 }
 
 impl Trial {
@@ -382,7 +384,7 @@ pub fn clips_dir(dir: &Path) -> PathBuf {
     dir.join("clips")
 }
 
-/// What one input file contributes to a trial: its rate, length and levels.
+/// What one input file contributes to a trial: its own rate, its length at 48 kHz and its levels.
 #[derive(Clone, Copy, Debug)]
 struct FileInfo {
     rate: u32,
@@ -390,13 +392,18 @@ struct FileInfo {
     level: ClipLevel,
 }
 
-/// Decode a candidate or reference file.
+/// Decode a candidate or reference file and bring it to 48 kHz stereo; returns the audio and the file's own rate.
 ///
 /// # Errors
 /// The file cannot be read or decoded.
-pub fn load_audio(path: &Path) -> Res<Wav> {
+pub fn load_audio(path: &Path) -> Res<(Wav, u32)> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    decode_any(&bytes).map_err(|e| format!("{}: {e}", path.display()).into())
+    let w = decode_any(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    let rate = w.sample_rate;
+    Ok((
+        to_out_rate(w).map_err(|e| format!("{}: {e}", path.display()))?,
+        rate,
+    ))
 }
 
 /// The path a trial's clip `k` (0 = reference, 1 = A, 2 = B) is read from.
@@ -439,10 +446,10 @@ pub fn finish(set: &Set, plan: &Plan, seed: u64) -> Res<Manifest> {
             let fi = if let Some(fi) = info.get(p) {
                 *fi
             } else {
-                let w = load_audio(p)?;
+                let (w, rate) = load_audio(p)?;
                 let level = measure(&w).map_err(|e| format!("{}: {e}", p.display()))?;
                 let fi = FileInfo {
-                    rate: w.sample_rate,
+                    rate,
                     seconds: w.seconds(),
                     level,
                 };
@@ -452,13 +459,6 @@ pub fn finish(set: &Set, plan: &Plan, seed: u64) -> Res<Manifest> {
             levels[k] = fi.level;
             rates[k] = fi.rate;
             seconds[k] = fi.seconds;
-        }
-        if rates[0] != rates[1] || rates[0] != rates[2] {
-            return Err(format!(
-                "item {:?}: the reference ({} Hz), A ({} Hz) and B ({} Hz) must share one sample rate; convert them to one (for example `ffmpeg -i in.wav -ar 48000 out.wav`)",
-                item.id, rates[0], rates[1], rates[2]
-            )
-            .into());
         }
         let clips = if t.audience == OWNER {
             [unique("c"), unique("c"), unique("c")]
@@ -477,6 +477,7 @@ pub fn finish(set: &Set, plan: &Plan, seed: u64) -> Res<Manifest> {
             levels: TrialLevels::plan(levels),
             lufs_in: levels.map(|l| l.lufs),
             seconds,
+            rates_in: rates,
         });
     }
     Ok(Manifest {
@@ -516,7 +517,7 @@ pub fn write_trial_clips(set: &Set, t: &Trial, dest: &Path) -> Res<()> {
         .ok_or_else(|| format!("the set has no item {:?}", t.item))?;
     for k in 0..3 {
         let w = scaled(
-            &load_audio(clip_source(item, t.pos_a, t.pos_b, k)?)?,
+            &load_audio(clip_source(item, t.pos_a, t.pos_b, k)?)?.0,
             t.levels.gains_db[k],
         );
         let p = dest.join(format!("{}.wav", t.clips[k]));

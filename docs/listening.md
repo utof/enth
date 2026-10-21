@@ -132,7 +132,7 @@ cargo build --release -p enth-listen                                            
 | Exclusion | A listener under **80 %** on the attention trials is excluded from the preference. With four of them, **one miss is 75 %: the listener is out**. (A listener who can no longer reach 80 % because of misses plus unanswered trials is out as well.) |
 | Short sounds | Never filtered by duration; a clip is not touched beyond its gain |
 
-**The set manifest** (`enth.listen.gr3-set/1`, TOML; what EVK and DS fill). Relative paths are relative to the file. Audio is WAV: PCM 16, 24 or 32 bit or float 32 or 64 bit (`enth render`'s default), mono or stereo (mono is copied to stereo); the three clips of one trial must share one sample rate (no resampler: convert with `ffmpeg -i in.wav -ar 48000 out.wav` first). The tool refuses anything else and names the file.
+**The set manifest** (`enth.listen.gr3-set/1`, TOML; what EVK and DS fill). Relative paths are relative to the file. Audio is WAV: PCM 16, 24 or 32 bit or float 32 or 64 bit (`enth render`'s default), mono or stereo (mono is copied to stereo). Other formats (the Ogg previews of `content/gr3`, MP3, FLAC) are converted to WAV first, for example `ffmpeg -i in.ogg out.wav`; the tool refuses anything else and names the file. **Every clip is played at 48 kHz:** a file at another rate (the arms render at their input file's own rate, so a clean 96 kHz original, a degraded upload and a phone recording rarely agree) is converted by a Kaiser-windowed sinc resampler (cutoff at 97 % of the lower Nyquist frequency, about 90 dB of stopband; a tone keeps its level to 0.01 dB), and a file already at 48 kHz is not touched. The key records each file's own rate.
 
 ```toml
 schema = "enth.listen.gr3-set/1"
@@ -156,7 +156,7 @@ The judged reference is `clean_reference` when there is one, else `reference`. I
 **The friends' kit** (`--export-kit <dir>`, about 15 minutes each). The folder is designed for two kits (`--friends 2`, the default; `--friends 0` for an owner-only test; decided when the folder is first designed). The references are dealt to the kits inside each (stratum, degraded) group, so each kit has half of every group, 30 of the 60, plus its 6 catch trials. Each of `kit1`, `kit2` holds:
 
 - `NN-K-xxxxxx.wav`: three random-named WAVs per trial, **NN** the trial number, **K** 1 for the reference, 2 for sound A, 3 for sound B, so sorting by name puts them in playing order; 24-bit stereo, already level-matched. Any player on any system works.
-- `answers.txt`: `kit: kitN`, instructions and one empty `NN:` line per trial; the friend types `a` or `b` after the colon (blank skips a trial; case, `=`, `-` and spaces are forgiven) and sends the file back.
+- `answers.txt`: `kit: kitN`, instructions and one empty `NN:` line per trial; the friend types `a` or `b` after the colon (blank skips a trial, which keeps the result provisional; case, `=`, `-` and spaces are forgiven) and sends the file back.
 - `README.txt`: what to do, in a few sentences.
 
 Send each folder (zipped) to one friend and nothing else: never `manifest.json` or `--dir`. When a file comes back, save it as `<name>.txt` in `~/enth-gr3/friends/`; the name is the listener's label in the report (use "friend-a", not a real name). A typo in a file is reported with its line number, never guessed at.

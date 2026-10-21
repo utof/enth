@@ -366,7 +366,7 @@ fn the_owners_session_saves_after_each_answer_and_resumes() {
     let a = args(&d.join("run"), Some(set));
     let mut player = MockPlayer::default();
     // two answers (with a replay of everything and of B), then quit
-    let (r, out) = run_text(&a, &["a", "r", "rb", "RR", "b", "q"], &mut player);
+    let (r, out) = run_text(&a, &["r", "rb", "RR", "a", "b", "q"], &mut player);
     r.unwrap();
     assert!(out.contains("GR3 listening: 18 trials"), "{out}");
     assert!(
@@ -437,6 +437,85 @@ fn an_unknown_answer_is_asked_again_and_the_stdin_reader_exists() {
         "{out}"
     );
     let _ = StdinLines; // the binary reads stdin through it
+    std::fs::remove_dir_all(&d).unwrap();
+}
+
+// ---- mixed sample rates -----------------------------------------------------------------------------------------
+
+fn wav_bytes(tag: u16, channels: u16, rate: u32, bits: u16, data: &[u8]) -> Vec<u8> {
+    let mut out = b"RIFF".to_vec();
+    out.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&tag.to_le_bytes());
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * u32::from(channels * bits / 8)).to_le_bytes());
+    out.extend_from_slice(&(channels * bits / 8).to_le_bytes());
+    out.extend_from_slice(&bits.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(data);
+    out
+}
+
+/// A degraded upload and its clean original rarely share a sample rate: here a 44.1 kHz mono reference and a 96 kHz
+/// candidate sit among 48 kHz clips. Every clip the trial plays is 48 kHz stereo, the same length, and level-matched.
+#[test]
+fn clips_at_other_sample_rates_are_played_at_48k() {
+    let d = scratch("rates");
+    let set = demo_set(&d.join("set"), 12).unwrap();
+    let audio = set.parent().unwrap().join("audio");
+    let tone = |rate: u32, secs: f64| -> Vec<f32> {
+        (0..(secs * f64::from(rate)) as usize)
+            .map(|i| {
+                (0.3 * libm::sin(2.0 * core::f64::consts::PI * 440.0 * i as f64 / f64::from(rate)))
+                    as f32
+            })
+            .collect()
+    };
+    // ref-00: 44.1 kHz mono, 16-bit
+    let mono: Vec<u8> = tone(44_100, 0.5)
+        .iter()
+        .flat_map(|v| ((f64::from(*v) * 32_767.0) as i16).to_le_bytes())
+        .collect();
+    std::fs::write(audio.join("ref-00.wav"), wav_bytes(1, 1, 44_100, 16, &mono)).unwrap();
+    // ref-00's arm B: 96 kHz stereo float
+    let st: Vec<u8> = tone(96_000, 0.5)
+        .iter()
+        .flat_map(|v| [v.to_le_bytes(), v.to_le_bytes()].concat())
+        .collect();
+    std::fs::write(audio.join("ref-00-b.wav"), wav_bytes(3, 2, 96_000, 32, &st)).unwrap();
+    let a = args(&d.join("run"), Some(set));
+    let (r, _) = run_text(&a, &[], &mut MockPlayer::default());
+    r.unwrap();
+    let m: Manifest = read_json(&manifest_path(&d.join("run"))).unwrap();
+    let t = m
+        .trials
+        .iter()
+        .find(|t| t.audience == OWNER && t.item == "ref-00" && t.kind == Kind::Main)
+        .unwrap();
+    let b_pos = if t.pos_a == enth_listen::gr3::design::Source::ArmB {
+        1
+    } else {
+        2
+    };
+    assert_eq!(t.rates_in[0], 44_100);
+    assert_eq!(t.rates_in[b_pos], 96_000);
+    let mut frames = Vec::new();
+    for c in &t.clips {
+        let w = enth_listen::wav::decode(
+            &std::fs::read(d.join("run").join("clips").join(format!("{c}.wav"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!((w.sample_rate, w.channels.len()), (48_000, 2), "{c}");
+        let l = measure(&w).unwrap().lufs;
+        assert!((l + 23.0 + t.levels.lowered_db).abs() < 0.05, "{c}: {l}");
+        frames.push(w.frames());
+    }
+    // 0.5 s at 44.1 kHz and at 96 kHz both come out as 24,000 frames; the 48 kHz candidate is 0.4 s long
+    assert_eq!(frames[0], 24_000);
+    assert_eq!(frames[b_pos], 24_000);
     std::fs::remove_dir_all(&d).unwrap();
 }
 

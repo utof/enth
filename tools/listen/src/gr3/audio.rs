@@ -3,9 +3,11 @@
 //! **Reading.** `enth render` writes 32-bit float WAVs (with an extra chunk), real references are usually 16- or 24-bit
 //! PCM, so [`decode_any`] reads PCM at 16, 24 and 32 bits, float at 32 and 64 bits, and the extensible header, mono or
 //! stereo, and skips every chunk it does not need. A mono file becomes stereo by copying the channel (a lossless
-//! change that the loudness meter then sees as it will be heard). No resampling: the three clips of a trial must share
-//! one sample rate (render and analysis run at the file's own rate, docs/r3.md), and a trial that does not is an error
-//! that names the files.
+//! change that the loudness meter then sees as it will be heard). **Every clip is played at 48 kHz**
+//! ([`OUT_RATE`], report 04 §3.2): a file at another rate (the arms render at the input file's own rate, and a
+//! reference, a degraded upload and a phone recording rarely share one) is converted by [`to_out_rate`], a
+//! windowed-sinc resampler; a file already at 48 kHz is not touched. The listening tool is the only place that
+//! resamples: the product path has no resampler (docs/r3.md).
 //!
 //! **Levels.** [`TrialLevels::plan`] takes the loudness and true peak of the trial's three clips (R, A and B, each
 //! measured once per file) and returns one gain per clip: every clip to [`TARGET_LUFS`] (-23 LUFS, BS.1770 through
@@ -117,6 +119,117 @@ pub fn decode_any(bytes: &[u8]) -> Result<Wav, String> {
         pos = end.saturating_add(len & 1);
     }
     Err("no data chunk".into())
+}
+
+/// The rate every clip is played at.
+pub const OUT_RATE: u32 = 48_000;
+/// Zero crossings of the resampler's kernel on each side of the centre (at the lower of the two rates).
+const KERNEL_ZEROS: f64 = 32.0;
+/// Kaiser window shape (about 90 dB of stopband).
+const KAISER_BETA: f64 = 9.0;
+/// The kernel's cutoff as a share of the lower Nyquist frequency.
+const CUTOFF: f64 = 0.97;
+
+fn gcd(a: u64, b: u64) -> u64 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// The zeroth-order modified Bessel function (power series).
+fn bessel_i0(x: f64) -> f64 {
+    let q = x * x / 4.0;
+    let (mut term, mut sum) = (1.0, 1.0);
+    for k in 1..60 {
+        term *= q / f64::from(k * k);
+        sum += term;
+        if term < 1e-17 * sum {
+            break;
+        }
+    }
+    sum
+}
+
+/// One channel from `from` Hz to `to` Hz: a Kaiser-windowed sinc, the cutoff at 97 % of the lower Nyquist frequency,
+/// exact for the rational ratio (a table of one kernel per output phase), zero outside the clip. The output is as
+/// long as the input lasts, rounded to a sample.
+fn resample_channel(x: &[f32], from: u32, to: u32) -> Vec<f32> {
+    let g = gcd(u64::from(from), u64::from(to));
+    let (up, down) = ((u64::from(to) / g) as usize, (u64::from(from) / g) as usize);
+    // cutoff and half-width in input samples
+    let fc = 0.5 * CUTOFF * f64::min(1.0, f64::from(to) / f64::from(from));
+    let half = (KERNEL_ZEROS / (2.0 * fc)).ceil() as i64;
+    let i0_beta = bessel_i0(KAISER_BETA);
+    let kernel = |u: f64| -> f64 {
+        let v = u / half as f64;
+        if v.abs() >= 1.0 {
+            return 0.0;
+        }
+        let w = bessel_i0(KAISER_BETA * libm::sqrt(1.0 - v * v)) / i0_beta;
+        let a = 2.0 * core::f64::consts::PI * fc * u;
+        let sinc = if a.abs() < 1e-12 {
+            1.0
+        } else {
+            libm::sin(a) / a
+        };
+        2.0 * fc * sinc * w
+    };
+    // one row of taps per output phase p (the position's fractional part is p / up): tap k sits at input offset
+    // k - half + 1 from floor(position)
+    let taps = (2 * half) as usize;
+    let table: Vec<Vec<f64>> = (0..up)
+        .map(|p| {
+            let frac = p as f64 / up as f64;
+            let row: Vec<f64> = (0..taps)
+                .map(|k| kernel((k as i64 - half + 1) as f64 - frac))
+                .collect();
+            let norm: f64 = row.iter().sum();
+            row.into_iter().map(|h| h / norm).collect()
+        })
+        .collect();
+    let n_out = (x.len() as f64 * f64::from(to) / f64::from(from)).round() as usize;
+    (0..n_out)
+        .map(|j| {
+            let pos = j * down;
+            let (i, p) = ((pos / up) as i64, pos % up);
+            let row = &table[p];
+            let mut acc = 0.0f64;
+            for (k, h) in row.iter().enumerate() {
+                let idx = i + k as i64 - half + 1;
+                if idx >= 0 && (idx as usize) < x.len() {
+                    acc += h * f64::from(x[idx as usize]);
+                }
+            }
+            acc as f32
+        })
+        .collect()
+}
+
+/// `w` at [`OUT_RATE`]: unchanged when it is already there.
+///
+/// # Errors
+/// A sample rate of zero, or a clip so short that it has no sample at the new rate.
+pub fn to_out_rate(w: Wav) -> Result<Wav, String> {
+    if w.sample_rate == OUT_RATE {
+        return Ok(w);
+    }
+    if w.sample_rate == 0 {
+        return Err("the sample rate is zero".into());
+    }
+    let channels: Vec<Vec<f32>> = w
+        .channels
+        .iter()
+        .map(|c| resample_channel(c, w.sample_rate, OUT_RATE))
+        .collect();
+    if channels[0].is_empty() {
+        return Err(format!(
+            "{} samples at {} Hz is too short to convert",
+            w.frames(),
+            w.sample_rate
+        ));
+    }
+    Ok(Wav {
+        sample_rate: OUT_RATE,
+        channels,
+    })
 }
 
 /// Loudness and true peak of one clip, measured on the stereo signal as it will be heard.
@@ -248,6 +361,44 @@ mod tests {
         assert_eq!(w.channels[1], samples);
     }
 
+    /// The layout `enth render` writes: an 18-byte fmt chunk (float, with cbSize), `fact`, the `enth` metadata chunk,
+    /// then `data`.
+    #[test]
+    fn reads_what_enth_render_writes() {
+        let chunk = |out: &mut Vec<u8>, id: &[u8; 4], body: &[u8]| {
+            out.extend_from_slice(id);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(body);
+            if body.len() % 2 == 1 {
+                out.push(0);
+            }
+        };
+        let mut fmt = Vec::new();
+        for v in [3u16, 2] {
+            fmt.extend_from_slice(&v.to_le_bytes());
+        }
+        fmt.extend_from_slice(&48_000u32.to_le_bytes());
+        fmt.extend_from_slice(&(48_000u32 * 8).to_le_bytes());
+        for v in [8u16, 32, 0] {
+            fmt.extend_from_slice(&v.to_le_bytes());
+        }
+        let data: Vec<u8> = [0.5f32, -0.5, 0.25, 0.75]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let mut body = b"WAVE".to_vec();
+        chunk(&mut body, b"fmt ", &fmt);
+        chunk(&mut body, b"fact", &2u32.to_le_bytes());
+        chunk(&mut body, b"enth", b"{\"schema\":\"enth.wavmeta/1\"}  ");
+        chunk(&mut body, b"data", &data);
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        file.extend_from_slice(&body);
+        let w = decode_any(&file).unwrap();
+        assert_eq!(w.sample_rate, 48_000);
+        assert_eq!(w.channels, vec![vec![0.5, 0.25], vec![-0.5, 0.75]]);
+    }
+
     #[test]
     fn reads_pcm16_pcm24_and_pcm32() {
         let d16: Vec<u8> = [16_384i16, -16_384]
@@ -311,6 +462,76 @@ mod tests {
             "sample peak {sample_peak}"
         );
         assert!(tp > -0.2 && tp < 0.3, "true peak {tp}");
+    }
+
+    /// A sine of `freq` Hz, `secs` long, at `rate`.
+    fn tone(rate: u32, freq: f64, secs: f64, amp: f64) -> Vec<f32> {
+        (0..(secs * f64::from(rate)) as usize)
+            .map(|i| {
+                (amp * libm::sin(2.0 * core::f64::consts::PI * freq * i as f64 / f64::from(rate)))
+                    as f32
+            })
+            .collect()
+    }
+
+    fn rms(x: &[f32]) -> f64 {
+        libm::sqrt(x.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / x.len() as f64)
+    }
+
+    #[test]
+    fn a_clip_at_48k_is_not_touched_and_others_are_converted_with_the_same_duration() {
+        let w = Wav::stereo(48_000, vec![0.5; 100], vec![0.25; 100]);
+        assert_eq!(to_out_rate(w.clone()).unwrap(), w);
+        for (rate, frames) in [
+            (44_100u32, 44_100usize),
+            (96_000, 96_000),
+            (8_000, 8_000),
+            (22_050, 22_050),
+            (16_000, 16_000),
+        ] {
+            let w = Wav::stereo(
+                rate,
+                tone(rate, 300.0, 1.0, 0.5),
+                tone(rate, 300.0, 1.0, 0.5),
+            );
+            assert_eq!(w.frames(), frames);
+            let o = to_out_rate(w).unwrap();
+            assert_eq!(
+                (o.sample_rate, o.frames(), o.channels.len()),
+                (48_000, 48_000, 2),
+                "{rate}"
+            );
+        }
+        assert!(to_out_rate(Wav::mono(44_100, Vec::new())).is_err());
+    }
+
+    #[test]
+    fn resampling_keeps_a_tone_at_its_level_and_frequency() {
+        for rate in [44_100u32, 96_000, 8_000, 32_000] {
+            let f = if rate == 8_000 { 1_000.0 } else { 3_000.0 };
+            let x = tone(rate, f, 1.0, 0.5);
+            let y = resample_channel(&x, rate, 48_000);
+            // away from the edges the output is the same tone, sample for sample, within the kernel's ripple
+            let want = tone(48_000, f, 1.0, 0.5);
+            let worst = (2_000..46_000)
+                .map(|i| f64::from((y[i] - want[i]).abs()))
+                .fold(0.0, f64::max);
+            assert!(worst < 2e-3, "{rate} Hz: worst error {worst}");
+            let level_db = 20.0 * libm::log10(rms(&y[2_000..46_000]) / rms(&want[2_000..46_000]));
+            assert!(level_db.abs() < 0.01, "{rate} Hz: level {level_db} dB");
+        }
+    }
+
+    #[test]
+    fn what_cannot_exist_at_the_new_rate_is_removed_not_folded_back() {
+        // 30 kHz at 96 kHz is above the 24 kHz Nyquist of the output: it must vanish, not alias to 18 kHz
+        let x = tone(96_000, 30_000.0, 1.0, 0.5);
+        let y = resample_channel(&x, 96_000, 48_000);
+        let db = 20.0 * libm::log10(rms(&y[2_000..46_000]) / 0.35);
+        assert!(db < -60.0, "alias at {db} dB");
+        // and a step (DC) keeps unit gain
+        let dc = resample_channel(&vec![0.5; 4_410], 44_100, 48_000);
+        assert!((dc[2_000] - 0.5).abs() < 1e-4);
     }
 
     fn level(lufs: f64, tp: f64) -> ClipLevel {
