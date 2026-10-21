@@ -23,6 +23,11 @@ enth-learn = { workspace = true, features = ["toml"] }
 enth-session.workspace = true
 enth-solver.workspace = true
 enth-challenge.workspace = true
+# Added by the coordinator (2026-10-21) for lane LCK: Patch, Op and ParamAddr (enth-patch), the expectation parser
+# that enth_solver::hint takes (enth-analysis), and the catalogue's Kind and Tier for coverage (enth-params).
+enth-patch.workspace = true
+enth-analysis.workspace = true
+enth-params.workspace = true
 
 [lints]
 workspace = true
