@@ -1,0 +1,12 @@
+schema = "enth.agent-eval-lesson/1"
+id = "basics-decay-and-sustain"
+added = "2026-10-21"
+difficulty = 1
+tags = ["basics", "adsr"]
+pack = "content/lessons/basics"
+lesson = "decay-and-sustain"
+# The steps the lesson had when this goal was written (id:kind). The harness refuses a pack that has drifted, so a
+# result always names the lesson it was measured on.
+steps = ["hear:listen", "which-holds:choose", "name:read", "try:do", "round-1:recreate", "round-2:recreate", "e-piano:do", "check-pluck:choose", "check-decay:choose"]
+rationale = "Decay and sustain of the basics pack: 9 steps (2 do, 2 recreate, 3 choose, 1 listen, 1 read). The objective, in the pack's words: Shape a note into an organ, a pluck or an e-piano with the amplitude envelope's decay and sustain. A do step is judged by `enth lesson check`, a round by `enth compare --challenge` (the pass mark of the round), an ear question by its recorded answer; a patch that changes a control the step locks does not count."
+budget = { units = 120, turns = 100, usd = 2.0 }

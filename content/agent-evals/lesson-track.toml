@@ -1,0 +1,10 @@
+# The agent lesson track (lane EV3, docs/agent-evals.md "The lesson track"): an agent completes whole lessons of the
+# basics pack from the lesson text through `enth lesson` and the patch CLI. `cargo xtask agent-eval lesson`.
+# `eval_version` changes whenever a prompt, a goal's steps or budget, the unit costs of the wrapper's lesson mode, or the
+# judge's rules change: results from different versions are not comparable. It is not the text goals' version
+# (`eval.toml`), which this track leaves alone.
+schema = "enth.agent-eval-lesson-set/1"
+eval_version = 1
+changelog = [
+  "1 (2026-10-21, R2 lane EV3): sixteen goals, one per lesson of the basics pack; a 120-unit budget in the wrapper's lesson mode (a check or a compare costs 1, a closest search 10; --reveal, paths outside the working directory and the pack's files except through `enth lesson` are refused); the judge is `enth lesson check` for a do step, `enth compare --challenge` for a round, the pack's recorded answer for an ear question, and the step's locked and editable controls for all of them.",
+]

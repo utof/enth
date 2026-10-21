@@ -14,6 +14,8 @@ mod audit;
 mod blind;
 mod fake;
 mod goal;
+mod lesson_fake;
+mod lesson_track;
 mod report;
 mod run;
 mod stream;
@@ -40,6 +42,8 @@ const USAGE: &str = "usage: cargo xtask agent-eval [run] [options]
   agent-eval listen <dir> [--player CMD] [--dry-run]
                             the owner's blind check (plays audio only when started by the owner; --dry-run plays nothing)
   agent-eval goals          list the goals and check their witnesses exist
+  agent-eval lesson [--dry-run] [--agent witness|follower] [...]
+                            the agent lesson track (lane EV3): whole lessons of the basics pack; `lesson --help`
   agent-eval audit [--goals id,...] [--cross] [--enth PATH]
                             honesty checks, no model: each witness passes both lists with no thin item, and the
                             untouched starting template fails the designer list (--cross: lists on other witnesses)";
@@ -67,6 +71,7 @@ pub fn agent_eval(args: &[String]) -> Result<(), String> {
         Some("listen") => listen(&args[1..]),
         Some("goals") => goals(),
         Some("audit") => audit::audit(&args[1..]),
+        Some("lesson") => lesson_track::lesson(&args[1..]),
         Some("--help" | "-h" | "help") => {
             println!("{USAGE}");
             Ok(())
@@ -141,6 +146,7 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--keep-tmp" => o.keep_tmp = true,
             "--no-blind" => o.blind = false,
             "--no-save-summary" => o.save_summary = false,
+            "--save-floor" => o.save_floor = true,
             _ => return Err(format!("unknown argument `{a}`\n{USAGE}")),
         }
     }
