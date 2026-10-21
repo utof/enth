@@ -24,7 +24,7 @@ title = "Space and dynamics"
 authors = ["enth contributors"]
 covers = ["comp", "reverb"]
 # The order the app offers them in (the curriculum's order). Lesson ids are append-only.
-lessons = ["reverb-space", "reverb-tone", "compressor-level", "compressor-time", "macros"]
+lessons = ["reverb-space", "reverb-tone", "compressor-level", "compressor-time", "macros", "gain-staging"]
 
 [license]
 text = "CC-BY-4.0"
