@@ -8,7 +8,7 @@ R2 teaches sound design on the instrument you keep: lessons of 5–10 minutes, o
 | --- | --- | --- | --- |
 | Lesson and pack model, player, checks, progress, markdown AST | `enth-learn` (L5) | LM, PLY | Planned |
 | Challenge v2 | `enth-challenge` (L4) | CV2 | Planned; judged at F1l |
-| Live binding, locks, the `learn` field | `enth-session::learn` (L6) | SL | Planned; judged at F1l |
+| Live binding, locks, the `learn` field | `enth-session::learn` (L6) | SL | Built on stand-ins for LM's and CV2's types until they merge ([session.md](session.md#learn-lane-sl-r2)); judged at F1l |
 | `closest` (the nearest passing patch) | `enth-solver::closest` (L5) | CLS | Planned |
 | One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | Planned (F2l) |
 | `lesson-check`, coverage, `pack`, `lessons.yml` | `xtask` | LCK | Planned |
