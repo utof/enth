@@ -1,0 +1,14 @@
+title = "Low-pass cutoff"
+objective = "Darken or brighten a sound with the cutoff."
+
+[[steps]]
+id = "hear"
+kind = "listen"
+
+[[steps]]
+id = "try"
+kind = "do"
+
+[[steps]]
+id = "check"
+kind = "choose"

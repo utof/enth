@@ -1,9 +1,9 @@
-//! **Owner: lane LCK** (`check`, `coverage`, `new`, `pack`), **DEC** (`gen`) and **INT2** (`gr2`). Pre-declared by lane
-//! S0l (R2, freeze point F0l); LCK built its four, `gen` and `gr2` refuse to run until their lanes land.
+//! **Owner: lane LCK** (`check`, `coverage`, `new`, `pack`) and **DEC** (`gen`). Pre-declared by lane S0l (R2, freeze
+//! point F0l), with a `gr2` for lane INT2, which built `gr2-report` in xtask instead (`xtask/src/gr2.rs`).
 //!
 //! `enth-lesson-tool`: the lessons' authoring loop (docs/learn.md, "`lesson-check` and the authoring loop"), as a
 //! tooling package so that `cargo xtask` stays light (no engine crate in xtask, S0r's rule). `cargo xtask lesson-check`,
-//! `lesson-coverage`, `lesson new`, `pack`, `lesson-gen` and `gr2-report` each run `cargo run --release -p
+//! `lesson-coverage`, `lesson new`, `pack` and `lesson-gen` each run `cargo run --release -p
 //! enth-lesson-tool -- <command> <args>` and forward the exit status, the way `cargo xtask golden` drives `enth-golden`.
 //! One file per command, so the lanes never edit each other's:
 //!
@@ -14,14 +14,11 @@
 //! | `new [--in DIR] <pack> <id>` | `new.rs` | scaffolds a lesson in the authoring layout | LCK |
 //! | `pack [--out DIR] [--check] [PACK...]` | `pack.rs` (reading packs: `source.rs`) | builds `.enthpack` files reproducibly (canonical JSON, sorted entries, the zip epoch's 1980 timestamps, deflate level 9) and compares each with its pins | LCK |
 //! | `gen deconstruct <preset>` | `gen.rs` | writes the factory studies from a preset by ablation | DEC |
-//! | `gr2 <progress file>...` | `gr2.rs` | the GR2 numbers from the progress files | INT2 |
 //!
 //! `.github/workflows/lessons.yml` runs `cargo xtask lesson-check --cross --solve` and `lesson-coverage` (a report
 //! until GR2) on `content/lessons/**`, `tools/lesson/**`, `xtask/**` and every crate a lesson's verdict depends on (a DSP
 //! change can break a lesson); `scripts/gate.sh lane` runs `lesson-check` when `content/lessons/` changes. The
 //! authoring layout is `content/lessons/<pack>/` (see the example pack there).
-//! INT2 may read the progress files without this package's dependencies (as `gr1-report` reads round logs), in which
-//! case `gr2.rs` here goes and `xtask/src/gr2.rs` does the work.
 #![allow(
     clippy::print_stdout,
     clippy::print_stderr,
@@ -31,7 +28,6 @@
 mod check;
 mod coverage;
 mod r#gen; // `gen` is a reserved word in edition 2024; the file is still `gen.rs`
-mod gr2;
 mod new;
 mod pack;
 mod source;
@@ -45,8 +41,7 @@ const USAGE: &str = "usage: enth-lesson-tool <command> [args...]
   new [--in DIR] <pack> <id>              scaffold a lesson in the authoring layout
   pack [--out DIR] [--check] [<pack>...]  build reproducible .enthpack files and compare them with the pins
   gen deconstruct <preset> | gen studies  a deconstruct lesson by ablation; the six factory studies
-  gr2 <progress file>...                  (not built yet: R2 lane INT2)
-Run it through `cargo xtask lesson-check`, `lesson-coverage`, `lesson new`, `pack`, `lesson-gen` and `gr2-report`.";
+Run it through `cargo xtask lesson-check`, `lesson-coverage`, `lesson new`, `pack` and `lesson-gen`.";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -56,7 +51,6 @@ fn main() -> ExitCode {
         Some("new") => new::run(&args[1..]),
         Some("pack") => pack::run(&args[1..]),
         Some("gen") => r#gen::run(&args[1..]),
-        Some("gr2") => gr2::run(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
     match result {

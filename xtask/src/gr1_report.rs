@@ -16,13 +16,14 @@
 //! | `render` | the readable tables |
 //! | `stats`, `privacy` | medians, Spearman with a seeded bootstrap, Wilson; the personal-data lint |
 
+// `code`, `logs`, `privacy` and `schema` are crate-visible: `gr2-report` (R2 lane INT2) reads round logs through them.
 mod baseline;
-mod code;
-mod logs;
+pub(crate) mod code;
+pub(crate) mod logs;
 mod numbers;
-mod privacy;
+pub(crate) mod privacy;
 mod render;
-mod schema;
+pub(crate) mod schema;
 mod stats;
 mod survey;
 

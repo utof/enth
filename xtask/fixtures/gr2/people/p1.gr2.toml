@@ -1,0 +1,38 @@
+# Made up for gr2-report's tests: the owner, full protocol, pre-test on form A.
+schema = "enth.gr2-answers/1"
+id = "p1"
+protocol = "full"
+pre_form = "A"
+
+[intake]
+years = 6
+confidence = { osc = 4, filter = 4, fx = 3 }
+
+[[lessons]]
+key = "basics/intro"
+vote = "knew"
+
+[[lessons]]
+key = "basics/waveforms"
+vote = "new"
+pace = "ok"
+learned = "The saw is buzzier than the triangle."
+coded = "specific"
+
+[[lessons]]
+key = "basics/cutoff"
+vote = "new"
+pace = "too_easy"
+learned = "Lower cutoff makes it darker."
+coded = "specific"
+
+[[lessons]]
+key = "space/reverb"
+vote = "knew"
+pace = "ok"
+learned = "Reverb."
+coded = "vague"
+
+[debrief]
+pace = "ok"
+things = ["The mix knob"]
