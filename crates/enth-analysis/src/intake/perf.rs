@@ -17,7 +17,8 @@
 //! Three warnings, because one note cannot reproduce them and the CLI's `--perf` (CLC) overrides all of this:
 //!
 //! - **several onsets** ("this looks like a phrase"): new partials arriving with a rise in level (the super flux of
-//!   Böck and Widmer, with a level check), at least 100 ms after the previous onset, within 30 dB of the loudest level;
+//!   Böck and Widmer, with a level check), at least 100 ms after the previous onset, within 30 dB of the loudest level,
+//!   in a frame the clip holds whole (a frame cut by the clip's end splatters like an onset);
 //! - **several notes:** the pitch holds two different notes (not octaves) for at least 80 ms each;
 //! - **a chord** (or an inharmonic sound), from the harmonic peaks of the held part's spectrum: either a second
 //!   harmonic series that the first does not explain carries at least 10 % of the peaks' power at an unrelated
@@ -79,6 +80,7 @@ const MIN_TONAL: f64 = 0.6;
 
 /// What every candidate plays: one note. Times are clip time (seconds from the conditioned clip's first sample).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct InferredPerf {
     /// The MIDI key: the nearest note to `f0_hz`; a chord's lowest tone; the first of several notes;
     /// [`UNPITCHED_KEY`] when unpitched.
@@ -324,7 +326,10 @@ fn onsets(
     let first = on / hop;
     let mut out = Vec::new();
     let mut prev = first;
-    for t in first + gap..flux.len() {
+    // A frame cut short by the clip's end has a hard edge inside its window, whose splatter reads as new partials:
+    // only whole frames can hold an onset (the last ~45 ms of a clip at 48 kHz cannot).
+    let whole = clip.len().saturating_sub(n) / hop + 1;
+    for t in first + gap..flux.len().min(whole) {
         if t < prev + gap || lv[t] < gate {
             continue;
         }
