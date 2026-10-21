@@ -161,7 +161,7 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     every P1 module and Basic-tier parameter taught, a non-patch check per module;
                                     fails on a hole (R2 lane LCK)
   lesson new [--in DIR] <pack> <id> scaffold a lesson in the authoring layout (R2 lane LCK)
-  lesson-gen deconstruct <preset>   (not built yet: R2 lane DEC) a deconstruct lesson from a preset, by ablation
+  lesson-gen deconstruct <preset>   a deconstruct lesson from a preset, by ablation (`lesson-gen studies`: the six studies)
   pack [--out DIR] [--check] [<pack>...]
                                     build content/lessons/<pack> into a reproducible .enthpack and compare it with its
                                     pins (R2 lane LCK)
