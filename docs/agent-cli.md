@@ -59,7 +59,7 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth step p.patch.json --ops '<json>' \| --set k=v[,…] [--expect …\|--target …] --out p2.patch.json` | apply + render + describe + check/compare in one call (fewest round trips). It echoes only the features named in `--expect` plus a headline, unless `--full` |
 | `enth explain <addr\|module\|kind> [--patch p]` | Plain text and JSON from the catalogue for a parameter, a module or a kind; with `--patch`, what a just-noticeable step of the parameter does in that patch (`enth.explain/1`) |
 | `enth challenge new\|show\|decode` | Make, regenerate and read Recreate challenges and their codes (`enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`) |
-| `enth lesson show\|check <pack> …` | A lesson pack's steps; one do step's check run against a patch file (`enth.lesson-show/1`, `enth.lesson-check/1`; [below](#lessons-on-the-command-line-enth-lesson)) |
+| `enth lesson list\|show\|start\|check\|hint\|closest <pack> …` | A lesson pack's lessons and steps; what a step loads; one do step's check against a patch file; a step's hint; a round's nearest passing patch (`enth.lesson-list/1`, `-show/1`, `-start/1`, `-check/1`, `-hint/1`, `-closest/1`; [below](#lessons-on-the-command-line-enth-lesson)) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
 | `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
@@ -346,12 +346,16 @@ All errors are `enth.error/1` with a stable `code` and a `hint`. Usage mistakes 
 
 ## Lessons on the command line (`enth lesson`)
 
-R2 (lane SKL, freeze point F2l; lane EV3 adds `list`, `hint` and `closest` beside them). Stateless like `enth check`: a pack is read from a path, and the lesson logic is `enth-learn`'s, so the CLI judges what the plugin's Learn view judges ([learn.md](learn.md)). A pack is a folder in the authoring layout (`content/lessons/<pack>/` with `pack.toml`; the CLI turns each TOML file into its canonical JSON and seals the manifest, as `cargo xtask pack` will), a built folder (`pack.json`) or an `.enthpack` archive; every one goes through `enth-learn`'s verified reader, and a refused pack is exit 3 with the reader's code (`hash_mismatch`, `bad_field`, `pack_too_new`, …) and hint.
+R2 (lane SKL, freeze point F2l: `show` and `check`; lane EV3 adds `list`, `start`, `hint` and `closest`). Stateless like `enth check`: a pack is read from a path, and the lesson logic is `enth-learn`'s, so the CLI judges what the plugin's Learn view judges ([learn.md](learn.md)). A pack is a folder in the authoring layout (`content/lessons/<pack>/` with `pack.toml`; the CLI turns each TOML file into its canonical JSON and seals the manifest, as `cargo xtask pack` will), a built folder (`pack.json`) or an `.enthpack` archive; every one goes through `enth-learn`'s verified reader, and a refused pack is exit 3 with the reader's code (`hash_mismatch`, `bad_field`, `pack_too_new`, …) and hint.
 
 | Command | Output | Does |
 | --- | --- | --- |
 | `enth lesson show <pack> [--lesson ID] [--reveal]` | `enth.lesson-show/1` | The pack (id, version, title, the engine it was sealed on) and its lessons (one with `--lesson`): each lesson's key (`pack/lesson`), title, tier, objective and `teaches`, and each step's number (1-based), id, kind, text (markdown), hints, view (`start`, `highlight`, `hide`, `editable`, `locked`), a do step's check (as the lesson file holds it), the labels of a listen step's examples or a choose step's options, a recreate step's challenge. **No answers** (a choose step's answer, a witness patch) unless `--reveal` |
-| `enth lesson check <pack> --lesson ID --step ID\|N <patch>` | `enth.lesson-check/1` | One do step's check against a patch file: its patch predicates (each with `pass`; a `touched` predicate reads the editor's edit log, which a file has not, so it fails here and `note` says so) and its sound checks (each item rendered through its phrase at the scored rate and seed and judged, with its margin). `pass` when every predicate and item passes; **exit 1** otherwise, like `check` |
+| `enth lesson check <pack> --lesson ID --step ID\|N <patch> [--from START]` | `enth.lesson-check/1` | One do step's check against a patch file: its patch predicates (each with `pass`; a `touched` predicate reads the editor's edit log, which a file has not, so it fails here and `note` says so, unless `--from` gives the patch the step started from (`enth lesson start --out`), when it reads how far the control moved from there: lane EV3, because a step with a `touched` predicate could not otherwise pass on the command line) and its sound checks (each item rendered through its phrase at the scored rate and seed and judged, with its margin). `pass` when every predicate and item passes; **exit 1** otherwise, like `check` |
+| `enth lesson list <path>…` | `enth.lesson-list/1` | Every pack at the paths (a pack, or a folder of packs such as `content/lessons`) and its lessons, steps in short: per pack its id, version, title, engine, `covers` and tracks; per lesson its key, title, tier, objective and `teaches`; per step its number, id, kind and how many authored hints it has. A folder entry the reader refuses is listed under `refused` with the reader's code and hint, and does not stop the rest; no pack at all is exit 3 (`not_a_pack`) |
+| `enth lesson start <pack> --lesson ID --step ID\|N [--out P] [--challenge-out F] [--examples-out DIR]` | `enth.lesson-start/1` | What the Learn view loads when the step opens, written to files, because a command line has no editor and no speakers. `--out`: the step's start patch (the pack patch its view names; a recreate step's is its challenge's own start). `--challenge-out`: a recreate step's round, the file `compare`, `suggest` and `match` take with `--challenge`. `--examples-out DIR`: a listen step's examples or a choose step's options, each as `N-label.patch.json` and `N-label.perf.json` (the step's phrase, transposed), which `enth describe PATCH --perf PERF` measures where the player would listen; the answer to a choose step is one of the labels. A step with no start of its own carries the patch over from the step before (`carried_start`, exit 2, naming that step) |
+| `enth lesson hint <pack> --lesson ID --step ID\|N [--n N] [<patch>]` | `enth.lesson-hint/1` | One rung of the step's hint ladder; stateless, so `--n` names the rung (default 1) and a caller wanting the next hint asks for `n + 1`. `--n 1` to the step's authored hints are the lesson's own words (`source: authored`, no patch, no render). The rung after them is **measured on your patch file**: a do step's is the solver's move over the failing sound checks within the step's editable controls (`source: measured`: the Learn view's sentence, `measured.moves` with each control, direction and values, `measured.ops` for `enth apply --ops`, `measured.pass_all` whether the move passes every check, `measured.blocked` what no parameter can fix); a recreate step's are the round's coach, four levels (`source: coach`, the `enth suggest` object under `coach`, whose last level names the control and a range). A choose step has authored hints only. `renders` says what a measured hint cost. The player marks a step assisted at its first hint; here `next` says so and the caller keeps the count |
+| `enth lesson closest <pack> --lesson ID --step ID\|N <patch> [--budget N] [--free ADDR,…] [--out P]` | `enth.lesson-closest/1` | A recreate step's "How close am I?": the nearest patch to yours that passes the round, searched in the step's editable controls (or the ones `--free` names) with at most `--budget` renders (default 300; yours is the first). `deltas` lists each control's move (`from`, `to`, `moved`); `passed`, `percent` and `start_percent` are the round's sound score before and after, `stop` why the search ended, `renders` and `first_pass_renders` what it cost; `--out` writes the answer patch. Exit 0 whenever the search ran, even if no patch within the budget passes (`passed: false`): `compare --challenge` on the answer is the pass check. The same answer for any `--workers` |
 
 ```sh
 enth lesson show content/lessons/example --lesson cutoff
@@ -366,6 +370,38 @@ enth lesson check content/lessons/example --lesson cutoff --step try content/les
 ```
 
 Errors: `unknown_lesson` and `unknown_step` (exit 2, with `did_you_mean` and `known`), `not_checkable` (exit 2: a read, listen, choose or recreate step has no patch check; a recreate step is scored with `enth compare --challenge`), `not_a_pack` (exit 3: a folder with neither `pack.toml` nor `pack.json`), a render that fails exit 4, a missing file exit 5.
+
+**A lesson, step by step** (lane EV3; what an agent does, and the agent lesson track measures, [agent-evals.md](agent-evals.md#the-lesson-track)):
+
+```sh
+enth lesson list content/lessons                       # which lessons there are
+enth lesson show content/lessons/basics --lesson cutoff   # the steps, their texts, controls and checks (no answers)
+enth lesson start content/lessons/basics --lesson cutoff --step try --out try.patch.json
+enth apply try.patch.json --set filter1.cutoff=600Hz   # edit it
+enth lesson check content/lessons/basics --lesson cutoff --step try try.patch.json   # exit 0 passes
+enth lesson hint content/lessons/basics --lesson cutoff --step try --n 3 try.patch.json   # stuck: the measured move
+enth lesson start content/lessons/basics --lesson cutoff --step round-1 --out r1.patch.json --challenge-out r1.challenge.json
+enth compare r1.patch.json --challenge r1.challenge.json   # a round: exit 0 passes
+enth lesson closest content/lessons/basics --lesson cutoff --step round-1 r1.patch.json --out r1.answer.patch.json
+enth lesson start content/lessons/basics --lesson cutoff --step which-darker --examples-out ears   # an ear question
+enth describe ears/1-a.patch.json --perf ears/1-a.perf.json   # measure each option, answer with a label
+```
+
+```json
+{"schema":"enth.lesson-hint/1","lesson":"basics/cutoff","step":"try","number":5,"kind":"do","n":3,"authored":2,
+ "source":"measured","text":"Try turning Cutoff (filter1.cutoff) down.","patch":"try.patch.json",
+ "measured":{"highlight":["filter1.cutoff"],"pass_all":true,"blocked":[],
+  "moves":[{"param":"filter1.cutoff","name":"Cutoff","direction":"down","from":"2kHz","to":"706.1Hz"}],
+  "ops":[{"set":"filter1.cutoff","to":"706.1Hz"}]},
+ "coach":null,"more":false,"renders":5,"next":"apply the move with `enth apply try.patch.json --ops '<ops>'`, then `enth lesson check` …"}
+```
+
+Choices the commands make, so nobody has to rediscover them:
+
+- **Stateless, and honest about help.** The Learn view counts hints per step; a file-based command cannot, so `hint` and `closest` say that using them marks the step assisted in the player, and the caller keeps the count (the lesson track reads it from the call log). `--reveal` stays on `show` only: it prints a choose step's answer and a do step's witness, which is also why an exercise built on these commands refuses it.
+- **`enth lesson check` does not enforce `locked` and `editable`.** The editor does not let the player touch them; a patch file has no editor. A caller that must hold a patch to a step's controls diffs it against the start (`enth diff start.patch.json patch.json`) and tests each change's `target` against the step's `locked` and `editable` selectors (`filter1.cutoff`, `osc1.*`), as the lesson track's judge does.
+- **The measured hint is the player's.** A do step's hint is built by the same `Player` the plugin uses (its free set, its macro pins) and solved by `enth_solver::hint`; a recreate step's is `enth_solver::coach`, the game's hint button. So the CLI never says what the Learn view would not.
+- **Errors carry a `hint`**, like every error: `bad_n` (`--n 0`), `not_hintable` (a read or listen step has no hints), `no_more_hints` (names the last rung and how many the step has), `patch_required` (a measured rung needs the patch file), `unknown_lesson`, `unknown_step` (with `did_you_mean` and `known`), `not_a_round` and `no_editable_set` and `bad_budget` (`closest`), `nothing_to_write`, `no_examples`, `no_round` and `carried_start` (`start`; exit 2), a pack the reader refuses exit 3.
 
 ## Three typical workflows
 
