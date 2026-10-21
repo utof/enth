@@ -1,0 +1,21 @@
+# the Do step's witness (cutoff 400 Hz) does not pass its check (< 300 Hz).
+schema = "enth.lesson/1"
+id = "l"
+title = "Fixture lesson"
+tier = "basic"
+objective = "Exercise one rule of lesson-check."
+teaches = ["svf.cutoff"]
+
+[[steps]]
+id = "try"
+kind = "do"
+text = "text.md"
+witness = "patches/dark.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+editable = ["filter1.cutoff"]
+
+[steps.check]
+kind = "patch"
+predicates = ["filter1.cutoff < 300Hz"]

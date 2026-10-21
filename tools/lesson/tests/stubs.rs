@@ -1,6 +1,6 @@
-//! The commands lane S0l pre-declared in `enth-lesson-tool`: `check` is a placeholder that says nothing was checked and
-//! exits 0, every other command refuses to run (exit 1) and names its lane, and an unknown command prints the usage. The
-//! lane that builds a command removes its row here and gives it real tests.
+//! The commands lane S0l pre-declared in `enth-lesson-tool` that are still stubs: each refuses to run (exit 1) and names
+//! its lane, and an unknown command prints the usage. The lane that builds a command removes its row here and gives it
+//! real tests (lane LCK's four: `tests/check.rs`, `tests/commands.rs`).
 #![allow(
     clippy::disallowed_methods,
     reason = "the test runs the tool's own binary"
@@ -16,21 +16,8 @@ fn run(args: &[&str]) -> Output {
 }
 
 #[test]
-fn check_is_a_placeholder_that_passes_and_says_so() {
-    for args in [vec!["check"], vec!["check", "--cross", "--solve", "basics"]] {
-        let out = run(&args);
-        assert!(out.status.success(), "{args:?}: {out:?}");
-        let text = String::from_utf8_lossy(&out.stdout);
-        assert!(text.contains("nothing was checked"), "{text}");
-    }
-}
-
-#[test]
-fn every_other_command_refuses_and_names_its_lane() {
+fn every_stub_refuses_and_names_its_lane() {
     for (args, lane) in [
-        (vec!["coverage"], "LCK"),
-        (vec!["new", "basics", "99"], "LCK"),
-        (vec!["pack"], "LCK"),
         (vec!["gen", "deconstruct", "x"], "DEC"),
         (vec!["gr2", "progress.json"], "INT2"),
     ] {

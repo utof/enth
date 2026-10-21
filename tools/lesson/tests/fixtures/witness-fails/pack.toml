@@ -1,0 +1,16 @@
+# A seeded-bad pack for lesson-check's tests (tools/lesson/tests/check.rs): the Do step's witness (cutoff 400 Hz) does not pass its check (< 300 Hz).
+schema = "enth.pack/1"
+id = "witness-fails"
+version = "0.1.0"
+title = "Fixture: witness-fails"
+authors = ["enth contributors"]
+covers = ["svf"]
+lessons = ["l"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+[requires]
+lesson = 1
+patch = 1
