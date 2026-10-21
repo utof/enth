@@ -30,6 +30,12 @@
 //! | [`create`] | "create from sound": `Target::from_intake`, `candidate`, `portfolio`, `schedule` (the start set, K branches, successive halving on budget-independent milestones), `record` (`enth.create/1`); the k-NN retrieval fills [`nearest`] | TP, F1S, MS |
 //! | [`propose`] | R3b's inference on our own scalar kernels: `pack`, `ops`, `net`, `features`, `decode`; wasm32, bytes passed in | ONX |
 //!
+//! R3 file added by lane OBJ (additive):
+//!
+//! | File | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`robust`] | the robust distance (`enth_analysis::robust`, `logmel-pool85-robust/1`) as a create job's objective: `RobustMetricTarget::from_intake`, one `RobustWorker` per thread | OBJ |
+//!
 //! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator (an
 //! [`Objective`](search::Objective) for a match), which returns results by job index, so a hint or a match is
 //! identical for any worker count.
@@ -61,6 +67,7 @@ pub mod heuristic;
 pub mod hint;
 pub mod nearest;
 pub mod propose;
+pub mod robust;
 pub mod search;
 pub mod sensitivity;
 
