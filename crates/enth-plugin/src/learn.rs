@@ -1027,9 +1027,12 @@ mod tests {
         for name in ["patches/saw.patch.json", "patches/dark.patch.json"] {
             let r = enth_learn::pack::PatchRef::new(name).unwrap();
             let patch = (**bundle.patch(&r).unwrap()).clone();
-            let ours =
-                enth_learn::check::evaluate_sounds_report(&sounds, &patch, Default::default())
-                    .unwrap();
+            let ours = enth_learn::check::evaluate_sounds_report(
+                &sounds,
+                &patch,
+                enth_learn::check::SoundOptions::default(),
+            )
+            .unwrap();
             for (sound, report) in sounds.iter().zip(&ours) {
                 let items: Vec<Expect> = sound
                     .expect
