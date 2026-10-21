@@ -239,6 +239,8 @@ An honest lesson is one `cargo xtask lesson-check --solve` passes. It runs over 
 
 ## Tests
 
+All planned (report 03 §8); the files are created by S0l or the lane that owns them.
+
 | Test | Where |
 | --- | --- |
 | Pack, lesson, challenge-v2 and progress fixtures; a newer pack refused with a hint; a newer progress file read leniently | `enth-learn/tests`, `enth-challenge/tests/fixtures/challenge/v2/` |

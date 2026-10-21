@@ -81,7 +81,7 @@ The coordinator commits both milestones' dependency pins first; **S0l and S0s bo
 
 ## Lanes
 
-Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and R1/S1's actual hours; sizes this plan added are marked). H = heavy local build (nice-plug, egui or clack), L = light. TR is runtime-heavy: a training run uses the machine alone.
+Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and R1/S1's actual hours; sizes this plan added are marked). H = heavy local build (nice-plug, egui or clack), L = light. TR is runtime-heavy: a training run uses the machine alone. Every file or directory in the Owns column is planned (created by S0l or S0s, or by the lane) unless it exists today, such as `nearest.rs`, `game.rs`, `overlay.rs` and `tools/listen`.
 
 **R2 — Learn**
 
@@ -138,12 +138,12 @@ Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and
 
 ## Waves
 
-**Two heavy slots: L for R2 and S for R3.** A slot holds at most one heavy lane; a slot its milestone leaves idle stays idle, never a third build. At most four light lanes build at once. The two milestones advance on their own triggers, so a row's two halves need not start together.
+**Two heavy slots: L for R2 and S for R3.** A slot holds at most one heavy lane, and a slot its milestone leaves idle never takes a third heavy build; it may hold two light lanes instead (a heavy build uses about the RAM of two light ones). Otherwise at most four light lanes build at once. Content, docs and Python-only lanes (C1–C3, DOCS3, DS, DEG, AUG) build no workspace crates beyond `lesson-check` and don't count. When a wave has more light lanes than room, the freeze-path lanes go first (in wave 2: LM, CV2, SL, FE and TP, in idle slot L's room; then OBJ and EVK). The two milestones advance on their own triggers, so a row's two halves need not start together.
 
 | Wave | Slot L (R2) | R2 light | Slot S (R3) | R3 light | Starts when |
 | --- | --- | --- | --- | --- | --- |
 | 0 | — | DOCS3; CUR (merged) | — | DOCS3 | Now, while the fu1 lanes finish |
-| 1 | S0l (→ F0l) | CLS, once F0l | S0s (→ F0s), once S0l has merged | DS, DEG, LT, once F0s | **fu1-hint and fu1-fk merged**; the coordinator's pins for both milestones first |
+| 1 | S0l (→ F0l) | CLS, once F0l | S0s, once S0l has merged | DS (→ F0s with S0s), DEG, LT, once S0s has merged | **fu1-hint and fu1-fk merged**; the coordinator's pins for both milestones first |
 | 2 | — | LM, CV2, SL (→ F1l, judged); C1 drafting from PLAN.md | FK3 | FE, TP (→ F1s, judged); OBJ; EVK | F0l; F0s |
 | 3 | SKL (→ F2l) | F1L, PLY (first: SKL needs its predicates), LCK; C1 verified; your taste check | SK3 (→ F2s) | F1S, CLC; EVK on dev | F1l; F1s |
 | 4 | LUI | DEC, C2, C3, EV3; REV after LUI | PUI | The arm-A baseline overnight (EVK) | F2l; F2s |
@@ -250,9 +250,9 @@ The tables of record will be `docs/r2-gates.md` (INT2) and `docs/r3-gates.md` (I
 - **No windows on the real display** (Xvfb, as [AGENTS.md](../AGENTS.md#ui) says), and **never play audio**: the listening tools are tested with `--dry-run`.
 - **Foreground commands** with a timeout above their measured length; a backgrounded agent can go idle and never resume. Keep a running `notes.md` in persistent scratch (`~/code/enth-scratch/r23/<lane>/`).
 - **Concurrency.** Two heavy slots, one per milestone ([Waves](#waves)); 15 GiB of RAM is shared by every lane. `CARGO_BUILD_JOBS=3`, a separate `CARGO_TARGET_DIR` per lane on ext4, `flock -s` around builds and `flock -x` around timing runs. Build only the crates you need until the final gate. Check `df -h /home` before a big build; a training cache stays under about 70 GB.
-- **A two-tier gate, judged by exit status only** (no `cmd | tail && echo ok`): `scripts/gate.sh lane <worktree>` before a lane reports, `gate.sh full` (the coordinator's) before a merge. Docs-only and Python-only lanes check their links, or run their own tests, instead of building the workspace.
+- **A two-tier gate, judged by exit status only** (no `cmd | tail && echo ok`): `scripts/gate.sh lane <worktree>` before a lane reports, `gate.sh full` (the coordinator's) before a merge. A docs-only lane checks its links and anchors instead (as DOCS3 does), and a Python-only lane runs `ml/`'s own tests; the coordinator's full gate covers the rest.
 - **No engine work.** Neither milestone needs any: no lane edits `enth-dsp`, `enth-engine` or `enth-render`, and no engine golden may change (fu1-drv's Drive fix is the coordinator's; C1's lesson 2.5, UT5's seeds and DEC's studies wait for it).
-- **ML rules** (R3). `ml/` is in no cargo or CI build and never ships. Only MIT or Apache code goes into it, as everywhere in this public repository; LGPL and GPL tools (LAME, ffmpeg) run only as subprocesses there; pedalboard, gpuRIR and fdk-aac are never imported. Shipped weights train only on our renders plus CC0, CC BY or Apache data; NC, SA and licence-less sets stay evaluation-only. Features are computed in Rust (`enth-analysis`), never re-implemented in Python. Logs stay local.
+- **ML rules** (R3). `ml/` is in no cargo or CI build and never ships. Only MIT or Apache code goes into it (report 01: the copy rule holds there too, although it never ships; MPL code only with your OK); LGPL and GPL tools (LAME, ffmpeg) run only as subprocesses there; pedalboard, gpuRIR and fdk-aac are never imported. Shipped weights train only on our renders plus CC0, CC BY or Apache data; NC, SA and licence-less sets stay evaluation-only. Features are computed in Rust (`enth-analysis`), never re-implemented in Python. Logs stay local.
 - **Held-out hygiene** (R3). The GR3 sets freeze with their hashes before any training; tuning happens on dev only; every test run is appended to `content/gr3/runs.jsonl` and none is dropped; the listening key stays closed until every listener is done; whoever prepares stimuli does not audition them.
 - **Composite artefacts belong to the coordinator:** composite goldens, bench budgets, the whole-editor snapshots per layout.
 - **Merge hotspots are defused up front.**
