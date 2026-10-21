@@ -255,13 +255,13 @@ impl Progress {
 
     /// Merge one step's outcome (what the player's [`Effect::Record`](crate::player::Effect::Record) carries).
     pub fn record(&mut self, r: &StepRecord) {
-        self.lessons
+        let mut one = Progress::new();
+        one.lessons
             .entry(r.lesson.clone())
             .or_default()
             .steps
-            .entry(r.step.clone())
-            .or_default()
-            .merge(&r.progress);
+            .insert(r.step.clone(), r.progress.clone());
+        self.merge(&one);
     }
 
     /// A lesson's progress.

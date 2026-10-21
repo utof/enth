@@ -8,8 +8,9 @@ publish.workspace = true
 
 [features]
 # Authors write TOML (docs/learn.md, "Packs"); `cargo xtask pack`, `lesson-check` and `enth lesson` read that layout,
-# so they turn this on. The plugin reads the built JSON only and leaves it off. Lane LM decides what it gates;
-# S0l proved the crate builds for wasm32 with it on (`cargo build -p enth-learn --lib --features toml --target
+# so they turn this on. The plugin reads the built JSON only and leaves it off. It gates `Manifest::from_toml` and
+# `Lesson::from_toml` (lane LM): the same serde types as the JSON, so the two forms cannot drift. S0l proved the
+# crate builds for wasm32 with it on (`cargo build -p enth-learn --lib --features toml --target
 # wasm32-unknown-unknown`, 2026-10-21).
 toml = ["dep:toml"]
 
@@ -34,7 +35,8 @@ toml = { workspace = true, optional = true }   # the authoring layout, behind th
 
 [dev-dependencies]
 proptest.workspace = true          # the player's and Progress::merge's properties (LM, PLY)
-insta.workspace = true             # pack, lesson and progress fixtures (LM)
+insta.workspace = true             # pre-declared by S0l for fixtures; LM's fixtures are plain files (as enth-challenge's)
+toml.workspace = true              # the tests read the example pack's TOML whether or not the `toml` feature is on
 
 [lints]
 workspace = true
