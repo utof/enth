@@ -1,7 +1,8 @@
 //! `check` (lane LCK's acceptance, docs/phase-3.md): it catches a seeded bad lesson of each kind (a start that passes,
 //! a witness that fails or touches a locked control, a dead link, an inaudible choice, and more), each pack under
 //! `tests/fixtures/` holding one fault, and the example pack passes `--cross --solve`. The fixtures are built from the
-//! example pack's two patches, so each fails for its one seeded reason and nothing else.
+//! example pack's two patches (the two good ones, `odd-one-out` and `descriptor-audible`, also from the basics pack's),
+//! so each bad one fails for its one seeded reason and nothing else.
 #![allow(
     clippy::disallowed_methods,
     reason = "the test runs the tool's own binary on fixture packs"
@@ -79,7 +80,7 @@ fn every_seeded_bad_lesson_is_caught_for_its_reason() {
             "inaudible-choice",
             &["--solve"],
             &[
-                r#"inaudible-choice/l#which: --solve: options "A" and "B" are 0.00 JND apart under sound/1, below 2: an inaudible choice"#,
+                r#"inaudible-choice/l#which: --solve: the answer "B" and "A" are 0.00 JND apart under sound/1, below 2, and no descriptor tells them apart by 2 steps: an inaudible choice"#,
             ],
         ),
         (
@@ -116,6 +117,28 @@ fn a_fixture_is_clean_without_the_option_that_catches_it() {
         let path = fixture(name);
         let out = tool(&["check", path.to_str().unwrap()]);
         assert!(out.status.success(), "{name}: {}", stdout(&out));
+    }
+}
+
+#[test]
+fn the_audibility_gate_passes_an_odd_one_out_and_a_difference_only_descriptors_hear() {
+    // Lane LCK's gate: only the answer must stand 2 JND apart from each distractor; when sound/1 is blind to the
+    // difference (a beat rate), a descriptor that tells the options apart decides. Both pass, each with a note.
+    for (name, note) in [
+        (
+            "odd-one-out",
+            r#"distractors "A" and "C" are 0.00 JND apart under sound/1: only the answer must stand apart"#,
+        ),
+        (
+            "descriptor-audible",
+            "but detune.beating_hz differs by inf steps (present in one option, absent in the other): audible by its descriptors",
+        ),
+    ] {
+        let path = fixture(name);
+        let out = tool(&["check", "--solve", path.to_str().unwrap()]);
+        let text = stdout(&out);
+        assert!(out.status.success(), "{name}: {text}");
+        assert!(text.contains(note), "{name}: {note:?} in\n{text}");
     }
 }
 
