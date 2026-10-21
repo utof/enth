@@ -76,7 +76,7 @@ pub fn unit(bits: u32) -> f32 {
 
 /// A value for a parameter: mostly valid and spread over the whole range at f32 resolution, with the edge cases
 /// (bounds, neighbours of bounds, subnormals, `-0.0`, the top of a periodic range) and about 12 % invalid ones
-/// (out of range, `NaN`, infinity, fractional integers, an enum index past the end).
+/// (out of range, `NaN`, infinity, fractional integers and enum indices, an enum index past the end).
 pub fn value_for(spec: &ParamSpec, bits: u32) -> f32 {
     let mode = bits & 0x1f;
     let rest = bits >> 5;
@@ -86,13 +86,20 @@ pub fn value_for(spec: &ParamSpec, bits: u32) -> f32 {
             30 => 2.0,
             _ => (rest & 1) as f32,
         },
+        // The fractional enum index and the integer below the top (lane NTF, FU1): with `min + 0.5` and the toggle's
+        // 0.5 alone, `not_integral` came up 0 to 7 times in the census's 3,000 ops (none under 5 of 60 seeds).
         Kind::Enum(items) => {
-            let n = items.len() + usize::from(mode == 31);
-            (rest as usize % n) as f32
+            if mode == 30 {
+                (rest as usize % items.len()) as f32 + 0.5
+            } else {
+                let n = items.len() + usize::from(mode == 31);
+                (rest as usize % n) as f32
+            }
         }
         Kind::Int { min, max } => match mode {
             31 => (max + 1) as f32,
             30 => min as f32 + 0.5,
+            29 => max as f32 - 0.5,
             _ => (i64::from(min) + i64::from(rest) % (i64::from(max) - i64::from(min) + 1)) as f32,
         },
         Kind::Float { min, max, .. } => match mode {
@@ -235,6 +242,22 @@ pub fn make_op(p: &Patch, (c, a, b, bits): Raw, fresh: &mut u32) -> Op {
     match c % 20 {
         0..=2 => {
             *fresh += 1;
+            // Now and then a module for the fullest section, which a full one refuses (`too_many`; lane NTF, FU1): with
+            // random kinds alone it came up 0 to 8 times in the census's 3,000 ops (none under 1 of 60 seeds).
+            let kind = if b % 11 == 5 {
+                let fullest = Section::ALL
+                    .into_iter()
+                    .max_by_key(|s| p.section(*s).len() * 1000 / s.max_len())
+                    .unwrap_or(kind.section());
+                let kinds: Vec<ModuleKind> = ModuleKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.section() == fullest)
+                    .collect();
+                pick(&kinds, a).copied().unwrap_or(kind)
+            } else {
+                kind
+            };
             let section = if b % 11 == 0 {
                 Section::ALL[usize::from(a) % 4]
             } else {
@@ -394,8 +417,9 @@ pub fn make_op(p: &Patch, (c, a, b, bits): Raw, fresh: &mut u32) -> Op {
         18 => {
             {
                 let targets = automatable_targets(p);
-                let addr = if bits.trailing_zeros() >= 4 {
-                    // sometimes something that is not automatable
+                let addr = if bits.trailing_zeros() >= 3 {
+                    // sometimes something that is not automatable (1 in 8: at 1 in 16, `not_automatable` came up 1 to
+                    // 11 times in the census's 3,000 ops)
                     pick(&params_where(p, |s| !s.flags.automatable), b).cloned()
                 } else if bits & 0xf0 == 0 {
                     None

@@ -19,7 +19,9 @@
 //!   hide a leak, and rises when it swaps back in. The test host also makes glibc's allocator deterministic in each
 //!   measurement process and lets threads that are still exiting go before it counts them (tools/test-host
 //!   `editor.rs`); without that the gate failed at random: 53 and 405 KB per cycle from malloc arenas, and a fourth
-//!   thread that was Mesa's `disk$0` queue thread finishing its exit (docs/plugin.md, "Leak gates").
+//!   thread that was Mesa's `disk$0` queue thread finishing its exit (docs/plugin.md, "Leak gates"). It also turns
+//!   transparent huge pages off in them (lane NTF, FU1): with the kernel's THP at `always`, the CI runner read
+//!   2048 KB per cycle, steps of exactly one 2 MB page, against about 13 KB with 4 KB pages.
 //! - **`churn`**: 200 whole instance lives (instantiate, load a patch, activate, play, deactivate, drop) must leave
 //!   PSS flat (at most 1 KB per cycle, the test host's default) and no thread or descriptor behind. The test host's
 //!   exit status is the verdict. It runs with the same deterministic allocator (each cycle's audio thread is a new
@@ -189,6 +191,12 @@ pub fn leak_test(args: &[String]) -> Result<(), String> {
         let counts = read_counts(&out.join("editor-counts.jsonl"))?;
         let frames = read_frames(&out.join("editor-counts.jsonl"))?;
         let (editor_checks, mut facts) = judge_editor(&report, &counts, &options);
+        if editor_checks.iter().any(|c| !c.ok) {
+            // The CI log is often all there is to read (lane NTF, FU1): say what the runs looked like.
+            for line in editor_details(&report, &frames) {
+                println!("leak-test: {line}");
+            }
+        }
         facts["plugin_frames"] = frames;
         checks.extend(editor_checks);
         summary["editor_cycles"] = facts;
@@ -409,6 +417,7 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         })
         .collect();
     let malloc = editor.first().map_or(Value::Null, |r| r["malloc"].clone());
+    let thp = editor.first().map_or(Value::Null, |r| r["thp"].clone());
     let base_mean = (!baseline_slopes.is_empty())
         .then(|| baseline_slopes.iter().sum::<f64>() / baseline_slopes.len() as f64);
     let worst = editor_slopes.iter().copied().reduce(f64::max);
@@ -434,8 +443,49 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         .map(|r| r["summary"]["opens_drawn_in_time"].as_u64().unwrap_or(0))
         .collect();
     let cycles = options.cycles as u64;
-    let editor_counts: Vec<(u64, u64)> = counts.iter().copied().filter(|(b, _)| *b > 0).collect();
-    let baseline_counts = counts.iter().filter(|(b, _)| *b == 0).count();
+    // Each run is its own process, the runs go one after the other, and each plugin appends its line when it is
+    // dropped, so the lines are in the runs' order: pair them when the numbers match. An editor run whose editor never
+    // opened then shows as (0, n) instead of passing for a baseline run (nightly 39506542786, where every
+    // `gui.create` failed on the runner).
+    let paired: Option<Vec<(&str, (u64, u64))>> = (counts.len() == runs.len()).then(|| {
+        runs.iter()
+            .map(|r| r["mode"].as_str().unwrap_or("?"))
+            .zip(counts.iter().copied())
+            .collect()
+    });
+    let (editor_counts, baseline_counts): (Vec<(u64, u64)>, usize) = match &paired {
+        Some(p) => (
+            p.iter()
+                .filter(|(m, _)| *m == "editor")
+                .map(|(_, c)| *c)
+                .collect(),
+            p.iter()
+                .filter(|(m, c)| *m == "baseline" && *c == (0, 0))
+                .count(),
+        ),
+        None => (
+            counts.iter().copied().filter(|(b, _)| *b > 0).collect(),
+            counts.iter().filter(|(b, _)| *b == 0).count(),
+        ),
+    };
+    let create_failures: Vec<u64> = editor
+        .iter()
+        .map(|r| r["create_failures"].as_u64().unwrap_or(0))
+        .collect();
+    let never_opened = if create_failures.iter().any(|f| *f > 0) {
+        let first_log = editor
+            .iter()
+            .find_map(|r| r["plugin_log"].as_array().and_then(|l| l.first()).cloned())
+            .unwrap_or(Value::Null);
+        format!(
+            "; gui.create failed {create_failures:?} times per editor run (first: {first_log}; the test host's stderr: \
+             {}). The editor's baseview opens its GL context through EGL, else GLX with an sRGB framebuffer config; \
+             under Xvfb both need Mesa's EGL vendor (packages libegl1 and libegl-mesa0)",
+            report["stderr_samples"]
+        )
+    } else {
+        String::new()
+    };
     let round = |v: &[f64]| {
         v.iter()
             .map(|x| (x * 100.0).round() / 100.0)
@@ -453,12 +503,15 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
                     .all(|&(b, c)| b == cycles && c == cycles),
             detail: format!(
                 "(builds, editor_closed) per editor run {editor_counts:?} for {cycles} cycles; {baseline_counts} baseline \
-                 runs counted nothing{}",
+                 runs counted nothing{}{}",
                 if counts.is_empty() {
                     " (no counts at all: was the bundle built with --features editor-counts?)"
+                } else if paired.is_none() {
+                    " (lines and runs differ in number: told apart by builds alone)"
                 } else {
                     ""
-                }
+                },
+                never_opened,
             ),
         },
         Check {
@@ -466,8 +519,8 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
             ok: growth.is_some_and(|g| g <= options.max_kb),
             detail: format!(
                 "worst editor run minus baseline {} KB per cycle, limit {} (Pss_Anon + SwapPss slopes: editor {:?}, \
-                 baseline {:?}; Pss_Anon alone: editor {:?}; most swapped: {:?} KB; malloc {}; the test host's pss_kb \
-                 slopes: editor {}, baseline {})",
+                 baseline {:?}; Pss_Anon alone: editor {:?}; most swapped: {:?} KB; malloc {}; transparent huge pages \
+                 {thp}; the test host's pss_kb slopes: editor {}, baseline {})",
                 growth.map_or("n/a".to_owned(), |g| format!("{g:.2}")),
                 options.max_kb,
                 round(&editor_slopes),
@@ -490,7 +543,7 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         Check {
             name: "editor: every open drew its first frame in time",
             ok: !drawn.is_empty() && drawn.iter().all(|d| *d == cycles),
-            detail: format!("{drawn:?} of {cycles} per editor run"),
+            detail: format!("{drawn:?} of {cycles} per editor run{never_opened}"),
         },
     ];
     let facts = json!({
@@ -502,13 +555,54 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         "swap_pss_kb_max": swap_max,
         "late_thread_exit_cycles": late_exits,
         "malloc": malloc,
+        "thp": thp,
         "pss_kb_per_cycle_test_host": host_pss,
         "threads_after_close": threads,
         "drawn_in_time": drawn,
+        "create_failures": create_failures,
         "counts": counts,
         "loadavg": report["environment"]["loadavg"],
     });
     (checks, facts)
+}
+
+/// What each run looked like, for a failed editor gate: frames drawn, the anonymous footprint's steps between samples
+/// (the first ones and the typical one after the warm-up), the threads alive with the editor open, and with
+/// `ENTH_LEAK_DIAG` set the mappings behind the first steps of more than 2 MB.
+fn editor_details(report: &Value, frames: &Value) -> Vec<String> {
+    let runs = report["runs"].as_array().cloned().unwrap_or_default();
+    let frames = frames.as_array().cloned().unwrap_or_default();
+    let mut lines = Vec::new();
+    for (i, run) in runs.iter().enumerate() {
+        let foot = footprint(run);
+        let steps: Vec<i64> = foot.windows(2).map(|w| (w[1] - w[0]) as i64).collect();
+        let mut tail: Vec<i64> = steps.iter().skip(WARMUP).copied().collect();
+        tail.sort_unstable();
+        let median = tail.get(tail.len() / 2).copied();
+        let first: Vec<i64> = steps.iter().take(12).copied().collect();
+        let frames = frames.get(i).filter(|_| frames.len() == runs.len());
+        lines.push(format!(
+            "run {i} ({}): footprint {} -> {} KB, steps {first:?}..., median step after the warm-up {median:?} KB; \
+             frames {}; threads with the editor open {}",
+            run["mode"].as_str().unwrap_or("?"),
+            foot.first().copied().unwrap_or(0.0),
+            foot.last().copied().unwrap_or(0.0),
+            frames.map_or(Value::Null, |f| f["frames"].clone()),
+            run["thread_names_open_first_cycle"],
+        ));
+        for step in run["diag"]["anon_steps"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .take(3)
+        {
+            lines.push(format!(
+                "run {i} diag: cycle {} step {} KB; by kind {}; mappings {}",
+                step["cycle"], step["delta_kb"], step["by_kind"], step["mappings"]
+            ));
+        }
+    }
+    lines
 }
 
 /// Runs `churn` and returns (passed, facts).
@@ -565,7 +659,7 @@ fn churn_detail(report: &Value) -> String {
     }
     format!(
         "PSS {} KB per cycle after the warm-up ({} in the second half; limit {}), threads +{}, descriptors +{}, \
-         failures {}, malloc {}",
+         failures {}, malloc {}, transparent huge pages {}",
         s["pss_kb_per_cycle_after_warmup"],
         s["pss_kb_per_cycle_second_half"],
         report["limits"]["max_kb_per_cycle"],
@@ -573,6 +667,7 @@ fn churn_detail(report: &Value) -> String {
         s["fd_growth_after_warmup"],
         report["failures"],
         report["malloc"],
+        report["thp"],
     )
 }
 
@@ -647,6 +742,29 @@ mod tests {
         // A bundle without the feature reports nothing.
         let (checks, _) = judge_editor(&good, &[], &options(n));
         assert!(!checks[0].ok);
+
+        // Nightly 39506542786: every gui.create failed, so the editor runs counted (0 builds, n closes) and drew
+        // nothing. The counts check names the editor runs, and both checks say why.
+        let mut never = run("editor", &flat, &threads, 0);
+        never["create_failures"] = json!(n);
+        never["plugin_log"] = json!(["gui.create failed: Failed to create plugin GUI"]);
+        let failed =
+            json!({ "runs": [run("baseline", &flat, &threads, 0), never], "stderr_samples": [] });
+        let (checks, facts) = judge_editor(&failed, &[(0, 0), (0, n as u64)], &options(n));
+        assert!(!checks[0].ok && !checks[3].ok);
+        assert!(
+            checks[0].detail.starts_with(&format!(
+                "(builds, editor_closed) per editor run [(0, {n})]"
+            )),
+            "{}",
+            checks[0].detail
+        );
+        assert!(
+            checks[3].detail.contains("libegl-mesa0"),
+            "{}",
+            checks[3].detail
+        );
+        assert_eq!(facts["create_failures"], json!([n]));
 
         let mut changing = threads.clone();
         changing[n - 1] = 13;

@@ -18,7 +18,7 @@ use enth_patch::validate::validate;
 use enth_patch::wire;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
-use proptest::test_runner::{Config, TestCaseError, TestRunner};
+use proptest::test_runner::{TestCaseError, TestRunner};
 
 fn valid(p: &Patch) -> Result<(), TestCaseError> {
     let r = validate(p);
@@ -373,10 +373,16 @@ proptest! {
 /// A census of the generator over a fixed corpus: every op kind both applies and fails often enough, and built
 /// patches have routes, slots, macros, labels and several modules. If this fails after a generator change, the
 /// properties above have gone blind.
+///
+/// The corpus is proptest's deterministic one, whatever `PROPTEST_RNG_SEED` says: the census is about the generator,
+/// not about a seed. With `Config::default()` it took the nightly's random seed, and seed 2418064807814974824 drew
+/// 3,000 ops without one `not_integral` (nightly 39506542786). Across seeds 1 to 60 (after lane NTF's generator
+/// changes, FU1) the rarest codes still come up at least once each: `too_many` 1 to 10 times, `not_automatable` 5 to
+/// 18, `not_integral` 6 to 20.
 #[test]
 fn the_generator_exercises_every_op_and_every_patch_feature() {
     use std::collections::BTreeMap;
-    let mut runner = TestRunner::new(Config::default());
+    let mut runner = TestRunner::deterministic();
     let mut ok: BTreeMap<&str, u32> = BTreeMap::new();
     let mut err: BTreeMap<&str, u32> = BTreeMap::new();
     let mut codes: BTreeMap<&str, u32> = BTreeMap::new();

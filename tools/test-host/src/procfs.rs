@@ -125,6 +125,34 @@ pub fn deterministic_malloc() -> Value {
     }
 }
 
+/// Turns transparent huge pages off for a measurement process (lane NTF, FU1; `editor-cycles` and `churn`), and for
+/// every process it starts (`prctl(PR_SET_THP_DISABLE)` is inherited); call it with [`deterministic_malloc`].
+///
+/// With the kernel's THP set to `always` (the CI runner; this machine has `madvise`), a page touched in an untouched
+/// 2 MB-aligned stretch of an anonymous mapping can bring in a whole 2 MB page, and khugepaged folds sparse stretches
+/// into 2 MB pages later: the editor gate read 2048 KB per open/close cycle on the runner (nightly 39521838190) against
+/// about 13 here, steps of exactly one 2 MB page. With 4 KB pages every growth is the memory really touched, on any
+/// kernel setting. Returns what it set, for the report.
+pub fn no_transparent_huge_pages() -> Value {
+    #[cfg(target_os = "linux")]
+    {
+        // Variadic arguments the kernel reads as unsigned longs: pass them at that width.
+        let (on, zero): (libc::c_ulong, libc::c_ulong) = (1, 0);
+        // SAFETY: PR_SET_THP_DISABLE sets one flag of this process (its arguments 3 to 5 must be 0); no memory is
+        // touched.
+        let ok = unsafe { libc::prctl(libc::PR_SET_THP_DISABLE, on, zero, zero, zero) } == 0;
+        if ok {
+            json!("off (PR_SET_THP_DISABLE)")
+        } else {
+            json!("system (prctl refused)")
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        json!("system (not Linux)")
+    }
+}
+
 /// Gives every free page of every malloc arena back to the kernel (glibc's `malloc_trim(0)`), so that a sample after
 /// it counts the pages live allocations occupy, not the free memory glibc keeps for reuse. Returns whether it ran.
 pub fn trim_heap() -> bool {
@@ -221,6 +249,19 @@ mod tests {
         let set = deterministic_malloc();
         assert_eq!(set["arena_max"], 1, "{set}");
         assert_eq!(set["mmap_threshold"], MALLOC_THRESHOLD);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn transparent_huge_pages_go_off() {
+        assert_eq!(no_transparent_huge_pages(), "off (PR_SET_THP_DISABLE)");
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        assert!(
+            status
+                .lines()
+                .any(|l| l.split_whitespace().eq(["THP_enabled:", "0"])),
+            "{status}"
+        );
     }
 
     #[test]

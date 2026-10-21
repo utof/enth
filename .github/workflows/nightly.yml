@@ -5,7 +5,10 @@ name: nightly
 #             also catching syscalls, I/O and pthread locks inside `process`. It does not see an uncontended std Mutex
 #             (measured in Phase 0), so the clippy ban on Mutex/RwLock stays.
 #   proptest: every property test with a fresh random seed and ten times the cases. The gate itself runs with a fixed
-#             seed (.cargo/config.toml, .config/nextest.toml); a find here is replayed with the printed seed.
+#             seed (.cargo/config.toml, .config/nextest.toml); a find here is replayed with the printed seed. A property
+#             that renders per case caps its own count (enth-challenge's P10 pair: 1,000, `render_property` in
+#             tests/ss_sound.rs): proptest applies PROPTEST_CASES over any count a test configures, and at 10,000 the
+#             pair hit nextest's ten-minute limit (run 39506542786).
 #   leak:     the plugin's leak gates (P1b lane INT, `cargo xtask leak-test`): 200 editor open/close cycles under Xvfb
 #             (at most 26 KB per cycle, threads constant, one editor_closed per open) and 200 instance lives (flat PSS,
 #             no thread or descriptor left behind). Locally the coordinator runs them before merging an editor lane.
@@ -14,6 +17,11 @@ on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      leak_diag:
+        description: "Leak job: ENTH_LEAK_DIAG=1 (thread events and the mappings behind every Pss_Anon jump of more than 2 MB)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -83,13 +91,18 @@ jobs:
           PROPTEST_RNG_SEED: ${{ steps.seed.outputs.seed }}
           PROPTEST_CASES: "10000"
         run: cargo nextest run --locked --profile explore --no-tests=pass --workspace --exclude 'spike-*' --exclude enth-ui --exclude enth-plugin --exclude enth-test-host --exclude xtask
-      # A new regression file is the reproduction: commit it together with the fix (it is merged as a union).
+      # A new regression file is the reproduction: commit it together with the fix (it is merged as a union). proptest
+      # writes `<test file>.proptest-regressions` beside an integration test's file (tests/fuzz_lite.rs ->
+      # tests/fuzz_lite.proptest-regressions), which the old `**/proptest-regressions/**` never matched: run 39506542786
+      # uploaded nothing. The committed files come along; the new or grown one is the find.
       - name: Keep new regression files
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proptest-regressions-${{ steps.seed.outputs.seed }}
-          path: "**/proptest-regressions/**"
+          path: |
+            **/*.proptest-regressions
+            **/proptest-regressions/**
           if-no-files-found: ignore
 
   leak:
@@ -103,6 +116,10 @@ jobs:
       - run: rustup toolchain install
       # The plugin's build libraries (as in ci.yml), plus Xvfb and Mesa's software OpenGL: the editor opens only on a
       # virtual display, never a GPU (`leak-test` starts xvfb-run itself and passes no display on).
+      # libegl1 and libegl-mesa0 are not optional (lane NTF, FU1): the editor's baseview opens its GL context through
+      # EGL, else through GLX with an sRGB framebuffer config, and Xvfb (21.1.12 with Mesa 25.2.8) offers sRGB GLX
+      # configs only when it can load Mesa's EGL vendor itself. Nothing else here pulls the two in; without them every
+      # `gui.create` fails, as in the first nightly (run 39506542786: no frame drawn in 200 cycles, no build counted).
       - name: System libraries for the plugin, Xvfb and software OpenGL
         run: |
           sudo apt-get update
@@ -110,16 +127,32 @@ jobs:
             libasound2-dev libgl-dev libjack-jackd2-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            xvfb xauth libgl1-mesa-dri libglx-mesa0
+            xvfb xauth libgl1-mesa-dri libglx-mesa0 libegl1 libegl-mesa0 mesa-utils
+      # What the editor will find under Xvfb, in the log: the EGL platform it tries first and the GLX fallback; and the
+      # kernel's transparent huge page settings. The runner has THP `always`, which read 2048 KB per editor cycle (one
+      # 2 MB page per open, run 39524725826); the test host now turns THP off in its measurement processes.
+      - name: Software OpenGL under Xvfb, memory settings
+        run: |
+          xvfb-run -a -s "-screen 0 1920x1080x24" sh -c 'eglinfo -B -p x11; glxinfo -B' 2>&1 | head -60
+          grep -H . /sys/kernel/mm/transparent_hugepage/enabled /sys/kernel/mm/transparent_hugepage/defrag \
+            /sys/kernel/mm/transparent_hugepage/khugepaged/max_ptes_none || true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: leak
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo xtask leak-test
+      - name: Leak gates
+        env:
+          LEAK_DIAG: ${{ inputs.leak_diag }}
+        run: |
+          if [ "$LEAK_DIAG" = true ]; then export ENTH_LEAK_DIAG=1; fi
+          cargo xtask leak-test
+      # The JSON reports and the test host's logs (the plugin bundle stays out: 16 MB).
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: leak-test
-          path: target/leak-test/*.json*
+          path: |
+            target/leak-test/*.json*
+            target/leak-test/*.log
           if-no-files-found: ignore

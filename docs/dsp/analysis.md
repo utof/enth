@@ -115,7 +115,7 @@ tol     := ("±" | "+-") (value | number "%")      after "=", "==" or "~" only
 
 - `=` and `~` without a tolerance use the feature's default: 25 ct for `pitch`, 50 ct for `pitch.note` (the same note), 10 % for Hz and ms features, 2 dB for dB features, 1.5 LU for loudness.
 - Pitch with `=` or `~` is judged in cents from the target note, so its margin and noise are in cents. `pitch in [C3, D3]` and `pitch > 200Hz` are judged in Hz.
-- Every item is echoed in canonical form with the canonical path: `brightness>2kHz` → `spectrum.centroid_hz > 2000`, `pitch=C3±20ct` → `pitch.f0_hz = C3 ± 20ct`, `beating in [3Hz, 9Hz]` → `detune.beating_hz in [3, 9]`. Canonical text parses back to the same item (a property test).
+- Every item is echoed in canonical form with the canonical path: `brightness>2kHz` → `spectrum.centroid_hz > 2000`, `pitch=C3±20ct` → `pitch.f0_hz = C3 ± 20ct`, `beating in [3Hz, 9Hz]` → `detune.beating_hz in [3, 9]`. Canonical text parses back to the same item (a property test): a pitch prints as a note's name only at that note's frequency (within 1e-6 ct; 440.001 Hz stays `440.001Hz`, FU1).
 - Errors are typed: `bad_expect` (usage, exit 2 in the CLI) or `unknown_feature` (validation, exit 3) with `did_you_mean` and a `hint`.
 
 Per item the checker returns `pass`, `got` (the feature's unit), `compared` (the cents error for pitch against a note), `unit`, `margin` (signed distance to the nearest edge, positive inside), `margin_pct` (Hz and ms features), `noise`, `thin`, `unstable`, `lower_bound` and `estimated`:
