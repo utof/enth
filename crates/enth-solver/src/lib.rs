@@ -23,6 +23,13 @@
 //! | --- | --- | --- |
 //! | [`closest`] | "How close am I?": CMA-ES from the player's patch over a lesson step's editable set (design §7); leaves `nearest` to R3 | CLS |
 //!
+//! R3 directories, pre-declared empty by lane S0s (`hint/` and `search.rs` stay untouched; `nearest` is filled by TP):
+//!
+//! | Directory | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`create`] | "create from sound": `candidate`, `portfolio`, `schedule` (the start set, K branches, successive halving; the k-NN retrieval fills [`nearest`]) | TP, MS |
+//! | [`propose`] | R3b's inference on our own scalar kernels: `pack`, `ops`, `net`, `features`, `decode`; wasm32, bytes passed in | ONX |
+//!
 //! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator (an
 //! [`Objective`](search::Objective) for a match), which returns results by job index, so a hint or a match is
 //! identical for any worker count.
@@ -48,10 +55,12 @@
 pub mod closest;
 pub mod cmaes;
 pub mod coach;
+pub mod create;
 pub mod eval;
 pub mod heuristic;
 pub mod hint;
 pub mod nearest;
+pub mod propose;
 pub mod search;
 pub mod sensitivity;
 

@@ -18,6 +18,9 @@ enth-challenge.workspace = true
 enth-dsp.workspace = true
 libm.workspace = true
 serde.workspace = true
+# Pre-declared by lane S0s (R3): `propose::pack` checks the model file's sha256 (lane ONX). Pure Rust, wasm32-clean (enth-learn
+# already builds with it), so the lock is resolved before the lane starts.
+sha2.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

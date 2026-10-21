@@ -1394,6 +1394,7 @@ dependencies = [
  "libm",
  "proptest",
  "serde",
+ "sha2",
 ]
 
 [[package]]
