@@ -4,16 +4,19 @@
 //! The crate depends on `enth-render` (for `model::Phrase::performance` and the scorers), so the dependency graph
 //! cannot show it. This test reads the generator's sources instead (`random`, its mask, the priors and the phrase
 //! table, each up to its test module): outside comments they name no crate but `enth_dsp` (the keyed draws),
-//! `enth_params` and `enth_patch`, reach no module of this crate but `phrases`, `priors`, `random`, `spec`,
-//! `fingerprint`, `code` and `model`, take nothing from `model` but the `Phrase`, `PhraseId` and `PhraseNote` data
-//! types, and never ask a phrase for its `Performance` (the one place `model` touches `enth-render`). The target
-//! fingerprint (`fingerprint`, F1r review M1) and the code module it names its prefix from are read too.
+//! `enth_params` and `enth_patch`, reach no module of this crate but `phrases`, `lesson_phrases`, `priors`,
+//! `random`, `spec`, `fingerprint`, `code` and `model`, take nothing from `model` but the `Phrase`, `PhraseId`,
+//! `PhraseNote` and `PhraseError` data types, and never ask a phrase for its `Performance` (the one place `model`
+//! touches `enth-render`). The target fingerprint (`fingerprint`, F1r review M1) and the code module it names its
+//! prefix from are read too, and the lesson-only phrase table (lane CV2), which the phrase lookup reaches.
 
-const SOURCES: [(&str, &str); 6] = [
+const SOURCES: [(&str, &str); 7] = [
     ("src/random.rs", include_str!("../src/random.rs")),
     ("src/random/mask.rs", include_str!("../src/random/mask.rs")),
     ("src/priors.rs", include_str!("../src/priors.rs")),
     ("src/phrases.rs", include_str!("../src/phrases.rs")),
+    // The lesson-only phrases (lane CV2, R2): `phrases::entry` looks in their table too.
+    ("src/lesson_phrases.rs", include_str!("../src/lesson_phrases.rs")),
     ("src/fingerprint.rs", include_str!("../src/fingerprint.rs")),
     ("src/code.rs", include_str!("../src/code.rs")),
 ];
@@ -60,6 +63,7 @@ fn the_generator_never_reaches_the_renderer() {
                 assert!(
                     [
                         "phrases",
+                        "lesson_phrases",
                         "priors",
                         "random",
                         "spec",
@@ -79,7 +83,8 @@ fn the_generator_never_reaches_the_renderer() {
                     assert!(
                         names
                             .iter()
-                            .all(|w| ["Phrase", "PhraseId", "PhraseNote"].contains(w)),
+                            .all(|w| ["Phrase", "PhraseId", "PhraseNote", "PhraseError"]
+                                .contains(w)),
                         "{file}:{n}: the generator takes more than phrase data from model: {line}"
                     );
                 }
