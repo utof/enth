@@ -28,7 +28,9 @@ const USAGE: &str = "usage: cargo xtask gr3-run --arm A|B|C|D [--split test|dev]
        [--workers 8] [--bank PATH|none] [--bank-entries N] [--proposals FILE (dev only)]
        [--k 8] [--first-rung 50] [--eta 2] [--finalists 2] [--neighbours 16] [--min-spread 0.25]
        [--lambda 0] [--seed 1] [--score-seconds 3] [--marks M,M...] [--out PATH (dev only)] [--runs PATH]
-       [--note TEXT] [--no-lock] [--dry-run]
+       [--note TEXT] [--no-lock] [--dry-run] [--tool PATH]
+       [--endpoint RENDERS --equivalent-seconds S --rate-source TEXT]   (a render run standing for a timed one)
+       cargo xtask gr3-run --rate-probe   (the idle-rate probe: 8 dev targets, 60 s each under flock -x, ~10 min)
 Defaults: test split, core set, wall-clock mode at 60 s, 8 workers, the bank `cargo xtask bank` writes,
 create's own settings (docs/gr3.md lists the tuned defaults). Test runs append to content/gr3/runs.jsonl.";
 
@@ -39,7 +41,20 @@ struct Opts {
     flags: Vec<String>,
 }
 
-const FLAGS: [&str; 3] = ["--no-lock", "--dry-run", "--help"];
+const FLAGS: [&str; 4] = ["--no-lock", "--dry-run", "--help", "--rate-probe"];
+
+/// The idle-rate probe's targets (`--rate-probe`): eight dev targets across the levels, a two-note phrase and three
+/// presets (a pad with reverb, a kick, a lead), so the probe sees short dry clips and long wet ones.
+pub const PROBE_IDS: [&str; 8] = [
+    "gen-d-l2-02",
+    "gen-d-l3-03",
+    "gen-d-l4-02",
+    "gen-d-l5-03",
+    "gen-d-l5-05",
+    "hand-d-velvet-pad-a",
+    "hand-d-thump-kick-a",
+    "hand-d-solar-lead-a",
+];
 
 impl Opts {
     fn parse(args: &[String]) -> Result<Opts, String> {
@@ -83,7 +98,7 @@ impl Opts {
     }
 
     fn check_known(&self) -> Result<(), String> {
-        const KNOWN: [&str; 26] = [
+        const KNOWN: [&str; 30] = [
             "--arm",
             "--split",
             "--set",
@@ -110,6 +125,10 @@ impl Opts {
             "--out",
             "--runs",
             "--note",
+            "--tool",
+            "--endpoint",
+            "--equivalent-seconds",
+            "--rate-source",
         ];
         for (k, _) in &self.pairs {
             if !KNOWN.contains(&k.as_str()) {
@@ -221,7 +240,29 @@ fn twin_budgets(
 
 /// `cargo xtask gr3-run`.
 pub fn gr3_run(args: &[String]) -> Result<(), String> {
-    let o = Opts::parse(args)?;
+    let mut o = Opts::parse(args)?;
+    if o.flag("--rate-probe") {
+        // The idle-rate probe (docs/gr3.md): arm A, wall-clock 60 s under the exclusive lock, 8 workers, on
+        // PROBE_IDS of dev, into a scratch file. Its renders at 60 s are the machine's idle rate.
+        for (k, v) in [
+            ("--arm", "A".to_owned()),
+            ("--split", "dev".to_owned()),
+            ("--ids", PROBE_IDS.join(",")),
+            ("--mode", "wall".to_owned()),
+            ("--seconds", "60".to_owned()),
+            ("--workers", "8".to_owned()),
+            ("--note", "idle-rate probe".to_owned()),
+        ] {
+            if o.get(k).is_none() {
+                o.pairs.push((k.to_owned(), v));
+            }
+        }
+        if o.get("--out").is_none() {
+            let out = target_dir(&root()).join("gr3/rate-probe.jsonl");
+            o.pairs
+                .push(("--out".to_owned(), out.display().to_string()));
+        }
+    }
     if o.flag("--help") {
         println!("{USAGE}");
         return Ok(());
@@ -381,6 +422,36 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
             .collect::<Result<_, _>>()?,
         None => Vec::new(),
     };
+    // A render-capped run that stands for a wall-clock one records the assumption, so the conversion can be applied
+    // (or replaced by a measured idle rate) later without running again.
+    let equivalence = match o.get("--equivalent-seconds") {
+        Some(sec) => {
+            if mode != "renders" {
+                return Err("--equivalent-seconds is for render mode".to_owned());
+            }
+            let sec: f64 = sec
+                .parse()
+                .map_err(|_| format!("--equivalent-seconds: not a number: {sec}"))?;
+            let endpoint: usize = o.num("--endpoint", budget.unwrap_or(0))?;
+            if endpoint == 0 || sec <= 0.0 {
+                return Err(
+                    "--equivalent-seconds needs a positive time and an --endpoint (renders)"
+                        .to_owned(),
+                );
+            }
+            let source = o.get("--rate-source").ok_or(
+                "--equivalent-seconds needs --rate-source (where the assumed rate comes from)",
+            )?;
+            json!({
+                "kind": "estimate",
+                "seconds": sec,
+                "renders": endpoint,
+                "rate_renders_per_s": endpoint as f64 / sec,
+                "source": source,
+            })
+        }
+        None => Value::Null,
+    };
     let out = if test {
         gr3.join("runs.jsonl")
     } else {
@@ -455,6 +526,7 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
         "twin_of": twin_of,
         "command": std::iter::once("cargo xtask gr3-run".to_owned()).chain(args.iter().cloned()).collect::<Vec<_>>().join(" "),
         "note": o.get("--note"),
+        "equivalence": equivalence,
         "load1_at_start": load1(),
     });
     let job = json!({
@@ -499,6 +571,10 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
     }
 
     // ---- build (shared lock), then run (the tool locks per target in wall mode) ----
+    if let Some(tool) = o.get("--tool") {
+        // A frozen tool binary (a long sweep keeps one build however the tree moves meanwhile).
+        return run_tool(Path::new(tool), &job_path, &out);
+    }
     let status = Command::new("flock")
         .args(["-s", "/tmp/enth-quiet.lock"])
         .arg(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
@@ -516,10 +592,13 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
     if !status.success() {
         return Err("building enth-datagen failed (report above)".to_owned());
     }
-    let bin = tdir.join("release/enth-datagen");
-    let status = Command::new(&bin)
+    run_tool(&tdir.join("release/enth-datagen"), &job_path, &out)
+}
+
+fn run_tool(bin: &Path, job_path: &Path, out: &Path) -> Result<(), String> {
+    let status = Command::new(bin)
         .args(["gr3", "run", "--job"])
-        .arg(&job_path)
+        .arg(job_path)
         .status()
         .map_err(|e| format!("cannot run {}: {e}", bin.display()))?;
     if status.success() {
