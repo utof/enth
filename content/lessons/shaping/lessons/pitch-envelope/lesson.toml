@@ -1,0 +1,170 @@
+# Lesson 4.3, Pitch envelope [shaping · intermediate] (content/lessons/PLAN.md §5, U4).
+#
+# Hear (a sine thump with env2 on its pitch at 0, +12 and +36 semitones, low as a kick; a saw zap high up), a "which
+# one is the kick?" item → Name → Try (route env2 to osc1's pitch, checked by the pitch's stability) → a Do step (a
+# longer drop, checked by stability) → an ear question.
+#
+# Changed from the card, measured on engine 0.3.0 at HELD: sound/1 is deaf to a pitch envelope. On a sine with
+# env2 at attack 1 ms, decay 60 ms, no sustain, 0 against +12 semitones is 0.03 JND, +12 against +24 0.05, +24 against
+# +36 0.09; decays of 40, 150 and 500 ms at +24 are 0.06 and 0.09 apart; on a saw pluck a 24-semitone drop against
+# none is 0.10. So the card's rounds (a drawn depth, a drawn decay) cannot be scored, and no fallback descriptor
+# tells the options apart either (the pitch reads C3 and the brightness moves under one step). `stability`
+# (pitch.stability) reads the drop: on a sine thump (decay 300 ms, no sustain) it falls with the depth and the
+# length of the drop, so it gates the Try and the Do step. The ear questions play the thump as a kick, two octaves
+# down: lesson-check notes them for a listening review (options it cannot compare as played), and lesson-coverage
+# counts them as no check.
+
+schema = "enth.lesson/1"
+id = "pitch-envelope"
+title = "Pitch envelope"
+tier = "intermediate"
+objective = "Route an envelope to an oscillator's pitch to make kicks and zaps."
+teaches = ["osc.semi", "adsr.decay"]
+
+# --- Hear: the thump as a kick (two octaves down) at 0, +12 and +36 semitones; then a saw zap an octave up.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No route"
+patch = "patches/kick-ready.patch.json"
+transpose = -24
+
+[[steps.examples]]
+label = "+12 semitones"
+patch = "patches/kick-12st.patch.json"
+transpose = -24
+
+[[steps.examples]]
+label = "+36 semitones"
+patch = "patches/kick-36st.patch.json"
+transpose = -24
+
+[[steps.examples]]
+label = "Zap"
+patch = "patches/zap-24st.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which one is the kick? (the thump with and without the pitch drop, two octaves down; noted
+# for a listening review: sound/1 cannot compare transposed options, and is deaf to the drop anyway.)
+[[steps]]
+id = "which-kick"
+kind = "choose"
+text = "which-kick.md"
+hints = ["Listen to the very start: one hits with a quick downward swoop."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/kick-24st.patch.json"
+transpose = -24
+
+[[steps.options]]
+label = "B"
+patch = "patches/kick-ready.patch.json"
+transpose = -24
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/kick-36st.patch.json"
+highlight = ["env2 -> osc1.semi", "env2.decay"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: make it a kick. Start: the thump with env2 routed nowhere (stability 0.93 to 0.95 over the scoring seed and
+# both nuisance seeds: fails `stability < 0.8`). Witness: the route at 25 % (+24 semitones: 0.16 to 0.28, passing by
+# 0.5 or more). +12 semitones reads 0.60 to 0.65 and also passes; +36 is left out of the checks because the pitch
+# tracker reads it erratically (0.77, 0.78 and 0 over the three seeds).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on env2's tile onto the Semi knob of osc1's card.",
+  "Deepen the route with the orange dot on the Semi knob's ring: 12.5 % is an octave, and a kick wants two or more.",
+]
+witness = "patches/kick-24st.patch.json"
+
+[steps.view]
+start = "patches/kick-ready.patch.json"
+highlight = ["env2 -> osc1.semi", "osc1.semi"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2 -> osc1.semi", "osc1.semi"]
+locked = ["filter1.*", "env1.*", "env2.attack", "env2.decay", "env2.sustain", "env2.release"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["env2 -> osc1.semi > 10%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability < 0.8"]
+
+# --- Do: a longer drop. Start: +24 semitones over 60 ms (0.16 to 0.28: fails `stability < 0.1`). Witness: the same
+# drop over 150 ms (0 on every seed: the pitch never settles long enough to read as steady). The measured hints can
+# turn env2's decay: the drop happens in the first 0.5 s, the short clip the hint probes on.
+[[steps]]
+id = "longer"
+kind = "do"
+text = "longer.md"
+hints = [
+  "env2's Decay sets how long the drop takes. Turn it up.",
+  "About 150 ms turns the kick into a laser-like zap.",
+]
+witness = "patches/kick-24st-150ms.patch.json"
+
+[steps.view]
+start = "patches/kick-24st.patch.json"
+highlight = ["env2.decay"]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["env2.decay"]
+locked = ["env2.attack", "env2.sustain", "env2.release", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["env2.decay > 100ms"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability < 0.1"]
+
+# --- Check: which drop is longer (60 against 150 ms, as a kick; noted for a listening review like the first).
+[[steps]]
+id = "check-longer"
+kind = "choose"
+text = "check-longer.md"
+hints = ["The longer drop swoops for a moment before it settles."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/kick-24st.patch.json"
+transpose = -24
+
+[[steps.options]]
+label = "B"
+patch = "patches/kick-24st-150ms.patch.json"
+transpose = -24

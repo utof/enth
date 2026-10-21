@@ -1,0 +1,225 @@
+# Lesson 5.3, Wobble and sweeps [shaping · intermediate] (content/lessons/PLAN.md §5, U5).
+#
+# Hear (a resonant bass wobble at 2 and 6 Hz, an octave down; a slow sweep on a pad over a long note), a "wobble or
+# vibrato?" item → Name → Try (route lfo1 to the cutoff, checked by the sweep's rate) → three Do steps (a slower
+# wobble, a slow sweep over LONG_HOLD, a deeper wobble, each checked by the sweep) → an ear question.
+#
+# Changed from the card, measured on engine 0.3.0 (sound/1 JND; `enth describe`): sound/1 is nearly deaf to a filter
+# LFO. On a saw through a 1.2 kHz low-pass (resonance 30 %) with lfo1 on the cutoff at 20 %, rates 1.5, 4 and 9 Hz are
+# 0.81 to 1.37 JND apart and the wobble at 4 Hz against none 0.93; 20 against 40 % 0.37; the pad's 0.3 against 0.7 Hz
+# over LONG_HOLD 0.93. So the card's rounds (drawn rates) cannot be scored honestly. The descriptors read it exactly:
+# `filter_lfo` (modulation.filter_sweep.hz) 1.465, 4.012 and 9.007 Hz at 1.5, 4 and 9 Hz, and `sweep_depth` 2.80
+# octaves at 20 % and 4.87 to 5.00 at 40 %. A sweep is found only with two or more cycles (finding 8), so the slow
+# sweep is checked over LONG_HOLD (phrase 5: C3 held 8 s), where 0.7 Hz reads 0.696 Hz; 0.3 Hz reads as a one-way
+# sweep even there, so the goal is 0.7 Hz. The rate steps start above their goal, because the measured hint probes
+# the rate a tenth of its log range toward the middle, and below the goal that lands where no sweep is found.
+
+schema = "enth.lesson/1"
+id = "wobble-and-sweeps"
+title = "Wobble and sweeps"
+tier = "intermediate"
+objective = "Make the filter wobble with an LFO, from a fast wobble to a slow sweep, and set how far it moves."
+teaches = ["lfo.rate", "svf.cutoff"]
+
+# --- Hear: a resonant bass wobble at 2 and 6 Hz, an octave down; then the slow pad sweep over a long note.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Bass, 2 Hz"
+patch = "patches/bass-wob-2hz.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "Bass, 6 Hz"
+patch = "patches/bass-wob-6hz.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "Pad, 0.3 Hz"
+patch = "patches/pad-sweep-0p3hz.patch.json"
+phrase = 5
+
+[[steps.examples]]
+label = "Pad, no sweep"
+patch = "patches/pad.patch.json"
+phrase = 5
+
+# --- Hear's ear question: wobble or vibrato? (lfo1 on the cutoff at 4 Hz against lfo1 on the pitch at 5 Hz: the
+# filter sweep reads 4.01 Hz in one and nothing in the other.)
+[[steps]]
+id = "which-wobble"
+kind = "choose"
+text = "which-wobble.md"
+hints = ["Vibrato moves the pitch; the wobble keeps the note and moves the brightness, like a wah."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/wob-20-4hz.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/vib-50ct-5hz.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/wob-20-3hz.patch.json"
+highlight = ["lfo1 -> filter1.cutoff", "lfo1.rate"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: make it wobble. Start: the saw with lfo1 at 3 Hz routed nowhere (no sweep: fails). Witness: the route at
+# 20 % (about 3 Hz: inside [2Hz, 3.8Hz]). A route is structure (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on lfo1's tile onto the Cutoff knob of the filter card.",
+  "The drop makes a route at 25 %: already a clear wobble.",
+]
+witness = "patches/wob-20-3hz.patch.json"
+
+[steps.view]
+start = "patches/wob-ready.patch.json"
+highlight = ["lfo1 -> filter1.cutoff", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> filter1.cutoff", "filter1.cutoff"]
+locked = ["lfo1.shape", "lfo1.rate", "osc1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> filter1.cutoff > 10%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [2Hz, 3.8Hz]"]
+
+# --- Do: a slower wobble. Start: 12 Hz, a buzz (fails). Witness: 4 Hz (4.01 Hz: inside [3.2Hz, 5Hz]), inside the
+# patch band [3Hz, 6Hz] so the hints never stop on a passing sound with the rate outside it.
+[[steps]]
+id = "slower"
+kind = "do"
+text = "slower.md"
+hints = [
+  "Turn lfo1's Rate down.",
+  "About four wobbles a second.",
+]
+witness = "patches/wob-20-4hz.patch.json"
+
+[steps.view]
+start = "patches/wob-20-12hz.patch.json"
+highlight = ["lfo1.rate"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.rate"]
+locked = ["lfo1.shape", "lfo1 -> filter1.cutoff", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.rate in [3Hz, 6Hz]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [3.2Hz, 5Hz]"]
+
+# --- Do: a slow sweep, over LONG_HOLD. Start: the pad with lfo1 at 2 Hz on its cutoff (fails). Witness: 0.7 Hz
+# (0.696 Hz: inside [0.55Hz, 0.9Hz]).
+[[steps]]
+id = "sweep"
+kind = "do"
+text = "sweep.md"
+hints = [
+  "Turn lfo1's Rate well down, below one cycle a second.",
+  "Hold a long note: at about 0.7 Hz the filter rises and falls every second and a half.",
+]
+witness = "patches/pad-sweep-0p7hz.patch.json"
+
+[steps.view]
+start = "patches/pad-sweep-2hz.patch.json"
+highlight = ["lfo1.rate"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.rate"]
+locked = ["lfo1.shape", "lfo1 -> filter1.cutoff", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.rate in [0.5Hz, 1Hz]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 5
+expect = ["filter_lfo in [0.55Hz, 0.9Hz]"]
+
+# --- Do: deeper. Start: the Try's witness, 20 % (2.80 octaves of sweep: fails `sweep_depth > 4oct`). Witness: 40 %
+# (4.87 to 5.00 octaves). A route depth is structure (noted).
+[[steps]]
+id = "depth"
+kind = "do"
+text = "depth.md"
+hints = [
+  "Drag the orange dot on the Cutoff knob's ring up: the depth handle of lfo1's route.",
+  "Twice the depth: about 40 %.",
+]
+witness = "patches/wob-40-3hz.patch.json"
+
+[steps.view]
+start = "patches/wob-20-3hz.patch.json"
+highlight = ["lfo1 -> filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> filter1.cutoff", "filter1.cutoff"]
+locked = ["lfo1.shape", "lfo1.rate", "osc1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> filter1.cutoff > 30%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["sweep_depth > 4oct"]
+
+# --- Check: which wobbles faster (1.5 against 9 Hz: the sweep reads 1.465 against 9.007 Hz).
+[[steps]]
+id = "check-faster"
+kind = "choose"
+text = "check-faster.md"
+hints = ["Count the wah-wahs in one second."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/wob-20-1p5hz.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/wob-20-9hz.patch.json"
