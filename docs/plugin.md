@@ -313,6 +313,19 @@ So the first hint of a round is 1.7× faster on four workers (up to 2.0× at lev
 - **The codec hint** (`IntakeCfg::codec`: the codec, lossy or not, the bitrate when the stream says): with a lossy hint the intake's bandwidth estimate accepts an edge with two partials in the octave under it instead of three, so a high note's sparse spectrum no longer hides an encoder's low-pass (the A7 fixture at 48 kbps: no cut-off without the hint, 11.2 kHz with it). Absent, nothing changes; the report records it.
 - Every result records the scored clip's hash (`enth.create/1`'s `input.audio_sha256`), so a replay can check its clip.
 
+### Measured (lane SK3, 2026-10-21)
+
+The machine was loaded throughout (other lanes' gates: load average 35–45 on 12 hardware threads), so timings are upper bounds.
+
+| Check | Result |
+| --- | --- |
+| `process-stats --gate g1`, release `create-harness` bundle, the G1 chord, rtkit RR 10, 120 s after 10 s; **under the machine's load** (`flock -s`, load 39–44) | **Without a job:** p50 143.9 µs, p99 169.1 µs, p99.9 191.9 µs, max 1,431 µs, 8 deadline misses; **G1 passes**. **With create jobs running** (a 4 s pad, 6 workers; 3 jobs started, 2 ended at their 60 s cap, 87 rounds, 1,850 renders in the ended jobs): p50 140.6 µs, p99 160.4 µs, p99.9 170.8 µs, max 922 µs, 6 deadline misses; **G1 passes**. The audio thread's p99 is unchanged (the pool runs at normal priority on half the threads) |
+| Time to the first candidate (`enth create`, the same code path, 6 workers, the 4 s pad, the F1s bank, under load 42) | the screening round's 20 starts (heuristic, 3 templates, 16 k-NN) at **3.1 s**; 935 renders in the 60 s cap, stopped at 60.6 s |
+| `cargo test -p enth-plugin --features create` (`tests_create`, debug) | 15 passed: a cancel to `Done` in 23–31 ms with the batch out dropped (the renders at `Done` are the last told round's); a 3 s cap kept (3.2 s with a debug build's render in flight); the shell dropped with a search running in 43–123 ms, the whole plugin in 71 ms, and no `enth-create` or `enth-search-N` thread left |
+| `cargo xtask validate --package enth-plugin` | default debug bundle and `--features create` debug bundle: 36 passed, 0 failed, 8 skipped each |
+| `cargo xtask reaper-test --package enth-plugin` | the create bundles (`--bundle-dir`, with a `learn,create` bundle for the `lesson` scenario): exit 0, 321 checks. The default bundles: 320 of 321, the VST3 `dirty-flag` drag missed under load (64 s against 35 s for CLAP); that scenario alone again: exit 0, 36 checks |
+| `cargo xtask leak-test` | `--features editor-counts,create` (`--no-build --bundle-dir`), load about 35: exit 0, 13.01 KB per cycle (limit 26), 3 threads after every close, 200 of 200 drawn and closed twice, churn 0.43 KB per cycle. The default bundle at load 37–45: the memory, thread and churn checks pass (13.22 and 13.43 KB per cycle, churn 0.48–0.53) but "every open drew its first frame in time" (1 s) failed, 198 and 169–191 of 200; the create bundle, run again at load 41, failed it the same way (189 and 188), so the load, not the change, misses that deadline |
+
 ### The harness
 
 `cargo xtask bundle enth-plugin --release --features create-harness` (never a shipped build): with `ENTH_CREATE_HARNESS` naming a sound file, activation starts create jobs on it one after the other (each capped at `ENTH_CREATE_SECONDS`, 60 by default) until deactivation, which stops them and appends an `enth.plugin-create-stats/1` line (jobs started and finished, rounds, renders, workers) to `ENTH_CREATE_REPORT`. `enth-test-host process-stats` loads the plugin in process, so the variables set in its environment reach it.

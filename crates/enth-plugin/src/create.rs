@@ -475,7 +475,17 @@ impl Inner {
         if !self.keep_posts.load(Ordering::Acquire) {
             return;
         }
-        self.posts.lock().push((id, post));
+        let mut posts = self.posts.lock();
+        // A round supersedes the round queued before it (the editor may be closed for a whole job): what waits stays
+        // bounded, and the session sees the latest candidates either way.
+        if matches!(post, CreatePost::Round { .. })
+            && let Some((last, CreatePost::Round { .. })) = posts.last()
+            && *last == id
+        {
+            posts.pop();
+        }
+        posts.push((id, post));
+        drop(posts);
         if let Some(ctx) = self.repaint.lock().as_ref() {
             ctx.request_repaint();
         }
@@ -990,6 +1000,39 @@ fn search(
             },
         );
         inner.serve_auditions();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn round(renders: usize) -> CreatePost {
+        CreatePost::Round {
+            progress: CreateProgress::new(1, renders, 100, 0.1, 60.0),
+            candidates: Vec::new(),
+        }
+    }
+
+    /// While no editor takes them, a job's rounds do not pile up: each supersedes the one queued before it.
+    #[test]
+    fn a_queued_round_is_superseded_by_the_next() {
+        let c = Create::new();
+        let (a, b) = (CreateJobId(1), CreateJobId(2));
+        for r in [10, 20, 30] {
+            c.inner.post(a, round(r));
+        }
+        c.inner.post(b, round(5));
+        c.inner.post(a, round(40));
+        let posts = c.take_posts();
+        let renders: Vec<(u64, usize)> = posts
+            .iter()
+            .map(|(id, p)| match p {
+                CreatePost::Round { progress, .. } => (id.0, progress.renders),
+                _ => (id.0, 0),
+            })
+            .collect();
+        assert_eq!(renders, vec![(1, 30), (2, 5), (1, 40)]);
     }
 }
 
