@@ -10,7 +10,11 @@
 //! it records
 //!
 //! - **PSS** from `/proc/self/smaps_rollup` (shared libraries are counted once, not per process like RSS),
-//! - the **thread count**, `/proc/self/task`,
+//! - the **thread count**, `/proc/self/task` ([`procfs::threads`]): the threads that are not exiting. A thread
+//!   that was joined can still be listed for a few milliseconds after `join` returns (the kernel reaps it a little
+//!   later, and on a loaded machine "a little" is sometimes longer than `--settle-ms`), so a plain count of the
+//!   entries reads one too many now and then; a thread with `PF_EXITING` set has run its last instruction, is not
+//!   a leak and is left out (the report counts them apart, `exiting_threads_listed`),
 //! - open **file descriptors**, `/proc/self/fd` (the listing's own descriptor is not counted),
 //! - the number of memory **mappings**, `/proc/self/maps` (information).
 //!
@@ -146,6 +150,8 @@ fn growth<T: Copy + Into<i64>>(values: &[T], warmup: usize) -> i64 {
 struct Series {
     pss_kb: Vec<u64>,
     threads: Vec<usize>,
+    /// Threads listed but already exiting at each sample, left out of `threads`.
+    threads_exiting: Vec<usize>,
     fds: Vec<usize>,
     maps: Vec<usize>,
 }
@@ -180,7 +186,7 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Value, Stri
         },
     };
     let before = procfs::memory()?;
-    let before_counts = (procfs::thread_count(), fd_count(), map_count());
+    let before_counts = (procfs::threads().live, fd_count(), map_count());
     let mut series = Series::default();
     for _ in 0..opts.cycles {
         one_cycle(entry, id, &request, opts.process_on)?;
@@ -192,7 +198,9 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Value, Stri
             procfs::trim_heap();
         }
         series.pss_kb.push(procfs::memory()?.pss_kb);
-        series.threads.push(procfs::thread_count());
+        let threads = procfs::threads();
+        series.threads.push(threads.live);
+        series.threads_exiting.push(threads.exiting);
         series.fds.push(fd_count());
         series.maps.push(map_count());
     }
@@ -254,7 +262,7 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Value, Stri
         "trim_before_sample": opts.trim,
         "loadavg": procfs::loadavg(),
         "before_cycles": { "pss_kb": before.pss_kb, "threads": before_counts.0, "fds": before_counts.1, "maps": before_counts.2 },
-        "series": { "pss_kb": series.pss_kb, "threads": series.threads, "fds": series.fds, "maps": series.maps },
+        "series": { "pss_kb": series.pss_kb, "threads": series.threads, "threads_exiting": series.threads_exiting, "fds": series.fds, "maps": series.maps },
         "summary": {
             "pss_kb_first_after_warmup": series.pss_kb.get(warmup),
             "pss_kb_last": series.pss_kb.last(),
@@ -264,6 +272,7 @@ pub fn run(entry: &PluginEntry, id: &CStr, opts: &Options) -> Result<Value, Stri
             "threads_min": series.threads.iter().min(),
             "threads_max": series.threads.iter().max(),
             "thread_growth_after_warmup": thread_growth,
+            "exiting_threads_listed": series.threads_exiting.iter().sum::<usize>(),
             "fd_growth_after_warmup": fd_growth,
             "fds_last": series.fds.last(),
             "map_growth_after_warmup": map_growth,
