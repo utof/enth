@@ -312,10 +312,11 @@ fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
         budget: 3_000,
         ..cheap_cfg(3_000)
     };
-    // 1 heuristic + 3 templates: 4 starts, so no screening round and 4 branches.
+    // 1 heuristic + 3 templates: 4 starts, all screened in round 0, and 4 branches.
     let r = run_with(&t, None, &mut proxy, &cfg, &mut |_| true);
     assert_eq!(r.candidates.len(), 4);
-    assert!(r.rounds.iter().all(|x| x.rung.is_some()));
+    assert_eq!((r.rounds[0].rung, r.rounds[0].renders), (None, 4));
+    assert!(r.rounds[1..].iter().all(|x| x.rung.is_some()));
     assert!(r.renders <= cfg.budget);
     // Live branches never grow from one rung to the next: 4, then at most 2 (half, at least the finalists), then 2.
     let max_live = |rung| {
@@ -331,7 +332,8 @@ fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
         "{:?}",
         r.rounds
     );
-    // Rung 0 spends about 10 % of the budget: it ends at the first round boundary past its shares.
+    // Rung 0 spends about 10 % of what screening left (299 of 2,996): it ends at the first round boundary past its
+    // shares, so by less than one batch per branch later.
     let end0 = r
         .rounds
         .iter()
@@ -340,7 +342,7 @@ fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
         .max()
         .unwrap();
     assert!(
-        (300..300 + 4 * 64).contains(&end0),
+        (4 + 299..4 + 299 + 4 * 64).contains(&end0),
         "rung 0 ended at {end0}"
     );
     assert_eq!(
@@ -364,6 +366,43 @@ fn successive_halving_runs_in_renders_and_the_budget_is_hard() {
             r.stop
         );
     }
+}
+
+#[test]
+fn the_shell_may_set_the_budget_after_screening_and_a_replay_under_it_is_the_same() {
+    let t = target();
+    let init = init();
+    let templates = templates();
+    let inputs = Inputs {
+        init: &init,
+        templates: &templates,
+        bank: None,
+    };
+    let analysis = t.analyse().unwrap();
+    let cfg = cheap_cfg(5_000);
+    let mut job = CreateJob::new(
+        &t,
+        &analysis,
+        Portfolio::build(&analysis, &inputs, &cfg),
+        &cfg,
+    )
+    .unwrap();
+    assert!(job.budget_open());
+    let screen = job.ask();
+    assert!(!job.budget_open(), "not while a batch is out");
+    let d: Vec<f64> = screen.iter().map(proxy).collect();
+    job.tell(&d).unwrap();
+    // The shell timed the screening round and can afford 700 renders in all.
+    assert!(job.budget_open());
+    job.set_budget(700).unwrap();
+    run(&mut job, &mut proxy, &mut |_| true).unwrap();
+    assert!(!job.budget_open());
+    assert_eq!(job.set_budget(900).unwrap_err().code(), "bad_create_cfg");
+    let shell = job.result();
+    assert!(shell.renders <= 700);
+
+    let replay = run_with(&t, None, &mut proxy, &cheap_cfg(700), &mut |_| true);
+    assert_eq!(replay, shell);
 }
 
 #[test]

@@ -381,3 +381,63 @@ fn step_record(s: &BranchStep) -> StepRecord {
         best: finite(s.best),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The wire names of `enth.create/1`'s enums and small records: a change here is a schema change.
+    #[test]
+    fn the_wire_names_are_pinned() {
+        let provenance = vec![
+            Provenance::Heuristic,
+            Provenance::Template {
+                name: "pluck_1osc".to_owned(),
+            },
+            Provenance::Knn {
+                rank: 0,
+                bank_index: 1234,
+                seed: 987_654_321,
+                difficulty: 100,
+                musical: 50,
+                embedding_distance: 0.75,
+            },
+            Provenance::Model {
+                model: "propose-v0".to_owned(),
+                hypothesis: 3,
+                confidence: Some(0.5),
+            },
+        ];
+        insta::assert_json_snapshot!("provenance", provenance);
+        let states = (
+            [
+                CandidateState::Proposed,
+                CandidateState::Searching,
+                CandidateState::Done,
+                CandidateState::Pruned,
+            ],
+            [
+                CreateStop::Budget,
+                CreateStop::Cancelled,
+                CreateStop::Exhausted,
+                CreateStop::Goal,
+            ],
+        );
+        insta::assert_json_snapshot!("states", states);
+        let round = RoundRecord {
+            round: 2,
+            renders: 300,
+            rung: Some(0),
+            live: 8,
+            seconds: Some(4.5),
+        };
+        let step = StepRecord {
+            round: 2,
+            renders: 40,
+            job_renders: 300,
+            best: Some(0.4),
+        };
+        insta::assert_json_snapshot!("round_and_step", (round, step));
+        assert_eq!(SCHEMA, "enth.create/1");
+    }
+}

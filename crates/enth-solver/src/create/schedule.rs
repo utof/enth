@@ -5,9 +5,11 @@
 //! ask/tell state machine like [`Search`], so the shell's orchestrator thread drives it, posts candidates between
 //! rounds and cancels it.
 //!
-//! 1. **Screening.** When the portfolio has more starts than K, one batch renders every start once; the heuristic
-//!    start is always kept and the best K − 1 others (by distance, ties to the earlier start) become the branches,
-//!    in start order. With K starts or fewer, every start is a branch and there is no screening round.
+//! 1. **Screening (round 0).** One batch renders every start once (at most the budget's worth, in portfolio
+//!    order), so the first K proposals have distances after a single batch. The heuristic start is always kept and
+//!    the best K − 1 others (by distance, ties to the earlier start) become the branches, in start order. Between
+//!    this round and the first rung's batch the shell may set the budget from the throughput it measured
+//!    ([`CreateJob::set_budget`]): the rungs run under that budget, and the record stores it.
 //! 2. **Branches.** Each branch is its own [`Search`] from its start, over the parameters the held phrase reveals
 //!    (`enth_challenge::random::observable`, as `enth match --free observable`), with the target's heuristic and a
 //!    seed derived from the job's seed and its start's index (so a replay from recorded starts draws the same).
@@ -175,7 +177,7 @@ impl CreateJob {
                 branch: None,
             })
             .collect();
-        let mut job = CreateJob {
+        Ok(CreateJob {
             cfg: cfg.clone(),
             starts,
             notes: portfolio.notes,
@@ -188,13 +190,7 @@ impl CreateJob {
             rounds: Vec::new(),
             stop: None,
             last_round: false,
-        };
-        if job.starts.len() <= cfg.k {
-            let all: Vec<usize> = (0..job.starts.len()).collect();
-            job.make_branches(&all)?;
-            job.begin_rung(0);
-        }
-        Ok(job)
+        })
     }
 
     /// The settings.
@@ -213,6 +209,62 @@ impl CreateJob {
     #[must_use]
     pub fn renders(&self) -> usize {
         self.used
+    }
+
+    /// The starts the screening round evaluates: all of them, or the budget's worth.
+    fn screened(&self) -> usize {
+        self.starts.len().min(self.cfg.budget)
+    }
+
+    /// Whether the budget may still change: until the first rung's first batch is asked (so after the screening
+    /// round, whose renders the shell can time).
+    #[must_use]
+    pub fn budget_open(&self) -> bool {
+        match self.phase {
+            Phase::Screen => self.pending == Pending::None,
+            Phase::Rung(0) => {
+                self.pending == Pending::None
+                    && self
+                        .branches
+                        .iter()
+                        .all(|b| b.search.as_ref().is_none_or(|s| s.renders() == 0))
+            }
+            _ => false,
+        }
+    }
+
+    /// Set the render budget from the shell's measured throughput (renders per second of the screening round
+    /// times the seconds left), while [`budget_open`](Self::budget_open). The rungs are laid out again from it;
+    /// nothing else changes, and a replay under the recorded budget is the same run.
+    ///
+    /// # Errors
+    /// [`CreateError::BadCfg`] when the budget is no longer open, or for a budget of 0.
+    pub fn set_budget(&mut self, budget: usize) -> Result<(), CreateError> {
+        if !self.budget_open() {
+            return Err(CreateError::BadCfg(
+                "the budget can change only before the first rung's first batch",
+            ));
+        }
+        if budget == 0 {
+            return Err(CreateError::BadCfg("budget must be at least 1 render"));
+        }
+        self.cfg.budget = budget;
+        // Each branch's search was set up with the old budget as its own cap: set them up again. None has drawn
+        // anything yet, so this changes nothing but the cap.
+        if let Phase::Rung(0) = self.phase {
+            let kept: Vec<usize> = self.branches.iter().map(|b| b.start).collect();
+            self.branches.clear();
+            for s in &mut self.starts {
+                s.branch = None;
+            }
+            self.make_branches(&kept)?;
+            if self.used >= self.cfg.budget {
+                self.finish(CreateStop::Budget);
+            } else {
+                self.begin_rung(0);
+            }
+        }
+        Ok(())
     }
 
     fn make_branches(&mut self, kept: &[usize]) -> Result<(), CreateError> {
@@ -348,7 +400,8 @@ impl CreateJob {
                 Phase::Done => return Vec::new(),
                 Phase::Screen => {
                     self.pending = Pending::Screen;
-                    return self.starts.iter().map(|s| s.patch.clone()).collect();
+                    let n = self.screened();
+                    return self.starts[..n].iter().map(|s| s.patch.clone()).collect();
                 }
                 Phase::Rung(r) => {
                     if self.used >= self.cfg.budget {
@@ -427,7 +480,7 @@ impl CreateJob {
     pub fn tell(&mut self, distances: &[f64]) -> Result<(), CreateError> {
         let expected = match &self.pending {
             Pending::None => 0,
-            Pending::Screen => self.starts.len(),
+            Pending::Screen => self.screened(),
             Pending::Branches(s) => s.iter().map(|(_, n)| n).sum(),
         };
         if expected == 0 || distances.len() != expected {
@@ -440,6 +493,7 @@ impl CreateJob {
         match std::mem::replace(&mut self.pending, Pending::None) {
             Pending::None => unreachable!("checked above"),
             Pending::Screen => {
+                // Starts past the budget are never evaluated, and never kept.
                 for (s, &d) in self.starts.iter_mut().zip(distances) {
                     s.screen_distance = Some(if d.is_finite() { d } else { FAILED });
                 }
@@ -450,11 +504,10 @@ impl CreateJob {
                     rung: None,
                     live: distances.len(),
                 });
-                let heuristic = self
-                    .starts
+                let heuristic = self.starts[..distances.len()]
                     .iter()
                     .position(|s| matches!(s.provenance, Provenance::Heuristic));
-                let mut others: Vec<usize> = (0..self.starts.len())
+                let mut others: Vec<usize> = (0..distances.len())
                     .filter(|&i| Some(i) != heuristic)
                     .collect();
                 let d = |i: usize| self.starts[i].screen_distance.unwrap_or(FAILED);

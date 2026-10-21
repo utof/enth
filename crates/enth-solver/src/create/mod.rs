@@ -244,8 +244,10 @@ pub struct Inputs<'a> {
     pub bank: Option<&'a Bank>,
 }
 
-/// Settings of a create job. [`Default`] is the CLI's and the plugin's starting point; the shell sets `budget` from
-/// its time cap (renders per second × seconds) and never reads a clock inside the job.
+/// Settings of a create job. [`Default`] is the CLI's and the plugin's starting point. The default budget, 4,000
+/// renders, is about 60 s on 8 workers for a 2–3 s clip of a patch with effects on the development laptop (TP's
+/// cost table, docs/r3.md); a shell should instead set it from the screening round's measured rate
+/// ([`CreateJob::set_budget`]), and never reads a clock inside the job.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CreateCfg {
     /// K: the branches refined at once (the starts are screened down to K when there are more).
@@ -275,7 +277,7 @@ impl Default for CreateCfg {
     fn default() -> Self {
         CreateCfg {
             k: 8,
-            budget: 6_000,
+            budget: 4_000,
             seed: 1,
             neighbours: 8,
             min_spread: 0.25,

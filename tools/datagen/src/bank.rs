@@ -7,6 +7,7 @@
 //! cargo xtask bank [--entries 20000] [--out PATH] [--threads 3] [--gr3 content/gr3]
 //! cargo xtask bank check PATH          # re-reads a bank, regenerates every entry, re-asserts the exclusions
 //! cargo xtask bank cost [--evals 24]   # the per-evaluation cost table (render + features, 1 worker and 8)
+//! cargo xtask bank probe PATH          # does retrieval help? start distances of k-NN against templates and chance
 //! ```
 //!
 //! # What it does
@@ -115,6 +116,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
             &args[2..],
         ),
         Some("cost") => cost(&args[1..]),
+        Some("probe") => probe(
+            args.get(1).ok_or("usage: bank probe <bank file>")?,
+            &args[2..],
+        ),
         _ => build(args),
     }
 }
@@ -797,4 +802,115 @@ fn candidate_spec_level5(i: u64) -> RandomSpec {
     let mut spec = candidate_spec(i);
     spec.difficulty = PRESETS[4].difficulty;
     spec
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Probe
+// ---------------------------------------------------------------------------------------------------------------
+
+fn median(mut v: Vec<f64>) -> f64 {
+    v.sort_by(f64::total_cmp);
+    if v.is_empty() {
+        f64::NAN
+    } else {
+        v[v.len() / 2]
+    }
+}
+
+/// Does retrieval help? For held-aside generator targets (the bank's own stream far past any bank index, played at
+/// another note than the bank's), the metric v1 distance of each kind of start before any search: the init
+/// template, the best template, the nearest neighbour, the best of the 8 nearest, and the best of 8 random entries.
+fn probe(path: &str, args: &[String]) -> Result<(), String> {
+    let bytes = fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let bank = Bank::parse(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    let targets: u64 = num(args, "--targets", 24)?;
+    let note: u8 = num(args, "--note", 55)?;
+    let threads: usize = num(args, "--threads", 3)?;
+    let templates = [
+        template(include_str!("../../../content/templates/init.patch.json"))?,
+        template(include_str!(
+            "../../../content/templates/pluck_1osc.patch.json"
+        ))?,
+        template(include_str!(
+            "../../../content/templates/pad_2osc.patch.json"
+        ))?,
+        template(include_str!(
+            "../../../content/templates/bass_sub.patch.json"
+        ))?,
+    ];
+    let in_bank: BTreeSet<u64> = bank.entries().iter().map(|e| e.seed).collect();
+    let rows: Vec<Option<[f64; 5]>> = pool(threads)?.install(|| {
+        (0..targets)
+            .into_par_iter()
+            .map(|i| {
+                let spec = candidate_spec(1_000_000_000 + i);
+                if in_bank.contains(&spec.seed) {
+                    return None;
+                }
+                let g = random::target(&spec).ok()?;
+                let perf = Performance::note(note, 100.0 / 127.0, 0.75, 1.5);
+                let rspec = RenderSpec::new(SAMPLE_RATE, RENDER_SEED);
+                let mid = render(&g.patch, &perf, &rspec).ok()?.mid();
+                let t = enth_solver::create::Target {
+                    audio: mid.clone(),
+                    sample_rate: SAMPLE_RATE,
+                    render_seed: RENDER_SEED,
+                    perf: enth_solver::create::TargetPerf {
+                        key: note,
+                        velocity: 100.0 / 127.0,
+                        on_s: 0.0,
+                        hold_s: 0.75,
+                        duration_s: 1.5,
+                        f0_hz: None,
+                    },
+                    bandwidth_hz: None,
+                    noise_floor_dbfs: None,
+                };
+                let analysis = t.analyse().ok()?;
+                let metric = MetricTarget::from_audio(&mid, &perf, &rspec);
+                let mut w = metric.worker();
+                let tpl: Vec<f64> = templates.iter().map(|p| w.distance(p)).collect();
+                let near = bank.nearest(&analysis.embedding, 8, 0.0);
+                let knn: Vec<f64> = near
+                    .iter()
+                    .filter_map(|n| bank.patch(n.index).ok())
+                    .map(|p| w.distance(&p))
+                    .collect();
+                let random: Vec<f64> = (0..8u64)
+                    .filter_map(|k| {
+                        let idx = (derive(derive(0x5052_4F42, i), k) % bank.len() as u64) as usize;
+                        bank.patch(idx).ok()
+                    })
+                    .map(|p| w.distance(&p))
+                    .collect();
+                let min = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
+                Some([
+                    tpl[0],
+                    min(&tpl),
+                    knn.first().copied().unwrap_or(f64::INFINITY),
+                    min(&knn),
+                    min(&random),
+                ])
+            })
+            .collect()
+    });
+    let rows: Vec<[f64; 5]> = rows.into_iter().flatten().collect();
+    let col = |k: usize| median(rows.iter().map(|r| r[k]).collect());
+    let wins = rows.iter().filter(|r| r[3] < r[1]).count();
+    println!(
+        "{} targets (bank stream, levels 2-5, note {note}, 1.5 s), metric v1 before any search:",
+        rows.len()
+    );
+    println!("| Start | Median distance |");
+    println!("| --- | --- |");
+    println!("| init template | {:.3} |", col(0));
+    println!("| best of the 4 templates | {:.3} |", col(1));
+    println!("| nearest neighbour | {:.3} |", col(2));
+    println!("| best of the 8 nearest | {:.3} |", col(3));
+    println!("| best of 8 random bank entries | {:.3} |", col(4));
+    println!(
+        "best of 8 nearest beats the best template on {wins} of {} targets",
+        rows.len()
+    );
+    Ok(())
 }
