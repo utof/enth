@@ -21,7 +21,7 @@
 //!   longer runs, or the same runs when they reach it) means neither one-sided test favours A at p < 0.05.
 //!   **B beats A** when both hold.
 //! - **Secondary, reported, never gated:** anytime curves (the median JND at 10, 30, 60 and 300 s), time to pass
-//!   (Kaplan–Meier over the checkpoint grid, censored at the cap), `structure/1`, every stratum (`gen-1note`,
+//!   (Kaplan–Meier over the checkpoint grid, censored at the endpoint), `structure/1`, every stratum (`gen-1note`,
 //!   `gen-2note`: the generator's two-note phrases, which `create` plays as one note in every arm; `preset`) and
 //!   level, and the Goodhart guard: the independent metric no arm optimises (MFCC mean squared error), by the same
 //!   paired Wilcoxon test.
@@ -143,9 +143,13 @@ pub fn summarize_by(
         .collect();
     let km_data: Vec<(f64, bool)> = lines
         .iter()
-        .map(|t| match t.time_to_pass() {
-            Some(tp) => (tp, true),
-            None => (t.cap, false),
+        .map(|t| {
+            // Censored at the endpoint the summary reads (a pass after it does not count).
+            let until = pick(t).map_or(t.cap, |c| c.mark);
+            match t.time_to_pass_by(until) {
+                Some(tp) => (tp, true),
+                None => (until, false),
+            }
         })
         .collect();
     let km = stats::kaplan_meier(&km_data);
@@ -614,7 +618,7 @@ pub fn single(
             sc.map_or_else(|| "–".to_owned(), |x| f(x.percent, 1)),
             sc.map_or_else(|| "–".to_owned(), |x| f(x.jnd, 2)),
             c.map_or_else(|| "–".to_owned(), |c| c.renders.to_string()),
-            t.time_to_pass()
+            t.time_to_pass_by(c.map_or(t.cap, |c| c.mark))
                 .map_or_else(|| "–".to_owned(), |x| format!("{x}")),
             opt(t.machine.others_cores.map(|x| (x * 10.0).round() / 10.0)),
         );

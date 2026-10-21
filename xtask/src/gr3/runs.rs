@@ -399,10 +399,11 @@ impl TargetLine {
         self.checkpoints.last()
     }
 
-    /// The first mark whose score passed, or `None` (censored at the cap).
-    pub fn time_to_pass(&self) -> Option<f64> {
+    /// The first mark at or below `until` whose score passed, or `None` (censored at `until`).
+    pub fn time_to_pass_by(&self, until: f64) -> Option<f64> {
         self.checkpoints
             .iter()
+            .take_while(|c| c.mark <= until)
             .find(|c| c.score.is_some_and(|s| s.passed))
             .map(|c| c.mark)
     }
@@ -634,7 +635,8 @@ phrase = 1
         assert_eq!(runs.headers.len(), 1);
         let t = &runs.targets["r1"][0];
         assert_eq!(t.at(60.0).unwrap().renders, 3000);
-        assert_eq!(t.time_to_pass(), Some(60.0));
+        assert_eq!(t.time_to_pass_by(f64::INFINITY), Some(60.0));
+        assert_eq!(t.time_to_pass_by(30.0), None);
         assert_eq!(runs.failed["r1"].len(), 1);
         assert!(runs.ended.contains_key("r1"));
         assert_eq!(notes.len(), 1);
