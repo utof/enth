@@ -221,8 +221,7 @@ fn a_full_patch_with_both_panes_reports_its_overflow() {
     let of = |name: &str| {
         over.iter()
             .find(|(n, _)| *n == name)
-            .map(|(_, o)| *o)
-            .unwrap_or_else(|| panic!("{name} is in the report: {over:?}"))
+            .map_or_else(|| panic!("{name} is in the report: {over:?}"), |(_, o)| *o)
     };
     assert!((of("modulators").x - 604.0).abs() < 2.0, "{over:?}");
     assert!((of("effects").y - 84.0).abs() < 2.0, "{over:?}");
