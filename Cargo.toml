@@ -101,6 +101,18 @@ libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-ho
 # found without it (lane PBC), or the owner allows MPL-2.0 for that one crate in deny.toml and the coordinator adds
 # `dirs` here.
 
+# Phase 3 (R2 Learn + R3 Sound to patch; docs/phase-3.md, the coordinator's pins, 2026-10-21). Licences read from the
+# crates.io API; lanes S0l and S0s add each to the crate that uses it (that changes Cargo.lock), then the coordinator
+# alone edits this table. `toml` and `rayon` above are reused (rayon also in enth-plugin for the create pool, L8 only).
+# R2 (enth-learn, L5, wasm-checked): lesson markdown and the .enthpack reader.
+pulldown-cmark = { version = "=0.13.4", default-features = false }   # MIT. Block AST of a lesson step (report 02 §3); no HTML output
+rawzip = "=0.5.2"                                   # MIT. Zero-dependency zip reader for .enthpack; refuse renamed or duplicate entries (report 02 §5)
+miniz_oxide = "=0.9.1"                              # MIT OR Zlib OR Apache-2.0. Deflate for .enthpack, pinned so `xtask pack` builds reproducibly
+# R3 (enth-plugin and enth-cli, L8): audio decoders without MPL-2.0 (symphonia needs the owner's OK; report 03 §7).
+claxon = "=0.4.3"                                   # Apache-2.0. FLAC
+lewton = "=0.10.2"                                  # MIT OR Apache-2.0. Ogg Vorbis
+nanomp3 = "=0.2.0"                                  # MIT OR Apache-2.0. MP3, a safe port of minimp3 (one maintainer: revisit if it stalls)
+
 # The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork";
 # lane FK). `vendor/` holds the crates.io sources (a pristine-import commit, then one commit per patch: slot rename,
 # `editor_closed`, baseview's xkb unref, keyboard focus only while typing; see vendor/README.md). Every entry keeps its
