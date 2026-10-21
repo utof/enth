@@ -1,0 +1,400 @@
+# Lesson 1.1, Waveforms [basics · basic · tour] (content/lessons/PLAN.md §5, U1). One of the two lessons of the owner's
+# taste check (TASTE.md): an enum control, drawn.
+#
+# Hear (two listen steps, a "which is brighter?" item) → Name → Try ("brighter than a sine", checked by sound) → three
+# rounds (two draws of the wave, then wave and octave together, what the game's level 1 randomizes) → two ear
+# questions. PLAN's last round was a generated level-1 target (`Target::Seed`); a seed target cannot be written in
+# TOML (its `amounts` need `null`), so it is the equivalent draw. Measured on engine 0.3.0, HELD (C3 for 1.5 s).
+
+schema = "enth.lesson/1"
+id = "waveforms"
+title = "Waveforms"
+tier = "basic"
+objective = "Tell sine, triangle, saw and pulse apart by ear, and pick the oscillator's wave to match a sound."
+teaches = ["osc.wave"]
+
+# --- Hear: the four waves at C3, then sine and saw two octaves up (C5) and saw and pulse an octave down (C2).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Sine"
+patch = "patches/sine.patch.json"
+
+[[steps.examples]]
+label = "Triangle"
+patch = "patches/triangle.patch.json"
+
+[[steps.examples]]
+label = "Saw"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "Pulse"
+patch = "patches/pulse.patch.json"
+
+[[steps.examples]]
+label = "Sine, high"
+patch = "patches/sine.patch.json"
+transpose = 24
+
+[[steps.examples]]
+label = "Saw, high"
+patch = "patches/saw.patch.json"
+transpose = 24
+
+[[steps.examples]]
+label = "Saw, low"
+patch = "patches/saw.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "Pulse, low"
+patch = "patches/pulse.patch.json"
+transpose = -12
+
+# --- Hear: the four waves on the slow pad, at C4.
+[[steps]]
+id = "hear-pad"
+kind = "listen"
+text = "hear-pad.md"
+
+[[steps.examples]]
+label = "Pad, sine"
+patch = "patches/pad-sine.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, triangle"
+patch = "patches/pad-triangle.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, saw"
+patch = "patches/pad.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, pulse"
+patch = "patches/pad-pulse.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which is brighter? (triangle, centroid 234 Hz, against saw, 894 Hz.)
+[[steps]]
+id = "which-brighter"
+kind = "choose"
+text = "which-brighter.md"
+hints = ["Brighter means more buzz at the top of the sound, not louder."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/triangle.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["osc1.wave"]
+
+# --- Try: "brighter than a sine". The patch predicate keeps it about the wave (the filter is locked too); the sound
+# check is the goal, set so that every wave but the sine passes. Measured: the sine start's spectral centroid is
+# 131.8 Hz (fails `brightness>180Hz` by 48 Hz); the witness, the saw, reads 894 Hz; the triangle 234 Hz (passes by
+# 54 Hz) and the pulse 767 Hz pass too. The table wave at its first frame is a sine, and fails.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The wave is the first control on the oscillator card (osc1).",
+  "Any of triangle, saw or pulse is brighter than the sine. Try each and listen.",
+]
+witness = "patches/saw.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sine.patch.json"
+highlight = ["osc1.wave"]
+editable = ["osc1.wave"]
+locked = ["filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "osc1.wave", cmp = "!=", value = "sine" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness>180Hz"]
+
+# --- Do, round 1: a hidden wave, drawn from the three the saw start is not. Seed 1 draws the triangle
+# (verified with `enth compare`: the start scores sound 26.6; the triangle candidate 100).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Soft and round, mellow, buzzy or hollow? Name the target's colour first, then pick that wave.",
+  "Saw and pulse are both bright: the pulse is hollower, like a clarinet; the saw fuller, like brass.",
+]
+
+[steps.view]
+highlight = ["osc1.wave"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "osc1.wave", set = ["sine", "triangle", "pulse"] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.wave"]
+locked = ["filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Waveforms, round 1"
+tags = ["basics", "waveforms"]
+
+# --- Do, round 2: the same three waves, another seed. Seed 2 draws the pulse, the hard one: the start
+# (a saw) scores sound 60.6, the pulse 100.
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Soft and round, mellow, buzzy or hollow? Name the target's colour first, then pick that wave.",
+  "Saw and pulse are both bright: the pulse is hollower, like a clarinet; the saw fuller, like brass.",
+]
+
+[steps.view]
+highlight = ["osc1.wave"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "osc1.wave", set = ["sine", "triangle", "pulse"] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.wave"]
+locked = ["filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Waveforms, round 2"
+tags = ["basics", "waveforms"]
+
+# --- Do, round 3: wave and octave together, the two things the game's level 1 randomizes (lesson 1.2 teaches
+# semitones; here only octaves). Seed 4 draws a triangle an octave up (C4): the start scores
+# sound 3.6; of the twelve candidates only triangle at +12 st scores 100.
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "First the wave: is the target soft, mellow, buzzy or hollow?",
+  "Then the pitch: is the target an octave above yours, below, or the same? Semitones moves in steps of 12.",
+]
+
+[steps.view]
+highlight = ["osc1.wave", "osc1.semi"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [
+  { param = "osc1.wave", set = ["sine", "triangle", "saw", "pulse"] },
+  { param = "osc1.semi", set = [-12.0, 0.0, 12.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.wave", "osc1.semi"]
+locked = ["filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Waveforms, round 3"
+tags = ["basics", "waveforms"]
+
+# --- Check: two ear questions. "Pulse or saw?" an octave down (PLAN: needed, since the descriptors read the two
+# alike), then "which is the triangle?" among the four waves on the pad at C4.
+[[steps]]
+id = "check-pulse"
+kind = "choose"
+text = "check-pulse.md"
+hints = ["The pulse is hollow, like a clarinet; the saw is full and brassy."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+transpose = -12
+
+[[steps.options]]
+label = "B"
+patch = "patches/pulse.patch.json"
+transpose = -12
+
+[[steps]]
+id = "check-triangle"
+kind = "choose"
+text = "check-triangle.md"
+hints = ["The sine is the softest; the triangle is a little brighter, mellow like a flute."]
+answer = 2
+
+[[steps.options]]
+label = "A"
+patch = "patches/pad.patch.json"
+transpose = 12
+
+[[steps.options]]
+label = "B"
+patch = "patches/pad-sine.patch.json"
+transpose = 12
+
+[[steps.options]]
+label = "C"
+patch = "patches/pad-triangle.patch.json"
+transpose = 12
+
+[[steps.options]]
+label = "D"
+patch = "patches/pad-pulse.patch.json"
+transpose = 12
