@@ -8,6 +8,7 @@ mod edit;
 pub(crate) mod explain;
 mod game;
 mod info;
+pub(crate) mod lesson;
 pub(crate) mod matching;
 mod sound;
 pub(crate) mod suggest;
@@ -176,6 +177,7 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
         Cmd::Match(args) => matching::run(&args, stdin),
         Cmd::Explain(args) => explain::run(&args, stdin),
         Cmd::Challenge(args) => challenge::run(&args),
+        Cmd::Lesson(args) => lesson::run(&args),
     }
 }
 

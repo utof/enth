@@ -215,4 +215,9 @@ pub enum Cmd {
     Explain(crate::cmd::explain::Args),
     /// Challenges and their codes: `new`, `show` (lanes SKR, then CL).
     Challenge(crate::cmd::challenge::Args),
+    // R2 command, pre-declared by lane S0l: hidden, and it answers `not_built_yet` until its lane builds it in its own
+    // file under `cmd/` (which also holds its arguments) and removes `hide` here.
+    /// Lessons: list, show, check, hint, closest (lanes SKL, then EV3).
+    #[command(hide = true)]
+    Lesson(crate::cmd::lesson::Args),
 }
