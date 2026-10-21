@@ -33,7 +33,7 @@ A lesson step has a goal that a check decides (report 03 §3). Four kinds exist,
 | **P** patch state | `Check::Patch` of predicates: `Value`, `Route`, `Has`, `Enabled`, `Touched` | the live patch satisfies every predicate (checked after each delivered edit) | every control; the only kind that does |
 | **S** sound expectation | `Check::Sound { phrase, expect }`, in the expectation grammar of `enth-analysis` (`brightness<500Hz`) | the rendered phrase meets every item with a margin | pitch, filter, noise, envelopes, LFO rate and depth, master level; little else |
 | **R** Recreate score | a real round (`RoundSource::Challenge`) against a hidden `Target::Draw`, `Target::Patch` or `Target::Seed`, with `Constraints.editable` | `structure/1` and `sound/1` reach the pass mark (90 %) | oscillator, filter, noise, voices with the right phrase; weak for short envelopes, effects; never for gauges and nuisances |
-| **E** ear question | `AnswerKind::Choice` (`StepKind::Choose`) over rendered options | the player picks the right option; options are at least 2 just-noticeable steps apart | everything; the only reliable check for resonance, reverb, the compressor and macros |
+| **E** ear question | `StepKind::Choose` over rendered options (a lesson step; Challenge v2 has no `AnswerKind::Choice`, F1l) | the player picks the right option; options are at least 2 just-noticeable steps apart | everything; the only reliable check for resonance, reverb, the compressor and macros |
 
 A `~` after S or R means the check exists but is **weak or conditional**: a probe to measure first, a score that barely moves, or a structure ring with no sound behind it. It never gates a lesson alone. The **Kinds** line of each card lists what it uses; every lesson has P and E. The Check step's mastery rule is report 01's: 2 of 3 Do challenges passed with no level-4 hint or Reveal, plus 1 or 2 mixed "what changed?" items, which come from a pool made of the E items of this lesson and the earlier ones (interleaving). The **Try** step (a goal checked live, with only the new control showing) uses P or S.
 
@@ -111,13 +111,13 @@ The friend track for GR2: one lesson per module, about 7 minutes each (report 01
 
 ## 4. Lesson index
 
-Generated from the cards in §5. **Kinds** are the check kinds the card uses (§1.2). **Waits for** lists what a lesson needs that does not exist yet (§8): a phrase id, `Target::Patch`, `Start::Patch`, route draws (Q4), the macro pin (Q5), Listen options (Q7: a level-match switch, a render seed, a control curve) or DRV. Every Do needs `Target::Draw` with `Constraints.editable`, every Try or S needs `Target::Expectations` and every E needs `AnswerKind::Choice` (§8.2), so those four are not repeated.
+Generated from the cards in §5. **Kinds** are the check kinds the card uses (§1.2). **Waits for** lists what a lesson needs that does not exist yet (§8): a phrase id, `Target::Patch`, `Start::Patch`, route draws (Q4), the macro pin (Q5), Listen options (Q7: a level-match switch, a render seed, a control curve) or DRV. Every Do needs `Target::Draw` with `Constraints.editable`, every Try or S a lesson's `Check::Sound` and every E a lesson's `StepKind::Choose` (§8.2; Challenge v2 left `Target::Expectations` and `AnswerKind::Choice` out at F1l, since those two lesson pieces say them), so those are not repeated.
 
 | Lesson | Title | Pack | Tier | Tour | New controls | Kinds | Waits for |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 0.1 | How a lesson works | `basics` | B |  | `master.level` | P S R E | level-match switch |
 | 1.1 | Waveforms | `basics` | B | tour | `osc1.wave` | P S R E | Target::Seed |
-| 1.2 | Octaves and intervals | `basics` | B |  | `osc1.semi` | P S R E | Target::Seed |
+| 1.2 | Octaves and intervals | `basics` | B |  | `osc1.semi` | P S R E | — (D2 a draw with a lock since F1l) |
 | 1.3 | Pulse width | `basics` | I |  | `osc1.pw` | P S~ R E | — |
 | 1.4 | Two oscillators | `basics` | B | tour | `osc2`, `osc2.fine`, `osc2.level` | P S R E | — |
 | 1.5 | Noise | `basics` | B | tour | `noise1`, `noise1.color`, `noise1.level` | P S R E | — |
@@ -192,10 +192,10 @@ One card per lesson, in curriculum order. The bracket after the title is `[pack 
 #### 1.2 Octaves and intervals [basics · B]
 - **New:** `osc1.semi`.
 - **Hear:** 0↔+12 (octave), 0↔+7 (fifth), 0↔−12 on `sine` and `saw` at C3. Same note name, higher or lower.
-- **Do:** Try: from C3, "play C4" (+12). D1: `Draw(HELD)` `osc1.semi ∈ {−24, −12, −7, +7, +12, +19, +24}`, edit `osc1.semi`. D2: a level-1 round (as 1.1 D2) with `osc1.wave` locked. Range for siblings: whole semitones in [−24, +24].
+- **Do:** Try: from C3, "play C4" (+12). D1: `Draw(HELD)` `osc1.semi ∈ {−24, −12, −7, +7, +12, +19, +24}`, edit `osc1.semi`. D2: ~~a level-1 round (as 1.1 D2) with `osc1.wave` locked~~ **refused since F1l** (a seed target takes no lock, and level 1 draws the wave): write it as a `Draw(HELD)` on `osc1.semi` from another start (a saw or a pulse), with `osc1.wave` locked (lane C1 writes it). Range for siblings: whole semitones in [−24, +24].
 - **Checks:** S `pitch=<target note>±25ct` (strong: gates D1). R D2. E "higher or lower, and by how much?" (fifth or octave, 3 options). P `Value osc1.semi` in [-24, 24].
 - **Kinds:** P S R E
-- **Needs:** `Target::Seed` through `RoundSource::Challenge` (SL) for D2.
+- **Needs:** `Target::Draw` with a lock for D2 (since F1l; it was `Target::Seed` through `RoundSource::Challenge`).
 
 #### 1.3 Pulse width [basics · I]
 - **New:** `osc1.pw` (only the pulse wave reads it, so the start is a pulse).
@@ -680,9 +680,9 @@ The table is append-only; a released phrase never changes (`phrases.rs`). Ids ar
 | `Target::Draw` | 32: every core lesson with a hidden-target Do (all but 5.6, 8.1, 8.2, 8.3) | Draw list of addresses with value sets, `edit` set, seeds and siblings. Must draw **route depths** in 9 lessons (4.1, 4.3, 4.4, 5.1 to 5.5, 6.3; Q4) |
 | `Start::Patch` | every Do, core and studies | Each lesson starts from its own patch (a sine, a reverb switched on at −60 dB, a clipping patch), not from `Start::Template` |
 | `Target::Patch` | 8.1 (the sibling) and the 6 studies (every step) | A hand-made or generated target; `closest` (lane CLS) gives the nearest-solution feedback on these |
-| `Target::Seed` through `RoundSource::Challenge` | 1.1, 1.2, 4.2 and the five unit tests | Not Challenge v2; lane SL |
-| `Target::Expectations` | 33 lessons with an S or S~ check, plus every Try that uses S | The Gauss-Newton `hint` gives the feedback |
-| `AnswerKind::Choice` | all 42 | Options rendered live; pairwise at least 2 just-noticeable steps apart |
+| `Target::Seed` through `RoundSource::Challenge` | 1.1, 4.2 and the five unit tests | Not Challenge v2; lane SL. It takes `editable` but **no lock** (F1l review M2: its draws change with the seed), so 1.2's D2 moved to a draw |
+| ~~`Target::Expectations`~~: the lesson's `Check::Sound { phrase, expect }` | 33 lessons with an S or S~ check, plus every Try that uses S | Left out of Challenge v2 at F1l (one representation); the Gauss-Newton `hint` gives the feedback |
+| ~~`AnswerKind::Choice`~~: the lesson's `StepKind::Choose` | all 42 | Left out of Challenge v2 at F1l; options rendered live, pairwise at least 2 just-noticeable steps apart |
 | `Constraints { editable, locked }` | every Do; `locked` in 19 cards (1.2, 1.4 to 1.6, 2.2 to 2.5, 3.1, 3.2, 4.1 to 4.3, 5.1, 5.2, 5.4, 5.5, 6.2, 8.2) | The session refuses an op on a locked address (`SessionError::Locked`) |
 | Also, from the schema lanes | 7.3 and 0.1 (a switch to turn level matching off), 5.6 and 8.3 (a render seed per example), 6.3 (a control curve), 8.1 (the macro pin and a macro predicate form, Q5), the `Touched` predicate (0.1, 2.2, 2.5, 3.1, 3.2, 4.2, 5.6, 7.2, 7.4, 8.3) | Q5 and Q7 |
 

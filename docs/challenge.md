@@ -69,7 +69,7 @@ A `Phrase` is the notes and length a target is heard and scored through: `notes:
 
 ## Challenge v2 (lane CV2, R2)
 
-**Status (2026-10-21): built by lane CV2, for the F1l review.** Challenge v1 can't express a lesson: it has only a seed target, a template start, no constraints and patch answers. Challenge v2 is R2's one persisted change, and a judge agent reviews it at freeze F1l together with the lesson model (LM) and the session's Learn API (SL) ([phase-3.md](phase-3.md#freezes)). The reasons and the lessons that need each piece are in [learn.md](learn.md#challenge-v2-planned-judged-at-f1l) and the [lesson plan](../content/lessons/PLAN.md#82-challenge-v2-and-the-other-learn-pieces). Code: `enth_challenge::v2` (the new pieces, the file forms and the migration), `model` (the same `Challenge`, `Target` and `Start` types, extended), `patch_round` (rounds on patch and draw targets), `lesson_phrases` (the new phrase ids) and `fingerprint::of_patch`.
+**Status (2026-10-21): built by lane CV2, reviewed at F1l, and the judge's findings closed by lane F1L** (one `touches` table for every lock check, no lock on a seed target, `with_seed` regenerates, repeated keys refused, the draw golden). After F1l, challenge types change only additively ([phase-3.md](phase-3.md#freezes)). Challenge v1 can't express a lesson: it has only a seed target, a template start, no constraints and patch answers. Challenge v2 is R2's one persisted change, and a judge agent reviews it at freeze F1l together with the lesson model (LM) and the session's Learn API (SL) ([phase-3.md](phase-3.md#freezes)). The reasons and the lessons that need each piece are in [learn.md](learn.md#challenge-v2-planned-judged-at-f1l) and the [lesson plan](../content/lessons/PLAN.md#82-challenge-v2-and-the-other-learn-pieces). Code: `enth_challenge::v2` (the new pieces, the file forms and the migration), `model` (the same `Challenge`, `Target` and `Start` types, extended), `patch_round` (rounds on patch and draw targets), `lesson_phrases` (the new phrase ids) and `fingerprint::of_patch`.
 
 ```json
 {"schema":"enth.challenge/2",
@@ -97,16 +97,16 @@ A `Phrase` is the notes and length a target is heard and scored through: `notes:
 
 ### Versions: v1 reads as v2, written at the lowest version
 
-- **One strict reader** (`v2::read`), used by both `Challenge::from_json` and the embedded serde path (a challenge inside a lesson file or a saved state). It checks the schema (`missing_schema`, `bad_schema`, `challenge_too_new` above version 2), decodes with unknown fields refused at every level, migrates v1, and validates. **v1 decodes through its own frozen shapes**: a v2 field in an `enth.challenge/1` file (`"constraints":{"locked":[…]}`, a patch start) is an unknown field (`bad_challenge`). The migration is field for field and changes no meaning: a seed target, its template's start, no constraint, a patch answer. The v1 fixtures stay as migration inputs, and each reads as v2 through both paths.
+- **One strict reader** (`v2::read`), used by both `Challenge::from_json` and the embedded serde path (a challenge inside a lesson file or a saved state). A key repeated in any object is refused (`bad_json` from `from_json`; v1's derived reader refused a repeated field, and a JSON value would keep the last one silently: F1l review nit 9). It checks the schema (`missing_schema`, `bad_schema`, `challenge_too_new` above version 2), decodes with unknown fields refused at every level, migrates v1, and validates. **v1 decodes through its own frozen shapes**: a v2 field in an `enth.challenge/1` file (`"constraints":{"locked":[…]}`, a patch start) is an unknown field (`bad_challenge`). The migration is field for field and changes no meaning: a seed target, its template's start, no constraint, a patch answer. The v1 fixtures stay as migration inputs, and each reads as v2 through both paths.
 - **Written at the lowest version that holds it** (`Challenge::version`): 1 for a seed target with its template's start and no constraint, otherwise 2. So every R1 challenge (each generated round, the golden challenges, `enth compare --code`, a challenge file) keeps its v1 bytes. The v1 fixtures regenerate byte for byte, and an older build still reads a generated challenge. Anything with a v2 piece writes `enth.challenge/2`, which an older build refuses by its schema (`challenge_too_new`). A hand-written v2 file holding a v1-expressible challenge reads, and is written back as v1. That is the one case where the read bytes and the written bytes differ.
 - `CHALLENGE_VERSION` = 2 is the newest this build reads; `v2::SCHEMA_V1` and `SCHEMA_V2` are the two strings.
 - **Strict inputs, lenient outputs**, as before: the challenge is strict, and the outputs (`ScoreReport`, `RoundResult`) are unchanged and still read tolerantly.
 - **Integers only, except patch values.** The challenge's own fields stay integers: seeds, ids, percentages. An inline patch is a patch file with its own schema, version and migration. It is read through `enth_patch::file::load_value` and written through the typed `PatchFile` (shortest `f32` text, exact both ways; `InlinePatch` is `Eq` because a loaded patch has finite values only). A draw's values use the patch file's own value form (numbers in real units, enum keys, unit text such as `"4kHz"`, `true`/`false`), and the catalogue resolves them as it resolves a patch file's (`enth_patch::file::resolve_value`). Both end as `f32` patch values with the same bits on every platform.
-- **Size.** A starter-sized inline patch is about 2.5 KB compact (`patch.json`, two inline patches pretty-printed, is 9.4 KB), far below the 1 MiB `enth` field. The judge's F1l check of the largest lesson plus its round is still open.
+- **Size.** A starter-sized inline patch is about 2.5 KB compact (`patch.json`, two inline patches pretty-printed, is 9.4 KB), far below the 1 MiB `enth` field. The F1l check of the largest lesson plus its round passed: a lesson round fits its 384 KiB and the `learn` object its cap, with more than 64 KiB of the field left ([session.md](session.md#learn-lane-sl-r2), "The budget").
 
 ### Target::Draw
 
-A draw is the start with each item set to a value drawn from its set or range. A new seed gives a sibling (`Challenge::with_seed`) for a redo after a Reveal or a parallel test form.
+A draw is the start with each item set to a value drawn from its set or range. A new seed gives a sibling (`Challenge::with_seed`, validated) for a redo after a Reveal or a parallel test form. **The draws are pinned by a golden** (`tests/golden/tests/cv2_draw.rs`: five draws × 200 seeds, every drawn value, the attempt and the forced flag; F1l review should-fix 5), run on every platform and under wasmtime as generator v1's is. A saved lesson round re-prepares its draw after a reload and checks its fingerprint, so a change there is a change of meaning: it needs a draw version (an additive field), not an update of the golden.
 
 | Item | Values | Drawn |
 | --- | --- | --- |
@@ -137,8 +137,24 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 - **`locked` is enforced:** the session refuses an op that touches anything a locked selector covers (`SessionError::Locked`, lane SL; `Constraints::lock_of` names the selector for the hint). Locked always wins.
 - **`editable` is advisory:** the step's controls. The editor emphasises them, lane CLS's "How close am I?" searches only them, and `lesson-check` requires the witness to touch only them. The session doesn't refuse an edit outside them, since the round is scored on sound either way. `Constraints::is_editable` is "not locked, and covered by `editable` or `editable` is empty".
 - **Validated at load** against the start (`bad_selector`): a parameter or module the start has, or a route from a source it has into a modulatable parameter. The route itself may be missing, because the step may be about adding it. A selector may not be listed twice in one list.
-- **No lock on what the target varies** (`bad_selector`): a seed target's draws (this seed's, whether or not a value moved), a draw's items, or a patch target's changed parameters, routes and enable flags. The session would refuse the very edit the round asks for. Lesson 1.2's planned "a level-1 round with `osc1.wave` locked" is refused this way, because level 1 draws the wave; a draw on `osc1.semi` says what the card means.
-- The session maps each op to the things it touches (`Touch::{Param, Route, Module, Macro}`): `SetParam` its parameter, a route op its route, a module op its module, `SetMacro` its macro.
+- **No lock on a seed target** (`bad_selector`, hint "lock with a draw target"; F1l review M2). A seed target's draws change with its seed, so a lock that leaves one seed's round passable can lock what a sibling varies (25 parameter-and-difficulty pairs changed validity with the seed). `editable` stays allowed on a seed target (`challenge/v2/seed-editable.json`).
+- **No lock on anything the target's edits touch** (`bad_selector`): the session would refuse the very edit the round asks for. The target's edits are a draw's items, or a patch target's differences from the start (modules added, removed or enabled, values, routes, macros), each as the op the player would make, and what each touches is the session's own table, [`v2::touches`](#what-an-op-touches) (F1l review M1). So a draw on `env2 -> filter1.cutoff` refuses a lock on `filter1.cutoff` (a depth edit touches its destination), and a patch target that enables a module refuses a lock on any of its parameters. The message names the lock, what it locks and the edit. Lesson 1.2's planned "a level-1 round with `osc1.wave` locked" is refused (a seed target takes no lock); a draw on `osc1.semi` says what the card means.
+
+#### What an op touches
+
+`v2::touches(before, op) -> Option<Vec<Touch>>` is **the one table** every lock check uses: the challenge's (above), lane SL's edit path (`SessionError::Locked`) and lane LM's player (Show's op and the measured hints' free set), so none of the three can accept what another refuses. `None` is an op kind this build doesn't know (`Op` is `non_exhaustive`): the session refuses it while anything is locked.
+
+| Op | Touches |
+| --- | --- |
+| `SetParam` | the parameter |
+| `InsertRoute`, `RemoveRoute`, `SetDepth` | the route, and its destination parameter (modulation moves it) |
+| `SetMacro` | the macro, and each route from it with its destination |
+| `SetMacroName` | the macro |
+| `AddModule`, `RemoveModule`, `SetEnabled` | the module, every parameter it has and every route from or into it |
+| `Move`, `SetLabel` | the module |
+| `SetAmpEnv` | the new amplitude envelope and the old one |
+| `SetSlot` | the slot's new target and its old one (a slot lets the host move a parameter) |
+| `SetMeta` | nothing |
 
 ### Phrases: the generator's and the lessons'
 
@@ -186,11 +202,12 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 | `bad_draw`, `draw_too_close` | a draw that doesn't fit its start: an item twice or not on the start, a value that doesn't resolve, a bad range or step; two set values less than a step apart |
 | `out_of_range` | a draw seed from 2⁵³ (and v1's cases) |
 | `draw_failed` | no playable target (from `prepare_challenge`, `RoundError::Draw`) |
-| `bad_selector` | a selector naming nothing on the start, listed twice, or locking what the target varies; text that isn't canonical (at decode, `bad_challenge`) |
+| `bad_selector` | a selector naming nothing on the start, listed twice, locking what the target's edits touch, or any lock on a seed target; text that isn't canonical (at decode, `bad_challenge`) |
+| `no_seed` | `Challenge::with_seed` on a patch target |
 
 ### The seams with LM and SL (F1l)
 
-- **LM:** a Recreate step holds a v2 `Challenge` inline (`StepKind::Recreate { challenge }`) and decodes it through `Challenge`'s own serde path, with no schema string check of its own. `requires.challenge` is checked against `CHALLENGE_VERSION`, phrases against `phrases::phrase`, and scorers against `score::is_known`. StepView patterns reuse `v2::Selector`. On a Recreate step, the challenge's constraints are the step's locks.
+- **LM:** a Recreate step holds a v2 `Challenge` inline (`StepKind::Recreate { challenge }`) and decodes it through `Challenge`'s own serde path, with no schema string check of its own. `requires.challenge` is checked against `CHALLENGE_VERSION` and must cover the highest `Challenge::version` a Recreate step uses (F1l review M3); phrases are checked against `phrases::phrase`, and scorers against `score::is_known`. StepView patterns reuse `v2::Selector`, and Show and the measured hints use `v2::touches`. On a Recreate step, the challenge's constraints are the step's `locked` and `editable` (M4).
 - **SL:** `RoundSource::Challenge(Box<Challenge>)` prepares through `prepare_challenge`. `Target`, `Start` and `Constraints` are no longer `Copy`, and `Challenge` is `Clone + Eq` but not `Hash`. The session enforces `locked` (`Constraints::lock_of` over `Touch`), and `editable` is advisory. A lesson round saves no code (`Challenge::code` is `None`) and is re-prepared from the lesson after a reload. Its fingerprint (`of_patch`) is what a saved round can check.
 
 ### Tests
@@ -198,7 +215,9 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 | What | Where |
 | --- | --- |
 | v1 fixtures read as v2 (both paths), are still written as v1, and regenerate byte for byte | `tests/fixtures.rs`: `challenge_v1_fixtures_read_as_v2`, `challenge_v1_fixtures_are_what_this_build_writes_and_reads` |
-| v2 fixtures (`challenge/v2/{draw,patch,seed-locked}.json`) are what this build writes, read back, are refused under a v1 schema, and prepare; the draw's fingerprint is pinned | `challenge_v2_fixtures_*` |
+| v2 fixtures (`challenge/v2/{draw,patch,seed-editable}.json`) are what this build writes, read back, are refused under a v1 schema, and prepare; the draw's fingerprint is pinned | `challenge_v2_fixtures_*` |
+| The lock check refuses what the session would (the judge's probes: a route draw with its destination locked, a patch target enabling or removing a module with a locked parameter, a routed macro); a seed target takes no lock; a seed sibling takes its generator's phrase (570 siblings); repeated keys are refused by both readers | `v2::tests` (lane F1L) |
+| Draws pinned: five draws × 200 seeds, the same on every platform | `tests/golden/tests/cv2_draw.rs` (lane F1L) |
 | `enth compare --target` gives the same report bytes as the F0l composition (three references, three phrases); the release binaries of main `4a76bc9` and this branch printed the same bytes and exit codes on 49 cases | `patch_round::tests::the_patch_round_gives_compare_the_report_it_gave_before`; lane CV2's notes |
 | The golden challenges (`cargo xtask golden --challenges`: 25 cases, `bits` `fafda415…` unchanged) and generator v1's 1,000-hash golden pass | `tests/golden` |
 | Selectors: canonical parse and print, strictness, what each covers (proptest round trip) | `v2::tests` |
@@ -427,7 +446,7 @@ Reading one refuses a pass without a time (and a time without a pass; not checke
 | Form | Version | Fixtures (`crates/enth-challenge/tests/fixtures/`) |
 | --- | --- | --- |
 | Challenge | `enth.challenge/1` | `challenge/v1/{level1,level5,custom}.json` |
-| Challenge v2 (lane CV2) | `enth.challenge/2`; a v1-expressible challenge is still written as `/1` | `challenge/v2/{draw,patch,seed-locked}.json` beside `v1/`, which stays as migration input and still regenerates byte for byte |
+| Challenge v2 (lane CV2) | `enth.challenge/2`; a v1-expressible challenge is still written as `/1` | `challenge/v2/{draw,patch,seed-editable}.json` beside `v1/`, which stays as migration input and still regenerates byte for byte |
 | Code | code v1 (in the first symbol) | `code/v1/codes.json`: ten specs, both forms, every preset; **frozen**: a promise to every player who has a code. Its SHA-256 is pinned (`code_v1_fixture_bytes_are_pinned`) and the regenerate test writes it only when it is missing. Re-frozen once, at the F1r review, before any code was shared (the GF(32) check, 53-bit seeds, template 0) |
 | Score report | `enth.score-report/1` | `score/v1/report.json` (with the S6 fields: answer addresses, directions, a moved-but-not-randomized row, the harmonics and sustain kinds, the engine) |
 | Round result | `enth.round-result/1` | `round/v1/{passed,gave-up,dimmed}.json` (`passed` and `gave-up` predate `dim_unused` and keep their bytes; `dimmed` is a round assisted by the dimming alone) |

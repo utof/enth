@@ -65,7 +65,7 @@ The summaries' own corrections stand ([R2](../_local/sessions/2026-10-21-r2-lear
 
 ## Freezes
 
-Each milestone has a serial spine with its own freeze points; lanes fan out after each. **After F2l, learn, challenge and session types change only additively. After F2s, the create API, `enth.create/1` and the session's create types change only additively. After F3s, the model file changes only with a version bump.**
+Each milestone has a serial spine with its own freeze points; lanes fan out after each. **After F1l (lane F1L's merge), learn, challenge and session types change only additively**, and so do their persisted forms (pack, lesson, challenge v2, progress, the `learn` object, the round log). **After F2s, the create API, `enth.create/1` and the session's create types change only additively. After F3s, the model file changes only with a version bump.**
 
 | Freeze | What is merged | Gate before the fan-out |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and
 | **S0l** Workspace prep (→ F0l) | Creates `enth-learn` (`enth-learn = 5` in `xtask/layers.toml`, and the layer line in [AGENTS.md](../AGENTS.md)); pre-declares every R2 file below, `tools/lesson/` (`enth-lesson-tool`, exempt, holding the heavy dependencies) with one file per command, and the thin drivers `xtask/src/lesson/` and `xtask/src/gr2.rs`; reserves the `enth` field's optional `learn` object; the Learn header hook; `sizes/learn.rs`; an `enth-plugin/learn` feature; `content/lessons/` with one example pack; a `lessons.yml` stub | fu1-hint and fu1-fk merged; the coordinator's pins | 0.5–1 | H once |
 | **CLS** Closest | `enth-solver/src/closest.rs` (design §7's nearest passing patch: CMA-ES from your patch over the step's editable set), its tests, a cost table | F0l | 1–2 | L |
 | **LM** Lesson model (→ F1l) | `enth-learn`: pack, lesson, step and check types, the player (API and a basic body), progress v1 and its merge, the track field (Q1) | F0l | 1–1.5 | L |
-| **CV2** Challenge v2 (→ F1l) | `enth-challenge`: model v2 and the v1 migration, `prepare_patch_round` (moved down from `enth-cli`'s `compare.rs`), the new phrase ids and the table split (Q8), [challenge.md](challenge.md#challenge-v2-planned-lane-cv2-r2)'s v2 section | F0l | 1–1.5 | L |
+| **CV2** Challenge v2 (→ F1l) | `enth-challenge`: model v2 and the v1 migration, `prepare_patch_round` (moved down from `enth-cli`'s `compare.rs`), the new phrase ids and the table split (Q8), [challenge.md](challenge.md#challenge-v2-lane-cv2-r2)'s v2 section | F0l | 1–1.5 | L |
 | **SL** Session Learn API (→ F1l) | `enth-session/src/learn.rs` (stash, step loads, **locks in the edit path**, jobs, read model), `RoundSource::Challenge` in `game.rs` (additive), the `learn` field, [session.md](session.md)'s Learn section | F0l | 1–1.5 | L |
 | **F1L** The F1l judge's findings | Its must-fix and should-fix items, in the files they name | The judge | 0.5–1.5 | L |
 | **PLY** Player and checks | The predicate grammar (`Value`, `Route`, `Has`, `Enabled`, `Touched`), sound and choice checks, the markdown block AST on `pulldown-cmark`, the player's proptests | F1l | 1–2 | L |
@@ -302,10 +302,13 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 | --- | --- | --- |
 | `pulldown-cmark` and `rawzip` pass `wasm-check` inside `enth-learn` | S0l | F0l |
 | `closest`'s cost on real lesson starts (renders, seconds, 1 vs 8 workers) | CLS | Wave 1 |
-| The largest lesson plus its round fit the 1 MiB `enth` field | F1l's judge | F1l |
-| Whether Listen examples can share the Target ▶ loop's buffer slot | SL | F1l |
-| How the tour is played across packs (Q1: a track, by default) | LM | F1l |
-| Route depths in `Target::Draw` (Q4), the macro pin (Q5), the Listen options (Q7), the phrase table's split (Q8) | CV2, LM | F1l |
+| ~~The largest lesson plus its round fit the 1 MiB `enth` field~~ **Settled:** 690,713 of 1,048,576 bytes with every part at its cap ([session.md](session.md#learn-lane-sl-r2), "The budget"); the preset bookmark is capped at 4 KiB so the rest stays bounded | F1l's judge; F1L | F1l |
+| ~~Whether Listen examples can share the Target ▶ loop's buffer slot~~ **Settled:** yes, by time, as a set of loops (SL) | SL | F1l |
+| ~~How the tour is played across packs (Q1)~~ **Settled:** a track, `pack/lesson` lists in the manifest (LM) | LM | F1l |
+| ~~Route depths in `Target::Draw` (Q4), the macro pin (Q5), the Listen options (Q7), the phrase table's split (Q8)~~ **Settled:** routes drawn as signed depths; `macros` on a sound check and the `macro1` form; `level_match`, `seed`, `curve` and `transpose` on an example; the table split, ids 4–7 lesson-only ([learn.md](learn.md#the-lesson-model-lane-lm), [challenge.md](challenge.md#challenge-v2-lane-cv2-r2)) | CV2, LM | F1l |
+| **A pack from a newer build** that fails on something this build lacks (a newer engine's patch, a scorer, a phrase) should be refused as "needs a newer enth" whenever its recorded `engine` is newer than this build's, rather than as a damaged pack (F1l review should-fix 6) | PLY | Before F2l |
+| **A resumed lesson forgets which steps passed:** `Player::resume` starts its visits fresh, so after a reload a passed step looks unpassed (and could record again) until the player reads the progress file back (F1l review should-fix 7). Default: the shell passes the lesson's `Progress` entry to the player on resume (an additive call) | SKL | F2l |
+| `enth compare --phrase` offers only the generator's phrases 1–3; the lesson phrases 4–7 resolve everywhere else (F1l review nit 9, not in lane F1L's list) | SKL (the next lane in `enth-cli`) | F2l |
 | How long a lesson takes; the pane's overflow on preset-sized patches | C1, LUI | Waves 3–4 |
 | Ablation cost and text quality on Acid Snap and Glass Pluck | DEC | Wave 4 |
 | Drive lessons (2.5), UT5's seeds and the studies wait for fu1-drv's merge | C1, DEC | After fu1-drv |
