@@ -318,6 +318,20 @@ impl Source {
         }
     }
 
+    /// Like [`Self::next_reply`], but waits for XdndFinished: a host's window may send more XdndStatus first. Returns the
+    /// answer and how many XdndStatus came before it.
+    fn next_finished(&mut self, ms: u64) -> (Option<(Window, Reply)>, u32) {
+        let end = Instant::now() + Duration::from_millis(ms);
+        let mut statuses = 0;
+        loop {
+            let left = end.saturating_duration_since(Instant::now()).as_millis() as u64;
+            match self.next_reply(left) {
+                Some((_, Reply::Status { .. })) => statuses += 1,
+                other => return (other, statuses),
+            }
+        }
+    }
+
     fn serve(&mut self, request: SelectionRequestEvent) {
         self.requestors.push(request.requestor);
         let property = if request.property == NONE { request.target } else { request.property };
@@ -481,7 +495,7 @@ fn drop_once(source: &mut Source, target: Window, x: i16, y: i16, files: &[PathB
     let accepted = matches!(status, Some((_, Reply::Status { accept: true, .. })));
     let finished = if accepted {
         source.send_drop(target);
-        Some(source.next_reply(3000))
+        Some(source.next_finished(3000))
     } else {
         source.leave(target);
         None
@@ -492,7 +506,8 @@ fn drop_once(source: &mut Source, target: Window, x: i16, y: i16, files: &[PathB
         reply_text(&source.conn, &status),
         requestors.join(", "),
         match &finished {
-            Some(f) => reply_text(&source.conn, f),
+            Some((f, 0)) => reply_text(&source.conn, f),
+            Some((f, n)) => format!("{n} more XdndStatus, then {}", reply_text(&source.conn, f)),
             None => "not accepted, so XdndLeave instead of XdndDrop".to_owned(),
         }
     )
