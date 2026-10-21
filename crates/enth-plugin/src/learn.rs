@@ -11,6 +11,7 @@
 //! | [`ProgressFile`] | `<Documents>/enth/Learn/progress.json` (`ENTH_LEARN_DIR` overrides the folder): a write takes a lock file, re-reads, merges with `Progress::record`, writes a temporary file and renames it, so two instances (in one host or two) never lose each other's progress; a file that is not a progress file is set aside, never overwritten |
 //! | [`Lessons`] | the library (`enth_learn::store::load_library` over [`FsPacks`], cached, rescanned when the editor opens), the progress file, and the answers to `Open` jobs: `Player::resume` at the saved step, then `Player::restore` from the progress file, so a step passed before a reload stays passed (phase-3's open check) |
 //! | [`run`] | the Learn jobs on the game worker (`game.rs` calls it): `Open`, `Check` (lane PLY's `enth_learn::check::evaluate_sounds`: the step's sound checks rendered and judged), `Hint` (`enth_solver::hint` through fu1-hint's parallel evaluator), `Examples` (each example rendered, measured, and handed to the audio thread as one loop of a set) |
+//! | [`closest`], [`RoundPool`] | "How close am I?" (lane LFU): `enth_solver::closest` on the round the game worker holds, on scoped threads, with progress after every batch and a cancel that stops it within one (`game.rs` runs it) |
 //! | [`act`] | after unlocking: the session's `LearnRequest`s: jobs to the worker, cancels, progress records to the file, the Listen state to `process()`'s atomics, dirty marks |
 //!
 //! `enth-learn` and the session's `learn` always compile, so a saved lesson restores in any build; without this
@@ -22,9 +23,10 @@ use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use enth_analysis::expect::{Expect, parse_item};
+use enth_challenge::PreparedRound;
 use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
 use enth_challenge::phrases;
 use enth_learn::check::evaluate_sounds;
@@ -33,19 +35,30 @@ use enth_learn::pack::{LessonId, PackId};
 use enth_learn::player::{Audition, HintRequest, MeasuredHint, StepRecord};
 use enth_learn::store::{Library, Origin, PackKey, PackSource, PackStore, load_library};
 use enth_learn::{LearnError, LessonBundle, LessonRef, Player, Progress, Selector};
+use enth_patch::Patch;
 use enth_render::{Control, Controller, Performance, RenderOutput, RenderSpec, render};
-use enth_session::learn::{LearnJob, LearnJobKind, LearnRequest, LearnResult};
+use enth_session::learn::{ClosestRequest, LearnJob, LearnJobKind, LearnRequest, LearnResult};
 use enth_solver::Evaluator;
+use enth_solver::closest::{ClosestEval, ClosestJob, Reading, closest_with, reading};
 use enth_solver::hint::{HintCfg, hint};
 use parking_lot::Mutex;
 
 use crate::presets::{Environment, Os, SystemEnv, documents_dir};
 
-/// The packs built into this binary: `(file name, the built .enthpack)`. The example pack (one lesson, `cutoff`) is
-/// the bundled lesson of freeze point F2l until lane C1's `basics` pack replaces it; `packs/` holds the built
-/// archives, and `tests::the_bundled_packs_are_the_content_built` rebuilds each from `content/lessons/` and compares
-/// the bytes (`ENTH_UPDATE_PACKS=1` rewrites them; the plan's `cargo xtask pack` is lane LCK's).
+/// The packs built into this binary: `(file name, the built .enthpack)`. Lane C1's `basics` pack (16 lessons, the
+/// tour's first seven) replaced freeze point F2l's example pack (lane LFU). `packs/` holds the built archives, written
+/// by `cargo xtask pack --out crates/enth-plugin/packs <pack>` (lane LCK; reproducible, so `cargo xtask pack --check`
+/// compares the bytes), and `tests::the_bundled_packs_are_the_content_built` rebuilds each from `content/lessons/` and
+/// compares them too.
 pub const BUNDLED: &[(&str, &[u8])] = &[(
+    "basics.enthpack",
+    include_bytes!("../packs/basics.enthpack"),
+)];
+
+/// The example pack (lane LM's layout example: one lesson, `cutoff`, Listen, Do and Choose), built beside the bundled
+/// packs and pinned the same way, but not bundled: the tests' small fixture (`Lessons::with_bundled`).
+#[cfg(test)]
+pub(crate) const EXAMPLE: &[(&str, &[u8])] = &[(
     "example.enthpack",
     include_bytes!("../packs/example.enthpack"),
 )];
@@ -412,6 +425,19 @@ impl Lessons {
         }
     }
 
+    /// Another set of bundled packs (tests: the example pack's one small lesson).
+    #[must_use]
+    pub fn with_bundled(mut self, bundled: &'static [(&'static str, &'static [u8])]) -> Lessons {
+        self.bundled = bundled;
+        *self.library.get_mut() = None;
+        self
+    }
+
+    /// The Packs folder, if there is one (the lesson browser's "Open packs folder").
+    pub fn packs_dir(&self) -> Option<&Path> {
+        self.packs.as_deref()
+    }
+
     /// Read every pack again (the editor opened).
     pub fn rescan(&self) -> Arc<Library> {
         let mut store = FsPacks::new(self.packs.clone()).with_bundled(self.bundled);
@@ -620,6 +646,98 @@ fn hint_text(result: &enth_solver::hint::HintResult) -> MeasuredHint {
     }
 }
 
+/// "How close am I?" on `round` (lane LFU; docs/dsp/match.md, "Closest"): `enth_solver::closest` from the request's
+/// patch over its free parameters within its hard budget, on `workers` threads ([`RoundPool`]), with `keep_going`
+/// after every batch (progress, and `false` to stop). The answer is the same for any worker count.
+pub fn closest(
+    request: &ClosestRequest,
+    round: &PreparedRound,
+    workers: usize,
+    keep_going: &mut dyn FnMut(&enth_solver::closest::Progress) -> bool,
+) -> LearnResult {
+    let job = ClosestJob {
+        round,
+        patch: &request.patch,
+        free: &request.free,
+        budget: request.budget,
+    };
+    match closest_with(&job, &mut RoundPool::new(workers), &request.cfg, keep_going) {
+        Ok(found) => LearnResult::Closest(Box::new(found)),
+        Err(e) => LearnResult::Failed {
+            message: format!("How close am I? {e} ({})", e.hint()),
+        },
+    }
+}
+
+/// The plugin's `enth_solver::closest::ClosestEval` (lane LFU): [`reading`] for every candidate of a batch on up to
+/// `n` scoped threads (the calling thread, the game worker, is one), results in input order, so a search is identical
+/// for any `n` (each reading is a pure function of its candidate). Like the hint evaluator ([`crate::hint_eval`]),
+/// it needs no new crate: one shared counter as the work queue.
+#[derive(Clone, Copy, Debug)]
+pub struct RoundPool {
+    n: usize,
+}
+
+impl RoundPool {
+    /// `n` threads at most (at least one).
+    pub fn new(n: usize) -> RoundPool {
+        RoundPool { n: n.max(1) }
+    }
+}
+
+/// Take candidates off the shared counter until none is left, scoring each against the round.
+fn drain_readings(
+    round: &PreparedRound,
+    candidates: &[Patch],
+    next: &AtomicUsize,
+) -> Vec<(usize, Option<Reading>)> {
+    let mut done = Vec::new();
+    loop {
+        let i = next.fetch_add(1, Ordering::Relaxed);
+        let Some(p) = candidates.get(i) else {
+            return done;
+        };
+        done.push((i, reading(round, p)));
+    }
+}
+
+impl ClosestEval for RoundPool {
+    fn readings(&mut self, round: &PreparedRound, candidates: &[Patch]) -> Vec<Option<Reading>> {
+        let n = self.n.min(candidates.len());
+        if n <= 1 {
+            return candidates.iter().map(|p| reading(round, p)).collect();
+        }
+        let next = AtomicUsize::new(0);
+        let mut slots: Vec<Option<Reading>> = vec![None; candidates.len()];
+        std::thread::scope(|s| {
+            let next = &next;
+            // A thread that cannot be spawned leaves its share to the others: the calling thread drains to the end.
+            let spawned: Vec<_> = (1..n)
+                .filter_map(|w| {
+                    std::thread::Builder::new()
+                        .name(format!("enth-closest-{w}"))
+                        .spawn_scoped(s, move || drain_readings(round, candidates, next))
+                        .ok()
+                })
+                .collect();
+            let mut put = |done: Vec<(usize, Option<Reading>)>| {
+                for (i, r) in done {
+                    slots[i] = r;
+                }
+            };
+            put(drain_readings(round, candidates, next));
+            for handle in spawned {
+                match handle.join() {
+                    Ok(done) => put(done),
+                    // A panicking render: the game worker's `catch_unwind` turns it into a failed job.
+                    Err(panic) => std::panic::resume_unwind(panic),
+                }
+            }
+        });
+        slots
+    }
+}
+
 /// What an example plays: its phrase, transposed, with its control curve.
 fn performance(a: &Audition) -> Option<Performance> {
     let mut perf = phrases::phrase(a.phrase)?.performance();
@@ -791,7 +909,7 @@ mod tests {
 
     #[test]
     fn the_bundled_packs_are_the_content_built() {
-        for (name, bytes) in BUNDLED {
+        for (name, bytes) in BUNDLED.iter().chain(EXAMPLE) {
             let pack = name.trim_end_matches(".enthpack");
             let built = build(pack);
             if std::env::var_os("ENTH_UPDATE_PACKS").is_some() {
@@ -810,8 +928,34 @@ mod tests {
     }
 
     #[test]
-    fn the_bundled_example_pack_reads_and_plays_its_first_step() {
+    fn the_bundled_basics_pack_reads_with_its_tour_first() {
         let lessons = Lessons::new(None, None);
+        let lib = lessons.library();
+        assert!(lib.problems.is_empty(), "{:?}", lessons.problems());
+        assert_eq!(lib.packs.len(), 1, "the basics pack alone is bundled");
+        let catalogue = lessons.catalogue();
+        assert_eq!(catalogue.len(), 16);
+        assert_eq!(catalogue[0].key().to_string(), "basics/how-a-lesson-works");
+        let manifest = lib.packs[0].pack.manifest();
+        let tour = manifest
+            .tracks
+            .iter()
+            .find(|t| t.id.to_string() == "tour")
+            .expect("the basics pack carries the tour");
+        assert_eq!(tour.lessons[0].to_string(), "basics/how-a-lesson-works");
+        let mut player = Player::new(catalogue[0].clone());
+        let effects = player.start().unwrap();
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, enth_learn::Effect::Examples(x) if x.len() == 4)),
+            "the first listen step's four examples: {effects:?}"
+        );
+    }
+
+    #[test]
+    fn the_example_fixture_reads_and_plays_its_first_step() {
+        let lessons = Lessons::new(None, None).with_bundled(EXAMPLE);
         let lib = lessons.library();
         assert!(lib.problems.is_empty(), "{:?}", lessons.problems());
         let catalogue = lessons.catalogue();
@@ -832,14 +976,14 @@ mod tests {
     fn user_packs_are_scanned_beside_the_bundled_ones_and_a_newer_one_wins() {
         let dir = temp("packs");
         // A newer copy of the example pack, as an archive, and a damaged one, as a folder.
-        let mut files = enth_learn::reader::extract(BUNDLED[0].1).unwrap();
+        let mut files = enth_learn::reader::extract(EXAMPLE[0].1).unwrap();
         let mut manifest =
             Manifest::from_json(std::str::from_utf8(&files[MANIFEST_PATH]).unwrap()).unwrap();
         manifest.version = "0.2.0".parse().unwrap();
         files.remove(MANIFEST_PATH);
         let sealed = manifest.seal(&files).unwrap();
         files.insert(MANIFEST_PATH.to_owned(), sealed.to_json().into_bytes());
-        let mut store = FsPacks::new(Some(dir.clone()));
+        let mut store = FsPacks::new(Some(dir.clone())).with_bundled(EXAMPLE);
         let key = store
             .write_user("example.enthpack", &write_archive(&files))
             .unwrap();
@@ -965,7 +1109,7 @@ mod tests {
     #[test]
     fn open_resumes_at_the_saved_step_with_the_steps_passed_before() {
         let dir = temp("open");
-        let lessons = Lessons::new(None, Some(dir.join(PROGRESS_FILE)));
+        let lessons = Lessons::new(None, Some(dir.join(PROGRESS_FILE))).with_bundled(EXAMPLE);
         let bundle = lessons.catalogue().remove(0);
         lessons
             .progress()
@@ -999,7 +1143,10 @@ mod tests {
 
     #[test]
     fn the_example_steps_check_renders_and_judges_the_start_and_the_witness() {
-        let bundle = Lessons::new(None, None).catalogue().remove(0);
+        let bundle = Lessons::new(None, None)
+            .with_bundled(EXAMPLE)
+            .catalogue()
+            .remove(0);
         let enth_learn::StepKind::Do { check, .. } = &bundle.lesson.steps[1].kind else {
             panic!("step 2 is a do step");
         };
@@ -1019,7 +1166,10 @@ mod tests {
     #[test]
     fn the_sound_check_measures_what_the_solver_measures() {
         use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
-        let bundle = Lessons::new(None, None).catalogue().remove(0);
+        let bundle = Lessons::new(None, None)
+            .with_bundled(EXAMPLE)
+            .catalogue()
+            .remove(0);
         let enth_learn::StepKind::Do { check, .. } = &bundle.lesson.steps[1].kind else {
             panic!("step 2 is a do step");
         };
@@ -1056,7 +1206,10 @@ mod tests {
 
     #[test]
     fn examples_render_at_the_host_rate_and_measure_at_the_scored_rate() {
-        let bundle = Lessons::new(None, None).catalogue().remove(0);
+        let bundle = Lessons::new(None, None)
+            .with_bundled(EXAMPLE)
+            .catalogue()
+            .remove(0);
         let mut player = Player::new(bundle);
         let effects = player.start().unwrap();
         let Some(enth_learn::Effect::Examples(examples)) = effects
@@ -1073,6 +1226,58 @@ mod tests {
             r.lufs[0] > r.lufs[1],
             "the open sound is louder than the closed one"
         );
+    }
+
+    /// "How close am I?" on the pool (lane LFU): the serial answer for any thread count, progress after every batch,
+    /// a hard budget, and a callback that stops it.
+    #[test]
+    fn closest_on_the_pool_gives_the_serial_answer_and_stops_when_asked() {
+        use enth_challenge::{SpecPreset, prepare_round};
+        use enth_solver::closest::{ClosestStop, RoundSerial};
+        let round = prepare_round(&SpecPreset::by_id(2).unwrap().spec(1, 0x434C_0000)).unwrap();
+        let free: Vec<_> = round.params().iter().take(2).cloned().collect();
+        let request = ClosestRequest {
+            round: enth_session::game::RoundId::default(),
+            challenge: Arc::new(round.challenge().clone()),
+            revision: 1,
+            patch: round.start().clone(),
+            free,
+            budget: 40,
+            cfg: enth_session::learn::closest_cfg(false),
+        };
+        let job = ClosestJob {
+            round: &round,
+            patch: &request.patch,
+            free: &request.free,
+            budget: request.budget,
+        };
+        let serial =
+            closest_with(&job, &mut RoundSerial::new(), &request.cfg, &mut |_| true).unwrap();
+        assert_ne!(
+            serial.stop,
+            ClosestStop::StartPasses,
+            "the start must not pass"
+        );
+        for workers in [1, 3, 4] {
+            let mut seen = Vec::new();
+            let LearnResult::Closest(pooled) = closest(&request, &round, workers, &mut |p| {
+                seen.push(p.renders);
+                true
+            }) else {
+                panic!("an answer");
+            };
+            assert_eq!(*pooled, serial, "{workers} workers");
+            assert!(pooled.renders <= 40, "the budget is hard");
+            assert!(
+                !seen.is_empty() && seen.windows(2).all(|w| w[0] <= w[1]),
+                "{seen:?}"
+            );
+        }
+        let LearnResult::Closest(stopped) = closest(&request, &round, 4, &mut |_| false) else {
+            panic!("an answer");
+        };
+        assert_eq!(stopped.stop, ClosestStop::Cancelled);
+        assert!(stopped.renders < serial.renders.max(2));
     }
 
     #[test]

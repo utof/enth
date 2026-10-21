@@ -59,7 +59,9 @@ use enth_session::game::{
     RoundLogEntry,
 };
 #[cfg(feature = "learn")]
-use enth_session::learn::{LearnJob, LearnJobId, LearnResult, ListenState};
+use enth_session::learn::{
+    ClosestRequest, LearnJob, LearnJobId, LearnJobKind, LearnResult, ListenState,
+};
 use enth_solver::coach::{CoachCfg, CoachPlan, CoachTarget};
 use parking_lot::{Condvar, Mutex};
 
@@ -702,6 +704,24 @@ impl Runner {
         &mut self.eval
     }
 
+    /// "How close am I?" (lane LFU): `enth_solver::closest` on the kept round (rebuilt from the request's challenge
+    /// if the worker lost it), on as many threads as the hint evaluator uses. `keep_going` sees the progress after
+    /// every batch and stops the search with `false` (cancel, or the worker quitting).
+    #[cfg(feature = "learn")]
+    pub(crate) fn closest(
+        &mut self,
+        request: &ClosestRequest,
+        keep_going: &mut dyn FnMut(&enth_solver::closest::Progress) -> bool,
+    ) -> LearnResult {
+        match self.prepared(request.round, &request.challenge) {
+            Ok(round) => crate::learn::closest(request, &round, self.eval.count(), keep_going),
+            Err(JobResult::Failed { message }) => LearnResult::Failed { message },
+            Err(_) => LearnResult::Failed {
+                message: "the round's target could not be prepared".to_owned(),
+            },
+        }
+    }
+
     /// Forget the round (its target went).
     pub fn clear(&mut self) {
         self.round = None;
@@ -854,6 +874,15 @@ struct Inner {
     /// The newest loop published is a set of examples (so a Listen clear drops it, and never a round's loop).
     #[cfg(feature = "learn")]
     examples_live: AtomicBool,
+    /// The Learn job the worker runs (0: none), set when it is taken off the queue, under the queue's lock (lane LFU).
+    #[cfg(feature = "learn")]
+    learn_running: AtomicU64,
+    /// The running Learn job the shell cancelled (lane LFU): a "How close am I?" with this id stops at its next batch.
+    #[cfg(feature = "learn")]
+    learn_cancel: AtomicU64,
+    /// The running "How close am I?"'s renders so far (lane LFU), for `Session::learn_job_progress`.
+    #[cfg(feature = "learn")]
+    learn_progress: Mutex<Option<(LearnJobId, usize)>>,
 }
 
 impl Inner {
@@ -894,6 +923,11 @@ fn work(inner: &Inner) {
                 }
                 if let Some(msg) = queue.pop_front() {
                     inner.busy.fetch_add(1, Ordering::AcqRel);
+                    // Under the queue's lock, so a cancel either removes the job or sees it running (lane LFU).
+                    #[cfg(feature = "learn")]
+                    if let Msg::Learn(job) = &msg {
+                        inner.learn_running.store(job.id.0, Ordering::Release);
+                    }
                     break msg;
                 }
                 inner.wake.wait(&mut queue);
@@ -934,7 +968,22 @@ fn work(inner: &Inner) {
                 let rate = inner.host_rate.load(Ordering::Acquire);
                 let lessons = Arc::clone(&inner.lessons.lock());
                 let ran = panic::catch_unwind(AssertUnwindSafe(|| {
-                    crate::learn::run(*job, &lessons, runner.evaluator(), rate)
+                    if let LearnJobKind::Closest(request) = &job.kind {
+                        // Progress after every batch, and a cancel (or the plugin closing) stops it within one.
+                        let mut keep_going = |p: &enth_solver::closest::Progress| {
+                            *inner.learn_progress.lock() = Some((id, p.renders));
+                            if let Some(ctx) = inner.repaint.lock().as_ref() {
+                                ctx.request_repaint();
+                            }
+                            !inner.quit.load(Ordering::Acquire)
+                                && inner.learn_cancel.load(Ordering::Acquire) != id.0
+                        };
+                        let result = runner.closest(request, &mut keep_going);
+                        *inner.learn_progress.lock() = None;
+                        (result, None)
+                    } else {
+                        crate::learn::run(*job, &lessons, runner.evaluator(), rate)
+                    }
                 }));
                 let (result, examples) = ran.unwrap_or_else(|_| {
                     (
@@ -944,6 +993,7 @@ fn work(inner: &Inner) {
                         None,
                     )
                 });
+                inner.learn_running.store(0, Ordering::Release);
                 if let Some(examples) = examples {
                     inner.publish(Box::new(TargetLoop::examples(examples.outs)));
                 }
@@ -1009,6 +1059,12 @@ impl Game {
                 lessons: Mutex::new(Arc::new(crate::learn::Lessons::from_env())),
                 #[cfg(feature = "learn")]
                 examples_live: AtomicBool::new(false),
+                #[cfg(feature = "learn")]
+                learn_running: AtomicU64::new(0),
+                #[cfg(feature = "learn")]
+                learn_cancel: AtomicU64::new(0),
+                #[cfg(feature = "learn")]
+                learn_progress: Mutex::new(None),
             }),
             thread: Mutex::new(None),
             ab: AbShared::default(),
@@ -1134,13 +1190,21 @@ impl Game {
         self.send(Msg::Learn(Box::new(job)));
     }
 
-    /// Drop a queued Learn job (a late result is refused as stale by the session).
+    /// Drop a queued Learn job, and stop it if it is the running "How close am I?" (lane LFU): it ends at its next
+    /// batch. A late result is refused as stale by the session.
     #[cfg(feature = "learn")]
     pub fn cancel_learn(&self, id: LearnJobId) {
-        self.inner
-            .queue
-            .lock()
-            .retain(|m| !matches!(m, Msg::Learn(job) if job.id == id));
+        let mut queue = self.inner.queue.lock();
+        queue.retain(|m| !matches!(m, Msg::Learn(job) if job.id == id));
+        if self.inner.learn_running.load(Ordering::Acquire) == id.0 {
+            self.inner.learn_cancel.store(id.0, Ordering::Release);
+        }
+    }
+
+    /// The running "How close am I?"'s renders so far (lane LFU): for `Session::learn_job_progress`, before the frame.
+    #[cfg(feature = "learn")]
+    pub fn learn_progress(&self) -> Option<(LearnJobId, usize)> {
+        *self.inner.learn_progress.lock()
     }
 
     /// The session's Listen state: to the audio thread's atomics, and the example loops dropped once it is no longer

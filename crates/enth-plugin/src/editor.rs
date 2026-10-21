@@ -217,6 +217,11 @@ impl Glue {
         for (id, result) in game.take_learn_results() {
             let _ = session.learn_job_done(id, result);
         }
+        // A running "How close am I?"'s progress (lane LFU): the worker asked for this frame after its batch.
+        #[cfg(feature = "learn")]
+        if let Some((id, renders)) = game.learn_progress() {
+            session.learn_job_progress(id, renders);
+        }
         game.follow_rate();
         #[cfg(feature = "recreate")]
         self.set_round(session.round());

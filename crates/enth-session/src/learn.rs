@@ -436,12 +436,14 @@ impl LearnJobKind {
 
 /// A "How close am I?" job (lane LFU): solver-native, `{round, patch, free, budget}` → `enth_solver::closest`
 /// (docs/learn.md, "Where Learn lives"), so the worker composes nothing. The round's prepared target is the one the
-/// game worker already holds from the round's prepare job; `round` names it, and a worker holding another answers
-/// `Failed`.
+/// game worker already holds from the round's prepare job (`round` and `challenge` name it, as a score job's do; a
+/// worker that lost it prepares it again).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClosestRequest {
     /// The lesson round it measures against.
     pub round: RoundId,
+    /// That round's challenge.
+    pub challenge: Arc<Challenge>,
     /// The lesson's revision of the patch it starts from: a result for an older one is stale.
     pub revision: u64,
     /// The player's patch, as the round scores it ([`Session::checked_patch`]): where the search starts and what
@@ -1978,6 +1980,7 @@ impl LearnEdit for Session {
         let revision = self.learn.revision;
         let id = self.learn_job(LearnJobKind::Closest(ClosestRequest {
             round,
+            challenge,
             revision,
             patch,
             free,
