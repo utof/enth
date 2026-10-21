@@ -1,4 +1,4 @@
-//! `enth-listen`: the owner's listening tools (lane T; the pairs session lane PAIRS). Three blind tests, one binary
+//! `enth-listen`: the owner's listening tools (lane T; the pairs session lane PAIRS). Four blind tests, one binary
 //! (docs/listening.md).
 //!
 //! - [`abx`]: "does the search result sound the same as the target?" The G0 search gate wants at least 14 of 20
@@ -10,8 +10,8 @@
 //!   copies at planned `sound/1` distances, rated like metric session 2 (with an X), so `sound/2`'s curve can be fitted
 //!   on real-engine sounds.
 //!
-//! R3 (lane S0s pre-declared it, lane LT builds it): [`gr3`], the blind GR3 test of model + search against search alone
-//! (`enth-listen gr3`, `--export-kit`, `--analyze`), hidden and refusing to run until then.
+//! - [`gr3`]: R3's blind GR3 test of model + search against search alone on real and degraded sounds (lane LT):
+//!   `enth-listen gr3`, with `--export-kit` for friends and `--analyze` for the decision rule fixed in advance.
 //!
 //! Shared pieces: [`wav`] (24-bit PCM files), [`player`] (`pw-play --media-role=Production` by default),
 //! [`loudness`] (EBU R128 level matching), [`flags`] (clicks and discontinuities are flagged, never filtered),

@@ -9,7 +9,7 @@ use enth_listen::{abx, gr3, pairs, reverb};
 #[derive(Parser)]
 #[command(
     name = "enth-listen",
-    about = "Blind listening tests for the owner: ABX on search results (G0), a reverb A/B (G1) and real-engine pairs (sound/2)",
+    about = "Blind listening tests for the owner: ABX on search results (G0), a reverb A/B (G1), real-engine pairs (sound/2) and GR3 (model + search against search alone)",
     version
 )]
 struct Cli {
@@ -25,10 +25,7 @@ enum Cmd {
     ReverbAb(reverb::ReverbArgs),
     /// Real-engine pairs: rate about 40 pairs at planned sound/1 distances (A, B, X, then 1-5); `pairs report` reads them
     Pairs(pairs::PairsArgs),
-    // R3 command, pre-declared by lane S0s: hidden, and it refuses to run until lane LT builds it in `gr3.rs` and removes
-    // `hide` here.
-    /// GR3: model + search against search alone, blind, on real and degraded sounds (lane LT)
-    #[command(hide = true)]
+    /// GR3: model + search against search alone, blind, on real and degraded sounds; `--export-kit` for friends, `--analyze`
     Gr3(gr3::Gr3Args),
 }
 

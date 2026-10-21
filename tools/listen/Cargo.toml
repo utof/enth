@@ -1,6 +1,6 @@
 [package]
 name = "enth-listen"
-description = "Owner listening tools: ABX on the search gate (G0) and a blind, level-matched reverb A/B (G1); docs/listening.md"
+description = "Owner listening tools: ABX on the search gate (G0), a blind reverb A/B (G1), real-engine pairs and the GR3 test of model + search (R3); docs/listening.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -29,7 +29,7 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 libm.workspace = true
-# Pre-declared by lane S0s (R3): `enth-listen gr3` (lane LT) reads the manifests of `content/gr3/` and the hashes it checks.
+# Pre-declared by lane S0s (R3), used by `enth-listen gr3` (lane LT): the set manifest (toml) and the SHA-256 of its audio files.
 toml.workspace = true
 sha2.workspace = true
 
