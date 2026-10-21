@@ -29,6 +29,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Doc, LearnError, bad_field};
 use crate::pack::KindKey;
 
+mod sound;
+
+pub use sound::{
+    NUISANCE_OFFSETS, SoundError, SoundOptions, SoundReport, evaluate_sounds,
+    evaluate_sounds_report, verdict,
+};
+
 /// The most predicates or expectation items one check may hold.
 pub const MAX_ITEMS: usize = 16;
 
