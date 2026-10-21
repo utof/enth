@@ -10,9 +10,12 @@
 //! The onset is found in steps: the first 20 ms frame of the level track at or above the threshold, then the first
 //! 1 ms window inside it at or above the same level, then the first sample there whose magnitude reaches it; then a
 //! guard against a codec's pre-echo moves it to the first 1 ms window within 25 dB of the level the next 15 ms reach
-//! (a clean attack moves by under a millisecond).
-//! The pre-roll is a whole number of the engine's 32-frame render segments, so a note played at the clip's onset
-//! starts exactly on the render grid (docs/design.md §5).
+//! (a clean attack moves by under a millisecond). Last, it is **placed on the file's render grid** ([`on_grid`]):
+//! back to just after the last digitally silent sample within [`SILENCE_BACK_S`] (the first sample of a sound that
+//! starts from silence), then down to a whole number of engine segments from the file's first sample.
+//! The pre-roll is a whole number of the engine's 32-frame render segments too, so a note played at the clip's onset
+//! starts exactly on the render grid (docs/design.md §5), and an engine render, whose grid starts at its first frame,
+//! comes back sample for sample: its note-on frame is the clip's onset.
 
 use serde::{Deserialize, Serialize};
 
@@ -28,8 +31,12 @@ const FINE_S: f64 = 0.001;
 /// The pre-echo guard: how far ahead the attack is looked for (s), and how far below its level the onset sits (dB).
 const ATTACK_S: f64 = 0.015;
 const ATTACK_DB: f64 = 25.0;
-/// The engine's render segment in frames (docs/design.md §5): the pre-roll is a whole number of them.
+/// The engine's render segment in frames (docs/design.md §5): the pre-roll is a whole number of them, and the onset
+/// sits on a whole number of them from the file's start. `enth-solver`'s `create_intake` test checks it against the
+/// engine (this crate cannot depend on `enth-engine`).
 pub const SEGMENT_FRAMES: usize = 32;
+/// How far back from the detected onset (s) a digitally silent sample moves it to the sound's first sample.
+pub const SILENCE_BACK_S: f64 = 0.004;
 
 /// Where the conditioned clip came from in the decoded file. Times are seconds in the **source** (the decoded file,
 /// at its own rate); every other time in the intake report is clip time.
@@ -208,6 +215,20 @@ pub(crate) fn onset(x: &[f32], sr: f64, levels: &Levels, thr_db: f64) -> usize {
         return first(s0, reach.max(s0 + 1), climb).unwrap_or(s0);
     }
     s0
+}
+
+/// The onset `onset` of `x` (whose first sample is sample `offset` of the decoded file) placed on the file's render
+/// grid: just after the last exactly-zero sample within [`SILENCE_BACK_S`] before it, if any, then down to a multiple
+/// of [`SEGMENT_FRAMES`] in file samples. It moves earlier only, by less than a segment plus 4 ms (0.67 + 4 ms at
+/// 48 kHz): a note an engine render played from silence comes back at its note-on frame, whatever its attack.
+pub(crate) fn on_grid(x: &[f32], onset: usize, offset: usize, sr: f64) -> usize {
+    let back = (libm::round(sr * SILENCE_BACK_S) as usize).min(onset);
+    let start = (onset - back..onset)
+        .rev()
+        .find(|&i| x[i] == 0.0)
+        .map_or(onset, |z| z + 1);
+    let file = offset + start;
+    (file - file % SEGMENT_FRAMES).saturating_sub(offset)
 }
 
 /// Just past the last sample of the signal: the end of the last pair of consecutive frames at or above `thr_db`

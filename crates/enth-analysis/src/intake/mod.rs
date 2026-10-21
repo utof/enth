@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
 use crate::fft::{FftPath, FftPlanner, hann};
 
 pub use clip::{ClipSpan, Clipping};
-pub use floor::Hum;
+pub use floor::{FloorSource, Hum};
 pub use perf::InferredPerf;
 pub use trim::Span;
 
@@ -92,12 +92,20 @@ impl Default for IntakeCfg {
 
 /// What the intake detected: what the upload no longer carries faithfully. Clip time.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Degradation {
-    /// The noise floor, RMS dBFS; `None` when no noise-only stretch was found (clean, or sounding throughout).
+    /// The noise floor, RMS dBFS; `None` when no noise-only stretch was found (clean, or sounding throughout). Use it
+    /// only when [`floor_confirmed`](Self::floor_confirmed): a held noise-like sound reads as an unconfirmed floor.
     pub noise_floor_dbfs: Option<f64>,
-    /// The loudest 20 ms frame above the floor (dB); `None` without a floor.
+    /// Where the floor was read (`lead_in`, `quiet`, `both`); `None` without a floor.
+    pub floor_source: Option<FloorSource>,
+    /// Whether the floor is confirmed: the lead-in holds it, or the sound is a note and the quiet stretch is not
+    /// ([`floor`] module docs). Only a confirmed floor moves the trim, and `create::Target::from_intake` passes only
+    /// a confirmed one to the objective.
+    pub floor_confirmed: bool,
+    /// The loudest 20 ms frame above a confirmed floor (dB); `None` without one.
     pub snr_db: Option<f64>,
-    /// Mains hum in the floor.
+    /// Mains hum in a confirmed floor.
     pub hum: Option<Hum>,
     /// The cut-off of a steep low-pass (a codec, a resampled file), Hz; `None` for the full band up to the file's
     /// Nyquist frequency.
@@ -113,6 +121,7 @@ pub struct Degradation {
 /// the CLI's `--perf` overrides the inferred performance.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Warning {
     /// Several onsets: this looks like a phrase.
     Phrase { onsets: usize },
@@ -126,13 +135,19 @@ pub enum Warning {
     Capped { source_s: f64 },
     /// The channels cancel in the mono mix (a polarity-flipped channel): the mono mix lost this many dB.
     ChannelsCancel { loss_db: f64 },
+    /// A warning a newer build wrote, read back leniently (its fields are dropped); never produced here.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Everything the intake found, for `enth.create/1`, the plugin's Create view and lane OBJ's objective.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct IntakeReport {
     /// [`INTAKE_VERSION`].
     pub version: u32,
+    /// The settings the clip was conditioned with.
+    pub cfg: IntakeCfg,
     /// The file's own rate (Hz): the clip's, and every candidate's render rate.
     pub sample_rate: u32,
     /// Channels in the file.
@@ -156,6 +171,7 @@ pub struct Intake {
 
 /// Why the intake refused a file. A short sound is never a reason.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum IntakeError {
     /// No samples.
     Empty,
@@ -247,14 +263,16 @@ impl Intake {
             warnings.push(Warning::ChannelsCancel { loss_db });
         }
 
-        // Floor first: the onset and the end sit just above it when it is above the silence threshold.
+        // Floor first: the onset and the end sit just above it when it is above the silence threshold. Only a floor
+        // the lead-in confirms moves them: a held noise-like sound's quietest stretch reads like a floor too.
         let levels = trim::Levels::standard(src, sr);
         let peak = levels.peak_db();
         let fl = floor::estimate(&levels, src, sr, &mut planner);
+        let confirmed = fl.filter(|f| f.confirmed);
         let quiet = peak - cfg.silence_db;
         // Above the floor by a margin that grows with its spread (brown noise wanders more than white), capped, and
         // never above 6 dB under the loudest frame, so the loudest frame always qualifies.
-        let (thr_on, thr_end) = match fl {
+        let (thr_on, thr_end) = match confirmed {
             Some(f) => (
                 quiet.max(f.level_db + (6.0 + 2.5 * f.spread_db).clamp(10.0, 20.0)),
                 quiet.max(f.level_db + (3.0 + 2.0 * f.spread_db).clamp(6.0, 12.0)),
@@ -262,7 +280,7 @@ impl Intake {
             None => (quiet, quiet),
         };
         let (thr_on, thr_end) = (thr_on.min(peak - 6.0), thr_end.min(peak - 6.0));
-        let onset = trim::onset(src, sr, &levels, thr_on);
+        let onset = trim::on_grid(src, trim::onset(src, sr, &levels, thr_on), skip, sr);
         let sig_end = trim::signal_end(&levels, src.len(), thr_end, onset);
         let frames = trim::CutFrames::new(
             sr,
@@ -287,7 +305,8 @@ impl Intake {
         let on = frames.preroll;
         let to_clip = |s: usize| (s + frames.preroll).saturating_sub(onset).min(audio.len());
         let end_c = to_clip(sig_end).max((on + 1).min(audio.len()));
-        let hum = fl.and_then(|f| floor::hum(src, sr, f.run, &mut planner));
+        // Hum is looked for in a confirmed floor only: a held note's harmonics on a mains multiple read as hum too.
+        let hum = confirmed.and_then(|f| floor::hum(src, sr, f.run, &mut planner));
         let bandwidth_hz = bandwidth::estimate(&audio, sr, (on, end_c), &mut planner);
         let clipping = clip::detect(&audio, sr);
         let clip_levels = trim::Levels::standard(&audio, sr);
@@ -295,10 +314,16 @@ impl Intake {
             &clip_levels,
             sr,
             end_c.div_ceil(clip_levels.hop),
-            fl.map_or(clip_levels.peak_db() - cfg.silence_db, |f| f.level_db),
+            confirmed.map_or(clip_levels.peak_db() - cfg.silence_db, |f| f.level_db),
         );
-        let (perf, found) =
-            perf::infer(&audio, sr, on, end_c, fl.map(|f| f.level_db), &mut planner);
+        let (perf, found) = perf::infer(
+            &audio,
+            sr,
+            on,
+            end_c,
+            confirmed.map(|f| f.level_db),
+            &mut planner,
+        );
         if perf.onsets_s.len() > 1 {
             warnings.push(Warning::Phrase {
                 onsets: perf.onsets_s.len(),
@@ -317,13 +342,16 @@ impl Intake {
         }
         let report = IntakeReport {
             version: INTAKE_VERSION,
+            cfg: *cfg,
             sample_rate,
             channels,
             source_s: mono.len() as f64 / sr,
             span,
             degradation: Degradation {
                 noise_floor_dbfs: fl.map(|f| f.level_db),
-                snr_db: fl.map(|f| peak - f.level_db),
+                floor_source: fl.map(|f| f.source),
+                floor_confirmed: confirmed.is_some(),
+                snr_db: confirmed.map(|f| peak - f.level_db),
                 hum,
                 bandwidth_hz,
                 clipping,

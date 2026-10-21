@@ -4,6 +4,13 @@ expression: r
 ---
 {
   "version": 1,
+  "cfg": {
+    "max_len_s": [f],
+    "preroll_ms": [f],
+    "silence_db": [f],
+    "tail_ms": [f],
+    "min_len_s": [f]
+  },
   "sample_rate": 48000,
   "channels": 1,
   "source_s": [f],
@@ -18,6 +25,8 @@ expression: r
   },
   "degradation": {
     "noise_floor_dbfs": [f],
+    "floor_source": "both",
+    "floor_confirmed": true,
     "snr_db": [f],
     "hum": null,
     "bandwidth_hz": null,

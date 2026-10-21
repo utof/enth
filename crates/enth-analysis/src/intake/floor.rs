@@ -6,7 +6,7 @@
 //! compares only the levels above the floor. Pure and deterministic, on the scalar FFT path.
 //!
 //! **The floor** is what is left when the instrument is not playing, so it is read from two stretches of the level
-//! track (20 ms frames every 10 ms), and the quieter one that passes the checks below wins:
+//! track (20 ms frames every 10 ms), and the quieter one that passes the checks below is reported:
 //!
 //! - the quietest stretch: the sounding frames within 6 dB of their 10th percentile, at least 100 ms of them, their
 //!   power mean; skipped when the file holds 100 ms of digital silence (it is clean, and its quietest sounding
@@ -22,8 +22,17 @@
 //!   cut off by the file is not a floor); its spread is the median absolute deviation of its frames' levels;
 //! - YIN finds no pitch in it other than the mains (a held note's quietest stretch is still the note; hum is a floor).
 //!
-//! A noise-like sound held through the whole file (a noise pad with no lead-in and no tail) cannot be told from a
-//! noise floor this way; it is reported as a floor only when it is at least 6 dB below the loudest frame.
+//! **Where it came from** ([`FloorSource`]) decides what the floor may do. A noise-like sound held through the whole
+//! file (a noise pad, a bell's or an FM sound's inharmonic body, the held part of an MP3, which never holds digital
+//! silence) has a quietest stretch that passes every check, so a quiet stretch alone is not evidence of a background.
+//! **A floor is confirmed** when the lead-in holds it (the lead-in passed, within [`CONFIRM_DB`] of the reported
+//! level), or, with no lead-in to read, when the quiet stretch cannot be the sound held: the sound's loudest part is a
+//! note (YIN finds a pitch in most of its first 300 ms) and the quiet stretch is not that note (YIN finds no pitch in
+//! it, or one of another pitch class, such as the mains). Only a confirmed floor moves the trim's thresholds,
+//! the tail's measurement and the pitch and onset gates; an unconfirmed one is still reported, flagged, and the clip
+//! is trimmed at the peak less `silence_db`, as a clean file is. So an unpitched sound (noise, a bell, a snare) that
+//! starts at the file's first sample and decays into real noise keeps its noisy tail up to the length cap: the price
+//! of never cutting a held sound to its attack.
 //!
 //! **Hum** is looked for in that same run, when it holds at least 1/8 s per Hz of resolution (170 ms at 48 kHz): peaks
 //! at least 10 dB above their neighbourhood on two or more of the first eight harmonics of 50 or 60 Hz.
@@ -55,6 +64,8 @@ const CLEAN_BELOW_PEAK_DB: f64 = 70.0;
 const MIN_BELOW_PEAK_DB: f64 = 6.0;
 /// The run may not trend by more than this (dB/s).
 const MAX_TREND_DB_PER_S: f64 = 20.0;
+/// A lead-in within this many dB of the reported floor confirms it.
+pub const CONFIRM_DB: f64 = 6.0;
 /// YIN's frame on the run (s), its lowest frequency (Hz), and the voiced share above which the run is a note.
 /// (YIN reads a 50 Hz hum 4–6 % sharp on short frames, hence the long frame and the wide mains tolerance.)
 const YIN_FRAME_S: f64 = 0.1;
@@ -62,6 +73,9 @@ const YIN_MIN_HZ: f64 = 45.0;
 const VOICED_NOTE: f64 = 0.5;
 /// YIN looks at the first this many seconds of a run, and hum at the first `2 × PROBE_S`.
 const PROBE_S: f64 = 2.0;
+/// The sound's body, where YIN looks for a note when only the quiet stretch holds a floor: this long from the
+/// loudest frame (s).
+const BODY_S: f64 = 0.3;
 /// Mains frequencies, and how far a harmonic may sit from its nominal frequency (share of it).
 const MAINS_HZ: [f64; 2] = [50.0, 60.0];
 const MAINS_TOL: f64 = 0.08;
@@ -78,6 +92,23 @@ pub struct Hum {
     pub level_dbfs: f64,
 }
 
+/// Which stretch of the file the noise floor was read from (see the [module docs](self)).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum FloorSource {
+    /// The lead-in alone (the quietest stretch did not pass, or the file holds digital silence): confirmed.
+    LeadIn,
+    /// The quietest stretch alone: confirmed only when the sound's loudest part is a note (a held noise-like sound
+    /// reads the same as a background otherwise).
+    Quiet,
+    /// Both passed: confirmed when the lead-in is within [`CONFIRM_DB`] of the quieter of the two.
+    Both,
+    /// A source a newer build wrote, read back leniently; never produced here.
+    #[serde(other)]
+    Unknown,
+}
+
 /// The noise floor as the intake uses it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Floor {
@@ -88,6 +119,10 @@ pub(crate) struct Floor {
     pub spread_db: f64,
     /// The longest run of the floor stretches that passed, in samples (where hum is looked for).
     pub run: (usize, usize),
+    /// Where it was read.
+    pub source: FloorSource,
+    /// Whether the lead-in confirms it: only then does it move the trim and the gates.
+    pub confirmed: bool,
 }
 
 /// The noise floor of `x`, or `None` (clean, or no background to read; see the module docs).
@@ -102,7 +137,7 @@ pub(crate) fn estimate(
         return None;
     }
     let peak = levels.peak_db();
-    let mut found: Option<Floor> = None;
+    let mut quiet: Option<Floor> = None;
     // (1) The quietest stretch, unless the file holds digital silence: then it is clean, and its quietest sounding
     // frames are the instrument's own tail.
     let silent = db.iter().filter(|&&d| d <= DIGITAL_SILENCE_DB).count();
@@ -124,28 +159,43 @@ pub(crate) fn estimate(
                 .filter(|(_, m)| **m)
                 .map(|(d, _)| *d)
                 .collect();
-            found = check(&picked, run, peak, levels, x, sr, planner);
+            quiet = check(&picked, run, peak, levels, x, sr, planner, FloorSource::Quiet);
         }
     }
     // (2) The lead-in: the frames before the level first rises 6 dB over their running median. It is before the
     // onset by construction, so it holds a floor even when the file ends before the sound has decayed into it.
-    if let Some(end) = lead_in(db)
-        && let Some(f) = check(&db[..end], (0, end), peak, levels, x, sr, planner)
-    {
-        found = Some(match found {
-            // The quieter level; the longer run, for the hum.
-            Some(g) => Floor {
-                run: if f.run.1 - f.run.0 > g.run.1 - g.run.0 {
-                    f.run
-                } else {
-                    g.run
-                },
-                ..if f.level_db < g.level_db { f } else { g }
+    let lead = lead_in(db).and_then(|end| {
+        check(
+            &db[..end],
+            (0, end),
+            peak,
+            levels,
+            x,
+            sr,
+            planner,
+            FloorSource::LeadIn,
+        )
+    });
+    match (quiet, lead) {
+        (None, None) => None,
+        // No lead-in to read: the quiet stretch is a background when the sound is a note and the stretch is not it.
+        (Some(q), None) => Some(Floor {
+            confirmed: background_under_a_note(levels, x, q.run, sr, planner),
+            ..q
+        }),
+        (None, Some(l)) => Some(l),
+        // The quieter level; the longer run, for the hum; confirmed when the lead-in agrees.
+        (Some(q), Some(l)) => Some(Floor {
+            run: if l.run.1 - l.run.0 > q.run.1 - q.run.0 {
+                l.run
+            } else {
+                q.run
             },
-            None => f,
-        });
+            source: FloorSource::Both,
+            confirmed: l.level_db - l.level_db.min(q.level_db) <= CONFIRM_DB,
+            ..if l.level_db < q.level_db { l } else { q }
+        }),
     }
-    found
 }
 
 /// The longest run of `true` in `member` (frame indices `a..b`), when it holds at least [`MIN_RUN_FRAMES`] and the
@@ -184,7 +234,11 @@ fn lead_in(db: &[f64]) -> Option<usize> {
 }
 
 /// A floor candidate from the levels of its frames and its longest run (frame indices), if it passes the checks of
-/// the module docs.
+/// the module docs; a lead-in confirms itself.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a private helper with two call sites, each naming its stretch"
+)]
 fn check(
     picked: &[f64],
     run: (usize, usize),
@@ -193,6 +247,7 @@ fn check(
     x: &[f32],
     sr: f64,
     planner: &mut FftPlanner,
+    source: FloorSource,
 ) -> Option<Floor> {
     let mean_pow = picked
         .iter()
@@ -224,7 +279,48 @@ fn check(
         level_db,
         spread_db,
         run: samples,
+        source,
+        confirmed: source == FloorSource::LeadIn,
     })
+}
+
+/// Whether the sound's body ([`BODY_S`] from the loudest frame) is a note, and the floor's run (samples) is not
+/// that note: no pitch in most of it, or one of another pitch class (more than a semitone away, octaves folded).
+fn background_under_a_note(
+    levels: &Levels,
+    x: &[f32],
+    run: (usize, usize),
+    sr: f64,
+    planner: &mut FftPlanner,
+) -> bool {
+    let loudest = levels
+        .db
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1).then(b.0.cmp(&a.0)))
+        .map_or(0, |(i, _)| i);
+    let a = levels.range(loudest, x.len()).0;
+    let b = x.len().min(a + (sr * BODY_S) as usize);
+    let Some(body) = voiced_hz(&x[a..b], sr, planner) else {
+        return false;
+    };
+    let probe = run.1.min(run.0 + (sr * PROBE_S) as usize);
+    voiced_hz(&x[run.0..probe], sr, planner).is_none_or(|f| {
+        let cents = (1200.0 * libm::log2(f / body)).rem_euclid(1200.0);
+        cents > 100.0 && cents < 1100.0
+    })
+}
+
+/// YIN's median reading over `x` when it finds a pitch (the mains included) in most of its frames.
+fn voiced_hz(x: &[f32], sr: f64, planner: &mut FftPlanner) -> Option<f64> {
+    let frame = (libm::round(sr * YIN_FRAME_S) as usize) & !1;
+    if x.len() < frame || frame < 4 {
+        return None;
+    }
+    let mut yin = Yin::new(planner, sr, frame, YIN_MIN_HZ, 4000.0);
+    let track = yin.track(x, frame / 2);
+    let voiced: Vec<f64> = track.iter().flatten().copied().collect();
+    (voiced.len() as f64 > VOICED_NOTE * track.len() as f64).then(|| median(&voiced))
 }
 
 /// Whether YIN finds a pitch other than the mains in most of `x`.
@@ -381,6 +477,31 @@ mod tests {
         .apply(&mut y, SR, 0.3);
         let n = white_noise(SR, 1e-5, 2.0, 3);
         assert!(floor_of(&mix(&y, &n)).is_none());
+    }
+
+    #[test]
+    fn a_floor_is_confirmed_by_its_lead_in_or_by_a_note_above_it() {
+        // White noise decaying to a 25 % sustain held to the end, no lead-in: the sustain passes every check of a
+        // floor, so it is reported, but not confirmed (the F1s judge's M4).
+        let mut x = white_noise(SR, 0.5, 3.0, 4);
+        Adsr {
+            attack_s: 0.003,
+            decay_s: 0.25,
+            sustain: 0.25,
+            release_s: 0.1,
+        }
+        .apply(&mut x, SR, 10.0);
+        let f = floor_of(&x).expect("the sustain reads as a floor");
+        assert_eq!((f.source, f.confirmed), (FloorSource::Quiet, false), "{f:?}");
+        // The same after 0.3 s of a quieter background: the lead-in holds the floor.
+        let mut y = white_noise(SR, 0.002, 0.3, 5);
+        y.extend(mix(&x, &white_noise(SR, 0.002, 3.0, 6)));
+        let f = floor_of(&y).unwrap();
+        assert!(f.confirmed && f.source != FloorSource::Quiet, "{f:?}");
+        assert!((f.level_db + 58.8).abs() < 1.5, "{f:?}");
+        // A pluck decaying into noise, no lead-in: its note confirms the background under it.
+        let f = floor_of(&mix(&pluck(), &white_noise(SR, 0.01, 3.0, 9))).unwrap();
+        assert_eq!((f.source, f.confirmed), (FloorSource::Quiet, true), "{f:?}");
     }
 
     #[test]
