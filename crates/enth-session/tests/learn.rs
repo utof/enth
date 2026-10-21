@@ -1418,6 +1418,9 @@ fn the_largest_lesson_and_its_round_fit_the_enth_field() {
         edits,
         edits_dropped: u32::MAX,
         origin: RoundOrigin::Lesson,
+        // Lane LFU: "How close am I?" used and a redo's seed, at their longest.
+        closest: true,
+        sibling: Some(u64::MAX),
     };
     let instance = InstanceState {
         ui: enth_session::UiState {
@@ -2125,8 +2128,302 @@ fn the_learn_api_errors_have_codes_and_hints() {
         LearnError::NoHint,
         LearnError::NothingToShow,
         LearnError::NoExample(3),
+        LearnError::ClosestNotNow,
+        LearnError::NoRedo,
     ];
     for e in cases {
         assert!(!e.code().is_empty() && !e.hint().is_empty() && !e.to_string().is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// "How close am I?" and the sibling redo (lane LFU)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// A lesson round after a scored submit of `sound` %: the step's round prepared, the cutoff moved to 900 Hz, Submit.
+fn submitted(sound: f64) -> (Session, Log) {
+    let steps = vec![step(Kind::Recreate, None, &[]), step(Kind::Read, None, &[])];
+    let (mut s, log) = started(steps);
+    let prepare = game_job(&drain_game(&mut s), "prepare_challenge");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    s.edit(vec![set(CUTOFF, 900.0)], None).unwrap();
+    s.game_tick(3_000, EditorView::Visible);
+    s.game_submit().unwrap();
+    let score = game_job(&drain_game(&mut s), "score");
+    s.game_job_done(score.id, JobResult::Scored(Box::new(report(sound))))
+        .unwrap();
+    (s, log)
+}
+
+/// The closest job the session asked for, with its request.
+fn closest_job(s: &mut Session) -> (LearnJob, enth_session::learn::ClosestRequest) {
+    let job = learn_job(&drain_learn(s), "closest");
+    let LearnJobKind::Closest(request) = job.kind.clone() else {
+        panic!("{job:?}");
+    };
+    (job, request)
+}
+
+/// What the worker would answer: the cutoff moved to 800 Hz, passing (or not).
+fn found(request: &enth_session::learn::ClosestRequest, passed: bool) -> LearnResult {
+    let from = request.patch.value(&addr(CUTOFF)).unwrap();
+    let mut patch = request.patch.clone();
+    apply_all(&mut patch, &[set(CUTOFF, 800.0)]).unwrap();
+    LearnResult::Closest(Box::new(enth_session::learn::Closest {
+        patch,
+        deltas: vec![enth_session::learn::ClosestDelta {
+            addr: addr(CUTOFF),
+            from,
+            to: 800.0,
+            norm: -0.02,
+            categorical: false,
+        }],
+        passed,
+        percent: if passed { 93.0 } else { 70.0 },
+        start_percent: 40.0,
+        distance: 0.02,
+        renders: 41,
+        first_pass_renders: passed.then_some(7),
+        stop: if passed {
+            enth_solver::closest::ClosestStop::Converged
+        } else {
+            enth_solver::closest::ClosestStop::Budget
+        },
+    }))
+}
+
+#[test]
+fn how_close_am_i_answers_after_a_failed_submit_with_progress_and_marks_the_round_assisted() {
+    // Before a submit there is nothing to measure against.
+    let steps = vec![step(Kind::Recreate, None, &[]), step(Kind::Read, None, &[])];
+    let (mut s, _) = started(steps);
+    let prepare = game_job(&drain_game(&mut s), "prepare_challenge");
+    s.game_job_done(prepare.id, prepared()).unwrap();
+    assert!(!s.lesson().unwrap().closest.available);
+    assert_eq!(s.learn_closest(false), Err(LearnError::ClosestNotNow));
+
+    let (mut s, log) = submitted(40.0);
+    let view = s.lesson().unwrap().closest;
+    assert!(view.available && view.running.is_none() && view.answer.is_none());
+    s.learn_closest(false).unwrap();
+    let (job, request) = closest_job(&mut s);
+    // Solver-native: the round the worker holds, the checked patch, the drawn parameters, the button's budget.
+    assert_eq!(request.round, s.game_record().unwrap().id);
+    assert_eq!(request.patch, s.checked_patch());
+    assert_eq!(request.free, vec![addr(CUTOFF)]);
+    assert_eq!(request.budget, enth_session::learn::CLOSEST_BUDGET);
+    assert_eq!(request.budget, 300);
+    assert!(!request.harder());
+    // Progress shows while it runs; the button does not.
+    let view = s.lesson().unwrap().closest;
+    assert!(!view.available);
+    assert_eq!(view.running.map(|p| (p.renders, p.budget)), Some((0, 300)));
+    s.learn_job_progress(job.id, 42);
+    assert_eq!(s.lesson().unwrap().closest.running.unwrap().renders, 42);
+    // A second press while it runs asks for nothing more.
+    s.learn_closest(false).unwrap();
+    assert!(learn_jobs(&drain_learn(&mut s)).is_empty());
+    // The answer: shown, the round assisted like a reveal, the step told (assisted, not passed), a redo due.
+    s.learn_job_done(job.id, found(&request, true)).unwrap();
+    let view = s.lesson().unwrap().closest;
+    assert!(view.running.is_none());
+    let answer = view.answer.expect("the answer shows");
+    assert!(answer.passed && answer.deltas[0].moved());
+    assert!(!view.revealed, "exact values wait for a reveal");
+    assert!(view.redo, "a sibling redo follows");
+    assert!(view.available, "the round can be asked again");
+    let record = s.game_record().unwrap();
+    assert!(record.closest && record.assisted());
+    assert!(s.round().unwrap().assisted);
+    assert_eq!(
+        log.lock().unwrap().rounds.last().copied(),
+        Some(RoundEnd {
+            passed: false,
+            assisted: true,
+            best_sound_pct: Some(40)
+        })
+    );
+    // Saved with the round, and an older record reads without it.
+    assert!(s.save(None).instance.contains(r#""closest":true"#));
+    // A late duplicate is stale.
+    assert_eq!(
+        s.learn_job_done(job.id, found(&request, true)),
+        Err(LearnError::StaleJob(job.id))
+    );
+}
+
+#[test]
+fn an_edit_or_cancel_stops_the_search_and_its_late_answer_is_stale() {
+    let (mut s, _) = submitted(40.0);
+    s.learn_closest(true).unwrap();
+    let (job, request) = closest_job(&mut s);
+    assert!(request.harder());
+    assert_eq!(request.budget, enth_session::learn::CLOSEST_HARDER_BUDGET);
+    assert_eq!(request.cfg, enth_session::learn::closest_cfg(true));
+    assert_eq!((request.cfg.patience, request.cfg.tol), (15, 0.0));
+    // An edit moves the revision: the search would answer for the patch that was.
+    s.edit(vec![set(CUTOFF, 950.0)], None).unwrap();
+    let requests = drain_learn(&mut s);
+    assert!(
+        requests.contains(&LearnRequest::Cancel(job.id)),
+        "{requests:?}"
+    );
+    assert!(s.lesson().unwrap().closest.running.is_none());
+    assert_eq!(
+        s.learn_job_done(job.id, found(&request, true)),
+        Err(LearnError::StaleJob(job.id))
+    );
+    assert!(!s.game_record().unwrap().closest);
+    // Cancel: the same.
+    s.learn_closest(false).unwrap();
+    let (job, request) = closest_job(&mut s);
+    s.learn_closest_cancel().unwrap();
+    assert!(drain_learn(&mut s).contains(&LearnRequest::Cancel(job.id)));
+    assert!(s.lesson().unwrap().closest.running.is_none());
+    assert_eq!(
+        s.learn_job_done(job.id, found(&request, true)),
+        Err(LearnError::StaleJob(job.id))
+    );
+    // An answer that found no pass is shown but helps no one: no assist, no redo.
+    s.learn_closest(false).unwrap();
+    let (job, request) = closest_job(&mut s);
+    s.learn_job_done(job.id, found(&request, false)).unwrap();
+    let view = s.lesson().unwrap().closest;
+    assert!(view.answer.is_some_and(|a| !a.passed));
+    assert!(!view.redo);
+    assert!(!s.game_record().unwrap().assisted());
+    // A failed job clears the search and says why.
+    s.learn_closest(false).unwrap();
+    let (job, _) = closest_job(&mut s);
+    s.learn_job_done(
+        job.id,
+        LearnResult::Failed {
+            message: "no round".to_owned(),
+        },
+    )
+    .unwrap();
+    let view = s.lesson().unwrap();
+    assert!(view.closest.running.is_none());
+    assert_eq!(view.error.unwrap().code(), "job_failed");
+}
+
+#[test]
+fn a_passed_or_revealed_round_offers_no_search_and_a_reveal_shows_the_values() {
+    let (mut s, _) = submitted(95.0);
+    assert_eq!(s.round().unwrap().phase, Phase::Passed);
+    assert!(!s.lesson().unwrap().closest.available);
+    assert_eq!(s.learn_closest(false), Err(LearnError::ClosestNotNow));
+
+    let (mut s, _) = submitted(40.0);
+    s.learn_closest(false).unwrap();
+    let (job, request) = closest_job(&mut s);
+    s.learn_job_done(job.id, found(&request, true)).unwrap();
+    s.game_reveal().unwrap();
+    let view = s.lesson().unwrap().closest;
+    assert!(
+        view.revealed && view.answer.is_some(),
+        "the values may show now"
+    );
+    assert!(!view.available, "a revealed round is over");
+    // Next leaves the step: the answer goes with it.
+    s.learn_next().unwrap();
+    assert!(s.lesson().unwrap().closest.answer.is_none());
+}
+
+#[test]
+fn a_sibling_redo_follows_a_reveal_or_an_answer_and_survives_a_reload() {
+    use enth_session::learn::sibling_seed;
+    // Nothing to redo before help.
+    let (mut s, _) = submitted(40.0);
+    assert!(!s.lesson().unwrap().closest.redo);
+    assert_eq!(s.learn_redo(), Err(LearnError::NoRedo));
+    // After a reveal: the step's round ends (logged) and its sibling starts, the same spec with the next seed.
+    s.game_reveal().unwrap();
+    assert!(s.lesson().unwrap().closest.redo);
+    drain_game(&mut s);
+    s.learn_redo().unwrap();
+    let requests = drain_game(&mut s);
+    assert_eq!(logs(&requests).len(), 1, "the revealed round's line");
+    let prepare = game_job(&requests, "prepare_challenge");
+    let seed = sibling_seed(spec().seed);
+    assert_ne!(seed, spec().seed);
+    let sibling = challenge().with_seed(seed).unwrap();
+    match &prepare.kind {
+        JobKind::PrepareChallenge { challenge: c } => assert_eq!(**c, sibling),
+        other => panic!("{other:?}"),
+    }
+    let record = s.game_record().unwrap();
+    assert_eq!(
+        (record.sibling, record.origin, record.revealed),
+        (Some(seed), RoundOrigin::Lesson, false)
+    );
+    let answer = |c: &Challenge| {
+        JobResult::Prepared(Box::new(Prepared::new(
+            c.clone(),
+            round_start(),
+            round_target(),
+            vec![addr(CUTOFF)],
+            fingerprint(),
+            Some(-14.0),
+        )))
+    };
+    s.game_job_done(prepare.id, answer(&sibling)).unwrap();
+    assert_eq!(s.round().unwrap().phase, Phase::Playing);
+    assert!(
+        !s.lesson().unwrap().closest.redo,
+        "a fresh round owes no redo"
+    );
+    assert_eq!(
+        s.patch().to_json(),
+        round_start().to_json(),
+        "one plan: the sibling's start"
+    );
+    // A reload resumes the sibling, not the step's own challenge.
+    s.edit(vec![set(CUTOFF, 700.0)], None).unwrap();
+    let saved = s.save(None);
+    assert!(
+        saved.instance.contains(&format!(r#""sibling":{seed}"#)),
+        "{}",
+        saved.instance
+    );
+    let mut t = Session::default();
+    assert_eq!(t.load(&saved).errors, []);
+    let open = learn_job(&drain_learn(&mut t), "open");
+    let (player, effects, _) = Fake::resumed(
+        vec![step(Kind::Recreate, None, &[]), step(Kind::Read, None, &[])],
+        0,
+    );
+    t.learn_job_done(open.id, LearnResult::Opened { player, effects })
+        .unwrap();
+    let prepare = game_job(&drain_game(&mut t), "prepare_challenge");
+    match &prepare.kind {
+        JobKind::PrepareChallenge { challenge: c } => assert_eq!(**c, sibling),
+        other => panic!("{other:?}"),
+    }
+    t.game_job_done(prepare.id, answer(&sibling)).unwrap();
+    assert_eq!(t.round().unwrap().phase, Phase::Playing);
+    assert_eq!(cutoff(&t), 700.0, "the sibling's patch stays");
+
+    // After a passing answer, too; a second redo moves on to the next seed.
+    let (mut s, _) = submitted(40.0);
+    s.learn_closest(false).unwrap();
+    let (job, request) = closest_job(&mut s);
+    s.learn_job_done(job.id, found(&request, true)).unwrap();
+    s.learn_redo().unwrap();
+    let prepare = game_job(&drain_game(&mut s), "prepare_challenge");
+    s.game_job_done(prepare.id, answer(&sibling)).unwrap();
+    assert!(
+        s.lesson().unwrap().closest.answer.is_none(),
+        "the answer went with its round"
+    );
+    s.game_reveal().unwrap();
+    s.learn_redo().unwrap();
+    let prepare = game_job(&drain_game(&mut s), "prepare_challenge");
+    let next = sibling_seed(seed);
+    match &prepare.kind {
+        JobKind::PrepareChallenge { challenge: c } => {
+            assert_eq!(**c, challenge().with_seed(next).unwrap());
+        }
+        other => panic!("{other:?}"),
     }
 }
