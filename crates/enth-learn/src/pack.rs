@@ -952,7 +952,8 @@ impl Pack {
             })?;
         let manifest_text = std::str::from_utf8(manifest_bytes)
             .map_err(|_| syntax(Doc::Pack, "pack.json is not UTF-8".to_owned()))?;
-        let manifest = Manifest::from_json(manifest_text)?;
+        let manifest =
+            Manifest::from_json(manifest_text).map_err(|e| newer_manifest(e, manifest_text))?;
         if let Some(need) = manifest.requires.unmet() {
             return Err(LearnError::Requires {
                 name: manifest.name(),
@@ -960,6 +961,12 @@ impl Pack {
             });
         }
         verify_files(&manifest, files)?;
+        let (name, engine) = (manifest.name(), manifest.engine.clone());
+        Pack::decode(manifest, files).map_err(|e| newer_build(e, name, &engine))
+    }
+
+    /// Steps 3 and 4 of [`Pack::from_files`], on verified files.
+    fn decode(manifest: Manifest, files: &BTreeMap<String, Vec<u8>>) -> Result<Pack, LearnError> {
         for path in [CREDITS_PATH.to_owned()]
             .into_iter()
             .chain(manifest.lessons.iter().map(lesson_path))
@@ -1297,6 +1304,48 @@ fn load_patch(path: &str, bytes: &[u8]) -> Result<enth_patch::file::Loaded, Lear
         path: path.to_owned(),
         message: e.to_string(),
     })
+}
+
+/// Whether `engine` (a pack's recorded engine) is newer than this build's. A stamp that does not read as
+/// `major.minor.patch` is not known to be newer.
+pub fn engine_is_newer(engine: &str) -> bool {
+    enth_challenge::EngineVersion::parse(engine.trim())
+        .is_some_and(|v| v > enth_challenge::EngineVersion::CURRENT)
+}
+
+/// A content refusal of a pack made with a newer engine, named as needing a newer enth (F1l review should-fix 6):
+/// a lesson or manifest that does not decode or breaks a rule (an unknown module kind, parameter key or phrase, a
+/// newer inline patch), a patch that does not load. Integrity refusals, `requires`, a text that is not UTF-8 and the
+/// schema refusals that already name a newer pack pass through unchanged.
+fn newer_build(e: LearnError, name: PackName, engine: &str) -> LearnError {
+    let content = match &e {
+        LearnError::BadFields { .. } => true,
+        LearnError::BadField { doc, field, .. } => !(*doc == Doc::Pack && field == "requires"),
+        LearnError::BadContent { message, .. } => message != "not UTF-8",
+        _ => false,
+    };
+    if content && engine_is_newer(engine) {
+        LearnError::NeedsNewer {
+            name,
+            engine: engine.to_owned(),
+            cause: Box::new(e),
+        }
+    } else {
+        e
+    }
+}
+
+/// [`newer_build`] for a manifest that does not decode: its name and engine read leniently from its JSON.
+fn newer_manifest(e: LearnError, text: &str) -> LearnError {
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return e;
+    };
+    let engine = value
+        .get("engine")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    newer_build(e, lenient_name(&value), &engine)
 }
 
 /// Name the pack in a lesson's `lesson_too_new`.
