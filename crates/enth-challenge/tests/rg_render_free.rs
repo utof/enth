@@ -16,7 +16,10 @@ const SOURCES: [(&str, &str); 7] = [
     ("src/priors.rs", include_str!("../src/priors.rs")),
     ("src/phrases.rs", include_str!("../src/phrases.rs")),
     // The lesson-only phrases (lane CV2, R2): `phrases::entry` looks in their table too.
-    ("src/lesson_phrases.rs", include_str!("../src/lesson_phrases.rs")),
+    (
+        "src/lesson_phrases.rs",
+        include_str!("../src/lesson_phrases.rs"),
+    ),
     ("src/fingerprint.rs", include_str!("../src/fingerprint.rs")),
     ("src/code.rs", include_str!("../src/code.rs")),
 ];
@@ -81,10 +84,9 @@ fn the_generator_never_reaches_the_renderer() {
                         .filter(|w| !w.is_empty())
                         .collect();
                     assert!(
-                        names
-                            .iter()
-                            .all(|w| ["Phrase", "PhraseId", "PhraseNote", "PhraseError"]
-                                .contains(w)),
+                        names.iter().all(
+                            |w| ["Phrase", "PhraseId", "PhraseNote", "PhraseError"].contains(w)
+                        ),
                         "{file}:{n}: the generator takes more than phrase data from model: {line}"
                     );
                 }
