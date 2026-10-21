@@ -1,0 +1,35 @@
+Content licence for content/lessons/ (PROVISIONAL)
+==================================================
+
+Status: provisional. These are the terms the R2 plan proceeds on (docs/phase-3.md, "Your part": "The content licence:
+lesson text CC BY 4.0, patches and codes CC0, code MIT"; docs/learn.md, "Packs"). The owner has not confirmed them yet,
+and confirms or changes them before lane C1 writes the first real pack. Until then, contribute on these terms or do not
+contribute to this directory.
+
+What is under which licence
+---------------------------
+
+  * Lesson text (the markdown steps, titles, objectives and every other prose field of a pack):
+    Creative Commons Attribution 4.0 International (CC BY 4.0).
+    https://creativecommons.org/licenses/by/4.0/legalcode
+
+  * Patches, factory presets, challenge codes and every other piece of machine-readable data in a pack
+    (patches/*.patch.json, the targets and codes a lesson names):
+    Creative Commons Zero 1.0 Universal (CC0 1.0), a public-domain dedication.
+    https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+  * Code (the lesson player in crates/enth-learn, the xtask commands, the tests): MIT, as the rest of the repository.
+    See the LICENSE file at the repository root. Nothing under content/lessons/ is code.
+
+Contributing
+------------
+
+By contributing to content/lessons/ you agree that your text is licensed CC BY 4.0 and your patches and codes CC0 1.0,
+and that you wrote them or may license them so. Do not copy lesson text, patches or presets from a source whose licence
+does not allow this (a synth manual, a preset pack, another project's lessons), and do not use GPL, LGPL or AGPL
+material: AGENTS.md's licensing rules apply to content as they do to code.
+
+Every pack carries a CREDITS.md that names its authors and repeats these terms, and its manifest records them as
+`license.text = "CC-BY-4.0"` and `license.patches = "CC0-1.0"`; `cargo xtask lesson-check` enforces those ids.
+
+This file is not legal advice and does not replace the full licence texts at the links above.

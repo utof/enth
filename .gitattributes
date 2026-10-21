@@ -11,3 +11,8 @@ tests/golden/challenges/** text eol=lf
 # (golden.yml's Windows job on e47543f; R1/S1 lane INT).
 tests/golden/generator/** text eol=lf
 tests/golden/structure/** text eol=lf
+
+# Lesson packs are hashed byte for byte (a pack's manifest lists each file's SHA-256, `cargo xtask pack` builds it
+# reproducibly, and `lesson-check` compares the patches with `Patch::to_json()` as text): keep LF on every platform, or a
+# Windows checkout (core.autocrlf) changes every hash (lane S0l, R2).
+content/lessons/** text eol=lf

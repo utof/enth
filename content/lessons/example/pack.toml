@@ -1,0 +1,35 @@
+# The example pack: one tiny lesson in the authoring layout (docs/learn.md, "Packs"). It exists so the layout, the
+# CI workflow and the lessons' lane-by-lane tooling have something real to read from the freeze on (lane S0l, R2,
+# freeze point F0l). It is NOT bundled and NOT a lesson to ship; lanes C1 to C3 write the real packs beside it.
+#
+# A SKETCH: every field name here follows docs/learn.md's manifest and lesson sketches, and lane LM freezes the real
+# schema at F1l (then rewrites this file to it; `cargo xtask lesson-check` fails on a field it does not know). Authors
+# write TOML (comments, multi-line text); `cargo xtask pack` writes the canonical JSON into a reproducible .enthpack.
+#
+# Layout:
+#   pack.toml                       this manifest (built into pack.json, `enth.pack/1`)
+#   lessons/<NN-name>/lesson.toml   one lesson: its steps, checks and witnesses (built into lesson.json)
+#   lessons/<NN-name>/step-<N>.md   the text of step N, a small markdown subset (headings, bold, bullets, `enth:` links)
+#   patches/*.patch.json            exactly Patch::to_json(): starts, Hear examples and witnesses
+#   CREDITS.md                      authors and licences, shown in the app
+#   media/                          reserved, empty in v1 (no audio, no images)
+
+id = "example"
+version = "0.1.0"
+title = "Example pack"
+authors = ["enth contributors"]
+covers = ["svf"]
+# The order the app offers the lessons in; lesson ids are append-only (progress is keyed by pack, lesson and step ids).
+lessons = ["cutoff"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+# The highest schema, generator and scorer ids this pack uses (the pack loads only if the build has them all).
+[requires]
+lesson = 1
+challenge = 1
+patch = 1
+generator = 1
+scorers = ["sound/1", "structure/1"]
