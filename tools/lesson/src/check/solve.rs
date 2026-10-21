@@ -4,17 +4,32 @@
 //! | --- | --- | --- |
 //! | `do` with a sound check | **the hint follower**: from the step's start, the real player asks for its measured hint (after the authored ones), `enth_solver::hint` answers it within the step's free set (its editable, unlocked parameters), the moves are applied, up to [`MAX_HINTS`] times | it does not reach the pass, unless the witness changes structure the hints cannot move (a waveform, a switch, a route, a transposition): then the step teaches structure and its witness shows it, which is noted |
 //! | `do` with patch predicates only | Show me (the playthrough already proved it) | — |
-//! | `recreate` | `enth_solver::closest` from the round's start over the challenge's editable parameters (else the round's drawn ones), unlocked | it does not pass within `--budget` renders |
-//! | `choose` | the audibility gate, `enth_learn::check::choice_audibility` | two options are measured closer than `MIN_JND` (2 JND): an inaudible choice. A pair `sound/1` cannot compare (another phrase, a transpose, a seed or a curve) is noted for a listening review, and `lesson-coverage` counts the step as no check (Q9) |
+//! | `recreate` | `enth_solver::closest` from the round's start over the challenge's editable parameters (else the round's drawn ones), unlocked, stopped at the first batch with a passing patch (reachability, not the nearest pass) | it does not pass within `--budget` renders |
+//! | `choose` | the audibility gate, `enth_learn::check::choice_audibility` | the answer is measured closer than `MIN_JND` (2 JND) to a distractor and no descriptor tells them apart either: an inaudible choice (below) |
+//!
+//! **The audibility gate, decided (lane LCK).** A question is answerable by ear when its **answer** stands apart from
+//! every distractor, so only the pairs with the answer are gated; two distractors may sound alike (an odd one out
+//! repeats a sound on purpose), which is noted. `sound/1` is blind to some audible differences (a beat rate, a beat
+//! depth, a decay it scores asymmetrically), so an answer pair under `MIN_JND` falls back to the descriptors: both
+//! options rendered at the scoring seed and the two nuisance seeds, and the pair passes, noted, when one descriptor
+//! (pitch, brightness, noisiness, the envelope, beating and its depth, tremolo, a filter sweep) differs by at least
+//! `MIN_JND` steps of about one just-noticeable difference (10 % in Hz and ms, 2 dB, 10 cents) and by more than twice
+//! the readings' noise. A pair `sound/1` cannot compare as played (another phrase, a transpose, a seed or a curve) is
+//! noted for a listening review, and `lesson-coverage` counts the step as no check (Q9).
 
 use enth_analysis::expect::parse_item;
 use enth_challenge::v2::{Selector, Touch, touches};
 use enth_challenge::{Challenge, phrases, prepare_challenge};
-use enth_learn::check::{MIN_JND, PairJnd, auditions, choice_audibility, evaluate_sounds};
+use enth_learn::SoundCheck;
+use enth_learn::check::{
+    MIN_JND, PairJnd, SoundOptions, auditions, choice_audibility, evaluate_sounds,
+    evaluate_sounds_report,
+};
+use enth_learn::player::Audition;
 use enth_learn::player::{Effect, SETTLE_MS};
 use enth_learn::{Check, EditSource, Example, LessonBundle, Player, StepKind, StepView};
 use enth_patch::{Builtin, ParamAddr, Patch, Target};
-use enth_solver::closest::{ClosestCfg, ClosestJob, RoundSerial, closest};
+use enth_solver::closest::{ClosestCfg, ClosestJob, RoundSerial, closest_with};
 use enth_solver::{HintCfg, Serial, hint};
 
 use super::ops::{moves, set_knob};
@@ -57,8 +72,8 @@ pub(super) fn lesson(bundle: &LessonBundle, played: &[Played], opts: Options, lo
             StepKind::Recreate { challenge, .. } => {
                 recreate_step(step.id.as_str(), challenge, opts.budget, at, log);
             }
-            StepKind::Choose { options, .. } => {
-                choose_step(bundle, step.id.as_str(), options, at, log);
+            StepKind::Choose { options, answer } => {
+                choose_step(bundle, step.id.as_str(), options, *answer, at, log);
             }
             StepKind::Read | StepKind::Listen { .. } => {}
         }
@@ -103,7 +118,9 @@ fn do_step(
                 log.fail(
                     at,
                     format!(
-                        "--solve: the measured hints stop where the sound check passes and {} still fail{}: a                          player following them is told it already sounds right; make the sound items imply the                          predicates, or the predicates follow from the sound",
+                        "--solve: the measured hints stop where the sound check passes and {} still fail{}: a \
+                         player following them is told it already sounds right; make the sound items imply the \
+                         predicates, or the predicates follow from the sound",
                         failing.join(", "),
                         if failing.len() == 1 { "s" } else { "" }
                     ),
@@ -339,14 +356,19 @@ fn recreate_step(id: &str, challenge: &Challenge, budget: usize, at: &str, log: 
         free: &free,
         budget,
     };
-    match closest(&job, &mut RoundSerial::new(), &ClosestCfg::default()) {
+    // Reachability, not the nearest pass: the search stops at the first batch that holds a passing patch.
+    let found = closest_with(
+        &job,
+        &mut RoundSerial::new(),
+        &ClosestCfg::default(),
+        &mut |p| p.passing.is_none(),
+    );
+    match found {
         Ok(found) if found.passed => log.line(format!(
-            "    {id} (recreate): closest passes in {} render(s) over {} free parameter(s) (sound {:.1} %, knob \
-             distance {:.3})",
+            "    {id} (recreate): closest passes in {} render(s) over {} free parameter(s) (sound {:.1} %)",
             found.renders,
             free.len(),
             found.percent,
-            found.distance
         )),
         Ok(found) => {
             log.line(format!("    {id} (recreate)"));
@@ -368,8 +390,16 @@ fn recreate_step(id: &str, challenge: &Challenge, budget: usize, at: &str, log: 
     }
 }
 
-fn choose_step(bundle: &LessonBundle, id: &str, options: &[Example], at: &str, log: &mut Log) {
-    let audibility = match choice_audibility(&auditions(bundle, options)) {
+fn choose_step(
+    bundle: &LessonBundle,
+    id: &str,
+    options: &[Example],
+    answer: u8,
+    at: &str,
+    log: &mut Log,
+) {
+    let auds = auditions(bundle, options);
+    let audibility = match choice_audibility(&auds) {
         Ok(a) => a,
         Err(e) => {
             log.line(format!("    {id} (choose)"));
@@ -383,21 +413,40 @@ fn choose_step(bundle: &LessonBundle, id: &str, options: &[Example], at: &str, l
             return;
         }
     };
+    let answer = usize::from(answer);
     let label = |i: usize| options.get(i).map_or("?", |o| o.label.as_str());
     let mut parts = Vec::new();
     let mut unmeasured: Vec<(String, &str)> = Vec::new();
     log.line(format!("    {id} (choose)"));
     for pair in &audibility.pairs {
         let (a, b) = (label(pair.a), label(pair.b));
+        let with_answer = pair.a == answer || pair.b == answer;
         match pair.jnd {
             PairJnd::Measured(j) if j >= MIN_JND => parts.push(format!("{a}-{b} {j:.2}")),
-            PairJnd::Measured(j) => log.fail(
-                at,
-                format!(
-                    "--solve: options {a:?} and {b:?} are {j:.2} JND apart under sound/1, below {MIN_JND}: an \
-                     inaudible choice"
+            PairJnd::Measured(j) if !with_answer => log.note(format!(
+                "{at}: distractors {a:?} and {b:?} are {j:.2} JND apart under sound/1: only the answer must stand \
+                 apart from each (an odd one out may repeat a sound)"
+            )),
+            PairJnd::Measured(j) => match descriptor_gap(&auds[pair.a], &auds[pair.b]) {
+                Some(gap) if gap.steps >= MIN_JND => log.note(format!(
+                    "{at}: sound/1 puts {a:?} and {b:?} {j:.2} JND apart, but {} differs by {:.1} steps ({}): \
+                     audible by its descriptors",
+                    gap.feature, gap.steps, gap.what
+                )),
+                gap => log.fail(
+                    at,
+                    format!(
+                        "--solve: the answer {:?} and {:?} are {j:.2} JND apart under sound/1, below {MIN_JND}, and \
+                         no descriptor tells them apart by {MIN_JND} steps{}: an inaudible choice",
+                        label(answer),
+                        if pair.a == answer { b } else { a },
+                        gap.map_or_else(String::new, |g| format!(
+                            " (the widest, {}, by {:.1})",
+                            g.feature, g.steps
+                        ))
+                    ),
                 ),
-            ),
+            },
             PairJnd::NotMeasured(why) => unmeasured.push((format!("{a}-{b}"), why)),
         }
     }
@@ -411,5 +460,116 @@ fn choose_step(bundle: &LessonBundle, id: &str, options: &[Example], at: &str, l
     }
     if !parts.is_empty() {
         log.line(format!("      audible (JND): {}", parts.join(", ")));
+    }
+}
+
+/// How one descriptor's step is measured: a ratio (a step is that factor) or a difference (a step is that amount).
+#[derive(Clone, Copy)]
+enum StepSize {
+    Ratio(f64),
+    Difference(f64),
+}
+
+/// The descriptors the fallback compares, by the expectation grammar's names, and one step of each: about one
+/// just-noticeable difference, after `sound/1`'s calibration steps (10 % for Hz and ms, 2 dB, 10 cents; design.md §7).
+/// Loudness and peaks are left out: options play level-matched.
+const DESCRIPTORS: [(&str, StepSize); 12] = [
+    ("pitch", StepSize::Ratio(1.005_793)), // 10 cents
+    ("brightness", StepSize::Ratio(1.1)),
+    ("noisiness", StepSize::Difference(0.05)),
+    ("attack", StepSize::Ratio(1.1)),
+    ("decay", StepSize::Ratio(1.1)),
+    ("sustain", StepSize::Difference(2.0)),
+    ("release", StepSize::Ratio(1.1)),
+    ("beating", StepSize::Ratio(1.1)),
+    ("beat_depth", StepSize::Difference(2.0)),
+    ("tremolo", StepSize::Ratio(1.1)),
+    ("tremolo_depth", StepSize::Difference(2.0)),
+    ("filter_lfo", StepSize::Ratio(1.1)),
+];
+
+/// The widest descriptor difference between two options.
+struct Gap {
+    feature: String,
+    steps: f64,
+    /// The two readings, for the report.
+    what: String,
+}
+
+/// The descriptor fallback of the audibility gate (lane LCK's decision, for differences `sound/1` is blind to: a beat
+/// rate, a beat depth, an asymmetric decay): each option rendered through its phrase at the scoring seed and the two
+/// nuisance seeds, every descriptor of [`DESCRIPTORS`] read, and the widest difference in steps whose change is more
+/// than twice the two readings' noise. `None` when the options cannot be compared (another phrase, a transpose, a
+/// seed, a curve) or nothing reads on both.
+fn descriptor_gap(x: &Audition, y: &Audition) -> Option<Gap> {
+    if x.phrase != y.phrase
+        || x.transpose != 0
+        || y.transpose != 0
+        || x.seed.is_some()
+        || y.seed.is_some()
+        || x.curve.is_some()
+        || y.curve.is_some()
+    {
+        return None;
+    }
+    let check = SoundCheck {
+        phrase: x.phrase,
+        expect: DESCRIPTORS
+            .iter()
+            .map(|(name, _)| format!("{name} != null"))
+            .collect(),
+        macros: Vec::new(),
+    };
+    let options = SoundOptions { nuisance: true };
+    let read = |a: &Audition| {
+        evaluate_sounds_report(std::slice::from_ref(&check), &a.patch, options)
+            .ok()
+            .and_then(|r| r.into_iter().next())
+    };
+    let (rx, ry) = (read(x)?, read(y)?);
+    let mut best: Option<Gap> = None;
+    let mut presence: Option<Gap> = None;
+    for (((name, step), ix), iy) in DESCRIPTORS
+        .iter()
+        .zip(&rx.report.results)
+        .zip(&ry.report.results)
+    {
+        let feature = ix.expect.split(' ').next().unwrap_or(name).to_owned();
+        // Present in one and absent in the other, on every render of both: as far apart as it gets.
+        if ix.pass != iy.pass && !ix.unstable && !iy.unstable {
+            let side =
+                |i: &enth_analysis::expect::ItemResult| if i.pass { "present" } else { "absent" };
+            presence.get_or_insert(Gap {
+                what: format!("{} in one option, {} in the other", side(ix), side(iy)),
+                feature,
+                steps: f64::INFINITY,
+            });
+            continue;
+        }
+        let (Some(a), Some(b)) = (ix.got, iy.got) else {
+            continue;
+        };
+        let noise = ix.noise.unwrap_or(0.0) + iy.noise.unwrap_or(0.0);
+        if (a - b).abs() <= 2.0 * noise {
+            continue;
+        }
+        let steps = match step {
+            StepSize::Ratio(r) if a > 0.0 && b > 0.0 => (a / b).ln().abs() / r.ln(),
+            StepSize::Ratio(_) => continue,
+            StepSize::Difference(d) => (a - b).abs() / d,
+        };
+        if best.as_ref().is_none_or(|g| steps > g.steps) {
+            best = Some(Gap {
+                feature,
+                steps,
+                what: format!("{a:.4} against {b:.4}, noise {noise:.4}"),
+            });
+        }
+    }
+    // A measured difference first; a descriptor present in one option only is the weaker evidence, used when no
+    // reading differs enough.
+    match best {
+        Some(g) if g.steps >= MIN_JND => Some(g),
+        other => presence.or(other),
     }
 }

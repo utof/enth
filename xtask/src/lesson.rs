@@ -1,5 +1,5 @@
-//! **Owner: lane LCK** (lesson check; `gen.rs` is lane DEC's). Pre-declared by lane S0l (R2); `lesson-check` is a
-//! placeholder that passes, the rest refuse to run.
+//! **Owner: lane LCK** (lesson check; `gen.rs` is lane DEC's). Pre-declared by lane S0l (R2); LCK built `lesson-check`,
+//! `lesson-coverage`, `lesson new` and `pack` in the tool.
 //!
 //! The authoring loop for lessons (docs/learn.md, "`lesson-check` and the authoring loop"): an honest lesson is one
 //! `cargo xtask lesson-check --solve` passes, over every pack in `content/lessons/`, deterministically and with no
@@ -17,9 +17,10 @@
 //! | `pack [PACK...]` | `pack` | `pack.rs` | builds `.enthpack` files reproducibly (canonical JSON, sorted entries, 1980 timestamps, a fixed deflate level) and checks each bundled pack's pinned hash | LCK |
 //! | `lesson-gen deconstruct <preset>` | `gen deconstruct <preset>` | `gen.rs` | writes the factory studies from a preset by ablation | DEC |
 //!
-//! `.github/workflows/lessons.yml` runs `lesson-check` on `content/lessons/**`, `crates/enth-learn/**`, `tools/lesson/**`
-//! and `xtask/**`; LCK adds the DSP, engine, patch and challenge crates (a DSP change can break a lesson) and the
-//! `gate.sh lane` hook. The authoring layout is `content/lessons/<pack>/` (see the example pack there).
+//! `.github/workflows/lessons.yml` runs `lesson-check --cross --solve`, `lesson-coverage` (a report until GR2) and `pack
+//! --check` on `content/lessons/**`, the lesson tool, xtask and every crate a lesson's verdict depends on (a DSP change
+//! can break a lesson); `scripts/gate.sh lane` runs `lesson-check` when `content/lessons/` changes. The authoring layout
+//! is `content/lessons/<pack>/` (see the example pack there).
 
 mod check;
 mod coverage;

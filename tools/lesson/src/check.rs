@@ -26,6 +26,7 @@
 //!    options are at least `MIN_JND` (2) apart under `sound/1` (an inaudible choice fails; options `sound/1` cannot
 //!    compare are listed for a listening review, and `lesson-coverage` counts them as no check).
 //!
+//! `--lesson ID` (repeatable) plays only those lessons (the files of their packs are still checked): an author's loop.
 //! Coverage is its own command (`lesson-coverage`). The exit status is the verdict: 0 only when nothing failed.
 
 mod cross;
@@ -59,6 +60,10 @@ pub(crate) struct Options {
     /// How many lessons are checked at once (`--jobs`; the report's order and content do not depend on it).
     pub jobs: usize,
 }
+
+/// `--lesson`: play only these lessons (by id, in any pack); empty means every lesson.
+#[derive(Clone, Debug, Default)]
+struct Only(Vec<String>);
 
 /// The report: lines on stdout (at once for the run's own log, in lesson order for a lesson's), and every failure
 /// again at the end.
@@ -134,10 +139,14 @@ pub fn run(args: &[String]) -> Result<(), String> {
         jobs: default_jobs(),
     };
     let mut names = Vec::new();
+    let mut only = Only::default();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--cross" => opts.cross = true,
+            "--lesson" => only
+                .0
+                .push(it.next().ok_or("--lesson needs a lesson id")?.clone()),
             "--solve" => opts.solve = true,
             "--jobs" => {
                 opts.jobs = it
@@ -155,7 +164,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
             }
             flag if flag.starts_with("--") => {
                 return Err(format!(
-                    "check: unknown option {flag}\nusage: check [--cross] [--solve] [--budget N] [--jobs N] [<pack>...]"
+                    "check: unknown option {flag}\nusage: check [--cross] [--solve] [--budget N] [--jobs N] [--lesson ID]... [<pack>...]"
                 ));
             }
             name => names.push(name.to_owned()),
@@ -168,8 +177,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let mut packs: Vec<Pack> = Vec::new();
     let mut lessons = 0_usize;
     for path in &paths {
-        if let Some(pack) = check_pack(&root, path, opts, &mut log) {
-            lessons += pack.lessons().count();
+        if let Some((pack, played)) = check_pack(&root, path, opts, &only, &mut log) {
+            lessons += played;
             packs.push(pack);
         }
     }
@@ -195,8 +204,15 @@ pub fn run(args: &[String]) -> Result<(), String> {
     }
 }
 
-/// Check one pack: files, then each lesson's playthrough, `--cross` and `--solve`. The verified pack, when it reads.
-fn check_pack(root: &Path, path: &Path, opts: Options, log: &mut Log) -> Option<Pack> {
+/// Check one pack: files, then each lesson's playthrough, `--cross` and `--solve`. The verified pack and how many of
+/// its lessons were played, when it reads.
+fn check_pack(
+    root: &Path,
+    path: &Path,
+    opts: Options,
+    only: &Only,
+    log: &mut Log,
+) -> Option<(Pack, usize)> {
     let started = Instant::now();
     log.line(format!("pack {}", path.display()));
     let at = path.display().to_string();
@@ -223,17 +239,29 @@ fn check_pack(root: &Path, path: &Path, opts: Options, log: &mut Log) -> Option<
         .manifest()
         .lessons
         .iter()
+        .filter(|id| only.0.is_empty() || only.0.iter().any(|o| o == id.as_str()))
         .filter_map(|id| pack.bundle(id))
         .collect();
     // Each lesson's playthrough and `--solve` on their own (a session, a player and renders per lesson), in parallel;
     // the report keeps the lessons' order.
     let done = AtomicUsize::new(0);
     let results = parallel(&lessons, opts.jobs, |bundle| {
+        let started = Instant::now();
         let mut l = Log::default();
         let played = play::lesson(bundle, &mut l);
+        let play_s = started.elapsed().as_secs_f64();
         if opts.solve {
             solve::lesson(bundle, &played, opts, &mut l);
         }
+        l.line(format!(
+            "  {}: {play_s:.1} s playthrough{}",
+            bundle.key(),
+            if opts.solve {
+                format!(", {:.1} s solve", started.elapsed().as_secs_f64() - play_s)
+            } else {
+                String::new()
+            }
+        ));
         let n = done.fetch_add(1, Ordering::Relaxed) + 1;
         eprintln!("lesson-check: {n}/{} {}", lessons.len(), bundle.key());
         (l, played)
@@ -251,7 +279,8 @@ fn check_pack(root: &Path, path: &Path, opts: Options, log: &mut Log) -> Option<
         lessons.len(),
         started.elapsed().as_secs_f64()
     ));
-    Some(pack)
+    let count = lessons.len();
+    Some((pack, count))
 }
 
 /// `--jobs` when not given: `ENTH_LESSON_JOBS`, else the machine's parallelism, at most 4 (CI's runners have 4).

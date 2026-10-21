@@ -39,7 +39,7 @@ mod source;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: enth-lesson-tool <command> [args...]
-  check [--cross] [--solve] [--budget N] [--jobs N] [<pack>...]
+  check [--cross] [--solve] [--budget N] [--jobs N] [--lesson ID]... [<pack>...]
                                           every lesson honest: files, the playthrough, --cross, --solve
   coverage [--all] [<pack>...]            every P1 module and Basic-tier parameter taught, a non-patch check per module
   new [--in DIR] <pack> <id>              scaffold a lesson in the authoring layout
