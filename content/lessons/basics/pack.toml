@@ -1,0 +1,58 @@
+# The basics pack (lane C1, R2): sources, the filter and the amplitude envelope, units U0 to U3 of the lesson plan
+# (content/lessons/PLAN.md §2), in the authoring layout of docs/learn.md ("The lesson model (lane LM)"). `cargo xtask
+# pack` (lane LCK) turns it into canonical JSON and a reproducible .enthpack; until then
+# `crates/enth-learn/tests/basics_pack.rs` reads it with this build's reader.
+#
+# Conventions of this pack:
+#   - every patch is the starter (Init) with a few values changed, at master -12 dB for headroom (two oscillators,
+#     noise and drive stay below -10 dBFS); `patches/` is shared by the lessons;
+#   - a lesson is Hear (listen steps, one ear question), Name (a read step of about 80 words), Try (a do step: a goal
+#     checked live, with a sound check), Do (two or three recreate steps, real rounds on a drawn target) and Check (ear
+#     questions), as report 01 §3 and docs/learn.md "The lesson shape" say;
+#   - a recreate step's start is inline (a challenge holds whole patches), written sparse: every parameter not named
+#     is the catalogue default, which is the starter's value.
+
+schema = "enth.pack/1"
+id = "basics"
+version = "0.1.0"
+title = "Synth basics"
+authors = ["enth contributors"]
+covers = ["osc", "noise", "svf", "adsr"]
+# The order the app offers them in (the curriculum's order). Lesson ids are append-only.
+lessons = ["how-a-lesson-works", "waveforms", "octaves-and-intervals", "pulse-width", "two-oscillators", "noise", "hard-sync", "wavetables", "cutoff", "resonance", "filter-modes", "key-tracking", "drive", "attack-and-release", "decay-and-sustain", "velocity"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+# Every Recreate step embeds an `enth.challenge/2` draw (a start patch inline, a drawn target, constraints), scored by
+# the Recreate scorers; some raise the pass mark where sound/1 hears the control weakly (see each lesson). No
+# generated (seed) target, so no `generator`: a seed target cannot be written in TOML today (RandomSpec.amounts needs
+# null), and the pack's rounds are draws.
+[requires]
+lesson = 1
+challenge = 2
+patch = 1
+scorers = ["combined/1", "sound/1", "structure/1", "time/1"]
+
+# The 12-lesson tour (PLAN.md §3, GR2's friend track), played across installed packs (Q1). This pack starts it, so it
+# carries it; 0.1 opens it, outside the count of 12 (Q3). The other packs' lesson ids are proposals for lanes C2 and C3: a lesson
+# whose pack is missing shows as missing.
+[[tracks]]
+id = "tour"
+title = "The tour"
+lessons = [
+  "basics/how-a-lesson-works",
+  "basics/waveforms",
+  "basics/two-oscillators",
+  "basics/noise",
+  "basics/cutoff",
+  "basics/drive",
+  "basics/decay-and-sustain",
+  "shaping/routes-and-depth",
+  "shaping/vibrato",
+  "shaping/glide",
+  "space-and-dynamics/reverb-space",
+  "space-and-dynamics/compressor-level",
+  "space-and-dynamics/macros",
+]

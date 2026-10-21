@@ -1,0 +1,320 @@
+# Lesson 3.2, Decay and sustain [basics · basic · tour] (content/lessons/PLAN.md §5, U3).
+#
+# Hear (organ, pluck and e-piano on a saw at C3 and a sine at C4), a "which one holds?" item → Name → Try ("make a
+# pluck", checked by sustain_db) → two rounds (the pluck's length: sustain to 0 % and a decay of 80 ms or 1 s) → the
+# e-piano (a Do step checked by sustain_db) → two ear questions. PLAN's report: S gates, R is weak (risk 11); measured
+# here, sound/1 hears a sustain level only near 0 %, so the sustain level is checked by sound in Do steps and the rounds
+# draw what sound/1 can hear. Measured on engine 0.3.0, HELD (C3 for 1.5 s): sustain_db reads -80 at 0 % (the floor),
+# -33.2 at 2 %, -25.3 at 5 %, -16.1 at 15 %, -11.7 at 25 %, -8.8 at 35 %, -5.8 at 50 %, -2.8 at 70 %, -0.1 at 100 %.
+
+schema = "enth.lesson/1"
+id = "decay-and-sustain"
+title = "Decay and sustain"
+tier = "basic"
+objective = "Shape a note into an organ, a pluck or an e-piano with the amplitude envelope's decay and sustain."
+teaches = ["adsr.decay", "adsr.sustain"]
+
+# --- Hear: three envelopes on the saw at C3, then on a sine at C4.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Organ"
+patch = "patches/saw-organ.patch.json"
+
+[[steps.examples]]
+label = "Pluck"
+patch = "patches/saw-pluck.patch.json"
+
+[[steps.examples]]
+label = "E-piano"
+patch = "patches/saw-epiano.patch.json"
+
+[[steps.examples]]
+label = "Sine organ"
+patch = "patches/sine-organ.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Sine pluck"
+patch = "patches/sine-pluck.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Sine e-piano"
+patch = "patches/sine-epiano.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which one keeps sounding while the key is held? (organ against pluck.)
+[[steps]]
+id = "which-holds"
+kind = "choose"
+text = "which-holds.md"
+hints = ["The key is held for a second and a half in both. One fades out long before that."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-pluck.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-organ.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["env1.decay", "env1.sustain"]
+
+# --- Try: "make a pluck" from the saw (sustain 70 %). Measured: the start reads sustain_db -2.8 (fails
+# `sustain<-30dB` by 27.2 dB); the witness, sustain 0 %, reads -80 (the floor: passes by 50 dB); 2 % reads -33.2 and
+# passes, 5 % reads -25.3 and fails.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Sustain is on the env1 card. Turn it all the way down.",
+  "With no sustain, the note fades away even while the key is held: a pluck.",
+]
+witness = "patches/saw-sustain-0.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw.patch.json"
+highlight = ["env1.sustain"]
+editable = ["env1.sustain"]
+locked = ["osc1.*", "filter1.*", "env1.attack", "env1.release"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "env1.sustain", cmp = "<", value = "10%" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["sustain<-30dB"]
+
+# --- Do, round 1: a hidden pluck: sustain to 0 % and a decay of 80 ms or 1 s, from the saw (sustain 70 %, decay 300
+# ms). Seed 3 draws 80 ms (the start scores sound 65.6). The pass mark is 95, not 90: sound/1 hears envelope shapes
+# coarsely at HELD (against an 80 ms pluck, every decay from 40 to 600 ms scores 96 or more; a 35 % sustain at any decay
+# scores 94 to 100 against the S70 start), so PLAN's sustain draw {0, 35, 100} would pass at its start, and the rounds
+# draw the pluck's length instead. At 95, against 80 ms: 40 to 600 ms pass (99.5 to 96.0), 1 s does not (91.6).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Does the target hold while the key is down, or die away? If it dies away, its sustain is 0 %.",
+  "Then the decay: does the target die in a short click or ring on for about a second?",
+]
+
+[steps.view]
+highlight = ["env1.decay", "env1.sustain"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [
+  { param = "env1.sustain", set = [0.0] },
+  { param = "env1.decay", set = [80.0, 1000.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.decay", "env1.sustain"]
+locked = ["env1.attack", "env1.release", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Decay and sustain, round 1"
+tags = ["basics", "decay-and-sustain"]
+
+# --- Do, round 2: seed 1 draws 1 s (the start scores 50.2). At 95, against 1 s: about 750 to 1350 ms pass (800 ms 96.2,
+# 1.2 s 97.3, 1.3 s 95.4); 600 ms (92.0), 1.5 s (90.2) and 80 ms (79.6) do not.
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Does the target hold while the key is down, or die away? If it dies away, its sustain is 0 %.",
+  "Then the decay: does the target die in a short click or ring on for about a second?",
+]
+
+[steps.view]
+highlight = ["env1.decay", "env1.sustain"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [
+  { param = "env1.sustain", set = [0.0] },
+  { param = "env1.decay", set = [80.0, 1000.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.decay", "env1.sustain"]
+locked = ["env1.attack", "env1.release", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Decay and sustain, round 2"
+tags = ["basics", "decay-and-sustain"]
+
+# --- Do: the e-piano, from the organ (sustain 100 %). Measured: the start reads sustain_db -0.1 (fails
+# `sustain in [-14dB, -6dB]` by 5.9 dB); the witness, decay 600 ms and sustain 35 %, reads -8.8 (passes by 2.8 dB);
+# 25 % reads -11.7 and passes, 15 % (-16.1) and 50 % (-5.8) fail. The touched predicate asks that the player turned
+# the sustain at all (a fifth of its range), as PLAN's P check does.
+[[steps]]
+id = "e-piano"
+kind = "do"
+text = "e-piano.md"
+hints = [
+  "Bring the sustain down from 100 %: the note should still hold, but quietly.",
+  "About a third, 25 to 40 %, gives the e-piano's quiet hold.",
+]
+witness = "patches/saw-epiano.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-organ.patch.json"
+highlight = ["env1.decay", "env1.sustain"]
+editable = ["env1.decay", "env1.sustain"]
+locked = ["osc1.*", "filter1.*", "env1.attack", "env1.release"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "touched", knob = "env1.sustain", min_span_pct = 20 }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["sustain in [-14dB, -6dB]"]
+
+# --- Check: organ or pluck (on the sine at C4), then which decays longer (80 ms against 1 s, both with no sustain).
+[[steps]]
+id = "check-pluck"
+kind = "choose"
+text = "check-pluck.md"
+hints = ["A pluck dies away while the key is still held."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/sine-pluck.patch.json"
+transpose = 12
+
+[[steps.options]]
+label = "B"
+patch = "patches/sine-organ.patch.json"
+transpose = 12
+
+[[steps]]
+id = "check-decay"
+kind = "choose"
+text = "check-decay.md"
+hints = ["Both start the same way; listen to how long each one rings."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-decay-80.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-decay-1000.patch.json"

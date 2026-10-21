@@ -1,0 +1,199 @@
+# Lesson 0.1, How a lesson works [basics · basic] (content/lessons/PLAN.md §5, U0). It opens the tour (Q3, the track's
+# first entry, outside the count of 12).
+#
+# Hear (two loud/quiet pairs with level matching off, then the same pairs matched) → Name → Try ("quieter than this",
+# checked by the peak level) → one demo round (the point is Target, Mine, Submit and the rings, not mastery) → one ear
+# question ("which is a different patch?", level-matched). Measured on engine 0.3.0, HELD (C3 for 1.5 s).
+
+schema = "enth.lesson/1"
+id = "how-a-lesson-works"
+title = "How a lesson works"
+tier = "basic"
+objective = "Play a lesson's steps and a round, and judge sounds at matched loudness rather than by volume."
+teaches = ["master.level"]
+
+# --- Hear: a saw at C4 and the pad at C3, each at master 0 dB and -12 dB, with level matching off (Q7's switch): the
+# louder one tends to sound better.
+[[steps]]
+id = "hear-loud"
+kind = "listen"
+text = "hear-loud.md"
+
+[[steps.examples]]
+label = "Saw, A"
+patch = "patches/saw-master-0.patch.json"
+transpose = 12
+level_match = false
+
+[[steps.examples]]
+label = "Saw, B"
+patch = "patches/saw.patch.json"
+transpose = 12
+level_match = false
+
+[[steps.examples]]
+label = "Pad, A"
+patch = "patches/pad-master-0.patch.json"
+level_match = false
+
+[[steps.examples]]
+label = "Pad, B"
+patch = "patches/pad.patch.json"
+level_match = false
+
+# --- Hear: the same pairs, level-matched (the default): each pair now sounds the same.
+[[steps]]
+id = "hear-matched"
+kind = "listen"
+text = "hear-matched.md"
+
+[[steps.examples]]
+label = "Saw, A"
+patch = "patches/saw-master-0.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Saw, B"
+patch = "patches/saw.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, A"
+patch = "patches/pad-master-0.patch.json"
+
+[[steps.examples]]
+label = "Pad, B"
+patch = "patches/pad.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["master.level"]
+
+# --- Try: "quieter than this" from the saw at 0 dB. Measured: the start peaks at -2.7 dBFS (fails `peak<-20dBFS` by
+# 17.3 dB); the witness, master -24 dB, peaks at -26.7 dBFS (passes by 6.7 dB). The touched predicate is PLAN's
+# "span at least 6 dB": 13 % of the 48 dB range.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The master level is in the header, at the right. Drag it down.",
+  "About -18 dB or lower is quiet enough.",
+]
+witness = "patches/saw-master-24.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-master-0.patch.json"
+highlight = ["master.level"]
+editable = ["master.level"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "touched", knob = "master.level", min_span_pct = 13 }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["peak<-20dBFS"]
+
+# --- Do: one demo round. The target is the same saw with a sine wave (a one-value draw, so every seed gives it): the
+# start scores sound 17.9 and does not pass, the target 100. PLAN's draw was {saw, sine} with the saw start, which is
+# the same round.
+[[steps]]
+id = "round"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "The target is softer and rounder than yours.",
+  "Try the other waves on the oscillator card and compare each with the target.",
+]
+
+[steps.view]
+highlight = ["osc1.wave"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "osc1.wave", set = ["sine"] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.wave"]
+locked = ["filter1.*", "env1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "How a lesson works, demo round"
+tags = ["basics", "how-a-lesson-works"]
+
+# --- Check: "same patch or different?", level-matched: A and C are the same saw at 0 and -12 dB (sound/1 scores them
+# 100 against each other), B has its cutoff at 1 kHz.
+[[steps]]
+id = "check-different"
+kind = "choose"
+text = "check-different.md"
+hints = ["The clips are matched in loudness, so a volume change makes no difference here. Listen for the tone."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-master-0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-cutoff-1k.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/saw.patch.json"

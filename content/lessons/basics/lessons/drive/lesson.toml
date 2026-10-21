@@ -1,0 +1,345 @@
+# Lesson 2.5, Drive [basics · intermediate · tour] (content/lessons/PLAN.md §5, U2). Written after lane fu1-drv's
+# drive fix merged (engine 0.3.0), as PLAN asks.
+#
+# Hear (0, 12 and 24 dB on a sine and on a saw, level-matched), a "which one is rougher?" item → Name → Try ("grittier
+# than this", checked by brightness on the sine) → three rounds (drive drawn from 12 and 24 dB, twice on the sine, once
+# on the saw) → two ear questions. The filter stays at PLAN's 1.5 kHz and 20 % resonance, locked. Measured on engine
+# 0.3.0, HELD (C3 for 1.5 s): drive on the sine raises the spectral centroid from 131.8 Hz to 295.8 Hz (12 dB) and
+# 530.7 Hz (24 dB); on the saw it lowers it slightly (800, 715, 702 Hz), so the sound check runs on the sine.
+
+schema = "enth.lesson/1"
+id = "drive"
+title = "Drive"
+tier = "intermediate"
+objective = "Hear the grit drive adds, set it by ear, and tell a driven sound from a clean one."
+teaches = ["svf.drive"]
+
+# --- Hear: drive at 0, 12 and 24 dB on a sine, then on a saw (level-matched: drive adds grit, not loudness).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Sine, clean"
+patch = "patches/sine-drive-0.patch.json"
+
+[[steps.examples]]
+label = "Sine, 12 dB"
+patch = "patches/sine-drive-12.patch.json"
+
+[[steps.examples]]
+label = "Sine, 24 dB"
+patch = "patches/sine-drive-24.patch.json"
+
+[[steps.examples]]
+label = "Saw, clean"
+patch = "patches/saw-drive-0.patch.json"
+
+[[steps.examples]]
+label = "Saw, 12 dB"
+patch = "patches/saw-drive-12.patch.json"
+
+[[steps.examples]]
+label = "Saw, 24 dB"
+patch = "patches/saw-drive-24.patch.json"
+
+# --- Hear's ear question: which one is rougher? (the sine clean against driven at 24 dB.)
+[[steps]]
+id = "which-rougher"
+kind = "choose"
+text = "which-rougher.md"
+hints = ["One is a pure, smooth tone; the other has a buzzy edge."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/sine-drive-0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sine-drive-24.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["filter1.drive"]
+
+# --- Try: "grittier than this" from the clean sine. Measured: the start's spectral centroid is 131.8 Hz (fails
+# `brightness>200Hz` by 68 Hz); the witness, drive 12 dB, reads 295.8 Hz (passes by 96 Hz); 24 dB reads 530.7 Hz. The
+# patch predicate (PLAN's `filter1.drive>10`) keeps it about the drive; the oscillator is locked (a saw would pass the
+# sound check alone).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drive is on the filter card. Turn it up.",
+  "Past about 10 dB the pure sine grows a clear buzzy edge.",
+]
+witness = "patches/sine-drive-12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sine-drive-0.patch.json"
+highlight = ["filter1.drive"]
+editable = ["filter1.drive"]
+locked = ["osc1.*", "filter1.cutoff", "filter1.resonance", "filter1.mode"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "filter1.drive", cmp = ">", value = "10dB" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness>200Hz"]
+
+# --- Do, round 1: a hidden drive on the sine, drawn from 12 and 24 dB (PLAN's {0, 12, 24}, the 0 dB start left out).
+# Seed 4 draws 24 dB (the start scores sound 23.7). sound/1 hears drive well at the default pass mark: on the sine,
+# against 24 dB, 12 dB scores 47.7 and 18 dB 72.5; against 12 dB, 9 dB scores 84.9 and 15 dB 85.6.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target pure, slightly rough, or plainly gritty? More grit means more drive.",
+  "Turn the drive up in steps and compare: the level stays the same, the edge grows.",
+]
+
+[steps.view]
+highlight = ["filter1.drive"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "filter1.drive", set = [12.0, 24.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sine, drive 0 dB", description = "A sine through a 1.5 kHz low-pass at 20 % resonance, drive 0 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "sine" } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1500.0, resonance = 20.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.drive"]
+locked = ["filter1.cutoff", "filter1.resonance", "filter1.mode", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Drive, round 1"
+tags = ["basics", "drive"]
+
+# --- Do, round 2: the sine again, seed 1: 12 dB (the start scores 45.3).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target pure, slightly rough, or plainly gritty? More grit means more drive.",
+  "Turn the drive up in steps and compare: the level stays the same, the edge grows.",
+]
+
+[steps.view]
+highlight = ["filter1.drive"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.drive", set = [12.0, 24.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sine, drive 0 dB", description = "A sine through a 1.5 kHz low-pass at 20 % resonance, drive 0 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "sine" } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1500.0, resonance = 20.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.drive"]
+locked = ["filter1.cutoff", "filter1.resonance", "filter1.mode", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Drive, round 2"
+tags = ["basics", "drive"]
+
+# --- Do, round 3: on the saw, where drive is subtler. Seed 4 draws 24 dB (the start scores 52.2; 12 dB scores 71.9, 18
+# dB 88.9).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "On a saw, drive makes the sound denser and rougher rather than brighter.",
+  "Compare the edges of the two sounds, not their loudness.",
+]
+
+[steps.view]
+highlight = ["filter1.drive"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "filter1.drive", set = [12.0, 24.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, drive 0 dB", description = "A saw through a 1.5 kHz low-pass at 20 % resonance, drive 0 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1500.0, resonance = 20.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.drive"]
+locked = ["filter1.cutoff", "filter1.resonance", "filter1.mode", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Drive, round 3"
+tags = ["basics", "drive"]
+
+# --- Check: "which has drive?" on the saw (PLAN: needed; clean against 24 dB), then which is driven harder on the
+# sine (12 against 24 dB).
+[[steps]]
+id = "check-saw"
+kind = "choose"
+text = "check-saw.md"
+hints = ["The driven saw is denser and rougher; the clean one smoother."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-drive-24.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-drive-0.patch.json"
+
+[[steps]]
+id = "check-harder"
+kind = "choose"
+text = "check-harder.md"
+hints = ["More drive, more buzz on top of the tone."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/sine-drive-12.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sine-drive-24.patch.json"
