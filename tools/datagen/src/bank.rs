@@ -20,18 +20,23 @@
 //!    Generator v1, template 0 (the starter superset). Level 1 is left out: it has only 14 distinct targets and all
 //!    are GR3 targets.
 //! 3. **Filters each candidate, before rendering**, against the lists: a seed inside a `seed-range`, a short code on
-//!    a `code` line, a target `fingerprint`, and a **near duplicate of a GR3 target** (DS's rule 3, against every
-//!    generator target on the list, test and dev, at any level: the same phrase, the same enabled modules, the same
-//!    routes with depths under 5 points apart, and every randomized value within its just-noticeable step). Then
-//!    duplicates of an earlier bank entry (same fingerprint) are dropped. Each skip is counted in the manifest.
+//!    a `code` line, a target `fingerprint`, and a **near duplicate of a GR3 target** in parameter space (DS's rule 3,
+//!    against every generator target on the list, test and dev, at any level and any phrase, since a bank entry is
+//!    rendered at its own reference performance: the same enabled modules, the same routes with depths under 5 points
+//!    apart, and every randomized value within its just-noticeable step). Then duplicates of an earlier bank entry
+//!    (same fingerprint) are dropped. Each skip is counted in the manifest.
 //! 4. **Renders** each survivor at the bank's reference performance (C3, velocity 0.8, held 1 s, 2 s at 48 kHz), drops
 //!    the silent ones (below −70 LUFS: nothing to match; never a filter by duration), measures the pitch and embeds
-//!    it (`nearest::embed`), on a rayon pool of `--threads` workers. Results are taken in candidate order, so the
-//!    bank is the same bytes for any thread count.
+//!    it (`nearest::embed`), on a rayon pool of `--threads` workers, and drops a **near render of a GR3 target**
+//!    (the README's rule 3, in embedding space): within [`NEAR_RENDER_NEPERS`] of the embedding of any GR3 synth
+//!    target, test or dev, rendered the same way: every listed generator code and every patch file `synth.toml`
+//!    names, the test-half presets, the dev anchors and the owner's G1 sounds once extracted. Results are taken in
+//!    candidate order, so the bank is the same bytes for any thread count.
 //! 5. **Asserts** the finished bank once more, independently: every entry regenerates to its fingerprint prefix, no
-//!    seed is in a listed range, no code or fingerprint is listed, no two entries share a fingerprint, the stream key
-//!    matches no listed stream. The bank holds generator specs only, so the preset, path, audio, Freesound and
-//!    degradation entries cannot match; the manifest says so.
+//!    seed is in a listed range, no code or fingerprint is listed, no entry is a near duplicate or a near render of a
+//!    GR3 target, no two entries share a fingerprint, the stream key matches no listed stream. The bank holds
+//!    generator specs only, so the preset, path, audio, Freesound and degradation entries cannot match; the manifest
+//!    says so.
 //! 6. **Writes** the bank (`nearest::Bank::to_bytes`) and a manifest (`enth.bank-manifest/1`, JSON) beside it.
 //!
 //! Like `enth-lesson-tool` this is tooling, exempt from the layer rules: it reads files, reads the clock (for the
@@ -58,8 +63,8 @@ use enth_dsp::util::rng::{derive, fnv1a64};
 use enth_patch::{Op, Patch, apply, file};
 use enth_render::{Performance, RenderSpec, render};
 use enth_solver::nearest::{
-    BANK_FORMAT, Bank, BankEntry, BankHeader, EMBEDDING_ID, EMBEDDING_VERSION, ENTRY_LEN, REF_NOTE,
-    embed, pitch_cents, reference_hz,
+    BANK_FORMAT, Bank, BankEntry, BankHeader, EMBEDDING_ID, EMBEDDING_VERSION, ENTRY_LEN, Embedding,
+    REF_NOTE, embed, pitch_cents, reference_hz,
 };
 use enth_solver::search::{MetricTarget, Objective};
 use rayon::prelude::*;
@@ -81,6 +86,10 @@ const RENDER_SEED: u64 = enth_render::DEFAULT_SEED;
 const CHUNK: usize = 512;
 /// Seeds are cut to this many bits, so every spec has a short code.
 const SEED_BITS: u32 = 40;
+/// The README's rule 3 in embedding space: an entry within this many nepers of a GR3 target's embedding (both
+/// rendered at the bank's reference performance) is a near render and is skipped. Two quantisation steps, about
+/// 1 dB per band on average: about one just-noticeable step.
+const NEAR_RENDER_NEPERS: f64 = 0.125;
 /// The exclusion lists, in the order their bytes are hashed.
 const LISTS: [&str; 3] = [
     "exclude-synth.txt",
@@ -237,25 +246,86 @@ impl Exclusions {
         })
     }
 
-    /// The GR3 generator targets on the list (test and dev), regenerated from their codes.
-    fn targets(&self) -> Result<Vec<Generated>, String> {
+    /// The GR3 generator targets on the list (test and dev), regenerated from their codes, with their codes.
+    fn targets(&self) -> Result<Vec<(String, Generated)>, String> {
         self.codes
             .iter()
             .map(|c| {
                 let code = ChallengeCode::decode(c).map_err(|e| format!("listed code {c}: {e}"))?;
-                random::target(code.spec()).map_err(|e| format!("listed code {c}: {e}"))
+                let g = random::target(code.spec()).map_err(|e| format!("listed code {c}: {e}"))?;
+                Ok((c.clone(), g))
             })
             .collect()
     }
 }
 
-/// DS's near-duplicate rule (content/gr3/synth.toml, selection rule 3), applied across levels: the same phrase, the
-/// same enabled modules, the same routes with depths under one route step apart, and every value either target
-/// randomized within its just-noticeable step.
-fn near_duplicate(a: &Generated, b: &Generated) -> bool {
-    if a.phrase != b.phrase {
-        return false;
+/// A GR3 synth target embedded at the bank's reference performance (the README's rule 3 in embedding space).
+struct Gr3Render {
+    name: String,
+    embedding: Embedding,
+}
+
+/// What the embedding-space rule compares with: every listed generator target and every patch file `synth.toml`
+/// names (test and dev), embedded at the bank's reference performance, in a fixed order; and the files named but not
+/// written yet (the owner's G1 placeholders), which the manifest lists.
+fn gr3_renders(
+    gr3: &Path,
+    targets: &[(String, Generated)],
+    pool: &rayon::ThreadPool,
+) -> Result<(Vec<Gr3Render>, Vec<String>), String> {
+    let toml = gr3.join("synth.toml");
+    let text =
+        fs::read_to_string(&toml).map_err(|e| format!("cannot read {}: {e}", toml.display()))?;
+    let named: BTreeSet<&str> = text
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("file = \""))
+        .filter_map(|rest| rest.split_once('"').map(|(f, _)| f))
+        .collect();
+    let mut patches: Vec<(String, Patch)> = targets
+        .iter()
+        .map(|(code, g)| (code.clone(), g.patch.clone()))
+        .collect();
+    let mut missing = Vec::new();
+    for f in named {
+        let path = gr3.join("../..").join(f);
+        match fs::read_to_string(&path) {
+            Ok(text) => patches.push((
+                f.to_owned(),
+                file::load(&text)
+                    .map_err(|e| format!("{f} does not load: {e}"))?
+                    .patch,
+            )),
+            Err(_) => missing.push(f.to_owned()),
+        }
     }
+    let renders = pool.install(|| {
+        patches
+            .par_iter()
+            .filter_map(|(name, p)| {
+                embedding_of(p).map(|(embedding, _)| Gr3Render {
+                    name: name.clone(),
+                    embedding,
+                })
+            })
+            .collect()
+    });
+    Ok((renders, missing))
+}
+
+/// The GR3 render an embedding is a near render of, with the distance.
+fn near_render<'a>(e: &Embedding, renders: &'a [Gr3Render]) -> Option<(&'a str, f64)> {
+    renders.iter().find_map(|r| {
+        e.distance(&r.embedding)
+            .filter(|d| *d <= NEAR_RENDER_NEPERS)
+            .map(|d| (r.name.as_str(), d))
+    })
+}
+
+/// DS's near-duplicate rule (content/gr3/synth.toml, selection rule 3), applied across levels and phrases (a bank
+/// entry is rendered at its own reference performance, never the target's phrase): the same enabled modules, the
+/// same routes with depths under one route step apart, and every value either target randomized within its
+/// just-noticeable step.
+fn near_duplicate(a: &Generated, b: &Generated) -> bool {
     let enabled = |p: &Patch| -> Vec<(String, bool)> {
         p.modules()
             .map(|(_, m)| (m.id.as_str().to_owned(), m.enabled))
@@ -317,6 +387,7 @@ enum Skip {
     Code,
     Fingerprint,
     NearDuplicate,
+    NearRender,
     Duplicate,
     Silent,
     Generate,
@@ -329,6 +400,7 @@ impl Skip {
             Skip::Code => "excluded_code",
             Skip::Fingerprint => "excluded_fingerprint",
             Skip::NearDuplicate => "near_duplicate_of_gr3_target",
+            Skip::NearRender => "near_render_of_gr3_target",
             Skip::Duplicate => "duplicate_of_earlier_entry",
             Skip::Silent => "silent",
             Skip::Generate => "does_not_generate",
@@ -336,7 +408,11 @@ impl Skip {
     }
 }
 
-fn screen(i: u64, ex: &Exclusions, gr3: &[Generated]) -> Result<(RandomSpec, Generated), Skip> {
+fn screen(
+    i: u64,
+    ex: &Exclusions,
+    gr3: &[(String, Generated)],
+) -> Result<(RandomSpec, Generated), Skip> {
     let spec = candidate_spec(i);
     if ex.seed_listed(spec.seed) {
         return Err(Skip::SeedRange);
@@ -350,7 +426,7 @@ fn screen(i: u64, ex: &Exclusions, gr3: &[Generated]) -> Result<(RandomSpec, Gen
     if ex.fingerprints.contains(&g.fingerprint.to_hex()) {
         return Err(Skip::Fingerprint);
     }
-    if gr3.iter().any(|t| near_duplicate(&g, t)) {
+    if gr3.iter().any(|(_, t)| near_duplicate(&g, t)) {
         return Err(Skip::NearDuplicate);
     }
     Ok((spec, g))
@@ -367,10 +443,10 @@ fn feature_cfg() -> FeatureCfg {
     }
 }
 
-/// Render and embed one bank patch; `None` when it is silent.
-fn measure(spec: &RandomSpec, g: &Generated) -> Option<BankEntry> {
+/// Render a patch at the bank's reference performance and embed it, with its pitch offset; `None` when it is silent.
+fn embedding_of(patch: &Patch) -> Option<(Embedding, i16)> {
     let perf = reference_perf();
-    let out = render(&g.patch, &perf, &RenderSpec::new(SAMPLE_RATE, RENDER_SEED)).ok()?;
+    let out = render(patch, &perf, &RenderSpec::new(SAMPLE_RATE, RENDER_SEED)).ok()?;
     let mid = out.mid();
     let cfg = feature_cfg();
     let features = FeatureExtractor::new(cfg).extract(&mid);
@@ -380,19 +456,26 @@ fn measure(spec: &RandomSpec, g: &Generated) -> Option<BankEntry> {
     let desc = Describer::new(f64::from(SAMPLE_RATE))
         .describe_some(&mid, enth_solver::note_timing(&perf), Want::CORE)
         .ok();
+    let embedding = embed(
+        &features,
+        &cfg,
+        0.0,
+        reference_hz(desc.as_ref()),
+        f64::from(SAMPLE_RATE) / 2.0,
+    );
+    Some((embedding, pitch_cents(desc.as_ref(), REF_NOTE)))
+}
+
+/// Render and embed one bank patch; `None` when it is silent.
+fn measure(spec: &RandomSpec, g: &Generated) -> Option<BankEntry> {
+    let (embedding, pitch_cents) = embedding_of(&g.patch)?;
     Some(BankEntry {
         seed: spec.seed,
         difficulty: spec.difficulty,
         musical: spec.musical,
-        pitch_cents: pitch_cents(desc.as_ref(), REF_NOTE),
+        pitch_cents,
         fingerprint_prefix: g.fingerprint.prefix().0,
-        embedding: embed(
-            &features,
-            &cfg,
-            0.0,
-            reference_hz(desc.as_ref()),
-            f64::from(SAMPLE_RATE) / 2.0,
-        ),
+        embedding,
     })
 }
 
@@ -434,6 +517,9 @@ struct Manifest {
     candidates_tried: u64,
     skipped: BTreeMap<&'static str, usize>,
     gr3_targets_checked: usize,
+    gr3_renders_checked: usize,
+    gr3_files_not_written: Vec<String>,
+    near_render_nepers: f64,
     exclusions: ExclusionsOut,
     asserted: Vec<&'static str>,
     threads: usize,
@@ -481,9 +567,11 @@ fn build(args: &[String]) -> Result<(), String> {
     }
     let targets = ex.targets()?;
     let pool = pool(threads)?;
+    let (renders, not_written) = gr3_renders(&gr3, &targets, &pool)?;
     eprintln!(
-        "bank: {entries} entries, {threads} threads, {} GR3 targets to stay away from",
-        targets.len()
+        "bank: {entries} entries, {threads} threads, {} GR3 targets and {} GR3 renders to stay away from",
+        targets.len(),
+        renders.len()
     );
 
     let mut bank: Vec<BankEntry> = Vec::with_capacity(entries);
@@ -515,6 +603,9 @@ fn build(args: &[String]) -> Result<(), String> {
             pool.install(|| fresh.par_iter().map(|(s, g)| measure(s, g)).collect());
         for m in measured {
             match m {
+                Some(e) if near_render(&e.embedding, &renders).is_some() => {
+                    *skipped.entry(Skip::NearRender).or_default() += 1;
+                }
                 Some(e) if bank.len() < entries => bank.push(e),
                 Some(_) => {}
                 None => *skipped.entry(Skip::Silent).or_default() += 1,
@@ -527,7 +618,7 @@ fn build(args: &[String]) -> Result<(), String> {
         );
     }
     let bank = Bank::new(header(&ex), bank);
-    assert_bank(&bank, &ex, &pool)?;
+    assert_bank(&bank, &ex, &targets, &renders, &pool)?;
     let bytes = bank.to_bytes();
     if let Some(dir) = out.parent() {
         fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -561,6 +652,9 @@ fn build(args: &[String]) -> Result<(), String> {
         candidates_tried: next,
         skipped: skipped.iter().map(|(k, v)| (k.name(), *v)).collect(),
         gr3_targets_checked: targets.len(),
+        gr3_renders_checked: renders.len(),
+        gr3_files_not_written: not_written,
+        near_render_nepers: NEAR_RENDER_NEPERS,
         exclusions: ExclusionsOut {
             sha256: hex(&ex.sha256),
             files: ex.file_sha256.iter().cloned().collect(),
@@ -586,11 +680,13 @@ fn build(args: &[String]) -> Result<(), String> {
 }
 
 /// What [`assert_bank`] checks, for the manifest.
-const ASSERTED: [&str; 7] = [
+const ASSERTED: [&str; 9] = [
     "every entry regenerates to its fingerprint prefix (generator v1, template 0)",
     "no seed inside a listed seed-range",
     "no short code on a code line",
     "no target fingerprint on a fingerprint line",
+    "no entry is a near duplicate of a listed GR3 generator target (DS's rule 3, any level, any phrase)",
+    "no entry's embedding is within near_render_nepers of a GR3 synth target's, test or dev, presets included (README rule 3)",
     "no two entries share a fingerprint",
     "the stream key matches no listed stream",
     "generator specs only: no preset, file, path, audio, Freesound or degradation item can be in the bank",
@@ -598,7 +694,13 @@ const ASSERTED: [&str; 7] = [
 
 /// The independent pass over a finished bank (see the [module docs](self), step 5). Fails on the first violation,
 /// naming the entry.
-fn assert_bank(bank: &Bank, ex: &Exclusions, pool: &rayon::ThreadPool) -> Result<(), String> {
+fn assert_bank(
+    bank: &Bank,
+    ex: &Exclusions,
+    targets: &[(String, Generated)],
+    renders: &[Gr3Render],
+    pool: &rayon::ThreadPool,
+) -> Result<(), String> {
     if ex.stream_listed(STREAM) {
         return Err(format!("the bank's stream {STREAM} is listed"));
     }
@@ -627,6 +729,16 @@ fn assert_bank(bank: &Bank, ex: &Exclusions, pool: &rayon::ThreadPool) -> Result
                     return Err(format!(
                         "entry {i}: fingerprint {} is listed",
                         g.fingerprint.to_hex()
+                    ));
+                }
+                if let Some((code, _)) = targets.iter().find(|(_, t)| near_duplicate(&g, t)) {
+                    return Err(format!(
+                        "entry {i}: a near duplicate of GR3 target {code}"
+                    ));
+                }
+                if let Some((name, d)) = near_render(&e.embedding, renders) {
+                    return Err(format!(
+                        "entry {i}: a near render of GR3 target {name} ({d:.3} nepers)"
                     ));
                 }
                 Ok(g.fingerprint.0)
@@ -659,7 +771,10 @@ fn check(path: &str, args: &[String]) -> Result<(), String> {
             hex(&ex.sha256)
         ));
     }
-    assert_bank(&bank, &ex, &pool(threads)?)?;
+    let pool = pool(threads)?;
+    let targets = ex.targets()?;
+    let (renders, _) = gr3_renders(&gr3, &targets, &pool)?;
+    assert_bank(&bank, &ex, &targets, &renders, &pool)?;
     println!(
         "{path}: {} entries, sha256 {}, every assertion holds",
         bank.len(),
@@ -918,4 +1033,68 @@ fn probe(path: &str, args: &[String]) -> Result<(), String> {
         rows.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gr3() -> PathBuf {
+        workspace().join("content/gr3")
+    }
+
+    /// F1s should-fix 7: the near-duplicate rule ignores the phrase (a bank entry plays its own reference
+    /// performance), and `assert_bank` re-checks it and the embedding-space rule on a finished bank.
+    #[test]
+    fn near_duplicates_and_near_renders_are_refused_by_the_check_too() {
+        let ex = read_exclusions(&gr3()).unwrap();
+        let targets = ex.targets().unwrap();
+        let (code, t) = targets
+            .iter()
+            .find(|(_, t)| t.level >= 2)
+            .expect("a listed target above level 1");
+        let mut other_phrase = t.clone();
+        other_phrase.phrase = enth_challenge::model::PhraseId(other_phrase.phrase.0 % 3 + 1);
+        assert_ne!(other_phrase.phrase, t.phrase);
+        assert!(near_duplicate(&other_phrase, t), "{code}: the phrase is not a reason");
+
+        // The bank's own stream holds near duplicates of GR3 targets (46 of the first 20,096 candidates): the first
+        // one, put in a bank by hand, is refused by the independent check.
+        let pool = pool(2).unwrap();
+        let (spec, _) = (0..5_000u64)
+            .map(candidate_spec)
+            .find_map(|spec| {
+                let g = random::target(&spec).ok()?;
+                let listed = ex.seed_listed(spec.seed)
+                    || ex.fingerprints.contains(&g.fingerprint.to_hex());
+                (!listed && targets.iter().any(|(_, t)| near_duplicate(&g, t))).then_some((spec, g))
+            })
+            .expect("a near duplicate in the first 5,000 candidates");
+        let g = random::target(&spec).unwrap();
+        let entry = |codes: u8| BankEntry {
+            seed: spec.seed,
+            difficulty: spec.difficulty,
+            musical: spec.musical,
+            pitch_cents: 0,
+            fingerprint_prefix: g.fingerprint.prefix().0,
+            embedding: Embedding { codes: [codes; enth_solver::nearest::DIMS] },
+        };
+        let bank = Bank::new(header(&ex), vec![entry(60)]);
+        let err = assert_bank(&bank, &ex, &targets, &[], &pool).unwrap_err();
+        assert!(err.contains("near duplicate of GR3 target"), "{err}");
+
+        // A near render: an entry whose embedding is within the rule's radius of a GR3 render's.
+        let far = Bank::new(header(&ex), vec![entry(60)]);
+        let renders = [Gr3Render {
+            name: "content/gr3/presets/x.patch.json".to_owned(),
+            embedding: Embedding { codes: [62; enth_solver::nearest::DIMS] },
+        }];
+        let err = assert_bank(&far, &ex, &[], &renders, &pool).unwrap_err();
+        assert!(err.contains("near render of GR3 target content/gr3/presets/x"), "{err}");
+        let clear = [Gr3Render {
+            name: "y".to_owned(),
+            embedding: Embedding { codes: [63; enth_solver::nearest::DIMS] },
+        }];
+        assert!(assert_bank(&far, &ex, &[], &clear, &pool).is_ok(), "3 steps apart is not near");
+    }
 }
