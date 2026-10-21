@@ -21,7 +21,7 @@
 //! | `dirty-flag` | an editor-only patch edit marks the project dirty (`IsProjectDirty`; fork patch 6), and no edit leaves it clean |
 //! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
 //! | `round` | (lane SKR) a Recreate round through the editor's Recreate bar (real clicks), the transport stopped: Start prepares the target, Target ▶ and Mine ▶ sound on the track's meter, a submit is scored, End removes the round and writes the round log |
-//! | `lesson` | (lane SKL, on a bundle built with the `learn` feature) the bundled example lesson through the Learn panel (real clicks), the transport stopped: Start, an example sounds on the track's meter, Next, Show me passes the Do step (its sound check rendered on the worker) and the progress file records it, the project saved mid-lesson; reopened in a new process, the lesson resumes at its step and moves on |
+//! | `lesson` | (lane SKL; on the default bundle since lane LFU turned the `learn` feature on by default) the tour's first lesson from the bundled `basics` pack through the Learn view (real clicks), the transport stopped: Start, an example sounds on the track's meter, Next to the Try step, Show me passes it (its sound check rendered on the worker) and the progress file records it, the project saved mid-lesson; reopened in a new process, the lesson resumes at its step and moves on |
 //! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save, each sound named and typed after its track (not "Init") |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
@@ -296,8 +296,6 @@ struct Sandbox {
     plugin_name: String,
     /// The bundles the scenarios load (REAPER's plugin path).
     bundled: PathBuf,
-    /// The bundles built with the `learn` feature, for the `lesson` scenario (lane SKL); `None` when there are none.
-    learn_bundled: Option<PathBuf>,
     reaper: PathBuf,
     home: PathBuf,
     out: PathBuf,
@@ -406,31 +404,12 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     )?;
 
     let work = meta.target_directory.join("reaper-test");
-    let wants_lesson =
-        options.scenarios.is_empty() || options.scenarios.contains(&Scenario::Lesson);
-    // The `lesson` scenario (lane SKL) runs on a bundle built with the `learn` feature: bundled first and copied aside,
-    // because both builds write `target/bundled/<package>.*`; the default bundle is built after it.
-    let mut learn_bundled = None;
+    // Every scenario, `lesson` included, runs on the default bundle: the `learn` feature is on by default (lane LFU),
+    // so the separate `learn` build lane SKL needed is gone.
     if options.build && options.bundle_dir.is_none() {
         let mut build_args = vec![package.to_owned(), "--locked".to_owned()];
         if options.release {
             build_args.push("--release".to_owned());
-        }
-        if wants_lesson {
-            let mut learn_args = build_args.clone();
-            learn_args.extend(["--features".to_owned(), "learn".to_owned()]);
-            bundle::bundle(&learn_args)?;
-            let from = bundle::bundled_dir()?;
-            let to = work.join("bundled-learn");
-            if to.exists() {
-                std::fs::remove_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
-            }
-            std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
-            for format in &options.formats {
-                let name = format!("{package}.{}", format.tag());
-                bundle::copy_tree(&from.join(&name), &to.join(&name))?;
-            }
-            learn_bundled = Some(to);
         }
         bundle::bundle(&build_args)?;
     }
@@ -449,16 +428,6 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
             ));
         }
     }
-    // Prebuilt bundles: the `learn` ones are expected in `<bundle dir>/learn/`; without them `lesson` is skipped (info).
-    if learn_bundled.is_none() && options.bundle_dir.is_some() {
-        let dir = bundled.join("learn");
-        let present = options
-            .formats
-            .iter()
-            .all(|f| dir.join(format!("{package}.{}", f.tag())).exists());
-        learn_bundled = present.then_some(dir);
-    }
-
     let mut scenarios: Vec<Scenario> = if options.scenarios.is_empty() {
         Scenario::PRODUCT.to_vec()
     } else {
@@ -479,7 +448,6 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
     let sandbox = Sandbox {
         plugin_name: options.plugin_name.clone(),
         bundled: bundled.clone(),
-        learn_bundled,
         reaper,
         home: work.join("home"),
         out: work.join("out"),
@@ -730,21 +698,13 @@ fn run_scenario(
     Ok(())
 }
 
-/// `lesson` (lane SKL, F2l): REAPER's plugin path points at the `learn` bundles for the two launches (`play`, then
-/// `reload` in a new process), with the Learn and Packs folders (`ENTH_LEARN_DIR`, `ENTH_PACKS_DIR`) and the crash
-/// folder in the results, so the owner's Documents are never touched; then back at the default bundles.
-/// `xtask/reaper/lesson.lua` clicks the Learn panel and makes the checks.
+/// `lesson` (lane SKL, F2l; on the default bundles since lane LFU): two launches (`play`, then `reload` in a new
+/// process), with the Learn and Packs folders (`ENTH_LEARN_DIR`, `ENTH_PACKS_DIR`) and the crash folder in the
+/// results, so the owner's Documents are never touched. `xtask/reaper/lesson.lua` clicks the Learn view and makes the
+/// checks.
 fn lesson(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
     let tag = format.tag();
     let scope = format!("{tag}/lesson");
-    let Some(learn) = sb.learn_bundled.as_ref() else {
-        report.info(
-            &scope,
-            "skipped",
-            "no bundles built with the learn feature (with --bundle-dir, put them in <dir>/learn/)",
-        );
-        return Ok(());
-    };
     let dirs: Vec<PathBuf> = ["learn", "packs", "crashes"]
         .iter()
         .map(|d| sb.out.join(format!("lesson-{d}-{tag}")))
@@ -758,15 +718,13 @@ fn lesson(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), Strin
         ("ENTH_PACKS_DIR", dirs[1].display().to_string()),
         ("ENTH_CRASH_DIR", dirs[2].display().to_string()),
     ];
-    write_reaper_ini(sb, learn)?;
     let play = run_script(sb, report, format, "lesson", "lesson", "play", &extra);
     let _ = run_script(sb, report, format, "lesson", "lesson", "reload", &extra);
-    write_reaper_ini(sb, &sb.bundled)?;
     report.info(
         &scope,
         "lesson-levels",
         format!(
-            "▶ Open peaked at {} (transport stopped); progress file: {}",
+            "▶ Saw, A peaked at {} (transport stopped); progress file: {}",
             play.data.get("example-peak").cloned().unwrap_or_default(),
             play.data.get("progress").cloned().unwrap_or_default()
         ),

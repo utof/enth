@@ -1,8 +1,9 @@
 //! A lesson through the Learn view (lane SKL's test of its minimal panel, F2l, kept for lane LUI's pane): kittest
-//! drives it by label over a real `Session` and the bundled example pack (`cutoff`: Listen, Do, Choose), the way the
-//! plugin's glue does each frame (`enth-plugin/src/editor.rs`): a clock tick, the worker's Learn results handed back
-//! (`Session::learn_job_done`), the lesson view handed over (`Editor::set_lesson`), the frame, then the Learn intents
-//! applied to the session's `LearnEdit` (`Editor::apply_learn`), and a repaint asked for at the lesson's settle moment.
+//! drives it by label over a real `Session` and the example pack (`cutoff`: Listen, Do, Choose; the REAPER points
+//! over the bundled basics pack since lane LFU), the way the plugin's glue does each frame
+//! (`enth-plugin/src/editor.rs`): a clock tick, the worker's Learn results handed back (`Session::learn_job_done`), the
+//! lesson view handed over (`Editor::set_lesson`), the frame, then the Learn intents applied to the session's
+//! `LearnEdit` (`Editor::apply_learn`), and a repaint asked for at the lesson's settle moment.
 //!
 //! The worker is played by the test between frames: the examples answer with fixed loudness readings, and the Do
 //! step's sound check (`brightness<500Hz`) answers by comparing the cutoff with the witness's, standing in for the
@@ -25,8 +26,11 @@ use enth_ui::Theme;
 use enth_ui::editor::Editor;
 use enth_ui::editor::overlay::{Emphasis, Overlay};
 
-/// The bundled example pack, as the plugin embeds it.
+/// The example pack, as the plugin builds it (its tests' fixture since lane LFU bundles `basics`).
 const EXAMPLE: &[u8] = include_bytes!("../../enth-plugin/packs/example.enthpack");
+
+/// The bundled basics pack, as the plugin embeds it (lane LFU): the REAPER `lesson` scenario plays its first lesson.
+const BASICS: &[u8] = include_bytes!("../../enth-plugin/packs/basics.enthpack");
 
 fn example() -> LessonBundle {
     let pack = enth_learn::reader::read_archive(EXAMPLE).unwrap();
@@ -48,11 +52,16 @@ struct App {
     records: Vec<StepRecord>,
     /// The witness's cutoff: the stand-in check passes at or under it.
     witness: f32,
+    /// Sound checks run for real (`enth_learn::check::evaluate_sounds`), not by the stand-in (the basics lesson).
+    real_checks: bool,
 }
 
 /// The worker's part, synchronously.
-fn run(job: &LearnJob, witness: f32) -> LearnResult {
+fn run(job: &LearnJob, witness: f32, real_checks: bool) -> LearnResult {
     match &job.kind {
+        LearnJobKind::Check(request) if real_checks => LearnResult::Checked(
+            enth_learn::check::evaluate_sounds(&request.sounds, &request.patch).unwrap_or_default(),
+        ),
         LearnJobKind::Check(request) => {
             let passed = request.patch.value(&cutoff()).is_some_and(|c| c <= witness);
             LearnResult::Checked(CheckVerdict {
@@ -86,6 +95,16 @@ fn plugin_init() -> Patch {
 }
 
 fn harness_with(patch: Patch) -> Harness<'static, App> {
+    harness_on(patch, "example.enthpack", EXAMPLE, false)
+}
+
+/// The harness over `patch` with one bundled pack (`name`, `bytes`), the sound checks real or stood in.
+fn harness_on(
+    patch: Patch,
+    name: &str,
+    bytes: &'static [u8],
+    real_checks: bool,
+) -> Harness<'static, App> {
     let theme = Theme::dark();
     let bundle = example();
     let witness = bundle
@@ -98,8 +117,8 @@ fn harness_with(patch: Patch) -> Harness<'static, App> {
     let mut store = enth_learn::store::MemStore::new();
     store.insert(
         enth_learn::store::Origin::Bundled,
-        "example.enthpack",
-        enth_learn::store::PackSource::Archive(EXAMPLE.to_vec()),
+        name,
+        enth_learn::store::PackSource::Archive(bytes.to_vec()),
     );
     editor.set_library(
         &enth_learn::store::load_library(&mut store),
@@ -114,6 +133,7 @@ fn harness_with(patch: Patch) -> Harness<'static, App> {
         results: Vec::new(),
         records: Vec::new(),
         witness,
+        real_checks,
     };
     Harness::builder()
         .with_size(theme.size.window.default)
@@ -157,7 +177,7 @@ fn harness_with(patch: Patch) -> Harness<'static, App> {
                     }
                 }
                 for job in std::mem::take(&mut app.jobs) {
-                    let result = run(&job, app.witness);
+                    let result = run(&job, app.witness, app.real_checks);
                     app.results.push((job.id, result));
                 }
             },
@@ -359,43 +379,62 @@ fn a_settled_lesson_asks_for_no_frames() {
 }
 
 /// The REAPER `lesson` scenario (`xtask/reaper/lesson.lua`) clicks the Learn view by position in the plugin's window
-/// (the default 1200 x 800, a fresh instance on the plugin's Init patch, the library the plugin hands over): these are
-/// its points, so a layout change fails here first.
+/// (the default 1200 x 800, a fresh instance on the plugin's Init patch, the library the plugin hands over: the bundled
+/// basics pack since lane LFU): these are its points, so a layout change fails here first. Its path: Learn, Start
+/// the tour's first lesson (How a lesson works), ▶ Saw, A on the first Listen step, ■ Stop, Next three times to the
+/// Try step, Show me (one jump of the master level passes its `touched` and peak checks), Next to the round.
 #[test]
 fn reaper_points_hit_their_controls() {
-    // Lane LUI's pane: the browser's first row on the example tour, then the controls anchored to the pane's bottom.
     const LEARN: (f32, f32) = (551.0, 28.0);
     const START: (f32, f32) = (901.0, 160.0);
-    const LISTEN_OPEN: (f32, f32) = (910.0, 580.0);
+    const LISTEN_FIRST: (f32, f32) = (910.0, 580.0);
     const STOP: (f32, f32) = (908.0, 608.0);
     const NEXT: (f32, f32) = (1155.0, 636.0);
     const SHOW: (f32, f32) = (957.0, 608.0);
+    let print = std::env::var_os("ENTH_PRINT_POINTS").is_some();
     let hits = |h: &Harness<'_, App>, label: &str, (x, y): (f32, f32)| {
         let rect = h
             .query_all_by_label(label)
             .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
             .unwrap_or_else(|| panic!("no button {label}"))
             .rect();
+        if print {
+            println!("{label}: {rect:?} (centre {:?})", rect.center());
+            return;
+        }
         assert!(
             rect.contains(egui::pos2(x, y)),
             "{label} is at {rect:?}, not under ({x}, {y}): update lesson.lua's POINTS and these"
         );
     };
-    let mut h = harness_with(plugin_init());
+    let mut h = harness_on(plugin_init(), "basics.enthpack", BASICS, true);
     h.run_steps(2);
     hits(&h, "Learn", LEARN);
     click(&mut h, "Learn");
-    hits(&h, "Start The low-pass cutoff", START);
-    click(&mut h, "Start The low-pass cutoff");
+    hits(&h, "Start How a lesson works", START);
+    click(&mut h, "Start How a lesson works");
     h.run_steps(3);
-    hits(&h, "Listen Open", LISTEN_OPEN);
+    assert_eq!(step(&h), Some(0));
+    hits(&h, "Listen Saw, A", LISTEN_FIRST);
     hits(&h, "Stop listening", STOP);
     hits(&h, "Next", NEXT);
-    click(&mut h, "Next");
+    for at in 1..=3 {
+        click(&mut h, "Next");
+        assert_eq!(step(&h), Some(at));
+        hits(&h, "Next", NEXT);
+    }
     hits(&h, "Show me", SHOW);
-    hits(&h, "Next", NEXT);
     click(&mut h, "Show me");
-    h.run_steps(30);
-    assert_eq!(phase(&h), Some(StepPhase::Passed));
+    for _ in 0..60 {
+        if phase(&h) == Some(StepPhase::Passed) {
+            break;
+        }
+        h.run_steps(1);
+    }
+    assert_eq!(
+        phase(&h),
+        Some(StepPhase::Passed),
+        "one Show me passes the Try step"
+    );
     hits(&h, "Next", NEXT);
 }
