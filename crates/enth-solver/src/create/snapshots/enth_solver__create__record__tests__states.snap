@@ -1,0 +1,20 @@
+---
+source: crates/enth-solver/src/create/record.rs
+expression: states
+---
+[
+  [
+    "proposed",
+    "searching",
+    "done",
+    "pruned",
+    "unknown"
+  ],
+  [
+    "budget",
+    "cancelled",
+    "exhausted",
+    "goal",
+    "unknown"
+  ]
+]

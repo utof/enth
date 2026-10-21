@@ -76,8 +76,10 @@ text = "name.md"
 highlight = ["filter1.resonance"]
 
 # --- Try: "make it whistle" (PLAN: resonance above 70 %) at 800 Hz. Measured: the start (10 %) reads 494 Hz (fails
-# `brightness>600Hz` by 106 Hz); the witness (90 %) 651 Hz (passes by 51 Hz); 70 % reads 620 Hz and passes, 50 %
-# (585 Hz) fails.
+# `brightness>625Hz` by 131 Hz); the witness (90 %) 651 Hz (passes by 26 Hz). The sound check carries the 70 %: the
+# centroid reads 585 Hz at 50 %, 620 Hz at 70 %, 628 Hz at 75 % and 636 Hz at 80 %, so 625 Hz is crossed at about 73 %.
+# A lower bar (the first draft's 600 Hz, crossed at 58 %) let the measured hints stop at 58 %, where the sound passes
+# and the patch predicate still fails (`lesson-check --solve`: a player told it already sounds right).
 [[steps]]
 id = "try"
 kind = "do"
@@ -105,7 +107,7 @@ predicates = [{ kind = "value", knob = "filter1.resonance", cmp = ">", value = "
 [[steps.check.checks]]
 kind = "sound"
 phrase = 1
-expect = ["brightness>600Hz"]
+expect = ["brightness>625Hz"]
 
 # --- Do, round 1: a hidden resonance, drawn from 50 and 90 % (PLAN's {10, 50, 90} with the 10 % start left out), the
 # cutoff locked at 800 Hz. Seed 1 draws 50 %. sound/1 hears it at the default pass mark (against 50 %, 30 % scores 93.6

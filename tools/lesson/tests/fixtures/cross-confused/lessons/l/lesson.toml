@@ -1,0 +1,36 @@
+# two Do steps whose checks each pass the other's witness from a start that fails them.
+schema = "enth.lesson/1"
+id = "l"
+title = "Fixture lesson"
+tier = "basic"
+objective = "Exercise one rule of lesson-check."
+teaches = ["svf.cutoff"]
+
+[[steps]]
+id = "darker"
+kind = "do"
+text = "text.md"
+witness = "patches/dark.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+editable = ["filter1.cutoff"]
+
+[steps.check]
+kind = "sound"
+phrase = 1
+expect = ["brightness<500Hz"]
+
+[[steps]]
+id = "lower"
+kind = "do"
+text = "text.md"
+witness = "patches/dark.patch.json"
+
+[steps.view]
+start = "patches/saw.patch.json"
+editable = ["filter1.cutoff"]
+
+[steps.check]
+kind = "patch"
+predicates = ["filter1.cutoff < 1kHz"]

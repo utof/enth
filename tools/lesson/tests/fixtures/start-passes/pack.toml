@@ -1,0 +1,16 @@
+# A seeded-bad pack for lesson-check's tests (tools/lesson/tests/check.rs): the Do step's start already passes its check (cutoff 2 kHz < 3 kHz).
+schema = "enth.pack/1"
+id = "start-passes"
+version = "0.1.0"
+title = "Fixture: start-passes"
+authors = ["enth contributors"]
+covers = ["svf"]
+lessons = ["l"]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+[requires]
+lesson = 1
+patch = 1

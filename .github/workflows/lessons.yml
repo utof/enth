@@ -1,30 +1,64 @@
 name: lessons
 
-# R2 Learn (lane S0l's stub, freeze point F0l; docs/learn.md, "`lesson-check` and the authoring loop"). `ci.yml` ignores
-# `**/*.md`, so a lesson's text (markdown, with TOML and patches beside it) would run nothing there: this workflow runs
-# `cargo xtask lesson-check` whenever a pack, the lesson crate, the lesson tool or xtask changes. xtask stays light: the
-# command runs `cargo run --release -p enth-lesson-tool -- check` (tools/lesson), which holds the heavy dependencies.
+# R2 Learn: every lesson stays honest (docs/learn.md, "`lesson-check` and the authoring loop"; lane LCK). `ci.yml`
+# ignores `**/*.md`, so a lesson's text would run nothing there; and a lesson's verdict is a render, so a change to the
+# DSP, the engine, the patch model, the challenge's scorers, the analysis, the session or the solver can break a lesson
+# that nobody touched. This workflow runs on all of those.
 #
-# A STUB: `lesson-check` is a placeholder that prints "nothing was checked" and exits 0 until lane LCK writes it, so a
-# green run means nothing yet. LCK fills it (the seven checks of learn.md, `--solve`, under 10 minutes) and adds the
-# paths a DSP change touches (the DSP, engine, patch and challenge crates: a DSP change can break a lesson), and the
-# `scripts/gate.sh lane` hook for content/lessons/.
+# `cargo xtask lesson-check --cross --solve` (tools/lesson, `enth-lesson-tool`): the files of every pack in
+# content/lessons/ (layout, schemas, sizes and hashes, patch bytes, the bundled pins, licences, the markdown lint), the
+# playthrough of every step through a headless session (each check fails at its start and passes after its witness,
+# sound margins of at least 1e-3), `--cross` (no check passes a neighbour's witness) and `--solve` (the hint follower,
+# `closest` on every round, the audibility gate on every ear question). It fails on any failure. Under 10 minutes: the
+# lessons run four at a time (the runner's cores), about 100 s for the 17 lessons on main (2026-10-21, local); the build
+# is the rest, and the cache keeps it warm.
+#
+# `cargo xtask lesson-coverage` (GR2's mechanical half) fails until the curriculum covers every P1 module (C2 and C3
+# are still to come), so it runs as a report and does not fail the job yet: make it blocking at GR2.
 
 on:
   push:
     branches: [main]
-    paths:  # the same paths as pull_request: only what can change a lesson runs it
+    paths:  # what can change a lesson's verdict; the same list as pull_request
       - "content/lessons/**"
-      - "crates/enth-learn/**"
       - "tools/lesson/**"
       - "xtask/**"
+      - "crates/enth-learn/**"
+      - "crates/enth-session/**"
+      - "crates/enth-solver/**"
+      - "crates/enth-challenge/**"
+      - "crates/enth-analysis/**"
+      - "crates/enth-render/**"
+      - "crates/enth-engine/**"
+      - "crates/enth-patch/**"
+      - "crates/enth-params/**"
+      - "crates/enth-dsp/**"
+      - "crates/enth-plugin/packs/**"  # the bundled archives `pack` compares with the content
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/config.toml"
       - ".github/workflows/lessons.yml"
   pull_request:
     paths:
       - "content/lessons/**"
-      - "crates/enth-learn/**"
       - "tools/lesson/**"
       - "xtask/**"
+      - "crates/enth-learn/**"
+      - "crates/enth-session/**"
+      - "crates/enth-solver/**"
+      - "crates/enth-challenge/**"
+      - "crates/enth-analysis/**"
+      - "crates/enth-render/**"
+      - "crates/enth-engine/**"
+      - "crates/enth-patch/**"
+      - "crates/enth-params/**"
+      - "crates/enth-dsp/**"
+      - "crates/enth-plugin/packs/**"  # the bundled archives `pack` compares with the content
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/config.toml"
       - ".github/workflows/lessons.yml"
   workflow_dispatch:
 
@@ -42,7 +76,7 @@ env:
 
 jobs:
   lesson-check:
-    name: lesson-check (a placeholder until lane LCK)
+    name: lesson-check --cross --solve
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -53,5 +87,14 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Check every lesson (a placeholder that exits 0 and says nothing was checked)
-        run: cargo xtask lesson-check
+      - name: Build the lesson tool (release, as the xtask drivers run it)
+        run: cargo build --locked --release --package enth-lesson-tool
+      - name: Check every lesson (files, playthrough, --cross)
+        run: cargo xtask lesson-check --cross
+      - name: Solvability (--solve; the hint follower, closest, audibility)
+        run: cargo xtask lesson-check --cross --solve
+      - name: Coverage of the P1 modules (a report until GR2)
+        continue-on-error: true
+        run: cargo xtask lesson-coverage
+      - name: The packs build reproducibly and match their pins
+        run: cargo xtask pack --check

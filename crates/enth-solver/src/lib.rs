@@ -15,7 +15,7 @@
 //! | [`cmaes`] | CMA-ES ported from `spike-metric`: ask-tell, seeded, bounded, IPOP restarts | MT |
 //! | [`search`] | `enth match`: free parameters, a distance, a render budget; probe, CMA-ES runs and restarts (`docs/dsp/match.md`) | MT |
 //! | [`heuristic`] | the search's start: envelope, pitch, cutoff and detune from a target's descriptors | MT |
-//! | [`nearest`] | the nearest reachable patch to a sound: a documented stub, on the cut list (R2) | MT |
+//! | [`nearest`] | k-NN retrieval over a pre-rendered bank of generator patches (`knn-logmel-rel/1`), one of a create job's starts; the stub MT left became R3a's (R2's "how close am I" is [`closest`]) | TP (R3a) |
 //!
 //! R2 file, pre-declared empty by lane S0l (`hint/` and `search.rs` stay untouched):
 //!
@@ -27,7 +27,7 @@
 //!
 //! | Directory | Holds | Lane |
 //! | --- | --- | --- |
-//! | [`create`] | "create from sound": `candidate`, `portfolio`, `schedule` (the start set, K branches, successive halving; the k-NN retrieval fills [`nearest`]) | TP, MS |
+//! | [`create`] | "create from sound": `Target::from_intake`, `candidate`, `portfolio`, `schedule` (the start set, K branches, successive halving on budget-independent milestones), `record` (`enth.create/1`); the k-NN retrieval fills [`nearest`] | TP, F1S, MS |
 //! | [`propose`] | R3b's inference on our own scalar kernels: `pack`, `ops`, `net`, `features`, `decode`; wasm32, bytes passed in | ONX |
 //!
 //! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator (an

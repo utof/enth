@@ -1,0 +1,21 @@
+# a GOOD pack: sound/1 hears two saws beating 12 ct apart as close to two in tune (0.24 JND), the beating descriptor tells them apart (passes, noted).
+schema = "enth.lesson/1"
+id = "l"
+title = "Fixture lesson"
+tier = "basic"
+objective = "Exercise one rule of lesson-check."
+teaches = ["svf.cutoff"]
+
+[[steps]]
+id = "which"
+kind = "choose"
+text = "text.md"
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/two-saws-12ct.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/two-saws.patch.json"

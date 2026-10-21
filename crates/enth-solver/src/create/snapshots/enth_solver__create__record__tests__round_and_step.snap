@@ -1,0 +1,19 @@
+---
+source: crates/enth-solver/src/create/record.rs
+expression: "(round, step)"
+---
+[
+  {
+    "round": 2,
+    "renders": 300,
+    "rung": 0,
+    "live": 8,
+    "seconds": 4.5
+  },
+  {
+    "round": 2,
+    "renders": 40,
+    "job_renders": 300,
+    "best": 0.4
+  }
+]

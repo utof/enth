@@ -1,0 +1,31 @@
+---
+source: crates/enth-solver/src/create/record.rs
+expression: provenance
+---
+[
+  {
+    "kind": "heuristic"
+  },
+  {
+    "kind": "template",
+    "name": "pluck_1osc"
+  },
+  {
+    "kind": "knn",
+    "rank": 0,
+    "bank_index": 1234,
+    "seed": 987654321,
+    "difficulty": 100,
+    "musical": 50,
+    "embedding_distance": 0.75
+  },
+  {
+    "kind": "model",
+    "model": "propose-v0",
+    "hypothesis": 3,
+    "confidence": 0.5
+  },
+  {
+    "kind": "unknown"
+  }
+]
