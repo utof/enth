@@ -59,8 +59,8 @@ fn example_with(extra: Vec<Raw>) -> Vec<u8> {
 
 fn code(r: Result<Pack, LearnError>) -> &'static str {
     let e = r.expect_err("refused");
-    assert!(!e.hint().is_empty(), "{} has a hint", e.code());
-    assert!(!e.to_string().is_empty());
+    assert_ne!(e.hint(), "", "{} has a hint", e.code());
+    assert_ne!(e.to_string(), "");
     e.code()
 }
 
@@ -294,6 +294,9 @@ fn unknown_fields_and_bad_ids_are_refused() {
     assert_eq!(code(Pack::from_files(&files)), "bad_pack");
 }
 
+/// An edit of a lesson's JSON.
+type Edit = dyn Fn(&mut serde_json::Value);
+
 /// The example's files with the lesson replaced by `json` and the manifest resealed.
 fn with_lesson(json: &str) -> BTreeMap<String, Vec<u8>> {
     let mut files = common::example_files();
@@ -315,12 +318,12 @@ fn lessons_are_strict_inputs_too() {
     };
     // A newer lesson is refused and names its pack.
     let e = Pack::from_files(&with_lesson(&edit(&|v| {
-        v["schema"] = "enth.lesson/2".into()
+        v["schema"] = "enth.lesson/2".into();
     })))
     .unwrap_err();
     assert_eq!(e.code(), "lesson_too_new");
     assert!(e.to_string().contains("Example pack"), "{e}");
-    let cases: [(&str, &dyn Fn(&mut serde_json::Value), &str); 7] = [
+    let cases: [(&str, &Edit, &str); 7] = [
         (
             "unknown field",
             &|v| v["steps"][0]["extra"] = 1.into(),

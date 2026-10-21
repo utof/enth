@@ -29,6 +29,9 @@ fn lesson() -> String {
     )
 }
 
+/// No effects.
+const NONE: Vec<Effect> = Vec::new();
+
 fn player() -> Player {
     let files = common::test_files(&[("play", &lesson())]);
     let pack = Pack::from_files(&files).unwrap();
@@ -106,17 +109,13 @@ fn a_read_step_loads_no_plan_and_passes_on_next() {
 fn a_patch_check_passes_on_the_edit_that_satisfies_it() {
     let mut p = at(1);
     let saw = patch("saw.patch.json");
-    assert!(
-        p.edited(0, 1, &saw, &[], EditSource::Load)
-            .unwrap()
-            .is_empty()
-    );
+    assert_eq!(p.edited(0, 1, &saw, &[], EditSource::Load).unwrap(), NONE);
     let mut darker = saw.clone();
     cutoff(1500.0).apply(&mut darker).unwrap();
-    assert!(
+    assert_eq!(
         p.edited(10, 2, &darker, &[cutoff(1500.0)], EditSource::Player)
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        NONE
     );
     cutoff(800.0).apply(&mut darker).unwrap();
     let fx = p
@@ -125,10 +124,10 @@ fn a_patch_check_passes_on_the_edit_that_satisfies_it() {
     assert_eq!(passed(&fx), Some(false));
     assert_eq!(p.phase(), StepPhase::Passed);
     // Passed is sticky: undoing the edit does not unpass the step.
-    assert!(
+    assert_eq!(
         p.edited(30, 4, &saw, &[cutoff(2000.0)], EditSource::Player)
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        NONE
     );
     assert_eq!(p.phase(), StepPhase::Passed);
 }
@@ -144,8 +143,9 @@ fn hints_and_show_mark_the_step_assisted() {
     );
     assert!(p.assisted());
     assert_eq!(p.hint().unwrap(), vec![Effect::Hint("Further.".to_owned())]);
-    assert!(
-        p.hint().unwrap().is_empty(),
+    assert_eq!(
+        p.hint().unwrap(),
+        NONE,
         "a patch-only check has no measured hint"
     );
     let fx = p.show(&saw).unwrap();
@@ -169,14 +169,14 @@ fn a_sound_check_waits_for_the_patch_to_settle_and_refuses_stale_results() {
     let saw = patch("saw.patch.json");
     let dark = patch("dark.patch.json");
     p.edited(1000, 7, &saw, &[], EditSource::Load).unwrap();
-    assert!(p.tick(1000 + SETTLE_MS - 1).unwrap().is_empty());
+    assert_eq!(p.tick(1000 + SETTLE_MS - 1).unwrap(), NONE);
     let fx = p.tick(1000 + SETTLE_MS).unwrap();
     let [Effect::Check(req)] = fx.as_slice() else {
         panic!("{fx:?}")
     };
     assert_eq!((req.revision, req.sounds.len()), (7, 1));
     assert_eq!(p.phase(), StepPhase::Checking { revision: 7 });
-    assert!(p.tick(5000).unwrap().is_empty(), "one check per revision");
+    assert_eq!(p.tick(5000).unwrap(), NONE, "one check per revision");
     // An edit while the check is out sends the step back to work; the old result is refused.
     p.edited(1400, 8, &dark, &[cutoff(400.0)], EditSource::Player)
         .unwrap();
@@ -189,12 +189,8 @@ fn a_sound_check_waits_for_the_patch_to_settle_and_refuses_stale_results() {
     let fx = p.tick(1400 + SETTLE_MS).unwrap();
     assert!(matches!(fx.as_slice(), [Effect::Check(r)] if r.revision == 8));
     // A failing verdict waits for the next edit.
-    assert!(
-        p.check_done(8, &CheckVerdict::default())
-            .unwrap()
-            .is_empty()
-    );
-    assert!(p.tick(9999).unwrap().is_empty());
+    assert_eq!(p.check_done(8, &CheckVerdict::default()).unwrap(), NONE);
+    assert_eq!(p.tick(9999).unwrap(), NONE);
     p.edited(2000, 9, &dark, &[], EditSource::Host).unwrap();
     assert!(
         matches!(p.tick(2000 + SETTLE_MS).unwrap().as_slice(), [Effect::Check(r)] if r.revision == 9)
@@ -223,8 +219,9 @@ fn a_measured_hint_follows_the_authored_ones_and_is_revision_guarded() {
         req.free,
         vec!["filter1.cutoff".parse::<ParamAddr>().unwrap()]
     );
-    assert!(
-        p.hint().unwrap().is_empty(),
+    assert_eq!(
+        p.hint().unwrap(),
+        NONE,
         "one measured hint out per revision"
     );
     let hint = MeasuredHint {
@@ -310,14 +307,14 @@ fn a_recreate_step_starts_a_round_and_never_loads_a_plan() {
             kind: "recreate"
         }
     );
-    assert!(
+    assert_eq!(
         p.round_ended(RoundEnd {
             passed: false,
             assisted: true,
             best_sound_pct: Some(40)
         })
-        .unwrap()
-        .is_empty()
+        .unwrap(),
+        NONE
     );
     let fx = p
         .round_ended(RoundEnd {
@@ -413,15 +410,15 @@ fn touched_counts_player_edits_only() {
     let saw = patch("saw.patch.json");
     let mut moved = saw.clone();
     cutoff(200.0).apply(&mut moved).unwrap();
-    assert!(
+    assert_eq!(
         p.edited(0, 1, &moved, &[cutoff(200.0)], EditSource::Host)
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        NONE
     );
-    assert!(
+    assert_eq!(
         p.edited(0, 2, &saw, &[cutoff(2000.0)], EditSource::Player)
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        NONE
     );
     let fx = p
         .edited(0, 3, &moved, &[cutoff(200.0)], EditSource::Player)
