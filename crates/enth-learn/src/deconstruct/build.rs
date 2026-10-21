@@ -73,6 +73,9 @@ pub struct Options {
     pub choice: bool,
     /// Build the variation goal.
     pub variation: bool,
+    /// Elements (by id) never taught as a round: `lesson-gen` adds the ones `closest` cannot pass within
+    /// lesson-check's budget, and regenerates.
+    pub no_round: BTreeSet<String>,
 }
 
 impl Options {
@@ -94,6 +97,7 @@ impl Options {
             hints: BTreeMap::new(),
             choice: true,
             variation: true,
+            no_round: BTreeSet::new(),
         }
     }
 }
@@ -748,58 +752,87 @@ fn round_out(x: f64, digits: i32, up: bool) -> f64 {
 fn loose(parts: &[&Part], start: &Patch, target: &Patch, none: &TouchLog) -> Vec<Predicate> {
     parts
         .iter()
-        .filter_map(|p| match p {
-            Part::Param(a) => {
-                let spec = target.spec(a)?;
-                let v = target.value(a)?;
-                let text = |x: f32| {
-                    let shown = spec.display(x).to_string();
-                    if spec.parse(&shown).ok().map(f32::to_bits) == Some(x.to_bits()) { shown } else { format!("{x}") }
-                };
-                match spec.kind {
-                    enth_params::Kind::Float { .. } => {
-                        let (lo, hi) = match spec.unit {
-                            enth_params::Unit::Semitones => (v - 1.0, v + 1.0),
-                            enth_params::Unit::Cents => (v - 10.0, v + 10.0),
-                            _ => {
-                                let n = spec.to_norm(v);
-                                (spec.from_norm((n - LOOSE_NORM).max(0.0)), spec.from_norm((n + LOOSE_NORM).min(1.0)))
-                            }
-                        };
-                        let (lo, hi) = (spec.clamp(lo.min(v)), spec.clamp(hi.max(v)));
-                        Some(Predicate::Within {
-                            knob: Knob::Param(a.clone()),
-                            lo: Plain::new(bound_text(spec, lo, v, false)),
-                            hi: Plain::new(bound_text(spec, hi, v, true)),
-                        })
-                    }
-                    _ => Some(Predicate::Value {
-                        knob: Knob::Param(a.clone()),
-                        cmp: Cmp::Eq,
-                        value: Plain::new(text(v)),
-                    }),
-                }
-            }
-            Part::Route(r) => {
-                let d = target
-                    .routes
-                    .iter()
-                    .find(|x| x.src == r.src && x.dst == r.dst)
-                    .map_or(0.0, |x| x.depth);
-                let half = round_pct(0.5 * d);
-                Some(Predicate::Route {
-                    route: r.clone(),
-                    cmp: if d >= 0.0 { Cmp::Ge } else { Cmp::Le },
-                    depth: Plain::new(half),
-                })
-            }
-            Part::Enable(id) => Some(Predicate::Enabled {
-                module: id.clone(),
-                enabled: target.find(id).is_some_and(|(_, m)| m.enabled),
-            }),
-        })
+        .filter_map(|p| loose_one(p, target))
         .filter(|p| p.holds(target, none) && !p.holds(start, none))
         .take(crate::check::MAX_ITEMS)
+        .collect()
+}
+
+/// One part as `target` has it, loosely (see [`predicates`]); a cents or semitone control's band is at most half its
+/// distance from 0, so a detune is told from none.
+fn loose_one(p: &Part, target: &Patch) -> Option<Predicate> {
+    match p {
+        Part::Param(a) => {
+            let spec = target.spec(a)?;
+            let v = target.value(a)?;
+            match spec.kind {
+                enth_params::Kind::Float { .. } => {
+                    let (lo, hi) = match spec.unit {
+                        enth_params::Unit::Semitones => (v - 1.0f32.min(0.5 * v.abs()), v + 1.0f32.min(0.5 * v.abs())),
+                        enth_params::Unit::Cents => (v - 10.0f32.min(0.5 * v.abs()), v + 10.0f32.min(0.5 * v.abs())),
+                        _ => {
+                            let n = spec.to_norm(v);
+                            (spec.from_norm((n - LOOSE_NORM).max(0.0)), spec.from_norm((n + LOOSE_NORM).min(1.0)))
+                        }
+                    };
+                    let (lo, hi) = (spec.clamp(lo.min(v)), spec.clamp(hi.max(v)));
+                    Some(Predicate::Within {
+                        knob: Knob::Param(a.clone()),
+                        lo: Plain::new(bound_text(spec, lo, v, false)),
+                        hi: Plain::new(bound_text(spec, hi, v, true)),
+                    })
+                }
+                _ => {
+                    let shown = spec.display(v).to_string();
+                    let text = if spec.parse(&shown).ok().map(f32::to_bits) == Some(v.to_bits()) {
+                        shown
+                    } else {
+                        format!("{v}")
+                    };
+                    Some(Predicate::Value {
+                        knob: Knob::Param(a.clone()),
+                        cmp: Cmp::Eq,
+                        value: Plain::new(text),
+                    })
+                }
+            }
+        }
+        Part::Route(r) => {
+            let d = target
+                .routes
+                .iter()
+                .find(|x| x.src == r.src && x.dst == r.dst)
+                .map_or(0.0, |x| x.depth);
+            Some(Predicate::Route {
+                route: r.clone(),
+                cmp: if d >= 0.0 { Cmp::Ge } else { Cmp::Le },
+                depth: Plain::new(round_pct(0.5 * d)),
+            })
+        }
+        Part::Enable(id) => Some(Predicate::Enabled {
+            module: id.clone(),
+            enabled: target.find(id).is_some_and(|(_, m)| m.enabled),
+        }),
+    }
+}
+
+/// The most context predicates a Do step carries.
+const MAX_CONTEXT: usize = 4;
+
+/// Context predicates: the parameters the earlier steps taught and this step locks, as the start has them. They hold
+/// at the start and at the witness and cannot move (locked), so they change nothing for the player and no hint, but
+/// they tell this step's goal apart from a neighbouring lesson's (`lesson-check --cross`): a filter envelope on Acid
+/// Snap is not one on Glass Pluck.
+fn context(plan: &Plan, k: usize, start: &Patch, target: &Patch) -> Vec<Predicate> {
+    let none = TouchLog::default();
+    locked(plan, k, start, target)
+        .iter()
+        .filter_map(|s| match s {
+            Selector::Param(a) => loose_one(&Part::Param(a.clone()), start),
+            _ => None,
+        })
+        .filter(|p| p.holds(start, &none) && p.holds(target, &none))
+        .take(MAX_CONTEXT)
         .collect()
 }
 
@@ -811,26 +844,52 @@ fn decide(
     m: &StepMeasure,
     start: &Patch,
     target: &Patch,
+    no_round: &BTreeSet<String>,
 ) -> Result<(Teach, u32), DeconstructError> {
-    if m.percent <= ROUND_MAX_START {
+    let parts = step_parts(plan, k, start, target);
+    // A round only where closest can solve it: parameters, no switch and no route (closest moves parameters only),
+    // and not one the caller found closest cannot pass.
+    let structural = parts.iter().any(|p| matches!(p, Part::Enable(_) | Part::Route(_)));
+    let forced = plan.steps[k].elements.iter().any(|i| no_round.contains(&plan.elements[*i].id));
+    if m.percent <= ROUND_MAX_START && !structural && !forced {
         return Ok((Teach::Round, 0));
     }
-    let parts = step_parts(plan, k, start, target);
     let phrase = plan.steps[k].phrase;
     let (items, renders) = verify_items(&propose_items(&m.start, &m.target), phrase, start, target, MAX_ITEMS)?;
-    // What is heard is checked by ear (the sound items, when any verified), and what the step builds is checked
-    // roughly (the loose patch predicates); either alone when the other is empty.
-    let preds = predicates(&parts, start, target, &m.changes);
-    let sound = (!items.is_empty()).then(|| Check::Sound {
-        phrase,
-        expect: items,
-        macros: Vec::new(),
-    });
-    let patch = (!preds.is_empty()).then(|| Check::Patch { predicates: preds });
-    let teach = match (patch, sound) {
-        (Some(p), Some(s)) => Teach::Check(Check::All { checks: vec![p, s] }),
-        (Some(c), None) | (None, Some(c)) => Teach::Check(c),
-        (None, None) => Teach::Merge,
+    // What is heard is checked by ear, the sound items alone (a patch predicate beside them could still fail where
+    // the measured hints stop: lesson-check's --solve); what no descriptor hears is checked as the parts, loosely.
+    // Either way the context predicates tell the goal apart from a neighbour's.
+    let ctx = context(plan, k, start, target);
+    let teach = if items.is_empty() {
+        let mut preds = predicates(&parts, start, target, &m.changes);
+        if preds.is_empty() {
+            return Ok((Teach::Merge, renders));
+        }
+        preds.extend(ctx);
+        preds.truncate(crate::check::MAX_ITEMS);
+        Teach::Check(Check::Patch { predicates: preds })
+    } else {
+        let sound = Check::Sound {
+            phrase,
+            expect: items,
+            macros: Vec::new(),
+        };
+        // A step that switches a module on also checks its parts: no measured hint switches a module, so the hints
+        // never reach the sound pass with them failing, and a neighbour's sound is told apart.
+        let mut preds = if parts.iter().any(|p| matches!(p, Part::Enable(_))) {
+            loose(&parts, start, target, &TouchLog::default())
+        } else {
+            Vec::new()
+        };
+        preds.extend(ctx);
+        preds.truncate(crate::check::MAX_ITEMS);
+        if preds.is_empty() {
+            Teach::Check(sound)
+        } else {
+            Teach::Check(Check::All {
+                checks: vec![Check::Patch { predicates: preds }, sound],
+            })
+        }
     };
     Ok((teach, renders))
 }
@@ -916,7 +975,7 @@ fn settle(
                 let c = step_challenge(plan, opts, k, &start, &target);
                 let m = measure_step(&c, &start, &target)?;
                 renders += STEP_RENDERS;
-                let (teach, r) = decide(plan, k, &m, &start, &target)?;
+                let (teach, r) = decide(plan, k, &m, &start, &target, &opts.no_round)?;
                 renders += r;
                 cache.insert(key.clone(), (m, teach));
             }
@@ -967,10 +1026,20 @@ fn variation(preset: &Patch) -> Result<Option<(Patch, Vec<String>, String, u32)>
         .into_iter()
         .filter(|i| i.starts_with("brightness"))
         .collect();
-    let (bright, r) = verify_items(&bright, HELD, preset, &witness, 1)?;
+    let (mut bright, r) = verify_items(&bright, HELD, preset, &witness, 1)?;
     renders += r;
     if bright.is_empty() {
         return Ok(None);
+    }
+    // And not too far: within half an octave past the witness, so "brighter" is this sound made brighter and not any
+    // bright sound (a neighbouring lesson's witness, lesson-check's --cross).
+    if let Some(b) = to.get(enth_analysis::Feature::Brightness) {
+        let (op, edge) = if brighter { ('<', b * 1.41) } else { ('>', b / 1.41) };
+        let item = format!("brightness{op}{}Hz", edge.round());
+        if verify_both(&item, preset, &witness)? {
+            bright.push(item);
+        }
+        renders += 6;
     }
     // What keeps its character: a plucky decay, a slow swell or a fast start, as the preset reads.
     let mut keep: Vec<(String, &'static str)> = Vec::new();
@@ -981,9 +1050,9 @@ fn variation(preset: &Patch) -> Result<Option<(Patch, Vec<String>, String, u32)>
     }
     if let Some(a) = from.get(enth_analysis::Feature::Attack) {
         if a >= 150.0 {
-            keep.push((format!("attack>{}ms", (a / 1.6).round()), "slow to swell"));
+            keep.push((format!("attack>{}ms", (a / 2.5).round()), "slow to swell"));
         } else {
-            keep.push((format!("attack<{}ms", (a * 2.0 + 20.0).round()), "quick to speak"));
+            keep.push((format!("attack<{}ms", (a * 2.0 + 30.0).round()), "quick to speak"));
         }
     }
     let mut kept: Vec<(String, &'static str)> = Vec::new();
@@ -997,13 +1066,46 @@ fn variation(preset: &Patch) -> Result<Option<(Patch, Vec<String>, String, u32)>
     }
     let mut items = bright;
     items.extend(kept.iter().map(|(i, _)| i.clone()));
-    let character = kept.first().map_or("itself", |(_, w)| w);
-    let goal = if brighter {
-        format!("Keep it {character}, and make it brighter.")
-    } else {
-        format!("Keep it {character}, and make it darker.")
+    let way = if brighter { "brighter" } else { "darker" };
+    let goal = match kept.first() {
+        Some((_, character)) => format!("Keep it {character}, and make it {way}."),
+        None => format!("Make it {way}, and keep its envelope as it is."),
     };
     Ok(Some((witness, items, goal, renders)))
+}
+
+/// The variation goal's check: its sound items, and the amplitude envelope kept as the preset has it (loosely), so the
+/// goal is this sound made brighter and not any bright sound with this brightness (lesson-check's --cross). The
+/// envelope is never what the measured hints move toward a brightness item, so the predicates hold wherever they stop.
+fn vary_check(preset: &Patch, witness: &Patch, items: Vec<String>) -> Check {
+    let none = TouchLog::default();
+    let amp = preset.voice.amp_env.clone();
+    let keep: Vec<Predicate> = preset
+        .find(&amp)
+        .map(|(_, m)| {
+            m.kind
+                .params()
+                .iter()
+                .filter_map(|spec| ParamAddr::module(amp.clone(), spec.key).ok())
+                .filter(|a| preset.value(a).zip(preset.spec(a)).is_some_and(|(v, s)| v.to_bits() != s.default.to_bits()))
+                .filter_map(|a| loose_one(&Part::Param(a), preset))
+                .filter(|p| p.holds(preset, &none) && p.holds(witness, &none))
+                .take(MAX_CONTEXT)
+                .collect()
+        })
+        .unwrap_or_default();
+    let sound = Check::Sound {
+        phrase: HELD,
+        expect: items,
+        macros: Vec::new(),
+    };
+    if keep.is_empty() {
+        sound
+    } else {
+        Check::All {
+            checks: vec![Check::Patch { predicates: keep }, sound],
+        }
+    }
 }
 
 /// Whether `item` passes on both patches, solidly (not thin, margin at least `MIN_MARGIN`).
@@ -1437,11 +1539,7 @@ fn assemble(
                 None => Vec::new(),
             },
             kind: StepKind::Do {
-                check: Check::Sound {
-                    phrase: HELD,
-                    expect: items.clone(),
-                    macros: Vec::new(),
-                },
+                check: vary_check(preset, &witness, items.clone()),
                 witness: patch_ref(&path),
             },
         });
@@ -1456,6 +1554,13 @@ fn assemble(
         .map(|(i, _)| label_of(opts, &plan.elements[*i]))
         .collect();
     let mut recap = format!("# What made {name}\n\n{}\n", recap_lines.join("\n"));
+    if crate::markdown::parse(&recap).doc.plain().split_whitespace().count() + 3 * fine.len() + 20
+        > crate::markdown::STEP_WORD_BUDGET
+    {
+        // Too long for one step: the parts by name only.
+        let short: Vec<String> = step_labels.iter().enumerate().map(|(i, l)| format!("{}. {}", i + 1, cap(l))).collect();
+        recap = format!("# What made {name}\n\n{}\n", short.join("\n"));
+    }
     if !fine.is_empty() {
         recap.push_str(&format!(
             "\nAlso there from the start, too small to hear on a held note: {}.\n",

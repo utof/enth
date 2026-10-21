@@ -230,10 +230,77 @@ fn studies(args: &[String]) -> Result<(), String> {
     write_report(&flags, &reports)
 }
 
-/// Generate, write and report one lesson; the JSON report with the wall time.
+/// lesson-check's `closest` budget for a Recreate round (`--budget`, default 300).
+const CLOSEST_BUDGET: usize = 300;
+
+/// The elements of the Recreate steps `closest` does not pass within [`CLOSEST_BUDGET`] renders from their start,
+/// searched as `lesson-check --solve` searches (the challenge's editable parameters, unlocked; stop at the first
+/// passing batch). A round no search reaches is a round lesson-check refuses, so it is taught as a Do step instead.
+fn unreachable_rounds(g: &Generated) -> Result<Vec<String>, String> {
+    use enth_challenge::v2::{Selector, Touch};
+    use enth_learn::StepKind;
+    use enth_patch::{Builtin, ParamAddr, Target};
+    use enth_solver::closest::{ClosestCfg, ClosestJob, RoundSerial, closest_with};
+    let mut out = Vec::new();
+    for step in &g.lesson.steps {
+        let StepKind::Recreate { challenge, .. } = &step.kind else { continue };
+        let round = enth_challenge::prepare_challenge(challenge.as_ref().clone()).map_err(|e| e.to_string())?;
+        let c = &challenge.constraints;
+        let params_of = |sel: &Selector| -> Vec<ParamAddr> {
+            let of_target = |t: &Target| -> Vec<ParamAddr> {
+                let specs = match t {
+                    Target::Module(id) => round.start().find(id).map_or(&[][..], |(_, m)| m.kind.params()),
+                    Target::Voice => Builtin::Voice.params(),
+                    Target::Master => Builtin::Master.params(),
+                };
+                specs.iter().filter_map(|sp| ParamAddr::new(t.clone(), sp.key).ok()).collect()
+            };
+            match sel {
+                Selector::Param(a) => vec![a.clone()],
+                Selector::Module(t) => of_target(t),
+                _ => Vec::new(),
+            }
+        };
+        let mut free: Vec<ParamAddr> = c.editable.iter().flat_map(params_of).collect();
+        free.retain(|a| !c.is_locked(&Touch::Param(a.clone())));
+        free.dedup();
+        let job = ClosestJob {
+            round: &round,
+            patch: round.start(),
+            free: &free,
+            budget: CLOSEST_BUDGET,
+        };
+        let found = closest_with(&job, &mut RoundSerial::new(), &ClosestCfg::default(), &mut |p| p.passing.is_none())
+            .map_err(|e| e.to_string())?;
+        if !found.passed {
+            println!(
+                "  {}: closest reaches {:.1} % within {CLOSEST_BUDGET} renders over {} parameter(s): taught as a Do step",
+                step.id,
+                found.percent,
+                free.len()
+            );
+            if let Some(r) = g.report.steps.iter().find(|r| r.id == step.id.as_str()) {
+                out.extend(r.elements.iter().cloned());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Generate, write and report one lesson; the JSON report with the wall time. A round `closest` cannot pass is
+/// regenerated as a Do step (at most a few times: each pass only adds elements).
 fn one(patch: &enth_patch::Patch, source: &str, opts: &Options, pack: &Path, flags: &Flags) -> Result<String, String> {
     let started = Instant::now();
-    let g = generate(patch, opts).map_err(|e| format!("{source}: {e} ({}; {})", e.code(), e.hint()))?;
+    let mut opts = opts.clone();
+    let g = loop {
+        let g = generate(patch, &opts).map_err(|e| format!("{source}: {e} ({}; {})", e.code(), e.hint()))?;
+        let bad = unreachable_rounds(&g)?;
+        if bad.is_empty() || bad.iter().all(|b| opts.no_round.contains(b)) {
+            break g;
+        }
+        opts.no_round.extend(bad);
+    };
+    let opts = &opts;
     let secs = started.elapsed().as_secs_f64();
     for line in g.report.lines() {
         println!("{line}");
