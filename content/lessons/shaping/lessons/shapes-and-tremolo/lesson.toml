@@ -1,0 +1,234 @@
+# Lesson 5.2, Shapes and tremolo [shaping · basic] (content/lessons/PLAN.md §5, U5).
+#
+# Hear (tremolo at 4 Hz in four shapes on the saw, then on the pad; a square on the pitch, a trill), a "which one
+# trembles?" item → Name → Try (route lfo1 to osc1's level, checked by the tremolo's rate) → two Do steps (a square,
+# checked by the tremolo's depth; a slower rate, checked by its rate) → two ear questions.
+#
+# Changed from the card, measured on engine 0.3.0 at HELD, the saw at 60 % level, lfo1 routed to its level at 40 %:
+# sound/1 is deaf to the tremolo's shape and nearly deaf to its rate (sine against square 0.08 JND, against saw down
+# 0.31, against triangle 0.12; 3 against 7 Hz 0.74), so the card's rounds (a drawn shape, a drawn rate) cannot be
+# scored honestly. The descriptors read both, the same at the scoring seed and both nuisance seeds: `tremolo`
+# (modulation.amp_lfo.hz) the rate (4.03 Hz at 4 Hz, 2.99 at 3, 7.02 at 7), and `tremolo_depth` the shape, since a
+# square spends its time at the extremes and a saw ramps: sine 13.6 dB, square 21.1, triangle 10.3, saw down 7.7.
+# The random shapes (sample and hold, smooth random) follow the render seed, so they are heard but never checked.
+
+schema = "enth.lesson/1"
+id = "shapes-and-tremolo"
+title = "Shapes and tremolo"
+tier = "basic"
+objective = "Make the loudness tremble with an LFO, and hear and choose the LFO's shape."
+teaches = ["lfo.shape", "lfo.rate", "osc.level"]
+
+# --- Hear: tremolo at 4 Hz on the saw: sine, square, saw down, sample and hold.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Sine"
+patch = "patches/trem-sine.patch.json"
+
+[[steps.examples]]
+label = "Square"
+patch = "patches/trem-square.patch.json"
+
+[[steps.examples]]
+label = "Saw down"
+patch = "patches/trem-saw-down.patch.json"
+
+[[steps.examples]]
+label = "Sample and hold"
+patch = "patches/trem-sample-hold.patch.json"
+
+# --- Hear: the pad with a sine and a square tremolo, and a square on the pitch: a trill.
+[[steps]]
+id = "hear-pad"
+kind = "listen"
+text = "hear-pad.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Pad, sine"
+patch = "patches/pad-trem-sine.patch.json"
+
+[[steps.examples]]
+label = "Pad, square"
+patch = "patches/pad-trem-square.patch.json"
+
+[[steps.examples]]
+label = "Square on the pitch"
+patch = "patches/trill.patch.json"
+
+# --- Hear's ear question: which one trembles? (the saw at 60 % with and without the sine tremolo: the tremolo reads
+# 4.03 Hz in one and nothing in the other.)
+[[steps]]
+id = "which-tremolo"
+kind = "choose"
+text = "which-tremolo.md"
+hints = ["Listen to the loudness, not the pitch: one pulses about four times a second."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/trem-sine.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/trem-ready.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/trem-sine.patch.json"
+highlight = ["lfo1.shape", "lfo1 -> osc1.level"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: make it tremble. Start: the saw at 60 % with lfo1 at 4 Hz routed nowhere (no tremolo: fails). Witness:
+# the route at 40 % (4.03 Hz: inside [3Hz, 5.5Hz]). A route is structure (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on lfo1's tile onto the Level knob of osc1's card.",
+  "The drop makes a route at 25 %; deepen it with the orange dot on the Level knob's ring for a stronger pulse.",
+]
+witness = "patches/trem-sine.patch.json"
+
+[steps.view]
+start = "patches/trem-ready.patch.json"
+highlight = ["lfo1 -> osc1.level", "osc1.level"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1 -> osc1.level", "osc1.level"]
+locked = ["lfo1.shape", "lfo1.rate", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> osc1.level > 10%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["tremolo in [3Hz, 5.5Hz]"]
+
+# --- Do: chop it. Start: the sine tremolo (13.6 dB deep: fails `tremolo_depth > 17dB` by 3.4 dB). Witness: a square
+# (21.1 dB: passes by 4.1 dB). The shape is a switch (noted).
+[[steps]]
+id = "shape"
+kind = "do"
+text = "shape.md"
+hints = [
+  "Shape is on lfo1's card.",
+  "The shape that jumps between two values is the square.",
+]
+witness = "patches/trem-square.patch.json"
+
+[steps.view]
+start = "patches/trem-sine.patch.json"
+highlight = ["lfo1.shape"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.shape"]
+locked = ["lfo1.rate", "lfo1 -> osc1.level", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.shape == square"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["tremolo_depth > 17dB"]
+
+# --- Do: slower. Start: a sine tremolo at 12 Hz, a flutter (fails). Witness: 6.5 Hz (inside [5.2Hz, 7.8Hz]). The
+# sound band sits inside the patch band, so the measured hints, which can turn the rate, never stop on a passing sound
+# with the rate outside it. The start is above the goal on purpose: the hint probes the rate a tenth of its log range
+# toward the middle, and from 3 Hz that is 1.3 Hz, where 1.5 s holds too few cycles for a tremolo reading.
+[[steps]]
+id = "rate"
+kind = "do"
+text = "rate.md"
+hints = [
+  "Turn lfo1's Rate down.",
+  "About half as fast as the start: six or seven pulses a second.",
+]
+witness = "patches/trem-sine-6p5hz.patch.json"
+
+[steps.view]
+start = "patches/trem-sine-12hz.patch.json"
+highlight = ["lfo1.rate"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+editable = ["lfo1.rate"]
+locked = ["lfo1.shape", "lfo1 -> osc1.level", "osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.rate in [5Hz, 8Hz]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["tremolo in [5.2Hz, 7.8Hz]"]
+
+# --- Check: which shape is the square (sine, square, saw down: depth 13.6, 21.1 and 7.7 dB, so the answer is 3.7 and
+# 6.7 steps of 2 dB from the others), and which tremolo is faster (3 against 7 Hz: 2.99 against 7.02 Hz).
+[[steps]]
+id = "check-shape"
+kind = "choose"
+text = "check-shape.md"
+hints = ["The square switches between loud and quiet with nothing in between."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/trem-sine.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/trem-square.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/trem-saw-down.patch.json"
+
+[[steps]]
+id = "check-faster"
+kind = "choose"
+text = "check-faster.md"
+hints = ["Count the pulses in one second."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/trem-sine-7hz.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/trem-sine-3hz.patch.json"

@@ -24,7 +24,7 @@ title = "Shaping the sound"
 authors = ["enth contributors"]
 covers = ["adsr", "lfo", "osc", "svf"]
 # The order the app offers them in (the curriculum's order). Lesson ids are append-only.
-lessons = ["routes-and-depth", "vibrato", "glide"]
+lessons = ["routes-and-depth", "vibrato", "shapes-and-tremolo", "poly-mono-legato", "glide"]
 
 [license]
 text = "CC-BY-4.0"
