@@ -826,6 +826,8 @@ fn probe(path: &str, args: &[String]) -> Result<(), String> {
     let targets: u64 = num(args, "--targets", 24)?;
     let note: u8 = num(args, "--note", 55)?;
     let threads: usize = num(args, "--threads", 3)?;
+    let spread: f64 = num(args, "--spread", 0.25)?;
+    let k: usize = num(args, "--neighbours", 8)?;
     let templates = [
         template(include_str!("../../../content/templates/init.patch.json"))?,
         template(include_str!(
@@ -870,7 +872,7 @@ fn probe(path: &str, args: &[String]) -> Result<(), String> {
                 let metric = MetricTarget::from_audio(&mid, &perf, &rspec);
                 let mut w = metric.worker();
                 let tpl: Vec<f64> = templates.iter().map(|p| w.distance(p)).collect();
-                let near = bank.nearest(&analysis.embedding, 8, 0.0);
+                let near = bank.nearest(&analysis.embedding, k, spread);
                 let knn: Vec<f64> = near
                     .iter()
                     .filter_map(|n| bank.patch(n.index).ok())
@@ -906,10 +908,13 @@ fn probe(path: &str, args: &[String]) -> Result<(), String> {
     println!("| init template | {:.3} |", col(0));
     println!("| best of the 4 templates | {:.3} |", col(1));
     println!("| nearest neighbour | {:.3} |", col(2));
-    println!("| best of the 8 nearest | {:.3} |", col(3));
+    println!(
+        "| best of the {k} nearest (spread {spread}) | {:.3} |",
+        col(3)
+    );
     println!("| best of 8 random bank entries | {:.3} |", col(4));
     println!(
-        "best of 8 nearest beats the best template on {wins} of {} targets",
+        "best of {k} nearest beats the best template on {wins} of {} targets",
         rows.len()
     );
     Ok(())

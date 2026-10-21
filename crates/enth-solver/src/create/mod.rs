@@ -279,7 +279,7 @@ impl Default for CreateCfg {
             k: 8,
             budget: 4_000,
             seed: 1,
-            neighbours: 8,
+            neighbours: 16,
             min_spread: 0.25,
             lambda: 0,
             stop_at: None,
