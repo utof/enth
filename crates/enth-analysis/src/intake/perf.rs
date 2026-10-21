@@ -70,6 +70,8 @@ const CHORD_FRAME_S: f64 = 0.17;
 const CHORD_SKIP_S: f64 = 0.05;
 const PEAK_RANGE_HZ: (f64, f64) = (30.0, 5000.0);
 const MAX_PEAKS: usize = 30;
+/// A peak stands at least this far (10 dB) above the median of its neighbourhood: noise's local maxima do not.
+const PROMINENCE: f64 = 10.0;
 const SERIES_RANGE_HZ: (f64, f64) = (25.0, 2000.0);
 const MAX_HARMONIC: f64 = 16.0;
 /// The peaks must hold at least this share of the band's power for a chord check: noise has peaks too.
@@ -438,28 +440,29 @@ fn related(a: f64, b: f64) -> bool {
     (1.0..=8.0).contains(&k) && (r - k).abs() <= 0.03 * k
 }
 
-/// Spectral peaks of `x[a..b]`: local maxima within 50 dB of the strongest, 30 Hz to 5 kHz, at most 30 strongest,
-/// frequency by parabolic interpolation, power over the peak bin and 2 bins either side; the bin width, and the
-/// power of the whole band.
+/// Spectral peaks of `x[a..b]`: local maxima within 50 dB of the strongest and 10 dB above their neighbourhood, 30 Hz
+/// to 5 kHz, at most 30 strongest,
+/// frequency by parabolic interpolation, power over the peak bin and 2 bins either side; the bin width, the power
+/// of the whole band, and the power of every peak.
 fn peaks(
     x: &[f32],
     sr: f64,
     a: usize,
     b: usize,
     planner: &mut FftPlanner,
-) -> (Vec<Peak>, f64, f64) {
+) -> (Vec<Peak>, f64, f64, f64) {
     let n = ((sr * CHORD_FRAME_S) as usize).next_power_of_two().max(512);
     let (pw, _) = welch(planner, x, a, b, n);
     let bin = sr / n as f64;
     let lo = (PEAK_RANGE_HZ.0 / bin).ceil().max(2.0) as usize;
     let hi = ((PEAK_RANGE_HZ.1.min(sr / 2.0 - 2.0 * bin)) / bin) as usize;
     if hi <= lo + 2 || hi + 2 >= pw.len() {
-        return (Vec::new(), bin, 0.0);
+        return (Vec::new(), bin, 0.0, 0.0);
     }
     let band: f64 = pw[lo..=hi].iter().sum();
     let top = pw[lo..=hi].iter().copied().fold(0.0, f64::max);
     if top <= 0.0 {
-        return (Vec::new(), bin, band);
+        return (Vec::new(), bin, band, 0.0);
     }
     let mut ps: Vec<Peak> = (lo..=hi)
         .filter(|&k| {
@@ -468,6 +471,7 @@ fn peaks(
                 && pw[k] >= pw[k + 1]
                 && pw[k] >= pw[k - 2]
                 && pw[k] >= pw[k + 2]
+                && pw[k] >= PROMINENCE * local_median(&pw, k)
         })
         .map(|k| {
             let (l, c, r) = (
@@ -488,8 +492,10 @@ fn peaks(
         })
         .collect();
     ps.sort_by(|p, q| q.power.total_cmp(&p.power).then(p.hz.total_cmp(&q.hz)));
+    // The tonal share counts every peak: a low chord has hundreds of partials, far more than the strongest 30.
+    let tonal = ps.iter().map(|p| p.power).sum::<f64>();
     ps.truncate(MAX_PEAKS);
-    (ps, bin, band)
+    (ps, bin, band, tonal)
 }
 
 /// The spectral peaks of the held part (from 50 ms after the onset, when it is long enough, to the note-off or the
@@ -498,12 +504,14 @@ struct Held {
     peaks: Vec<Peak>,
     bin: f64,
     band: f64,
+    /// The power of every peak, not only the strongest [`MAX_PEAKS`].
+    tonal: f64,
 }
 
 impl Held {
     /// The peaks' share of the band's power.
     fn share(&self) -> f64 {
-        self.peaks.iter().map(|p| p.power).sum::<f64>() / self.band.max(1e-30)
+        self.tonal / self.band.max(1e-30)
     }
 
     /// Tonal enough to read pitches from: the peaks hold at least [`MIN_TONAL`] of the band (noise has peaks too).
@@ -516,8 +524,26 @@ fn held_part(clip: &[f32], sr: f64, on: usize, end: usize, planner: &mut FftPlan
     let skip = (sr * CHORD_SKIP_S) as usize;
     let end = end.min(clip.len());
     let a = if end > on + 4 * skip { on + skip } else { on };
-    let (peaks, bin, band) = peaks(clip, sr, a, end, planner);
-    Held { peaks, bin, band }
+    let (peaks, bin, band, tonal) = peaks(clip, sr, a, end, planner);
+    Held {
+        peaks,
+        bin,
+        band,
+        tonal,
+    }
+}
+
+/// The median power of the bins 3 to 16 bins either side of `k`: the floor a partial stands on.
+fn local_median(pw: &[f64], k: usize) -> f64 {
+    let mut v: Vec<f64> = (k.saturating_sub(16)..k.saturating_sub(2))
+        .chain((k + 3)..(k + 17).min(pw.len()))
+        .map(|i| pw[i])
+        .collect();
+    if v.is_empty() {
+        return 0.0;
+    }
+    v.sort_by(f64::total_cmp);
+    v[v.len() / 2]
 }
 
 /// The chord's tones (Hz, ascending), or empty for a single pitch (or no harmonic content).
