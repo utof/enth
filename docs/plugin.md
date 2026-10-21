@@ -21,6 +21,9 @@
 | `src/tests_game.rs` | a full round through the real plugin with the real worker and jobs | SKR |
 | `src/learn.rs` | with the `learn` cargo feature: [Learn](#learn-lane-skl-r2): the bundled packs, the Packs folder, the progress file, the Learn jobs the game worker runs, the session's Learn requests acted on | SKL (R2) |
 | `src/tests_learn.rs` | with `learn`: a lesson through the real plugin and worker, saved and resumed mid-lesson | SKL |
+| `src/create.rs` | with the `create` cargo feature: [Create from sound](#create-lane-sk3-r3): the `enth-create` thread, the per-job pool, cancel and the time cap, the bank's lookup, auditions, the `create-harness` measurement harness | SK3 (R3) |
+| `src/create/decode.rs` | with `create`: the decoders (WAV, FLAC, Ogg Vorbis, MP3), the 2:1 decimation at 192 kHz and above, the codec hint; `enth create` includes the same file by path | SK3 |
+| `src/tests_create.rs`, `tests/fixtures/create/` | with `create`: decoders, a job through the thread, cancel, the cap, auditions, the bank lookup, unload with a job running; the decoder fixtures (our own renders) | SK3 |
 | `packs/*.enthpack` | the packs the `learn` build bundles (`include_bytes!`), rebuilt from `content/lessons/` by a test | SKL |
 | `clippy.toml` | the workspace's bans, minus I/O, plus `GuiContext::set_state`/`get_state`, `execute_gui` and `VoiceID::id_or_fallback` | SK |
 | `tests/cli-equal.profile.toml` | the engine goldens `cli-equal` renders through the plugin (all of them since PL, `mod-controls` included); `cargo xtask host-render` runs it since INT | SK, PL |
@@ -44,6 +47,8 @@ The plugin-level golden is `tools/test-host/golden/enth-plugin.toml` with its in
 | baseview's GUI thread | the editor's `build` and `ui` | the session, through `Shared::with_session`; `ParamSetter` after unlocking |
 | nice-plug's background worker | `Task::Pump` | the session (pump, audition release) |
 | the game worker (`enth-game`, lane SKR) | a round's jobs ([below](#the-recreate-round-lane-skr)); spawned at the first job, joined when `Shared` drops | its own queues and the target loop's hand-off. **Never the session lock** |
+| the create thread (`enth-create`, lane SK3, feature `create`) | a create job from the file to its last post ([below](#create-lane-sk3-r3)); spawned at the first job, joined when `Shared` drops (it cancels the running job first) | its own queue and posts, the audition hand-off. **Never the session lock** |
+| a job's pool (`enth-search-N`, `min(cores / 2, 8)` threads) | the K searches' renders, distances by index | built per job with `build_scoped` and **joined before the job returns**: no search thread exists between jobs |
 
 `Shared` holds the one lock, `parking_lot::Mutex<Session>`, and atomics: `pump_wanted`, `monitor_bypass`, `rebaseline`, `editor_closed`, plus a weak reference to the parameters for reading the host's values off the audio thread, the fork's `HostRequests` (set once by the wrapper right after construction, `Plugin::host_requests`) and, with `rt-stats`, the histogram. **`Shared::with_session` is the only way in:** it locks, runs the closure, drains the session's requests, sets the 72 display names if one of them was `RenameParams` ([below](#parameter-names)), notes whether a compile is still pending, **unlocks**, then stores the monitor bypass, asks the host for a parameter-info rescan on a rename, marks the project dirty on `PatchEdited` ([Dirty marking](#dirty-marking)), arms `pump_wanted`, and returns the host writes. Only editor edits make host writes, and the editor forwards them to `ParamSetter` after this returns, never under the lock, because a host may call back synchronously (to read the state, which locks).
 
@@ -267,6 +272,50 @@ So the first hint of a round is 1.7× faster on four workers (up to 2.0× at lev
 | --- | --- |
 | `cargo test -p enth-plugin --features learn` (`learn::tests`, `game::tests`' example loops, `tests_learn`) | the bundled pack equals `content/lessons/example` built (SHA-256 `9ba7e94e…`, enth-learn's fixture); the example step's check fails the start and passes the witness (margin 178.9 Hz); examples measured at 48 kHz (open louder than closed) and rendered at 44.1 kHz; eight writers keep 40 of 40 records; a lesson through the real plugin: example 0 equal to its render sample for sample at its gain, a locked edit refused, the Do step passed on the worker and recorded clean, the project saved mid-lesson and resumed by a fresh instance at step 1 with the step still passed and its locks back |
 | `reaper-test`, scenario `lesson` (debug `learn` bundle, Xvfb, Dummy Audio, transport stopped) | 12 of 12 on CLAP and VST3, 18.1 / 16.9 s: the lesson starts 0.0–0.3 s after Start; ▶ Open peaks 0.154 on the track's meter; Show me passes the Do step and the progress file records it 0.6 s later; reopened in a new REAPER process the lesson resumes at step 1 and Next moves it to step 2 |
+
+## Create (lane SK3, R3)
+
+**With the `create` cargo feature the plugin creates patches from a sound file end to end: the shell decodes the file, `enth-analysis`'s intake conditions it, `enth-solver`'s `create` builds the portfolio and refines K branches, the session's `create` module keeps the read model and turns "Use this" into one undo step** (freeze point F2s, [phase-3.md](phase-3.md); the session's side is [session.md](session.md#create-lane-sk3-r3); the design is [r3.md](r3.md)). Everything is in `src/create.rs` and `src/create/decode.rs`, wired additively behind the feature in `lib.rs`, `process.rs` and `editor.rs`, and the editor's minimal Create panel is in `enth-ui`'s `editor/create/panel.rs` (lane PUI builds the real view). **`create` is off by default at F2s**; without it the session's create requests are drained and dropped, and nothing is saved either way.
+
+| Part | Thread | What it does |
+| --- | --- | --- |
+| `Create` (in `Shared`) | whoever drains the session | `Shared::with_session` drains `Session::drain_create_requests` beside the others and hands them to `Create::act` after unlocking: a `Run` is queued for the thread, a `Cancel` drops a queued run (posting its end at once) or raises the running job's flag, auditions go to the thread |
+| the create thread | `enth-create`, spawned at the first request, joined when `Shared` drops | one job at a time ([below](#a-job)); a panicking job is posted as failed (the crash hook writes its file) and the thread goes on. Its posts go to a queue behind a short `parking_lot` lock, each asking the open editor for a repaint |
+| the job's pool | `enth-search-0` … `enth-search-(n-1)` | `rayon::ThreadPoolBuilder::build_scoped`, so the pool's threads are **joined** when the job ends (a plain `ThreadPool` drop does not wait, and a thread left running in an unloaded plugin crashes the host); `n` = `min(available_parallelism / 2, 8)` (6 on the owner's 12-thread laptop), normal priority. Each thread keeps a metric worker (FFT plans, buffers) |
+| the editor glue | GUI, once per frame | the thread's posts back (`Session::create_post`), the session's `CreateView` to the editor before the frame (`Editor::set_create`, which also makes the header show **Create**), the panel's intents to `CreateEdit` after it (`Editor::apply_create`). The view asks for no frames: posts wake the editor |
+| `AuditionPlayer` | audio | a candidate rendered at the host's rate, handed over through `AuditionSlot` (an incoming and a retired `AtomicPtr`, as `game::Mailbox`) and added to the block once, from its start. While nothing plays a block costs one atomic load; it never allocates or frees (a clip it is done with goes back through the retired slot, or waits in a pending place while that slot is full) |
+
+### A job
+
+1. **Decode** the file ([below](#decoders)), polling the job's cancel flag and the time cap between chunks.
+2. **The intake** (`Intake::with_cfg`, with the decoder's codec hint in `IntakeCfg::codec`), then `Target::from_intake` (the scored 3 s window, `RENDER_SEED`); an `Intake` post carries how the file decoded, the report whole and the notes.
+3. **The starts:** the heuristic start on the `init` template, the templates (`pluck_1osc`, `pad_2osc`, `bass_sub`, embedded from `content/templates/` as the CLI's are) and, when the bank is found, the k-NN neighbours (`CreateCfg::default()`, K and the render cap from the job's settings).
+4. **The search:** each round's merged batch on the pool, distances back by index; a `Round` post after every told round (the progress and the K candidates); auditions asked meanwhile are served between rounds.
+5. **The end:** a `Done` post with the stop and the final candidates. The job's target stays for auditions until the next job.
+
+**Cancel within one batch.** The job's `AtomicBool` is checked before every render in the pool and after each round; a batch a cancel interrupts is dropped and **never told** (`CreateJob::cancel`), so the result is what the rounds before it found and the run stays a prefix of the full one. **The time cap** (the job's `seconds`, at most 300) is checked the same way, from the job's start: past it the batch is dropped and the job ends `cancelled`, with the note "stopped at the time cap". **Unload never hangs:** `Create`'s drop raises the running job's flag, wakes the thread and joins it; the pool stops within one render per thread and the decoder within one chunk.
+
+**The bank** (`enth-bank-v1.bin`, `cargo xtask bank`) is looked for beside the plugin's binary (`dladdr` on Linux and macOS, `GetModuleHandleExW` and `GetModuleFileNameW` on Windows: the CLAP file's folder, or the folder of the binary inside a VST3 bundle), then in `$ENTH_MODELS_DIR` or `<Documents>/enth/Models/`. A missing or refused bank (`Bank::parse` checks it) means the job runs on the heuristic and the templates, and its notes say so and where it looked. Copying the bank next to the bundles is the bundle step's (INTa's), not done yet.
+
+### Decoders
+
+`src/create/decode.rs`, shared with `enth create` (the CLI includes the file by path), so both shells decode a file to the same bits:
+
+| Format | Crate | Exact? |
+| --- | --- | --- |
+| WAV (8–32-bit integer, 32-bit float) | `hound` | yes: integers scaled by a power of two |
+| FLAC | `claxon` | yes (the fixture decodes to exactly the WAV's samples) |
+| Ogg Vorbis | `lewton` | the same bits twice on one machine; **across platforms unverified**, and unlikely: its window and twiddle tables use std's `sin`, `cos` and `exp` |
+| MP3 (MP2, MP1) | `nanomp3` (a port of the CC0 minimp3) | the same bits twice on one machine; across platforms unverified (it keeps C's evaluation order and uses tables, no std transcendentals, and its default `wide` SIMD path runs the same lane arithmetic) |
+
+- At most 60 s are read (the intake looks at 30 s from a second before the first sound); M4A/AAC (`symphonia`, MPL-2.0) waits for the owner's OK and AIFF has no reader yet.
+- **192 kHz and above are decimated exactly 2:1** (again while still 192 kHz or more: 384 kHz → 96 kHz, 352.8 kHz → 176.4 kHz) by a fixed 63-tap half-band FIR (Kaiser β 9; flat to 40 kHz at 192 kHz, −61 dB at 56 kHz, below −100 dB from 60 kHz), summed in `f64` in a fixed order; the note says so. Other rates outside the analysis's 8,000–191,999 Hz are refused (`sample_rate`), and the hint says both.
+- **The codec hint** (`IntakeCfg::codec`: the codec, lossy or not, the bitrate when the stream says): with a lossy hint the intake's bandwidth estimate accepts an edge with two partials in the octave under it instead of three, so a high note's sparse spectrum no longer hides an encoder's low-pass (the A7 fixture at 48 kbps: no cut-off without the hint, 11.2 kHz with it). Absent, nothing changes; the report records it.
+- Every result records the scored clip's hash (`enth.create/1`'s `input.audio_sha256`), so a replay can check its clip.
+
+### The harness
+
+`cargo xtask bundle enth-plugin --release --features create-harness` (never a shipped build): with `ENTH_CREATE_HARNESS` naming a sound file, activation starts create jobs on it one after the other (each capped at `ENTH_CREATE_SECONDS`, 60 by default) until deactivation, which stops them and appends an `enth.plugin-create-stats/1` line (jobs started and finished, rounds, renders, workers) to `ENTH_CREATE_REPORT`. `enth-test-host process-stats` loads the plugin in process, so the variables set in its environment reach it.
 
 ## rt-stats
 
