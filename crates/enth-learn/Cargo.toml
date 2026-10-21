@@ -1,0 +1,40 @@
+[package]
+name = "enth-learn"
+description = "L5: lessons, content packs (.enthpack, enth.pack/1), the pure lesson player, checks, progress and the markdown block AST (docs/learn.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Authors write TOML (docs/learn.md, "Packs"); `cargo xtask pack`, `lesson-check` and `enth lesson` read that layout,
+# so they turn this on. The plugin reads the built JSON only and leaves it off. Lane LM decides what it gates;
+# S0l proved the crate builds for wasm32 with it on (`cargo build -p enth-learn --lib --features toml --target
+# wasm32-unknown-unknown`, 2026-10-21).
+toml = ["dep:toml"]
+
+[dependencies]
+# Pre-declared by lane S0l (R2, freeze point F0l) so Cargo.lock is resolved before the lanes fan out; lanes use what
+# they need. A core crate (L5): no I/O, threads, clocks or global RNG, and it builds for wasm32 (`cargo xtask
+# wasm-check`); the root clippy.toml bans apply. It embeds `Challenge` (L4), so it sits above `enth-challenge`, and it
+# never calls `enth-solver` (same layer): solver jobs carry solver-native payloads the shell runs (docs/learn.md).
+enth-dsp.workspace = true          # derive and fnv1a64: keyed draws for sibling rounds and review (LM, REV)
+enth-params.workspace = true       # ParamSpec ranges, units and the learn tier (PLY, DEC, coverage)
+enth-patch.workspace = true        # Patch, addresses, ModuleKind, ops: predicates, steps' start patches (every lane)
+enth-render.workspace = true       # a sound check renders a phrase as a Performance (PLY)
+enth-analysis.workspace = true     # the expectation grammar and descriptors for sound checks (PLY)
+enth-challenge.workspace = true    # Challenge (v2 from lane CV2) embedded in a Recreate step (LM)
+serde.workspace = true             # pack, lesson, progress are persisted (LM)
+serde_json.workspace = true        # pack.json, lesson.json, progress.json (LM)
+sha2.workspace = true              # SHA-256 per pack file; the LessonRef content prefix (LM)
+pulldown-cmark.workspace = true    # the block AST of a lesson step (PLY); no HTML output
+rawzip.workspace = true            # the .enthpack zip reader (LM)
+miniz_oxide.workspace = true       # deflate for .enthpack, pinned so `xtask pack` builds reproducibly (LM, LCK)
+toml = { workspace = true, optional = true }   # the authoring layout, behind the `toml` feature
+
+[dev-dependencies]
+proptest.workspace = true          # the player's and Progress::merge's properties (LM, PLY)
+insta.workspace = true             # pack, lesson and progress fixtures (LM)
+
+[lints]
+workspace = true

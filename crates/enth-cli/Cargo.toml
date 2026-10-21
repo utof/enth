@@ -22,6 +22,9 @@ enth-analysis.workspace = true
 enth-solver.workspace = true
 # Pre-declared by lane S0r (R1/S1): `compare`, `suggest`, `match`, `explain` and `challenge` (lanes SKR and CL).
 enth-challenge.workspace = true
+# Pre-declared by lane S0l (R2): `enth lesson list|show|check|hint|closest` (lanes SKL and EV3). The CLI reads packs in the
+# authoring layout (TOML), so it turns the crate's `toml` feature on; the plugin does not.
+enth-learn = { workspace = true, features = ["toml"] }
 clap.workspace = true
 schemars.workspace = true
 strsim.workspace = true

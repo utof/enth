@@ -27,6 +27,7 @@ enth-render = { path = "crates/enth-render" }
 enth-analysis = { path = "crates/enth-analysis" }
 enth-challenge = { path = "crates/enth-challenge" }  # L4 (R1/S1 lane S0r)
 enth-solver = { path = "crates/enth-solver" }
+enth-learn = { path = "crates/enth-learn" }          # L5 (R2 lane S0l)
 enth-cli = { path = "crates/enth-cli" }
 enth-ui = { path = "crates/enth-ui" }
 enth-session = { path = "crates/enth-session" }      # L6 (P1b lane S0b)

@@ -52,9 +52,9 @@ Rules:
 | The Learn view | `enth-ui/src/editor/learn/` | The `editor/recreate/` seam |
 | Pack I/O, the progress file, Learn jobs on the worker | `enth-plugin/src/learn.rs` | Shells translate; the rules come from `enth-learn` |
 | `enth lesson list\|show\|check\|hint\|closest` | `enth-cli/src/cmd/lesson.rs` | Agent evals; stateless like `enth check` |
-| `lesson-check`, `lesson-coverage`, `lesson new`, `lesson-gen`, `pack`, `gr2-report` | `xtask/src/lesson/`, `xtask/src/gr2.rs` | Tooling |
+| `lesson-check`, `lesson-coverage`, `lesson new`, `lesson-gen`, `pack`, `gr2-report` | `tools/lesson/src/` (the package `enth-lesson-tool`, exempt tooling); `xtask/src/lesson/` and `xtask/src/gr2.rs` are thin drivers that run it, so xtask carries no engine crate | Tooling |
 
-Rejected: lessons inside `enth-challenge` (11.5k lines with five owners, and packs have a lifecycle challenges don't); session-only lessons (the CLI and xtask could not share the player); an L7 I/O crate (only the plugin needs one until a standalone ships).
+Rejected: lessons inside `enth-challenge` (11.5k lines with five owners, and packs have a lifecycle challenges don't); session-only lessons (the CLI and the lesson tool could not share the player); an L7 I/O crate (only the plugin needs one until a standalone ships).
 
 **Job payloads are solver-native**, so `enth-learn` never calls its same-layer sibling `enth-solver`, and the worker composes nothing: an expectation hint is `{patch, perf, items, free}` → `enth_solver::hint`; a Recreate step's hint is the game's coach job; closest is `{round, patch, free, budget}` → `enth_solver::closest`.
 

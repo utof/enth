@@ -93,7 +93,8 @@ jobs:
   # R1/S1, pre-declared by lane S0r: the editor and the plugin with every editor feature on (`learn`, `recreate`,
   # `presets`, `add-module`). The `check` job builds default features only, so it never compiles the Presets and
   # Recreate hooks or the Recreate views (`add-module` is a default feature since lane AM). Lane AM's hook was the first
-  # with content, so the job runs.
+  # with content, so the job runs. R2 (lane S0l) adds the plugin's `learn` feature (src/learn.rs), which builds nothing
+  # without it, to the clippy line; enth-ui's own `learn` tests (the Learn header hook) run in the test line.
   editor-features:
     name: editor features (lanes AM, PBU, RUI)
     runs-on: ubuntu-24.04
@@ -116,7 +117,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: >-
           cargo clippy --locked -p enth-ui -p enth-plugin --all-targets
-          --features enth-ui/learn,enth-ui/recreate,enth-ui/presets,enth-ui/add-module -- -D warnings
+          --features enth-ui/learn,enth-ui/recreate,enth-ui/presets,enth-ui/add-module,enth-plugin/learn -- -D warnings
       - run: cargo test --locked -p enth-ui --features learn,recreate,presets,add-module
 
   deny:

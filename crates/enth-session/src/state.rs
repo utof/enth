@@ -9,7 +9,7 @@
 //! | Field | Text | Versioned by |
 //! | --- | --- | --- |
 //! | [`PATCH_FIELD`] `patch` | exactly `Patch::to_json()`, carried as raw JSON (never re-parsed through `serde_json::Value`, which would widen `f32`s) | the patch file's own `schema` number and `enth_patch::migrate` |
-//! | [`INSTANCE_FIELD`] `enth` | an [`InstanceState`]: `{"schema":"enth.plugin-state/1","monitor":{…},"ui":{…}}`, plus the optional `game` and `preset` objects R1/S1 reserves (absent until used) | its `schema` string, [`STATE_SCHEMA`], and [`INSTANCE_STEPS`] |
+//! | [`INSTANCE_FIELD`] `enth` | an [`InstanceState`]: `{"schema":"enth.plugin-state/1","monitor":{…},"ui":{…}}`, plus the optional `game` and `preset` objects R1/S1 reserves and the optional `learn` object R2 reserves (absent until used) | its `schema` string, [`STATE_SCHEMA`], and [`INSTANCE_STEPS`] |
 //!
 //! So a plugin state's `patch` and a `.patch.json` are interchangeable, and loading one goes through
 //! `enth_patch::file::load` and its migrations, the same path as `enth render`. The 64 slot assignments and the 8
@@ -90,6 +90,16 @@ pub struct InstanceState {
     /// `None`, like `game`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<crate::presets::PresetState>,
+    /// The lesson in flight (lane SL; reserved by lane S0l for R2): its reference, its step and the stash of the
+    /// player's own patch, so a reload resumes the lesson. Optional and omitted when `None`, like `game`, so a state
+    /// without a lesson saves the same bytes as before the field existed (state version 1: an optional field with a
+    /// default), and older builds ignore it. Read leniently ([`crate::learn::lenient_learn`]): a `learn` object this
+    /// build cannot decode never fails the rest of the field.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::learn::lenient_learn"
+    )]
+    pub learn: Option<crate::learn::LearnState>,
 }
 
 /// Monitoring switches (ADR-0006).

@@ -355,6 +355,9 @@ impl Editor {
                             room: Room::all(patch),
                             #[cfg(feature = "recreate")]
                             recreate: self.recreate.view(),
+                            // Lane S0l (R2): lessons are not available until lane LUI hands the editor a Learn state.
+                            #[cfg(feature = "learn")]
+                            learn: super::learn::HeaderLearn::default(),
                         };
                         let knobs: Vec<CardView> = self
                             .layout

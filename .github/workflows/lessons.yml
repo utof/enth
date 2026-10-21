@@ -1,0 +1,57 @@
+name: lessons
+
+# R2 Learn (lane S0l's stub, freeze point F0l; docs/learn.md, "`lesson-check` and the authoring loop"). `ci.yml` ignores
+# `**/*.md`, so a lesson's text (markdown, with TOML and patches beside it) would run nothing there: this workflow runs
+# `cargo xtask lesson-check` whenever a pack, the lesson crate, the lesson tool or xtask changes. xtask stays light: the
+# command runs `cargo run --release -p enth-lesson-tool -- check` (tools/lesson), which holds the heavy dependencies.
+#
+# A STUB: `lesson-check` is a placeholder that prints "nothing was checked" and exits 0 until lane LCK writes it, so a
+# green run means nothing yet. LCK fills it (the seven checks of learn.md, `--solve`, under 10 minutes) and adds the
+# paths a DSP change touches (the DSP, engine, patch and challenge crates: a DSP change can break a lesson), and the
+# `scripts/gate.sh lane` hook for content/lessons/.
+
+on:
+  push:
+    branches: [main]
+    paths:  # the same paths as pull_request: only what can change a lesson runs it
+      - "content/lessons/**"
+      - "crates/enth-learn/**"
+      - "tools/lesson/**"
+      - "xtask/**"
+      - ".github/workflows/lessons.yml"
+  pull_request:
+    paths:
+      - "content/lessons/**"
+      - "crates/enth-learn/**"
+      - "tools/lesson/**"
+      - "xtask/**"
+      - ".github/workflows/lessons.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+  RUST_BACKTRACE: "1"
+
+jobs:
+  lesson-check:
+    name: lesson-check (a placeholder until lane LCK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check every lesson (a placeholder that exits 0 and says nothing was checked)
+        run: cargo xtask lesson-check

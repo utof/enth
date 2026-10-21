@@ -16,6 +16,8 @@ enth-engine.workspace = true
 enth-render.workspace = true     # DEFAULT_SEED only: the render seed is never per instance and never the patch hash
 # Pre-declared by lane S0r (R1/S1): the pure `game` module drives a round over a Challenge (lane SG).
 enth-challenge.workspace = true
+# Pre-declared by lane S0l (R2): the pure `learn` module binds the lesson player to the live patch (lane SL).
+enth-learn.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

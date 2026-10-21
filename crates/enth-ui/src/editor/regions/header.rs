@@ -2,9 +2,11 @@
 //! fork's captured-shortcut hook, report 02 D6, so the buttons are the way to undo in every host). Built-in cards a
 //! layout places here (layout 1: master) draw as inline knobs at the right end, with every control's menu.
 //!
-//! Three hook points end [`Header::show`] (lane S0r, R1/S1): Add (`editor/add_module.rs`, feature `add-module`, lane
-//! AM), Presets (`editor/browser.rs`, feature `presets`, lane PBU) and Recreate (`editor/recreate/bar.rs`, feature
-//! `recreate`, lane RUI). Each is a no-op until its lane fills it.
+//! Four hook points end [`Header::show`] (lanes S0r, R1/S1, and S0l, R2): Add (`editor/add_module.rs`, feature
+//! `add-module`, lane AM), Presets (`editor/browser.rs`, feature `presets`, lane PBU), Recreate
+//! (`editor/recreate/bar.rs`, feature `recreate`, lane RUI) and Learn (`editor/learn/header.rs`, feature `learn`, lane
+//! LUI). Each is a no-op until its lane fills it (Learn's draws an inert entry, and only once a shell says lessons are
+//! available).
 
 use egui::{Align, Align2, Button, Layout, Rect, RichText, Ui, UiBuilder, pos2};
 
@@ -31,6 +33,10 @@ pub struct HeaderView {
     /// shell hands the editor a round view.
     #[cfg(feature = "recreate")]
     pub recreate: crate::editor::recreate::bar::BarView,
+    /// The Learn entry's view (lane LUI's hook, pre-declared by lane S0l): empty, and drawn as nothing, until the
+    /// shell says lessons are available.
+    #[cfg(feature = "learn")]
+    pub learn: crate::editor::learn::HeaderLearn,
 }
 
 /// The header band.
@@ -145,5 +151,8 @@ impl<'a> Header<'a> {
         // Lane SKR: the Recreate bar joins the right-hand row, left of Add (it fits there beside the Presets group).
         #[cfg(feature = "recreate")]
         crate::editor::recreate::bar::header(&mut buttons, t, inner, self.view, out);
+        // Lane S0l (R2): the Learn entry joins the same row, left of Recreate. Inert until lane LUI fills it.
+        #[cfg(feature = "learn")]
+        crate::editor::learn::header::header(&mut buttons, t, inner, self.view, out);
     }
 }

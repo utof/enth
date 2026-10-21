@@ -19,9 +19,11 @@
 //! | `add_module.rs` | adding and removing modules: menus, the "+ Add" slot, the header's Add hook (`add-module`) | AM (R1/S1) |
 //! | `browser.rs` | the preset browser: the header's Presets hook (`presets`) and the browse panel | PBU (R1/S1) |
 //! | `recreate/` | the Recreate UI behind `recreate`: challenge bar and the header's Recreate hook, results, settings | RUI (R1/S1) |
+//! | `learn/` | the Learn view behind `learn`: the header's Learn hook (inert until LUI), the editor's Learn state and the seam, the lesson pane, the lesson browser | LUI (R2; pre-declared by S0l) |
 //!
 //! Lane S0r (R1/S1) declared the last three, and three header hook points: `regions/header.rs` calls one no-op
 //! function in each of them, behind its feature, so AM, PBU and RUI fill their header controls in their own files.
+//! Lane S0l (R2) added a fourth, Learn (`learn/header.rs`, feature `learn`), and the `learn/` seam.
 //!
 //! docs/editor.md describes the whole editor.
 //!
@@ -34,6 +36,8 @@ pub mod cards;
 mod describe;
 mod frame;
 pub mod layout;
+#[cfg(feature = "learn")]
+pub mod learn;
 pub mod live;
 pub mod modulate;
 pub mod overlay;
