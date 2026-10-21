@@ -1,14 +1,15 @@
-//! The Create header hook (lane S0s's inert entry point, R3; lane PUI fills the view): with the `create` feature on, the
-//! header draws one **Create** button when the shell says create from sound is available, and draws exactly as before
-//! when it does not. The click is inert for now. kittest finds the button by its accessibility label, with no renderer.
+//! The Create header hook (lane S0s's entry point, R3; lane SK3's minimal panel, F2s; lane PUI fills the view): with the
+//! `create` feature on, the header draws one **Create** button when the shell says create from sound is available,
+//! and draws exactly as before when it does not. The click toggles the Create panel (lane SK3). kittest finds the
+//! button by its accessibility label, with no renderer.
 #![cfg(feature = "create")]
 
 use egui::vec2;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use enth_ui::Theme;
-use enth_ui::editor::cards::Intents;
-use enth_ui::editor::create::HeaderCreate;
+use enth_ui::editor::cards::{Intent, Intents};
+use enth_ui::editor::create::{CreateIntent, HeaderCreate};
 use enth_ui::editor::regions::{Header, HeaderView};
 
 /// The header band alone, over a view, and the intents its frames pushed.
@@ -47,7 +48,7 @@ fn the_header_has_no_create_entry_until_the_shell_says_create_is_available() {
 }
 
 #[test]
-fn an_available_create_entry_is_drawn_and_inert() {
+fn an_available_create_entry_is_drawn_and_its_click_toggles_the_panel() {
     let view = HeaderView {
         create: HeaderCreate { available: true },
         ..HeaderView::default()
@@ -56,9 +57,9 @@ fn an_available_create_entry_is_drawn_and_inert() {
     h.run();
     h.get_by_label("Create").click();
     h.run();
-    assert!(
-        h.state().out.is_empty(),
-        "the entry pushes no intent yet: {:?}",
-        h.state().out.as_slice()
+    assert_eq!(
+        h.state().out.as_slice(),
+        [Intent::Create(CreateIntent::Toggle)],
+        "the entry toggles the panel (lane SK3)"
     );
 }

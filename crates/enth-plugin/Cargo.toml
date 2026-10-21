@@ -67,6 +67,10 @@ learn = ["enth-ui/learn"]
 # decoders) and the editor's Create view (enth-ui/create). Off by default until lane SK3 (F2s) decides; `enth-session`'s
 # `create` always compiles, and nothing is saved in the project for a create job.
 create = ["enth-ui/create", "dep:hound", "dep:claxon", "dep:lewton", "dep:nanomp3", "dep:rayon"]
+# Lane SK3: the `process-stats` measurement harness for create jobs (src/create.rs, `harness`): with
+# `ENTH_CREATE_HARNESS` naming a sound file, activation runs create jobs on it one after the other until deactivation,
+# which appends an `enth.plugin-create-stats/1` line to `ENTH_CREATE_REPORT`. Off by default; measurement bundles only.
+create-harness = ["create"]
 default = ["recreate", "learn"]
 # Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
 # activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by

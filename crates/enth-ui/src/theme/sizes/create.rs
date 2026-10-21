@@ -8,12 +8,25 @@ use serde::{Deserialize, Serialize};
 /// The Create view: drop zone, folder browser, candidate tiles, progress bar (lane PUI).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct CreateSizes {}
+pub struct CreateSizes {
+    /// The width of the Create panel at the window's right edge, under the layout's top row (lane SK3's minimal panel,
+    /// F2s): the layout's other regions take the rest while it is open, the lesson pane included. The lesson pane's
+    /// width.
+    pub pane: f32,
+    /// The height of the drop zone.
+    pub drop_zone: f32,
+    /// The room the path field leaves for its **Choose** button.
+    pub choose: f32,
+}
 
 impl CreateSizes {
     /// The dark theme's sizes.
     pub(super) fn dark() -> Self {
-        Self {}
+        Self {
+            pane: 320.0,
+            drop_zone: 56.0,
+            choose: 80.0,
+        }
     }
 }
 

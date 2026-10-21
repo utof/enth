@@ -363,6 +363,10 @@ impl Enth {
         // 3b. The A/B mix (lane SKR): Target ▶'s loop and Mine ▶'s engine output, crossfaded at one position; the
         //     block is left untouched while no round plays, so renders still equal `enth render`.
         self.player.mix(left, right);
+        // 3c. A create candidate's audition (lane SK3, feature `create`): added once, from its start; one atomic load
+        //     per block while none plays.
+        #[cfg(feature = "create")]
+        self.audition.mix(left, right);
 
         // 4. Telemetry wake.
         if let Some(tap) = engine.tap()

@@ -24,15 +24,22 @@
 //! | [`audition`] | ▶ audition and A/B against the upload, level-matched |
 //! | [`progress`] | the progress bar (renders against the budget, time left) and Cancel |
 //!
-//! Lane S0s left the hook inert: it draws one **Create** button when the shell says create is available, and the click
-//! does nothing yet. The other files are empty.
+//! | [`panel`] | lane SK3's minimal panel (F2s): drop zone, path field, Start, Cancel, progress, the K candidates with ▶ and "Use this" |
+//!
+//! Lane S0s left the hook inert. **Lane SK3** (F2s) wired the minimal seam PUI grows: the click toggles a plain Create
+//! panel at the window's right edge ([`panel`]), the editor's [`Create`] state with [`CreateIntent`], `set_create`
+//! and `apply_create`; a file dropped anywhere on the editor is chosen (the frame reads egui's `dropped_files`
+//! whatever the view, as lane FK3 advised). `audition.rs`, `browser.rs`, `drop_zone.rs`, `progress.rs` and `tiles.rs`
+//! are still empty.
 
 pub mod audition;
 pub mod browser;
 pub mod drop_zone;
 pub mod header;
+pub mod panel;
 pub mod progress;
 pub mod state;
 pub mod tiles;
 
 pub use header::HeaderCreate;
+pub use state::{Create, CreateIntent};

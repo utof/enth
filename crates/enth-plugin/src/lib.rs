@@ -31,7 +31,7 @@
 //! | [`hint_eval`] | the hint job's evaluator: `enth_solver::measure` on a few scoped threads, results by job index, so a hint is the same for any worker count | HINT (FU1) |
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 //! | `learn` | with the `learn` cargo feature: pack I/O (bundled packs and the Packs folder), the progress file, Learn jobs on the game worker, the session's Learn requests acted on after unlocking | SKL (R2, F2l) |
-//! | `create` | with the `create` cargo feature: the `enth-create` thread, the per-job `rayon` pool, cancel, the file decoders; empty until F2s | SK3 (R3; pre-declared by S0s) |
+//! | `create` | with the `create` cargo feature: the `enth-create` thread, the per-job `rayon` pool (joined per job), cancel within one batch, the wall-clock cap, the file decoders, the k-NN bank's lookup, auditions; the session's create requests acted on after unlocking | SK3 (R3, F2s; pre-declared by S0s) |
 //! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
     unsafe_code,
@@ -60,6 +60,8 @@ pub mod process;
 #[cfg(feature = "rt-stats")]
 pub mod rt_stats;
 pub mod state;
+#[cfg(all(test, feature = "create"))]
+mod tests_create;
 #[cfg(test)]
 mod tests_game;
 #[cfg(test)]
@@ -74,6 +76,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 
 use enth_engine::Engine;
+use enth_session::create::CreateRequest;
 use enth_session::game::GameRequest;
 use enth_session::learn::LearnRequest;
 use enth_session::{Activation, HostParam, HostValues, Session, ShellRequest};
@@ -122,6 +125,10 @@ pub struct Shared {
     /// A Recreate round's shell side (lane SKR, [`game`]): the job worker, the A/B atomics `process()` reads, the
     /// target loop's hand-off and the round log. Every drain of the session acts on its game requests here.
     pub game: game::Game,
+    /// "Create from sound" (lane SK3, feature `create`): the `enth-create` thread and its per-job pool, the posts the
+    /// GUI thread hands to the session, the audition hand-off. Every drain acts on the session's create requests here.
+    #[cfg(feature = "create")]
+    pub create: create::Create,
     /// The parameters, for reading the host's values on the main and GUI threads (weak: the params own the
     /// persistent fields, which own this).
     params: OnceLock<Weak<EnthParams>>,
@@ -156,6 +163,8 @@ impl Shared {
             restored: process::Restored::new(),
             editor_closed: AtomicBool::new(false),
             game: game::Game::new(),
+            #[cfg(feature = "create")]
+            create: create::Create::new(),
             params: OnceLock::new(),
             host: OnceLock::new(),
             #[cfg(feature = "rt-stats")]
@@ -194,6 +203,8 @@ impl Shared {
             // A lesson's requests (lane SKL): acted on with the `learn` feature, dropped without it (a saved lesson
             // then stays in the project as it was, its stash kept).
             let learn: Vec<LearnRequest> = session.drain_learn_requests().collect();
+            // The create job's requests (lane SK3): acted on with the `create` feature, dropped without it.
+            let create: Vec<CreateRequest> = session.drain_create_requests().collect();
             if requests
                 .iter()
                 .any(|r| matches!(r, ShellRequest::RenameParams))
@@ -202,12 +213,16 @@ impl Shared {
             }
             (
                 result,
-                (requests, game, learn),
+                (requests, game, learn, create),
                 session.status().compile_pending,
             )
         };
-        let (requests, game, learn) = requests;
+        let (requests, game, learn, create) = requests;
         let host = self.settle(requests, game, learn, pending);
+        #[cfg(feature = "create")]
+        self.create.act(create);
+        #[cfg(not(feature = "create"))]
+        drop(create);
         (result, host)
     }
 
@@ -304,6 +319,9 @@ pub struct Enth {
     audio: Audio,
     /// A Recreate round's audio side: the target loop and Mine ▶'s phrase, the A/B mix (lane SKR, [`game`]).
     player: game::Player,
+    /// A create candidate's audition, added to the block (lane SK3, feature `create`).
+    #[cfg(feature = "create")]
+    audition: create::AuditionPlayer,
 }
 
 /// RealtimeSanitizer's positive control (`cargo xtask rtsan`, R1/S1 lane INT): with `ENTH_RTSAN_CONTROL=alloc` set at
@@ -321,6 +339,8 @@ impl Default for Enth {
         let _ = shared.params.set(Arc::downgrade(&params));
         let size = enth_ui::Theme::dark().size.window.default;
         let player = game::Player::new(shared.game.mailbox());
+        #[cfg(feature = "create")]
+        let audition = create::AuditionPlayer::new(shared.create.audition_slot());
         Enth {
             params,
             shared,
@@ -329,6 +349,8 @@ impl Default for Enth {
             engine: None,
             audio: Audio::new(),
             player,
+            #[cfg(feature = "create")]
+            audition,
         }
     }
 }
@@ -446,6 +468,11 @@ impl Plugin for Enth {
         // A round's target loop follows the host's rate; the new engine holds none of Mine's notes (lane SKR).
         self.shared.game.set_host_rate(buffer_config.sample_rate);
         self.player.activate(buffer_config.sample_rate);
+        // A create candidate's audition renders at the host's rate (lane SK3).
+        #[cfg(feature = "create")]
+        self.shared.create.set_host_rate(buffer_config.sample_rate);
+        #[cfg(feature = "create-harness")]
+        create::harness::start(&self.shared.create);
         self.shared.rebaseline.store(false, Ordering::Release);
         #[cfg(feature = "ab-toggle")]
         game::harness::start(&self.shared, &mut self.player, buffer_config.sample_rate);
@@ -460,6 +487,8 @@ impl Plugin for Enth {
         self.shared.rt_stats.write_report();
         #[cfg(feature = "ab-toggle")]
         game::harness::report(&self.player);
+        #[cfg(feature = "create-harness")]
+        create::harness::report(&self.shared.create);
     }
 
     fn reset(&mut self) {

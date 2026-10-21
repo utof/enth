@@ -93,6 +93,10 @@ pub struct Editor {
     /// region itself.
     #[cfg(feature = "learn")]
     learn_layout: Layout,
+    /// The Create state (lane SK3's minimal panel, F2s; lane PUI's view): the session's create read model, the chosen
+    /// file, the panel and the intents waiting for the session.
+    #[cfg(feature = "create")]
+    create: super::create::Create,
 }
 
 impl std::fmt::Debug for Editor {
@@ -137,6 +141,8 @@ impl Editor {
             learn: super::learn::Learn::default(),
             #[cfg(feature = "learn")]
             learn_layout: learn_layout(theme),
+            #[cfg(feature = "create")]
+            create: super::create::Create::default(),
         }
     }
 
@@ -312,6 +318,50 @@ impl Editor {
         self.learn.set_review_day(day);
     }
 
+    /// Before a frame (lane SK3, F2s): the session's create job (`CreateEdit::create()`), as `set_round` hands over a
+    /// round. A shell that calls it says create is available: the header shows **Create** and a dropped file is
+    /// taken.
+    #[cfg(feature = "create")]
+    pub fn set_create(&mut self, view: Option<enth_session::create::CreateView>) {
+        self.create.set_create(view);
+    }
+
+    /// After a frame (lane SK3): the Create view's intents, applied to the session's `CreateEdit`.
+    #[cfg(feature = "create")]
+    pub fn apply_create(&mut self, session: &mut dyn enth_session::create::CreateEdit) {
+        self.create.apply(session);
+    }
+
+    /// The Create state (tests and the dev window).
+    #[cfg(feature = "create")]
+    pub fn create(&self) -> &super::create::Create {
+        &self.create
+    }
+
+    /// The Create panel (lane SK3, F2s), before the layout: takes a file dropped on the window when create is
+    /// available, and, while the panel is open, says where its column starts: `size.create.pane` wide, `space.gap` in
+    /// from the window's right edge as the layouts' margin insets their regions. Returns that left edge and whether
+    /// files are being dragged over the window.
+    #[cfg(feature = "create")]
+    fn create_column(&mut self, ctx: &Context, t: &Theme, rect: Rect) -> (Option<f32>, bool) {
+        let (dropped, hovering) = ctx.input(|i| {
+            (
+                i.raw.dropped_files.first().map(|f| f.path().to_path_buf()),
+                !i.raw.hovered_files.is_empty(),
+            )
+        });
+        if self.create.available()
+            && let Some(path) = dropped
+        {
+            self.create.push(super::create::CreateIntent::Choose(path));
+        }
+        let split = self.create.panel_open().then(|| {
+            let right = (rect.right() - t.space.gap).max(rect.left());
+            (right - t.size.create.pane).max(rect.left())
+        });
+        (split, hovering)
+    }
+
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
     /// dragged source and the overlay applied.
     fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {
@@ -421,19 +471,34 @@ impl Editor {
         let rect = ui.max_rect();
         ui.painter()
             .rect_filled(rect, 0.0, t.color.surface.background);
+        // The Create panel takes a column at the window's right edge while it is open (lane SK3's minimal panel, F2s),
+        // under the layout's top row, and the layout, Learn's included, places the rest beside it ([`beside`]): with
+        // both open, the lesson pane sits left of the Create panel. A file dropped anywhere on the window is chosen,
+        // whatever the view (lane FK3's advice), once the shell says create is available.
+        #[cfg(feature = "create")]
+        let (column, hovering) = self.create_column(&ctx, t, rect);
+        let place = |layout: &Layout| {
+            #[cfg(feature = "create")]
+            if let Some(split) = column {
+                return beside(layout, rect, split);
+            }
+            layout.regions(rect)
+        };
         // While the lesson pane shows, the built-in layout `learn` places it (lane LUI), unless the editor's own layout
         // places the `lesson` region; what no longer fits is in the overflow report.
         #[cfg(feature = "learn")]
         let (regions, layout) = {
-            let own = self.layout.regions(rect);
+            let own = place(&self.layout);
             if self.learn.panel_open() && !own.iter().any(|p| p.region == Region::Lesson) {
-                (self.learn_layout.regions(rect), &self.learn_layout)
+                (place(&self.learn_layout), &self.learn_layout)
             } else {
                 (own, &self.layout)
             }
         };
         #[cfg(not(feature = "learn"))]
-        let (regions, layout) = (self.layout.regions(rect), &self.layout);
+        let (regions, layout) = (place(&self.layout), &self.layout);
+        #[cfg(feature = "create")]
+        let create_pane = column.map(|split| create_pane(&regions, rect, split, t.space.gap));
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
         #[cfg(feature = "recreate")]
@@ -483,9 +548,9 @@ impl Editor {
                             // Lane S0l (R2): lessons are not available until lane LUI hands the editor a Learn state.
                             #[cfg(feature = "learn")]
                             learn: self.learn.header(),
-                            // Lane S0s (R3): create is not available until lane PUI hands the editor a create state.
+                            // Lane SK3 (F2s): available once the shell hands the editor a create read model.
                             #[cfg(feature = "create")]
-                            create: super::create::HeaderCreate::default(),
+                            create: self.create.header(),
                         };
                         let knobs: Vec<CardView> = layout
                             .parts_in(Region::Header)
@@ -572,6 +637,13 @@ impl Editor {
                     }
                 }
             }
+            // The Create panel (lane SK3), in its column right of the layout.
+            #[cfg(feature = "create")]
+            if let Some(p) = create_pane {
+                let over =
+                    super::create::panel::show(&mut self.create, ui, t, p, hovering, &mut out);
+                overflow.push(("create", over));
+            }
             if let Some(b) = sheet {
                 #[cfg(feature = "recreate")]
                 if settings_page {
@@ -630,6 +702,11 @@ impl Editor {
         if self.learn.has_queued() {
             ctx.request_repaint();
         }
+        // And the Create view's (lane SK3), the same way: only after a click or a drop.
+        #[cfg(feature = "create")]
+        if self.create.has_queued() {
+            ctx.request_repaint();
+        }
     }
 
     /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
@@ -651,6 +728,8 @@ impl Editor {
                 Intent::Game(g) => self.recreate.push(g.clone()),
                 #[cfg(feature = "learn")]
                 Intent::Learn(l) => self.learn.push(l.clone()),
+                #[cfg(feature = "create")]
+                Intent::Create(c) => self.create.push(c.clone()),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
                 Intent::End(_) => {
                     session.end_gesture();
@@ -708,6 +787,65 @@ fn mark_cards(ctx: &Context, cards: &[CardView], fingerprint: &mut Fingerprint) 
             }
         }
     }
+}
+
+/// `layout`'s regions in `rect` beside the Create panel's column, which starts at `split` (lane SK3). As the layout
+/// `learn` keeps the header row whole for a lesson's round (lane LUI), the column sits under the layout's top row: the
+/// regions of the row the header starts (the header and the output region in both built-ins) keep the window's width,
+/// and the rest are placed left of `split`. A layout whose header is not in its top row, or whose regions would
+/// overlap that way (a custom one), is placed left of `split` whole, beside a column the window's height.
+#[cfg(feature = "create")]
+fn beside(layout: &Layout, rect: Rect, split: f32) -> Vec<Placed> {
+    let narrow = layout.regions(Rect::from_min_max(
+        rect.min,
+        egui::pos2(split, rect.bottom()),
+    ));
+    let full = layout.regions(rect);
+    let top_row = full
+        .iter()
+        .find(|p| p.region == Region::Header)
+        .map(|h| h.rect)
+        .filter(|h| full.iter().all(|p| p.rect.top() >= h.top() - 0.5))
+        .map(|h| h.bottom());
+    let Some(bottom) = top_row else {
+        return narrow;
+    };
+    let mixed: Vec<Placed> = full
+        .iter()
+        .filter_map(|p| {
+            if p.rect.bottom() <= bottom + 0.5 {
+                Some(*p)
+            } else {
+                narrow.iter().find(|n| n.region == p.region).copied()
+            }
+        })
+        .collect();
+    let apart = |a: &Placed, b: &Placed| !a.rect.shrink(0.5).intersects(b.rect.shrink(0.5));
+    let clear = mixed.len() == full.len()
+        && mixed
+            .iter()
+            .enumerate()
+            .all(|(i, a)| mixed[i + 1..].iter().all(|b| apart(a, b)))
+        && mixed
+            .iter()
+            .all(|p| p.rect.bottom() <= bottom + 0.5 || p.rect.right() <= split + 0.5);
+    if clear { mixed } else { narrow }
+}
+
+/// The Create panel's rectangle beside `regions` ([`beside`]): from `split` to `gap` in from `rect`'s right edge, and
+/// from under the regions that reach past `split` (the layout's top row) to `gap` above the bottom edge, as the
+/// layouts' margin insets their regions.
+#[cfg(feature = "create")]
+fn create_pane(regions: &[Placed], rect: Rect, split: f32, gap: f32) -> Rect {
+    let top = regions
+        .iter()
+        .filter(|p| p.rect.right() > split + 0.5)
+        .map(|p| p.rect.bottom())
+        .fold(rect.top(), f32::max)
+        + gap;
+    let right = (rect.right() - gap).max(split);
+    let bottom = (rect.bottom() - gap).max(top);
+    Rect::from_min_max(egui::pos2(split, top), egui::pos2(right, bottom))
 }
 
 /// The built-in layout `learn` for `theme` (lane LUI), or layout 1 if it does not resolve (it always does: the

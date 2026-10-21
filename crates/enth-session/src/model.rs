@@ -133,6 +133,8 @@ pub struct Session {
     /// The lesson's state that is not saved (lane SL; the saved part is `instance.learn`): the player, the step's
     /// locks and pinned values, jobs and the outbox. See [`crate::learn`].
     pub(crate) learn: crate::learn::LearnLive,
+    /// The create job's state (lane SK3; never saved): the job, its candidates and the outbox. See [`crate::create`].
+    pub(crate) create: crate::create::CreateLive,
 }
 
 impl std::fmt::Debug for Session {
@@ -179,6 +181,7 @@ impl Session {
             telemetry_maps: Vec::new(),
             game: crate::game::GameLive::default(),
             learn: crate::learn::LearnLive::default(),
+            create: crate::create::CreateLive::default(),
         }
     }
 

@@ -40,6 +40,10 @@ const DROP_DB: f64 = 20.0;
 /// loudest.
 const FULL_DB: f64 = 35.0;
 const FULL_PARTIALS: usize = 3;
+/// Fullness when the decoder says the file is lossy ([`IntakeCfg::codec`](super::IntakeCfg::codec), lane SK3): the
+/// codec has likely low-passed it, so two partials under the edge are enough (a high note's sparse spectrum holds
+/// fewer than three in the octave under an MP3's cut-off). An isolated partial (a sine) is still not an edge.
+const FULL_PARTIALS_LOSSY: usize = 2;
 /// No bump: the level under the edge at most this far above the median of those partials.
 const BUMP_DB: f64 = 6.0;
 /// What is under an edge is within this many dB of the loudest bin (lower is rounding noise, or nothing worth
@@ -53,13 +57,20 @@ const EDGE_DB: f64 = 20.0;
 /// Analysis frame (s), rounded up to a power of two in samples.
 const FRAME_S: f64 = 0.04;
 
-/// The cut-off of a steep low-pass in `x[span]` (Hz), or `None` for the full band.
+/// The cut-off of a steep low-pass in `x[span]` (Hz), or `None` for the full band. `lossy`: the decoder says the file
+/// went through a lossy codec, so two partials under an edge are enough ([`FULL_PARTIALS_LOSSY`]).
 pub(crate) fn estimate(
     x: &[f32],
     sr: f64,
     span: (usize, usize),
+    lossy: bool,
     planner: &mut FftPlanner,
 ) -> Option<f64> {
+    let full_partials = if lossy {
+        FULL_PARTIALS_LOSSY
+    } else {
+        FULL_PARTIALS
+    };
     let n = ((sr * FRAME_S) as usize).next_power_of_two().max(256);
     let (pw, _) = welch(planner, x, span.0, span.1, n);
     let bin = sr / n as f64;
@@ -127,7 +138,7 @@ pub(crate) fn estimate(
             .collect();
         let top = parts.iter().copied().fold(-300.0, f64::max);
         let mut strong: Vec<f64> = parts.into_iter().filter(|&p| p >= top - FULL_DB).collect();
-        if strong.len() < FULL_PARTIALS {
+        if strong.len() < full_partials {
             continue;
         }
         strong.sort_by(f64::total_cmp);
@@ -171,7 +182,23 @@ mod tests {
     }
 
     fn bw(x: &[f32]) -> Option<f64> {
-        estimate(x, SR, (0, x.len()), &mut FftPlanner::new(FftPath::Scalar))
+        estimate(
+            x,
+            SR,
+            (0, x.len()),
+            false,
+            &mut FftPlanner::new(FftPath::Scalar),
+        )
+    }
+
+    fn bw_lossy(x: &[f32]) -> Option<f64> {
+        estimate(
+            x,
+            SR,
+            (0, x.len()),
+            true,
+            &mut FftPlanner::new(FftPath::Scalar),
+        )
     }
 
     fn bright(note_hz: f64) -> Vec<f32> {
@@ -231,5 +258,35 @@ mod tests {
         }
         let sq = oscillator(SR, Wave::Square, 1500.0, 1.0, 0.0);
         assert!(bw(&sq).is_none(), "a high square");
+    }
+
+    /// Lane SK3 (F1s should-fix 2): a high note keeps two partials in the octave under an MP3-like cut-off, which the
+    /// clean rule (three) does not trust; the decoder's lossy hint does. What has no edge stays without one.
+    #[test]
+    fn the_lossy_hint_finds_a_high_notes_cut_off_and_nothing_else() {
+        let x = bright(2500.0);
+        let cut = brick_wall(&x, 11_000.0);
+        assert_eq!(
+            bw(&cut),
+            None,
+            "the clean rule leaves a sparse high note alone"
+        );
+        let got = bw_lossy(&cut).expect("the lossy hint finds the cut-off");
+        assert!(libm::log2(got / 11_000.0).abs() < 1.0 / 3.0, "{got}");
+        assert!(bw_lossy(&x).is_none(), "an open filter is the full band");
+        for f in [440.0, 2500.0, 6000.0] {
+            assert!(bw_lossy(&sine(SR, f, 0.5, 1.0)).is_none(), "sine {f}");
+        }
+        for note in [65.4, 220.0, 523.25] {
+            let low = bright(note);
+            for fc in [3400.0, 8000.0, 11_000.0, 16_000.0] {
+                let clean = bw(&brick_wall(&low, fc));
+                let hinted = bw_lossy(&brick_wall(&low, fc));
+                assert_eq!(
+                    clean, hinted,
+                    "{note} {fc}: a full spectrum reads the same either way"
+                );
+            }
+        }
     }
 }

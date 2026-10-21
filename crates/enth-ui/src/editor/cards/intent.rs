@@ -49,6 +49,10 @@ pub enum Intent {
     /// applies it to the session's `LearnEdit` after the frame (`Editor::apply_learn`).
     #[cfg(feature = "learn")]
     Learn(crate::editor::learn::LearnIntent),
+    /// The Create view (lane SK3's minimal panel, F2s; lane PUI's view): the editor hands it to its Create state,
+    /// which applies it to the session's `CreateEdit` after the frame (`Editor::apply_create`).
+    #[cfg(feature = "create")]
+    Create(crate::editor::create::CreateIntent),
     /// A drag started on a control: the edits up to the matching `End` are one gesture (one undo step).
     Begin(Grip),
     /// A parameter's new plain value, in real units and valid for its spec.
@@ -125,6 +129,12 @@ impl Intent {
             Intent::Game(_) => Vec::new(),
             #[cfg(feature = "learn")]
             Intent::Learn(_) => Vec::new(),
+            #[cfg(feature = "create")]
+            #[allow(
+                clippy::match_same_arms,
+                reason = "lane SK3's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
+            )]
+            Intent::Create(_) => Vec::new(),
             Intent::Set { addr, value } => vec![Op::SetParam {
                 addr: addr.clone(),
                 value: *value,

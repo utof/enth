@@ -24,6 +24,7 @@
 | `GameState`, `RoundRecord`, `RoundLogEntry` | `game` | The `enth` field's `game` object (absent while no round is live) and the round log's line (`enth.round-log/1`, carrying CT's `enth.round-result/1`) | Lane SG; fixture `tests/fixtures/state/v1/round.*.json` |
 | `LearnEdit`, `LearnView`, `Session::{learn_job_done, drain_learn_requests, learn_record, learn_player, locks, checked_patch}`, `LearnJob`, `LearnResult`, `LearnRequest`, `LearnError` | `learn` | The editor's lesson intents and read model, and the shell's side of a lesson: jobs, progress records, the Listen state | Lane SL (R2, freeze point F1l); [below](#learn-lane-sl-r2) |
 | `LearnState`, `LessonRef`, `Selector`, `SessionError::{Locked, LessonLive}`, `RoundSource::Challenge`, `JobKind::PrepareChallenge`, `RoundOrigin` | `learn`, `model`, `game` | The `enth` field's `learn` object, the lock selectors and refusals, and lesson rounds | Lane SL; `LessonRef` is lane LM's and `Selector` lane CV2's, re-exported (lane F1L) |
+| `CreateEdit`, `CreateView`, `CandidateView`, `Session::{create_post, drain_create_requests}`, `CreateRun`, `CreateRequest`, `CreatePost`, `CreateSettings`, `CreateSource`, `CreateError` | `create` | "Create from sound": the editor's intents and read model, the shell's jobs and posts, "Use this" as one undo step; nothing saved | Lane SK3 (R3, freeze point F2s); [below](#create-lane-sk3-r3) |
 
 Stubs return `SessionError::Unsupported { what, lane }` (or `Inactive` while detached), never panic, and name the lane that fills them in.
 
@@ -466,6 +467,51 @@ The `enth` field's optional `learn` object holds the in-flight `LessonRef` (pack
 6. **Lesson rounds resume from the lesson**, by its reference and the round's saved fingerprint, not from a code (non-seed targets have none).
 7. **The session refuses stale results itself**, by job id and revision, and the player's own check stays as a second guard.
 8. **A host load other than the same lesson's ends the live lesson without a restore**, like a host load of another round.
+
+## Create (lane SK3, R3)
+
+`enth-session`'s `create` module is the pure side of "create from sound" ([r3.md](r3.md#the-create-view-and-the-session), [phase-3.md](phase-3.md), freeze point F2s). Like `game` and `learn` it does no I/O, spawns no threads and reads no clocks: **the shell runs the job** (decoding, the intake, the portfolio and the K searches, on the plugin's `enth-create` thread and its per-job pool, [plugin.md](plugin.md#create-lane-sk3-r3)) **and posts back**; the session keeps the read model and turns "Use this" into one undo step. The audio thread never touches it.
+
+### The lifecycle
+
+| Phase | Entered by | Leaves by |
+| --- | --- | --- |
+| (no job) | — | `create_start(source, settings)`: a `Run` goes out |
+| `Starting` | `create_start` | the shell's `Intake` post (the file decoded, the intake ran), or a `Round` post |
+| `Searching` | the first post | `Done` (the budget, the time cap, a cancel, exhaustion, the goal) or `Failed` |
+| `Cancelling` | `create_cancel`: a `Cancel` goes out once | the shell's `Done` (stop `cancelled`) |
+| `Done(stop)`, `Failed` | the shell's last post | `create_start` (a new job; the old candidates go), `create_clear` |
+
+`create_clear` forgets the job at once (a running one gets a `Cancel`); its later posts are refused as `stale_post`. `create_start` is refused while a job runs (`create_running`), and for settings out of range (`bad_create_settings`: K 1–16, the cap above 0 and at most 300 s, a render cap of at least 1) or an empty path (`no_file`).
+
+### Who calls what
+
+| Entry | Thread | Does |
+| --- | --- | --- |
+| `CreateEdit::{create, create_start, create_cancel, create_use, create_audition, create_stop_audition, create_clear}` | GUI, at the end of the frame like `SessionEdit` | The editor's intents and its read model (`CreateView`, rebuilt on every call: the file, the phase, the settings, the intake's report and the shell's notes, the latest progress, the K candidates with their ranks, the one taken, the one auditioned, the error) |
+| `create_post(id, post)` | GUI (or host main), under the lock | Hands a post back. One for a job the session no longer runs, or after its end, is `stale_post` and changes nothing |
+| `drain_create_requests()` | Wherever `drain_requests` is drained | `Run(CreateRun)`, `Cancel(id)`, `Audition { id, branch, which, patch }`, `StopAudition`; acted on **after unlocking** |
+
+### Posts
+
+| Post | When | The view |
+| --- | --- | --- |
+| `Intake(CreateIntake)` | The file decoded and the intake ran | How it decoded ("MP3, 128 kbps, 44100 Hz, mono"), FE's `IntakeReport` whole (the inferred performance, the degradation, the warnings, which `warning_text` turns into sentences), the shell's notes (a 2:1 decimation, no k-NN bank) |
+| `Round { progress, candidates }` | After every told round | The progress (rounds, renders against the cap, seconds against the time cap, `fraction()` the larger of the two) and the K branches as `enth_solver::create::Candidate`s (re-exported here with `CandidateState`, `CreateStop` and `Provenance`, so the editor needs no solver dependency) |
+| `Done { progress, stop, candidates, notes }` | The job ended | Its stop (a time cap and a cancel both read `cancelled`; the notes say which) and the final candidates |
+| `Failed { code, message, hint }` | It could not run | The error |
+
+### "Use this"
+
+`create_use(branch, which)` loads the candidate's refined patch (`Which::Refined`) or the start it grew from (`Which::Proposal`) through `Session::load_preset`: `enth_patch::ops_between` of the patch and the candidate as **one undo step**, delivered like a host load (**one plan**, forgetting the engine's remembered host slot values), **no host writes**, `PatchEdited` for the dirty mark. The patch is named after the file's stem ("kick" for `kick.wav`). Refused while a lesson is live (`lesson_live`, as a preset load is), and for a branch the job has no candidate on yet (`no_candidate`). `create_audition` sends the candidate's patch to the shell, which renders it with the job's performance at the host's rate and plays it once.
+
+### Nothing is saved
+
+A create job does not survive a project reload (the coordinator's decision, kept by the F1s judge): the patch you take is in the project, the job is not. So `create` adds **no field** to the `enth` blob, `enth.plugin-state/1` is unchanged, and host loads leave the create state alone.
+
+### Tests (lane SK3)
+
+`tests/create.rs`: a job goes out and its posts build the view (ranks by distance, stale posts after the end or for another job), cancel and clear go out once, bad settings and an empty path are refused, "Use this" is one undo step with exactly one plan and no host writes (the proposal loads the same way), audition requests carry the patch, a job is not saved (the `enth` field keeps its bytes) and a host load leaves it alone. `src/create.rs`: settings ranges, the source's name and stem, the progress fraction, `Send`.
 
 ## Decisions
 

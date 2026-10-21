@@ -12,3 +12,5 @@
 # insta leaves these next to a snapshot when it differs; only the accepted <name>.snap is committed.
 **/*.snap.new
 **/.pending-snap
+# Lane SK3: the create decoders' own test fixtures (our renders, ~60 KB).
+!crates/enth-plugin/tests/fixtures/create/*.wav
