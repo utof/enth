@@ -1,0 +1,180 @@
+# content/gr3/exclude-real.txt: real audio training must never contain (lane DS).
+# One entry per line: <type> <value>, then an optional comment after '#'.
+#
+# freesound-id N        that Freesound sound, from Freesound, FSD50K (whose fname is the Freesound id) or any mirror
+# freesound-pack N      every sound of that Freesound pack (same session: near-duplicates)
+# freesound-uploader U  advisory: every sound by that uploader where the source records it (FSD50K's uploader names
+#                       can differ from Freesound's, so ids and packs are the hard guard)
+# audio-sha256 H        no audio file with these bytes
+# path P                nothing under this path (~ = the owner's home)
+
+path ~/code/enth-scratch/owner/r3-picks/**  # the owner's picks (owner-01..owner-10)
+path ~/code/enth-scratch/r3-data/freesound/**  # the downloaded references
+
+freesound-id 213657  # real-sub-01
+freesound-id 213525  # real-sub-02
+freesound-id 311331  # real-sub-03
+freesound-id 303130  # real-sub-04
+freesound-id 324040  # real-sub-05
+freesound-id 89075  # real-sub-06
+freesound-id 423680  # real-sub-07
+freesound-id 340139  # real-sub-08
+freesound-id 676927  # real-sub-09
+freesound-id 847305  # real-sub-10
+freesound-id 750370  # real-fm-01
+freesound-id 817013  # real-fm-02
+freesound-id 792954  # real-fm-03
+freesound-id 873843  # real-fm-04
+freesound-id 557012  # real-fm-05
+freesound-id 680995  # real-fm-06
+freesound-id 122421  # real-fm-07
+freesound-id 24525  # real-fm-08
+freesound-id 776760  # real-fm-09
+freesound-id 798638  # real-fm-10
+freesound-id 794463  # real-ac-01
+freesound-id 577702  # real-ac-02
+freesound-id 791932  # real-ac-03
+freesound-id 726800  # real-ac-04
+freesound-id 257363  # real-ac-05
+freesound-id 674296  # real-ac-06
+freesound-id 378681  # real-ac-07
+freesound-id 659912  # real-ac-08
+freesound-id 82281  # real-ac-09
+freesound-id 371192  # real-ac-10
+freesound-id 580112  # owner-default-01
+freesound-id 353269  # owner-default-02
+freesound-id 208447  # owner-default-03
+freesound-id 399542  # owner-default-04
+freesound-id 31131  # owner-default-05
+freesound-id 384920  # owner-default-06
+freesound-id 657392  # owner-default-07
+freesound-id 761184  # owner-default-08
+freesound-id 632255  # owner-default-09
+freesound-id 609691  # owner-default-10
+freesound-id 527242  # reserve-sub-1
+freesound-id 369453  # reserve-sub-2
+freesound-id 442312  # reserve-fm-1
+freesound-id 341166  # reserve-fm-2
+freesound-id 331047  # reserve-ac-1
+freesound-id 404856  # reserve-ac-2
+freesound-id 165334  # reserve-owner-1
+freesound-id 351061  # reserve-owner-2
+
+freesound-pack 17609
+freesound-pack 17482
+freesound-pack 18180
+freesound-pack 5782
+freesound-pack 19268
+freesound-pack 37786
+freesound-pack 41556
+freesound-pack 43784
+freesound-pack 45020
+freesound-pack 31288
+freesound-pack 30065
+freesound-pack 7674
+freesound-pack 1533
+freesound-pack 42444
+freesound-pack 43099
+freesound-pack 32432
+freesound-pack 40584
+freesound-pack 15795
+freesound-pack 37634
+freesound-pack 20137
+freesound-pack 36711
+freesound-pack 41982
+freesound-pack 35190
+freesound-pack 33580
+freesound-pack 29641
+freesound-pack 20773
+freesound-pack 19309
+freesound-pack 18609
+
+freesound-uploader Garzul
+freesound-uploader modularsamples
+freesound-uploader menegass
+freesound-uploader DJMini
+freesound-uploader rugged163
+freesound-uploader Terry93D
+freesound-uploader voxlab
+freesound-uploader CAT-FOX_ALEX
+freesound-uploader TheSoundLibrary
+freesound-uploader NickSamples
+freesound-uploader Saif_Sameer
+freesound-uploader Cloud-10
+freesound-uploader Anillogic
+freesound-uploader tran5ient
+freesound-uploader Ragnar59
+freesound-uploader CVLTIV8R
+freesound-uploader Sadiquecat
+freesound-uploader joesh2
+freesound-uploader noel.liv
+freesound-uploader yano1
+freesound-uploader TheEndOfACycle
+freesound-uploader karolist
+freesound-uploader PanPiper5
+freesound-uploader KEVOY
+freesound-uploader neopolitansixth
+freesound-uploader TechGeekMusic
+freesound-uploader EKVelika
+freesound-uploader Chameon
+freesound-uploader Calethos
+freesound-uploader Streetpoptunez
+freesound-uploader gmortizwavs
+freesound-uploader halo4shaun
+freesound-uploader QVL
+freesound-uploader Brett_Lavallee
+freesound-uploader SampleBasement
+freesound-uploader Poligonstudio
+freesound-uploader foochie_foochie
+freesound-uploader gnuoctathorpe
+freesound-uploader Jessetz
+freesound-uploader thaighaudio
+
+audio-sha256 39dfbb33b479e70974c1685846a7efe64e0fbd761e7719b154accdbe61052072  # real-sub-01 (213657_862453-hq.ogg)
+audio-sha256 b87f5ce1d355f6a02b9b4b343d01b9a1d531f94a1830455c2d36bb3440626a19  # real-sub-02 (213525_862453-hq.ogg)
+audio-sha256 fc76ae6aa1c1e1a49bc790b7bbe9d9087da4cb484aeb6b83755ca90737b8ba77  # real-sub-03 (311331_2050105-hq.ogg)
+audio-sha256 8aac950d91edcd96a328d29f074df277b7344f886a5dd82c2143fe517bab5455  # real-sub-04 (303130_2050105-hq.ogg)
+audio-sha256 9d1ce9a3f8fc9b1ef6e0e2acaa86d1fbd967404cbb4da6ed18fa11dcdf4ca161  # real-sub-05 (324040_29308-hq.ogg)
+audio-sha256 dbddfc30672080a701a29a54c1a81d8061f14075cca04ceff30e7b183741b33a  # real-sub-06 (89075_792998-hq.ogg)
+audio-sha256 ce58e3e5e0bf6f58de334a3fed41cafc4a36f6b6c73f4a0fcd0b0186f08650dc  # real-sub-07 (423680_2329264-hq.ogg)
+audio-sha256 c0d384bb9fb3b98c30714b1a3a8c430165eff485f9463ef953e61b18e896c7b3  # real-sub-08 (340139_5622625-hq.ogg)
+audio-sha256 8b3afa5605964126018389883fc66ad05da83f02e7596c9a53c52074486f24e4  # real-sub-09 (676927_11173586-hq.ogg)
+audio-sha256 d214fea9ac6b97fb5a9859e0314a2e4375f3bdd422e245919f54b34500f6bb4d  # real-sub-10 (847305_17675683-hq.ogg)
+audio-sha256 3af362c62594fb0e3ff02e4cbcc16361ee1a49acdb4b12539ca9f650844c61af  # real-fm-01 (750370_11173586-hq.ogg)
+audio-sha256 2506d875e951cd0b1d4316f76e06cceaa446fed5f39eac28b5832bcd6080fe11  # real-fm-02 (817013_17512884-hq.ogg)
+audio-sha256 62485403a1692b65e37114dad37196ce2dbe2bf3b60216eddb080ca8fa30eeda  # real-fm-03 (792954_17061486-hq.ogg)
+audio-sha256 f9b4ae482b10cd3b79e515da8e2d00a24ac98b0dafbec4b7ce45236fd3248745  # real-fm-04 (873843_17675683-hq.ogg)
+audio-sha256 1831be699c6ddf75c8db3ea11c3d97bb08a4d969220ab9a4adef1d67dde2f8e3  # real-fm-05 (557012_1165076-hq.ogg)
+audio-sha256 e0fa64cda9ef30c60d4ace905b58c51539ea92f60b78b5c021ba5a5b342c79b6  # real-fm-06 (680995_10403690-hq.ogg)
+audio-sha256 205b6fa150a296bb7dd23b2917a3818fa3f7be83d81a781970c39a3d25fdcf9e  # real-fm-07 (122421_2142830-hq.ogg)
+audio-sha256 cc14adbf365eb4adbf86e88e135564e6705094e1a43495559c60cf869aaf878b  # real-fm-08 (24525_35839-hq.ogg)
+audio-sha256 9c08bd9c3ef769149dcd8eb3f2b8e02b72395f9481129408c8857c79f8514a40  # real-fm-09 (776760_532787-hq.ogg)
+audio-sha256 7bfd3c55da11253b03942caf463d61f1660fed94beaa0e11ebc58e42fcefc8ed  # real-fm-10 (798638_2520418-hq.ogg)
+audio-sha256 bcaf954ff5a531fc8037ad10ff0367ebc78a587741cca5acda00a40d4e5cd75f  # real-ac-01 (794463_5287430-hq.ogg)
+audio-sha256 723609a273ff150408b1dfc844b70be7387aaa57dd9dc11bf73a64e7757521a8  # real-ac-02 (577702_4617272-hq.ogg)
+audio-sha256 9dcfad2ba3f5ae6465f2977497a74151879664c2d2fd5f64a02ee912b02c01ee  # real-ac-03 (791932_16831012-hq.ogg)
+audio-sha256 9712948125357e926c8e73c04451099f0dbf64165bd6a6e06774ce065a5971cd  # real-ac-04 (726800_5287430-hq.ogg)
+audio-sha256 faa8e7c280b7e2eb55af81eef1805f3c30ca7f37351134719bbe1157c93fd288  # real-ac-05 (257363_4755274-hq.ogg)
+audio-sha256 7ba7b66395efb5899aa3d02b927ab6dbd144795a03de0c77e6d307ea32dd6a25  # real-ac-06 (674296_3130497-hq.ogg)
+audio-sha256 33ce89f7d7785cb41536466e6675aa9621c066e26494f0053294499327339800  # real-ac-07 (378681_6399962-hq.ogg)
+audio-sha256 2bc4b893c7c566b14967253cf3c021665b8ec613cfb937fd0df71a7c6c73c6f7  # real-ac-08 (659912_8499836-hq.ogg)
+audio-sha256 302420f3d67d343c9282d82c6bccedf313d1511986ae2f4970efa8a2af3b9a47  # real-ac-09 (82281_1299633-hq.ogg)
+audio-sha256 1bd8785be35d21835ac2e07f63eefd993bbdee96091b72a88a82f024a59d5da1  # real-ac-10 (371192_6399962-hq.ogg)
+audio-sha256 2be64257a68b118bf5947b3f55a4750726a8834edf5399eac82299cc411cf47f  # owner-default-01 (580112_7295304-hq.ogg)
+audio-sha256 23039c76bc2e9ea119e7dbd5de6fede86994d05a5e5aeebcc10ccb603c3fd730  # owner-default-02 (353269_6397561-hq.ogg)
+audio-sha256 8a855142dc9fb831fc349e9d57a5f5a7da3ae74a070fe8d2f7f2641154c408cc  # owner-default-03 (208447_1137749-hq.ogg)
+audio-sha256 045be6140928c0d6a85f37ad14f426963f512fa652b27a70b9f10a862afee3b6  # owner-default-04 (399542_6996302-hq.ogg)
+audio-sha256 66e2b9587469cc28059b4dba64bde874fd491958914fda4fef6c746aa6a081c1  # owner-default-05 (31131_248225-hq.ogg)
+audio-sha256 8f12efe81513a4dc300273b53ca5f06f06a5059c0aedcda108bd386781e585ab  # owner-default-06 (384920_7123687-hq.ogg)
+audio-sha256 0052a82c58e6b498e1c9731babcb0da991aa14c24d389bfe79d59969db33034d  # owner-default-07 (657392_6603437-hq.ogg)
+audio-sha256 c591cb94f1720c63199528b974a91b360dac95a0f166cb782085a21cc067247c  # owner-default-08 (761184_11866294-hq.ogg)
+audio-sha256 c5eda8ab1649b267db1f55007ae9dc0699168d7f85f7ef4d693d72ad85c1c3d7  # owner-default-09 (632255_10403690-hq.ogg)
+audio-sha256 5dba15a98357dec245068d02b5112ff465ad770e2663eeff1713f58c62f9afbc  # owner-default-10 (609691_13493793-hq.ogg)
+audio-sha256 fc81fae270e5d05513b8284285ff371fccf14bef94fdd78f184dbcf0ba7107ab  # reserve-sub-1 (527242_2903891-hq.ogg)
+audio-sha256 5b4c4aa9bffca6038e7172d54006db6e8a56339a919f4c7486fc0f73fe002f9c  # reserve-sub-2 (369453_69312-hq.ogg)
+audio-sha256 2a57c6cb503bc6deb597953c26fa518287dce8380803eb37de333fa546b0828f  # reserve-fm-1 (442312_7383104-hq.ogg)
+audio-sha256 ea4f13cfa9516e976d61520bee920c4b3a936992deb7fa209ab7f85ba49ff385  # reserve-fm-2 (341166_5622625-hq.ogg)
+audio-sha256 978e58d1c72907156473452cf2b432e5f2fbeec260ec683995f38cf41a461e23  # reserve-ac-1 (331047_2603667-hq.ogg)
+audio-sha256 40bccc7396def623ec2daa684aa3217c6b184e6107e348174d1b31b5ca39d4a2  # reserve-ac-2 (404856_413392-hq.ogg)
+audio-sha256 ab757878af25606fe7ebb26fc77710cf4b231f44d8acb31789374ea582f2c63e  # reserve-owner-1 (165334_2687421-hq.ogg)
+audio-sha256 92375a136ba7d8527e6e17f97c58b8b8ae9227359d59726acc0f540fd78bda30  # reserve-owner-2 (351061_2205380-hq.ogg)

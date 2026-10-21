@@ -1,0 +1,62 @@
+# content/gr3/exclude-degraded.txt: the degradations training must never apply (lane DS, with lane DEG's names).
+# One entry per line: <type> <value>, then an optional comment after '#'.
+#
+# degrade-pool P          training never draws from this pool of ml/enth_ml/degrade/pools.toml
+# degrade-variant V       no training record shows this stage variant (<pool>/<stage>/<variant>)
+# degrade-profile V       nor this profile
+# degrade-seed-range L..H no training chain uses a seed in this range
+# pools-sha256 H          the pools file these names were frozen from (DEG commit 4cd21c1)
+
+pools-sha256 da671fcb967cd795823427e57278e49c81fbc7f5db5de9581ccbef8950630353
+degrade-pool heldout
+degrade-seed-range 770100000000..770299999999  # synth and real items (inside the GR3 block)
+
+degrade-variant heldout/attack_cut/cut-deep
+degrade-variant heldout/tail_trunc/truncate-late
+degrade-variant heldout/lead_pad/silence-long
+degrade-variant heldout/room/cathedral
+degrade-variant heldout/room/flutter
+degrade-variant heldout/room/hall
+degrade-variant heldout/room/living-room
+degrade-variant heldout/eq/laptop-box
+degrade-variant heldout/eq/phone-speaker
+degrade-variant heldout/eq/tilt-bright
+degrade-variant heldout/eq/tilt-dull
+degrade-variant heldout/noise/babble-am
+degrade-variant heldout/noise/blue-hiss
+degrade-variant heldout/noise/velvet-crackle
+degrade-variant heldout/noise/violet-hiss
+degrade-variant heldout/hum/buzz
+degrade-variant heldout/dynamics/atan-clip
+degrade-variant heldout/dynamics/compressor-crush
+degrade-variant heldout/dynamics/cubic-clip
+degrade-variant heldout/dynamics/hard-clip-hot
+degrade-variant heldout/dynamics/limiter-hot
+degrade-variant heldout/mono/cancel
+degrade-variant heldout/mono/plain
+degrade-variant heldout/band_limit/resample-narrow
+degrade-variant heldout/codec/aac-fast
+degrade-variant heldout/codec/amr-nb
+degrade-variant heldout/codec/gsm
+degrade-variant heldout/codec/lame-abr
+degrade-variant heldout/codec/lame-vbr
+degrade-variant heldout/codec/opus-voip
+degrade-variant heldout/codec/shine-cbr
+degrade-variant heldout/bit_depth/alaw
+degrade-variant heldout/bit_depth/quantise-low
+
+degrade-profile heldout/profile/trim
+degrade-profile heldout/profile/reverb
+degrade-profile heldout/profile/eq
+degrade-profile heldout/profile/eq-other
+degrade-profile heldout/profile/noise-hum
+degrade-profile heldout/profile/clip-limit
+degrade-profile heldout/profile/mono
+degrade-profile heldout/profile/band-bit
+degrade-profile heldout/profile/mp3
+degrade-profile heldout/profile/codec-other
+degrade-profile heldout/profile/phone-codec
+degrade-profile heldout/profile/upload-noisy
+degrade-profile heldout/profile/upload-room
+degrade-profile heldout/profile/upload-loud
+degrade-profile heldout/profile/phone-recording

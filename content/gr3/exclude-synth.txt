@@ -1,0 +1,375 @@
+# content/gr3/exclude-synth.txt: what training (ds1, the k-NN bank, priors, templates) must never contain (lane DS).
+# One entry per line: <type> <value>, then an optional comment after '#'. Lane DG's `enth-datagen exclude` asserts
+# that no training item matches any entry (README, "How a training pipeline asserts the exclusions").
+#
+# seed-range LO..HI   no generator or sampler version draws a seed in this closed range, under any spec or stream
+# stream K           no sample is drawn from this stream key (a trailing * is a prefix)
+# code C             no training target is this challenge code
+# fingerprint F      no training target has this generator-v1 target fingerprint
+# preset-stem S      never a perturbation anchor, prior, template, start or bank entry
+# preset-name N      the same, by meta.name (the rest of the line)
+# file-sha256 H      no file with these bytes (patch files: a byte copy, e.g. a promoted factory preset)
+# path P             nothing under this path (relative to the repository root; ** = any depth)
+
+seed-range 770000000000..770999999999  # GR3's block: test, dev and degradation seeds
+stream r3/test  # report 02 set A; development curves only
+stream gr3/*
+path content/gr3/**
+
+# GR3 clause 1, generator targets, test and dev (dev is never trained on either: tuning would see training)
+code 1040-1PD3-S7ER-H4  # gen-t-l1-01
+fingerprint fa5e007adb3b25e883d1fdea886412096f7ec38923b68a1bf68007ac9b65ee9f  # gen-t-l1-01
+code 1040-1PD3-S7ER-J2  # gen-t-l1-02
+fingerprint 440bbcceafa2108fc7d24bb8bbac67c018b434675961e45d482fbbd784b5edcf  # gen-t-l1-02
+code 1040-1PD3-S7ER-K0  # gen-t-l1-03
+fingerprint 7f8cbe1c6ff927c2d80387ff5986328c5729c3eeba6957ef0ec9a975d794bcd0  # gen-t-l1-03
+code 1040-1PD3-S7ER-NC  # gen-t-l1-04
+fingerprint 2d0c3729b2b94de8bab7275f96f1a2cb6acd1a6c1183be3633aacd9cbdb377b1  # gen-t-l1-04
+code 1040-1PD3-S7ER-SM  # gen-t-l1-05
+fingerprint a110d7f9708a3b9d8ede01bf7fac8bfab66ccbeabbf6cd86aebe5213a1b1ce6a  # gen-t-l1-05
+code 1040-1PD3-S7ER-WY  # gen-t-l1-06
+fingerprint 0ceb0dd538c62057439d14ff9397ff798589c49a8b68c60d5714cbe840e5e7ae  # gen-t-l1-06
+code 1040-1PD3-S7ER-ZR  # gen-t-l1-07
+fingerprint aa2350f8ded8daf74468846d0b958612e83a45f7d5a6a62f3b7134c0a4160b17  # gen-t-l1-07
+code 1040-1PD3-S7ES-8Q  # gen-t-l1-08
+fingerprint ea6e4e1a16838d543aa22f7a322bc76bbd549f0d084b376e32bd0f887394c2ea  # gen-t-l1-08
+code 1040-1PD3-S7ES-9N  # gen-t-l1-09
+fingerprint 5fb6d9250d52dbd73a961f5ecb6cd9e7bfdfb66e47cd752b7dd34dcdf31e74ea  # gen-t-l1-09
+code 1040-1PD3-S7ES-H0  # gen-t-l1-10
+fingerprint 372c726b78fcb6d502622a5e42175e0e1a42d4e16198b84f32d5731a38173d7b  # gen-t-l1-10
+code 1040-1PD3-S7ES-PE  # gen-t-l1-11
+fingerprint f0576c12b0f7532222b5dafb340bb7f629ad34673d9256f9bffddc0e1a200664  # gen-t-l1-11
+code 1040-1PD3-S7ES-QC  # gen-t-l1-12
+fingerprint 721fb88795c32b90ffdd7dee2b6abf9fbd11a116da3610e8fd7e892bc64448e7  # gen-t-l1-12
+code 1080-1PD3-S7RH-10  # gen-t-l2-01
+fingerprint 94862f92ac5a1889ce7ec89a569d1dca99142f1493d0995c7004934e0d474e90  # gen-t-l2-01
+code 1080-1PD3-S7RH-26  # gen-t-l2-02
+fingerprint d65d6d509c3628f81adabf85f6c38b4445dd0114c6205448dc75e5854acd8a4d  # gen-t-l2-02
+code 1080-1PD3-S7RH-34  # gen-t-l2-03
+fingerprint f1af56b8b754baee0f0acb7f2bc9e54f75bc98c4c22174bd0c96c7d5edb56cf8  # gen-t-l2-03
+code 1080-1PD3-S7RH-4A  # gen-t-l2-04
+fingerprint 5358c65c0c0f122de28d47d153224d558ed508ad66237aa6e55fdfba669e15ba  # gen-t-l2-04
+code 1080-1PD3-S7RH-58  # gen-t-l2-05
+fingerprint a424b143691017a7a7573fe0c43ff36bd49631671bcad8a8e6d146126f17a1be  # gen-t-l2-05
+code 1080-1PD3-S7RH-6E  # gen-t-l2-06
+fingerprint 043c7d915833029801d50c4452a3a44e1bb7b6a338e2ac3a757a2bdc5abede48  # gen-t-l2-06
+code 1080-1PD3-S7RH-7C  # gen-t-l2-07
+fingerprint 7d4b69706317f27dd833e87247c18ec4979832d71b4052ef7a10c1b1c042f716  # gen-t-l2-07
+code 1080-1PD3-S7RH-8J  # gen-t-l2-08
+fingerprint aef06974c67eb1b045b175a153e86c014bb8dc8068f12fddd812284d41b2dbdf  # gen-t-l2-08
+code 1080-1PD3-S7RH-9G  # gen-t-l2-09
+fingerprint 5f667e4627ff2f2d7bbc07e986369d32b107f4ce22130a5061af657b080e430f  # gen-t-l2-09
+code 1080-1PD3-S7RH-AP  # gen-t-l2-10
+fingerprint 683302a4db1bf7868f487a055f3e513199579905f0b3deeb84df3ec938b3cf04  # gen-t-l2-10
+code 1080-1PD3-S7RH-BM  # gen-t-l2-11
+fingerprint 69df488eb4f1093fe880a101c83bba6d9b77f598da42c86084d577c979e6d6ed  # gen-t-l2-11
+code 1080-1PD3-S7RH-CT  # gen-t-l2-12
+fingerprint c4d4ccb415a4c0de3f8a21272a561a37127c93346fb6f4aae6612d669794529d  # gen-t-l2-12
+code 1080-1PD3-S7RH-DR  # gen-t-l2-13
+fingerprint 87bde942f35a6517b51b2881a444f2fd406f53ccd36dde4edb57969d1ee0b5aa  # gen-t-l2-13
+code 1080-1PD3-S7RH-FW  # gen-t-l2-14
+fingerprint fad0a79a8d801e06df3f161bb84c8f62dd7137c709508668f1ea1171ff43c3b0  # gen-t-l2-14
+code 1080-1PD3-S7RH-G7  # gen-t-l2-15
+fingerprint 40dada08f85366cdf090e626ab44346fb7f7d5d2a6dc075e2964a400ca2a2889  # gen-t-l2-15
+code 1080-1PD3-S7RH-H5  # gen-t-l2-16
+fingerprint ac23caade8452a52c56a24cbba825c3be30cac47e1dd34131b2ac1ba025fb90f  # gen-t-l2-16
+code 1080-1PD3-S7RH-J3  # gen-t-l2-17
+fingerprint a4cbf3d3da5072f3c6a929da7977363d4bbe8e188df7e3366566ef80554feec9  # gen-t-l2-17
+code 1080-1PD3-S7RH-K1  # gen-t-l2-18
+fingerprint 219f4d8e874236411319d8f2ffa7ac490574724f3e540fe0e22d227884a14f36  # gen-t-l2-18
+code 1080-1PD3-S7RH-MF  # gen-t-l2-19
+fingerprint 11ca59e84ddcba4fb13e578d8e2276098a5be97cec61ccf01af20d47434d4ba5  # gen-t-l2-19
+code 1080-1PD3-S7RH-ND  # gen-t-l2-20
+fingerprint baa970a5d51a510dc07023c6ed155e871ca7260432ca3f81f9e050bb4bede7c3  # gen-t-l2-20
+code 10C0-1PD3-S829-HK  # gen-t-l3-01
+fingerprint 64bf4c9a4fad3a32ee5c38ee6e1d6d3c17d8d347097f69f25246015f39f45173  # gen-t-l3-01
+code 10C0-1PD3-S829-JN  # gen-t-l3-02
+fingerprint fe5fd9923f0c054bdd7cc3e4b43e7497154ca049c4c404550287f007731684e9  # gen-t-l3-02
+code 10C0-1PD3-S829-KQ  # gen-t-l3-03
+fingerprint 6263610b7f9d8276a44a512fbd06bc05b22072b1facbcc65fa657009e72e4007  # gen-t-l3-03
+code 10C0-1PD3-S829-MS  # gen-t-l3-04
+fingerprint 2bc44dabc26971b13aed7bb19e5d3227da0406cd69ed93d321e467e831849906  # gen-t-l3-04
+code 10C0-1PD3-S829-NV  # gen-t-l3-05
+fingerprint a5a7ec7739a4591edbb4d33a1a1b3cfdcfde928cadfd9c89e7f7b4ee83ff9ae8  # gen-t-l3-05
+code 10C0-1PD3-S829-PX  # gen-t-l3-06
+fingerprint 1ecc82de0117d8517adb7f4a065ea056ac951b11f9c305f80efa92dabdd6e44c  # gen-t-l3-06
+code 10C0-1PD3-S829-QZ  # gen-t-l3-07
+fingerprint 0accdc514818009a1358b50b1ac113355c07b77e281ad352043a122e7b347d66  # gen-t-l3-07
+code 10C0-1PD3-S829-R1  # gen-t-l3-08
+fingerprint 1d2fde6109c4e12d743199025db2e72e948ffe805e988696e81547d48871bcf1  # gen-t-l3-08
+code 10C0-1PD3-S829-S3  # gen-t-l3-09
+fingerprint a2aff12357e3b922910e3cf948b7c41fb2dbb4aecb13fd422893823c489dab61  # gen-t-l3-09
+code 10C0-1PD3-S829-T5  # gen-t-l3-10
+fingerprint 64b90a5741eaf0c52dfee26cd36b51ef5849fdcd2e6a818189485dc2a6ca6e41  # gen-t-l3-10
+code 10C0-1PD3-S829-V7  # gen-t-l3-11
+fingerprint c2b87c266da50e9bb5a9fc0c52c0432b5566285882e79f5e78d134a83286fe60  # gen-t-l3-11
+code 10C0-1PD3-S829-W9  # gen-t-l3-12
+fingerprint 2b86aeb7d3047ef31ea1a21902c808368acc8fb0ea2523d5bf59b314b929479c  # gen-t-l3-12
+code 10C0-1PD3-S829-XB  # gen-t-l3-13
+fingerprint eb19ce2e1601bdb36f949ef55fd3072d4489d5221c19576d20a2706ab767078a  # gen-t-l3-13
+code 10C0-1PD3-S829-YD  # gen-t-l3-14
+fingerprint 664285905c240250f87ec3c9068968ed1de7c6e57a481f015bb16f55cbbc70fa  # gen-t-l3-14
+code 10C0-1PD3-S829-ZF  # gen-t-l3-15
+fingerprint 3435de02e35493184cc346aaaae0d726523cd6fa6e9ce9b597b16e0edec9a9a5  # gen-t-l3-15
+code 10C0-1PD3-S82A-0R  # gen-t-l3-16
+fingerprint 001f594d267efe107322b095e088a30d6f42e5ff3c5ad3cd7a4d0500d08a4cf0  # gen-t-l3-16
+code 10C0-1PD3-S82A-1T  # gen-t-l3-17
+fingerprint bbc7fb17e2703dfb742831abfa384d946dbbbb67eb38f9c647e9bd23d12d46e4  # gen-t-l3-17
+code 10C0-1PD3-S82A-2W  # gen-t-l3-18
+fingerprint 6ca87ccfe554be36e6916da7b58972ce0be6a8229ee5064a6227b8a51687c3da  # gen-t-l3-18
+code 10C0-1PD3-S82A-3Y  # gen-t-l3-19
+fingerprint aaefb1295c1200300a4c53495fc9274dbfe7280ae3b0dba8a7c8419fd8b590c5  # gen-t-l3-19
+code 10C0-1PD3-S82A-4G  # gen-t-l3-20
+fingerprint 47080b39a0c4a896ee7ae66f1de4061d87cc389ba55c1081ef78b109c67e440f  # gen-t-l3-20
+code 10G0-1PD3-S8C2-1Y  # gen-t-l4-01
+fingerprint b7cb1960aa52a10a1c306e9905885ff49e86cbe4580a81a00c5023ff85554215  # gen-t-l4-01
+code 10G0-1PD3-S8C2-2R  # gen-t-l4-02
+fingerprint b3a0b91ac9e83cca6df608e61e33b3a1886e21790ceea2315ce95c6c161409f5  # gen-t-l4-02
+code 10G0-1PD3-S8C2-3T  # gen-t-l4-03
+fingerprint a3fed75162a015af7cfa52cfb1c6c7bff0ce78d85903d88f7da077fec22b0b1f  # gen-t-l4-03
+code 10G0-1PD3-S8C2-4M  # gen-t-l4-04
+fingerprint 2a90ff1d218a61154f809bad3e521a1c0b2f9b6b871ebc9644cfc072244a3119  # gen-t-l4-04
+code 10G0-1PD3-S8C2-5P  # gen-t-l4-05
+fingerprint 7b71f6a711c8395f8881fdd69f255fba03f923c809e41139f9e07d8f998aedaf  # gen-t-l4-05
+code 10G0-1PD3-S8C2-6G  # gen-t-l4-06
+fingerprint 5b27430426d980ec25a94b9b35fef940c6ffff5c723b0e44f09615b56c709a9d  # gen-t-l4-06
+code 10G0-1PD3-S8C2-7J  # gen-t-l4-07
+fingerprint 7c1cc252f6241387e9316dc07cd2989eedf5c0bdc2ca2d297ade636d3fd59f00  # gen-t-l4-07
+code 10G0-1PD3-S8C2-8C  # gen-t-l4-08
+fingerprint bcfbb4977128e8524bbbad5433b4bb2cad6898c74c2173ff2863a6a3fcce0901  # gen-t-l4-08
+code 10G0-1PD3-S8C2-9E  # gen-t-l4-09
+fingerprint 4fd3ed2c0bce8eedc04fe7dd52aa9f5a732e420d809485d66643cea85b2a131d  # gen-t-l4-09
+code 10G0-1PD3-S8C2-A8  # gen-t-l4-10
+fingerprint abe7750118b0ccd067d9c52d531901e2171400adb4000eaacd0f39dc92bd784a  # gen-t-l4-10
+code 10G0-1PD3-S8C2-BA  # gen-t-l4-11
+fingerprint df39a1c3806d1ee605217207615b6d53fdde784d72a0dd3270401f06dd672f20  # gen-t-l4-11
+code 10G0-1PD3-S8C2-C4  # gen-t-l4-12
+fingerprint 17f500c5d73b51fd1780398e5168f1a4358a842b11d66ea0fd43789ef6b5d9b8  # gen-t-l4-12
+code 10G0-1PD3-S8C2-D6  # gen-t-l4-13
+fingerprint e115dcf4b78f109b9f1f50d4da405f51658ac3003dec83723e3dd08c4baf47f4  # gen-t-l4-13
+code 10G0-1PD3-S8C2-E0  # gen-t-l4-14
+fingerprint d89a9a5aaec5d8b8dc4f7b24e71298513ff18cce5eab7b450d9176a3aa131d77  # gen-t-l4-14
+code 10G0-1PD3-S8C2-F2  # gen-t-l4-15
+fingerprint 37de3236be3da5418c7cd9fd083a55e27ed1e9de72a583935945e200126be01f  # gen-t-l4-15
+code 10G0-1PD3-S8C2-GS  # gen-t-l4-16
+fingerprint b88c13b05a1d96220638bdc21ba78a52b36554617771c21cd8f7ea152b6d9ac6  # gen-t-l4-16
+code 10G0-1PD3-S8C2-HV  # gen-t-l4-17
+fingerprint bb1aa397a59461fdbb80d1ac78c3544095317858d583a20fc4fdde7a84f0b5e1  # gen-t-l4-17
+code 10G0-1PD3-S8C2-JX  # gen-t-l4-18
+fingerprint 798426366b74f309385d5fa36864969f34da5d067ef45c7b61121f5796989019  # gen-t-l4-18
+code 10G0-1PD3-S8C2-KZ  # gen-t-l4-19
+fingerprint c8731af5bb6278ffd19c273d897b3f0de3b7704133be4f8b6d9d80e3610a0483  # gen-t-l4-19
+code 10G0-1PD3-S8C2-MH  # gen-t-l4-20
+fingerprint 908560ec611f0c905970d935bd5fc05554dd1cad6dac99e76c6ac42a28511cbd  # gen-t-l4-20
+code 10M0-1PD3-S8NT-HY  # gen-t-l5-01
+fingerprint e10076a08a0323c8d66263153b3583f8d08ae62c8f0e853cb04ed89d6c110d48  # gen-t-l5-01
+code 10M0-1PD3-S8NT-JR  # gen-t-l5-02
+fingerprint 62fe354b1db85ed84d161e717fc07912fe069f7235186395ebb7df1c49215380  # gen-t-l5-02
+code 10M0-1PD3-S8NT-KT  # gen-t-l5-03
+fingerprint 439628bc22dd00a59e82d75a2e50283bb51138e0b9a361f3322cdfa4c43c3df7  # gen-t-l5-03
+code 10M0-1PD3-S8NT-MM  # gen-t-l5-04
+fingerprint dc198c55a89c0a028dc8b404dc3e6ca072658f2c0b6d785cc78c954478e626d9  # gen-t-l5-04
+code 10M0-1PD3-S8NT-NP  # gen-t-l5-05
+fingerprint fe5a13d23d3655c5c9595486012608da7bb696dd90916e22c07233f4691f1738  # gen-t-l5-05
+code 10M0-1PD3-S8NT-PG  # gen-t-l5-06
+fingerprint 3a4b06091aeaff816138be5e458a75d56a8cf771111af22f035be6ce51b4a2cc  # gen-t-l5-06
+code 10M0-1PD3-S8NT-QJ  # gen-t-l5-07
+fingerprint decdeda7afb50ee7678486a17017796499206e023fa0f2d26f416c447415dea5  # gen-t-l5-07
+code 10M0-1PD3-S8NT-RC  # gen-t-l5-08
+fingerprint 38a1a4542d0c91b908865e503f8a894c6b938386fa4cbd28726ea4eb245daf12  # gen-t-l5-08
+code 10M0-1PD3-S8NT-SE  # gen-t-l5-09
+fingerprint e2b0d9a5f785260094aebcb72befa985db8986dcb77b797073b919d3df142476  # gen-t-l5-09
+code 10M0-1PD3-S8NT-T8  # gen-t-l5-10
+fingerprint 6c2c0102ebc045dbc04f5507cdb5fe2b0752e5d242d87af01c40805f11d1a556  # gen-t-l5-10
+code 10M0-1PD3-S8NT-VA  # gen-t-l5-11
+fingerprint 9be7d342b2ad274238ec1b558a0f1ab77142f2fdc27fc28eaa2fcdf8aed7ec61  # gen-t-l5-11
+code 10M0-1PD3-S8NT-W4  # gen-t-l5-12
+fingerprint d1bdba56ddb5276700da97fd502d2c3f2c666907209c48430396751746d6865f  # gen-t-l5-12
+code 10M0-1PD3-S8NT-X6  # gen-t-l5-13
+fingerprint ec2549c7458a5c1619f244225415f749a87dd8d0c2db4e6e7249cfecf1dd9edc  # gen-t-l5-13
+code 10M0-1PD3-S8NT-Y0  # gen-t-l5-14
+fingerprint e6ce5909ece7ba15c0ccb8e6ac402f65aeb9ffe76884fb78593845230cacd284  # gen-t-l5-14
+code 10M0-1PD3-S8NT-Z2  # gen-t-l5-15
+fingerprint 502a2c22109d191e6c534cbe95f633e1b6ef5a1a953069ae6b6fa285ef2e68d1  # gen-t-l5-15
+code 10M0-1PD3-S8NV-0X  # gen-t-l5-16
+fingerprint e20ca70d358a3175bbe3fb4b0fe3dd570b2ea0f3dcf844b68a28c2de82bbde1f  # gen-t-l5-16
+code 10M0-1PD3-S8NV-1Z  # gen-t-l5-17
+fingerprint addd287536e7e1950eaeed972ecb52d143755619111e296e22a31113ad0f8416  # gen-t-l5-17
+code 10M0-1PD3-S8NV-2S  # gen-t-l5-18
+fingerprint 91e71efdb0e910f2a796cd8cabc1f82950955a751dbcd7fbe6900366571d8d6a  # gen-t-l5-18
+code 10M0-1PD3-S8NV-3V  # gen-t-l5-19
+fingerprint 7e3e826d7f549b89a2f724d82a11f2749cd8a66b8f4bede9caf48ddeec5cd9fd  # gen-t-l5-19
+code 10M0-1PD3-S8NV-4N  # gen-t-l5-20
+fingerprint ca4584a2f486876ddc291d9d26382b41209a783d5598ac4dffd6eeecf9a9713b  # gen-t-l5-20
+code 1040-1PD3-SPQ1-H4  # gen-d-l1-01
+fingerprint eb30ccd04b3edf5f6f5ad62c140e2613f8c33c685fced0afd518c144bdd2eac5  # gen-d-l1-01
+code 1040-1PD3-SPQC-82  # gen-d-l1-02
+fingerprint 07f0bbf15c1d8158c17c7e4b60a980f408741dc471a394fe480f5c957092ca1b  # gen-d-l1-02
+code 1080-1PD3-SQ0T-1T  # gen-d-l2-01
+fingerprint 82fb32128c8d9c50094e0f0feb7e3e6187bcdfe334cee247bb2f2ea86128f254  # gen-d-l2-01
+code 1080-1PD3-SQ0T-2W  # gen-d-l2-02
+fingerprint 6b163196bed60f9573b22ec237c309ec1e494614ca5a6406a6e1be9dd1d64a7b  # gen-d-l2-02
+code 1080-1PD3-SQ0T-3Y  # gen-d-l2-03
+fingerprint 798e6b6e7fac025e7a6afe0acd9e22fd5ec891ff0995df1c110dd5883b81a11c  # gen-d-l2-03
+code 1080-1PD3-SQ0T-5J  # gen-d-l2-04
+fingerprint 8e815d0ac20bebd740a2004e4f8fadbfeab55a4cbeb024a966a068de57fdfd9b  # gen-d-l2-04
+code 10C0-1PD3-SQAJ-HW  # gen-d-l3-01
+fingerprint 17b49753a1fa99b8de78aa4d220df598fe50f40ea766b0875ccde228e581b84f  # gen-d-l3-01
+code 10C0-1PD3-SQAJ-JT  # gen-d-l3-02
+fingerprint 006f9c6afe390330bf0c6c1dd0c89614d587a3111a08fde448b75b3435a6f1c1  # gen-d-l3-02
+code 10C0-1PD3-SQAJ-KR  # gen-d-l3-03
+fingerprint 68ae87624d3c101ca8d2cc9b313edb41d4cded8ae10f83528c85f37e84aa3149  # gen-d-l3-03
+code 10C0-1PD3-SQAJ-MP  # gen-d-l3-04
+fingerprint 35c1b36339bb7036f06a0202e48f620cb6bbcd736fabe1dcc5727b6f50de1e7d  # gen-d-l3-04
+code 10C0-1PD3-SQAJ-NM  # gen-d-l3-05
+fingerprint e4c7e4315e436b4b6bcd0fc614e4942a63e68c51c148587e53aac38dc2211c9e  # gen-d-l3-05
+code 10G0-1PD3-SQMB-17  # gen-d-l4-01
+fingerprint a436383b2897276b6de724560871330a9185b529b8f83842f16124ef674e784e  # gen-d-l4-01
+code 10G0-1PD3-SQMB-21  # gen-d-l4-02
+fingerprint 66a34facfc035f76233ee00507819cfc327081c814bafa28d68ea459726dea09  # gen-d-l4-02
+code 10G0-1PD3-SQMB-33  # gen-d-l4-03
+fingerprint 81a9ca40aaa1c104c4987f412d1bcb5b00cf1aaece36b5ec16dfab8e740e079b  # gen-d-l4-03
+code 10G0-1PD3-SQMB-4D  # gen-d-l4-04
+fingerprint a2687bce17faf49e88f08a9695717b65a7e2948a6c880495ebe85b2b71f25ab6  # gen-d-l4-04
+code 10M0-1PD3-SQY3-H1  # gen-d-l5-01
+fingerprint c8d4e77043b9c68b070443fee306dcc11dfeedb6da79e0e017769977d5c6a54b  # gen-d-l5-01
+code 10M0-1PD3-SQY3-J7  # gen-d-l5-02
+fingerprint 207d9fec5cd98af60e61a4c24e15f909e8d17de788d8b260421af3a4b329dcdd  # gen-d-l5-02
+code 10M0-1PD3-SQY3-K5  # gen-d-l5-03
+fingerprint 9c6e55521ff9aac18985abd798f635894c717cb1f5d3595b5c068420be6bba1f  # gen-d-l5-03
+code 10M0-1PD3-SQY3-MB  # gen-d-l5-04
+fingerprint ee518b8d9ec45dde84c2e9e2b77f3ba4d29260a4c33de6e4a1c01e73e2dabbb7  # gen-d-l5-04
+code 10M0-1PD3-SQY3-N9  # gen-d-l5-05
+fingerprint aa1320f5568f15ebfb63e2c56b1a374f6e3056a97588412ec576ccac9a37441a  # gen-d-l5-05
+
+# the test half of the preset candidates (its byte copies are in content/gr3/presets/)
+preset-stem octave-arp
+preset-name Octave Arp
+file-sha256 f6d992878f179ee3bbd1bd666dd099c2e7a074a6f469afde0382c4a452ebacb8  # content/presets-candidates/arp/octave-arp.patch.json
+preset-stem acid-snap
+preset-name Acid Snap
+file-sha256 ae40658b07eae698d9b2d797cda7f0ed95c36f683e873db472562a2a8441ffbe  # content/presets-candidates/bass/acid-snap.patch.json
+preset-stem sub-floor
+preset-name Sub Floor
+file-sha256 7daf360a68d8a031ad06a226d441f3f6b0679e3afbd1214d7f41bdb026353b4a  # content/presets-candidates/bass/sub-floor.patch.json
+preset-stem drawbar-organ
+preset-name Drawbar Organ
+file-sha256 349d7e72e1346595ec3e1f791daa71fb871b497e8156e32223787ca318573f21  # content/presets-candidates/keys/drawbar-organ.patch.json
+preset-stem tremolo-keys
+preset-name Tremolo Keys
+file-sha256 8de430cdbd502a47e1aadd86556447c4be289efc2f30094ce77ecec3cddeaaec  # content/presets-candidates/keys/tremolo-keys.patch.json
+preset-stem breath-flute
+preset-name Breath Flute
+file-sha256 0b0419032ff618af467b8848c15bc3b8a343c75ef637fd408b6598daa3d70dd0  # content/presets-candidates/lead/breath-flute.patch.json
+preset-stem sync-tear
+preset-name Sync Tear
+file-sha256 aaa24ead7570df232bf903a194e667c77070f41d12db3735e0167091b3c213ea  # content/presets-candidates/lead/sync-tear.patch.json
+preset-stem gate-keeper
+preset-name Gate Keeper
+file-sha256 6ccd399ea7e07e3399a9952f3b024b9f3d74d90fe415a3e1d64a8f7b853d8a1f  # content/presets-candidates/pad/gate-keeper.patch.json
+preset-stem aurora
+preset-name Aurora
+file-sha256 9bf606c90fbcd5b333b73b05b097956aae0024ee5cb5dadd553b00b6a79f00cb  # content/presets-candidates/pad/aurora.patch.json
+preset-stem snare-crack
+preset-name Snare Crack
+file-sha256 5d2d4ff97bf5ca138950f9c7d369593cfcd6fa04d17bb9dd8accb0295c059243  # content/presets-candidates/perc/snare-crack.patch.json
+preset-stem poly-stab
+preset-name Poly Stab
+file-sha256 ed54273fb8448002b3ce2c77487d5e272340c237b3da59efab3fb3e27716172b  # content/presets-candidates/pluck/poly-stab.patch.json
+
+# the owner's four G1 sounds: test targets once extracted; their SHA-256 joins this list in the amendment
+path content/presets/bass.patch.json  # placeholder
+path content/presets/pad.patch.json  # placeholder
+path content/presets/pluck.patch.json  # placeholder
+path content/presets/lead.patch.json  # placeholder
+
+# also never trained on (report 02 section 9): GR1's 20 codes and the golden challenges
+code 1040-1000-000Z-9V  # gr1 level 1 seed 1001
+fingerprint 1881282b38feaf82335bcbbf9fc95b8f4fe77fc593996d312152f38473bfb641
+code 1040-1000-000Z-AX  # gr1 level 1 seed 1002
+fingerprint 202c853824ef58322370312c6591a2d0af4eeea7f410c403ceaa85a2473943f5
+code 1040-1000-000Z-BZ  # gr1 level 1 seed 1003
+fingerprint bc3eed7abcc7927cee4b8270dd9432cd62183a2e32fd1508f64ec808683ded55
+code 1040-1000-000Z-CH  # gr1 level 1 seed 1004
+fingerprint 336cfb5f155557a3da1433c5867a66f189592008b14f0948d0cc6494250939cb
+code 1080-1000-000Z-9T  # gr1 level 2 seed 1001
+fingerprint 82f9351784de7b56404cf34741e04bace957329140e98961189460c45470ded7
+code 1080-1000-000Z-AW  # gr1 level 2 seed 1002
+fingerprint 45537136ede1a3fcc4d8b087a27e6df656eca77c7d594cd96259814289252073
+code 1080-1000-000Z-BY  # gr1 level 2 seed 1003
+fingerprint 3bc15a30672c568436733511c35a5163538f9c3985d2ecd433cff74d315e6f57
+code 1080-1000-000Z-CG  # gr1 level 2 seed 1004
+fingerprint 8d45a3aa66106cc1ad2164aa22583bc3e868c6224cc80be0af49672273c837e9
+code 10C0-1000-000Z-96  # gr1 level 3 seed 1001
+fingerprint 30db80dbaf6dc29749d41e8c808ecdffc113e9cc1b30eeeb7d84c258321eb8be
+code 10C0-1000-000Z-A0  # gr1 level 3 seed 1002
+fingerprint ff6c842c7b0ba8f31475a2a1699b593cc6ce03c5b832de462d8a91929d33c412
+code 10C0-1000-000Z-B2  # gr1 level 3 seed 1003
+fingerprint aedb288c07ffa896ac86687a5aed91690d1af32312e1010132bd0067b7b9e76c
+code 10C0-1000-000Z-CC  # gr1 level 3 seed 1004
+fingerprint b0090e4abcbb464027ddabc3df665a0afd424a18cfd44f8fbcfab152c0eb879d
+code 10G0-1000-000Z-9R  # gr1 level 4 seed 1001
+fingerprint 26af25d19a6734c6cd10e145376427fcb11f0cd19f542611530ffc77d7454501
+code 10G0-1000-000Z-AY  # gr1 level 4 seed 1002
+fingerprint ccfdc48f0f203e8b1ef9c30b0d2e0df335d53fce97bfd0b8cae505c2e2bacb5d
+code 10G0-1000-000Z-BW  # gr1 level 4 seed 1003
+fingerprint 0d6859c1024cefdbfef8f15fa6f7baebcc3ac4561916a670fa90fb6772b08c8d
+code 10G0-1000-000Z-CJ  # gr1 level 4 seed 1004
+fingerprint c9fb24969f4f62347303c959f04eb0beae88c7158926135dff6096a8742f5673
+code 10M0-1000-000Z-94  # gr1 level 5 seed 1001
+fingerprint 95bb20aad4c7c90b7bb2734ab2c63d00c24b542b9609804bd5ad44966697c2f0
+code 10M0-1000-000Z-A2  # gr1 level 5 seed 1002
+fingerprint 6997c9dd44a88851ec89fd7f891ef14f0a2ead7d88b110e896ac95476157c810
+code 10M0-1000-000Z-B0  # gr1 level 5 seed 1003
+fingerprint 10acd26bed6a2791d6ef9593eb0e0d6f2efa21ead7864c8cea28d0e197df66f6
+code 10M0-1000-000Z-CE  # gr1 level 5 seed 1004
+fingerprint 9d25f88e09fee9be40468822d53da62be40ed631fed86b78591793875a44b537
+code 1040-1000-0000-E6  # golden level 1 seed 14
+fingerprint 5708bcce78638ffae4d64d3f3c7c5d8c0ecf0c05216185acd7440eb7ff39d60c
+code 1040-1000-0000-4J  # golden level 1 seed 4
+fingerprint e6c443d266bfda68d2f4629bf01cb2ce7272afad125daaa52c629c70535e93ae
+code 10G0-1000-0000-C1  # golden level 4 seed 12
+fingerprint f66c409bb575f33f69f695a4bc8d1a26354d7aea2107d8f5e082cb483d7f3952
+code 1040-1000-0000-BC  # golden level 1 seed 11
+fingerprint fcef858f78d219f2305cd9e454622328de340f0200fc520dbc062be9fb0847e6
+code 10G0-1000-004A-WC  # golden level 4 seed 4444
+fingerprint d93ceb89ff74a49e7e680f95550b9e69d86159e20998cb96dc0d1ba27a50ff47
+code 1040-1000-0000-1R  # golden level 1 seed 1
+fingerprint 006f84878298371ac20cb02fc88cd651319a79f92f71dd6d9a1336810d850871
+code 10G0-1000-0000-KT  # golden level 4 seed 19
+fingerprint 3ba4dd19f1c09178cdbcb41e300b889680a83c1c915aa8976056494be4af69d6
+code 10C0-1000-0000-5D  # golden level 3 seed 5
+fingerprint b4de555de148f223e562a05cd120d3dcedb3d70c8f00245f57806bb2e0c28d07
+code H000-G000-0000-0002-W680-0000-801V-S0PJ-W0W  # golden level 2 seed 92
+fingerprint 1de416978aa78456a71e5b2feea9fcc774894e9a6193a8a4dc4389ac16566cae
+code 10C0-1000-000A-DG  # golden level 3 seed 333
+fingerprint 864037660f92d9359fd99df0605e88bf76f419aed6f26d637162555f154b16cd
+code H000-G000-0000-0004-KS68-0000-80F5-X508-7ZJC-K4S6-9J0G  # golden level 5 seed 147
+fingerprint f2f4a0417fa004e10bf8583a61379d2e2ca0e86011b274ab335cc6c90d07a2b9
+code 10G0-1000-0000-89  # golden level 4 seed 8
+fingerprint 2dc01391fb9562275aaf69a6e42ce0a8f1fc6f2a6235b12b1357385abf656797
+code 1080-1000-0000-PJ  # golden level 2 seed 22
+fingerprint 0823846dea1dba80f4e0b3fe18c3878057464b96183b9bfc0b6f9e19baba8d60
+code 1080-1000-0000-BD  # golden level 2 seed 11
+fingerprint a790aa1c785de48a77f77625c813977938e20aa35c793f86b0101491202a0d5e
+code 1080-1000-0000-2Z  # golden level 2 seed 2
+fingerprint 7cdbe22ebb36a047cda47f7e7046c221a1222d0df6a6f3d7bb573a7357cc018c
+code 10C0-1000-0000-31  # golden level 3 seed 3
+fingerprint 14c5f0b012c32b7179cf095cb366b57c47517ea824769d37da75c2c6f36e6180
+code 1080-1000-0000-7N  # golden level 2 seed 7
+fingerprint 231b82a9dc730c519cb71a3be1267c59293e81a319394bcfb35f2efbbb355c84
+code 10C0-1000-0000-CZ  # golden level 3 seed 12
+fingerprint 98d3e39b186c558cb73d9618091ce17797c7a6e2805a665df95a041627648363
+code H000-G000-0000-0000-5JR0-0000-80BQ-SRGS-80A  # golden level 4 seed 5
+fingerprint bbe710ca78f4ea103fa3d17ed12051dca9eeeda5e5b38a909775d26f62d6a5bd
+code 10M0-1000-0000-33  # golden level 5 seed 3
+fingerprint d2c87fc47711633bc387f05207f9e6e9da06894eeae0f31f767635cb9687fe58
+code 10M0-1000-0000-21  # golden level 5 seed 2
+fingerprint 75f5013ac8dcaaa49e2dd4e3e22d9b1391fe77f4c3f69a3a57598045fed44b04
+code 10M0-1000-0000-9Q  # golden level 5 seed 9
+fingerprint a75d50f0419bdf1c23812cb9635bf28e3f7c8e609e99224aab085d70aa9269f5
+code H000-G000-0000-0000-26E8-0000-807R-2WSZ-C3J0-2  # golden level 2 seed 2
+fingerprint 7c0b99fbc1d128c4c4410cbc6378e90a3a4a5ace6f45b0f95374c2b212562382
+code 10M0-1000-01P8-3Q  # golden level 5 seed 55555
+fingerprint 8cf69e4b71285545209af90460254e33eb0cdecb02ace9e4aaa511414aef8f2b
+code H000-G000-0000-0000-Q680-0000-804X-2T92-M0S  # golden silent-l2-s23 (silent: enth refuses the round, so it has no playable fingerprint)
