@@ -25,6 +25,12 @@
 //! **Progress changes are additive only.** A later progress version may add fields and entries, never change what
 //! one of these means or how it is written: that is what makes keeping the unknown and writing the newer number back
 //! correct. A change that is not additive needs a new file, not a new version of this one.
+//!
+//! **The `review` field** (lane REV, additive, still `enth.progress/1`): a Leitner box per skill
+//! ([`Review`](crate::review::Review)), `"review":{"skills":{"svf.cutoff":{"box":2,"day":20747,"rounds":3}}}`, written
+//! after `lessons` and omitted while empty, so a file without boxes keeps its bytes. It is read as leniently as the
+//! rest, its merge is a join too (per skill, the entry with more rounds), and [`Progress::observe`] applies a round's
+//! rings to it. A `review` value that is not an object is kept verbatim, until a readable one replaces it.
 
 use std::collections::BTreeMap;
 
@@ -36,6 +42,7 @@ use crate::error::{Doc, LearnError};
 use crate::lesson::{Lesson, StepKind};
 use crate::pack::{LessonKey, StepId, schema_version, syntax};
 use crate::player::StepRecord;
+use crate::review::{Day, Review, RoundRings};
 
 /// The progress version this build writes.
 pub const PROGRESS_VERSION: u32 = 1;
@@ -43,7 +50,7 @@ pub const PROGRESS_VERSION: u32 = 1;
 pub const PROGRESS_SCHEMA: &str = "enth.progress/1";
 
 /// Fields kept verbatim: unknown to this build, written back as they were.
-type Extra = BTreeMap<String, Value>;
+pub(crate) type Extra = BTreeMap<String, Value>;
 
 /// One step's progress.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -192,6 +199,8 @@ pub struct Progress {
     pub unread: Extra,
     /// Fields from a newer build, kept.
     pub extra: Extra,
+    /// The Leitner boxes per skill (lane REV, additive): see [`crate::review`]. Omitted from the file while empty.
+    pub review: Review,
     /// The highest `enth.progress/<N>` read into this or merged in, at least [`PROGRESS_VERSION`]: what
     /// [`to_json`](Self::to_json) writes, so a newer file an older build rewrites keeps its version (progress changes
     /// are additive only, so nothing it holds is misread under that number).
@@ -204,6 +213,7 @@ impl Default for Progress {
             lessons: BTreeMap::new(),
             unread: Extra::new(),
             extra: Extra::new(),
+            review: Review::default(),
             version: PROGRESS_VERSION,
         }
     }
@@ -246,6 +256,12 @@ impl Progress {
                         }
                     }
                 }
+                "review" => match Review::read(v) {
+                    Some(review) => p.review = review,
+                    None => {
+                        p.extra.insert(k.clone(), v.clone());
+                    }
+                },
                 _ => {
                     p.extra.insert(k.clone(), v.clone());
                 }
@@ -275,6 +291,22 @@ impl Progress {
         self.unread
             .retain(|k, _| !self.lessons.keys().any(|key| key.to_string() == *k));
         merge_extra(&mut self.extra, &other.extra);
+        self.review.merge(&other.review);
+        self.drop_kept_review();
+    }
+
+    /// Apply one Recreate round's rings to the review boxes on `today` (lane REV; [`Review::observe`]). The shell
+    /// calls it on the file it has just re-read, then writes the file back.
+    pub fn observe(&mut self, rings: &RoundRings, today: Day) {
+        self.review.observe(rings, today);
+        self.drop_kept_review();
+    }
+
+    /// A readable `review` field replaces a kept one that was not (written once, never twice).
+    fn drop_kept_review(&mut self) {
+        if !self.review.is_empty() {
+            self.extra.remove("review");
+        }
     }
 
     /// Merge one step's outcome (what the player's [`Effect::Record`](crate::player::Effect::Record) carries).
@@ -309,6 +341,9 @@ impl Serialize for Progress {
         };
         m.serialize_entry("schema", &schema)?;
         m.serialize_entry("lessons", &Merged(&self.lessons, &self.unread))?;
+        if !self.review.is_empty() {
+            m.serialize_entry("review", &self.review)?;
+        }
         for (k, v) in &self.extra {
             m.serialize_entry(k, v)?;
         }
@@ -317,7 +352,7 @@ impl Serialize for Progress {
 }
 
 /// A map of readable entries and kept unreadable ones, written as one object in key-text order.
-struct Merged<'a, K, V>(&'a BTreeMap<K, V>, &'a Extra);
+pub(crate) struct Merged<'a, K, V>(pub(crate) &'a BTreeMap<K, V>, pub(crate) &'a Extra);
 
 impl<K: ToString, V: Serialize> Serialize for Merged<'_, K, V> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -350,7 +385,7 @@ fn canonical(v: &Value) -> String {
 }
 
 /// Unite kept fields; on a conflict keep the greater by canonical JSON text, so the merge stays a join.
-fn merge_extra(into: &mut Extra, other: &Extra) {
+pub(crate) fn merge_extra(into: &mut Extra, other: &Extra) {
     for (k, v) in other {
         match into.get_mut(k) {
             Some(mine) if *mine != *v => {

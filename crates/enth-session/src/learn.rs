@@ -609,6 +609,10 @@ pub enum LearnRequest {
     /// The lesson changed what the `enth` field saves (a start, a step, an end): mark the project dirty, coalesced
     /// with `ShellRequest::PatchEdited`.
     Dirty,
+    /// A played Recreate round ended (any origin: the game, a lesson, a Review item; lane REV, additive): apply its
+    /// first submit's rings to the per-user progress file's review boxes with today's day (re-read,
+    /// `Progress::observe`, temporary file, rename). See `crate::review`.
+    Rings(enth_learn::review::RoundRings),
 }
 
 /// What the audio side plays of a Listen or Choose step's examples: they share the Target ▶ slot by time (a Listen
@@ -904,6 +908,13 @@ pub trait LearnEdit {
     fn learn_redo(&mut self) -> Result<(), LearnError> {
         Err(LearnError::NoRedo)
     }
+    /// Play a Review item (lane REV, additive): its seeded sibling challenge as a round of origin `review`, which
+    /// stashes your patch like a game round (see `crate::review`). Refused while a lesson is live. The default body
+    /// does nothing, so a fake keeps compiling.
+    fn review_start(&mut self, item: enth_learn::review::ReviewItem) -> Result<(), LearnError> {
+        let _ = item;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1123,6 +1134,11 @@ impl Session {
     }
 
     // --- hooks the rest of the session calls (each one line at its call site) ----------------------------------
+
+    /// Queue a request for the shell (lane REV's review rings use the lesson's outbox).
+    pub(crate) fn learn_request(&mut self, request: LearnRequest) {
+        self.learn.requests.push(request);
+    }
 
     /// A lesson is live: the `learn` object holds a lesson or a stash.
     pub(crate) fn learn_live(&self) -> bool {
@@ -1944,6 +1960,10 @@ impl LearnEdit for Session {
         }
         self.learn.listen = example;
         Ok(())
+    }
+
+    fn review_start(&mut self, item: enth_learn::review::ReviewItem) -> Result<(), LearnError> {
+        self.review_open(item) // lane REV: crate::review
     }
 
     fn learn_end(&mut self, choice: EndChoice) -> Result<(), LearnError> {

@@ -299,6 +299,19 @@ impl Editor {
         &self.learn
     }
 
+    /// The progress file again (lane REV): after the shell writes a round's rings into it, so the Review queue
+    /// follows.
+    #[cfg(feature = "learn")]
+    pub fn set_progress(&mut self, progress: enth_learn::Progress) {
+        self.learn.set_progress(progress);
+    }
+
+    /// The day it is, as the shell counts it (days since 1970-01-01, UTC; lane REV): the Review queue's day.
+    #[cfg(feature = "learn")]
+    pub fn set_review_day(&mut self, day: enth_learn::review::Day) {
+        self.learn.set_review_day(day);
+    }
+
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
     /// dragged source and the overlay applied.
     fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {

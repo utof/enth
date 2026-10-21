@@ -18,6 +18,7 @@
 //! | [`game`] | the pure Recreate round: states, stash, submit, reveal, jobs for the shell; [`GameState`] in the saved state | SG (R1/S1; pre-declared by S0r) |
 //! | [`presets`] | preset format, index, tags, search, the undoable editor load; [`PresetState`] in the saved state | PBC (R1/S1; pre-declared by S0r) |
 //! | [`learn`] | the pure Learn API: stash, step loads, locks in the edit path, jobs, the read model ([`LearnEdit`], [`LearnView`]); [`LearnState`] in the saved state | SL (R2; pre-declared by S0l) |
+//! | [`review`] | the review source: a Review item's sibling round (origin `review`), no hint on its first try, and every played round's first-submit rings out to the shell for the progress file's boxes | REV (R2) |
 //! | [`create`] | the pure create state: jobs out to the shell and results back, the K candidates' read model, "Use this" as one undo step with no host writes; **no saved state** (a create job is not saved). Empty until F2s | SK3 (R3; pre-declared by S0s) |
 //!
 //! P1b stubs (lane S1s): [`Session::activate`], [`Session::pump`]'s active case, [`Session::edit`] and the audition
@@ -34,6 +35,7 @@ pub mod learn;
 pub mod link;
 pub mod model;
 pub mod presets;
+pub mod review;
 pub mod state;
 pub mod telemetry;
 

@@ -15,7 +15,8 @@ use serde_json::Value;
 const PACKS: [&str; 2] = ["basics", "shaping"];
 const LESSONS: [&str; 3] = ["cutoff", "waves", "glide"];
 const STEPS: [&str; 3] = ["hear", "try", "which"];
-const EXTRA_KEYS: [&str; 2] = ["time_ms", "review"];
+/// Keys no build reads at these levels (`review` became progress's field with lane REV; `tests/review.rs` covers it).
+const EXTRA_KEYS: [&str; 2] = ["time_ms", "votes"];
 
 /// A kept field's value: any JSON.
 fn kept_value() -> impl Strategy<Value = Value> {
@@ -107,6 +108,7 @@ fn progress() -> impl Strategy<Value = Progress> {
                 unread,
                 extra,
                 version,
+                ..Progress::default()
             }
         })
 }

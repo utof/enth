@@ -8,8 +8,8 @@
 //! ("3/11", "✓ 11/11" once every step is done) and its objective. The packs the shell refused are listed at the end
 //! with their reasons ("needs a newer enth" included, never hidden).
 //!
-//! **Review** (lane REV's queue of due skills, fed by Recreate's rings) has its entry here already: a button that is
-//! disabled and says it comes later, behind nothing; REV enables it and handles `LearnIntent::Review`.
+//! **Review** (lane REV's queue of due skills, fed by Recreate's rings): a button with the due count that plays the
+//! queue's next item ([`review`]).
 //!
 //! **Open packs folder** and **Get more lessons** stand at the pane's bottom (lane LFU), both through egui's
 //! `OpenUrl`, so R2 has no network code: the first asks the shell to open its Packs folder
@@ -104,11 +104,7 @@ pub(crate) fn show(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) -> 
                 out,
             );
         }
-        // Lane REV's entry: there, and disabled, until the Review queue exists.
-        button(ui, t, "Review", "Review", false, LearnIntent::Review, out)
-            .on_disabled_hover_text(
-                "Review: a few items from the lessons you passed, by your weakest skills (comes in a later update)",
-            );
+        review(learn, ui, t, out);
     });
     let shelf = learn.shelf();
     ui.horizontal_wrapped(|ui| {
@@ -242,6 +238,44 @@ pub(crate) fn show(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) -> 
         });
     let over = shown.content_size - shown.inner_rect.size();
     vec2(over.x.max(0.0), over.y.max(0.0))
+}
+
+/// Lane REV's entry: **Review**, with how many skills are due ("Review • 3 due"; its name stays "Review"). It plays
+/// the queue's next item, a seeded sibling of a passed lesson's round for the weakest due skill; it is disabled while a
+/// lesson is live (a lesson's stash is the only one) and until a lesson with a Recreate round is passed.
+fn review(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
+    let queue = learn.review();
+    let due = queue.due();
+    let text = if due > 0 {
+        format!("Review {} {due} due", glyph::BULLET)
+    } else {
+        "Review".to_owned()
+    };
+    let enabled = !queue.is_empty() && learn.view().is_none();
+    let next = queue.items.first().map(|item| {
+        let lesson = learn
+            .lessons()
+            .iter()
+            .find(|b| b.key() == item.lesson)
+            .map_or_else(|| item.lesson.to_string(), |b| b.lesson.title.clone());
+        let when = if item.due { "due" } else { "not due yet" };
+        format!(
+            "Plays a new round of {lesson} for your weakest skill, {} (box {} of {}, {when}); no hint before your first submit",
+            item.skill.label(),
+            item.level,
+            enth_learn::review::BOXES
+        )
+    });
+    let disabled = if learn.view().is_some() {
+        "End the lesson first: Review plays rounds of its own"
+    } else {
+        "Review: once you pass a lesson with a Recreate round, its skills come back here when they are due"
+    };
+    let response = button(ui, t, &text, "Review", enabled, LearnIntent::Review, out)
+        .on_disabled_hover_text(disabled);
+    if let Some(next) = next {
+        response.on_hover_text(next);
+    }
 }
 
 /// A shelf's tab.

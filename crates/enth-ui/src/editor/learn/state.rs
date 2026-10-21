@@ -19,11 +19,18 @@
 //! **Progress.** The shell hands over the progress file when the window opens; while it is open, the view marks a
 //! step done when it sees it pass (or Next leave a Read or Listen step), so the browser's counts follow the lesson.
 //! The file stays the shell's: the session's `LearnRequest::Record` is what writes it.
+//!
+//! **Review** (lane REV). With the day from the shell (`Editor::set_review_day`), the view keeps
+//! `enth_learn::review::queue` of its progress and lessons ([`Learn::review`]); the browser's Review shows how many
+//! skills are due and plays the queue's head item through `LearnEdit::review_start`. The shell writes the round's
+//! rings into the progress file and hands the file back (`Editor::set_progress`), so the next press plays the next
+//! item.
 
 use enth_learn::lesson::Layout as StepLayout;
 use enth_learn::pack::LessonKey;
 use enth_learn::player::StepRecord;
 use enth_learn::progress::Progress;
+use enth_learn::review::{self, Day, Queue};
 use enth_learn::store::Library;
 use enth_learn::{
     LessonBundle, PackId, Player, Selector, Step, StepKind, StepPhase, StepProgress, StepView,
@@ -65,7 +72,8 @@ pub enum LearnIntent {
     Listen(Option<u8>),
     /// A/B: play the other of the last two examples played, at the same position (they share the Target ▶ slot).
     Flip,
-    /// The Review queue's entry (lane REV feeds it later): a placeholder that does nothing yet.
+    /// Play the Review queue's next item (lane REV): the weakest due skill's seeded sibling round
+    /// (`LearnEdit::review_start`). The queue follows the progress file, so the next press plays the next item.
     Review,
     /// The lesson browser's shelf: a track, or every pack.
     Shelf(Shelf),
@@ -145,6 +153,10 @@ pub struct Learn {
     tracks: Vec<TrackInfo>,
     problems: Vec<String>,
     progress: Progress,
+    /// The day the shell says it is (lane REV; `None`: no Review), and the Review queue for it, recomputed whenever
+    /// the progress, the lessons or the day change.
+    review_day: Option<Day>,
+    review: Queue,
     open: bool,
     browsing: bool,
     view: Option<LearnView>,
@@ -186,6 +198,7 @@ impl Learn {
         self.tracks.clear();
         self.lessons = lessons;
         self.problems = problems;
+        self.refresh_review();
     }
 
     /// When the window opens: the shell's library (every installed pack, the refused ones as problems) and the
@@ -239,6 +252,7 @@ impl Learn {
         self.packs = packs;
         self.tracks = tracks;
         self.progress = progress;
+        self.refresh_review();
     }
 
     /// The Packs folder the shell reads user packs from (lane LFU): the browser's "Open packs folder" opens it.
@@ -256,9 +270,33 @@ impl Learn {
         std::mem::take(&mut self.open_packs)
     }
 
-    /// The progress file's contents (the shell reads it when the window opens).
+    /// The progress file's contents (the shell reads it when the window opens, and again after it writes a round's
+    /// rings into the review boxes).
     pub fn set_progress(&mut self, progress: Progress) {
         self.progress = progress;
+        self.refresh_review();
+    }
+
+    /// The day it is, as the shell counts it (days since 1970-01-01, UTC; lane REV): the Review queue's day. The view
+    /// reads no clock.
+    pub fn set_review_day(&mut self, day: Day) {
+        if self.review_day != Some(day) {
+            self.review_day = Some(day);
+            self.refresh_review();
+        }
+    }
+
+    /// The Review queue (lane REV): empty until the shell gives a day and a lesson with a Recreate round is passed.
+    pub fn review(&self) -> &Queue {
+        &self.review
+    }
+
+    /// Recompute the Review queue (`enth_learn::review::queue`: pure, a few microseconds a step).
+    fn refresh_review(&mut self) {
+        self.review = match self.review_day {
+            Some(day) => review::queue(&self.progress, &self.lessons, day),
+            None => Queue::default(),
+        };
     }
 
     /// The progress the view holds: the file as handed over, plus the steps seen passing since.
@@ -369,6 +407,9 @@ impl Learn {
             .collect();
         for r in &records {
             self.progress.record(r);
+        }
+        if !records.is_empty() {
+            self.refresh_review(); // a lesson passed here may join the Review queue (lane REV)
         }
     }
 
@@ -497,7 +538,10 @@ impl Learn {
                     self.browsing = on;
                     Ok(())
                 }
-                LearnIntent::Review => Ok(()),
+                LearnIntent::Review => match self.review.items.first() {
+                    Some(item) => session.review_start(item.clone()),
+                    None => Ok(()),
+                },
                 LearnIntent::Shelf(shelf) => {
                     self.shelf = Some(shelf);
                     Ok(())
