@@ -19,7 +19,7 @@ title = "Synth basics"
 authors = ["enth contributors"]
 covers = ["osc", "noise", "svf", "adsr"]
 # The order the app offers them in (the curriculum's order). Lesson ids are append-only.
-lessons = ["waveforms", "two-oscillators", "noise", "cutoff", "decay-and-sustain"]
+lessons = ["waveforms", "two-oscillators", "noise", "cutoff", "drive", "decay-and-sustain"]
 
 [license]
 text = "CC-BY-4.0"
@@ -32,3 +32,24 @@ lesson = 1
 challenge = 2
 patch = 1
 scorers = ["combined/1", "sound/1", "structure/1", "time/1"]
+
+# The 12-lesson tour (PLAN.md §3, GR2's friend track), played across installed packs (Q1). This pack starts it, so it
+# carries it; 0.1 opens it once written (Q3). The other packs' lesson ids are proposals for lanes C2 and C3: a lesson
+# whose pack is missing shows as missing.
+[[tracks]]
+id = "tour"
+title = "The tour"
+lessons = [
+  "basics/waveforms",
+  "basics/two-oscillators",
+  "basics/noise",
+  "basics/cutoff",
+  "basics/drive",
+  "basics/decay-and-sustain",
+  "shaping/routes-and-depth",
+  "shaping/vibrato",
+  "shaping/glide",
+  "space-and-dynamics/reverb-space",
+  "space-and-dynamics/compressor-level",
+  "space-and-dynamics/macros",
+]
