@@ -327,7 +327,7 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 | 192 kHz files have no path: accept 192 kHz, or decimate exactly 2:1 in the decoder, and say which in the hint (F1s should-fix 10) | SK3 | F2s |
 | Slow attacks under noise surface 5–35 ms late: extend the onset back along the attack's rise (F1s should-fix 6) | OBJ, or an FE follow-up | Before R3a ships |
 | `min_spread` against the bank's size; `first_rung` (m0, 50) and K against the budget; the scored window (2, 3 or 5 s; `create::SCORE_S` is 3) (F1s should-fix 9 and the coordinator's decisions) | EVK, on dev | Wave 3 |
-| The CLI's `--score-seconds` (`Target::from_intake_scored`) | CLC | With `enth create`'s flags |
+| ~~The CLI's `--score-seconds` (`Target::from_intake_scored`)~~ **Settled by CLC:** `enth create --score-seconds` (0.1–5 s, default 3) builds `Target::from_intake_scored` and the new `RobustMetricTarget::from_intake_scored`, equal to `from_intake` bit for bit at 3 s; the plugin keeps the default window | CLC | With `enth create`'s flags |
 | OBJ masks on a floor only when `floor_confirmed`, and never on `clipping` for soft clipping or limiting (FE decision 7) | OBJ | Wave 2–3 |
 | EVK: 12 of the 112 clause-1 generator targets are two-note phrases, but `create` plays one note in every arm: report them as their own stratum (the F1s judge) | EVK | Arm A |
 | `enth.create/1`'s JSON test lives in `tools/datagen/tests/create_record.rs`: moving it into `enth-solver` needs a `serde_json` dev-dependency, one line in `Cargo.lock`'s `enth-solver` entry (F1s nit 14) | The coordinator | Any time |

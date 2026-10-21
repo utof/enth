@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &s.path(\"missing.wav\")], 5, \"file_not_found\")"
+---
+exit: 5
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "file_not_found",
+  "exit": 5,
+  "file": "[TMP]/missing.wav",
+  "hint": "check the path and that the file can be read",
+  "message": "cannot open [TMP]/missing.wav: No such file or directory (os error 2)",
+  "schema": "enth.error/1"
+}
+--- stderr

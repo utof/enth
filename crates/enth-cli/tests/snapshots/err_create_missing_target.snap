@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[], 2, \"usage\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "usage",
+  "exit": 2,
+  "hint": "usage: enth create --target <FILE>; `--help` shows the flags, `enth guide` the workflow",
+  "message": "the following required arguments were not provided: --target <FILE>",
+  "schema": "enth.error/1"
+}
+--- stderr

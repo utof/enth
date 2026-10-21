@@ -32,9 +32,9 @@ LLMs are good at intent and structure ("a pluck needs a fast attack and a filter
 | --- | --- | --- |
 | 0 | OK (for `check`: all expectations passed) | |
 | 1 | Ran fine, but `check` had failures | |
-| 2 | Usage error (bad flags) | `usage` (clap, with the usage line in `hint`), `bad_expect`, `bad_perf`, `nothing_to_apply`; R1: `bad_level`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_workers`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase` |
-| 3 | Validation error (bad patch, unknown param, value out of range) | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range` with `try`, `min`, `max`, `bad_value`, `wrong_unit`, `bad_json`, `unknown_op`, …), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema`, `not_a_patch`; R1: every `enth-challenge` code a code or file can raise (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, `silent_target` for a code whose target nobody can hear, …), `unknown_category`, `nothing_to_search` |
-| 4 | Render or analysis failure | `render_failed`, `analysis_failed`, `unsupported_wav`, `write_failed`; R1: `start_failed`, `pool_failed`, `silent_target` and the solver's own codes |
+| 2 | Usage error (bad flags) | `usage` (clap, with the usage line in `hint`), `bad_expect`, `bad_perf`, `nothing_to_apply`; R1: `bad_level`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_workers`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase`; R3 `enth create`: `bad_candidates`, `bad_score_seconds`, `bad_out`, `dur_fixed` (and the R1 `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_workers`, `bad_perf`) |
+| 3 | Validation error (bad patch, unknown param, value out of range) | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range` with `try`, `min`, `max`, `bad_value`, `wrong_unit`, `bad_json`, `unknown_op`, …), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema`, `not_a_patch`; R1: every `enth-challenge` code a code or file can raise (`bad_check`, `bad_symbol`, `code_too_new`, `target_mismatch`, `silent_target` for a code whose target nobody can hear, …), `unknown_category`, `nothing_to_search`; R3 `enth create`: `unknown_format`, `bad_file`, `sample_rate`, `no_audio` (the file), `intake` (a silent file or one the analysis refuses), `not_a_bank` and the bank's other codes |
+| 4 | Render or analysis failure | `render_failed`, `analysis_failed`, `unsupported_wav`, `write_failed`; R1: `start_failed`, `pool_failed`, `silent_target` and the solver's own codes; R3 `enth create`: `time_cap`, `no_candidate` |
 | 5 | File not found | `file_not_found` |
 
 Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (possibly empty), and where it applies `path` (an address such as `filter1.cutof`, an op such as `ops[2]`, or a path into a file such as `generators[1].params.cutoff`), `file`, `known` (the valid names, when the list is short) and `errors` (every problem, when a file has several). On a terminal the error is plain text on stderr instead.
@@ -60,6 +60,7 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth explain <addr\|module\|kind> [--patch p]` | Plain text and JSON from the catalogue for a parameter, a module or a kind; with `--patch`, what a just-noticeable step of the parameter does in that patch (`enth.explain/1`) |
 | `enth challenge new\|show\|decode` | Make, regenerate and read Recreate challenges and their codes (`enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`) |
 | `enth lesson list\|show\|start\|check\|hint\|closest <pack> …` | A lesson pack's lessons and steps; what a step loads; one do step's check against a patch file; a step's hint; a round's nearest passing patch (`enth.lesson-list/1`, `-show/1`, `-start/1`, `-check/1`, `-hint/1`, `-closest/1`; [below](#lessons-on-the-command-line-enth-lesson)) |
+| `enth create --target <wav\|flac\|ogg\|mp3> [--candidates K] [--seconds S] [--budget N] [--stop-at D] [--score-seconds S] [--bank F] [--perf …] [--out P] [--record F]` | Patches that sound like a recording: the intake finds the sound in the file, a portfolio of starts is screened, K branches are refined by the robust distance; K candidates with their provenance and traces, every start as a patch, and what to do next (`enth.create/1`; [below](#creating-patches-from-a-sound-enth-create)) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
 | `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
@@ -403,6 +404,135 @@ Choices the commands make, so nobody has to rediscover them:
 - **The measured hint is the player's.** A do step's hint is built by the same `Player` the plugin uses (its free set, its macro pins) and solved by `enth_solver::hint`; a recreate step's is `enth_solver::coach`, the game's hint button. So the CLI never says what the Learn view would not.
 - **Errors carry a `hint`**, like every error: `bad_n` (`--n 0`), `not_hintable` (a read or listen step has no hints), `no_more_hints` (names the last rung and how many the step has), `patch_required` (a measured rung needs the patch file), `unknown_lesson`, `unknown_step` (with `did_you_mean` and `known`), `not_a_round` and `no_editable_set` and `bad_budget` (`closest`), `nothing_to_write`, `no_examples`, `no_round` and `carried_start` (`start`; exit 2), a pack the reader refuses exit 3.
 
+## Creating patches from a sound (`enth create`)
+
+R3 (lane SK3 built the command and its engine at freeze point F2s; lane CLC finished the flags, typed `enth.create/1`, pinned it with snapshots and wrote this section). `enth create --target kick.wav` is the plugin's "Create from sound" on the command line, the same code ([r3.md](r3.md), [plugin.md](plugin.md#create-lane-sk3-r3)): it decodes a recording; the **intake** finds the sound in it (where it starts and ends, its pitch and hold, and what the upload has lost: a cut-off, a noise floor, clipping); a **portfolio** of starts (the heuristic start, the templates and, with `--bank`, the nearest patches of a k-NN bank) is screened; and K branches are refined by successive halving. Every render is scored by the **robust distance** (`logmel-pool85-robust/1`), which does not pay a candidate for reproducing the recording's noise, band limit or clipping. It is deterministic: the same file, flags and renders give the same bytes for any `--workers`; only the clock fields differ (`elapsed_s`, `rounds[].seconds`). A run the `--seconds` cap stopped repeats as the same job with its `renders` as the budget, on any machine.
+
+| Flag | Default | Does |
+| --- | --- | --- |
+| `--target FILE` | required | The sound: WAV, FLAC, Ogg Vorbis or MP3, read by the plugin's own decoder (so both shells get the same bits). 192 kHz and above are decimated exactly 2:1; M4A/AAC and AIFF are not read yet. A short sound is never rejected for its length. Render and analysis run at the file's own rate, with no resampling |
+| `--candidates K` | 8 | The branches refined at once, 1 to 16. Fewer come back when the portfolio holds fewer starts (4 without a bank: the heuristic and three templates; a bank adds up to 16 neighbours), and `notes` says so |
+| `--seconds S` | 60 | The wall-clock cap, above 0 and at most 300 (every result arrives in under 5 minutes), from decoding to the last candidate. Checked before every render; a batch it interrupts is dropped. A capped run depends on the machine's speed. If it passes before the first round ends there is no candidate to give: `time_cap`, exit 4, never an empty result |
+| `--budget N` | 4000 | The most renders, at least 1. Only a cap: the schedule never depends on it, so a run is a prefix of any longer one. The last round keeps the whole batches that fit, so `renders` can be a few under `N` |
+| `--stop-at D` | none | End the job as soon as a candidate's distance is at or below `D` (`stop` reads `goal`). `D` is in the objective's units (`settings.objective`): 0 is identical, and the patch that made a clean sound scores under 0.02. Not `compare`'s units |
+| `--score-seconds S` | 3 | The scored window, 0.1 to 5: every candidate is rendered for, and compared over, the first `S` seconds of the clip (the intake keeps up to 5 s of a file). A shorter window is cheaper per render, a longer one hears more of the decay; a window longer than the clip scores the clip. 3 is the product's setting (`create::SCORE_S`; on the dev set 2 s ended farther on 13 of 30 targets and 5 s was level, [gr3.md](gr3.md)). When it cuts the clip, `notes` says so |
+| `--bank FILE` | none | The k-NN bank, `enth-bank-v1.bin` from `cargo xtask bank`. Without one the job runs on the heuristic and the templates and says so in `notes`. A missing file is `file_not_found` and a file that is not a bank is `not_a_bank` (exit 3); neither is ignored |
+| `--seed N` | 1 | The search's seed. The same seed, file and renders repeat a run exactly |
+| `--workers N` | every core | Worker threads, 1 to 256. The output is the same for any number |
+| `--perf PERF`, `--note NOTE`, `--vel V`, `--hold T` | the intake's | Override the performance the intake inferred ([below](#the-performance-the-intake-inferred)) |
+| `--out PATCH` | none | Write the closest candidate's patch, named after the file (`kick.wav` gives a patch named `kick`). It must not be the `--target` file or `--record`'s (`bad_out`) |
+| `--record FILE` | none | Write the whole `enth.create/1` record as well: the file is the printed object |
+
+`--dur` is refused (`dur_fixed`): the clip's length is the file's, and `--score-seconds` sets what is scored. The global `--format table` prints the K candidates as a table instead of the record.
+
+### The performance the intake inferred
+
+The intake reads one note from the recording: its key (the note nearest the measured pitch; C3 when unpitched), a fixed velocity (100), its onset on the engine's render grid and how long it is held (to the note-off it found, or to where the sound fell into the floor). Every candidate is rendered with that note, and `input.perf` holds it. When it is wrong (a chord reads as its lowest tone, a pitch an octave off, a hold that ended early) the intake says so in `intake.warnings`, and you override it:
+
+| Form | Replaces |
+| --- | --- |
+| `--note A3`, `--vel 80`, `--hold 0.4s` | That one field of the inferred note; the others stay |
+| `--perf note=A3,hold=0.4s` | Exactly the fields it names (`note`, `vel`, `hold`); the rest stay the intake's. This differs from the other commands, where the rest of the short form is the CLI's default (C3, 100, 1.5 s): here the rest is the recording's |
+| `--perf perf.json`, `--perf '{"notes":[…],"dur_s":…}'`, `--perf -` | A whole performance (`enth schema perf`): the key, velocity and hold of its one note. Several notes: the first by note-on is played, and `notes` says so |
+
+A flag given with `--perf` wins for its field. The onset and the clip stay the intake's, so a `--perf` note-on and `dur_s` are not used (`notes` says so); `--score-seconds` sets the window. The intake's own reading stays in `intake.perf`, and `notes` records `performance overridden: key A3, velocity 100, hold 0.400 s`. `played` in the output is the performance every candidate was rendered with, as an `enth.perf/1` object.
+
+### Output: `enth.create/1`
+
+Printed **exactly**, unlike the other commands (no 4-digit rounding, keys sorted): the patch values and seeds replay the run. `enth schema create` prints the JSON Schema (the intake report is left open there: it is FE's `IntakeReport`, version 1, described in [r3.md](r3.md)). The solver's `CreateRecord` (`enth_solver::create::record`) reads a printed object back and ignores the fields the CLI adds. An object that gains a field stays `/1`; a changed meaning is `/2`.
+
+| Field | What |
+| --- | --- |
+| `schema` | `enth.create/1` |
+| `input` | What the job was given: `audio_sha256` (the scored mono clip; a lossy decoder may differ in its last bits across CPUs, so a replay checks it), `features_sha256`, `sample_rate`, `frames`, `render_seed`, `perf` (`key`, `velocity` 0 to 1, `on_s`, `hold_s`, `duration_s`, `f0_hz`: what was **played**, overrides included), `bandwidth_hz`, `noise_floor_dbfs` (a confirmed floor only) |
+| `intake` | FE's report whole: its settings and the codec hint, the performance it **inferred**, the `span` it kept, the `degradation` it found (bandwidth, floor, clipping, hum, SNR, tail) and its `warnings` |
+| `settings` | What the job ran under: `k`, `budget`, `seed`, `stop_at`, the schedule (`first_rung`, `eta`, `finalists`, `lambda`), `neighbours` and `min_spread`, `objective` (`logmel-pool85-robust/1`), `embedding`, `bank` (`sha256`, `entries`, `generator`) or null, and the `templates` proposed |
+| `starts` | **Every start as a patch file** (`enth schema patch`), with its `provenance`, its `screen_distance` and the `branch` it became (null when screening dropped it). `provenance.kind` is `heuristic`, `template` (with `name`) or `knn` (`rank`, `bank_index`, the generator spec, `embedding_distance`) |
+| `candidates` | The K branches in branch order: the refined `patch`, its `distance` (smaller is closer), the `proposal_distance` its start had, `state` (`proposed`, `searching`, `done`, `pruned`), `rung`, `renders`, `runs`, and a `trace` of its best distance after each round it ran in |
+| `rounds` | Each round: `renders` so far, `rung` (null for the screening round), `live` branches and `seconds` since the start |
+| `renders`, `stop`, `best`, `notes` | Renders used; why it ended (`budget`, `cancelled` for the `--seconds` cap, `exhausted`, `goal`); the closest candidate's index in `candidates`; notices in the order they arose (what the decoder found, the window, an override, a missing bank, fewer candidates than K, the cap) |
+| `decoded` | How the file was read: `WAV, 16-bit, 48000 Hz, mono` |
+| `elapsed_s`, `cap_s`, `score_s` | The wall-clock seconds, the `--seconds` cap and the `--score-seconds` window |
+| `played` | The performance every candidate was played with, as `enth.perf/1`: pass it as `--perf` to `enth render`, `enth describe`, `enth compare --target FILE` or `enth match` |
+| `wrote` | The files written, `--out` then `--record` |
+| `hint` | What to do next: where the closest candidate is and how it was played |
+
+The notes also go to stderr, one `note:` line each. **Exit 0 whatever stopped the job** once a candidate exists: a run the cap or `--stop-at` ended is a result, and `stop` says which. The distances are the objective's: they are **not** on `enth compare`'s or `enth match`'s scale (`logmel-l1/1`), so a candidate's `distance` and the `compare` distance of its patch against the same file differ (0.023 and 0.107 for the fixture tone below).
+
+```sh
+enth create --target kick.wav --out kick.patch.json --record run.json     # 8 candidates, up to 60 s
+enth create --target snare.wav --note C2 --hold 0.15s --candidates 4 --out snare.patch.json
+enth create --target pad.flac --bank target/bank/enth-bank-v1.bin --score-seconds 5 --seconds 120
+enth create --target x.wav --stop-at 0.05 --out good-enough.patch.json   # ends once a candidate is that close
+```
+
+A real run (the plugin's `tone.wav` fixture, an A3 tone; engine 0.3.0, debug build, patches and the intake's report left out):
+
+```json
+{"schema":"enth.create/1","decoded":"WAV, 16-bit, 48000 Hz, mono",
+ "input":{"audio_sha256":"a051d91c…","features_sha256":"b686c018…","sample_rate":48000,"frames":18016,
+          "render_seed":236412653,"bandwidth_hz":null,"noise_floor_dbfs":null,
+          "perf":{"key":57,"velocity":0.787401556968689,"on_s":0.005333333333333333,"hold_s":0.27,
+                  "duration_s":0.37533333333333335,"f0_hz":219.76246886441328}},
+ "intake":{"…":"FE's report: cfg, span, degradation, perf, warnings"},
+ "settings":{"k":2,"budget":60,"seed":1,"stop_at":null,"neighbours":16,"min_spread":0.25,"lambda":0,
+             "first_rung":50,"eta":2,"finalists":2,"objective":"logmel-pool85-robust/1",
+             "embedding":"knn-logmel-rel/1","bank":null,"templates":["pluck_1osc","pad_2osc","bass_sub"]},
+ "starts":[{"index":0,"provenance":{"kind":"heuristic"},"screen_distance":0.3466,"branch":0,"patch":{"…":"…"}},
+           {"index":1,"provenance":{"kind":"template","name":"pluck_1osc"},"screen_distance":0.02267,"branch":1,"patch":{"…":"…"}},
+           {"index":2,"provenance":{"kind":"template","name":"pad_2osc"},"screen_distance":3.117,"branch":null,"patch":{"…":"…"}},
+           {"index":3,"provenance":{"kind":"template","name":"bass_sub"},"screen_distance":0.7743,"branch":null,"patch":{"…":"…"}}],
+ "candidates":[{"branch":0,"start":0,"provenance":{"kind":"heuristic"},"distance":0.3241,"proposal_distance":0.3466,
+                "state":"done","rung":0,"renders":20,"runs":1,"trace":["…"],"patch":{"…":"…"}},
+               {"branch":1,"start":1,"provenance":{"kind":"template","name":"pluck_1osc"},"distance":0.02267,
+                "proposal_distance":0.02267,"state":"done","rung":0,"renders":31,"runs":1,"trace":["…"],"patch":{"…":"…"}}],
+ "rounds":[{"round":0,"renders":4,"rung":null,"live":4,"seconds":1.697},{"round":1,"renders":28,"rung":0,"live":2,"seconds":4.578},
+           {"round":2,"renders":47,"rung":0,"live":2,"seconds":6.424},{"round":3,"renders":55,"rung":0,"live":1,"seconds":7.044}],
+ "renders":55,"stop":"budget","best":1,
+ "notes":["no --bank: running on the heuristic and the templates (k-NN needs enth-bank-v1.bin from `cargo xtask bank`)"],
+ "elapsed_s":7.046,"cap_s":60.0,"score_s":3.0,"wrote":["best.patch.json"],
+ "played":{"schema":"enth.perf/1","notes":[{"note":"A3","vel":100,"on_s":0.005333333333333333,"off_s":0.2753333333333334}],"dur_s":0.37533333333333335},
+ "hint":"the closest is candidates[1] (template pluck_1osc, distance 0.0227), written to best.patch.json; `played` is how every candidate was played: pass it as --perf to `enth render`, `enth describe` or `enth compare --target tone.wav` (their distances are `compare`'s, not this objective's)"}
+```
+
+**From the closest candidate to a better one** (what an agent does; `played` is the performance, so every step plays the note the candidates were made for):
+
+```sh
+enth create --target kick.wav --out kick.patch.json --record run.json
+PERF=$(jq -c .played run.json)
+enth render kick.patch.json --perf "$PERF" --out kick-created.wav            # hear what it made (deterministic)
+enth compare kick.patch.json --target kick.wav --perf "$PERF"                 # the descriptors that differ, in words
+enth match --target kick.wav --start kick.patch.json --perf "$PERF" --free observable --budget 600 --out kick2.patch.json
+enth apply kick2.patch.json --set filter1.cutoff=1.2kHz                       # or edit by hand
+```
+
+`create` renders at the file's own rate and `render`, `compare` and `match` at 48 kHz, so for a 44.1 kHz file their numbers are close but not equal.
+
+Errors (all `enth.error/1` with a `hint`; every flag is checked before the file is read):
+
+| Exit | Code | When |
+| --- | --- | --- |
+| 2 | `usage` | A flag clap refuses, or no `--target` (the usage line in `hint`) |
+| 2 | `bad_candidates`, `bad_seconds`, `bad_budget`, `bad_score_seconds`, `bad_stop_at`, `bad_workers` | A flag outside its range (the message names the range) |
+| 2 | `bad_perf` | `--perf`, `--note`, `--vel` or `--hold` is not a performance (`enth schema perf`) |
+| 2 | `dur_fixed` | `--dur`: the clip's length is the file's |
+| 2 | `bad_out` | `--out` is the `--target` file (it would overwrite the sound), or `--out` and `--record` are one file |
+| 3 | `unknown_format` | Not a sound this build reads. A JSON file (a patch, say) gets its own hint: to match a patch use `enth match --target PATCH` |
+| 3 | `bad_file`, `sample_rate`, `no_audio` | The decoder reads the format but the file is damaged, at a rate the analysis refuses, or has no samples |
+| 3 | `intake` | The file holds no sound the analysis can use: it is silent, not finite, or at a rate it refuses |
+| 3 | `not_a_bank` and the bank's other codes | `--bank` is not a k-NN bank, is a newer format, or was built for another embedding; the hint says `cargo xtask bank` |
+| 4 | `time_cap` | The `--seconds` cap passed before the first candidate was made (while decoding or in the first round) |
+| 4 | `no_candidate` | No start rendered to a distance (a bug: keep the file and the flags) |
+| 4 | `write_failed` | `--out` or `--record` cannot be written |
+| 5 | `file_not_found` | `--target` or `--bank` is missing or unreadable (the hint for a bank is the bank's) |
+
+Choices the command makes, so nobody has to rediscover them:
+
+- **One objective, the robust distance.** The plugin uses the same, so the CLI judges what the Create view shows. A different objective is a different `settings.objective` id, not a flag; the metric `enth compare` and `enth match` use stays `logmel-l1/1`.
+- **No silent no-ops.** A file that cannot be a sound, a bank that cannot be read, an output that would overwrite the input and a cap that leaves nothing are errors with a hint, never a result with an empty `candidates`. `--candidates` above the number of starts is not an error (the job runs on what exists), and `notes` says what it did.
+- **The search's tuning stays out of the flags.** `neighbours`, `min_spread`, `lambda`, `first_rung`, `eta` and `finalists` are in `settings` for the record but are `create`'s defaults, tuned on the dev set (EVK); a caller that needs another value uses the solver's API.
+- **A window is a flag, a clip length is not.** `--score-seconds` is `Target::from_intake_scored`'s window, and the robust objective compares the silence after a sound that ends in its floor up to that window (`RobustMetricTarget::from_intake_scored`), so a 5 s window differs from the 3 s default only for a long sound.
+
 ## Three typical workflows
 
 **Text goal** ("make a warm evolving pad"):
@@ -417,6 +547,8 @@ Choices the commands make, so nobody has to rediscover them:
 1. `enth describe target.wav` → LLM picks a template and structure.
 2. `enth step` with ops for the coarse moves, then `enth compare p.patch.json --target target.wav` for the distance and the descriptors that differ (`ours is brighter than the target`); repeat until the differences are small.
 3. `enth match --target target.wav --start p.patch.json --free <params> --out p2.patch.json` to fine-tune only the parameters the LLM freed; `--stop-at 0.005` ends it at a close match.
+
+**Recording to patch** ("make a patch that sounds like this recording"): `enth create --target kick.wav --out kick.patch.json --record run.json` gives K candidates and the closest as a patch; `enth render kick.patch.json --perf "$(jq -c .played run.json)"` plays it the way it was made; `enth compare` against the recording says which descriptors differ, and `enth match --start kick.patch.json` fine-tunes (the section above has the commands). If `intake.warnings` or `intake.perf` read the wrong note or hold, rerun with `--note` or `--hold`.
 
 **Recreate challenge** ("get as close to the game's target as you can"): `enth challenge new --level 2` gives a code; `enth compare p.patch.json --code <code>` scores a patch and exits 1 until it passes; `enth suggest p.patch.json --code <code> --level 1` (then 2, 3, 4) is the hint button; `enth match --target <code> --level 2` lets the optimiser have a go at the first two categories.
 

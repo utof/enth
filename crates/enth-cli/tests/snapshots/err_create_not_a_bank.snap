@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &wav, \"--bank\", &not_a_bank], 3, \"not_a_bank\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "not_a_bank",
+  "exit": 3,
+  "file": "[TMP]/bank.bin",
+  "hint": "rebuild it with `cargo xtask bank`, or leave --bank out to run without k-NN",
+  "message": "[TMP]/bank.bin: not an enth k-NN bank (bad magic or cut short)",
+  "schema": "enth.error/1"
+}
+--- stderr

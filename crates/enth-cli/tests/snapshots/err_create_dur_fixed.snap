@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--dur\", \"2s\"]), 2, \"dur_fixed\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "dur_fixed",
+  "exit": 2,
+  "hint": "--score-seconds sets how much of the clip is scored; --perf, --note, --vel and --hold change what is played",
+  "message": "--dur: the clip's length is the file's; create does not take one",
+  "schema": "enth.error/1"
+}
+--- stderr

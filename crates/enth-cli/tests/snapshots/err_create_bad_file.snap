@@ -1,0 +1,16 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &[\"--target\", &truncated], 3, \"bad_file\")"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_file",
+  "exit": 3,
+  "file": "[TMP]/cut.wav",
+  "hint": "check the file plays elsewhere, or export it again as WAV",
+  "message": "the WAV file does not decode: Failed to read enough bytes.",
+  "schema": "enth.error/1"
+}
+--- stderr

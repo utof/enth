@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--stop-at\", \"-1\"]), 2, \"bad_stop_at\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_stop_at",
+  "exit": 2,
+  "hint": "the objective's distance is 0 for an identical sound; the patch that made a clean sound scores under 0.02",
+  "message": "--stop-at -1: a distance is zero or more",
+  "schema": "enth.error/1"
+}
+--- stderr

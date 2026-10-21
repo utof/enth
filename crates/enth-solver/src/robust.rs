@@ -72,9 +72,38 @@ impl RobustMetricTarget {
         report: &IntakeReport,
         settings: &Settings,
     ) -> RobustMetricTarget {
+        RobustMetricTarget::scored_with(target, report, SCORE_S, settings)
+    }
+
+    /// [`RobustMetricTarget::from_intake`] for a target scored over `score_s` seconds
+    /// ([`Target::from_intake_scored`], lane CLC's `enth create --score-seconds`): the silence after the sound is
+    /// compared up to that window instead of [`SCORE_S`] (they differ only for a window above [`SCORE_S`] and a clip
+    /// that ends in its floor, which the default window would not compare past 3 s). `from_intake_scored(.., SCORE_S)`
+    /// is [`from_intake`](Self::from_intake). A non-finite or non-positive `score_s` is the whole clip, as it is for
+    /// the target.
+    #[must_use]
+    pub fn from_intake_scored(
+        target: &Target,
+        report: &IntakeReport,
+        score_s: f64,
+    ) -> RobustMetricTarget {
+        RobustMetricTarget::scored_with(target, report, score_s, &Settings::default())
+    }
+
+    fn scored_with(
+        target: &Target,
+        report: &IntakeReport,
+        score_s: f64,
+        settings: &Settings,
+    ) -> RobustMetricTarget {
         let damage =
             Damage::from_report(report).windowed(target.perf.duration_s, report.perf.duration_s);
-        RobustMetricTarget::with_damage(target, &damage, settings)
+        let window = if score_s.is_finite() && score_s > 0.0 {
+            score_s
+        } else {
+            target.perf.duration_s
+        };
+        RobustMetricTarget::windowed(target, &damage, settings, window)
     }
 
     /// The target with only what [`Target`] carries (the bandwidth and a confirmed floor): no clipped spans, and the
@@ -96,9 +125,20 @@ impl RobustMetricTarget {
         damage: &Damage,
         settings: &Settings,
     ) -> RobustMetricTarget {
+        RobustMetricTarget::windowed(target, damage, settings, SCORE_S)
+    }
+
+    /// [`with_damage`](Self::with_damage) with the scored window (s) that bounds the silence compared past the clip.
+    fn windowed(
+        target: &Target,
+        damage: &Damage,
+        settings: &Settings,
+        window_s: f64,
+    ) -> RobustMetricTarget {
         let cfg = target.feature_cfg();
         let mut fx = FeatureExtractor::new(cfg);
-        let robust = RobustTarget::with_settings(&mut fx, &target.audio, damage, SCORE_S, settings);
+        let robust =
+            RobustTarget::with_settings(&mut fx, &target.audio, damage, window_s, settings);
         let sr = f64::from(target.sample_rate);
         let mut perf = target.performance();
         perf.duration_s += robust.extra_samples() as f64 / sr;

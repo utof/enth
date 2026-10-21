@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/create.rs
+expression: "err(&s, &flags(&wav, &[\"--score-seconds\", \"9\"]), 2, \"bad_score_seconds\")"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "bad_score_seconds",
+  "exit": 2,
+  "hint": "the intake keeps at most 5 s of a file, so a longer window scores the same clip; leave it out for 3",
+  "message": "--score-seconds 9: the scored window must be 0.1 to 5 seconds",
+  "schema": "enth.error/1"
+}
+--- stderr

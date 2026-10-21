@@ -5,6 +5,7 @@
 //! another version. There is no `jsonschema` crate: its default features build C code. The typed round trip in the
 //! tests keeps the schemas honest instead.
 
+pub mod create;
 pub mod game;
 pub mod lesson;
 pub mod types;
@@ -13,6 +14,7 @@ use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde_json::Value;
 
+pub use create::*;
 pub use game::*;
 pub use lesson::*;
 pub use types::*;
@@ -77,6 +79,8 @@ pub mod ids {
     pub const LESSON_HINT: &str = "enth.lesson-hint/1";
     /// `enth lesson closest` (lane EV3).
     pub const LESSON_CLOSEST: &str = "enth.lesson-closest/1";
+    /// `enth create` (lane SK3 built it; lane CLC typed it).
+    pub const CREATE: &str = "enth.create/1";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -301,6 +305,12 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::LESSON_CLOSEST,
         describes: "the output of enth lesson closest",
         generate: gen_schema::<LessonClosestOut>,
+    },
+    Entry {
+        name: "create",
+        id: ids::CREATE,
+        describes: "the output of enth create (R3: candidates from a sound file)",
+        generate: gen_schema::<CreateOut>,
     },
 ];
 
