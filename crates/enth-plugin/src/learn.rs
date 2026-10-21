@@ -396,13 +396,46 @@ fn read_progress(path: &Path) -> Progress {
 
 /// The installed lessons and the progress file, shared by the GUI thread (the editor's lesson list), the worker
 /// (`Open`) and whoever drains the session (progress records). The library is read once and cached; the editor
-/// rescans when it opens. Its lock is never held while the session's is taken.
+/// rescans when it opens, and a rescan reads the packs again only when the Packs folder changed since the last read
+/// ([`Lessons::rescan`]). Its lock is never held while the session's is taken.
 #[derive(Debug)]
 pub struct Lessons {
     packs: Option<PathBuf>,
     bundled: &'static [(&'static str, &'static [u8])],
     progress: ProgressFile,
-    library: Mutex<Option<Arc<Library>>>,
+    /// The library, with the Packs folder's listing it was read from.
+    library: Mutex<Option<(FolderStamp, Arc<Library>)>>,
+}
+
+/// A Packs folder's listing, as far as a rescan cares (lane LFU): each entry's name, size and modification time, and
+/// a folder pack's `pack.json`'s too (a pack folder's other files must match its manifest's hashes, so an author who
+/// changes them writes a new `pack.json`). `None`: no folder, or it cannot be listed.
+type FolderStamp = Option<Vec<(String, u64, Option<std::time::SystemTime>)>>;
+
+/// The Packs folder `dir`'s [`FolderStamp`], one directory listing (and one `stat` per entry).
+fn folder_stamp(dir: Option<&Path>) -> FolderStamp {
+    let entries = fs::read_dir(dir?).ok()?;
+    let stamp =
+        |path: &Path| fs::metadata(path).map_or((0, None), |m| (m.len(), m.modified().ok()));
+    let mut out: Vec<(String, u64, Option<std::time::SystemTime>)> = Vec::new();
+    for e in entries.filter_map(Result::ok) {
+        let Some(name) = e.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let path = e.path();
+        let (len, modified) = stamp(&path);
+        if path.is_dir() {
+            let (m_len, m_modified) = stamp(&path.join(enth_learn::pack::MANIFEST_PATH));
+            out.push((
+                format!("{name}/{}", enth_learn::pack::MANIFEST_PATH),
+                m_len,
+                m_modified,
+            ));
+        }
+        out.push((name, len, modified));
+    }
+    out.sort();
+    Some(out)
 }
 
 impl Lessons {
@@ -446,18 +479,32 @@ impl Lessons {
         Some(dir)
     }
 
-    /// Read every pack again (the editor opened).
+    /// The library as the packs are now (the editor opened): read again when the Packs folder's listing changed since
+    /// the last read (a pack added, removed or replaced), else the cached one. The bundled packs never change in a
+    /// process, and reading them is the slow part (the basics pack: about 80–140 ms at a load of 30, lane LFU), so an
+    /// editor open costs one directory listing.
     pub fn rescan(&self) -> Arc<Library> {
+        let stamp = folder_stamp(self.packs.as_deref());
+        if let Some((read_at, library)) = self.library.lock().as_ref()
+            && *read_at == stamp
+        {
+            return Arc::clone(library);
+        }
+        self.read_all(stamp)
+    }
+
+    /// Read every pack, and keep the library with the folder listing `stamp` it was read at.
+    fn read_all(&self, stamp: FolderStamp) -> Arc<Library> {
         let mut store = FsPacks::new(self.packs.clone()).with_bundled(self.bundled);
         let library = Arc::new(load_library(&mut store));
-        *self.library.lock() = Some(Arc::clone(&library));
+        *self.library.lock() = Some((stamp, Arc::clone(&library)));
         library
     }
 
     /// The library, read on first use.
     pub fn library(&self) -> Arc<Library> {
-        if let Some(l) = self.library.lock().clone() {
-            return l;
+        if let Some((_, l)) = self.library.lock().as_ref() {
+            return Arc::clone(l);
         }
         self.rescan()
     }
@@ -1023,6 +1070,43 @@ mod tests {
             "the broken folder is listed, not hidden"
         );
         assert_eq!(lib.replaced.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A rescan reads the packs again only when the Packs folder changed (lane LFU): an editor open costs a listing.
+    #[test]
+    fn a_rescan_rereads_only_when_the_packs_folder_changed() {
+        let dir = temp("rescan");
+        let lessons = Lessons::new(Some(dir.clone()), None).with_bundled(EXAMPLE);
+        let first = lessons.rescan();
+        assert!(
+            Arc::ptr_eq(&first, &lessons.rescan()),
+            "nothing changed: the cached library"
+        );
+        assert!(Arc::ptr_eq(&first, &lessons.library()));
+        // A pack dropped into the folder (a newer example) is read at the next open.
+        let mut files = enth_learn::reader::extract(EXAMPLE[0].1).unwrap();
+        let mut manifest =
+            Manifest::from_json(std::str::from_utf8(&files[MANIFEST_PATH]).unwrap()).unwrap();
+        manifest.version = "0.3.0".parse().unwrap();
+        files.remove(MANIFEST_PATH);
+        let sealed = manifest.seal(&files).unwrap();
+        files.insert(MANIFEST_PATH.to_owned(), sealed.to_json().into_bytes());
+        fs::write(dir.join("example.enthpack"), write_archive(&files)).unwrap();
+        let second = lessons.rescan();
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "the folder changed: read again"
+        );
+        assert_eq!(
+            second.packs[0].key.origin,
+            Origin::User,
+            "the newer pack wins"
+        );
+        assert!(Arc::ptr_eq(&second, &lessons.rescan()));
+        // Removed again: back to the bundled one.
+        fs::remove_file(dir.join("example.enthpack")).unwrap();
+        assert_eq!(lessons.rescan().packs[0].key.origin, Origin::Bundled);
         let _ = fs::remove_dir_all(&dir);
     }
 
