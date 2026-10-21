@@ -236,8 +236,8 @@ fn a_newer_progress_file_is_read_leniently_and_kept_whole() {
     let key = "example/cutoff".parse().unwrap();
     assert!(p.step(&key, &StepId::new("try").unwrap()).unwrap().done);
     assert!(
-        p.extra.contains_key("review"),
-        "a field this build does not know is kept"
+        p.review.skills.is_empty() && p.review.extra.contains_key("boxes"),
+        "fields this build does not know are kept, inside `review` (lane REV's field) too"
     );
     assert_eq!(read("progress", "newer.rewritten.json"), p.to_json());
     // Merged and written by this build, nothing of the newer file is lost.
@@ -245,6 +245,7 @@ fn a_newer_progress_file_is_read_leniently_and_kept_whole() {
     merged.merge(&p);
     let back = Progress::from_json(&merged.to_json()).unwrap();
     assert_eq!(back.extra, p.extra);
+    assert_eq!(back.review, p.review);
     assert!(back.unread.contains_key("Example/Odd"));
     // Where this build can read an entry the newer file could not, the readable one wins.
     assert!(!back.unread.contains_key("basics/waveforms"));
