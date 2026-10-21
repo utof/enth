@@ -12,19 +12,17 @@
 //!   recreate step's challenge (`enth.lesson-show/1`). No answers (a choose step's answer, a witness) unless
 //!   `--reveal`.
 //! - `enth lesson check <PACK> --lesson ID --step STEP <PATCH>`: one do step's check run against a patch file: its
-//!   patch predicates, then its sound checks, each rendered through its phrase at the scored rate and seed and judged
-//!   (`enth.lesson-check/1`). Exit 1 when it fails. `STEP` is the step's id or its 1-based number.
+//!   patch predicates, then its sound checks (lane PLY's `enth_learn::check::evaluate_sounds`: each rendered through
+//!   its phrase at the scored rate and seed and judged; `enth.lesson-check/1`). Exit 1 when it fails. `STEP` is the step's id or its 1-based number.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use enth_learn::check::{SoundCheck, TouchLog};
+use enth_learn::check::{TouchLog, evaluate_sounds};
 use enth_learn::pack::{LessonId, MANIFEST_PATH, lesson_path};
-use enth_learn::player::{CheckVerdict, ItemVerdict};
 use enth_learn::{
     Check, LearnError, Lesson, LessonBundle, Manifest, Pack, Predicate, Step, StepKind,
 };
-use enth_patch::Patch;
 
 use super::{Reply, Res};
 use crate::error::{self, CliError, EXIT_CHECK_FAILED, nearest};
@@ -371,46 +369,6 @@ fn show(path: &Path, lesson: Option<&str>, reveal: bool) -> Res {
 // check
 // ---------------------------------------------------------------------------------------------------------------
 
-/// **Interim** (lane SKL, until lane PLY's `enth_learn::check::evaluate_sounds` reaches main, with the same
-/// signature): each sound check's pinned patch rendered through its phrase at the scored rate and seed, described,
-/// and judged with `enth_analysis::check`; one render per check.
-fn evaluate_sounds(sounds: &[SoundCheck], patch: &Patch) -> Result<CheckVerdict, String> {
-    use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
-    let mut verdict = CheckVerdict {
-        passed: true,
-        items: Vec::new(),
-    };
-    let mut describer = None;
-    for sound in sounds {
-        let phrase = enth_challenge::phrases::phrase(sound.phrase)
-            .ok_or_else(|| format!("phrase {} is not in this build", sound.phrase.0))?;
-        let items: Vec<enth_analysis::expect::Expect> = sound
-            .expect
-            .iter()
-            .map(|i| enth_analysis::expect::parse_item(i).map_err(|e| e.message))
-            .collect::<Result<_, _>>()?;
-        let perf = phrase.performance();
-        let features: Vec<_> = items.iter().map(|e| e.feature).collect();
-        let job = enth_solver::Job {
-            patch: sound.pinned(patch),
-            perf: &perf,
-            spec: enth_render::RenderSpec::new(SCORING_SAMPLE_RATE, SCORING_SEED),
-            want: enth_analysis::descriptors::Want::for_features(&features),
-        };
-        let d = enth_solver::measure(&job, &mut describer).map_err(|e| e.to_string())?;
-        let report = enth_analysis::check(&items, &d, &[]);
-        for (item, r) in sound.expect.iter().zip(&report.results) {
-            verdict.items.push(ItemVerdict {
-                item: item.clone(),
-                passed: r.pass,
-                margin: r.margin,
-            });
-        }
-        verdict.passed &= report.pass;
-    }
-    Ok(verdict)
-}
-
 /// The patch predicates of a check, in order.
 fn predicates(check: &Check) -> Vec<&Predicate> {
     match check {
@@ -461,9 +419,9 @@ fn check(path: &Path, lesson: &str, which: &str, patch_path: &Path) -> Res {
     let sounds = check.sounds();
     let verdict = evaluate_sounds(&sounds, &patch).map_err(|e| {
         error::failed(
-            "render_failed",
+            e.code(),
             format!("the step's sound check could not run: {e}"),
-            "check the patch renders: `enth render <patch>`",
+            e.hint(),
         )
     })?;
     // Each sound check's items, in order, with its phrase.

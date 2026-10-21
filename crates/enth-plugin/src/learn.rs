@@ -10,7 +10,7 @@
 //! | [`BUNDLED`], [`FsPacks`] | the packs: the bundled ones (built `.enthpack` files embedded with `include_bytes!`, read through the same reader as any other) and the Packs folder ([`packs_dir`]: `ENTH_PACKS_DIR`, else `<Documents>/enth/Packs`), an `.enthpack` file or a folder with the same layout each. No network code in R2 |
 //! | [`ProgressFile`] | `<Documents>/enth/Learn/progress.json` (`ENTH_LEARN_DIR` overrides the folder): a write takes a lock file, re-reads, merges with `Progress::record`, writes a temporary file and renames it, so two instances (in one host or two) never lose each other's progress; a file that is not a progress file is set aside, never overwritten |
 //! | [`Lessons`] | the library (`enth_learn::store::load_library` over [`FsPacks`], cached, rescanned when the editor opens), the progress file, and the answers to `Open` jobs: `Player::resume` at the saved step, then `Player::restore` from the progress file, so a step passed before a reload stays passed (phase-3's open check) |
-//! | [`run`] | the Learn jobs on the game worker (`game.rs` calls it): `Open`, `Check` (the step's sound checks rendered and judged), `Hint` (`enth_solver::hint` through fu1-hint's parallel evaluator), `Examples` (each example rendered, measured, and handed to the audio thread as one loop of a set) |
+//! | [`run`] | the Learn jobs on the game worker (`game.rs` calls it): `Open`, `Check` (lane PLY's `enth_learn::check::evaluate_sounds`: the step's sound checks rendered and judged), `Hint` (`enth_solver::hint` through fu1-hint's parallel evaluator), `Examples` (each example rendered, measured, and handed to the audio thread as one loop of a set) |
 //! | [`act`] | after unlocking: the session's `LearnRequest`s: jobs to the worker, cancels, progress records to the file, the Listen state to `process()`'s atomics, dirty marks |
 //!
 //! `enth-learn` and the session's `learn` always compile, so a saved lesson restores in any build; without this
@@ -24,19 +24,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use enth_analysis::descriptors::Want;
 use enth_analysis::expect::{Expect, parse_item};
 use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
 use enth_challenge::phrases;
-use enth_learn::check::SoundCheck;
+use enth_learn::check::evaluate_sounds;
 use enth_learn::lesson::ControlCurve;
 use enth_learn::pack::{LessonId, PackId};
-use enth_learn::player::{
-    Audition, CheckVerdict, HintRequest, ItemVerdict, MeasuredHint, StepRecord,
-};
+use enth_learn::player::{Audition, HintRequest, MeasuredHint, StepRecord};
 use enth_learn::store::{Library, Origin, PackKey, PackSource, PackStore, load_library};
 use enth_learn::{LearnError, LessonBundle, LessonRef, Player, Progress, Selector};
-use enth_patch::Patch;
 use enth_render::{Control, Controller, Performance, RenderOutput, RenderSpec, render};
 use enth_session::learn::{LearnJob, LearnJobKind, LearnRequest, LearnResult};
 use enth_solver::Evaluator;
@@ -555,48 +551,6 @@ pub fn run(
     }
 }
 
-/// **Interim** (lane SKL, until lane PLY's `enth_learn::check::evaluate_sounds` reaches main; the signature is
-/// PLY's, the error a string): render each sound check's pinned patch through its phrase at the scored rate and
-/// seed, describe it, and judge its items with `enth_analysis::check`; one render per check, no nuisance renders.
-///
-/// # Errors
-/// An unknown phrase, an item that does not parse, a render or an analysis that fails.
-pub fn evaluate_sounds(sounds: &[SoundCheck], patch: &Patch) -> Result<CheckVerdict, String> {
-    let mut verdict = CheckVerdict {
-        passed: true,
-        items: Vec::new(),
-    };
-    let mut describer = None;
-    for sound in sounds {
-        let phrase = phrases::phrase(sound.phrase)
-            .ok_or_else(|| format!("phrase {} is not in this build", sound.phrase.0))?;
-        let items: Vec<Expect> = sound
-            .expect
-            .iter()
-            .map(|i| parse_item(i).map_err(|e| e.message))
-            .collect::<Result<_, _>>()?;
-        let perf = phrase.performance();
-        let features: Vec<_> = items.iter().map(|e| e.feature).collect();
-        let job = enth_solver::Job {
-            patch: sound.pinned(patch),
-            perf: &perf,
-            spec: RenderSpec::new(SCORING_SAMPLE_RATE, SCORING_SEED),
-            want: Want::for_features(&features),
-        };
-        let d = enth_solver::measure(&job, &mut describer).map_err(|e| e.to_string())?;
-        let report = enth_analysis::check(&items, &d, &[]);
-        for (item, r) in sound.expect.iter().zip(&report.results) {
-            verdict.items.push(ItemVerdict {
-                item: item.clone(),
-                passed: r.pass,
-                margin: r.margin,
-            });
-        }
-        verdict.passed &= report.pass;
-    }
-    Ok(verdict)
-}
-
 /// A measured hint for an expectation step: `enth_solver::hint` from the step's patch over its items, within the
 /// step's free parameters, through the game worker's evaluator. The text names the largest move's parameter and
 /// its direction (never a value), and the hint highlights every moved parameter; a blocked item says why.
@@ -1058,6 +1012,43 @@ mod tests {
         let witness = evaluate_sounds(&sounds, &patch("patches/dark.patch.json")).unwrap();
         assert!(!start.passed && witness.passed, "{start:?} {witness:?}");
         assert_eq!(witness.items.len(), 1);
+    }
+
+    /// PLY's `evaluate_sounds` repeats a few lines of `enth_solver::measure` (a core crate may not call its sibling):
+    /// both must hear the same thing, so the judged values equal `measure`'s descriptors judged by `enth_analysis`.
+    #[test]
+    fn the_sound_check_measures_what_the_solver_measures() {
+        use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
+        let bundle = Lessons::new(None, None).catalogue().remove(0);
+        let enth_learn::StepKind::Do { check, .. } = &bundle.lesson.steps[1].kind else {
+            panic!("step 2 is a do step");
+        };
+        let sounds = check.sounds();
+        for name in ["patches/saw.patch.json", "patches/dark.patch.json"] {
+            let r = enth_learn::pack::PatchRef::new(name).unwrap();
+            let patch = (**bundle.patch(&r).unwrap()).clone();
+            let ours =
+                enth_learn::check::evaluate_sounds_report(&sounds, &patch, Default::default())
+                    .unwrap();
+            for (sound, report) in sounds.iter().zip(&ours) {
+                let items: Vec<Expect> = sound
+                    .expect
+                    .iter()
+                    .map(|i| parse_item(i).unwrap())
+                    .collect();
+                let perf = phrases::phrase(sound.phrase).unwrap().performance();
+                let features: Vec<_> = items.iter().map(|e| e.feature).collect();
+                let job = enth_solver::Job {
+                    patch: sound.pinned(&patch),
+                    perf: &perf,
+                    spec: RenderSpec::new(SCORING_SAMPLE_RATE, SCORING_SEED),
+                    want: enth_analysis::descriptors::Want::for_features(&features),
+                };
+                let d = enth_solver::measure(&job, &mut None).unwrap();
+                let solver = enth_analysis::check(&items, &d, &[]);
+                assert_eq!(report.report.results, solver.results, "{name}");
+            }
+        }
     }
 
     #[test]
