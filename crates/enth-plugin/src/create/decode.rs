@@ -167,8 +167,8 @@ fn cancelled() -> DecodeError {
 /// The hint of a rate outside the analysis's range.
 pub fn rate_hint() -> String {
     format!(
-        "the analysis runs at {} to {} Hz; files at 192 kHz and above are decimated 2:1 exactly (to 96 kHz, or 88.2 kHz \
-         from 176.4 kHz x 2), other rates are refused: resample the file to 44.1 or 48 kHz",
+        "the analysis runs at {} to {} Hz; files at 192 kHz and above are decimated exactly 2:1 until they are under \
+         192 kHz (192 kHz to 96 kHz, 352.8 kHz to 176.4 kHz), other rates are refused: resample the file to 44.1 or 48 kHz",
         SAMPLE_RATES.start,
         SAMPLE_RATES.end - 1
     )

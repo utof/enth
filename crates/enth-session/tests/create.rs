@@ -89,7 +89,7 @@ fn a_job_goes_out_and_its_posts_build_the_view() {
     let id = started(&mut s);
     let v = s.create().unwrap();
     assert_eq!((v.id, v.phase, v.file.as_str()), (id, CreatePhase::Starting, "kick.wav"));
-    assert!(v.candidates.is_empty());
+    assert_eq!(v.candidates, Vec::new());
     // A second start while it runs is refused, and nothing goes out.
     assert_eq!(
         s.create_start(CreateSource::file("b.wav"), CreateSettings::default())
