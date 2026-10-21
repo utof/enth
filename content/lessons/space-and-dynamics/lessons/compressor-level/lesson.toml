@@ -1,0 +1,309 @@
+# Lesson 7.3, Compressor level [space-and-dynamics · intermediate · tour] (content/lessons/PLAN.md §5, U7).
+#
+# Hear (the threshold, the ratio and the make-up on a run of plucked keys and a held chord, not level-matched, so
+# the compressor's turning down is heard as it is), a "which one is compressed?" item, level-matched → Name → Try
+# (turn it down with the threshold, checked by the loudness) → a harder ratio (a patch goal) → make-up gain (checked
+# by the loudness) → three ear questions.
+#
+# Phrases: STACCATO_RUN (7: C3 four times, 120 ms each, one every 400 ms) for every check and ear question, the
+# card's plucked run; CHORD (4) for the held chord in Hear. The sound is "keys": a long decay (1.5 s), so each note
+# rings into the next.
+#
+# Changed from the card, measured on engine 0.3.0 (`enth describe --perf`, `enth compare --phrase staccato_run`):
+# sound/1 is loudness-normalised and deaf to this compressor (the keys off against threshold -36 dB at 8:1: under
+# 1 JND; off against -30 dB at 4:1: 0.62 on the held note), so there are no rounds: a round's start would pass. The
+# readings hear it. At the default 10 ms attack each note's click gets through and the ring after it is held down, so
+# on the run the peak falls a little and the ring a lot: `loudness` (off -28.9 LUFS; threshold -18 dB at 4:1: -34.3;
+# -24: -38.0; -30: -42.3; -36: -46.5; -42: -50.5; -36 at 8:1: -49.0, with 12 dB of make-up -37.0), `sustain`, the ring
+# against the click (off -5.4 dB; -24: -15.7; -36 at 8:1: -23.7), and `decay`. The peak moves only a few dB and reads
+# 4.5 dB apart over the nuisance seeds (the oscillator's free phase), so it is too thin for a check. Thresholds above
+# about -16 dB do nothing here: the keys peak at -14.6 dBFS. The audibility gate hears the level-matched questions by
+# `sustain` and `decay`, and the make-up question by its loudness (the options play un-matched, as the card asks).
+
+schema = "enth.lesson/1"
+id = "compressor-level"
+title = "Compressor level"
+tier = "intermediate"
+objective = "Hear what a compressor turns down, set how much with the threshold and the ratio, and bring the level back up with make-up gain."
+teaches = ["comp.threshold", "comp.ratio", "comp.makeup"]
+
+# --- Hear: the threshold at ratio 4:1, not level-matched.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/keys-comp-18.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No compressor"
+patch = "patches/keys.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Threshold -24 dB"
+patch = "patches/keys-thr-24.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Threshold -36 dB"
+patch = "patches/keys-thr-36.patch.json"
+phrase = 7
+level_match = false
+
+# --- Hear: the ratio at threshold -30 dB, not level-matched.
+[[steps]]
+id = "hear-ratio"
+kind = "listen"
+text = "hear-ratio.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Ratio 1.5:1"
+patch = "patches/keys-ratio-1.5.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Ratio 4:1"
+patch = "patches/keys-ratio-4.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Ratio 20:1"
+patch = "patches/keys-ratio-20.patch.json"
+phrase = 7
+level_match = false
+
+# --- Hear: make-up gain after heavy compression, on the run and on a held chord, not level-matched.
+[[steps]]
+id = "hear-makeup"
+kind = "listen"
+text = "hear-makeup.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No compressor"
+patch = "patches/keys.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Compressed"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Compressed, make-up +12 dB"
+patch = "patches/keys-squash-makeup-12.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.examples]]
+label = "Chord, no compressor"
+patch = "patches/keys.patch.json"
+phrase = 4
+level_match = false
+
+[[steps.examples]]
+label = "Chord, compressed, make-up"
+patch = "patches/keys-squash-makeup-12.patch.json"
+phrase = 4
+level_match = false
+
+# --- Hear's ear question, level-matched: which one is compressed? (off against threshold -36 dB at 8:1: sound/1 under
+# 1 JND; `sustain`, the ring against the click, reads -5.4 against -23.7 dB.)
+[[steps]]
+id = "which-compressed"
+kind = "choose"
+text = "which-compressed.md"
+hints = ["Both play at the same loudness. Listen to what follows each click: in one the ring is held down."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys.patch.json"
+phrase = 7
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/keys-thr-36.patch.json"
+highlight = ["comp1.threshold", "comp1.ratio", "comp1.makeup"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+# --- Try: turn the loud parts down. Start: the compressor at its defaults (threshold -18 dB, 4:1), which barely
+# touches the keys (-34.3 LUFS on the run); witness: threshold -42 dB (-50.5). The item passes from about -33 dB, so it
+# implies the predicate; master.level is locked and make-up not editable, so only the compression lowers the level.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Threshold is on the compressor card, in the effects. Turn it down.",
+  "Nothing happens until the threshold is below the loudest part of the sound; keep going past -30 dB.",
+]
+witness = "patches/keys-thr-42.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-comp-18.patch.json"
+highlight = ["comp1.threshold"]
+editable = ["comp1.threshold"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comp1.threshold < -28dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 7
+expect = ["loudness < -44LUFS"]
+
+# --- Do: a harder ratio. Start: threshold -24 dB at 1.5:1; witness: 20:1. A patch goal: the loudness flattens out
+# above 4:1 (-33.4 LUFS at 1.5:1, -38.0 at 4:1, -39.3 at 8:1, -40.0 at 20:1), too close to its 1 dB of noise for an
+# item, and the ear question below checks the ratio by ear. Its threshold keeps the Try's predicate from passing its
+# witness, and its ratio keeps the Try's witness (4:1) from passing it (--cross).
+[[steps]]
+id = "harder"
+kind = "do"
+text = "harder.md"
+hints = [
+  "Ratio is on the compressor card, next to Threshold. Turn it up.",
+  "At 1.5:1 the compressor only leans on the sound. From about 6:1 up it holds it down firmly.",
+]
+witness = "patches/keys-t24-ratio-20.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-t24-ratio-1.5.patch.json"
+highlight = ["comp1.ratio"]
+editable = ["comp1.ratio"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level"]
+
+[steps.check]
+kind = "patch"
+predicates = ["comp1.ratio > 6"]
+
+# --- Do: bring the level back. Start: threshold -36 dB at 8:1 with no make-up (-49.0 LUFS on the run); witness: 12 dB
+# of make-up (-37.0). The item passes from about 9 dB. sound/1 cannot see make-up (it is loudness-normalised), but the
+# loudness reading can.
+[[steps]]
+id = "makeup"
+kind = "do"
+text = "makeup.md"
+hints = [
+  "Make-up is on the compressor card. Turn it up.",
+  "The compressor took the level down by about 20 dB; give back more than 9 dB.",
+]
+witness = "patches/keys-squash-makeup-12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-squash.patch.json"
+highlight = ["comp1.makeup"]
+editable = ["comp1.makeup"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comp1.makeup > 6dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 7
+expect = ["loudness > -40LUFS"]
+
+# --- Check: make-up, not level-matched (the same compression, 0 against 12 dB: 12 dB louder); the higher ratio,
+# level-matched (1.5:1 against 20:1 at -30 dB: `sustain` -10.7 against -21.5 dB); and a "what changed?" item mixed
+# with lesson 7.1, level-matched: one got a compressor, the other reverb.
+[[steps]]
+id = "check-makeup"
+kind = "choose"
+text = "check-makeup.md"
+hints = ["These two are not level-matched on purpose: make-up gain is loudness."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+level_match = false
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-squash-makeup-12.patch.json"
+phrase = 7
+level_match = false
+
+[[steps]]
+id = "check-ratio"
+kind = "choose"
+text = "check-ratio.md"
+hints = ["The higher ratio holds the ring after each click down harder."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-ratio-1.5.patch.json"
+phrase = 7
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-ratio-20.patch.json"
+phrase = 7
+
+[[steps]]
+id = "what-changed"
+kind = "choose"
+text = "what-changed.md"
+hints = ["Reverb adds a tail after the last note; a compressor changes each note's shape and adds no tail."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-wet-12.patch.json"
+phrase = 7
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
