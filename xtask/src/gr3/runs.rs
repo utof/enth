@@ -312,6 +312,9 @@ pub struct MachineRec {
     /// Wall seconds.
     #[serde(default)]
     pub seconds: f64,
+    /// This process's CPU seconds over the window.
+    #[serde(default)]
+    pub cpu_s: Option<f64>,
     /// Other processes' cores.
     #[serde(default)]
     pub others_cores: Option<f64>,
@@ -378,6 +381,17 @@ impl TargetLine {
     /// The checkpoint at `mark` (exactly), if the run had one.
     pub fn at(&self, mark: f64) -> Option<&CheckpointRec> {
         self.checkpoints.iter().find(|c| c.mark == mark)
+    }
+
+    /// The last checkpoint at or below `mark`.
+    pub fn at_most(&self, mark: f64) -> Option<&CheckpointRec> {
+        self.checkpoints.iter().rev().find(|c| c.mark <= mark)
+    }
+
+    /// CPU seconds per render over the run (`None` without a reading).
+    pub fn cpu_per_render(&self) -> Option<f64> {
+        let c = self.machine.cpu_s?;
+        (self.fin.renders > 0 && c > 0.0).then(|| c / self.fin.renders as f64)
     }
 
     /// The checkpoint at the cap (the last).

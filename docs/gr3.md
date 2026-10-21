@@ -190,7 +190,7 @@ Filled in below.
 cargo xtask gr3-report --run <CORE RUN> --rate-from <PROBE RUN> --probe-runs $CARGO_TARGET_DIR/gr3/rate-probe.jsonl
 ```
 
-reads the render-equivalent core at the checkpoint at or below 60 s × the measured rate. The core was recorded to 8,000 renders with a mark every 250, so any idle rate up to about 133 renders/s converts without running again. The probe is a dev run, so its lines go to scratch, never to `runs.jsonl`; `--probe-runs` reads them from there.
+reads the render-equivalent core at the checkpoint at or below 60 s × the measured rate, and also **per target**: each target's renders are scaled by its CPU cost per render against the run's median, because a dry level-2 patch renders several times faster than a preset with reverb, and a timed run would give it that many more renders. A target whose share exceeds the run's budget is read at its cap and counted. The core was recorded to 8,000 renders with a mark every 250, so any idle rate up to about 133 renders/s converts without running again. The probe is a dev run, so its lines go to scratch, never to `runs.jsonl`; `--probe-runs` reads them from there.
 
 ## The runs file
 

@@ -78,7 +78,12 @@ pub struct Point {
 
 /// A target at `mark`: `None` when the run never reached the mark.
 pub fn point(t: &TargetLine, mark: f64) -> Option<Point> {
-    let c = t.at(mark)?;
+    point_of(t.at(mark))
+}
+
+/// What a checkpoint scored.
+pub fn point_of(c: Option<&runs::CheckpointRec>) -> Option<Point> {
+    let c = c?;
     Some(Point {
         passed: c.score.is_some_and(|s| s.passed),
         jnd: c.score.map(|s| s.jnd).filter(|x| x.is_finite()),
@@ -115,7 +120,16 @@ pub struct Summary {
 
 /// Summarise `lines` at `mark`, with the anytime curve at `anytime` (the marks every line has).
 pub fn summarize(lines: &[&TargetLine], mark: f64, anytime: &[f64]) -> Summary {
-    let pts: Vec<Point> = lines.iter().filter_map(|t| point(t, mark)).collect();
+    summarize_by(lines, &|t| t.at(mark), anytime)
+}
+
+/// Summarise `lines` at the checkpoint `pick` chooses for each (a per-target endpoint: `--rate-from`).
+pub fn summarize_by(
+    lines: &[&TargetLine],
+    pick: &dyn Fn(&TargetLine) -> Option<&runs::CheckpointRec>,
+    anytime: &[f64],
+) -> Summary {
+    let pts: Vec<Point> = lines.iter().filter_map(|t| point_of(pick(t))).collect();
     let n = lines.len();
     let passed = pts.iter().filter(|p| p.passed).count();
     let jnd_or_inf = |p: Option<Point>| p.and_then(|p| p.jnd).unwrap_or(f64::INFINITY);
@@ -146,7 +160,7 @@ pub fn summarize(lines: &[&TargetLine], mark: f64, anytime: &[f64]) -> Summary {
         median_jnd: stats::median(
             &lines
                 .iter()
-                .map(|t| jnd_or_inf(point(t, mark)))
+                .map(|t| jnd_or_inf(point_of(pick(t))))
                 .collect::<Vec<_>>(),
         ),
         anytime,
@@ -317,6 +331,28 @@ pub fn probe_rate(runs: &Runs, probe: &str) -> Result<(f64, usize, usize), Strin
     Ok((stats::median(&r), locked, lines.len()))
 }
 
+/// Each target's renders in the converted time: `renders` (the median rate's) scaled by the run's median CPU cost per
+/// render over the target's own, at most the target's cap; and how many hit the cap.
+fn per_target_renders(lines: &[&TargetLine], renders: f64) -> (BTreeMap<String, f64>, usize) {
+    let costs: Vec<f64> = lines.iter().filter_map(|t| t.cpu_per_render()).collect();
+    if costs.len() != lines.len() {
+        return (BTreeMap::new(), 0);
+    }
+    let med = stats::median(&costs);
+    let mut capped = 0;
+    let out = lines
+        .iter()
+        .map(|t| {
+            let want = renders * med / t.cpu_per_render().unwrap_or(med);
+            if want > t.cap {
+                capped += 1;
+            }
+            (t.target.id.clone(), want.min(t.cap))
+        })
+        .collect();
+    (out, capped)
+}
+
 /// The largest mark at or below `renders` that every line has.
 fn common_mark_at_most(lines: &[&TargetLine], renders: f64) -> Option<f64> {
     let first = lines.first()?;
@@ -383,6 +419,7 @@ pub fn single(
         .map(|v| v.iter().collect())
         .unwrap_or_default();
     let mut mark = mark_of(run, at);
+    let mut converted = Value::Null;
     let mut s = String::new();
     let _ = writeln!(s, "{}", run_text(runs, id)?);
     if let Some(e) = equivalence(run) {
@@ -411,12 +448,30 @@ pub fn single(
         mark = common_mark_at_most(&lines, want).ok_or_else(|| {
             format!("no checkpoint at or below {want:.0} renders: run a twin with a larger budget")
         })?;
+        converted =
+            json!({"probe": probe, "rate": rate, "seconds": secs, "renders": want, "mark": mark});
+        let (per, capped) = per_target_renders(&lines, rate * secs);
         let _ = writeln!(
             s,
             "**Converted with a measured idle rate:** probe {probe} ({locked} of {n} targets under the exclusive lock) \
-             measured a median {} renders/s, so {secs} s is {want:.0} renders; reported at the checkpoint {mark}.",
+             measured a median {} renders/s, so {secs} s is {want:.0} renders; the table reads the checkpoint {mark}.",
             f(rate, 1)
         );
+        if !per.is_empty() {
+            let pick: &dyn Fn(&TargetLine) -> Option<&runs::CheckpointRec> =
+                &|t| per.get(t.target.id.as_str()).and_then(|m| t.at_most(*m));
+            let sm = summarize_by(&lines, pick, &[]);
+            let _ = writeln!(
+                s,
+                "Per target (each target's renders scaled by its CPU cost per render against the run's median, so a \
+                 dry patch gets more renders in {secs} s than one with reverb): {} of {} pass, median JND {}; {capped} \
+                 target(s) would need more renders than the run's budget and read at its cap (a longer twin removes that).",
+                sm.passed,
+                sm.n,
+                f(sm.median_jnd, 2)
+            );
+            converted["per_target"] = json!({"passed": sm.passed, "n": sm.n, "median_jnd": sm.median_jnd, "capped": capped});
+        }
     }
     let failed = runs.failed.get(id).map_or(0, Vec::len);
     let _ = writeln!(
@@ -564,7 +619,7 @@ pub fn single(
             opt(t.machine.others_cores.map(|x| (x * 10.0).round() / 10.0)),
         );
     }
-    let j = json!({"run": id, "mark": mark, "strata": json_strata, "others_cores_median": stats::median(&others)});
+    let j = json!({"run": id, "mark": mark, "strata": json_strata, "others_cores_median": stats::median(&others), "converted": converted});
     Ok((s, j))
 }
 
@@ -907,18 +962,25 @@ mod tests {
             "{{\"schema\":\"enth.gr3-run/1\",\"record\":\"run\",\"run_id\":\"c\",\"arm\":\"A\",\"mode\":\"renders\",\"budget\":8000,\
              \"header\":{{\"equivalence\":{{\"kind\":\"estimate\",\"seconds\":60.0,\"renders\":4000,\"rate_renders_per_s\":66.7,\"source\":\"TP\"}}}}}}"
         );
-        let marks: Vec<String> = (1..=32)
-            .map(|k| {
-                let m = 250 * k;
-                format!("{{\"mark\":{m}.0,\"renders\":{m},\"score\":{{\"percent\":95.0,\"jnd\":0.5,\"passed\":true}}}}")
-            })
-            .collect();
-        let _ = writeln!(
-            text,
-            "{{\"schema\":\"enth.gr3-run/1\",\"record\":\"target\",\"run_id\":\"c\",\"arm\":\"A\",\"mode\":\"renders\",\"cap\":8000.0,\
-             \"target\":{{\"id\":\"t\"}},\"checkpoints\":[{}]}}",
-            marks.join(",")
-        );
+        // Two targets: t costs 12.5 ms of CPU per render, u 25 ms; the median is 18.75 ms. Per target, 3,600 renders
+        // become 3,600 × 18.75 / 12.5 = 5,400 for t (read at 5,250) and 2,700 for u (read at 2,500). Both pass from
+        // 5,000 renders on, so the common mark (3,500) passes neither, and the per-target reading passes t.
+        for (id, cpu) in [("t", 100.0), ("u", 200.0)] {
+            let marks: Vec<String> = (1..=32)
+                .map(|k| {
+                    let m = 250 * k;
+                    let pass = m >= 5000;
+                    let j = if pass { 0.5 } else { 2.0 };
+                    format!("{{\"mark\":{m}.0,\"renders\":{m},\"score\":{{\"percent\":95.0,\"jnd\":{j},\"passed\":{pass}}}}}")
+                })
+                .collect();
+            let _ = writeln!(
+                text,
+                "{{\"schema\":\"enth.gr3-run/1\",\"record\":\"target\",\"run_id\":\"c\",\"arm\":\"A\",\"mode\":\"renders\",\"cap\":8000.0,\
+                 \"target\":{{\"id\":\"{id}\"}},\"machine\":{{\"cpu_s\":{cpu}}},\"final\":{{\"renders\":8000}},\"checkpoints\":[{}]}}",
+                marks.join(",")
+            );
+        }
         let (runs, _) = parse_runs(&text).unwrap();
         let (rate, locked, n) = probe_rate(&runs, "p").unwrap();
         assert!((rate - 60.0).abs() < 1e-12);
@@ -930,6 +992,9 @@ mod tests {
         let (out, j) = single(&runs, "c", None, Some((&runs, "p"))).unwrap();
         assert_eq!(j["mark"], json!(3500.0), "{out}");
         assert!(out.contains("3600 renders"), "{out}");
+        assert_eq!(j["converted"]["per_target"]["passed"], json!(1), "{out}");
+        assert_eq!(j["converted"]["per_target"]["capped"], json!(0));
+        assert!(out.contains("| all | 2 | 0 |"), "{out}");
         // A timed run is not converted.
         assert!(single(&runs, "p", None, Some((&runs, "p"))).is_err());
     }
