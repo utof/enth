@@ -605,7 +605,8 @@ impl Player {
     }
 
     /// Show: a Do step's witness's next op from `patch` ([`Effect::Apply`], one undo step; the session applies it
-    /// through its edit path and reports it with [`EditSource::Player`]): the first op whose every touch
+    /// through its edit path and reports it with [`EditSource::Player`]; the knob's value in `patch` is noted for
+    /// `touched` first, so the op's jump counts as a turn across its travel): the first op whose every touch
     /// ([`touches`], the session's own table) the view allows, else the first that touches no lock. A witness every
     /// remaining op of which touches a lock is `no_witness_path` (a content bug `lesson-check` catches), never an op
     /// the session would refuse. An ear question's answer ([`Effect::Reveal`], and the step passes, assisted). Marks
@@ -642,8 +643,12 @@ impl Player {
                     .find(allowed)
                     .or_else(|| moves.iter().find(unlocked))
                     .ok_or(PlayerError::NoWitnessPath)?;
+                let pick = Op::clone(pick);
+                // The touch spans from where the knob is now (lane LFU): the session reports the op's result with
+                // `EditSource::Player`, so one jump of Show me covers the travel it moves, as a drag would.
+                self.note_touch(patch, &pick);
                 self.visits[self.step].assisted = true;
-                Ok(vec![Effect::Apply(Op::clone(pick))])
+                Ok(vec![Effect::Apply(pick)])
             }
             StepKind::Choose { answer, .. } => {
                 self.visits[self.step].assisted = true;
@@ -1027,6 +1032,107 @@ mod restore_tests {
         p.restore(&progress(&[("a", false, false), ("b", false, false)]));
         assert!(p.passed(0), "a step passed in this session stays passed");
         assert!(!p.passed(1));
+        assert_eq!(p.phase(), StepPhase::Working);
+    }
+}
+
+/// Show me on a `touched` step (lane LFU, LUI's note for PLY): one jump of Show me counts as a turn across the travel
+/// it moves.
+#[cfg(test)]
+mod show_touch_tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::pack::{ContentId, PackVersion, PatchRef};
+
+    fn bundle(min_span_pct: u8) -> LessonBundle {
+        let lesson = Lesson::from_json(&format!(
+            r#"{{"schema":"enth.lesson/1","id":"turn","title":"Turn","tier":"basic","objective":"Turn it.",
+            "teaches":["master.level"],"steps":[{{"id":"turn","kind":"do","view":{{"start":"patches/start.patch.json"}},
+            "check":{{"kind":"patch","predicates":["touched master.level >= {min_span_pct}%"]}},
+            "witness":"patches/witness.patch.json"}}]}}"#
+        ))
+        .unwrap();
+        let start = Patch::init();
+        let addr: ParamAddr = "master.level".parse().unwrap();
+        let spec = start.spec(&addr).unwrap();
+        let from = start.value(&addr).unwrap();
+        let mut witness = start.clone();
+        // Half the travel, down (the starter sits near the top of the level's range).
+        let to = spec.from_norm((spec.to_norm(from) - 0.5).max(0.0));
+        Op::SetParam {
+            addr: addr.clone(),
+            value: to,
+        }
+        .apply(&mut witness)
+        .unwrap();
+        let mut patches = BTreeMap::new();
+        patches.insert(
+            PatchRef::new("patches/start.patch.json").unwrap(),
+            Arc::new(start),
+        );
+        patches.insert(
+            PatchRef::new("patches/witness.patch.json").unwrap(),
+            Arc::new(witness),
+        );
+        LessonBundle {
+            pack: "example".parse().unwrap(),
+            version: PackVersion::new(0, 1, 0),
+            content: ContentId([0; 8]),
+            lesson: Arc::new(lesson),
+            patches,
+            texts: BTreeMap::new(),
+        }
+    }
+
+    /// Play Show me as the session does: its op applied, then reported as the player's edit.
+    fn show_once(p: &mut Player, patch: &mut Patch, revision: u64) -> Vec<Effect> {
+        let fx = p.show(patch).unwrap();
+        let Some(Effect::Apply(op)) = fx.first() else {
+            panic!("Show me gives an op: {fx:?}");
+        };
+        op.apply(patch).unwrap();
+        p.edited(
+            10 * revision,
+            revision,
+            patch,
+            std::slice::from_ref(op),
+            EditSource::Player,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn one_show_me_covers_the_travel_it_moves() {
+        let b = bundle(30);
+        let mut patch =
+            Patch::clone(&b.patches[&PatchRef::new("patches/start.patch.json").unwrap()]);
+        let mut p = Player::new(b);
+        let _ = p.start().unwrap();
+        let _ = p.edited(0, 1, &patch, &[], EditSource::Load).unwrap();
+        assert_eq!(p.phase(), StepPhase::Working, "the start fails");
+        let fx = show_once(&mut p, &mut patch, 2);
+        assert!(
+            fx.iter().any(|e| matches!(e, Effect::Passed { .. })),
+            "a 50 % jump passes a 30 % span: {fx:?}"
+        );
+        assert!(p.assisted(), "Show me helps");
+    }
+
+    #[test]
+    fn a_jump_shorter_than_the_span_still_fails() {
+        let b = bundle(60);
+        let mut patch =
+            Patch::clone(&b.patches[&PatchRef::new("patches/start.patch.json").unwrap()]);
+        let mut p = Player::new(b);
+        let _ = p.start().unwrap();
+        let _ = p.edited(0, 1, &patch, &[], EditSource::Load).unwrap();
+        let fx = show_once(&mut p, &mut patch, 2);
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::Passed { .. })),
+            "{fx:?}"
+        );
         assert_eq!(p.phase(), StepPhase::Working);
     }
 }

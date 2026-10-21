@@ -755,6 +755,10 @@ pub enum Outcome {
 /// and a field this build added later (`dim_unused`) defaults when missing, so every older result still reads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent assists a round may have used, each persisted as its own flag"
+)]
 pub struct AssistsUsed {
     /// Hints revealed.
     pub hints: u8,
@@ -767,6 +771,10 @@ pub struct AssistsUsed {
     /// without it keeps the bytes it had before the field existed.
     #[serde(skip_serializing_if = "is_false")]
     pub dim_unused: bool,
+    /// Whether "How close am I?" answered with a passing patch's moves (a lesson round, lane LFU, R2; additive like
+    /// `dim_unused`): written only when true.
+    #[serde(skip_serializing_if = "is_false")]
+    pub closest: bool,
 }
 
 /// `skip_serializing_if` for an additive flag that is written only when set.
@@ -781,7 +789,7 @@ fn is_false(b: &bool) -> bool {
 impl AssistsUsed {
     /// Whether the round was assisted.
     pub fn any(&self) -> bool {
-        self.hints > 0 || self.live_meter || self.revealed || self.dim_unused
+        self.hints > 0 || self.live_meter || self.revealed || self.dim_unused || self.closest
     }
 }
 
@@ -1217,6 +1225,16 @@ mod tests {
             ..AssistsUsed::default()
         };
         assert!(dimmed.any(), "the dim assist marks the round assisted");
+        let closest = AssistsUsed {
+            closest: true,
+            ..AssistsUsed::default()
+        };
+        assert!(closest.any(), "How close am I? marks the round assisted");
+        assert_eq!(
+            serde_json::to_string(&closest).unwrap(),
+            r#"{"hints":0,"live_meter":false,"revealed":false,"closest":true}"#,
+            "written only when used"
+        );
     }
 
     /// `dim_unused` is additive (lane HINT, FU1): written only when set, so a result without it keeps its bytes, and a

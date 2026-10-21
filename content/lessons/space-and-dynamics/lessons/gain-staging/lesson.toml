@@ -1,0 +1,200 @@
+# Lesson 8.2, Gain staging [space-and-dynamics · basic] (content/lessons/PLAN.md §5, U8). No new control: the master
+# level (from 0.1) for headroom, and the source levels as gauges of balance, not of tone.
+#
+# Hear (a chord at master 0 and -12 dB, not level-matched; three sources turned down together, level-matched, against
+# one turned up), a "which is louder?" item → Name → Try (stop the chord clipping with the master level) → the same
+# with the sources (master locked), keeping the sound → an ear question on balance.
+#
+# Phrase: CHORD (4: C3, E3, G3, B3 held 1.5 s), since a chord is what clips. Sound: two saws (the second 12 cents up)
+# and white noise. Measured on engine 0.3.0 (`enth describe --perf`, `enth check`): the render is floating point, so
+# a peak above 0 dBFS is kept and reads as such (all three at 100 % and master 0 dB peak at +9.2 dBFS, -2.7 LUFS; each
+# dB of master or of every source together moves both by a dB); brightness (1410 Hz) and noisiness (0.104) stay put
+# when everything moves together. The checks use `peak` and `loudness` (noise 0.6 and 0.3 dB on the chord), not
+# `clipping`, a yes or no with no margin. Changed from the card: no "which clips?" question. The clip happens after
+# enth, in the host or the sound card, so what a player hears of it depends on the system, and a level-matched pair
+# that differs only in level is the same sound to sound/1 and to every reading; "which is louder?" (not level-matched)
+# and a balance question stand in.
+
+schema = "enth.lesson/1"
+id = "gain-staging"
+title = "Gain staging"
+tier = "basic"
+objective = "Keep a patch's peaks under 0 dBFS without changing its sound, with the master level or the source levels."
+teaches = ["master.level"]
+
+# --- Hear: a chord at master 0 dB (peaks at +4.9 dBFS) and -12 dB (-7.1), not level-matched.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/saw-master-12.patch.json"
+hide = ["env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Master 0 dB"
+patch = "patches/saw-master-0.patch.json"
+phrase = 4
+level_match = false
+
+[[steps.examples]]
+label = "Master -12 dB"
+patch = "patches/saw-master-12.patch.json"
+phrase = 4
+level_match = false
+
+# --- Hear: three sources at 100 % (master -15 dB) and at 25 % (master 0 dB) sound the same; the noise turned up does
+# not. Level-matched.
+[[steps]]
+id = "hear-balance"
+kind = "listen"
+text = "hear-balance.md"
+
+[steps.view]
+start = "patches/three-master-15.patch.json"
+hide = ["env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "All at 100 %, master -15 dB"
+patch = "patches/three-master-15.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "All at 25 %, master 0 dB"
+patch = "patches/three-levels-25.patch.json"
+phrase = 4
+
+[[steps.examples]]
+label = "Noise turned up"
+patch = "patches/three-noise-up.patch.json"
+phrase = 4
+
+# --- Hear's ear question: which is louder? (not level-matched: master 0 against -12 dB, 12 dB apart.)
+[[steps]]
+id = "which-louder"
+kind = "choose"
+text = "which-louder.md"
+hints = ["These two are not level-matched on purpose."]
+answer = 0
+
+[steps.view]
+hide = ["env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-master-0.patch.json"
+phrase = 4
+level_match = false
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-master-12.patch.json"
+phrase = 4
+level_match = false
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/three-master-15.patch.json"
+highlight = ["master.level", "osc1.level", "osc2.level", "noise1.level"]
+hide = ["env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: stop it clipping. Start: all three at 100 %, master +6 dB (peak +15.2 dBFS); witness: master -15 dB (peak
+# -5.8, -17.7 LUFS). The items pass for a master between about -21 and -10 dB, so they imply the predicate: under 0 dBFS,
+# and not so quiet that the patch disappears. The predicate also keeps the next step's witness (master -6 dB, the
+# sources at half) from passing here (--cross).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The master level is the knob in the header. Turn it down.",
+  "Each dB down takes a dB off the peaks. They are 15 dB over: go down past -10 dB, but not below -20.",
+]
+witness = "patches/three-master-15.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/three-master-6.patch.json"
+highlight = ["master.level"]
+editable = ["master.level"]
+locked = ["osc1.*", "osc2.*", "noise1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["master.level < -9dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 4
+expect = ["peak < -1dBFS", "loudness > -24LUFS"]
+
+# --- Do: the same at the sources, the master locked at -6 dB. Start: all three at 100 % (peak +3.2 dBFS); witness: all
+# three at 50 % (peak -2.8, the same noisiness). (From a larger overshoot the measured hints, which see a level's
+# effect in dB as a straight line, ask for more than the knobs' travel: lesson-check --solve.) The band keeps the balance between the saws and the noise (0.104 at
+# the start; the noise turned up reads 0.678), so turning the saws down alone does not pass. A brightness band too was
+# more than the measured hints could meet at once from the start (lesson-check --solve). The predicate keeps the
+# Try's witness (sources at 100 %) from passing here (--cross).
+[[steps]]
+id = "balance"
+kind = "do"
+text = "balance.md"
+hints = [
+  "The three Level knobs are on the source cards: the two oscillators and the noise. Turn all three down by the same amount.",
+  "Halving a level takes about 6 dB off; the peaks are 3 dB over. Try all three at about half.",
+]
+witness = "patches/three-levels-50.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/three-master-minus-6.patch.json"
+highlight = ["osc1.level", "osc2.level", "noise1.level"]
+editable = ["osc1.level", "osc2.level", "noise1.level"]
+locked = ["master.level", "osc1.wave", "osc2.wave", "osc2.fine", "noise1.color", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["osc1.level < 95%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 4
+expect = ["peak < -1dBFS", "loudness > -30LUFS", "noisiness in [0.05, 0.2]"]
+
+# --- Check: which one has another balance? (level-matched: two with the same balance, at 25 % and at 100 % with the
+# master down, and one with the noise turned up.)
+[[steps]]
+id = "check-balance"
+kind = "choose"
+text = "check-balance.md"
+hints = ["Two of these are the same sound at different levels. Listen for the hiss."]
+answer = 2
+
+[steps.view]
+hide = ["env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/three-levels-25.patch.json"
+phrase = 4
+
+[[steps.options]]
+label = "B"
+patch = "patches/three-master-15.patch.json"
+phrase = 4
+
+[[steps.options]]
+label = "C"
+patch = "patches/three-noise-up.patch.json"
+phrase = 4

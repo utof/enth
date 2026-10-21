@@ -311,6 +311,11 @@ text = "check-responds.md"
 hints = ["Listen to the second, softly played note."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/pad-velocity-100.patch.json"

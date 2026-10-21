@@ -11,8 +11,9 @@
 //! **Which rings.** The first submit's structure rows, from the round's saved `first_report` (`enth.score-report/1`
 //! text): after it the rings show live, so later submits are feedback, not evidence. **Assisted** (no box moves up):
 //! the coach's last level (a hint level of [`HINT_LEVELS`], which gives the move), a Reveal, or "How close am I?"
-//! (lane LFU's `closest`, once it lands). The skills are read off the round's target patch, so a round whose target
-//! is gone (a restored round that broke) feeds nothing.
+//! (lane LFU's `closest` on the record). These are the redo's triggers too: a lesson's sibling redo closes the
+//! assisted round (its Bad rings still count) and plays a fresh one, whose first submit can raise the box. The skills
+//! are read off the round's target patch, so a round whose target is gone (a restored round that broke) feeds nothing.
 //!
 //! **After a reload.** A Review item's draw target has no code, so like any challenge round outside a lesson it
 //! restores broken, its stash kept: ending it brings your patch back, and the queue offers the item again.
@@ -39,7 +40,7 @@ pub fn round_rings(record: &RoundRecord, target: &Patch) -> Option<RoundRings> {
 /// Whether a round counts as assisted for review: a hint at the coach's last level, a Reveal, or "How close am I?".
 /// The lower hint levels and the dim assist name an aspect or a module, never the value, so they hold no box back.
 pub fn assisted(record: &RoundRecord) -> bool {
-    record.hints >= HINT_LEVELS || record.revealed
+    record.hints >= HINT_LEVELS || record.revealed || record.closest
 }
 
 /// Whether the round refuses a hint now: a Review round before its first submit.

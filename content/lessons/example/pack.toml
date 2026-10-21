@@ -1,6 +1,7 @@
 # The example pack: one tiny lesson in the authoring layout (docs/learn.md, "The lesson model (lane LM)"). It exists so
 # the layout, the CI workflow and the lesson tooling have something real to read. It is NOT bundled and NOT a lesson to
-# ship; lanes C1 to C3 write the real packs beside it. Lane LM froze the schema at F1l and rewrote this file to it;
+# ship (the plugin bundles `basics`; its tests use this pack, built to crates/enth-plugin/packs/example.enthpack and
+# pinned like a bundled pack, as a small fixture); lanes C1 to C3 write the real packs beside it. Lane LM froze the schema at F1l and rewrote this file to it;
 # `crates/enth-learn/tests/example_pack.rs` reads this directory, seals it and plays it, so it stays valid.
 #
 # Authors write TOML (comments, multi-line text); `cargo xtask pack` turns each file into canonical JSON and seals the

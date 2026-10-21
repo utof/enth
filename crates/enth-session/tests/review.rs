@@ -284,6 +284,21 @@ fn a_revealed_round_or_the_last_hint_is_assisted() {
 }
 
 #[test]
+fn how_close_am_i_is_assisted_and_the_lower_assists_are_not() {
+    use enth_session::game::RoundRecord;
+    use enth_session::review::assisted;
+    assert!(assisted(&RoundRecord {
+        closest: true,
+        ..RoundRecord::default()
+    }));
+    assert!(!assisted(&RoundRecord {
+        hints: 3,
+        dim_unused: true,
+        ..RoundRecord::default()
+    }));
+}
+
+#[test]
 fn a_host_load_that_ends_a_round_sends_no_rings() {
     let mut s = ready(RoundSource::Challenge(Box::new(challenge())));
     submit(&mut s, 40.0, Verdict::Bad);

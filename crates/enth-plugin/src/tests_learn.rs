@@ -1,7 +1,8 @@
 //! A lesson through the real plugin (lane SKL, F2l): [`Enth`] driven through fake nice-plug contexts, with the real
-//! game worker running the real Learn jobs over the bundled example pack (`cutoff`). The session calls are the ones
-//! the editor glue makes each frame ([`crate::editor::Glue::round_frame`] without the drawing): a tick, the worker's
-//! Learn results handed back, then the lesson's intents; `process()` plays the examples.
+//! game worker running the real Learn jobs over the example pack (`cutoff`; the tests' fixture since lane LFU bundles
+//! `basics`). The session calls are the ones the editor glue makes each frame ([`crate::editor::Glue::round_frame`]
+//! without the drawing): a tick, the worker's Learn results handed back, then the lesson's intents; `process()` plays
+//! the examples.
 //!
 //! What is checked: start → the examples rendered on the worker and played from the target slot, exactly the
 //! example's render at its level-match gain → Next → a locked edit refused → the cutoff turned down → the sound check
@@ -214,7 +215,9 @@ fn rms(x: &[f32]) -> f64 {
 #[test]
 fn a_lesson_through_the_real_plugin_with_the_worker_saved_and_resumed_mid_lesson() {
     let dir = TempDir::new("learn");
-    let lessons = Arc::new(Lessons::new(None, Some(dir.0.join(PROGRESS_FILE))));
+    let lessons = Arc::new(
+        Lessons::new(None, Some(dir.0.join(PROGRESS_FILE))).with_bundled(crate::learn::EXAMPLE),
+    );
     let bundle = lessons.catalogue().remove(0);
     let witness = bundle
         .patch(&enth_learn::pack::PatchRef::new("patches/dark.patch.json").unwrap())

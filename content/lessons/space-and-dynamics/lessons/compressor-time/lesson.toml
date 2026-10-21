@@ -1,0 +1,299 @@
+# Lesson 7.4, Compressor time [space-and-dynamics · advanced] (content/lessons/PLAN.md §5, U7).
+#
+# Hear (the attack, the release, the mix and the knee on the run of keys, compressed hard: threshold -36 dB, 8:1), a
+# "which keeps its snap?" item → Name → Try (let the click through with a slower attack) → a faster release → parallel
+# compression with the mix (each checked by the loudness) → a soft knee (a patch goal) → two ear questions.
+#
+# Phrase: STACCATO_RUN (7) for every check and ear question. Examples and questions play level-matched: the time
+# controls change each note's shape, which is the lesson.
+#
+# Changed from the card, measured on engine 0.3.0 (`enth describe --perf`, `enth compare --phrase staccato_run`): no
+# rounds. sound/1 hears the attack only between its extremes (0.5 against 40 ms: 2.94 JND; 1 against 10: 0.98; 10
+# against 60: 0.82), the release likewise (20 against 800 ms: 2.14; 40 against 200: 1.20), and the mix not at all
+# (100 against 30 %: 0.44), so a drawn round would let a wrong answer pass. The loudness reading follows all three: a
+# slower attack lets more of each click through (0.5 ms: -55.5 LUFS; 1: -54.7; 10: -49.0; 40: -43.3), a faster release
+# lets the ring come back between the notes (800 ms: -51.2; 200: -49.0; 40: -42.0), and a lower mix blends the dry
+# sound back in (100 %: -49.0; 65: -36.8; 30: -31.7). The knee changes nothing any reading or sound/1 hears at these
+# levels (0 against 24 dB at threshold -24 dB: 0.00 JND; at -36 dB the keys are far above it), so it has no ear
+# question: taught, not checked (Q9). The ear questions pass the audibility gate by sound/1 (attack, release) and by
+# `sustain` and `decay` (mix: -23.7 against -6.4 dB, 35 against 77 ms).
+
+schema = "enth.lesson/1"
+id = "compressor-time"
+title = "Compressor time"
+tier = "advanced"
+objective = "Set how fast a compressor grabs and lets go, blend it with the dry sound, and soften its knee."
+teaches = ["comp.attack", "comp.release", "comp.knee", "comp.mix"]
+
+# --- Hear: the attack.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/keys-squash.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Attack 0.5 ms"
+patch = "patches/keys-squash-attack-0.5.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Attack 10 ms"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Attack 40 ms"
+patch = "patches/keys-squash-attack-40.patch.json"
+phrase = 7
+
+# --- Hear: the release.
+[[steps]]
+id = "hear-release"
+kind = "listen"
+text = "hear-release.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Release 20 ms"
+patch = "patches/keys-squash-release-20.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Release 200 ms"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Release 800 ms"
+patch = "patches/keys-squash-release-800.patch.json"
+phrase = 7
+
+# --- Hear: the mix (parallel compression), then the knee.
+[[steps]]
+id = "hear-mix"
+kind = "listen"
+text = "hear-mix.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Mix 100 %"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Mix 65 %"
+patch = "patches/keys-squash-mix-65.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Mix 30 %"
+patch = "patches/keys-squash-mix-30.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Hard knee"
+patch = "patches/keys-knee-0.patch.json"
+phrase = 7
+
+[[steps.examples]]
+label = "Soft knee"
+patch = "patches/keys-knee-24.patch.json"
+phrase = 7
+
+# --- Hear's ear question: which keeps its snap? (attack 0.5 against 40 ms: 2.94 JND.)
+[[steps]]
+id = "which-snap"
+kind = "choose"
+text = "which-snap.md"
+hints = ["Listen to the very start of each note: in one the click comes through, in the other it is caught."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-squash-attack-0.5.patch.json"
+phrase = 7
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-squash-attack-40.patch.json"
+phrase = 7
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/keys-squash.patch.json"
+highlight = ["comp1.attack", "comp1.release", "comp1.knee", "comp1.mix"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+# --- Try: keep the snap. Start: attack 1 ms (-54.7 LUFS on the run); witness: 40 ms (-43.3). The item passes from
+# about 20 ms, so it implies the predicate. The threshold, ratio and make-up are locked, so only the attack moves it.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Attack is on the compressor card. Turn it up.",
+  "Above about 20 ms each note's click gets through before the compressor grabs it.",
+]
+witness = "patches/keys-squash-attack-40.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-squash-attack-1.patch.json"
+highlight = ["comp1.attack"]
+editable = ["comp1.attack"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level", "comp1.threshold", "comp1.ratio", "comp1.makeup"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comp1.attack > 15ms"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 7
+expect = ["loudness > -46LUFS"]
+
+# --- Do: let go faster. Start: release 800 ms (-51.2 LUFS); witness: 40 ms (-42.0). The item passes from about 100 ms
+# (200 ms reads -49.0), so it implies the predicate. Each step's predicate fails the other steps' witnesses (--cross).
+[[steps]]
+id = "let-go"
+kind = "do"
+text = "let-go.md"
+hints = [
+  "Release is on the compressor card, next to Attack. Turn it down.",
+  "With a short release the ring swells back between the notes: the compressor breathes.",
+]
+witness = "patches/keys-squash-release-40.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-squash-release-800.patch.json"
+highlight = ["comp1.release"]
+editable = ["comp1.release"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level", "comp1.threshold", "comp1.ratio", "comp1.makeup"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comp1.release < 150ms"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 7
+expect = ["loudness > -46LUFS"]
+
+# --- Do: parallel compression. Start: mix 100 % (-49.0 LUFS); witness: 30 % (-31.7). The item passes from about 60 %
+# (65 % reads -36.8), so it implies the predicate.
+[[steps]]
+id = "parallel"
+kind = "do"
+text = "parallel.md"
+hints = [
+  "Mix is on the compressor card. Turn it down.",
+  "Around a third of the compressed sound keeps the click's punch and gives the ring back.",
+]
+witness = "patches/keys-squash-mix-30.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-squash.patch.json"
+highlight = ["comp1.mix"]
+editable = ["comp1.mix"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level", "comp1.threshold", "comp1.ratio", "comp1.makeup"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comp1.mix < 70%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 7
+expect = ["loudness > -36LUFS"]
+
+# --- Do: a soft knee. Start: a hard knee (0 dB) at threshold -24 dB; witness: 24 dB. A patch goal: nothing hears the
+# knee here (0.00 JND, no reading moves).
+[[steps]]
+id = "soft-knee"
+kind = "do"
+text = "soft-knee.md"
+hints = [
+  "Knee is on the compressor card. Turn it up.",
+  "A soft knee starts compressing gently below the threshold instead of all at once: go above 18 dB.",
+]
+witness = "patches/keys-knee-24.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/keys-knee-0.patch.json"
+highlight = ["comp1.knee"]
+editable = ["comp1.knee"]
+locked = ["osc1.*", "filter1.*", "env1.*", "master.level", "comp1.threshold", "comp1.ratio", "comp1.makeup"]
+
+[steps.check]
+kind = "patch"
+predicates = ["comp1.knee > 18dB"]
+
+# --- Check: which lets go faster (release 20 against 800 ms: 2.14 JND), which is parallel (mix 100 against 30 %:
+# sustain -23.7 against -6.4 dB).
+[[steps]]
+id = "check-release"
+kind = "choose"
+text = "check-release.md"
+hints = ["Listen between the notes: with a fast release, the ring comes back up before the next note."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-squash-release-20.patch.json"
+phrase = 7
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-squash-release-800.patch.json"
+phrase = 7
+
+[[steps]]
+id = "check-parallel"
+kind = "choose"
+text = "check-parallel.md"
+hints = ["Parallel compression keeps the dry ring under the compressed click."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/keys-squash.patch.json"
+phrase = 7
+
+[[steps.options]]
+label = "B"
+patch = "patches/keys-squash-mix-30.patch.json"
+phrase = 7

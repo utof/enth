@@ -9,17 +9,65 @@
 //! with their reasons ("needs a newer enth" included, never hidden).
 //!
 //! **Review** (lane REV's queue of due skills, fed by Recreate's rings): a button with the due count that plays the
-//! queue's next item ([`review`]). "Open packs
-//! folder" and "Get more lessons" are left for a later lane: they need the shell's folder and the releases page.
+//! queue's next item ([`review`]).
+//!
+//! **Open packs folder** and **Get more lessons** stand at the pane's bottom (lane LFU), both through egui's
+//! `OpenUrl`, so R2 has no network code: the first asks the shell to open its Packs folder
+//! (`LearnIntent::OpenPacksFolder`: the shell makes it if missing, since the editor does no I/O, then opens it in the
+//! file manager), the second opens the project's releases page ([`RELEASES_URL`]) in the browser, where packs are
+//! published.
 //! The view rescans when the window opens (the shell's `set_library`). Sizes come from `theme/sizes/learn.rs`.
 
-use egui::{Align, Label, Layout, RichText, Role, ScrollArea, Ui, Vec2, vec2};
+use egui::{Align, Label, Layout, Rect, RichText, Role, ScrollArea, Ui, UiBuilder, Vec2, vec2};
 
-use super::pane::{button, named};
+use super::pane::{button, named, rows};
 use super::state::{Learn, LearnIntent, Shelf};
 use crate::Theme;
 use crate::editor::cards::Intents;
 use crate::theme::glyph;
+
+/// Where "Get more lessons" goes: the project's releases page, where packs are published beside the builds (no
+/// network code in R2: the browser fetches it).
+pub const RELEASES_URL: &str = "https://github.com/utof/enth/releases";
+
+/// The browser's bottom row (bottom-up): **Open packs folder** (the shell's folder, in the file manager) and **Get
+/// more lessons** (the releases page, in the browser), both through egui's `OpenUrl`.
+fn more(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
+    let folder = learn.packs_folder();
+    let texts = [
+        "Open packs folder".to_owned(),
+        "Get more lessons".to_owned(),
+    ];
+    let width = ui.available_width();
+    for row in rows(ui, t, &texts, width).iter().rev() {
+        ui.horizontal(|ui| {
+            for &i in row {
+                let enabled = i == 1 || folder.is_some();
+                let response = ui.add_enabled(
+                    enabled,
+                    egui::Button::new(RichText::new(&texts[i]).font(t.text.body.clone())),
+                );
+                named(&response, Role::Button, &texts[i]);
+                let response = if i == 0 {
+                    response
+                        .on_hover_text("Your packs: put an .enthpack file (or a pack folder) here; the lessons list it when the window opens")
+                        .on_disabled_hover_text("No Packs folder here: set ENTH_PACKS_DIR")
+                } else {
+                    response.on_hover_text("The releases page, in your browser: packs are published there")
+                };
+                if response.clicked() {
+                    if i == 0 {
+                        out.push(crate::editor::cards::Intent::Learn(
+                            LearnIntent::OpenPacksFolder,
+                        ));
+                    } else {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(RELEASES_URL));
+                    }
+                }
+            }
+        });
+    }
+}
 
 /// Draws the browser into `ui` (the pane's inner column). Returns how far its list reached past the pane.
 pub(crate) fn show(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) -> Vec2 {
@@ -81,10 +129,31 @@ pub(crate) fn show(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) -> 
             );
         }
     });
+    // The bottom row first (bottom-up), then the list in what is left above it.
+    let rest = ui.available_rect_before_wrap();
+    let mut bottom = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rest)
+            .layout(Layout::bottom_up(Align::Min)),
+    );
+    bottom.spacing_mut().item_spacing = ui.spacing().item_spacing;
+    more(learn, &mut bottom, t, out);
+    let list_rect = Rect::from_min_max(
+        rest.min,
+        egui::pos2(
+            rest.max.x,
+            (bottom.min_rect().top() - t.space.gap).max(rest.min.y),
+        ),
+    );
+    let mut list = ui.new_child(
+        UiBuilder::new()
+            .max_rect(list_rect)
+            .layout(Layout::top_down(Align::Min)),
+    );
     let shown = ScrollArea::vertical()
         .id_salt("enth.learn.browser")
         .auto_shrink([false, false])
-        .show(ui, |ui| {
+        .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
             match shelf {
                 Shelf::Track(i) => {

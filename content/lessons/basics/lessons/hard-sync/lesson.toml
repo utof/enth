@@ -327,6 +327,11 @@ text = "check-synced.md"
 hints = ["The synced one has a nasal, tearing edge the plain saw lacks."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/sync-on-17.patch.json"
@@ -341,6 +346,11 @@ kind = "choose"
 text = "check-higher.md"
 hints = ["The higher osc2 is tuned, the brighter and more ripping the sync."]
 answer = 1
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

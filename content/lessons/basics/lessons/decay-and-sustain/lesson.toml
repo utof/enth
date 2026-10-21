@@ -294,6 +294,11 @@ text = "check-pluck.md"
 hints = ["A pluck dies away while the key is still held."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/sine-pluck.patch.json"
@@ -310,6 +315,11 @@ kind = "choose"
 text = "check-decay.md"
 hints = ["Both start the same way; listen to how long each one rings."]
 answer = 1
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

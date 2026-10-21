@@ -186,6 +186,11 @@ text = "check-different.md"
 hints = ["The clips are matched in loudness, so a volume change makes no difference here. Listen for the tone."]
 answer = 1
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/saw-master-0.patch.json"
