@@ -5,6 +5,7 @@ mod common;
 
 use common::{entry, state_for};
 use enth_test_host::churn::{self, Inject, Options};
+use enth_test_host::procfs;
 use serde_json::Value;
 
 fn options(patch: Option<&str>) -> Options {
@@ -28,6 +29,23 @@ fn checks(report: &Value) -> (bool, bool, bool) {
 #[test]
 fn churn_passes_a_clean_plugin_and_fails_each_kind_of_leak() {
     let (entry, id) = entry();
+
+    // The measure itself (lane CHURN): a thread that has been joined is never counted, though the kernel may list it for
+    // a while longer. `pthread_join` returns when the kernel clears the thread's tid word, early in `do_exit`; the
+    // thread leaves `/proc/self/task` only when it is reaped, later, and at load 40 that is often a few milliseconds.
+    // Every audio thread of the cycles below is such a thread: the plain count read one too many (or, at the first
+    // sample, one too few) in 15 runs of 80 at load 41, as 30 or 32 where 31 is expected and as a failed thread check
+    // of a plugin that leaks only memory. A listed thread that is exiting (`PF_EXITING`) has run its last instruction,
+    // so the count leaves it out; a leak is parked and always counted (below, exactly).
+    let base = procfs::threads().live;
+    for _ in 0..2000 {
+        std::thread::spawn(|| {}).join().unwrap();
+        assert_eq!(
+            procfs::threads().live,
+            base,
+            "a joined thread was counted as live"
+        );
+    }
 
     // The control: a plugin that cleans up after itself passes all three checks.
     let clean = churn::run(&entry, &id, &options(None)).unwrap();
@@ -58,7 +76,9 @@ fn churn_passes_a_clean_plugin_and_fails_each_kind_of_leak() {
     assert!(!checks(&fd).2, "{fd}");
     assert_eq!(fd["summary"]["fd_growth_after_warmup"], 31);
 
-    // A plugin that leaves a thread per instance (thread stacks also show in memory, so only threads are asserted).
+    // A plugin that leaves a thread per instance (thread stacks also show in memory, so only threads are asserted). The
+    // growth is exact: one parked thread for each of the 31 samples after the first one past the warm-up (40 cycles, 8
+    // of warm-up), the audio threads not counted whether or not the kernel still lists them.
     let thread = churn::run(&entry, &id, &options(Some(r#"{"leak":"thread"}"#))).unwrap();
     assert_eq!(thread["ok"], false);
     assert!(!checks(&thread).1, "{thread}");
