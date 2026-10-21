@@ -7,8 +7,8 @@
 //! dev window that never sets it draws exactly as before. Colours, sizes, spacing and fonts come from the theme's
 //! tokens.
 //!
-//! **Lane SK3** (F2s) made the click toggle its minimal Create panel (`Intent::Create(CreateIntent::Toggle)`); lane PUI
-//! opens the real Create view from here.
+//! **Lane SK3** (F2s) made the click toggle its minimal Create panel (`Intent::Create(CreateIntent::Toggle)`); lane PUI's
+//! Create view opens from here the same way.
 
 use egui::{Button, Rect, RichText, Ui};
 
