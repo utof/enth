@@ -216,6 +216,32 @@ A fresh instance plays **Init** (lane AM, R1/S1; `src/init.rs`): the starter pat
 
 Tests: `src/game.rs` (the hand-off without a free on the audio side, an idle player leaves the block bit for bit, the crossfade and the shared position, Mine's attenuation and the phrase's wrap, the loudness, the runner's jobs, the coach, the log path, the lazy worker), `src/tests_game.rs` (start → Target ▶ equal to the scored render → Mine ▶ → a submit that does not pass → the target rebuilt → a pass → End restores the patch, logs the round, marks dirty once; 44.1 kHz; no round, no worker), `enth-ui`'s `tests/recreate.rs` (the kittest round flow).
 
+### The hint evaluator (lane HINT, FU1)
+
+`src/hint_eval.rs`. The coach's renders (`CoachTarget::for_round`'s sensitivity batch, the plan's probe batch and its serial verification steps) go through `hint_eval::Workers`, the plugin's `enth_solver::Evaluator`: `enth_solver::measure` on scoped threads (`std::thread::scope`; no new crate), one shared atomic counter as the work queue, each result written back at its job's index, so **a hint is identical for any worker count** (each result is a pure function of its job on the scalar FFT path; `the_worker_count_never_changes_the_hint` compares eight hints for 1 and 3 workers, `results_come_back_in_job_order_for_any_worker_count` compares batches with an error at its index for 1, 2, 3 and 8). Each worker keeps its `Describer` across batches; the game worker's own thread is worker 0, so a batch spawns `n − 1` threads (`enth-hint-<i>`) for its length only, and a batch of one job, or one worker, runs inline.
+
+**How many** (`hint_eval::hint_workers`): half the logical CPUs, at least 1 and at most `MAX_HINT_WORKERS` = 4. The workers run at normal priority; a host that gives its audio thread real-time priority is safe anyway, but REAPER on Linux without rtkit and many hosts' extra audio workers run at normal priority too, and the player often listens while a hint is computed (Mine ▶ renders live in `process()`). Half the logical CPUs is about the physical cores, so the SMT siblings (at least one whole core on any machine with two or more) stay free for the host's audio, GUI and main threads. More than four does not pay: the parallel batches are 6–20 renders and the verification steps are serial (the table). RAM: a worker holds one render (a few MB) and its describer.
+
+**Latency, serial against parallel** (`game::tests::hint_latency`, `#[ignore]`; release, 2026-10-21, the owner's i7-9750H, 12 logical CPUs, so 4 workers). Measured **under the shared lock with other lanes building** (load average 16.3 at the start, 14.5 at the end), so every number is an upper bound; the serial/parallel ratio is the result. Each round plays one flow, interleaving 1 worker and 4 workers four times each with the order alternating (serial, parallel, parallel, serial, …) so the drifting load falls on both; medians. Hint 1 measures the target (`for_round`) and the start patch's plan; hint 3 a new plan after the player moved a randomized knob; **hints 2 and 4 of an unchanged patch reuse the plan and take under 0.1 ms**. Every run gave the same four hints.
+
+| Round (preset level, seed) | Renders (target, plan 1, plan 3) | Hint 1 serial (ms) | Hint 1 parallel (ms) | Ratio | Hint 3 serial (ms) | Hint 3 parallel (ms) | Ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| L1 seed 3 | 2, 5, 3 | 355 | 254 | 1.40 | 143 | 141 | 1.01 |
+| L1 seed 11 | 3, 1, 1 | 170 | 94 | 1.81 | 41 | 41 | 1.01 |
+| L1 seed 29 | 2, 9, 9 | 474 | 439 | 1.08 | 373 | 383 | 0.97 |
+| L2 seed 3 | 4, 6, 7 | 557 | 401 | 1.39 | 395 | 378 | 1.05 |
+| L2 seed 11 | 5, 6, 6 | 447 | 270 | 1.66 | 249 | 173 | 1.44 |
+| L2 seed 29 | 4, 10, 11 | 722 | 520 | 1.39 | 495 | 418 | 1.18 |
+| L3 seed 3 | 10, 11, 10 | 1,182 | 634 | 1.86 | 497 | 330 | 1.51 |
+| L3 seed 11 | 11, 11, 14 | 1,272 | 759 | 1.68 | 741 | 559 | 1.33 |
+| L3 seed 29 | 10, 16, 17 | 1,296 | 637 | 2.03 | 689 | 445 | 1.55 |
+| L4 seed 3 | 11, 19, 18 | 1,303 | 678 | 1.92 | 791 | 431 | 1.84 |
+| L4 seed 11 | 12, 11, 12 | 853 | 499 | 1.71 | 452 | 318 | 1.42 |
+| L4 seed 29 | 11, 16, 16 | 1,105 | 573 | 1.93 | 574 | 413 | 1.39 |
+| **All 12 (sum of medians)** | | **9,735** | **5,757** | **1.69** | **5,441** | **4,029** | **1.35** |
+
+So the first hint of a round is 1.7× faster on four workers (up to 2.0× at levels 3 and 4, where the target's sensitivity batch is 10–12 renders), and a hint after an edit 1.35× (the plan's verification steps are serial; a plan of 1–3 renders gains nothing). At levels 3–4 the first hint drops from about 1.1–1.3 s to 0.5–0.8 s under this load. A single run under `flock -x` earlier the same night (the load average still decaying from 12.7 to 10.0, serial always run first, so drift favoured the parallel runs) gave the same picture: 1.73× for hint 1 and 1.45× for hint 3 on four workers, 1.49× for hint 1 on two (sums 6.8 s serial, 4.6 s on two workers, 3.9 s on four), so four workers are worth having over two.
+
 ## rt-stats
 
 `cargo xtask bundle enth-plugin --features rt-stats` (the bundler passes cargo options through) compiles `rt_stats.rs`: `process_block` reads `Instant::now()` at its top and records the elapsed time at its end (the plugin's own work, nice-plug's wrapper excluded) into a log-scale histogram of atomic counters, 16 buckets per octave of nanoseconds (each at most 6.25 % wide), plus the count, frames, sum and maximum: relaxed atomic adds, no lock, no allocation. `Shared::rt_stats.snapshot()` gives p50, p99, p99.9 (the upper edge of the bucket that holds them, so at most one bucket high) and the maximum; at `deactivate`, if `ENTH_RT_STATS` names a file, one JSON line (`enth.plugin-rt-stats/1`, microseconds, with the non-empty buckets) is appended and the counters restart. Without the feature the module is not compiled and `process()` reads no clock. It complements `enth-test-host process-stats`, which times the whole `process()` call from the host's side. Checked end to end: a debug feature bundle rendering the golden chord through `enth-test-host render` (1,500 blocks of 64 frames) wrote one report line at deactivation (debug build, a loaded laptop: p50 39 µs, p99 59 µs, max 76 µs; not an RT measurement).

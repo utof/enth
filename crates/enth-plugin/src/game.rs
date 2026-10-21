@@ -1871,27 +1871,120 @@ mod tests {
     }
 
     /// Lane HINT (FU1): hint latency, serial against parallel, printed as a Markdown table (docs/plugin.md, "The hint
-    /// evaluator"). Run on purpose, in release, with nothing else timing or building:
-    /// `flock -x /tmp/enth-quiet.lock cargo test --release -p enth-plugin --lib -- --ignored hint_latency --nocapture`.
-    /// For each round (preset levels 1–4, a few seeds) and each worker count: hint 1 on the start patch (the target's
-    /// sensitivity and a plan), hint 2 on the same patch (the cached plan), hint 3 after the player moved a randomized
-    /// knob (a new plan), hint 4 on that patch (cached). Every worker count must give the same hints.
+    /// evaluator"). Run on purpose, in release:
+    /// `cargo test --release -p enth-plugin --lib -- --ignored hint_latency --nocapture --test-threads 1`
+    /// (under `flock -x` when the machine can be had quiet; under load the numbers are upper bounds).
+    ///
+    /// Each round (preset levels 1–4, three seeds) plays the same flow with one worker and with the shell's default
+    /// ([`crate::hint_eval::hint_workers`]): hint 1 on the start patch (the target's sensitivity and a plan), hint 2 on
+    /// the same patch (the cached plan), hint 3 after the player moved a randomized knob (a new plan), hint 4 cached.
+    /// The two worker counts are interleaved, the order alternating each repeat (serial, parallel, parallel, serial,
+    /// …), so a drifting machine load falls on both; the table gives each count's median over [`REPEATS`] runs and the
+    /// serial/parallel ratio. Every run must give the same four hints.
     #[test]
-    #[ignore = "a timing run: release build, nothing else running"]
+    #[ignore = "a timing run: release build"]
     #[allow(
         clippy::disallowed_methods,
-        reason = "a timing measurement reads the clock and prints its table"
+        reason = "a timing measurement reads the clock and the load average and prints its table"
     )]
     fn hint_latency() {
         use std::time::Instant;
-        let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
+        const REPEATS: usize = 4;
+        let load = || {
+            std::fs::read_to_string("/proc/loadavg")
+                .map(|l| l.split_whitespace().take(3).collect::<Vec<_>>().join(" "))
+                .unwrap_or_default()
+        };
+        let median = |mut v: Vec<f64>| {
+            v.sort_by(f64::total_cmp);
+            let n = v.len();
+            if n % 2 == 1 {
+                v[n / 2]
+            } else {
+                f64::midpoint(v[n / 2 - 1], v[n / 2])
+            }
+        };
         let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
-        let workers = [1, 2, crate::hint_eval::hint_workers(cpus)];
-        println!("cpus {cpus}, shell default {} workers", workers[2]);
+        let parallel = crate::hint_eval::hint_workers(cpus);
         println!(
-            "| Round | Workers | Hint 1: target + plan (ms) | Hint 2: cached (ms) | Hint 3: after an edit (ms) | Hint 4: cached (ms) | Renders (target, plan 1, plan 3) |"
+            "cpus {cpus}; serial = 1 worker, parallel = the shell's default, {parallel}; load average (1, 5, 15 min) at the start: {}",
+            load()
         );
-        println!("| --- | --- | --- | --- | --- | --- | --- |");
+        // One run of the flow: the times of hints 1 and 3 (ms), the four hints, and the renders of the target and the
+        // two plans.
+        let flow = |spec: enth_challenge::RandomSpec, id: RoundId, workers: usize| {
+            let mut runner = Runner::with_hint_workers(workers);
+            let (result, _) = runner.run(
+                Job {
+                    id: JobId(1),
+                    round: id,
+                    kind: JobKind::Prepare { spec },
+                },
+                48_000,
+            );
+            let JobResult::Prepared(prepared) = result else {
+                panic!("{result:?}")
+            };
+            let challenge = Arc::new(prepared.challenge.clone());
+            let target = Arc::new(prepared.target.clone());
+            let mut moved = prepared.start.clone();
+            if let Some(addr) = prepared.params.first() {
+                let spec = moved.spec(addr).unwrap();
+                let u = spec.to_norm(moved.value(addr).unwrap());
+                enth_patch::apply(
+                    &mut moved,
+                    &enth_patch::Op::SetParam {
+                        addr: addr.clone(),
+                        value: spec.from_norm((u + 0.3) % 1.0),
+                    },
+                )
+                .unwrap();
+            }
+            let (mut times, mut hints, mut renders) = (Vec::new(), Vec::new(), Vec::new());
+            for (level, patch) in [
+                (1, &prepared.start),
+                (2, &prepared.start),
+                (3, &moved),
+                (4, &moved),
+            ] {
+                let t = Instant::now();
+                let (r, _) = runner.run(
+                    Job {
+                        id: JobId(2),
+                        round: id,
+                        kind: JobKind::Hint {
+                            challenge: Arc::clone(&challenge),
+                            target: Arc::clone(&target),
+                            patch: Box::new(patch.clone()),
+                            level,
+                        },
+                    },
+                    48_000,
+                );
+                times.push(t.elapsed().as_secs_f64() * 1000.0);
+                let JobResult::Hint(h) = r else {
+                    panic!("{r:?}")
+                };
+                hints.push(*h);
+                let coach = runner.coach.as_ref().unwrap();
+                if level == 1 {
+                    renders.push(coach.target.sensitivity().renders);
+                }
+                if level % 2 == 1 {
+                    renders.push(coach.plan.as_ref().map_or(0, |p| p.1.renders()));
+                }
+            }
+            assert!(
+                times[1] < 5.0 && times[3] < 5.0,
+                "levels 2 and 4 reuse the plan: {times:?}"
+            );
+            (times[0], times[2], hints, renders)
+        };
+        println!(
+            "| Round | Renders (target, plan 1, plan 3) | Hint 1 serial (ms) | Hint 1 parallel (ms) | Ratio | Hint 3 serial (ms) | Hint 3 parallel (ms) | Ratio |"
+        );
+        println!("| --- | --- | --- | --- | --- | --- | --- | --- |");
+        let mut totals = [[0.0_f64; 2]; 2]; // [hint 1, hint 3] × [serial, parallel]
         for level in 1..=4_u8 {
             for seed in [3_u64, 11, 29] {
                 let spec = SpecPreset::by_id(level)
@@ -1899,81 +1992,54 @@ mod tests {
                     .spec(LATEST_GENERATOR, seed);
                 let id = round_id(u32::from(level) * 100 + seed as u32);
                 let mut reference: Option<Vec<CoachHint>> = None;
-                for &n in &workers {
-                    let mut runner = Runner::with_hint_workers(n);
-                    let (result, _) = runner.run(
-                        Job {
-                            id: JobId(1),
-                            round: id,
-                            kind: JobKind::Prepare { spec },
-                        },
-                        48_000,
-                    );
-                    let JobResult::Prepared(prepared) = result else {
-                        panic!("{result:?}")
-                    };
-                    let challenge = Arc::new(prepared.challenge.clone());
-                    let target = Arc::new(prepared.target.clone());
-                    let mut moved = prepared.start.clone();
-                    if let Some(addr) = prepared.params.first() {
-                        let spec = moved.spec(addr).unwrap();
-                        let u = spec.to_norm(moved.value(addr).unwrap());
-                        enth_patch::apply(
-                            &mut moved,
-                            &enth_patch::Op::SetParam {
-                                addr: addr.clone(),
-                                value: spec.from_norm((u + 0.3) % 1.0),
-                            },
-                        )
-                        .unwrap();
-                    }
-                    let mut times = Vec::new();
-                    let mut hints = Vec::new();
-                    let mut renders = Vec::new();
-                    for (level, patch) in [
-                        (1, &prepared.start),
-                        (2, &prepared.start),
-                        (3, &moved),
-                        (4, &moved),
-                    ] {
-                        let t = Instant::now();
-                        let (r, _) = runner.run(
-                            Job {
-                                id: JobId(2),
-                                round: id,
-                                kind: JobKind::Hint {
-                                    challenge: Arc::clone(&challenge),
-                                    target: Arc::clone(&target),
-                                    patch: Box::new(patch.clone()),
-                                    level,
-                                },
-                            },
-                            48_000,
-                        );
-                        times.push(ms(t));
-                        let JobResult::Hint(h) = r else {
-                            panic!("{r:?}")
-                        };
-                        hints.push(*h);
-                        let coach = runner.coach.as_ref().unwrap();
-                        if level == 1 {
-                            renders.push(coach.target.sensitivity().renders);
+                let mut renders = Vec::new();
+                let mut samples = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
+                for r in 0..REPEATS {
+                    let order = if r % 2 == 0 { [0, 1] } else { [1, 0] };
+                    for which in order {
+                        let workers = if which == 0 { 1 } else { parallel };
+                        let (t1, t3, hints, n) = flow(spec, id, workers);
+                        match &reference {
+                            Some(h) => assert_eq!(
+                                &hints, h,
+                                "level {level} seed {seed}: {workers} workers"
+                            ),
+                            None => reference = Some(hints),
                         }
-                        if level % 2 == 1 {
-                            renders.push(coach.plan.as_ref().map_or(0, |p| p.1.renders()));
-                        }
+                        renders = n;
+                        samples[0][which].push(t1);
+                        samples[1][which].push(t3);
                     }
-                    match &reference {
-                        Some(r) => assert_eq!(&hints, r, "level {level} seed {seed}: {n} workers"),
-                        None => reference = Some(hints),
-                    }
-                    println!(
-                        "| L{level} seed {seed} | {n} | {:.0} | {:.1} | {:.0} | {:.1} | {}, {}, {} |",
-                        times[0], times[1], times[2], times[3], renders[0], renders[1], renders[2]
-                    );
                 }
+                let m = samples.map(|per| per.map(&median));
+                for (hint, row) in m.iter().enumerate() {
+                    totals[hint][0] += row[0];
+                    totals[hint][1] += row[1];
+                }
+                println!(
+                    "| L{level} seed {seed} | {}, {}, {} | {:.0} | {:.0} | {:.2} | {:.0} | {:.0} | {:.2} |",
+                    renders[0],
+                    renders[1],
+                    renders[2],
+                    m[0][0],
+                    m[0][1],
+                    m[0][0] / m[0][1],
+                    m[1][0],
+                    m[1][1],
+                    m[1][0] / m[1][1]
+                );
             }
         }
+        println!(
+            "| All 12 rounds (sum of medians) | | {:.0} | {:.0} | {:.2} | {:.0} | {:.0} | {:.2} |",
+            totals[0][0],
+            totals[0][1],
+            totals[0][0] / totals[0][1],
+            totals[1][0],
+            totals[1][1],
+            totals[1][0] / totals[1][1]
+        );
+        println!("load average at the end: {}", load());
     }
 
     #[test]
