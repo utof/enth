@@ -88,7 +88,7 @@ struct Objective<'a> {
 
 impl<'a> Objective<'a> {
     /// Lane OBJ's robust distance (`logmel-pool85-robust/1`) against `scoring`
-    /// (`RobustMetricTarget::from_intake(&target, &intake.report)`): one `RobustWorker` per thread.
+    /// (`RobustMetricTarget::from_intake_scored(&target, &intake.report, score_s)`): one `RobustWorker` per thread.
     fn robust(scoring: &'a RobustMetricTarget) -> Self {
         Objective {
             id: METRIC_ROBUST,
