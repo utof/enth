@@ -654,6 +654,15 @@ fn mistakes_are_reported_with_what_to_do() {
         &mut MockPlayer::default(),
     );
     assert!(r.unwrap_err().contains("2 kit(s)"));
+    let (r, _) = run_text(
+        &Gr3Args {
+            seed: Some(1),
+            ..args(&dir, None)
+        },
+        &[],
+        &mut MockPlayer::default(),
+    );
+    assert!(r.unwrap_err().contains("seed"));
     // a changed input is caught
     let wav = set.parent().unwrap().join("audio").join("ref-00-a.wav");
     let mut bytes = std::fs::read(&wav).unwrap();

@@ -181,6 +181,14 @@ fn prepare(args: &Gr3Args, dir: &Path, out: &mut dyn Write) -> Res<(Manifest, Op
             )
             .into());
         }
+        if let Some(seed) = args.seed.filter(|s| *s != m.seed) {
+            return Err(format!(
+                "{} was designed with seed {}, not {seed}; use a new --dir",
+                dir.display(),
+                m.seed
+            )
+            .into());
+        }
         let set = match &args.set {
             Some(p) => {
                 let s = Set::load(p)?;

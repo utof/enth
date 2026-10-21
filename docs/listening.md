@@ -192,7 +192,7 @@ Send each folder (zipped) to one friend and nothing else: never `manifest.json` 
 ./target/release/enth-listen abx --dry-run --dir /tmp/enth-abx-dry               # the full 20-target design (3-7 min) and a synthetic report
 ./target/release/enth-listen abx --dry-run --targets 4 --workers 2 --dir /tmp/enth-abx-dry-small
 ./target/release/enth-listen pairs --dry-run --dir /tmp/enth-pairs-dry          # the 40-pair design (1-2 min), synthetic answers from sound/1's own curve, the report
-./target/release/enth-listen gr3 --dry-run --dir /tmp/enth-gr3-dry                # a few seconds (20 s in a debug build): a synthetic 60-reference set, the design, both kits, synthetic answers, the report
+./target/release/enth-listen gr3 --dry-run --dir /tmp/enth-gr3-dry                # about 20 s in a debug build, less in a release one: a synthetic 60-reference set, the design, both kits, synthetic answers, the report
 ./target/release/enth-listen gr3 --dry-run --set <set.toml> --dir /tmp/enth-gr3-dry   # the same on EVK's real set: checks its files, levels and true peaks before anyone listens
 ```
 
