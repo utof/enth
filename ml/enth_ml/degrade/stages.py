@@ -8,12 +8,11 @@ the peak). One ffmpeg call per filter step keeps every step's input and output i
 Filters used: ``atrim``, ``afade``, ``adelay``, ``apad``, ``afir`` (room), ``highpass``, ``lowpass``, ``equalizer``,
 ``lowshelf``, ``highshelf`` (device EQ), ``anoisesrc``, ``aevalsrc``, ``tremolo``, ``amix`` (noise and hum),
 ``alimiter``, ``asoftclip``, ``acompressor`` (dynamics), ``pan`` (mono), ``aresample`` (band limit), ``aeval``
-(bit depth), ``loudnorm`` (measurement) and ``volume`` (normalisation).
+(bit depth), ``ebur128`` (measurement), ``aloop`` (short clips) and ``volume`` (normalisation).
 """
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from collections.abc import Callable
@@ -429,36 +428,34 @@ def _dither_source(label: str, sr: int, dur: float, amp: float, seeds: list[int]
 
 # --- loudness normalisation and the final file --------------------------------------------------------------------
 
-_JSON = re.compile(r"\{[^{}]*\}", re.DOTALL)
+_R128_I = re.compile(r"lavfi\.r128\.I=(-?[0-9.]+)")
 
 
 def measure_lufs(ctx: Ctx, path: Path, extra: str = "") -> float | None:
-    """Integrated loudness of ``path`` by ffmpeg's ``loudnorm`` (BS.1770 gating); None when it is below -70 LUFS."""
-    args = ["-loglevel", "info", "-i", "{in}", "-af", f"{extra}loudnorm=I=-23:LRA=50:TP=-1:print_format=json", "-f", "null", "-"]
-    err = ctx.call(args, {"in": str(path)})
-    match = None
-    for match in _JSON.finditer(err):
-        pass
-    if match is None:
-        raise ffmpeg.FfmpegError("loudnorm printed no measurement")
-    value = json.loads(match.group(0)).get("input_i")
-    try:
-        lufs = float(value)
-    except (TypeError, ValueError):
+    """Integrated loudness of ``path`` by ffmpeg's ``ebur128`` filter (libebur128, the meter enth's own is a port of).
+
+    ``loudnorm``'s own reading differs from it by up to a dB on clips of a second or less, so it is not used here.
+    None when the clip holds no gating block (under 400 ms), is under 100 ms, or is below -70 LUFS.
+    """
+    graph = f"{extra}ebur128=metadata=1:framelog=quiet,ametadata=mode=print:key=lavfi.r128.I"
+    err = ctx.call(["-loglevel", "info", "-i", "{in}", "-af", graph, "-f", "null", "-"], {"in": str(path)})
+    values = _R128_I.findall(err)
+    if not values:  # ebur128 reports once per 100 ms of audio: a shorter clip prints nothing
         return None
+    lufs = float(values[-1])  # the last frame carries the integrated loudness of the whole clip
     return lufs if math.isfinite(lufs) and lufs > -70.0 else None
 
 
 def normalise_and_write(ctx: Ctx, target_lufs: float, out_path: Path, sample_fmt: str) -> dict[str, Any]:
     """Bring the clip to ``target_lufs`` with one linear gain and write the final WAV."""
     lufs = measure_lufs(ctx, ctx.cur)
-    method = "loudnorm"
+    method = "ebur128"
     if lufs is None:
-        # A clip under 400 ms holds no BS.1770 gating block (loudnorm reads -inf). Loop it to 1.5 s and measure that:
+        # A clip under 400 ms holds no BS.1770 gating block (the meter reads -70). Loop it to 1.5 s and measure that:
         # a looped clip has the same mean power as the clip, which is what enth's own meter reads for short sounds.
         loops = max(int(math.ceil(1.5 * ctx.sr / ctx.frames)), 1)
         lufs = measure_lufs(ctx, ctx.cur, extra=f"aloop=loop={loops}:size={ctx.frames},")
-        method = "loudnorm on the clip looped to 1.5 s"
+        method = "ebur128 on the clip looped to 1.5 s"
     gain_db = None
     result: dict[str, Any] = {"target_lufs": target_lufs, "measured_lufs": None if lufs is None else round(lufs, 3), "method": method}
     _, pk = ctx.level()

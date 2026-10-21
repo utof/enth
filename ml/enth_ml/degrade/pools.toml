@@ -226,6 +226,28 @@ codec = ["lame-cbr"]
 [pool.train.profile.codec]
 stages = ["codec"]
 
+# Composite profiles: compound damage in one chain, as an upload has it (lane DS's real-set degraded copies). The same
+# names exist in both pools; train's versions draw only training settings, as their in-distribution control.
+[pool.train.profile.upload-noisy]
+stages = ["noise", "hum", "codec"]
+[pool.train.profile.upload-noisy.variants]
+codec = ["lame-cbr"]
+[pool.train.profile.upload-room]
+stages = ["room", "codec"]
+[pool.train.profile.upload-room.variants]
+codec = ["lame-cbr"]
+[pool.train.profile.upload-loud]
+stages = ["dynamics", "codec"]
+[pool.train.profile.upload-loud.variants]
+dynamics = ["limiter", "hard-clip", "tanh-clip"]
+codec = ["lame-cbr"]
+[pool.train.profile.phone-recording]
+stages = ["room", "eq", "mono", "codec"]
+[pool.train.profile.phone-recording.variants]
+room = ["small"]
+eq = ["device"]
+codec = ["aac-lc", "opus"]
+
 # ====================================================================================================================
 # heldout
 # ====================================================================================================================
@@ -409,7 +431,7 @@ p = 0.3
 kind = "resample"
 sr_hz = { choice = [4000, 5512, 6000, 7000] }
 
-# GR3 and report 02 set C: shine, an MP3 encoder training never has (libshine is present in this ffmpeg build); LAME in
+# GR3 (docs/r3.md: MP3 at 32-96 kbps): shine, an MP3 encoder training never has (libshine is present in this ffmpeg build); LAME in
 # the VBR and ABR modes training does not use; the native AAC encoder with its fast coder; Opus in its voice mode at
 # low rates; the phone codecs AMR-NB and GSM (8 kHz mono, then back to the clip's rate and channels).
 [pool.heldout.stage.codec]
@@ -419,7 +441,7 @@ kind = "libshine-cbr"
 weight = 0.25
 encoder = "libshine"
 mode = "cbr"
-bitrate_kbps = { choice = [32, 40, 48, 56, 64, 80, 96, 112, 128] }
+bitrate_kbps = { choice = [32, 40, 48, 56, 64, 80, 96] }
 ext = "mp3"
 [pool.heldout.stage.codec.variant.lame-vbr]
 kind = "libmp3lame-vbr"
@@ -508,4 +530,27 @@ codec = ["aac-fast", "opus-voip"]
 [pool.heldout.profile.phone-codec]
 stages = ["codec"]
 [pool.heldout.profile.phone-codec.variants]
+codec = ["amr-nb", "gsm"]
+
+# Composite profiles (see the train pool's note). phone-recording is the default stand-in for phone re-recordings: a
+# living room, a phone speaker, a mono mic and a phone codec.
+[pool.heldout.profile.upload-noisy]
+stages = ["noise", "hum", "codec"]
+[pool.heldout.profile.upload-noisy.variants]
+codec = ["shine-cbr", "lame-vbr", "lame-abr"]
+[pool.heldout.profile.upload-room]
+stages = ["room", "codec"]
+[pool.heldout.profile.upload-room.variants]
+room = ["living-room", "hall", "cathedral", "flutter"]
+codec = ["shine-cbr", "lame-vbr", "lame-abr"]
+[pool.heldout.profile.upload-loud]
+stages = ["dynamics", "codec"]
+[pool.heldout.profile.upload-loud.variants]
+dynamics = ["limiter-hot", "hard-clip-hot", "atan-clip", "cubic-clip"]
+codec = ["shine-cbr", "lame-vbr", "lame-abr"]
+[pool.heldout.profile.phone-recording]
+stages = ["room", "eq", "mono", "codec"]
+[pool.heldout.profile.phone-recording.variants]
+room = ["living-room"]
+eq = ["phone-speaker"]
 codec = ["amr-nb", "gsm"]
