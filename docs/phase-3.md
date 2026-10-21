@@ -111,13 +111,13 @@ Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and
 
 | Lane | Owns | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
-| **S0s** Workspace prep (→ F0s) | Stubs for every R3 file below (solver `create/`, `propose/`; analysis `intake/` and the robust distance; session `create.rs`; plugin `create.rs`; CLI `cmd/create.rs`; UI `editor/create/`, `sizes/create.rs` and the Create header hook; `tools/listen/src/gr3.rs`; `xtask/src/gr3/`; `tools/datagen` as an exempt package); the `ml/` skeleton (uv); `content/gr3/` | S0l merged; the coordinator's pins | 0.75–1.5 | H once |
+| **S0s** Workspace prep (→ F0s) | Stubs for every R3 file below (solver `create/`, `propose/`; analysis `intake/` and the robust distance; session `create.rs`; plugin `create.rs`; CLI `cmd/create.rs`; UI `editor/create/`, `sizes/create.rs` and the Create header hook; `tools/listen/src/gr3.rs`; `xtask/src/gr3/`; `tools/datagen` (`enth-datagen`, an exempt package that also holds TP's bank builder, `bank.rs`, which `cargo xtask bank` drives); an `enth-plugin/create` feature (the decoders and `rayon`, optional) and an `enth-ui/create` feature); the `ml/` skeleton (uv); `content/gr3/` | S0l merged; the coordinator's pins | 0.75–1.5 | H once |
 | **DS** Held-out sets | `content/gr3/{synth,real,degraded}.toml`, `hashes.txt`, `exclude-*.txt` | S0s; your picks or the default | 0.5–1 | L |
 | **DEG** Degradation chain | `ml/enth_ml/degrade/` (seeded; held-out pools disjoint from training's) | S0s | 0.75–1.5 | L |
 | **LT** GR3 listening | `tools/listen/src/gr3.rs` (`enth-listen gr3`, `--export-kit`, `--analyze`), its section of [listening.md](listening.md) | S0s | 1–1.5 | L |
 | **FE** Intake (→ F1s) | `enth-analysis/src/intake/{trim,floor,bandwidth,clip,perf,resample}.rs` (pure, wasm32) | F0s | 1.5–2.5 | L |
 | **OBJ** Robust objective | The degradation-aware distance in `enth-analysis`, under a new id (`sound/1` unchanged) | FE | 1–2 | L |
-| **TP** Portfolio (→ F1s) | `enth-solver/src/create/{portfolio,schedule,candidate}.rs`, `nearest.rs` (k-NN retrieval), the bank builder; the per-evaluation cost on R1's engine with effects | F0s | 1.5–2.5 | L |
+| **TP** Portfolio (→ F1s) | `enth-solver/src/create/{portfolio,schedule,candidate}.rs`, `nearest.rs` (k-NN retrieval), the bank builder (`tools/datagen/src/bank.rs`, driven by `cargo xtask bank`); the per-evaluation cost on R1's engine with effects | F0s | 1.5–2.5 | L |
 | **EVK** GR3 kit | `xtask/src/gr3/`, `content/gr3/runs.jsonl`, `docs/gr3.md` (planned); the arm-A baseline | TP, DS | 1–2 | L |
 | **F1S** The F1s judge's findings | Its must-fix items, in the files they name | The judge | 0.5–1.5 (this plan's estimate) | L |
 | **FK3** Fork patch 11: file drops | `vendor/egui-baseview` (baseview's drag events mapped to egui's hovered and dropped files, `AcceptDrop(Copy)`), `vendor/README.md`, the ADR-0001 note | fu1-fk merged; F0s (for the slot) | 0.75–1.5 (this plan's estimate) | **H** |
@@ -126,7 +126,7 @@ Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and
 | **PUI** Create UI | `enth-ui/src/editor/create/*` (drop zone, folder browser, K tiles, audition and A/B, progress, cancel) | F2s, FK3 | 2–3.5 | **H** |
 | **INTa** R3a ships | The R3a table in `docs/r3-gates.md`, [r3.md](r3.md)'s status, owner sheet 5 (`docs/r3-owner.md`) | All R3a lanes | 1.5–2.5 | **H** |
 | **ONX** Inference | `enth-solver/src/propose/{pack,ops,net,features,decode}.rs` (our scalar kernels; bytes passed in), `tools/model-check` (exempt; parity against ONNX Runtime and `tract-nnef`), the kernel-hash step on every CI platform | F3s | 1.5–3 | **H** |
-| **DG** Dataset generator | `tools/datagen/` (exempt): `ds1`, shards, exclusions | F3s | 1–2 | L |
+| **DG** Dataset generator | `tools/datagen/` (exempt): `ds1.rs`, `shards.rs`, `exclude.rs` (`bank.rs` is TP's) | F3s | 1–2 | L |
 | **AUG** Augmentation | `ml/enth_ml/augment/`, the data manifest | DEG | 1–2 | L |
 | **TR** Training | `ml/enth_ml/{model,train,export}/` | DG, AUG, F3s | 2–4, plus 1–3 days of runs | Runtime-heavy |
 | **MS** Model + search | Model proposals in `create/schedule.rs` (successive halving over the K hypotheses) | ONX, TP | 1–2 | L |
@@ -268,7 +268,7 @@ The tables of record will be `docs/r2-gates.md` (INT2) and `docs/r3-gates.md` (I
   | The state blob | S0l reserves the optional `learn` object (absent when idle; state version 1); SL fills it; a create job is not saved |
   | `enth-challenge` | CV2 only (v2, the migration, `prepare_patch_round`, phrases). `ds1` reads generator v1's public pieces from `tools/datagen`; a needed `pub` is additive and reported |
   | `enth-analysis` | FE (`intake/`) and OBJ (the robust distance); existing files untouched |
-  | `xtask/src/` | S0l pre-declares `lesson/` (LCK; `gen.rs` is DEC's) and `gr2.rs` (INT2); S0s pre-declares `gr3/` (EVK) and the bank builder (TP); `main.rs` registrations go in with the stubs |
+  | `xtask/src/` | S0l pre-declares `lesson/` (LCK; `gen.rs` is DEC's) and `gr2.rs` (INT2); S0s pre-declares `gr3.rs` with `gr3/` (EVK: `gr3-run`, `gr3-report`) and `bank.rs` (TP's thin driver of `enth-datagen`, whose `bank.rs` is the work); `main.rs` registrations go in with the stubs |
   | `content/` | One owner per directory: `lessons/<pack>/` (C1, C2, C3, DEC), `gr3/` (DS; `runs.jsonl` EVK and EVb) |
   | CI workflows | S0l stubs `lessons.yml`, LCK fills it; ONX adds the kernel-hash step; nothing builds `ml/` |
   | `scripts/gate.sh` | LCK adds the `lesson-check` hook for `content/lessons/`, reviewed by the coordinator |
