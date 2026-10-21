@@ -104,7 +104,7 @@ impl PreparedRound {
         &self.challenge
     }
 
-    /// The patch the player starts from (the spec's template).
+    /// The patch the player starts from (the spec's template, or a v2 challenge's own start).
     pub fn start(&self) -> &Patch {
         &self.start
     }
@@ -114,12 +114,15 @@ impl PreparedRound {
         &self.generated.patch
     }
 
-    /// Everything the generator returned.
+    /// Everything the generator returned. For a patch or draw target (Challenge v2) the same shape, with generator
+    /// [`NOT_GENERATED`](crate::v2::NOT_GENERATED), level 0 and no minimum steps: the target, its phrase, what the
+    /// round compares and the patch-target fingerprint.
     pub fn generated(&self) -> &Generated {
         &self.generated
     }
 
-    /// The randomized parameters, in address order: the rings, `dim_unused`, `TargetContext::randomized`.
+    /// The randomized parameters, in address order: the rings, `dim_unused`, `TargetContext::randomized` (for a
+    /// patch or draw target, the compared ones: [`crate::patch_round`]).
     pub fn params(&self) -> &[ParamAddr] {
         &self.generated.params
     }

@@ -26,13 +26,13 @@
 //! | [`calibrate`] | per-challenge just-noticeable-difference units and the fitted sound-% curve | SS |
 //! | [`loudness`] | an in-house BS.1770 loudness on `libm` for the scored path, bit-exact on every platform | SS |
 //!
-//! R2 hooks (Challenge v2, freeze point F1l), pre-declared empty by lane S0l so CV2 never edits this file; each
-//! file names the design it will hold, and nothing in v1 changes until CV2 lands:
+//! R2 (Challenge v2, freeze point F1l): files pre-declared by lane S0l and filled by lane CV2 (docs/challenge.md,
+//! "Challenge v2"):
 //!
 //! | File | Holds | Lane |
 //! | --- | --- | --- |
-//! | [`v2`] | Challenge v2 (`Target::Draw`, `Target::Patch`, `Target::Expectations`, `Start::Patch`, `Constraints { editable, locked }`, `AnswerKind::Choice`) and the v1 migration | CV2 |
-//! | [`patch_round`] | `prepare_patch_round`, moved down from `enth-cli`'s `compare.rs` | CV2 |
+//! | [`v2`] | Challenge v2's pieces (`Target::Draw`, `Target::Patch`, `Start::Patch`, `Constraints { editable, locked }` over one `Selector`), the file forms of both versions and the v1 migration; `AnswerKind::Choice` and `Target::Expectations` are left out (lessons use `enth-learn`'s own) | CV2 |
+//! | [`patch_round`] | `prepare_patch_round`, moved down from `enth-cli`'s `compare.rs`, and `prepare_draw_round` | CV2 |
 //! | [`lesson_phrases`] | the lesson-only phrase ids (`CHORD`, `LONG_HOLD`, `STACCATO`, `STACCATO_RUN`) and their invariants | CV2 |
 
 pub mod calibrate;
