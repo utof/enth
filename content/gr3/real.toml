@@ -1,1 +1,1199 @@
-# R3 lane DS fills this (docs/r3.md, "GR3 and its hygiene"; content/gr3/README.md). Empty until then.
+# content/gr3/real.toml: GR3 clause 2's references (lane DS, R3, freeze F0s).
+# docs/r3.md "GR3 and its hygiene"; content/gr3/README.md. Manifest only: no audio is committed.
+# 60 references = 40 clean (10 per stratum below) + 20 degraded copies of 20 of them (degraded.toml, judged
+# against the clean original). Licences were read on each sound's own page on the date given.
+
+schema = "enth.gr3-real/1"
+set_version = 1
+frozen_on = "2026-10-21"
+
+[sizes]
+clean = 40  # sub 10, fm 10, ac 10, owner 10
+degraded = 20  # 5 per stratum; degraded.toml
+references = 60
+defaults = 10  # agent picks that fill the owner slots the owner leaves empty
+reserves = 8  # 2 per stratum, used only to replace an item whose source disappears before the first test run
+
+[rules]
+selection = "Picked by an agent (lane DS) from Freesound search results and sound pages, by stratum, title, description and tags only: nothing was played, auditioned or run through enth. At most 2 sounds per uploader and 1 per Freesound pack. Skipped: sounds whose page says they were ripped from a record, a video or a commercial pack; sounds that are themselves FSD50K clips (FSD50K v1.0 ground truth, Zenodo 4060432), so the set is disjoint from FSD50K by construction."
+licences = "CC0 or CC BY only, read from the sound's page (the licence link beside the player). All 48 are CC0 (Creative Commons 0, publicdomain/zero/1.0) as read on 2026-10-21. CC0 needs no attribution; the attribution field is a courtesy credit."
+audio = "The reference is the Freesound HQ Ogg preview (Vorbis, about 192 kbps stereo or 110 kbps mono, at the original sample rate): public, no account, and hashed below. The original files need a Freesound account (the owner's); fetching them is optional and never replaces a preview after the freeze (a new set version would)."
+local_root = "~/code/enth-scratch/r3-data/freesound/"  # where the previews live; never committed (CC0 would allow it; the coordinator keeps audio out of git)
+owner_slots = "owner-01..owner-10: the owner's own picks, as local files ~/code/enth-scratch/owner/r3-picks/owner-NN.<ext> (any format enth reads), never committed unless CC0 or the owner's. A slot left empty at the amendment (README) is filled by owner-default-NN. The owner records licence, source and SHA-256 in the amendment."
+dedupe = "exclude-real.txt lists every Freesound id, pack, uploader (advisory) and audio SHA-256 here, test, default and reserve alike; training drops them from FSD50K, Freesound and any other source."
+
+[[reference]]
+id = "real-sub-01"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+source = "freesound"
+freesound_id = 213657
+page = "https://freesound.org/people/Garzul/sounds/213657/"
+title = "Resonant analog synth bass"
+uploader = "Garzul"
+description = "From a Minimoog"  # as shown on the page, shortened
+tags = ["analog", "bass", "minimoog", "moog", "rain", "resonant", "synth", "synthetizer"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Resonant analog synth bass by Garzul (freesound.org/s/213657), CC0 1.0"
+duration_s = 1.672
+original = { type = "Wave (.wav)", size = "627.3 KB", sample_rate = "96 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "213657_862453-hq.ogg", url = "https://cdn.freesound.org/previews/213/213657_862453-hq.ogg", sha256 = "39dfbb33b479e70974c1685846a7efe64e0fbd761e7719b154accdbe61052072", bytes = 45705, format = "ogg-vorbis", sample_rate = 96000, channels = 2, duration_s = 1.672708 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-02"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+source = "freesound"
+freesound_id = 213525
+page = "https://freesound.org/people/Garzul/sounds/213525/"
+title = "Noisy analog synth stab"
+uploader = "Garzul"
+description = "A noisy agressive analog synth stab made with a Minimoog, no fx applied"  # as shown on the page, shortened
+tags = ["agressive", "analog", "chord", "minimoog", "moog", "noise", "noisy", "stab", "synth", "synthetizer"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Noisy analog synth stab by Garzul (freesound.org/s/213525), CC0 1.0"
+duration_s = 1.999
+original = { type = "Wave (.wav)", size = "749.8 KB", sample_rate = "96 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "213525_862453-hq.ogg", url = "https://cdn.freesound.org/previews/213/213525_862453-hq.ogg", sha256 = "b87f5ce1d355f6a02b9b4b343d01b9a1d531f94a1830455c2d36bb3440626a19", bytes = 61049, format = "ogg-vorbis", sample_rate = 96000, channels = 2, duration_s = 1.999229 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-03"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+source = "freesound"
+freesound_id = 311331
+page = "https://freesound.org/people/modularsamples/sounds/311331/"
+title = "Roland SH-2 - Wow Bass - E#6 (89F5-D3FC.aif)"
+uploader = "modularsamples"
+pack = { id = 17609, name = "Roland SH-2 - Wow Bass" }
+description = "Single note sampled from an analog synthesizer by Modular Samples. Modular Samples provides samples of vintage and modern synthesizers for Apple EXS24, Nativ..."  # as shown on the page, shortened
+tags = ["ESharp6", "Roland-SH-2", "midi-note-89", "multisample", "single-note", "synthesizer"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Roland SH-2 - Wow Bass - E#6 (89F5-D3FC.aif) by modularsamples (freesound.org/s/311331), CC0 1.0"
+duration_s = 3.364
+original = { type = "AIFF (.aiff)", size = "438.7 KB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "311331_2050105-hq.ogg", url = "https://cdn.freesound.org/previews/311/311331_2050105-hq.ogg", sha256 = "fc76ae6aa1c1e1a49bc790b7bbe9d9087da4cb484aeb6b83755ca90737b8ba77", bytes = 30840, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 3.364717, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-04"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+degraded_copy = "real-deg-01"
+source = "freesound"
+freesound_id = 303130
+page = "https://freesound.org/people/modularsamples/sounds/303130/"
+title = "Roland Jupiter 4 - 4 Bass - C8 (4 Bass-108-127-98QA.aif)"
+uploader = "modularsamples"
+pack = { id = 17482, name = "Roland Jupiter 4 - 4 Bass" }
+description = "Single note sampled from an analog synthesizer by Modular Samples. Modular Samples provides samples of vintage and modern synthesizers for Apple EXS24, Nativ..."  # as shown on the page, shortened
+tags = ["C8", "Roland-Jupiter-4", "midi-note-108", "multisample", "single-note", "synthesizer"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Roland Jupiter 4 - 4 Bass - C8 (4 Bass-108-127-98QA.aif) by modularsamples (freesound.org/s/303130), CC0 1.0"
+duration_s = 4.508
+original = { type = "AIFF (.aiff)", size = "1.1 MB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "303130_2050105-hq.ogg", url = "https://cdn.freesound.org/previews/303/303130_2050105-hq.ogg", sha256 = "8aac950d91edcd96a328d29f074df277b7344f886a5dd82c2143fe517bab5455", bytes = 74453, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 4.508571, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-05"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+degraded_copy = "real-deg-03"
+source = "freesound"
+freesound_id = 324040
+page = "https://freesound.org/people/menegass/sounds/324040/"
+title = "MOOG_LEAD_G#.wav"
+uploader = "menegass"
+pack = { id = 18180, name = "Moog Minitaur" }
+description = "moog minitaur lead roland space echo"  # as shown on the page, shortened
+tags = ["echo", "lead", "minitaur", "moog", "roland", "space"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "MOOG_LEAD_G#.wav by menegass (freesound.org/s/324040), CC0 1.0"
+duration_s = 2.15
+original = { type = "Wave (.wav)", size = "370.5 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "324040_29308-hq.ogg", url = "https://cdn.freesound.org/previews/324/324040_29308-hq.ogg", sha256 = "9d1ce9a3f8fc9b1ef6e0e2acaa86d1fbd967404cbb4da6ed18fa11dcdf4ca161", bytes = 51014, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 2.150431, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-06"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+degraded_copy = "real-deg-04"
+source = "freesound"
+freesound_id = 89075
+page = "https://freesound.org/people/DJMini/sounds/89075/"
+title = "303 C1 Wave.wav"
+uploader = "DJMini"
+pack = { id = 5782, name = "Mike's Sound Factory" }
+description = "A 303 Sample i sampled from my tb303Workes great with only this sample in reason fl studio and so on"  # as shown on the page, shortened
+tags = ["303", "c1", "wave"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "303 C1 Wave.wav by DJMini (freesound.org/s/89075), CC0 1.0"
+duration_s = 1.761
+original = { type = "Wave (.wav)", size = "152.0 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "89075_792998-hq.ogg", url = "https://cdn.freesound.org/previews/89/89075_792998-hq.ogg", sha256 = "dbddfc30672080a701a29a54c1a81d8061f14075cca04ceff30e7b183741b33a", bytes = 14178, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 1.761814, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-07"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+degraded_copy = "real-deg-02"
+source = "freesound"
+freesound_id = 423680
+page = "https://freesound.org/people/rugged163/sounds/423680/"
+title = "brutebass1.aif"
+uploader = "rugged163"
+description = "arturia mini brute bass stab kinda thing"  # as shown on the page, shortened
+tags = ["arturia", "bass", "minibrute"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "brutebass1.aif by rugged163 (freesound.org/s/423680), CC0 1.0"
+duration_s = 0.942
+original = { type = "AIFF (.aiff)", size = "121.9 KB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "423680_2329264-hq.ogg", url = "https://cdn.freesound.org/previews/423/423680_2329264-hq.ogg", sha256 = "ce58e3e5e0bf6f58de334a3fed41cafc4a36f6b6c73f4a0fcd0b0186f08650dc", bytes = 13004, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 0.942857, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-08"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+source = "freesound"
+freesound_id = 340139
+page = "https://freesound.org/people/Terry93D/sounds/340139/"
+title = "Warm Horn Fs3"
+uploader = "Terry93D"
+pack = { id = 19268, name = "Analog Synth - Warm Horn" }
+description = "An analog synth horn with a warm, friendly feel to it. This is the note F sharp in the 3rd octave. (Created with AudioSauna.)"  # as shown on the page, shortened
+tags = ["brass", "horn", "synth", "warm"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Warm Horn Fs3 by Terry93D (freesound.org/s/340139), CC0 1.0"
+duration_s = 3.993
+original = { type = "Wave (.wav)", size = "688.0 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "340139_5622625-hq.ogg", url = "https://cdn.freesound.org/previews/340/340139_5622625-hq.ogg", sha256 = "c0d384bb9fb3b98c30714b1a3a8c430165eff485f9463ef953e61b18e896c7b3", bytes = 31964, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 3.993855, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-09"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+source = "freesound"
+freesound_id = 676927
+page = "https://freesound.org/people/voxlab/sounds/676927/"
+title = "Sequential OB-6 Filtersweep - C1"
+uploader = "voxlab"
+pack = { id = 37786, name = "sound examples" }
+description = "Filtersweep with the Sequential OB-6 SEM-State-variable-Filter. C1. RME Babyface pro FS"  # as shown on the page, shortened
+tags = ["SEM", "analog", "analog-synth", "example", "filter", "filtersweep", "ob-6", "oberheim", "sequential"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Sequential OB-6 Filtersweep - C1 by voxlab (freesound.org/s/676927), CC0 1.0"
+duration_s = 14.365
+original = { type = "Wave (.wav)", size = "3.9 MB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "676927_11173586-hq.ogg", url = "https://cdn.freesound.org/previews/676/676927_11173586-hq.ogg", sha256 = "8b3afa5605964126018389883fc66ad05da83f02e7596c9a53c52074486f24e4", bytes = 257759, format = "ogg-vorbis", sample_rate = 48000, channels = 2, duration_s = 14.364979, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-sub-10"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "test"
+degraded_copy = "real-deg-05"
+source = "freesound"
+freesound_id = 847305
+page = "https://freesound.org/people/CAT-FOX_ALEX/sounds/847305/"
+title = "Pluck 1-C"
+uploader = "CAT-FOX_ALEX"
+description = "Synthed with phaseplant only."  # as shown on the page, shortened
+tags = ["Analog", "EDM", "Lead", "One-shot", "Pluck", "Synthetic"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Pluck 1-C by CAT-FOX_ALEX (freesound.org/s/847305), CC0 1.0"
+duration_s = 0.761
+original = { type = "Wave (.wav)", size = "262.6 KB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "847305_17675683-hq.ogg", url = "https://cdn.freesound.org/previews/847/847305_17675683-hq.ogg", sha256 = "d214fea9ac6b97fb5a9859e0314a2e4375f3bdd422e245919f54b34500f6bb4d", bytes = 12484, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 0.761723, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-01"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+degraded_copy = "real-deg-06"
+source = "freesound"
+freesound_id = 750370
+page = "https://freesound.org/people/voxlab/sounds/750370/"
+title = "FS1R _ Furry Bell _ C5"
+uploader = "voxlab"
+pack = { id = 41556, name = "Yamaha FS1R Oneshot samples" }
+description = "I have made Oneshot samples of some Presets in Performance Bank A of the Yamaha FS1R."  # as shown on the page, shortened
+tags = ["FM", "FS1R", "Yamaha", "fm", "formant", "oneshot", "synth", "synthesis", "synthesizer"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "FS1R _ Furry Bell _ C5 by voxlab (freesound.org/s/750370), CC0 1.0"
+duration_s = 5.269
+original = { type = "Wave (.wav)", size = "1.4 MB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "750370_11173586-hq.ogg", url = "https://cdn.freesound.org/previews/750/750370_11173586-hq.ogg", sha256 = "3af362c62594fb0e3ff02e4cbcc16361ee1a49acdb4b12539ca9f650844c61af", bytes = 117753, format = "ogg-vorbis", sample_rate = 48000, channels = 2, duration_s = 5.269917, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-02"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+source = "freesound"
+freesound_id = 817013
+page = "https://freesound.org/people/TheSoundLibrary/sounds/817013/"
+title = "Electric Piano (FM)"
+uploader = "TheSoundLibrary"
+pack = { id = 43784, name = "C notes" }
+description = "Made in famistudio. Electric piano for musical use."  # as shown on the page, shortened
+tags = ["Electric-piano", "Electronic", "Sample"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Electric Piano (FM) by TheSoundLibrary (freesound.org/s/817013), CC0 1.0"
+duration_s = 2.662
+original = { type = "Wave (.wav)", size = "458.7 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "817013_17512884-hq.ogg", url = "https://cdn.freesound.org/previews/817/817013_17512884-hq.ogg", sha256 = "2506d875e951cd0b1d4316f76e06cceaa446fed5f39eac28b5832bcd6080fe11", bytes = 44015, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 2.662268, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-03"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+source = "freesound"
+freesound_id = 792954
+page = "https://freesound.org/people/NickSamples/sounds/792954/"
+title = "FM Pluck EP"
+uploader = "NickSamples"
+description = "A plucky FM Electric Piano patch from Korg's Opsix rendered a little more lo-fi through UAD's Verve Machines plugin. Works great as a simple one shot keys pa..."  # as shown on the page, shortened
+tags = ["Electric", "Electric-Piano", "FM", "Keys", "Lo-Fi", "One-shot", "Pluck"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "FM Pluck EP by NickSamples (freesound.org/s/792954), CC0 1.0"
+duration_s = 8.688
+original = { type = "Wave (.wav)", size = "2.2 MB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "792954_17061486-hq.ogg", url = "https://cdn.freesound.org/previews/792/792954_17061486-hq.ogg", sha256 = "62485403a1692b65e37114dad37196ce2dbe2bf3b60216eddb080ca8fa30eeda", bytes = 127023, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 8.688934, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-04"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+source = "freesound"
+freesound_id = 873843
+page = "https://freesound.org/people/CAT-FOX_ALEX/sounds/873843/"
+title = "Classic FM Growl One-shot_#F"
+uploader = "CAT-FOX_ALEX"
+pack = { id = 45020, name = "Dubstep Friends" }
+description = "Designed in vital."  # as shown on the page, shortened
+tags = ["128bpm", "Bass", "Bass-house", "Basshouse", "FM", "Growl", "House", "One-shot", "Wobble"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Classic FM Growl One-shot_#F by CAT-FOX_ALEX (freesound.org/s/873843), CC0 1.0"
+duration_s = 0.493
+original = { type = "Wave (.wav)", size = "170.0 KB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "873843_17675683-hq.ogg", url = "https://cdn.freesound.org/previews/873/873843_17675683-hq.ogg", sha256 = "f9b4ae482b10cd3b79e515da8e2d00a24ac98b0dafbec4b7ce45236fd3248745", bytes = 10457, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 0.493175, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-05"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+degraded_copy = "real-deg-09"
+source = "freesound"
+freesound_id = 557012
+page = "https://freesound.org/people/Saif_Sameer/sounds/557012/"
+title = "SY99 - AFM waveforms - WF 8.wav"
+uploader = "Saif_Sameer"
+pack = { id = 31288, name = "SY99 AFM FM waveform operators" }
+description = "Sampling the AFM (Advanced FM) operators of Yamaha SY99 synthesizer. My purpose was to recreate the waveform shapes mathematically in Serum formula parser."  # as shown on the page, shortened
+tags = ["FM", "FM-Synth", "SY77", "SY99", "Synth", "TG77", "Yamaha", "digital", "electronic", "frequency-modulation", "mathematical", "operator", "oscillator", "sampling", "sinewave", "synth", "synthesis", "synthesizer", "synthetic", "vintage", "waveform"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "SY99 - AFM waveforms - WF 8.wav by Saif_Sameer (freesound.org/s/557012), CC0 1.0"
+duration_s = 0.418
+original = { type = "Wave (.wav)", size = "78.8 KB", sample_rate = "48 kHz", bit_depth = "32 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "557012_1165076-hq.ogg", url = "https://cdn.freesound.org/previews/557/557012_1165076-hq.ogg", sha256 = "1831be699c6ddf75c8db3ea11c3d97bb08a4d969220ab9a4adef1d67dde2f8e3", bytes = 9051, format = "ogg-vorbis", sample_rate = 48000, channels = 1, duration_s = 0.418396, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-06"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+source = "freesound"
+freesound_id = 680995
+page = "https://freesound.org/people/Cloud-10/sounds/680995/"
+title = "M1 Classic Organ"
+uploader = "Cloud-10"
+pack = { id = 30065, name = "EDM Sounds" }
+description = "A 90's style Korg dance M1 organ one-shot in C. Made with ReFX Nexus, edited from a preset called \"Piano Stack,\" which is from the expansion Deep House. Enjoy!"  # as shown on the page, shortened
+tags = ["90s", "bass", "club", "dance", "effect", "electro", "electronic", "eurodance", "house", "korg", "loop", "oneshot", "organ", "rave", "sample", "shot", "synth", "techno", "trance"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "M1 Classic Organ by Cloud-10 (freesound.org/s/680995), CC0 1.0"
+duration_s = 2.653
+original = { type = "Wave (.wav)", size = "457.4 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "680995_10403690-hq.ogg", url = "https://cdn.freesound.org/previews/680/680995_10403690-hq.ogg", sha256 = "e0fa64cda9ef30c60d4ace905b58c51539ea92f60b78b5c021ba5a5b342c79b6", bytes = 51608, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 2.653855, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-07"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+degraded_copy = "real-deg-10"
+source = "freesound"
+freesound_id = 122421
+page = "https://freesound.org/people/Anillogic/sounds/122421/"
+title = "gpG4.WAV"
+uploader = "Anillogic"
+pack = { id = 7674, name = "Dirty Grand Piano" }
+description = "This was an experiment running a Yamaha TX81Z through a Korg EA-1. The FM is a Grand Piano Patch Decimated and warmed up with Analog Oscillators. Sampled int..."  # as shown on the page, shortened
+tags = ["analog", "ea-1", "fm", "korg", "piano", "synth", "tx81z", "yamaha"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "gpG4.WAV by Anillogic (freesound.org/s/122421), CC0 1.0"
+duration_s = 2.124
+original = { type = "Wave (.wav)", size = "366.1 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "122421_2142830-hq.ogg", url = "https://cdn.freesound.org/previews/122/122421_2142830-hq.ogg", sha256 = "205b6fa150a296bb7dd23b2917a3818fa3f7be83d81a781970c39a3d25fdcf9e", bytes = 50517, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 2.124308, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-08"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+source = "freesound"
+freesound_id = 24525
+page = "https://freesound.org/people/tran5ient/sounds/24525/"
+title = "PSS-01.WAV"
+uploader = "tran5ient"
+pack = { id = 1533, name = "yamaha pss-470 fm synth sample pack" }
+description = "Fm Synth Tone 01"  # as shown on the page, shortened
+tags = ["fm", "portasound", "pss-470", "synth", "yamaha"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "PSS-01.WAV by tran5ient (freesound.org/s/24525), CC0 1.0"
+duration_s = 2.016
+original = { type = "Wave (.wav)", size = "173.9 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "24525_35839-hq.ogg", url = "https://cdn.freesound.org/previews/24/24525_35839-hq.ogg", sha256 = "cc14adbf365eb4adbf86e88e135564e6705094e1a43495559c60cf869aaf878b", bytes = 27437, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 2.016961, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-09"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+degraded_copy = "real-deg-07"
+source = "freesound"
+freesound_id = 776760
+page = "https://freesound.org/people/Ragnar59/sounds/776760/"
+title = "pad g8"
+uploader = "Ragnar59"
+pack = { id = 42444, name = "warbly pad 0 detune" }
+description = "an FM pad that has very specific modulation. Only a modulator with 0 cents detuning from the base wave can be used, or the equivalent subosc. However, the wa..."  # as shown on the page, shortened
+tags = ["blok-modular", "digital", "electronic", "fm", "jeskola-buzz", "modular", "pad", "synth", "warble"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "pad g8 by Ragnar59 (freesound.org/s/776760), CC0 1.0"
+duration_s = 5.625
+original = { type = "Wave (.wav)", size = "1.4 MB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "776760_532787-hq.ogg", url = "https://cdn.freesound.org/previews/776/776760_532787-hq.ogg", sha256 = "9c08bd9c3ef769149dcd8eb3f2b8e02b72395f9481129408c8857c79f8514a40", bytes = 54019, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 5.625011, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-fm-10"
+stratum = "fm"  # FM, wavetable or digital
+role = "test"
+degraded_copy = "real-deg-08"
+source = "freesound"
+freesound_id = 798638
+page = "https://freesound.org/people/CVLTIV8R/sounds/798638/"
+title = "CVLT BASS 97.wav"
+uploader = "CVLTIV8R"
+description = "bass stabs drops bassdrop sub subs subbass subwoofer low lowend clear wobble lfo wavetable synthbass synth"  # as shown on the page, shortened
+tags = ["bass", "bassdrop", "clear", "drops", "lfo", "low", "lowend", "stabs", "sub", "subbass", "subs", "subwoofer", "synth", "synthbass", "wavetable", "wobble"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "CVLT BASS 97.wav by CVLTIV8R (freesound.org/s/798638), CC0 1.0"
+duration_s = 1.024
+original = { type = "Wave (.wav)", size = "353.7 KB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "798638_2520418-hq.ogg", url = "https://cdn.freesound.org/previews/798/798638_2520418-hq.ogg", sha256 = "7bfd3c55da11253b03942caf463d61f1660fed94beaa0e11ebc58e42fcefc8ed", bytes = 25434, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 1.024785, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-01"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+source = "freesound"
+freesound_id = 794463
+page = "https://freesound.org/people/Sadiquecat/sounds/794463/"
+title = "Upright Piano Remeau up close XY - G4"
+uploader = "Sadiquecat"
+pack = { id = 43099, name = "Piano - Upright Living Room 1" }
+description = "Subject : A single note of a Remeau Upright piano in a spacious living-room. It wasn't against a wall kind of against a stair-case with a solid cubic meter o..."  # as shown on the page, shortened
+tags = ["4", "Average-piano", "FR-AV2", "G", "G4", "Living-room", "NT5", "Oneshot", "Piano", "Remeau", "Rode", "Rode-NT5", "Tascam", "Upright-piano", "XY", "acoustic", "close-up", "individual-note", "one-shot", "sample", "single-note", "up-close", "upright"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Upright Piano Remeau up close XY - G4 by Sadiquecat (freesound.org/s/794463), CC0 1.0"
+duration_s = 7.573
+original = { type = "Wave (.wav)", size = "8.3 MB", sample_rate = "192 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "794463_5287430-hq.ogg", url = "https://cdn.freesound.org/previews/794/794463_5287430-hq.ogg", sha256 = "bcaf954ff5a531fc8037ad10ff0367ebc78a587741cca5acda00a40d4e5cd75f", bytes = 205230, format = "ogg-vorbis", sample_rate = 192000, channels = 2, duration_s = 7.573307 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-02"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+source = "freesound"
+freesound_id = 577702
+page = "https://freesound.org/people/joesh2/sounds/577702/"
+title = "G2.wav"
+uploader = "joesh2"
+pack = { id = 32432, name = "Mallet Percussion" }
+description = "A short Marimba note - the number donates the octave (I've loaded two octaves worth if you look carefully)."  # as shown on the page, shortened
+tags = ["instrument", "marimba", "percussion", "wood"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "G2.wav by joesh2 (freesound.org/s/577702), CC0 1.0"
+duration_s = 2.0
+original = { type = "Wave (.wav)", size = "345.2 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "577702_4617272-hq.ogg", url = "https://cdn.freesound.org/previews/577/577702_4617272-hq.ogg", sha256 = "723609a273ff150408b1dfc844b70be7387aaa57dd9dc11bf73a64e7757521a8", bytes = 19926, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 2.0, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-03"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+source = "freesound"
+freesound_id = 791932
+page = "https://freesound.org/people/noel.liv/sounds/791932/"
+title = "String Pizzicato A5"
+uploader = "noel.liv"
+description = "Violin pizzicato in A5"  # as shown on the page, shortened
+tags = ["one-shot", "pizzicato", "string", "violin"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "String Pizzicato A5 by noel.liv (freesound.org/s/791932), CC0 1.0"
+duration_s = 0.472
+original = { type = "Wave (.wav)", size = "40.8 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "791932_16831012-hq.ogg", url = "https://cdn.freesound.org/previews/791/791932_16831012-hq.ogg", sha256 = "9dcfad2ba3f5ae6465f2977497a74151879664c2d2fd5f64a02ee912b02c01ee", bytes = 9959, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 0.472857, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-04"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+source = "freesound"
+freesound_id = 726800
+page = "https://freesound.org/people/Sadiquecat/sounds/726800/"
+title = "Ukulele OS_ G Fret 9 NT5 L_12Fret R_Soundhole"
+uploader = "Sadiquecat"
+pack = { id = 40584, name = "Ukulele" }
+description = "Subject : \"Miguel Almeria\" Ukulele with new Martin Guitars M600 NEW Ukulele String Set Date : 2024 03 09 Location : France, Indoor. Notes : Two Mono recordin..."  # as shown on the page, shortened
+tags = ["M600", "Note", "One-shot", "Oneshot", "Soprano", "Ukulele", "acoustic", "cheap", "fluorocarbon", "instrument", "single", "singlenote"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Ukulele OS_ G Fret 9 NT5 L_12Fret R_Soundhole by Sadiquecat (freesound.org/s/726800), CC0 1.0"
+duration_s = 3.041
+original = { type = "Wave (.wav)", size = "855.9 KB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "726800_5287430-hq.ogg", url = "https://cdn.freesound.org/previews/726/726800_5287430-hq.ogg", sha256 = "9712948125357e926c8e73c04451099f0dbf64165bd6a6e06774ce065a5971cd", bytes = 62206, format = "ogg-vorbis", sample_rate = 48000, channels = 2, duration_s = 3.04125, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-05"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+degraded_copy = "real-deg-13"
+source = "freesound"
+freesound_id = 257363
+page = "https://freesound.org/people/yano1/sounds/257363/"
+title = "overall quality of single note - flute - C4"
+uploader = "yano1"
+pack = { id = 15795, name = "Pablo_Project flute overall quality of single note" }
+description = "instrument::flute exercise::overall quality of single note note::C4"  # as shown on the page, shortened
+tags = ["C4", "flute", "good-sounds", "multisample", "pabloproject", "single-note"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "overall quality of single note - flute - C4 by yano1 (freesound.org/s/257363), CC0 1.0"
+duration_s = 3.959
+original = { type = "Wave (.wav)", size = "345.0 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "257363_4755274-hq.ogg", url = "https://cdn.freesound.org/previews/257/257363_4755274-hq.ogg", sha256 = "faa8e7c280b7e2eb55af81eef1805f3c30ca7f37351134719bbe1157c93fd288", bytes = 49520, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 3.959002, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-06"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+degraded_copy = "real-deg-12"
+source = "freesound"
+freesound_id = 674296
+page = "https://freesound.org/people/TheEndOfACycle/sounds/674296/"
+title = "Hi-Hat Closed Hit - Clean"
+uploader = "TheEndOfACycle"
+pack = { id = 37634, name = "Cymbals Pack" }
+description = "This is a non-produced closed hi-hat hit. It might need a slight boost to make its way through in your mix."  # as shown on the page, shortened
+tags = ["close", "closed", "cymbal", "cymbals", "drum", "drums", "hat", "hh", "hi", "hi-hat", "hihat", "hihats", "hit", "one-shot", "percussion"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Hi-Hat Closed Hit - Clean by TheEndOfACycle (freesound.org/s/674296), CC0 1.0"
+duration_s = 0.171
+original = { type = "Wave (.wav)", size = "29.7 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "674296_3130497-hq.ogg", url = "https://cdn.freesound.org/previews/674/674296_3130497-hq.ogg", sha256 = "7ba7b66395efb5899aa3d02b927ab6dbd144795a03de0c77e6d307ea32dd6a25", bytes = 8219, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 0.171973, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-07"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+degraded_copy = "real-deg-15"
+source = "freesound"
+freesound_id = 378681
+page = "https://freesound.org/people/karolist/sounds/378681/"
+title = "rack tom.wav"
+uploader = "karolist"
+description = "Rack tom sound recorded in studio."  # as shown on the page, shortened
+tags = ["acoustic", "drum", "hit", "natural", "perc", "percussion", "rack", "studio", "tom"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "rack tom.wav by karolist (freesound.org/s/378681), CC0 1.0"
+duration_s = 0.199
+original = { type = "Wave (.wav)", size = "34.4 KB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "378681_6399962-hq.ogg", url = "https://cdn.freesound.org/previews/378/378681_6399962-hq.ogg", sha256 = "33ce89f7d7785cb41536466e6675aa9621c066e26494f0053294499327339800", bytes = 5899, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 0.199456, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-08"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+degraded_copy = "real-deg-11"
+source = "freesound"
+freesound_id = 659912
+page = "https://freesound.org/people/PanPiper5/sounds/659912/"
+title = "Clave.wav"
+uploader = "PanPiper5"
+description = "Single clave hit."  # as shown on the page, shortened
+tags = ["Clave", "Claves", "Orchestra", "Percussion"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Clave.wav by PanPiper5 (freesound.org/s/659912), CC0 1.0"
+duration_s = 0.127
+original = { type = "Wave (.wav)", size = "22.0 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "659912_8499836-hq.ogg", url = "https://cdn.freesound.org/previews/659/659912_8499836-hq.ogg", sha256 = "2bc4b893c7c566b14967253cf3c021665b8ec613cfb937fd0df71a7c6c73c6f7", bytes = 7127, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 0.12771, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-09"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+source = "freesound"
+freesound_id = 82281
+page = "https://freesound.org/people/KEVOY/sounds/82281/"
+title = "acoustic snare rimshot.wav"
+uploader = "KEVOY"
+description = "Acoustic snare rimshot"  # as shown on the page, shortened
+tags = ["drums", "rimshot", "sd", "snare", "snaredrum"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "acoustic snare rimshot.wav by KEVOY (freesound.org/s/82281), CC0 1.0"
+duration_s = 1.677
+original = { type = "Wave (.wav)", size = "157.3 KB", sample_rate = "48 kHz", bit_depth = "16 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "82281_1299633-hq.ogg", url = "https://cdn.freesound.org/previews/82/82281_1299633-hq.ogg", sha256 = "302420f3d67d343c9282d82c6bccedf313d1511986ae2f4970efa8a2af3b9a47", bytes = 21083, format = "ogg-vorbis", sample_rate = 48000, channels = 1, duration_s = 1.677625, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "real-ac-10"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "test"
+degraded_copy = "real-deg-14"
+source = "freesound"
+freesound_id = 371192
+page = "https://freesound.org/people/karolist/sounds/371192/"
+title = "acoustic kick.wav"
+uploader = "karolist"
+description = "Acoustic bass drum sound recorded in studio."  # as shown on the page, shortened
+tags = ["Drum", "acoustic", "bass", "beat", "drum", "drum-loop", "drums", "garbage", "groovy", "hard", "kick", "kickdrum", "percussion", "percussive", "rock"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "acoustic kick.wav by karolist (freesound.org/s/371192), CC0 1.0"
+duration_s = 0.296
+original = { type = "Wave (.wav)", size = "51.2 KB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "371192_6399962-hq.ogg", url = "https://cdn.freesound.org/previews/371/371192_6399962-hq.ogg", sha256 = "1bd8785be35d21835ac2e07f63eefd993bbdee96091b72a88a82f024a59d5da1", bytes = 7108, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 0.296485, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-01"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-01"
+source = "freesound"
+freesound_id = 580112
+page = "https://freesound.org/people/neopolitansixth/sounds/580112/"
+title = "80s Supersaw"
+uploader = "neopolitansixth"
+description = "Boring 80s filtered supersaw thingy or whatever"  # as shown on the page, shortened
+tags = ["artificial", "pad", "sample", "supersaw"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "80s Supersaw by neopolitansixth (freesound.org/s/580112), CC0 1.0"
+duration_s = 1.712
+original = { type = "Wave (.wav)", size = "442.6 KB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "580112_7295304-hq.ogg", url = "https://cdn.freesound.org/previews/580/580112_7295304-hq.ogg", sha256 = "2be64257a68b118bf5947b3f55a4750726a8834edf5399eac82299cc411cf47f", bytes = 31888, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 1.712472, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-02"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-02"
+source = "freesound"
+freesound_id = 353269
+page = "https://freesound.org/people/TechGeekMusic/sounds/353269/"
+title = "Dark Reese F#.wav"
+uploader = "TechGeekMusic"
+pack = { id = 20137, name = "Abrassive Reese Bass Shots" }
+description = "A Dubstep Reese Bass Part Of My Reese Bass Sample Pack"  # as shown on the page, shortened
+tags = ["Bass", "Dance", "Drop", "Dubstep", "Electronic", "Reese"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Dark Reese F#.wav by TechGeekMusic (freesound.org/s/353269), CC0 1.0"
+duration_s = 4.347
+original = { type = "Wave (.wav)", size = "1.5 MB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "353269_6397561-hq.ogg", url = "https://cdn.freesound.org/previews/353/353269_6397561-hq.ogg", sha256 = "23039c76bc2e9ea119e7dbd5de6fede86994d05a5e5aeebcc10ccb603c3fd730", bytes = 128345, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 4.347098, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-03"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-03"
+source = "freesound"
+freesound_id = 208447
+page = "https://freesound.org/people/EKVelika/sounds/208447/"
+title = "808 Deep kick"
+uploader = "EKVelika"
+description = "808 deep low kick"  # as shown on the page, shortened
+tags = ["808", "bass", "beat", "deep", "drum", "hip", "hop", "kick", "low", "percussion", "rap", "thump", "trap"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "808 Deep kick by EKVelika (freesound.org/s/208447), CC0 1.0"
+duration_s = 1.315
+original = { type = "Wave (.wav)", size = "170.2 KB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "208447_1137749-hq.ogg", url = "https://cdn.freesound.org/previews/208/208447_1137749-hq.ogg", sha256 = "8a855142dc9fb831fc349e9d57a5f5a7da3ae74a070fe8d2f7f2641154c408cc", bytes = 14614, format = "ogg-vorbis", sample_rate = 44100, channels = 1, duration_s = 1.315737, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-04"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-04"
+source = "freesound"
+freesound_id = 399542
+page = "https://freesound.org/people/Chameon/sounds/399542/"
+title = "Hoover Synth"
+uploader = "Chameon"
+description = "Hoover synth sound."  # as shown on the page, shortened
+tags = ["Bass", "Electronic", "Gabber", "Hardcore", "Hoover", "Mentasm", "Noise", "Rave", "Reece", "Synth"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Hoover Synth by Chameon (freesound.org/s/399542), CC0 1.0"
+duration_s = 2.081
+original = { type = "Wave (.wav)", size = "358.8 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "399542_6996302-hq.ogg", url = "https://cdn.freesound.org/previews/399/399542_6996302-hq.ogg", sha256 = "045be6140928c0d6a85f37ad14f426963f512fa652b27a70b9f10a862afee3b6", bytes = 54224, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 2.081723, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-05"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-05"
+source = "freesound"
+freesound_id = 31131
+page = "https://freesound.org/people/Calethos/sounds/31131/"
+title = "superwave p8 super lead cut1.wav"
+uploader = "Calethos"
+description = "I made a bunch of synth leads. More useful as a one-shot in conjunction with other one-shot samples. mid range. Made with a Casio LK-300 TV, ACID Music Studi..."  # as shown on the page, shortened
+tags = ["lead", "synth"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "superwave p8 super lead cut1.wav by Calethos (freesound.org/s/31131), CC0 1.0"
+duration_s = 1.889
+original = { type = "Wave (.wav)", size = "325.6 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "31131_248225-hq.ogg", url = "https://cdn.freesound.org/previews/31/31131_248225-hq.ogg", sha256 = "66e2b9587469cc28059b4dba64bde874fd491958914fda4fef6c746aa6a081c1", bytes = 41348, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 1.889138, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-06"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-06"
+source = "freesound"
+freesound_id = 384920
+page = "https://freesound.org/people/Streetpoptunez/sounds/384920/"
+title = "Ali BaBa Bass"
+uploader = "Streetpoptunez"
+description = "Sub Bass created by SPT. This bass sound pounds your sub woofer. Works in ALL DAWs."  # as shown on the page, shortened
+tags = ["Dub", "LFO", "Wobbles", "bass", "beautiful", "dubstep", "effect", "effects", "electronic", "electronica", "live", "low", "music", "one", "pretty", "sample", "samples", "shot", "stab", "stabs", "sub", "substep", "wobble"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Ali BaBa Bass by Streetpoptunez (freesound.org/s/384920), CC0 1.0"
+duration_s = 0.741
+original = { type = "Wave (.wav)", size = "127.9 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "384920_7123687-hq.ogg", url = "https://cdn.freesound.org/previews/384/384920_7123687-hq.ogg", sha256 = "8f12efe81513a4dc300273b53ca5f06f06a5059c0aedcda108bd386781e585ab", bytes = 12834, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 0.741678, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-07"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-07"
+source = "freesound"
+freesound_id = 657392
+page = "https://freesound.org/people/gmortizwavs/sounds/657392/"
+title = "Rhodes-Pan"
+uploader = "gmortizwavs"
+pack = { id = 36711, name = "Pianos" }
+description = "Rhodes piano pan, note C5, stereo-limiter master, comp, 2 eq, chorus, reverb, master."  # as shown on the page, shortened
+tags = ["C5", "abstract", "ambient", "creative-commons", "digital", "echo", "effect", "electric", "future", "fx", "lo-fi", "note", "pan", "panning", "rhodes", "rhodes-pan", "sci-fi", "sfx", "sound", "sound-design", "sounddesign", "stereo", "wav"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Rhodes-Pan by gmortizwavs (freesound.org/s/657392), CC0 1.0"
+duration_s = 5.79
+original = { type = "Wave (.wav)", size = "1.6 MB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "657392_6603437-hq.ogg", url = "https://cdn.freesound.org/previews/657/657392_6603437-hq.ogg", sha256 = "0052a82c58e6b498e1c9731babcb0da991aa14c24d389bfe79d59969db33034d", bytes = 104443, format = "ogg-vorbis", sample_rate = 48000, channels = 2, duration_s = 5.790188, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-08"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-08"
+source = "freesound"
+freesound_id = 761184
+page = "https://freesound.org/people/halo4shaun/sounds/761184/"
+title = "Bass Saw C S3"
+uploader = "halo4shaun"
+pack = { id = 41982, name = "Saw Synth Samples C One Shots" }
+description = "Custom Saw Synth Sample With Mixing Sub Saw Texture"  # as shown on the page, shortened
+tags = ["Bass", "Growl", "Low", "Saw", "synth"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Bass Saw C S3 by halo4shaun (freesound.org/s/761184), CC0 1.0"
+duration_s = 1.5
+original = { type = "Wave (.wav)", size = "421.9 KB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "761184_11866294-hq.ogg", url = "https://cdn.freesound.org/previews/761/761184_11866294-hq.ogg", sha256 = "c591cb94f1720c63199528b974a91b360dac95a0f166cb782085a21cc067247c", bytes = 59199, format = "ogg-vorbis", sample_rate = 48000, channels = 2, duration_s = 1.5, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-09"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-09"
+source = "freesound"
+freesound_id = 632255
+page = "https://freesound.org/people/Cloud-10/sounds/632255/"
+title = "Piano Bell Sound (C3).wav"
+uploader = "Cloud-10"
+pack = { id = 35190, name = "By Request" }
+description = "A C3 piano, bell sound for all your C3 piano, bell sound needs. Requested by user \"slade38012.\""  # as shown on the page, shortened
+tags = ["ambient", "bass", "bell", "chord", "electric", "fender", "grand", "guitar", "keyboard", "multisample", "note", "notes", "pad", "piano", "rhodes", "sample", "steinway", "string", "synth", "tine", "tube"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Piano Bell Sound (C3).wav by Cloud-10 (freesound.org/s/632255), CC0 1.0"
+duration_s = 3.9
+original = { type = "Wave (.wav)", size = "1008.1 KB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "632255_10403690-hq.ogg", url = "https://cdn.freesound.org/previews/632/632255_10403690-hq.ogg", sha256 = "c5eda8ab1649b267db1f55007ae9dc0699168d7f85f7ef4d693d72ad85c1c3d7", bytes = 75343, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 3.900952, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-default-10"
+stratum = "owner"  # the owner's picks
+role = "default"
+fills = "owner-10"
+source = "freesound"
+freesound_id = 609691
+page = "https://freesound.org/people/QVL/sounds/609691/"
+title = "WAIL PAD 9.wav"
+uploader = "QVL"
+pack = { id = 33580, name = "wail'ish pads" }
+description = "pad"  # as shown on the page, shortened
+tags = ["ambiance", "ambient", "artificial", "atmosphere", "deep", "digital", "divine", "dream", "dreamy", "drone", "electronic", "evolving", "experimental", "freaky", "granular", "horror", "multisample", "oceanic", "organ", "pad", "reaktor", "sample", "smooth", "sound", "soundscape", "space", "sweet", "synth", "wail", "water"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "WAIL PAD 9.wav by QVL (freesound.org/s/609691), CC0 1.0"
+duration_s = 1.31
+original = { type = "Wave (.wav)", size = "225.8 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "609691_13493793-hq.ogg", url = "https://cdn.freesound.org/previews/609/609691_13493793-hq.ogg", sha256 = "5dba15a98357dec245068d02b5112ff465ad770e2663eeff1713f58c62f9afbc", bytes = 34673, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 1.310272, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-sub-1"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "reserve"
+source = "freesound"
+freesound_id = 527242
+page = "https://freesound.org/people/Brett_Lavallee/sounds/527242/"
+title = "Minibrute 10.wav"
+uploader = "Brett_Lavallee"
+pack = { id = 29641, name = "Minibrute" }
+description = "A single note played on a Minibrute synthesizer."  # as shown on the page, shortened
+tags = ["Minibrute", "Samples", "Synthesizer"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Minibrute 10.wav by Brett_Lavallee (freesound.org/s/527242), CC0 1.0"
+duration_s = 4.03
+original = { type = "Wave (.wav)", size = "566.9 KB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "527242_2903891-hq.ogg", url = "https://cdn.freesound.org/previews/527/527242_2903891-hq.ogg", sha256 = "fc81fae270e5d05513b8284285ff371fccf14bef94fdd78f184dbcf0ba7107ab", bytes = 103505, format = "ogg-vorbis", sample_rate = 48000, channels = 1, duration_s = 4.030188, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-sub-2"
+stratum = "sub"  # other subtractive synths' one-shots
+role = "reserve"
+source = "freesound"
+freesound_id = 369453
+page = "https://freesound.org/people/SampleBasement/sounds/369453/"
+title = "The Legend Continues (C).wav"
+uploader = "SampleBasement"
+pack = { id = 20773, name = "Vintage Bass" }
+description = "The Vintage Bass pack is a collection of bass one shots created in Reason using Synapse´s The Legend Synthesizer which is probably the best emulation of the..."  # as shown on the page, shortened
+tags = ["Analog", "Bass", "Legend", "Minimoog", "Moog", "Oneshot", "The", "Vintage", "Virtual"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "The Legend Continues (C).wav by SampleBasement (freesound.org/s/369453), CC0 1.0"
+duration_s = 8.0
+original = { type = "Wave (.wav)", size = "2.0 MB", sample_rate = "44.1 kHz", bit_depth = "24 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "369453_69312-hq.ogg", url = "https://cdn.freesound.org/previews/369/369453_69312-hq.ogg", sha256 = "5b4c4aa9bffca6038e7172d54006db6e8a56339a919f4c7486fc0f73fe002f9c", bytes = 131261, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 8.0, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-fm-1"
+stratum = "fm"  # FM, wavetable or digital
+role = "reserve"
+source = "freesound"
+freesound_id = 442312
+page = "https://freesound.org/people/Poligonstudio/sounds/442312/"
+title = "Phat sawtooth wavetable"
+uploader = "Poligonstudio"
+description = "Sawtooth for sampling or custom wavetable."  # as shown on the page, shortened
+tags = ["Sawtooth", "design", "electronic", "music", "phat", "sample", "saw", "sound", "synth", "wave", "wavetable"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Phat sawtooth wavetable by Poligonstudio (freesound.org/s/442312), CC0 1.0"
+duration_s = 8.0
+original = { type = "Wave (.wav)", size = "2.7 MB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "442312_7383104-hq.ogg", url = "https://cdn.freesound.org/previews/442/442312_7383104-hq.ogg", sha256 = "2a57c6cb503bc6deb597953c26fa518287dce8380803eb37de333fa546b0828f", bytes = 180866, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 8.0, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-fm-2"
+stratum = "fm"  # FM, wavetable or digital
+role = "reserve"
+source = "freesound"
+freesound_id = 341166
+page = "https://freesound.org/people/Terry93D/sounds/341166/"
+title = "LR35902 Square G4"
+uploader = "Terry93D"
+pack = { id = 19309, name = "Analog Synth - LR35902 Square" }
+description = "A sound which reminded me a lot of the GameBoy. I've named it after the GB's CPU - the Sharp LR35902 - which also handled the GB's audio. This is the note G..."  # as shown on the page, shortened
+tags = ["chiptune", "fuzzy", "square", "synth"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "LR35902 Square G4 by Terry93D (freesound.org/s/341166), CC0 1.0"
+duration_s = 3.993
+original = { type = "Wave (.wav)", size = "688.0 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "341166_5622625-hq.ogg", url = "https://cdn.freesound.org/previews/341/341166_5622625-hq.ogg", sha256 = "ea4f13cfa9516e976d61520bee920c4b3a936992deb7fa209ab7f85ba49ff385", bytes = 83685, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 3.993855, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-ac-1"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "reserve"
+source = "freesound"
+freesound_id = 331047
+page = "https://freesound.org/people/foochie_foochie/sounds/331047/"
+title = "Kalimba (C-note)"
+uploader = "foochie_foochie"
+pack = { id = 18609, name = "Musical Samples" }
+description = "Recording of my Kalimba tuned to C-major (give or take a few cents), striking the lowest possible note. Recorded on a Rode NT1-A through a Scarlett 2i2 inter..."  # as shown on the page, shortened
+tags = ["C", "C-note", "Rode", "Rode-NT1", "hit", "kalimba", "metal", "metallic", "musical", "note", "percussion", "pluck", "tine", "ting"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Kalimba (C-note) by foochie_foochie (freesound.org/s/331047), CC0 1.0"
+duration_s = 3.991
+original = { type = "Wave (.wav)", size = "749.6 KB", sample_rate = "48 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "331047_2603667-hq.ogg", url = "https://cdn.freesound.org/previews/331/331047_2603667-hq.ogg", sha256 = "978e58d1c72907156473452cf2b432e5f2fbeec260ec683995f38cf41a461e23", bytes = 52949, format = "ogg-vorbis", sample_rate = 48000, channels = 2, duration_s = 3.991604, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-ac-2"
+stratum = "ac"  # acoustic and percussive (short sounds included)
+role = "reserve"
+source = "freesound"
+freesound_id = 404856
+page = "https://freesound.org/people/gnuoctathorpe/sounds/404856/"
+title = "RimShot-gh.wav"
+uploader = "gnuoctathorpe"
+description = "just a rimshot"  # as shown on the page, shortened
+tags = ["drum", "drums", "hit", "rim", "rimshot", "snare"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "RimShot-gh.wav by gnuoctathorpe (freesound.org/s/404856), CC0 1.0"
+duration_s = 0.674
+original = { type = "Wave (.wav)", size = "116.6 KB", sample_rate = "44.1 kHz", bit_depth = "16 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "404856_413392-hq.ogg", url = "https://cdn.freesound.org/previews/404/404856_413392-hq.ogg", sha256 = "40bccc7396def623ec2daa684aa3217c6b184e6107e348174d1b31b5ca39d4a2", bytes = 14578, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 0.674422, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-owner-1"
+stratum = "owner"  # the owner's picks
+role = "reserve"
+source = "freesound"
+freesound_id = 165334
+page = "https://freesound.org/people/Jessetz/sounds/165334/"
+title = "Hoover Sound C5.wav"
+uploader = "Jessetz"
+description = "My remake of the iconic hoover sound commonly heard in hard house. A lot of reverb in this one. Made using the Sawer soft-synth in FL Studio 10 The key is C5"  # as shown on the page, shortened
+tags = ["10", "5", "c", "c5", "fl", "hard", "hoover", "hoover-sound", "house", "key", "remake", "reverb", "sawer", "sound", "studio"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "Hoover Sound C5.wav by Jessetz (freesound.org/s/165334), CC0 1.0"
+duration_s = 3.558
+original = { type = "Wave (.wav)", size = "1.2 MB", sample_rate = "44.1 kHz", bit_depth = "32 bit", channels = "Stereo", fetch = "owner (account)" }
+audio = { file = "165334_2687421-hq.ogg", url = "https://cdn.freesound.org/previews/165/165334_2687421-hq.ogg", sha256 = "ab757878af25606fe7ebb26fc77710cf4b231f44d8acb31789374ea582f2c63e", bytes = 85237, format = "ogg-vorbis", sample_rate = 44100, channels = 2, duration_s = 3.558027, nominal_bps = 192000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "reserve-owner-2"
+stratum = "owner"  # the owner's picks
+role = "reserve"
+source = "freesound"
+freesound_id = 351061
+page = "https://freesound.org/people/thaighaudio/sounds/351061/"
+title = "072816 Rusty Box 808 style kick 3.wav"
+uploader = "thaighaudio"
+description = "Long length 808 style kick drum created with Retrologue and processed with a Tronographic Rusty Box for additional fatness. 3 of 3."  # as shown on the page, shortened
+tags = ["808", "bass", "beat", "drum", "electronic", "hip-hop", "kick", "percussion"]
+licence = "CC0-1.0"
+licence_as_shown = "Creative Commons 0"
+licence_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+licence_read_on = "2026-10-21"
+attribution = "072816 Rusty Box 808 style kick 3.wav by thaighaudio (freesound.org/s/351061), CC0 1.0"
+duration_s = 3.0
+original = { type = "Wave (.wav)", size = "422.0 KB", sample_rate = "48 kHz", bit_depth = "24 bit", channels = "Mono", fetch = "owner (account)" }
+audio = { file = "351061_2205380-hq.ogg", url = "https://cdn.freesound.org/previews/351/351061_2205380-hq.ogg", sha256 = "92375a136ba7d8527e6e17f97c58b8b8ae9227359d59726acc0f540fd78bda30", bytes = 21685, format = "ogg-vorbis", sample_rate = 48000, channels = 1, duration_s = 3.0, nominal_bps = 110000 }
+fetched = "2026-10-21, lane DS, User-Agent enth-research/0.1, no account"
+
+[[reference]]
+id = "owner-01"
+stratum = "owner"  # the owner's picks
+role = "test"
+degraded_copy = "real-deg-17"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-01.*"
+default = "owner-default-01"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-02"
+stratum = "owner"  # the owner's picks
+role = "test"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-02.*"
+default = "owner-default-02"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-03"
+stratum = "owner"  # the owner's picks
+role = "test"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-03.*"
+default = "owner-default-03"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-04"
+stratum = "owner"  # the owner's picks
+role = "test"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-04.*"
+default = "owner-default-04"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-05"
+stratum = "owner"  # the owner's picks
+role = "test"
+degraded_copy = "real-deg-19"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-05.*"
+default = "owner-default-05"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-06"
+stratum = "owner"  # the owner's picks
+role = "test"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-06.*"
+default = "owner-default-06"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-07"
+stratum = "owner"  # the owner's picks
+role = "test"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-07.*"
+default = "owner-default-07"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-08"
+stratum = "owner"  # the owner's picks
+role = "test"
+degraded_copy = "real-deg-18"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-08.*"
+default = "owner-default-08"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-09"
+stratum = "owner"  # the owner's picks
+role = "test"
+degraded_copy = "real-deg-20"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-09.*"
+default = "owner-default-09"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"
+
+[[reference]]
+id = "owner-10"
+stratum = "owner"  # the owner's picks
+role = "test"
+degraded_copy = "real-deg-16"
+source = "owner"
+status = "placeholder"
+file = "~/code/enth-scratch/owner/r3-picks/owner-10.*"
+default = "owner-default-10"  # used when the owner leaves this slot empty
+licence = "pending (the owner records it; committed only if CC0 or the owner's own)"
+sha256 = "pending"

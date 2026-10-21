@@ -1,1 +1,1713 @@
-# R3 lane DS fills this (docs/r3.md, "GR3 and its hygiene"; content/gr3/README.md). Empty until then.
+# content/gr3/synth.toml: GR3 clause 1's held-out synth targets (lane DS, R3, freeze F0s).
+# docs/r3.md "GR3 and its hygiene"; content/gr3/README.md says how to read and check this file.
+# Targets are specs (a generator-v1 code, or a patch file) plus a performance, never audio: renders are bit-exact.
+# Frozen: never edit an entry. A change is a new set version beside this one (README, "The freeze").
+
+schema = "enth.gr3-synth/1"
+set_version = 1
+frozen_on = "2026-10-21"
+frozen_at_commit = "eb2fb6d"  # the main commit the set was drawn from
+
+[sizes]
+test_generator = 92  # levels 1-5: 12, 20, 20, 20, 20 (level 1 has only 14 distinct targets; see [generator])
+test_hand_made = 22  # 11 test-half presets x 2 notes
+test_owner_g1 = 8  # placeholders: the owner's 4 G1 sounds x 2 notes, once extracted
+test_total = 122  # 114 until the G1 sounds exist
+test_core = 40  # the pre-declared 40-target core: the 300 s tail, and the degraded core
+dev = 30  # 20 generator + 10 renders of 5 anchor-half presets; all tuning happens here
+
+[generator]
+version = 1  # generator v1 is frozen: a spec gives the same fingerprint on every build (its golden pins it)
+presets = "code v1's level presets 1-5 (difficulty 0, 25, 50, 75, 100; musical 100; template 0); short codes"
+block = [770000000000, 770999999999]  # GR3's seed block; below 2^40, so codes stay short. Training never draws a seed here
+test_seed = "770000000000 + 10000 * level + k"  # k = 1, 2, ...; a separate seed per level, because keyed streams share draws across levels
+dev_seed = "770000500000 + 10000 * level + k"
+selection = """For each split (test, then dev) and level 1..5, try k = 1, 2, ... in order and accept the seed unless:
+(1) enth refuses the round (silent target); (2) its target fingerprint equals an accepted target's, GR1's or a golden
+challenge's; (3) it is within one minimum step (docs/challenge.md, "The minimum step") of an accepted target of the same
+level in both splits: same phrase, same enabled modules, same routes with depths under 5 points apart, and every
+randomized value within its step (frequencies 2 semitones, LFO rates and times x1.5 with 1 ms added, level percentages
+and dB 3 dB, semitones 1, cents 3, other percentages 10 points, discrete values equal). Stop at the level's count,
+or after k = 500 (only dev level 1 stopped there: 2 of 4). No other filter: nothing was rendered, scored or listened to."""
+tool = "enth challenge new --level L --seed S; enth challenge show CODE --reveal (a build of main with generator v1)"
+recheck = "python3 content/gr3/check.py --enth <path to an enth build> re-derives every code and fingerprint"
+
+[generator.skipped]  # seeds tried and skipped, per split and level (all inside the block, so excluded anyway)
+dev_l1 = { same_fingerprint = 308, near_duplicate = 190, silent = 0, last_seed_tried = 770000510500 }
+dev_l2 = { same_fingerprint = 0, near_duplicate = 1, silent = 0, last_seed_tried = 770000520005 }
+test_l1 = { same_fingerprint = 20, near_duplicate = 7, silent = 0, last_seed_tried = 770000010039 }
+test_l2 = { same_fingerprint = 0, near_duplicate = 1, silent = 0, last_seed_tried = 770000020021 }
+
+[preset_split]
+rule = "Sort the 22 files of content/presets-candidates/ by folder name, then by SHA-256 of \"gr3/preset-split/v1:<file stem>\" (hex); even positions (0-based) are the test half, odd positions the anchor half."
+order = ["octave-arp", "wobble-machine", "acid-snap", "warm-reese", "sub-floor", "noise-riser", "drawbar-organ", "soft-bell", "tremolo-keys", "solar-lead", "breath-flute", "pixel-square", "sync-tear", "velvet-pad", "gate-keeper", "night-drift", "aurora", "thump-kick", "snare-crack", "glass-pluck", "poly-stab", "wind-tunnel"]
+test = ["octave-arp", "acid-snap", "sub-floor", "drawbar-organ", "tremolo-keys", "breath-flute", "sync-tear", "gate-keeper", "aurora", "snare-crack", "poly-stab"]
+anchor = ["wobble-machine", "warm-reese", "noise-riser", "soft-bell", "solar-lead", "pixel-square", "velvet-pad", "night-drift", "thump-kick", "glass-pluck", "wind-tunnel"]
+dev_from_anchor = ["wobble-machine", "noise-riser", "solar-lead", "velvet-pad", "thump-kick"]  # split positions 1, 5, 9, 13, 17
+statement = """The test half is never a perturbation anchor for ds1, never fitted as a prior, never a template, start or
+k-NN bank entry, and never tuned on; training may use only the anchor half (r3.md: 25 % perturbed preset candidates,
+from the anchor half only). The test presets are frozen as byte copies in content/gr3/presets/ (their SHA-256 equals
+the candidate files at the freeze commit), so a later retune of a candidate never moves a GR3 target. If the owner
+promotes a test-half candidate to a factory preset (content/presets/), it stays a GR3 target and stays out of every
+bank, template and prior: exclude-synth.txt lists the file hashes and stems."""
+performance = "a: the note, hold and clip of the candidates README (velocity 100); b: 7 semitones up, velocity 80, same hold and clip. Owner G1 sounds use their type's row (bass C2 2/3 s, pad C3 5/8 s, pluck C4 1/2.5 s, lead C4 1.5/3 s)."
+
+[[stream]]
+key = "r3/test"
+sampler = "ds1"  # lane DG; the version is ds1's first released one, recorded with it
+size = 2000
+use = "development curves (report 02 set A); never trained on; deduped against training within about one just-noticeable step; never a GR3 gate"
+
+# ----- targets: test first (generator, hand-made, owner G1), then dev ---------------------------------------------
+
+[[target]]
+id = "gen-t-l1-01"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010001
+code = "1040-1PD3-S7ER-H4"
+fingerprint = "fa5e007adb3b25e883d1fdea886412096f7ec38923b68a1bf68007ac9b65ee9f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-02"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010002
+code = "1040-1PD3-S7ER-J2"
+fingerprint = "440bbcceafa2108fc7d24bb8bbac67c018b434675961e45d482fbbd784b5edcf"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l1-03"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010003
+code = "1040-1PD3-S7ER-K0"
+fingerprint = "7f8cbe1c6ff927c2d80387ff5986328c5729c3eeba6957ef0ec9a975d794bcd0"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-04"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010005
+code = "1040-1PD3-S7ER-NC"
+fingerprint = "2d0c3729b2b94de8bab7275f96f1a2cb6acd1a6c1183be3633aacd9cbdb377b1"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-05"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010009
+code = "1040-1PD3-S7ER-SM"
+fingerprint = "a110d7f9708a3b9d8ede01bf7fac8bfab66ccbeabbf6cd86aebe5213a1b1ce6a"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l1-06"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010012
+code = "1040-1PD3-S7ER-WY"
+fingerprint = "0ceb0dd538c62057439d14ff9397ff798589c49a8b68c60d5714cbe840e5e7ae"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-07"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010015
+code = "1040-1PD3-S7ER-ZR"
+fingerprint = "aa2350f8ded8daf74468846d0b958612e83a45f7d5a6a62f3b7134c0a4160b17"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-08"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010024
+code = "1040-1PD3-S7ES-8Q"
+fingerprint = "ea6e4e1a16838d543aa22f7a322bc76bbd549f0d084b376e32bd0f887394c2ea"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l1-09"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010025
+code = "1040-1PD3-S7ES-9N"
+fingerprint = "5fb6d9250d52dbd73a961f5ecb6cd9e7bfdfb66e47cd752b7dd34dcdf31e74ea"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l1-10"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010033
+code = "1040-1PD3-S7ES-H0"
+fingerprint = "372c726b78fcb6d502622a5e42175e0e1a42d4e16198b84f32d5731a38173d7b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-11"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010038
+code = "1040-1PD3-S7ES-PE"
+fingerprint = "f0576c12b0f7532222b5dafb340bb7f629ad34673d9256f9bffddc0e1a200664"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l1-12"
+split = "test"
+kind = "generator"
+level = 1
+seed = 770000010039
+code = "1040-1PD3-S7ES-QC"
+fingerprint = "721fb88795c32b90ffdd7dee2b6abf9fbd11a116da3610e8fd7e892bc64448e7"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-01"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020001
+code = "1080-1PD3-S7RH-10"
+fingerprint = "94862f92ac5a1889ce7ec89a569d1dca99142f1493d0995c7004934e0d474e90"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-02"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020002
+code = "1080-1PD3-S7RH-26"
+fingerprint = "d65d6d509c3628f81adabf85f6c38b4445dd0114c6205448dc75e5854acd8a4d"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-03"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020003
+code = "1080-1PD3-S7RH-34"
+fingerprint = "f1af56b8b754baee0f0acb7f2bc9e54f75bc98c4c22174bd0c96c7d5edb56cf8"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-04"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020004
+code = "1080-1PD3-S7RH-4A"
+fingerprint = "5358c65c0c0f122de28d47d153224d558ed508ad66237aa6e55fdfba669e15ba"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-05"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020005
+code = "1080-1PD3-S7RH-58"
+fingerprint = "a424b143691017a7a7573fe0c43ff36bd49631671bcad8a8e6d146126f17a1be"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-06"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020006
+code = "1080-1PD3-S7RH-6E"
+fingerprint = "043c7d915833029801d50c4452a3a44e1bb7b6a338e2ac3a757a2bdc5abede48"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-07"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020007
+code = "1080-1PD3-S7RH-7C"
+fingerprint = "7d4b69706317f27dd833e87247c18ec4979832d71b4052ef7a10c1b1c042f716"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-08"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020008
+code = "1080-1PD3-S7RH-8J"
+fingerprint = "aef06974c67eb1b045b175a153e86c014bb8dc8068f12fddd812284d41b2dbdf"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-09"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020009
+code = "1080-1PD3-S7RH-9G"
+fingerprint = "5f667e4627ff2f2d7bbc07e986369d32b107f4ce22130a5061af657b080e430f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-10"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020010
+code = "1080-1PD3-S7RH-AP"
+fingerprint = "683302a4db1bf7868f487a055f3e513199579905f0b3deeb84df3ec938b3cf04"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-11"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020011
+code = "1080-1PD3-S7RH-BM"
+fingerprint = "69df488eb4f1093fe880a101c83bba6d9b77f598da42c86084d577c979e6d6ed"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-12"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020012
+code = "1080-1PD3-S7RH-CT"
+fingerprint = "c4d4ccb415a4c0de3f8a21272a561a37127c93346fb6f4aae6612d669794529d"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-13"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020013
+code = "1080-1PD3-S7RH-DR"
+fingerprint = "87bde942f35a6517b51b2881a444f2fd406f53ccd36dde4edb57969d1ee0b5aa"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-14"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020015
+code = "1080-1PD3-S7RH-FW"
+fingerprint = "fad0a79a8d801e06df3f161bb84c8f62dd7137c709508668f1ea1171ff43c3b0"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-15"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020016
+code = "1080-1PD3-S7RH-G7"
+fingerprint = "40dada08f85366cdf090e626ab44346fb7f7d5d2a6dc075e2964a400ca2a2889"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-16"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020017
+code = "1080-1PD3-S7RH-H5"
+fingerprint = "ac23caade8452a52c56a24cbba825c3be30cac47e1dd34131b2ac1ba025fb90f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-17"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020018
+code = "1080-1PD3-S7RH-J3"
+fingerprint = "a4cbf3d3da5072f3c6a929da7977363d4bbe8e188df7e3366566ef80554feec9"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-18"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020019
+code = "1080-1PD3-S7RH-K1"
+fingerprint = "219f4d8e874236411319d8f2ffa7ac490574724f3e540fe0e22d227884a14f36"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l2-19"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020020
+code = "1080-1PD3-S7RH-MF"
+fingerprint = "11ca59e84ddcba4fb13e578d8e2276098a5be97cec61ccf01af20d47434d4ba5"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l2-20"
+split = "test"
+kind = "generator"
+level = 2
+seed = 770000020021
+code = "1080-1PD3-S7RH-ND"
+fingerprint = "baa970a5d51a510dc07023c6ed155e871ca7260432ca3f81f9e050bb4bede7c3"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-01"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030001
+code = "10C0-1PD3-S829-HK"
+fingerprint = "64bf4c9a4fad3a32ee5c38ee6e1d6d3c17d8d347097f69f25246015f39f45173"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-02"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030002
+code = "10C0-1PD3-S829-JN"
+fingerprint = "fe5fd9923f0c054bdd7cc3e4b43e7497154ca049c4c404550287f007731684e9"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-03"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030003
+code = "10C0-1PD3-S829-KQ"
+fingerprint = "6263610b7f9d8276a44a512fbd06bc05b22072b1facbcc65fa657009e72e4007"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-04"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030004
+code = "10C0-1PD3-S829-MS"
+fingerprint = "2bc44dabc26971b13aed7bb19e5d3227da0406cd69ed93d321e467e831849906"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-05"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030005
+code = "10C0-1PD3-S829-NV"
+fingerprint = "a5a7ec7739a4591edbb4d33a1a1b3cfdcfde928cadfd9c89e7f7b4ee83ff9ae8"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-06"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030006
+code = "10C0-1PD3-S829-PX"
+fingerprint = "1ecc82de0117d8517adb7f4a065ea056ac951b11f9c305f80efa92dabdd6e44c"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-07"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030007
+code = "10C0-1PD3-S829-QZ"
+fingerprint = "0accdc514818009a1358b50b1ac113355c07b77e281ad352043a122e7b347d66"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-08"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030008
+code = "10C0-1PD3-S829-R1"
+fingerprint = "1d2fde6109c4e12d743199025db2e72e948ffe805e988696e81547d48871bcf1"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-09"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030009
+code = "10C0-1PD3-S829-S3"
+fingerprint = "a2aff12357e3b922910e3cf948b7c41fb2dbb4aecb13fd422893823c489dab61"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-10"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030010
+code = "10C0-1PD3-S829-T5"
+fingerprint = "64b90a5741eaf0c52dfee26cd36b51ef5849fdcd2e6a818189485dc2a6ca6e41"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-11"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030011
+code = "10C0-1PD3-S829-V7"
+fingerprint = "c2b87c266da50e9bb5a9fc0c52c0432b5566285882e79f5e78d134a83286fe60"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-12"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030012
+code = "10C0-1PD3-S829-W9"
+fingerprint = "2b86aeb7d3047ef31ea1a21902c808368acc8fb0ea2523d5bf59b314b929479c"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-13"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030013
+code = "10C0-1PD3-S829-XB"
+fingerprint = "eb19ce2e1601bdb36f949ef55fd3072d4489d5221c19576d20a2706ab767078a"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-14"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030014
+code = "10C0-1PD3-S829-YD"
+fingerprint = "664285905c240250f87ec3c9068968ed1de7c6e57a481f015bb16f55cbbc70fa"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-15"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030015
+code = "10C0-1PD3-S829-ZF"
+fingerprint = "3435de02e35493184cc346aaaae0d726523cd6fa6e9ce9b597b16e0edec9a9a5"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-16"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030016
+code = "10C0-1PD3-S82A-0R"
+fingerprint = "001f594d267efe107322b095e088a30d6f42e5ff3c5ad3cd7a4d0500d08a4cf0"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-17"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030017
+code = "10C0-1PD3-S82A-1T"
+fingerprint = "bbc7fb17e2703dfb742831abfa384d946dbbbb67eb38f9c647e9bd23d12d46e4"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-18"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030018
+code = "10C0-1PD3-S82A-2W"
+fingerprint = "6ca87ccfe554be36e6916da7b58972ce0be6a8229ee5064a6227b8a51687c3da"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l3-19"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030019
+code = "10C0-1PD3-S82A-3Y"
+fingerprint = "aaefb1295c1200300a4c53495fc9274dbfe7280ae3b0dba8a7c8419fd8b590c5"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l3-20"
+split = "test"
+kind = "generator"
+level = 3
+seed = 770000030020
+code = "10C0-1PD3-S82A-4G"
+fingerprint = "47080b39a0c4a896ee7ae66f1de4061d87cc389ba55c1081ef78b109c67e440f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-01"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040001
+code = "10G0-1PD3-S8C2-1Y"
+fingerprint = "b7cb1960aa52a10a1c306e9905885ff49e86cbe4580a81a00c5023ff85554215"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-02"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040002
+code = "10G0-1PD3-S8C2-2R"
+fingerprint = "b3a0b91ac9e83cca6df608e61e33b3a1886e21790ceea2315ce95c6c161409f5"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-03"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040003
+code = "10G0-1PD3-S8C2-3T"
+fingerprint = "a3fed75162a015af7cfa52cfb1c6c7bff0ce78d85903d88f7da077fec22b0b1f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-04"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040004
+code = "10G0-1PD3-S8C2-4M"
+fingerprint = "2a90ff1d218a61154f809bad3e521a1c0b2f9b6b871ebc9644cfc072244a3119"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-05"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040005
+code = "10G0-1PD3-S8C2-5P"
+fingerprint = "7b71f6a711c8395f8881fdd69f255fba03f923c809e41139f9e07d8f998aedaf"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-06"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040006
+code = "10G0-1PD3-S8C2-6G"
+fingerprint = "5b27430426d980ec25a94b9b35fef940c6ffff5c723b0e44f09615b56c709a9d"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-07"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040007
+code = "10G0-1PD3-S8C2-7J"
+fingerprint = "7c1cc252f6241387e9316dc07cd2989eedf5c0bdc2ca2d297ade636d3fd59f00"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-08"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040008
+code = "10G0-1PD3-S8C2-8C"
+fingerprint = "bcfbb4977128e8524bbbad5433b4bb2cad6898c74c2173ff2863a6a3fcce0901"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-09"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040009
+code = "10G0-1PD3-S8C2-9E"
+fingerprint = "4fd3ed2c0bce8eedc04fe7dd52aa9f5a732e420d809485d66643cea85b2a131d"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-10"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040010
+code = "10G0-1PD3-S8C2-A8"
+fingerprint = "abe7750118b0ccd067d9c52d531901e2171400adb4000eaacd0f39dc92bd784a"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-11"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040011
+code = "10G0-1PD3-S8C2-BA"
+fingerprint = "df39a1c3806d1ee605217207615b6d53fdde784d72a0dd3270401f06dd672f20"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-12"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040012
+code = "10G0-1PD3-S8C2-C4"
+fingerprint = "17f500c5d73b51fd1780398e5168f1a4358a842b11d66ea0fd43789ef6b5d9b8"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-13"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040013
+code = "10G0-1PD3-S8C2-D6"
+fingerprint = "e115dcf4b78f109b9f1f50d4da405f51658ac3003dec83723e3dd08c4baf47f4"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-14"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040014
+code = "10G0-1PD3-S8C2-E0"
+fingerprint = "d89a9a5aaec5d8b8dc4f7b24e71298513ff18cce5eab7b450d9176a3aa131d77"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-15"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040015
+code = "10G0-1PD3-S8C2-F2"
+fingerprint = "37de3236be3da5418c7cd9fd083a55e27ed1e9de72a583935945e200126be01f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-16"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040016
+code = "10G0-1PD3-S8C2-GS"
+fingerprint = "b88c13b05a1d96220638bdc21ba78a52b36554617771c21cd8f7ea152b6d9ac6"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-17"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040017
+code = "10G0-1PD3-S8C2-HV"
+fingerprint = "bb1aa397a59461fdbb80d1ac78c3544095317858d583a20fc4fdde7a84f0b5e1"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-18"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040018
+code = "10G0-1PD3-S8C2-JX"
+fingerprint = "798426366b74f309385d5fa36864969f34da5d067ef45c7b61121f5796989019"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l4-19"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040019
+code = "10G0-1PD3-S8C2-KZ"
+fingerprint = "c8731af5bb6278ffd19c273d897b3f0de3b7704133be4f8b6d9d80e3610a0483"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l4-20"
+split = "test"
+kind = "generator"
+level = 4
+seed = 770000040020
+code = "10G0-1PD3-S8C2-MH"
+fingerprint = "908560ec611f0c905970d935bd5fc05554dd1cad6dac99e76c6ac42a28511cbd"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-01"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050001
+code = "10M0-1PD3-S8NT-HY"
+fingerprint = "e10076a08a0323c8d66263153b3583f8d08ae62c8f0e853cb04ed89d6c110d48"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l5-02"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050002
+code = "10M0-1PD3-S8NT-JR"
+fingerprint = "62fe354b1db85ed84d161e717fc07912fe069f7235186395ebb7df1c49215380"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-03"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050003
+code = "10M0-1PD3-S8NT-KT"
+fingerprint = "439628bc22dd00a59e82d75a2e50283bb51138e0b9a361f3322cdfa4c43c3df7"
+phrase = 2  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l5-04"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050004
+code = "10M0-1PD3-S8NT-MM"
+fingerprint = "dc198c55a89c0a028dc8b404dc3e6ca072658f2c0b6d785cc78c954478e626d9"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l5-05"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050005
+code = "10M0-1PD3-S8NT-NP"
+fingerprint = "fe5a13d23d3655c5c9595486012608da7bb696dd90916e22c07233f4691f1738"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-06"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050006
+code = "10M0-1PD3-S8NT-PG"
+fingerprint = "3a4b06091aeaff816138be5e458a75d56a8cf771111af22f035be6ce51b4a2cc"
+phrase = 2  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-07"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050007
+code = "10M0-1PD3-S8NT-QJ"
+fingerprint = "decdeda7afb50ee7678486a17017796499206e023fa0f2d26f416c447415dea5"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l5-08"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050008
+code = "10M0-1PD3-S8NT-RC"
+fingerprint = "38a1a4542d0c91b908865e503f8a894c6b938386fa4cbd28726ea4eb245daf12"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-09"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050009
+code = "10M0-1PD3-S8NT-SE"
+fingerprint = "e2b0d9a5f785260094aebcb72befa985db8986dcb77b797073b919d3df142476"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-10"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050010
+code = "10M0-1PD3-S8NT-T8"
+fingerprint = "6c2c0102ebc045dbc04f5507cdb5fe2b0752e5d242d87af01c40805f11d1a556"
+phrase = 2  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l5-11"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050011
+code = "10M0-1PD3-S8NT-VA"
+fingerprint = "9be7d342b2ad274238ec1b558a0f1ab77142f2fdc27fc28eaa2fcdf8aed7ec61"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "gen-t-l5-12"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050012
+code = "10M0-1PD3-S8NT-W4"
+fingerprint = "d1bdba56ddb5276700da97fd502d2c3f2c666907209c48430396751746d6865f"
+phrase = 2  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-13"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050013
+code = "10M0-1PD3-S8NT-X6"
+fingerprint = "ec2549c7458a5c1619f244225415f749a87dd8d0c2db4e6e7249cfecf1dd9edc"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-14"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050014
+code = "10M0-1PD3-S8NT-Y0"
+fingerprint = "e6ce5909ece7ba15c0ccb8e6ac402f65aeb9ffe76884fb78593845230cacd284"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-15"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050015
+code = "10M0-1PD3-S8NT-Z2"
+fingerprint = "502a2c22109d191e6c534cbe95f633e1b6ef5a1a953069ae6b6fa285ef2e68d1"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-16"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050016
+code = "10M0-1PD3-S8NV-0X"
+fingerprint = "e20ca70d358a3175bbe3fb4b0fe3dd570b2ea0f3dcf844b68a28c2de82bbde1f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-17"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050017
+code = "10M0-1PD3-S8NV-1Z"
+fingerprint = "addd287536e7e1950eaeed972ecb52d143755619111e296e22a31113ad0f8416"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-18"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050018
+code = "10M0-1PD3-S8NV-2S"
+fingerprint = "91e71efdb0e910f2a796cd8cabc1f82950955a751dbcd7fbe6900366571d8d6a"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-19"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050019
+code = "10M0-1PD3-S8NV-3V"
+fingerprint = "7e3e826d7f549b89a2f724d82a11f2749cd8a66b8f4bede9caf48ddeec5cd9fd"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = false
+
+[[target]]
+id = "gen-t-l5-20"
+split = "test"
+kind = "generator"
+level = 5
+seed = 770000050020
+code = "10M0-1PD3-S8NV-4N"
+fingerprint = "ca4584a2f486876ddc291d9d26382b41209a783d5598ac4dffd6eeecf9a9713b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+core = true
+
+[[target]]
+id = "hand-t-octave-arp-a"
+split = "test"
+kind = "preset"
+preset = "Octave Arp"
+stem = "octave-arp"
+file = "content/gr3/presets/octave-arp.patch.json"
+sha256 = "f6d992878f179ee3bbd1bd666dd099c2e7a074a6f469afde0382c4a452ebacb8"
+perf = { key = 60, velocity = 100, hold_ms = 2000, length_ms = 3000 }
+core = true
+
+[[target]]
+id = "hand-t-octave-arp-b"
+split = "test"
+kind = "preset"
+preset = "Octave Arp"
+stem = "octave-arp"
+file = "content/gr3/presets/octave-arp.patch.json"
+sha256 = "f6d992878f179ee3bbd1bd666dd099c2e7a074a6f469afde0382c4a452ebacb8"
+perf = { key = 67, velocity = 80, hold_ms = 2000, length_ms = 3000 }
+core = true
+
+[[target]]
+id = "hand-t-acid-snap-a"
+split = "test"
+kind = "preset"
+preset = "Acid Snap"
+stem = "acid-snap"
+file = "content/gr3/presets/acid-snap.patch.json"
+sha256 = "ae40658b07eae698d9b2d797cda7f0ed95c36f683e873db472562a2a8441ffbe"
+perf = { key = 36, velocity = 100, hold_ms = 2000, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-acid-snap-b"
+split = "test"
+kind = "preset"
+preset = "Acid Snap"
+stem = "acid-snap"
+file = "content/gr3/presets/acid-snap.patch.json"
+sha256 = "ae40658b07eae698d9b2d797cda7f0ed95c36f683e873db472562a2a8441ffbe"
+perf = { key = 43, velocity = 80, hold_ms = 2000, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-sub-floor-a"
+split = "test"
+kind = "preset"
+preset = "Sub Floor"
+stem = "sub-floor"
+file = "content/gr3/presets/sub-floor.patch.json"
+sha256 = "7daf360a68d8a031ad06a226d441f3f6b0679e3afbd1214d7f41bdb026353b4a"
+perf = { key = 36, velocity = 100, hold_ms = 2000, length_ms = 3000 }
+core = true
+
+[[target]]
+id = "hand-t-sub-floor-b"
+split = "test"
+kind = "preset"
+preset = "Sub Floor"
+stem = "sub-floor"
+file = "content/gr3/presets/sub-floor.patch.json"
+sha256 = "7daf360a68d8a031ad06a226d441f3f6b0679e3afbd1214d7f41bdb026353b4a"
+perf = { key = 43, velocity = 80, hold_ms = 2000, length_ms = 3000 }
+core = true
+
+[[target]]
+id = "hand-t-drawbar-organ-a"
+split = "test"
+kind = "preset"
+preset = "Drawbar Organ"
+stem = "drawbar-organ"
+file = "content/gr3/presets/drawbar-organ.patch.json"
+sha256 = "349d7e72e1346595ec3e1f791daa71fb871b497e8156e32223787ca318573f21"
+perf = { key = 60, velocity = 100, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-drawbar-organ-b"
+split = "test"
+kind = "preset"
+preset = "Drawbar Organ"
+stem = "drawbar-organ"
+file = "content/gr3/presets/drawbar-organ.patch.json"
+sha256 = "349d7e72e1346595ec3e1f791daa71fb871b497e8156e32223787ca318573f21"
+perf = { key = 67, velocity = 80, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-tremolo-keys-a"
+split = "test"
+kind = "preset"
+preset = "Tremolo Keys"
+stem = "tremolo-keys"
+file = "content/gr3/presets/tremolo-keys.patch.json"
+sha256 = "8de430cdbd502a47e1aadd86556447c4be289efc2f30094ce77ecec3cddeaaec"
+perf = { key = 60, velocity = 100, hold_ms = 1500, length_ms = 3000 }
+core = true
+
+[[target]]
+id = "hand-t-tremolo-keys-b"
+split = "test"
+kind = "preset"
+preset = "Tremolo Keys"
+stem = "tremolo-keys"
+file = "content/gr3/presets/tremolo-keys.patch.json"
+sha256 = "8de430cdbd502a47e1aadd86556447c4be289efc2f30094ce77ecec3cddeaaec"
+perf = { key = 67, velocity = 80, hold_ms = 1500, length_ms = 3000 }
+core = true
+
+[[target]]
+id = "hand-t-breath-flute-a"
+split = "test"
+kind = "preset"
+preset = "Breath Flute"
+stem = "breath-flute"
+file = "content/gr3/presets/breath-flute.patch.json"
+sha256 = "0b0419032ff618af467b8848c15bc3b8a343c75ef637fd408b6598daa3d70dd0"
+perf = { key = 60, velocity = 100, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-breath-flute-b"
+split = "test"
+kind = "preset"
+preset = "Breath Flute"
+stem = "breath-flute"
+file = "content/gr3/presets/breath-flute.patch.json"
+sha256 = "0b0419032ff618af467b8848c15bc3b8a343c75ef637fd408b6598daa3d70dd0"
+perf = { key = 67, velocity = 80, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-sync-tear-a"
+split = "test"
+kind = "preset"
+preset = "Sync Tear"
+stem = "sync-tear"
+file = "content/gr3/presets/sync-tear.patch.json"
+sha256 = "aaa24ead7570df232bf903a194e667c77070f41d12db3735e0167091b3c213ea"
+perf = { key = 60, velocity = 100, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-sync-tear-b"
+split = "test"
+kind = "preset"
+preset = "Sync Tear"
+stem = "sync-tear"
+file = "content/gr3/presets/sync-tear.patch.json"
+sha256 = "aaa24ead7570df232bf903a194e667c77070f41d12db3735e0167091b3c213ea"
+perf = { key = 67, velocity = 80, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "hand-t-gate-keeper-a"
+split = "test"
+kind = "preset"
+preset = "Gate Keeper"
+stem = "gate-keeper"
+file = "content/gr3/presets/gate-keeper.patch.json"
+sha256 = "6ccd399ea7e07e3399a9952f3b024b9f3d74d90fe415a3e1d64a8f7b853d8a1f"
+perf = { key = 48, velocity = 100, hold_ms = 5000, length_ms = 8000 }
+core = false
+
+[[target]]
+id = "hand-t-gate-keeper-b"
+split = "test"
+kind = "preset"
+preset = "Gate Keeper"
+stem = "gate-keeper"
+file = "content/gr3/presets/gate-keeper.patch.json"
+sha256 = "6ccd399ea7e07e3399a9952f3b024b9f3d74d90fe415a3e1d64a8f7b853d8a1f"
+perf = { key = 55, velocity = 80, hold_ms = 5000, length_ms = 8000 }
+core = false
+
+[[target]]
+id = "hand-t-aurora-a"
+split = "test"
+kind = "preset"
+preset = "Aurora"
+stem = "aurora"
+file = "content/gr3/presets/aurora.patch.json"
+sha256 = "9bf606c90fbcd5b333b73b05b097956aae0024ee5cb5dadd553b00b6a79f00cb"
+perf = { key = 48, velocity = 100, hold_ms = 5000, length_ms = 8000 }
+core = false
+
+[[target]]
+id = "hand-t-aurora-b"
+split = "test"
+kind = "preset"
+preset = "Aurora"
+stem = "aurora"
+file = "content/gr3/presets/aurora.patch.json"
+sha256 = "9bf606c90fbcd5b333b73b05b097956aae0024ee5cb5dadd553b00b6a79f00cb"
+perf = { key = 55, velocity = 80, hold_ms = 5000, length_ms = 8000 }
+core = false
+
+[[target]]
+id = "hand-t-snare-crack-a"
+split = "test"
+kind = "preset"
+preset = "Snare Crack"
+stem = "snare-crack"
+file = "content/gr3/presets/snare-crack.patch.json"
+sha256 = "5d2d4ff97bf5ca138950f9c7d369593cfcd6fa04d17bb9dd8accb0295c059243"
+perf = { key = 57, velocity = 100, hold_ms = 300, length_ms = 1000 }
+core = true
+
+[[target]]
+id = "hand-t-snare-crack-b"
+split = "test"
+kind = "preset"
+preset = "Snare Crack"
+stem = "snare-crack"
+file = "content/gr3/presets/snare-crack.patch.json"
+sha256 = "5d2d4ff97bf5ca138950f9c7d369593cfcd6fa04d17bb9dd8accb0295c059243"
+perf = { key = 64, velocity = 80, hold_ms = 300, length_ms = 1000 }
+core = true
+
+[[target]]
+id = "hand-t-poly-stab-a"
+split = "test"
+kind = "preset"
+preset = "Poly Stab"
+stem = "poly-stab"
+file = "content/gr3/presets/poly-stab.patch.json"
+sha256 = "ed54273fb8448002b3ce2c77487d5e272340c237b3da59efab3fb3e27716172b"
+perf = { key = 60, velocity = 100, hold_ms = 1000, length_ms = 2500 }
+core = false
+
+[[target]]
+id = "hand-t-poly-stab-b"
+split = "test"
+kind = "preset"
+preset = "Poly Stab"
+stem = "poly-stab"
+file = "content/gr3/presets/poly-stab.patch.json"
+sha256 = "ed54273fb8448002b3ce2c77487d5e272340c237b3da59efab3fb3e27716172b"
+perf = { key = 67, velocity = 80, hold_ms = 1000, length_ms = 2500 }
+core = false
+
+[[target]]
+id = "g1-bass-a"
+split = "test"
+kind = "owner-g1"
+sound = "bass"
+file = "content/presets/bass.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 36, velocity = 100, hold_ms = 2000, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "g1-bass-b"
+split = "test"
+kind = "owner-g1"
+sound = "bass"
+file = "content/presets/bass.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 43, velocity = 80, hold_ms = 2000, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "g1-pad-a"
+split = "test"
+kind = "owner-g1"
+sound = "pad"
+file = "content/presets/pad.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 48, velocity = 100, hold_ms = 5000, length_ms = 8000 }
+core = false
+
+[[target]]
+id = "g1-pad-b"
+split = "test"
+kind = "owner-g1"
+sound = "pad"
+file = "content/presets/pad.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 55, velocity = 80, hold_ms = 5000, length_ms = 8000 }
+core = false
+
+[[target]]
+id = "g1-pluck-a"
+split = "test"
+kind = "owner-g1"
+sound = "pluck"
+file = "content/presets/pluck.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 60, velocity = 100, hold_ms = 1000, length_ms = 2500 }
+core = false
+
+[[target]]
+id = "g1-pluck-b"
+split = "test"
+kind = "owner-g1"
+sound = "pluck"
+file = "content/presets/pluck.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 67, velocity = 80, hold_ms = 1000, length_ms = 2500 }
+core = false
+
+[[target]]
+id = "g1-lead-a"
+split = "test"
+kind = "owner-g1"
+sound = "lead"
+file = "content/presets/lead.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 60, velocity = 100, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "g1-lead-b"
+split = "test"
+kind = "owner-g1"
+sound = "lead"
+file = "content/presets/lead.patch.json"  # written by cargo xtask extract-presets from the owner's G1 project
+sha256 = "pending"  # pinned by the one allowed amendment, before the first test run (README)
+status = "placeholder"
+perf = { key = 67, velocity = 80, hold_ms = 1500, length_ms = 3000 }
+core = false
+
+[[target]]
+id = "gen-d-l1-01"
+split = "dev"
+kind = "generator"
+level = 1
+seed = 770000510001
+code = "1040-1PD3-SPQ1-H4"
+fingerprint = "eb30ccd04b3edf5f6f5ad62c140e2613f8c33c685fced0afd518c144bdd2eac5"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l1-02"
+split = "dev"
+kind = "generator"
+level = 1
+seed = 770000510344
+code = "1040-1PD3-SPQC-82"
+fingerprint = "07f0bbf15c1d8158c17c7e4b60a980f408741dc471a394fe480f5c957092ca1b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l2-01"
+split = "dev"
+kind = "generator"
+level = 2
+seed = 770000520001
+code = "1080-1PD3-SQ0T-1T"
+fingerprint = "82fb32128c8d9c50094e0f0feb7e3e6187bcdfe334cee247bb2f2ea86128f254"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l2-02"
+split = "dev"
+kind = "generator"
+level = 2
+seed = 770000520002
+code = "1080-1PD3-SQ0T-2W"
+fingerprint = "6b163196bed60f9573b22ec237c309ec1e494614ca5a6406a6e1be9dd1d64a7b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l2-03"
+split = "dev"
+kind = "generator"
+level = 2
+seed = 770000520003
+code = "1080-1PD3-SQ0T-3Y"
+fingerprint = "798e6b6e7fac025e7a6afe0acd9e22fd5ec891ff0995df1c110dd5883b81a11c"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l2-04"
+split = "dev"
+kind = "generator"
+level = 2
+seed = 770000520005
+code = "1080-1PD3-SQ0T-5J"
+fingerprint = "8e815d0ac20bebd740a2004e4f8fadbfeab55a4cbeb024a966a068de57fdfd9b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l3-01"
+split = "dev"
+kind = "generator"
+level = 3
+seed = 770000530001
+code = "10C0-1PD3-SQAJ-HW"
+fingerprint = "17b49753a1fa99b8de78aa4d220df598fe50f40ea766b0875ccde228e581b84f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l3-02"
+split = "dev"
+kind = "generator"
+level = 3
+seed = 770000530002
+code = "10C0-1PD3-SQAJ-JT"
+fingerprint = "006f9c6afe390330bf0c6c1dd0c89614d587a3111a08fde448b75b3435a6f1c1"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l3-03"
+split = "dev"
+kind = "generator"
+level = 3
+seed = 770000530003
+code = "10C0-1PD3-SQAJ-KR"
+fingerprint = "68ae87624d3c101ca8d2cc9b313edb41d4cded8ae10f83528c85f37e84aa3149"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l3-04"
+split = "dev"
+kind = "generator"
+level = 3
+seed = 770000530004
+code = "10C0-1PD3-SQAJ-MP"
+fingerprint = "35c1b36339bb7036f06a0202e48f620cb6bbcd736fabe1dcc5727b6f50de1e7d"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l3-05"
+split = "dev"
+kind = "generator"
+level = 3
+seed = 770000530005
+code = "10C0-1PD3-SQAJ-NM"
+fingerprint = "e4c7e4315e436b4b6bcd0fc614e4942a63e68c51c148587e53aac38dc2211c9e"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l4-01"
+split = "dev"
+kind = "generator"
+level = 4
+seed = 770000540001
+code = "10G0-1PD3-SQMB-17"
+fingerprint = "a436383b2897276b6de724560871330a9185b529b8f83842f16124ef674e784e"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l4-02"
+split = "dev"
+kind = "generator"
+level = 4
+seed = 770000540002
+code = "10G0-1PD3-SQMB-21"
+fingerprint = "66a34facfc035f76233ee00507819cfc327081c814bafa28d68ea459726dea09"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l4-03"
+split = "dev"
+kind = "generator"
+level = 4
+seed = 770000540003
+code = "10G0-1PD3-SQMB-33"
+fingerprint = "81a9ca40aaa1c104c4987f412d1bcb5b00cf1aaece36b5ec16dfab8e740e079b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l4-04"
+split = "dev"
+kind = "generator"
+level = 4
+seed = 770000540004
+code = "10G0-1PD3-SQMB-4D"
+fingerprint = "a2687bce17faf49e88f08a9695717b65a7e2948a6c880495ebe85b2b71f25ab6"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l5-01"
+split = "dev"
+kind = "generator"
+level = 5
+seed = 770000550001
+code = "10M0-1PD3-SQY3-H1"
+fingerprint = "c8d4e77043b9c68b070443fee306dcc11dfeedb6da79e0e017769977d5c6a54b"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l5-02"
+split = "dev"
+kind = "generator"
+level = 5
+seed = 770000550002
+code = "10M0-1PD3-SQY3-J7"
+fingerprint = "207d9fec5cd98af60e61a4c24e15f909e8d17de788d8b260421af3a4b329dcdd"
+phrase = 3  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l5-03"
+split = "dev"
+kind = "generator"
+level = 5
+seed = 770000550003
+code = "10M0-1PD3-SQY3-K5"
+fingerprint = "9c6e55521ff9aac18985abd798f635894c717cb1f5d3595b5c068420be6bba1f"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l5-04"
+split = "dev"
+kind = "generator"
+level = 5
+seed = 770000550004
+code = "10M0-1PD3-SQY3-MB"
+fingerprint = "ee518b8d9ec45dde84c2e9e2b77f3ba4d29260a4c33de6e4a1c01e73e2dabbb7"
+phrase = 1  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "gen-d-l5-05"
+split = "dev"
+kind = "generator"
+level = 5
+seed = 770000550005
+code = "10M0-1PD3-SQY3-N9"
+fingerprint = "aa1320f5568f15ebfb63e2c56b1a374f6e3056a97588412ec576ccac9a37441a"
+phrase = 2  # the generator's pick: 1 held, 2 octave pair, 3 legato pair
+
+[[target]]
+id = "hand-d-wobble-machine-a"
+split = "dev"
+kind = "preset"
+preset = "Wobble Machine"
+stem = "wobble-machine"
+file = "content/presets-candidates/bass/wobble-machine.patch.json"
+sha256 = "2935aab031a82e8f3b1a5390ae34c063ce7121a40ba8954bfb96c193284c6706"
+perf = { key = 36, velocity = 100, hold_ms = 2000, length_ms = 3000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-wobble-machine-b"
+split = "dev"
+kind = "preset"
+preset = "Wobble Machine"
+stem = "wobble-machine"
+file = "content/presets-candidates/bass/wobble-machine.patch.json"
+sha256 = "2935aab031a82e8f3b1a5390ae34c063ce7121a40ba8954bfb96c193284c6706"
+perf = { key = 43, velocity = 80, hold_ms = 2000, length_ms = 3000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-noise-riser-a"
+split = "dev"
+kind = "preset"
+preset = "Noise Riser"
+stem = "noise-riser"
+file = "content/presets-candidates/fx/noise-riser.patch.json"
+sha256 = "ea72ce2b31517a2f0b827bdb69e3d3ce69ea7a4b4bdb9a36ae02543bbd954e53"
+perf = { key = 48, velocity = 100, hold_ms = 3000, length_ms = 4500 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-noise-riser-b"
+split = "dev"
+kind = "preset"
+preset = "Noise Riser"
+stem = "noise-riser"
+file = "content/presets-candidates/fx/noise-riser.patch.json"
+sha256 = "ea72ce2b31517a2f0b827bdb69e3d3ce69ea7a4b4bdb9a36ae02543bbd954e53"
+perf = { key = 55, velocity = 80, hold_ms = 3000, length_ms = 4500 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-solar-lead-a"
+split = "dev"
+kind = "preset"
+preset = "Solar Lead"
+stem = "solar-lead"
+file = "content/presets-candidates/lead/solar-lead.patch.json"
+sha256 = "33e14580fe02cc895358cef4752a6630345f8ebf024ba565409c452de52afd44"
+perf = { key = 60, velocity = 100, hold_ms = 1500, length_ms = 3000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-solar-lead-b"
+split = "dev"
+kind = "preset"
+preset = "Solar Lead"
+stem = "solar-lead"
+file = "content/presets-candidates/lead/solar-lead.patch.json"
+sha256 = "33e14580fe02cc895358cef4752a6630345f8ebf024ba565409c452de52afd44"
+perf = { key = 67, velocity = 80, hold_ms = 1500, length_ms = 3000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-velvet-pad-a"
+split = "dev"
+kind = "preset"
+preset = "Velvet Pad"
+stem = "velvet-pad"
+file = "content/presets-candidates/pad/velvet-pad.patch.json"
+sha256 = "b8b6e4dd2c8c4a9a65d699817a7a060905bdb602540074138686a605bc6c92c2"
+perf = { key = 48, velocity = 100, hold_ms = 5000, length_ms = 8000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-velvet-pad-b"
+split = "dev"
+kind = "preset"
+preset = "Velvet Pad"
+stem = "velvet-pad"
+file = "content/presets-candidates/pad/velvet-pad.patch.json"
+sha256 = "b8b6e4dd2c8c4a9a65d699817a7a060905bdb602540074138686a605bc6c92c2"
+perf = { key = 55, velocity = 80, hold_ms = 5000, length_ms = 8000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-thump-kick-a"
+split = "dev"
+kind = "preset"
+preset = "Thump Kick"
+stem = "thump-kick"
+file = "content/presets-candidates/perc/thump-kick.patch.json"
+sha256 = "aee879d2fd25979dbc00cd5c7429f18f2dcc945db61b17aeaa67f863af13a9ac"
+perf = { key = 33, velocity = 100, hold_ms = 300, length_ms = 1000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
+
+[[target]]
+id = "hand-d-thump-kick-b"
+split = "dev"
+kind = "preset"
+preset = "Thump Kick"
+stem = "thump-kick"
+file = "content/presets-candidates/perc/thump-kick.patch.json"
+sha256 = "aee879d2fd25979dbc00cd5c7429f18f2dcc945db61b17aeaa67f863af13a9ac"
+perf = { key = 40, velocity = 80, hold_ms = 300, length_ms = 1000 }
+anchor = true  # anchor half: training may perturb it, so model numbers on it are optimistic; for tuning only
