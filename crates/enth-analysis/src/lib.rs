@@ -15,6 +15,14 @@
 //! - [`fft`]: the scalar (identical everywhere) and dispatched FFT paths; [`loudness`], [`pitch`] (YIN), [`units`].
 //! - [`test_signals`]: synthetic signals with known answers, for tests and sweeps.
 //!
+//! R3 files, pre-declared empty by lane S0s so the lanes that fill them never edit this one (every file above is
+//! untouched):
+//!
+//! | File | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`intake`] | "create from sound"'s intake: `trim`, `floor`, `bandwidth`, `clip`, `perf` (and an open `resample`); mono, the noise floor, the bandwidth, clipped spans, the inferred performance | FE |
+//! | [`robust`] | the degradation-aware distance, under a new metric id (`sound/1` and the metrics above unchanged) | OBJ |
+//!
 //! Pure functions of samples: no I/O, no clocks, no threads, no global RNG; builds for wasm32. Transcendentals go
 //! through `libm`, and every FFT that feeds a pass/fail decision runs on [`FftPath::Scalar`].
 
@@ -26,11 +34,13 @@ pub mod expect;
 pub mod features;
 pub mod fft;
 pub mod harmonics;
+pub mod intake;
 mod linalg;
 pub mod loudness;
 pub mod margin;
 pub mod pitch;
 pub mod pooled;
+pub mod robust;
 pub mod sweep;
 pub mod test_signals;
 pub mod units;
