@@ -1,7 +1,8 @@
 //! Component tokens: per-widget dimensions, in logical px at 100 % UI scale. One file per UI area, so a lane adds
 //! the dimensions of its own area in its own file: `bar`, `card`, `cards` (UI-C), `display`, `editor` (ED1), `handle`,
 //! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
-//! R1/S1 (lane S0r) pre-declared three empty areas: `recreate` (RUI), `browser` (PBU) and `add_module` (AM).
+//! R1/S1 (lane S0r) pre-declared three empty areas: `recreate` (RUI), `browser` (PBU) and `add_module` (AM); R2 (lane S0l) one:
+//! `learn` (LUI).
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,7 @@ mod display;
 mod editor;
 mod handle;
 mod knob;
+mod learn;
 mod matrix;
 mod modulation;
 mod output;
@@ -31,6 +33,7 @@ pub use display::DisplaySizes;
 pub use editor::EditorSizes;
 pub use handle::HandleSizes;
 pub use knob::KnobSizes;
+pub use learn::LearnSizes;
 pub use matrix::MatrixSizes;
 pub use modulation::ModulationSizes;
 pub use output::OutputSizes;
@@ -74,6 +77,9 @@ pub struct Sizes {
     /// Adding and removing modules (lane AM; empty until it adds tokens).
     #[serde(default)]
     pub add_module: AddModuleSizes,
+    /// The Learn view: lesson pane, lesson browser, lock glyph (lane LUI; empty until it adds tokens).
+    #[serde(default)]
+    pub learn: LearnSizes,
     /// Height of single-line controls: buttons, segmented controls, number fields.
     pub control_height: f32,
 }
@@ -98,6 +104,7 @@ impl Sizes {
             recreate: RecreateSizes::dark(),
             browser: BrowserSizes::dark(),
             add_module: AddModuleSizes::dark(),
+            learn: LearnSizes::dark(),
             control_height: 24.0,
         }
     }
