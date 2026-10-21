@@ -10,7 +10,7 @@ R2 teaches sound design on the instrument you keep: lessons of 5–10 minutes, o
 | Challenge v2 | `enth-challenge` (L4) | CV2 | Built and judged at F1l ([challenge.md](challenge.md#challenge-v2-lane-cv2-r2)) |
 | Live binding, locks, the `learn` field | `enth-session::learn` (L6) | SL | Built and judged at F1l, on LM's player and CV2's selectors since lane F1L's swap ([session.md](session.md#learn-lane-sl-r2)) |
 | `closest` (the nearest passing patch) | `enth-solver::closest` (L5) | CLS | Planned |
-| One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | Planned (F2l) |
+| One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | SKL's part built (F2l): [plugin.md](plugin.md#learn-lane-skl-r2), [agent-cli.md](agent-cli.md#lessons-on-the-command-line-enth-lesson); EV3's `list`, `hint`, `closest` planned |
 | `lesson-check`, coverage, `pack`, `lessons.yml` | `xtask` | LCK | Planned |
 | The Learn view | `enth-ui::editor::learn` (L7) | LUI | Planned |
 | Deconstruct lessons, the studies | `enth-learn::deconstruct`, `xtask` | DEC | Planned |
