@@ -477,3 +477,46 @@ pub fn run_target(
     };
     Ok((rec, line))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snap_at(t: f64) -> Snap {
+        Snap {
+            t_s: t,
+            renders: t as usize,
+            rounds: 0,
+            objective: 1.0 / t,
+            branch: 0,
+            provenance: "heuristic".into(),
+            patch: super::super::templates().unwrap().0,
+        }
+    }
+
+    #[test]
+    fn a_mark_reports_the_last_round_at_or_before_it() {
+        // Rounds end at 3, 7, 10 and 12 (the job's end); marks 1, 5, 10, 20.
+        let mut tr = Tracker::new(vec![1.0, 5.0, 10.0, 20.0]);
+        tr.round(3.0, Some(snap_at(3.0)));
+        tr.round(7.0, Some(snap_at(7.0)));
+        tr.round(10.0, Some(snap_at(10.0)));
+        tr.round(12.0, Some(snap_at(12.0)));
+        let taken: Vec<(f64, Option<f64>)> = tr
+            .finish()
+            .into_iter()
+            .map(|(m, s)| (m, s.map(|s| s.t_s)))
+            .collect();
+        // Mark 1 came before any round: no candidate yet. Mark 5: the round at 3. Mark 10: the round that ended
+        // exactly at 10. Mark 20, after the job ended at 12: the last state.
+        assert_eq!(
+            taken,
+            vec![
+                (1.0, None),
+                (5.0, Some(3.0)),
+                (10.0, Some(10.0)),
+                (20.0, Some(12.0))
+            ]
+        );
+    }
+}

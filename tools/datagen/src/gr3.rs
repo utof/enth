@@ -225,3 +225,234 @@ pub fn run_job(job: &Job) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    //! The kit's own checks, on one cheap dev target (a level-1 generator code; tuning targets, never test ones):
+    //! the result does not depend on the worker count, a checkpoint's renders are its twin's budget, arm C renders
+    //! exactly its proposals, arm D's oracle keeps the structure and drops the values, and the bookkeeping of
+    //! checkpoints, strata and the register shift.
+    use std::path::PathBuf;
+
+    use enth_challenge::random::observable;
+    use enth_solver::create::Provenance;
+
+    use super::arm::{self, Ctx, Proposer};
+    use super::job::{Arm, CfgJob, Job, Kind, Mode, SCHEMA, TargetJob};
+    use super::target::{Gr3Target, stratum, transpose};
+    use super::*;
+
+    /// `gen-d-l1-01` of content/gr3/synth.toml (dev).
+    fn dev_target() -> TargetJob {
+        TargetJob {
+            id: "gen-d-l1-01".into(),
+            split: "dev".into(),
+            kind: Kind::Generator,
+            level: Some(1),
+            phrase: Some(1),
+            core: false,
+            code: Some("1040-1PD3-SPQ1-H4".into()),
+            fingerprint: Some(
+                "eb30ccd04b3edf5f6f5ad62c140e2613f8c33c685fced0afd518c144bdd2eac5".into(),
+            ),
+            file: None,
+            sha256: None,
+            perf: None,
+            budget: None,
+        }
+    }
+
+    fn job(arm: Arm, budget: usize, marks: Vec<f64>, workers: usize) -> Job {
+        Job {
+            schema: SCHEMA.into(),
+            run_id: "test".into(),
+            out: PathBuf::from("/dev/null"),
+            patches_out: None,
+            arm,
+            mode: Mode::Renders,
+            seconds: None,
+            budget: Some(budget),
+            marks,
+            workers,
+            lock: None,
+            cfg: CfgJob {
+                score_s: 1.0,
+                ..CfgJob::default()
+            },
+            bank: None,
+            bank_entries: None,
+            proposals: None,
+            split: "dev".into(),
+            header: serde_json::Value::Null,
+            targets: vec![dev_target()],
+        }
+    }
+
+    fn run_one(
+        j: &Job,
+        proposer: Option<&dyn Proposer>,
+    ) -> (record::TargetRecord, record::PatchesLine) {
+        let (init, templates) = templates().unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(j.workers)
+            .build()
+            .unwrap();
+        let ctx = Ctx {
+            init: &init,
+            templates: &templates,
+            bank: None,
+            pool: &pool,
+            proposer,
+        };
+        arm::run_target(j, &j.targets[0], &ctx).unwrap()
+    }
+
+    fn hashes(r: &record::TargetRecord) -> Vec<(f64, usize, String)> {
+        r.checkpoints
+            .iter()
+            .map(|c| (c.mark, c.renders, c.patch_sha256.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_run_is_the_same_for_any_worker_count_and_a_checkpoint_is_its_twins_budget() {
+        let one = run_one(&job(Arm::A, 90, vec![30.0], 1), None).0;
+        let three = run_one(&job(Arm::A, 90, vec![30.0], 3), None).0;
+        assert_eq!(hashes(&one), hashes(&three));
+        assert_eq!(one.fin.renders, three.fin.renders);
+        assert!(one.fin.renders <= 90);
+        // Every checkpoint is scored, and the last is at the cap.
+        assert!(one.checkpoints.iter().all(|c| c.score.is_some()));
+        assert_eq!(one.checkpoints.last().unwrap().mark, 90.0);
+        // The twin of the checkpoint at 30: a run with its renders as the budget ends on the same patch.
+        let at30 = &one.checkpoints[0];
+        assert_eq!(at30.mark, 30.0);
+        assert!(at30.renders <= 30);
+        let twin = run_one(&job(Arm::A, at30.renders.max(1), vec![], 2), None).0;
+        let last = twin.checkpoints.last().unwrap();
+        assert_eq!(last.renders, at30.renders);
+        assert_eq!(last.patch_sha256, at30.patch_sha256);
+    }
+
+    struct Fixed(Vec<enth_patch::Patch>);
+
+    impl Proposer for Fixed {
+        fn id(&self) -> String {
+            "fixed".into()
+        }
+        fn propose(
+            &self,
+            _: &str,
+            _: &enth_solver::create::Target,
+            _: &enth_solver::create::Analysis,
+        ) -> Result<Vec<enth_solver::create::Start>, String> {
+            Ok(self
+                .0
+                .iter()
+                .enumerate()
+                .map(|(i, p)| enth_solver::create::Start {
+                    patch: p.clone(),
+                    provenance: Provenance::Model {
+                        model: "fixed".into(),
+                        hypothesis: i,
+                        confidence: None,
+                    },
+                })
+                .collect())
+        }
+        fn charged_s(&self, _: &str) -> f64 {
+            0.5
+        }
+    }
+
+    #[test]
+    fn arm_c_renders_its_proposals_once_and_arm_b_adds_them_to_the_portfolio() {
+        let (init, templates) = templates().unwrap();
+        // The true patch, moved into the frame create searches in: the intake hears this target 12 semitones up
+        // (its oscillators sit an octave above the key it is played at), so the model would propose it 12 down, and
+        // the kit's register shift moves it back before scoring.
+        let t = Gr3Target::build(&dev_target()).unwrap();
+        let intake = enth_analysis::intake::Intake::new(&t.upload().unwrap(), 1, 48_000).unwrap();
+        let shift = i32::from(intake.report.perf.key) - i32::from(t.true_key());
+        assert_eq!(shift, 12);
+        let truth = transpose(&t.patch, -shift);
+        let p = Fixed(vec![init.clone(), templates[1].patch.clone(), truth]);
+        let c = run_one(&job(Arm::C, 1000, vec![], 1), Some(&p)).0;
+        assert_eq!(c.fin.renders, 3);
+        assert_eq!(c.fin.starts, 3);
+        assert!(c.inference_s >= 0.5);
+        // The true patch is among the proposals: arm C's best is it, and it passes.
+        let last = c.checkpoints.last().unwrap();
+        assert_eq!(last.provenance, "model");
+        assert_eq!(c.register_shift, 12);
+        assert!(last.score.unwrap().passed, "{:?}", last.score);
+        // Arm B: the heuristic, the templates (one equals init and is skipped) and the three proposals (init again
+        // is a duplicate of no start: the heuristic start is init with the heuristic applied).
+        let b = run_one(&job(Arm::B, 60, vec![], 1), Some(&p)).0;
+        assert!(b.fin.starts >= 6, "{}", b.fin.starts);
+        assert!(b.fin.branch_provenance.iter().any(|k| k == "model"));
+    }
+
+    #[test]
+    fn the_oracle_template_keeps_the_structure_and_drops_the_values() {
+        let t = Gr3Target::build(&dev_target()).unwrap();
+        let o = t.oracle_template().unwrap();
+        let enabled = |p: &enth_patch::Patch| -> Vec<(String, bool)> {
+            p.modules()
+                .map(|(_, m)| (m.id.as_str().to_owned(), m.enabled))
+                .collect()
+        };
+        assert_eq!(enabled(&o), enabled(&t.patch));
+        assert_eq!(o.routes, t.patch.routes);
+        let mask = observable(&t.patch, t.phrase);
+        let mut moved = 0;
+        for addr in mask.observable_params() {
+            let spec = t.patch.spec(addr).unwrap();
+            assert_eq!(o.value(addr), Some(spec.clamp(spec.default)), "{addr}");
+            moved += usize::from(t.patch.value(addr) != o.value(addr));
+        }
+        assert!(moved > 0, "the target moved nothing off its defaults?");
+        // Arm D runs with it as its only template.
+        let d = run_one(&job(Arm::D, 40, vec![], 1), None).0;
+        assert!(d.fin.branch_provenance.iter().any(|k| k == "template"));
+    }
+
+    #[test]
+    fn strata_shift_and_marks() {
+        assert_eq!(stratum(Kind::Generator, Some(1)), "gen-1note");
+        assert_eq!(stratum(Kind::Generator, Some(2)), "gen-2note");
+        assert_eq!(stratum(Kind::Generator, Some(3)), "gen-2note");
+        assert_eq!(stratum(Kind::Preset, None), "preset");
+        let t = Gr3Target::build(&dev_target()).unwrap();
+        assert_eq!(t.true_key(), 48);
+        let semi: enth_patch::ParamAddr = "osc1.semi".parse().unwrap();
+        let before = t.patch.value(&semi).unwrap();
+        let up = transpose(&t.patch, 12);
+        assert_eq!(
+            up.value(&semi),
+            Some(t.patch.spec(&semi).unwrap().clamp(before + 12.0))
+        );
+        assert_eq!(transpose(&t.patch, 0), t.patch);
+        // The marks: the grid below the cap, then the cap.
+        let j = job(Arm::A, 300, vec![], 1);
+        assert_eq!(j.marks_of(&j.targets[0]), vec![100.0, 250.0, 300.0]);
+        let mut w = job(Arm::A, 300, vec![], 1);
+        w.mode = Mode::Wall;
+        w.seconds = Some(30.0);
+        assert_eq!(
+            w.marks_of(&w.targets[0]),
+            vec![2.0, 5.0, 10.0, 15.0, 20.0, 30.0]
+        );
+        assert_eq!(w.budget_of(&w.targets[0]), job::UNREACHED);
+    }
+
+    #[test]
+    fn a_moved_target_is_refused() {
+        let mut t = dev_target();
+        t.fingerprint = Some("00".repeat(32));
+        assert!(Gr3Target::build(&t).err().unwrap().contains("fingerprint"));
+        let mut t = dev_target();
+        t.phrase = Some(2);
+        assert!(Gr3Target::build(&t).err().unwrap().contains("phrase"));
+    }
+}
