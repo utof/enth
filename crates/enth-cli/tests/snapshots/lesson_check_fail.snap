@@ -1,0 +1,26 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, true)"
+---
+exit: 1
+--- stdout
+{
+  "lesson": "example/cutoff",
+  "next": "change the patch (`enth apply`) and check again; `enth check <patch> --expect <items>` measures each item",
+  "note": null,
+  "number": "<num>",
+  "pass": false,
+  "patch": "[repo]/content/lessons/example/patches/saw.patch.json",
+  "predicates": [],
+  "schema": "enth.lesson-check/1",
+  "sounds": [
+    {
+      "item": "brightness<500Hz",
+      "margin": "<num>",
+      "pass": false,
+      "phrase": "<num>"
+    }
+  ],
+  "step": "try"
+}
+--- stderr

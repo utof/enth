@@ -1,0 +1,352 @@
+# Lesson 3.1, Attack and release [basics · basic] (content/lessons/PLAN.md §5, U3). It names env1 as the voice's
+# amplitude envelope (`voice.amp_env`), which is not a parameter.
+#
+# Hear (attack 5 and 300 ms, release 20 and 600 ms on the saw; the pad at C4 with a fast and slow attack and a short
+# release), a "which one swells?" item → Name → Try ("make it swell", checked by attack_ms) → three rounds (the attack
+# twice, then the release, at a raised pass mark) → two ear questions. PLAN: S gates, R is weak for short attacks
+# (risk 11); measured here, sound/1 hears long attacks and releases, so the rounds draw those. Measured on engine 0.3.0,
+# HELD (C3 for 1.5 s): attack_ms reads 4 at 2 ms, 19 at 25 ms, 148 at 200 ms, 300 at 400 ms, 665 at 900 ms.
+
+schema = "enth.lesson/1"
+id = "attack-and-release"
+title = "Attack and release"
+tier = "basic"
+objective = "Shape how a note starts and ends with the amplitude envelope's attack and release."
+teaches = ["adsr.attack", "adsr.release"]
+
+# --- Hear: attack 5 against 300 ms and release 20 against 600 ms on the saw; then the pad at C4 (its slow attack
+# against 5 ms, its long release against 100 ms).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Attack 5 ms"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "Attack 300 ms"
+patch = "patches/saw-attack-300.patch.json"
+
+[[steps.examples]]
+label = "Release 20 ms"
+patch = "patches/saw-release-20.patch.json"
+
+[[steps.examples]]
+label = "Release 600 ms"
+patch = "patches/saw-release-600.patch.json"
+
+[[steps.examples]]
+label = "Pad, slow attack and release"
+patch = "patches/pad.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, fast attack"
+patch = "patches/pad-attack-5.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, short release"
+patch = "patches/pad-release-100.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which one swells in? (attack 5 against 900 ms: 5 against 300 ms scores 95 under sound/1.)
+[[steps]]
+id = "which-swells"
+kind = "choose"
+text = "which-swells.md"
+hints = ["Listen to the first moment of each note."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-attack-900.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["env1.attack", "env1.release"]
+
+# --- Try: "make it swell" (PLAN: attack above 200 ms). Measured: the start (5 ms) reads attack_ms 5 (fails
+# `attack>200ms` by 195 ms); the witness (400 ms) reads 300 (passes by 100 ms); 200 ms reads 148 and fails.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Attack is the first knob on the env1 card.",
+  "Around 300 ms or more, the note clearly fades in.",
+]
+witness = "patches/saw-attack-400.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw.patch.json"
+highlight = ["env1.attack"]
+editable = ["env1.attack"]
+locked = ["osc1.*", "filter1.*", "env1.decay", "env1.sustain", "env1.release"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "env1.attack", cmp = ">", value = "200ms" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["attack>200ms"]
+
+# --- Do, round 1: a hidden attack, drawn from 400 ms and 1.3 s, from 5 ms, the release locked at 150 ms (PLAN). Seed 7
+# draws 400 ms (the start scores sound 92.3, below the pass mark of 95). The pass mark is 95: sound/1 does not hear
+# short attacks apart at HELD (2, 10, 25 and 60 ms all score 100 against each other; 200 ms scores 97 against them), so
+# PLAN's set {2, 25, 200, 900} is replaced by values it can tell apart, and the pass mark keeps the start from passing.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "How long does the target take to reach full level? Instant, a short swell, or a long one?",
+  "Lengthen the attack until yours fades in as slowly as the target.",
+]
+
+[steps.view]
+highlight = ["env1.attack"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 7
+items = [{ param = "env1.attack", set = [400.0, 1300.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, release 150 ms", description = "The starter with a 150 ms release (attack 5 ms)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.attack"]
+locked = ["env1.release", "env1.decay", "env1.sustain", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Attack and release, round 1"
+tags = ["basics", "attack-and-release"]
+
+# --- Do, round 2: seed 1 draws 1.3 s (the start scores 70.8).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "How long does the target take to reach full level? Instant, a short swell, or a long one?",
+  "Lengthen the attack until yours fades in as slowly as the target.",
+]
+
+[steps.view]
+highlight = ["env1.attack"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "env1.attack", set = [400.0, 1300.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, release 150 ms", description = "The starter with a 150 ms release (attack 5 ms)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.attack"]
+locked = ["env1.release", "env1.decay", "env1.sustain", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Attack and release, round 2"
+tags = ["basics", "attack-and-release"]
+
+# --- Do, round 3: a hidden release, drawn from 20 ms, 300 ms and 1.2 s (PLAN's {20, 150, 800}, spread: sound/1 scores
+# 20 against 60 ms 100), from 150 ms, the attack locked at 5 ms. Seed 5 draws 300 ms (the start scores 90.9, below 95).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "Listen after the key is let go: does the target stop dead, fade quickly, or ring on?",
+  "Set the release so that yours dies away like the target.",
+]
+
+[steps.view]
+highlight = ["env1.release"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 5
+items = [{ param = "env1.release", set = [20.0, 300.0, 1200.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, release 150 ms", description = "The starter with a 150 ms release (attack 5 ms)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["env1.release"]
+locked = ["env1.attack", "env1.decay", "env1.sustain", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 95
+
+[steps.challenge.meta]
+title = "Attack and release, round 3"
+tags = ["basics", "attack-and-release"]
+
+# --- Check: which one swells in more slowly (attack 300 against 900 ms; the pad's 600 against 5 ms scores 91 under
+# sound/1, too close), then which one fades after the key is let go (release 20 against 600 ms).
+[[steps]]
+id = "check-swell"
+kind = "choose"
+text = "check-swell.md"
+hints = ["Both fade in; one takes about three times as long."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-attack-300.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-attack-900.patch.json"
+
+[[steps]]
+id = "check-release"
+kind = "choose"
+text = "check-release.md"
+hints = ["Listen to the end, after the key is let go."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-release-20.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-release-600.patch.json"

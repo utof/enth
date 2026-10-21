@@ -19,8 +19,10 @@
 //! | [`pane`] | the lesson pane: the step's text from the block AST, hear / try / check controls, hints |
 //! | [`browser`] | the lesson browser, its Review entry and the Packs folder buttons |
 //!
-//! Lane S0l left the hook inert: it draws one **Learn** button when the shell says lessons are available, and the
-//! click does nothing yet. The other files are empty.
+//! Lane S0l left the hook inert. **Lane SKL** (F2l) wired the minimal seam LUI grows: the click toggles a plain
+//! Learn panel at the window's right edge ([`pane`]), the editor's [`Learn`] state with [`LearnIntent`], `set_lesson`,
+//! `set_lessons` and `apply_learn`, and [`LessonOverlay`] (highlights through the hint outline, locks dimmed,
+//! hidden modules dropped). `browser.rs` is still empty.
 
 pub mod browser;
 pub mod header;
@@ -28,3 +30,4 @@ pub mod pane;
 pub mod state;
 
 pub use header::HeaderLearn;
+pub use state::{Learn, LearnIntent, LessonOverlay};

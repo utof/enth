@@ -1,0 +1,233 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "LessonOut": {
+      "additionalProperties": false,
+      "description": "One lesson.",
+      "properties": {
+        "id": {
+          "description": "The lesson's id.",
+          "type": "string"
+        },
+        "key": {
+          "description": "`pack/lesson`.",
+          "type": "string"
+        },
+        "objective": {
+          "description": "What it teaches, in a sentence.",
+          "type": "string"
+        },
+        "steps": {
+          "description": "Its steps, in order.",
+          "items": {
+            "$ref": "#/$defs/LessonStepOut"
+          },
+          "type": "array"
+        },
+        "teaches": {
+          "description": "The controls it teaches (catalogue keys: `svf.cutoff`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tier": {
+          "description": "`basic`, `intermediate` or `advanced`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "id",
+        "title",
+        "tier",
+        "objective",
+        "teaches",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "LessonPackOut": {
+      "additionalProperties": false,
+      "description": "A pack's identity.",
+      "properties": {
+        "engine": {
+          "description": "The engine it was checked on (recorded, never a gate; read from the authoring TOML, the pack is sealed on\nthis build's).",
+          "type": "string"
+        },
+        "id": {
+          "description": "Its id (`basics`): progress is keyed by it.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Its version (semver).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "title",
+        "engine"
+      ],
+      "type": "object"
+    },
+    "LessonStepOut": {
+      "additionalProperties": false,
+      "description": "One step.",
+      "properties": {
+        "answer": {
+          "description": "With `--reveal`: a choose step's answer (0-based).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "challenge": {
+          "description": "A recreate step's challenge, as the lesson file holds it."
+        },
+        "check": {
+          "description": "A do step's goal, as the lesson file holds it (`{\"kind\":\"sound\",\"phrase\":1,\"expect\":[…]}`)."
+        },
+        "editable": {
+          "description": "What the player is meant to change (advisory).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "examples": {
+          "description": "A listen step's examples or a choose step's options: their labels, in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hide": {
+          "description": "What the step hides.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "highlight": {
+          "description": "What the step outlines.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hints": {
+          "description": "The authored hints, in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Its id (append-only; progress is keyed by it).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`read`, `listen`, `do`, `recreate` or `choose`.",
+          "type": "string"
+        },
+        "locked": {
+          "description": "What the session refuses to change.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number": {
+          "description": "Its place, 1-based (\"Step 2 of 3\"); `enth lesson check --step` takes it or the id.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "description": "The patch the step starts from (a pack path; null: the patch carries over).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "description": "The step's text (markdown), when it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "witness": {
+          "description": "With `--reveal`: a do or recreate step's witness, the reference solution (a pack path).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "id",
+        "kind",
+        "hints",
+        "highlight",
+        "hide",
+        "editable",
+        "locked",
+        "examples"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.lesson-show/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.lesson-show/1`: a pack's lessons, step by step, as a lesson's text says them. No answers (a choose step's\nanswer, a do step's witness) unless `--reveal`.",
+  "properties": {
+    "lessons": {
+      "description": "The lessons shown (one with `--lesson`, else every lesson of the pack, in its order).",
+      "items": {
+        "$ref": "#/$defs/LessonOut"
+      },
+      "type": "array"
+    },
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "pack": {
+      "$ref": "#/$defs/LessonPackOut",
+      "description": "The pack."
+    },
+    "schema": {
+      "const": "enth.lesson-show/1",
+      "description": "`enth.lesson-show/1`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "pack",
+    "lessons",
+    "next"
+  ],
+  "title": "LessonShowOut",
+  "type": "object"
+}

@@ -1,0 +1,350 @@
+# Lesson 1.6, Hard sync [basics · intermediate] (content/lessons/PLAN.md §5, U1).
+#
+# Hear (osc2 at +7 and +15 semitones, sync off and on, at C3 and C2), a "which one tears?" item → Name → Try ("bring
+# the pitch back to C3 with sync", checked by pitch) → three rounds (osc2's semitones under sync, twice; then sync and
+# semitones together) → two ear questions. osc1 is silent (level 0) in every patch but stays the master, so the synced
+# sound is osc2 alone: with sync off it plays at osc2's pitch, with sync on at osc1's (C3), which is what the Try checks.
+# PLAN's +19 is replaced by +15: 19 semitones is a frequency ratio of 2.997, nearly a whole number, and like +12 and +24
+# it syncs almost inaudibly (sync off against on at +19 scores 97.1; at +7, 8.3). Measured on engine 0.3.0, HELD.
+
+schema = "enth.lesson/1"
+id = "hard-sync"
+title = "Hard sync"
+tier = "intermediate"
+objective = "Sync the second oscillator to the first and shape its tearing tone with its tuning."
+teaches = ["osc.sync"]
+
+# --- Hear: osc2 seven and fifteen semitones up, sync off then on, at C3; then the two synced ones an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "+7, sync off"
+patch = "patches/sync-off-7.patch.json"
+
+[[steps.examples]]
+label = "+7, sync on"
+patch = "patches/sync-on-7.patch.json"
+
+[[steps.examples]]
+label = "+15, sync off"
+patch = "patches/sync-off-15.patch.json"
+
+[[steps.examples]]
+label = "+15, sync on"
+patch = "patches/sync-on-15.patch.json"
+
+[[steps.examples]]
+label = "+7, sync on, low"
+patch = "patches/sync-on-7.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "+15, sync on, low"
+patch = "patches/sync-on-15.patch.json"
+transpose = -12
+
+# --- Hear's ear question: both at C3; which one tears? (a plain saw against osc2 synced at +15.)
+[[steps]]
+id = "which-tears"
+kind = "choose"
+text = "which-tears.md"
+hints = ["Both play the same note. One has a hard, ripping edge, like a voice saying \"aah\" through a horn."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sync-on-15.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["osc2.sync", "osc2.semi"]
+
+# --- Try: osc2 seven semitones up plays G3; switching sync on brings the note back to osc1's C3. Measured: the start
+# reads G3 (fails `pitch=C3`, judged within 25 cents, by 675 cents); the witness, sync on, reads C3 (passes). Both
+# osc2's semitones and osc1 are locked, so only sync can do it.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Sync is a switch on osc2's card.",
+  "Sync on restarts osc2 at osc1's pitch, whatever osc2 is tuned to.",
+]
+witness = "patches/sync-on-7.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sync-off-7.patch.json"
+highlight = ["osc2.sync"]
+editable = ["osc2.sync"]
+locked = ["osc1.*", "osc2.semi", "osc2.fine", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "osc2.sync", cmp = "==", value = "on" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["pitch=C3"]
+
+# --- Do, round 1: osc2's semitones under sync, drawn from PLAN's +5, +10 and +15, from osc2 in tune (a plain saw). Seed
+# 5 draws +10 (the start scores sound 75.6). sound/1 separates them at the default pass mark: against +5, +7 scores
+# 84.4; against +10, +15 scores 87.3; against +15, +10 scores 87.0.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "With sync on, osc2's semitones change the tone, not the note. Higher means more tearing.",
+  "Sweep osc2's Semitones slowly upwards and stop where the edge matches the target's.",
+]
+
+[steps.view]
+highlight = ["osc2.semi"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 5
+items = [{ param = "osc2.semi", set = [5.0, 10.0, 15.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sync on, osc2 in tune", description = "osc1 silent (level 0) as the master, osc2 a saw in tune with it, hard sync on." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { level = 0.0 } },
+  { id = "osc2", kind = "osc", params = { sync = true } },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc2.semi"]
+locked = ["osc2.sync", "osc2.level", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Hard sync, round 1"
+tags = ["basics", "hard-sync"]
+
+# --- Do, round 2: seed 4 draws +15 (the start scores 75.5). The +5 target is not used: the plain-saw start scores 89.0
+# against it, too near the pass mark.
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "With sync on, osc2's semitones change the tone, not the note. Higher means more tearing.",
+  "Sweep osc2's Semitones slowly upwards and stop where the edge matches the target's.",
+]
+
+[steps.view]
+highlight = ["osc2.semi"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "osc2.semi", set = [5.0, 10.0, 15.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sync on, osc2 in tune", description = "osc1 silent (level 0) as the master, osc2 a saw in tune with it, hard sync on." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { level = 0.0 } },
+  { id = "osc2", kind = "osc", params = { sync = true } },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc2.semi"]
+locked = ["osc2.sync", "osc2.level", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Hard sync, round 2"
+tags = ["basics", "hard-sync"]
+
+# --- Do, round 3: sync and semitones together (PLAN's D2, +19 replaced by +15), from sync off and osc2 in tune. Seed 1
+# draws sync on at +7 (the start scores 83.7; sync off at +7, the same tuning unsynced, scores 8.3).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "First the note: is the target at C3, like osc1, or higher? Only sync keeps it at C3.",
+  "Then the tone: a stronger tear means osc2 is tuned higher.",
+]
+
+[steps.view]
+highlight = ["osc2.sync", "osc2.semi"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [
+  { param = "osc2.sync", set = [false, true] },
+  { param = "osc2.semi", set = [7.0, 15.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sync off, osc2 in tune", description = "osc1 silent (level 0) as the master, osc2 a saw in tune with it, hard sync off." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { level = 0.0 } },
+  { id = "osc2", kind = "osc" },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc2.sync", "osc2.semi"]
+locked = ["osc2.level", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Hard sync, round 3"
+tags = ["basics", "hard-sync"]
+
+# --- Check: which one is synced (osc2 synced at +7 against a plain saw, both at C3), then in which one osc2 is tuned
+# higher (synced at +7 against +15).
+[[steps]]
+id = "check-synced"
+kind = "choose"
+text = "check-synced.md"
+hints = ["The synced one has a nasal, tearing edge the plain saw lacks."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/sync-on-7.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw.patch.json"
+
+[[steps]]
+id = "check-higher"
+kind = "choose"
+text = "check-higher.md"
+hints = ["The higher osc2 is tuned, the brighter and more ripping the sync."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/sync-on-7.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sync-on-15.patch.json"

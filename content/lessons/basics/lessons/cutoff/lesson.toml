@@ -1,0 +1,373 @@
+# Lesson 2.1, Low-pass cutoff [basics · basic · tour] (content/lessons/PLAN.md §5, U2). One of the two lessons of the
+# owner's taste check (TASTE.md): a continuous control with a sound check.
+#
+# Hear (two listen steps, a "which is darker?" item) → Name → Try ("darker than this", checked by sound) → three
+# rounds (two draws from five cutoffs, then the continuous range siblings use) → two ear questions.
+# Measured on engine 0.3.0 with `enth check`, the HELD phrase (C3 for 1.5 s): see the comments at each check.
+
+schema = "enth.lesson/1"
+id = "cutoff"
+title = "Low-pass cutoff"
+tier = "basic"
+objective = "Hear how far a low-pass filter is open, and set its cutoff by ear."
+teaches = ["svf.cutoff"]
+
+# --- Hear: the same saw with the low-pass at 4 kHz, 1 kHz and 300 Hz, at C3 and an octave lower (C2).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "4 kHz"
+patch = "patches/saw-cutoff-4k.patch.json"
+
+[[steps.examples]]
+label = "1 kHz"
+patch = "patches/saw-cutoff-1k.patch.json"
+
+[[steps.examples]]
+label = "300 Hz"
+patch = "patches/saw-cutoff-300.patch.json"
+
+[[steps.examples]]
+label = "4 kHz, low note"
+patch = "patches/saw-cutoff-4k.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "1 kHz, low note"
+patch = "patches/saw-cutoff-1k.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "300 Hz, low note"
+patch = "patches/saw-cutoff-300.patch.json"
+transpose = -12
+
+# --- Hear: the same three cutoffs on a second base sound, the slow pad, at C4.
+[[steps]]
+id = "hear-pad"
+kind = "listen"
+text = "hear-pad.md"
+
+[[steps.examples]]
+label = "Pad, 4 kHz"
+patch = "patches/pad-cutoff-4k.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, 1 kHz"
+patch = "patches/pad-cutoff-1k.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pad, 300 Hz"
+patch = "patches/pad-cutoff-300.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which is darker? (2 kHz against 600 Hz, neither heard above.)
+[[steps]]
+id = "which-darker"
+kind = "choose"
+text = "which-darker.md"
+hints = ["Listen to the top of each sound, not its loudness: the darker one has less buzz."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-cutoff-600.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["filter1.cutoff"]
+
+# --- Try: "darker than this", from the 2 kHz start. The sound check is the goal; the patch predicate keeps it about
+# the cutoff (a sine would also read darker, and osc1 is locked anyway). Measured: the start's spectral centroid is
+# 894 Hz (fails `brightness<500Hz` by 394 Hz); the witness, the cutoff at 400 Hz, reads 321 Hz (passes by 179 Hz).
+# For reference: 1 kHz reads 570 Hz (fails), 700 Hz reads 453 Hz, 600 Hz 411 Hz (both pass).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The cutoff is the big knob on the filter card. Turn it to the left and listen to the top of the sound.",
+  "Below about 700 Hz the saw sounds muffled, as if heard through a door. That is dark enough.",
+]
+witness = "patches/saw-cutoff-400.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw.patch.json"
+highlight = ["filter1.cutoff"]
+editable = ["filter1.cutoff"]
+locked = ["osc1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "filter1.cutoff", cmp = "<", value = "1kHz" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness<500Hz"]
+
+# --- Do, round 1: a hidden cutoff drawn from five values two octaves or more apart around the 2 kHz start.
+# Seed 1 draws 1.2 kHz (verified with `enth compare`: the start scores sound 54.9 and does not pass).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target brighter or darker than yours? Turn the cutoff that way.",
+  "Sweep the cutoff slowly and stop where the top of the sound matches.",
+]
+
+[steps.view]
+highlight = ["filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.cutoff", set = [300.0, 600.0, 1200.0, 4000.0, 8000.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.cutoff"]
+locked = ["osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Low-pass cutoff, round 1"
+tags = ["basics", "cutoff"]
+
+# --- Do, round 2: the same five values, another seed. Seed 4 draws 4 kHz, brighter than the start (verified with
+# `enth compare`: the start scores sound 56.3 and does not pass; the 4 kHz candidate scores 100).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target brighter or darker than yours? Turn the cutoff that way.",
+  "Sweep the cutoff slowly and stop where the top of the sound matches.",
+]
+
+[steps.view]
+highlight = ["filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "filter1.cutoff", set = [300.0, 600.0, 1200.0, 4000.0, 8000.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.cutoff"]
+locked = ["osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Low-pass cutoff, round 2"
+tags = ["basics", "cutoff"]
+
+# --- Do, round 3: any cutoff from 200 Hz to 12 kHz (log-uniform), the form siblings and Review use. Seed 4 draws a
+# cutoff whose brightness reads 700 Hz (about 1.4 kHz); the start scores sound 66.1 and does not pass.
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "Is the target brighter or darker than yours? Turn the cutoff that way.",
+  "Sweep the cutoff slowly and stop where the top of the sound matches.",
+  "Big moves first: an octave at a time. Then smaller ones around the closest.",
+]
+
+[steps.view]
+highlight = ["filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "filter1.cutoff", range = [200.0, 12000.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.cutoff"]
+locked = ["osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Low-pass cutoff, round 3"
+tags = ["basics", "cutoff"]
+
+# --- Check: two ear questions. The lowest of three cutoffs on the pad (300 Hz, two octaves below the next), then a
+# "what changed?" item mixed with lesson 1.1: both clips are darker than the starter saw (a 400 Hz cutoff reads 321 Hz,
+# a triangle 234 Hz), and the timbre tells them apart, not the brightness.
+[[steps]]
+id = "check-lowest"
+kind = "choose"
+text = "check-lowest.md"
+hints = ["The lowest cutoff lets the fewest high harmonics through: pick the dullest."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/pad-cutoff-1k.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pad-cutoff-300.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/pad-cutoff-4k.patch.json"
+
+[[steps]]
+id = "what-changed"
+kind = "choose"
+text = "what-changed.md"
+hints = ["A filtered saw keeps its buzz low down; a triangle is smooth and hollow all the way up."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-cutoff-400.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/triangle.patch.json"

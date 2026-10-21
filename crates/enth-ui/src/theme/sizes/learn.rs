@@ -8,12 +8,16 @@ use serde::{Deserialize, Serialize};
 /// The Learn view: the lesson pane, the lesson browser and the lock glyph (lane LUI).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct LearnSizes {}
+pub struct LearnSizes {
+    /// The width of the Learn panel at the window's right edge (lane SKL's minimal panel, F2l): the layout's regions
+    /// take the rest while it is open. Report 03's 320 px.
+    pub pane: f32,
+}
 
 impl LearnSizes {
     /// The dark theme's sizes.
     pub(super) fn dark() -> Self {
-        Self {}
+        Self { pane: 320.0 }
     }
 }
 

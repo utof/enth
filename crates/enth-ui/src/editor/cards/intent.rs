@@ -45,6 +45,10 @@ pub enum Intent {
     /// [`Editor::apply_game`]: crate::editor::Editor::apply_game
     #[cfg(feature = "recreate")]
     Game(crate::editor::recreate::bar::GameIntent),
+    /// The Learn view (lane SKL's minimal panel, F2l; lane LUI's view): the editor hands it to its Learn state, which
+    /// applies it to the session's `LearnEdit` after the frame (`Editor::apply_learn`).
+    #[cfg(feature = "learn")]
+    Learn(crate::editor::learn::LearnIntent),
     /// A drag started on a control: the edits up to the matching `End` are one gesture (one undo step).
     Begin(Grip),
     /// A parameter's new plain value, in real units and valid for its spec.
@@ -119,6 +123,8 @@ impl Intent {
                 reason = "lane SKR's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
             )]
             Intent::Game(_) => Vec::new(),
+            #[cfg(feature = "learn")]
+            Intent::Learn(_) => Vec::new(),
             Intent::Set { addr, value } => vec![Op::SetParam {
                 addr: addr.clone(),
                 value: *value,

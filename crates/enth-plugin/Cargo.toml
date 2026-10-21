@@ -75,6 +75,9 @@ ab-toggle = []
 
 [dev-dependencies]
 insta.workspace = true
+# Lane SKL: the tests rebuild the bundled packs from `content/lessons/` (the authoring TOML) and compare the bytes; the
+# plugin itself reads only the built JSON.
+enth-learn = { workspace = true, features = ["toml"] }
 
 [lints]
 workspace = true

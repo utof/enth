@@ -1,0 +1,369 @@
+# Lesson 2.3, Filter modes [basics · basic] (content/lessons/PLAN.md §5, U2).
+#
+# Hear (lp, hp, bp and notch at 1 kHz with 40 % resonance, on the saw and on noise alone, which shows the shapes
+# plainly), a "which one has lost its bass?" item → Name → Try ("keep only the highs", checked by brightness) → three
+# rounds (the mode drawn twice, then the mode and the cutoff) → two ear questions. Measured on engine 0.3.0, HELD (C3,
+# 1.5 s): on the saw at 1 kHz the spectral centroid is 668 Hz in lp, 1456 in bp, 3613 in notch and 4473 in hp; sound/1
+# separates the four modes widely (every pair scores 16 to 44 against each other).
+
+schema = "enth.lesson/1"
+id = "filter-modes"
+title = "Filter modes"
+tier = "basic"
+objective = "Tell the four filter modes apart by ear and choose the one a sound needs."
+teaches = ["svf.mode"]
+
+# --- Hear: the four modes on the saw.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Saw, lp"
+patch = "patches/saw-lp-1k.patch.json"
+
+[[steps.examples]]
+label = "Saw, hp"
+patch = "patches/saw-hp-1k.patch.json"
+
+[[steps.examples]]
+label = "Saw, bp"
+patch = "patches/saw-bp-1k.patch.json"
+
+[[steps.examples]]
+label = "Saw, notch"
+patch = "patches/saw-notch-1k.patch.json"
+
+# --- Hear: the four modes on white noise alone, where each shape is plain.
+[[steps]]
+id = "hear-noise"
+kind = "listen"
+text = "hear-noise.md"
+
+[[steps.examples]]
+label = "Noise, lp"
+patch = "patches/noise-lp-1k.patch.json"
+
+[[steps.examples]]
+label = "Noise, hp"
+patch = "patches/noise-hp-1k.patch.json"
+
+[[steps.examples]]
+label = "Noise, bp"
+patch = "patches/noise-bp-1k.patch.json"
+
+[[steps.examples]]
+label = "Noise, notch"
+patch = "patches/noise-notch-1k.patch.json"
+
+# --- Hear's ear question: which one has lost its bass? (lp against hp.)
+[[steps]]
+id = "which-thin"
+kind = "choose"
+text = "which-thin.md"
+hints = ["One keeps the low body of the saw; the other is all fizz."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-hp-1k.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-lp-1k.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["filter1.mode"]
+
+# --- Try: "keep only the highs" from lp. Measured: the start reads 668 Hz (fails `brightness>2000Hz` by 1332 Hz); the
+# witness, hp, 4473 Hz (passes by 2473 Hz). Notch also reads bright (3613 Hz), so the patch predicate asks for hp.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Mode is on the filter card.",
+  "The high-pass keeps what is above the cutoff and throws away the bass.",
+]
+witness = "patches/saw-hp-1k.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-lp-1k.patch.json"
+highlight = ["filter1.mode"]
+editable = ["filter1.mode"]
+locked = ["filter1.cutoff", "filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "filter1.mode", cmp = "==", value = "hp" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness>2000Hz"]
+
+# --- Do, round 1: a hidden mode, drawn from hp, bp and notch (the lp start left out), the cutoff locked at 1 kHz. Seed
+# 1 draws hp (the start scores sound 16.1).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Dark means lp; thin with no bass means hp; nasal and narrow means bp; hollow, with the middle scooped out, notch.",
+  "Switch through the four modes and compare each with the target.",
+]
+
+[steps.view]
+highlight = ["filter1.mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.mode", set = ["hp", "bp", "notch"] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, lp at 1 kHz", description = "The saw through the filter in lp mode at 1 kHz, 40 % resonance." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1000.0, resonance = 40.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.mode"]
+locked = ["filter1.cutoff", "filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Filter modes, round 1"
+tags = ["basics", "filter-modes"]
+
+# --- Do, round 2: seed 2 draws bp (the start scores 34.7).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Dark means lp; thin with no bass means hp; nasal and narrow means bp; hollow, with the middle scooped out, notch.",
+  "Switch through the four modes and compare each with the target.",
+]
+
+[steps.view]
+highlight = ["filter1.mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "filter1.mode", set = ["hp", "bp", "notch"] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, lp at 1 kHz", description = "The saw through the filter in lp mode at 1 kHz, 40 % resonance." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1000.0, resonance = 40.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.mode"]
+locked = ["filter1.cutoff", "filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Filter modes, round 2"
+tags = ["basics", "filter-modes"]
+
+# --- Do, round 3: the mode and the cutoff together (PLAN's D2: any mode, the cutoff at 500 Hz or 2 kHz). Seed 6 draws
+# notch at 500 Hz (the start scores 16.1; of the eight candidates only that one passes).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "First the mode: dark, thin, nasal or hollow?",
+  "Then the cutoff: is the target's filter working lower or higher than yours?",
+]
+
+[steps.view]
+highlight = ["filter1.mode", "filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 6
+items = [
+  { param = "filter1.mode", set = ["lp", "hp", "bp", "notch"] },
+  { param = "filter1.cutoff", set = [500.0, 2000.0] },
+]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, lp at 1 kHz", description = "The saw through the filter in lp mode at 1 kHz, 40 % resonance." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1000.0, resonance = 40.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.mode", "filter1.cutoff"]
+locked = ["filter1.resonance", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Filter modes, round 3"
+tags = ["basics", "filter-modes"]
+
+# --- Check: which is the band-pass (the four modes on noise), then which is the notch (lp, notch and hp on the saw).
+[[steps]]
+id = "check-bp"
+kind = "choose"
+text = "check-bp.md"
+hints = ["The band-pass keeps a narrow band: it sounds like noise through a telephone."]
+answer = 2
+
+[[steps.options]]
+label = "A"
+patch = "patches/noise-hp-1k.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/noise-lp-1k.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/noise-bp-1k.patch.json"
+
+[[steps.options]]
+label = "D"
+patch = "patches/noise-notch-1k.patch.json"
+
+[[steps]]
+id = "check-notch"
+kind = "choose"
+text = "check-notch.md"
+hints = ["The notch keeps the bass and the highs, and scoops out the middle: full, but hollow."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-lp-1k.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-notch-1k.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/saw-hp-1k.patch.json"
