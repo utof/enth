@@ -35,7 +35,7 @@ control_src=$out/control-src
 rm -rf "$control_src"
 mkdir -p "$control_src"
 if [ -n "$control_rev" ]; then
-  git -C "$here" archive "$control_rev" vendor/egui-baseview | tar -x -C "$control_src"
+  git -C "$(git -C "$here" rev-parse --show-toplevel)" archive "$control_rev" vendor/egui-baseview | tar -x -C "$control_src"
   control_dir=$control_src/vendor/egui-baseview
   control_name="vendor/egui-baseview at $control_rev"
 else
