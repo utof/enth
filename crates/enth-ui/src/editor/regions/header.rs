@@ -2,11 +2,11 @@
 //! fork's captured-shortcut hook, report 02 D6, so the buttons are the way to undo in every host). Built-in cards a
 //! layout places here (layout 1: master) draw as inline knobs at the right end, with every control's menu.
 //!
-//! Four hook points end [`Header::show`] (lanes S0r, R1/S1, and S0l, R2): Add (`editor/add_module.rs`, feature
+//! Five hook points end [`Header::show`] (lanes S0r, R1/S1, S0l, R2, and S0s, R3): Add (`editor/add_module.rs`, feature
 //! `add-module`, lane AM), Presets (`editor/browser.rs`, feature `presets`, lane PBU), Recreate
-//! (`editor/recreate/bar.rs`, feature `recreate`, lane RUI) and Learn (`editor/learn/header.rs`, feature `learn`, lane
-//! LUI). Each is a no-op until its lane fills it (Learn's draws an inert entry, and only once a shell says lessons are
-//! available).
+//! (`editor/recreate/bar.rs`, feature `recreate`, lane RUI), Learn (`editor/learn/header.rs`, feature `learn`, lane
+//! LUI) and Create (`editor/create/header.rs`, feature `create`, lane PUI). Each is a no-op until its lane fills it
+//! (Learn's and Create's draw an inert entry, and only once a shell says lessons or create are available).
 
 use egui::{Align, Align2, Button, Layout, Rect, RichText, Ui, UiBuilder, pos2};
 
@@ -37,6 +37,10 @@ pub struct HeaderView {
     /// shell says lessons are available.
     #[cfg(feature = "learn")]
     pub learn: crate::editor::learn::HeaderLearn,
+    /// The Create entry's view (lane PUI's hook, pre-declared by lane S0s): empty, and drawn as nothing, until the
+    /// shell says create from sound is available.
+    #[cfg(feature = "create")]
+    pub create: crate::editor::create::HeaderCreate,
 }
 
 /// The header band.
@@ -154,5 +158,8 @@ impl<'a> Header<'a> {
         // Lane S0l (R2): the Learn entry joins the same row, left of Recreate. Inert until lane LUI fills it.
         #[cfg(feature = "learn")]
         crate::editor::learn::header::header(&mut buttons, t, inner, self.view, out);
+        // Lane S0s (R3): the Create entry joins the same row, left of Learn. Inert until lane PUI fills it.
+        #[cfg(feature = "create")]
+        crate::editor::create::header::header(&mut buttons, t, inner, self.view, out);
     }
 }
