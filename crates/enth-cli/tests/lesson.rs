@@ -231,7 +231,7 @@ fn list_names_the_packs_lessons_and_steps() {
     assert_eq!(o.code, 0, "{}", o.stdout);
     let out: LessonListOut = round_trip(&o);
     assert_eq!(out.schema, "enth.lesson-list/1");
-    assert!(out.refused.is_empty());
+    assert_eq!(out.refused, Vec::new());
     let lesson = &out.packs[0].lessons[0];
     assert_eq!(lesson.key, "example/cutoff");
     let kinds: Vec<(&str, u16)> = lesson
@@ -254,7 +254,7 @@ fn list_names_the_packs_lessons_and_steps() {
     assert_eq!(ids, ["basics", "example"]);
     assert_eq!(all.packs[0].lessons.len(), 16);
     assert_eq!(all.packs[0].tracks[0].id, "tour");
-    assert!(all.refused.is_empty());
+    assert_eq!(all.refused, Vec::new());
 }
 
 #[test]

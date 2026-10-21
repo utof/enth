@@ -215,10 +215,10 @@ pub(super) fn start(
             from = Some(r.to_string());
             start_patch = Some(patch.as_ref().clone());
         }
-    } else if challenge_out.is_some() {
-        if let StepKind::Recreate { challenge, .. } = &step.kind {
-            round_json = Some(challenge.to_json());
-        }
+    } else if challenge_out.is_some()
+        && let StepKind::Recreate { challenge, .. } = &step.kind
+    {
+        round_json = Some(challenge.to_json());
     }
     let prepared = match (list, examples_out) {
         (Some(list), Some(dir)) => prepare_sounds(&bundle, list, dir, number)?,

@@ -93,7 +93,6 @@ fn named(free: &[String], patch: &Patch) -> Result<Vec<ParamAddr>, CliError> {
 fn from_closest(e: &ClosestError) -> CliError {
     match e {
         ClosestError::Search(inner) => game::from_search(inner),
-        ClosestError::StartUnscorable => error::failed(e.code(), e.to_string(), e.hint()),
         _ => error::failed(e.code(), e.to_string(), e.hint()),
     }
 }

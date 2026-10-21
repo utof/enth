@@ -213,7 +213,7 @@ pub(super) fn hint_cmd(
                 )
             })?;
             let (text, measured) = measured(&request.patch, &result);
-            out.source = "measured".to_owned();
+            "measured".clone_into(&mut out.source);
             out.text = text;
             out.measured = Some(measured);
             out.renders = u32::try_from(result.stats.renders).unwrap_or(u32::MAX);
@@ -246,7 +246,7 @@ pub(super) fn hint_cmd(
                 };
             let mut sug =
                 suggest::suggest_out(patch_path, None, level, &plan, target_renders, &spec_of);
-            out.source = "coach".to_owned();
+            "coach".clone_into(&mut out.source);
             out.text.clone_from(&sug.text);
             out.renders = u32::try_from(sug.renders).unwrap_or(u32::MAX);
             out.next = format!(
