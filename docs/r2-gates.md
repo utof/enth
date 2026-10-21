@@ -28,8 +28,8 @@ The automated checks GR2 rests on:
 | --- | --- | --- | --- |
 | A1 | **The agent lesson track** (an agent completes lessons through `enth lesson` from the text alone) | **passed for the two fakes**, recorded by EV3 (track version 1, engine 0.3.0, 2026-10-21, results in `fc581c2`, merged `8411d10`): `witness` (the ceiling, a reachability proof) 16 of 16 lessons, 107 of 107 graded steps; `follower` (**the floor**: hints only, first option on ear questions) **0 of 16 lessons, 32 of 107 steps** (do 7 of 19, rounds 11 of 45, ear questions 14 of 43, the first-option rate). **Pending owner** for a model's run (paid, only with your OK) | EV3 ([agent-evals.md](agent-evals.md#the-lesson-track-r2-lane-ev3)) |
 | A2 | **The Learn view in kittest** (two lessons by label, no peeking in lesson rounds, the overflow report at 1200 × 800, 0 idle frames, overlay snapshots; Review's snapshot) | **passed** in INT2's full gate (2,454 tests, 0 failed; below) | LUI (`89167f2`), LFU, REV (`bede6d9`) |
-| A3 | **A lesson in REAPER** (the `lesson` scenario on the default bundle: a step, the progress file, a save and reload mid-lesson) | see "Gates on INT2's branch" | SKL, LFU; INT2's run |
-| A4 | **The leak gate with Learn on by default** | see "Gates on INT2's branch" | LK; INT2's run |
+| A3 | **A lesson in REAPER** (the `lesson` scenario on the default bundle: a step, the progress file, a save and reload mid-lesson) | **passed**: 12 of 12 on CLAP and VST3 in INT2's `reaper-test` (321 checks, below) | SKL, LFU; INT2's run |
+| A4 | **The leak gate with Learn on by default** | **passed**: 14.53 KB per cycle (limit 26), threads constant, churn flat (below) | LK; INT2's run |
 | A5 | **The one-hour REAPER soak** | see "Gates on INT2's branch" | SOAK; INT2's run |
 | A6 | **Binary size with `basics` bundled** (report 02 put a TLS stack at 2.2 MB) | **measured**: the release `.clap` (Linux x86-64, default features `recreate` and `learn`) is **19,723,472 bytes** (15,208,840 stripped) at `620a67f`; lane LFU measured 19,504,816 with `learn` against 16,626,216 without (+2.88 MB, the pack 0.16 MB of it); the 218 KB since are R3's create work. No budget is set | LFU ([learn.md](learn.md#learn-follow-ups-lane-lfu)); INT2's bundle |
 | A7 | **Progress, the player and Review keep their laws** (merge never shrinks, no pass without a result, locks hold, Leitner moves, a deterministic queue) | **passed** in the full gate (proptests at the fixed seed) | LM, PLY, REV |
@@ -46,8 +46,8 @@ Each judged by its exit status, on `r2/int2` (main `fb299ae` plus INT2's commits
 | `cargo xtask lesson-check --cross --solve` | exit 0 (G2) |
 | `cargo xtask lesson-coverage` | exit 0 (G1) |
 | `cargo xtask pack --check` | exit 0 (G3) |
-| `xvfb-run -a cargo xtask reaper-test --package enth-plugin` | <!-- int2:reaper --> |
-| `cargo xtask leak-test` | <!-- int2:leak --> |
+| `xvfb-run -a -s "-screen 0 1920x1080x24" cargo xtask reaper-test --package enth-plugin` (under `flock -x`) | **exit 0: 321 checks**, CLAP and VST3, every scenario green (417 s; the lock taken at a load of 8). `lesson` 12 of 12 on each (16.8 / 22.4 s): the bundled basics pack's first lesson starts, ▶ Saw, A peaks 0.669 on the track's meter with the transport stopped, Show me passes the Try step and the progress file records it 0.4 / 0.6 s later, and a new REAPER process resumes the lesson mid-way; `round` 10 of 10, `editor-smoke` 5 of 5, `dirty-flag` 18 of 18 |
+| `cargo xtask leak-test` (under `flock -x`) | **exit 0, 5 checks** (442 s, at a load of 23): the editor grows **14.53 KB per cycle** over its baseline (slopes 13.90 and 14.59; limit 26), 3 threads after every close, 200 of 200 first frames in time in both runs, (200, 200) builds and `editor_closed`; instance churn 0.44 KB per cycle (−0.05 in the second half; limit 1.0), +0 threads, +0 descriptors |
 | `cargo xtask reaper-soak --minutes 60` | <!-- int2:soak --> |
 | `cargo xtask validate` (debug) and `--release --no-build` | exit 0 each: 36 passed, 0 failed, 8 skipped (the rehearsal, G4) |
 | `cargo clippy -p enth-lesson-tool --target x86_64-pc-windows-gnu` and `aarch64-apple-darwin`, `-D warnings` | exit 0 both (the release legs' pack step) |
