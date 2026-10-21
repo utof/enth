@@ -1,19 +1,24 @@
 //! The session's Learn API through the public API (lane SL, R2; docs/session.md, "Learn"): the lifecycle and the
 //! stash, every op kind on a locked control refused, one plan per step load, jobs and stale results, the lesson
 //! round (`RoundSource::Challenge`, origin `lesson`), the saved `learn` object and its budget, host automation and
-//! loads, and no audio-thread contact. The shell and lane LM's player are played by hand: a scripted player
-//! ([`Fake`]) stands in for `enth_learn::player::Player` behind the session's `LessonPlayer` trait. No wall clock and
+//! loads, and no audio-thread contact. The shell is played by hand, and the player by a scripted fake ([`Fake`])
+//! behind the session's `LessonPlayer` trait, speaking lane LM's types (F1L swap item 17), so each test controls
+//! exactly what the player answers; `tests/learn_player.rs` drives the real `enth_learn::Player`. No wall clock and
 //! no random seed anywhere: every timestamp is a literal.
 
 mod common;
 
 use std::sync::Arc;
 
+use std::collections::BTreeMap;
+
 use enth_challenge::score::ParamScore;
 use enth_challenge::{
     Combined, Direction, PhraseId, ScoringSpec, SoundScore, SpecPreset, TargetFingerprint,
 };
 use enth_engine::{Engine, Event, EventKind, NoteKey};
+use enth_learn::StepProgress;
+use enth_learn::pack::{PackVersion, StepId};
 use enth_patch::canon::exact_hash;
 use enth_patch::model::{ModuleInstance, Route, Section};
 use enth_patch::{ModSource, ModuleKind, Op, Patch, PatchMeta, Position, apply_all};
@@ -227,18 +232,43 @@ struct Fake {
 
 fn lesson_ref() -> LessonRef {
     LessonRef {
-        pack: "basics".to_owned(),
-        version: "1.0.0".to_owned(),
-        lesson: "02-filter".to_owned(),
+        pack: "basics".parse().unwrap(),
+        version: PackVersion::new(1, 0, 0),
+        lesson: "02-filter".parse().unwrap(),
         step: 0,
-        content: "0123456789abcdef".to_owned(),
+        content: "0123456789abcdef".parse().unwrap(),
     }
 }
 
+/// LM's refusal for a code the fake uses.
 fn refused(code: &'static str) -> PlayerError {
-    PlayerError {
-        code,
-        hint: "not here".to_owned(),
+    match code {
+        "stale_result" => PlayerError::Stale {
+            revision: 0,
+            current: 0,
+        },
+        "not_here" => PlayerError::NotHere {
+            call: "choose",
+            kind: "do",
+        },
+        _ => PlayerError::OutOfRange {
+            what: "step",
+            index: 0,
+        },
+    }
+}
+
+/// The progress record of `step` (the fake's step ids are `s0`, `s1`, …): passed, and clean unless `assisted`.
+fn step_record(step: u16, assisted: bool) -> StepRecord {
+    StepRecord {
+        lesson: lesson_ref().key(),
+        step: StepId::new(&format!("s{step}")).unwrap(),
+        progress: StepProgress {
+            done: true,
+            clean: !assisted,
+            best: None,
+            extra: BTreeMap::new(),
+        },
     }
 }
 
@@ -275,11 +305,7 @@ impl Fake {
         let step = self.lesson.step;
         vec![
             PlayerEffect::Passed { step, assisted },
-            PlayerEffect::Record(StepRecord {
-                step,
-                passed: true,
-                assisted,
-            }),
+            PlayerEffect::Record(step_record(step, assisted)),
         ]
     }
 
@@ -301,14 +327,18 @@ impl Fake {
             }
         }
         out.push(PlayerEffect::View(StepView {
-            lock: step.lock.iter().map(|t| t.parse().unwrap()).collect(),
+            locked: step.lock.iter().map(|t| t.parse().unwrap()).collect(),
             ..StepView::default()
         }));
         if let Kind::Choose { .. } = step.kind {
             let example = |label: &str, cutoff: f32| Audition {
                 label: label.to_owned(),
                 patch: Arc::new(lesson_patch_with(cutoff)),
+                phrase: PhraseId(1),
+                transpose: 0,
                 level_match: true,
+                seed: None,
+                curve: None,
             };
             out.push(PlayerEffect::Examples(Arc::from(vec![
                 example("A", 500.0),
@@ -332,7 +362,7 @@ impl LessonPlayer for Fake {
         self.lesson.clone()
     }
 
-    fn steps(&self) -> u16 {
+    fn step_count(&self) -> u16 {
         self.steps.len() as u16
     }
 
@@ -400,6 +430,7 @@ impl LessonPlayer for Fake {
         Ok(vec![PlayerEffect::Check(CheckRequest {
             revision,
             patch: Box::new(patch),
+            sounds: Vec::new(),
         })])
     }
 
@@ -431,6 +462,9 @@ impl LessonPlayer for Fake {
                 vec![PlayerEffect::HintJob(HintRequest {
                     revision,
                     patch: Box::new(patch),
+                    phrase: PhraseId(1),
+                    expect: Vec::new(),
+                    free: Vec::new(),
                 })]
             }
             _ => Vec::new(),
@@ -503,7 +537,10 @@ impl LessonPlayer for Fake {
     fn end(&mut self, choice: EndChoice) -> Result<Vec<PlayerEffect>, PlayerError> {
         self.log.lock().unwrap().ends.push(choice);
         let mut out = self.leave();
-        out.push(PlayerEffect::End(choice));
+        out.push(PlayerEffect::End(match choice {
+            EndChoice::Restore => enth_learn::EndChoice::Restore,
+            EndChoice::Keep => enth_learn::EndChoice::Keep,
+        }));
         Ok(out)
     }
 }
@@ -540,7 +577,7 @@ fn records(requests: &[LearnRequest]) -> Vec<StepRecord> {
     requests
         .iter()
         .filter_map(|r| match r {
-            LearnRequest::Record { record, .. } => Some(*record),
+            LearnRequest::Record { record, .. } => Some(record.clone()),
             _ => None,
         })
         .collect()
@@ -622,7 +659,7 @@ fn a_lesson_stashes_your_patch_loads_its_steps_and_restores_you() {
     let v = s.lesson().unwrap();
     assert_eq!((v.steps, v.phase, v.round), (3, StepPhase::Working, false));
     assert_eq!(
-        v.view.lock,
+        v.view.locked,
         vec!["filter1.resonance".parse::<Selector>().unwrap()]
     );
     let shell: Vec<ShellRequest> = s.drain_requests().collect();
@@ -633,14 +670,7 @@ fn a_lesson_stashes_your_patch_loads_its_steps_and_restores_you() {
     // The patch check passes on your own edit and records it for the progress file.
     s.edit(vec![set(CUTOFF, 900.0)], None).unwrap();
     assert_eq!(s.lesson().unwrap().phase, StepPhase::Passed);
-    assert_eq!(
-        records(&drain_learn(&mut s)),
-        [StepRecord {
-            step: 0,
-            passed: true,
-            assisted: false
-        }]
-    );
+    assert_eq!(records(&drain_learn(&mut s)), [step_record(0, false)]);
 
     // Next: step 1 loads its start; the saved reference follows; undo cannot reach step 0's edit.
     s.learn_next().unwrap();
@@ -713,17 +743,24 @@ fn a_lesson_too_large_to_save_is_refused_and_changes_nothing() {
     assert_eq!(s.lesson(), None);
     assert_eq!(s.save(None).patch, huge);
 
-    // A lesson reference longer than the budget (a pack with absurd ids).
-    let mut s = Session::new(custom_patch());
-    let (mut fake, _) = Fake::new(three_steps());
-    fake.lesson.lesson = "x".repeat(LESSON_REF_BYTES);
-    let e = s.learn_start(fake).unwrap_err();
-    assert!(
-        matches!(e, LearnError::TooLarge { what: "lesson", .. }),
-        "{e:?}"
-    );
-    assert_eq!(s.patch().to_json(), custom_patch().to_json());
-    assert_eq!(drain_learn(&mut s), []);
+    // A lesson reference cannot outgrow its budget: LM's typed ids bound it far below LESSON_REF_BYTES (the session
+    // still checks, for any other player).
+    let longest = serde_json::to_string(&longest_lesson_ref()).unwrap().len();
+    assert!(longest * 4 < LESSON_REF_BYTES, "{longest} bytes");
+}
+
+/// The longest reference LM's typed ids allow: the longest pack and lesson ids, the widest version and step.
+fn longest_lesson_ref() -> LessonRef {
+    use enth_learn::pack::{LessonId, PackId};
+    LessonRef {
+        pack: format!("p{}", "a".repeat(PackId::MAX_LEN - 1))
+            .parse()
+            .unwrap(),
+        version: PackVersion::new(u32::MAX, u32::MAX, u32::MAX),
+        lesson: "l".repeat(LessonId::MAX_LEN).parse().unwrap(),
+        step: u16::MAX,
+        content: "ffffffffffffffff".parse().unwrap(),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1018,20 +1055,30 @@ fn host_automation_of_a_locked_parameter_folds_but_never_counts() {
     let (mut s, log) = started(steps);
     let mut host = s.host_values();
     s.fold_host(&host); // the first fold after a load only records
-    host.slots[0] = 0.1;
-    host.macros[0] = 0.9;
-    assert_eq!(s.fold_host(&host).written, 2);
+    let told = log.lock().unwrap().edits.clone();
+    // The host keeps moving both locked controls, frame after frame (should-fix 1: this never settled before).
+    for (i, t) in [1_100_u64, 1_200, 1_300, 1_400].into_iter().enumerate() {
+        host.slots[0] = 0.1 + 0.05 * i as f32;
+        host.macros[0] = 0.9 - 0.05 * i as f32;
+        assert_eq!(s.fold_host(&host).written, 2);
+        s.game_tick(t, EditorView::Visible);
+    }
     // The patch follows the host (the patch-wins rules hold) ...
     assert_ne!(cutoff(&s), 2000.0);
-    assert_eq!(s.patch().macros[0].value, 0.9);
-    // ... but every check sees the step's values.
+    assert!(s.patch().macros[0].value > 0.5);
+    // ... but every check sees the step's values, and the player is told nothing: the checked patch did not move.
     let checked = s.checked_patch();
     assert_eq!(checked.value(&addr(CUTOFF)), Some(2000.0));
     assert_eq!(checked.macros[0].value, 0.25);
-    let last = *log.lock().unwrap().edits.last().unwrap();
+    assert_eq!(
+        log.lock().unwrap().edits,
+        told,
+        "no change notice, no new revision"
+    );
+    let last = *told.last().unwrap();
     assert_eq!(
         (last.1, last.2, last.3),
-        (EditSource::Host, Some(2000.0), 0.25)
+        (EditSource::Load, Some(2000.0), 0.25)
     );
     s.game_tick(2_000, EditorView::Visible);
     let job = learn_job(&drain_learn(&mut s), "check");
@@ -1060,6 +1107,52 @@ fn host_automation_of_a_locked_parameter_folds_but_never_counts() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+/// A macro routed into a locked parameter is held as the lock is: the edit path refuses turning it (the session's
+/// table counts the route's destination), and host automation of it neither counts toward a check nor keeps one
+/// from settling (F1l review, nit 9 and should-fix 1).
+#[test]
+fn host_automation_of_a_macro_routed_into_a_lock_never_counts() {
+    // The lesson patch routes macro 1 into the resonance; the step locks the resonance only.
+    let (mut s, log) = started(vec![step(
+        Kind::Sound,
+        Some(lesson_patch_with(2000.0)),
+        &["filter1.resonance"],
+    )]);
+    let turn = Op::SetMacro {
+        index: macro_index(1),
+        value: 0.8,
+    };
+    assert!(matches!(
+        s.edit(vec![turn], None),
+        Err(SessionError::Locked { .. })
+    ));
+    let mut host = s.host_values();
+    s.fold_host(&host);
+    let told = log.lock().unwrap().edits.len();
+    host.macros[0] = 0.8;
+    assert_eq!(s.fold_host(&host).written, 1);
+    assert_eq!(s.patch().macros[0].value, 0.8, "the patch follows the host");
+    assert_eq!(s.checked_patch().macros[0].value, 0.25, "checks do not");
+    assert_eq!(log.lock().unwrap().edits.len(), told);
+    // The sound check still settles and measures the checked patch.
+    s.game_tick(2_000, EditorView::Visible);
+    let job = learn_job(&drain_learn(&mut s), "check");
+    let LearnJobKind::Check(check) = &job.kind else {
+        panic!("{job:?}")
+    };
+    assert_eq!(check.patch.macros[0].value, 0.25);
+    // An unrouted macro is free: the editor may turn it, and host automation of it counts.
+    s.edit(
+        vec![Op::SetMacro {
+            index: macro_index(2),
+            value: 0.7,
+        }],
+        None,
+    )
+    .unwrap();
+    assert_eq!(s.checked_patch().macros[1].value, 0.7);
 }
 
 #[test]
@@ -1177,7 +1270,7 @@ fn a_lesson_that_cannot_be_found_again_keeps_its_stash() {
     t.load(&saved);
     let open = learn_job(&drain_learn(&mut t), "open");
     let (mut other, _) = Fake::new(three_steps());
-    other.lesson.lesson = "03-env".to_owned();
+    other.lesson.lesson = "03-env".parse().unwrap();
     let e = t
         .learn_job_done(
             open.id,
@@ -1224,14 +1317,14 @@ fn an_updated_lesson_restarts_at_its_first_step() {
     // The shell resumed the updated lesson at the saved step; its content differs, so the session starts it again
     // at step 0 and loads that step's start.
     let (mut player, effects, _) = Fake::resumed(three_steps(), 1);
-    player.lesson.content = "fedcba9876543210".to_owned();
+    player.lesson.content = "fedcba9876543210".parse().unwrap();
     t.learn_job_done(open.id, LearnResult::Opened { player, effects })
         .unwrap();
     assert_eq!(cutoff(&t), 2000.0);
     let lesson = t.learn_record().unwrap().lesson.clone().unwrap();
     assert_eq!(
-        (lesson.step, lesson.content.as_str()),
-        (0, "fedcba9876543210")
+        (lesson.step, lesson.content.to_string()),
+        (0, "fedcba9876543210".to_owned())
     );
 }
 
@@ -1271,15 +1364,10 @@ fn the_largest_lesson_and_its_round_fit_the_enth_field() {
     let worst = |cap: usize| "\u{1}".repeat((cap - 2) / 6);
     let stash = worst(STASH_BYTES);
     assert!(escaped_len(&stash) <= STASH_BYTES && escaped_len(&stash) > STASH_BYTES - 8);
-    let mut lesson = LessonRef {
-        step: u16::MAX,
-        content: "f".repeat(16),
-        ..LessonRef::default()
-    };
-    let base = serde_json::to_string(&lesson).unwrap().len();
-    lesson.pack = "\u{1}".repeat((LESSON_REF_BYTES - base) / 6);
+    // The longest reference LM's typed ids allow (F1L swap item 16; it is far below its budget).
+    let lesson = longest_lesson_ref();
     let lesson_bytes = serde_json::to_string(&lesson).unwrap().len();
-    assert!(lesson_bytes <= LESSON_REF_BYTES && lesson_bytes > LESSON_REF_BYTES - 8);
+    assert!(lesson_bytes <= LESSON_REF_BYTES);
 
     let mut edits = Vec::new();
     let mut bytes = 0;
@@ -1397,7 +1485,10 @@ fn a_sound_check_runs_once_settled_and_a_stale_result_is_refused() {
     assert!(s.lesson().unwrap().pending.checking);
     // An edit before the result: the result measured an older patch, so it is refused and changes nothing.
     s.edit(vec![set(CUTOFF, 2500.0)], None).unwrap();
-    let verdict = LearnResult::Checked(CheckVerdict { passed: true });
+    let verdict = LearnResult::Checked(CheckVerdict {
+        passed: true,
+        ..CheckVerdict::default()
+    });
     assert_eq!(
         s.learn_job_done(job.id, verdict),
         Err(LearnError::StaleJob(job.id))
@@ -1409,7 +1500,10 @@ fn a_sound_check_runs_once_settled_and_a_stale_result_is_refused() {
     assert_ne!(again.id, job.id);
     s.learn_job_done(
         again.id,
-        LearnResult::Checked(CheckVerdict { passed: true }),
+        LearnResult::Checked(CheckVerdict {
+            passed: true,
+            ..CheckVerdict::default()
+        }),
     )
     .unwrap();
     assert_eq!(s.lesson().unwrap().phase, StepPhase::Passed);
@@ -1418,7 +1512,10 @@ fn a_sound_check_runs_once_settled_and_a_stale_result_is_refused() {
     assert_eq!(
         s.learn_job_done(
             again.id,
-            LearnResult::Checked(CheckVerdict { passed: false })
+            LearnResult::Checked(CheckVerdict {
+                passed: false,
+                ..CheckVerdict::default()
+            })
         ),
         Err(LearnError::StaleJob(again.id))
     );
@@ -1457,7 +1554,13 @@ fn a_step_change_cancels_its_jobs_and_wrong_or_failed_results_are_handled() {
     s.learn_next().unwrap();
     assert!(drain_learn(&mut s).contains(&LearnRequest::Cancel(out.id)));
     assert_eq!(
-        s.learn_job_done(out.id, LearnResult::Checked(CheckVerdict { passed: true })),
+        s.learn_job_done(
+            out.id,
+            LearnResult::Checked(CheckVerdict {
+                passed: true,
+                ..CheckVerdict::default()
+            })
+        ),
         Err(LearnError::StaleJob(out.id))
     );
 }
@@ -1481,6 +1584,7 @@ fn hints_give_text_first_then_a_measured_job() {
         job.id,
         LearnResult::Hinted(MeasuredHint {
             text: "lower the cutoff by an octave".to_owned(),
+            highlight: Vec::new(),
         }),
     )
     .unwrap();
@@ -1844,7 +1948,10 @@ fn each_step_load_is_one_plan_and_nothing_else_reaches_the_engine() {
     let check = learn_job(&drain_learn(&mut s), "check");
     s.learn_job_done(
         check.id,
-        LearnResult::Checked(CheckVerdict { passed: true }),
+        LearnResult::Checked(CheckVerdict {
+            passed: true,
+            ..CheckVerdict::default()
+        }),
     )
     .unwrap();
     assert_eq!(plans(&mut s, &mut engine), three);
@@ -1946,7 +2053,10 @@ fn lessons_never_stop_the_audio_thread_or_make_it_allocate() {
                 if let LearnRequest::Run(job) = request {
                     let _ = s.learn_job_done(
                         job.id,
-                        LearnResult::Checked(CheckVerdict { passed: true }),
+                        LearnResult::Checked(CheckVerdict {
+                            passed: true,
+                            ..CheckVerdict::default()
+                        }),
                     );
                 }
             }
