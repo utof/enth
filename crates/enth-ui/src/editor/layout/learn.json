@@ -1,0 +1,148 @@
+{
+  "schema": "enth.layout/1",
+  "name": "learn",
+  "description": "Learn (lane LUI): the lesson pane as a column right of the cards, under the header row (so a lesson's round keeps the whole header for its challenge bar), and the overview as a row across the whole window under both (so a round's results drawer and the route list keep their width). The cards keep layout 1's arrangement in the narrower column: a step hides what it does not use, and a focus step shows only its own modules.",
+  "margin": {
+    "token": "space.gap"
+  },
+  "gap": {
+    "token": "space.gap"
+  },
+  "root": {
+    "rows": [
+      {
+        "size": {
+          "token": "size.bar.header"
+        },
+        "cols": [
+          {
+            "size": {
+              "share": 1
+            },
+            "region": "header"
+          },
+          {
+            "size": {
+              "token": "size.output.width"
+            },
+            "region": "output"
+          }
+        ]
+      },
+      {
+        "size": {
+          "share": 1
+        },
+        "cols": [
+          {
+            "size": {
+              "share": 1
+            },
+            "rows": [
+              {
+                "size": {
+                  "token": "size.bar.macros"
+                },
+                "region": "macros"
+              },
+              {
+                "size": {
+                  "share": 1
+                },
+                "cols": [
+                  {
+                    "size": {
+                      "share": 1
+                    },
+                    "rows": [
+                      {
+                        "size": {
+                          "token": "size.card.generator_height",
+                          "count": 3
+                        },
+                        "cols": [
+                          {
+                            "size": {
+                              "share": 1
+                            },
+                            "region": "sources",
+                            "arrange": "strips"
+                          },
+                          {
+                            "size": {
+                              "token": "size.card.lane_width"
+                            },
+                            "region": "voice_fx",
+                            "arrange": "lane"
+                          }
+                        ]
+                      },
+                      {
+                        "size": {
+                          "token": "size.editor.band_height"
+                        },
+                        "region": "modulators",
+                        "arrange": "band"
+                      }
+                    ]
+                  },
+                  {
+                    "size": {
+                      "token": "size.card.lane_width"
+                    },
+                    "region": "effects",
+                    "arrange": "lane"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "size": {
+              "token": "size.learn.pane"
+            },
+            "region": "lesson"
+          }
+        ]
+      },
+      {
+        "size": {
+          "token": "size.learn.overview_height"
+        },
+        "region": "overview"
+      },
+      {
+        "size": {
+          "token": "size.bar.status"
+        },
+        "region": "status"
+      }
+    ]
+  },
+  "place": [
+    {
+      "part": "generators",
+      "region": "sources"
+    },
+    {
+      "part": "voice_fx",
+      "region": "voice_fx"
+    },
+    {
+      "part": "voice",
+      "region": "effects"
+    },
+    {
+      "part": "fx",
+      "region": "effects"
+    },
+    {
+      "part": "modulators",
+      "region": "modulators"
+    },
+    {
+      "part": "master",
+      "region": "header"
+    }
+  ]
+}

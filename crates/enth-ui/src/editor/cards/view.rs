@@ -71,6 +71,9 @@ pub struct ParamView {
     /// A revealed hint points here (a Recreate round, lane HINT; from the editor's
     /// [`Overlay`](crate::editor::overlay::Overlay)): drawn as an outline, with the way to turn it when the hint says.
     pub hint: Option<Pointer>,
+    /// The lesson step locks it (lane LUI; from the editor's [`Overlay`](crate::editor::overlay::Overlay)): drawn with
+    /// a lock glyph, and hovering it says why. The session refuses its edits either way. False outside a lesson.
+    pub locked: bool,
 }
 
 impl ParamView {
@@ -82,6 +85,10 @@ impl ParamView {
 
 /// One card.
 #[derive(Clone, Debug, PartialEq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "a view model: independent facts a card draws (lane LUI added the lesson's highlight and lock)"
+)]
 pub struct CardView {
     pub key: CardKey,
     pub kind: CardKind,
@@ -106,6 +113,12 @@ pub struct CardView {
     /// A revealed hint points at this module (a Recreate round, lane HINT; from the editor's
     /// [`Overlay`](crate::editor::overlay::Overlay)): the card is outlined. False outside a round.
     pub hinted: bool,
+    /// A lesson step is about this module as a whole (lane LUI; the overlay's `Emphasis::Highlighted` on the module):
+    /// the card gets the thin highlight outline. False outside a lesson.
+    pub highlighted: bool,
+    /// A lesson step locks this module as a whole (lane LUI): the lock glyph on its title row; every parameter is
+    /// locked too. False outside a lesson.
+    pub locked: bool,
 }
 
 impl CardView {
@@ -136,6 +149,8 @@ impl CardView {
             place: Place::of(patch, &module.id),
             enable_score: None,
             hinted: false,
+            highlighted: false,
+            locked: false,
         }
     }
 
@@ -175,6 +190,8 @@ impl CardView {
             place: None,
             enable_score: None,
             hinted: false,
+            highlighted: false,
+            locked: false,
         }
     }
 
@@ -266,6 +283,7 @@ fn param_view(patch: &Patch, addr: ParamAddr, spec: &'static ParamSpec, value: f
         emphasis: Emphasis::Normal,
         score: None,
         hint: None,
+        locked: false,
     }
 }
 

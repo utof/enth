@@ -1,4 +1,4 @@
-//! A lesson through lane SKL's minimal Learn panel (freeze point F2l; lane LUI's view replaces the panel): kittest
+//! A lesson through the Learn view (lane SKL's test of its minimal panel, F2l, kept for lane LUI's pane): kittest
 //! drives it by label over a real `Session` and the bundled example pack (`cutoff`: Listen, Do, Choose), the way the
 //! plugin's glue does each frame (`enth-plugin/src/editor.rs`): a clock tick, the worker's Learn results handed back
 //! (`Session::learn_job_done`), the lesson view handed over (`Editor::set_lesson`), the frame, then the Learn intents
@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use egui::{UiBuilder, ViewportId};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use enth_learn::pack::PatchRef;
 use enth_learn::player::{CheckVerdict, MeasuredHint, StepRecord};
 use enth_learn::{LessonBundle, StepPhase};
@@ -23,7 +23,7 @@ use enth_session::game::EditorView;
 use enth_session::learn::{LearnEdit, LearnJob, LearnJobKind, LearnRequest, LearnResult};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
-use enth_ui::editor::overlay::{Emphasis, Overlay, Pointer};
+use enth_ui::editor::overlay::{Emphasis, Overlay};
 
 /// The bundled example pack, as the plugin embeds it.
 const EXAMPLE: &[u8] = include_bytes!("../../enth-plugin/packs/example.enthpack");
@@ -94,7 +94,17 @@ fn harness_with(patch: Patch) -> Harness<'static, App> {
         .value(&cutoff())
         .unwrap();
     let mut editor = Editor::new(&theme);
-    editor.set_lessons(vec![bundle], Vec::new());
+    // As the plugin's glue does at every open (`Glue::set_lessons`): the library and the progress file.
+    let mut store = enth_learn::store::MemStore::new();
+    store.insert(
+        enth_learn::store::Origin::Bundled,
+        "example.enthpack",
+        enth_learn::store::PackSource::Archive(EXAMPLE.to_vec()),
+    );
+    editor.set_library(
+        &enth_learn::store::load_library(&mut store),
+        enth_learn::Progress::new(),
+    );
     let app = App {
         editor,
         theme: theme.clone(),
@@ -155,8 +165,19 @@ fn harness_with(patch: Patch) -> Harness<'static, App> {
         )
 }
 
+/// Clicks the control named `label` (a button or tab before a text run that says the same word).
 fn click(h: &mut Harness<'_, App>, label: &str) {
-    h.get_by_label(label).click();
+    use egui::accesskit::Role;
+    let control = h.query_all_by_label(label).find(|n| {
+        matches!(
+            n.accesskit_node().role(),
+            Role::Button | Role::Tab | Role::Link
+        )
+    });
+    match control {
+        Some(node) => node.click(),
+        None => h.get_by_label(label).click(),
+    }
     h.run_steps(3);
 }
 
@@ -200,11 +221,15 @@ fn a_lesson_plays_through_the_panel_by_label() {
             .any(|r| r.step.as_str() == "hear" && r.progress.done)
     );
 
-    // Try: the step's view on the cards: the cutoff outlined, osc 1 dimmed (locked).
+    // Try: the step's view on the cards: the cutoff outlined, osc 1 locked (dimmed, with the lock glyph).
     let overlay = h.state().editor.learn().overlay().cloned().unwrap();
-    assert_eq!(overlay.param(&cutoff()).hint, Some(Pointer::Here));
+    assert_eq!(overlay.param(&cutoff()).emphasis, Emphasis::Highlighted);
     let osc1 = enth_patch::ModuleId::new("osc1").unwrap();
-    assert_eq!(overlay.module(&osc1), Emphasis::Dimmed);
+    assert!(overlay.module_locked(&osc1));
+    assert_eq!(
+        overlay.param(&"osc1.level".parse().unwrap()).emphasis,
+        Emphasis::Dimmed
+    );
     // A locked edit is refused by the session; the cutoff turned down (as its knob would) passes once it settles.
     let level: ParamAddr = "osc1.level".parse().unwrap();
     let refused = h.state_mut().session.edit(
@@ -252,9 +277,10 @@ fn a_lesson_plays_through_the_panel_by_label() {
         .unwrap();
     assert!(!which.progress.clean, "a wrong pick first");
 
-    // Finish, then end keeping the lesson's patch: the panel goes back to the lesson list.
+    // Finish, then end keeping the lesson's patch: the pane goes back to the lesson browser.
     click(&mut h, "Finish");
     assert!(LearnEdit::lesson(&h.state().session).unwrap().finished);
+    click(&mut h, "End lesson");
     click(&mut h, "End and keep this patch");
     assert!(LearnEdit::lesson(&h.state().session).is_none());
     assert!(h.query_by_label("Start The low-pass cutoff").is_some());
@@ -286,6 +312,7 @@ fn hint_and_show_me_help_on_the_do_step_and_mark_it_assisted() {
         .find(|r| r.step.as_str() == "try")
         .unwrap();
     assert!(!record.progress.clean);
+    click(&mut h, "End lesson");
     click(&mut h, "End and restore my patch");
     let restored = h.state().session.patch();
     assert_eq!(
@@ -331,19 +358,24 @@ fn a_settled_lesson_asks_for_no_frames() {
     assert_eq!(h.state().editor.report().repaint, None);
 }
 
-/// The REAPER `lesson` scenario (`xtask/reaper/lesson.lua`) clicks the panel by position in the plugin's window (the
-/// default 1200 x 800, a fresh instance on the plugin's Init patch): these are its points, so a layout change fails
-/// here first.
+/// The REAPER `lesson` scenario (`xtask/reaper/lesson.lua`) clicks the Learn view by position in the plugin's window
+/// (the default 1200 x 800, a fresh instance on the plugin's Init patch, the library the plugin hands over): these are
+/// its points, so a layout change fails here first.
 #[test]
 fn reaper_points_hit_their_controls() {
+    // Lane LUI's pane: the browser's first row on the example tour, then the controls anchored to the pane's bottom.
     const LEARN: (f32, f32) = (551.0, 28.0);
-    const START: (f32, f32) = (909.0, 44.0);
-    const LISTEN_OPEN: (f32, f32) = (918.0, 82.0);
-    const STOP: (f32, f32) = (1055.0, 82.0);
-    const NEXT: (f32, f32) = (982.0, 54.0);
-    const SHOW: (f32, f32) = (969.0, 82.0);
+    const START: (f32, f32) = (901.0, 160.0);
+    const LISTEN_OPEN: (f32, f32) = (910.0, 580.0);
+    const STOP: (f32, f32) = (908.0, 608.0);
+    const NEXT: (f32, f32) = (1155.0, 636.0);
+    const SHOW: (f32, f32) = (957.0, 608.0);
     let hits = |h: &Harness<'_, App>, label: &str, (x, y): (f32, f32)| {
-        let rect = h.get_by_label(label).rect();
+        let rect = h
+            .query_all_by_label(label)
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .unwrap_or_else(|| panic!("no button {label}"))
+            .rect();
         assert!(
             rect.contains(egui::pos2(x, y)),
             "{label} is at {rect:?}, not under ({x}, {y}): update lesson.lua's POINTS and these"

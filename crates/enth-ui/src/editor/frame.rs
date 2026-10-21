@@ -86,9 +86,13 @@ pub struct Editor {
     #[cfg(feature = "recreate")]
     recreate: super::recreate::bar::Recreate,
     /// The Learn state (lane SKL's minimal panel, F2l; lane LUI's view): the shell's lessons, the session's lesson
-    /// read model, the panel and the intents waiting for the session.
+    /// read model, the pane and the intents waiting for the session.
     #[cfg(feature = "learn")]
     learn: super::learn::Learn,
+    /// The built-in layout `learn` (lane LUI), drawn while the lesson pane shows unless `layout` places the `lesson`
+    /// region itself.
+    #[cfg(feature = "learn")]
+    learn_layout: Layout,
 }
 
 impl std::fmt::Debug for Editor {
@@ -131,6 +135,8 @@ impl Editor {
             recreate: super::recreate::bar::Recreate::default(),
             #[cfg(feature = "learn")]
             learn: super::learn::Learn::default(),
+            #[cfg(feature = "learn")]
+            learn_layout: learn_layout(theme),
         }
     }
 
@@ -250,10 +256,22 @@ impl Editor {
         self.learn.set_lesson(lesson);
     }
 
-    /// When the window opens (lane SKL): the shell's installed lessons and the packs it refused.
+    /// When the window opens (lane SKL): the shell's installed lessons and the packs it refused. Lane LUI's
+    /// [`Editor::set_library`] also gives the pack titles, the tracks and the progress file.
     #[cfg(feature = "learn")]
     pub fn set_lessons(&mut self, lessons: Vec<enth_learn::LessonBundle>, problems: Vec<String>) {
         self.learn.set_lessons(lessons, problems);
+    }
+
+    /// When the window opens (lane LUI): the shell's library (every installed pack, the refused ones as problems)
+    /// and the progress file, for the lesson browser.
+    #[cfg(feature = "learn")]
+    pub fn set_library(
+        &mut self,
+        library: &enth_learn::store::Library,
+        progress: enth_learn::Progress,
+    ) {
+        self.learn.set_library(library, progress);
     }
 
     /// After a frame (lane SKL): the Learn view's intents, applied to the session's `LearnEdit`.
@@ -293,28 +311,41 @@ impl Editor {
                 }
             }
         }
-        overlay::apply(self.active_overlay(), &mut cards);
+        self.with_overlay(|o| overlay::apply(o, &mut cards));
         cards
     }
 
-    /// The overlay laid over the cards: a live Recreate round's rings and dimming (lane RUI), else the one set with
-    /// [`Editor::set_overlay`].
-    fn active_overlay(&self) -> &dyn Overlay {
+    /// Runs `f` with the overlay laid over the cards: a live Recreate round's rings and dimming (lane RUI), a lesson
+    /// step's highlights, locks and hidden modules (lane LUI), the round's over the step's in a lesson's Recreate
+    /// step, else the one set with [`Editor::set_overlay`].
+    fn with_overlay<R>(&self, f: impl FnOnce(&dyn Overlay) -> R) -> R {
+        #[cfg(all(feature = "recreate", feature = "learn"))]
+        if let (Some(round), Some(lesson)) = (self.recreate.overlay(), self.learn.overlay()) {
+            return f(&overlay::Layered {
+                top: round,
+                base: lesson,
+            });
+        }
         #[cfg(feature = "recreate")]
         if let Some(round) = self.recreate.overlay() {
-            return round;
+            return f(round);
         }
-        // A lesson step's highlights, locks and hidden modules (lane SKL); its round's rings come first.
         #[cfg(feature = "learn")]
         if let Some(lesson) = self.learn.overlay() {
-            return lesson;
+            return f(lesson);
         }
-        self.overlay.as_ref()
+        f(self.overlay.as_ref())
     }
 
-    /// The modulation sources, with their live levels in the tiles' 0..1.
+    /// The modulation sources, with their live levels in the tiles' 0..1. A module the overlay hides (a lesson step
+    /// that does not use it, lane LUI) has no tile either.
     fn sources(&self, patch: &Patch) -> Vec<SourceView> {
         let mut sources = SourceView::all(patch);
+        self.with_overlay(|o| {
+            sources.retain(
+                |s| !matches!(&s.src, ModSource::Module(id) if o.module(id) == overlay::Emphasis::Hidden),
+            );
+        });
         for s in &mut sources {
             let output = match &s.src {
                 ModSource::Module(id) => self.live.modulator(id),
@@ -345,6 +376,10 @@ impl Editor {
             if let Ok(layout) = Layout::new(self.layout.spec().clone(), theme) {
                 self.layout = layout;
             }
+            #[cfg(feature = "learn")]
+            {
+                self.learn_layout = learn_layout(theme);
+            }
             theme.clone_into(&mut self.resolved_for);
         }
         let t = theme;
@@ -360,20 +395,19 @@ impl Editor {
         let rect = ui.max_rect();
         ui.painter()
             .rect_filled(rect, 0.0, t.color.surface.background);
-        // The Learn panel takes a column at the window's right edge while it is open (lane SKL's minimal panel, F2l);
-        // the layout's regions share the rest, and what no longer fits is in the overflow report.
+        // While the lesson pane shows, the built-in layout `learn` places it (lane LUI), unless the editor's own layout
+        // places the `lesson` region; what no longer fits is in the overflow report.
         #[cfg(feature = "learn")]
-        let (rect, pane) = if self.learn.panel_open() {
-            let w = t.size.learn.pane.min(rect.width());
-            let split = rect.right() - w;
-            (
-                Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
-                Some(Rect::from_min_max(egui::pos2(split, rect.top()), rect.max)),
-            )
-        } else {
-            (rect, None)
+        let (regions, layout) = {
+            let own = self.layout.regions(rect);
+            if self.learn.panel_open() && !own.iter().any(|p| p.region == Region::Lesson) {
+                (self.learn_layout.regions(rect), &self.learn_layout)
+            } else {
+                (own, &self.layout)
+            }
         };
-        let regions = self.layout.regions(rect);
+        #[cfg(not(feature = "learn"))]
+        let (regions, layout) = (self.layout.regions(rect), &self.layout);
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
         #[cfg(feature = "recreate")]
@@ -386,6 +420,22 @@ impl Editor {
         let mut status = None;
         {
             let patch = session.patch();
+            // The lesson pane first (lane LUI): the `enth:` link it finds under the pointer outlines its control on
+            // the cards drawn after it, in the same frame.
+            #[cfg(feature = "learn")]
+            if let Some(p) = regions.iter().find(|p| p.region == Region::Lesson) {
+                let shown = super::learn::pane::show(
+                    &self.learn,
+                    ui,
+                    t,
+                    p.rect,
+                    patch,
+                    &self.live,
+                    &mut out,
+                );
+                overflow.push(("learn", shown.overflow));
+                self.learn.set_pointing(shown.pointing);
+            }
             for placed in &regions {
                 if sheet.is_some_and(|b| browser::covered(placed, b)) {
                     continue;
@@ -411,8 +461,7 @@ impl Editor {
                             #[cfg(feature = "create")]
                             create: super::create::HeaderCreate::default(),
                         };
-                        let knobs: Vec<CardView> = self
-                            .layout
+                        let knobs: Vec<CardView> = layout
                             .parts_in(Region::Header)
                             .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
@@ -423,12 +472,11 @@ impl Editor {
                         Macros::new(t, &MacroView::all(patch)).show(ui, r, &mut out);
                     }
                     Region::Sources | Region::VoiceFx | Region::Modulators | Region::Effects => {
-                        let cards: Vec<CardView> = self
-                            .layout
+                        let cards: Vec<CardView> = layout
                             .parts_in(placed.region)
                             .flat_map(|part| self.cards(patch, part, drag))
                             .collect();
-                        let room = Room::of_parts(patch, self.layout.parts_in(placed.region));
+                        let room = Room::of_parts(patch, layout.parts_in(placed.region));
                         let shown =
                             CardRegion::new(t, placed.region.name(), &cards, placed.arrange)
                                 .room(&room)
@@ -445,8 +493,21 @@ impl Editor {
                     }
                     Region::Overview => {
                         let sources = self.sources(patch);
-                        let overlay = self.active_overlay();
-                        let matrix = MatrixView::of(patch).scored(|route| overlay.route(route));
+                        let matrix = self.with_overlay(|o| {
+                            // The routes of a module the overlay hides (a lesson step, lane LUI) are not listed.
+                            let hidden = |id: &enth_patch::ModuleId| o.module(id) == overlay::Emphasis::Hidden;
+                            let gone = |r: &enth_patch::Route| {
+                                matches!(&r.src, ModSource::Module(id) if hidden(id))
+                                    || matches!(r.dst.target(), enth_patch::Target::Module(id) if hidden(id))
+                            };
+                            if patch.routes.iter().any(gone) {
+                                let mut shown = patch.clone();
+                                shown.routes.retain(|r| !gone(r));
+                                MatrixView::of(&shown).scored(|route| o.route(route))
+                            } else {
+                                MatrixView::of(patch).scored(|route| o.route(route))
+                            }
+                        });
                         let shown = Overview::new(t, &sources, &matrix).show(ui, r, &mut out);
                         #[cfg(feature = "recreate")]
                         if self.recreate.has_results() {
@@ -476,18 +537,14 @@ impl Editor {
                     }
                     // Drawn last: it shows what the other regions report as hovered.
                     Region::Status => status = Some(r),
+                    // Drawn first, above (lane LUI).
                     #[cfg(feature = "learn")]
-                    Region::Lesson => super::reserved::show(ui, t, r, placed.region),
+                    Region::Lesson => {}
                     #[cfg(feature = "recreate")]
                     Region::ChallengeBar | Region::Results => {
                         super::reserved::show(ui, t, r, placed.region);
                     }
                 }
-            }
-            #[cfg(feature = "learn")]
-            if let Some(p) = pane {
-                let over = super::learn::pane::show(&self.learn, ui, t, p, &mut out);
-                overflow.push(("learn", over));
             }
             if let Some(b) = sheet {
                 #[cfg(feature = "recreate")]
@@ -541,8 +598,8 @@ impl Editor {
         if self.recreate.take_changed() {
             ctx.request_repaint();
         }
-        // So do the Learn view's intents (lane SKL): the shell applies them after this frame (`apply_learn`), and the
-        // next pass shows what they did. Only after a click: never a timer.
+        // So do the Learn view's intents (lanes SKL, LUI): the shell applies them after this frame (`apply_learn`), and
+        // the next pass shows what they did. Only after a click: never a timer.
         #[cfg(feature = "learn")]
         if self.learn.has_queued() {
             ctx.request_repaint();
@@ -625,4 +682,14 @@ fn mark_cards(ctx: &Context, cards: &[CardView], fingerprint: &mut Fingerprint) 
             }
         }
     }
+}
+
+/// The built-in layout `learn` for `theme` (lane LUI), or layout 1 if it does not resolve (it always does: the
+/// unit test in `layout.rs` checks every built-in).
+#[cfg(feature = "learn")]
+fn learn_layout(theme: &Theme) -> Layout {
+    LayoutSpec::builtin("learn")
+        .and_then(|spec| Layout::new(spec, theme).ok())
+        .or_else(|| Layout::new(LayoutSpec::lanes(), theme).ok())
+        .unwrap_or_else(|| unreachable!("the built-in layouts check"))
 }

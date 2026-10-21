@@ -13,7 +13,7 @@
 | `editor/live.rs` | live feedback (ED2): the telemetry reader per open, the frame's fingerprint of visible live values, repaint gating |
 | `meter.rs` | display maths for the output region (ED2): dB, the spectrum's FFT |
 | `editor/cards/` | UI-C's catalogue cards; ED1 added `menu.rs` (right-click menu, "Type value…"), the shared `control` (also used by the header) and the overlay fields on `ParamView` |
-| `editor/overlay.rs` | the no-op `Overlay` (emphasis normal, dimmed or hidden; scores) |
+| `editor/overlay.rs` | the no-op `Overlay` (emphasis normal, dimmed, hidden or highlighted; scores; a lesson's locks, `Layered`) |
 | `editor/describe.rs` | undo steps in the editor's words, for the Undo and Redo tooltips |
 | `editor/reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features |
 | `editor/add_module.rs` | (lane AM) adding and removing modules: the card's "…" menu, the region menu, the dashed "+ Add" slot, the header's Add hook, the "Rename…" field, the status line's notes ([below](#adding-and-removing-modules-lane-am)) |
@@ -23,6 +23,7 @@
 | `crates/enth-plugin/src/editor.rs` | the plugin window: `EditorApp` and `Glue`, the plugin's handle on `Editor` |
 | `editor/recreate/` | the Recreate UI (lane RUI): the challenge bar in the header row (`bar.rs`), the results drawer in the overview slot (`results.rs`), the randomizer settings page (`settings.rs`), the score overlay (`overlay.rs`), the editor's Recreate state and round intents (`state.rs`); tokens in `theme/sizes/recreate.rs` ([below](#the-recreate-ui-lane-rui)) |
 | `editor/browser.rs`, `editor/browser/` | the preset browser (lane PBU): `Presets` (the editor's preset state), the header's Presets hook (`header.rs`), the browse panel (`panel.rs`), the Save dialog (`save.rs`), the crash notice and report (`crash.rs`); tokens in `theme/sizes/browser.rs` ([below](#the-preset-browser-lane-pbu)) |
+| `editor/learn/`, `editor/layout/learn.json` | the Learn view (lane LUI, feature `learn`): the header's entry (`header.rs`), the editor's Learn state, intents and the lesson overlay (`state.rs`), the lesson pane (`pane.rs`), the lesson browser (`browser.rs`), the built-in layout `learn`; tokens in `theme/sizes/learn.rs` ([below](#the-learn-view-lane-lui)) |
 
 ## The frame
 
@@ -361,6 +362,104 @@ The drawer costs less than the overview it replaces at the maximum patch (eleven
 - A route hint's matrix cell and route-list row are not marked: the results drawer covers the overview while a hint shows. Its destination control and source card are.
 - No "Daily" seed yet (the code field takes a daily's code when one exists).
 - Route rings show only while the overview is up (the drawer takes its slot); a route the player lacks has no ring anywhere, only its share of structure %.
+
+## The Learn view (lane LUI)
+
+**A lesson is a layout plus an overlay: the lesson pane beside the cards, and the step's view laid over them.** Lane LUI replaced lane SKL's minimal panel (F2l) with the view in `editor/learn/` (feature `learn`, which the plugin's `learn` feature turns on). The design of record is [learn.md](learn.md#the-learn-view); the lesson types, the player and the markdown AST are `enth-learn`'s, the live binding `enth-session`'s ([session.md](session.md#learn-lane-sl-r2)).
+
+**The seam**, copied from Recreate: `Editor::set_lesson(LearnEdit::lesson())` before every frame (the session's read model), `Editor::set_library(&Library, Progress)` when the window opens (the shell's installed packs, the refused ones, and the progress file; SKL's `set_lessons` still works), `Intent::Learn(LearnIntent)` while drawing, and `Editor::apply_learn(&mut dyn LearnEdit)` after the frame. The intents: `Toggle` (show or hide the pane), `Browse(bool)`, `Shelf`, `Start(i)`, `Next`, `Back`, `Hint`, `Show`, `Choose(i)`, `Listen(Option<i>)`, `Flip` (A/B), `Review` (a placeholder for lane REV) and `End(Restore | Keep)`. A queued intent asks egui for one more pass, never a timer. The plugin's glue (`Glue::round_frame`, `Glue::set_lessons`) does all of it ([plugin.md](plugin.md#learn-lane-skl-r2)).
+
+### Where the pane goes
+
+**The built-in layout `learn`** (`layout/learn.json`, in `layout::BUILTIN` with the `learn` feature) is drawn while the pane shows, unless the editor's own layout places the `lesson` region itself (then that layout is kept, with the pane in its region):
+
+| Row | Holds |
+| --- | --- |
+| `size.bar.header` | the header and the output region, as in layout 1: a lesson's round keeps the whole header for its challenge bar |
+| share | the cards column (macros, then layout 1's signal row of sources and the filter lane, the modulator band, the effects lane at its right) and the **`lesson` region**, `size.learn.pane` (320 px) wide |
+| `size.learn.overview_height` (98) | the overview **across the whole window** (1,184 px at 1200 × 800, wider than layout 1's 956), so a round's results drawer and the route list keep their width |
+| `size.bar.status` | the status line |
+
+**Hiding the pane is the collapse.** The pane's **Hide** (and the header's entry) toggles it: hidden, the editor draws its own layout over the whole window, the lesson goes on (its overlay stays), and the header's entry reads **Lesson n/m**; a click brings the pane back. In Recreate mode the entry steps aside for the challenge bar, as the Presets group does, so a lesson's Recreate step keeps the pane (its **Hide** is disabled there).
+
+**Focus.** A step whose view says `layout = "focus"` shows, beside the pane, only the modules it highlights or leaves editable (the built-ins stay); with the pane hidden, focus gives way and the whole patch shows. A module the step hides (or focus leaves out) also loses its source tile and its routes in the overview.
+
+**The overflow report at 1200 × 800** (`tests/learn_view.rs`, `Editor::report()`):
+
+| Case | What does not fit |
+| --- | --- |
+| The steps of How a lesson works and Low-pass cutoff that hide what they do not use or are focus steps (6 of their 16) | nothing |
+| Their Recreate steps after Submit (the results drawer in the overview row) | nothing |
+| Their steps with no start of their own that carry the player's patch over (7 of 16; the test's player has Init) | nothing for Init; a patch the size of the P1 default overflows as the next rows say |
+| Their Listen and Choose steps right after a round, which carry the round's full starter over (3 of 16) | the modulator band by 276 px sideways (report 03's figure) and the effects lane by 84 px |
+| The P1 default with the browser open | the same, and the browser's list scrolls by 4 px in the pane |
+| The pane hidden (layout 1), the P1 default | nothing |
+| The maximum patch, the pane open | every card region scrolls on its own (sources 104, filter lane 723, effects 546, the band 1,188 sideways) and the route list by 63 |
+
+So a lesson fits beside the pane when its steps hide what they do not use: the content lanes should give a step that carries a full starter over (the Check steps after a round, a Name step on the player's own patch) a `hide` list or `layout = "focus"`; a player can always hide the pane.
+
+### The pane
+
+**With no lesson** (or after **Lessons** over a live one) the pane is **the lesson browser**: a tab per track, **the tour first** (its lessons in order, numbered; a lesson whose pack is missing is listed as not installed), and **All lessons** (each pack's title, id, version and lessons in order). A row is **Start** (**Restart** for the live lesson), the title, its progress ("3/10", "✓ 10/10" once every step is done, in the score ink with the glyph) and the objective. Refused packs are listed with their reasons. **Review** is there and disabled ("comes in a later update") until lane REV feeds it. The progress is the file the shell handed over, plus the steps the view saw pass since (the file stays the shell's: `LearnRequest::Record` writes it).
+
+**In a lesson**, top to bottom: the title row (the lesson's title, **Lessons**, **Hide**); the progress row (a dot per step: the current one in the value accent, done ones in the label ink; "Step n of m • <kind> • <state>", with Listen, Read, Try, Recreate and Choose for the kinds and "✓ Passed", "Checking…", "Lesson complete" for the state); the step's text, which scrolls; and **the controls, anchored to the pane's bottom** so they stand at the same place whatever the text (the REAPER `lesson` scenario clicks them by position):
+
+| From the bottom up | What |
+| --- | --- |
+| The way on | **◀ Back**, **End** (a menu: **End and restore my patch**, **End and keep this patch**), **Next ▶** (**Finish ▶** on the last step) |
+| Do and Choose | **Hint** and **Show me** (both mark the step helped) |
+| Choose | a button per answer, under "Your answer:" |
+| Listen and Choose | **■ Stop** and **A/B** (the other of the last two examples played, at the same position: they share the Target ▶ slot), above them a **▶** per example in rows that fit |
+| Above | the verdict ("✓ Right.", "✗ Not that one: listen again.", "✓ The answer is B."), the latest hint in the value accent, "Working out a hint…", the last refusal in the bad-score ink |
+
+A **Recreate** step is played with the Recreate UI unchanged (the challenge bar in the header, the rings, the results drawer in the overview row); the pane keeps its text and a line that says where the round's controls are. Its overlay is the round's laid over the step's (`overlay::Layered`: hidden beats dimmed beats highlighted; rings, the round's hint and the dim assist from the round; locks from the step).
+
+**The text** is `enth-learn`'s block AST (`markdown::parse`), drawn with tokens only; the pane never sees markdown:
+
+| AST | Drawn as |
+| --- | --- |
+| Heading 1, 2–3 | `text.title`, `text.strong` |
+| Paragraph; list (bulleted, numbered, nested) | runs that flow and wrap, `text.body`; `•` or `n.` markers in the label ink, items indented by `space.section` |
+| Strong, emphasis, code | `text.strong`; italics; `text.value` on `surface.recessed` |
+| `enth:<selector>` link | underlined in the value accent; **hovering it outlines its control on the cards** (a route: its destination and its source's card; a module: its card). The pane is drawn before the cards, so the outline shows in the same frame |
+| `enth:play/n` link, `play n` widget | plays example (or option) n, or stops it while it plays ("Play <label>" for the widget) |
+| `https:` link | opens the browser through egui's `OpenUrl` (no network code) |
+| `control <param>` widget | the live knob, under its own id (`ids::param(addr).with("lesson")`), so it never clashes with the card's: the same gestures (one undo step a drag), dimmed when locked; hovering it outlines the card's control. A switch or a short enum shows its value as a chip; a module, route or macro selector shows as a chip that outlines it |
+| `scope` widget | the live scope from the telemetry the output region draws, `size.learn.scope_height` tall |
+| `shape <module>` widget | an envelope's stages or an LFO's wave from the live patch, `size.learn.shape_height` tall |
+
+### The overlay's highlight and lock
+
+Additive in `overlay.rs` (docs at the top of the file):
+
+- **`Emphasis::Highlighted`**: what a step highlights (`view.highlight`) and the hovered link. A control gets a thin outline in the value accent a tight gap outside it (`paint_highlight`, `stroke.thin`); a module's highlight outlines its card. Static, so it asks for no frames. A revealed hint's thick outline still reads stronger.
+- **`Overlay::locked` and `Overlay::module_locked`** (default false): what the step locks (`view.locked`). The control is drawn dimmed with a **lock glyph** on its top right corner (`paint_lock`: a shackle over a filled body, `size.learn.lock`, the label ink; Inter has no padlock), a locked module's card carries it on its title row, left of "More" or "…". Hovering a locked control sets the not-allowed cursor and the status line reads "<path> <value> Locked in this step: the lesson keeps it where it is, so you hear only what it teaches", as a refused drag-to-modulate target names its reason. **The session refuses the edit anyway** (`SessionError::Locked`), and its hint shows at the status line's right end.
+- `ParamView::locked`, `CardView::highlighted` and `CardView::locked` carry them to the cards (`cards/view.rs`, `cards/card.rs`, additive).
+
+**Repaint.** The Learn view asks for no frames of its own: a settled lesson's frames ask for `Duration::MAX` on every step kind (an example playing, a passed Try step, the browser); job results and the lesson's settle moment (`LearnView::wake_at_ms`) wake the editor through the shell. In a Recreate step the round's own clock asks for its next second, as in any round.
+
+**Accessibility labels** (kittest drives the view by them): "Learn" or "Lesson n/m" (the header's entry); "Lessons", "Hide lesson", "Hide lessons", "Back to the lesson", "Review", the track titles and "All lessons" (tabs), "Start <title>", "<title> progress d/n"; "Step n of m <state>" (a status); "Back", "Next", "Finish", "End lesson", "End and restore my patch", "End and keep this patch"; "Listen <label>", "Stop listening", "A/B", "Choose <label>", "Hint", "Show me"; links by their text; "Play <label>" for a play widget.
+
+**Tests.** `crates/enth-ui/tests/learn_view.rs`, over a real `Session` with the worker's real functions (`evaluate_sounds`, `prepare_challenge`, `score_round`, `score_structure`) and the `basics` pack built from `content/lessons/basics`: **two lessons completed by label** (How a lesson works and Low-pass cutoff, every step kind: examples played and A/B flipped, the Try steps walked to the witness, the rounds matched and submitted, the answers chosen; every step recorded done; the browser shows both complete); the browser (the tour first, a missing pack's lesson, All lessons, the disabled Review); hiding the pane and the header's "Lesson n/m"; a step's highlight, locks and focus; a hovered link's outline; links and every widget (a play link, a play widget, the text's live knob turning the cutoff as one undo step); a locked control's reason; **no peeking** in a lesson's Recreate step (no text the editor shows, hovering every control, the Hint and the End menu, contains the drawn value; after Reveal it does); **the overflow report**; **no idle frames**. Snapshots (lavapipe, 1200 × 800): `learn_browser.png`, `learn_name_link.png` (a link hovered), `learn_try_focus.png` (a focus step's outline), `learn_round.png` (a lesson round, the lock glyphs), `learn_locked_hidden_pane.png` (the pane hidden on a step that locks three modules). `tests/learn_panel.rs` (lane SKL's) plays the example pack through the pane and pins the REAPER points; `tests/learn.rs` the header's entry; unit tests in `overlay.rs` and `learn/state.rs`.
+
+| Token (`theme/sizes/learn.rs`) | Value | For |
+| --- | --- | --- |
+| `size.learn.pane` | 320 | the lesson pane's column in the layout `learn` |
+| `size.learn.overview_height` | 98 | the overview row across the window in the layout `learn` (what layout 1 leaves its overview) |
+| `size.learn.lock` | 9 | the lock glyph's side |
+| `size.learn.scope_height` | 64 | a `scope` widget in a step's text |
+| `size.learn.shape_height` | 56 | a `shape` widget |
+| `size.learn.progress_width` | 56 | the browser's progress column |
+
+Glyphs: `STOP` ■ (new, Inter covers it), `PLAY` ▶, `PREVIOUS` ◀, `NEXT` ▶, `DOT_ON` ●, `DOT_OFF` ○, `BULLET` •, `GOOD` ✓, `BAD` ✗.
+
+**Left for later:**
+
+- **"How close am I?"** is not built: the session's `LearnJobKind` has no `Closest` job (lane SL's file), and the plugin's worker would run it (lane SKL's); with both, the button joins the Recreate step's controls with progress and cancel.
+- "Open packs folder" and "Get more lessons" (the browser's buttons in learn.md) need the shell's folder and the releases page's address; Review waits for lane REV.
+- The plugin bundles only the example pack (`enth-plugin/src/learn.rs`'s `BUNDLED`, lane SKL's), so the basics pack and its tour reach the plugin once a lane bundles it.
+- A route selector in a link outlines its destination and its source's card, not its matrix cell or route-list row; a macro selector outlines nothing (the macro bar takes no overlay).
+- A one-op Show me never satisfies a `touched` predicate: the touch log spans the values the player's edits reached, starting at the first edit's (enth-learn's `TouchLog`), so a single jump spans nothing (How a lesson works' Try step passes by a drag, not by Show me).
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 

@@ -1,7 +1,8 @@
 //! The Learn header hook (lane S0l's entry point, R2; lane LUI fills the view): with the `learn` feature on, the
 //! header draws one **Learn** button when the shell says lessons are available, and draws exactly as before when it
 //! does not. Since lane SKL's minimal panel (F2l) the click toggles the Learn panel (`tests/learn_panel.rs` plays a
-//! lesson through it). kittest finds the button by its accessibility label, with no renderer.
+//! lesson through it); since lane LUI it reads "Lesson n/m" while a lesson is live, so a hidden (collapsed) pane still
+//! shows where the lesson stands. kittest finds the button by its accessibility label, with no renderer.
 #![cfg(feature = "learn")]
 
 use egui::vec2;
@@ -50,7 +51,10 @@ fn the_header_has_no_learn_entry_until_the_shell_says_lessons_are_available() {
 #[test]
 fn an_available_learn_entry_is_drawn_and_toggles_the_panel() {
     let view = HeaderView {
-        learn: HeaderLearn { available: true },
+        learn: HeaderLearn {
+            available: true,
+            ..HeaderLearn::default()
+        },
         ..HeaderView::default()
     };
     let mut h = harness(view);
@@ -61,5 +65,27 @@ fn an_available_learn_entry_is_drawn_and_toggles_the_panel() {
         h.state().out.as_slice(),
         &[Intent::Learn(LearnIntent::Toggle)],
         "the entry toggles the Learn panel (lane SKL)"
+    );
+}
+
+#[test]
+fn a_live_lesson_shows_its_step_on_the_entry() {
+    let view = HeaderView {
+        learn: HeaderLearn {
+            available: true,
+            lesson: Some((3, 11)),
+            open: false,
+        },
+        ..HeaderView::default()
+    };
+    let mut h = harness(view);
+    h.run();
+    assert!(h.query_by_label("Learn").is_none());
+    h.get_by_label("Lesson 3/11").click();
+    h.run();
+    assert_eq!(
+        h.state().out.as_slice(),
+        &[Intent::Learn(LearnIntent::Toggle)],
+        "a click brings the pane back"
     );
 }

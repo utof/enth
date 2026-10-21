@@ -1,37 +1,73 @@
-//! **Owner: lane LUI** (the Learn view, feature `learn`). Pre-declared by lane S0l (R2); **lane SKL** wrote this
-//! minimal panel for freeze point F2l, which LUI replaces with the real lesson pane.
+//! **Owner: lane LUI** (the Learn view, feature `learn`). Pre-declared by lane S0l (R2); lane SKL's minimal panel
+//! (F2l) is replaced by this pane.
 //!
-//! The planned pane: the `LessonPane` of `widgets/lesson_pane.rs` fed by `enth-learn`'s block AST: headings, bold,
-//! bullets and `enth:` links (a link such as `[Cutoff](enth:filter1.cutoff)` highlights its control on hover),
-//! drawn with design tokens only; the Hear / Try / Do / Check controls; the hint tiers. A 320 px pane fits 1200 x 800
-//! only when the step hides unused modules (the G1 patch overflows by 276 to 732 px), so LUI needs a collapsible pane
-//! or a focus-card region, with an overflow report. Sizes go in `theme/sizes/learn.rs`.
+//! **The lesson pane** fills the `lesson` region (the built-in layout `learn`, `layout/learn.json`): with no lesson, or
+//! when asked, the lesson browser ([`super::browser`]); in a lesson, the step. It draws `enth-learn`'s markdown block
+//! AST with design tokens only and never sees markdown (docs/learn.md, "The markdown block AST"):
 //!
-//! **SKL's panel** takes a column at the window's right edge while it is open (`size.learn.pane`) and draws, in plain
-//! text with the theme's tokens: with no lesson, the installed lessons with a **Start** each (and the packs the shell
-//! refused); in a lesson, its title, "Step n of m" and where the step stands, the step's text (markdown reduced to
-//! plain lines), the examples' Listen buttons, the ear question's options, Hint and Show me, Back and Next, and End
-//! with Keep or Restore. Every button has an accessible name, so kittest drives it by label. It asks for no frames
-//! of its own.
+//! | AST | Drawn as |
+//! | --- | --- |
+//! | `Heading` 1 / 2–3 | `text.title` / `text.strong` |
+//! | `Paragraph`, `List` (bulleted, numbered, nested) | flowing runs in `text.body`; `•` or `n.` markers, nested lists indented by `space.section` |
+//! | `Strong`, `Emphasis`, `Code` | `text.strong`; italics; `text.value` on `surface.recessed` (a chip) |
+//! | link `enth:<selector>` | the value accent; **hovering it outlines its control** on the cards (the overlay's highlight) |
+//! | link `enth:play/n` | the value accent; a click plays example (or option) n |
+//! | link `https:` | the value accent; a click opens the browser (egui's `OpenUrl`; R2 has no network code) |
+//! | widget `play n` | a ▶ button for example n |
+//! | widget `control <param>` | the live control in the text (a knob under its own id, so it never clashes with the card's); a module, route or macro shows as a chip that outlines it on hover |
+//! | widget `scope` | the live scope (the telemetry the output region draws) |
+//! | widget `shape <module>` | an envelope's stages or an LFO's wave, from the live patch |
+//!
+//! **Where things stand.** The title row (the lesson's title, **Lessons** for the browser, **Hide** to collapse the
+//! pane into the header's "Lesson n/m" entry) and the progress row (a dot per step, "Step n of m" and the step's state)
+//! sit at the top; the step's text scrolls in the middle; **the controls are anchored to the bottom**, so they stand at
+//! the same place whatever the text's length (the REAPER `lesson` scenario clicks them by position;
+//! `tests/learn_panel.rs` pins the points). From the bottom up: ◀ Back, **End lesson** (a menu: restore or keep) and
+//! Next ▶ (Finish ▶ on the last step); the step's own controls (Listen: ▶ per example, ■ Stop and **A/B**, which flips
+//! between the last two examples at the same position; Choose: the examples, then a button per answer; Do: **Hint**
+//! and **Show me**); above them the verdict, the latest hint and the last refusal. A Recreate step is played with the
+//! Recreate UI unchanged (the challenge bar in the header, the results drawer in the overview slot); the pane keeps
+//! its text and the way on. Every control has an accessible name, so kittest drives it by label. The pane asks for no
+//! frames of its own.
 
 use egui::{
-    Align, Button, Label, Layout, Rect, RichText, Role, ScrollArea, Ui, UiBuilder, WidgetInfo, vec2,
+    Align, Button, CursorIcon, Label, Layout, Rect, Response, RichText, Role, ScrollArea, Sense,
+    Ui, UiBuilder, Vec2, WidgetInfo, vec2,
 };
-use enth_learn::{StepKind, StepPhase};
+use enth_learn::markdown::{self, Block, Doc, Inline, LinkTarget, Widget};
+use enth_learn::{Example, Selector, StepKind, StepPhase};
+use enth_patch::catalogue::LfoShape;
+use enth_patch::{ModuleKind, ParamAddr, Patch};
 use enth_session::game::EndChoice;
+use enth_session::learn::LearnView;
 
 use super::state::{Learn, LearnIntent};
 use crate::Theme;
-use crate::editor::cards::{Intent, Intents};
+use crate::editor::cards::format::value_text;
+use crate::editor::cards::{
+    CardKind, Control, Grip, Intent, Intents, envelope_stages, ids, present, shapes,
+};
+use crate::editor::live::Live;
+use crate::theme::glyph;
+use crate::widgets::{Display, Emphasis as KnobEmphasis, Ink, Knob, Trace};
+
+/// What the pane did this frame, besides its intents.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct PaneOutput {
+    /// How far its scrolling text reached past its slot (the frame report lists it as `learn`).
+    pub overflow: Vec2,
+    /// The `enth:` link or `control` widget under the pointer: its control is outlined on the cards.
+    pub pointing: Option<Selector>,
+}
 
 /// Names a widget for screen readers and tests, whatever its text shows.
-fn named(response: &egui::Response, label: &str) {
+pub(crate) fn named(response: &Response, role: Role, label: &str) {
     let enabled = response.enabled();
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
+    response.widget_info(|| WidgetInfo::labeled(role, enabled, label));
 }
 
 /// A button with `text`, named `label`, enabled when `enabled`; pushes `intent` when clicked.
-fn button(
+pub(crate) fn button(
     ui: &mut Ui,
     t: &Theme,
     text: &str,
@@ -39,188 +75,162 @@ fn button(
     enabled: bool,
     intent: LearnIntent,
     out: &mut Intents,
-) {
+) -> Response {
     let response = ui.add_enabled(
         enabled,
         Button::new(RichText::new(text).font(t.text.body.clone())),
     );
-    named(&response, label);
+    named(&response, Role::Button, label);
     if response.clicked() {
         out.push(Intent::Learn(intent));
     }
+    response
 }
 
-/// A step's markdown as plain lines: headings marked (drawn in the strong font), `**bold**` and `[text](link)`
-/// reduced to their text, bullets drawn as `•`. Lane LUI replaces this with the block AST.
-pub fn plain(markdown: &str) -> Vec<(bool, String)> {
-    let mut out = Vec::new();
-    for line in markdown.lines() {
-        let line = line.trim_end();
-        if line.trim().is_empty() {
-            continue;
+/// A line of wrapped text in `font` and `ink`.
+fn line(ui: &mut Ui, text: &str, font: egui::FontId, ink: egui::Color32) {
+    ui.add(Label::new(RichText::new(text).font(font).color(ink)).wrap());
+}
+
+/// The width a button with `text` takes in the body font.
+fn button_width(ui: &Ui, t: &Theme, text: &str) -> f32 {
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), t.text.body.clone(), t.color.text.primary);
+    galley.size().x + 2.0 * ui.spacing().button_padding.x
+}
+
+/// Splits buttons (by their texts) into rows that fit `width`, greedily, so the bottom-anchored controls know their
+/// rows before drawing them bottom-up.
+fn rows(ui: &Ui, t: &Theme, texts: &[String], width: f32) -> Vec<Vec<usize>> {
+    let gap = ui.spacing().item_spacing.x;
+    let mut out: Vec<Vec<usize>> = Vec::new();
+    let mut used = 0.0;
+    for (i, text) in texts.iter().enumerate() {
+        let w = button_width(ui, t, text);
+        match out.last_mut() {
+            Some(row) if used + gap + w <= width => {
+                row.push(i);
+                used += gap + w;
+            }
+            _ => {
+                out.push(vec![i]);
+                used = w;
+            }
         }
-        let (heading, body) = match line.trim_start().strip_prefix('#') {
-            Some(rest) => (true, rest.trim_start_matches('#').trim()),
-            None => (false, line),
-        };
-        let body = match body.trim_start().strip_prefix("- ") {
-            Some(rest) => format!("• {rest}"),
-            None => body.to_owned(),
-        };
-        out.push((heading, unlink(&body.replace("**", ""))));
     }
     out
 }
 
-/// `[text](target)` → `text`.
-fn unlink(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(open) = rest.find('[') {
-        let after = &rest[open + 1..];
-        let link = after.find("](").and_then(|mid| {
-            after[mid + 2..]
-                .find(')')
-                .map(|close| (mid, mid + 2 + close))
-        });
-        if let Some((mid, close)) = link {
-            out.push_str(&rest[..open]);
-            out.push_str(&after[..mid]);
-            rest = &after[close + 1..];
-        } else {
-            out.push_str(&rest[..=open]);
-            rest = after;
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Draws the panel into `rect` (its column at the window's right edge) from `learn`. Returns how far its content reached past
-/// it (it scrolls; the frame report lists it).
+/// Draws the pane into `rect` (the `lesson` region) from `learn`, the live patch and the telemetry.
 pub(crate) fn show(
     learn: &Learn,
     ui: &mut Ui,
     t: &Theme,
     rect: Rect,
+    patch: &Patch,
+    live: &Live,
     out: &mut Intents,
-) -> egui::Vec2 {
+) -> PaneOutput {
     let mut ui = ui.new_child(
         UiBuilder::new()
             .max_rect(rect)
             .layout(Layout::top_down(Align::Min))
-            .id_salt("enth.learn.panel"),
+            .id_salt("enth.learn.pane"),
     );
     ui.set_clip_rect(rect.intersect(ui.clip_rect()));
     ui.painter()
         .rect_filled(rect, t.radius.medium, t.color.surface.card);
-    let inner = rect.shrink2(vec2(t.space.gap, t.space.tight));
+    let inner = rect.shrink2(vec2(t.space.gap, t.space.gap));
     let mut col = ui.new_child(
         UiBuilder::new()
             .max_rect(inner)
             .layout(Layout::top_down(Align::Min)),
     );
+    col.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
+    if learn.browsing() {
+        let overflow = super::browser::show(learn, &mut col, t, out);
+        return PaneOutput {
+            overflow,
+            pointing: None,
+        };
+    }
+    lesson(learn, &mut col, t, inner, patch, live, out)
+}
+
+/// A lesson's step: the title and progress rows, the controls anchored to the bottom, the text between them.
+fn lesson(
+    learn: &Learn,
+    ui: &mut Ui,
+    t: &Theme,
+    inner: Rect,
+    patch: &Patch,
+    live: &Live,
+    out: &mut Intents,
+) -> PaneOutput {
+    let Some(view) = learn.view() else {
+        return PaneOutput::default();
+    };
+    top(learn, view, ui, t, out);
+    let top_bottom = ui.min_rect().bottom() + t.space.gap;
+    let bottom_rect = Rect::from_min_max(egui::pos2(inner.left(), top_bottom), inner.max);
+    let mut bottom = ui.new_child(
+        UiBuilder::new()
+            .max_rect(bottom_rect)
+            .layout(Layout::bottom_up(Align::Min)),
+    );
+    bottom.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
+    controls(learn, view, &mut bottom, t, out);
+    let controls_top = bottom.min_rect().top() - t.space.gap;
+    let text_rect = Rect::from_min_max(
+        egui::pos2(inner.left(), top_bottom),
+        egui::pos2(inner.right(), controls_top.max(top_bottom)),
+    );
+    let mut text = ui.new_child(
+        UiBuilder::new()
+            .max_rect(text_rect)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    let mut pointing = None;
+    // One scroll position per step, so a new step's text starts at its top.
+    let at = view.lesson.as_ref().map(|r| (r.lesson.clone(), r.step));
     let shown = ScrollArea::vertical()
-        .id_salt("enth.learn.scroll")
+        .id_salt(("enth.learn.text", at))
         .auto_shrink([false, false])
-        .show(&mut col, |ui| {
-            ui.spacing_mut().item_spacing = vec2(t.space.gap, t.space.tight);
-            if learn.view().is_some() {
-                lesson(learn, ui, t, out);
-            } else {
-                list(learn, ui, t, out);
+        .show(&mut text, |ui| {
+            ui.spacing_mut().item_spacing = vec2(t.space.tight, t.space.gap);
+            let cx = TextCx {
+                learn,
+                view,
+                patch,
+                live,
+            };
+            if let Some((bundle, _, step)) = learn.step()
+                && let Some(source) = step.text.as_ref().and_then(|r| bundle.text(r))
+            {
+                let parsed = markdown::parse(source);
+                doc(ui, t, &parsed.doc, &cx, &mut pointing, out);
+            }
+            if matches!(learn.step(), Some((_, _, s)) if matches!(s.kind, StepKind::Recreate { .. })) {
+                line(
+                    ui,
+                    "Play it with the round's controls in the header: Target ▶ and Mine ▶ to compare, then Submit. \
+                     Hint, Reveal and the results are the round's.",
+                    t.text.label.clone(),
+                    t.color.text.label,
+                );
             }
         });
     let over = shown.content_size - shown.inner_rect.size();
-    vec2(over.x.max(0.0), over.y.max(0.0))
-}
-
-/// No lesson live: the installed lessons, each with Start.
-fn list(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new("Lessons")
-                .font(t.text.title.clone())
-                .color(t.color.text.primary),
-        );
-        button(
-            ui,
-            t,
-            "Close",
-            "Close lessons",
-            true,
-            LearnIntent::Toggle,
-            out,
-        );
-    });
-    if learn.lessons().is_empty() {
-        ui.label(
-            RichText::new("No lessons are installed.")
-                .font(t.text.body.clone())
-                .color(t.color.text.dimmed),
-        );
-    }
-    for (i, bundle) in learn.lessons().iter().enumerate() {
-        let title = bundle.lesson.title.as_str();
-        ui.horizontal(|ui| {
-            button(
-                ui,
-                t,
-                "Start",
-                &format!("Start {title}"),
-                true,
-                LearnIntent::Start(i),
-                out,
-            );
-            ui.add(Label::new(
-                RichText::new(format!("{title} · {}", bundle.key()))
-                    .font(t.text.body.clone())
-                    .color(t.color.text.primary),
-            ));
-        });
-        ui.add(
-            Label::new(
-                RichText::new(bundle.lesson.objective.as_str())
-                    .font(t.text.label.clone())
-                    .color(t.color.text.label),
-            )
-            .wrap(),
-        );
-    }
-    for problem in learn.problems() {
-        ui.add(
-            Label::new(
-                RichText::new(problem)
-                    .font(t.text.label.clone())
-                    .color(t.color.text.dimmed),
-            )
-            .wrap(),
-        );
-    }
-    if let Some(said) = learn.said() {
-        ui.add(
-            Label::new(
-                RichText::new(said)
-                    .font(t.text.label.clone())
-                    .color(t.color.score.bad),
-            )
-            .wrap(),
-        );
+    PaneOutput {
+        overflow: vec2(over.x.max(0.0), over.y.max(0.0)),
+        pointing,
     }
 }
 
-/// A lesson live: the step and its controls. The controls come before the step's text, in a fixed order (Back and
-/// Next; the step's Listen, Choose, Hint and Show me), so they stand at the same place whatever the text's length
-/// (the REAPER `lesson` scenario clicks them by position; `tests/learn_panel.rs` pins the points).
-fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
-    let Some(view) = learn.view() else {
-        return;
-    };
-    let step = learn.step();
-    let title = step.map_or("Lesson", |(b, _, _)| b.lesson.title.as_str());
-    let index = view.lesson.as_ref().map_or(0, |r| usize::from(r.step));
-    let count = usize::from(view.steps);
-    let state = if view.broken {
+/// The step's state in words: what the progress row says after "Step n of m".
+fn state(view: &LearnView) -> &'static str {
+    if view.broken {
         "This lesson cannot continue: end it"
     } else if view.pending.opening {
         "Reopening…"
@@ -233,128 +243,128 @@ fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
             StepPhase::Working if view.pending.checking => "Checking…",
             StepPhase::Working => "",
         }
-    };
-    ui.label(
-        RichText::new(title)
-            .font(t.text.title.clone())
-            .color(t.color.text.primary),
-    );
+    }
+}
+
+/// The step kind's name for the player: the lesson shape's words (Hear, Name, Try, Do, Check).
+fn kind_name(kind: &StepKind) -> &'static str {
+    match kind {
+        StepKind::Read => "Read",
+        StepKind::Listen { .. } => "Listen",
+        StepKind::Do { .. } => "Try",
+        StepKind::Recreate { .. } => "Recreate",
+        StepKind::Choose { .. } => "Choose",
+    }
+}
+
+/// The title row and the progress row.
+fn top(learn: &Learn, view: &LearnView, ui: &mut Ui, t: &Theme, out: &mut Intents) {
+    let step = learn.step();
+    let title = step.map_or("Lesson", |(b, _, _)| b.lesson.title.as_str());
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            // In a Recreate step the challenge bar holds the header, where the Lesson entry would bring the pane back.
+            let hide = button(ui, t, "Hide", "Hide lesson", !view.round, LearnIntent::Toggle, out);
+            hide.on_hover_text("The whole editor; the lesson keeps going (the header's Lesson button brings it back)")
+                .on_disabled_hover_text("The round's bar holds the header: the lesson stays beside it until the round");
+            button(
+                ui,
+                t,
+                "Lessons",
+                "Lessons",
+                true,
+                LearnIntent::Browse(true),
+                out,
+            )
+            .on_hover_text("The lesson browser (this lesson keeps going)");
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(
+                    Label::new(
+                        RichText::new(title)
+                            .font(t.text.title.clone())
+                            .color(t.color.text.primary),
+                    )
+                    .truncate(),
+                );
+            });
+        });
+    });
+    let index = view.lesson.as_ref().map_or(0, |r| usize::from(r.step));
+    let count = usize::from(view.steps);
     let place = if count > 0 {
         format!("Step {} of {count}", index + 1)
     } else {
         String::new()
     };
-    let status = ui.label(
-        RichText::new(format!("{place}  {state}"))
-            .font(t.text.label.clone())
-            .color(t.color.text.label),
-    );
-    named(&status, format!("{place} {state}").trim());
+    let state = state(view);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        // A dot per step: done in the label ink, the current one in the value accent.
+        if let Some((bundle, _, _)) = step {
+            let progress = learn.progress().lesson(&bundle.key());
+            for (i, s) in bundle.lesson.steps.iter().enumerate() {
+                let done = progress
+                    .and_then(|p| p.steps.get(&s.id))
+                    .is_some_and(|p| p.done);
+                let (glyph, ink) = match (i == index, done) {
+                    (true, _) => (glyph::DOT_ON, t.color.accent.value),
+                    (false, true) => (glyph::DOT_ON, t.color.text.label),
+                    (false, false) => (glyph::DOT_OFF, t.color.text.dimmed),
+                };
+                ui.label(RichText::new(glyph).font(t.text.label.clone()).color(ink));
+            }
+            ui.add_space(t.space.gap);
+        }
+        let kind = step.map_or("", |(_, _, s)| kind_name(&s.kind));
+        let shown = [place.as_str(), kind, state]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(&format!(" {} ", glyph::BULLET));
+        let status = ui.label(
+            RichText::new(shown)
+                .font(t.text.label.clone())
+                .color(t.color.text.label),
+        );
+        named(&status, Role::Status, format!("{place} {state}").trim());
+    });
+}
+
+/// The controls, anchored to the bottom (`ui` lays out bottom-up): the way on, the step's own controls, then the
+/// verdict, the hint and the last refusal above them.
+fn controls(learn: &Learn, view: &LearnView, ui: &mut Ui, t: &Theme, out: &mut Intents) {
+    let index = view.lesson.as_ref().map_or(0, |r| usize::from(r.step));
+    let count = usize::from(view.steps);
     let live = !view.broken && !view.pending.opening && !view.finished;
+    let width = ui.available_width();
+    // The way on: Back, End lesson, Next (or Finish).
     ui.horizontal(|ui| {
         button(
             ui,
             t,
-            "◀ Back",
+            &format!("{} Back", glyph::PREVIOUS),
             "Back",
             live && index > 0,
             LearnIntent::Back,
             out,
         );
-        let last = count > 0 && index + 1 == count;
-        let next = if last { "Finish ▶" } else { "Next ▶" };
-        button(
-            ui,
-            t,
-            next,
-            if last { "Finish" } else { "Next" },
-            live,
-            LearnIntent::Next,
-            out,
-        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let last = count > 0 && index + 1 == count;
+            let (text, label) = if last {
+                (format!("Finish {}", glyph::NEXT), "Finish")
+            } else {
+                (format!("Next {}", glyph::NEXT), "Next")
+            };
+            button(ui, t, &text, label, live, LearnIntent::Next, out);
+            end_menu(ui, t, out);
+        });
     });
-    // The step's own controls.
-    if let Some((_, _, s)) = step
-        && live
-    {
-        let listen = |ui: &mut Ui, out: &mut Intents, labels: &[String], stop: bool| {
-            ui.horizontal_wrapped(|ui| {
-                for (i, label) in labels.iter().enumerate() {
-                    let i = u8::try_from(i).unwrap_or(u8::MAX);
-                    let playing = view.listen.example == Some(i);
-                    button(
-                        ui,
-                        t,
-                        &format!("{} {label}", if playing { "■" } else { "▶" }),
-                        &format!("Listen {label}"),
-                        view.listen.ready,
-                        LearnIntent::Listen(if playing { None } else { Some(i) }),
-                        out,
-                    );
-                }
-                if stop {
-                    button(
-                        ui,
-                        t,
-                        "Stop",
-                        "Stop listening",
-                        view.listen.example.is_some(),
-                        LearnIntent::Listen(None),
-                        out,
-                    );
-                }
-            });
-        };
-        match &s.kind {
-            StepKind::Listen { examples } => {
-                let labels: Vec<String> = examples.iter().map(|e| e.label.clone()).collect();
-                listen(ui, out, &labels, true);
-            }
-            StepKind::Choose { options, .. } => {
-                let labels: Vec<String> = options.iter().map(|e| e.label.clone()).collect();
-                listen(ui, out, &labels, true);
-                ui.horizontal_wrapped(|ui| {
-                    for (i, label) in labels.iter().enumerate() {
-                        let i = u8::try_from(i).unwrap_or(u8::MAX);
-                        button(
-                            ui,
-                            t,
-                            label,
-                            &format!("Choose {label}"),
-                            view.phase != StepPhase::Passed,
-                            LearnIntent::Choose(i),
-                            out,
-                        );
-                    }
-                });
-                let verdict = match (view.chose, view.answer) {
-                    (_, Some(a)) => labels
-                        .get(usize::from(a))
-                        .map(|l| format!("The answer is {l}.")),
-                    (Some((_, true)), _) => Some("✓ Right.".to_owned()),
-                    (Some((_, false)), _) => Some("✗ Not that one: listen again.".to_owned()),
-                    _ => None,
-                };
-                if let Some(v) = verdict {
-                    ui.label(
-                        RichText::new(v)
-                            .font(t.text.body.clone())
-                            .color(t.color.text.primary),
-                    );
-                }
-            }
-            StepKind::Recreate { .. } => {
-                ui.label(
-                    RichText::new("Recreate the target with the round's controls above.")
-                        .font(t.text.label.clone())
-                        .color(t.color.text.label),
-                );
-            }
-            _ => {}
-        }
+    let step = learn.step().filter(|_| live);
+    if let Some((_, _, s)) = step {
+        let open = view.phase != StepPhase::Passed;
         if matches!(s.kind, StepKind::Do { .. } | StepKind::Choose { .. }) {
             ui.horizontal(|ui| {
-                let open = view.phase != StepPhase::Passed;
                 button(
                     ui,
                     t,
@@ -363,98 +373,626 @@ fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
                     open && !view.pending.hinting,
                     LearnIntent::Hint,
                     out,
-                );
-                button(ui, t, "Show me", "Show me", open, LearnIntent::Show, out);
+                )
+                .on_hover_text("The next hint (the step counts as helped)");
+                button(ui, t, "Show me", "Show me", open, LearnIntent::Show, out)
+                    .on_hover_text("Make the next change for me (the step counts as helped)");
             });
         }
-    }
-    if let Some(hint) = view.hint.as_deref() {
-        ui.add(
-            Label::new(
-                RichText::new(hint)
-                    .font(t.text.body.clone())
-                    .color(t.color.accent.value),
-            )
-            .wrap(),
-        );
-    }
-    if view.pending.hinting {
-        ui.label(
-            RichText::new("Working out a hint…")
-                .font(t.text.label.clone())
-                .color(t.color.text.label),
-        );
-    }
-    if let Some((bundle, _, s)) = step
-        && let Some(text) = s.text.as_ref().and_then(|r| bundle.text(r))
-    {
-        for (heading, line) in plain(text) {
-            let font = if heading {
-                t.text.strong.clone()
-            } else {
-                t.text.body.clone()
-            };
-            ui.add(Label::new(RichText::new(line).font(font).color(t.color.text.primary)).wrap());
+        match &s.kind {
+            StepKind::Listen { examples } => listen(learn, view, ui, t, examples, width, out),
+            StepKind::Choose { options, .. } => {
+                let labels: Vec<String> = options.iter().map(|e| e.label.clone()).collect();
+                for row in rows(ui, t, &labels, width).iter().rev() {
+                    ui.horizontal(|ui| {
+                        for &i in row {
+                            let o = u8::try_from(i).unwrap_or(u8::MAX);
+                            let label = &labels[i];
+                            button(
+                                ui,
+                                t,
+                                label,
+                                &format!("Choose {label}"),
+                                open,
+                                LearnIntent::Choose(o),
+                                out,
+                            );
+                        }
+                    });
+                }
+                caption(ui, t, "Your answer:");
+                listen(learn, view, ui, t, options, width, out);
+            }
+            _ => {}
         }
     }
-    ui.horizontal_wrapped(|ui| {
-        ui.label(
-            RichText::new("End lesson:")
-                .font(t.text.label.clone())
-                .color(t.color.text.label),
-        );
-        button(
-            ui,
-            t,
-            "Restore my patch",
-            "End and restore my patch",
-            true,
-            LearnIntent::End(EndChoice::Restore),
-            out,
-        );
-        button(
-            ui,
-            t,
-            "Keep this patch",
-            "End and keep this patch",
-            true,
-            LearnIntent::End(EndChoice::Keep),
-            out,
-        );
-    });
+    // Above the controls: the verdict, the hint, a pending hint, the last refusal (bottom-up, so read upwards).
     let error = learn
         .said()
         .map(str::to_owned)
         .or_else(|| view.error.as_ref().map(|e| format!("{e}: {}", e.hint())));
     if let Some(e) = error {
-        ui.add(
-            Label::new(
-                RichText::new(e)
-                    .font(t.text.label.clone())
-                    .color(t.color.score.bad),
-            )
-            .wrap(),
+        line(ui, &e, t.text.label.clone(), t.color.score.bad);
+    }
+    if view.pending.hinting {
+        line(
+            ui,
+            "Working out a hint…",
+            t.text.label.clone(),
+            t.color.text.label,
         );
+    }
+    if let Some(hint) = view.hint.as_deref() {
+        line(ui, hint, t.text.body.clone(), t.color.accent.value);
+    }
+    if let Some((_, _, s)) = step
+        && let StepKind::Choose { options, .. } = &s.kind
+    {
+        let label = |i: u8| options.get(usize::from(i)).map(|e| e.label.as_str());
+        let verdict = match (view.chose, view.answer) {
+            (_, Some(a)) => label(a).map(|l| format!("{} The answer is {l}.", glyph::GOOD)),
+            (Some((_, true)), _) => Some(format!("{} Right.", glyph::GOOD)),
+            (Some((_, false)), _) => Some(format!("{} Not that one: listen again.", glyph::BAD)),
+            _ => None,
+        };
+        if let Some(v) = verdict {
+            line(ui, &v, t.text.body.clone(), t.color.text.primary);
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// A small caption above a group of controls.
+fn caption(ui: &mut Ui, t: &Theme, text: &str) {
+    ui.label(
+        RichText::new(text)
+            .font(t.text.label.clone())
+            .color(t.color.text.label),
+    );
+}
 
-    #[test]
-    fn markdown_becomes_plain_lines() {
-        let lines = plain(
-            "# Open and closed\n\nOnly the [cutoff](enth:filter1.cutoff) differs.\n\n- **Open** lets it through.\n",
+/// The End lesson menu: restore my patch, or keep this one.
+fn end_menu(ui: &mut Ui, t: &Theme, out: &mut Intents) {
+    let menu = ui.menu_button(RichText::new("End").font(t.text.body.clone()), |ui| {
+        let restore = ui
+            .add(Button::new(
+                RichText::new("End and restore my patch").font(t.text.body.clone()),
+            ))
+            .on_hover_text("Your own patch and its undo history come back");
+        if restore.clicked() {
+            out.push(Intent::Learn(LearnIntent::End(EndChoice::Restore)));
+            ui.close();
+        }
+        let keep = ui
+            .add(Button::new(
+                RichText::new("End and keep this patch").font(t.text.body.clone()),
+            ))
+            .on_hover_text("Keep the lesson's patch as your own");
+        if keep.clicked() {
+            out.push(Intent::Learn(LearnIntent::End(EndChoice::Keep)));
+            ui.close();
+        }
+    });
+    named(&menu.response, Role::Button, "End lesson");
+}
+
+/// The examples' controls (bottom-up): ■ Stop and A/B, then a ▶ per example above them, in rows that fit.
+fn listen(
+    learn: &Learn,
+    view: &LearnView,
+    ui: &mut Ui,
+    t: &Theme,
+    examples: &[Example],
+    width: f32,
+    out: &mut Intents,
+) {
+    let ready = view.listen.ready;
+    let playing = view.listen.example;
+    ui.horizontal(|ui| {
+        button(
+            ui,
+            t,
+            &format!("{} Stop", glyph::STOP),
+            "Stop listening",
+            playing.is_some(),
+            LearnIntent::Listen(None),
+            out,
         );
-        assert_eq!(
-            lines,
-            vec![
-                (true, "Open and closed".to_owned()),
-                (false, "Only the cutoff differs.".to_owned()),
-                (false, "• Open lets it through.".to_owned()),
-            ]
-        );
-        assert_eq!(unlink("a [b] c"), "a [b] c");
+        button(
+            ui,
+            t,
+            "A/B",
+            "A/B",
+            learn.flip_to().is_some(),
+            LearnIntent::Flip,
+            out,
+        )
+        .on_hover_text("Flip between the last two examples you played, at the same moment");
+        if view.pending.examples || (!ready && !examples.is_empty()) {
+            caption(ui, t, "Rendering…");
+        }
+    });
+    let texts: Vec<String> = examples
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let on = playing == u8::try_from(i).ok();
+            format!("{} {}", if on { glyph::STOP } else { glyph::PLAY }, e.label)
+        })
+        .collect();
+    for row in rows(ui, t, &texts, width).iter().rev() {
+        ui.horizontal(|ui| {
+            for &i in row {
+                let e = u8::try_from(i).unwrap_or(u8::MAX);
+                let on = playing == Some(e);
+                button(
+                    ui,
+                    t,
+                    &texts[i],
+                    &format!("Listen {}", examples[i].label),
+                    ready,
+                    LearnIntent::Listen(if on { None } else { Some(e) }),
+                    out,
+                );
+            }
+        });
+    }
+}
+
+/// What the step's text needs besides the AST.
+struct TextCx<'a> {
+    learn: &'a Learn,
+    view: &'a LearnView,
+    patch: &'a Patch,
+    live: &'a Live,
+}
+
+impl TextCx<'_> {
+    /// The step's examples (a Listen step's) or options (a Choose step's).
+    fn examples(&self) -> &[Example] {
+        match self.learn.step().map(|(_, _, s)| &s.kind) {
+            Some(StepKind::Listen { examples }) => examples,
+            Some(StepKind::Choose { options, .. }) => options,
+            _ => &[],
+        }
+    }
+
+    /// The intent that plays example `n` (1-based), or stops it while it plays.
+    fn play(&self, n: u8) -> Option<LearnIntent> {
+        let i = n.checked_sub(1)?;
+        if usize::from(i) >= self.examples().len() {
+            return None;
+        }
+        Some(LearnIntent::Listen(
+            if self.view.listen.example == Some(i) {
+                None
+            } else {
+                Some(i)
+            },
+        ))
+    }
+}
+
+/// How a run of inline text is styled.
+#[derive(Clone, Copy, Default)]
+struct Style {
+    strong: bool,
+    italic: bool,
+    /// The heading level (0: body text).
+    heading: u8,
+}
+
+/// Draws a document's blocks.
+fn doc(
+    ui: &mut Ui,
+    t: &Theme,
+    doc: &Doc,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    for b in &doc.blocks {
+        block(ui, t, b, cx, pointing, out);
+    }
+}
+
+fn block(
+    ui: &mut Ui,
+    t: &Theme,
+    b: &Block,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    match b {
+        Block::Heading { level, inlines: i } => {
+            let style = Style {
+                heading: (*level).max(1),
+                ..Style::default()
+            };
+            flow(ui, t, i, style, cx, pointing, out);
+        }
+        Block::Paragraph(i) => flow(ui, t, i, Style::default(), cx, pointing, out),
+        Block::List { start, items } => {
+            for (n, item) in items.iter().enumerate() {
+                let marker = match start {
+                    Some(first) => format!("{}.", first.saturating_add(n as u64)),
+                    None => glyph::BULLET.to_owned(),
+                };
+                ui.horizontal_top(|ui| {
+                    ui.add_sized(
+                        vec2(t.space.section, ui.spacing().interact_size.y),
+                        Label::new(
+                            RichText::new(marker)
+                                .font(t.text.body.clone())
+                                .color(t.color.text.label),
+                        ),
+                    );
+                    ui.vertical(|ui| {
+                        for b in item {
+                            block(ui, t, b, cx, pointing, out);
+                        }
+                    });
+                });
+            }
+        }
+        Block::Widgets(widgets) => {
+            for w in widgets {
+                widget(ui, t, w, cx, pointing, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A paragraph or a heading: its runs flow and wrap across the pane's width.
+fn flow(
+    ui: &mut Ui,
+    t: &Theme,
+    inlines: &[Inline],
+    style: Style,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        runs(ui, t, inlines, style, None, cx, pointing, out);
+    });
+}
+
+/// The rich text of a run of `text` in `style` (a link's text underlined in the value accent).
+fn rich(t: &Theme, text: &str, style: Style, link: bool) -> RichText {
+    let font = match style.heading {
+        1 => t.text.title.clone(),
+        2 | 3 => t.text.strong.clone(),
+        _ if style.strong => t.text.strong.clone(),
+        _ => t.text.body.clone(),
+    };
+    let ink = if link {
+        t.color.accent.value
+    } else {
+        t.color.text.primary
+    };
+    let mut r = RichText::new(text).font(font).color(ink);
+    if style.italic {
+        r = r.italics();
+    }
+    if link {
+        r = r.underline();
+    }
+    r
+}
+
+/// Draws inline runs, each a label in the flow. Inside a link, `link` is its target.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the run's whole context: where, theme, runs, style, its link, the step, hover and intents"
+)]
+fn runs(
+    ui: &mut Ui,
+    t: &Theme,
+    inlines: &[Inline],
+    style: Style,
+    link: Option<&LinkTarget>,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    for inline in inlines {
+        match inline {
+            Inline::Text(text) => {
+                let Some(target) = link else {
+                    ui.add(Label::new(rich(t, text, style, false)).wrap());
+                    continue;
+                };
+                let response = ui.add(
+                    Label::new(rich(t, text, style, true))
+                        .wrap()
+                        .sense(Sense::click()),
+                );
+                named(&response, Role::Link, text);
+                follow(ui, &response, target, cx, pointing, out);
+            }
+            Inline::Code(code) => {
+                ui.add(
+                    Label::new(
+                        RichText::new(code)
+                            .font(t.text.value.clone())
+                            .color(t.color.text.primary)
+                            .background_color(t.color.surface.recessed),
+                    )
+                    .wrap(),
+                );
+            }
+            Inline::LineBreak => ui.end_row(),
+            Inline::Emphasis(inner) => runs(
+                ui,
+                t,
+                inner,
+                Style {
+                    italic: true,
+                    ..style
+                },
+                link,
+                cx,
+                pointing,
+                out,
+            ),
+            Inline::Strong(inner) => runs(
+                ui,
+                t,
+                inner,
+                Style {
+                    strong: true,
+                    ..style
+                },
+                link,
+                cx,
+                pointing,
+                out,
+            ),
+            Inline::Link { target, inlines } => {
+                runs(ui, t, inlines, style, Some(target), cx, pointing, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// What a link does: a control's is outlined while hovered, a play link plays, a web link opens the browser.
+fn follow(
+    ui: &Ui,
+    response: &Response,
+    target: &LinkTarget,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    match target {
+        LinkTarget::Control(selector) => {
+            if response.hovered() {
+                *pointing = Some(selector.clone());
+            }
+        }
+        LinkTarget::Play(n) => {
+            let intent = cx.play(*n).filter(|_| cx.view.listen.ready);
+            if intent.is_some() {
+                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+            }
+            if response.clicked()
+                && let Some(intent) = intent
+            {
+                out.push(Intent::Learn(intent));
+            }
+        }
+        LinkTarget::Web(url) => {
+            if response.hovered() {
+                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+            }
+            if response.clicked() {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// One widget of an `enth` block.
+fn widget(
+    ui: &mut Ui,
+    t: &Theme,
+    w: &Widget,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    let width = ui.available_width();
+    match w {
+        Widget::Play(n) => {
+            let label = cx
+                .examples()
+                .get(usize::from(n.saturating_sub(1)))
+                .map_or_else(|| format!("example {n}"), |e| e.label.clone());
+            let playing = cx.view.listen.example == n.checked_sub(1);
+            let text = format!(
+                "{} {label}",
+                if playing { glyph::STOP } else { glyph::PLAY }
+            );
+            let intent = cx.play(*n);
+            let response = ui.add_enabled(
+                intent.is_some() && cx.view.listen.ready,
+                Button::new(RichText::new(text).font(t.text.body.clone())),
+            );
+            named(&response, Role::Button, &format!("Play {label}"));
+            if response.clicked()
+                && let Some(intent) = intent
+            {
+                out.push(Intent::Learn(intent));
+            }
+        }
+        Widget::Control(Selector::Param(addr)) => control(ui, t, addr, cx, pointing, out),
+        Widget::Control(selector) => {
+            let response = ui.add(
+                Label::new(
+                    RichText::new(selector.to_string())
+                        .font(t.text.value.clone())
+                        .color(t.color.accent.value)
+                        .background_color(t.color.surface.recessed),
+                )
+                .sense(Sense::hover()),
+            );
+            if response.hovered() {
+                *pointing = Some(selector.clone());
+            }
+        }
+        Widget::Scope => {
+            let samples = cx.live.scope().map_or(&[][..], |(s, _)| s);
+            let (rect, _) =
+                ui.allocate_exact_size(vec2(width, t.size.learn.scope_height), Sense::hover());
+            Display::new(t, Trace::Scope(samples), rect.size())
+                .caption("Scope")
+                .paint(ui, rect);
+        }
+        Widget::Shape(module) => {
+            let Some((_, m)) = cx.patch.find(module) else {
+                return;
+            };
+            let (rect, response) =
+                ui.allocate_exact_size(vec2(width, t.size.learn.shape_height), Sense::hover());
+            let value = |key: &str| {
+                ParamAddr::module(module.clone(), key)
+                    .ok()
+                    .and_then(|a| Some((a.clone(), cx.patch.value(&a)?)))
+            };
+            let norm = |key: &str| {
+                value(key)
+                    .and_then(|(a, v)| Some(cx.patch.spec(&a)?.to_norm(v)))
+                    .unwrap_or(0.0)
+            };
+            match m.kind {
+                ModuleKind::Adsr => {
+                    let [peak, corner, release] = envelope_stages(t).corners(
+                        norm("attack"),
+                        norm("decay"),
+                        norm("sustain"),
+                        norm("release"),
+                    );
+                    let points = [vec2(0.0, 0.0), peak, corner, release, vec2(1.0, 0.0)];
+                    let curve = |x: f32| through(&points, x);
+                    Display::new(t, Trace::Curve(&curve), rect.size())
+                        .ink(Ink::Modulation)
+                        .paint(ui, rect);
+                }
+                ModuleKind::Lfo => {
+                    let shape = value("shape").and_then(|(_, v)| LfoShape::from_value(v));
+                    let curve = |x| shapes::lfo(shape, x);
+                    Display::new(t, Trace::Curve(&curve), rect.size())
+                        .ink(Ink::Modulation)
+                        .paint(ui, rect);
+                }
+                _ => {}
+            }
+            if response.hovered() {
+                *pointing = Some(Selector::Module(enth_patch::Target::Module(module.clone())));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `y` at `x` on the polyline through `points` (x rising).
+fn through(points: &[Vec2], x: f32) -> f32 {
+    for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        if x <= b.x {
+            let span = b.x - a.x;
+            return if span > 0.0 {
+                a.y + (b.y - a.y) * (x - a.x) / span
+            } else {
+                b.y
+            };
+        }
+    }
+    points.last().map_or(0.0, |p| p.y)
+}
+
+/// The `control` widget: the live control in the text, a knob under its own id (the card's knob keeps its), with
+/// the same gestures as the card's: `Begin`, `Set`, `End`, a double-click reset. A switch or a short enum shows its
+/// value as a chip. Hovering it outlines the card's control.
+fn control(
+    ui: &mut Ui,
+    t: &Theme,
+    addr: &ParamAddr,
+    cx: &TextCx<'_>,
+    pointing: &mut Option<Selector>,
+    out: &mut Intents,
+) {
+    let (Some(spec), Some(value)) = (cx.patch.spec(addr), cx.patch.value(addr)) else {
+        return;
+    };
+    let kind = match addr.target() {
+        enth_patch::Target::Module(id) => match cx.patch.find(id) {
+            Some((_, m)) => CardKind::Module(m.kind),
+            None => return,
+        },
+        enth_patch::Target::Voice => CardKind::Voice,
+        enth_patch::Target::Master => CardKind::Master,
+    };
+    let label = present::label(kind, spec);
+    let text = match spec.enum_item(value) {
+        Some(item) if spec.enum_items().is_some() => {
+            present::item_label(kind, spec, item).to_owned()
+        }
+        _ => value_text(spec, value),
+    };
+    let response = match present::control(t, spec) {
+        Control::Knob | Control::Stepped(_) => {
+            let mut norm = spec.to_norm(value);
+            let mut knob = Knob::new(t, &mut norm, label)
+                .id(ids::param(addr).with("lesson"))
+                .value_text(text)
+                .default_value(spec.to_norm(spec.default))
+                .bipolar(present::bipolar(spec));
+            if let Control::Stepped(steps) = present::control(t, spec) {
+                knob = knob.steps(steps);
+            }
+            let locked = cx
+                .learn
+                .overlay()
+                .is_some_and(|o| crate::editor::overlay::Overlay::locked(o, addr));
+            if locked {
+                knob = knob.emphasis(KnobEmphasis::Dimmed);
+            }
+            let response = ui.add(knob);
+            let grip = || Grip::Param(addr.clone());
+            if response.drag_started() {
+                out.push(Intent::Begin(grip()));
+            }
+            if response.changed() {
+                let v = spec.clamp(spec.from_norm(norm));
+                if v.to_bits() != value.to_bits() {
+                    out.push(Intent::Set {
+                        addr: addr.clone(),
+                        value: v,
+                    });
+                }
+            }
+            if response.drag_stopped() {
+                out.push(Intent::End(grip()));
+            }
+            response
+        }
+        Control::Segmented | Control::Toggle => ui.add(
+            Label::new(
+                RichText::new(format!("{label} {text}"))
+                    .font(t.text.value.clone())
+                    .color(t.color.text.primary)
+                    .background_color(t.color.surface.recessed),
+            )
+            .sense(Sense::hover()),
+        ),
+    };
+    if response.hovered() || response.dragged() {
+        *pointing = Some(Selector::Param(addr.clone()));
     }
 }

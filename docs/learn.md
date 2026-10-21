@@ -331,6 +331,7 @@ A pack whose recorded `engine` is newer than this build's, and that fails on its
 - **Layout:** a 320 px pane fits 1200 × 800 only when the step hides unused modules (the G1 patch overflows by 276–732 px), so LUI needs a collapsible pane or a focus-card region, with an overflow report.
 - **Markdown:** our own small renderer. `enth-learn` parses each step into a block AST with `pulldown-cmark` (MIT), and `LessonPane` draws it with design tokens only. `egui_commonmark` was rejected for now: +875 KB, hard-coded colours and emoji, one maintainer, and releases tied to egui's. The lint bans HTML, images and code blocks and allows `https:` links only. Revisit if lessons need tables or footnotes.
 - **Repaint:** Learn asks for no frames of its own; job results wake the editor, as `wake_at_ms` and the worker's `request_repaint` do for rounds.
+- **Built (2026-10-21, lane LUI):** the pane, the browser (the tour first, progress per lesson, a disabled Review entry for REV), the layout `learn` (the pane right of the cards, the overview across the window), hiding the pane as the collapse, focus steps, the overlay's `Emphasis::Highlighted` and lock glyph, links and widgets; two basics lessons pass by label in kittest, and the overflow report says which steps fit beside the pane. The reference is [editor.md](editor.md#the-learn-view-lane-lui). "How close am I?" waits for a `Closest` job in the session.
 
 ## Packs
 

@@ -1,5 +1,5 @@
--- lesson (lane SKL, F2l): the bundled example lesson (`example/cutoff`: Listen, Do, Choose) played through the
--- plugin's Learn panel with real X events (xinput.py, under Xvfb only), on a bundle built with the `learn` feature, the
+-- lesson (lane SKL, F2l; lane LUI's view): the bundled example lesson (`example/cutoff`: Listen, Do, Choose) played
+-- through the plugin's Learn view with real X events (xinput.py, under Xvfb only), on a bundle built with the `learn` feature, the
 -- transport stopped. Two launches: `play` starts the lesson and passes its Do step, then saves the project mid-lesson;
 -- `reload` opens the saved project in a new REAPER process and goes on from the saved step.
 -- Checks (play):
@@ -17,17 +17,18 @@
 --   no-crash:        the crash folder is still empty.
 -- Data: the example's peak, the times. Audio is measured, never listened to.
 --
--- The click points are offsets into the plugin's window (layout "lanes" at 1200 x 800, the plugin's Init patch):
+-- The click points are offsets into the plugin's window (1200 x 800, the plugin's Init patch; lane LUI's Learn view:
+-- the browser's first row on the example tour, then the pane's controls, anchored to its bottom):
 -- `reaper_points_hit_their_controls` in crates/enth-ui/tests/learn_panel.rs asserts the same numbers.
 dofile(os.getenv("ENTH_LUA_DIR") .. "/common.lua")
 
 local POINTS = {
   learn = { 551, 28 },
-  start = { 909, 44 },
-  listen_open = { 918, 82 },
-  stop = { 1055, 82 },
-  next = { 982, 54 },
-  show = { 969, 82 },
+  start = { 901, 160 },
+  listen_open = { 910, 580 },
+  stop = { 908, 608 },
+  next = { 1155, 636 },
+  show = { 957, 608 },
 }
 local tag = os.getenv("ENTH_TAG")
 local phase = os.getenv("ENTH_PHASE")
@@ -163,7 +164,7 @@ else
       local step = saved_step(track, fx)
       check("reload-lesson", step == 1 and has_stash(track, fx), string.format("saved step %s, stash %s", tostring(step), tostring(has_stash(track, fx))))
       with_editor(track, fx, function(click)
-        -- The panel opens by itself on the resumed lesson; give the Open job a moment, then Next.
+        -- The pane opens by itself on the resumed lesson; give the Open job a moment, then Next.
         wait(1.0, function()
           click("next")
           wait_until(function() return saved_step(track, fx) == 2 end, 10, 0.2, function(resumed)
