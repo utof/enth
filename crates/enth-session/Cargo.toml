@@ -18,6 +18,10 @@ enth-render.workspace = true     # DEFAULT_SEED only: the render seed is never p
 enth-challenge.workspace = true
 # Pre-declared by lane S0l (R2): the pure `learn` module binds the lesson player to the live patch (lane SL).
 enth-learn.workspace = true
+# Pre-declared by lane S0s (R3): the pure `create` module holds the create jobs' read model, the K candidates of
+# `enth_solver::create` and the intake's report from `enth_analysis::intake` (lane SK3). L6 may use L3 and L5.
+enth-analysis.workspace = true
+enth-solver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

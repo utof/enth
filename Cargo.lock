@@ -1368,12 +1368,14 @@ name = "enth-session"
 version = "0.0.0"
 dependencies = [
  "assert_no_alloc",
+ "enth-analysis",
  "enth-challenge",
  "enth-engine",
  "enth-learn",
  "enth-params",
  "enth-patch",
  "enth-render",
+ "enth-solver",
  "insta",
  "proptest",
  "serde",
