@@ -119,6 +119,7 @@ pub fn custom_instance() -> InstanceState {
         },
         game: None,
         preset: None,
+        learn: None,
     }
 }
 

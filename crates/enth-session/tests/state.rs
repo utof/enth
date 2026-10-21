@@ -22,8 +22,8 @@ use enth_session::state::{
     INSTANCE_STEPS, MAX_FIELD_BYTES, STATE_VERSION, decode_patch, encode_patch, instance_version,
 };
 use enth_session::{
-    GameState, InstanceState, PresetState, STATE_SCHEMA, SavedState, Session, ShellRequest,
-    StateError,
+    GameState, InstanceState, LearnState, PresetState, STATE_SCHEMA, SavedState, Session,
+    ShellRequest, StateError,
 };
 
 fn dir(version: u32) -> PathBuf {
@@ -299,6 +299,55 @@ fn the_reserved_game_and_preset_fields_are_absent_until_set() {
     let (old, _) =
         InstanceState::from_json(r#"{"schema":"enth.plugin-state/1","game":null}"#).unwrap();
     assert_eq!((old.game, old.preset), (None, None));
+}
+
+/// The R2 reservation (lane S0l): `learn` (lane SL) is absent from the bytes while `None`, so every v1 fixture keeps
+/// its bytes; set, it round-trips; a text without it, or with one this build cannot read, loads with `None` and the
+/// rest of the field intact.
+#[test]
+fn the_reserved_learn_field_is_absent_until_set() {
+    let text = InstanceState::default().to_json();
+    assert!(!text.contains("learn"), "{text}");
+    let state = InstanceState {
+        learn: Some(LearnState::default()),
+        ..InstanceState::default()
+    };
+    let text = state.to_json();
+    assert_eq!(
+        text,
+        r#"{"schema":"enth.plugin-state/1","monitor":{"fx_bypass":false},"ui":{"layout":"lanes","scale_percent":100,"advanced":false},"learn":{}}"#
+    );
+    assert_eq!(InstanceState::from_json(&text).unwrap(), (state, 1));
+    // All three reserved objects together keep the declaration order: game, preset, learn.
+    let all = InstanceState {
+        game: Some(GameState::default()),
+        preset: Some(PresetState::default()),
+        learn: Some(LearnState::default()),
+        ..InstanceState::default()
+    };
+    assert!(
+        all.to_json()
+            .ends_with(r#""game":{},"preset":{},"learn":{}}"#)
+    );
+    // Absent, null, or unreadable: `None`, and the monitor switch next to it still loads.
+    for tail in [
+        "",
+        r#","learn":null"#,
+        r#","learn":"later""#,
+        r#","learn":[1]"#,
+    ] {
+        let text =
+            format!(r#"{{"schema":"enth.plugin-state/1","monitor":{{"fx_bypass":true}}{tail}}}"#);
+        let (old, _) = InstanceState::from_json(&text).unwrap();
+        assert_eq!(old.learn, None, "{text}");
+        assert!(old.monitor.fx_bypass, "{text}");
+    }
+    // An object with fields a newer build added reads as the state this build knows (and is not kept).
+    let (newer, _) = InstanceState::from_json(
+        r#"{"schema":"enth.plugin-state/1","learn":{"lesson":"basics/01-saw","step":2}}"#,
+    )
+    .unwrap();
+    assert_eq!(newer.learn, Some(LearnState::default()));
 }
 
 #[test]
