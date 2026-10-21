@@ -656,6 +656,12 @@ mod tests {
             s.starts_with("#!/bin/sh\nexec '/t/xtask' agent-eval wrap --calls '/a b/calls.jsonl'")
         );
         assert!(s.contains("--budget 20 -- \"$@\""));
+        // Lesson mode is one more wrapper flag, before the `--` after which the agent's own `--lesson ID` goes.
+        let lesson = WrapCfg {
+            lesson: true,
+            ..cfg
+        };
+        assert!(script(Path::new("/t/xtask"), &lesson).contains("--budget 20 --lesson -- \"$@\""));
     }
 
     #[test]

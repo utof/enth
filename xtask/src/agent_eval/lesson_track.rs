@@ -1851,6 +1851,17 @@ budget = { units = 120, turns = 100, usd = 2.0 }
     }
 
     #[test]
+    fn the_answer_schema_asks_for_steps_with_a_patch_or_a_choice() {
+        let schema: Value = serde_json::from_str(&answer_schema()).expect("a JSON schema");
+        assert_eq!(schema["required"], json!(["steps"]));
+        let item = &schema["properties"]["steps"]["items"];
+        assert_eq!(item["required"], json!(["step"]));
+        assert!(
+            item["properties"]["patch"].is_object() && item["properties"]["choice"].is_object()
+        );
+    }
+
+    #[test]
     fn a_real_run_needs_the_spend_to_be_confirmed() {
         let err = run(&super::super::parse(&[]).unwrap())
             .expect_err("a real run without --confirm-spend is refused");

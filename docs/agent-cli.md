@@ -444,6 +444,7 @@ These numbers are the regression test for CLI changes, following Anthropic's adv
 - **A blind listen:** you judge whether the final sounds match their text, without seeing the numbers; G1 needs at least 7 of 10.
 - **Agent-written lists:** a second, harder track where the agent writes its own expectations from the brief. Reported separately, not gated at G1. Both are scored: does the agent's own list pass (self-consistency), and does the hidden designer list pass (the real score).
 - `cargo xtask agent-eval` runs nightly or on demand, **never as a merge gate**: it needs API access, costs money and is not deterministic.
+- **The lesson track** (R2, lane EV3): `cargo xtask agent-eval lesson` has the agent complete whole lessons of the basics pack through `enth lesson` and the patch CLI, in the same harness, with its own wrapper mode (cost units, `--reveal` refused), a per-step judge and a scripted `follower` floor that costs nothing ([agent-evals.md](agent-evals.md#the-lesson-track-r2-lane-ev3)). Paid runs of it need the owner's approval too.
 
 ### The harness (P1a, lane E)
 
