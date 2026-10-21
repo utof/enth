@@ -145,7 +145,11 @@ pub fn append(path: &Path, line: &impl serde::Serialize) -> Result<(), String> {
         .append(true)
         .open(path)
         .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
-    writeln!(f, "{text}").map_err(|e| format!("cannot append to {}: {e}", path.display()))?;
+    // One write of the whole line: concurrent runs appending to one file never interleave inside a line.
+    let mut line = text;
+    line.push('\n');
+    f.write_all(line.as_bytes())
+        .map_err(|e| format!("cannot append to {}: {e}", path.display()))?;
     f.flush()
         .map_err(|e| format!("cannot flush {}: {e}", path.display()))
 }
