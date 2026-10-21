@@ -1,4 +1,9 @@
-//! The persisted forms of lane CT's types, pinned: Challenge v1, code v1, `ScoreReport` v1 and `RoundResult` v1.
+//! The persisted forms of lane CT's types, pinned: Challenge v1 and v2 (lane CV2), code v1, `ScoreReport` v1 and
+//! `RoundResult` v1.
+//!
+//! Challenge v2 (R2) writes a challenge at the lowest version that holds it, so the v1 cases below still write the
+//! v1 fixtures byte for byte, and every v1 fixture reads as v2 (the migration). `challenge/v2/` holds the cases that
+//! need a v2 piece: a draw over a patch start with constraints, a patch target, a seed target with locks.
 //!
 //! Fixtures live in `tests/fixtures/<kind>/v<N>/`. They are the bytes this build writes for the cases below, and they
 //! must decode to those cases: a change to a format fails here. A code fixture is a promise to every player who has a
@@ -18,9 +23,12 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use enth_challenge::model::DEFAULT_PASS_MARK;
+use enth_challenge::model::{DEFAULT_PASS_MARK, Start, Target};
 use enth_challenge::score::{ModuleStatus, ModuleTerm, ParamScore};
 use enth_challenge::spec::MAX_SEED;
+use enth_challenge::v2::{
+    Constraints, Draw, DrawAt, DrawItem, DrawValue, DrawValues, InlinePatch, Selector,
+};
 use enth_challenge::{
     Agreement, AssistsUsed, Category, Challenge, ChallengeCode, ChallengeMeta, Closeness, CodeForm,
     Combined, Component, ComponentKind, Direction, EngineVersion, Outcome, PhraseId, RandomSpec,
@@ -34,16 +42,28 @@ use sha2::{Digest, Sha256};
 const CODES_V1_SHA256: &str = "e962d821c8122b0ca6db17cb3408a721f14984653a4238348f3cf31021d75bfe";
 
 fn dir(kind: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{kind}/v1"))
+    dir_v(kind, 1)
+}
+
+fn dir_v(kind: &str, version: u32) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{kind}/v{version}"))
 }
 
 fn read(kind: &str, name: &str) -> String {
-    let path = dir(kind).join(name);
+    read_v(kind, 1, name)
+}
+
+fn read_v(kind: &str, version: u32, name: &str) -> String {
+    let path = dir_v(kind, version).join(name);
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 fn write(kind: &str, name: &str, text: &str) {
-    let d = dir(kind);
+    write_v(kind, 1, name, text);
+}
+
+fn write_v(kind: &str, version: u32, name: &str, text: &str) {
+    let d = dir_v(kind, version);
     fs::create_dir_all(&d).unwrap();
     fs::write(d.join(name), format!("{text}\n")).unwrap();
 }
@@ -94,6 +114,134 @@ fn challenges() -> Vec<(&'static str, Challenge)> {
         ("level5", recreate(level(5, (1 << 40) - 1), PhraseId(2))),
         ("custom", assisted),
     ]
+}
+
+/// The frozen starter (template 0) with ops applied: inline patches whose bytes no editor or engine change moves (its
+/// engine stamp is the file's own).
+fn starter_with(ops: &[(&str, f32)]) -> enth_patch::Patch {
+    let mut p = enth_challenge::random::start(0).unwrap();
+    for (addr, value) in ops {
+        enth_patch::apply(
+            &mut p,
+            enth_patch::Op::SetParam {
+                addr: addr.parse().unwrap(),
+                value: *value,
+            },
+        )
+        .unwrap();
+    }
+    p
+}
+
+fn selectors(texts: &[&str]) -> Vec<Selector> {
+    texts.iter().map(|t| t.parse().unwrap()).collect()
+}
+
+fn v1_scorers(difficulty: u8) -> ScoringSpec {
+    ScoringSpec::with_scorers(
+        difficulty,
+        ScorerId::SOUND_V1,
+        ScorerId::STRUCTURE_V1,
+        ScorerId::COMBINED_V1,
+        ScorerId::TIME_V1,
+    )
+}
+
+/// Challenge v2's cases (lane CV2): each needs a v2 piece, so each writes `enth.challenge/2`.
+fn challenges_v2() -> Vec<(&'static str, Challenge)> {
+    let num = DrawValue::Number;
+    let text = |t: &str| DrawValue::Text(t.to_owned());
+    // Lesson 2.1-style: the cutoff from a set, the mode by key, the resonance on a grid, an envelope route's signed
+    // depth; a patch start; the cutoff the step's control, the drive locked.
+    let mut draw = Challenge::new(
+        Target::Draw(Draw {
+            seed: 7,
+            items: vec![
+                DrawItem {
+                    at: DrawAt::Param("filter1.cutoff".parse().unwrap()),
+                    values: DrawValues::Set(vec![
+                        num(300.0),
+                        num(600.0),
+                        num(1200.0),
+                        text("4kHz"),
+                    ]),
+                },
+                DrawItem {
+                    at: DrawAt::Param("filter1.mode".parse().unwrap()),
+                    values: DrawValues::Set(vec![text("lp"), text("bp")]),
+                },
+                DrawItem {
+                    at: DrawAt::Param("filter1.resonance".parse().unwrap()),
+                    values: DrawValues::Range {
+                        low: num(10.0),
+                        high: num(70.0),
+                        step: Some(num(10.0)),
+                    },
+                },
+                DrawItem {
+                    at: DrawAt::Route("env2 -> filter1.cutoff".parse().unwrap()),
+                    values: DrawValues::Set(vec![num(-30.0), num(30.0), text("+1oct")]),
+                },
+            ],
+        }),
+        Start::Patch {
+            patch: InlinePatch::new(starter_with(&[
+                ("filter1.cutoff", 2000.0),
+                ("env1.decay", 250.0),
+            ])),
+        },
+        PhraseId(1),
+        v1_scorers(0),
+    );
+    draw.constraints = Constraints {
+        editable: selectors(&[
+            "filter1.cutoff",
+            "filter1.mode",
+            "filter1.resonance",
+            "env2 -> filter1.cutoff",
+        ]),
+        locked: selectors(&["filter1.drive", "osc1.*"]),
+    };
+    draw.meta = ChallengeMeta {
+        title: "Low-pass cutoff, D1".to_owned(),
+        tags: vec!["basics".to_owned(), "2.1".to_owned()],
+    };
+    // A study's step: an explicit target patch (a macro routed to the cutoff, a slow sweep heard on the long hold)
+    // from its own start; the macro and the filter are the step's, the oscillator locked.
+    let mut target = starter_with(&[("filter1.cutoff", 1500.0), ("lfo1.rate", 0.5)]);
+    enth_patch::apply(
+        &mut target,
+        enth_patch::Op::InsertRoute {
+            index: 0,
+            route: enth_patch::Route {
+                src: "lfo1".parse().unwrap(),
+                dst: "filter1.cutoff".parse().unwrap(),
+                depth: 25.0,
+            },
+        },
+    )
+    .unwrap();
+    let mut patch = Challenge::new(
+        Target::Patch(InlinePatch::new(target)),
+        Start::Patch {
+            patch: InlinePatch::new(starter_with(&[("filter1.cutoff", 1500.0)])),
+        },
+        enth_challenge::lesson_phrases::LONG_HOLD,
+        v1_scorers(50),
+    );
+    patch.constraints = Constraints {
+        editable: selectors(&["lfo1.*", "lfo1 -> filter1.cutoff"]),
+        locked: selectors(&["osc1.*", "macro1"]),
+    };
+    patch.assists.hint_budget = Some(0);
+    // A unit test's level-1 round with the filter locked (a seed target needs v2 for its constraint; level 1 draws
+    // only the oscillator, so a filter lock leaves the round passable).
+    let mut seed = recreate(level(1, 42), PhraseId(1));
+    seed.constraints = Constraints {
+        editable: selectors(&["osc1.*"]),
+        locked: selectors(&["filter1.*"]),
+    };
+    vec![("draw", draw), ("patch", patch), ("seed-locked", seed)]
 }
 
 /// One code fixture: the inputs of both forms and the texts they give.
@@ -322,6 +470,9 @@ fn regenerate() {
     for (name, c) in challenges() {
         write("challenge", &format!("{name}.json"), &c.to_json_pretty());
     }
+    for (name, c) in challenges_v2() {
+        write_v("challenge", 2, &format!("{name}.json"), &c.to_json_pretty());
+    }
     // Code v1 is frozen: written only when missing (a new code version adds `code/v2/`).
     if !dir("code").join("codes.json").exists() {
         write(
@@ -361,6 +512,80 @@ fn challenge_v1_fixtures_are_what_this_build_writes_and_reads() {
         assert_eq!(Challenge::from_json(&c.to_json()), Ok(c), "{name}");
     }
 }
+
+/// Challenge v1's fixtures read as v2 (lane CV2's acceptance): the migrated challenge is the v1 one with no change
+/// of meaning (a seed target, its template's start, no constraint), it is still written as v1, and the embedded serde
+/// path reads it too.
+#[test]
+fn challenge_v1_fixtures_read_as_v2() {
+    for (name, c) in challenges() {
+        let text = read("challenge", &format!("{name}.json"));
+        assert!(text.contains("\"enth.challenge/1\""), "{name}");
+        let read = Challenge::from_json(&text).unwrap();
+        assert_eq!(read.version(), 1, "{name}");
+        assert!(matches!(read.target, Target::Seed(_)), "{name}");
+        assert!(
+            matches!(read.start, Start::Template { template: 0 }),
+            "{name}"
+        );
+        assert!(read.constraints.is_empty(), "{name}");
+        assert_eq!(
+            serde_json::from_str::<Challenge>(&text).unwrap(),
+            c,
+            "{name}"
+        );
+        assert_eq!(
+            read.to_json_pretty() + "\n",
+            text,
+            "{name}: still written as v1"
+        );
+    }
+}
+
+#[test]
+fn challenge_v2_fixtures_are_what_this_build_writes_and_reads() {
+    for (name, c) in challenges_v2() {
+        let text = read_v("challenge", 2, &format!("{name}.json"));
+        assert_eq!(c.version(), 2, "{name}");
+        assert!(text.contains("\"enth.challenge/2\""), "{name}");
+        assert_eq!(text, format!("{}\n", c.to_json_pretty()), "{name}");
+        assert_eq!(Challenge::from_json(&text), Ok(c.clone()), "{name}");
+        assert_eq!(
+            serde_json::from_str::<Challenge>(&text).unwrap(),
+            c,
+            "{name}"
+        );
+        assert_eq!(Challenge::from_json(&c.to_json()), Ok(c.clone()), "{name}");
+        // A v1 build refuses it by its schema: no v1 reader sees a v2 piece.
+        assert_eq!(
+            Challenge::from_json(&text.replacen("enth.challenge/2", "enth.challenge/1", 1))
+                .unwrap_err()
+                .code(),
+            "bad_challenge",
+            "{name}"
+        );
+    }
+}
+
+/// Every v2 fixture prepares a round whose target scores 100, and the draw's target is pinned by its fingerprint.
+#[test]
+fn challenge_v2_fixtures_prepare() {
+    for (name, c) in challenges_v2() {
+        let round =
+            enth_challenge::prepare_challenge(c.clone()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(round.challenge(), &c, "{name}");
+        if name == "draw" {
+            assert_eq!(
+                round.fingerprint().to_hex(),
+                DRAW_FINGERPRINT,
+                "the draw fixture's target moved: a draw rule changed"
+            );
+        }
+    }
+}
+
+/// The draw fixture's target fingerprint: a change to how a draw picks, places or quantizes values moves it.
+const DRAW_FINGERPRINT: &str = "03f82ae2982232db9506ab8eb290a1f62e2123ab64a7118952e611c16aba1045";
 
 /// T4 (F1r review): code v1's fixture is frozen by its SHA-256, so no regenerate run can quietly rewrite it.
 #[test]

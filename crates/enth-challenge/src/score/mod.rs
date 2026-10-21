@@ -51,6 +51,25 @@ use crate::model::{Challenge, Phrase, ScoringSpec};
 /// The `schema` string of a [`ScoreReport`]: `enth.score-report/1`.
 pub const SCORE_REPORT_SCHEMA: &str = "enth.score-report/1";
 
+/// Every scorer id this build prepares (lane CV2, for `enth-learn`'s `requires.scorers` check): the three stubs,
+/// `sound/1`, `structure/1`, `combined/1` and the time rule `time/1`. A test prepares each through the round's
+/// dispatch, so the list cannot drift from it; `sound/2` is reserved, not here.
+pub const KNOWN_SCORERS: [ScorerId; 7] = [
+    ScorerId::SOUND_STUB,
+    ScorerId::STRUCTURE_STUB,
+    ScorerId::COMBINED_STUB,
+    ScorerId::SOUND_V1,
+    ScorerId::STRUCTURE_V1,
+    ScorerId::COMBINED_V1,
+    ScorerId::TIME_V1,
+];
+
+/// Whether this build prepares the scorer `id` ([`KNOWN_SCORERS`]): a challenge or a pack naming another is a newer
+/// build's.
+pub fn is_known(id: &ScorerId) -> bool {
+    KNOWN_SCORERS.contains(id)
+}
+
 /// A scorer's stable id: a name and a version, written `name/version` (`sound/1`). A scorer that would move any
 /// score gets a new version or a new name; old ids keep their meaning.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

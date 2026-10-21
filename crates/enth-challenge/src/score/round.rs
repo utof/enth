@@ -38,9 +38,11 @@ use crate::fingerprint::TargetFingerprint;
 use crate::loudness;
 use crate::model::{
     Challenge, ChallengeError, Phrase, PhraseId, SCORING_SAMPLE_RATE, SCORING_SEED, ScoringSpec,
+    Target,
 };
 use crate::random::{self, GenError, Generated};
 use crate::spec::RandomSpec;
+use crate::v2::DrawError;
 
 /// A scorer prepared for one challenge, with its kind's score type and nothing else visible: what the dispatch
 /// keeps. [`Ready`] makes one from any [`Scorer`].
@@ -102,7 +104,7 @@ impl PreparedRound {
         &self.challenge
     }
 
-    /// The patch the player starts from (the spec's template).
+    /// The patch the player starts from (the spec's template, or a v2 challenge's own start).
     pub fn start(&self) -> &Patch {
         &self.start
     }
@@ -112,12 +114,15 @@ impl PreparedRound {
         &self.generated.patch
     }
 
-    /// Everything the generator returned.
+    /// Everything the generator returned. For a patch or draw target (Challenge v2) the same shape, with generator
+    /// [`NOT_GENERATED`](crate::v2::NOT_GENERATED), level 0 and no minimum steps: the target, its phrase, what the
+    /// round compares and the patch-target fingerprint.
     pub fn generated(&self) -> &Generated {
         &self.generated
     }
 
-    /// The randomized parameters, in address order: the rings, `dim_unused`, `TargetContext::randomized`.
+    /// The randomized parameters, in address order: the rings, `dim_unused`, `TargetContext::randomized` (for a
+    /// patch or draw target, the compared ones: [`crate::patch_round`]).
     pub fn params(&self) -> &[ParamAddr] {
         &self.generated.params
     }
@@ -165,6 +170,8 @@ pub enum RoundError {
     /// The target is silent through its phrase (`silent_target`): its scored render reads no loudness, so any silent
     /// answer would score 100 %. Only [`prepare_round`] refuses it; the shell deals another seed (R1/S1 lane INT).
     SilentTarget,
+    /// A draw target gave no playable target (`draw_failed`), or a drawn value could not be set (Challenge v2).
+    Draw(DrawError),
 }
 
 impl RoundError {
@@ -176,6 +183,7 @@ impl RoundError {
             RoundError::PhraseMismatch { .. } => "phrase_mismatch",
             RoundError::Score(e) => e.code(),
             RoundError::SilentTarget => "silent_target",
+            RoundError::Draw(e) => e.code(),
         }
     }
 
@@ -192,6 +200,7 @@ impl RoundError {
                                          hear; deal another seed (a new round), or raise `musical` if it keeps \
                                          happening"
                 .to_owned(),
+            RoundError::Draw(e) => e.hint(),
         }
     }
 }
@@ -211,6 +220,7 @@ impl fmt::Display for RoundError {
             ),
             RoundError::Score(e) => write!(f, "{e}"),
             RoundError::SilentTarget => f.write_str("the target is silent through its phrase"),
+            RoundError::Draw(e) => write!(f, "the draw: {e}"),
         }
     }
 }
@@ -261,15 +271,26 @@ pub fn target_lufs(target: &Patch, phrase: &Phrase) -> Result<Option<f64>, Round
     Ok(loudness::integrated_lufs(&out.mid(), SCORING_SAMPLE_RATE))
 }
 
-/// Prepare a given challenge (a golden challenge, `enth compare`, a challenge file): validate it, regenerate its
-/// target, check that its phrase is the generator's pick, and prepare the scorers it names.
+/// Prepare a given challenge (a golden challenge, `enth compare`, a challenge file, a lesson's step): validate it,
+/// make its target and prepare the scorers it names. [`PreparedRound::challenge`] is the challenge as given.
+///
+/// - A seed target: regenerate it, and check that the challenge's phrase is the generator's pick.
+/// - A patch target (Challenge v2): [`crate::patch_round::prepare_patch_round`] with
+///   [`Compared::FromStart`](crate::patch_round::Compared::FromStart).
+/// - A draw target (Challenge v2): draw it over the start ([`crate::v2::Draw::draw`]); the drawn parameters are the
+///   compared ones.
 pub fn prepare_challenge(challenge: Challenge) -> Result<PreparedRound, RoundError> {
     challenge.validate().map_err(RoundError::Challenge)?;
-    let spec = *challenge.spec().ok_or_else(|| {
-        RoundError::Score(ScoreError::Unscorable {
-            reason: "only generated challenges are prepared in R1".to_owned(),
-        })
-    })?;
+    let spec = match &challenge.target {
+        Target::Seed(spec) => *spec,
+        Target::Patch(_) => {
+            return crate::patch_round::prepare_patch_round(
+                challenge,
+                crate::patch_round::Compared::FromStart,
+            );
+        }
+        Target::Draw(_) => return crate::patch_round::prepare_draw_round(challenge),
+    };
     let start = random::start(spec.template)?;
     let generated = random::generate(&spec, &start)?;
     if generated.phrase != challenge.phrase {
@@ -281,7 +302,8 @@ pub fn prepare_challenge(challenge: Challenge) -> Result<PreparedRound, RoundErr
     prepare_parts(challenge, start, generated)
 }
 
-fn prepare_parts(
+/// The scorers a challenge names, prepared on its target: the one way a [`PreparedRound`] is built.
+pub(crate) fn prepare_parts(
     challenge: Challenge,
     start: Patch,
     generated: Generated,
@@ -505,6 +527,28 @@ mod tests {
             let round = prepare_round(&spec(level, 42)).unwrap();
             let lufs = target_lufs(round.target(), round.phrase()).unwrap();
             assert!(lufs.is_some_and(|l| l > -70.0), "level {level}: {lufs:?}");
+        }
+    }
+
+    /// `score::KNOWN_SCORERS` is exactly what the dispatch prepares (lane CV2, for `enth-learn`'s `requires`).
+    #[test]
+    fn the_known_scorers_are_what_the_dispatch_prepares() {
+        let round = prepare_round(&spec(1, 3)).unwrap();
+        let base = round.challenge().clone();
+        for id in super::super::KNOWN_SCORERS {
+            assert!(super::super::is_known(&id));
+            let mut c = base.clone();
+            match id.name() {
+                "sound" | "sound-stub" => c.scoring.sound = id.clone(),
+                "structure" | "structure-stub" => c.scoring.structure = id.clone(),
+                "combined" | "combined-stub" => c.scoring.combined = id.clone(),
+                "time" => c.scoring.time = id.clone(),
+                other => panic!("an unexpected scorer kind {other}"),
+            }
+            assert!(prepare_challenge(c).is_ok(), "{id}");
+        }
+        for unknown in [ScorerId::SOUND_V2, ScorerId::new("sound", 9)] {
+            assert!(!super::super::is_known(&unknown));
         }
     }
 
