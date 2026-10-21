@@ -76,6 +76,12 @@ pub struct IntakeCfg {
     pub tail_ms: f64,
     /// A clip shorter than this (s) is padded with silence, never rejected: 0.1 by default.
     pub min_len_s: f64,
+    /// What the decoder knows of the file's coding (lane SK3, F1s should-fix 2), when a shell passes it: a lossy
+    /// codec has likely low-passed the file, so [`bandwidth`] accepts an edge with fewer partials under it (a high
+    /// note's sparse spectrum hides a codec's cut-off otherwise). `None` by default, and then nothing changes; it is
+    /// left out of the report when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codec: Option<CodecHint>,
 }
 
 impl Default for IntakeCfg {
@@ -86,8 +92,62 @@ impl Default for IntakeCfg {
             silence_db: 60.0,
             tail_ms: 100.0,
             min_len_s: 0.1,
+            codec: None,
         }
     }
+}
+
+/// The decoder's hint about a file's coding (lane SK3, additive): which codec, whether it is lossy (likely
+/// low-passed), and its bitrate when the stream says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodecHint {
+    /// The codec.
+    pub codec: Codec,
+    /// Whether it is lossy (MP3, Vorbis): such files are usually low-passed by the encoder.
+    pub lossy: bool,
+    /// The bitrate (kbps), when the stream says (an MP3's average frame bitrate, a Vorbis stream's nominal one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bitrate_kbps: Option<u32>,
+}
+
+impl CodecHint {
+    /// The hint of a lossless file (PCM, FLAC).
+    #[must_use]
+    pub fn lossless(codec: Codec) -> Self {
+        CodecHint {
+            codec,
+            lossy: false,
+            bitrate_kbps: None,
+        }
+    }
+
+    /// The hint of a lossy file (MP3, Vorbis) at `bitrate_kbps`.
+    #[must_use]
+    pub fn lossy(codec: Codec, bitrate_kbps: Option<u32>) -> Self {
+        CodecHint {
+            codec,
+            lossy: true,
+            bitrate_kbps,
+        }
+    }
+}
+
+/// A file's codec, as the decoder found it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Codec {
+    /// Uncompressed PCM (WAV, AIFF).
+    Pcm,
+    /// FLAC.
+    Flac,
+    /// Ogg Vorbis.
+    Vorbis,
+    /// MPEG audio (MP3, MP2, MP1).
+    Mp3,
+    /// A codec a newer build wrote, read back leniently; never produced here.
+    #[serde(other)]
+    Unknown,
 }
 
 /// What the intake detected: what the upload no longer carries faithfully. Clip time.
@@ -307,7 +367,8 @@ impl Intake {
         let end_c = to_clip(sig_end).max((on + 1).min(audio.len()));
         // Hum is looked for in a confirmed floor only: a held note's harmonics on a mains multiple read as hum too.
         let hum = confirmed.and_then(|f| floor::hum(src, sr, f.run, &mut planner));
-        let bandwidth_hz = bandwidth::estimate(&audio, sr, (on, end_c), &mut planner);
+        let lossy = cfg.codec.is_some_and(|c| c.lossy);
+        let bandwidth_hz = bandwidth::estimate(&audio, sr, (on, end_c), lossy, &mut planner);
         let clipping = clip::detect(&audio, sr);
         let clip_levels = trim::Levels::standard(&audio, sr);
         let tail_t60_s = trim::tail_t60(
