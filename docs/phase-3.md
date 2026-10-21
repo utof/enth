@@ -102,7 +102,7 @@ Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and
 | **LUI** Learn view | `enth-ui/src/editor/learn/*`, `learn.json`, the overlay's highlight and lock (additive in `overlay.rs`), the lesson browser and its Review entry, `sizes/learn.rs` | F2l | 2–3.5 | **H** |
 | **DEC** Deconstruct and studies | `enth-learn/src/deconstruct.rs`, `xtask/src/lesson/gen.rs` (`lesson-gen deconstruct`), the runtime job for user presets, `content/lessons/studies/` | F2l, CLS, fu1-drv | 1–2 | L |
 | **C2, C3** Shaping; space and dynamics | `content/lessons/shaping/`, `content/lessons/space-and-dynamics/` (tour lessons first) | LCK; CV2's phrases | 2–3 each | L, Opus |
-| **EV3** Agent lesson track | The lesson track in `content/agent-evals/`, a `follower` floor | SKL's CLI | 0.75–1.5 | L |
+| **EV3** Agent lesson track | The lesson track in `content/agent-evals/`, a `follower` floor; the rest of `enth lesson` (`list`, `hint`, `closest`), additive in SKL's `lesson.rs` | SKL's CLI, CLS | 0.75–1.5 | L |
 | **REV** Review | `enth-learn/src/review.rs` (Leitner boxes per skill: module kind + parameter, fed by Recreate's rings), progress's review field (additive), the session's review source (seeded sibling rounds) | LUI | 1–2 (this plan's estimate) | L |
 | **INT2** R2 integration | `docs/r2-gates.md`, owner sheet 4 (`docs/r2-owner.md`), the friend sheet, `cargo xtask gr2-report` (`xtask/src/gr2.rs`), a friend build with packs | Everything | 1.5–2.5 | **H** |
 | **DL** Download (cut list) | A non-default `learn-download` feature (`ureq` + `rustls`), or import only | Your networking decision, after GR1 | 1–2 | H |
@@ -176,7 +176,7 @@ Each lane stops at its own criteria and reports against them.
 | **C1, C2, C3** | `lesson-check --solve` green on every lesson; coverage complete across C1–C3; C1 after your taste check |
 | **LUI** | Two lessons by label in kittest; overlay snapshots; no-peek in lesson Recreate steps; the overflow report at 1200 × 800; 0 idle frames; `leak-test` |
 | **DEC** | Lessons from 5 factory presets pass `lesson-check`; ablation cost and step quality reported on Acid Snap and Glass Pluck |
-| **EV3** | The follower floor recorded with model, date and cost (paid runs only with your OK) |
+| **EV3** | `enth lesson list\|hint\|closest` with insta snapshots; the follower floor recorded with model, date and cost (paid runs only with your OK) |
 | **REV** | Leitner moves as proptests; a skill's box follows its rings; the due queue is deterministic for a given progress file |
 | **INT2** | The full gate, REAPER, leak and soak green. The GR2 table filled except your and your friends' rows. Owner sheet 4 written |
 | **DL** | `cargo deny`; three OS legs; no request without a click |
@@ -245,7 +245,7 @@ The tables of record will be `docs/r2-gates.md` (INT2) and `docs/r3-gates.md` (I
 
 ## Rules for every lane
 
-- Branch from the latest freeze of your milestone, and write only the files your lane owns. One owner per doc: [learn.md](learn.md) (DOCS3, then a section each for LM, SL, PLY, LCK, LUI, DEC and REV; INT2 its status), [challenge.md](challenge.md)'s v2 section (CV2), [session.md](session.md)'s Learn (SL) and Create (SK3) sections, [editor.md](editor.md)'s Learn (LUI) and Create (PUI) sections, [plugin.md](plugin.md)'s Learn (SKL) and Create (SK3) sections, [agent-cli.md](agent-cli.md) (SKL's `enth lesson`, CLC's `enth create`), [r3.md](r3.md) (DOCS3, then FE, OBJ, TP, ONX, DG and TR sections; INTa and INTb its status), [listening.md](listening.md)'s GR3 section (LT), `docs/gr3.md` (EVK, EVb), the gate tables and owner sheets (INT2, INTa, INTb). Report against your acceptance criteria when you stop.
+- Branch from the latest freeze of your milestone, and write only the files your lane owns. One owner per doc: [learn.md](learn.md) (DOCS3, then a section each for LM, SL, PLY, LCK, LUI, DEC and REV; INT2 its status), [challenge.md](challenge.md)'s v2 section (CV2), [session.md](session.md)'s Learn (SL) and Create (SK3) sections, [editor.md](editor.md)'s Learn (LUI) and Create (PUI) sections, [plugin.md](plugin.md)'s Learn (SKL) and Create (SK3) sections, [agent-cli.md](agent-cli.md) (SKL's and EV3's `enth lesson`, CLC's `enth create`), [r3.md](r3.md) (DOCS3, then FE, OBJ, TP, ONX, DG and TR sections; INTa and INTb its status), [listening.md](listening.md)'s GR3 section (LT), `docs/gr3.md` (EVK, EVb), the gate tables and owner sheets (INT2, INTa, INTb). Report against your acceptance criteria when you stop.
 - **Privacy.** Never put your email, name or other personal details in any request, header, URL or payload (crates.io, GitHub and dataset sites included); use `enth-research/0.1`. A dataset that needs an account (Freesound's originals) is fetched by you, not by an agent.
 - **No windows on the real display** (Xvfb, as [AGENTS.md](../AGENTS.md#ui) says), and **never play audio**: the listening tools are tested with `--dry-run`.
 - **Foreground commands** with a timeout above their measured length; a backgrounded agent can go idle and never resume. Keep a running `notes.md` in persistent scratch (`~/code/enth-scratch/r23/<lane>/`).
