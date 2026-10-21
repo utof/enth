@@ -25,6 +25,11 @@ enth-challenge.workspace = true
 # Pre-declared by lane S0l (R2): `enth lesson list|show|check|hint|closest` (lanes SKL and EV3). The CLI reads packs in the
 # authoring layout (TOML), so it turns the crate's `toml` feature on; the plugin does not.
 enth-learn = { workspace = true, features = ["toml"] }
+# Pre-declared by lane S0s (R3): `enth create` decodes FLAC, Ogg Vorbis and MP3 beside WAV (`hound`, below) and hands the
+# search to the rayon-backed evaluator (lanes SK3 and CLC). `symphonia` (MPL-2.0) is not here: it waits for the owner's OK.
+claxon.workspace = true
+lewton.workspace = true
+nanomp3.workspace = true
 clap.workspace = true
 schemars.workspace = true
 strsim.workspace = true

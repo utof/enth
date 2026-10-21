@@ -358,6 +358,9 @@ impl Editor {
                             // Lane S0l (R2): lessons are not available until lane LUI hands the editor a Learn state.
                             #[cfg(feature = "learn")]
                             learn: super::learn::HeaderLearn::default(),
+                            // Lane S0s (R3): create is not available until lane PUI hands the editor a create state.
+                            #[cfg(feature = "create")]
+                            create: super::create::HeaderCreate::default(),
                         };
                         let knobs: Vec<CardView> = self
                             .layout

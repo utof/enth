@@ -18,5 +18,5 @@ enth-cli = 8
 max_layer = 5          # layers 0..=5 must build for wasm32 and do no I/O
 
 [exempt]
-packages = ["xtask", "enth-test-host", "enth-golden", "enth-listen", "enth-lesson-tool"]
+packages = ["xtask", "enth-test-host", "enth-golden", "enth-listen", "enth-lesson-tool", "enth-datagen"]
 prefixes = ["spike-"]

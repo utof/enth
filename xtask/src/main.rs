@@ -7,12 +7,14 @@
 
 mod affected;
 mod agent_eval;
+mod bank;
 mod bench;
 mod bundle;
 mod engine;
 mod golden;
 mod gr1_report;
 mod gr2;
+mod gr3;
 mod host_render;
 mod leak;
 mod lesson;
@@ -161,6 +163,10 @@ const USAGE: &str = "usage: cargo xtask <command>
   lesson-gen deconstruct <preset>   (not built yet: R2 lane DEC) a deconstruct lesson from a preset, by ablation
   pack [<pack>...]                  (not built yet: R2 lane LCK) build content/lessons/<pack> into a reproducible .enthpack
   gr2-report <progress file>...     (not built yet: R2 lane INT2) the GR2 numbers from the progress files
+  gr3-run [options] <set>           (not built yet: R3 lane EVK) GR3's four arms over a held-out set of content/gr3/,
+                                    appended to content/gr3/runs.jsonl
+  gr3-report [options] <runs.jsonl> (not built yet: R3 lane EVK) GR3's clause-1 endpoints from the runs
+  bank [options]                    (not built yet: R3 lane TP) build the k-NN retrieval bank (drives `enth-datagen bank`)
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
@@ -191,6 +197,9 @@ fn main() -> ExitCode {
         Some("preset-add") => preset_add::preset_add(&args[1..]),
         Some("gr1-report") => gr1_report::gr1_report(&args[1..]),
         Some("gr2-report") => gr2::gr2_report(&args[1..]),
+        Some("gr3-run") => gr3::gr3_run(&args[1..]),
+        Some("gr3-report") => gr3::gr3_report(&args[1..]),
+        Some("bank") => bank::bank(&args[1..]),
         Some("lesson-check") => lesson::lesson_check(&args[1..]),
         Some("lesson-coverage") => lesson::lesson_coverage(&args[1..]),
         Some("lesson") => lesson::lesson(&args[1..]),

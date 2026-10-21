@@ -2,7 +2,7 @@
 //! the dimensions of its own area in its own file: `bar`, `card`, `cards` (UI-C), `display`, `editor` (ED1), `handle`,
 //! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
 //! R1/S1 (lane S0r) pre-declared three empty areas: `recreate` (RUI), `browser` (PBU) and `add_module` (AM); R2 (lane S0l) one:
-//! `learn` (LUI).
+//! `learn` (LUI); R3 (lane S0s) one: `create` (PUI).
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,7 @@ mod bar;
 mod browser;
 mod card;
 mod cards;
+mod create;
 mod display;
 mod editor;
 mod handle;
@@ -29,6 +30,7 @@ pub use bar::BarSizes;
 pub use browser::BrowserSizes;
 pub use card::CardSizes;
 pub use cards::CardsSizes;
+pub use create::CreateSizes;
 pub use display::DisplaySizes;
 pub use editor::EditorSizes;
 pub use handle::HandleSizes;
@@ -80,6 +82,9 @@ pub struct Sizes {
     /// The Learn view: lesson pane, lesson browser, lock glyph (lane LUI; empty until it adds tokens).
     #[serde(default)]
     pub learn: LearnSizes,
+    /// The Create view: drop zone, folder browser, candidate tiles, progress bar (lane PUI; empty until it adds tokens).
+    #[serde(default)]
+    pub create: CreateSizes,
     /// Height of single-line controls: buttons, segmented controls, number fields.
     pub control_height: f32,
 }
@@ -105,6 +110,7 @@ impl Sizes {
             browser: BrowserSizes::dark(),
             add_module: AddModuleSizes::dark(),
             learn: LearnSizes::dark(),
+            create: CreateSizes::dark(),
             control_height: 24.0,
         }
     }

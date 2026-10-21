@@ -1,0 +1,25 @@
+# enth-ml: R3b's Python side (docs/r3.md, "R3b: the first model"; docs/phase-3.md, "ML rules"). A uv project that is
+# in NO cargo or CI build and never ships. Lane S0s (R3, freeze point F0s) wrote this file and nothing else: no
+# dependency is declared, none is installed or downloaded, and there is no lock. The lane that needs a package (DEG, AUG, TR)
+# adds it under [project] dependencies and runs `uv sync` itself; the first `uv sync` writes `uv.lock`, which that lane
+# commits (the run manifests record its hash).
+#
+# Dependency rules (README.md, "The ML rules"): only MIT or Apache code goes into ml/, MPL code only with the owner's OK;
+# LGPL and GPL tools (LAME, shine, ffmpeg) run only as subprocesses, never imported; pedalboard (GPL-3.0), gpuRIR
+# (AGPL-3.0) and fdk-aac are never imported. Features are computed in Rust (`enth-analysis`), never re-implemented here.
+[project]
+name = "enth-ml"
+version = "0.0.0"
+description = "enth R3b: the degradation chain, augmentation, the proposal model, training and the export to our model file. Never shipped."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+# A set of scripts and packages run from this directory (`uv run python -m enth_ml.<package>`), not a distributable
+# package: no build backend, nothing is built or installed into the environment but the dependencies.
+package = false

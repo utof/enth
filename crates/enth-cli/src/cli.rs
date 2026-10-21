@@ -220,4 +220,8 @@ pub enum Cmd {
     /// Lessons: list, show, check, hint, closest (lanes SKL, then EV3).
     #[command(hide = true)]
     Lesson(crate::cmd::lesson::Args),
+    // R3 command, pre-declared by lane S0s, hidden and answering `not_built_yet` the same way (lanes SK3, then CLC).
+    /// Create patches from a sound file: the intake, a start portfolio and K searched candidates (lanes SK3, then CLC).
+    #[command(hide = true)]
+    Create(crate::cmd::create::Args),
 }
