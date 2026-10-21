@@ -274,7 +274,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let mut stamps: Vec<f64> = Vec::new();
     let capped = game::with_workers(args.workers, || {
         search(&mut job, &metric, &late, &mut || {
-            stamps.push(t0.elapsed().as_secs_f64())
+            stamps.push(t0.elapsed().as_secs_f64());
         })
     })?
     .map_err(|e| error::failed(e.code(), e.to_string(), e.hint()))?;
