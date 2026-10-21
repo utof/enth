@@ -39,7 +39,11 @@ exit: 3
     "challenge-decode",
     "compare",
     "lesson-show",
-    "lesson-check"
+    "lesson-check",
+    "lesson-list",
+    "lesson-start",
+    "lesson-hint",
+    "lesson-closest"
   ],
   "message": "no schema named 'chek'",
   "schema": "enth.error/1"

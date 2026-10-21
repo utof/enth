@@ -1,0 +1,18 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "challenge": null,
+  "from": "patches/saw.patch.json",
+  "kind": "do",
+  "lesson": "example/cutoff",
+  "next": "edit [TMP]/start.patch.json with `enth apply`, then `enth lesson check [repo]/content/lessons/example --lesson cutoff --step try [TMP]/start.patch.json`",
+  "number": 2,
+  "patch": "[TMP]/start.patch.json",
+  "schema": "enth.lesson-start/1",
+  "step": "try"
+}
+--- stderr

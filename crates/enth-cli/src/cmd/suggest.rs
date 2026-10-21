@@ -102,7 +102,7 @@ fn check_level(level: u8) -> Result<u8, CliError> {
 
 /// The output for the hint at `level`. A field is set only from its level on, so a higher level's information never
 /// reaches a lower level's output.
-fn suggest_out(
+pub(crate) fn suggest_out(
     patch: &std::path::Path,
     code: Option<&str>,
     level: u8,

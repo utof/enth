@@ -1,0 +1,65 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "next": "`enth lesson show [repo]/content/lessons/example --lesson cutoff` reads a lesson (1 lessons in 1 packs)",
+  "packs": [
+    {
+      "covers": [
+        "svf"
+      ],
+      "engine": "[engine]",
+      "id": "example",
+      "lessons": [
+        {
+          "id": "cutoff",
+          "key": "example/cutoff",
+          "objective": "Turn the low-pass filter's cutoff down and hear the sound get darker.",
+          "steps": [
+            {
+              "hints": 0,
+              "id": "hear",
+              "kind": "listen",
+              "number": 1
+            },
+            {
+              "hints": 1,
+              "id": "try",
+              "kind": "do",
+              "number": 2
+            },
+            {
+              "hints": 0,
+              "id": "which",
+              "kind": "choose",
+              "number": 3
+            }
+          ],
+          "teaches": [
+            "svf.cutoff"
+          ],
+          "tier": "basic",
+          "title": "The low-pass cutoff"
+        }
+      ],
+      "path": "[repo]/content/lessons/example",
+      "title": "Example pack",
+      "tracks": [
+        {
+          "id": "tour",
+          "lessons": [
+            "example/cutoff"
+          ],
+          "title": "The example tour"
+        }
+      ],
+      "version": "0.1.0"
+    }
+  ],
+  "refused": [],
+  "schema": "enth.lesson-list/1"
+}
+--- stderr

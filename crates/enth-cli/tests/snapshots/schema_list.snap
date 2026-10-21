@@ -147,6 +147,26 @@ exit: 0
       "describes": "the output of enth lesson check",
       "id": "enth.lesson-check/1",
       "name": "lesson-check"
+    },
+    {
+      "describes": "the output of enth lesson list",
+      "id": "enth.lesson-list/1",
+      "name": "lesson-list"
+    },
+    {
+      "describes": "the output of enth lesson start",
+      "id": "enth.lesson-start/1",
+      "name": "lesson-start"
+    },
+    {
+      "describes": "the output of enth lesson hint",
+      "id": "enth.lesson-hint/1",
+      "name": "lesson-hint"
+    },
+    {
+      "describes": "the output of enth lesson closest",
+      "id": "enth.lesson-closest/1",
+      "name": "lesson-closest"
     }
   ]
 }

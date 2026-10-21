@@ -1,0 +1,343 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "LessonBlockedOut": {
+      "additionalProperties": false,
+      "description": "An item a measured hint cannot reach.",
+      "properties": {
+        "at_bound": {
+          "description": "Parameters sitting at a bound.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "item": {
+          "description": "The item as written.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "The stable reason (`at_bound`, `conflict`, `no_effect`, `absent`, `performance`, `unmodelled`).",
+          "type": "string"
+        },
+        "why": {
+          "description": "Why, in a sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "reason",
+        "why",
+        "at_bound"
+      ],
+      "type": "object"
+    },
+    "LessonMeasuredOut": {
+      "additionalProperties": false,
+      "description": "A do step's measured hint: the solver's verified move, from the player's patch, within the step's editable set.",
+      "properties": {
+        "blocked": {
+          "description": "Items no move within the step's controls can satisfy, with the reason.",
+          "items": {
+            "$ref": "#/$defs/LessonBlockedOut"
+          },
+          "type": "array"
+        },
+        "highlight": {
+          "description": "The controls the Learn view points at.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "moves": {
+          "description": "Each parameter the move changes, the largest first.",
+          "items": {
+            "$ref": "#/$defs/LessonMoveOut"
+          },
+          "type": "array"
+        },
+        "ops": {
+          "description": "The move as ops, for `enth apply <patch> --ops '<json>'` (plain values with units).",
+          "items": true,
+          "type": "array"
+        },
+        "pass_all": {
+          "description": "Applying every move makes the whole sound check pass.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "highlight",
+        "moves",
+        "ops",
+        "pass_all",
+        "blocked"
+      ],
+      "type": "object"
+    },
+    "LessonMoveOut": {
+      "additionalProperties": false,
+      "description": "One parameter of a measured move.",
+      "properties": {
+        "direction": {
+          "description": "`up` or `down`.",
+          "type": "string"
+        },
+        "from": {
+          "description": "Where it is now, with its unit.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name on the card (`Cutoff`).",
+          "type": "string"
+        },
+        "param": {
+          "description": "The address (`filter1.cutoff`).",
+          "type": "string"
+        },
+        "to": {
+          "description": "Where the move puts it, with its unit.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "param",
+        "name",
+        "from",
+        "to",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "SuggestOut": {
+      "additionalProperties": false,
+      "description": "`enth.suggest/1`: the coach's hint for a patch against a challenge's target, at one reveal level.\n\nThe fields appear level by level, as in the game: `aspect` and `difference` from level 1, `module` from 2,\n`param` and `turn` from 3, `range` at 4. **Levels 1 to 3 hold no number but `level`, `levels` and `renders`:\nthe target's values are never printed before the last level, and even then as a range around the fix, not the\ntarget's own value.** Asking for a level costs one coach plan (about 25 renders); the same patch gives the same\nanswer at every worker count.",
+      "properties": {
+        "aspect": {
+          "description": "Level 1 on: the aspect that is off (`pitch`, `brightness`, `attack`, `decay`, `sustain`, `release`,\n`noisiness`, `beating`, `tremolo` or `sweep`); absent when `close`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "close": {
+          "description": "True when nothing measured is off: every level then says so.",
+          "type": "boolean"
+        },
+        "code": {
+          "description": "The challenge's code, when it has one (a `--challenge` file made from a custom spec has a long one).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "difference": {
+          "description": "Level 1 on: how your sound differs: `higher`, `lower`, `missing` (the target has it, yours does not) or\n`extra`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hint": {
+          "description": "The next command to try.",
+          "type": "string"
+        },
+        "level": {
+          "description": "The reveal level asked for, 1 to `levels`.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "levels": {
+          "description": "How many levels there are (4): 1 which aspect, 2 which module, 3 which parameter and which way, 4 a range.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "measured": {
+          "description": "True when the hint comes from a verified render of the solver's fix; false for a named structural\ndifference (a waveform, a mode, a module or a route) or general advice.",
+          "type": "boolean"
+        },
+        "module": {
+          "description": "Level 2 on: the module to look at (`filter1`); absent for a region such as the voice settings.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "param": {
+          "description": "Level 3 on: the parameter to change (`filter1.cutoff`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "patch": {
+          "description": "The patch file that was judged.",
+          "type": "string"
+        },
+        "range": {
+          "description": "Level 4: the values the parameter should land between, `[low, high]` as unit strings.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "renders": {
+          "description": "Renders the coach used for this answer (the target's sensitivity and your patch's probes).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "schema": {
+          "description": "`enth.suggest/1`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The hint in plain language, complete at its level.",
+          "type": "string"
+        },
+        "turn": {
+          "description": "Level 3 on: `raise` or `lower`; absent for a categorical parameter, which is changed, not turned.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "patch",
+        "level",
+        "levels",
+        "close",
+        "measured",
+        "text",
+        "renders",
+        "hint"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.lesson-hint/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.lesson-hint/1`: one hint of a step's ladder. `--n 1` to the number of authored hints are the lesson's own\nwords; the next is measured on a patch file: a do step's by `enth_solver::hint` (the move over the failing\nitems, within the step's editable controls), a recreate step's by the round's coach, four graded levels. Any hint\nmarks a step assisted in the player.",
+  "properties": {
+    "authored": {
+      "description": "How many authored hints the step has.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "coach": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SuggestOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "A recreate step's coach hint: an `enth.suggest/1` object for the round, at level `n - authored`."
+    },
+    "kind": {
+      "description": "The step's kind: `do`, `recreate` or `choose`.",
+      "type": "string"
+    },
+    "lesson": {
+      "description": "`pack/lesson`.",
+      "type": "string"
+    },
+    "measured": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LessonMeasuredOut"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "A do step's measured move: what to turn, by how much, and the same as `enth apply --ops` takes."
+    },
+    "more": {
+      "description": "Whether another hint follows this one (`--n <n + 1>`).",
+      "type": "boolean"
+    },
+    "n": {
+      "description": "Which hint this is (the `--n` asked for), 1-based.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "number": {
+      "description": "Its place, 1-based.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "patch": {
+      "description": "The patch file a measured or coach hint is for.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "renders": {
+      "description": "Renders the measured hint cost (0 for an authored one).",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "enth.lesson-hint/1",
+      "description": "`enth.lesson-hint/1`.",
+      "type": "string"
+    },
+    "source": {
+      "description": "`authored`, `measured` (a do step's solver move) or `coach` (a recreate step's graded hint).",
+      "type": "string"
+    },
+    "step": {
+      "description": "The step's id.",
+      "type": "string"
+    },
+    "text": {
+      "description": "The hint, in words.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "lesson",
+    "step",
+    "number",
+    "kind",
+    "n",
+    "authored",
+    "source",
+    "text",
+    "more",
+    "renders",
+    "next"
+  ],
+  "title": "LessonHintOut",
+  "type": "object"
+}

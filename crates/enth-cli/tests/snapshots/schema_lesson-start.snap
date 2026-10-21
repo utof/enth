@@ -1,0 +1,67 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$id": "enth.lesson-start/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.lesson-start/1`: what the player loads when a step opens, written to files: the step's start patch and, for\na recreate step, its round (the challenge file `enth compare`, `suggest` and `match` take with `--challenge`).",
+  "properties": {
+    "challenge": {
+      "description": "A recreate step's challenge file, as written.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "from": {
+      "description": "Where the start came from: the pack patch the step names (`patches/saw.patch.json`), or `challenge` for a\nrecreate step's own start.",
+      "type": "string"
+    },
+    "kind": {
+      "description": "`do` or `recreate`.",
+      "type": "string"
+    },
+    "lesson": {
+      "description": "`pack/lesson`.",
+      "type": "string"
+    },
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "number": {
+      "description": "Its place, 1-based.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "patch": {
+      "description": "The start patch, as written.",
+      "type": "string"
+    },
+    "schema": {
+      "const": "enth.lesson-start/1",
+      "description": "`enth.lesson-start/1`.",
+      "type": "string"
+    },
+    "step": {
+      "description": "The step's id.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "lesson",
+    "step",
+    "number",
+    "kind",
+    "from",
+    "patch",
+    "next"
+  ],
+  "title": "LessonStartOut",
+  "type": "object"
+}

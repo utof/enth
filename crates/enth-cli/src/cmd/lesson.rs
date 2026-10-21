@@ -1,4 +1,5 @@
-//! **Owner: lane SKL** (`show` and `check`, freeze point F2l), then **EV3** (`list`, `hint` and `closest`, additive).
+//! **Owner: lane SKL** (`show` and `check`, freeze point F2l), then **EV3** (`list`, `start`, `hint` and `closest`,
+//! additive, each in its own file under `lesson/`).
 //! Lane S0l pre-declared the command; SKL filled [`Args`] and [`run`] here, un-hid it in `cli.rs`, added its schemas
 //! (`schema/lesson.rs`) and snapshots, and documented it in docs/agent-cli.md.
 //!
@@ -14,6 +15,13 @@
 //! - `enth lesson check <PACK> --lesson ID --step STEP <PATCH>`: one do step's check run against a patch file: its
 //!   patch predicates, then its sound checks (lane PLY's `enth_learn::check::evaluate_sounds`: each rendered through
 //!   its phrase at the scored rate and seed and judged; `enth.lesson-check/1`). Exit 1 when it fails. `STEP` is the step's id or its 1-based number.
+//! - `enth lesson list <PATH>...` (EV3): the packs and their lessons, steps in short (`enth.lesson-list/1`).
+//! - `enth lesson start <PACK> --lesson ID --step STEP --out FILE [--challenge-out FILE]` (EV3): what the player loads
+//!   when a step opens, written to files (`enth.lesson-start/1`).
+//! - `enth lesson hint <PACK> --lesson ID --step STEP [--n N] [PATCH]` (EV3): the step's hints in order, the authored
+//!   ones first, then a measured one on the patch (`enth.lesson-hint/1`).
+//! - `enth lesson closest <PACK> --lesson ID --step STEP PATCH [--budget N]` (EV3): a recreate step's "How close am
+//!   I?", the nearest passing patch (`enth.lesson-closest/1`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -23,6 +31,11 @@ use enth_learn::pack::{LessonId, MANIFEST_PATH, lesson_path};
 use enth_learn::{
     Check, LearnError, Lesson, LessonBundle, Manifest, Pack, Predicate, Step, StepKind,
 };
+
+mod closest;
+mod hint;
+mod list;
+mod start;
 
 use super::{Reply, Res};
 use crate::error::{self, CliError, EXIT_CHECK_FAILED, nearest};
@@ -66,6 +79,73 @@ pub enum Sub {
         /// The patch file to check.
         patch: PathBuf,
     },
+    /// The packs at PATH... and their lessons, steps in short (a folder of packs lists each).
+    List {
+        /// A pack (a folder or an `.enthpack` file), or a folder of packs such as `content/lessons`.
+        #[arg(required = true, value_name = "PATH")]
+        paths: Vec<PathBuf>,
+    },
+    /// Write what a step loads when it opens: its start patch, and a recreate step's round.
+    Start {
+        /// The pack: a folder (`pack.toml` or `pack.json`) or an `.enthpack` file.
+        pack: PathBuf,
+        /// The lesson's id.
+        #[arg(long, value_name = "ID")]
+        lesson: String,
+        /// The step: its id or its 1-based number.
+        #[arg(long, value_name = "STEP")]
+        step: String,
+        /// Where to write the start patch (*.patch.json).
+        #[arg(long, value_name = "PATCH")]
+        out: PathBuf,
+        /// A recreate step's challenge file, for `enth compare|suggest|match --challenge`.
+        #[arg(long, value_name = "FILE")]
+        challenge_out: Option<PathBuf>,
+    },
+    /// One hint of a step: the authored ones first (--n 1 up), then one measured on your patch.
+    Hint {
+        /// The pack: a folder (`pack.toml` or `pack.json`) or an `.enthpack` file.
+        pack: PathBuf,
+        /// The lesson's id.
+        #[arg(long, value_name = "ID")]
+        lesson: String,
+        /// The step: its id or its 1-based number.
+        #[arg(long, value_name = "STEP")]
+        step: String,
+        /// Which hint, from 1. `enth lesson list` shows how many authored hints a step has; the next one is measured.
+        #[arg(long, value_name = "N", default_value_t = 1)]
+        n: u16,
+        /// The patch file a measured hint is for (an authored hint needs none).
+        patch: Option<PathBuf>,
+        /// Worker threads for the renders (default: every core). The answer is the same for any number.
+        #[arg(long, value_name = "N")]
+        workers: Option<usize>,
+    },
+    /// A recreate step's "How close am I?": the nearest patch that passes its round, with each control's move.
+    Closest {
+        /// The pack: a folder (`pack.toml` or `pack.json`) or an `.enthpack` file.
+        pack: PathBuf,
+        /// The lesson's id.
+        #[arg(long, value_name = "ID")]
+        lesson: String,
+        /// The step: its id or its 1-based number.
+        #[arg(long, value_name = "STEP")]
+        step: String,
+        /// The patch file to start from.
+        patch: PathBuf,
+        /// The most renders, your own patch included (default 300).
+        #[arg(long, value_name = "N")]
+        budget: Option<u32>,
+        /// The controls that may move, as full addresses (default: the step's editable set).
+        #[arg(long, value_name = "ADDR", value_delimiter = ',')]
+        free: Vec<String>,
+        /// Write the answer patch here.
+        #[arg(long, value_name = "PATCH")]
+        out: Option<PathBuf>,
+        /// Worker threads for the renders (default: every core). The answer is the same for any number.
+        #[arg(long, value_name = "N")]
+        workers: Option<usize>,
+    },
 }
 
 /// Run `enth lesson`.
@@ -82,6 +162,41 @@ pub fn run(args: &Args) -> Res {
             step,
             patch,
         } => check(pack, lesson, step, patch),
+        Sub::List { paths } => list::list(paths),
+        Sub::Start {
+            pack,
+            lesson,
+            step,
+            out,
+            challenge_out,
+        } => start::start(pack, lesson, step, out, challenge_out.as_deref()),
+        Sub::Hint {
+            pack,
+            lesson,
+            step,
+            n,
+            patch,
+            workers,
+        } => hint::hint_cmd(pack, lesson, step, *n, patch.as_deref(), *workers),
+        Sub::Closest {
+            pack,
+            lesson,
+            step,
+            patch,
+            budget,
+            free,
+            out,
+            workers,
+        } => closest::closest_cmd(
+            pack,
+            lesson,
+            step,
+            patch,
+            *budget,
+            free,
+            out.as_deref(),
+            *workers,
+        ),
     }
 }
 
