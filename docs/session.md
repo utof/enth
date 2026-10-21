@@ -432,7 +432,7 @@ The `enth` field's optional `learn` object holds the in-flight `LessonRef` (pack
 
 ### What lanes SKL and LUI must wire
 
-1. **The player.** Build it from the pack the shell read (`Player::new(bundle)`) and pass it to `learn_start`. Answer `Open` with `Player::resume(bundle, step)`'s player and effects.
+1. **The player.** Build it from the pack the shell read (`Player::new(bundle)`) and pass it to `learn_start`. Answer `Open` with `Player::resume(bundle, step)`'s player and effects. If the resume refuses the step (an updated lesson with fewer steps), answer with `Player::new(bundle)` and no effects: its other content prefix makes the session start it at step 0.
 2. **The worker.** Run `LearnRequest::Run` jobs like the game's (never blocking on a full queue), and answer `JobKind::PrepareChallenge` with `prepare_challenge`. Results come back through `learn_job_done` on the GUI thread.
 3. **The progress file.** Merge each `LearnRequest::Record` after unlocking (re-read, `Progress::merge`, temporary file, rename).
 4. **Listen.** Store `LearnRequest::Listen` where `process()` reads it, and play the example loops from the Target ▶ slot.
