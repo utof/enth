@@ -382,6 +382,11 @@ text = "check-detune.md"
 hints = ["More cents apart, faster wobble."]
 answer = 1
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/two-saws-12ct.patch.json"
@@ -396,6 +401,11 @@ kind = "choose"
 text = "check-level.md"
 hints = ["The louder the second oscillator, the deeper the wobble."]
 answer = 0
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

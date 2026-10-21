@@ -348,6 +348,11 @@ text = "check-pink.md"
 hints = ["Pink noise is the softer, darker one, like rain; white is brighter, like steam."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/noise-pink.patch.json"
@@ -362,6 +367,11 @@ kind = "choose"
 text = "check-more.md"
 hints = ["Ignore the note; listen only to the hiss around it."]
 answer = 1
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

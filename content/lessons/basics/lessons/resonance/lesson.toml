@@ -329,6 +329,11 @@ text = "check-more.md"
 hints = ["Both have a peak; one rings much more sharply."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/saw-res-90.patch.json"
@@ -343,6 +348,11 @@ kind = "choose"
 text = "check-high.md"
 hints = ["Higher up, the whistle is a bright, thin ring above the saw."]
 answer = 1
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

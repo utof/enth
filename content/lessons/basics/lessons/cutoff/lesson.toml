@@ -345,6 +345,11 @@ text = "check-lowest.md"
 hints = ["The lowest cutoff lets the fewest high harmonics through: pick the dullest."]
 answer = 1
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/pad-cutoff-1k.patch.json"
@@ -363,6 +368,11 @@ kind = "choose"
 text = "what-changed.md"
 hints = ["A filtered saw keeps its buzz low down; a triangle is smooth and hollow all the way up."]
 answer = 0
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"
