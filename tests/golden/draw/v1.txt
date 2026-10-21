@@ -1,0 +1,1003 @@
+# enth-challenge Challenge v2 draws: 1,000 (draw, seed) -> drawn values golden (tests/golden/tests/cv2_draw.rs).
+# case index seed a=attempt f=forced at=value...; last line: sha256 of every line above it
+cutoff-set 0000 1cdf688e69f90a a=0 f=0 filter1.cutoff=600
+cutoff-set 0001 08eb9d06e3d0b0 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0002 07492ae2c7a172 a=0 f=0 filter1.cutoff=600
+cutoff-set 0003 003114ccef72d9 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0004 02c6d630955dc4 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0005 1d810d0802a3e4 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0006 1034a8c3f90ca9 a=0 f=0 filter1.cutoff=600
+cutoff-set 0007 1faf9389db94cd a=0 f=0 filter1.cutoff=4000
+cutoff-set 0008 0ee7b9f2b81c44 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0009 07b41cbf2b1975 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0010 07cf56bce5c7c5 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0011 0c6540245c6810 a=0 f=0 filter1.cutoff=300
+cutoff-set 0012 0dc532849873d7 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0013 02636adcfa88c8 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0014 00c3619804f95b a=0 f=0 filter1.cutoff=600
+cutoff-set 0015 05c124b95dca90 a=0 f=0 filter1.cutoff=600
+cutoff-set 0016 02bcdde8516c08 a=0 f=0 filter1.cutoff=600
+cutoff-set 0017 14f7bd512b3099 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0018 00043d813d9f72 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0019 1f4ba0ff7c74bd a=0 f=0 filter1.cutoff=4000
+cutoff-set 0020 0da8775eda1d43 a=0 f=0 filter1.cutoff=300
+cutoff-set 0021 1007a3712d5232 a=0 f=0 filter1.cutoff=300
+cutoff-set 0022 12da6c0741e457 a=0 f=0 filter1.cutoff=300
+cutoff-set 0023 1c69045161c95b a=0 f=0 filter1.cutoff=600
+cutoff-set 0024 1160c2332b2c5d a=0 f=0 filter1.cutoff=4000
+cutoff-set 0025 10560b1e7e863b a=0 f=0 filter1.cutoff=4000
+cutoff-set 0026 0a87104db27ed9 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0027 1e0bce795b2127 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0028 0b8f43cb3a1b60 a=0 f=0 filter1.cutoff=600
+cutoff-set 0029 10e29e5f5716df a=0 f=0 filter1.cutoff=1200
+cutoff-set 0030 1e10ee48e10a0e a=0 f=0 filter1.cutoff=600
+cutoff-set 0031 0508ef5c1558ab a=0 f=0 filter1.cutoff=300
+cutoff-set 0032 0dc3001ffc1cc5 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0033 1ec892bf9c723e a=0 f=0 filter1.cutoff=1200
+cutoff-set 0034 0218d931b1be40 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0035 154debae43c15f a=0 f=0 filter1.cutoff=600
+cutoff-set 0036 0f8cf9bd2345d7 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0037 081f41b1104539 a=0 f=0 filter1.cutoff=600
+cutoff-set 0038 1d2ba697034708 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0039 05c7b68f26b10c a=0 f=0 filter1.cutoff=600
+cutoff-set 0040 13559d3ac8d26d a=0 f=0 filter1.cutoff=1200
+cutoff-set 0041 191a07aae16fc0 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0042 198bd657d8ddea a=0 f=0 filter1.cutoff=600
+cutoff-set 0043 01422151a8d427 a=0 f=0 filter1.cutoff=300
+cutoff-set 0044 0cdc314902d580 a=0 f=0 filter1.cutoff=600
+cutoff-set 0045 08efb1ac636018 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0046 0b4b573e590396 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0047 1e799fe3b66c18 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0048 1d7bffa4788f22 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0049 04d9bf881c9590 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0050 1bfafcff83bfd2 a=0 f=0 filter1.cutoff=600
+cutoff-set 0051 19c48eeef83b7f a=0 f=0 filter1.cutoff=300
+cutoff-set 0052 1751c87e8b5645 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0053 0cd90b64d1af13 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0054 0ddbbe2882e992 a=0 f=0 filter1.cutoff=600
+cutoff-set 0055 042f803b45c1ea a=0 f=0 filter1.cutoff=600
+cutoff-set 0056 123652689612b7 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0057 1ef49111029b43 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0058 1af3ad00242690 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0059 014407e3d75145 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0060 0e54c7625cf640 a=0 f=0 filter1.cutoff=600
+cutoff-set 0061 0540c4ae5afcdd a=0 f=0 filter1.cutoff=8000
+cutoff-set 0062 0ddade9e189a27 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0063 12823121995460 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0064 1d3c7e807c74d5 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0065 12051b240e8119 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0066 1ebd4dcd46e9d3 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0067 12b357d0a9067e a=0 f=0 filter1.cutoff=4000
+cutoff-set 0068 10398e4ba5c977 a=0 f=0 filter1.cutoff=600
+cutoff-set 0069 114eda8dcd0648 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0070 15426a522691e5 a=0 f=0 filter1.cutoff=600
+cutoff-set 0071 05d07936397675 a=0 f=0 filter1.cutoff=300
+cutoff-set 0072 0d73cce03985c3 a=0 f=0 filter1.cutoff=600
+cutoff-set 0073 00ff19ff2138b8 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0074 0af98a2e439864 a=0 f=0 filter1.cutoff=600
+cutoff-set 0075 02b20c63126596 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0076 074f4d1d4677bd a=0 f=0 filter1.cutoff=4000
+cutoff-set 0077 0704233ab9fbda a=0 f=0 filter1.cutoff=600
+cutoff-set 0078 1bf2c808fb5799 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0079 17c429f8719f85 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0080 0acbf81b23ea13 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0081 0d000b2402a248 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0082 1cd175ebcc62ab a=0 f=0 filter1.cutoff=1200
+cutoff-set 0083 0cd158004426e3 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0084 01d3e892cfd7ed a=0 f=0 filter1.cutoff=8000
+cutoff-set 0085 184a43b4f3ed91 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0086 1878f7750daaab a=0 f=0 filter1.cutoff=1200
+cutoff-set 0087 0e05d04b382a23 a=0 f=0 filter1.cutoff=600
+cutoff-set 0088 14c2848b633aed a=0 f=0 filter1.cutoff=4000
+cutoff-set 0089 1c3f42c04e9523 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0090 0723cf0177430c a=0 f=0 filter1.cutoff=8000
+cutoff-set 0091 0cad94f99eb0c2 a=0 f=0 filter1.cutoff=600
+cutoff-set 0092 0eb9f8dc72ee69 a=0 f=0 filter1.cutoff=300
+cutoff-set 0093 0a5d0b1f59d895 a=0 f=0 filter1.cutoff=600
+cutoff-set 0094 0d2b7ef2d9329e a=0 f=0 filter1.cutoff=8000
+cutoff-set 0095 007faf29992b88 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0096 19f6b830401e1b a=0 f=0 filter1.cutoff=300
+cutoff-set 0097 047c7a7dbc8484 a=0 f=0 filter1.cutoff=600
+cutoff-set 0098 1e3c91122eafc5 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0099 0ede02a59f9b21 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0100 042ba4317e9610 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0101 1b53912166e28e a=0 f=0 filter1.cutoff=1200
+cutoff-set 0102 069d8a1407a8ac a=0 f=0 filter1.cutoff=600
+cutoff-set 0103 1a12c8ab12a9f6 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0104 024e2537e122a4 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0105 09a4fe8442f161 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0106 0662bc9546374c a=0 f=0 filter1.cutoff=8000
+cutoff-set 0107 19c8878aa2c0f5 a=0 f=0 filter1.cutoff=600
+cutoff-set 0108 0f765c17dd3150 a=0 f=0 filter1.cutoff=600
+cutoff-set 0109 0dd9c9677d2c8c a=0 f=0 filter1.cutoff=600
+cutoff-set 0110 18829de134c0ef a=0 f=0 filter1.cutoff=1200
+cutoff-set 0111 0f274d1fcd7590 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0112 1c10391a8e9808 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0113 0a4c6342570db0 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0114 182c1d5d12fc0a a=0 f=0 filter1.cutoff=600
+cutoff-set 0115 10c385ba82cbd7 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0116 0f136095756880 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0117 0965399da29a16 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0118 150540256167b3 a=0 f=0 filter1.cutoff=600
+cutoff-set 0119 07de9473aadeb1 a=0 f=0 filter1.cutoff=300
+cutoff-set 0120 1d595a71656562 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0121 156920c836d365 a=0 f=0 filter1.cutoff=300
+cutoff-set 0122 12c38bbcd0e3c3 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0123 1126db39b7b9c8 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0124 0ca590122a127d a=0 f=0 filter1.cutoff=4000
+cutoff-set 0125 1ce38f84b8962f a=0 f=0 filter1.cutoff=8000
+cutoff-set 0126 1cf44fc8f5826b a=0 f=0 filter1.cutoff=300
+cutoff-set 0127 0124f645ea32c8 a=0 f=0 filter1.cutoff=600
+cutoff-set 0128 121d832992e4c9 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0129 1d8e70591c82d0 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0130 0948e38efc3138 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0131 00cdd5f8ba904b a=0 f=0 filter1.cutoff=300
+cutoff-set 0132 0fe50ff9cdf3e7 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0133 15165fd8e294dd a=0 f=0 filter1.cutoff=8000
+cutoff-set 0134 1fdf468b137660 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0135 0aa69440606feb a=0 f=0 filter1.cutoff=300
+cutoff-set 0136 1e124b7c34a4fb a=0 f=0 filter1.cutoff=8000
+cutoff-set 0137 093520c8b6858b a=0 f=0 filter1.cutoff=300
+cutoff-set 0138 0fff3814164c5b a=0 f=0 filter1.cutoff=600
+cutoff-set 0139 186eb7e83a986e a=0 f=0 filter1.cutoff=300
+cutoff-set 0140 0d1306f8678b38 a=0 f=0 filter1.cutoff=600
+cutoff-set 0141 0b691aa5516b11 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0142 106f042f6ce5ba a=0 f=0 filter1.cutoff=1200
+cutoff-set 0143 1077de9e822958 a=0 f=0 filter1.cutoff=300
+cutoff-set 0144 0d875f84866c83 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0145 1f090af453cead a=0 f=0 filter1.cutoff=600
+cutoff-set 0146 133755d6186b52 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0147 13a3d7733e620c a=0 f=0 filter1.cutoff=8000
+cutoff-set 0148 14e2c2ba9868d1 a=0 f=0 filter1.cutoff=600
+cutoff-set 0149 0725ab5cb28f1a a=0 f=0 filter1.cutoff=8000
+cutoff-set 0150 0f1d1dadc15f78 a=0 f=0 filter1.cutoff=300
+cutoff-set 0151 0c7c8cf8794d11 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0152 1bfb642eb8f530 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0153 0a511b2cd4637a a=0 f=0 filter1.cutoff=1200
+cutoff-set 0154 103b5c28175929 a=0 f=0 filter1.cutoff=600
+cutoff-set 0155 056e200d738cd7 a=0 f=0 filter1.cutoff=600
+cutoff-set 0156 132e988c5986f8 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0157 014881212a9f45 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0158 1be7ce5f5488cc a=0 f=0 filter1.cutoff=300
+cutoff-set 0159 03df8919873669 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0160 07ab6c9c597be1 a=0 f=0 filter1.cutoff=300
+cutoff-set 0161 169d133532c498 a=0 f=0 filter1.cutoff=600
+cutoff-set 0162 0878ae7d631ae3 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0163 0aa6c461507d47 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0164 13b7a5ec99c3b0 a=0 f=0 filter1.cutoff=600
+cutoff-set 0165 0e867b85c761fe a=0 f=0 filter1.cutoff=300
+cutoff-set 0166 16ccd3c2539345 a=0 f=0 filter1.cutoff=300
+cutoff-set 0167 0a3de3501931ca a=0 f=0 filter1.cutoff=4000
+cutoff-set 0168 0149a2348a3460 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0169 0dcb4838f58293 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0170 0cd8cf4b6a4eed a=0 f=0 filter1.cutoff=300
+cutoff-set 0171 02302764b6b260 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0172 141b57faf41ca4 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0173 125a6906aafbdb a=0 f=0 filter1.cutoff=4000
+cutoff-set 0174 144436d9b0abe3 a=0 f=0 filter1.cutoff=300
+cutoff-set 0175 0a80d2162c6587 a=0 f=0 filter1.cutoff=600
+cutoff-set 0176 1816bca6dc5cef a=0 f=0 filter1.cutoff=300
+cutoff-set 0177 04a1dc68b979c9 a=0 f=0 filter1.cutoff=300
+cutoff-set 0178 02358ddf3dc8ad a=0 f=0 filter1.cutoff=1200
+cutoff-set 0179 1f6fab51d8fbac a=0 f=0 filter1.cutoff=8000
+cutoff-set 0180 12542e89dbf8b6 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0181 0bca9e8a4c761a a=0 f=0 filter1.cutoff=1200
+cutoff-set 0182 004b9e7c564ad7 a=0 f=0 filter1.cutoff=600
+cutoff-set 0183 142705a2528037 a=0 f=0 filter1.cutoff=600
+cutoff-set 0184 0e5a9822c720b0 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0185 1d6c04818258e0 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0186 079a290ff84da9 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0187 0b5706a2ef6b5f a=0 f=0 filter1.cutoff=600
+cutoff-set 0188 1039ae56bbef4e a=0 f=0 filter1.cutoff=300
+cutoff-set 0189 0421ca83a3a540 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0190 1c16b6279d5bdc a=0 f=0 filter1.cutoff=8000
+cutoff-set 0191 0f9dec98d6e028 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0192 00caef92c65a0e a=0 f=0 filter1.cutoff=600
+cutoff-set 0193 0597f735fdcec3 a=0 f=0 filter1.cutoff=300
+cutoff-set 0194 07135c00d3a41e a=0 f=0 filter1.cutoff=8000
+cutoff-set 0195 1e48f81ebec3c6 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0196 12f2105d7a4961 a=0 f=0 filter1.cutoff=1200
+cutoff-set 0197 18374df9ba2fe9 a=0 f=0 filter1.cutoff=8000
+cutoff-set 0198 00003f89aefb98 a=0 f=0 filter1.cutoff=4000
+cutoff-set 0199 02b89fc33e0ae5 a=0 f=0 filter1.cutoff=300
+mode-and-wave 0200 16adf788bd5264 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0201 1c2ca8eeb9032a a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0202 191151a0e949d8 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0203 064c1d98d7a141 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0204 1fe5ea2ebbe1d8 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0205 0c9620df78c957 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0206 1564e64814ea49 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0207 16c4545e51142c a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0208 055f374a4f8452 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0209 0091bd9c2bd5be a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0210 1c4d4de97e0089 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0211 0164f0c603947a a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0212 09454dc5cb96b1 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0213 1a092828685547 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0214 1919a8a89057cc a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0215 0629d06fbcec60 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0216 0c4b30b29b4a25 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0217 00626fdc3ddaaa a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0218 1e96595086f4b5 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0219 1b99e9e8f3015d a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0220 1de5266bbf6dc2 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0221 1e937515bdd309 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0222 0622e8ec9c8635 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0223 1f0e3feed77b51 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0224 127db74c49747a a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0225 0a3b1f550311b8 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0226 00a4a86bdc0d9a a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0227 12a256bc389d04 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0228 049aa1e3614dc8 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0229 1c87bfc33f7c77 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0230 11bda0e348e853 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0231 082999258035a1 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0232 1dc9940c174c7c a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0233 072c156dc949f9 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0234 11e62609914d74 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0235 16c028df5184d2 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0236 1271e21958cb12 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0237 0e84146a3e8aad a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0238 071360aedb830b a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0239 034a4022cb6e57 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0240 0ea9fb0bcd5ae8 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0241 06a16c068aa8d2 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0242 0ee2841b1ea6fc a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0243 144a6299c7ff5b a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0244 05b70d34774684 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0245 15f24709ad3f09 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0246 187637adbd0cdb a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0247 100d3e3b0bc960 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0248 1f437be5344959 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0249 0fc39866bfa4d3 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0250 0764f728ee90e0 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0251 0cee305f194a6d a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0252 0df988b330482e a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0253 1b2d03e16da2b6 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0254 1296e650be9f6c a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0255 073e68dbdd30eb a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0256 0a6ece6328b415 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0257 119cb656eee7a7 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0258 1f7d8411666841 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0259 16aea0e547afeb a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0260 1c696357f355fe a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0261 0bdff4b66351e6 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0262 14400fd70212a1 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0263 11667e7d788969 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0264 020dbfaee8d830 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0265 0d994d60857836 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0266 17749f5a42d83a a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0267 1c8bbea893ce8d a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0268 032682ac62d754 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0269 1faddc10016e3e a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0270 18516c4815cda9 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0271 03ef73ce7a61f7 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0272 0913118ef0ee17 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0273 1c880613100dc9 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0274 0f95770e8e8791 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0275 1f48d71dae44af a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0276 14a67a43e36fb8 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0277 166416018bbbc4 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0278 1fc22c0b4c774e a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0279 1e517fc5f8338a a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0280 0aec139647e021 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0281 1018ca5d9054b5 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0282 167fc69e6887b8 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0283 06477f955d1fce a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0284 121d3efc8fe2b3 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0285 0b69fcd9c50dda a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0286 184c604d909e48 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0287 10f6c30c3d613e a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0288 0eae6d3ddc2b2a a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0289 057822967e3625 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0290 1ea94af67d7c95 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0291 064877888dc560 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0292 1618c9ff188f46 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0293 0708946d8a4499 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0294 1636d3002bee9c a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0295 09979b82bf2356 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0296 1744f02a9bd0c4 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0297 0fbe4bed5e0468 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0298 146c69afe1036f a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0299 16c5c50a2c58e9 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0300 1ba98c3afc1116 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0301 047576c3f1ceb1 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0302 16d16291fb8cc5 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0303 0507b9b3d31faa a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0304 088a952679bd05 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0305 143db6f51e2a29 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0306 1cb0fe64a7943a a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0307 16b99767dab506 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0308 19c7771fbfe54f a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0309 06e6495f3f8e31 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0310 1978e181ad01ab a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0311 1216649e3d161f a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0312 19137779468e14 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0313 1a645ecde3971a a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0314 0bfb133c657f2d a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0315 1a22dbb970305b a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0316 1ac24bd850b9ce a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0317 0e866a693ef427 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0318 16ae0db62ff847 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0319 0f7bd628b250f2 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0320 0cae069af273d3 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0321 063ffb828a58de a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0322 0666f917fd16f2 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0323 0e156a481de7bb a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0324 1d0eb06c2c5da6 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0325 16af521b6fcf66 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0326 03b4d0d5880380 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0327 171770d44093ff a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0328 10e2199e7d8fb6 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0329 1d5623ab016f15 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0330 1d850c5c55fba5 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0331 0c01c7fdd6bd90 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0332 1f397c1ca6f57d a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0333 108ac6b3c9084a a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0334 15d864cec63985 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0335 03a3b067f4ca81 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0336 01a6935f71e7dd a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0337 000c1392d936ce a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0338 1cdd9d39a06c0f a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0339 1ef3b9c5570b68 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0340 0ed35560f1fdba a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0341 0e994f69292fbc a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0342 09eee906502729 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0343 0386212cb7bcbc a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0344 09d93dfc9669f4 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0345 032aaecaecfa3b a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0346 197ebd1e4c6768 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0347 072e357473e0da a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0348 1582ed5b5f2c4d a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0349 08db4aba5c452c a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0350 1d27c1c60e3a92 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0351 16c732a38a45ca a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0352 0684240a4ea0a7 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0353 18a4052d9ed384 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0354 17be24b6a29c1b a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0355 06fd999acdecbb a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0356 0458e11619ace0 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0357 10d1e562c38dac a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0358 0438f9c65e0f8f a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0359 055b5a088c9449 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0360 1c3861284b3c15 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0361 131b7babe09b93 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0362 0044b03c1c6fa1 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0363 1fbce77d10ed3d a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0364 0e92a04c5d6d15 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0365 06529215124c20 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0366 05e7d92fa2788d a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0367 0ef82070cebcb2 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0368 167c0dbfe5a4dc a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0369 0a55d6f317f258 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0370 192ca1555d8493 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0371 0953561b848198 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0372 0cf2f221f901bb a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0373 192b2f5f0f85f6 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0374 1bca82aa9713c5 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0375 160cae2f7bc762 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0376 025add64001a36 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0377 0eeb0992d8b42a a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0378 15a9a1754f6369 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0379 0bb203cff76760 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0380 170d1df0645738 a=0 f=0 filter1.mode=1 osc1.wave=0
+mode-and-wave 0381 17cf15a503e0da a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0382 010d80956682a9 a=0 f=0 filter1.mode=1 osc1.wave=1
+mode-and-wave 0383 0530a210d5ea2d a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0384 19a1bf5230d7e5 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0385 0daded03c2e371 a=0 f=0 filter1.mode=2 osc1.wave=1
+mode-and-wave 0386 0c01974e29a137 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0387 17cc037f8b7558 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0388 05478a20893ed4 a=0 f=0 filter1.mode=1 osc1.wave=3
+mode-and-wave 0389 0c93828248689f a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0390 1f7cd941f32534 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0391 197a338fc0bca4 a=0 f=0 filter1.mode=0 osc1.wave=3
+mode-and-wave 0392 0cac9cbd6c5c88 a=0 f=0 filter1.mode=2 osc1.wave=0
+mode-and-wave 0393 12f14bfac14776 a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0394 1cea857e05100f a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0395 1ba55d109f96f4 a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0396 135b6cc8ef01bb a=0 f=0 filter1.mode=2 osc1.wave=3
+mode-and-wave 0397 02e46ba174827a a=0 f=0 filter1.mode=0 osc1.wave=1
+mode-and-wave 0398 1c44e0f95103e1 a=0 f=0 filter1.mode=0 osc1.wave=0
+mode-and-wave 0399 08cbedf6cfdb44 a=0 f=0 filter1.mode=0 osc1.wave=3
+ranges 0400 10b4a6669f9436 a=0 f=0 filter1.resonance=63.5 osc1.semi=16
+ranges 0401 08f94784f9ed90 a=0 f=0 filter1.resonance=1.76 osc1.semi=-23
+ranges 0402 134738e2cdc320 a=0 f=0 filter1.resonance=16.1 osc1.semi=-21
+ranges 0403 0b9f82cd3ccd44 a=0 f=0 filter1.resonance=12.3 osc1.semi=21
+ranges 0404 108307721737f4 a=0 f=0 filter1.resonance=71.8 osc1.semi=-20
+ranges 0405 16ff79d2b476d0 a=0 f=0 filter1.resonance=16.8 osc1.semi=-16
+ranges 0406 0c4be4f7e90b2b a=0 f=0 filter1.resonance=68.4 osc1.semi=7
+ranges 0407 1e2b6352be4d77 a=0 f=0 filter1.resonance=74.8 osc1.semi=-18
+ranges 0408 019c1efcf72d45 a=0 f=0 filter1.resonance=58.1 osc1.semi=12
+ranges 0409 00bccb12dc6e19 a=0 f=0 filter1.resonance=47.6 osc1.semi=-3
+ranges 0410 16fd0b028ba45b a=0 f=0 filter1.resonance=70.5 osc1.semi=15
+ranges 0411 0a82de87457583 a=0 f=0 filter1.resonance=14.6 osc1.semi=24
+ranges 0412 0fbfad53e33c74 a=0 f=0 filter1.resonance=42 osc1.semi=17
+ranges 0413 085686d015d2fa a=0 f=0 filter1.resonance=44.4 osc1.semi=7
+ranges 0414 0193c11ce0df61 a=0 f=0 filter1.resonance=5.88 osc1.semi=-20
+ranges 0415 0f84247dca05e2 a=0 f=0 filter1.resonance=2.44 osc1.semi=-21
+ranges 0416 15b32840d5f98c a=0 f=0 filter1.resonance=15.6 osc1.semi=1
+ranges 0417 03504d58227e94 a=0 f=0 filter1.resonance=0.156 osc1.semi=-1
+ranges 0418 1b29a16eb1b907 a=0 f=0 filter1.resonance=20.9 osc1.semi=-13
+ranges 0419 14725dd5b47df7 a=0 f=0 filter1.resonance=60.9 osc1.semi=-10
+ranges 0420 1fa8f3c021b736 a=0 f=0 filter1.resonance=55.3 osc1.semi=1
+ranges 0421 0b2f4465376410 a=0 f=0 filter1.resonance=77.5 osc1.semi=-16
+ranges 0422 098a9adccfc60f a=0 f=0 filter1.resonance=60.6 osc1.semi=-2
+ranges 0423 1a7834307ab7e6 a=0 f=0 filter1.resonance=45.3 osc1.semi=-13
+ranges 0424 07ebfe6760526c a=0 f=0 filter1.resonance=43.6 osc1.semi=14
+ranges 0425 0006e929197d96 a=0 f=0 filter1.resonance=31.1 osc1.semi=-19
+ranges 0426 18af73c3a67b0d a=0 f=0 filter1.resonance=35.7 osc1.semi=22
+ranges 0427 032b20db74730c a=0 f=0 filter1.resonance=75.6 osc1.semi=-20
+ranges 0428 05a4fb7df72295 a=0 f=0 filter1.resonance=34.3 osc1.semi=-7
+ranges 0429 0a7fd1f7f43e9b a=0 f=0 filter1.resonance=44.3 osc1.semi=10
+ranges 0430 0dd9ee88c13403 a=0 f=0 filter1.resonance=61.6 osc1.semi=-20
+ranges 0431 1194c71c12092b a=0 f=0 filter1.resonance=55.9 osc1.semi=-19
+ranges 0432 03c4db7afeae97 a=0 f=0 filter1.resonance=64.7 osc1.semi=-3
+ranges 0433 0f8e3c540a63e6 a=0 f=0 filter1.resonance=55.8 osc1.semi=-16
+ranges 0434 1ac9b4d32f0931 a=0 f=0 filter1.resonance=25.8 osc1.semi=-23
+ranges 0435 186aa5a98523bd a=0 f=0 filter1.resonance=43.6 osc1.semi=-22
+ranges 0436 0907768d3a0e47 a=0 f=0 filter1.resonance=61.8 osc1.semi=3
+ranges 0437 065723d4a63f8f a=0 f=0 filter1.resonance=60.2 osc1.semi=12
+ranges 0438 0782bc8e63ae28 a=0 f=0 filter1.resonance=53.7 osc1.semi=-16
+ranges 0439 1051e9e4eb29e7 a=0 f=0 filter1.resonance=39.3 osc1.semi=-8
+ranges 0440 064c5bb248b37f a=0 f=0 filter1.resonance=50 osc1.semi=22
+ranges 0441 1cf8ddcf8a8a2b a=0 f=0 filter1.resonance=47.8 osc1.semi=-9
+ranges 0442 0890c8a9279cab a=0 f=0 filter1.resonance=55.4 osc1.semi=8
+ranges 0443 1a5aff04de5b3e a=0 f=0 filter1.resonance=52.2 osc1.semi=6
+ranges 0444 198643b6f59b79 a=0 f=0 filter1.resonance=23.6 osc1.semi=-13
+ranges 0445 159d408535b312 a=0 f=0 filter1.resonance=9.8 osc1.semi=-18
+ranges 0446 00e1fbfad51441 a=0 f=0 filter1.resonance=65.7 osc1.semi=8
+ranges 0447 0f5cdbfe4f3f4a a=0 f=0 filter1.resonance=56.8 osc1.semi=18
+ranges 0448 016a3e06bb47d0 a=0 f=0 filter1.resonance=48.9 osc1.semi=-1
+ranges 0449 0cd24437e2b37d a=0 f=0 filter1.resonance=35.4 osc1.semi=-11
+ranges 0450 108079fecd0ee3 a=0 f=0 filter1.resonance=68.2 osc1.semi=13
+ranges 0451 0b9ea7034e0fdf a=0 f=0 filter1.resonance=33.7 osc1.semi=-10
+ranges 0452 0d3bcf968f3145 a=0 f=0 filter1.resonance=17.6 osc1.semi=-14
+ranges 0453 173a8923f7962a a=0 f=0 filter1.resonance=51 osc1.semi=-5
+ranges 0454 0928123213ed9e a=0 f=0 filter1.resonance=23.1 osc1.semi=-24
+ranges 0455 089e75ab65a686 a=0 f=0 filter1.resonance=76.1 osc1.semi=-7
+ranges 0456 05b7c36d5e1c34 a=0 f=0 filter1.resonance=39.7 osc1.semi=10
+ranges 0457 058ac86cfb487c a=0 f=0 filter1.resonance=66.6 osc1.semi=14
+ranges 0458 001b7c467a9e41 a=1 f=0 filter1.resonance=52.5 osc1.semi=-24
+ranges 0459 1127f3ce4fa423 a=0 f=0 filter1.resonance=55.2 osc1.semi=-14
+ranges 0460 13d03a9645e8fc a=0 f=0 filter1.resonance=69.7 osc1.semi=-20
+ranges 0461 05410b304a983d a=0 f=0 filter1.resonance=44.9 osc1.semi=-14
+ranges 0462 16787891acc212 a=0 f=0 filter1.resonance=23.3 osc1.semi=9
+ranges 0463 0b6fe007061108 a=0 f=0 filter1.resonance=52.1 osc1.semi=-6
+ranges 0464 0958124bd2b68e a=0 f=0 filter1.resonance=52.1 osc1.semi=-20
+ranges 0465 1d8d56a8574489 a=0 f=0 filter1.resonance=40 osc1.semi=4
+ranges 0466 0ca389cbbc346c a=0 f=0 filter1.resonance=56.7 osc1.semi=1
+ranges 0467 1e2a37282418be a=0 f=0 filter1.resonance=36.5 osc1.semi=19
+ranges 0468 08019858cb4d19 a=0 f=0 filter1.resonance=52 osc1.semi=-20
+ranges 0469 05d2c1a819021c a=0 f=0 filter1.resonance=20.8 osc1.semi=-2
+ranges 0470 1d62b92afdef30 a=0 f=0 filter1.resonance=72.9 osc1.semi=-8
+ranges 0471 006aaac425f0b6 a=0 f=0 filter1.resonance=74.9 osc1.semi=12
+ranges 0472 0f64233a7b7e0e a=0 f=0 filter1.resonance=7.35 osc1.semi=-14
+ranges 0473 1fc89ba634f01c a=0 f=0 filter1.resonance=68.5 osc1.semi=20
+ranges 0474 1d32bf28e930e1 a=0 f=0 filter1.resonance=58.7 osc1.semi=-8
+ranges 0475 17b20494a9fae4 a=0 f=0 filter1.resonance=41.3 osc1.semi=-9
+ranges 0476 07d6bd9f31948c a=0 f=0 filter1.resonance=16.8 osc1.semi=-16
+ranges 0477 1e8048e7dda636 a=0 f=0 filter1.resonance=2.24 osc1.semi=18
+ranges 0478 1b6a87bed23333 a=0 f=0 filter1.resonance=79.8 osc1.semi=5
+ranges 0479 1bb2456e4d9066 a=0 f=0 filter1.resonance=48.1 osc1.semi=15
+ranges 0480 0633dc680b6255 a=0 f=0 filter1.resonance=60.2 osc1.semi=-14
+ranges 0481 1f94e99c0a67e1 a=0 f=0 filter1.resonance=43.6 osc1.semi=-2
+ranges 0482 1c0753826ac614 a=0 f=0 filter1.resonance=78.6 osc1.semi=4
+ranges 0483 0e9c66d1786506 a=0 f=0 filter1.resonance=44.9 osc1.semi=10
+ranges 0484 174f9f10fbaa8c a=0 f=0 filter1.resonance=76.8 osc1.semi=-8
+ranges 0485 0175acd7892773 a=0 f=0 filter1.resonance=26.8 osc1.semi=10
+ranges 0486 0c533bc2d3a9d9 a=0 f=0 filter1.resonance=45.1 osc1.semi=21
+ranges 0487 020b72a85175c5 a=0 f=0 filter1.resonance=35.6 osc1.semi=20
+ranges 0488 1a24531cfd25f0 a=0 f=0 filter1.resonance=4.71 osc1.semi=-13
+ranges 0489 1b4d83aa2826b9 a=0 f=0 filter1.resonance=1.94 osc1.semi=-1
+ranges 0490 0a703ab72c26eb a=0 f=0 filter1.resonance=37.3 osc1.semi=-23
+ranges 0491 13361aadaef8c5 a=0 f=0 filter1.resonance=20.6 osc1.semi=-23
+ranges 0492 04d6d1c3eb4034 a=0 f=0 filter1.resonance=33.9 osc1.semi=-22
+ranges 0493 135fef3d5eee79 a=0 f=0 filter1.resonance=23.6 osc1.semi=-14
+ranges 0494 1006e093f3d8ae a=0 f=0 filter1.resonance=50 osc1.semi=-16
+ranges 0495 070582f083b21d a=0 f=0 filter1.resonance=2.59 osc1.semi=6
+ranges 0496 1f67d3a5f6c481 a=0 f=0 filter1.resonance=27.9 osc1.semi=-24
+ranges 0497 0b07a299c1fdbf a=0 f=0 filter1.resonance=23.7 osc1.semi=-16
+ranges 0498 008e6aeae42577 a=0 f=0 filter1.resonance=70.6 osc1.semi=-1
+ranges 0499 0247075c5c7461 a=0 f=0 filter1.resonance=35 osc1.semi=15
+ranges 0500 192b16c8d8d854 a=0 f=0 filter1.resonance=71.7 osc1.semi=-5
+ranges 0501 0b8ee585be7947 a=0 f=0 filter1.resonance=69 osc1.semi=-8
+ranges 0502 144e47d0804dbd a=0 f=0 filter1.resonance=73.8 osc1.semi=7
+ranges 0503 0a965920179902 a=0 f=0 filter1.resonance=41.7 osc1.semi=8
+ranges 0504 0010663cc7f9b0 a=0 f=0 filter1.resonance=20.3 osc1.semi=3
+ranges 0505 031833446bfa4d a=0 f=0 filter1.resonance=4.86 osc1.semi=-9
+ranges 0506 0a5f8aa80da870 a=0 f=0 filter1.resonance=39 osc1.semi=-6
+ranges 0507 1b8e7e7e7975d0 a=0 f=0 filter1.resonance=24.1 osc1.semi=15
+ranges 0508 0f19a5534417aa a=0 f=0 filter1.resonance=22.2 osc1.semi=-22
+ranges 0509 193786c0e142ba a=0 f=0 filter1.resonance=53.4 osc1.semi=3
+ranges 0510 1bc9945101cd60 a=0 f=0 filter1.resonance=42 osc1.semi=4
+ranges 0511 1a2175a7eb1d2c a=0 f=0 filter1.resonance=54.8 osc1.semi=3
+ranges 0512 1bbf22abaab12c a=0 f=0 filter1.resonance=42.6 osc1.semi=-17
+ranges 0513 0b6b9649869188 a=0 f=0 filter1.resonance=26 osc1.semi=22
+ranges 0514 13f7e7d4b721a5 a=0 f=0 filter1.resonance=56.4 osc1.semi=1
+ranges 0515 142a26be0d6bc8 a=0 f=0 filter1.resonance=75.5 osc1.semi=0
+ranges 0516 1843e7f9c58ba7 a=0 f=0 filter1.resonance=5.96 osc1.semi=-6
+ranges 0517 1fcc5580912b9b a=0 f=0 filter1.resonance=40.1 osc1.semi=10
+ranges 0518 1959f2b4fc1f5a a=0 f=0 filter1.resonance=75 osc1.semi=-20
+ranges 0519 1b30d367dc9420 a=0 f=0 filter1.resonance=57.8 osc1.semi=-12
+ranges 0520 1bd5729fa2983f a=0 f=0 filter1.resonance=48.4 osc1.semi=-8
+ranges 0521 1589da4918df98 a=0 f=0 filter1.resonance=26.1 osc1.semi=-8
+ranges 0522 198a811d98dc83 a=0 f=0 filter1.resonance=18.8 osc1.semi=-1
+ranges 0523 102627b6b585c5 a=0 f=0 filter1.resonance=73.4 osc1.semi=-10
+ranges 0524 010066a5fe49e6 a=0 f=0 filter1.resonance=61.4 osc1.semi=0
+ranges 0525 0a1be5457495ac a=0 f=0 filter1.resonance=6.14 osc1.semi=-4
+ranges 0526 00b0d3fa95a9b0 a=0 f=0 filter1.resonance=60.7 osc1.semi=8
+ranges 0527 1e11cce0df158a a=0 f=0 filter1.resonance=74.7 osc1.semi=-23
+ranges 0528 081f9086a28fe4 a=0 f=0 filter1.resonance=61.1 osc1.semi=-23
+ranges 0529 052060089f4b80 a=0 f=0 filter1.resonance=48.4 osc1.semi=4
+ranges 0530 0b2401404291d5 a=0 f=0 filter1.resonance=55.8 osc1.semi=-20
+ranges 0531 1e8b2a00c209e5 a=0 f=0 filter1.resonance=18.3 osc1.semi=-21
+ranges 0532 185f75b3df2131 a=0 f=0 filter1.resonance=40.2 osc1.semi=17
+ranges 0533 02740c2545ad4a a=0 f=0 filter1.resonance=9.68 osc1.semi=4
+ranges 0534 141cb0a2e9ae52 a=0 f=0 filter1.resonance=75.5 osc1.semi=7
+ranges 0535 1f79427d9f6867 a=0 f=0 filter1.resonance=6.79 osc1.semi=1
+ranges 0536 05995360ce2df1 a=0 f=0 filter1.resonance=69.7 osc1.semi=-8
+ranges 0537 07cc6f1db68052 a=0 f=0 filter1.resonance=11.8 osc1.semi=-23
+ranges 0538 0bc24eaa1c0e28 a=0 f=0 filter1.resonance=2.34 osc1.semi=-7
+ranges 0539 024c7ae25761ff a=0 f=0 filter1.resonance=37.8 osc1.semi=15
+ranges 0540 1ece1d359409cf a=0 f=0 filter1.resonance=55.7 osc1.semi=19
+ranges 0541 176734c27e62dd a=0 f=0 filter1.resonance=36.3 osc1.semi=24
+ranges 0542 0e91c4b92727b4 a=0 f=0 filter1.resonance=20.6 osc1.semi=23
+ranges 0543 1e8cb6cda9a1f1 a=0 f=0 filter1.resonance=73.9 osc1.semi=17
+ranges 0544 038d42f3f3c5ed a=0 f=0 filter1.resonance=62.9 osc1.semi=-9
+ranges 0545 04945f28c09f25 a=0 f=0 filter1.resonance=42.9 osc1.semi=16
+ranges 0546 074b9a4426e18b a=0 f=0 filter1.resonance=63.6 osc1.semi=3
+ranges 0547 1f46fa4be50ba5 a=0 f=0 filter1.resonance=40.6 osc1.semi=-2
+ranges 0548 1d67e87dc21589 a=0 f=0 filter1.resonance=55.2 osc1.semi=-18
+ranges 0549 1ebfd7560267e2 a=0 f=0 filter1.resonance=48.4 osc1.semi=-16
+ranges 0550 1a65b617700051 a=0 f=0 filter1.resonance=61.2 osc1.semi=-2
+ranges 0551 1945a10ad387dc a=0 f=0 filter1.resonance=54.9 osc1.semi=10
+ranges 0552 14e1157019f594 a=0 f=0 filter1.resonance=63.9 osc1.semi=-18
+ranges 0553 1f2b3d1c76430c a=0 f=0 filter1.resonance=70.2 osc1.semi=12
+ranges 0554 1524e6b2105c28 a=0 f=0 filter1.resonance=72.5 osc1.semi=10
+ranges 0555 14ca971be3e12e a=0 f=0 filter1.resonance=51.3 osc1.semi=-13
+ranges 0556 0767d9aa85fda0 a=0 f=0 filter1.resonance=79.1 osc1.semi=-7
+ranges 0557 12a138aedcb2ea a=0 f=0 filter1.resonance=37.4 osc1.semi=4
+ranges 0558 0b7d27f6ad887c a=0 f=0 filter1.resonance=14.6 osc1.semi=-1
+ranges 0559 0355ac62abf49f a=0 f=0 filter1.resonance=70.3 osc1.semi=23
+ranges 0560 16e53636978818 a=0 f=0 filter1.resonance=9.2 osc1.semi=-9
+ranges 0561 0cb7025136c4d1 a=0 f=0 filter1.resonance=17.9 osc1.semi=4
+ranges 0562 1835f1a59ab592 a=0 f=0 filter1.resonance=69.6 osc1.semi=4
+ranges 0563 04f87d1acf48c6 a=0 f=0 filter1.resonance=27 osc1.semi=11
+ranges 0564 125638559186f2 a=0 f=0 filter1.resonance=77 osc1.semi=18
+ranges 0565 01aa72f55691cf a=0 f=0 filter1.resonance=30.9 osc1.semi=17
+ranges 0566 1d0cc80c77fd13 a=0 f=0 filter1.resonance=79 osc1.semi=-11
+ranges 0567 1e608a302c47b2 a=0 f=0 filter1.resonance=27.1 osc1.semi=0
+ranges 0568 12f05496c49aad a=0 f=0 filter1.resonance=28 osc1.semi=-8
+ranges 0569 107dd9642a2293 a=0 f=0 filter1.resonance=7.29 osc1.semi=-15
+ranges 0570 04fd47447bf376 a=0 f=0 filter1.resonance=63.6 osc1.semi=-2
+ranges 0571 00edc2fea846f4 a=0 f=0 filter1.resonance=30.8 osc1.semi=-6
+ranges 0572 0562b11c78cf38 a=0 f=0 filter1.resonance=53.3 osc1.semi=-3
+ranges 0573 093c9e38114784 a=0 f=0 filter1.resonance=32 osc1.semi=5
+ranges 0574 18a067bd0494f6 a=0 f=0 filter1.resonance=14.6 osc1.semi=-13
+ranges 0575 0126105efa0111 a=0 f=0 filter1.resonance=51.7 osc1.semi=-13
+ranges 0576 1377d8aab1996d a=0 f=0 filter1.resonance=41.7 osc1.semi=-6
+ranges 0577 1f8754abf8caaa a=0 f=0 filter1.resonance=73.8 osc1.semi=-18
+ranges 0578 0521800b2349f6 a=0 f=0 filter1.resonance=52.7 osc1.semi=-21
+ranges 0579 16c243a67d19bd a=0 f=0 filter1.resonance=69.2 osc1.semi=19
+ranges 0580 04bafeb68fcfcb a=0 f=0 filter1.resonance=68.9 osc1.semi=1
+ranges 0581 1ee00485fb6a93 a=0 f=0 filter1.resonance=69.4 osc1.semi=18
+ranges 0582 07c92c937ee15b a=0 f=0 filter1.resonance=21.8 osc1.semi=-11
+ranges 0583 11adc8e4f7153d a=0 f=0 filter1.resonance=25.5 osc1.semi=-3
+ranges 0584 0273cfbdd2c1c8 a=0 f=0 filter1.resonance=69 osc1.semi=-9
+ranges 0585 03e426e3084606 a=0 f=0 filter1.resonance=2.63 osc1.semi=7
+ranges 0586 1c1c3f3cea6d94 a=0 f=0 filter1.resonance=50.4 osc1.semi=-14
+ranges 0587 0b26edbe1df18f a=0 f=0 filter1.resonance=29.5 osc1.semi=-18
+ranges 0588 1213fddd97b009 a=0 f=0 filter1.resonance=47.9 osc1.semi=16
+ranges 0589 1cf9cc70d097d3 a=0 f=0 filter1.resonance=6.23 osc1.semi=5
+ranges 0590 19cf34286b976a a=0 f=0 filter1.resonance=41.5 osc1.semi=-6
+ranges 0591 10e22925e3d23f a=0 f=0 filter1.resonance=76.2 osc1.semi=-8
+ranges 0592 12486a2b2c96af a=0 f=0 filter1.resonance=11.5 osc1.semi=-14
+ranges 0593 074ac489abc042 a=0 f=0 filter1.resonance=50.3 osc1.semi=5
+ranges 0594 1ca38a8816a6b9 a=0 f=0 filter1.resonance=17.2 osc1.semi=-23
+ranges 0595 0bc23b8dcb35a4 a=0 f=0 filter1.resonance=6.08 osc1.semi=13
+ranges 0596 0bbe09439ec1d2 a=0 f=0 filter1.resonance=39.8 osc1.semi=-17
+ranges 0597 1898dab80b31cc a=0 f=0 filter1.resonance=57.5 osc1.semi=24
+ranges 0598 067f0f3abcca0b a=0 f=0 filter1.resonance=27.5 osc1.semi=21
+ranges 0599 001dd748d940c1 a=0 f=0 filter1.resonance=23.6 osc1.semi=-18
+route-depth 0600 1c1ec5492a423a a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0601 1981cf4f43ae7f a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0602 063bc04e6f9217 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0603 1393923dd197ad a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0604 0961e7265cb618 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0605 06b01c6793188e a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0606 1997cf6e909ba7 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0607 12d3bd7ef58144 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0608 1de519930ec7b9 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0609 0161648592d515 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0610 1ba91e31e07d2d a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0611 091faa759bebaa a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0612 1ddccb8611eecd a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0613 0fc7898a236866 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0614 120e06454fee12 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0615 14433fefd035f3 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0616 0e343f339e246a a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0617 1e9fbef8bb0ef8 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0618 055e7058428970 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0619 1ceee39416c53e a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0620 100931b3831a09 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0621 1814e80de1b327 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0622 0fedad9aca2277 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0623 04078e5cd8d887 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0624 08040723c86406 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0625 05d48f46a06bf8 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0626 0e2a12c89c43d6 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0627 07a18ce234e6df a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0628 02dc6efb56027c a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0629 02b6780c4cf702 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0630 0034273097baaa a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0631 045cef660cf706 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0632 0a5c5d3f7fe296 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0633 136ead6eb54a17 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0634 1f35ecbeba6426 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0635 0a24806483aa4f a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0636 1ab934c3bd972a a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0637 1b0ff4dce2ddaf a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0638 0b674498f27037 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0639 0accced046b7e6 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0640 04625e904f42c9 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0641 1d845c2db99c25 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0642 11089216a70d8a a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0643 08b1789ef90862 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0644 057d36c649c1dc a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0645 04bc0d5c50c7b6 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0646 05d04e6c24d7fd a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0647 1921534bb0ee55 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0648 1e2638c524df09 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0649 1cc4bbbe3401f4 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0650 0ec26b54b1e887 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0651 0738f81bd04da9 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0652 18c11787d09d42 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0653 14665c8692a79e a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0654 1ee0a20f183ab3 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0655 1432658c59f4d5 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0656 0c143500d62113 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0657 07bd907c7d2fc4 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0658 02610cda1bcd2c a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0659 08f67d64fb26b5 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0660 1208f02e1ebb7f a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0661 10e950e9af5a13 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0662 0bde311806ae10 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0663 1586cf8c46731e a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0664 03ddf7ede3caa9 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0665 1e05c40d6ce679 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0666 1e6082680a5657 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0667 1ccdeede5f5769 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0668 0112dcfc341a36 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0669 1a5587e9f11dd1 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0670 12cb855b2c696d a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0671 031d7ac2682323 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0672 0289e3e49e325b a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0673 01e3228b85ed52 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0674 0532d0889feb98 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0675 1d6f5c02fb8197 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0676 15b092d24bcfc2 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0677 1b2c760df1ed55 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0678 085a768766fb93 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0679 0618d0be5906a1 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0680 1daa5536248d05 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0681 043c90a1e8bb3c a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0682 18bdad561e7a01 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0683 103f67b4abced8 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0684 084b8804b3890d a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0685 051c2a3ad4319f a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0686 14a6fd9a838dfc a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0687 039421d183bce2 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0688 1d8f4a78782890 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0689 13672922e6202c a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0690 14231f039aac3d a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0691 189104b99f9814 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0692 00268cab2c8f58 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0693 19e79739046131 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0694 0b1c13a55e8629 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0695 12d62b98912f2b a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0696 0b2d64a9fd1b1e a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0697 15b5b2de092e85 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0698 13625cdb9dfdc8 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0699 093318035caae5 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0700 0ca8a7bb0623a9 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0701 1047cf0a2b493f a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0702 19971cdd7b55ee a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0703 103743392fc7e0 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0704 0604f737328efa a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0705 10e69e583dbfae a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0706 1fc32e8b47d3c3 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0707 168ae800674861 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0708 11dba2fd57ab86 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0709 1d1b488b243ea4 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0710 18292f092e7296 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0711 07ff5fc22f3b6e a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0712 09249b803b938d a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0713 10626d0ec3aff7 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0714 18974f13bb8681 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0715 158fefa8d545cc a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0716 069ac7eac3dae4 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0717 0df43c7a89a433 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0718 08f0337f9541b0 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0719 1377044cdfe652 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0720 0b31540d322685 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0721 0f578dc4bb7b6e a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0722 1db531600d74ba a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0723 05b945c5c24f74 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0724 11459c87b6b01e a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0725 1d6365009821df a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0726 0c49f633512f8f a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0727 083b2619acb21e a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0728 1c02a4bd2e16d1 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0729 0fc469ae594d89 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0730 1adf79d0a7253e a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0731 0ec7896349f3f6 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0732 09744b7c51b4a3 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0733 10c21932c7b0fd a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0734 08ba1713d008b7 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0735 1d1274d08c9987 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0736 04642c25392c4d a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0737 1e76016bf8a664 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0738 02068e8740bbea a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0739 10fb750010a04a a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0740 0b294b11dd468b a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0741 1fc5cca6566a59 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0742 0fce145fa508b1 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0743 0feca6131dcb2b a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0744 027c98182aed1e a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0745 009e342bdb7d87 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0746 1cb9eb99bd9514 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0747 022c954de869f4 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0748 17c67bfa51a5f5 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0749 01bc1b04b7eb7b a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0750 1113b866c59dc7 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0751 198da9b733d9fe a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0752 173701670620ec a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0753 03b18a7d926f37 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0754 07027025ae73af a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0755 0b2f86c144ca00 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0756 09c6e7ab147082 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0757 0d5c48400d5367 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0758 0e11c6729151be a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0759 1255c64f5caa30 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0760 01b2be1dfa36c1 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0761 08d493e2525580 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0762 0f9b7b1cba6d5e a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0763 1fd77cafbae3df a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0764 0dc540fc4c2653 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0765 11652ebae86d99 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0766 1e5c8ba455cf03 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0767 0bfcd988b7c649 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0768 0570619d5a6d35 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0769 174c42634288a9 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0770 1850784b176259 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0771 09745e93f033f6 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0772 1ad9482fbf7137 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0773 10ad22074a486f a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0774 1b7a6a08e4343b a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0775 1cba521ef658b8 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0776 08b93d9a8f24ff a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0777 051412965a0b49 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0778 1d40145223b696 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0779 0ffe2a32f8787b a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0780 03888fb0b82de3 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0781 08d5799c52344f a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0782 17cefbdd713452 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0783 0956bff6487cb5 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0784 18237a1838bcbe a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0785 0b9141b76faa32 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0786 1b9200df7fb660 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0787 0c4e05ada93aef a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0788 150ce022ec2273 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0789 14ad9a30ca87ea a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0790 078afe910a0dc8 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0791 0fedaf3337e36f a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0792 021f5ebcc09ebe a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0793 1b86ce8b96ea00 a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0794 13c38812356f2e a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0795 1b1132657e92ee a=0 f=0 env2 -> filter1.cutoff=10.034333
+route-depth 0796 018a9470047fd0 a=0 f=0 env2 -> filter1.cutoff=60
+route-depth 0797 0a37cab1816419 a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0798 090b91afa999ca a=0 f=0 env2 -> filter1.cutoff=-40
+route-depth 0799 0d12f3fc1accd9 a=0 f=0 env2 -> filter1.cutoff=60
+lesson-2.1 0800 010a9686cbd322 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0801 1ed3109a78d57a a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0802 0fb3583b6ee71f a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=70 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0803 12dc16b290b8b0 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0804 1163467be37c5f a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0805 0b14e95d38f794 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0806 1361faa181417c a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0807 1220c624320584 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0808 1391e0826ab0c9 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0809 173ba0ca148379 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0810 0a64fbb58dfb35 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0811 1bda18d053b96c a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0812 12ae985189dfee a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0813 057288190e4c42 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0814 1b14fe67367006 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0815 15f2522d7b9ae9 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0816 13ee0e0ed745a0 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0817 13c09bb2763e62 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=70 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0818 16383349e69824 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0819 1b9a7e430c58ca a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0820 1a37707290e684 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=40 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0821 1c79e9294a2dd2 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0822 19676a2395a0ac a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0823 003cfbe8191db8 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=70 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0824 0e978b6824f914 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0825 1d9260cf9cdeeb a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0826 04bd50ef0e225a a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0827 1ba2bc7a073687 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0828 1bd24f389002a2 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0829 00423e4ed7de91 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0830 0c47ce6455342a a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0831 15819280590f0a a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=10 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0832 0630f2d731f21f a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0833 18c0400f654f89 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0834 02595e652a1c8d a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0835 0e3d74e8f61e7d a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0836 12be4c61dfd49c a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=50 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0837 10c2892bb2e1b0 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0838 02a08b6209307a a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0839 0bbac6136cb3ed a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0840 1110170dfa0848 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0841 07423b430881cb a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0842 16fdce93220798 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0843 04a2488f5fd8ed a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=10 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0844 038a40645d07ab a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=70 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0845 1db70c66fbea72 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0846 0ae7027afb68a6 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0847 0f7bf62977feb1 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0848 07630cd3205f06 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0849 16ef49f15a2db8 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=70 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0850 010b3f8b8930e2 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0851 1a00df8a65cbe3 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0852 0ced28c5a7178b a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0853 0ae3acf8e426ef a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0854 14b77b823a51ee a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=10 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0855 142a3aee3599b6 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0856 1ef791ca43c482 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0857 10cc45178d971f a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0858 0042ef1cba5313 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=10 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0859 109149b3af5d08 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=30 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0860 00560c12e2a8e0 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0861 0113e8fee6385e a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=50 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0862 0d93476882ab4b a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0863 1d18b0e1e8c7bb a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0864 1dd5e349235592 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0865 062c1ddb07acdd a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0866 10edcf0d0fcdf9 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0867 09a664d8651a46 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0868 0b73ae5413da3a a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0869 117a72ed43caa3 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=30 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0870 015e64c3cbc2b1 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0871 07a0e22773a0a1 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0872 12fbb97e327463 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0873 183e8e5fce2c1e a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=30 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0874 07e9a46a4d17b3 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0875 0c6614027c6025 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=70 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0876 0b508017480a4e a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0877 0371fed0b4daa1 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0878 1780d33a513d01 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0879 15d8043f5d1e7e a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0880 15d7a1309b169f a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0881 062c1dd46ebe7f a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0882 02b2465dbc0cf3 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0883 1f50760132d482 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0884 11b69b31245172 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=70 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0885 021af9fec7f1e3 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0886 139a33523758ec a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0887 147fcb2849f142 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0888 15ff591bf5d732 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=50 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0889 11b27aa318a861 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0890 01702520cef86d a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0891 060ff4475f895f a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0892 0384bc7d02b23c a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0893 0bbfbb463cb7e3 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0894 14bf0b25dcf86a a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=70 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0895 18c627661d775c a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=10 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0896 19c5cd67efc80c a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0897 0c0245edab1d29 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=70 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0898 036c797700304f a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0899 0b146a78613d09 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0900 1c3b9620bd56f5 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=30 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0901 1043652e5864b5 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0902 183421939ba0a9 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=70 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0903 0357c5f2df3439 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0904 1b47da61fab768 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0905 1abba8f68ac148 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0906 020c87006caf25 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0907 1fa786090f929f a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=70 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0908 1325e69f5c63fb a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0909 0c544ef3356762 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0910 19e0b9f7dd7b19 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0911 1192d36734e93f a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0912 18586a65454322 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=40 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0913 1ff8266f93c944 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0914 06d688c8bee2b1 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0915 02751f6bac7722 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0916 1e02b521c387b6 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0917 1a89f4c5141e7f a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0918 0eec8f70271d1e a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0919 0a5aa2ba228db4 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=10 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0920 09afb273cf743a a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0921 16b7c474ad5564 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=40 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0922 07fdf29c19bfa1 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0923 0ea77e3ad98861 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0924 16d21efcb5e468 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0925 03d26b16ba04e0 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0926 12eed5b4774cf7 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=70 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0927 15340767e9fe07 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0928 0264e5d0928e13 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0929 10e87abe68d703 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0930 1fcd81319705bc a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0931 193845e52c8747 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0932 11713dfa367c2d a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0933 07bb41d7c352bd a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0934 09e4d9b6fffcf6 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=70 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0935 04e11a83a41e24 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0936 1e93bf21e2972f a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0937 061bcd14a5a508 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0938 13563e0ba74894 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0939 0d0b56753cfd08 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0940 01998ea63ac94c a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0941 0cc6efa33b657d a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=40 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0942 17be70d8d0f089 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0943 019d878ed8a569 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0944 149d718cc24916 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0945 19b8031b8ba926 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=30 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0946 099c3dd253edf0 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0947 14686f4ca02c81 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0948 0680683766794b a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0949 1c35f1dea416dc a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0950 0e1cf9e1460541 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0951 07b32f8a702744 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0952 001dad30f3eda2 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0953 08fdf53647035a a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0954 08adc8856014f7 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0955 05947199ee536c a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0956 08dce6f783c4b7 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0957 0767c6d49ef0a7 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0958 0b5affcdc8efcb a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0959 0647cc404ff80f a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=40 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0960 0b539e8f54fbc6 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=70 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0961 1ad8404ca884e4 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0962 0c1b24aba284d1 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0963 12da6d96773098 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0964 1f7228553c8532 a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0965 115c83a96fa4d5 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0966 14eea9d706900c a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0967 12b6df2f9a1103 a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0968 1e60d50bac7ceb a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0969 03c5efaad6f01a a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=50 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0970 1a799235c0c00f a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0971 0fede8b2491c23 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=70 env1.attack=25 env2 -> filter1.cutoff=-30
+lesson-2.1 0972 1dded102e285ab a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=40 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0973 0e9acaa0bb576c a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0974 08902aa1aec621 a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0975 07179a8cb9fad7 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0976 1ff79d019ebe5a a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=20 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0977 1f41d7f0f48493 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=60 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0978 10bbefdb5d1b0c a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=30 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0979 1b9bdf9cceec3e a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0980 1f29640da0586f a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=70 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0981 16ec901f367467 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=30
+lesson-2.1 0982 0bbd312e9ecbb5 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0983 160dd72b2c9ec8 a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0984 042b143889cc6d a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=20 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0985 01ccc9737f1830 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=50 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0986 19f7a005dc9072 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=50 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0987 19e6ebdd886b8d a=0 f=0 filter1.cutoff=600 filter1.mode=1 filter1.resonance=50 env1.attack=2 env2 -> filter1.cutoff=30
+lesson-2.1 0988 0675c11b56cb64 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=30 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0989 0076d974f868da a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=60 env1.attack=2 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0990 106aae269f9051 a=0 f=0 filter1.cutoff=4000 filter1.mode=1 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=30
+lesson-2.1 0991 0301803fd1a32a a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=50 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0992 1186e8ad8aaae0 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=60 env1.attack=900 env2 -> filter1.cutoff=-30
+lesson-2.1 0993 093a250df91f75 a=0 f=0 filter1.cutoff=300 filter1.mode=0 filter1.resonance=30 env1.attack=2 env2 -> filter1.cutoff=-30
+lesson-2.1 0994 0f71f1ea7dca4f a=0 f=0 filter1.cutoff=1200 filter1.mode=1 filter1.resonance=60 env1.attack=200 env2 -> filter1.cutoff=-30
+lesson-2.1 0995 1bd5d668b1b8c6 a=0 f=0 filter1.cutoff=4000 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0996 0f3966f0fa8670 a=0 f=0 filter1.cutoff=300 filter1.mode=1 filter1.resonance=20 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0997 0deb716559fc7c a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=40 env1.attack=900 env2 -> filter1.cutoff=10.034333
+lesson-2.1 0998 0f5e0254defa9f a=0 f=0 filter1.cutoff=1200 filter1.mode=0 filter1.resonance=50 env1.attack=200 env2 -> filter1.cutoff=30
+lesson-2.1 0999 0f6dcbf3ccac9f a=0 f=0 filter1.cutoff=600 filter1.mode=0 filter1.resonance=30 env1.attack=25 env2 -> filter1.cutoff=-30
+all 97ff27a7dd4d3c78c7f71ed798b6492823c20d4b3d4741414da9b3b59ebf2b76
