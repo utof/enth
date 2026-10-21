@@ -88,13 +88,14 @@ pub fn value_for(spec: &ParamSpec, bits: u32) -> f32 {
         },
         // The fractional enum index and the integer below the top (lane NTF, FU1): with `min + 0.5` and the toggle's
         // 0.5 alone, `not_integral` came up 0 to 7 times in the census's 3,000 ops (none under 5 of 60 seeds).
-        Kind::Enum(items) => match mode {
-            30 => (rest as usize % items.len()) as f32 + 0.5,
-            _ => {
+        Kind::Enum(items) => {
+            if mode == 30 {
+                (rest as usize % items.len()) as f32 + 0.5
+            } else {
                 let n = items.len() + usize::from(mode == 31);
                 (rest as usize % n) as f32
             }
-        },
+        }
         Kind::Int { min, max } => match mode {
             31 => (max + 1) as f32,
             30 => min as f32 + 0.5,
