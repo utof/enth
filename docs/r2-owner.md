@@ -49,8 +49,10 @@ cp ~/code/enth/content/gr2/answers-template.toml ~/code/enth/_local/gr2/p1.gr2.t
 
 ```bash
 cd ~/code/enth
-./target/release/enth lesson show content/lessons/basics --lesson waveforms --format table
-./target/release/enth lesson show content/lessons/basics --lesson cutoff --format table
+for l in waveforms cutoff; do
+  ./target/release/enth lesson show content/lessons/basics --lesson $l | python3 -c 'import json,sys
+for s in json.load(sys.stdin)["lessons"][0]["steps"]: print("--- step", s["number"], s["kind"], "| hints:", " / ".join(s["hints"])); print(s["text"] or "")'
+done | less                                                # every step's text and hints, in playing order
 ```
 
 Judge them by report 01's rubric (TASTE-basics.md, "What to judge"): the contrast heard before it is explained, words for the sound rather than the circuit, a Try goal clear from its text alone, rounds far enough apart to hear, hints that are listening cues. Note what you would change; an agent applies it to the pack and re-runs `lesson-check --cross --solve`.
