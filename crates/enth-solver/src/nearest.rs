@@ -107,10 +107,20 @@ pub fn pitched_hz(desc: Option<&Descriptors>) -> Option<f64> {
         .map(|p| p.f0_hz)
 }
 
-/// The embedding's reference frequency for a clip with these descriptors: [`pitched_hz`], else [`ref_hz`].
+/// The embedding's reference frequency for a clip with these descriptors: [`pitched_hz`], else [`ref_hz`]. The bank
+/// builder's reading.
 #[must_use]
 pub fn reference_hz(desc: Option<&Descriptors>) -> f64 {
     pitched_hz(desc).unwrap_or_else(ref_hz)
+}
+
+/// A query's reference frequency: [`pitched_hz`], else `fallback` (the intake's own pitch reading, `perf.f0_hz`,
+/// which has a tonal fallback the descriptors lack) when it is a positive finite frequency, else [`ref_hz`].
+#[must_use]
+pub fn reference_hz_or(desc: Option<&Descriptors>, fallback: Option<f64>) -> f64 {
+    pitched_hz(desc)
+        .or(fallback.filter(|f| f.is_finite() && *f > 0.0))
+        .unwrap_or_else(ref_hz)
 }
 
 /// A bank entry's pitch offset: the measured pitch relative to `note`, in cents, or [`UNPITCHED`].
@@ -409,6 +419,8 @@ pub struct Neighbour {
 pub struct Bank {
     header: BankHeader,
     entries: Vec<BankEntry>,
+    /// The SHA-256 of [`Bank::to_bytes`], computed once.
+    sha256: [u8; 32],
 }
 
 fn put_u16(out: &mut Vec<u8>, v: u16) {
@@ -430,7 +442,13 @@ impl Bank {
     /// A bank from its header and entries (the builder's, and tests').
     #[must_use]
     pub fn new(header: BankHeader, entries: Vec<BankEntry>) -> Bank {
-        Bank { header, entries }
+        let mut bank = Bank {
+            header,
+            entries,
+            sha256: [0; 32],
+        };
+        bank.sha256 = Sha256::digest(bank.to_bytes()).into();
+        bank
     }
 
     /// The header.
@@ -559,13 +577,18 @@ impl Bank {
                 embedding: Embedding { codes: get(e, 16) },
             })
             .collect();
-        Ok(Bank { header, entries })
+        Ok(Bank {
+            header,
+            entries,
+            sha256: Sha256::digest(bytes).into(),
+        })
     }
 
-    /// The SHA-256 of the file's bytes (what a result records to name the bank it used).
+    /// The SHA-256 of the file's bytes (what a result records to name the bank it used), computed once when the bank
+    /// was read or built.
     #[must_use]
     pub fn sha256(&self) -> [u8; 32] {
-        Sha256::digest(self.to_bytes()).into()
+        self.sha256
     }
 
     /// The generator spec of entry `index`.
