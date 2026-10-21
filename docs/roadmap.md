@@ -6,6 +6,7 @@
 
 Changes from earlier plans:
 
+- **2026-10-21:** R2 and R3 research (`_local/sessions/2026-10-21-r2-learn/summary.md`, `_local/sessions/2026-10-21-r3-sound-to-patch/summary.md`), planned together in [phase-3.md](phase-3.md) with one heavy build slot each; all provisional until you steer. **R2:** a lesson is Hear → Name → Try → Do → Check, then Review, and its "recreate this" steps are real Recreate rounds; a new core crate, `enth-learn` (L5), and Challenge v2 (judged at freeze F1l); four kinds of check, because sound alone cannot check the compressor, reverb, resonance or macros; **packs are bundled and R2 has no network code**, so downloading inside the plugin waits for GR1 and your OK; 42 lessons in four packs, with a 12-lesson tour as GR2's friend track ([learn.md](learn.md)). **R3:** today's search copies the damage in a degraded upload (noise 10 %, reverb 25 %, clipping 64 % against the clean target), so **R3a ships first with no ML** (a robust intake, a degradation-aware objective, a portfolio with k-NN retrieval, K branches on a cancellable pool), then **R3b** adds a K = 8 winner-takes-all model on **our own scalar kernels instead of `tract`** (bit-exact on every platform, about 0.1 MB against 15.5 MB); real audio without labels is a hypothesis; GR3's three clauses become testable ([r3.md](r3.md)).
 - **2026-10-20:** R1 + S1 research (`_local/sessions/2026-10-20-r1-s1-recreate-and-instrument/summary.md`). R1 and S1 run in parallel on what exists, planned together in [phase-2.md](phase-2.md): five waves behind three freezes (F0r, F1r, F2r), about 22–42 agent-hours planned and 26–30 expected. Targets are the same on every machine because every random draw is keyed by its parameter address, never taken in sequence, and a challenge code carries the generator and engine versions and a target-hash prefix ([design.md §9](design.md#9-randomizer-and-difficulty)). Before sound % decides a pass it gets module mapping, metric v1.1's pooling, descriptor components, per-challenge calibration and a `libm` loudness ([ADR-0007](adr/0007-metric-v1.md)). The A/B plays a pre-rendered target against the live engine, with no engine work. Score disputes are the top risk, so an agreement vote and a local round log go into the first playable round. In S1, poly-mod is already done (only the Bitwig check is left), a fresh instance will play a gain-staged starter patch as "Init", and a preset load becomes one undo step. The friend build is CLAP and VST3 bundles first, from a tag-only `release.yml`, unsigned for R1; a standalone app waits for your OK; AU is deferred past S1. Docs-only pushes no longer run CI.
 - **2026-10-19 (e):** P1b research (`_local/sessions/2026-10-19-p1b-plugin-editor/summary.md`). P1b is buildable on what exists, with an engine-seams lane (E+) in the spine and a privately vendored fork of nice-plug and baseview (CLAP slot names, an `editor_closed` fix, baseview's xkb leak fix, keyboard focus only while typing). The plugin renders exactly like the CLI (20 of 20 runs bit-identical), so "CLI = plugin renders" becomes a G1 check. The real-time row of G1 now gates on p99 and p99.9 under real-time priority and on swap blocks, and a plan swap moves effect state instead of copying it. The editor makes layout data, so each Claude Design variant becomes one file. The P1b lane plan is [phase-1b.md](phase-1b.md).
 - **2026-10-19 (d):** P1a research (`_local/sessions/2026-10-19-p1a-headless-core/summary.md`). P1a is buildable as planned, with five design corrections: seeds never come from the patch hash; the processing quantum is a 32-frame segment behind a FIFO, not "block 64"; the reverb needs no RNG; the probe's 15 of 15 was partly a descriptor bug (13 of 15 when re-judged); and P1a gains a minimal `enth-solver` (hints), `enth-golden` and the text-goal agent-eval harness. G1's CPU budget is re-set, because (c)'s 340 M instructions per 2 s render was too tight for the real module set; macOS goldens run on demand or weekly; "a bass, pad, pluck and lead you like" moves to P1b. The P1a lane plan is [phase-1a.md](phase-1a.md).
@@ -110,6 +111,14 @@ The effort figures are still unvalidated guesses; Phase 0 records actual against
 - About 22–42 agent-hours planned, 26–30 expected (calibrated on P1b's 20 measured hours against its 27–51 estimate); the critical path is about 8–11 h of wall time. Your time: about 3 h new (the friend survey first, owner build 3 with the preset pick, GR1's 20 rounds, the layout pick), plus the P1 backlog. Each friend: about 1.5–2 h.
 - **Status (2026-10-20, lane INT):** every lane is merged, plus two unplanned ones (F1R, the judge's fixes; LK, the leak gate). Every automated GR1 and GS1 check passes; the tables are [r1s1-gates.md](r1s1-gates.md), and what is left (your rounds and your friends', the preset pick, the real display, the friend build) is [owner sheet 3](r1s1-owner.md).
 
+## R2 + R3 lane plan
+
+2026-10-21, from the R2 and R3 research. The full plan, with per-lane ownership and acceptance, the hotspot table, your part with its defaults, the cut lists and the open checks, is [phase-3.md](phase-3.md); the designs are [learn.md](learn.md) and [r3.md](r3.md).
+
+- **Two spines, seven freezes, one heavy slot each.** R2: S0l (creates `enth-learn`) gives **F0l**; LM (the lesson model), CV2 (Challenge v2) and SL (the session's Learn API) give **F1l**, reviewed together by a judge agent; SKL (one bundled lesson end to end in the plugin) gives **F2l**. R3: S0s with the held-out sets (DS) gives **F0s**; the intake types and the create API give **F1s**, judged; SK3 (create end to end in the CLI and the plugin) gives **F2s**; the model contract on our kernel op set gives **F3s**, judged before any long training run.
+- **Waves:** both start once fu1-hint and fu1-fk have merged, with the coordinator's pins first, then S0l, then S0s (both touch the root manifests). R2 runs five waves to INT2, owner build 4 and GR2; R3a five waves to INTa, your 5-sound check and its release; R3b four more (our kernels, `ds1`, augmentation, training, model + search, the GR3 runs and listening).
+- About 22–40 agent-hours of code plus 6–9 of content for R2 (roughly 9–13 h of wall time); about 14–18 for R3a and 11–16 for R3b, plus 1–3 days of training. Your time: about 3–4 h for R2 (a taste check of two lessons, owner build 4, GR2) and 2.5–3.5 h for R3 (picks, the R3a check, GR3's 25-minute listen), after owner sheet 3.
+
 ## Track R — Recreate
 
 ### R1 — Recreate mode (3–4 weeks)
@@ -128,13 +137,27 @@ The game you most want: the synth makes a random patch, you recreate it, and you
 
 ### R2 — Learn (ongoing)
 
-Lessons as **content packs** (markdown + patches + challenges) loaded on demand — bundled, or downloaded from the project's GitHub releases with a button — so the plugin stays light. Nearest-solution knob feedback; auto-generated "deconstruct this preset" lessons; lessons go from basics to advanced sound design.
+Lessons as **content packs** (markdown + patches + challenges), bundled first; downloading them from the project's GitHub releases with a button comes only after GR1 and your OK (2026-10-21). Nearest-solution knob feedback; auto-generated "deconstruct this preset" lessons; lessons go from basics to advanced sound design.
 
-**Gate GR2:** the lessons cover every P1 module, and you and friends learn something new from them.
+2026-10-21 (R2 research; provisional until you steer). Lanes, freezes and acceptance are in [phase-3.md](phase-3.md); the design of record is [learn.md](learn.md); the curriculum is [the lesson plan](../content/lessons/PLAN.md).
+
+- **A lesson teaches one control or idea in 5–10 minutes:** Hear → Name → Try → Do → Check, then Review in later sessions. You hear a contrast before the explanation; scaffolds fade (hidden, dimmed, normal); hints thin out by tier; no spectrum during Do.
+- **Lessons reuse the game:** a "recreate this" step is a real Recreate round, the coach's levels are the hint ladder, and "How close am I?" (CMA-ES from your patch, `enth-solver::closest`) follows a failed Submit, with a sibling challenge after it.
+- **42 lessons in four packs** (36 core in the generator's order, 6 studies built from the preset candidates), covering all 54 P1 parameters; **a 12-lesson tour** (one lesson per module, about 1.5 h) is GR2's friend track and is written first.
+- **Bundled, with no network code in R2:** about 60 lessons zip to about 0.2 MB, while a TLS stack would add 2.2 MB and a C toolchain. Packs are `.enthpack` files (`enth.pack/1`) embedded in the build, plus a `<Documents>/enth/Packs` folder and a "Get more lessons" button that opens the releases page in the browser. In-plugin download needs your OK on a C toolchain (`ring`) or a new crate (`graviola`).
+- **Code home:** a new core crate, `enth-learn` (L5), with `enth-session::learn` (L6, which enforces locks in the edit path) and `enth-ui::editor::learn` (L7). Challenge v2 is the one persisted change.
+- **The authoring loop first:** `cargo xtask lesson-check` plays every lesson's reference solution through a real session and checks reachability with the solver; a `lessons.yml` workflow, since lesson-only commits run no CI.
+
+**Gate GR2:** the lessons cover every P1 module, and you and friends learn something new from them. 2026-10-21: the first half is mechanical (`lesson-coverage`: every module and Basic-tier parameter has a step and a non-patch check, an ear question included); the second is parallel-form pre- and post-tests made of challenge codes, a staggered mid-test, and "name up to three things you learned", all local and reported per person ([learn.md](learn.md#gr2); the pass criteria are yours to set).
 
 ### R3 — Sound → patch (6–10 weeks)
 
-"Create from sound": heuristic start + CMA-ES, then learned proposals (ONNX + `tract`) returning several candidates. Fully local. **Budget: under 5 minutes per sound on your laptop; aim for about 60 seconds.**
+"Create from sound": heuristic start + CMA-ES, then learned proposals returning several candidates (2026-10-21: on our own scalar kernels, not ONNX + `tract`). Fully local. **Budget: under 5 minutes per sound on your laptop; aim for about 60 seconds.**
+
+2026-10-21 (R3 research; provisional until you steer). Lanes, freezes and acceptance are in [phase-3.md](phase-3.md); the design of record is [r3.md](r3.md).
+
+- **R3a ships first, with no ML.** Measured on one target, today's search copies the damage in an upload (scored against the clean target: MP3 92 %, noise 10 %, reverb 25 %, clipping 64 %; trimming the noisy tail alone gave 56 %). So R3a has a robust intake (trim, noise floor, bandwidth, clipping, the inferred note and hold) and a degradation-aware objective under a new metric id, a portfolio of starts (the heuristic, templates, k-NN retrieval over a pre-rendered bank), and K branches refined by successive halving on a cancellable pool of its own, in the CLI and the plugin (file drop or a folder browser).
+- **R3b adds a narrow model:** a small CNN with K = 8 winner-takes-all hypotheses and a confidence head, whose categorical heads matter most (CMA-ES solves 0 of 4 level-5 codes). Its proposals are extra starts, never the only ones; it must beat k-NN retrieval and search alone. Inference runs on our own scalar kernels, bit-exact on every platform; the weights are a separate model file beside the plugin.
 
 **Robust to real-world audio** (owner, 2026-10-19). Users upload degraded sounds, so training renders go through realistic augmentation:
 - codecs at low bitrates (MP3 128 kbps and below, AAC, Opus), resampling, low bit depth;
@@ -146,7 +169,18 @@ Lessons as **content packs** (markdown + patches + challenges) loaded on demand 
 
 Unlabelled real recordings train the audio side. The R3 research session covers augmentation design and its licences: codec encoders such as LAME are LGPL, which is acceptable in the never-shipped `ml/` pipeline but never in the product.
 
-**Gate GR3:** on held-out sounds from our own synth, model + search beats search alone at equal time; on real samples, **including a held-out set of degraded uploads (low-bitrate MP3, noisy, reverberant, clipped)**, a blind listening test prefers it; every result arrives in under 5 minutes.
+2026-10-21 (R3 research):
+
+- **Real audio without labels is a hypothesis, not a plan.** In 2026 papers it helped through render rewards and barely as a passive input. Its first use is search-distilled pseudo-labels (model + search on real one-shots, the good fits kept), capped at about 30 % and listened to batch by batch.
+- **Training data comes from our engine**, through a new sampler (`ds1`) beside generator v1, which is unfit as it stands (level 1 has about 12 sounds, every phrase starts on C3). The augmentation chain above is buildable today, with LGPL and GPL tools only as subprocesses in `ml/`; held-out codecs, rooms and noises stay evaluation-only; shipped weights train only on our renders plus CC0, CC BY or Apache data.
+- **The degradation policy** (yours to decide; the default): codec damage, hum, noise and device EQ count as damage to ignore; for room reverb and compression, the K candidates include a dry patch and one using the patch's own reverb or compressor.
+
+**Gate GR3:** on held-out sounds from our own synth, model + search beats search alone at equal time; on real samples, **including a held-out set of degraded uploads (low-bitrate MP3, noisy, reverberant, clipped)**, a blind listening test prefers it; every result arrives in under 5 minutes. 2026-10-21, how each clause is run ([r3.md](r3.md#gr3-and-its-hygiene)):
+
+- **Clause 1:** model + search against the *best tuned* search at equal wall-clock time, inference charged, on about 120 held-out targets (McNemar on pass rate, Wilcoxon on JND distance, at 60 s and to 300 s), plus one metric no arm optimises.
+- **Clause 2:** forced choice "which is closer to the reference?", level-matched, top candidates only, with catch trials; 60 references, 20 of them degraded and **judged against the clean original** (judging against the upload would reward copying the noise); a cluster-bootstrap rule fixed in advance. You listen for about 25 minutes; friends get a 30-reference kit.
+- **Clause 3:** a cap guarantees 5 minutes, so the gate is on time to the first candidate (at most 15 s) and on no xruns while a search runs in the DAW.
+- **Hygiene:** the held-out sets are frozen and hashed before any training, and no prior is fitted on presets that are also test targets.
 
 ### R4 — Ear-training games (later)
 
@@ -191,7 +225,7 @@ Learn content ships as data packs, not code; the Learn and Recreate views sit be
 | --- | --- | --- |
 | G0 | Any UI beyond the reference panel | egui is confirmed only at G0, after the real-display and in-host checks |
 | G1 | Editor polish, AU/AAX, MPE, preset cloud, standalone app | The minimal synth must work first |
-| GR1 | ML of any kind, networking, MCP server | The game and agent loop must work with plain search first |
+| GR1 | ML of any kind, networking, MCP server | The game and agent loop must work with plain search first. 2026-10-21: R3a and R2 have neither (packs are bundled); whether R3b's training waits for GR1 is an open check for you ([phase-3.md](phase-3.md#open-checks)) |
 | GR3 | Topology search, text-to-patch models | Templates must work before structure search pays off |
 | GS1 | Hosting third-party plugins inside the synth | Costs weeks and breaks determinism, the CLI and preset sharing; the DAW's FX chain already provides it. Even then only a CLAP-only post-FX slot after the scoring tap; anything more needs a new ADR ([ADR-0006](adr/0006-effects-strategy.md)) |
 | Never | Server-side compute or cloud AI; a differentiable PyTorch copy of the engine; plugdata/Pure Data in the core | Local-first; one engine of truth; GPL and a second runtime |
