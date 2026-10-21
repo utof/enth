@@ -91,10 +91,7 @@ jobs:
         run: cargo build --locked --release --package enth-lesson-tool
       - name: Check every lesson (files, playthrough, --cross)
         run: cargo xtask lesson-check --cross
-      # Coordinator, 2026-10-21: non-blocking until lane C1FIX lands its fixes to six basics steps (four ear questions
-      # under 2 JND, two Try steps whose measured hints stop early); then this step loses continue-on-error.
       - name: Solvability (--solve; the hint follower, closest, audibility)
-        continue-on-error: true
         run: cargo xtask lesson-check --cross --solve
       - name: Coverage of the P1 modules (a report until GR2)
         continue-on-error: true
