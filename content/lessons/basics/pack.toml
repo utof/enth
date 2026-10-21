@@ -19,7 +19,7 @@ title = "Synth basics"
 authors = ["enth contributors"]
 covers = ["osc", "noise", "svf", "adsr"]
 # The order the app offers them in (the curriculum's order). Lesson ids are append-only.
-lessons = ["waveforms", "two-oscillators", "cutoff"]
+lessons = ["waveforms", "two-oscillators", "noise", "cutoff"]
 
 [license]
 text = "CC-BY-4.0"

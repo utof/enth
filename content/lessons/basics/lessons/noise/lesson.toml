@@ -1,0 +1,372 @@
+# Lesson 1.5, Noise [basics · basic · tour] (content/lessons/PLAN.md §5, U1).
+#
+# Hear (a saw with and without noise, noise alone in white and pink, a pluck with noise), a "which one hisses?" item →
+# Name → Try ("hissier than this", switching noise1 on, checked by sound) → three rounds (draws of the noise level) →
+# the colour (a Do step on noise alone) → two ear questions. PLAN's colour round is a Do step: under a full saw, pink
+# noise is masked (pink at 100 % scores 99.0 against white at 20 %), so a colour round would not be honest. Q10: the
+# texts say how noise1 is switched on. Measured on engine 0.3.0, HELD (C3 for 1.5 s); noisiness is `noise_ratio`.
+
+schema = "enth.lesson/1"
+id = "noise"
+title = "Noise"
+tier = "basic"
+objective = "Mix noise into a tone, judge how much by ear, and tell white noise from pink."
+teaches = ["noise.level", "noise.color"]
+
+# --- Hear: the saw alone, with some white noise, white and pink noise alone; then a pluck at C4 without and with.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Saw"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "Saw and noise"
+patch = "patches/saw-noise-30.patch.json"
+
+[[steps.examples]]
+label = "Noise alone, white"
+patch = "patches/noise-white.patch.json"
+
+[[steps.examples]]
+label = "Noise alone, pink"
+patch = "patches/noise-pink.patch.json"
+
+[[steps.examples]]
+label = "Pluck"
+patch = "patches/pluck.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "Pluck and noise"
+patch = "patches/pluck-noise-30.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which one hisses? (white noise at 100 % under the saw against the saw alone.)
+[[steps]]
+id = "which-hisses"
+kind = "choose"
+text = "which-hisses.md"
+hints = ["Listen behind the note, for a sound like air or steam."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-noise-100.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["noise1.color", "noise1.level"]
+
+# --- Try: "hissier than this" from the saw, noise1 switched off. Measured noisiness (noise_ratio) with the saw at
+# 100 %: noise off 0.0000 (the start: fails `noisiness>0.01`), white at 30 % 0.0078 (fails), 50 % 0.025, 100 % 0.111
+# (the witness: passes by 0.101), pink at 100 % 0.045. PLAN's 0.3 is out of reach with the saw at full level.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The noise card, noise1, is switched off: turn it on with the switch on its card.",
+  "Then raise its Level until you hear the hiss clearly behind the note.",
+]
+witness = "patches/saw-noise-100.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw.patch.json"
+highlight = ["noise1.*"]
+editable = ["noise1.*"]
+locked = ["osc1.*", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "enabled", module = "noise1", enabled = true }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["noisiness>0.01"]
+
+# --- Do, round 1: a hidden noise level, drawn from 20, 50 and 100 % (white, the saw locked at 100 %), from the noise
+# switched on at 0 %. Seed 1 draws 100 % (the start scores sound 44.7). sound/1 hears the level well enough at the default pass mark: against 20, 50 and 100 % the other set values
+# score 57.8 to 85.3 (`enth compare --target`).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Listen behind the note: how loud is the hiss in the target compared with yours?",
+  "Raise noise1's Level until the hiss sits in the sound as it does in the target.",
+]
+
+[steps.view]
+highlight = ["noise1.level"]
+hide = ["osc2.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "noise1.level", set = [20.0, 50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, noise on at 0 %", description = "The starter with noise1 switched on but turned all the way down." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", params = { level = 0.0 } },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["noise1.level"]
+locked = ["osc1.*", "noise1.color", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Noise, round 1"
+tags = ["basics", "noise"]
+
+# --- Do, round 2: seed 3 draws 50 % (the start scores 70.7).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Listen behind the note: how loud is the hiss in the target compared with yours?",
+  "Raise noise1's Level until the hiss sits in the sound as it does in the target.",
+]
+
+[steps.view]
+highlight = ["noise1.level"]
+hide = ["osc2.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "noise1.level", set = [20.0, 50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, noise on at 0 %", description = "The starter with noise1 switched on but turned all the way down." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", params = { level = 0.0 } },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["noise1.level"]
+locked = ["osc1.*", "noise1.color", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Noise, round 2"
+tags = ["basics", "noise"]
+
+# --- Do, round 3: seed 8 draws 20 %, the faint one (the start scores 87.8 and does not pass; 10 % and 35 % pass).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Listen behind the note: how loud is the hiss in the target compared with yours?",
+  "Raise noise1's Level until the hiss sits in the sound as it does in the target.",
+]
+
+[steps.view]
+highlight = ["noise1.level"]
+hide = ["osc2.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 8
+items = [{ param = "noise1.level", set = [20.0, 50.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, noise on at 0 %", description = "The starter with noise1 switched on but turned all the way down." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", params = { level = 0.0 } },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["noise1.level"]
+locked = ["osc1.*", "noise1.color", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Noise, round 3"
+tags = ["basics", "noise"]
+
+# --- Do: the colour, on noise alone (osc1 at 0 %), where it is plain. Measured: white noise through the 2 kHz low-pass
+# reads a spectral centroid of 2615 Hz (the start: fails `brightness<2000Hz` by 615 Hz), pink 1479 Hz (the witness:
+# passes by 521 Hz). The filter is locked, so only the colour can darken it.
+[[steps]]
+id = "colour"
+kind = "do"
+text = "colour.md"
+hints = ["Switch noise1's Color from white to pink."]
+witness = "patches/noise-pink.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/noise-white.patch.json"
+highlight = ["noise1.color"]
+editable = ["noise1.color"]
+locked = ["osc1.*", "filter1.*", "noise1.level"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "noise1.color", cmp = "==", value = "pink" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness<2000Hz"]
+
+# --- Check: white or pink, on noise alone (PLAN), then which has more hiss (30 % against 100 % under the saw).
+[[steps]]
+id = "check-pink"
+kind = "choose"
+text = "check-pink.md"
+hints = ["Pink noise is the softer, darker one, like rain; white is brighter, like steam."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/noise-pink.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/noise-white.patch.json"
+
+[[steps]]
+id = "check-more"
+kind = "choose"
+text = "check-more.md"
+hints = ["Ignore the note; listen only to the hiss around it."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-noise-30.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-noise-100.patch.json"
