@@ -121,8 +121,9 @@ patch = "patches/keys-squash-makeup-12.patch.json"
 phrase = 4
 level_match = false
 
-# --- Hear's ear question, level-matched: which one is compressed? (off against threshold -36 dB at 8:1: sound/1 under
-# 1 JND; `sustain`, the ring against the click, reads -5.4 against -23.7 dB.)
+# --- Hear's ear question, level-matched: which one is compressed? (threshold 0 dB, above the whole sound, against -36
+# dB, both at 8:1: sound/1 under 1 JND; `sustain`, the ring against the click, reads -5.4 against -23.7 dB. The
+# compressor stays switched on in both, so the options differ in the threshold, not in a switch.)
 [[steps]]
 id = "which-compressed"
 kind = "choose"
@@ -140,7 +141,7 @@ phrase = 7
 
 [[steps.options]]
 label = "B"
-patch = "patches/keys.patch.json"
+patch = "patches/keys-comp-above.patch.json"
 phrase = 7
 
 # --- Name.
@@ -245,7 +246,8 @@ expect = ["loudness > -40LUFS"]
 
 # --- Check: make-up, not level-matched (the same compression, 0 against 12 dB: 12 dB louder); the higher ratio,
 # level-matched (1.5:1 against 20:1 at -30 dB: `sustain` -10.7 against -21.5 dB); and a "what changed?" item mixed
-# with lesson 7.1, level-matched: one got a compressor, the other reverb.
+# with lesson 7.1, level-matched: one got a compressor, the other reverb (both effects stay switched on, one of them
+# set to do nothing, so the options differ in knobs, not in a switch).
 [[steps]]
 id = "check-makeup"
 kind = "choose"
@@ -305,5 +307,5 @@ phrase = 7
 
 [[steps.options]]
 label = "B"
-patch = "patches/keys-squash.patch.json"
+patch = "patches/keys-squash-dry.patch.json"
 phrase = 7
