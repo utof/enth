@@ -179,7 +179,7 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
         Cmd::Explain(args) => explain::run(&args, stdin),
         Cmd::Challenge(args) => challenge::run(&args),
         Cmd::Lesson(args) => lesson::run(&args),
-        Cmd::Create(args) => create::run(&args),
+        Cmd::Create(args) => create::run(&args, stdin),
     }
 }
 
