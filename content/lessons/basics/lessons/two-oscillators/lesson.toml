@@ -1,0 +1,404 @@
+# Lesson 1.4, Two oscillators [basics · basic · tour] (content/lessons/PLAN.md §5, U1).
+#
+# Hear (detune on a saw at C3 and C4; the second oscillator's level; the pad), a "which one wobbles?" item → Name →
+# Try ("make it beat", switching osc2 on, checked by sound) → three rounds (draws of the detune, at a raised pass
+# mark) → the balance (osc2's level, checked by the beat's depth) → two ear questions. Q10: the Name and Try texts say
+# how osc2 is switched on, since no lesson adds modules. Measured on engine 0.3.0, HELD (C3 for 1.5 s): the beat rate
+# is f0 times the detune ratio, 0.53 Hz at 7 ct, 0.91 Hz at 12 ct, 1.89 Hz at 25 ct, 3.84 Hz at 50 ct (`enth
+# describe`, detune.beating_hz).
+
+schema = "enth.lesson/1"
+id = "two-oscillators"
+title = "Two oscillators"
+tier = "basic"
+objective = "Switch on a second oscillator, detune it until the sound beats, and balance its level by ear."
+teaches = ["osc.fine", "osc.level"]
+
+# --- Hear: one saw, two in tune, two detuned by 7 and 25 cents at C3, and 7 cents at C4 (twice the beat rate).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "One oscillator"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "Two, in tune"
+patch = "patches/two-saws.patch.json"
+
+[[steps.examples]]
+label = "Two, 7 cents apart"
+patch = "patches/two-saws-7ct.patch.json"
+
+[[steps.examples]]
+label = "Two, 25 cents apart"
+patch = "patches/two-saws-25ct.patch.json"
+
+[[steps.examples]]
+label = "Two, 7 cents apart, an octave up"
+patch = "patches/two-saws-7ct.patch.json"
+transpose = 12
+
+# --- Hear: the second oscillator loud and quiet, then one and two oscillators on the pad.
+[[steps]]
+id = "hear-level"
+kind = "listen"
+text = "hear-level.md"
+
+[[steps.examples]]
+label = "Second at 100 %"
+patch = "patches/two-saws-12ct.patch.json"
+
+[[steps.examples]]
+label = "Second at 25 %"
+patch = "patches/two-saws-12ct-quiet.patch.json"
+
+[[steps.examples]]
+label = "Pad, one"
+patch = "patches/pad.patch.json"
+
+[[steps.examples]]
+label = "Pad, two"
+patch = "patches/pad-two-12ct.patch.json"
+
+# --- Hear's ear question: which one wobbles? (12 cents apart against in tune; the in-tune pair reads no beating.)
+[[steps]]
+id = "which-wobbles"
+kind = "choose"
+text = "which-wobbles.md"
+hints = ["Listen to the loudness over the whole note: one swells and fades about once a second."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/two-saws-12ct.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/two-saws.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["osc2.fine", "osc2.level"]
+
+# --- Try: "make it beat" from one saw, osc2 switched off. The patch predicate asks for osc2 on; the sound check is the
+# goal. Measured: the start reads no beating (`beating` is null: fails); the witness, osc2 on and 12 ct sharp, beats at
+# 0.909 Hz (passes `beating in [0.6Hz, 1.5Hz]` by 0.309 Hz). 7 ct (0.53 Hz) is too slow and 25 ct (1.89 Hz) too fast.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The second oscillator card, osc2, is switched off: turn it on with the switch on its card.",
+  "Two oscillators in tune do not beat. Turn osc2's Fine up a little.",
+  "About 10 to 20 cents gives one beat a second at this note.",
+]
+witness = "patches/two-saws-12ct.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw.patch.json"
+highlight = ["osc2.*"]
+editable = ["osc2.*"]
+locked = ["filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "enabled", module = "osc2", enabled = true }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["beating in [0.6Hz, 1.5Hz]"]
+
+# --- Do, round 1: a hidden detune of osc2, drawn from 12, 25 and 50 cents (PLAN: positive detune only, 12 ct or
+# more so HELD shows a full beat), osc2's level locked. Seed 4 draws 50 ct, the fastest beating (the in-tune start
+# scores sound 67.4). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target,
+# 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes).
+# At 97, against 50 ct: 40 ct passes (97.4), 32 ct (95.4) and 65 ct (96.3) do not.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Count the wobbles in the target: faster wobbling means more cents apart.",
+  "Turn osc2's Fine until your wobble keeps pace with the target's.",
+]
+
+[steps.view]
+highlight = ["osc2.fine"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 4
+items = [{ param = "osc2.fine", set = [12.0, 25.0, 50.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Two saws", description = "The starter with osc2 switched on, in tune with osc1." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc" },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc2.fine"]
+locked = ["osc2.level", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 97
+
+[steps.challenge.meta]
+title = "Two oscillators, round 1"
+tags = ["basics", "two-oscillators"]
+
+# --- Do, round 2: the same three detunes, seed 3: 25 ct (the start scores 76.2). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target,
+# 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes).
+# At 98, against 25 ct: 18 ct (98.2) and 32 ct (98.9) pass; 15 ct (97.5), 40 ct (97.6), 12 and 50 ct (95.1, 95.3) do not.
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Count the wobbles in the target: faster wobbling means more cents apart.",
+  "Turn osc2's Fine until your wobble keeps pace with the target's.",
+]
+
+[steps.view]
+highlight = ["osc2.fine"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "osc2.fine", set = [12.0, 25.0, 50.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Two saws", description = "The starter with osc2 switched on, in tune with osc1." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc" },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc2.fine"]
+locked = ["osc2.level", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 98
+
+[steps.challenge.meta]
+title = "Two oscillators, round 2"
+tags = ["basics", "two-oscillators"]
+
+# --- Do, round 3: seed 1: 12 ct, the slowest (the start scores 85.0). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target,
+# 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes).
+# At 98, against 12 ct: 9 to 18 ct pass (99.5 to 98.8); 6 ct (97.9) and 25 ct (97.8) do not.
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Count the wobbles in the target: faster wobbling means more cents apart.",
+  "Turn osc2's Fine until your wobble keeps pace with the target's.",
+]
+
+[steps.view]
+highlight = ["osc2.fine"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "osc2.fine", set = [12.0, 25.0, 50.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Two saws", description = "The starter with osc2 switched on, in tune with osc1." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc" },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc2.fine"]
+locked = ["osc2.level", "osc1.*", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 98
+
+[steps.challenge.meta]
+title = "Two oscillators, round 3"
+tags = ["basics", "two-oscillators"]
+
+# --- Do: the balance. PLAN drew osc2's level in a round, but sound/1 cannot hear it as a ratio (every level from 5 to
+# 100 % scores 89 to 100 against 10, 25 or 50 %), so it is a goal checked by the beat's depth instead. Measured
+# (`enth describe`, detune.depth_db): osc2 at 100 % beats 16.7 dB deep (the start: fails `beat_depth in [6dB, 12dB]`),
+# at 70 % 12.6 dB (fails), at 50 % 9.0 dB (the witness: passes by 3.0 dB); at 35 % and below no beat is found (fails).
+[[steps]]
+id = "balance"
+kind = "do"
+text = "balance.md"
+hints = [
+  "Turn osc2's Level down: the wobble gets shallower as the second saw gets quieter.",
+  "About half way is right. Too far, and the wobble disappears.",
+]
+witness = "patches/two-saws-12ct-half.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/two-saws-12ct.patch.json"
+highlight = ["osc2.level"]
+editable = ["osc2.level"]
+locked = ["osc1.*", "osc2.fine", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "osc2.level", cmp = "<", value = "100%" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["beat_depth in [6dB, 12dB]"]
+
+# --- Check: which is detuned more (12 against 50 cents: 0.91 against 3.84 beats a second), and in which is the second
+# oscillator louder (100 % against 25 %, both 12 cents apart: a 16.7 dB beat against none found). For LCK's audibility
+# gate: sound/1 is nearly blind to slow beating (these pairs score 92.7 and 98.6 against each other), so the gate
+# should judge them by the descriptors (detune.beating_hz, detune.depth_db), not by sound/1 alone.
+[[steps]]
+id = "check-detune"
+kind = "choose"
+text = "check-detune.md"
+hints = ["More cents apart, faster wobble."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/two-saws-12ct.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/two-saws-50ct.patch.json"
+
+[[steps]]
+id = "check-level"
+kind = "choose"
+text = "check-level.md"
+hints = ["The louder the second oscillator, the deeper the wobble."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/two-saws-12ct.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/two-saws-12ct-quiet.patch.json"
