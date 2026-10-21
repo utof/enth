@@ -94,7 +94,7 @@ pub fn run(args: &Args) -> Res {
 /// A refused pack: `enth-learn`'s code and hint (exit 3).
 fn refused(path: &Path, e: &LearnError) -> CliError {
     error::invalid(e.code(), format!("{}: {e}", patchio::show(path)), e.hint())
-        .in_file(&patchio::show(path))
+        .in_file(patchio::show(path))
 }
 
 /// Read a pack from `path` (see the module docs).
@@ -288,7 +288,7 @@ fn step_out(bundle: &LessonBundle, i: usize, s: &Step, reveal: bool) -> LessonSt
             None,
             witness.as_ref().filter(|_| reveal).map(ToString::to_string),
         ),
-        _ => (None, Vec::new(), None, None, None),
+        StepKind::Read => (None, Vec::new(), None, None, None),
     };
     LessonStepOut {
         number: u16::try_from(i + 1).unwrap_or(u16::MAX),
@@ -416,7 +416,7 @@ fn predicates(check: &Check) -> Vec<&Predicate> {
     match check {
         Check::Patch { predicates } => predicates.iter().collect(),
         Check::All { checks } => checks.iter().flat_map(predicates).collect(),
-        _ => Vec::new(),
+        Check::Sound { .. } => Vec::new(),
     }
 }
 

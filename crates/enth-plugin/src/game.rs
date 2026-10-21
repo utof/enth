@@ -134,8 +134,12 @@ pub struct TargetLoop {
     /// ones padded with silence) so a flip between them keeps its position. A set of examples has no target loop
     /// (`left` and `right` are empty), so a round's A/B never plays it.
     #[cfg(feature = "learn")]
-    examples: Box<[(Box<[f32]>, Box<[f32]>)]>,
+    examples: Box<[Channels]>,
 }
+
+/// One example loop's left and right channels (lane SKL, feature `learn`).
+#[cfg(feature = "learn")]
+type Channels = (Box<[f32]>, Box<[f32]>);
 
 impl TargetLoop {
     /// The loop of `round`'s target: `out` (a render of `phrase` at `out.sample_rate`) and the phrase's notes in
@@ -1430,29 +1434,26 @@ impl Player {
             release_all(&mut self.held, events, 0);
         }
         let listen = self.mailbox.listen.load();
-        match listen.example.filter(|e| *e < count) {
-            Some(want) => {
-                if self.example.is_none() || self.w == 0.0 {
-                    if self.example.is_none() {
-                        self.pos = 0;
-                    }
-                    self.example = Some(want);
-                    self.target_gain = listen.gain;
+        if let Some(want) = listen.example.filter(|e| *e < count) {
+            if self.example.is_none() || self.w == 0.0 {
+                if self.example.is_none() {
+                    self.pos = 0;
                 }
-                if self.example == Some(want) {
-                    self.want = (1.0, 1.0, listen.gain);
-                } else if self.target_gain == 0.0 {
-                    self.example = Some(want);
-                    self.want = (1.0, 1.0, listen.gain);
-                } else {
-                    self.want = (1.0, 1.0, 0.0);
-                }
+                self.example = Some(want);
+                self.target_gain = listen.gain;
             }
-            None => {
-                self.want = (0.0, 1.0, self.target_gain);
-                if self.w == 0.0 {
-                    self.example = None;
-                }
+            if self.example == Some(want) {
+                self.want = (1.0, 1.0, listen.gain);
+            } else if self.target_gain == 0.0 {
+                self.example = Some(want);
+                self.want = (1.0, 1.0, listen.gain);
+            } else {
+                self.want = (1.0, 1.0, 0.0);
+            }
+        } else {
+            self.want = (0.0, 1.0, self.target_gain);
+            if self.w == 0.0 {
+                self.example = None;
             }
         }
         true

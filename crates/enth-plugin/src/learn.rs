@@ -144,6 +144,7 @@ impl FsPacks {
     }
 
     /// Another set of bundled packs (tests).
+    #[must_use]
     pub fn with_bundled(mut self, bundled: &'static [(&'static str, &'static [u8])]) -> FsPacks {
         self.bundled = bundled;
         self
@@ -369,17 +370,15 @@ fn read_progress(path: &Path) -> Progress {
     let Ok(text) = fs::read_to_string(path) else {
         return Progress::new();
     };
-    match Progress::from_json(&text) {
-        Ok(p) => p,
-        Err(_) => {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs());
-            let aside = path.with_extension(format!("json.unreadable-{secs}"));
-            let _ = fs::rename(path, aside);
-            Progress::new()
-        }
+    if let Ok(p) = Progress::from_json(&text) {
+        return p;
     }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let aside = path.with_extension(format!("json.unreadable-{secs}"));
+    let _ = fs::rename(path, aside);
+    Progress::new()
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -456,7 +455,7 @@ impl Lessons {
             .collect()
     }
 
-    /// The packs the library refused, each as one line for the editor ("user:bad.enthpack: hash_mismatch …").
+    /// The packs the library refused, each as one line for the editor (`user:bad.enthpack: …`).
     pub fn problems(&self) -> Vec<String> {
         self.library()
             .problems
@@ -974,7 +973,11 @@ mod tests {
             .unwrap()
             .filter_map(Result::ok)
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.ends_with(".tmp"))
+            .filter(|n| {
+                Path::new(n)
+                    .extension()
+                    .is_some_and(|x| x.eq_ignore_ascii_case("tmp"))
+            })
             .collect();
         assert!(leftovers.is_empty(), "{leftovers:?}");
         let _ = fs::remove_dir_all(&dir);

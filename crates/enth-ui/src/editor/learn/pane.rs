@@ -78,20 +78,18 @@ fn unlink(s: &str) -> String {
     let mut rest = s;
     while let Some(open) = rest.find('[') {
         let after = &rest[open + 1..];
-        match after.find("](").and_then(|mid| {
+        let link = after.find("](").and_then(|mid| {
             after[mid + 2..]
                 .find(')')
                 .map(|close| (mid, mid + 2 + close))
-        }) {
-            Some((mid, close)) => {
-                out.push_str(&rest[..open]);
-                out.push_str(&after[..mid]);
-                rest = &after[close + 1..];
-            }
-            None => {
-                out.push_str(&rest[..=open]);
-                rest = after;
-            }
+        });
+        if let Some((mid, close)) = link {
+            out.push_str(&rest[..open]);
+            out.push_str(&after[..mid]);
+            rest = &after[close + 1..];
+        } else {
+            out.push_str(&rest[..=open]);
+            rest = after;
         }
     }
     out.push_str(rest);
@@ -232,8 +230,8 @@ fn lesson(learn: &Learn, ui: &mut Ui, t: &Theme, out: &mut Intents) {
         match view.phase {
             StepPhase::Passed => "✓ Passed",
             StepPhase::Checking { .. } => "Checking…",
-            _ if view.pending.checking => "Checking…",
-            _ => "",
+            StepPhase::Working if view.pending.checking => "Checking…",
+            StepPhase::Working => "",
         }
     };
     ui.label(
