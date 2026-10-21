@@ -233,6 +233,10 @@ pub enum RoundOrigin {
     Game,
     /// A lesson's Recreate step (the session's `learn` module). Never stashes; `gr1-report` leaves it out.
     Lesson,
+    /// A Review item (lane REV, R2; additive): a seeded sibling of a passed lesson's Recreate step, started from the
+    /// lesson browser (`crate::review`). It stashes like a game round, gives no hint before its first submit, and
+    /// `gr1-report` leaves it out (its origin is not `game`).
+    Review,
     /// An origin from a newer build: not a game round either.
     #[serde(other)]
     Other,
@@ -1330,6 +1334,8 @@ pub enum GameError {
     LessonLive,
     /// The round belongs to the live lesson (lane SL, R2): the lesson's Next, Back and End move it.
     LessonRound,
+    /// A Review round gives no hint before its first submit (lane REV, R2; report 01 §3: "no hints on the first try").
+    FirstTry,
 }
 
 impl GameError {
@@ -1356,6 +1362,7 @@ impl GameError {
             GameError::AlreadyScored => "already_scored",
             GameError::LessonLive => "lesson_live",
             GameError::LessonRound => "lesson_round",
+            GameError::FirstTry => "first_try",
         }
     }
 
@@ -1402,6 +1409,9 @@ impl GameError {
             GameError::LessonRound => {
                 "this round is the lesson's step: use Next, Back or End lesson".to_owned()
             }
+            GameError::FirstTry => {
+                "Review gives no hint on the first try: submit your answer, then hints open".to_owned()
+            }
         }
     }
 }
@@ -1442,6 +1452,7 @@ impl std::fmt::Display for GameError {
             GameError::AlreadyScored => f.write_str("the first score is already recorded"),
             GameError::LessonLive => f.write_str("a lesson is live"),
             GameError::LessonRound => f.write_str("the round belongs to the live lesson"),
+            GameError::FirstTry => f.write_str("no hint before the first submit in Review"),
         }
     }
 }
@@ -2126,6 +2137,8 @@ impl Session {
         if record.played() {
             let entry = self.log_entry(&record, LogEvent::End, Some(why));
             self.game.requests.push(GameRequest::Log(Box::new(entry)));
+            // Lane REV: the first submit's rings feed the review boxes (every played round but a host load's).
+            self.review_note_close(&record, why, self.game.target.clone());
         }
         self.game.cancel_all();
         let history = self.game.stash_history.take();
@@ -2517,6 +2530,9 @@ impl GameEdit for Session {
 
     fn game_hint(&mut self) -> Result<u8, GameError> {
         let (record, challenge, target) = self.open_round()?;
+        if crate::review::refuses_hint(record) {
+            return Err(GameError::FirstTry); // lane REV: no hint on a Review round's first try
+        }
         if self.game.jobs.hint.is_some() {
             return Err(GameError::Busy { what: "hint" });
         }
