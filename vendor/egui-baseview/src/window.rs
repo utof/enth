@@ -1,12 +1,13 @@
 use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use baseview::dpi::{LogicalPosition, LogicalSize, Size};
 use baseview::{
-    Event, EventStatus, HandlerError, ParentWindowHandle, Window, WindowContext, WindowHandler,
-    WindowSettings, WindowSize,
+    DropData, DropEffect, Event, EventStatus, HandlerError, ParentWindowHandle, Window,
+    WindowContext, WindowHandler, WindowSettings, WindowSize,
 };
 use copypasta::ClipboardProvider;
 use egui::{FullOutput, Pos2, Rect, Rgba, ViewportCommand, pos2, vec2};
@@ -943,6 +944,28 @@ impl<A: App> WindowHandler for EguiWindow<A> {
                     self.pointer_logical_pos.set(None);
                     egui_input.events.push(egui::Event::PointerGone);
                 }
+                // enth fork: file drops. While files hover, `hovered_files` lists them (egui keeps
+                // it from frame to frame); a drop moves them to `dropped_files` (one frame). The
+                // drag position is not forwarded, as in egui-winit.
+                baseview::MouseEvent::DragEntered { data, .. }
+                | baseview::MouseEvent::DragMoved { data, .. } => {
+                    let hovered = hovered_files(data);
+                    if egui_input.hovered_files == hovered {
+                        do_repaint = false;
+                    } else {
+                        egui_input.hovered_files = hovered;
+                    }
+                }
+                baseview::MouseEvent::DragLeft => {
+                    do_repaint = !egui_input.hovered_files.is_empty();
+                    egui_input.hovered_files.clear();
+                }
+                baseview::MouseEvent::DragDropped { data, .. } => {
+                    let dropped = dropped_files(data);
+                    do_repaint = !dropped.is_empty() || !egui_input.hovered_files.is_empty();
+                    egui_input.hovered_files.clear();
+                    egui_input.dropped_files.extend(dropped);
+                }
                 _ => do_repaint = false,
             },
             baseview::Event::Keyboard(event) => {
@@ -1058,6 +1081,21 @@ impl<A: App> WindowHandler for EguiWindow<A> {
                     return_status
                 }
             }
+            // enth fork: accept a drag of files as a copy, so that the host shows a copy cursor
+            // and the source keeps its files (Windows and macOS read this; on X11 baseview 0.4.1
+            // accepts every file drag itself, with the source's action).
+            baseview::Event::Mouse(
+                baseview::MouseEvent::DragEntered { data, .. }
+                | baseview::MouseEvent::DragMoved { data, .. }
+                | baseview::MouseEvent::DragDropped { data, .. },
+            ) => {
+                if has_files(data) {
+                    EventStatus::AcceptDrop(DropEffect::Copy)
+                } else {
+                    EventStatus::Ignored
+                }
+            }
+            baseview::Event::Mouse(baseview::MouseEvent::DragLeft) => EventStatus::Ignored,
             baseview::Event::Mouse(_) => {
                 let egui_ctx = &self.inner.borrow().egui_ctx;
                 if egui_ctx.egui_is_using_pointer() || egui_ctx.egui_wants_pointer_input() {
@@ -1075,6 +1113,51 @@ impl<A: App> WindowHandler for EguiWindow<A> {
         if timer == self.poll_repaint_timer_handle {
             self.poll_repaint_timer();
         }
+    }
+}
+
+/// enth fork: whether a drag carries at least one file.
+fn has_files(data: &DropData) -> bool {
+    matches!(data, DropData::Files(paths) if !paths.is_empty())
+}
+
+/// enth fork: the files of a drag, for [`egui::RawInput::hovered_files`].
+fn hovered_files(data: &DropData) -> Vec<egui::HoveredFile> {
+    match data {
+        DropData::Files(paths) => paths
+            .iter()
+            .map(|path| egui::HoveredFile {
+                path: Some(path.clone()),
+                ..Default::default()
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// enth fork: the files of a drop, for [`egui::RawInput::dropped_files`].
+fn dropped_files(data: &DropData) -> Vec<egui::DroppedFileHandle> {
+    match data {
+        DropData::Files(paths) => paths
+            .iter()
+            .map(|path| Arc::new(DroppedPath(path.clone())) as egui::DroppedFileHandle)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// enth fork: a dropped file, by its path (as egui-winit's `NativeFile`).
+#[derive(Debug)]
+struct DroppedPath(PathBuf);
+
+impl egui::DroppedFile for DroppedPath {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    /// Reads the whole file on the calling thread.
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|err| err.to_string())
     }
 }
 

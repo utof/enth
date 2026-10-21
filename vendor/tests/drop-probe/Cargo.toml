@@ -1,0 +1,23 @@
+[package]
+name = "drop-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+egui-baseview = { version = "0.9.0", default-features = false, features = ["opengl", "tracing"] }
+baseview = "0.4.1"
+egui = { version = "=0.37.0", default-features = false }
+raw-window-handle = "0.6"
+x11rb = "=0.13.2"
+
+[workspace]
+
+[patch.crates-io]
+baseview = { path = "../../baseview" }
+egui-baseview = { path = "../../egui-baseview" }
+
+[profile.dev]
+debug = "line-tables-only"
+[profile.dev.package."*"]
+debug = false
