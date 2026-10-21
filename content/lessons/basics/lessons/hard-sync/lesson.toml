@@ -103,9 +103,9 @@ kind = "sound"
 phrase = 1
 expect = ["pitch=C3"]
 
-# --- Do, round 1: osc2's semitones under sync, drawn from PLAN's +5, +10 and +15, from osc2 in tune (a plain saw).
-# Seed 5 draws +10 (the start scores sound 75.6). sound/1 separates them at the default pass mark: against +5, +7 scores 84.4; against +10, +15
-# scores 87.3; against +15, +10 scores 87.0.
+# --- Do, round 1: osc2's semitones under sync, drawn from PLAN's +5, +10 and +15, from osc2 in tune (a plain saw). Seed
+# 5 draws +10 (the start scores sound 75.6). sound/1 separates them at the default pass mark: against +5, +7 scores
+# 84.4; against +10, +15 scores 87.3; against +15, +10 scores 87.0.
 [[steps]]
 id = "round-1"
 kind = "recreate"
@@ -174,8 +174,8 @@ pass_mark = 90
 title = "Hard sync, round 1"
 tags = ["basics", "hard-sync"]
 
-# --- Do, round 2: seed 4 draws +15 (the start scores 75.5). The +5 target is not used: the plain-saw start scores
-# 89.0 against it, too near the pass mark.
+# --- Do, round 2: seed 4 draws +15 (the start scores 75.5). The +5 target is not used: the plain-saw start scores 89.0
+# against it, too near the pass mark.
 [[steps]]
 id = "round-2"
 kind = "recreate"
@@ -244,8 +244,8 @@ pass_mark = 90
 title = "Hard sync, round 2"
 tags = ["basics", "hard-sync"]
 
-# --- Do, round 3: sync and semitones together (PLAN's D2, +19 replaced by +15), from sync off and osc2 in tune.
-# Seed 1 draws sync on at +7 (the start scores 83.7; sync off at +7, the same tuning unsynced, scores 8.3).
+# --- Do, round 3: sync and semitones together (PLAN's D2, +19 replaced by +15), from sync off and osc2 in tune. Seed 1
+# draws sync on at +7 (the start scores 83.7; sync off at +7, the same tuning unsynced, scores 8.3).
 [[steps]]
 id = "round-3"
 kind = "recreate"

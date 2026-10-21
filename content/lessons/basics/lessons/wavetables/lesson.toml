@@ -1,0 +1,352 @@
+# Lesson 1.7, Wavetables [basics · intermediate] (content/lessons/PLAN.md §5, U1).
+#
+# Hear (basic at 0, 50 and 100 %, tilt and formant at both ends, organ), a "which one is brighter?" item → Name → Try
+# ("the brightest end of tilt", checked by brightness) → three rounds (the table at 50 %, then the position on tilt and
+# on formant) → two ear questions. PLAN drew the table at position 0 and played basic against organ there; measured,
+# both tables start on a plain sine (they score 100 against each other at 0 %), so the table round and the organ example
+# sit at 50 %, where the four tables score 54 to 86 against each other. Measured on engine 0.3.0, HELD (C3, 1.5 s).
+
+schema = "enth.lesson/1"
+id = "wavetables"
+title = "Wavetables"
+tier = "intermediate"
+objective = "Pick a wavetable and scan its position to shape the tone, and hear where in a table a sound sits."
+teaches = ["osc.table", "osc.position"]
+
+# --- Hear: basic from start to end, tilt and formant at both ends, organ half way.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Basic, 0 %"
+patch = "patches/table-basic-0.patch.json"
+
+[[steps.examples]]
+label = "Basic, 50 %"
+patch = "patches/table-basic-50.patch.json"
+
+[[steps.examples]]
+label = "Basic, 100 %"
+patch = "patches/table-basic-100.patch.json"
+
+[[steps.examples]]
+label = "Tilt, 0 %"
+patch = "patches/table-tilt-0.patch.json"
+
+[[steps.examples]]
+label = "Tilt, 100 %"
+patch = "patches/table-tilt-100.patch.json"
+
+[[steps.examples]]
+label = "Formant, 0 %"
+patch = "patches/table-formant-0.patch.json"
+
+[[steps.examples]]
+label = "Formant, 100 %"
+patch = "patches/table-formant-100.patch.json"
+
+[[steps.examples]]
+label = "Organ, 50 %"
+patch = "patches/table-organ-50.patch.json"
+
+# --- Hear's ear question: which one is brighter? (tilt at 0 %, centroid 1609 Hz, against 100 %, 173 Hz.)
+[[steps]]
+id = "which-brighter"
+kind = "choose"
+text = "which-brighter.md"
+hints = ["One is close to a pure sine; the other is full of high harmonics."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/table-tilt-0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/table-tilt-100.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["osc1.table", "osc1.position"]
+
+# --- Try: from the dark end of tilt (100 %), scan to its brightest end. Measured spectral centroid on tilt: 1609 Hz at
+# 0 % (the witness: passes `brightness>1000Hz` by 609 Hz), 888 Hz at 20 %, 579 Hz at 35 %, 173 Hz at 100 % (the start:
+# fails by 827 Hz). The patch predicate keeps it to the position; the table is locked.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Position is on the oscillator card; it only works on the table wave.",
+  "On tilt, the bright end is the start of the table, near 0 %.",
+]
+witness = "patches/table-tilt-0.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/table-tilt-100.patch.json"
+highlight = ["osc1.position"]
+editable = ["osc1.position"]
+locked = ["osc1.wave", "osc1.table", "osc1.semi", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "osc1.position", cmp = "<", value = "30%" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness>1000Hz"]
+
+# --- Do, round 1: a hidden table, drawn from tilt, formant and organ, at position 50 % (locked), from basic. Seed 6
+# draws formant (the start scores sound 68.0; tilt and organ score 86.4 and 73.8 against formant).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Basic at 50 % sounds like a soft saw; tilt is smooth and dark here; formant sounds like a vowel; organ like pipes.",
+  "Switch through the tables and compare each with the target.",
+]
+
+[steps.view]
+highlight = ["osc1.table"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 6
+items = [{ param = "osc1.table", set = ["tilt", "formant", "organ"] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Table basic, 50 %", description = "The wavetable wave, table basic, at position 50 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "table", table = "basic", position = 50.0 } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.table"]
+locked = ["osc1.wave", "osc1.semi", "filter1.*", "osc1.position"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Wavetables, round 1"
+tags = ["basics", "wavetables"]
+
+# --- Do, round 2: a hidden position on tilt, drawn from 0, 35, 70 and 100 %, from 50 %. Seed 3 draws 70 % (the start
+# scores 57.0). sound/1 separates them well (against 35 %, 20 % scores 55.2 and 50 % 55.4; against 70 %, 85 % scores
+# 73.8).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round-2.md"
+hints = [
+  "Brighter than yours means the target is nearer the start of tilt; darker, nearer the end.",
+  "Scan the position slowly and stop where the brightness matches.",
+]
+
+[steps.view]
+highlight = ["osc1.position"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "osc1.position", set = [0.0, 35.0, 70.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Table tilt, 50 %", description = "The wavetable wave, table tilt, at position 50 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "table", table = "tilt", position = 50.0 } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.position"]
+locked = ["osc1.wave", "osc1.semi", "filter1.*", "osc1.table"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Wavetables, round 2"
+tags = ["basics", "wavetables"]
+
+# --- Do, round 3: a hidden position on formant, from 50 %. Seed 3 draws 70 % (the start scores 71.1). Against each of
+# 0, 35, 70 and 100 %, the other three score 74 to 88.
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "Listen for the vowel: the formant table moves from A through E, I and O to U.",
+  "Scan the position and stop on the vowel the target sings.",
+]
+
+[steps.view]
+highlight = ["osc1.position"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "osc1.position", set = [0.0, 35.0, 70.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Table formant, 50 %", description = "The wavetable wave, table formant, at position 50 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "table", table = "formant", position = 50.0 } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.position"]
+locked = ["osc1.wave", "osc1.semi", "filter1.*", "osc1.table"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Wavetables, round 3"
+tags = ["basics", "wavetables"]
+
+# --- Check: which is the formant table (formant against organ, both at 50 %), then which one is further along the
+# tilt table (35 % against 70 %: further is darker).
+[[steps]]
+id = "check-formant"
+kind = "choose"
+text = "check-formant.md"
+hints = ["The formant table sounds like a voice singing a vowel; the organ like pipes."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/table-organ-50.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/table-formant-50.patch.json"
+
+[[steps]]
+id = "check-further"
+kind = "choose"
+text = "check-further.md"
+hints = ["Along tilt, the sound gets darker and closer to a sine."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/table-tilt-35.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/table-tilt-70.patch.json"

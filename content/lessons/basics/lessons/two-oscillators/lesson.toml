@@ -121,11 +121,11 @@ kind = "sound"
 phrase = 1
 expect = ["beating in [0.6Hz, 1.5Hz]"]
 
-# --- Do, round 1: a hidden detune of osc2, drawn from 12, 25 and 50 cents (PLAN: positive detune only, 12 ct or
-# more so HELD shows a full beat), osc2's level locked. Seed 4 draws 50 ct, the fastest beating (the in-tune start
-# scores sound 67.4). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target,
-# 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes).
-# At 97, against 50 ct: 40 ct passes (97.4), 32 ct (95.4) and 65 ct (96.3) do not.
+# --- Do, round 1: a hidden detune of osc2, drawn from 12, 25 and 50 cents (PLAN: positive detune only, 12 ct or more so
+# HELD shows a full beat), osc2's level locked. Seed 4 draws 50 ct, the fastest beating (the in-tune start scores sound
+# 67.4). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target, 25 ct
+# scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes). At 97, against 50 ct:
+# 40 ct passes (97.4), 32 ct (95.4) and 65 ct (96.3) do not.
 [[steps]]
 id = "round-1"
 kind = "recreate"
@@ -194,9 +194,10 @@ pass_mark = 97
 title = "Two oscillators, round 1"
 tags = ["basics", "two-oscillators"]
 
-# --- Do, round 2: the same three detunes, seed 3: 25 ct (the start scores 76.2). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target,
-# 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes).
-# At 98, against 25 ct: 18 ct (98.2) and 32 ct (98.9) pass; 15 ct (97.5), 40 ct (97.6), 12 and 50 ct (95.1, 95.3) do not.
+# --- Do, round 2: the same three detunes, seed 3: 25 ct (the start scores 76.2). The pass mark is raised from 90: at
+# HELD, sound/1 hears the beat rate weakly (against a 12 ct target, 25 ct scores 97.8 and 50 ct 92.7; the in-tune start
+# 85.0; `enth compare --target`, lane C1's notes). At 98, against 25 ct: 18 ct (98.2) and 32 ct (98.9) pass; 15 ct
+# (97.5), 40 ct (97.6), 12 and 50 ct (95.1, 95.3) do not.
 [[steps]]
 id = "round-2"
 kind = "recreate"
@@ -265,9 +266,10 @@ pass_mark = 98
 title = "Two oscillators, round 2"
 tags = ["basics", "two-oscillators"]
 
-# --- Do, round 3: seed 1: 12 ct, the slowest (the start scores 85.0). The pass mark is raised from 90: at HELD, sound/1 hears the beat rate weakly (against a 12 ct target,
-# 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth compare --target`, lane C1's notes).
-# At 98, against 12 ct: 9 to 18 ct pass (99.5 to 98.8); 6 ct (97.9) and 25 ct (97.8) do not.
+# --- Do, round 3: seed 1: 12 ct, the slowest (the start scores 85.0). The pass mark is raised from 90: at HELD, sound/1
+# hears the beat rate weakly (against a 12 ct target, 25 ct scores 97.8 and 50 ct 92.7; the in-tune start 85.0; `enth
+# compare --target`, lane C1's notes). At 98, against 12 ct: 9 to 18 ct pass (99.5 to 98.8); 6 ct (97.9) and 25 ct
+# (97.8) do not.
 [[steps]]
 id = "round-3"
 kind = "recreate"

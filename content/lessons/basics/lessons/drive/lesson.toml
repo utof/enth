@@ -102,9 +102,9 @@ kind = "sound"
 phrase = 1
 expect = ["brightness>200Hz"]
 
-# --- Do, round 1: a hidden drive on the sine, drawn from 12 and 24 dB (PLAN's {0, 12, 24}, the 0 dB start left
-# out). Seed 4 draws 24 dB (the start scores sound 23.7). sound/1 hears drive well at the default pass mark: on the
-# sine, against 24 dB, 12 dB scores 47.7 and 18 dB 72.5; against 12 dB, 9 dB scores 84.9 and 15 dB 85.6.
+# --- Do, round 1: a hidden drive on the sine, drawn from 12 and 24 dB (PLAN's {0, 12, 24}, the 0 dB start left out).
+# Seed 4 draws 24 dB (the start scores sound 23.7). sound/1 hears drive well at the default pass mark: on the sine,
+# against 24 dB, 12 dB scores 47.7 and 18 dB 72.5; against 12 dB, 9 dB scores 84.9 and 15 dB 85.6.
 [[steps]]
 id = "round-1"
 kind = "recreate"
@@ -242,8 +242,8 @@ pass_mark = 90
 title = "Drive, round 2"
 tags = ["basics", "drive"]
 
-# --- Do, round 3: on the saw, where drive is subtler. Seed 4 draws 24 dB (the start scores 52.2; 12 dB scores 71.9,
-# 18 dB 88.9).
+# --- Do, round 3: on the saw, where drive is subtler. Seed 4 draws 24 dB (the start scores 52.2; 12 dB scores 71.9, 18
+# dB 88.9).
 [[steps]]
 id = "round-3"
 kind = "recreate"

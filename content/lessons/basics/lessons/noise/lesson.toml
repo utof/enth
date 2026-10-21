@@ -103,8 +103,8 @@ phrase = 1
 expect = ["noisiness>0.01"]
 
 # --- Do, round 1: a hidden noise level, drawn from 20, 50 and 100 % (white, the saw locked at 100 %), from the noise
-# switched on at 0 %. Seed 1 draws 100 % (the start scores sound 44.7). sound/1 hears the level well enough at the default pass mark: against 20, 50 and 100 % the other set values
-# score 57.8 to 85.3 (`enth compare --target`).
+# switched on at 0 %. Seed 1 draws 100 % (the start scores sound 44.7). sound/1 hears the level well enough at the
+# default pass mark: against 20, 50 and 100 % the other set values score 57.8 to 85.3 (`enth compare --target`).
 [[steps]]
 id = "round-1"
 kind = "recreate"

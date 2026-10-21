@@ -93,9 +93,9 @@ locked = ["osc1.wave", "osc1.semi", "filter1.*"]
 kind = "patch"
 predicates = [{ kind = "value", knob = "osc1.pw", cmp = "<", value = "30%" }]
 
-# --- Do, round 1: a hidden width, drawn from 10 and 30 % (PLAN's {10, 30, 50} with the 50 % start left out). Seed 5 draws
-# 30 % (the start scores sound 52.4). sound/1 separates the widths at the default pass mark: against 10 %, 30 % scores 79.1 and 20 % 86.0; against 30 %,
-# 10 % scores 73.1 and 40 % 89.5.
+# --- Do, round 1: a hidden width, drawn from 10 and 30 % (PLAN's {10, 30, 50} with the 50 % start left out). Seed 5
+# draws 30 % (the start scores sound 52.4). sound/1 separates the widths at the default pass mark: against 10 %, 30 %
+# scores 79.1 and 20 % 86.0; against 30 %, 10 % scores 73.1 and 40 % 89.5.
 [[steps]]
 id = "round-1"
 kind = "recreate"

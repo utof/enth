@@ -107,8 +107,8 @@ kind = "sound"
 phrase = 1
 expect = ["pitch=C4"]
 
-# --- Do, round 1: a hidden transposition, drawn from PLAN's -24, -12, -7, +7, +12, +19 and +24 st, on the saw.
-# Seed 3 draws +12 (the start scores sound 4.4).
+# --- Do, round 1: a hidden transposition, drawn from PLAN's -24, -12, -7, +7, +12, +19 and +24 st, on the saw. Seed 3
+# draws +12 (the start scores sound 4.4).
 [[steps]]
 id = "round-1"
 kind = "recreate"

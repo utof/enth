@@ -139,8 +139,8 @@ kind = "sound"
 phrase = 1
 expect = ["brightness>180Hz"]
 
-# --- Do, round 1: a hidden wave, drawn from the three the saw start is not. Seed 1 draws the triangle
-# (verified with `enth compare`: the start scores sound 26.6; the triangle candidate 100).
+# --- Do, round 1: a hidden wave, drawn from the three the saw start is not. Seed 1 draws the triangle (verified with
+# `enth compare`: the start scores sound 26.6; the triangle candidate 100).
 [[steps]]
 id = "round-1"
 kind = "recreate"
@@ -209,8 +209,8 @@ pass_mark = 90
 title = "Waveforms, round 1"
 tags = ["basics", "waveforms"]
 
-# --- Do, round 2: the same three waves, another seed. Seed 2 draws the pulse, the hard one: the start
-# (a saw) scores sound 60.6, the pulse 100.
+# --- Do, round 2: the same three waves, another seed. Seed 2 draws the pulse, the hard one: the start (a saw) scores
+# sound 60.6, the pulse 100.
 [[steps]]
 id = "round-2"
 kind = "recreate"
@@ -279,9 +279,9 @@ pass_mark = 90
 title = "Waveforms, round 2"
 tags = ["basics", "waveforms"]
 
-# --- Do, round 3: wave and octave together, the two things the game's level 1 randomizes (lesson 1.2 teaches
-# semitones; here only octaves). Seed 4 draws a triangle an octave up (C4): the start scores
-# sound 3.6; of the twelve candidates only triangle at +12 st scores 100.
+# --- Do, round 3: wave and octave together, the two things the game's level 1 randomizes (lesson 1.2 teaches semitones;
+# here only octaves). Seed 4 draws a triangle an octave up (C4): the start scores sound 3.6; of the twelve candidates
+# only triangle at +12 st scores 100.
 [[steps]]
 id = "round-3"
 kind = "recreate"

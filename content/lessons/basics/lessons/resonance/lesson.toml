@@ -1,0 +1,351 @@
+# Lesson 2.2, Resonance [basics · basic] (content/lessons/PLAN.md §5, U2).
+#
+# Hear (10, 50 and 90 % at 800 Hz, 10 and 90 % at 2 kHz, and on the pad), a "which one whistles?" item → Name → Try
+# ("make it whistle") → three rounds (the resonance drawn from 50 and 90 % at 800 Hz, twice, then on the pad) → two
+# ear questions. PLAN has no S check here (there is no resonance descriptor); measured, with the cutoff locked at
+# 800 Hz the spectral centroid rises steadily with resonance (494 Hz at 10 %, 585 at 50 %, 620 at 70 %, 651 at 90 %),
+# so the Try's sound check is a brightness proxy that is honest only because the cutoff, mode and drive are locked.
+# Measured on engine 0.3.0, HELD (C3 for 1.5 s).
+
+schema = "enth.lesson/1"
+id = "resonance"
+title = "Resonance"
+tier = "basic"
+objective = "Add resonance to a filter, from a nasal colour to a whistling peak, and match its amount by ear."
+teaches = ["svf.resonance"]
+
+# --- Hear: the saw at 800 Hz with 10, 50 and 90 % resonance; at 2 kHz with 10 and 90 %; the pad with 10 and 90 %.
+# (PLAN's pluck is left out: on so short a sound, 10 % and 90 % score 99.5 against each other, a logmel distance
+# of 0.03.)
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "800 Hz, 10 %"
+patch = "patches/saw-cutoff-800.patch.json"
+
+[[steps.examples]]
+label = "800 Hz, 50 %"
+patch = "patches/saw-res-50.patch.json"
+
+[[steps.examples]]
+label = "800 Hz, 90 %"
+patch = "patches/saw-res-90.patch.json"
+
+[[steps.examples]]
+label = "2 kHz, 10 %"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "2 kHz, 90 %"
+patch = "patches/saw-res-90-2k.patch.json"
+
+[[steps.examples]]
+label = "Pad, 10 %"
+patch = "patches/pad.patch.json"
+
+[[steps.examples]]
+label = "Pad, 90 %"
+patch = "patches/pad-res-90.patch.json"
+
+# --- Hear's ear question: which one whistles? (10 % against 90 % at 800 Hz.)
+[[steps]]
+id = "which-whistles"
+kind = "choose"
+text = "which-whistles.md"
+hints = ["Listen for a ringing tone inside the sound, like wind across a bottle."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-cutoff-800.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-res-90.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["filter1.resonance"]
+
+# --- Try: "make it whistle" (PLAN: resonance above 70 %) at 800 Hz. Measured: the start (10 %) reads 494 Hz (fails
+# `brightness>600Hz` by 106 Hz); the witness (90 %) 651 Hz (passes by 51 Hz); 70 % reads 620 Hz and passes, 50 %
+# (585 Hz) fails.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Resonance is on the filter card, beside the cutoff.",
+  "Turn it well past half way, until a whistle rings out of the saw.",
+]
+witness = "patches/saw-res-90.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-cutoff-800.patch.json"
+highlight = ["filter1.resonance"]
+editable = ["filter1.resonance"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.drive", "osc1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "value", knob = "filter1.resonance", cmp = ">", value = "70%" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness>600Hz"]
+
+# --- Do, round 1: a hidden resonance, drawn from 50 and 90 % (PLAN's {10, 50, 90} with the 10 % start left out), the
+# cutoff locked at 800 Hz. Seed 1 draws 50 %. sound/1 hears it at the default pass mark (against 50 %, 30 % scores 93.6
+# and 70 % 83.1; against 90 %, 70 % scores 86.2; the start 81.8 and 72.9).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Listen for a whistle at the cutoff: is the target's peak sharper or softer than yours?",
+  "Turn the resonance in steps and compare: more resonance, more ringing.",
+]
+
+[steps.view]
+highlight = ["filter1.resonance"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.resonance", set = [50.0, 90.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, cutoff 800 Hz", description = "The starter with the low-pass at 800 Hz (resonance 10 %)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 800.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.resonance"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Resonance, round 1"
+tags = ["basics", "resonance"]
+
+# --- Do, round 2: the same, seed 3: 90 %.
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Listen for a whistle at the cutoff: is the target's peak sharper or softer than yours?",
+  "Turn the resonance in steps and compare: more resonance, more ringing.",
+]
+
+[steps.view]
+highlight = ["filter1.resonance"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "filter1.resonance", set = [50.0, 90.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, cutoff 800 Hz", description = "The starter with the low-pass at 800 Hz (resonance 10 %)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 800.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.resonance"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.drive", "osc1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Resonance, round 2"
+tags = ["basics", "resonance"]
+
+# --- Do, round 3: the same values on the pad (cutoff 1.5 kHz). PLAN's D2 was a pluck at 2 kHz, but sound/1 barely hears
+# resonance on so short a sound (the 10 % start scores 98.5 against 50 % and 90.3 against 90 %); on the pad the start
+# scores 84.0 and 71.9, and 50 % against 90 % 81.4 and 83.1. Seed 1 draws 50 %.
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "On the pad the resonance is a ringing tone under the swell. Is the target's sharper or softer?",
+  "Wait for the pad to swell in, then compare the ring.",
+]
+
+[steps.view]
+highlight = ["filter1.resonance"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "filter1.resonance", set = [50.0, 90.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pad", description = "A slow saw pad: attack 600 ms, sustain 90 %, release 1.2 s, cutoff 1.5 kHz." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 1500.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 600.0, sustain = 90.0, release = 1200.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["filter1.resonance"]
+locked = ["filter1.cutoff", "filter1.mode", "filter1.drive", "osc1.*", "env1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Resonance, round 3"
+tags = ["basics", "resonance"]
+
+# --- Check: which has more resonance (50 % against 90 % at 800 Hz), then the same question at 2 kHz (10 % against 90 %,
+# scoring 68.5 against each other).
+[[steps]]
+id = "check-more"
+kind = "choose"
+text = "check-more.md"
+hints = ["Both have a peak; one rings much more sharply."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-res-90.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-res-50.patch.json"
+
+[[steps]]
+id = "check-high"
+kind = "choose"
+text = "check-high.md"
+hints = ["Higher up, the whistle is a bright, thin ring above the saw."]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-res-90-2k.patch.json"
