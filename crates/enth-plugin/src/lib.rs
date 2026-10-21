@@ -64,6 +64,8 @@ pub mod state;
 mod tests_game;
 #[cfg(test)]
 mod tests_host;
+#[cfg(all(test, feature = "learn"))]
+mod tests_learn;
 
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
