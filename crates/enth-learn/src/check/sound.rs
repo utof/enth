@@ -83,6 +83,11 @@ pub enum SoundError {
         /// Its message.
         message: String,
     },
+    /// A `sound/1` round on an option could not be prepared or scored (choice audibility).
+    Score {
+        /// The scorer's message.
+        message: String,
+    },
 }
 
 impl SoundError {
@@ -93,6 +98,7 @@ impl SoundError {
             SoundError::BadExpect { .. } => "bad_expect",
             SoundError::Render { .. } => "render_failed",
             SoundError::Analysis { .. } => "analysis_failed",
+            SoundError::Score { .. } => "score_failed",
         }
     }
 
@@ -105,6 +111,9 @@ impl SoundError {
             }
             SoundError::Render { .. } | SoundError::Analysis { .. } => {
                 "the patch could not be heard; change it and the check runs again".to_owned()
+            }
+            SoundError::Score { .. } => {
+                "an option's patch cannot be scored: check it with `enth compare`".to_owned()
             }
         }
     }
@@ -119,6 +128,7 @@ impl std::fmt::Display for SoundError {
             SoundError::BadExpect { item, message } => write!(f, "expectation {item:?}: {message}"),
             SoundError::Render { message, .. } => write!(f, "render failed: {message}"),
             SoundError::Analysis { message } => write!(f, "analysis failed: {message}"),
+            SoundError::Score { message } => write!(f, "scoring failed: {message}"),
         }
     }
 }

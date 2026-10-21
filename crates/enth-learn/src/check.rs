@@ -29,8 +29,12 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Doc, LearnError, bad_field};
 use crate::pack::KindKey;
 
+mod choice;
 mod sound;
 
+pub use choice::{
+    Audibility, LEVEL_STEP_DB, MIN_JND, OptionPair, PairJnd, auditions, choice_audibility,
+};
 pub use sound::{
     NUISANCE_OFFSETS, SoundError, SoundOptions, SoundReport, evaluate_sounds,
     evaluate_sounds_report, verdict,
