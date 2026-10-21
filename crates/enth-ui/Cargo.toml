@@ -56,6 +56,9 @@ eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional =
 # Snapshot tests render through wgpu on a CPU adapter only (Mesa lavapipe); see tests/common.
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 egui-wgpu.workspace = true
+# Lane LUI: the Learn view's tests play lessons of the `basics` pack from its authoring layout (`content/lessons/basics`,
+# TOML), as `cargo xtask pack` builds it. Already in Cargo.lock (with `toml`), so this changes no lock entry.
+enth-learn = { workspace = true, features = ["toml"] }
 
 [[example]]
 # The editor against a real session and engine, with no audio output (docs/editor.md). Xvfb or the owner's display only.
