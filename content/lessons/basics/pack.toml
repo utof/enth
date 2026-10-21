@@ -25,8 +25,10 @@ lessons = ["how-a-lesson-works", "waveforms", "octaves-and-intervals", "pulse-wi
 text = "CC-BY-4.0"
 patches = "CC0-1.0"
 
-# Recreate steps embed `enth.challenge/2` draws (and 1.1's last round is a generated level-1 target, generator 1),
-# scored by the Recreate defaults.
+# Every Recreate step embeds an `enth.challenge/2` draw (a start patch inline, a drawn target, constraints), scored by
+# the Recreate scorers; some raise the pass mark where sound/1 hears the control weakly (see each lesson). No
+# generated (seed) target, so no `generator`: a seed target cannot be written in TOML today (RandomSpec.amounts needs
+# null), and the pack's rounds are draws.
 [requires]
 lesson = 1
 challenge = 2
