@@ -522,6 +522,11 @@ pub struct LearnView {
     pub broken: bool,
     /// The last thing that went wrong.
     pub error: Option<LearnError>,
+    /// When the lesson next needs a frame without input (lane SKL, F2l; additive): the moment the patch will have
+    /// settled after the last change, so the player's tick can ask for its sound check (`enth_learn::player::SETTLE_MS`
+    /// after the change). `None` once that tick has run: the lesson asks for no frames of its own otherwise. The shell
+    /// asks the editor for a repaint at the earlier of this and the round's `wake_at_ms`.
+    pub wake_at_ms: Option<u64>,
 }
 
 /// Why a Learn call failed. Every variant has a stable snake-case [`code`](LearnError::code) and a one-line
@@ -759,6 +764,8 @@ pub(crate) struct LearnLive {
     resuming: bool,
     /// How deep effects are calling back into the player.
     depth: u8,
+    /// When the patch will have settled after the last change the player was told about ([`LearnView::wake_at_ms`]).
+    settle_at: Option<u64>,
     error: Option<LearnError>,
     requests: Vec<LearnRequest>,
 }
@@ -963,10 +970,13 @@ impl Session {
     /// The lesson's clock: the player may ask for a sound check once the patch has settled. Called from
     /// [`Session::game_tick`], once per editor frame.
     pub(crate) fn learn_tick(&mut self, now: u64) {
-        if self.learn.broken || self.learn.player.is_none() {
-            return;
+        if !self.learn.broken && self.learn.player.is_some() {
+            let _ = self.learn_drive(|p| p.tick(now), false);
         }
-        let _ = self.learn_drive(|p| p.tick(now), false);
+        // The settle moment has passed: the lesson needs no frame of its own until the next change.
+        if self.learn.settle_at.is_some_and(|at| now >= at) {
+            self.learn.settle_at = None;
+        }
     }
 
     /// A lesson round's start patch was seated (the step's one plan): pin the locks and show the player the patch.
@@ -1140,6 +1150,7 @@ impl Session {
         self.learn.revision += 1;
         let revision = self.learn.revision;
         let now = self.game_now();
+        self.learn.settle_at = Some(now.saturating_add(enth_learn::player::SETTLE_MS));
         self.learn.told = Some(patch.clone());
         let _ = self.learn_drive(|p| p.edited(now, revision, &patch, ops, source), false);
     }
@@ -1490,6 +1501,7 @@ impl LearnEdit for Session {
             finished: self.learn.finished,
             broken: self.learn.broken || state.lesson.is_none(),
             error: self.learn.error.clone(),
+            wake_at_ms: self.learn.settle_at,
         })
     }
 
