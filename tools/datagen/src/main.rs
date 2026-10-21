@@ -30,7 +30,9 @@ mod shards;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: enth-datagen <command> [args...]
-  bank                (not built yet: R3 lane TP) the k-NN retrieval bank
+  bank [--entries N] [--out PATH] [--threads T]   the k-NN retrieval bank (R3 lane TP)
+  bank check PATH     re-read a bank, regenerate every entry, re-assert the GR3 exclusions
+  bank cost           the per-evaluation cost table (render + features, 1 worker and 8)
   ds1                 (not built yet: R3 lane DG) the training sampler's manifest
   shards              (not built yet: R3 lane DG) deterministic shards of clean renders and labels
   exclude             (not built yet: R3 lane DG) assert that training excludes the GR3 sets

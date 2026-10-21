@@ -99,13 +99,27 @@ pub fn note_hz(note: u8) -> f64 {
     440.0 * libm::pow(2.0, (f64::from(note) - 69.0) / 12.0)
 }
 
-/// The embedding's reference frequency for a clip with these descriptors: the measured pitch when YIN found most of
-/// the loud frames voiced, else [`ref_hz`].
+/// The measured pitch of a clip with these descriptors, when YIN found most of the loud frames voiced.
 #[must_use]
-pub fn reference_hz(desc: Option<&Descriptors>) -> f64 {
+pub fn pitched_hz(desc: Option<&Descriptors>) -> Option<f64> {
     desc.and_then(|d| d.pitch.as_ref())
         .filter(|p| p.f0_hz > 0.0 && p.f0_hz.is_finite() && p.voiced >= PITCHED_VOICED)
-        .map_or_else(ref_hz, |p| p.f0_hz)
+        .map(|p| p.f0_hz)
+}
+
+/// The embedding's reference frequency for a clip with these descriptors: [`pitched_hz`], else [`ref_hz`].
+#[must_use]
+pub fn reference_hz(desc: Option<&Descriptors>) -> f64 {
+    pitched_hz(desc).unwrap_or_else(ref_hz)
+}
+
+/// A bank entry's pitch offset: the measured pitch relative to `note`, in cents, or [`UNPITCHED`].
+#[must_use]
+pub fn pitch_cents(desc: Option<&Descriptors>, note: u8) -> i16 {
+    pitched_hz(desc).map_or(UNPITCHED, |f| {
+        let c = libm::round(1200.0 * libm::log2(f / note_hz(note)));
+        c.clamp(f64::from(i16::MIN + 1), f64::from(i16::MAX)) as i16
+    })
 }
 
 /// The quantised value of `v` nepers: 1–255.
