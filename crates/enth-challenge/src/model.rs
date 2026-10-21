@@ -6,32 +6,44 @@
 //! the player hears the target through a [`Phrase`] and starts from a template's patch. The target patch itself is
 //! never persisted; a round keeps its [`ChallengeCode`](crate::code::ChallengeCode) and regenerates the target.
 //!
-//! Persisted, so versioned: the JSON form starts with `"schema": "enth.challenge/1"`, a newer version is refused
-//! (`challenge_too_new`), unknown fields are refused, and fixtures under `tests/fixtures/challenge/v1/` pin the bytes.
-//! Any change to the shape is a version bump with a migration (AGENTS.md); a field is never silently ignored, because
-//! ignoring a constraint would play a different game. Every number in it is an integer.
+//! Persisted, so versioned: the JSON form starts with `"schema": "enth.challenge/<N>"`, a newer version is refused
+//! (`challenge_too_new`), unknown fields are refused, and fixtures under `tests/fixtures/challenge/v1/` and `v2/` pin
+//! the bytes. Any change to the shape is a version bump with a migration (AGENTS.md); a field is never silently
+//! ignored, because ignoring a constraint would play a different game. Every number of the challenge's own is an
+//! integer (an inline patch and a draw's values are patch values: [`crate::v2`]).
+//!
+//! **Challenge v2** (lane CV2, R2; docs/challenge.md, "Challenge v2"): the same types gain a patch target
+//! ([`Target::Patch`]), a seeded draw over the start ([`Target::Draw`]), a patch start ([`Start::Patch`]) and
+//! [`Constraints`] (`editable`, `locked`), so a lesson's step can be a challenge. v1 reads as v2 with no change of
+//! meaning, and a challenge is written at the lowest version that holds it, so a generated round's challenge keeps
+//! its v1 bytes. The file forms, the migration and the new pieces live in [`crate::v2`].
 //!
 //! The round's results ([`RoundResult`], [`Outcome`], [`AssistsUsed`], [`Agreement`]) are here too: lane SG's round
 //! produces them and lane GK's round log stores them, with `"schema": "enth.round-result/1"`. A result is an output,
 //! read tolerantly (F1r review M3, S6): unknown fields are ignored, a missing new field takes its default and an
 //! unknown enum value reads as `unknown`, so a newer build's result (or a round saved by one) still reads.
 
+use enth_patch::Patch;
 use enth_render::{Note, Performance};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::code::{ChallengeCode, EngineVersion, TargetPrefix};
 use crate::score::{ScoreReport, ScorerId};
-use crate::spec::{PERCENT_MAX, RandomSpec, SpecError};
+use crate::spec::{LATEST_TEMPLATE, PERCENT_MAX, RandomSpec, SpecError};
+pub use crate::v2::Constraints;
+use crate::v2::{Draw, DrawError, InlinePatch};
 
 /// The challenge schema family.
 pub const CHALLENGE_KIND: &str = "enth.challenge";
 
-/// The challenge version this build writes, and the newest it reads.
-pub const CHALLENGE_VERSION: u32 = 1;
+/// The newest challenge version this build reads and writes (2: Challenge v2, lane CV2). Every version from 1 up
+/// reads; a challenge is written at the lowest version that holds it ([`Challenge::version`]).
+pub const CHALLENGE_VERSION: u32 = 2;
 
-/// The `schema` string this build writes: `enth.challenge/1`.
-pub const CHALLENGE_SCHEMA: &str = "enth.challenge/1";
+/// The `schema` string of the newest version, `enth.challenge/2` (a v1-expressible challenge is still written as
+/// `enth.challenge/1`: [`crate::v2::SCHEMA_V1`]).
+pub const CHALLENGE_SCHEMA: &str = crate::v2::SCHEMA_V2;
 
 /// The `schema` string of a [`RoundResult`]: `enth.round-result/1`.
 pub const ROUND_RESULT_SCHEMA: &str = "enth.round-result/1";
@@ -53,7 +65,8 @@ pub const DEFAULT_PASS_MARK: u8 = 90;
 
 /// A challenge: what a round asks of the player. See the [module docs](self).
 ///
-/// JSON, compact and schema first (`Challenge::to_json`):
+/// JSON, compact and schema first (`Challenge::to_json`); a generated round's challenge is v1 (a v2 example is in
+/// [`crate::v2`] and docs/challenge.md):
 ///
 /// ```json
 /// {"schema":"enth.challenge/1",
@@ -63,8 +76,7 @@ pub const DEFAULT_PASS_MARK: u8 = 90;
 ///  "scoring":{"sound":"sound/1","structure":"structure/1","combined":"combined/1","time":"time/1","sound_weight":50,"pass_mark":90},
 ///  "meta":{"title":"","tags":[]}}
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "ChallengeFile", try_from = "ChallengeFile")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Challenge {
     /// What the player recreates.
     pub target: Target,
@@ -76,7 +88,7 @@ pub struct Challenge {
     pub phrase: PhraseId,
     /// What the player starts from.
     pub start: Start,
-    /// What the player may not change. R1 locks nothing.
+    /// What the player is meant to change and what the session refuses. R1 locks nothing; v1 has no constraint.
     pub constraints: Constraints,
     /// The help a round allows.
     pub assists: Assists,
@@ -105,10 +117,70 @@ impl Challenge {
         }
     }
 
+    /// A challenge on `target` from `start`, heard through `phrase` and scored by `scoring`: a patch answer, no
+    /// constraint, the default assists, no title (a lesson's step sets the rest).
+    pub fn new(target: Target, start: Start, phrase: PhraseId, scoring: ScoringSpec) -> Challenge {
+        Challenge {
+            target,
+            answer: AnswerKind::Patch,
+            phrase,
+            start,
+            constraints: Constraints::default(),
+            assists: Assists::default(),
+            scoring,
+            meta: ChallengeMeta::default(),
+        }
+    }
+
     /// The randomizer spec, for a generated target.
     pub fn spec(&self) -> Option<&RandomSpec> {
         match &self.target {
             Target::Seed(spec) => Some(spec),
+            Target::Patch(_) | Target::Draw(_) => None,
+        }
+    }
+
+    /// The draw, for a drawn target.
+    pub fn draw(&self) -> Option<&Draw> {
+        match &self.target {
+            Target::Draw(draw) => Some(draw),
+            Target::Seed(_) | Target::Patch(_) => None,
+        }
+    }
+
+    /// The lowest version that holds this challenge, the one [`to_json`](Self::to_json) writes: 1 for a seed target
+    /// with its template's start and no constraint (every R1 challenge, byte for byte as v1 wrote it), else 2.
+    pub fn version(&self) -> u32 {
+        let v1 = matches!(self.target, Target::Seed(_))
+            && matches!(self.start, Start::Template { .. })
+            && self.constraints.is_empty()
+            && self.answer == AnswerKind::Patch;
+        if v1 { 1 } else { 2 }
+    }
+
+    /// The same challenge with another seed: a sibling for a redo or a parallel test form. `None` for a patch target,
+    /// which has no seed.
+    pub fn with_seed(&self, seed: u64) -> Option<Challenge> {
+        let mut c = self.clone();
+        match &mut c.target {
+            Target::Seed(spec) => spec.seed = seed,
+            Target::Draw(draw) => draw.seed = seed,
+            Target::Patch(_) => return None,
+        }
+        Some(c)
+    }
+
+    /// The patch the player starts from: the template's frozen start ([`crate::random::start`]) or the inline patch.
+    /// A template this build does not have is `code_too_new`.
+    pub fn start_patch(&self) -> Result<Patch, ChallengeError> {
+        match &self.start {
+            Start::Template { template } => crate::random::start(*template).map_err(|_| {
+                ChallengeError::Spec(SpecError::TemplateTooNew {
+                    template: *template,
+                    latest: LATEST_TEMPLATE,
+                })
+            }),
+            Start::Patch { patch } => Ok(patch.patch().clone()),
         }
     }
 
@@ -136,26 +208,61 @@ impl Challenge {
             .or_else(|| ChallengeCode::long(spec, EngineVersion::CURRENT, target).ok())
     }
 
-    /// Check what the types cannot: a valid spec (a generator and template this build has, a seed below 2⁵³), a
-    /// start that matches the spec's template, a phrase id, and the scoring percentages. Every load runs it.
+    /// Check what the types cannot, and every load runs it:
+    ///
+    /// - a seed target: a valid spec (a generator and template this build has, a seed below 2⁵³) and its template's
+    ///   start (`start_mismatch`);
+    /// - a template start that this build has (`code_too_new`);
+    /// - a draw target: its draw against the start ([`Draw::validate`]: items on the start, values that resolve,
+    ///   sets a step apart);
+    /// - constraints whose selectors name things the start has (`bad_selector`);
+    /// - a phrase id of either phrase table (`phrase_too_new` for an id this build does not have; 0 is `bad_field`);
+    /// - the scoring percentages.
     pub fn validate(&self) -> Result<(), ChallengeError> {
-        match &self.target {
-            Target::Seed(spec) => {
+        match (&self.target, &self.start) {
+            (Target::Seed(spec), start) => {
                 spec.validate().map_err(ChallengeError::Spec)?;
-                let Start::Template { template } = self.start;
-                if template != spec.template {
-                    return Err(ChallengeError::StartMismatch {
-                        start: template,
-                        spec: spec.template,
-                    });
+                match start {
+                    Start::Template { template } if *template == spec.template => {}
+                    Start::Template { template } => {
+                        return Err(ChallengeError::StartMismatch {
+                            start: *template,
+                            spec: spec.template,
+                        });
+                    }
+                    Start::Patch { .. } => {
+                        return Err(ChallengeError::StartNotTemplate {
+                            spec: spec.template,
+                        });
+                    }
                 }
             }
+            (_, Start::Template { template }) if *template > LATEST_TEMPLATE => {
+                return Err(ChallengeError::Spec(SpecError::TemplateTooNew {
+                    template: *template,
+                    latest: LATEST_TEMPLATE,
+                }));
+            }
+            _ => {}
         }
         if self.phrase.0 == 0 {
             return Err(ChallengeError::BadField {
                 field: "phrase",
                 value: 0,
             });
+        }
+        if crate::phrases::entry(self.phrase).is_none() {
+            return Err(ChallengeError::UnknownPhrase {
+                phrase: self.phrase.0,
+            });
+        }
+        // The start patch only when something is checked against it, so a v1 challenge loads nothing.
+        if self.draw().is_some() || !self.constraints.is_empty() {
+            let start = self.start_patch()?;
+            if let Some(draw) = self.draw() {
+                draw.validate(&start).map_err(ChallengeError::Draw)?;
+            }
+            self.constraints.check_against(&start)?;
         }
         self.scoring.validate()
     }
@@ -171,130 +278,30 @@ impl Challenge {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
 
-    /// Read a challenge: parse, check the schema (`missing_schema`, `bad_schema`, `challenge_too_new`), migrate to
-    /// [`CHALLENGE_VERSION`] (nothing to do at version 1), decode (unknown fields refused), then
-    /// [`validate`](Self::validate).
+    /// Read a challenge of any version this build has: parse, check the schema (`missing_schema`, `bad_schema`,
+    /// `challenge_too_new`), decode (unknown fields refused; v1 through its frozen shapes), migrate v1 to the current
+    /// types (no change of meaning), then [`validate`](Self::validate) ([`crate::v2::read`]). The embedded serde path
+    /// runs the same reader.
     pub fn from_json(text: &str) -> Result<Challenge, ChallengeError> {
         let value: Value = serde_json::from_str(text).map_err(|e| ChallengeError::BadJson {
             message: e.to_string(),
         })?;
-        let version = challenge_version(&value)?;
-        if version > CHALLENGE_VERSION {
-            return Err(ChallengeError::TooNew {
-                found: version,
-                supported: CHALLENGE_VERSION,
-            });
-        }
-        let file: ChallengeFile =
-            serde_json::from_value(value).map_err(|e| ChallengeError::BadChallenge {
-                message: e.to_string(),
-            })?;
-        let challenge = file.into_challenge();
-        challenge.validate()?;
-        Ok(challenge)
+        crate::v2::read(value)
     }
 }
 
-/// The version of a challenge's JSON: its `schema` must be `enth.challenge/<N>` with `N ≥ 1`.
-fn challenge_version(value: &Value) -> Result<u32, ChallengeError> {
-    let schema = value
-        .as_object()
-        .ok_or_else(|| ChallengeError::BadChallenge {
-            message: "a challenge is a JSON object".to_owned(),
-        })?
-        .get("schema")
-        .ok_or(ChallengeError::MissingSchema)?;
-    let bad = || ChallengeError::BadSchema {
-        found: schema.to_string(),
-    };
-    let text = schema.as_str().ok_or_else(bad)?;
-    let n = text
-        .strip_prefix(CHALLENGE_KIND)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .ok_or_else(bad)?;
-    if n.is_empty() || n.starts_with('0') || !n.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(bad());
-    }
-    n.parse::<u32>().map_err(|_| bad())
-}
-
-/// The on-disk shape: the schema first, then the challenge.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChallengeFile {
-    schema: String,
-    target: Target,
-    answer: AnswerKind,
-    phrase: PhraseId,
-    start: Start,
-    constraints: Constraints,
-    assists: Assists,
-    scoring: ScoringSpec,
-    meta: ChallengeMeta,
-}
-
-impl ChallengeFile {
-    fn into_challenge(self) -> Challenge {
-        Challenge {
-            target: self.target,
-            answer: self.answer,
-            phrase: self.phrase,
-            start: self.start,
-            constraints: self.constraints,
-            assists: self.assists,
-            scoring: self.scoring,
-            meta: self.meta,
-        }
-    }
-}
-
-impl From<Challenge> for ChallengeFile {
-    fn from(c: Challenge) -> Self {
-        ChallengeFile {
-            schema: CHALLENGE_SCHEMA.to_owned(),
-            target: c.target,
-            answer: c.answer,
-            phrase: c.phrase,
-            start: c.start,
-            constraints: c.constraints,
-            assists: c.assists,
-            scoring: c.scoring,
-            meta: c.meta,
-        }
-    }
-}
-
-impl TryFrom<ChallengeFile> for Challenge {
-    type Error = String;
-
-    /// The embedded path (a challenge inside another serde type): the schema must be this version's exactly.
-    fn try_from(file: ChallengeFile) -> Result<Self, Self::Error> {
-        if file.schema != CHALLENGE_SCHEMA {
-            return Err(format!(
-                "schema {:?}: this build reads {CHALLENGE_SCHEMA} (challenge_too_new or bad_schema)",
-                file.schema
-            ));
-        }
-        let c = file.into_challenge();
-        c.validate()
-            .map_err(|e| format!("{}: {e} ({})", e.code(), e.hint()))?;
-        Ok(c)
-    }
-}
-
-/// What the player recreates (design.md §6). R1 has generated targets only; patch, audio and expectation targets
-/// (lessons, "create from sound", text goals) are later variants, each a version bump.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    content = "spec",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+/// What the player recreates (design.md §6). R1 has generated targets only; Challenge v2 adds a patch and a draw
+/// (lessons). Audio and expectation targets ("create from sound", text goals) are later variants, each a version
+/// bump. JSON (`{"kind":…}`, unknown fields refused) is in [`crate::v2`].
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Target {
-    /// Generated from the spec by the frozen generator it names: `{"kind":"seed","spec":{…}}`.
+    /// Generated from the spec by the frozen generator it names: `{"kind":"seed","spec":{…}}` (v1).
     Seed(RandomSpec),
+    /// An explicit target patch, held inline: `{"kind":"patch","patch":{…patch file…}}` (v2).
+    Patch(InlinePatch),
+    /// A seeded draw over the start: `{"kind":"draw","seed":7,"items":[…]}` (v2; [`Draw`]).
+    Draw(Draw),
 }
 
 /// What the player answers with. R1 answers with a patch; choice and value answers (ear training) come later.
@@ -400,7 +407,7 @@ pub enum PhraseError {
 }
 
 /// What the player starts from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum Start {
@@ -410,13 +417,13 @@ pub enum Start {
         /// The template id ([`RandomSpec::template`]).
         template: u8,
     },
+    /// The step's own start patch, held inline: `{"kind":"patch","patch":{…patch file…}}` (v2). Not for a seed
+    /// target, whose generator draws over its template's start.
+    Patch {
+        /// The patch.
+        patch: InlinePatch,
+    },
 }
-
-/// What the player may not change (design.md §6: editable parameters, allowed module kinds, a module limit, locked
-/// parts). R1 locks nothing, so v1 has no fields; a version that adds one migrates v1 to "no constraint".
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Constraints {}
 
 /// The help a round allows (report 01 §2.5). Using any marks the round as assisted ([`AssistsUsed`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -565,6 +572,25 @@ pub enum ChallengeError {
         /// Its value.
         value: u64,
     },
+    /// A seed target with a patch start: the generator draws over its template's start (`start_mismatch`).
+    StartNotTemplate {
+        /// The spec's template.
+        spec: u8,
+    },
+    /// A phrase id neither phrase table has: a newer build's (ids are append-only), `phrase_too_new`.
+    UnknownPhrase {
+        /// The id.
+        phrase: u16,
+    },
+    /// The draw is refused (`bad_draw`, `draw_too_close`, `out_of_range`).
+    Draw(DrawError),
+    /// A constraint's selector names nothing on the start, or is listed twice (`bad_selector`).
+    Selector {
+        /// The selector, as text.
+        selector: String,
+        /// Why.
+        reason: String,
+    },
 }
 
 impl ChallengeError {
@@ -577,8 +603,13 @@ impl ChallengeError {
             ChallengeError::TooNew { .. } => "challenge_too_new",
             ChallengeError::BadChallenge { .. } => "bad_challenge",
             ChallengeError::Spec(e) => e.code(),
-            ChallengeError::StartMismatch { .. } => "start_mismatch",
+            ChallengeError::StartMismatch { .. } | ChallengeError::StartNotTemplate { .. } => {
+                "start_mismatch"
+            }
             ChallengeError::BadField { .. } => "bad_field",
+            ChallengeError::UnknownPhrase { .. } => "phrase_too_new",
+            ChallengeError::Draw(e) => e.code(),
+            ChallengeError::Selector { .. } => "bad_selector",
         }
     }
 
@@ -589,16 +620,26 @@ impl ChallengeError {
                 "the challenge file is damaged".to_owned()
             }
             ChallengeError::MissingSchema | ChallengeError::BadSchema { .. } => {
-                format!("a challenge starts with \"schema\": \"{CHALLENGE_SCHEMA}\"")
+                format!(
+                    "a challenge starts with \"schema\": \"{}\" or \"{CHALLENGE_SCHEMA}\"",
+                    crate::v2::SCHEMA_V1
+                )
             }
             ChallengeError::TooNew { .. } => {
                 "made by a newer enth: update enth to open it".to_owned()
             }
             ChallengeError::Spec(e) => e.hint(),
-            ChallengeError::StartMismatch { .. } => {
+            ChallengeError::StartMismatch { .. } | ChallengeError::StartNotTemplate { .. } => {
                 "a generated challenge starts from its spec's template".to_owned()
             }
             ChallengeError::BadField { field, .. } => format!("{field} is out of range"),
+            ChallengeError::UnknownPhrase { .. } => {
+                "made by a newer enth (a phrase this build does not have): update enth to open it".to_owned()
+            }
+            ChallengeError::Draw(e) => e.hint(),
+            ChallengeError::Selector { .. } => {
+                "a selector names a parameter, module (filter1.*), route or macro of the start patch".to_owned()
+            }
         }
     }
 }
@@ -621,6 +662,17 @@ impl core::fmt::Display for ChallengeError {
                 "the start is template {start}, the spec's template is {spec}"
             ),
             ChallengeError::BadField { field, value } => write!(f, "{field} is {value}"),
+            ChallengeError::StartNotTemplate { spec } => write!(
+                f,
+                "the start is a patch, the spec's start is template {spec}"
+            ),
+            ChallengeError::UnknownPhrase { phrase } => {
+                write!(f, "phrase {phrase} is not in this build's tables")
+            }
+            ChallengeError::Draw(e) => write!(f, "the draw: {e}"),
+            ChallengeError::Selector { selector, reason } => {
+                write!(f, "selector '{selector}': {reason}")
+            }
         }
     }
 }
@@ -842,11 +894,17 @@ mod tests {
     fn schemas_are_checked() {
         let json = level1().to_json();
         let with = |schema: &str| json.replacen("\"enth.challenge/1\"", schema, 1);
+        // Version 2 is this build's newest (Challenge v2, lane CV2): a v2 file may hold a seed challenge too, and it
+        // reads to the same challenge (written back as v1, the lowest version that holds it).
         assert_eq!(
-            Challenge::from_json(&with("\"enth.challenge/2\"")).unwrap_err(),
+            Challenge::from_json(&with("\"enth.challenge/2\"")),
+            Ok(level1())
+        );
+        assert_eq!(
+            Challenge::from_json(&with("\"enth.challenge/3\"")).unwrap_err(),
             ChallengeError::TooNew {
-                found: 2,
-                supported: 1
+                found: 3,
+                supported: 2
             }
         );
         for bad in [
@@ -872,8 +930,12 @@ mod tests {
             Challenge::from_json("[]").unwrap_err().code(),
             "bad_challenge"
         );
-        // The embedded path refuses another version too.
-        assert!(serde_json::from_str::<Challenge>(&with("\"enth.challenge/2\"")).is_err());
+        // The embedded path runs the same reader: a newer version is refused, an older one migrates.
+        assert!(serde_json::from_str::<Challenge>(&with("\"enth.challenge/3\"")).is_err());
+        assert_eq!(
+            serde_json::from_str::<Challenge>(&with("\"enth.challenge/2\"")).unwrap(),
+            level1()
+        );
     }
 
     #[test]

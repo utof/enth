@@ -267,7 +267,10 @@ mod tests {
             check(&p(&BACKWARDS, 3000)),
             Err(LessonPhraseError::Unordered)
         );
-        assert_eq!(check(&p(&NINE, 3000)), Err(LessonPhraseError::TooManyAtOnce));
+        assert_eq!(
+            check(&p(&NINE, 3000)),
+            Err(LessonPhraseError::TooManyAtOnce)
+        );
         assert_eq!(
             check(&p(&HIGH[..0], 3000)),
             Err(LessonPhraseError::Invalid(
