@@ -250,8 +250,14 @@ fn list_names_the_packs_lessons_and_steps() {
     let o = run(&["lesson", "list", &packs_dir()]);
     assert_eq!(o.code, 0, "{}", o.stdout);
     let all: LessonListOut = round_trip(&o);
+    // Content lanes add packs (studies, shaping, …), so assert the ones this test is about and the order, not the set.
     let ids: Vec<&str> = all.packs.iter().map(|p| p.id.as_str()).collect();
-    assert_eq!(ids, ["basics", "example"]);
+    assert!(
+        ids.contains(&"basics") && ids.contains(&"example"),
+        "{ids:?}"
+    );
+    assert!(ids.is_sorted(), "{ids:?}");
+    assert_eq!(ids[0], "basics");
     assert_eq!(all.packs[0].lessons.len(), 16);
     assert_eq!(all.packs[0].tracks[0].id, "tour");
     assert_eq!(all.refused, Vec::new());

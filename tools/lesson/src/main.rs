@@ -44,7 +44,7 @@ const USAGE: &str = "usage: enth-lesson-tool <command> [args...]
   coverage [--all] [<pack>...]            every P1 module and Basic-tier parameter taught, a non-patch check per module
   new [--in DIR] <pack> <id>              scaffold a lesson in the authoring layout
   pack [--out DIR] [--check] [<pack>...]  build reproducible .enthpack files and compare them with the pins
-  gen deconstruct <preset>                (not built yet: R2 lane DEC)
+  gen deconstruct <preset> | gen studies  a deconstruct lesson by ablation; the six factory studies
   gr2 <progress file>...                  (not built yet: R2 lane INT2)
 Run it through `cargo xtask lesson-check`, `lesson-coverage`, `lesson new`, `pack`, `lesson-gen` and `gr2-report`.";
 
