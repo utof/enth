@@ -12,8 +12,10 @@ mod bundle;
 mod engine;
 mod golden;
 mod gr1_report;
+mod gr2;
 mod host_render;
 mod leak;
+mod lesson;
 mod plugin;
 mod preset;
 mod preset_add;
@@ -150,6 +152,15 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     rate by level, time to pass, assists, agreement, blind rating vs score, disputes,
                                     want more, and the agent baseline beside the no-op and CMA-ES floors; --json,
                                     --validate, --codes; `gr1-report --help`, docs/gr1.md (R1/S1 lane GK)
+  lesson-check [--cross] [--solve] [<pack>...]
+                                    (placeholder: checks nothing and passes until R2 lane LCK builds it) every lesson of
+                                    content/lessons/ honest: schemas, text, the witness plays through a session, reachable
+  lesson-coverage                   (not built yet: R2 lane LCK) every P1 module and Basic-tier parameter has a lesson
+                                    step and a non-patch check
+  lesson new <pack> <id>            (not built yet: R2 lane LCK) scaffold a lesson in the authoring layout
+  lesson-gen deconstruct <preset>   (not built yet: R2 lane DEC) a deconstruct lesson from a preset, by ablation
+  pack [<pack>...]                  (not built yet: R2 lane LCK) build content/lessons/<pack> into a reproducible .enthpack
+  gr2-report <progress file>...     (not built yet: R2 lane INT2) the GR2 numbers from the progress files
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
@@ -179,6 +190,12 @@ fn main() -> ExitCode {
         Some("starter-project") => preset::write_starter_project(&args[1..]),
         Some("preset-add") => preset_add::preset_add(&args[1..]),
         Some("gr1-report") => gr1_report::gr1_report(&args[1..]),
+        Some("gr2-report") => gr2::gr2_report(&args[1..]),
+        Some("lesson-check") => lesson::lesson_check(&args[1..]),
+        Some("lesson-coverage") => lesson::lesson_coverage(&args[1..]),
+        Some("lesson") => lesson::lesson(&args[1..]),
+        Some("lesson-gen") => lesson::lesson_gen(&args[1..]),
+        Some("pack") => lesson::pack(&args[1..]),
         Some("wasm-hash") => engine::wasm_hash(&args[1..]),
         Some("golden") => golden::golden(&args[1..]),
         Some("bench" | "budget") => bench::bench(&args[1..]),
