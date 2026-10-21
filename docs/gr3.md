@@ -13,8 +13,8 @@ Everything is local: no network, no telemetry, no paid run. Nothing here plays a
 | --- | --- |
 | `gr3-run`: four arms, wall-clock and render modes, twins, the idle-rate probe | Built. Arm A and D run now. Arms B and C run only from a proposals file, as a dry run on dev, until R3b's model exists ([Arm B](#arm-b-where-the-model-plugs-in)) |
 | `gr3-report`: the clause-1 statistics, fixed in advance | Built; checked against hand values (`stats.rs`, `report.rs` tests) |
-| Dev tuning of arm A (`first_rung`, K, `min_spread` against the bank's size, the scored window) | Done ([Dev tuning](#dev-tuning-arm-a)) |
-| The arm-A baseline | Recorded on the 40-target core as a **render-equivalent estimate**, since no quiet window was available ([The arm-A baseline](#the-arm-a-baseline)) |
+| Dev tuning of arm A (`first_rung`, K, `min_spread` against the bank's size, the scored window) | Done: create's defaults kept; no variant did better on dev ([Dev tuning](#dev-tuning-arm-a)) |
+| The arm-A baseline | Recorded on the 40-target core as a **render-equivalent estimate** (no quiet window): **29 of 40 pass (72.5 %), median 0.40 JND** at 4,000 renders ≈ 60 s ([The arm-A baseline](#the-arm-a-baseline)). The rest of the set waits for a quiet night |
 | The idle-rate probe, then the timed numbers | **Open**: one command, about 10 minutes of a quiet machine ([The idle-rate probe](#the-idle-rate-probe)) |
 
 ## The protocol as built
@@ -145,7 +145,7 @@ The bank is the file `cargo xtask bank` writes (default `$CARGO_TARGET_DIR/bank/
 | Pass, pass rate | `sound/1` ≥ 90 at the endpoint, with the 95 % Wilson interval |
 | Median JND | `sound/1`'s distance in JND units at the endpoint (a target with no score counts as +∞) |
 | JND at 10, 30, 60, 300 s (or 500 … 8,000 renders) | The anytime curve: the median at each mark every target has |
-| KM median time to pass | Kaplan–Meier over the checkpoint grid (a target passes at the first mark whose score passes), censored at the cap; "not reached" while fewer than half have passed |
+| KM median time to pass | Kaplan–Meier over the checkpoint grid (a target passes at the first mark whose score passes), censored at the endpoint; "not reached" while fewer than half have passed |
 | Median MFCC | The independent metric |
 | Median structure %, renders | `structure/1`, and renders at the endpoint |
 
@@ -176,11 +176,85 @@ A sign test needs 69 targets to detect a 65 % win rate (37 for 70 %, 158 for 60 
 
 ## Dev tuning (arm A)
 
-Filled in below from `~/code/enth-scratch/r23/evk/dev-tune.jsonl` (render mode, 4,000 renders, 8 workers, 30 dev targets, `gr3-report --a base --b <config> --at 4000`).
+The sweep is in `~/code/enth-scratch/r23/evk/dev-tune.jsonl` (lane EVK, 2026-10-21; build `06aef8c`, the binaries frozen for the whole sweep). It ran arm A on the 30 dev targets in render mode, 4,000 renders each, 6–8 workers, with each change made alone against create's defaults (K 8, `first_rung` 50, `min_spread` 0.25, the rebuilt 20,000-entry bank `66d5f380…`, the 3 s window). The machine was loaded throughout (load 16–42), which render mode ignores.
+
+| Config | Change | Pass at 1,000 / 2,000 / 4,000 renders | Median JND at 4,000 | Paired at 4,000: Hodges–Lehmann Δ JND (95 % CI) |
+| --- | --- | --- | --- | --- |
+| **base** | create's defaults | **13 / 13 / 13** | **1.14** | – |
+| bank2k | the bank's first 2,000 entries | 12 / 13 / 13 | 1.34 | −0.10 (−0.27 to 0.01) |
+| s05 | `min_spread` 0.5 | 11 / 14 / 14 | 1.24 | −0.19 (−1.21 to −0.02) |
+| bank2k-s05 | both | 9 / 11 / 11 | 1.40 | −0.19 (−0.47 to −0.05) |
+| m25 | `first_rung` 25 | 11 / 12 / 13 | 1.41 | 0.00 (−0.15 to 0.00) |
+| m100 | `first_rung` 100 | 11 / 13 / 12 | 1.29 | 0.00 (−0.11 to 0.00) |
+| k4 | K 4 | 13 / 13 / 12 | 1.29 | −0.07 (−0.31 to 0.00) |
+| k12 | K 12 | 11 / 13 / 12 | 1.42 | 0.00 (−0.14 to 0.00) |
+| w2 | 2 s window, at equal CPU time | 12 / 14 / 14 | 1.09 | closer on 3 targets, farther on 13 |
+| w5 | 5 s window, at equal CPU time | 11 / 13 / 13 | 1.14 | closer on 4, farther on 7 |
+
+Δ is `JND_base − JND_variant`, so a negative value means the variant ends farther from the target. The window variants are read at equal CPU time: each target's base CPU budget for 4,000 renders, converted into the variant's renders by the two runs' CPU cost per render, read at the checkpoint at or below that (a mark every 250 renders). Not run, for time: `min_spread` 0.125, the 2,000-entry bank at 0.125, and no bank. TP's probe and the base run's provenance already show that retrieval helps: 28 of 30 best candidates grow from a k-NN neighbour.
+
+**Chosen: create's defaults, unchanged** (K 8, `first_rung` 50, `eta` 2, 2 finalists, 16 neighbours, `min_spread` 0.25, the 20,000-entry bank, `SCORE_S` 3 s).
+
+- No variant passes significantly more targets (every McNemar p ≥ 0.5). Every paired Hodges–Lehmann estimate is at or below 0, meaning the variant ends farther. A wider spread is clearly worse on either bank.
+- **`min_spread` against the bank's size** (F1s should-fix 9): on dev, 20,000 entries beat 2,000 at the same spread (closer on 18 of 29 untied targets), and a spread of 0.5 hurts both, the small bank most (11 passes). So keep 20,000 entries at 0.25 nepers. TP's probe, which used the bank's own stream before any search, had found the small bank's best-of-16 starts slightly closer; after search, on GR3's dev targets, the large bank wins.
+- **`first_rung` and K against the budget**: 50 beats 25 and 100, and K 8 beats 4 and 12 at 4,000 renders, with no difference at 1,000 and 2,000 large enough to change the pick.
+- **The scored window**: at equal CPU time, 2 s passes one more target but ends farther on 13 of 30, and 5 s is level. `SCORE_S` stays 3 s.
+- **Where the search stops helping:** the median JND is 1.14 at 1,000 renders and at 4,000. Generator levels 1–3 pass early (11 of 11 by 1,000 renders); levels 4–5 (2 of 9) and the anchor presets (0 of 10) stall. The lever is structure and the objective (OBJ's robust distance; arm B's starts), not the schedule.
+- **The register shift** was not 0 on 17 of 30 dev targets: 15 at ±12, because generator patches often sit an octave off on `semi`. Unshifted, those score 4–5 %.
+- **Cost:** CPU per render ran from 5 ms (a dry kick) to 135 ms (a level-5 patch with effects), a factor of 27. That is why `--rate-from` converts per target.
 
 ## The arm-A baseline
 
-Filled in below.
+**Recorded on 2026-10-21 as a render-equivalent estimate, on the 40-target core.** Run `20261021T153018Z-1e40-A-renders8000-test-core` in `content/gr3/runs.jsonl`, build `8dfda49`.
+
+- **Why an estimate.** No quiet window was available (six lanes and a non-enth job on the machine; the coordinator's option b), and the exclusive lock starves under overlapping shared holders. So the core ran in render mode at create's default **4,000 renders, standing for 60 s on 8 workers at an assumed 66.7 renders/s**. The source is TP's cost table ([r3.md](r3.md#what-lane-tp-built-f1s-2026-10-21), measured under `flock -x` at load 8.7–10.9, an upper bound on cost): "the default, 4,000 renders, is about 60 s on 8 workers for a 2–3 s clip of a patch with effects".
+- **The flag.** The run's first line carries it (`header.equivalence`), and `gr3-report` prints it.
+- **Headroom.** The run went to 8,000 renders with a checkpoint every 250, so the idle-rate probe can replace the assumption later without running again (`--rate-from`; [The idle-rate probe](#the-idle-rate-probe)). Its 4,000-render state is exactly what a 4,000-render run gives, because the run is a prefix of the longer one.
+- **The settings are create's defaults**, as dev tuning chose: K 8, `first_rung` 50, `eta` 2, 2 finalists, 16 neighbours at `min_spread` 0.25, the 20,000-entry bank (SHA-256 `66d5f380…`), the 3 s scored window, seed 1.
+- **The selection:** 32 generator codes (29 one-note, 3 two-note) and 8 test-preset renders. No G1 or owner item, so amendment 1 stays open.
+
+At the endpoint (4,000 renders):
+
+| Stratum | n | Pass | Pass rate (95 % CI) | Median JND | Median MFCC |
+| --- | --- | --- | --- | --- | --- |
+| **all** | 40 | **29** | **72.5 % (57.2–83.9)** | **0.40** | 0.20 |
+| gen-1note | 29 | 25 | 86.2 % (69.4–94.5) | 0.36 | 0.08 |
+| **gen-2note** | 3 | 0 | 0.0 % (0.0–56.1) | 13.35 | 6.80 |
+| preset | 8 | 4 | 50.0 % (21.5–78.5) | 0.92 | 3.86 |
+| level 1 / 2 / 3 / 4 / 5 | 4 / 7 / 7 / 7 / 7 | 4 / 6 / 6 / 7 / 2 | – | 0.08 / 0.01 / 0.36 / 0.51 / 1.88 | – |
+
+**The anytime curve:**
+
+| Renders (≈ s at the assumed rate) | 250 (4) | 500 (8) | 1,000 (15) | 2,000 (30) | 3,000 (45) | **4,000 (60)** | 6,000 (90) | 8,000 (120) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Passed | 20 | 23 | 28 | 29 | 30 | **29** | 29 | 28 |
+| Median JND | 0.97 | 0.88 | 0.71 | 0.56 | 0.44 | **0.40** | 0.40 | 0.40 |
+
+- **Time to pass:** the Kaplan–Meier median is 250 renders (more than half pass in the screening round and the first rung, from a k-NN neighbour). Level 4's median is 750 renders and level 5's 1,500; the two-note stratum's is not reached.
+- **A pass can lapse:** 30 at 3,000 renders, 28 at 8,000. The search minimises metric v1 on the 3 s window, and `sound/1` is metric v1.1 through the whole performance, so a better objective can score a little worse.
+- **Starts:** 39 of 40 best candidates grew from a k-NN neighbour, and one from the heuristic.
+- **The register shift** was ±12 on 18 of 40 targets. Unshifted, 17 targets would pass instead of 29.
+- **The 11 fails:**
+  - all three two-note targets, with the intake warning `phrase`, plus `notes` and `chord` on one;
+  - four level-5 one-note targets and one at each of levels 2 and 3;
+  - Octave Arp a and b (its arpeggio reads as a phrase), and Snare Crack a and b (26.6 % and 88.0 %).
+
+  The two-note stratum confirms the F1s judge's point: create plays one note of a two-note target in every arm.
+- **Machine conditions:** render mode does not depend on load, which ran from 14 to 40 at the targets' starts. Other processes kept a median 7.7 cores busy (at most 9.9); a median 119 renders/s on 8 workers; 52.5 minutes for the 40 targets. CPU per render ran from 7 to 132 ms, median 24.
+
+For B against this baseline, B's run must be read at the same equivalent time, with its inference charged: a twin of A's timing, or the same render budget less the inference at the measured idle rate.
+
+### Running the rest overnight
+
+The rest (74 filled targets) was not run: the machine was not quiet (load about 30). On a quiet night, run the same flags with `--set rest`, about 75 minutes at idle (two to three hours loaded):
+
+```sh
+cargo xtask gr3-run --arm A --set rest --mode renders --budget 8000 --workers 8 --marks "$(seq -s, 250 250 8000)" \
+    --endpoint 4000 --equivalent-seconds 60 --rate-source "<the same text as the core's run line>" \
+    --bank <the 66d5f380… bank> --note "arm-A rest: render-equivalent estimate"
+```
+
+If the idle-rate probe has run by then, prefer a timed run: `cargo xtask gr3-run --arm A --set rest --seconds 60 --workers 8`.
 
 ## The idle-rate probe
 

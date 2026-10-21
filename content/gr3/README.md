@@ -19,7 +19,7 @@ This folder holds the sets that clauses 1 and 2 are measured on, **frozen and ha
 | `exclude-synth.txt`, `exclude-real.txt`, `exclude-degraded.txt` | What training must never contain: seed ranges, codes, fingerprints, preset stems and file hashes; Freesound ids, packs and audio hashes; the held-out pool, its variants and seeds |
 | `hashes.txt` | The SHA-256 of every frozen file above (`sha256sum -c` format, paths relative to this folder) |
 | `check.py` | The check: recomputes the hashes and re-derives every rule (below). Standard library only |
-| `runs.jsonl` | **Not created yet.** Every test run, appended (build, date, load, the input and output hashes of degraded files), never dropped or rewritten. Lane EVK creates it on the first run; EVK and EVb append to it |
+| `runs.jsonl` | Every test run, appended (build, date, load, the input and output hashes of degraded files), never dropped or rewritten: `enth.gr3-run/1` lines that `cargo xtask gr3-run` writes and `gr3-report` reads ([docs/gr3.md](../../docs/gr3.md)). Lane EVK created it on 2026-10-21 with the arm-A core baseline (a render-equivalent estimate: no G1 or owner item, so amendment 1 stays open); EVK and EVb append to it. Not in `hashes.txt`: it grows |
 
 ## The sets
 
