@@ -21,6 +21,9 @@ enth-params.workspace = true
 # Pre-declared by lane S0r (R1/S1): game wiring, the target render and scoring on a worker (SKR), hints (SN).
 enth-challenge.workspace = true
 enth-solver.workspace = true
+# Pre-declared by lane S0l (R2): pack I/O, the progress file and Learn jobs on the game worker (lane SKL). The crate is a
+# core crate and always compiles; the plugin's own `learn` feature gates the I/O and the bundled content.
+enth-learn.workspace = true
 # Added by the coordinator (2026-10-21) for a parallel hint evaluator: `enth-analysis`'s `Descriptors` per worker.
 enth-analysis.workspace = true
 # Exact pins in the root Cargo.toml (docs/adr/0001-plugin-shell.md). `assert_process_allocs` only has an effect in debug
@@ -49,6 +52,10 @@ editor-counts = []
 recreate = ["enth-ui/recreate"]
 presets = ["enth-ui/presets"]
 add-module = ["enth-ui/add-module"]
+# R2 (lane S0l): the Learn I/O (src/learn.rs, lane SKL: pack I/O, the progress file, Learn jobs on the worker) and the
+# editor's Learn view (enth-ui/learn). Off by default until lane SKL (F2l) decides; `enth-learn` and the session's
+# `learn` always compile, so a saved lesson restores in any build.
+learn = ["enth-ui/learn"]
 default = ["recreate"]
 # Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
 # activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by

@@ -8,6 +8,7 @@ enth-render = 3
 enth-analysis = 3
 enth-challenge = 4
 enth-solver = 5
+enth-learn = 5
 enth-session = 6
 enth-ui = 7
 enth-plugin = 8
