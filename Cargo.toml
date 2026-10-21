@@ -66,8 +66,8 @@ gungraun = "=0.20.0"                                # Apache-2.0 OR MIT. Callgri
 clap = { version = "=4.6.7", features = ["derive"] }   # MIT OR Apache-2.0
 schemars = "=1.2.3"                                 # MIT. JSON Schema (draft 2020-12) for `enth schema`
 strsim = "=0.11.1"                                  # MIT. did_you_mean for unknown parameters. (Deliberately no `jsonschema` crate: its default features build C code.)
-hound = "=3.5.1"                                    # Apache-2.0. Reads external WAVs; the CLI only (our own float WAV writer is bytes-only, in enth-render)
-rayon = "=1.12.0"                                   # MIT OR Apache-2.0. The CLI hands the solver a rayon-backed, index-ordered evaluator (P1a report 03). Never in L0-L5.
+hound = "=3.5.1"                                    # Apache-2.0. Reads external WAVs; L8 only: the CLI, and the plugin behind its `create` feature (our own float WAV writer is bytes-only, in enth-render)
+rayon = "=1.12.0"                                   # MIT OR Apache-2.0. The CLI hands the solver a rayon-backed, index-ordered evaluator (P1a report 03); the plugin's `create` feature gives each create job its own pool. Never in L0-L5.
 
 # P1b dependencies (lane S0b, freeze point F0b). Same rules as the P1a block above: every pin is exact, only the
 # coordinator edits this table and Cargo.lock after F0b (one commit per change), and a lane that needs a crate asks for
@@ -109,7 +109,9 @@ libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-ho
 pulldown-cmark = { version = "=0.13.4", default-features = false }   # MIT. Block AST of a lesson step (report 02 §3); no HTML output
 rawzip = "=0.5.2"                                   # MIT. Zero-dependency zip reader for .enthpack; refuse renamed or duplicate entries (report 02 §5)
 miniz_oxide = "=0.9.1"                              # MIT OR Zlib OR Apache-2.0. Deflate for .enthpack, pinned so `xtask pack` builds reproducibly
-# R3 (enth-plugin and enth-cli, L8): audio decoders without MPL-2.0 (symphonia needs the owner's OK; report 03 §7).
+# R3 (enth-plugin and enth-cli, L8): audio decoders without MPL-2.0 (symphonia needs the owner's OK; report 03 §7). Lane S0s
+# (F0s) made them dependencies: the CLI's, and the plugin's behind its `create` feature (with `hound` and `rayon` above), and
+# resolved Cargo.lock (claxon, lewton with `ogg` and `byteorder`, nanomp3 with `nanomp3-core`).
 claxon = "=0.4.3"                                   # Apache-2.0. FLAC
 lewton = "=0.10.2"                                  # MIT OR Apache-2.0. Ogg Vorbis
 nanomp3 = "=0.2.0"                                  # MIT OR Apache-2.0. MP3, a safe port of minimp3 (one maintainer: revisit if it stalls)

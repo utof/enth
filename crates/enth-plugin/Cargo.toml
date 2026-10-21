@@ -34,6 +34,13 @@ nice-plug-egui.workspace = true
 egui.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
+# Pre-declared by lane S0s (R3), optional behind the `create` feature (lane SK3): the audio decoders of "create from sound"
+# (docs/r3.md, "File input"; `symphonia` is MPL-2.0 and not here) and the per-job pool of its searches (L8 only).
+hound = { workspace = true, optional = true }
+claxon = { workspace = true, optional = true }
+lewton = { workspace = true, optional = true }
+nanomp3 = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 # `raw_value`: the `patch` field carries `Patch::to_json()` verbatim (docs/session.md); no extra crates.
 serde_json = { workspace = true, features = ["raw_value"] }
 
@@ -56,6 +63,10 @@ add-module = ["enth-ui/add-module"]
 # editor's Learn view (enth-ui/learn). Off by default until lane SKL (F2l) decides; `enth-learn` and the session's
 # `learn` always compile, so a saved lesson restores in any build.
 learn = ["enth-ui/learn"]
+# R3 (lane S0s): "create from sound" (src/create.rs, lane SK3: the `enth-create` thread, the per-job pool, cancel, the
+# decoders) and the editor's Create view (enth-ui/create). Off by default until lane SK3 (F2s) decides; `enth-session`'s
+# `create` always compiles, and nothing is saved in the project for a create job.
+create = ["enth-ui/create", "dep:hound", "dep:claxon", "dep:lewton", "dep:nanomp3", "dep:rayon"]
 default = ["recreate"]
 # Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
 # activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by
