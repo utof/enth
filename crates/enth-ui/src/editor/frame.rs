@@ -89,6 +89,10 @@ pub struct Editor {
     /// read model, the panel and the intents waiting for the session.
     #[cfg(feature = "learn")]
     learn: super::learn::Learn,
+    /// The Create state (lane SK3's minimal panel, F2s; lane PUI's view): the session's create read model, the chosen
+    /// file, the panel and the intents waiting for the session.
+    #[cfg(feature = "create")]
+    create: super::create::Create,
 }
 
 impl std::fmt::Debug for Editor {
@@ -131,6 +135,8 @@ impl Editor {
             recreate: super::recreate::bar::Recreate::default(),
             #[cfg(feature = "learn")]
             learn: super::learn::Learn::default(),
+            #[cfg(feature = "create")]
+            create: super::create::Create::default(),
         }
     }
 
@@ -268,6 +274,26 @@ impl Editor {
         &self.learn
     }
 
+    /// Before a frame (lane SK3, F2s): the session's create job (`CreateEdit::create()`), as `set_round` hands over a
+    /// round. A shell that calls it says create is available: the header shows **Create** and a dropped file is
+    /// taken.
+    #[cfg(feature = "create")]
+    pub fn set_create(&mut self, view: Option<enth_session::create::CreateView>) {
+        self.create.set_create(view);
+    }
+
+    /// After a frame (lane SK3): the Create view's intents, applied to the session's `CreateEdit`.
+    #[cfg(feature = "create")]
+    pub fn apply_create(&mut self, session: &mut dyn enth_session::create::CreateEdit) {
+        self.create.apply(session);
+    }
+
+    /// The Create state (tests and the dev window).
+    #[cfg(feature = "create")]
+    pub fn create(&self) -> &super::create::Create {
+        &self.create
+    }
+
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
     /// dragged source and the overlay applied.
     fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {
@@ -373,6 +399,34 @@ impl Editor {
         } else {
             (rect, None)
         };
+        // The Create panel takes a column at the right edge too (lane SK3's minimal panel, F2s), left of Learn's. A
+        // file dropped anywhere on the window is chosen, whatever the view (lane FK3's advice), once the shell says
+        // create is available.
+        #[cfg(feature = "create")]
+        let (rect, create_pane, hovering) = {
+            let (dropped, hovering) = ctx.input(|i| {
+                (
+                    i.raw.dropped_files.first().map(|f| f.path().to_path_buf()),
+                    !i.raw.hovered_files.is_empty(),
+                )
+            });
+            if self.create.available()
+                && let Some(path) = dropped
+            {
+                self.create.push(super::create::CreateIntent::Choose(path));
+            }
+            if self.create.panel_open() {
+                let w = t.size.create.pane.min(rect.width());
+                let split = rect.right() - w;
+                (
+                    Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom())),
+                    Some(Rect::from_min_max(egui::pos2(split, rect.top()), rect.max)),
+                    hovering,
+                )
+            } else {
+                (rect, None, hovering)
+            }
+        };
         let regions = self.layout.regions(rect);
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
@@ -407,9 +461,9 @@ impl Editor {
                             // Lane S0l (R2): lessons are not available until lane LUI hands the editor a Learn state.
                             #[cfg(feature = "learn")]
                             learn: self.learn.header(),
-                            // Lane S0s (R3): create is not available until lane PUI hands the editor a create state.
+                            // Lane SK3 (F2s): available once the shell hands the editor a create read model.
                             #[cfg(feature = "create")]
-                            create: super::create::HeaderCreate::default(),
+                            create: self.create.header(),
                         };
                         let knobs: Vec<CardView> = self
                             .layout
@@ -489,6 +543,12 @@ impl Editor {
                 let over = super::learn::pane::show(&self.learn, ui, t, p, &mut out);
                 overflow.push(("learn", over));
             }
+            #[cfg(feature = "create")]
+            if let Some(p) = create_pane {
+                let over =
+                    super::create::panel::show(&mut self.create, ui, t, p, hovering, &mut out);
+                overflow.push(("create", over));
+            }
             if let Some(b) = sheet {
                 #[cfg(feature = "recreate")]
                 if settings_page {
@@ -547,6 +607,11 @@ impl Editor {
         if self.learn.has_queued() {
             ctx.request_repaint();
         }
+        // And the Create view's (lane SK3), the same way: only after a click or a drop.
+        #[cfg(feature = "create")]
+        if self.create.has_queued() {
+            ctx.request_repaint();
+        }
     }
 
     /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
@@ -568,6 +633,8 @@ impl Editor {
                 Intent::Game(g) => self.recreate.push(g.clone()),
                 #[cfg(feature = "learn")]
                 Intent::Learn(l) => self.learn.push(l.clone()),
+                #[cfg(feature = "create")]
+                Intent::Create(c) => self.create.push(c.clone()),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
                 Intent::End(_) => {
                     session.end_gesture();

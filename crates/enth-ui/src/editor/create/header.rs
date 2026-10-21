@@ -7,13 +7,14 @@
 //! dev window that never sets it draws exactly as before. Colours, sizes, spacing and fonts come from the theme's
 //! tokens.
 //!
-//! **Inert.** The button does nothing when clicked. Lane PUI turns the click into an `Intent::Create(CreateIntent::…)`
-//! that opens the Create view, once the editor has a create state to hand it to.
+//! **Lane SK3** (F2s) made the click toggle its minimal Create panel (`Intent::Create(CreateIntent::Toggle)`); lane PUI
+//! opens the real Create view from here.
 
 use egui::{Button, Rect, RichText, Ui};
 
+use super::CreateIntent;
 use crate::Theme;
-use crate::editor::cards::Intents;
+use crate::editor::cards::{Intent, Intents};
 use crate::editor::regions::HeaderView;
 
 /// What the header's Create hook shows (part of [`HeaderView`](crate::editor::regions::HeaderView)).
@@ -25,22 +26,19 @@ pub struct HeaderCreate {
 }
 
 /// The header's Create hook point (feature `create`): called by the header with its right-hand row (laid out right to
-/// left, after Learn) and its inner rectangle. Draws the **Create** entry when create is available; inert.
-pub(crate) fn header(
-    ui: &mut Ui,
-    theme: &Theme,
-    _rect: Rect,
-    view: &HeaderView,
-    _out: &mut Intents,
-) {
+/// left, after Learn) and its inner rectangle. Draws the **Create** entry when create is available; a click toggles
+/// the Create panel.
+pub(crate) fn header(ui: &mut Ui, theme: &Theme, _rect: Rect, view: &HeaderView, out: &mut Intents) {
     if !view.create.available {
         return;
     }
     ui.add_space(theme.space.section);
-    // Inert: the response is dropped, so a click changes nothing. PUI reads it and pushes an intent.
-    let _ = ui
+    let response = ui
         .add(Button::new(
             RichText::new("Create").font(theme.text.body.clone()),
         ))
         .on_hover_text("Create patches from a sound file");
+    if response.clicked() {
+        out.push(Intent::Create(CreateIntent::Toggle));
+    }
 }

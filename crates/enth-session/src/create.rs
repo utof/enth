@@ -35,7 +35,7 @@ use std::path::PathBuf;
 
 use enth_analysis::intake::{IntakeReport, Warning};
 use enth_patch::Patch;
-use enth_solver::create::{Candidate, CandidateState, CreateStop, Provenance};
+pub use enth_solver::create::{Candidate, CandidateState, CreateStop, Provenance};
 
 use crate::model::{Session, SessionError};
 
@@ -347,7 +347,7 @@ pub struct CandidateView {
 }
 
 impl CandidateView {
-    /// A short label: "heuristic", "template pluck_1osc", "k-NN 3", "model 2".
+    /// A short label: "heuristic", "template `pluck_1osc`", "k-NN 3", "model 2".
     #[must_use]
     pub fn label(&self) -> String {
         provenance_label(&self.provenance)

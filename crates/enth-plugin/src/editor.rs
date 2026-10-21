@@ -223,11 +223,17 @@ impl Glue {
         #[cfg(feature = "learn")]
         self.editor
             .set_lesson(enth_session::learn::LearnEdit::lesson(session));
+        // The create job's read model (lane SK3): with it the header shows Create and a drop is taken.
+        #[cfg(feature = "create")]
+        self.editor
+            .set_create(enth_session::create::CreateEdit::create(session));
         self.frame(ui, theme, session, pointer_down);
         #[cfg(feature = "recreate")]
         self.apply_game(session);
         #[cfg(feature = "learn")]
         self.editor.apply_learn(session);
+        #[cfg(feature = "create")]
+        self.editor.apply_create(session);
         let round = session.round().and_then(|r| r.wake_at_ms);
         // The lesson's settle moment (its sound check waits for it), else nothing: Learn asks for no other frames.
         #[cfg(feature = "learn")]
@@ -365,6 +371,9 @@ impl NiceEguiApp for EditorApp {
         self.glue.set_lessons(&self.shared.game.lessons());
         // The round's worker asks this window for a repaint whenever it posts a result (lane SKR).
         self.shared.game.set_repaint(Some(egui_ctx.clone()));
+        // So does the create thread (lane SK3).
+        #[cfg(feature = "create")]
+        self.shared.create.set_repaint(Some(egui_ctx.clone()));
         let env = layout_from_env();
         let glue = &mut self.glue;
         let theme = &self.theme;
@@ -394,6 +403,8 @@ impl NiceEguiApp for EditorApp {
             s.game_tick(game::now_ms(), EditorView::Hidden);
         });
         self.shared.game.set_repaint(None);
+        #[cfg(feature = "create")]
+        self.shared.create.set_repaint(None);
         glue.close();
         if let Some(gui) = self.gui.take() {
             forward(&gui, &self.params, writes);
@@ -413,6 +424,11 @@ impl NiceEguiApp for EditorApp {
         let (wake, writes) = shared.with_session(|s| {
             s.pump();
             s.fold_host(&host);
+            // The create thread's posts (lane SK3): a stale one is refused by the session, harmlessly.
+            #[cfg(feature = "create")]
+            for (id, post) in shared.create.take_posts() {
+                let _ = s.create_post(id, post);
+            }
             // The round's clock and results, then the editor's frame (the root Ui covers the whole window; the editor
             // paints its own background) and the Recreate bar's intents (lane SKR).
             glue.round_frame(ui, theme, s, &shared.game, now, pointer_down)
