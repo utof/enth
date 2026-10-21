@@ -274,6 +274,19 @@ impl Editor {
         self.learn.set_library(library, progress);
     }
 
+    /// When the window opens (lane LFU): the Packs folder, for the lesson browser's "Open packs folder".
+    #[cfg(feature = "learn")]
+    pub fn set_packs_folder(&mut self, folder: Option<String>) {
+        self.learn.set_packs_folder(folder);
+    }
+
+    /// After a frame (lane LFU): whether "Open packs folder" was clicked; the shell makes the folder if missing and
+    /// opens it (egui's `OpenUrl`), since the editor does no I/O. Asking clears it.
+    #[cfg(feature = "learn")]
+    pub fn take_open_packs_folder(&mut self) -> bool {
+        self.learn.take_open_packs_folder()
+    }
+
     /// After a frame (lane SKL): the Learn view's intents, applied to the session's `LearnEdit`.
     #[cfg(feature = "learn")]
     pub fn apply_learn(&mut self, session: &mut dyn enth_session::learn::LearnEdit) {

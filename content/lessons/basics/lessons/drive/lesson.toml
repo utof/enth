@@ -323,6 +323,11 @@ text = "check-saw.md"
 hints = ["The driven saw is denser and rougher; the clean one smoother."]
 answer = 0
 
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
+
 [[steps.options]]
 label = "A"
 patch = "patches/saw-drive-24.patch.json"
@@ -337,6 +342,11 @@ kind = "choose"
 text = "check-harder.md"
 hints = ["More drive, more buzz on top of the tone."]
 answer = 1
+
+# The cards are not part of an ear question: a focus view with nothing highlighted shows none of the patch
+# this step carries over from the round, so it fits beside the pane at 1200 x 800 (lane LFU).
+[steps.view]
+layout = "focus"
 
 [[steps.options]]
 label = "A"

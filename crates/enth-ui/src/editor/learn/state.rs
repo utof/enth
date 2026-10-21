@@ -30,10 +30,13 @@ use enth_learn::{
     Touch,
 };
 use enth_patch::{ModSource, ModuleId, ParamAddr, Target};
-use enth_session::game::EndChoice;
-use enth_session::learn::{LearnEdit, LearnView};
+use std::sync::Arc;
 
-use crate::editor::overlay::{Emphasis, Overlay, ParamOverlay};
+use enth_session::game::EndChoice;
+use enth_session::learn::{Closest, ClosestDelta, LearnEdit, LearnView, MoveSize, move_size};
+
+use crate::editor::overlay::{Emphasis, Overlay, ParamOverlay, Pointer};
+use crate::theme::Score;
 
 use super::HeaderLearn;
 
@@ -68,6 +71,14 @@ pub enum LearnIntent {
     Shelf(Shelf),
     /// End the lesson.
     End(EndChoice),
+    /// "How close am I?" (`true`: look harder), after a Submit that did not pass (lane LFU).
+    Closest(bool),
+    /// Stop a running "How close am I?".
+    CancelClosest,
+    /// "Try a new one": the step's round's sibling (lane LFU).
+    Redo,
+    /// "Open packs folder" (lane LFU): the shell opens it after the frame ([`Learn::take_open_packs_folder`]).
+    OpenPacksFolder,
 }
 
 /// The lesson browser's tabs: a track (the tour first), or every pack's lessons.
@@ -145,6 +156,9 @@ pub struct Learn {
     ab: [Option<u8>; 2],
     /// The browser's tab, once the player picked one.
     shelf: Option<Shelf>,
+    /// The Packs folder, for the browser's "Open packs folder" (the shell's, lane LFU), and whether it was asked for.
+    packs_folder: Option<String>,
+    open_packs: bool,
 }
 
 /// The packs `lessons` come from, in order of first appearance, titled by their ids.
@@ -227,6 +241,21 @@ impl Learn {
         self.progress = progress;
     }
 
+    /// The Packs folder the shell reads user packs from (lane LFU): the browser's "Open packs folder" opens it.
+    pub fn set_packs_folder(&mut self, folder: Option<String>) {
+        self.packs_folder = folder;
+    }
+
+    /// The Packs folder, when the shell has one.
+    pub fn packs_folder(&self) -> Option<&str> {
+        self.packs_folder.as_deref()
+    }
+
+    /// Whether "Open packs folder" was clicked since the last ask (the shell opens it); asking clears it.
+    pub fn take_open_packs_folder(&mut self) -> bool {
+        std::mem::take(&mut self.open_packs)
+    }
+
     /// The progress file's contents (the shell reads it when the window opens).
     pub fn set_progress(&mut self, progress: Progress) {
         self.progress = progress;
@@ -284,6 +313,7 @@ impl Learn {
             view: v.view.clone(),
             pointing: pointing.clone(),
             beside_pane: self.open,
+            closest: v.closest.answer.clone().filter(|a| a.passed),
         });
         self.view = view;
     }
@@ -497,6 +527,13 @@ impl Learn {
                     None => Ok(()),
                 },
                 LearnIntent::End(choice) => session.learn_end(choice),
+                LearnIntent::Closest(harder) => session.learn_closest(harder),
+                LearnIntent::CancelClosest => session.learn_closest_cancel(),
+                LearnIntent::Redo => session.learn_redo(),
+                LearnIntent::OpenPacksFolder => {
+                    self.open_packs = self.packs_folder.is_some();
+                    Ok(())
+                }
             };
             self.said = result.err().map(|e| format!("{e}: {}", e.hint()));
         }
@@ -526,6 +563,19 @@ pub struct LessonOverlay {
     /// The cards share the window with the lesson pane: a focus step then shows only its own modules. With the pane
     /// hidden the player asked for the whole editor, so focus gives way (hides, highlights and locks stay).
     beside_pane: bool,
+    /// "How close am I?"'s passing answer (lane LFU): a ring on each control it would move, by how far, and a
+    /// pointer for the way to turn it; never a value.
+    closest: Option<Arc<Closest>>,
+}
+
+/// "How close am I?"'s ring on a control (lane LFU), by how far it would move ([`move_size`]): Good when it stays,
+/// Near for a touch or a little, Bad for a lot or a switch.
+pub fn closest_ring(delta: &ClosestDelta) -> Score {
+    match move_size(delta) {
+        MoveSize::Stay => Score::Good,
+        MoveSize::Touch | MoveSize::Little => Score::Near,
+        MoveSize::Lot | MoveSize::Switch => Score::Bad,
+    }
 }
 
 impl LessonOverlay {
@@ -535,7 +585,15 @@ impl LessonOverlay {
             view,
             pointing: None,
             beside_pane: true,
+            closest: None,
         }
+    }
+
+    /// The overlay with "How close am I?"'s answer on the cards (lane LFU; a passing one).
+    #[must_use]
+    pub fn closest(mut self, answer: Option<Arc<Closest>>) -> Self {
+        self.closest = answer.filter(|a| a.passed);
+        self
     }
 
     /// The overlay with the pane shown (`true`) or hidden.
@@ -587,10 +645,24 @@ impl Overlay for LessonOverlay {
         } else {
             Emphasis::Normal
         };
+        // "How close am I?"'s answer: a ring by how far the control would move, and the way to turn it.
+        let delta = self
+            .closest
+            .as_ref()
+            .and_then(|a| a.deltas.iter().find(|d| d.addr == *addr));
+        let hint = delta.filter(|d| closest_ring(d) != Score::Good).map(|d| {
+            if d.categorical {
+                Pointer::Here
+            } else if d.norm > 0.0 {
+                Pointer::Raise
+            } else {
+                Pointer::Lower
+            }
+        });
         ParamOverlay {
             emphasis,
-            score: None,
-            hint: None,
+            score: delta.map(closest_ring),
+            hint,
         }
     }
 

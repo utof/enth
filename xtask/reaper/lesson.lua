@@ -1,35 +1,39 @@
--- lesson (lane SKL, F2l; lane LUI's view): the bundled example lesson (`example/cutoff`: Listen, Do, Choose) played
--- through the plugin's Learn view with real X events (xinput.py, under Xvfb only), on a bundle built with the `learn` feature, the
--- transport stopped. Two launches: `play` starts the lesson and passes its Do step, then saves the project mid-lesson;
--- `reload` opens the saved project in a new REAPER process and goes on from the saved step.
+-- lesson (lane SKL, F2l; lane LUI's view; lane LFU: the default bundle, the bundled basics pack): the tour's first
+-- lesson (`basics/how-a-lesson-works`: Listen, Listen, Read, Try, a round, Choose) played through the plugin's Learn
+-- view with real X events (xinput.py, under Xvfb only), the transport stopped. Two launches: `play` starts the lesson
+-- and passes its Try step, then saves the project mid-lesson; `reload` opens the saved project in a new REAPER process
+-- and goes on from the saved step.
 -- Checks (play):
 --   lesson-started:  Learn, then Start: the saved `enth` field holds the lesson (`learn` object, step 0) and the stash;
---   example-sounds:  ▶ Open (the Listen step's first example, rendered on the game worker and played from the target
---                    slot): the track's peak meter over 1.5 s is above silence;
---   step-next:       Next: the saved lesson is at step 1 (the Do step);
---   step-passed:     Show me (the witness's edit, through the session's edit path), then the sound check rendered on
---                    the worker passes: the progress file (ENTH_LEARN_DIR) records step `try` done;
+--   example-sounds:  ▶ Saw, A (the first Listen step's first example, rendered on the game worker and played from the
+--                    target slot): the track's peak meter over 1.5 s is above silence;
+--   step-next:       Next three times: the saved lesson is at step 3 (the Try step);
+--   step-passed:     Show me (the witness's edit, the master level, through the session's edit path: one jump counts
+--                    as a turn across its travel), then the sound check rendered on the worker passes: the progress
+--                    file (ENTH_LEARN_DIR) records step `try` done;
 --   project-saved:   the project saved mid-lesson.
 -- Checks (reload):
---   reload-lesson:   the saved lesson is in the reloaded state at step 1 with its stash;
+--   reload-lesson:   the saved lesson is in the reloaded state at step 3 with its stash;
 --   lesson-resumed:  the editor opens, the lesson reopens on the worker (Open, then Player::resume and the progress file
---                    read back), and Next moves it to step 2: only a resumed player answers Next;
+--                    read back), and Next moves it to step 4 (its round): only a resumed player answers Next;
 --   no-crash:        the crash folder is still empty.
 -- Data: the example's peak, the times. Audio is measured, never listened to.
 --
 -- The click points are offsets into the plugin's window (1200 x 800, the plugin's Init patch; lane LUI's Learn view:
--- the browser's first row on the example tour, then the pane's controls, anchored to its bottom):
+-- the browser's first row on the tour, then the pane's controls, anchored to its bottom):
 -- `reaper_points_hit_their_controls` in crates/enth-ui/tests/learn_panel.rs asserts the same numbers.
 dofile(os.getenv("ENTH_LUA_DIR") .. "/common.lua")
 
 local POINTS = {
   learn = { 551, 28 },
   start = { 901, 160 },
-  listen_open = { 910, 580 },
+  listen_first = { 910, 580 },
   stop = { 908, 608 },
   next = { 1155, 636 },
   show = { 957, 608 },
 }
+-- The Try step's index (0-based): after two Listen steps and the Read step.
+local TRY = 3
 local tag = os.getenv("ENTH_TAG")
 local phase = os.getenv("ENTH_PHASE")
 local project = OUT .. "/lesson-" .. tag .. ".rpp"
@@ -116,17 +120,22 @@ if phase == "play" then
         check("lesson-started", started, started and string.format("the saved state holds the lesson at step 0 after %.1f s", reaper.time_precise() - t0)
           or "no lesson in the saved state: the click points moved? see reaper_points_hit_their_controls in crates/enth-ui/tests/learn_panel.rs")
         if not started then return finish() end
-        -- The examples render on the worker (debug bundle: well under a second); then ▶ Open.
+        -- The examples render on the worker (debug bundle: well under a second); then ▶ Saw, A.
         wait(1.5, function()
-          click("listen_open")
+          click("listen_first")
           peak_for(track, 1.5, function(peak)
             data("example-peak", string.format("%.6f", peak))
-            check("example-sounds", peak > 0.001, string.format("▶ Open peaked at %.4f with the transport stopped", peak))
+            check("example-sounds", peak > 0.001, string.format("▶ Saw, A peaked at %.4f with the transport stopped", peak))
             click("stop")
             sleep(0.3)
-            click("next")
-            wait_until(function() return saved_step(track, fx) == 1 end, 10, 0.2, function(moved)
-              check("step-next", moved, moved and "the saved lesson is at step 1" or "Next did not move the lesson")
+            -- Next to the second Listen step, the Read step, then the Try step.
+            for _ = 1, TRY do
+              click("next")
+              sleep(0.4)
+            end
+            wait_until(function() return saved_step(track, fx) == TRY end, 10, 0.2, function(moved)
+              check("step-next", moved, moved and string.format("the saved lesson is at step %d (Try)", TRY)
+                or string.format("Next did not move the lesson to step %d (saved step %s)", TRY, tostring(saved_step(track, fx))))
               if not moved then return finish() end
               sleep(0.5)
               click("show")
@@ -162,13 +171,13 @@ else
       check("reload-fx", track ~= nil and reaper.TrackFX_GetCount(track) == 1, "one plugin on track 1")
       if not track then return finish() end
       local step = saved_step(track, fx)
-      check("reload-lesson", step == 1 and has_stash(track, fx), string.format("saved step %s, stash %s", tostring(step), tostring(has_stash(track, fx))))
+      check("reload-lesson", step == TRY and has_stash(track, fx), string.format("saved step %s, stash %s", tostring(step), tostring(has_stash(track, fx))))
       with_editor(track, fx, function(click)
         -- The pane opens by itself on the resumed lesson; give the Open job a moment, then Next.
         wait(1.0, function()
           click("next")
-          wait_until(function() return saved_step(track, fx) == 2 end, 10, 0.2, function(resumed)
-            check("lesson-resumed", resumed, resumed and "the reopened lesson moved to step 2"
+          wait_until(function() return saved_step(track, fx) == TRY + 1 end, 10, 0.2, function(resumed)
+            check("lesson-resumed", resumed, resumed and string.format("the reopened lesson moved to step %d (its round)", TRY + 1)
               or string.format("the lesson did not move on after the reload (saved step %s)", tostring(saved_step(track, fx))))
             local crashes = crash_files()
             check("no-crash", crashes == 0, string.format("%d crash file(s) in %s", crashes, tostring(CRASHES)))
