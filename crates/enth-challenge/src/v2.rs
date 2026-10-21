@@ -1826,6 +1826,102 @@ mod tests {
         ]
     }
 
+    /// Valid draw items over the starter, one per key: what a draw strategy picks from.
+    fn item_pool() -> Vec<DrawItem> {
+        let text = |t: &str| DrawValue::Text(t.to_owned());
+        vec![
+            set(
+                "filter1.cutoff",
+                nums(&[300.0, 600.0, 1200.0, 4000.0, 8000.0]),
+            ),
+            set("filter1.mode", vec![text("lp"), text("hp"), text("bp")]),
+            DrawItem {
+                at: DrawAt::Param(addr("filter1.resonance")),
+                values: DrawValues::Range {
+                    low: DrawValue::Number(0.0),
+                    high: DrawValue::Number(80.0),
+                    step: None,
+                },
+            },
+            DrawItem {
+                at: DrawAt::Param(addr("osc1.semi")),
+                values: DrawValues::Range {
+                    low: DrawValue::Number(-24.0),
+                    high: DrawValue::Number(24.0),
+                    step: Some(DrawValue::Number(1.0)),
+                },
+            },
+            set("env1.attack", nums(&[2.0, 25.0, 200.0, 900.0])),
+            set(
+                "env2 -> filter1.cutoff",
+                vec![
+                    DrawValue::Number(-40.0),
+                    text("+1oct"),
+                    DrawValue::Number(60.0),
+                ],
+            ),
+            set(
+                "osc1.wave",
+                vec![text("sine"), text("triangle"), text("pulse")],
+            ),
+        ]
+    }
+
+    fn any_draw_challenge() -> impl Strategy<Value = Challenge> {
+        let pool = item_pool();
+        (
+            0..=MAX_SEED,
+            1u32..(1 << pool.len()),
+            prop::collection::btree_set(any_selector(), 0..4),
+            prop::collection::btree_set(any_selector(), 0..3),
+            any::<bool>(),
+        )
+            .prop_map(move |(seed, mask, editable, locked, patch_start)| {
+                let items = pool
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask & (1 << i) != 0)
+                    .map(|(_, item)| item.clone())
+                    .collect();
+                let start = if patch_start {
+                    Start::Patch {
+                        patch: InlinePatch::new(starter()),
+                    }
+                } else {
+                    Start::Template { template: 0 }
+                };
+                let mut c =
+                    Challenge::new(Target::Draw(Draw { seed, items }), start, HELD, scoring());
+                c.constraints = Constraints {
+                    editable: editable.into_iter().collect(),
+                    locked: locked.into_iter().collect(),
+                };
+                c
+            })
+            .prop_filter("a valid challenge", |c| c.validate().is_ok())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+        /// Any valid draw challenge round-trips through both paths to the same value and the same bytes, and draws
+        /// the same target twice.
+        #[test]
+        fn any_v2_challenge_round_trips_to_the_same_bytes(c in any_draw_challenge()) {
+            let json = c.to_json();
+            let v2 = json.starts_with(r#"{"schema":"enth.challenge/2""#);
+            prop_assert!(v2, "written as v2");
+            let back = Challenge::from_json(&json).unwrap();
+            prop_assert_eq!(&back, &c);
+            prop_assert_eq!(back.to_json(), json.clone());
+            prop_assert_eq!(serde_json::from_str::<Challenge>(&json).unwrap(), c.clone());
+            prop_assert_eq!(Challenge::from_json(&c.to_json_pretty()).unwrap(), c.clone());
+            let start = c.start_patch().unwrap();
+            let a = c.draw().unwrap().draw(&start, held());
+            prop_assert_eq!(a, c.draw().unwrap().draw(&start, held()));
+        }
+    }
+
     proptest! {
         /// Print → parse gives the selector back, and the text is what JSON carries.
         #[test]
