@@ -403,11 +403,11 @@ fn lenient_intake<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Intak
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Maybe {
-        Report(IntakeReport),
+        Report(Box<IntakeReport>),
         Other(serde::de::IgnoredAny),
     }
     Ok(match Maybe::deserialize(d)? {
-        Maybe::Report(r) => Some(r),
+        Maybe::Report(r) => Some(*r),
         Maybe::Other(_) => None,
     })
 }
