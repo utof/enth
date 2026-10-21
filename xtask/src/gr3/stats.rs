@@ -163,13 +163,15 @@ pub fn signed_rank(d: &[f64]) -> SignedRank {
     }
     let abs: Vec<f64> = nz.iter().map(|x| x.abs()).collect();
     let ranks = mid_ranks(&abs);
+    // `Sum` for floats starts at −0.0: add 0.0 so an empty sum reads 0, not −0.
     let w_plus: f64 = nz
         .iter()
         .zip(&ranks)
         .filter(|(x, _)| **x > 0.0)
         .map(|(_, r)| r)
-        .sum();
-    let total: f64 = ranks.iter().sum();
+        .sum::<f64>()
+        + 0.0;
+    let total: f64 = ranks.iter().sum::<f64>() + 0.0;
     let w2: Vec<usize> = ranks.iter().map(|r| (2.0 * r).round() as usize).collect();
     let dist = signed_rank_null(&w2);
     let obs = (2.0 * w_plus).round() as usize;
@@ -376,6 +378,11 @@ mod tests {
         close(w.p_greater, 3.0 / 32.0);
         // Nothing but zeros.
         close(signed_rank(&[0.0, 0.0]).p_greater, 1.0);
+        // Every difference negative: W+ is 0 (an empty sum), printed as 0 and not −0.
+        let w = signed_rank(&[-1.0, -2.0]);
+        assert!(w.w_plus == 0.0 && w.w_plus.is_sign_positive());
+        close(w.p_greater, 1.0);
+        close(w.p_less, 0.25);
     }
 
     #[test]

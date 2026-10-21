@@ -279,7 +279,7 @@ fn f(x: f64, digits: usize) -> String {
     if x.is_nan() {
         "–".to_owned()
     } else if x.is_infinite() {
-        "∞".to_owned()
+        if x > 0.0 { "∞" } else { "−∞" }.to_owned()
     } else {
         format!("{x:.digits$}")
     }
