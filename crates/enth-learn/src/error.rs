@@ -159,6 +159,18 @@ pub enum LearnError {
         /// What it needs.
         need: Need,
     },
+    /// A pack made with a newer engine than this build's failed on its content: most likely on something this build
+    /// lacks (a module kind, a parameter key, a phrase, a newer patch or an inline patch schema in a challenge), so it
+    /// is named as needing a newer enth rather than as damaged (F1l review should-fix 6, lane PLY). The refusal it
+    /// met is kept as `cause`. Integrity failures (a hash, a size, the archive) are never turned into this.
+    NeedsNewer {
+        /// The pack.
+        name: PackName,
+        /// The engine it records (`engine`), newer than this build's.
+        engine: String,
+        /// What failed.
+        cause: Box<LearnError>,
+    },
     // --- the archive and its files ---------------------------------------------------------------------------
     /// Not a zip archive, or a damaged one.
     BadArchive {
@@ -288,6 +300,7 @@ impl LearnError {
             },
             LearnError::BadField { .. } => "bad_field",
             LearnError::Requires { .. } => "requires_unmet",
+            LearnError::NeedsNewer { .. } => "needs_newer_enth",
             LearnError::BadArchive { .. } => "bad_archive",
             LearnError::TooManyEntries { .. } => "too_many_entries",
             LearnError::RenamedEntry { .. } => "renamed_entry",
@@ -306,6 +319,16 @@ impl LearnError {
             LearnError::NotFound { .. } => "not_found",
             LearnError::Store { .. } => "store_failed",
         }
+    }
+
+    /// Whether the fix is a newer enth rather than a repaired pack: a newer schema (`pack_too_new`,
+    /// `lesson_too_new`), a `requires` this build lacks, or a newer pack's content (`needs_newer_enth`). The browser
+    /// lists these as "needs a newer enth", never as damaged.
+    pub fn needs_newer_enth(&self) -> bool {
+        matches!(
+            self,
+            LearnError::TooNew { .. } | LearnError::Requires { .. } | LearnError::NeedsNewer { .. }
+        )
     }
 
     /// What to do about it, in one line.
@@ -327,6 +350,10 @@ impl LearnError {
             },
             LearnError::BadField { field, .. } => format!("fix {field} in the source and rebuild the pack"),
             LearnError::Requires { .. } => "this pack needs a newer enth: update enth to open it".to_owned(),
+            LearnError::NeedsNewer { engine, .. } => format!(
+                "this pack needs a newer enth: it was made with engine {engine}, this build has {}; update enth to open it",
+                enth_patch::file::ENGINE_VERSION
+            ),
             LearnError::BadArchive { .. } | LearnError::Corrupt { .. } => {
                 "the pack file is damaged: download or copy it again".to_owned()
             }
@@ -383,6 +410,15 @@ impl fmt::Display for LearnError {
                 field,
                 message,
             } => write!(f, "{} {field}: {message}", doc.name()),
+            LearnError::NeedsNewer {
+                name,
+                engine,
+                cause,
+            } => write!(
+                f,
+                "{name} needs a newer enth (made with engine {engine}, this build has {}): {cause}",
+                enth_patch::file::ENGINE_VERSION
+            ),
             LearnError::Requires { name, need } => {
                 write!(f, "{name} needs {need}, which this build lacks")
             }
