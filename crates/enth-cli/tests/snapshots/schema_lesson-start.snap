@@ -3,6 +3,54 @@ source: crates/enth-cli/tests/schemas.rs
 expression: v
 ---
 {
+  "$defs": {
+    "LessonExampleOut": {
+      "additionalProperties": false,
+      "description": "One sound of a listen or choose step, as files: `enth describe PATCH --perf PERF` measures it, where the player\nwould play it.",
+      "properties": {
+        "label": {
+          "description": "What the player sees on its button (\"A\", \"Open\").",
+          "type": "string"
+        },
+        "patch": {
+          "description": "The example's patch, as written.",
+          "type": "string"
+        },
+        "perf": {
+          "description": "The performance (`enth.perf/1`): the step's phrase, transposed, as written.",
+          "type": "string"
+        },
+        "phrase": {
+          "description": "The phrase's name (`held`).",
+          "type": "string"
+        },
+        "seed": {
+          "description": "The render seed, when the example sets one: pass it to `describe --seed`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "transpose": {
+          "description": "Semitones added to every note of the phrase.",
+          "format": "int8",
+          "maximum": 127,
+          "minimum": -128,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "patch",
+        "perf",
+        "phrase",
+        "transpose"
+      ],
+      "type": "object"
+    }
+  },
   "$id": "enth.lesson-start/1",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -15,12 +63,22 @@ expression: v
         "null"
       ]
     },
+    "examples": {
+      "description": "A listen or choose step's sounds, as files (`--examples-out`); empty otherwise. A choose step's answer is one\nof the labels.",
+      "items": {
+        "$ref": "#/$defs/LessonExampleOut"
+      },
+      "type": "array"
+    },
     "from": {
-      "description": "Where the start came from: the pack patch the step names (`patches/saw.patch.json`), or `challenge` for a\nrecreate step's own start.",
-      "type": "string"
+      "description": "Where the start came from: the pack patch the step names (`patches/saw.patch.json`), or `challenge` for a\nrecreate step's own start; null when only the examples were asked for.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "kind": {
-      "description": "`do` or `recreate`.",
+      "description": "`read`, `listen`, `do`, `recreate` or `choose`.",
       "type": "string"
     },
     "lesson": {
@@ -39,8 +97,11 @@ expression: v
       "type": "integer"
     },
     "patch": {
-      "description": "The start patch, as written.",
-      "type": "string"
+      "description": "The start patch, as written (null when only the examples were asked for).",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "schema": {
       "const": "enth.lesson-start/1",
@@ -58,8 +119,7 @@ expression: v
     "step",
     "number",
     "kind",
-    "from",
-    "patch",
+    "examples",
     "next"
   ],
   "title": "LessonStartOut",

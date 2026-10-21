@@ -302,8 +302,8 @@ fn start_writes_what_a_step_loads() {
     assert_eq!(o.code, 0, "{}", o.stdout);
     let r: LessonStartOut = round_trip(&o);
     assert_eq!(
-        (r.from.as_str(), r.kind.as_str()),
-        ("patches/saw.patch.json", "do")
+        (r.from.as_deref(), r.kind.as_str()),
+        (Some("patches/saw.patch.json"), "do")
     );
     assert!(r.challenge.is_none());
     settings(&s).bind(|| assert_snapshot!("lesson_start", record(&s, &o, false)));
@@ -329,13 +329,100 @@ fn start_writes_what_a_step_loads() {
     assert_eq!(o.code, 0, "{}", o.stdout);
     let r: LessonStartOut = round_trip(&o);
     assert_eq!(
-        (r.from.as_str(), r.kind.as_str()),
-        ("challenge", "recreate")
+        (r.from.as_deref(), r.kind.as_str()),
+        (Some("challenge"), "recreate")
     );
     assert_eq!(r.challenge.as_deref(), Some(c.as_str()));
     let o = run(&["compare", &p, "--challenge", &c]);
     assert_eq!(o.code, 1, "{}", o.stdout);
     assert_eq!(json(&o)["passed"], false);
+}
+
+/// The ear questions of a command line: `start --examples-out` writes each sound as a patch and a performance, and
+/// `describe` reads them where the player would listen. The measured brightness picks the answer the pack records.
+#[test]
+fn start_writes_the_sounds_of_an_ear_step_and_describe_answers_the_question() {
+    let s = Scratch::new("lesson_start_ears");
+    let dir = s.path("ears");
+    let o = run(&[
+        "lesson",
+        "start",
+        &basics(),
+        "--lesson",
+        "cutoff",
+        "--step",
+        "which-darker",
+        "--examples-out",
+        &dir,
+    ]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    let r: LessonStartOut = round_trip(&o);
+    assert_eq!((r.kind.as_str(), r.patch, r.from), ("choose", None, None));
+    let labels: Vec<&str> = r.examples.iter().map(|e| e.label.as_str()).collect();
+    assert_eq!(labels, ["A", "B"]);
+    assert_eq!(r.examples[0].phrase, "held");
+    settings(&s).bind(|| assert_snapshot!("lesson_start_ears", record(&s, &o, false)));
+
+    // The pack records which option is darker; the numbers agree with it.
+    let shown = json(&run(&[
+        "lesson",
+        "show",
+        &basics(),
+        "--lesson",
+        "cutoff",
+        "--reveal",
+    ]));
+    let step = shown["lessons"][0]["steps"]
+        .as_array()
+        .and_then(|a| a.iter().find(|st| st["id"] == "which-darker"))
+        .cloned()
+        .expect("the step exists");
+    let darker = usize::try_from(step["answer"].as_u64().expect("a choose step has an answer"))
+        .expect("an index");
+    let centroid = |i: usize| -> f64 {
+        let e = &r.examples[i];
+        let o = run(&["describe", &e.patch, "--perf", &e.perf]);
+        assert_eq!(o.code, 0, "{}", o.stdout);
+        let d = json(&o);
+        d["spectrum"]["centroid_hz"]
+            .as_f64()
+            .unwrap_or_else(|| panic!("no centroid in {d}"))
+    };
+    let (a, b) = (centroid(0), centroid(1));
+    let measured_darker = usize::from(b < a);
+    assert_eq!(measured_darker, darker, "A {a} Hz, B {b} Hz");
+}
+
+#[test]
+fn start_says_what_a_step_has_to_write() {
+    let s = Scratch::new("lesson_start_nothing");
+    // A step with neither flag, and the flag of the wrong kind of step, are usage errors that write nothing.
+    let o = run(&[
+        "lesson",
+        "start",
+        &basics(),
+        "--lesson",
+        "cutoff",
+        "--step",
+        "which-darker",
+    ]);
+    let e: ErrorOut = round_trip(&o);
+    assert_eq!((o.code, e.error.as_str()), (2, "nothing_to_write"));
+    assert!(e.hint.contains("--examples-out"), "{}", e.hint);
+    let o = run(&[
+        "lesson",
+        "start",
+        &basics(),
+        "--lesson",
+        "cutoff",
+        "--step",
+        "try",
+        "--examples-out",
+        &s.path("e"),
+    ]);
+    let e: ErrorOut = round_trip(&o);
+    assert_eq!((o.code, e.error.as_str()), (2, "no_examples"));
+    assert!(!std::path::Path::new(&s.path("e")).exists());
 }
 
 #[test]

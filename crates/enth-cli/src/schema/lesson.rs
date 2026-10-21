@@ -258,17 +258,39 @@ pub struct LessonStartOut {
     pub step: String,
     /// Its place, 1-based.
     pub number: u16,
-    /// `do` or `recreate`.
+    /// `read`, `listen`, `do`, `recreate` or `choose`.
     pub kind: String,
     /// Where the start came from: the pack patch the step names (`patches/saw.patch.json`), or `challenge` for a
-    /// recreate step's own start.
-    pub from: String,
-    /// The start patch, as written.
-    pub patch: String,
+    /// recreate step's own start; null when only the examples were asked for.
+    pub from: Option<String>,
+    /// The start patch, as written (null when only the examples were asked for).
+    pub patch: Option<String>,
     /// A recreate step's challenge file, as written.
     pub challenge: Option<String>,
+    /// A listen or choose step's sounds, as files (`--examples-out`); empty otherwise. A choose step's answer is one
+    /// of the labels.
+    pub examples: Vec<LessonExampleOut>,
     /// What to do next.
     pub next: String,
+}
+
+/// One sound of a listen or choose step, as files: `enth describe PATCH --perf PERF` measures it, where the player
+/// would play it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LessonExampleOut {
+    /// What the player sees on its button ("A", "Open").
+    pub label: String,
+    /// The example's patch, as written.
+    pub patch: String,
+    /// The performance (`enth.perf/1`): the step's phrase, transposed, as written.
+    pub perf: String,
+    /// The phrase's name (`held`).
+    pub phrase: String,
+    /// Semitones added to every note of the phrase.
+    pub transpose: i8,
+    /// The render seed, when the example sets one: pass it to `describe --seed`.
+    pub seed: Option<u32>,
 }
 
 /// `enth.lesson-hint/1`: one hint of a step's ladder. `--n 1` to the number of authored hints are the lesson's own

@@ -6,6 +6,7 @@ exit: 0
 --- stdout
 {
   "challenge": null,
+  "examples": [],
   "from": "patches/saw.patch.json",
   "kind": "do",
   "lesson": "example/cutoff",

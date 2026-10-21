@@ -95,12 +95,16 @@ pub enum Sub {
         /// The step: its id or its 1-based number.
         #[arg(long, value_name = "STEP")]
         step: String,
-        /// Where to write the start patch (*.patch.json).
+        /// Where to write the start patch (*.patch.json); a do or recreate step needs it.
         #[arg(long, value_name = "PATCH")]
-        out: PathBuf,
+        out: Option<PathBuf>,
         /// A recreate step's challenge file, for `enth compare|suggest|match --challenge`.
         #[arg(long, value_name = "FILE")]
         challenge_out: Option<PathBuf>,
+        /// A listen or choose step's sounds, one patch and one performance file each, for `enth describe PATCH --perf
+        /// PERF` (a command line cannot play them).
+        #[arg(long, value_name = "DIR")]
+        examples_out: Option<PathBuf>,
     },
     /// One hint of a step: the authored ones first (--n 1 up), then one measured on your patch.
     Hint {
@@ -169,7 +173,15 @@ pub fn run(args: &Args) -> Res {
             step,
             out,
             challenge_out,
-        } => start::start(pack, lesson, step, out, challenge_out.as_deref()),
+            examples_out,
+        } => start::start(
+            pack,
+            lesson,
+            step,
+            out.as_deref(),
+            challenge_out.as_deref(),
+            examples_out.as_deref(),
+        ),
         Sub::Hint {
             pack,
             lesson,
