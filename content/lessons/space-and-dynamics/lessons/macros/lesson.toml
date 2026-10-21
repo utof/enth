@@ -1,0 +1,256 @@
+# Lesson 8.1, Macros [space-and-dynamics · basic · tour] (content/lessons/PLAN.md §5, U8).
+#
+# Hear (one knob doing three things on a saw, at 0, 0.5 and 1 and swept; then a pad's Bright and Space macros), a
+# "which has Bright turned up?" item → Name → Try (turn the Bright macro, a patch goal) → give the macro a second
+# job (a route to the reverb's wet level, checked by sound with the macro pinned at 0 and at 1) → a route of negative
+# depth (the release, the same way) → two ear questions.
+#
+# Changed from the card: the editor cannot drag a new route from a macro yet (the overview has no macro tiles,
+# docs/editor.md "For the next lanes"), so the Do steps start with the macro's route in place at 0 % and ask for its
+# depth, which the knob's depth handle and the overview's route list both edit; and there is no round (`closest`
+# moves parameters, not routes, and the generator never draws macros). The sound checks pin the macro (Q5): a goal
+# that holds the sound at 0 and changes it at 1 is one only the route can meet, so turning the destination knob does
+# not pass it (lane C2's finding: a route step's witness touches its destination, which must be editable).
+#
+# Measured on engine 0.3.0 (`enth describe`): the Bright macro (macro1 -> filter1.cutoff +20 %, two octaves) on the
+# saw reads brightness 894 Hz at 0, 1380 at 0.5, 2041 at 1 (HELD); macro1 -> reverb1.wet +40 % on the pluck with wet at
+# -36 dB reads sustain -42.4 dB at 0 and -24.1 at 1 (STACCATO); macro1 -> env1.release -15 % shortens the saw's 400 ms
+# release from a 201 ms reading to 27 ms at 1 (HELD).
+
+schema = "enth.lesson/1"
+id = "macros"
+title = "Macros"
+tier = "basic"
+objective = "Turn one macro knob to change several things at once, and make a macro do more, or less, of each."
+teaches = ["macro.value"]
+
+# --- Hear: one knob, three jobs (the cutoff, the resonance and the reverb's wet level), at 0, 0.5 and 1, then swept.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/saw-three-way-0.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "Macro at 0"
+patch = "patches/saw-three-way-0.patch.json"
+
+[[steps.examples]]
+label = "Macro at 0.5"
+patch = "patches/saw-three-way-half.patch.json"
+
+[[steps.examples]]
+label = "Macro at 1"
+patch = "patches/saw-three-way-1.patch.json"
+
+[[steps.examples]]
+label = "Swept from 0 to 1"
+patch = "patches/saw-three-way-0.patch.json"
+curve = { source = "macro1", points = [{ ms = 0, pct = 0 }, { ms = 1500, pct = 100 }] }
+
+# --- Hear: a pad with two macros, Bright and Space.
+[[steps]]
+id = "hear-pad"
+kind = "listen"
+text = "hear-pad.md"
+
+[steps.view]
+start = "patches/pad-macros-00.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "Both at 0"
+patch = "patches/pad-macros-00.patch.json"
+
+[[steps.examples]]
+label = "Bright at 1"
+patch = "patches/pad-macros-10.patch.json"
+
+[[steps.examples]]
+label = "Space at 1"
+patch = "patches/pad-macros-01.patch.json"
+
+[[steps.examples]]
+label = "Both at 1"
+patch = "patches/pad-macros-11.patch.json"
+
+# --- Hear's ear question: which has Bright turned up? (the pad with Bright at 0 against 1.)
+[[steps]]
+id = "which-bright"
+kind = "choose"
+text = "which-bright.md"
+hints = ["Bright opens the filter: listen for the top of the sound."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pad-macros-00.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pad-macros-10.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/saw-bright-half.patch.json"
+highlight = ["macro1", "macro1 -> filter1.cutoff"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+# --- Try: turn the Bright macro. Start: the saw with macro1 -> filter1.cutoff +20 % at 0 (brightness 894 Hz);
+# witness: the macro at 1 (2041 Hz). A patch goal: moving a macro touches its routes and their destinations (the
+# session's table, `v2::touches`), so the cutoff must stay editable, and a brightness goal would then let the measured
+# hints turn the cutoff knob instead of the macro. The ear questions check the macro's position by ear.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "The macros are the row of knobs at the top, under the header. Turn the first one, Bright.",
+  "The macro opens the cutoff as you turn it: go most of the way up.",
+]
+witness = "patches/saw-bright-1.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-bright-0.patch.json"
+highlight = ["macro1"]
+editable = ["macro1", "macro1 -> filter1.cutoff", "filter1.cutoff"]
+locked = ["osc1.*", "env1.*", "filter1.mode", "filter1.resonance"]
+
+[steps.check]
+kind = "patch"
+predicates = ["macro1 > 0.6"]
+
+# --- Do: a second job. Start: the pluck's Bright macro (at 1) with its route to reverb1.wet at 0 % (wet -36 dB);
+# witness: +40 %. The two sound checks pin the macro: at 0 the tail stays faint (sustain -42.4 dB), at 1 it rings
+# (-24.1 dB against -42.4 at the start). Turning Wet itself raises both, so only the route passes; the hints cannot make
+# a route (noted).
+[[steps]]
+id = "space"
+kind = "do"
+text = "space.md"
+hints = [
+  "The macro already has a route to the reverb's Wet, at 0 %. Drag the orange dot on the Wet knob's ring up: that is the route's depth.",
+  "Or drag macro 1's Wet row in the route list at the bottom. About 40 % gives a clear tail at the top of the knob.",
+]
+witness = "patches/pluck-bright-space-40.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pluck-bright-space-0.patch.json"
+highlight = ["macro1 -> reverb1.wet"]
+editable = ["macro1 -> reverb1.wet", "reverb1.wet"]
+locked = ["osc1.*", "filter1.*", "env1.*", "macro1"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["macro1 -> reverb1.wet > 25%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["sustain < -36dB"]
+macros = [{ macro = "macro1", value = "0" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["sustain > -30dB"]
+macros = [{ macro = "macro1", value = "1" }]
+
+# --- Do: a negative depth. Start: the saw's Bright macro (at 1) with a route to env1.release at 0 %; witness: -10 %.
+# Pinned at 0 the release keeps its length; pinned at 1 it is short. Turning the release knob moves both, so only the
+# route passes (the hints cannot make it: noted).
+[[steps]]
+id = "shorter"
+kind = "do"
+text = "shorter.md"
+hints = [
+  "Drag the orange dot on the Release knob's ring of the amp envelope down, below zero: a negative depth.",
+  "A little goes a long way: about -10 % makes the note stop short at the top of the knob.",
+]
+witness = "patches/saw-bright-release-minus-10.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/saw-bright-release-0.patch.json"
+highlight = ["macro1 -> env1.release"]
+editable = ["macro1 -> env1.release", "env1.release"]
+locked = ["osc1.*", "filter1.*", "macro1"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["macro1 -> env1.release < -5%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["release > 150ms"]
+macros = [{ macro = "macro1", value = "0" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["release < 120ms"]
+macros = [{ macro = "macro1", value = "1" }]
+
+# --- Check: which macro is up, Bright or Space (the pluck, staccato), and which has the macro at 1 (the saw's Bright
+# at 0, 0.5 and 1: brightness 894, 1380 and 2041 Hz).
+[[steps]]
+id = "check-which"
+kind = "choose"
+text = "check-which.md"
+hints = ["Bright changes the note itself; Space adds a tail after it."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pluck-macros-01.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/pluck-macros-10.patch.json"
+phrase = 6
+
+[[steps]]
+id = "check-top"
+kind = "choose"
+text = "check-top.md"
+hints = ["The higher the macro, the more the filter opens: pick the brightest."]
+answer = 2
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw-bright-half.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-bright-0.patch.json"
+
+[[steps.options]]
+label = "C"
+patch = "patches/saw-bright-1.patch.json"

@@ -1,0 +1,227 @@
+# Lesson 8.3, Phase and seeds [space-and-dynamics · advanced] (content/lessons/PLAN.md §5, U8).
+#
+# Hear (two saws at the same pitch in free, reset and seeded phase mode, each rendered with two or three render seeds;
+# then the second saw's start phase at 0, 90 and 180 degrees, at C3 and C4), an "out of phase?" item → Name → Try
+# (make every note start the same: reset mode, a patch goal) → thin the pair with the phase (checked by the loudness)
+# → seeded mode, another seed (a patch goal) → a "what changed?" ear question.
+#
+# Phase is inaudible on one oscillator, so the lesson uses two at the same pitch (osc2 on, no detune). Measured on
+# engine 0.3.0 (`enth describe`, HELD, reset mode): the second saw's phase moves the loudness steadily (0 degrees:
+# -18.4 LUFS; 45: -20.2; 90: -22.0; 135: -23.5; 180: -24.1, half the harmonics cancelled) and the pitch reading jumps
+# to the octave only at 180 (261.6 Hz against 130.8). Free mode differs per render seed (brightness 936, 967 and
+# 773 Hz at seeds 1 to 3). Phase mode and seed are nuisances the generator never draws, so there is no round. The
+# Hear examples with their own render seed cannot be compared by sound/1 as played; they are for listening, not a
+# check. Changed from the card: no "which two renders are identical?" question, which needs render seeds the
+# audibility gate cannot measure (Q9); a "what changed?" item (out of phase against an octave apart) stands in.
+
+schema = "enth.lesson/1"
+id = "phase-and-seeds"
+title = "Phase and seeds"
+tier = "advanced"
+objective = "Choose how an oscillator's notes start: freely, always the same, or from a seed; and hear what the start phase does between two oscillators."
+teaches = ["osc.phase_mode", "osc.phase", "osc.seed"]
+
+# --- Hear: free, reset and seeded, each rendered with different render seeds (free changes; the others repeat).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/pair-free.patch.json"
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Free, render 1"
+patch = "patches/pair-free.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Free, render 2"
+patch = "patches/pair-free.patch.json"
+seed = 2
+
+[[steps.examples]]
+label = "Free, render 3"
+patch = "patches/pair-free.patch.json"
+seed = 3
+
+[[steps.examples]]
+label = "Reset, render 1"
+patch = "patches/pair-reset.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Reset, render 2"
+patch = "patches/pair-reset.patch.json"
+seed = 2
+
+[[steps.examples]]
+label = "Seeded, render 1"
+patch = "patches/pair-seeded.patch.json"
+seed = 1
+
+[[steps.examples]]
+label = "Seeded, render 2"
+patch = "patches/pair-seeded.patch.json"
+seed = 2
+
+# --- Hear: the second saw's start phase, 0, 90 and 180 degrees, then 0 and 180 an octave up.
+[[steps]]
+id = "hear-phase"
+kind = "listen"
+text = "hear-phase.md"
+
+[steps.view]
+start = "patches/pair-reset.patch.json"
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "0 degrees"
+patch = "patches/pair-reset.patch.json"
+
+[[steps.examples]]
+label = "90 degrees"
+patch = "patches/pair-phase-90.patch.json"
+
+[[steps.examples]]
+label = "180 degrees"
+patch = "patches/pair-phase-180.patch.json"
+
+[[steps.examples]]
+label = "0 degrees, C4"
+patch = "patches/pair-reset.patch.json"
+transpose = 12
+
+[[steps.examples]]
+label = "180 degrees, C4"
+patch = "patches/pair-phase-180.patch.json"
+transpose = 12
+
+# --- Hear's ear question: which pair is out of phase? (0 against 180 degrees: the pitch reads 130.8 against 261.6 Hz.)
+[[steps]]
+id = "which-out"
+kind = "choose"
+text = "which-out.md"
+hints = ["Out of phase, half of the harmonics cancel: the pair sounds thinner and higher."]
+answer = 1
+
+[steps.view]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pair-reset.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pair-phase-180.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/pair-reset.patch.json"
+highlight = ["osc1.phase_mode", "osc1.phase", "osc1.seed", "osc2.phase_mode", "osc2.phase", "osc2.seed"]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# --- Try: make every note start the same. Start: both saws free; witness: both reset. A patch goal: a free patch's
+# sound depends on the render seed, which a check at one seed cannot judge.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Phase mode is on each oscillator card. Set it to reset on both.",
+  "In reset mode every note starts at the Start phase knob's angle, so every note sounds the same.",
+]
+witness = "patches/pair-reset.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pair-free.patch.json"
+highlight = ["osc1.phase_mode", "osc2.phase_mode"]
+editable = ["osc1.phase_mode", "osc2.phase_mode"]
+locked = ["osc1.wave", "osc1.semi", "osc1.fine", "osc1.level", "osc2.wave", "osc2.semi", "osc2.fine", "osc2.level", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["osc1.phase_mode == reset", "osc2.phase_mode == reset"]
+
+# --- Do: thin the pair. Start: the second saw 45 degrees late (-20.2 LUFS; not 0 degrees, where the loudness is at its
+# peak and has no slope for the measured hints); witness: 180 degrees (-24.1). The item passes from about 130 degrees,
+# so it implies the predicate.
+[[steps]]
+id = "thin"
+kind = "do"
+text = "thin.md"
+hints = [
+  "Start phase is on the second oscillator's card. Turn it towards 180 degrees.",
+  "Half a cycle apart, the two saws cancel half their harmonics: the pair goes thin and a little quieter.",
+]
+witness = "patches/pair-phase-180.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pair-phase-45.patch.json"
+highlight = ["osc2.phase"]
+editable = ["osc2.phase"]
+locked = ["osc1.wave", "osc1.semi", "osc1.fine", "osc1.level", "osc2.wave", "osc2.semi", "osc2.fine", "osc2.level", "filter1.*", "env1.*", "osc1.phase", "osc1.phase_mode", "osc2.phase_mode"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["osc2.phase in [120deg, 240deg]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["loudness < -23.2LUFS"]
+
+# --- Do: seeded mode, another seed. Start: both saws seeded with seed 0; witness: the second saw's seed 7. A patch
+# goal: which timbre a seed gives is not a target, only that the seed, unlike the render seed, is part of the patch.
+[[steps]]
+id = "seed"
+kind = "do"
+text = "seed.md"
+hints = [
+  "Seed is on the second oscillator's card. Type a new number into it.",
+  "Any seed but 0 will do. Each seed gives the same start phase every time.",
+]
+witness = "patches/pair-seeded-7.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pair-seeded.patch.json"
+highlight = ["osc2.seed"]
+editable = ["osc2.seed"]
+locked = ["osc1.wave", "osc1.semi", "osc1.fine", "osc1.level", "osc2.wave", "osc2.semi", "osc2.fine", "osc2.level", "filter1.*", "env1.*", "osc1.phase_mode", "osc2.phase_mode"]
+
+[steps.check]
+kind = "patch"
+predicates = ["osc2.seed != 0"]
+
+# --- Check: what changed? Two saws an octave apart, or two at the same pitch 180 degrees apart (a saw an octave up,
+# with no fundamental under it).
+[[steps]]
+id = "check-octave"
+kind = "choose"
+text = "check-octave.md"
+hints = ["The octave pair keeps the low note under the high one; the out-of-phase pair loses it."]
+answer = 1
+
+[steps.view]
+hide = ["noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pair-octave.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/pair-phase-180.patch.json"

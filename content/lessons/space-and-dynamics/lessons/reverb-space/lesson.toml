@@ -1,0 +1,463 @@
+# Lesson 7.1, Reverb space [space-and-dynamics · intermediate · tour] (content/lessons/PLAN.md §5, U7).
+#
+# Hear (the wet level, the decay and the room size on a pluck played short, so the tail is heard after the note; a
+# pad held, where the tail shows only after the release), a "which is wetter?" item → Name → Try (bring the reverb
+# in, checked by sound) → a round on the wet level → a longer tail (checked by sound) → a round on the decay → a
+# bigger room and a fully wet sound (patch goals) → three ear questions.
+#
+# Phrases: STACCATO (6: C3 held 150 ms in a 6 s render) for every check, round and ear question, because a reverb
+# shows on a decaying sound (finding 7: a held note reads dry), and HELD (1) for the pad in Hear.
+#
+# Measured on engine 0.3.0 (`enth describe --perf` with the staccato phrase, `enth compare --phrase staccato`): the
+# tail's level reads in `sustain` (wet -60 dB: -42.1 dB, -24: -39.6, -12: -27.1, -9: -23.4, -3: -16.5) and its length
+# in `release` (decay 0.4 s: 250 ms, 1.5 s: 819, 3 s: 1516, 6 s: 3030). sound/1 hears both well: wet off against -24 dB
+# and up are 6 to 9 JND apart, -24/-12 3.65, -12/-3 2.80; decay 0.4/1.5 s 4.13, 1.5/6 s 5.44. It barely hears the room
+# size (20 against 160 ms at decay 3 s: 1.25 JND), but 3.01 at decay 1.5 s, so the room is a patch goal and an ear
+# question there, not a round (changed from the card's D3). The dry level reads in `attack` (dry 0 dB: 4 ms; off: 45 ms)
+# but only once the dry part sinks below the tail, a step the measured hints cannot follow, so it is a patch goal.
+
+schema = "enth.lesson/1"
+id = "reverb-space"
+title = "Reverb space"
+tier = "intermediate"
+objective = "Hear how much reverb a sound has, how long its tail lasts and how big the room is, and set each by ear."
+teaches = ["reverb.wet", "reverb.dry", "reverb.room", "reverb.decay"]
+
+# --- Hear: the wet level on a pluck played short (the staccato phrase).
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/pluck-reverb-off.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "No reverb"
+patch = "patches/pluck-reverb-off.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Wet -24 dB"
+patch = "patches/pluck-wet-24.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Wet -12 dB"
+patch = "patches/pluck-wet-12.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Wet -3 dB"
+patch = "patches/pluck-wet-3.patch.json"
+phrase = 6
+
+# --- Hear: the decay on the same pluck, then a held pad, where the tail starts at the release.
+[[steps]]
+id = "hear-tail"
+kind = "listen"
+text = "hear-tail.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "Decay 0.4 s"
+patch = "patches/pluck-decay-400.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Decay 1.5 s"
+patch = "patches/pluck-decay-1500.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Decay 6 s"
+patch = "patches/pluck-decay-6000.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Pad, no reverb"
+patch = "patches/pad.patch.json"
+
+[[steps.examples]]
+label = "Pad, reverb"
+patch = "patches/pad-wet-9.patch.json"
+
+# --- Hear: the room size, and the dry signal turned off.
+[[steps]]
+id = "hear-room"
+kind = "listen"
+text = "hear-room.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.examples]]
+label = "Small room"
+patch = "patches/pluck-room-20.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Large hall"
+patch = "patches/pluck-room-160.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Dry and wet"
+patch = "patches/pluck-wet-3.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Wet only"
+patch = "patches/pluck-fully-wet.patch.json"
+phrase = 6
+
+# --- Hear's ear question: which is wetter? (wet -24 against -3 dB: 4.94 JND under sound/1.)
+[[steps]]
+id = "which-wetter"
+kind = "choose"
+text = "which-wetter.md"
+hints = ["Listen after the note stops: the wetter one keeps ringing louder."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pluck-wet-24.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/pluck-wet-3.patch.json"
+phrase = 6
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/pluck-wet-12.patch.json"
+highlight = ["reverb1.wet", "reverb1.dry", "reverb1.room", "reverb1.decay"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+# --- Try: bring the reverb in. Start: a trace of reverb, wet -24 dB; witness: -12 dB. The tail's level reads in
+# `sustain` on the staccato phrase (start -39.6 dB, witness -27.1; the item passes from about -17 dB). Not from -60 dB:
+# there the tail is far below the note and the measured hints find nothing to follow (lesson-check --solve: "no free
+# parameter moves envelope.sustain_db"). The patch predicate keeps it about the wet level and follows from the sound.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Wet is on the reverb card, at the right of the effects. Turn it up.",
+  "Play a short note and listen after it stops: you want a tail you can hear clearly.",
+]
+witness = "patches/pluck-wet-12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pluck-wet-24.patch.json"
+highlight = ["reverb1.wet"]
+editable = ["reverb1.wet"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["reverb1.wet > -21dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["sustain > -33dB"]
+
+# Do, round 1: a hidden wet level drawn from -24, -12 and -3 dB (3.65 and 2.80 JND apart under sound/1) on the staccato
+# phrase, from the reverb at -60 dB (6 to 9 JND from each). Seed 1 draws -12 dB (`enth compare`: the start scores sound
+# 39.9 and does not pass; seeds 4 and 5 draw -3 and -24 dB).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round-1.md"
+hints = [
+  "Listen after the note: is the target's tail louder or quieter than yours? Turn Wet that way.",
+  "Each step of the draw is about 10 dB: try -24, -12 and -3 dB and keep the closest.",
+]
+
+[steps.view]
+highlight = ["reverb1.wet"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 6
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "reverb1.wet", set = [-24.0, -12.0, -3.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pluck, reverb at -60 dB", description = "The pluck with the reverb on but its wet level at -60 dB, which is off." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 3000.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", params = { wet = -60.0 } },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 2.0, decay = 250.0, sustain = 0.0, release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["reverb1.wet"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Reverb space, round 1"
+tags = ["space-and-dynamics", "reverb"]
+
+# --- Do: a longer tail. Start: decay 0.4 s at wet -9 dB (`release` 250 ms); witness: decay 6 s (3030 ms). The item
+# needs more than the default 3 s (1516 ms), so the Try's witness does not pass it (--cross).
+[[steps]]
+id = "longer"
+kind = "do"
+text = "longer.md"
+hints = [
+  "Decay is on the reverb card. Turn it up.",
+  "A hall rings for several seconds after a short note: aim for 5 s or more.",
+]
+witness = "patches/pluck-decay-6000.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pluck-decay-400.patch.json"
+highlight = ["reverb1.decay"]
+editable = ["reverb1.decay"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["reverb1.decay > 3s"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["release > 2000ms"]
+
+# Do, round 2: a hidden decay drawn from 0.4, 1.5 and 6 s (4.13 and 5.44 JND apart) at wet -9 dB, from the default 3 s.
+# Seed 1 draws 1.5 s, shorter than the start (`enth compare`: the start scores sound 43.7 and does not pass; seed 2
+# draws 6 s, seed 3 0.4 s).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round-2.md"
+hints = [
+  "How long does the target ring after the note: shorter or longer than yours? Turn Decay that way.",
+  "Big moves first: halve or double the decay, then listen again.",
+]
+
+[steps.view]
+highlight = ["reverb1.decay"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 6
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "reverb1.decay", set = [400.0, 1500.0, 6000.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pluck, wet -9 dB", description = "The pluck in a reverb with the default 3 s decay, wet -9 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf", params = { cutoff = 3000.0 } }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", params = { wet = -9.0 } },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 2.0, decay = 250.0, sustain = 0.0, release = 150.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["reverb1.decay"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Reverb space, round 2"
+tags = ["space-and-dynamics", "reverb"]
+
+# --- Do: a bigger room. Start: room 20 ms (decay 1.5 s, wet -3 dB); witness: 160 ms. A patch goal: no descriptor
+# follows the room size steadily (`sustain` reads -25.4 against -15.5 dB here, but not in order at decay 3 s), and
+# the ear question below checks it by ear (3.01 JND).
+[[steps]]
+id = "bigger"
+kind = "do"
+text = "bigger.md"
+hints = [
+  "Room size is on the reverb card. Turn it up.",
+  "A big room spreads the echoes out: the tail sounds wider and smoother. Go past 120 ms.",
+]
+witness = "patches/pluck-room-160.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pluck-room-20.patch.json"
+highlight = ["reverb1.room"]
+editable = ["reverb1.room"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["reverb1.room > 120ms"]
+
+# --- Do: only the reverb. Start: wet -3 dB with the dry signal at 0 dB; witness: dry off (-60 dB). A patch goal: the
+# attack reads 4 ms against 45 ms, but only once the dry part sinks below the tail, a step with nothing to follow on
+# the way. The last ear question checks it by ear.
+[[steps]]
+id = "far"
+kind = "do"
+text = "far.md"
+hints = [
+  "Dry is on the reverb card, next to Wet. Turn it all the way down.",
+  "At -60 dB the dry signal is off: the note's own attack disappears and only the room is left.",
+]
+witness = "patches/pluck-fully-wet.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/pluck-wet-3.patch.json"
+highlight = ["reverb1.dry"]
+editable = ["reverb1.dry"]
+locked = ["osc1.*", "filter1.*", "env1.*"]
+
+[steps.check]
+kind = "patch"
+predicates = ["reverb1.dry < -50dB"]
+
+# --- Check: which tail is longer (decay 0.4 against 6 s: 6.58 JND), which room is bigger (20 against 160 ms at
+# decay 1.5 s: 3.01 JND), which is only reverb (sound/1 1.67 JND, but the attack reads 4 against 45 ms).
+[[steps]]
+id = "check-longer"
+kind = "choose"
+text = "check-longer.md"
+hints = ["Count how long each keeps ringing after the note stops."]
+answer = 0
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pluck-decay-6000.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/pluck-decay-400.patch.json"
+phrase = 6
+
+[[steps]]
+id = "check-bigger"
+kind = "choose"
+text = "check-bigger.md"
+hints = ["In a small room the echoes come thick and close; in a hall they open out and swell."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pluck-room-20.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/pluck-room-160.patch.json"
+phrase = 6
+
+[[steps]]
+id = "check-wet-only"
+kind = "choose"
+text = "check-wet-only.md"
+hints = ["Listen to the very start of each note: one has a sharp click, the other fades in."]
+answer = 1
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*"]
+
+[[steps.options]]
+label = "A"
+patch = "patches/pluck-wet-3.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/pluck-fully-wet.patch.json"
+phrase = 6
