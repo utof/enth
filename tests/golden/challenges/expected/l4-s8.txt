@@ -12,7 +12,7 @@ render rate=48000 seed=236412653 frames=144000 sha256=11252bbdc02434c6eebfd3c5dd
 scoring sound/1 structure/1 combined/1 time/1 weight=72 pass_mark=90
   answer exact
     report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
-    sound distance=0.000000000 floor=0.001061360 scale=0.133662177 jnd=0.000000000
+    sound distance=0.000000000 floor=0.001061360 scale=0.133662083 jnd=0.000000000
     component pitch same close target=-2096.290418455 answer=-2096.290418455
     component brightness same close target=131.954561779 answer=131.954561779
     component attack same close target=13.000000000 answer=13.000000000
@@ -39,8 +39,8 @@ scoring sound/1 structure/1 combined/1 time/1 weight=72 pass_mark=90
     ring lfo1 -> osc1.fine good same 1.000000000 answer=lfo1 -> osc1.fine
     ring lfo2 -> filter1.cutoff good same 1.000000000 answer=lfo2 -> filter1.cutoff
   answer start
-    report sound=16.726246592 structure=28.114438166 combined=19.914940233 passed=false margin=-73.273753408
-    sound distance=2.251184478 floor=0.001061360 scale=0.133662177 jnd=16.964735165
+    report sound=16.726233694 structure=28.114438166 combined=19.914930946 passed=false margin=-73.273766306
+    sound distance=2.251184478 floor=0.001061360 scale=0.133662083 jnd=16.964746908
     component pitch same close target=-2096.290418455 answer=-2100.000526561
     component brightness higher far target=131.954561779 answer=894.250747943
     component harmonics extra far target=- answer=0.344186717
@@ -71,8 +71,8 @@ scoring sound/1 structure/1 combined/1 time/1 weight=72 pass_mark=90
     module missing lfo1 lfo
     module missing lfo2 lfo
   answer near
-    report sound=95.262966854 structure=98.390039333 combined=96.138547148 passed=true margin=5.262966854
-    sound distance=0.009193615 floor=0.001061360 scale=0.133662177 jnd=0.542211579
+    report sound=95.262966381 structure=98.390039333 combined=96.138546808 passed=true margin=5.262966381
+    sound distance=0.009193615 floor=0.001061360 scale=0.133662083 jnd=0.542211622
     component pitch same close target=-2096.290418455 answer=-2083.804339815
     component brightness same close target=131.954561779 answer=131.994787708
     component attack same close target=13.000000000 answer=13.000000000

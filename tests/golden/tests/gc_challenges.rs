@@ -424,7 +424,7 @@ mod scratch {
         );
 
         // 4. A pinned number that moves is refused, in a check and in an update, and the file is left alone.
-        let tampered = second.replacen("sound=94.918209609", "sound=94.718209609", 1);
+        let tampered = second.replacen("sound=94.918204140", "sound=94.718204140", 1);
         assert_ne!(tampered, second);
         std::fs::write(&expected_path, &tampered).unwrap();
         let moved = challenges::run(&options(&dir, false)).expect("runs");
@@ -432,7 +432,7 @@ mod scratch {
             panic!("a moved pin must fail a check");
         };
         assert!(
-            why.contains("sound=94.718209609") && why.contains("sound=94.918209609"),
+            why.contains("sound=94.718204140") && why.contains("sound=94.918204140"),
             "{why}"
         );
         let refused = challenges::run(&options(&dir, true)).expect("runs");

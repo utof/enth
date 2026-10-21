@@ -6,7 +6,7 @@
 
 - Each one is a list of ops applied with `enth apply` to the starter patch (`xtask/src/preset/starter.patch.json`: every P1 module, the extras switched off; the same modules as the factory Init, whose master is lower), so the whole instrument is there to tweak. Then `enth render` and `enth describe` checked it, and `cargo xtask preset-add` wrote it here in the exact preset form (`Patch::to_json()`, a name, tags from the factory vocabulary, the engine stamp). `enth diff xtask/src/preset/starter.patch.json <file>` lists the ops behind any of them.
 - Folders are the type tag: `bass`, `lead`, `pad`, `pluck`, `keys`, `arp`, `perc`, `fx`, `texture`.
-- **Macros** follow the G1 naming: 1 **Bright**, 2 **Pluck**, 3 **Space**, 4 **Drive**. They sit at 0 in the saved sound and add as you turn them up. Pluck makes the sound shorter and snappier (less sustain, a shorter decay or swell). Space raises the reverb's wet level; the basses have no Space. Drive raises the filter's drive *and* the compressor's makeup, with the compressor on at 1:1 as a clean gain stage (Poly Stab uses it for real): the filter's saturator loses about 1 dB of level per dB of drive, so drive alone would mostly make the sound quieter. Macro 5 is **Rate** on the three modulation showcases (Wobble Machine, Gate Keeper, Octave Arp).
+- **Macros** follow the G1 naming: 1 **Bright**, 2 **Pluck**, 3 **Space**, 4 **Drive**. They sit at 0 in the saved sound and add as you turn them up. Pluck makes the sound shorter and snappier (less sustain, a shorter decay or swell). Space raises the reverb's wet level; the basses have no Space. Drive raises the filter's drive and, a little, the compressor's makeup (8 % of its range, about 2 dB at full Drive; Poly Stab 16 %), with the compressor on at 1:1 as a clean gain stage (Poly Stab uses it for real). Since engine 0.3.0 the saturator has its own make-up gain and keeps a full-level oscillator at about its level (FU1 lane DRV, [docs/dsp/svf.md](../../docs/dsp/svf.md#drive)); the compressor's few dB cover what two oscillators or a hot mix still lose to the saturation. Acid Snap's Drive is the filter's drive alone, and its master sits 3 dB lower (−6.5 dB) to keep its saved sound's level, since its filter runs at 6 dB of drive. (On engine 0.2.0 the saturator lost about 1 dB of level per dB of drive, and the make-up was 0.8× the drive depth. The retune keeps every candidate's loudness with Drive at 1 within 0.1 dB of what was auditioned, Acid Snap's within 0.4 dB; the saved sounds are unchanged.) Macro 5 is **Rate** on the three modulation showcases (Wobble Machine, Gate Keeper, Octave Arp).
 - **Headroom.** Every candidate peaks at or below −1.5 dBFS on a single note and on a four-note chord (C–E–G–B) at velocity 127, from C1 to C6, over several render seeds. Poly sounds are gain-staged for chords, so their single notes are quieter (about −10 dBFS). The kick, snare and riser are mono (a new note retriggers), like drum voices.
 - Short and percussive sounds are kept as they are; nothing was filtered by duration.
 
@@ -39,32 +39,32 @@
 
 ### What `enth describe` reads
 
-Rendered at the note and hold/clip lengths shown (velocity 100 for the readings; the peaks are at velocity 127). Envelope readings are `enth describe`'s, not knob values: attack to within 1 dB of the peak, sustain relative to the peak, release to 40 dB down, duration within 40 dB of the peak. "Peak" is single note / four-note chord, in dBFS; "macros at 1" is the chord's peak with every macro turned fully up.
+Rendered at the note and hold/clip lengths shown (velocity 100 for the readings; the peaks are at velocity 127). Envelope readings are `enth describe`'s, not knob values: attack to within 1 dB of the peak, sustain relative to the peak, release to 40 dB down, duration within 40 dB of the peak. "Peak" is single note / four-note chord, in dBFS; "macros at 1" is the chord's peak with every macro turned fully up (engine 0.3.0 with lane DRV's Drive retune: within 0.1 dB of 0.2.0's, except Acid Snap −7.2 → −6.8 and Poly Stab −4.3 → −2.4, whose compressor lets the saturator's transients through).
 
 | Name | Played | Pitch | Brightness | Attack / sustain / release / duration | Movement | Peak | Macros at 1 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Sub Floor | C2, 2/3 s | C2 | 67 Hz | 0 ms / 0 dB / 60 ms / 2059 ms | steady | -3.1 / -3.1 | -5.3 |
-| Acid Snap | C2, 2/3 s | C2 | 167 Hz | 30 ms / -3 dB / 41 ms / 2041 ms | brightness down 1.4 oct in 117 ms | -5.3 / -5.3 | -7.2 |
-| Warm Reese | C2, 2/3 s | C2 | 234 Hz | 15 ms / -3 dB / 83 ms / 2072 ms | beating 0.98 Hz | -3.0 / -3.8 | -10.2 |
-| Wobble Machine | C2, 2/3 s | C1 | 315 Hz | 455 ms / -8 dB / 62 ms / 2059 ms | brightness LFO 2.01 Hz, 3.5 oct; noisiness 0.40 | -2.0 / -2.1 | -5.8 |
-| Solar Lead | C4, 1.5/3 s | C4 | 2.62 kHz | 7 ms / -1 dB / 421 ms / 1898 ms | beating 1.06 Hz | -3.1 / -3.2 | -9.8 |
+| Acid Snap | C2, 2/3 s | C2 | 167 Hz | 30 ms / -3 dB / 41 ms / 2041 ms | brightness down 1.4 oct in 117 ms | -5.3 / -5.3 | -6.8 |
+| Warm Reese | C2, 2/3 s | C2 | 234 Hz | 15 ms / -3 dB / 83 ms / 2072 ms | beating 0.98 Hz | -3.0 / -3.8 | -10.3 |
+| Wobble Machine | C2, 2/3 s | C1 | 315 Hz | 455 ms / -8 dB / 62 ms / 2059 ms | brightness LFO 2.01 Hz, 3.5 oct; noisiness 0.40 | -2.0 / -2.1 | -5.9 |
+| Solar Lead | C4, 1.5/3 s | C4 | 2.62 kHz | 7 ms / -1 dB / 421 ms / 1898 ms | beating 1.06 Hz | -3.1 / -3.2 | -9.9 |
 | Pixel Square | C4, 1.5/3 s | C4 | 2.69 kHz | 0 ms / 0 dB / 10 ms / 1510 ms | steady | -5.5 / -5.5 | -7.3 |
 | Sync Tear | C4, 1.5/3 s | C4 | 2.86 kHz | 4 ms / -1 dB / 363 ms / 1854 ms | steady | -3.0 / -3.2 | -3.0 |
 | Breath Flute | C4, 1.5/3 s | C4 | 2.56 kHz | 116 ms / -1 dB / 435 ms / 1927 ms | noisiness 0.06 | -2.8 / -2.0 | -7.2 |
 | Velvet Pad | C3, 5/8 s | C3 | 566 Hz | 561 ms / -2 dB / 1331 ms / 5944 ms | beating 1.21 Hz | -11.0 / -2.1 | -7.7 |
-| Aurora | C3, 5/8 s | C3 | 1.68 kHz | 698 ms / -2 dB / 2093 ms / 7042 ms | beating 1.51 Hz; brightness LFO 0.80 Hz, 1.4 oct | -11.3 / -2.1 | -8.0 |
-| Night Drift | C3, 5/8 s | C2 | 265 Hz | 989 ms / -2 dB / 1978 ms / 6811 ms | steady | -11.9 / -2.4 | -4.7 |
+| Aurora | C3, 5/8 s | C3 | 1.68 kHz | 698 ms / -2 dB / 2093 ms / 7042 ms | beating 1.51 Hz; brightness LFO 0.80 Hz, 1.4 oct | -11.3 / -2.1 | -8.1 |
+| Night Drift | C3, 5/8 s | C2 | 265 Hz | 989 ms / -2 dB / 1978 ms / 6811 ms | steady | -11.9 / -2.4 | -4.8 |
 | Gate Keeper | C3, 5/8 s | C3 | 1.22 kHz | 64 ms / -12 dB / 445 ms / 5368 ms | tremolo 8.0 Hz, 32 dB; noisiness 0.10 | -12.3 / -1.7 | -6.3 |
-| Glass Pluck | C4, 1/2.5 s | C4 | 2.14 kHz | 0 ms / -55 dB / 0 ms / 534 ms | brightness down 0.6 oct in 149 ms | -11.0 / -3.1 | -4.7 |
-| Poly Stab | C4, 1/2.5 s | C4 | 1.64 kHz | 0 ms / -74 dB / 0 ms / 366 ms | noisiness 0.01 | -8.3 / -3.5 | -4.3 |
+| Glass Pluck | C4, 1/2.5 s | C4 | 2.14 kHz | 0 ms / -55 dB / 0 ms / 534 ms | brightness down 0.6 oct in 149 ms | -11.0 / -3.1 | -4.8 |
+| Poly Stab | C4, 1/2.5 s | C4 | 1.64 kHz | 0 ms / -74 dB / 0 ms / 366 ms | noisiness 0.01 | -8.3 / -3.5 | -2.4 |
 | Drawbar Organ | C4, 1.5/3 s | C4 | 589 Hz | 4 ms / -1 dB / 22 ms / 1522 ms | steady | -14.1 / -2.6 | -8.0 |
-| Tremolo Keys | C4, 1.5/3 s | C4 | 489 Hz | 3 ms / -10 dB / 379 ms / 1698 ms | tremolo 5.0 Hz, 5 dB | -10.2 / -1.3 | -1.2 |
-| Soft Bell | C5, 3/5 s | C5 | 816 Hz | 15 ms / -78 dB / 0 ms / 1709 ms | tremolo 2.7 Hz, 9 dB | -9.4 / -1.4 | -4.9 |
-| Octave Arp | C4, 2/3 s | C4 | 1.27 kHz | 50 ms / -3 dB / 423 ms / 2413 ms | brightness LFO 8.01 Hz, 1.0 oct; noisiness 0.04 | -11.0 / -2.4 | -3.1 |
-| Thump Kick | A1, 0.3/1 s | A1 | 120 Hz | 0 ms / -50 dB / 0 ms / 231 ms | brightness up 0.7 oct in 192 ms | -4.9 / -5.2 | -7.0 |
+| Tremolo Keys | C4, 1.5/3 s | C4 | 489 Hz | 3 ms / -10 dB / 379 ms / 1698 ms | tremolo 5.0 Hz, 5 dB | -10.2 / -1.3 | -1.3 |
+| Soft Bell | C5, 3/5 s | C5 | 816 Hz | 15 ms / -78 dB / 0 ms / 1709 ms | tremolo 2.7 Hz, 9 dB | -9.4 / -1.4 | -5.0 |
+| Octave Arp | C4, 2/3 s | C4 | 1.27 kHz | 50 ms / -3 dB / 423 ms / 2413 ms | brightness LFO 8.01 Hz, 1.0 oct; noisiness 0.04 | -11.0 / -2.4 | -3.2 |
+| Thump Kick | A1, 0.3/1 s | A1 | 120 Hz | 0 ms / -50 dB / 0 ms / 231 ms | brightness up 0.7 oct in 192 ms | -4.9 / -5.2 | -7.1 |
 | Snare Crack | A3, 0.3/1 s | tonal A3 | 11.39 kHz | 0 ms / -52 dB / 0 ms / 181 ms | noisiness 0.49 | -4.1 / -2.7 | -4.5 |
 | Noise Riser | C3, 3/4.5 s | – | 6.06 kHz | 2217 ms / -1 dB / 1354 ms / 4220 ms | brightness up 3.7 oct in 2037 ms; noisiness 1.00 | -4.4 / -4.4 | -2.9 |
-| Wind Tunnel | C3, 5/7 s | – | 3.95 kHz | 1535 ms / -4 dB / 2370 ms / 6989 ms | brightness LFO 0.69 Hz, 0.7 oct; noisiness 1.00 | -10.2 / -4.1 | -4.3 |
+| Wind Tunnel | C3, 5/7 s | – | 3.95 kHz | 1535 ms / -4 dB / 2370 ms / 6989 ms | brightness LFO 0.69 Hz, 0.7 oct; noisiness 1.00 | -10.2 / -4.1 | -4.4 |
 
 Reading notes ([docs/dsp/analysis.md](../../docs/dsp/analysis.md) has the limits):
 

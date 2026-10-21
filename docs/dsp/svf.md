@@ -48,15 +48,60 @@ Why: the peak of a 12 dB/octave filter at its cutoff is about `Q` for `Q ≥ 1`,
 
 ## Drive
 
-`drive` (0 to 24 dB) puts a soft saturator in front of the filter: `y = x / sqrt(1 + a·x²)` with `a = 10^(dB/10) − 1`. It is odd, monotonic, has unity gain at small signals, and is bounded by `1/sqrt(a)`: a sigmoid with gain `G = 10^(dB/20)` in front, normalised back, offset so that the small-signal level does not change. At 0 dB, `a = 0` and the saturator is skipped entirely, which is bit-identical to running it (`x / sqrt(1 + 0)` is exactly `x`). The drive amount `a` is ramped per sample across the segment, like the coefficients. The cost is one `sqrt` and one `div` per sample (both correctly rounded in IEEE 754).
+`drive` (0 to 24 dB) puts a soft saturator in front of the filter (`svf::Drive`, `svf::saturate`):
 
-The shape is the algebraic sigmoid above, not a tanh; the module comment in `catalogue/svf.rs` says so.
+```text
+y = x / sqrt(b + c·x²)        a = 10^(dB/10) − 1        b = 1 / (1 + a·r²)        c = a·b        r² = 1/3
+```
+
+That is the algebraic sigmoid `x / sqrt(1 + a·x²)` (gain `sqrt(a)` into `u / sqrt(1 + u²)`, normalised back) times a make-up gain `sqrt(1 + a·r²)`, chosen so that `b + c·r² = 1`: a signal at `±r` passes unchanged at every drive. `r = 1/√3 ≈ 0.577` (−4.77 dBFS) is the RMS of a full-scale saw (`DRIVE_REFERENCE_SQ`). The shape is an algebraic sigmoid, not a tanh; the module comment in `catalogue/svf.rs` says so.
+
+- **Odd and monotonic**: `dy/dx = b / (b + c·x²)^(3/2) > 0`. Deep in saturation at 24 dB the true step between neighbouring test inputs is below one ulp, so the `f32` output is monotonic to the last bit.
+- **Bounded**: `|y| < 1/sqrt(c) = sqrt(r² + 1/a)`, which falls to `r` as the drive rises, and `|y| ≤ max(|x|, r)`: a peak above `r` never grows, a quieter signal rises at most to `r`. Finite for every finite input.
+- **Small-signal gain** `1/sqrt(b) = sqrt(1 + a·r²)`: +7.7 dB at 12 dB of drive, +19.3 dB at 24.
+- **0 dB is the identity, bit for bit**: `b = 1`, `c = 0` (`Drive::OFF`), and the saturator is skipped entirely, which is bit-identical to running it (`x / sqrt(1 + 0)` is exactly `x`). Drive above the catalogue's 24 dB is clamped.
+- **Automation**: `b` and `c` ramp linearly per sample across the segment, like the coefficients. `b + c·r² = 1` is linear, so the reference level holds along every ramp, and a jump from 0 to 24 dB in one segment moves a loud input (0.9) by at most 0.02 per sample (0.32 in one step without the ramp). The stress test also drives the saturator with a new random drive every block.
+- **The cost** is one `sqrt` and one `div` per sample (both correctly rounded in IEEE 754) and two ramp adds; `Drive::from_db` (one `expm1` and an `f64` division) runs only when the drive changes, and costs one compare at 0 dB.
+
+Because the curve is the old one times a gain at each drive, the spectrum is unchanged: the `svf-drive` golden's centroid did not move, only its level (−16.7 → −8.9 dB RMS).
+
+### Why this make-up (FU1 lane DRV, 2026-10-21; engine 0.3.0)
+
+Up to engine 0.2.0 the saturator was `x / sqrt(1 + a·x²)`: unity gain at small signals and bounded by `1/sqrt(a)`, so a full-level oscillator lost about 1 dB per dB of drive (19.8 dB quieter at 24 dB) and turning Drive up made a sound quieter (lane PR's finding; its preset candidates compensated with compressor make-up). A static waveshaper cannot keep every input level, so the choice is which level it keeps. Compared on a band-limited saw (a Python model, then the engine):
+
+| Curve | Full-level saw, 0 → 24 dB | Half-level saw at 24 dB | Why not |
+| --- | --- | --- | --- |
+| no make-up (0.2.0) | −19.6 dB | −14 dB | the bug |
+| **make-up to `r = 1/√3`** (chosen) | −1.1 to 0 dB | +5.3 dB | |
+| make-up to `r = 0.5` | down to −2.0 dB | +4.1 dB | a full saw dips past the ±2 dB target |
+| make-up to `r = 0.7` | up to +1.4 dB | +7.0 dB | louder for everything |
+| peak normalisation (`r = 1`, gain `G`) | up to +4.5 dB | +10.0 dB | far louder with drive |
+| exact RMS make-up for a full-scale saw | within +0.4 dB | +5.7 dB | an `atan` per change and a series near 0 dB, no peak guarantee, for 1 dB less dip on one waveform |
+
+The chosen curve is closed-form, keeps a full-level oscillator within about 1.3 dB at every drive, and never raises a peak above the larger of the input's peak and −4.8 dBFS. Its cost is that drive also compresses towards `r`, as any saturator with make-up does: a quieter signal gets louder as drive rises, a hotter one (two full-level oscillators) quieter.
+
+### Measured: loudness against drive
+
+`enth render` and `enth describe` (LUFS-I; RMS of the sustained part beside it), the starter patch (osc 1 saw into the low-pass at 2 kHz, resonance 10 %, amp envelope at 100 % sustain), velocity 127, held 1.5 s; level 100 % is a ±1 saw at the filter's input (the centre pan makes it −3 dB per channel). Change from the same patch at 0 dB of drive, engine 0.2.0 → 0.3.0:
+
+| Case (level at 0 dB) | 6 dB | 12 dB | 18 dB | 24 dB |
+| --- | --- | --- | --- | --- |
+| A2, level 100 % (−9.20 LUFS), LUFS | −4.12 → **−1.13** | −8.93 → **−1.19** | −14.22 → **−0.86** | −19.81 → **−0.55** |
+| A2, level 100 %, RMS | −3.96 → −0.96 | −8.68 → −0.94 | −13.95 → −0.58 | −19.55 → −0.29 |
+| A2, level 50 % (−15.22 LUFS), LUFS | −1.57 → **+1.43** | −4.68 → **+3.07** | −9.09 → **+4.28** | −14.25 → **+5.01** |
+| A2, level 50 %, RMS | −1.49 → +1.50 | −4.50 → +3.25 | −8.84 → +4.53 | −13.98 → +5.29 |
+| A2, level 100 %, filter open (20 kHz), LUFS | −4.21 → −1.22 | −9.07 → −1.33 | −14.39 → −1.02 | −19.98 → −0.72 |
+| C4, level 100 %, LUFS | −3.99 → −0.99 | −8.73 → −0.98 | −13.99 → −0.63 | −19.58 → −0.32 |
+| C4, level 50 %, LUFS | −1.50 → +1.49 | −4.53 → +3.21 | −8.88 → +4.48 | −14.02 → +5.24 |
+| A2, two saws at 100 % (+7 ct apart, −5.84 LUFS), LUFS | −6.51 → −3.51 | −11.78 → −4.03 | −17.21 → −3.84 | −22.84 → −3.57 |
+
+A full-level saw stays within 1.33 dB of its 0 dB loudness (the target was about ±2 dB); the dip is deepest between 6 and 12 dB, where the knee crosses the saw's range, and closes as the output squares off. The peak of a full-level saw falls from −2.5 to −6.8 dBFS at 24 dB (the wave squares off at the same RMS). Scripts and raw tables: `~/code/enth-scratch/fu1/drv/` (`py/measure.py`, `measure/*/table.json`).
 
 ## Stability under modulation
 
 Required: finite output, no stuck DC, at full resonance under audio-rate cutoff modulation. Tests (`enth-dsp` white-box and `modules/svf.rs`):
 
-- **Random-jump stress**: all four modes, drive 0 and 24 dB, Q 25, white noise (±0.5) in, and the cutoff jumping to a new random value (log-uniform from 20 Hz to 0.45·fs) at the start of every one of 15,000 segments (10 s; an audio-rate 1.5 kHz modulation): every output sample is finite, the peak stays below 25 (report 02 measured 2.9), the mean of the output stays below 0.05 (no stuck DC), and once the input stops and the cutoff is parked the state decays to exactly 0.0 (no limit cycle, no subnormal tail).
+- **Random-jump stress**: all four modes, drive 0 dB, 24 dB and a random drive every block (FU1), Q 25, white noise (±0.5) in, and the cutoff jumping to a new random value (log-uniform from 20 Hz to 0.45·fs) at the start of every one of 15,000 segments (10 s; an audio-rate 1.5 kHz modulation): every output sample is finite, the peak stays below 25 (report 02 measured 2.9), the mean of the output stays below 0.05 (no stuck DC), and once the input stops and the cutoff is parked the state decays to exactly 0.0 (no limit cycle, no subnormal tail).
 - An impulse at 0.45·fs and Q 25 is below 1e-6 within 60 ms (report 02: 42 ms).
 - `modules/svf.rs` repeats the random-jump stress through the module (high-pass, Q 25, a random cutoff from 20 Hz to 20 kHz every segment for 15,000 segments; the state then dies to exact zero with no subnormals), and the `moving_16v` bench renders 16 voices with a cutoff event every segment.
 
@@ -68,11 +113,11 @@ Required: finite output, no stuck DC, at full resonance under audio-rate cutoff 
 | `cutoff` | Hz, `cur` value | smoothing and modulation are applied by the engine before the module sees it |
 | `resonance` | `k_from_resonance` | |
 | `keytrack` | octaves per octave | 0 skips the `exp2` |
-| `drive` | `drive_amount` | 0 dB skips the saturator |
+| `drive` | `Drive::from_db` (`b`, `c`; `drive_amount` is the shape `a`) | 0 dB is `Drive::OFF` and skips the saturator |
 
 ## Determinism
 
-The only transcendentals are `tanf` (per changed segment), `exp2` (the resonance map in `f64`, and key tracking) and `expm1` (the drive map), all through `enth_dsp::util::math` (pinned `libm`). The per-sample code is `+ − × ÷` and `sqrt`, all correctly rounded; no `mul_add`. 24 impulse-response hashes (4 modes × 3 cutoffs × 2 resonances) are pinned in `svf.rs`, and the `enth-dsp` unit tests were run under wasmtime (wasm32-wasip1) with the same results. The goldens `svf-*` are checked native = wasm by `cargo xtask golden --wasm`.
+The only transcendentals are `tanf` (per changed segment), `exp2` (the resonance map in `f64`, and key tracking) and `expm1` (the drive map, with an `f64` division for `b`), all through `enth_dsp::util::math` (pinned `libm`). The per-sample code is `+ − × ÷` and `sqrt`, all correctly rounded; no `mul_add`. 24 impulse-response hashes (4 modes × 3 cutoffs × 2 resonances) are pinned in `svf.rs`, and the `enth-dsp` unit tests were run under wasmtime (wasm32-wasip1) with the same results. The goldens `svf-*` are checked native = wasm by `cargo xtask golden --wasm`.
 
 ## Cost
 
@@ -85,9 +130,13 @@ Measured with callgrind (`cargo xtask bench --bench svf`), 1 s at 48 kHz, whole 
 | `drive_16v` (12 dB) | 71,442,823 | 78,588,000 | 36.6 |
 | `moving_16v` (a cutoff event every segment) | 71,381,472 | 78,520,000 | 36.5 |
 
+The drive's make-up (FU1 lane DRV, engine 0.3.0) measured before → after on one build of everything else: `lp_1v` 4,995,647 → 5,001,648, `lp_16v` 56,836,437 → 56,932,453, `drive_16v` 63,077,925 → 63,894,229 (+1.29 %, +1.06 instructions per sample per voice: the second ramp add) and `moving_16v` 73,189,536 → 73,309,536 (+0.16 %, the larger drive state per voice). The table above is P1a's (2026-10-19); the engine skeleton has got cheaper since, so today's absolute counts are lower ([benchmarks.md](../benchmarks.md)). The budgets are unchanged and hold.
+
 The inner loop of a static low-pass is 22 instructions per sample (13 floating-point operations, 6 register moves that SSE2's two-operand form needs, the load, the store and the loop). The rest of the marginal 28 is the engine handling one more voice processor. A moving cutoff adds the four ramp adds and one `tanf` per voice-segment. A form with `v2 = ic2 + g·v1` would save about five instructions per sample, but it ramps a different set of coefficients than the one report 02 validated for stability, so it was not adopted.
 
 ## Behaviour other lanes must know
+
+- **Drive keeps the level since engine 0.3.0** (FU1 lane DRV): turning it up adds harmonics and compresses towards −4.8 dBFS RMS instead of making the sound quieter. Anything that pinned a number through `filter1.drive` moved with it (the `svf-drive` golden, the golden challenges through `sound/1`'s JND scale, the `sound/1` determinism pin, the GR1 floors, the preset candidates' Drive make-up); the commit messages list each.
 
 - The module does not use `params.prev`. Whatever smoothing S2b puts on `cutoff`, `resonance` and `drive` (the catalogue gives them `SMOOTH`) arrives as `cur`, and the filter glides across 32 frames to it from where it was.
 - `svf-cutoff-jump` automates `filter1.cutoff` at off-grid times with a resonance of 90 %: until S2b smooths the cutoff, it moves in one segment, and the golden will change on purpose when smoothing lands.

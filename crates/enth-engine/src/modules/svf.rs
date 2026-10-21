@@ -5,26 +5,25 @@
 //!
 //! 1. The effective cutoff is `cutoff · 2^(keytrack · (pitch − 60) / 12)` (`pitch` is `NoteState::pitch_cur`),
 //!    clamped to 20 Hz … 0.45·fs. Resonance maps to the damping `k = 2 · 50^(−resonance %)` (Q 0.5 … 25,
-//!    exponential in Q), and drive to the saturator amount `a = 10^(dB/10) − 1`.
+//!    exponential in Q), and drive to the saturator's two coefficients (`svf::Drive`: `x / sqrt(b + c·x²)` with
+//!    make-up gain, from `a = 10^(dB/10) − 1`).
 //! 2. One `tanf` (plus one `exp2` for the resonance) gives the coefficients for the *end* of the segment. They are
 //!    cached per voice and only recomputed when one of the four inputs (cutoff, resonance, drive, key-tracking term)
 //!    changed, so a static filter costs no transcendental.
-//! 3. `enth_dsp::svf::process_block` filters the 32 frames, ramping `a1, a2, a3, k` (and the drive amount) linearly
+//! 3. `enth_dsp::svf::process_block` filters the 32 frames, ramping `a1, a2, a3, k` (and the drive's `b`, `c`) linearly
 //!    from the end of the *previous* segment to this one's, then flushes the two integrator states.
 //!
 //! The module keeps the previous segment's coefficients itself, instead of recomputing them from the parameter views'
 //! `prev` values: that halves the `tanf` calls and makes a mono retrigger or a smoother reset a 32-frame glide in
 //! the coefficients rather than a step. A fresh voice (no previous segment) starts at its first segment's values.
 
-use enth_dsp::svf::{self, Coeffs, Mode, State};
+use enth_dsp::svf::{self, Coeffs, Drive, Mode, State};
 use enth_dsp::util::math::exp2f;
 #[cfg(test)]
 use enth_dsp::util::math::{log2f, sinf};
 use enth_patch::catalogue::{FilterMode, SvfParam};
 
-use crate::module::{
-    MAX_VOICES, PrepareCfg, SEG, VoiceCx, VoiceProcessor, VoiceStart, count_subnormals,
-};
+use crate::module::{MAX_VOICES, PrepareCfg, SEG, VoiceCx, VoiceProcessor, VoiceStart};
 
 /// The inputs a voice's coefficients were computed from: cutoff, resonance, drive and the key-tracking term in
 /// octaves. Equal inputs give equal coefficients, so the cache is exact.
@@ -37,8 +36,8 @@ pub struct Svf {
     state: [State; MAX_VOICES],
     /// The coefficients at the end of the previous segment.
     coeffs: [Coeffs; MAX_VOICES],
-    /// The saturator amount at the end of the previous segment.
-    drive: [f32; MAX_VOICES],
+    /// The saturator at the end of the previous segment.
+    drive: [Drive; MAX_VOICES],
     key: [Key; MAX_VOICES],
     /// The voice has run a segment since `start_voice`: `coeffs`, `drive` and `key` are valid.
     valid: [bool; MAX_VOICES],
@@ -53,7 +52,7 @@ impl Svf {
             sample_rate: cfg.sample_rate,
             state: [State::ZERO; MAX_VOICES],
             coeffs: [idle; MAX_VOICES],
-            drive: [0.0; MAX_VOICES],
+            drive: [Drive::OFF; MAX_VOICES],
             key: [[0.0; 4]; MAX_VOICES],
             valid: [false; MAX_VOICES],
         }
@@ -102,7 +101,7 @@ impl VoiceProcessor for Svf {
                 self.key[v] = key;
                 (
                     Coeffs::new(fc, svf::k_from_resonance(resonance), self.sample_rate),
-                    svf::drive_amount(drive_db),
+                    Drive::from_db(drive_db),
                 )
             } else {
                 (self.coeffs[v], self.drive[v])
@@ -138,7 +137,12 @@ impl VoiceProcessor for Svf {
 
     fn subnormals(&self) -> usize {
         let states = self.state.iter().filter(|s| s.has_subnormal()).count();
-        states + count_subnormals(&self.drive)
+        let drives = self
+            .drive
+            .iter()
+            .filter(|d| d.b().is_subnormal() || d.c().is_subnormal())
+            .count();
+        states + drives
     }
 }
 
@@ -222,7 +226,15 @@ mod tests {
         for _ in 0..10 {
             let got = rig.run(&input);
             let mut want = input;
-            svf::process_block(&mut core, Mode::Lp, &c, &c, 0.0, 0.0, &mut want);
+            svf::process_block(
+                &mut core,
+                Mode::Lp,
+                &c,
+                &c,
+                Drive::OFF,
+                Drive::OFF,
+                &mut want,
+            );
             assert_eq!(got, want);
         }
         assert_eq!(rig.svf.coeffs[0], c);
@@ -242,8 +254,24 @@ mod tests {
         let mut core = State::ZERO;
         let mut warm = input;
         let c0 = Coeffs::new(400.0, svf::k_from_resonance(10.0), SR);
-        svf::process_block(&mut core, Mode::Lp, &c0, &c0, 0.0, 0.0, &mut warm);
-        svf::process_block(&mut core, Mode::Lp, &before, &to, 0.0, 0.0, &mut want);
+        svf::process_block(
+            &mut core,
+            Mode::Lp,
+            &c0,
+            &c0,
+            Drive::OFF,
+            Drive::OFF,
+            &mut warm,
+        );
+        svf::process_block(
+            &mut core,
+            Mode::Lp,
+            &before,
+            &to,
+            Drive::OFF,
+            Drive::OFF,
+            &mut want,
+        );
         assert_eq!(got, want);
         assert_eq!(rig.svf.coeffs[0], to);
     }
@@ -318,14 +346,60 @@ mod tests {
         driven.start();
         let b = driven.run(&input);
         assert_ne!(a, b);
-        // Saturated: the driven peak is far below the clean peak (the clip level is 1/sqrt(250) = 0.063).
+        // Saturated: the saturator holds its output below 1/sqrt(c) = sqrt(1/3 + 1/a) = 0.581 at 24 dB, where the
+        // clean input peaks at 2 (the filter's response to the squared-off 6.9 kHz wave overshoots that a little,
+        // 0.77). The make-up keeps it near the reference level 1/√3 = 0.577, not at the old curve's 1/sqrt(a) = 0.063.
         let peak = |x: &[f32; SEG]| x.iter().fold(0.0f32, |m, y| m.max(y.abs()));
         assert!(
-            peak(&b) < 0.1 && peak(&a) > 1.0,
+            peak(&b) < 0.8 && peak(&b) > 0.5 && peak(&a) > 1.0,
             "{} {}",
             peak(&b),
             peak(&a)
         );
+    }
+
+    #[test]
+    fn a_drive_change_ramps_from_the_previous_segment() {
+        let mut rig = Rig::new(&[(SvfParam::Cutoff, 20_000.0)]);
+        rig.start();
+        let input: [f32; SEG] = core::array::from_fn(|i| 0.9 * sinf(i as f32 * 0.3));
+        let _ = rig.run(&input);
+        assert_eq!(rig.svf.drive[0], Drive::OFF);
+        rig.set(SvfParam::Drive, 18.0);
+        let got = rig.run(&input);
+        let c = Coeffs::new(20_000.0, svf::k_from_resonance(10.0), SR);
+        let mut core = State::ZERO;
+        let mut warm = input;
+        svf::process_block(
+            &mut core,
+            Mode::Lp,
+            &c,
+            &c,
+            Drive::OFF,
+            Drive::OFF,
+            &mut warm,
+        );
+        let mut want = input;
+        svf::process_block(
+            &mut core,
+            Mode::Lp,
+            &c,
+            &c,
+            Drive::OFF,
+            Drive::from_db(18.0),
+            &mut want,
+        );
+        assert_eq!(got, want);
+        assert_eq!(rig.svf.drive[0], Drive::from_db(18.0));
+        // Back to 0 dB: one ramp down, then the saturator is skipped again: from the same filter state, the next
+        // block equals a never-driven filter's.
+        rig.set(SvfParam::Drive, 0.0);
+        let _ = rig.run(&input);
+        assert_eq!(rig.svf.drive[0], Drive::OFF);
+        let mut clean = Rig::new(&[(SvfParam::Cutoff, 20_000.0)]);
+        clean.start();
+        clean.svf.copy_state_from(&rig.svf);
+        assert_eq!(rig.run(&input), clean.run(&input));
     }
 
     #[test]

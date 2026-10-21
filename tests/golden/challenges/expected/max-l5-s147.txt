@@ -6,20 +6,20 @@ level 5
 phrase 3
 fingerprint f2f4a0417fa004e10bf8583a61379d2e2ca0e86011b274ab335cc6c90d07a2b9
 drawn params=32 routes=3 enables=4
-target lufs=-27.290378472
-render rate=48000 seed=236412653 frames=228000 sha256=5a917bfa14bea27354d83a1caa96fd334feb592250f33faf39c8d605d0324d8f
+target lufs=-26.571643886
+render rate=48000 seed=236412653 frames=228000 sha256=0bd1c66cac17a2a7d454642d1ee9dbff5390209eaf9ca265038bf7b314e00d00
 
 scoring sound/1 structure/1 combined/1 time/1 weight=80 pass_mark=90
   answer exact
     report sound=100.000000000 structure=100.000000000 combined=100.000000000 passed=true margin=10.000000000
-    sound distance=0.000000000 floor=0.338907442 scale=0.388970194 jnd=0.000000000
-    component pitch same close target=-891.847032513 answer=-891.847032513
-    component brightness same close target=537.746787199 answer=537.746787199
-    component harmonics same close target=0.999946789 answer=0.999946789
+    sound distance=0.000000000 floor=0.340543771 scale=0.388527182 jnd=0.000000000
+    component pitch same close target=-891.843571879 answer=-891.843571879
+    component brightness same close target=538.295047598 answer=538.295047598
+    component harmonics same close target=0.999946814 answer=0.999946814
     component attack same close target=340.000000000 answer=340.000000000
     component envelope same close target=11.000000000 answer=11.000000000
-    component sustain same close target=-1.633912769 answer=-1.633912769
-    component noisiness same close target=0.001576417 answer=0.001576417
+    component sustain same close target=-1.644867651 answer=-1.644867651
+    component noisiness same close target=0.001575992 answer=0.001575992
     component movement same close target=2.288818359 answer=2.288818359
     ring comp1.attack good same 1.000000000 answer=comp1.attack
     ring comp1.ratio good same 1.000000000 answer=comp1.ratio
@@ -61,15 +61,15 @@ scoring sound/1 structure/1 combined/1 time/1 weight=80 pass_mark=90
     ring osc2.enabled good same 1.000000000 answer=osc2.enabled
     ring reverb1.enabled good same 1.000000000 answer=reverb1.enabled
   answer start
-    report sound=4.038491165 structure=14.461016098 combined=6.122996152 passed=false margin=-85.961508835
-    sound distance=1.751802520 floor=0.338907442 scale=0.388970194 jnd=54.565858248
-    component pitch lower far target=-891.847032513 answer=-2100.000747142
-    component brightness higher far target=537.746787199 answer=894.245887170
-    component harmonics lower far target=0.999946789 answer=0.344186702
+    report sound=4.039243284 structure=14.461016098 combined=6.123597847 passed=false margin=-85.960756716
+    sound distance=1.748757962 floor=0.340543771 scale=0.388527182 jnd=54.557943672
+    component pitch lower far target=-891.843571879 answer=-2100.000747142
+    component brightness higher far target=538.295047598 answer=894.245887170
+    component harmonics lower far target=0.999946814 answer=0.344186702
     component attack lower far target=340.000000000 answer=5.000000000
     component envelope higher far target=11.000000000 answer=25.000000000
-    component sustain same close target=-1.633912769 answer=-2.769121416
-    component noisiness same close target=0.001576417 answer=0.000040336
+    component sustain same close target=-1.644867651 answer=-2.769121416
+    component noisiness same close target=0.001575992 answer=0.000040336
     component movement missing far target=2.288818359 answer=-
     ring comp1.attack bad missing 0.000000000 answer=-
     ring comp1.ratio bad missing 0.000000000 answer=-
@@ -117,15 +117,15 @@ scoring sound/1 structure/1 combined/1 time/1 weight=80 pass_mark=90
     module missing lfo1 lfo
     module missing lfo2 lfo
   answer bare
-    report sound=86.660812302 structure=61.538461538 combined=81.636342150 passed=false margin=-3.339187698
-    sound distance=0.752149801 floor=0.338907442 scale=0.388970194 jnd=1.261773241
-    component pitch same close target=-891.847032513 answer=-897.198790332
-    component brightness lower far target=537.746787199 answer=344.901119353
-    component harmonics same close target=0.999946789 answer=0.999688822
+    report sound=86.603265235 structure=61.538461538 combined=81.590304496 passed=false margin=-3.396734765
+    sound distance=0.755139843 floor=0.340543771 scale=0.388527182 jnd=1.266468665
+    component pitch same close target=-891.843571879 answer=-897.199000743
+    component brightness lower far target=538.295047598 answer=344.901066076
+    component harmonics same close target=0.999946814 answer=0.999688823
     component attack higher a_bit target=340.000000000 answer=515.000000000
     component envelope higher far target=11.000000000 answer=307.000000000
-    component sustain lower a_bit target=-1.633912769 answer=-5.712727777
-    component noisiness same close target=0.001576417 answer=0.000214975
+    component sustain lower a_bit target=-1.644867651 answer=-5.712727798
+    component noisiness same close target=0.001575992 answer=0.000214975
     component movement missing far target=2.288818359 answer=-
     ring comp1.attack bad missing 0.000000000 answer=-
     ring comp1.ratio bad missing 0.000000000 answer=-
@@ -170,15 +170,15 @@ scoring sound/1 structure/1 combined/1 time/1 weight=80 pass_mark=90
     module missing comp1 comp
     module missing reverb1 reverb
   answer near
-    report sound=87.559588179 structure=100.000000000 combined=90.047670543 passed=false margin=-2.440411821
-    sound distance=0.421879545 floor=0.338907442 scale=0.388970194 jnd=1.188466220
-    component pitch same close target=-891.847032513 answer=-867.077280690
-    component brightness same close target=537.746787199 answer=539.463770248
-    component harmonics same close target=0.999946789 answer=0.999954238
-    component attack lower a_bit target=340.000000000 answer=268.000000000
+    report sound=87.576580188 structure=100.000000000 combined=90.061264150 passed=false margin=-2.423419812
+    sound distance=0.423295130 floor=0.340543771 scale=0.388527182 jnd=1.187080418
+    component pitch same close target=-891.843571879 answer=-867.096663407
+    component brightness same close target=538.295047598 answer=539.712149752
+    component harmonics same close target=0.999946814 answer=0.999953717
+    component attack lower a_bit target=340.000000000 answer=267.000000000
     component envelope higher far target=11.000000000 answer=194.000000000
-    component sustain lower a_bit target=-1.633912769 answer=-5.314521194
-    component noisiness same close target=0.001576417 answer=0.006951886
+    component sustain lower a_bit target=-1.644867651 answer=-5.033240671
+    component noisiness same close target=0.001575992 answer=0.006802804
     component movement higher far target=2.288818359 answer=5.860379724
     ring comp1.attack good same 1.000000000 answer=comp1.attack
     ring comp1.ratio good same 1.000000000 answer=comp1.ratio

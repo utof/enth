@@ -9,6 +9,9 @@
 //! ```
 //!
 //! A change that moves it moves a `sound/1` score: that is a new scorer id (`sound/2`…), never an edit of this pin.
+//! The one exception is the engine moving under the same scorer, on purpose: engine 0.3.0 (lane DRV, FU1: the
+//! filter drive's make-up gain) moved this pin through the JND scale, whose jittered copies turn `filter1.drive` up
+//! a step (now: scale 0.290973, the start 41.981971 %, the near miss 93.637716 %).
 
 use enth_analysis::test_signals::{SR, Wave, oscillator, sine, white_noise};
 use enth_challenge::calibrate::step;
@@ -21,7 +24,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write;
 
 /// SHA-256 of the bytes below, as hex.
-const PINNED: &str = "ab1e8042a8b1383c728a9458b7752ff4cf2883f9f9e449dfcea98d8e402f763e";
+const PINNED: &str = "72666db8e3114279cd951ab65c25b5d0b6f2c271a4ac83a1f7cfe43f1fc6738b";
 
 fn put(h: &mut Sha256, v: f64) {
     h.update(v.to_bits().to_be_bytes());

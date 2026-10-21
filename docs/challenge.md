@@ -763,7 +763,7 @@ Only the pass mark has a margin. The structure ring verdicts (`good` under one s
 | 5 | `l5-s2`, `l5-s3`, `l5-s9`, `l5-s55555` | 2 / 2 |
 | Special (long codes) | `musical0-l4-s5` (musical 0), `structure-l2-s2` (randomized structure: osc 2 and noise on), `max-l5-s147` (every amount 100: 39 drawn items), `quiet-l2-s92` (a target at -65.9 LUFS), `silent-l2-s23` (a silent target) | |
 
-The cases include phrases 1, 2 and 3 (`l5-s2` and `structure-l2-s2` are phrase 2, `l5-s55555` and `max-l5-s147` phrase 3), and five long codes (engine version 0.2.0 and the 32-bit fingerprint prefix). The structure and max cases also pin a `bare` answer (the extra modules disabled).
+The cases include phrases 1, 2 and 3 (`l5-s2` and `structure-l2-s2` are phrase 2, `l5-s55555` and `max-l5-s147` phrase 3), and five long codes (engine version 0.2.0 and the 32-bit fingerprint prefix; engine 0.3.0 plays them with the `engine_differs` warning, which the harness does not pin). The structure and max cases also pin a `bare` answer (the extra modules disabled).
 
 ### Determinism
 
@@ -776,6 +776,8 @@ The cases include phrases 1, 2 and 3 (`l5-s2` and `structure-l2-s2` are phrase 2
 Linux x86-64, debug, release and wasm32-wasip1 under wasmtime 48 give the same `bits` for the 25 cases and the same `FINDINGS_SCALAR` (its first wasm comparison); Windows and macOS run in CI. ebur128's loudness (analysis) is compared within 1e-6, not pinned. The `challenges` job is enabled (it was gated on `vars.ENTH_JOB_CHALLENGES`); a docs-only push still runs nothing.
 
 Costs: the check takes about 40 s natively in debug, 37 s for all eight tests in release, and 50 s under wasmtime.
+
+**Re-pinned on engine 0.3.0** (FU1 lane DRV, 2026-10-21, the filter drive's make-up gain; the never-shared exception above): 15 of the 25 cases moved. `max-l5-s147` draws `filter1.drive` (its target −27.290 → −26.572 LUFS; the bare answer −0.058 sound %, the near miss +0.017); 14 others moved through `sound/1`'s JND scale (12 by less than 1e-4 sound %; `l5-s2` by −0.013 on its near miss and −0.0013 on its start, `l5-s9`'s start by +0.0007), whose jittered copies turn `filter1.drive` up a step. No pass decision flipped and every margin holds; `bits` went from `297f16cf…` to `fafda415…`, the same natively and under wasmtime. The `sound/1` determinism pin moved the same way.
 
 ### Findings while choosing answers
 

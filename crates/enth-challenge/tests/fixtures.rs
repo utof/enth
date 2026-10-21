@@ -271,8 +271,14 @@ fn round() -> RoundResult {
 
 fn gave_up() -> RoundResult {
     RoundResult {
-        code: ChallengeCode::long(custom(), EngineVersion::CURRENT, TargetPrefix(0xdead_beef))
-            .unwrap(),
+        // Pinned, not this build's engine (as in `report`): the fixture pins the format, so an engine bump (lane
+        // DRV's 0.3.0) does not rewrite it.
+        code: ChallengeCode::long(
+            custom(),
+            EngineVersion::parse("0.2.0").unwrap(),
+            TargetPrefix(0xdead_beef),
+        )
+        .unwrap(),
         outcome: Outcome::GaveUp,
         first_submit: None,
         submits: 0,

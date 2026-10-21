@@ -76,7 +76,7 @@ pub const SCHEMA: u32 = 1;
 /// The stamp is a record, not an input: nothing branches on it today (loading keeps whatever stamp a file has, an
 /// older one included, and the sound hash leaves it out). Compatibility modes keyed on it are later work
 /// (design.md §5).
-pub const ENGINE_VERSION: &str = "0.2.0";
+pub const ENGINE_VERSION: &str = "0.3.0";
 
 /// A whole patch file. See the [module docs](self).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
