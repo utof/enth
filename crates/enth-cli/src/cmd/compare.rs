@@ -22,16 +22,14 @@ use std::path::PathBuf;
 use enth_analysis::Feature;
 use enth_analysis::descriptors::{Describer, Descriptors, NoteTiming};
 use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
+use enth_challenge::patch_round::{Compared, prepare_patch_round};
 use enth_challenge::phrases::{self, TABLE};
-use enth_challenge::random;
-use enth_challenge::score::combined::CombinedV1;
-use enth_challenge::score::sound::SoundV1;
-use enth_challenge::score::structure::StructureV1;
+use enth_challenge::v2::InlinePatch;
 use enth_challenge::{
-    Challenge, Combiner, Phrase, PreparedRound, ScoreReport, Scorer, ScoringSpec, TargetContext,
+    Challenge, Phrase, PreparedRound, RoundError, ScoreReport, ScoringSpec, Start, Target,
     score_round,
 };
-use enth_patch::{ParamAddr, Patch};
+use enth_patch::Patch;
 use enth_render::{Performance, RenderSpec, render};
 use enth_solver::coach::Aspect;
 use enth_solver::search::{FAILED, MetricTarget};
@@ -273,29 +271,25 @@ fn patch_reference(args: &Args, target_path: &std::path::Path, bytes: &[u8]) -> 
     let (reference, ref_notes) = patchio::parse(bytes, &name)?;
     notes.extend(ref_notes);
 
-    // The hand-made round: the reference is the target, the parameters it moved off their defaults and that the
-    // phrase lets you hear are the randomized ones, and the starter superset is the start.
-    let start = random::start(0).map_err(|e| {
-        error::failed(
+    // The hand-made round (`enth_challenge::patch_round`, lane CV2): the reference is the target, the parameters it
+    // moved off their defaults and that the phrase lets you hear are the compared ones, and the starter superset is
+    // the start.
+    let challenge = Challenge::new(
+        Target::Patch(InlinePatch::new(reference.clone())),
+        Start::Template { template: 0 },
+        entry.id,
+        ScoringSpec::recreate(0),
+    );
+    let round = prepare_patch_round(challenge, Compared::OffDefaults).map_err(|e| match e {
+        // A scorer that cannot prepare on the reference is reported as scoring it always was.
+        RoundError::Score(e) => game::from_score(&e),
+        e => error::failed(
             "start_failed",
-            format!("the starter patch cannot be built: {e}"),
+            format!("the round on the reference cannot be prepared: {e}"),
             "this is a bug; report it",
-        )
+        ),
     })?;
-    let randomized = moved_params(&reference, &entry.phrase);
-    let spec = enth_challenge::spec::SpecPreset::by_id(1)
-        .unwrap_or_else(|| unreachable!("level 1 is a preset"))
-        .spec(enth_challenge::spec::LATEST_GENERATOR, 0);
-    let mut challenge = Challenge::recreate(spec, entry.id);
-    challenge.scoring = ScoringSpec::recreate(0);
-    let ctx = TargetContext {
-        challenge: &challenge,
-        target: &reference,
-        start: &start,
-        phrase: &entry.phrase,
-        randomized: &randomized,
-    };
-    let report = score_reference(&ctx, &patch).map_err(|e| game::from_score(&e))?;
+    let report = score_round(&round, &patch).map_err(|e| game::from_score(&e))?;
 
     let perf = entry.phrase.performance();
     let spec = RenderSpec::new(SCORING_SAMPLE_RATE, SCORING_SEED);
@@ -337,37 +331,6 @@ fn patch_reference(args: &Args, target_path: &std::path::Path, bytes: &[u8]) -> 
         hint,
         notes,
     }))
-}
-
-/// The reference's observable parameters that are not at their catalogue default: what its author set.
-fn moved_params(reference: &Patch, phrase: &Phrase) -> Vec<ParamAddr> {
-    let mask = random::observable(reference, phrase);
-    let mut out: Vec<ParamAddr> = mask
-        .observable_params()
-        .filter(|addr| {
-            matches!(
-                (reference.spec(addr), reference.value(addr)),
-                (Some(spec), Some(v)) if v.to_bits() != spec.default.to_bits()
-            )
-        })
-        .cloned()
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
-
-/// The game's scorers on a hand-made context: the same `sound/1`, `structure/1` and `combined/1` a challenge's
-/// round runs, composed as `score_round` composes them.
-fn score_reference(
-    ctx: &TargetContext<'_>,
-    patch: &Patch,
-) -> Result<ScoreReport, enth_challenge::ScoreError> {
-    let scoring = &ctx.challenge.scoring;
-    let sound = SoundV1.score(&SoundV1.prepare(ctx)?, patch)?;
-    let structure = StructureV1.score(&StructureV1.prepare(ctx)?, patch)?;
-    let combined = CombinedV1.combine(scoring, &sound, &structure);
-    Ok(ScoreReport::new(scoring, sound, structure, combined))
 }
 
 fn wav_reference(
