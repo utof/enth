@@ -21,10 +21,14 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--pool", choices=("train", "heldout"), default="train", help="which pool to draw from (default train)")
     p.add_argument("--profile", help="force a named subset of stages (see --list), or 'all' for every stage")
     p.add_argument("--record", type=Path, help="write the JSON record here (default: print it on stdout)")
-    p.add_argument("--sample-fmt", choices=chain.SAMPLE_FORMATS, default="s16", help="the output sample format (default s16)")
+    p.add_argument(
+        "--sample-fmt", choices=chain.SAMPLE_FORMATS, default="s16", help="the output sample format (default s16)"
+    )
     p.add_argument("--work-dir", type=Path, help="keep the intermediate float files here (default: a removed temp dir)")
     p.add_argument("--list", action="store_true", help="print the pools' stages, variants and profiles as JSON and exit")
-    p.add_argument("--plan", action="store_true", help="print the plan for --seed/--pool/--profile as JSON (no audio) and exit")
+    p.add_argument(
+        "--plan", action="store_true", help="print the plan for --seed/--pool/--profile as JSON (no audio) and exit"
+    )
     return p
 
 

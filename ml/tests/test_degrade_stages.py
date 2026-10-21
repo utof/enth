@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import math
 import pathlib
-import subprocess
 import tempfile
 import unittest
 
@@ -97,7 +96,9 @@ class Stages(unittest.TestCase):
     def tearDown(self) -> None:
         self._td.cleanup()
 
-    def run_chain(self, seed: int, pool: str, profile: str | None, src: pathlib.Path | None = None) -> tuple[dict, pathlib.Path]:
+    def run_chain(
+        self, seed: int, pool: str, profile: str | None, src: pathlib.Path | None = None
+    ) -> tuple[dict, pathlib.Path]:
         rec = degrade_file(src or self.src, self.out, seed=seed, pool=pool, profile=profile, work_dir=self.work)
         return rec, self.work
 

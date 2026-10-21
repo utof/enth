@@ -37,7 +37,9 @@ def make_plan(
         active = set(STAGE_ORDER)
     elif profile is not None:
         if profile not in pool.profiles:
-            raise PoolError(f"pool {pool_name} has no profile {profile!r}; it has {sorted(pool.profiles)} and {ALL_PROFILE!r}")
+            raise PoolError(
+                f"pool {pool_name} has no profile {profile!r}; it has {sorted(pool.profiles)} and {ALL_PROFILE!r}"
+            )
         active = set(pool.profiles[profile].stages)
         restrict = dict(pool.profiles[profile].variants)
     else:
@@ -157,8 +159,14 @@ def degrade_file(
         ctx.calls = []
         out_tmp = work / "99-final.wav"
         norm = stages.normalise_and_write(ctx, plan["target_lufs"], out_tmp, sample_fmt)
-        norm_rec = {"stage": "normalise", "active": True, "params": {"target_lufs": plan["target_lufs"], "sample_fmt": sample_fmt},
-                    "applied": True, "result": norm, "calls": ctx.calls}
+        norm_rec = {
+            "stage": "normalise",
+            "active": True,
+            "params": {"target_lufs": plan["target_lufs"], "sample_fmt": sample_fmt},
+            "applied": True,
+            "result": norm,
+            "calls": ctx.calls,
+        }
         record_stages.append(norm_rec)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(out_tmp, dst)

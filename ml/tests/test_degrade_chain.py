@@ -75,7 +75,8 @@ class Determinism(unittest.TestCase):
 
     def test_the_record_says_exactly_what_was_applied(self) -> None:
         out, rec = self.run_chain("r", seed=5, pool="heldout", profile="all")
-        first_line = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, check=True).stdout.splitlines()[0]
+        version = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, check=True).stdout
+        first_line = version.splitlines()[0]
         self.assertEqual(rec["schema"], RECORD_SCHEMA)
         self.assertEqual(rec["chain_version"], CHAIN_VERSION)
         self.assertEqual(rec["ffmpeg"], first_line.strip())
@@ -194,7 +195,9 @@ class Cli(unittest.TestCase):
         shas = []
         for i in range(2):
             out, rec = self.dir / f"y{i}.wav", self.dir / f"y{i}.json"
-            done = self.cli("--in", str(self.src), "--out", str(out), "--seed", "7", "--pool", "heldout", "--record", str(rec))
+            done = self.cli(
+                "--in", str(self.src), "--out", str(out), "--seed", "7", "--pool", "heldout", "--record", str(rec)
+            )
             self.assertEqual(done.returncode, 0, done.stderr)
             record = json.loads(rec.read_text(encoding="utf-8"))
             self.assertEqual(record["pool"], "heldout")

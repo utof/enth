@@ -209,17 +209,23 @@ def apply_eq(ctx: Ctx, p: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def noise_source(label: str, color: str, sr: int, dur_s: float, seeds: list[int], post: str = "") -> str:
-    """A filtergraph fragment that ends in pad ``[label]``: seeded noise, one independent source per channel."""
-    parts = [
-        f"anoisesrc=d={dur_s:.6f}:c={color}:r={sr}:a=1:s={s}[{label}{c}]" for c, s in enumerate(seeds)
+def noise_source(
+    label: str, color: str, sr: int, dur_s: float, seeds: list[int], amp: float = 1.0, post: str = ""
+) -> str:
+    """A filtergraph fragment that ends in pad ``[label]``: seeded noise, one independent source per channel.
+
+    ``post`` is a filter chain applied after the channels are merged (a band-pass, a tremolo).
+    """
+    srcs = [
+        f"anoisesrc=d={dur_s:.6f}:c={color}:r={sr}:a={amp:.9g}:s={seed}"  # anoisesrc is mono: one source per channel
+        for seed in seeds
     ]
     tail = f",{post}" if post else ""
-    if len(seeds) == 1:
-        return f"{parts[0][: parts[0].rindex('[')]}{tail}[{label}]"
-    joined = ";".join(parts)
-    pads = "".join(f"[{label}{c}]" for c in range(len(seeds)))
-    return f"{joined};{pads}amerge=inputs={len(seeds)},aformat=channel_layouts=stereo{tail}[{label}]"
+    if len(srcs) == 1:
+        return f"{srcs[0]}{tail}[{label}]"
+    labelled = ";".join(f"{src}[{label}{c}]" for c, src in enumerate(srcs))
+    pads = "".join(f"[{label}{c}]" for c in range(len(srcs)))
+    return f"{labelled};{pads}amerge=inputs={len(srcs)},aformat=channel_layouts=stereo{tail}[{label}]"
 
 
 def _mix_in(ctx: Ctx, label: str, aux: Path, gain_db: float) -> None:
@@ -248,7 +254,7 @@ def apply_noise(ctx: Ctx, p: dict[str, Any]) -> dict[str, Any]:
         post.append(f"tremolo=f={fmt(p['am_hz'])}:d={fmt(p['am_depth'])}")
     post.append(f"atrim=end_sample={ctx.frames}")  # exactly the clip's length, so the RMS below is the mixed part's
     seeds = [int(p["seed"]) + 2 * c for c in range(ctx.channels)]
-    graph = noise_source("n", p["color"], ctx.sr, ctx.frames / ctx.sr + 0.05, seeds, ",".join(post))
+    graph = noise_source("n", p["color"], ctx.sr, ctx.frames / ctx.sr + 0.05, seeds, post=",".join(post))
     noise = ctx.new_path("noise")
     ctx.call(
         ["-filter_complex", graph, "-map", "[n]", *ffmpeg.OUT_FLAGS, "-c:a", "pcm_f32le", "{out}"],
@@ -299,7 +305,10 @@ def apply_dynamics(ctx: Ctx, p: dict[str, Any]) -> dict[str, Any]:
     else:
         pre = p["gain_db"] - wavio.to_db(pk)  # the peak lands gain_db above full scale
         if kind == "limiter":
-            tail = f"alimiter=limit={fmt(LIMIT_LIN)}:attack={fmt(p['attack_ms'])}:release={fmt(p['release_ms'])}:level=0:latency=1"
+            tail = (
+                f"alimiter=limit={fmt(LIMIT_LIN)}:attack={fmt(p['attack_ms'])}:release={fmt(p['release_ms'])}"
+                ":level=0:latency=1"
+            )
         else:
             tail = f"asoftclip=type={kind}"
         graph = f"volume={fmt(pre)}dB,{tail}"
@@ -409,21 +418,14 @@ def apply_bit_depth(ctx: Ctx, p: dict[str, Any]) -> dict[str, Any]:
         seeds_a = [int(p["seed"]) + 2 * c for c in range(ctx.channels)]
         seeds_b = [int(p["seed"]) + 2 * (ctx.channels + c) for c in range(ctx.channels)]
         graph = (
-            f"{_dither_source('da', ctx.sr, dur, a, seeds_a)};{_dither_source('db', ctx.sr, dur, a, seeds_b)};"
+            f"{noise_source('da', 'white', ctx.sr, dur, seeds_a, a)};"
+            f"{noise_source('db', 'white', ctx.sr, dur, seeds_b, a)};"
             f"[0:a][da][db]amix=inputs=3:normalize=0:duration=first,aeval=exprs='{quant}':c=same"
         )
         ctx.filter("bit-depth", graph, complex_=True)
     else:
         ctx.filter("bit-depth", f"aeval=exprs='{quant}':c=same")
     return {"levels": int(q * 2)}
-
-
-def _dither_source(label: str, sr: int, dur: float, amp: float, seeds: list[int]) -> str:
-    parts = [f"anoisesrc=d={dur:.6f}:c=white:r={sr}:a={amp:.9g}:s={s}[{label}{c}]" for c, s in enumerate(seeds)]
-    if len(seeds) == 1:
-        return parts[0].replace(f"[{label}0]", f"[{label}]")
-    pads = "".join(f"[{label}{c}]" for c in range(len(seeds)))
-    return f"{';'.join(parts)};{pads}amerge=inputs={len(seeds)},aformat=channel_layouts=stereo[{label}]"
 
 
 # --- loudness normalisation and the final file --------------------------------------------------------------------
@@ -457,7 +459,11 @@ def normalise_and_write(ctx: Ctx, target_lufs: float, out_path: Path, sample_fmt
         lufs = measure_lufs(ctx, ctx.cur, extra=f"aloop=loop={loops}:size={ctx.frames},")
         method = "ebur128 on the clip looped to 1.5 s"
     gain_db = None
-    result: dict[str, Any] = {"target_lufs": target_lufs, "measured_lufs": None if lufs is None else round(lufs, 3), "method": method}
+    result: dict[str, Any] = {
+        "target_lufs": target_lufs,
+        "measured_lufs": None if lufs is None else round(lufs, 3),
+        "method": method,
+    }
     _, pk = ctx.level()
     if lufs is None or pk <= 0.0:
         gain_db = 0.0
