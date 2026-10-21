@@ -19,7 +19,9 @@
 //!   hide a leak, and rises when it swaps back in. The test host also makes glibc's allocator deterministic in each
 //!   measurement process and lets threads that are still exiting go before it counts them (tools/test-host
 //!   `editor.rs`); without that the gate failed at random: 53 and 405 KB per cycle from malloc arenas, and a fourth
-//!   thread that was Mesa's `disk$0` queue thread finishing its exit (docs/plugin.md, "Leak gates").
+//!   thread that was Mesa's `disk$0` queue thread finishing its exit (docs/plugin.md, "Leak gates"). It also turns
+//!   transparent huge pages off in them (lane NTF, FU1): with the kernel's THP at `always`, the CI runner read
+//!   2048 KB per cycle, steps of exactly one 2 MB page, against about 13 KB with 4 KB pages.
 //! - **`churn`**: 200 whole instance lives (instantiate, load a patch, activate, play, deactivate, drop) must leave
 //!   PSS flat (at most 1 KB per cycle, the test host's default) and no thread or descriptor behind. The test host's
 //!   exit status is the verdict. It runs with the same deterministic allocator (each cycle's audio thread is a new
@@ -415,6 +417,7 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         })
         .collect();
     let malloc = editor.first().map_or(Value::Null, |r| r["malloc"].clone());
+    let thp = editor.first().map_or(Value::Null, |r| r["thp"].clone());
     let base_mean = (!baseline_slopes.is_empty())
         .then(|| baseline_slopes.iter().sum::<f64>() / baseline_slopes.len() as f64);
     let worst = editor_slopes.iter().copied().reduce(f64::max);
@@ -516,8 +519,8 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
             ok: growth.is_some_and(|g| g <= options.max_kb),
             detail: format!(
                 "worst editor run minus baseline {} KB per cycle, limit {} (Pss_Anon + SwapPss slopes: editor {:?}, \
-                 baseline {:?}; Pss_Anon alone: editor {:?}; most swapped: {:?} KB; malloc {}; the test host's pss_kb \
-                 slopes: editor {}, baseline {})",
+                 baseline {:?}; Pss_Anon alone: editor {:?}; most swapped: {:?} KB; malloc {}; transparent huge pages \
+                 {thp}; the test host's pss_kb slopes: editor {}, baseline {})",
                 growth.map_or("n/a".to_owned(), |g| format!("{g:.2}")),
                 options.max_kb,
                 round(&editor_slopes),
@@ -552,6 +555,7 @@ fn judge_editor(report: &Value, counts: &[(u64, u64)], options: &Options) -> (Ve
         "swap_pss_kb_max": swap_max,
         "late_thread_exit_cycles": late_exits,
         "malloc": malloc,
+        "thp": thp,
         "pss_kb_per_cycle_test_host": host_pss,
         "threads_after_close": threads,
         "drawn_in_time": drawn,
@@ -655,7 +659,7 @@ fn churn_detail(report: &Value) -> String {
     }
     format!(
         "PSS {} KB per cycle after the warm-up ({} in the second half; limit {}), threads +{}, descriptors +{}, \
-         failures {}, malloc {}",
+         failures {}, malloc {}, transparent huge pages {}",
         s["pss_kb_per_cycle_after_warmup"],
         s["pss_kb_per_cycle_second_half"],
         report["limits"]["max_kb_per_cycle"],
@@ -663,6 +667,7 @@ fn churn_detail(report: &Value) -> String {
         s["fd_growth_after_warmup"],
         report["failures"],
         report["malloc"],
+        report["thp"],
     )
 }
 

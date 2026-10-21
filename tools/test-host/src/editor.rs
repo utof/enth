@@ -22,6 +22,10 @@
 //!   swapped part of it out (lane SOAK's metric: `Pss_Anon` alone fell 130 KB per cycle in a run that swapped).
 //! - The thread count after a close is read once the threads that are still exiting are gone ([`settled_threads`]):
 //!   under load, Mesa's `disk$0` queue thread was sometimes still listed 50 ms after a close and gone by the next.
+//! - Transparent huge pages are off in a measurement process ([`procfs::no_transparent_huge_pages`]; lane NTF, FU1;
+//!   `--system-thp` keeps the kernel's setting). On the CI runner (THP `always`) each open left one 2 MB page: every
+//!   open on the EGL path maps a new 10 MB executable region (llvmpipe's JIT code; about 8 KB of it touched here, with
+//!   4 KB pages), and the first touch brought in a whole huge page, so the gate read 2048 KB per cycle.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{CStr, c_ulong};
