@@ -127,6 +127,9 @@ struct App {
     records: Vec<StepRecord>,
     /// Each lesson round's prepared target, newest last (the test turns the knobs to it).
     targets: Vec<enth_challenge::PreparedRound>,
+    /// Hold "How close am I?" jobs instead of answering them (lane LFU: the progress and Stop show meanwhile).
+    hold_closest: bool,
+    held: Vec<LearnJob>,
 }
 
 /// The Learn worker's part, synchronously.
@@ -145,6 +148,45 @@ fn run_learn(job: &LearnJob) -> LearnResult {
             text: "Turn the highlighted control and listen.".to_owned(),
             highlight: Vec::new(),
         }),
+        // "How close am I?" (lane LFU): an answer that moves every free control to the round's target (the worker's
+        // real search is `enth_solver::closest`, tested in enth-solver and the plugin).
+        LearnJobKind::Closest(request) => {
+            let round = prepare_challenge((*request.challenge).clone()).unwrap();
+            let mut patch = request.patch.clone();
+            let deltas = request
+                .free
+                .iter()
+                .map(|addr| {
+                    let spec = patch.spec(addr).unwrap();
+                    let from = patch.value(addr).unwrap();
+                    let to = round.target().value(addr).unwrap();
+                    Op::SetParam {
+                        addr: addr.clone(),
+                        value: to,
+                    }
+                    .apply(&mut patch)
+                    .unwrap();
+                    enth_session::learn::ClosestDelta {
+                        addr: addr.clone(),
+                        from,
+                        to,
+                        norm: f64::from(spec.to_norm(to) - spec.to_norm(from)),
+                        categorical: false,
+                    }
+                })
+                .collect();
+            LearnResult::Closest(Box::new(enth_session::learn::Closest {
+                patch,
+                deltas,
+                passed: true,
+                percent: 95.0,
+                start_percent: 40.0,
+                distance: 0.3,
+                renders: 41,
+                first_pass_renders: Some(9),
+                stop: enth_session::learn::ClosestStop::Converged,
+            }))
+        }
         _ => LearnResult::Failed {
             message: "not in this test".to_owned(),
         },
@@ -198,6 +240,8 @@ fn harness_with(patch: Patch, example: bool, render: bool) -> Harness<'static, A
         game_results: Vec::new(),
         records: Vec::new(),
         targets: Vec::new(),
+        hold_closest: false,
+        held: Vec::new(),
     };
     let mut builder = Harness::builder()
         .with_size(theme.size.window.default)
@@ -262,6 +306,11 @@ fn harness_with(patch: Patch, example: bool, render: bool) -> Harness<'static, A
             let learn: Vec<LearnRequest> = app.session.drain_learn_requests().collect();
             for request in learn {
                 match request {
+                    LearnRequest::Run(job)
+                        if app.hold_closest && matches!(job.kind, LearnJobKind::Closest(_)) =>
+                    {
+                        app.held.push(job);
+                    }
                     LearnRequest::Run(job) => {
                         let result = run_learn(&job);
                         app.learn_results.push((job.id, result));
@@ -928,6 +977,129 @@ fn a_lesson_round_shows_no_target_value() {
         values.iter().any(|v| after.contains(v.as_str())),
         "after Reveal the target's value is on the knob: {values:?}"
     );
+}
+
+/// "How close am I?" on a lesson's round (lane LFU): after a Submit that does not pass, the button; while it searches,
+/// its progress and ■ Stop (which cancels); then "N moves away: …" in words and rings on the cards, with no value
+/// until Reveal; Look harder; and Try a new one, which starts the step's sibling round.
+#[test]
+fn how_close_am_i_after_a_failed_submit() {
+    let mut h = harness();
+    start(&mut h, "Low-pass cutoff");
+    for _ in 0..5 {
+        click(&mut h, "Next");
+    }
+    assert!(until(&mut h, 20, |h| has(h, "Submit")));
+    assert!(
+        !has(&h, "How close am I?"),
+        "nothing to ask before a Submit"
+    );
+    let cutoff: ParamAddr = "filter1.cutoff".parse().unwrap();
+    let round = h.state().targets.last().unwrap();
+    let target = value_text(
+        round.target().spec(&cutoff).unwrap(),
+        round.target().value(&cutoff).unwrap(),
+    );
+    // A Submit of the start, which does not pass.
+    click(&mut h, "Submit");
+    if has(&h, "Skip") {
+        click(&mut h, "Skip");
+    }
+    assert!(until(&mut h, 40, |h| lesson(h)
+        .is_some_and(|l| l.closest.available)));
+    assert!(has(&h, "How close am I?"));
+    // While it searches: its progress and Stop, which cancels it.
+    h.state_mut().hold_closest = true;
+    click(&mut h, "How close am I?");
+    let job = h.state_mut().held.pop().expect("a closest job");
+    h.state_mut().session.learn_job_progress(job.id, 42);
+    h.run_steps(2);
+    let shown = texts(&h).join("\n");
+    assert!(shown.contains("42 of 300 renders"), "{shown}");
+    assert!(has(&h, "Stop searching") && !has(&h, "How close am I?"));
+    click(&mut h, "Stop searching");
+    assert!(lesson(&h).unwrap().closest.running.is_none());
+    assert!(has(&h, "How close am I?"));
+    // The answer: in words, and rings with a pointer on the cards; no value before Reveal.
+    h.state_mut().hold_closest = false;
+    click(&mut h, "How close am I?");
+    assert!(until(&mut h, 20, |h| lesson(h)
+        .is_some_and(|l| l.closest.answer.is_some())));
+    h.run_steps(2);
+    let shown = texts(&h);
+    assert!(
+        shown
+            .iter()
+            .any(|t| t.contains("1 move away: Cutoff (filter1.cutoff)")),
+        "{shown:#?}"
+    );
+    assert!(
+        !shown.iter().any(|t| t.contains(target.as_str())),
+        "no value before Reveal: {target}"
+    );
+    let o = h.state().editor.learn().overlay().unwrap().param(&cutoff);
+    assert!(o.score.is_some() && o.hint.is_some(), "{o:?}");
+    assert!(has(&h, "Look harder") && has(&h, "Try a new one"));
+    assert!(
+        h.state().session.round().unwrap().assisted,
+        "the round counts as helped"
+    );
+    // Reveal shows the values; Try a new one starts the sibling round.
+    click(&mut h, "Reveal");
+    h.run_steps(2);
+    let shown = texts(&h).join("\n");
+    assert!(
+        shown.contains(&format!("{} {target}", enth_ui::theme::glyph::SEND)),
+        "{shown}"
+    );
+    let rounds = h.state().targets.len();
+    click(&mut h, "Try a new one");
+    assert!(until(&mut h, 20, |h| h.state().targets.len() == rounds + 1
+        && has(h, "Submit")));
+    assert!(h.state().session.game_record().unwrap().sibling.is_some());
+    assert!(
+        lesson(&h).unwrap().closest.answer.is_none(),
+        "the answer went with its round"
+    );
+    assert!(!has(&h, "Try a new one"), "the sibling owes no redo yet");
+}
+
+/// The browser's Open packs folder and Get more lessons (lane LFU): the first asks the shell (which makes and opens the
+/// folder), the second opens the releases page through egui's OpenUrl.
+#[test]
+fn the_browser_opens_the_packs_folder_and_the_releases_page() {
+    let mut h = harness();
+    h.run_steps(2);
+    click(&mut h, "Learn");
+    assert!(
+        h.get_by_label("Open packs folder")
+            .accesskit_node()
+            .is_disabled(),
+        "no folder, nothing to open"
+    );
+    h.state_mut()
+        .editor
+        .set_packs_folder(Some("/tmp/enth-packs".to_owned()));
+    h.run_steps(2);
+    click(&mut h, "Open packs folder");
+    assert!(
+        h.state_mut().editor.take_open_packs_folder(),
+        "the shell is asked"
+    );
+    assert!(!h.state_mut().editor.take_open_packs_folder(), "once");
+    h.get_by_label("Get more lessons").click();
+    h.run_steps(1);
+    let opened: Vec<String> = h
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|c| match c {
+            egui::OutputCommand::OpenUrl(u) => Some(u.url.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(opened, ["https://github.com/utof/enth/releases"]);
 }
 
 /// A step's text with every kind of link and widget (lane PLY's AST), drawn by the pane: a play link and a `play`

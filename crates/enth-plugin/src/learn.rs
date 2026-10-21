@@ -438,6 +438,14 @@ impl Lessons {
         self.packs.as_deref()
     }
 
+    /// The Packs folder, created if missing (lane LFU: the editor's "Open packs folder" needs it to exist); `None`
+    /// when there is no folder or it cannot be created.
+    pub fn ensure_packs_dir(&self) -> Option<&Path> {
+        let dir = self.packs.as_deref()?;
+        fs::create_dir_all(dir).ok()?;
+        Some(dir)
+    }
+
     /// Read every pack again (the editor opened).
     pub fn rescan(&self) -> Arc<Library> {
         let mut store = FsPacks::new(self.packs.clone()).with_bundled(self.bundled);

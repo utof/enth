@@ -81,7 +81,7 @@ use crate::game::{
 };
 use crate::model::{Session, SessionError};
 use crate::state::{MAX_FIELD_BYTES, StateError, decode_patch};
-pub use enth_solver::closest::{Closest, ClosestCfg, Delta as ClosestDelta};
+pub use enth_solver::closest::{Closest, ClosestCfg, ClosestStop, Delta as ClosestDelta};
 
 // ---------------------------------------------------------------------------------------------------------------
 // The budget
@@ -128,6 +128,48 @@ pub fn closest_cfg(harder: bool) -> ClosestCfg {
         }
     } else {
         ClosestCfg::default()
+    }
+}
+
+/// How far one control moves in "How close am I?"'s answer (lane LFU): the Learn view's words ("a touch", "a little",
+/// "a lot", "switch") and rings (Good for a control that stays, Near for a touch or a little, Bad for a lot or a
+/// switch). Never a value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MoveSize {
+    /// It stays (a move under [`MOVE_STAY`] of its travel counts as staying: about one just-noticeable step).
+    Stay,
+    /// Under [`MOVE_TOUCH`] of its travel.
+    Touch,
+    /// Under [`MOVE_LITTLE`] of its travel.
+    Little,
+    /// More.
+    Lot,
+    /// A switch, a mode or a waveform changes.
+    Switch,
+}
+
+/// A move under this share of a knob's travel stays put ([`MoveSize::Stay`]).
+pub const MOVE_STAY: f64 = 0.02;
+/// A move under this share of a knob's travel is a touch ([`MoveSize::Touch`]).
+pub const MOVE_TOUCH: f64 = 0.08;
+/// A move under this share of a knob's travel is a little ([`MoveSize::Little`]); more is a lot.
+pub const MOVE_LITTLE: f64 = 0.25;
+
+/// How far `delta` moves its control ([`MoveSize`]).
+pub fn move_size(delta: &ClosestDelta) -> MoveSize {
+    let travel = delta.norm.abs();
+    if !delta.moved() {
+        MoveSize::Stay
+    } else if delta.categorical {
+        MoveSize::Switch
+    } else if travel < MOVE_STAY {
+        MoveSize::Stay
+    } else if travel < MOVE_TOUCH {
+        MoveSize::Touch
+    } else if travel < MOVE_LITTLE {
+        MoveSize::Little
+    } else {
+        MoveSize::Lot
     }
 }
 
@@ -1441,7 +1483,7 @@ impl Session {
     /// A fresh answer (its revision is the patch's now) is for the live round: a new round's start and a step load
     /// both move the revision, and both stop the search.
     fn learn_closest_answered(&mut self, found: Closest, harder: bool) {
-        if found.stop == enth_solver::closest::ClosestStop::Cancelled {
+        if found.stop == ClosestStop::Cancelled {
             return;
         }
         let Some(round) = self

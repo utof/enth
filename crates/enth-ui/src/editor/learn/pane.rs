@@ -27,7 +27,9 @@
 //! between the last two examples at the same position; Choose: the examples, then a button per answer; Do: **Hint**
 //! and **Show me**); above them the verdict, the latest hint and the last refusal. A Recreate step is played with the
 //! Recreate UI unchanged (the challenge bar in the header, the results drawer in the overview slot); the pane keeps
-//! its text and the way on. Every control has an accessible name, so kittest drives it by label. The pane asks for no
+//! its text and the way on, and adds **How close am I?** after a Submit that did not pass (lane LFU: progress and
+//! ■ Stop while it searches, then "N moves away: …" in words, with rings on the cards and exact values only after a
+//! reveal; **Look harder**; **Try a new one** when a sibling redo is due). Every control has an accessible name, so kittest drives it by label. The pane asks for no
 //! frames of its own.
 
 use egui::{
@@ -39,7 +41,7 @@ use enth_learn::{Example, Selector, StepKind, StepPhase};
 use enth_patch::catalogue::LfoShape;
 use enth_patch::{ModuleKind, ParamAddr, Patch};
 use enth_session::game::EndChoice;
-use enth_session::learn::LearnView;
+use enth_session::learn::{LearnView, MoveSize, move_size};
 
 use super::state::{Learn, LearnIntent};
 use crate::Theme;
@@ -102,7 +104,7 @@ fn button_width(ui: &Ui, t: &Theme, text: &str) -> f32 {
 
 /// Splits buttons (by their texts) into rows that fit `width`, greedily, so the bottom-anchored controls know their
 /// rows before drawing them bottom-up.
-fn rows(ui: &Ui, t: &Theme, texts: &[String], width: f32) -> Vec<Vec<usize>> {
+pub(crate) fn rows(ui: &Ui, t: &Theme, texts: &[String], width: f32) -> Vec<Vec<usize>> {
     let gap = ui.spacing().item_spacing.x;
     let mut out: Vec<Vec<usize>> = Vec::new();
     let mut used = 0.0;
@@ -180,7 +182,7 @@ fn lesson(
             .layout(Layout::bottom_up(Align::Min)),
     );
     bottom.spacing_mut().item_spacing = vec2(t.space.tight, t.space.tight);
-    controls(learn, view, &mut bottom, t, out);
+    controls(learn, view, &mut bottom, t, patch, out);
     let controls_top = bottom.min_rect().top() - t.space.gap;
     let text_rect = Rect::from_min_max(
         egui::pos2(inner.left(), top_bottom),
@@ -215,7 +217,8 @@ fn lesson(
                 line(
                     ui,
                     "Play it with the round's controls in the header: Target ▶ and Mine ▶ to compare, then Submit. \
-                     Hint, Reveal and the results are the round's.",
+                     Hint, Reveal and the results are the round's. After a Submit that does not pass, How close am I? \
+                     finds the nearest passing sound and the moves to it.",
                     t.text.label.clone(),
                     t.color.text.label,
                 );
@@ -333,7 +336,14 @@ fn top(learn: &Learn, view: &LearnView, ui: &mut Ui, t: &Theme, out: &mut Intent
 
 /// The controls, anchored to the bottom (`ui` lays out bottom-up): the way on, the step's own controls, then the
 /// verdict, the hint and the last refusal above them.
-fn controls(learn: &Learn, view: &LearnView, ui: &mut Ui, t: &Theme, out: &mut Intents) {
+fn controls(
+    learn: &Learn,
+    view: &LearnView,
+    ui: &mut Ui,
+    t: &Theme,
+    patch: &Patch,
+    out: &mut Intents,
+) {
     let index = view.lesson.as_ref().map_or(0, |r| usize::from(r.step));
     let count = usize::from(view.steps);
     let live = !view.broken && !view.pending.opening && !view.finished;
@@ -403,8 +413,13 @@ fn controls(learn: &Learn, view: &LearnView, ui: &mut Ui, t: &Theme, out: &mut I
                 caption(ui, t, "Your answer:");
                 listen(learn, view, ui, t, options, width, out);
             }
+            StepKind::Recreate { .. } if view.round => closest(view, ui, t, width, out),
             _ => {}
         }
+    }
+    // "How close am I?" (lane LFU): its progress, or its answer in words.
+    if let Some(text) = step.and_then(|_| closest_words(view, patch)) {
+        line(ui, &text, t.text.body.clone(), t.color.accent.value);
     }
     // Above the controls: the verdict, the hint, a pending hint, the last refusal (bottom-up, so read upwards).
     let error = learn
@@ -439,6 +454,122 @@ fn controls(learn: &Learn, view: &LearnView, ui: &mut Ui, t: &Theme, out: &mut I
             line(ui, &v, t.text.body.clone(), t.color.text.primary);
         }
     }
+}
+
+/// "How close am I?" on a lesson's Recreate step (lane LFU; bottom-up): **How close am I?** after a Submit that did
+/// not pass, **Look harder** once it answered, **■ Stop** while it searches, and **Try a new one** when a sibling
+/// redo is due, in rows that fit.
+fn closest(view: &LearnView, ui: &mut Ui, t: &Theme, width: f32, out: &mut Intents) {
+    let c = &view.closest;
+    let mut buttons: Vec<(String, &str, bool, LearnIntent, &str)> = Vec::new();
+    if c.running.is_some() {
+        buttons.push((
+            format!("{} Stop", glyph::STOP),
+            "Stop searching",
+            true,
+            LearnIntent::CancelClosest,
+            "Stop looking for the nearest passing sound",
+        ));
+    } else if c.available || c.answer.is_some() {
+        buttons.push((
+            "How close am I?".to_owned(),
+            "How close am I?",
+            c.available,
+            LearnIntent::Closest(false),
+            "Find the nearest sound to yours that passes, and the moves to it (the round counts as helped)",
+        ));
+        if c.answer.is_some() {
+            buttons.push((
+                "Look harder".to_owned(),
+                "Look harder",
+                c.available,
+                LearnIntent::Closest(true),
+                "A longer search: a nearer answer, or one where the first found none",
+            ));
+        }
+    }
+    if c.redo {
+        buttons.push((
+            "Try a new one".to_owned(),
+            "Try a new one",
+            true,
+            LearnIntent::Redo,
+            "A new sound with the same controls: after a worked example, a problem",
+        ));
+    }
+    let texts: Vec<String> = buttons.iter().map(|b| b.0.clone()).collect();
+    for row in rows(ui, t, &texts, width).iter().rev() {
+        ui.horizontal(|ui| {
+            for &i in row {
+                let (text, label, enabled, intent, tip) = &buttons[i];
+                button(ui, t, text, label, *enabled, intent.clone(), out).on_hover_text(*tip);
+            }
+        });
+    }
+}
+
+/// The name a move speaks of: the control's name and its address (`Cutoff (filter1.cutoff)`).
+fn control_name(patch: &Patch, addr: &ParamAddr) -> String {
+    patch.spec(addr).map_or_else(
+        || addr.to_string(),
+        |spec| format!("{} ({addr})", spec.name),
+    )
+}
+
+/// "How close am I?" in words (lane LFU): its progress while it searches; then "N moves away: …" with each move's way
+/// and size, and the exact values only once the round is revealed (no peeking); or that it found no pass.
+fn closest_words(view: &LearnView, patch: &Patch) -> Option<String> {
+    let c = &view.closest;
+    if let Some(p) = c.running {
+        let what = if p.harder {
+            "Looking harder"
+        } else {
+            "Looking for the nearest passing sound"
+        };
+        return Some(format!("{what}… {} of {} renders", p.renders, p.budget));
+    }
+    let answer = c.answer.as_ref()?;
+    if !answer.passed {
+        return Some(format!(
+            "No passing sound found near yours in {} renders (the nearest scored {:.0} %). Look harder, or keep \
+             going: the hints and Reveal are the round's.",
+            answer.renders, answer.percent
+        ));
+    }
+    let moves: Vec<String> = answer
+        .deltas
+        .iter()
+        .filter(|d| move_size(d) != MoveSize::Stay)
+        .map(|d| {
+            let name = control_name(patch, &d.addr);
+            let words = match move_size(d) {
+                MoveSize::Switch => format!("change {name}"),
+                size => {
+                    let way = if d.norm > 0.0 { "up" } else { "down" };
+                    let amount = match size {
+                        MoveSize::Touch => "a touch",
+                        MoveSize::Little => "a little",
+                        _ => "a lot",
+                    };
+                    format!("{name} {way} {amount}")
+                }
+            };
+            match (c.revealed, patch.spec(&d.addr)) {
+                (true, Some(spec)) => format!(
+                    "{words} ({} {} {})",
+                    value_text(spec, d.from),
+                    glyph::SEND,
+                    value_text(spec, d.to)
+                ),
+                _ => words,
+            }
+        })
+        .collect();
+    Some(match moves.len() {
+        0 => "Your sound passes as it is: Submit it again.".to_owned(),
+        1 => format!("1 move away: {}.", moves[0]),
+        n => format!("{n} moves away: {}.", moves.join("; ")),
+    })
 }
 
 /// A small caption above a group of controls.

@@ -212,10 +212,12 @@ fn stronger(a: Emphasis, b: Emphasis) -> Emphasis {
 impl Overlay for Layered<'_> {
     fn param(&self, addr: &ParamAddr) -> ParamOverlay {
         let (top, base) = (self.top.param(addr), self.base.param(addr));
+        // The step's own ring and pointer, when it has one ("How close am I?"'s answer, lane LFU), read over the
+        // round's: they answer the question just asked. Otherwise the round's.
         ParamOverlay {
             emphasis: stronger(top.emphasis, base.emphasis),
-            score: top.score,
-            hint: top.hint,
+            score: base.score.or(top.score),
+            hint: base.hint.or(top.hint),
         }
     }
 

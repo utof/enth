@@ -233,6 +233,15 @@ impl Glue {
         self.apply_game(session);
         #[cfg(feature = "learn")]
         self.editor.apply_learn(session);
+        // "Open packs folder" (lane LFU): the folder is made if missing, then opened through egui's OpenUrl, which
+        // the vendored egui-baseview hands to the system's file manager.
+        #[cfg(feature = "learn")]
+        if self.editor.take_open_packs_folder()
+            && let Some(dir) = game.lessons().ensure_packs_dir()
+        {
+            ui.ctx()
+                .open_url(egui::OpenUrl::new_tab(dir.display().to_string()));
+        }
         let round = session.round().and_then(|r| r.wake_at_ms);
         // The lesson's settle moment (its sound check waits for it), else nothing: Learn asks for no other frames.
         #[cfg(feature = "learn")]
@@ -251,6 +260,9 @@ impl Glue {
     pub fn set_lessons(&mut self, lessons: &crate::learn::Lessons) {
         self.editor
             .set_library(&lessons.rescan(), lessons.progress().load());
+        // Lane LFU: the browser's "Open packs folder" (the glue creates the folder when it is asked to open it).
+        self.editor
+            .set_packs_folder(lessons.packs_dir().map(|d| d.display().to_string()));
     }
 
     /// The editor's preset browser (lane PBU): its store and its crash offer.
