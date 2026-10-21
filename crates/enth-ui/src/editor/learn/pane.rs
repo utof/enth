@@ -192,8 +192,10 @@ fn lesson(
             .layout(Layout::top_down(Align::Min)),
     );
     let mut pointing = None;
+    // One scroll position per step, so a new step's text starts at its top.
+    let at = view.lesson.as_ref().map(|r| (r.lesson.clone(), r.step));
     let shown = ScrollArea::vertical()
-        .id_salt("enth.learn.text")
+        .id_salt(("enth.learn.text", at))
         .auto_shrink([false, false])
         .show(&mut text, |ui| {
             ui.spacing_mut().item_spacing = vec2(t.space.tight, t.space.gap);
