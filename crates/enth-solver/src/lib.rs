@@ -17,6 +17,12 @@
 //! | [`heuristic`] | the search's start: envelope, pitch, cutoff and detune from a target's descriptors | MT |
 //! | [`nearest`] | the nearest reachable patch to a sound: a documented stub, on the cut list (R2) | MT |
 //!
+//! R2 file, pre-declared empty by lane S0l (`hint/` and `search.rs` stay untouched):
+//!
+//! | File | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`closest`] | "How close am I?": CMA-ES from the player's patch over a lesson step's editable set (design §7); leaves `nearest` to R3 | CLS |
+//!
 //! The solver spawns no threads, reads no clocks and does no I/O: parallelism comes from the caller's evaluator (an
 //! [`Objective`](search::Objective) for a match), which returns results by job index, so a hint or a match is
 //! identical for any worker count.
@@ -39,6 +45,7 @@
 //! }
 //! ```
 
+pub mod closest;
 pub mod cmaes;
 pub mod coach;
 pub mod eval;
