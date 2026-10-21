@@ -555,3 +555,68 @@ fn bad_targets_and_settings_are_errors_not_panics() {
         Ok(_) => panic!("an empty portfolio is an error"),
     }
 }
+
+/// Lane F1S, the F1s judge's M5: R3b's proposals come after the k-NN neighbours, in their order, with their
+/// provenance; a duplicate of an earlier start is skipped.
+#[test]
+fn proposals_follow_the_neighbours_in_their_order() {
+    let t = target();
+    let bank = small_bank();
+    let init = init();
+    let templates = templates();
+    let mut hypothesis = init.clone();
+    set(&mut hypothesis, "osc1.wave", 3.0);
+    let model = |h: usize| Provenance::Model {
+        model: "propose-v0".to_owned(),
+        hypothesis: h,
+        confidence: Some(0.9),
+    };
+    let proposals = [
+        enth_solver::create::Start {
+            patch: hypothesis.clone(),
+            provenance: model(0),
+        },
+        enth_solver::create::Start {
+            patch: templates[0].patch.clone(),
+            provenance: model(1),
+        },
+    ];
+    let inputs = Inputs {
+        init: &init,
+        templates: &templates,
+        bank: Some(&bank),
+        proposals: &proposals,
+    };
+    let analysis = t.analyse().unwrap();
+    let p = Portfolio::build(&t, &analysis, &inputs, &cheap_cfg(100));
+    let kinds: Vec<&str> = p.starts.iter().map(|s| s.provenance.kind()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "heuristic", "template", "template", "template", "knn", "knn", "knn", "model"
+        ],
+        "the second proposal duplicates a template and is skipped"
+    );
+    assert_eq!(p.starts[7].patch, hypothesis);
+    assert_eq!(p.starts[7].provenance, model(0));
+}
+
+/// Lane F1S, should-fix 3: when the target's note-off falls at or after the clip's end, no release is ever heard,
+/// and no branch searches the envelopes' release (the held phrase alone would); with a release in the clip, they do.
+#[test]
+fn the_release_is_searched_only_when_the_clip_holds_one() {
+    let release: ParamAddr = "env1.release".parse().unwrap();
+    for heard in [false, true] {
+        let mut t = target();
+        if !heard {
+            t.perf.hold_s = t.perf.duration_s; // the note-off after the end
+        }
+        assert_eq!(t.perf.release_heard(), heard);
+        let r = run_with(&t, None, &mut proxy, &cheap_cfg(600), &mut |_| true);
+        let moved = r
+            .candidates
+            .iter()
+            .any(|c| c.patch.value(&release) != c.proposal.value(&release));
+        assert_eq!(moved, heard, "release heard: {heard}");
+    }
+}
