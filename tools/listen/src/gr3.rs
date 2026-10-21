@@ -4,11 +4,11 @@
 //! The trial: the reference R, then A, then B, "which is closer to R?", forced choice. A and B are two arms' **top-ranked**
 //! candidates by their own objective (never a human pick), their order counterbalanced per reference. Every clip, R
 //! included, is scaled to -23 LUFS (the in-house BS.1770), and a trial with a clip over -1 dBTP is lowered as a whole.
-//! Six catch trials per listener: two identical pairs (bias) and four against an obviously wrong candidate (attention);
-//! a listener under 80 % on attention is excluded. **Degraded references are judged against the clean original.**
+//! Seven catch trials per listener: two identical pairs (bias) and five against an obviously wrong candidate (attention);
+//! a listener under 80 % on attention is excluded (one miss in five is kept, two are out). **Degraded references are judged against the clean original.**
 //!
 //! ```text
-//! enth-listen gr3 --set set.toml --dir D       design once (the key, the owner's clips), then the owner's 66 trials
+//! enth-listen gr3 --set set.toml --dir D       design once (the key, the owner's clips), then the owner's 67 trials
 //! enth-listen gr3 --dir D --export-kit K       the friends' kits: K/kit1, K/kit2 (random-named WAVs, answers.txt)
 //! enth-listen gr3 --dir D --analyze            per listener, strata, the decision rule fixed in advance
 //! enth-listen gr3 --dry-run --dir D            all of it with a synthetic set and synthetic answers; plays nothing
@@ -371,7 +371,7 @@ fn dry_run(args: &Gr3Args, dir: &Path, out: &mut dyn Write) -> Res<()> {
     }
     writeln!(
         out,
-        "\nSYNTHETIC answers: the owner and each kit are generated; kit2 misses an attention trial on purpose, to show the exclusion.\n"
+        "\nSYNTHETIC answers: the owner and each kit are generated; kit2 misses two attention trials on purpose, to show the exclusion.\n"
     )?;
     analyze_dir(args, dir, out)?;
     Ok(())

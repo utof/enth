@@ -9,7 +9,7 @@
 //! The synthetic listeners prefer arm B with a probability of about 0.66 on clean references and 0.60 on degraded ones,
 //! moved by a per-reference effect that all listeners share (so the judgements of one reference agree more than
 //! chance, as real ones do); they answer identical pairs at random and attention trials right, except `kit2`, who
-//! misses the first one, so the exclusion path shows in the report.
+//! misses the first two (3 of 5 is under 80 %; one miss would be kept), so the exclusion path shows in the report.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -186,7 +186,7 @@ fn fnv(s: &str) -> u64 {
 #[must_use]
 pub fn synthetic_choices(m: &Manifest, audience: &str, seed: u64) -> BTreeMap<usize, char> {
     let mut rng = SplitMix64::new(seed ^ fnv(audience));
-    let mut misses = usize::from(audience == "kit2");
+    let mut misses = if audience == "kit2" { 2 } else { 0 };
     let mut out = BTreeMap::new();
     for t in m.trials_of(audience) {
         let pos_of = |s: Source| if t.pos_a == s { 'a' } else { 'b' };

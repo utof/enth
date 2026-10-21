@@ -2,7 +2,7 @@
 //!
 //! **The rule, fixed in advance** (docs/r3.md, "Clause 2"; the statistics are in [`super::boot`]):
 //!
-//! 1. A listener who got fewer than 80 % of the four attention trials right is **excluded** (a listener who can no
+//! 1. A listener who got fewer than 80 % of the five attention trials right is **excluded** (a listener who can no
 //!    longer reach 80 % because of misses and the trials still unanswered is excluded as well). Catch trials never
 //!    enter the preference.
 //! 2. The estimate is the pooled share of the remaining judgements in which arm B's candidate was called closer.
@@ -175,7 +175,8 @@ fn listener_report(m: &Manifest, r: &Responses) -> ListenerReport {
     }
     if l.attention_assigned > 0 {
         let best = l.attention_right + (l.attention_assigned - l.attention_answered);
-        l.excluded = (best as f64 / l.attention_assigned as f64) < ATTENTION_MIN;
+        // 4 of 5 is exactly 80 % and stays; the epsilon keeps a rounding error from deciding it
+        l.excluded = (best as f64 / l.attention_assigned as f64) < ATTENTION_MIN - 1e-9;
     }
     l
 }
@@ -660,62 +661,16 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
     }
 
-    #[test]
-    fn attention_under_80_percent_excludes_a_listener_from_the_preference() {
-        let (d, m) = key("exclude", 12);
-        let good = uniform_responses(&m, OWNER, "owner", false);
-        // kit1 always picks B but misses one of the four attention trials: 3/4 = 75% < 80%
-        let mut bad = uniform_responses(&m, "kit1", "friend", true);
-        let t = m
-            .trials_of("kit1")
+    /// The attention trials of `audience`, in play order.
+    fn attention_of<'m>(m: &'m Manifest, audience: &str) -> Vec<&'m Trial> {
+        m.trials_of(audience)
             .into_iter()
-            .find(|t| t.kind == Kind::Attention)
-            .unwrap();
-        bad.choices.insert(
-            t.n,
-            if t.right_position() == Some('a') {
-                'b'
-            } else {
-                'a'
-            },
-        );
-        let r = analyze(&m, &[good.clone(), bad.clone()], 300);
-        let f = r.listeners.iter().find(|l| l.name == "friend").unwrap();
-        assert!(f.excluded && f.attention_right == 3);
-        // the excluded friend's all-B judgements are out: the pooled share is the owner's alone (all A)
-        assert_eq!(r.pooled.as_ref().unwrap().p, 0.0);
-        assert_eq!(r.pooled.as_ref().unwrap().listeners, 1);
-        assert!(r.to_text().contains("EXCLUDED"));
-        // all four right: included
-        let mut ok = bad.clone();
-        ok.choices.insert(t.n, t.right_position().unwrap());
-        let r = analyze(&m, &[good, ok], 300);
-        assert!(!r.listeners[1].excluded);
-        assert_eq!(r.pooled.as_ref().unwrap().listeners, 2);
-        std::fs::remove_dir_all(&d).unwrap();
+            .filter(|t| t.kind == Kind::Attention)
+            .collect()
     }
 
-    #[test]
-    fn unanswered_trials_keep_a_listener_in_until_the_attention_rule_cannot_be_met() {
-        let (d, m) = key("partial", 12);
-        let mut r = uniform_responses(&m, OWNER, "owner", true);
-        let attn: Vec<usize> = m
-            .trials_of(OWNER)
-            .iter()
-            .filter(|t| t.kind == Kind::Attention)
-            .map(|t| t.n)
-            .collect();
-        // two attention trials unanswered, the two answered right: still reachable (4/4 possible)
-        r.choices.remove(&attn[0]);
-        r.choices.remove(&attn[1]);
-        let rep = analyze(&m, &[r.clone()], 200);
-        assert!(!rep.listeners[0].excluded && !rep.listeners[0].complete);
-        // one answered wrong, one unanswered: at best 3/4 = 75%, already out
-        let t = m
-            .trials_of(OWNER)
-            .into_iter()
-            .find(|t| t.n == attn[2])
-            .unwrap();
+    /// Answer attention trial `t` wrongly.
+    fn miss(r: &mut Responses, t: &Trial) {
         r.choices.insert(
             t.n,
             if t.right_position() == Some('a') {
@@ -724,6 +679,59 @@ mod tests {
                 'a'
             },
         );
+    }
+
+    #[test]
+    fn attention_under_80_percent_excludes_a_listener_from_the_preference() {
+        let (d, m) = key("exclude", 12);
+        assert_eq!(attention_of(&m, "kit1").len(), 5);
+        let good = uniform_responses(&m, OWNER, "owner", false);
+        let att = attention_of(&m, "kit1");
+        // kit1 always picks B and misses one of the five attention trials: 4/5 = 80%, kept
+        let mut one = uniform_responses(&m, "kit1", "friend", true);
+        miss(&mut one, att[0]);
+        let r = analyze(&m, &[good.clone(), one.clone()], 300);
+        let f = r.listeners.iter().find(|l| l.name == "friend").unwrap();
+        assert!(!f.excluded && f.attention_right == 4, "{}", r.to_text());
+        assert_eq!(r.pooled.as_ref().unwrap().listeners, 2);
+        // two misses: 3/5 = 60% < 80%, out
+        let mut two = one.clone();
+        miss(&mut two, att[1]);
+        let r = analyze(&m, &[good.clone(), two.clone()], 300);
+        let f = r.listeners.iter().find(|l| l.name == "friend").unwrap();
+        assert!(f.excluded && f.attention_right == 3);
+        // the excluded friend's all-B judgements are out: the pooled share is the owner's alone (all A)
+        assert_eq!(r.pooled.as_ref().unwrap().p, 0.0);
+        assert_eq!(r.pooled.as_ref().unwrap().listeners, 1);
+        assert!(r.to_text().contains("EXCLUDED"));
+        // all five right: included
+        let mut ok = two.clone();
+        ok.choices
+            .insert(att[0].n, att[0].right_position().unwrap());
+        ok.choices
+            .insert(att[1].n, att[1].right_position().unwrap());
+        let r = analyze(&m, &[good, ok], 300);
+        assert!(!r.listeners[1].excluded && r.listeners[1].attention_right == 5);
+        assert_eq!(r.pooled.as_ref().unwrap().listeners, 2);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn unanswered_trials_keep_a_listener_in_until_the_attention_rule_cannot_be_met() {
+        let (d, m) = key("partial", 12);
+        let mut r = uniform_responses(&m, OWNER, "owner", true);
+        let attn = attention_of(&m, OWNER);
+        // two attention trials unanswered, the three answered right: still reachable (5/5 possible)
+        r.choices.remove(&attn[0].n);
+        r.choices.remove(&attn[1].n);
+        let rep = analyze(&m, &[r.clone()], 200);
+        assert!(!rep.listeners[0].excluded && !rep.listeners[0].complete);
+        // one answered wrong, two unanswered: at best 4/5 = 80%, still in
+        miss(&mut r, attn[2]);
+        let rep = analyze(&m, &[r.clone()], 200);
+        assert!(!rep.listeners[0].excluded);
+        // a second one answered wrong, one unanswered: at best 3/5 = 60%, already out
+        miss(&mut r, attn[3]);
         let rep = analyze(&m, &[r], 200);
         assert!(rep.listeners[0].excluded);
         assert!(rep.decision.verdict.starts_with("NO RESULT"));

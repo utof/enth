@@ -8,9 +8,9 @@
 //! - *Counterbalancing:* which arm plays first is dealt per reference, alternating inside each (stratum, degraded)
 //!   group, so half of every group has arm B first. A friend hears each of their references in the order opposite to
 //!   the owner's: judged by two listeners, every reference is heard in both orders.
-//! - *Catch trials,* six per listener: two **identical pairs** (A and B are the same candidate, to measure a bias towards
-//!   a position or the second sound) and four **attention** trials (one arm's top candidate against the obviously wrong
-//!   one, the Init patch; the wrong one is first in two of them). Attention items are clean items that have a `wrong`
+//! - *Catch trials,* seven per listener: two **identical pairs** (A and B are the same candidate, to measure a bias towards
+//!   a position or the second sound) and five **attention** trials (one arm's top candidate against the obviously wrong
+//!   one, the Init patch; the wrong one is first in two or three of them, each arm is the real candidate in two or three). Attention items are clean items that have a `wrong`
 //!   candidate. A kit's catch trials use references outside that kit when there are enough, so a friend does not hear a
 //!   reference's candidate in a catch trial and again in a main trial.
 //! - Each listener's trials are shuffled together.
@@ -39,7 +39,7 @@ pub const DEFAULT_SEED: u64 = 20_261_021;
 /// Identical pairs per listener.
 pub const N_IDENTICAL: usize = 2;
 /// Attention trials per listener.
-pub const N_ATTENTION: usize = 4;
+pub const N_ATTENTION: usize = 5;
 /// A listener below this share of attention trials right is excluded.
 pub const ATTENTION_MIN: f64 = 0.8;
 /// Silence between the reference, A and B.
@@ -215,9 +215,21 @@ pub fn plan(set: &Set, seed: u64, friends: usize) -> Res<Plan> {
         let mut att_pool = outside(&eligible, N_ATTENTION);
         shuffle(&mut rng, &mut att_pool);
         let att_items: Vec<usize> = att_pool[..N_ATTENTION].to_vec();
-        let mut arms = [Source::ArmA, Source::ArmA, Source::ArmB, Source::ArmB];
+        // as balanced as an odd count allows: the arm and the side of the extra one are drawn
+        let (extra_arm, extra_side) = (rng.below(2) == 0, rng.below(2) == 0);
+        let mut arms: Vec<Source> = (0..N_ATTENTION)
+            .map(|k| {
+                if (k % 2 == 0) == extra_arm {
+                    Source::ArmA
+                } else {
+                    Source::ArmB
+                }
+            })
+            .collect();
         shuffle(&mut rng, &mut arms);
-        let mut wrong_first = [true, true, false, false];
+        let mut wrong_first: Vec<bool> = (0..N_ATTENTION)
+            .map(|k| (k % 2 == 0) == extra_side)
+            .collect();
         shuffle(&mut rng, &mut wrong_first);
         for k in 0..N_ATTENTION {
             let (pos_a, pos_b) = if wrong_first[k] {
@@ -593,7 +605,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let owner = of(OWNER);
-        assert_eq!(owner.len(), 66);
+        assert_eq!(owner.len(), 67);
         assert_eq!(owner.iter().filter(|t| t.kind == Kind::Main).count(), 60);
         assert_eq!(
             owner.iter().filter(|t| t.kind == Kind::Identical).count(),
@@ -601,14 +613,14 @@ mod tests {
         );
         assert_eq!(
             owner.iter().filter(|t| t.kind == Kind::Attention).count(),
-            4
+            5
         );
         assert_eq!(
             p.kits.iter().map(Vec::len).collect::<Vec<_>>(),
             vec![30, 30]
         );
         for k in ["kit1", "kit2"] {
-            assert_eq!(of(k).len(), 36);
+            assert_eq!(of(k).len(), 37);
         }
         // numbering is 1..=len in play order
         assert!(owner.iter().enumerate().all(|(i, t)| t.n == i + 1));
@@ -669,14 +681,19 @@ mod tests {
                 .copied()
                 .filter(|t| t.kind == Kind::Attention)
                 .collect();
-            assert_eq!(att.len(), 4);
-            // clean items with a wrong candidate; the wrong one first in two; both arms used twice
+            assert_eq!(att.len(), 5);
+            // clean items with a wrong candidate; the wrong one first in two or three (never one side more than
+            // one ahead), and each arm used two or three times
             assert!(
                 att.iter()
                     .all(|t| !s.items[t.item].degraded && s.items[t.item].wrong.is_some())
             );
-            assert_eq!(att.iter().filter(|t| t.pos_a == Source::Wrong).count(), 2);
-            assert_eq!(att.iter().filter(|t| t.pos_b == Source::Wrong).count(), 2);
+            let first = att.iter().filter(|t| t.pos_a == Source::Wrong).count();
+            assert!((2..=3).contains(&first), "{a}: wrong first {first} of 5");
+            assert_eq!(
+                att.iter().filter(|t| t.pos_b == Source::Wrong).count(),
+                5 - first
+            );
             let real = |t: &&PlanTrial| {
                 if t.pos_a == Source::Wrong {
                     t.pos_b
@@ -684,7 +701,8 @@ mod tests {
                     t.pos_a
                 }
             };
-            assert_eq!(att.iter().filter(|t| real(t) == Source::ArmA).count(), 2);
+            let arm_a = att.iter().filter(|t| real(t) == Source::ArmA).count();
+            assert!((2..=3).contains(&arm_a), "{a}: arm A {arm_a} of 5");
             let ident: Vec<&PlanTrial> = mine
                 .iter()
                 .copied()
@@ -730,8 +748,8 @@ mod tests {
         let (d, s) = set("key", 12);
         let out = d.join("out");
         let m = design(&s, DEFAULT_SEED, 2, &out).unwrap();
-        assert_eq!(m.trials_of(OWNER).len(), 18);
-        assert_eq!(m.trials.len(), 18 + 2 * 12);
+        assert_eq!(m.trials_of(OWNER).len(), 12 + 7);
+        assert_eq!(m.trials.len(), 19 + 2 * (6 + 7));
         // owner clips exist under random names
         for t in m.trials_of(OWNER) {
             for c in &t.clips {

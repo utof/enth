@@ -262,13 +262,13 @@ fn a_dry_run_designs_exports_answers_and_reports() {
     assert_eq!(report.listeners.len(), 3);
     assert!(
         report.listeners.iter().any(|l| l.excluded),
-        "kit2 misses an attention trial on purpose"
+        "kit2 misses two attention trials on purpose"
     );
     assert_eq!(report.seed, 0x4752_3342_4f4f_5453);
 
-    // the kits: 8 references per friend plus 6 catch trials, three clips each, random names, no key
+    // the kits: 12 references per friend plus 7 catch trials, three clips each, random names, no key
     let m: Manifest = read_json(&manifest_path(&dir)).unwrap();
-    assert_eq!(m.trials_of(OWNER).len(), 24 + 6);
+    assert_eq!(m.trials_of(OWNER).len(), 24 + 7);
     for k in ["kit1", "kit2"] {
         let kit = dir.join("kits").join(k);
         let names = names_in(&kit);
@@ -280,7 +280,7 @@ fn a_dry_run_designs_exports_answers_and_reports() {
             .iter()
             .filter(|n| Path::new(n).extension().is_some_and(|e| e == "wav"))
             .collect();
-        assert_eq!(wavs.len(), 3 * (12 + 6), "{k}: {names:?}");
+        assert_eq!(wavs.len(), 3 * (12 + 7), "{k}: {names:?}");
         for n in &wavs {
             // NN-K-xxxxxx.wav
             let p: Vec<&str> = n.trim_end_matches(".wav").split('-').collect();
@@ -347,10 +347,10 @@ fn a_dry_run_without_a_set_uses_the_demo_set() {
     let m: Manifest = read_json(&manifest_path(&dir)).unwrap();
     assert_eq!(
         (m.items.len(), m.kits, m.trials_of(OWNER).len()),
-        (60, 0, 66)
+        (60, 0, 67)
     );
     assert!(
-        out.contains("66 trials") && out.contains("40 clean, 20 degraded"),
+        out.contains("67 trials") && out.contains("40 clean, 20 degraded"),
         "{out}"
     );
     assert!(!dir.join("kits").exists());
@@ -368,9 +368,9 @@ fn the_owners_session_saves_after_each_answer_and_resumes() {
     // two answers (with a replay of everything and of B), then quit
     let (r, out) = run_text(&a, &["r", "rb", "RR", "a", "b", "q"], &mut player);
     r.unwrap();
-    assert!(out.contains("GR3 listening: 18 trials"), "{out}");
+    assert!(out.contains("GR3 listening: 19 trials"), "{out}");
     assert!(
-        out.contains("[1/18]") && out.contains("[2/18]") && out.contains("saved 2 answers"),
+        out.contains("[1/19]") && out.contains("[2/19]") && out.contains("saved 2 answers"),
         "{out}"
     );
     // blind: nothing in the session names a reference, stratum or arm
@@ -396,32 +396,32 @@ fn the_owners_session_saves_after_each_answer_and_resumes() {
     assert_eq!(file.answers.len(), 2);
     assert_eq!(file.answers[0].replays, 3);
     // resume with the rest
-    let rest: Vec<&str> = (0..16)
+    let rest: Vec<&str> = (0..17)
         .map(|i| if i % 3 == 0 { "b" } else { "a" })
         .collect();
     let (r, out) = run_text(&a, &rest, &mut player);
     r.unwrap();
     assert!(
-        out.contains("Resuming after 2 answered trials") && out.contains("Done: 18 answers"),
+        out.contains("Resuming after 2 answered trials") && out.contains("Done: 19 answers"),
         "{out}"
     );
     assert!(out.contains("--export-kit") && out.contains("--analyze"));
     let file = load_answers(&d.join("run").join("answers.json"), SCHEMA_ANSWERS, 1)
         .unwrap()
         .unwrap();
-    assert_eq!(file.answers.len(), 18);
+    assert_eq!(file.answers.len(), 19);
     assert_eq!(
         file.answers
             .iter()
             .map(|x| x.n)
             .collect::<BTreeSet<_>>()
             .len(),
-        18
+        19
     );
     // a third run has nothing left to ask
     let (r, out) = run_text(&a, &[], &mut player);
     r.unwrap();
-    assert!(out.contains("Done: 18 answers"), "{out}");
+    assert!(out.contains("Done: 19 answers"), "{out}");
     std::fs::remove_dir_all(&d).unwrap();
 }
 
@@ -527,8 +527,8 @@ fn the_friends_flow_is_gated_until_everyone_is_done() {
     let set = demo_set(&d.join("set"), 24).unwrap();
     let dir = d.join("run");
     let a = args(&dir, Some(set));
-    // the owner answers everything (all 30 trials) with a fixed pattern
-    let owner: Vec<&str> = (0..30)
+    // the owner answers everything (all 31 trials) with a fixed pattern
+    let owner: Vec<&str> = (0..31)
         .map(|i| if i % 2 == 0 { "a" } else { "b" })
         .collect();
     let (r, _) = run_text(&a, &owner, &mut MockPlayer::default());
