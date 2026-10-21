@@ -60,4 +60,4 @@ Send me:
 
 Crashes: on a Mac the DAW's crash report is in `~/Library/Logs/DiagnosticReports`; on Windows tell me when it happened and what you were doing.
 
-After installing, play the Recreate rounds as [gr1-friends.md](gr1-friends.md) describes (the zip holds a copy).
+After installing, play the Recreate rounds as [gr1-friends.md](gr1-friends.md) describes (the zip holds a copy). For the lessons, [gr2-friends.md](gr2-friends.md) (also in the zip) says how to add the zip's `Packs` folder and play the tour.
