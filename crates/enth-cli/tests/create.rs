@@ -85,7 +85,7 @@ fn a_wav_becomes_k_candidates_and_an_enth_create_record() {
         "every start is a patch"
     );
     assert_eq!(r.settings.k, 3);
-    assert_eq!(r.settings.objective, "logmel-l1/1");
+    assert_eq!(r.settings.objective, "logmel-pool85-robust/1");
     assert!(r.settings.bank.is_none());
     assert_eq!(r.input.audio_sha256.len(), 64);
     assert_eq!(r.input.perf.key, 57, "A3");

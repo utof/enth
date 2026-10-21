@@ -15,8 +15,11 @@
 //!   `ThreadPoolBuilder::build_scoped`, so its threads are **joined** before the job returns and no thread exists
 //!   between jobs (a plain `ThreadPool`'s drop does not wait for its threads, and a thread left running in an unloaded
 //!   plugin crashes the host); [`search_workers`] = `min(available_parallelism / 2, 8)`, at normal priority, never
-//!   real-time. Each worker keeps its own metric worker (FFT plans, buffers); a batch's distances come back by index,
-//!   so the result is the same for any worker count.
+//!   real-time. Each worker keeps its own scorer (lane OBJ's `RobustWorker`: FFT plans, buffers); a batch's distances
+//!   come back by index, so the result is the same for any worker count.
+//! - **The objective** is lane OBJ's robust distance ([`OBJECTIVE`], `logmel-pool85-robust/1`):
+//!   `RobustMetricTarget::from_intake(&target, &intake.report)`, so the search compares a candidate with the upload
+//!   only where the intake says the upload still carries information. The job's intake post names it in its notes.
 //! - **Cancel within one batch:** a job's `AtomicBool` is checked before every render in the pool and after each round.
 //!   A cancelled batch is dropped and never told (`CreateJob::cancel`), so a cancelled run is a prefix of the full one.
 //!   The latency is one render per worker (tens of ms with effects on a 3 s clip).
@@ -47,6 +50,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use enth_analysis::intake::{Intake, IntakeCfg};
+use enth_analysis::robust::METRIC_ROBUST;
 use enth_patch::{Patch, file};
 use enth_render::{RenderSpec, render};
 use enth_session::create::{
@@ -56,6 +60,7 @@ use enth_solver::create::{
     Candidate, CreateCfg, CreateJob, CreateStop, Inputs, Portfolio, Target, Template,
 };
 use enth_solver::nearest::Bank;
+use enth_solver::robust::RobustMetricTarget;
 use enth_solver::search::MetricTarget;
 use parking_lot::{Condvar, Mutex};
 use rayon::prelude::*;
@@ -64,18 +69,20 @@ use crate::presets::{Environment, Os, SystemEnv, documents_dir};
 
 /// The k-NN bank's file name (`cargo xtask bank` writes it; docs/r3.md, "The bank").
 pub const BANK_FILE: &str = "enth-bank-v1.bin";
-/// Metric v1's id (the solver's `MetricWorker`): the objective a job scores with until lane OBJ's robust metric lands.
-pub const OBJECTIVE: &str = "logmel-l1/1";
+/// The objective a job scores with: lane OBJ's robust distance (`logmel-pool85-robust/1`; docs/r3.md, "The robust
+/// objective"), the default since main merged OBJ.
+pub const OBJECTIVE: &str = METRIC_ROBUST;
+/// Metric v1's id (the solver's `MetricWorker`), the objective before lane OBJ's: [`Objective::metric_v1`].
+pub const METRIC_V1: &str = "logmel-l1/1";
 
 /// One pool thread's scorer: a candidate's distance to the target (lower is better).
 pub type Scorer<'a> = Box<dyn FnMut(&Patch) -> f64 + Send + 'a>;
 
 /// What a create job scores its candidates with: the objective's id (recorded) and a scorer per pool thread, each a
 /// pure function of its candidate, so a batch's distances are the same for any worker count. **A parameter of the
-/// search**, so lane OBJ's robust metric replaces metric v1 in one place (where a job builds its objective): `let
-/// scoring = RobustMetricTarget::from_intake(&target, &intake.report);` and `Objective::new(METRIC_ROBUST, ||
-/// { let mut w = scoring.worker(); Box::new(move |p| w.distance(p)) })` (the coordinator, 2026-10-21: once main has
-/// OBJ).
+/// search**, built in one place (where a job builds its objective): lane OBJ's robust distance
+/// ([`Objective::robust`]) since main merged OBJ (the coordinator, 2026-10-21); metric v1 ([`Objective::metric_v1`])
+/// before it.
 pub struct Objective<'a> {
     /// The objective's metric id, as `enth.create/1` records it.
     pub id: &'static str,
@@ -91,10 +98,19 @@ impl<'a> Objective<'a> {
         }
     }
 
-    /// Metric v1 ([`OBJECTIVE`], `logmel-l1/1`) against `metric` (`Target::metric_target`): one `MetricWorker` per
+    /// Lane OBJ's robust distance ([`OBJECTIVE`], `logmel-pool85-robust/1`) against `scoring`
+    /// (`RobustMetricTarget::from_intake(&target, &intake.report)`): one `RobustWorker` per thread.
+    pub fn robust(scoring: &'a RobustMetricTarget) -> Self {
+        Objective::new(OBJECTIVE, move || {
+            let mut w = scoring.worker();
+            Box::new(move |p: &Patch| w.distance(p))
+        })
+    }
+
+    /// Metric v1 ([`METRIC_V1`], `logmel-l1/1`) against `metric` (`Target::metric_target`): one `MetricWorker` per
     /// thread.
     pub fn metric_v1(metric: &'a MetricTarget) -> Self {
-        Objective::new(OBJECTIVE, move || {
+        Objective::new(METRIC_V1, move || {
             let mut w = metric.worker();
             Box::new(move |p: &Patch| w.distance(p))
         })
@@ -886,6 +902,7 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
     if let Some((_, path)) = &bank {
         notes.push(format!("k-NN bank: {}", path.display()));
     }
+    notes.push(format!("objective: {OBJECTIVE}"));
     inner.post(
         id,
         CreatePost::Intake(Box::new(CreateIntake::new(
@@ -924,10 +941,10 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
             return;
         }
     };
-    // 4. The search, on a pool of its own whose threads are joined before this returns. The objective is the one
-    //    place lane OBJ's robust metric goes in ([`Objective`]).
-    let scoring = target.metric_target();
-    let objective = Objective::metric_v1(&scoring);
+    // 4. The search, on a pool of its own whose threads are joined before this returns, scored by lane OBJ's robust
+    //    distance from what the intake found ([`Objective`]).
+    let scoring = RobustMetricTarget::from_intake(&target, &intake.report);
+    let objective = Objective::robust(&scoring);
     let workers = match inner.workers.load(Ordering::Acquire) {
         0 => search_workers(),
         n => n,

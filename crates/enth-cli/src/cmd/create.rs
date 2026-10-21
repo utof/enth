@@ -17,8 +17,9 @@
 //!    velocity and the hold the intake inferred (the onset and the clip stay the intake's).
 //! 3. **The portfolio**: the heuristic start, the templates (`content/templates/`) and, with `--bank`, the k-NN
 //!    neighbours; without a bank the job says so and runs on the rest.
-//! 4. **`create`**: K branches refined by successive halving on the CLI's rayon pool, distances by index, so the
-//!    result is the same for any `--workers`. `--budget` caps the renders (the schedule never depends on it); the
+//! 4. **`create`**: K branches refined by successive halving on the CLI's rayon pool, scored by lane OBJ's robust
+//!    distance (`logmel-pool85-robust/1`, `RobustMetricTarget::from_intake`, one `RobustWorker` per thread; recorded
+//!    as the record's `settings.objective`), distances by index, so the result is the same for any `--workers`. `--budget` caps the renders (the schedule never depends on it); the
 //!    wall-clock cap (`--seconds`, at most 300) is checked before every render, and a batch it interrupts is dropped:
 //!    the run is then the same job with its renders as the budget (`replay_cfg`), on any machine.
 //!
@@ -39,12 +40,13 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use enth_analysis::intake::{Intake, IntakeCfg};
+use enth_analysis::robust::METRIC_ROBUST;
 use enth_patch::Patch;
 use enth_render::DEFAULT_SEED;
 use enth_solver::create::record::{CreateRecord, RecordContext};
 use enth_solver::create::{CreateCfg, CreateJob, CreateStop, Inputs, Portfolio, Target, Template};
 use enth_solver::nearest::Bank;
-use enth_solver::search::MetricTarget;
+use enth_solver::robust::RobustMetricTarget;
 use rayon::prelude::*;
 use serde_json::Value;
 
@@ -57,28 +59,26 @@ use crate::{patchio, templates};
 const MAX_SECONDS: f64 = 300.0;
 /// The most candidates.
 const MAX_CANDIDATES: usize = 16;
-/// Metric v1's id: the objective `enth create` scores with until lane OBJ's robust metric lands.
-const OBJECTIVE: &str = "logmel-l1/1";
 
 /// One pool thread's scorer: a candidate's distance to the target (lower is better).
 type Scorer<'a> = Box<dyn FnMut(&Patch) -> f64 + Send + 'a>;
 
 /// What the job scores with: the id `enth.create/1` records and a scorer per thread. **A parameter of the search**,
-/// so lane OBJ's robust metric replaces metric v1 where [`run`] builds it: `let scoring =
-/// RobustMetricTarget::from_intake(&target, &intake.report);` and `Objective { id: METRIC_ROBUST, scorer: … }` (the
-/// coordinator, 2026-10-21: once main has OBJ). The plugin's `create.rs` has the same seam.
+/// built where [`run`] builds it: lane OBJ's robust distance since main merged OBJ (the coordinator, 2026-10-21; it
+/// was metric v1, `logmel-l1/1`). The plugin's `create.rs` has the same seam.
 struct Objective<'a> {
     id: &'static str,
     scorer: Box<dyn Fn() -> Scorer<'a> + Sync + 'a>,
 }
 
 impl<'a> Objective<'a> {
-    /// Metric v1 against `metric` (`Target::metric_target`): one `MetricWorker` per thread.
-    fn metric_v1(metric: &'a MetricTarget) -> Self {
+    /// Lane OBJ's robust distance (`logmel-pool85-robust/1`) against `scoring`
+    /// (`RobustMetricTarget::from_intake(&target, &intake.report)`): one `RobustWorker` per thread.
+    fn robust(scoring: &'a RobustMetricTarget) -> Self {
         Objective {
-            id: OBJECTIVE,
+            id: METRIC_ROBUST,
             scorer: Box::new(move || {
-                let mut w = metric.worker();
+                let mut w = scoring.worker();
                 Box::new(move |p: &Patch| w.distance(p))
             }),
         }
@@ -294,10 +294,10 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let portfolio = Portfolio::build(&target, &analysis, &inputs, &ccfg);
     let mut job = CreateJob::new(&target, &analysis, portfolio, &ccfg)
         .map_err(|e| error::invalid(e.code(), e.to_string(), e.hint()))?;
-    // 4. The search on the CLI's pool, the cap checked before every render. The objective is the one place lane
-    //    OBJ's robust metric goes in ([`Objective`]).
-    let scoring = target.metric_target();
-    let objective = Objective::metric_v1(&scoring);
+    // 4. The search on the CLI's pool, the cap checked before every render, scored by lane OBJ's robust distance from
+    //    what the intake found ([`Objective`]).
+    let scoring = RobustMetricTarget::from_intake(&target, &intake.report);
+    let objective = Objective::robust(&scoring);
     let mut stamps: Vec<f64> = Vec::new();
     let capped = game::with_workers(args.workers, || {
         search(&mut job, &objective, &late, &mut || {

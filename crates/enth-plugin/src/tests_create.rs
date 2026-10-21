@@ -364,6 +364,16 @@ fn a_job_runs_from_the_file_to_k_candidates_and_its_threads_go_with_it() {
         "{:?}",
         intake.notes
     );
+    // Scored by lane OBJ's robust distance, and the intake post says so.
+    assert_eq!(create::OBJECTIVE, "logmel-pool85-robust/1");
+    assert!(
+        intake
+            .notes
+            .iter()
+            .any(|n| *n == format!("objective: {}", create::OBJECTIVE)),
+        "{:?}",
+        intake.notes
+    );
     assert!(rounds(&posts) >= 2, "a post per round");
     let Some((
         id,
