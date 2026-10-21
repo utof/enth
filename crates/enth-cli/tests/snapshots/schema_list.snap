@@ -137,6 +137,16 @@ exit: 0
       "describes": "the output of enth compare",
       "id": "enth.compare/2",
       "name": "compare"
+    },
+    {
+      "describes": "the output of enth lesson show",
+      "id": "enth.lesson-show/1",
+      "name": "lesson-show"
+    },
+    {
+      "describes": "the output of enth lesson check",
+      "id": "enth.lesson-check/1",
+      "name": "lesson-check"
     }
   ]
 }

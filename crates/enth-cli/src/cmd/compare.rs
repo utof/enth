@@ -6,7 +6,7 @@
 //!   holds the components' direction and closeness, as the game's results drawer shows them, but not the target's
 //!   readings (the game never shows those during a round); `--reveal` adds them. Exit 1 when the patch does not pass.
 //! - `--target REF.patch.json [--phrase N]`: a reference patch, heard through a phrase of the table (default: the held
-//!   note). It is scored by the game's own scorers (`sound/1`, `structure/1`, `combined/1`) on a hand-made round: the
+//!   note; the generator's phrases 1-3 and the lesson phrases 4-7, lane SKL's fix of the F1l review's nit 9). It is scored by the game's own scorers (`sound/1`, `structure/1`, `combined/1`) on a hand-made round: the
 //!   reference stands for the target, the parameters it moved off their defaults (and that the phrase lets you hear)
 //!   stand for the randomized ones, and the pass mark is the game's (90). Exit 1 when it does not pass.
 //! - `--target REF.wav [--perf ...]`: a recording. There is no patch behind it, so the game's scores (which scale by
@@ -78,8 +78,8 @@ pub struct Args {
     pub patch: PathBuf,
     #[command(flatten)]
     pub reference: Reference,
-    /// For a reference patch: the phrase both are heard through, by id or name (`held`, `octave_pair`,
-    /// `legato_pair`). Default: held.
+    /// For a reference patch: the phrase both are heard through, by id or name: the generator's (`held`,
+    /// `octave_pair`, `legato_pair`) or a lesson's (`chord`, `long_hold`, `staccato`, `staccato_run`). Default: held.
     #[arg(long, value_name = "ID|NAME")]
     pub phrase: Option<String>,
     /// For a challenge: also show the target's readings in the report's components (the game never does during a
@@ -236,24 +236,31 @@ fn reference(args: &Args, target: &std::path::Path, stdin: &str) -> Res {
     }
 }
 
-/// `--phrase`: an id or a name of the table; the held note by default.
+/// Every phrase `--phrase` offers: the generator's table (ids 1-3), then the lesson-only phrases (ids 4-7, lane CV2),
+/// one id sequence (lane SKL: the F1l review's nit 9, `--phrase` offered only the first table).
+fn all_phrases() -> impl Iterator<Item = &'static phrases::Entry> {
+    TABLE
+        .iter()
+        .chain(enth_challenge::lesson_phrases::TABLE.iter())
+}
+
+/// `--phrase`: an id or a name of either table; the held note by default.
 fn pick_phrase(arg: Option<&str>) -> Result<&'static phrases::Entry, CliError> {
     let Some(text) = arg.map(str::trim) else {
         return Ok(&TABLE[0]);
     };
     let found = text.parse::<u16>().map_or_else(
-        |_| TABLE.iter().find(|e| e.name == text),
-        |n| TABLE.iter().find(|e| e.id.0 == n),
+        |_| all_phrases().find(|e| e.name == text),
+        |n| all_phrases().find(|e| e.id.0 == n),
     );
     found.ok_or_else(|| {
-        let names: Vec<&str> = TABLE.iter().map(|e| e.name).collect();
+        let names: Vec<&str> = all_phrases().map(|e| e.name).collect();
         error::usage(
             "unknown_phrase",
             format!("'{text}' is not a phrase"),
             format!(
                 "the phrases are {}",
-                TABLE
-                    .iter()
+                all_phrases()
                     .map(|e| format!("{} ({})", e.id.0, e.name))
                     .collect::<Vec<_>>()
                     .join(", ")

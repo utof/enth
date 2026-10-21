@@ -1,0 +1,102 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "lessons": [
+    {
+      "id": "cutoff",
+      "key": "example/cutoff",
+      "objective": "Turn the low-pass filter's cutoff down and hear the sound get darker.",
+      "steps": [
+        {
+          "answer": null,
+          "challenge": null,
+          "check": null,
+          "editable": [],
+          "examples": [
+            "Open",
+            "Closed"
+          ],
+          "hide": [],
+          "highlight": [],
+          "hints": [],
+          "id": "hear",
+          "kind": "listen",
+          "locked": [],
+          "number": 1,
+          "start": null,
+          "text": "# Open and closed\n\nListen to the two sounds. They are the same saw wave, and only the low-pass filter's [cutoff](enth:filter1.cutoff) differs.\n\n- **Open** lets the whole sound through.\n- **Closed** cuts the upper part away.\n\nWhich one is brighter?\n",
+          "witness": null
+        },
+        {
+          "answer": null,
+          "challenge": null,
+          "check": {
+            "expect": [
+              "brightness<500Hz"
+            ],
+            "kind": "sound",
+            "phrase": 1
+          },
+          "editable": [
+            "filter1.cutoff"
+          ],
+          "examples": [],
+          "hide": [],
+          "highlight": [
+            "filter1.cutoff"
+          ],
+          "hints": [
+            "The cutoff knob is on the filter. Turn it to the left."
+          ],
+          "id": "try",
+          "kind": "do",
+          "locked": [
+            "osc1.*"
+          ],
+          "number": 2,
+          "start": "patches/saw.patch.json",
+          "text": "# Make it darker\n\nThe cutoff is the frequency where the filter starts to remove sound. **Turn it down and the sound gets darker.**\n\nStart from the open sound and bring the [cutoff](enth:filter1.cutoff) down until it is darker than the closed one you heard.\n",
+          "witness": null
+        },
+        {
+          "answer": null,
+          "challenge": null,
+          "check": null,
+          "editable": [],
+          "examples": [
+            "A",
+            "B"
+          ],
+          "hide": [],
+          "highlight": [],
+          "hints": [],
+          "id": "which",
+          "kind": "choose",
+          "locked": [],
+          "number": 3,
+          "start": null,
+          "text": "# Which is darker?\n\nListen to **A** and **B**. Which one has the lower [cutoff](enth:filter1.cutoff)?\n",
+          "witness": null
+        }
+      ],
+      "teaches": [
+        "svf.cutoff"
+      ],
+      "tier": "basic",
+      "title": "The low-pass cutoff"
+    }
+  ],
+  "next": "check a do step against a patch: `enth lesson check [repo]/content/lessons/example --lesson cutoff --step <id|n> <patch>`",
+  "pack": {
+    "engine": "[engine]",
+    "id": "example",
+    "title": "Example pack",
+    "version": "0.1.0"
+  },
+  "schema": "enth.lesson-show/1"
+}
+--- stderr

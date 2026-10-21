@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/lesson.rs
+expression: "record(&s, &o, false)"
+---
+exit: 2
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "not_checkable",
+  "exit": 2,
+  "hint": "a read or listen step passes when the player moves on; `enth lesson show` lists the do steps",
+  "message": "step 1 (hear) of example/cutoff is a listen step, which has no check",
+  "schema": "enth.error/1"
+}
+--- stderr
