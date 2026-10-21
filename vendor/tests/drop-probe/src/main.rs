@@ -17,6 +17,13 @@
 //!
 //! Exit status: 0 when every check passed; 1 when only `[egui]` checks failed (baseview took the drop and egui never saw
 //! it: upstream egui-baseview 0.9.0, the negative control); 3 when an `[x11]` check failed; 2 on a setup error.
+//!
+//!   drop-probe --into <window title>
+//!
+//! A measurement, not a check: on a display where a host already shows a plugin window (REAPER's FX window, on the
+//! same Xvfb), it lists the XdndAware windows and the plugin window's ancestors, and drops a WAV file at the plugin
+//! window's centre, once where a Qt-style source would and once on the plugin window directly, printing who asked for
+//! the data and who answered.
 
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -33,7 +40,7 @@ use x11rb::NONE;
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ClientMessageEvent, ConnectionExt, CreateWindowAux, EventMask, PropMode,
+    Atom, AtomEnum, ClientMessageEvent, ConnectionExt, CreateWindowAux, EventMask, MapState, PropMode,
     SELECTION_NOTIFY_EVENT, SelectionNotifyEvent, SelectionRequestEvent, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
@@ -179,6 +186,8 @@ struct Source {
     uris: Vec<u8>,
     /// `ConvertSelection` requests answered with the list.
     conversions: u32,
+    /// The window of every `ConvertSelection` request, answered or not, in order.
+    requestors: Vec<Window>,
 }
 
 impl Source {
@@ -202,7 +211,7 @@ impl Source {
         .unwrap();
         conn.flush().unwrap();
         let atoms = Atoms::new(&conn);
-        Self { conn, root, window, atoms, time: 0, uris: Vec::new(), conversions: 0 }
+        Self { conn, root, window, atoms, time: 0, uris: Vec::new(), conversions: 0, requestors: Vec::new() }
     }
 
     /// A server timestamp, from a zero-length property append (ICCCM §2.1).
@@ -282,20 +291,21 @@ impl Source {
         self.send(target, self.atoms.leave, [self.window, 0, 0, 0, 0]);
     }
 
-    /// Answers `ConvertSelection` requests until the target sends XdndStatus or XdndFinished, or `ms` pass.
-    fn next_reply(&mut self, target: Window, ms: u64) -> Option<Reply> {
+    /// Answers `ConvertSelection` requests until a window sends XdndStatus or XdndFinished, or `ms` pass. Returns the
+    /// window that answered (its id is the message's first field) and the answer.
+    fn next_reply(&mut self, ms: u64) -> Option<(Window, Reply)> {
         let end = Instant::now() + Duration::from_millis(ms);
         loop {
             while let Some(event) = self.conn.poll_for_event().unwrap() {
                 match event {
                     Event::SelectionRequest(request) => self.serve(request),
-                    Event::ClientMessage(m) if m.format == 32 && m.data.as_data32()[0] == target => {
+                    Event::ClientMessage(m) if m.format == 32 => {
                         let d = m.data.as_data32();
                         if m.type_ == self.atoms.status {
-                            return Some(Reply::Status { accept: d[1] & 1 == 1, action: d[4] });
+                            return Some((d[0], Reply::Status { accept: d[1] & 1 == 1, action: d[4] }));
                         }
                         if m.type_ == self.atoms.finished {
-                            return Some(Reply::Finished { accepted: d[1] & 1 == 1, action: d[2] });
+                            return Some((d[0], Reply::Finished { accepted: d[1] & 1 == 1, action: d[2] }));
                         }
                     }
                     _ => {}
@@ -309,6 +319,7 @@ impl Source {
     }
 
     fn serve(&mut self, request: SelectionRequestEvent) {
+        self.requestors.push(request.requestor);
         let property = if request.property == NONE { request.target } else { request.property };
         let ok = request.selection == self.atoms.selection && request.target == self.atoms.uri_list;
         if ok {
@@ -389,15 +400,222 @@ fn names(paths: &[PathBuf]) -> Vec<String> {
     paths.iter().map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()).collect()
 }
 
+// ---------------------------------------------------------------- --into: a drop on another program's plugin window
+
+fn window_name(conn: &RustConnection, window: Window) -> String {
+    conn.get_property(false, window, AtomEnum::WM_NAME, AtomEnum::ANY, 0, 256)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .map(|reply| String::from_utf8_lossy(&reply.value).into_owned())
+        .unwrap_or_default()
+}
+
+fn aware_version(conn: &RustConnection, atoms: &Atoms, window: Window) -> Option<u32> {
+    let reply = conn.get_property(false, window, atoms.aware, AtomEnum::ATOM, 0, 1).ok()?.reply().ok()?;
+    (reply.type_ != NONE).then(|| reply.value32().and_then(|mut v| v.next()).unwrap_or(0))
+}
+
+fn proxy_of(conn: &RustConnection, atoms: &Atoms, window: Window) -> Option<Window> {
+    let reply = conn.get_property(false, window, atoms.proxy, AtomEnum::WINDOW, 0, 1).ok()?.reply().ok()?;
+    if reply.type_ == NONE { None } else { reply.value32().and_then(|mut v| v.next()) }
+}
+
+fn viewable(conn: &RustConnection, window: Window) -> bool {
+    conn.get_window_attributes(window)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .is_some_and(|a| a.map_state == MapState::VIEWABLE)
+}
+
+/// Every viewable XdndAware window below `top`, depth first, with its depth below `top`.
+fn aware_descendants(conn: &RustConnection, atoms: &Atoms, top: Window, depth: usize, out: &mut Vec<(Window, usize)>) {
+    for child in conn.query_tree(top).unwrap().reply().unwrap().children {
+        if !viewable(conn, child) {
+            continue;
+        }
+        if aware_version(conn, atoms, child).is_some() {
+            out.push((child, depth + 1));
+        }
+        aware_descendants(conn, atoms, child, depth + 1, out);
+    }
+}
+
+fn describe(conn: &RustConnection, atoms: &Atoms, window: Window) -> String {
+    let g = conn.get_geometry(window).unwrap().reply().unwrap();
+    format!(
+        "{window:#x} {:?} {}x{}, XdndAware {}, XdndProxy {}",
+        window_name(conn, window),
+        g.width,
+        g.height,
+        aware_version(conn, atoms, window).map_or("-".to_owned(), |v| v.to_string()),
+        proxy_of(conn, atoms, window).map_or("-".to_owned(), |w| format!("{w:#x}")),
+    )
+}
+
+fn reply_text(conn: &RustConnection, reply: &Option<(Window, Reply)>) -> String {
+    let name = |atom: Atom| {
+        conn.get_atom_name(atom)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .map(|r| String::from_utf8_lossy(&r.name).into_owned())
+            .unwrap_or_else(|| format!("{atom}"))
+    };
+    match reply {
+        None => "no answer in 3 s".to_owned(),
+        Some((from, Reply::Status { accept, action })) => {
+            format!("XdndStatus from {from:#x}: accept {accept}, action {}", name(*action))
+        }
+        Some((from, Reply::Finished { accepted, action })) => {
+            format!("XdndFinished from {from:#x}: accepted {accepted}, action {}", name(*action))
+        }
+    }
+}
+
+/// One drag of `files` onto `target` at a root point: enter, position, then drop if the target accepted, else leave.
+fn drop_once(source: &mut Source, target: Window, x: i16, y: i16, files: &[PathBuf]) -> String {
+    source.requestors.clear();
+    let owned = source.start_drag(files);
+    source.enter(target, [source.atoms.uri_list, NONE, NONE]);
+    source.position(target, x, y);
+    let status = source.next_reply(3000);
+    let accepted = matches!(status, Some((_, Reply::Status { accept: true, .. })));
+    let finished = if accepted {
+        source.send_drop(target);
+        Some(source.next_reply(3000))
+    } else {
+        source.leave(target);
+        None
+    };
+    let requestors: Vec<String> = source.requestors.iter().map(|w| format!("{w:#x}")).collect();
+    format!(
+        "selection owned {owned}; {}; data requested by [{}]; {}",
+        reply_text(&source.conn, &status),
+        requestors.join(", "),
+        match &finished {
+            Some(f) => reply_text(&source.conn, f),
+            None => "not accepted, so XdndLeave instead of XdndDrop".to_owned(),
+        }
+    )
+}
+
+/// A short WAV file of silence (48 kHz, 16-bit, mono, 0.1 s), so that a host that imports what is dropped can.
+fn write_silence(path: &Path) {
+    let frames: u32 = 4800;
+    let data_len = frames * 2;
+    let mut wav = Vec::with_capacity(44 + data_len as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+    wav.extend_from_slice(&48_000u32.to_le_bytes());
+    wav.extend_from_slice(&96_000u32.to_le_bytes()); // bytes per second
+    wav.extend_from_slice(&2u16.to_le_bytes()); // block align
+    wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.resize(44 + data_len as usize, 0);
+    std::fs::write(path, wav).unwrap();
+}
+
+/// `--into <title>`: no editor of its own. Finds the toplevel whose WM_NAME contains `title` (a host's plugin window),
+/// reports every XdndAware window in it and the plugin window's ancestors, then drops a WAV file at the plugin
+/// window's centre twice: on the window a Qt-style source picks (the outermost XdndAware window under the point), and
+/// on the plugin window directly. Prints what it saw; exit 0 when it ran, 2 when the window is missing.
+fn run_into(title: &str) -> i32 {
+    let mut source = Source::new();
+    let root = source.root;
+    let tops: Vec<Window> = {
+        let conn = &source.conn;
+        conn.query_tree(root)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .children
+            .into_iter()
+            .filter(|&w| viewable(conn, w) && window_name(conn, w).contains(title))
+            .collect()
+    };
+    // The last one is the topmost in the stacking order.
+    let Some(&top) = tops.last() else {
+        eprintln!("drop-probe --into: no viewable toplevel window has {title:?} in its name");
+        return 2;
+    };
+    let (conn, atoms) = (&source.conn, &source.atoms);
+    println!("toplevel: {}", describe(conn, atoms, top));
+    let mut aware = Vec::new();
+    aware_descendants(conn, atoms, top, 0, &mut aware);
+    for &(window, depth) in &aware {
+        println!("XdndAware below it at depth {depth}: {}", describe(conn, atoms, window));
+    }
+    // The plugin's window: the deepest XdndAware window below the toplevel (baseview marks its own window).
+    let Some(&(plugin, _)) = aware.iter().max_by_key(|(_, depth)| *depth) else {
+        eprintln!("drop-probe --into: no XdndAware window below the toplevel");
+        return 2;
+    };
+    println!("the plugin window and its ancestors, innermost first:");
+    let mut window = plugin;
+    loop {
+        println!("  {}", describe(conn, atoms, window));
+        let parent = conn.query_tree(window).unwrap().reply().unwrap().parent;
+        if parent == root || parent == NONE {
+            break;
+        }
+        window = parent;
+    }
+    let g = conn.get_geometry(plugin).unwrap().reply().unwrap();
+    let at = conn
+        .translate_coordinates(plugin, root, (g.width / 2) as i16, (g.height / 2) as i16)
+        .unwrap()
+        .reply()
+        .unwrap();
+    let (x, y) = (at.dst_x, at.dst_y);
+    let qt = source.find_target(x, y);
+    // GTK 3 asks only the toplevel under the pointer (its client window; there is no window manager here, so that is
+    // the toplevel itself), through its XdndProxy if it has one.
+    let under = conn.translate_coordinates(root, root, x, y).unwrap().reply().unwrap().child;
+    let gtk = proxy_of(conn, atoms, under).unwrap_or(under);
+    println!(
+        "drop point ({x}, {y}) on the root: a Qt-style source drops on {}, a GTK-style source on {gtk:#x} (XdndAware {})",
+        qt.map_or("nothing".to_owned(), |(w, v)| format!("{w:#x} (XdndAware {v})")),
+        aware_version(conn, atoms, gtk).map_or("-".to_owned(), |v| v.to_string()),
+    );
+
+    let dir = std::env::temp_dir().join(format!("drop-probe-into-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.canonicalize().unwrap().join("drop-probe-silence.wav");
+    write_silence(&file);
+    let files = [file];
+    match qt {
+        Some((target, _)) => {
+            println!("drop on the Qt-style target {target:#x}: {}", drop_once(&mut source, target, x, y, &files))
+        }
+        None => println!("drop on the Qt-style target: there is none"),
+    }
+    thread::sleep(Duration::from_millis(500));
+    println!("drop on the plugin window {plugin:#x} directly: {}", drop_once(&mut source, plugin, x, y, &files));
+    thread::sleep(Duration::from_millis(500));
+    let _ = std::fs::remove_dir_all(&dir);
+    0
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let reparent = args.iter().any(|a| a == "--reparent");
-    if let Some(other) = args.iter().find(|a| *a != "--reparent") {
-        eprintln!("usage: drop-probe [--reparent], not {other:?}");
-        std::process::exit(2);
-    }
     if let Err(e) = require_xvfb() {
         eprintln!("drop-probe: {e}. Run: xvfb-run -a -s \"-screen 0 1920x1080x24\" drop-probe");
+        std::process::exit(2);
+    }
+    if args.first().is_some_and(|a| a == "--into") {
+        let Some(title) = args.get(1).filter(|_| args.len() == 2) else {
+            eprintln!("usage: drop-probe --into <window title>");
+            std::process::exit(2);
+        };
+        std::process::exit(run_into(title));
+    }
+    let reparent = args.iter().any(|a| a == "--reparent");
+    if let Some(other) = args.iter().find(|a| *a != "--reparent") {
+        eprintln!("usage: drop-probe [--reparent] | --into <window title>, not {other:?}");
         std::process::exit(2);
     }
 
@@ -488,11 +706,11 @@ fn main() {
     let frames_before = snapshot().frames;
     source.enter(target, [source.atoms.uri_list, NONE, NONE]);
     source.position(target, x, y);
-    let reply = source.next_reply(target, 3000);
+    let reply = source.next_reply(3000);
     c.record(
         Side::X11,
         "XdndEnter + XdndPosition: the editor fetches the list and accepts the drag as a copy",
-        owned && reply == Some(Reply::Status { accept: true, action: copy }) && source.conversions == 1,
+        owned && reply == Some((target, Reply::Status { accept: true, action: copy })) && source.conversions == 1,
         format!("selection owned {owned}, reply {reply:?}, conversions {}", source.conversions),
     );
 
@@ -528,20 +746,20 @@ fn main() {
     );
 
     source.position(target, x + 20, y + 10);
-    let reply = source.next_reply(target, 3000);
+    let reply = source.next_reply(3000);
     c.record(
         Side::X11,
         "a move: XdndStatus still accepts the copy",
-        reply == Some(Reply::Status { accept: true, action: copy }),
+        reply == Some((target, Reply::Status { accept: true, action: copy })),
         format!("reply {reply:?}"),
     );
 
     source.send_drop(target);
-    let reply = source.next_reply(target, 3000);
+    let reply = source.next_reply(3000);
     c.record(
         Side::X11,
         "XdndDrop: XdndFinished, accepted as a copy",
-        reply == Some(Reply::Finished { accepted: true, action: copy }),
+        reply == Some((target, Reply::Finished { accepted: true, action: copy })),
         format!("reply {reply:?}"),
     );
 
@@ -572,11 +790,11 @@ fn main() {
     let owned = source.start_drag(&files[..1]);
     source.enter(target, [source.atoms.uri_list, NONE, NONE]);
     source.position(target, x, y);
-    let reply = source.next_reply(target, 3000);
+    let reply = source.next_reply(3000);
     c.record(
         Side::X11,
         "a second drag: accepted as a copy",
-        owned && reply == Some(Reply::Status { accept: true, action: copy }),
+        owned && reply == Some((target, Reply::Status { accept: true, action: copy })),
         format!("selection owned {owned}, reply {reply:?}"),
     );
     notifier.request_repaint();
@@ -604,11 +822,11 @@ fn main() {
     let owned = source.start_drag(&[]);
     source.enter(target, [source.atoms.text_plain, NONE, NONE]);
     source.position(target, x, y);
-    let reply = source.next_reply(target, 3000);
+    let reply = source.next_reply(3000);
     c.record(
         Side::X11,
         "a drag of text/plain only: XdndStatus refuses it",
-        owned && matches!(reply, Some(Reply::Status { accept: false, .. })),
+        owned && matches!(reply, Some((w, Reply::Status { accept: false, .. })) if w == target),
         format!("reply {reply:?}"),
     );
     notifier.request_repaint();
