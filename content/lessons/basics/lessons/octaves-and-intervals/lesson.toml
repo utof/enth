@@ -1,0 +1,336 @@
+# Lesson 1.2, Octaves and intervals [basics · basic] (content/lessons/PLAN.md §5, U1).
+#
+# Hear (0, +12, +7 and -12 semitones on a sine and a saw at C3), a "which is higher?" item → Name → Try ("play C4",
+# checked by pitch) → three rounds (two draws of PLAN's seven intervals, then any whole semitone from -24 to +24 on a
+# pulse with the wave locked: PLAN's D2, rewritten as a draw since a seed target takes no lock) → an interval question.
+# Measured on engine 0.3.0, HELD (C3 for 1.5 s): sound/1 separates pitch sharply (against +7, +5 scores 30.1 and +12
+# 11.6; every other interval in the set scores under 14).
+
+schema = "enth.lesson/1"
+id = "octaves-and-intervals"
+title = "Octaves and intervals"
+tier = "basic"
+objective = "Move an oscillator by octaves and fifths, and hear how far above or below a note another one is."
+teaches = ["osc.semi"]
+
+# --- Hear: a sine at C3, an octave up, a fifth up and an octave down; then the same on the saw.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[[steps.examples]]
+label = "Sine, C3"
+patch = "patches/sine.patch.json"
+
+[[steps.examples]]
+label = "Sine, +12"
+patch = "patches/sine-semi-12.patch.json"
+
+[[steps.examples]]
+label = "Sine, +7"
+patch = "patches/sine-semi-7.patch.json"
+
+[[steps.examples]]
+label = "Sine, -12"
+patch = "patches/sine-semi-down-12.patch.json"
+
+[[steps.examples]]
+label = "Saw, C3"
+patch = "patches/saw.patch.json"
+
+[[steps.examples]]
+label = "Saw, +12"
+patch = "patches/saw-semi-12.patch.json"
+
+[[steps.examples]]
+label = "Saw, +7"
+patch = "patches/saw-semi-7.patch.json"
+
+[[steps.examples]]
+label = "Saw, -12"
+patch = "patches/saw-semi-down-12.patch.json"
+
+# --- Hear's ear question: which is higher? (C3 against G3.)
+[[steps]]
+id = "which-higher"
+kind = "choose"
+text = "which-higher.md"
+hints = ["Hum along with each: which one makes you reach up?"]
+answer = 1
+
+[[steps.options]]
+label = "A"
+patch = "patches/saw.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/saw-semi-7.patch.json"
+
+# --- Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+highlight = ["osc1.semi"]
+
+# --- Try: "play C4" from C3. Measured: the start reads C3 (fails `pitch=C4`, judged within 25 cents, by 1200 cents);
+# the witness, +12 st, reads C4 (passes). The patch predicate keeps it to semitones (Fine is locked).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Semitones is on the oscillator card, beside the wave.",
+  "An octave is 12 semitones.",
+]
+witness = "patches/sine-semi-12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sine.patch.json"
+highlight = ["osc1.semi"]
+editable = ["osc1.semi"]
+locked = ["osc1.wave", "osc1.fine", "filter1.*"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = [{ kind = "within", knob = "osc1.semi", lo = "11", hi = "13" }]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["pitch=C4"]
+
+# --- Do, round 1: a hidden transposition, drawn from PLAN's -24, -12, -7, +7, +12, +19 and +24 st, on the saw.
+# Seed 3 draws +12 (the start scores sound 4.4).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target higher or lower than yours? Start with octaves: 12 semitones at a time.",
+  "Once the octave is right, try 7 semitones up or down: an octave and a fifth is 19.",
+]
+
+[steps.view]
+highlight = ["osc1.semi"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "osc1.semi", set = [-24.0, -12.0, -7.0, 7.0, 12.0, 19.0, 24.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.semi"]
+locked = ["osc1.wave", "osc1.fine", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Octaves and intervals, round 1"
+tags = ["basics", "octaves-and-intervals"]
+
+# --- Do, round 2: the same seven intervals, seed 1: +7, a fifth (the start scores 8.6).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target higher or lower than yours? Start with octaves: 12 semitones at a time.",
+  "Once the octave is right, try 7 semitones up or down: an octave and a fifth is 19.",
+]
+
+[steps.view]
+highlight = ["osc1.semi"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "osc1.semi", set = [-24.0, -12.0, -7.0, 7.0, 12.0, 19.0, 24.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw", description = "The starter (Init): a saw through a 2 kHz low-pass, at -12 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.semi"]
+locked = ["osc1.wave", "osc1.fine", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Octaves and intervals, round 2"
+tags = ["basics", "octaves-and-intervals"]
+
+# --- Do, round 3: any whole semitone from -24 to +24 (PLAN's range for siblings), on a pulse with its wave locked:
+# PLAN's D2, a draw with a lock (a seed target takes none since F1l). Seed 3 draws +17 st, F4 (the start scores 3.0).
+[[steps]]
+id = "round-3"
+kind = "recreate"
+text = "round-3.md"
+hints = [
+  "Find the octave first, then move a semitone at a time.",
+  "When the two are almost right, you hear a slow wobble between them; keep going until it stops.",
+]
+
+[steps.view]
+highlight = ["osc1.semi"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "osc1.semi", range = [-24.0, 24.0], step = 1.0 }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pulse", description = "The starter with a 50 % pulse (a square)." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "pulse" } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [{ id = "filter1", kind = "svf" }]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["osc1.semi"]
+locked = ["osc1.wave", "osc1.fine", "filter1.*"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Octaves and intervals, round 3"
+tags = ["basics", "octaves-and-intervals"]
+
+# --- Check: an interval question with its reference built in: each option plays two notes from the phrase table,
+# C3 then C4 (OCTAVE_PAIR, the second softer and detached) and C3 then G3 (LEGATO_PAIR, overlapping).
+[[steps]]
+id = "check-interval"
+kind = "choose"
+text = "check-interval.md"
+hints = ["An octave lands on the same note name, higher: the two notes blend almost into one."]
+answer = 0
+
+[[steps.options]]
+label = "A"
+patch = "patches/sine.patch.json"
+phrase = 2
+
+[[steps.options]]
+label = "B"
+patch = "patches/sine.patch.json"
+phrase = 3
