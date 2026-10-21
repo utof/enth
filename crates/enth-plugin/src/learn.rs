@@ -340,6 +340,25 @@ impl ProgressFile {
     /// # Errors
     /// The folder or the file cannot be written (the record is lost; the step stays passed in the lesson).
     pub fn record(&self, record: &StepRecord) -> io::Result<()> {
+        self.update(|progress| progress.record(record))
+    }
+
+    /// Apply a Recreate round's rings to the file's review boxes on `day` (lane REV): under the lock file, re-read,
+    /// `Progress::observe`, a temporary file and a rename, so one writer never loses a move and two merge as a join.
+    ///
+    /// # Errors
+    /// The folder or the file cannot be written (the round's move is lost; nothing else changes).
+    pub fn observe(
+        &self,
+        rings: &enth_learn::review::RoundRings,
+        day: enth_learn::review::Day,
+    ) -> io::Result<()> {
+        self.update(|progress| progress.observe(rings, day))
+    }
+
+    /// Re-read the file under the lock file, change it with `change`, write it through a temporary file and a rename,
+    /// and count the write ([`progress_writes`]).
+    fn update(&self, change: impl FnOnce(&mut Progress)) -> io::Result<()> {
         let Some(path) = self.path.as_deref() else {
             return Ok(());
         };
@@ -354,11 +373,32 @@ impl ProgressFile {
             .open(path.with_extension("json.lock"))?;
         lock.lock()?;
         let mut progress = read_progress(path);
-        progress.record(record);
+        change(&mut progress);
         let result = write_atomic(path, progress.to_json_pretty().as_bytes());
         let _ = lock.unlock();
+        if result.is_ok() {
+            WRITES.fetch_add(1, Ordering::Release);
+        }
         result
     }
+}
+
+/// Progress file writes made by this process (lane REV): the editor's glue hands the file back to the editor when the
+/// count moves, so the browser's Review queue follows the rounds' rings.
+static WRITES: AtomicU64 = AtomicU64::new(0);
+
+/// How many progress file writes this process has made (any instance's).
+pub fn progress_writes() -> u64 {
+    WRITES.load(Ordering::Acquire)
+}
+
+/// Today, as Review counts days (lane REV): whole days since 1970-01-01 in UTC, from the system clock. The session
+/// and the view read no clock; the shell passes this in.
+pub fn today() -> enth_learn::review::Day {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    enth_learn::review::Day::try_from(secs / 86_400).unwrap_or(enth_learn::review::Day::MAX)
 }
 
 /// Read the progress file at `path` (see [`ProgressFile::load`]).
@@ -722,6 +762,10 @@ pub fn act(game: &crate::game::Game, requests: Vec<LearnRequest>) -> bool {
             }
             LearnRequest::Listen(state) => game.listen(&state),
             LearnRequest::Dirty => dirty = true,
+            LearnRequest::Rings(rings) => {
+                // Lane REV: a round's move that cannot be written is lost; nothing else depends on it.
+                let _ = game.lessons().progress().observe(&rings, today());
+            }
             _ => {}
         }
     }

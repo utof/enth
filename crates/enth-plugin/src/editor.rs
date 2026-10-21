@@ -81,6 +81,9 @@ pub fn create(
 #[derive(Debug, Default)]
 pub struct Glue {
     editor: Editor,
+    /// The progress file writes the editor has seen (lane REV): when the count moves, the file is handed back.
+    #[cfg(feature = "learn")]
+    progress_seen: u64,
 }
 
 impl Glue {
@@ -88,6 +91,8 @@ impl Glue {
     pub fn new(theme: &Theme) -> Self {
         Glue {
             editor: Editor::new(theme),
+            #[cfg(feature = "learn")]
+            progress_seen: 0,
         }
     }
 
@@ -218,6 +223,8 @@ impl Glue {
             let _ = session.learn_job_done(id, result);
         }
         game.follow_rate();
+        #[cfg(feature = "learn")]
+        self.follow_progress(&game.lessons()); // lane REV: the Review queue's day and file
         #[cfg(feature = "recreate")]
         self.set_round(session.round());
         #[cfg(feature = "learn")]
@@ -244,8 +251,23 @@ impl Glue {
     /// the whole library (pack titles, the tracks, the refused packs) and the progress file, for the lesson browser.
     #[cfg(feature = "learn")]
     pub fn set_lessons(&mut self, lessons: &crate::learn::Lessons) {
+        self.progress_seen = crate::learn::progress_writes(); // lane REV
         self.editor
             .set_library(&lessons.rescan(), lessons.progress().load());
+        self.editor.set_review_day(crate::learn::today());
+    }
+
+    /// Each frame (lane REV): today for the Review queue (it recomputes only when the day changes), and the progress
+    /// file handed back once this process wrote it (a round's rings, a step's record), so the browser's due count
+    /// follows. One small file read per write.
+    #[cfg(feature = "learn")]
+    fn follow_progress(&mut self, lessons: &crate::learn::Lessons) {
+        self.editor.set_review_day(crate::learn::today());
+        let writes = crate::learn::progress_writes();
+        if writes != self.progress_seen {
+            self.progress_seen = writes;
+            self.editor.set_progress(lessons.progress().load());
+        }
     }
 
     /// The editor's preset browser (lane PBU): its store and its crash offer.
