@@ -37,9 +37,7 @@ pub use plan::{FineWhy, Plan, PlanStep, Rank, Ranks, plan};
 use crate::check::SoundError;
 use crate::error::LearnError;
 use crate::lesson::StepKind;
-use crate::pack::{
-    KindKey, License, Manifest, Pack, PackId, PackVersion, Requires, lesson_path,
-};
+use crate::pack::{KindKey, License, Manifest, Pack, PackId, PackVersion, Requires, lesson_path};
 
 /// Why a deconstruct lesson could not be made.
 #[derive(Clone, Debug, PartialEq)]
@@ -129,10 +127,24 @@ pub fn auto_lesson(
     opts: &Options,
 ) -> Result<AutoLesson, DeconstructError> {
     let g = generate(preset, opts)?;
+    pack_of(preset, &g, pack_id.unwrap_or(AUTO_PACK))
+}
+
+/// A generated lesson as a one-lesson pack `pack_id`: the lesson's JSON, its texts and patches, a credits file and the
+/// sealed manifest, verified by [`Pack::from_files`].
+///
+/// # Errors
+/// [`DeconstructError::Lesson`] if the pack does not verify (a bug in the generator).
+pub fn pack_of(
+    preset: &Patch,
+    g: &Generated,
+    pack_id: &str,
+) -> Result<AutoLesson, DeconstructError> {
+    let id = &g.lesson.id;
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    files.insert(lesson_path(&opts.lesson), g.lesson.to_json().into_bytes());
+    files.insert(lesson_path(id), g.lesson.to_json().into_bytes());
     for (name, text) in &g.texts {
-        files.insert(format!("lessons/{}/{name}", opts.lesson), text.clone().into_bytes());
+        files.insert(format!("lessons/{id}/{name}"), text.clone().into_bytes());
     }
     for (path, patch) in &g.patches {
         files.insert(path.clone(), patch.to_json().into_bytes());
@@ -145,22 +157,31 @@ pub fn auto_lesson(
         )
         .into_bytes(),
     );
-    let manifest = manifest_for(pack_id.unwrap_or(AUTO_PACK), &g)?;
+    let manifest = manifest_for(pack_id, g)?;
     let sealed = manifest.seal(&files).map_err(DeconstructError::Lesson)?;
-    files.insert(crate::pack::MANIFEST_PATH.to_owned(), sealed.to_json().into_bytes());
+    files.insert(
+        crate::pack::MANIFEST_PATH.to_owned(),
+        sealed.to_json().into_bytes(),
+    );
     let pack = Pack::from_files(&files).map_err(DeconstructError::Lesson)?;
     Ok(AutoLesson {
         pack,
         files,
-        report: g.report,
+        report: g.report.clone(),
     })
 }
 
 /// The manifest of a one-lesson pack holding `g`, with `requires` exactly what the lesson uses.
 pub fn manifest_for(pack_id: &str, g: &Generated) -> Result<Manifest, DeconstructError> {
-    let bad = |m: String| DeconstructError::Lesson(crate::error::bad_field(crate::error::Doc::Pack, "id", m));
+    let bad = |m: String| {
+        DeconstructError::Lesson(crate::error::bad_field(crate::error::Doc::Pack, "id", m))
+    };
     let id = PackId::new(pack_id).map_err(bad)?;
-    let rounds = g.lesson.steps.iter().any(|s| matches!(s.kind, StepKind::Recreate { .. }));
+    let rounds = g
+        .lesson
+        .steps
+        .iter()
+        .any(|s| matches!(s.kind, StepKind::Recreate { .. }));
     let mut covers: Vec<KindKey> = Vec::new();
     for step in &g.plan.steps {
         for i in &step.elements {
@@ -170,7 +191,8 @@ pub fn manifest_for(pack_id: &str, g: &Generated) -> Result<Manifest, Deconstruc
                     Part::Enable(m) => Some(m.clone()),
                     Part::Route(r) => r.dst.module_id().cloned(),
                 };
-                if let Some((_, m)) = module.and_then(|m| g.plan.preset.find(&m).map(|(pos, m)| (pos, m.kind)))
+                if let Some((_, m)) =
+                    module.and_then(|m| g.plan.preset.find(&m).map(|(pos, m)| (pos, m.kind)))
                     && !covers.contains(&KindKey(m))
                 {
                     covers.push(KindKey(m));
@@ -193,7 +215,11 @@ pub fn manifest_for(pack_id: &str, g: &Generated) -> Result<Manifest, Deconstruc
             challenge: rounds.then_some(enth_challenge::model::CHALLENGE_VERSION),
             patch: enth_patch::file::SCHEMA,
             generator: None,
-            scorers: if rounds { enth_challenge::model::RECREATE_SCORERS.to_vec() } else { Vec::new() },
+            scorers: if rounds {
+                enth_challenge::model::RECREATE_SCORERS.to_vec()
+            } else {
+                Vec::new()
+            },
         },
         engine: String::new(),
         covers,

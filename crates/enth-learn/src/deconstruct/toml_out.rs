@@ -20,15 +20,43 @@ use crate::lesson::Lesson;
 /// Keys written first, in this order (the rest follow alphabetically): what a reader looks for first in a lesson, a
 /// step, a check, a challenge and a patch.
 const FIRST: [&str; 26] = [
-    "schema", "id", "kind", "title", "tier", "objective", "teaches", "text", "label", "patch", "phrase", "answer",
-    "witness", "hints", "engine", "meta", "voice", "master", "generators", "voice_fx", "fx", "modulators", "routes",
-    "macros", "predicates", "expect",
+    "schema",
+    "id",
+    "kind",
+    "title",
+    "tier",
+    "objective",
+    "teaches",
+    "text",
+    "label",
+    "patch",
+    "phrase",
+    "answer",
+    "witness",
+    "hints",
+    "engine",
+    "meta",
+    "voice",
+    "master",
+    "generators",
+    "voice_fx",
+    "fx",
+    "modulators",
+    "routes",
+    "macros",
+    "predicates",
+    "expect",
 ];
 
 /// `obj`'s entries in [`FIRST`]'s order, then alphabetically.
 fn ordered(obj: &Map<String, Value>) -> Vec<(&String, &Value)> {
     let mut v: Vec<(&String, &Value)> = obj.iter().collect();
-    v.sort_by_key(|(k, _)| (FIRST.iter().position(|f| f == k).unwrap_or(FIRST.len()), (*k).clone()));
+    v.sort_by_key(|(k, _)| {
+        (
+            FIRST.iter().position(|f| f == k).unwrap_or(FIRST.len()),
+            (*k).clone(),
+        )
+    });
     v
 }
 
@@ -36,7 +64,11 @@ fn ordered(obj: &Map<String, Value>) -> Vec<(&String, &Value)> {
 const TABLE_ARRAYS: [&str; 4] = ["steps", "examples", "options", "checks"];
 
 /// `lesson` as `lesson.toml`: `header` as the top comment, `notes` (by step id) as comments above each step.
-pub fn lesson_toml(lesson: &Lesson, header: &[String], notes: &BTreeMap<String, Vec<String>>) -> String {
+pub fn lesson_toml(
+    lesson: &Lesson,
+    header: &[String],
+    notes: &BTreeMap<String, Vec<String>>,
+) -> String {
     let mut value: Value = serde_json::from_str(&lesson.to_json()).unwrap_or(Value::Null);
     sparsen_patches(&mut value);
     let mut out = String::new();
@@ -88,14 +120,18 @@ fn comment(out: &mut String, line: &str) {
 
 /// The body of the table at `path`: its plain values, then its sub-tables, then its arrays of tables.
 fn table_body(out: &mut String, path: &str, obj: &Map<String, Value>) {
-    let is_patch = path.ends_with(".patch");
+    let is_patch = path.rsplit('.').next() == Some("patch");
     let mut tables = Vec::new();
     let mut arrays = Vec::new();
     for (k, v) in ordered(obj) {
         match v {
             Value::Null => {}
             Value::Object(o) if !is_patch => tables.push((k, o)),
-            Value::Array(a) if !is_patch && TABLE_ARRAYS.contains(&k.as_str()) && a.iter().all(Value::is_object) => {
+            Value::Array(a)
+                if !is_patch
+                    && TABLE_ARRAYS.contains(&k.as_str())
+                    && a.iter().all(Value::is_object) =>
+            {
                 arrays.push((k, a));
             }
             Value::Array(a) if is_patch && a.iter().all(Value::is_object) && !a.is_empty() => {
@@ -128,7 +164,10 @@ fn table_body(out: &mut String, path: &str, obj: &Map<String, Value>) {
 
 /// A key: bare when it can be, else quoted.
 fn key(k: &str) -> String {
-    if !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+    if !k.is_empty()
+        && k.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
         k.to_owned()
     } else {
         string(k)
@@ -152,7 +191,11 @@ fn inline(v: &Value) -> String {
             } else {
                 let f = n.as_f64().unwrap_or(0.0);
                 let s = format!("{f:?}");
-                if s.contains(['.', 'e', 'E']) { s } else { format!("{s}.0") }
+                if s.contains(['.', 'e', 'E']) {
+                    s
+                } else {
+                    format!("{s}.0")
+                }
             }
         }
         Value::String(s) => string(s),
@@ -166,7 +209,11 @@ fn inline(v: &Value) -> String {
                 .filter(|(_, v)| !v.is_null())
                 .map(|(k, v)| format!("{} = {}", key(k), inline(v)))
                 .collect();
-            if items.is_empty() { "{}".to_owned() } else { format!("{{ {} }}", items.join(", ")) }
+            if items.is_empty() {
+                "{}".to_owned()
+            } else {
+                format!("{{ {} }}", items.join(", "))
+            }
         }
     }
 }
@@ -218,15 +265,29 @@ fn sparsen(patch: &mut Value) {
     let init: Value = serde_json::from_str(&Patch::init().to_json()).unwrap_or(Value::Null);
     let mut defaults: BTreeMap<String, Option<Value>> = BTreeMap::new();
     for section in Section::ALL {
-        let Some(Value::Array(mods)) = p.get_mut(section.key()) else { continue };
+        let Some(Value::Array(mods)) = p.get_mut(section.key()) else {
+            continue;
+        };
         for m in mods.iter_mut() {
             let Value::Object(m) = m else { continue };
-            let kind = m.get("kind").and_then(Value::as_str).unwrap_or_default().to_owned();
-            let def = defaults.entry(kind.clone()).or_insert_with(|| default_params(&kind)).clone();
-            if let (Some(Value::Object(params)), Some(Value::Object(def))) = (m.get_mut("params"), def) {
+            let kind = m
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let def = defaults
+                .entry(kind.clone())
+                .or_insert_with(|| default_params(&kind))
+                .clone();
+            if let (Some(Value::Object(params)), Some(Value::Object(def))) =
+                (m.get_mut("params"), def)
+            {
                 params.retain(|k, v| def.get(k) != Some(v));
             }
-            if m.get("params").and_then(Value::as_object).is_some_and(Map::is_empty) {
+            if m.get("params")
+                .and_then(Value::as_object)
+                .is_some_and(Map::is_empty)
+            {
                 m.remove("params");
             }
             if m.get("enabled") == Some(&Value::Bool(true)) {
@@ -234,19 +295,30 @@ fn sparsen(patch: &mut Value) {
             }
         }
     }
-    if let (Some(Value::Object(voice)), Some(Value::Object(dv))) = (p.get_mut("voice"), init.get("voice")) {
+    if let (Some(Value::Object(voice)), Some(Value::Object(dv))) =
+        (p.get_mut("voice"), init.get("voice"))
+    {
         voice.retain(|k, v| dv.get(k) != Some(v));
     }
-    if p.get("voice").and_then(Value::as_object).is_some_and(Map::is_empty) {
+    if p.get("voice")
+        .and_then(Value::as_object)
+        .is_some_and(Map::is_empty)
+    {
         p.remove("voice");
     }
-    if p.get("routes").and_then(Value::as_array).is_some_and(Vec::is_empty) {
+    if p.get("routes")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+    {
         p.remove("routes");
     }
     if p.get("macros") == init.get("macros") {
         p.remove("macros");
     }
-    if p.get("slots").and_then(Value::as_object).is_some_and(Map::is_empty) {
+    if p.get("slots")
+        .and_then(Value::as_object)
+        .is_some_and(Map::is_empty)
+    {
         p.remove("slots");
     }
 }

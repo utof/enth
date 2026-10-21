@@ -93,7 +93,9 @@ impl Part {
                 (x, y) => x.is_none() && y.is_none(),
             },
             Part::Enable(id) => enabled(a, id) == enabled(b, id),
-            Part::Route(r) => route_depth(a, r).map(f32::to_bits) == route_depth(b, r).map(f32::to_bits),
+            Part::Route(r) => {
+                route_depth(a, r).map(f32::to_bits) == route_depth(b, r).map(f32::to_bits)
+            }
         }
     }
 }
@@ -210,7 +212,12 @@ fn modulator_parts(preset: &Patch, id: &ModuleId) -> Vec<Part> {
 }
 
 /// The parameters of a module (all of them, or `only` these keys) whose value differs from the base's.
-fn module_param_parts(preset: &Patch, id: &ModuleId, kind: ModuleKind, only: Option<&[&str]>) -> Vec<Part> {
+fn module_param_parts(
+    preset: &Patch,
+    id: &ModuleId,
+    kind: ModuleKind,
+    only: Option<&[&str]>,
+) -> Vec<Part> {
     kind.params()
         .iter()
         .filter(|spec| only.is_none_or(|keys| keys.contains(&spec.key)))
@@ -285,9 +292,21 @@ pub fn elements(preset: &Patch) -> Vec<Element> {
             }
             let (id, label, main_key) = match (m.kind, g) {
                 (ModuleKind::Svf, 0) => (m.id.to_string(), "the filter".to_owned(), "cutoff"),
-                (ModuleKind::Svf, 1) => (format!("{}.keytrack", m.id), "the filter's key tracking".to_owned(), "keytrack"),
-                (ModuleKind::Svf, _) => (format!("{}.drive", m.id), "the filter's drive".to_owned(), "drive"),
-                _ => (format!("{}.{}", m.id, keys[0]), format!("the {}", m.kind.spec().name.to_lowercase()), keys[0]),
+                (ModuleKind::Svf, 1) => (
+                    format!("{}.keytrack", m.id),
+                    "the filter's key tracking".to_owned(),
+                    "keytrack",
+                ),
+                (ModuleKind::Svf, _) => (
+                    format!("{}.drive", m.id),
+                    "the filter's drive".to_owned(),
+                    "drive",
+                ),
+                _ => (
+                    format!("{}.{}", m.id, keys[0]),
+                    format!("the {}", m.kind.spec().name.to_lowercase()),
+                    keys[0],
+                ),
             };
             let main = ParamAddr::module(m.id.clone(), main_key)
                 .ok()
@@ -407,18 +426,16 @@ fn ordinal(n: usize) -> &'static str {
 }
 
 fn generator_label(preset: &Patch, id: &ModuleId, kind: ModuleKind) -> String {
-    match kind {
-        ModuleKind::Noise => "the noise".to_owned(),
-        _ => {
-            let n = preset
-                .generators
-                .iter()
-                .filter(|m| m.kind == kind)
-                .position(|m| &m.id == id)
-                .unwrap_or(0);
-            format!("the {} oscillator", ordinal(n))
-        }
+    if kind == ModuleKind::Noise {
+        return "the noise".to_owned();
     }
+    let n = preset
+        .generators
+        .iter()
+        .filter(|m| m.kind == kind)
+        .position(|m| &m.id == id)
+        .unwrap_or(0);
+    format!("the {} oscillator", ordinal(n))
 }
 
 fn voice_label(preset: &Patch) -> String {
@@ -456,11 +473,27 @@ fn route_label(preset: &Patch, r: &RouteAddr) -> String {
             let src_kind = preset.find(src).map(|(_, m)| m.kind);
             let is_env = src_kind == Some(ModuleKind::Adsr);
             if dst_is(ModuleKind::Svf, &["cutoff"]) {
-                if is_env { "the filter envelope" } else { "the filter LFO" }.to_owned()
+                if is_env {
+                    "the filter envelope"
+                } else {
+                    "the filter LFO"
+                }
+                .to_owned()
             } else if dst_is(ModuleKind::Osc, &["semi", "fine"]) {
-                if is_env { "the pitch envelope" } else { "vibrato" }.to_owned()
-            } else if dst_kind.is_some_and(|k| matches!(k, ModuleKind::Osc | ModuleKind::Noise)) && param == "level" {
-                let what = generator_label(preset, r.dst.module_id().unwrap_or(src), dst_kind.unwrap_or(ModuleKind::Osc));
+                if is_env {
+                    "the pitch envelope"
+                } else {
+                    "vibrato"
+                }
+                .to_owned()
+            } else if dst_kind.is_some_and(|k| matches!(k, ModuleKind::Osc | ModuleKind::Noise))
+                && param == "level"
+            {
+                let what = generator_label(
+                    preset,
+                    r.dst.module_id().unwrap_or(src),
+                    dst_kind.unwrap_or(ModuleKind::Osc),
+                );
                 if is_env {
                     format!("an envelope on {what}")
                 } else {
@@ -561,15 +594,17 @@ pub(crate) mod tests {
 
     /// The starter: every P1 module, osc 2, noise, compressor and reverb off.
     pub(crate) fn starter() -> Patch {
-        enth_patch::file::load(include_str!("../../../../xtask/src/preset/starter.patch.json"))
-            .unwrap()
-            .patch
+        enth_patch::file::load(include_str!(
+            "../../../../xtask/src/preset/starter.patch.json"
+        ))
+        .unwrap()
+        .patch
     }
 
     #[test]
     fn the_starter_has_no_elements_and_is_its_own_base() {
         let s = starter();
-        assert!(elements(&s).is_empty());
+        assert_eq!(elements(&s), Vec::new());
         assert_eq!(base(&s), s);
     }
 
@@ -607,20 +642,36 @@ pub(crate) mod tests {
             ]
         );
         let all: BTreeSet<usize> = (0..els.len()).collect();
-        assert_eq!(project(&p, &els, &all), p, "everything included is the preset");
+        assert_eq!(
+            project(&p, &els, &all),
+            p,
+            "everything included is the preset"
+        );
         let b = base(&p);
-        assert!(elements(&b).is_empty(), "the base adds nothing");
+        assert_eq!(elements(&b), Vec::new(), "the base adds nothing");
         // The base keeps the module set, turns the extras off and drops the routes.
-        assert!(b.routes.is_empty());
+        assert_eq!(b.routes, Vec::new());
         assert!(!b.find(&ModuleId::new("osc2").unwrap()).unwrap().1.enabled);
-        assert!(!b.find(&ModuleId::new("reverb1").unwrap()).unwrap().1.enabled);
+        assert!(
+            !b.find(&ModuleId::new("reverb1").unwrap())
+                .unwrap()
+                .1
+                .enabled
+        );
         assert_eq!(b.master, p.master);
         // One element back on its own: only its parts differ from the base.
-        let env2 = ids.iter().position(|i| *i == "env2 -> filter1.cutoff").unwrap();
+        let env2 = ids
+            .iter()
+            .position(|i| *i == "env2 -> filter1.cutoff")
+            .unwrap();
         let one = project(&p, &els, &BTreeSet::from([env2]));
         assert_eq!(one.routes.len(), 1);
         let sustain: ParamAddr = "env2.sustain".parse().unwrap();
-        assert_eq!(one.value(&sustain), Some(0.0), "the route brings its envelope's values");
+        assert_eq!(
+            one.value(&sustain),
+            Some(0.0),
+            "the route brings its envelope's values"
+        );
         assert_eq!(elements(&one).len(), 1);
     }
 
@@ -636,7 +687,10 @@ pub(crate) mod tests {
         let b = base(&p);
         let noise = ModuleId::new("noise1").unwrap();
         let osc1 = ModuleId::new("osc1").unwrap();
-        assert!(b.find(&noise).unwrap().1.enabled, "noise is the sounding generator");
+        assert!(
+            b.find(&noise).unwrap().1.enabled,
+            "noise is the sounding generator"
+        );
         assert!(!b.find(&osc1).unwrap().1.enabled);
         let els = elements(&p);
         let routes: Vec<usize> = els
@@ -660,6 +714,9 @@ pub(crate) mod tests {
         assert_eq!(slug("voice.pan", 32), "voice-pan");
         assert_eq!(slug("a--b-", 32), "a-b");
         assert_eq!(slug("abcdef", 3), "abc");
-        assert!(crate::pack::StepId::new(&format!("build-{}", slug("macro4 -> comp1.makeup", 26))).is_ok());
+        assert!(
+            crate::pack::StepId::new(&format!("build-{}", slug("macro4 -> comp1.makeup", 26)))
+                .is_ok()
+        );
     }
 }

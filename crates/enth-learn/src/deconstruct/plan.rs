@@ -199,7 +199,10 @@ impl Rank {
 
     /// How many changes reach [`MIN_CHANGE_STEPS`].
     pub fn heard_changes(&self) -> usize {
-        self.changes.iter().filter(|c| c.steps >= MIN_CHANGE_STEPS).count()
+        self.changes
+            .iter()
+            .filter(|c| c.steps >= MIN_CHANGE_STEPS)
+            .count()
     }
 }
 
@@ -266,7 +269,12 @@ impl Plan {
         self.fine
             .iter()
             .map(|(i, _)| *i)
-            .chain(self.steps.iter().take(k).flat_map(|s| s.elements.iter().copied()))
+            .chain(
+                self.steps
+                    .iter()
+                    .take(k)
+                    .flat_map(|s| s.elements.iter().copied()),
+            )
             .collect()
     }
 
@@ -298,7 +306,11 @@ impl Plan {
         if self.steps.len() < 2 || k >= self.steps.len() {
             return;
         }
-        let (into, from) = if k + 1 < self.steps.len() { (k + 1, k) } else { (k - 1, k) };
+        let (into, from) = if k + 1 < self.steps.len() {
+            (k + 1, k)
+        } else {
+            (k - 1, k)
+        };
         let moved = self.steps.remove(from);
         let into = if into > from { into - 1 } else { into };
         let target = &mut self.steps[into];
@@ -372,7 +384,11 @@ pub fn contribution_of(rank: &Rank) -> f64 {
 
 /// Whether a step's elements all sit in one flow (for text: "the filter" rather than a list).
 pub fn flows(plan: &Plan, step: &PlanStep) -> Vec<Flow> {
-    let mut out: Vec<Flow> = step.elements.iter().map(|i| plan.elements[*i].flow).collect();
+    let mut out: Vec<Flow> = step
+        .elements
+        .iter()
+        .map(|i| plan.elements[*i].flow)
+        .collect();
     out.dedup();
     out
 }
@@ -380,8 +396,8 @@ pub fn flows(plan: &Plan, step: &PlanStep) -> Vec<Flow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use enth_challenge::{Closeness, ComponentKind};
     use enth_challenge::phrases::{HELD, LEGATO_PAIR};
+    use enth_challenge::{Closeness, ComponentKind};
     use enth_patch::{Op, ParamAddr, RouteAddr, apply};
 
     fn acid() -> Patch {
@@ -402,7 +418,10 @@ mod tests {
         set(&mut p, "env2.sustain", 0.0);
         set(&mut p, "voice.glide", 70.0);
         set(&mut p, "voice.mode", 2.0);
-        for (r, d) in [("env2 -> filter1.cutoff", 50.0), ("macro1 -> filter1.cutoff", 15.0)] {
+        for (r, d) in [
+            ("env2 -> filter1.cutoff", 50.0),
+            ("macro1 -> filter1.cutoff", 15.0),
+        ] {
             let route: RouteAddr = r.parse().unwrap();
             let index = p.routes.len();
             apply(
@@ -445,12 +464,18 @@ mod tests {
     fn prunes_orders_by_flow_then_contribution_and_ends_on_the_preset() {
         let p = acid();
         let mut ranks = Ranks::new();
-        ranks.insert("filter1".into(), rank(HELD, 9.0, &[ComponentKind::Brightness]));
+        ranks.insert(
+            "filter1".into(),
+            rank(HELD, 9.0, &[ComponentKind::Brightness]),
+        );
         ranks.insert("filter1.drive".into(), rank(HELD, 0.4, &[]));
         ranks.insert("env2 -> filter1.cutoff".into(), rank(HELD, 5.0, &[]));
         ranks.insert("macro1 -> filter1.cutoff".into(), rank(HELD, 0.0, &[]));
         // sound/1 hears the glide only weakly, but a descriptor moves far: it is taught.
-        ranks.insert("voice".into(), rank(LEGATO_PAIR, 0.3, &[ComponentKind::Pitch]));
+        ranks.insert(
+            "voice".into(),
+            rank(LEGATO_PAIR, 0.3, &[ComponentKind::Pitch]),
+        );
         let plan = plan(&p, &ranks);
         let order: Vec<&str> = plan
             .steps
@@ -471,14 +496,22 @@ mod tests {
                 ("macro1 -> filter1.cutoff", FineWhy::BelowJnd)
             ]
         );
-        assert_eq!(plan.step_target(plan.steps.len() - 1), p, "the last target is the preset");
+        assert_eq!(
+            plan.step_target(plan.steps.len() - 1),
+            p,
+            "the last target is the preset"
+        );
         for k in 1..plan.steps.len() {
             assert_eq!(plan.step_start(k), plan.step_target(k - 1));
         }
         // The fine detail is in the lesson's start already.
         let drive: ParamAddr = "filter1.drive".parse().unwrap();
         assert_eq!(plan.start_patch().value(&drive), Some(6.0));
-        assert_eq!(plan.start_patch().routes.len(), 1, "the macro route, folded in");
+        assert_eq!(
+            plan.start_patch().routes.len(),
+            1,
+            "the macro route, folded in"
+        );
     }
 
     #[test]
@@ -487,17 +520,24 @@ mod tests {
         let mut ranks = Ranks::new();
         ranks.insert("filter1".into(), Rank::unobservable());
         let plan1 = plan(&p, &ranks);
-        assert!(plan1.steps.is_empty());
+        assert_eq!(plan1.steps, Vec::new());
         assert!(plan1.fine.iter().any(|(_, w)| *w == FineWhy::Unobservable));
         assert!(plan1.fine.iter().any(|(_, w)| *w == FineWhy::NotMeasured));
-        assert_eq!(plan1.start_patch(), p, "nothing taught: the start is the preset");
+        assert_eq!(
+            plan1.start_patch(),
+            p,
+            "nothing taught: the start is the preset"
+        );
 
         let els = elements(&p);
         let mut ranks = Ranks::new();
         for (n, e) in els.iter().enumerate() {
             ranks.insert(e.id.clone(), rank(HELD, 2.0 + n as f64, &[]));
         }
-        assert!(els.len() <= MAX_TAUGHT, "the fixture is small; the cap is a property below");
+        assert!(
+            els.len() <= MAX_TAUGHT,
+            "the fixture is small; the cap is a property below"
+        );
         let all = plan(&p, &ranks);
         assert_eq!(all.steps.len(), els.len());
     }
@@ -518,7 +558,10 @@ mod tests {
         pl.merge(1);
         assert_eq!(pl.steps.len(), 1);
         assert_eq!(pl.steps[0].elements.len(), 3);
-        assert_eq!(pl.steps[0].phrase, HELD, "the filter's phrase: it contributes most");
+        assert_eq!(
+            pl.steps[0].phrase, HELD,
+            "the filter's phrase: it contributes most"
+        );
         pl.merge(0);
         assert_eq!(pl.steps.len(), 1, "one step cannot merge");
     }

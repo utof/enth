@@ -16,21 +16,20 @@
 //! human-edited text (`lesson-gen` never overwrites an existing text file); a user's presets keep it.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
-use enth_challenge::phrases::{HELD, LEGATO_PAIR, OCTAVE_PAIR};
 use enth_challenge::lesson_phrases::{CHORD, LONG_HOLD};
+use enth_challenge::phrases::{HELD, LEGATO_PAIR, OCTAVE_PAIR};
 use enth_challenge::v2::{InlinePatch, Selector, touches};
-use enth_challenge::{
-    Assists, Challenge, ChallengeMeta, Constraints, PhraseId, Start, Target,
-};
+use enth_challenge::{Assists, Challenge, ChallengeMeta, Constraints, PhraseId, Start, Target};
 use enth_patch::catalogue::ModuleKind;
 use enth_patch::{ModSource, Op, ParamAddr, Patch, PatchMeta, apply, ops_between};
 
 use super::DeconstructError;
 use super::element::{Element, Part, slug};
 use super::measure::{
-    Renders, STEP_RENDERS, StepMeasure, describe, measure_step, pick_options, propose_items, scoring,
-    verify_items,
+    Renders, STEP_RENDERS, StepMeasure, describe, measure_step, pick_options, propose_items,
+    scoring, verify_items,
 };
 use super::plan::{Aspect, Change, FineWhy, Plan, Rank, Way};
 use crate::check::{Check, Cmp, Knob, Plain, Predicate, TouchLog};
@@ -87,7 +86,8 @@ impl Options {
             if s.is_empty() { "preset".to_owned() } else { s }
         };
         Options {
-            lesson: LessonId::new(&id).unwrap_or_else(|_| LessonId::new("preset").unwrap_or_else(|_| unreachable!())),
+            lesson: LessonId::new(&id)
+                .unwrap_or_else(|_| LessonId::new("preset").unwrap_or_else(|_| unreachable!())),
             prefix: id,
             title: format!("Deconstruct: {name}"),
             objective: None,
@@ -105,7 +105,11 @@ impl Options {
 /// The preset's name, or "your preset".
 pub fn preset_name(preset: &Patch) -> String {
     let n = preset.meta.name.trim();
-    if n.is_empty() { "your preset".to_owned() } else { n.to_owned() }
+    if n.is_empty() {
+        "your preset".to_owned()
+    } else {
+        n.to_owned()
+    }
 }
 
 /// How a step is taught, decided from its measure.
@@ -219,7 +223,11 @@ impl Report {
                 e.jnd,
                 e.percent,
                 e.fate,
-                if e.changes.is_empty() { String::new() } else { format!("; {}", e.changes.join(", ")) }
+                if e.changes.is_empty() {
+                    String::new()
+                } else {
+                    format!("; {}", e.changes.join(", "))
+                }
             ));
         }
         out
@@ -250,7 +258,8 @@ pub struct Generated {
 /// `text` with its first letter upper-case.
 fn cap(text: &str) -> String {
     let mut c = text.chars();
-    c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
+    c.next()
+        .map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
 }
 
 /// A list in prose: "a", "a and b", "a, b and c".
@@ -319,10 +328,14 @@ fn effect(c: &Change) -> Option<&'static str> {
 fn cue(c: &Change) -> &'static str {
     use Aspect as A;
     match c.aspect {
-        A::Brightness | A::Harmonics => "Listen to the brightness: is the target duller or brighter than yours?",
+        A::Brightness | A::Harmonics => {
+            "Listen to the brightness: is the target duller or brighter than yours?"
+        }
         A::Pitch => "Listen to the pitch, and to how one note moves to the next.",
         A::Attack => "Listen to the very start of each note: how fast does it speak?",
-        A::Decay | A::Sustain => "Listen to how the note falls after its start, and what level it holds.",
+        A::Decay | A::Sustain => {
+            "Listen to how the note falls after its start, and what level it holds."
+        }
         A::Release => "Listen to the tail after the note lets go.",
         A::Noisiness => "Listen for hiss or breath under the tone.",
         A::Beating => "Listen for a slow beat, like two strings slightly out of tune.",
@@ -351,7 +364,9 @@ fn effect_sentence(changes: &[Change]) -> Option<String> {
 
 fn phrase_note(p: PhraseId) -> &'static str {
     match p {
-        x if x == LEGATO_PAIR => " Both play two overlapping notes, so you hear how one note moves to the next.",
+        x if x == LEGATO_PAIR => {
+            " Both play two overlapping notes, so you hear how one note moves to the next."
+        }
         x if x == OCTAVE_PAIR => " Both play two notes an octave apart, the second softer.",
         x if x == LONG_HOLD => " Both play one long note, so slow movement has time to show.",
         x if x == CHORD => " Both play a chord.",
@@ -364,18 +379,26 @@ fn phrase_note(p: PhraseId) -> &'static str {
 fn control_link(patch: &Patch, sel: &Selector) -> String {
     match sel {
         Selector::Param(a) => {
-            let name = patch.spec(a).map_or_else(|| a.param().to_owned(), |s| s.name.to_lowercase());
+            let name = patch
+                .spec(a)
+                .map_or_else(|| a.param().to_owned(), |s| s.name.to_lowercase());
             match a.target() {
-                enth_patch::Target::Module(id) => match patch.find(id).map(|(_, m)| module_name(patch, m)) {
-                    Some(o) if o.ends_with(|c: char| c.is_ascii_digit()) => format!("{o}'s [{name}](enth:{a})"),
-                    Some(o) => format!("the {o}'s [{name}](enth:{a})"),
-                    None => format!("[{name}](enth:{a})"),
-                },
+                enth_patch::Target::Module(id) => {
+                    match patch.find(id).map(|(_, m)| module_name(patch, m)) {
+                        Some(o) if o.ends_with(|c: char| c.is_ascii_digit()) => {
+                            format!("{o}'s [{name}](enth:{a})")
+                        }
+                        Some(o) => format!("the {o}'s [{name}](enth:{a})"),
+                        None => format!("[{name}](enth:{a})"),
+                    }
+                }
                 _ => format!("[{name}](enth:{a})"),
             }
         }
         Selector::Module(enth_patch::Target::Module(id)) => {
-            let name = patch.find(id).map_or_else(|| id.to_string(), |(_, m)| module_name(patch, m));
+            let name = patch
+                .find(id)
+                .map_or_else(|| id.to_string(), |(_, m)| module_name(patch, m));
             if name.ends_with(|c: char| c.is_ascii_digit()) {
                 format!("[{name}](enth:{id}.*)")
             } else {
@@ -387,10 +410,15 @@ fn control_link(patch: &Patch, sel: &Selector) -> String {
                 .spec(&r.dst)
                 .map_or_else(|| r.dst.param().to_owned(), |s| s.name.to_lowercase());
             let src = match &r.src {
-                ModSource::Module(id) => patch.find(id).map_or_else(|| id.to_string(), |(_, m)| module_name(patch, m)),
+                ModSource::Module(id) => patch
+                    .find(id)
+                    .map_or_else(|| id.to_string(), |(_, m)| module_name(patch, m)),
                 other => other.to_string(),
             };
-            format!("the [route from {src} to the {dst}](enth:{}->{})", r.src, r.dst)
+            format!(
+                "the [route from {src} to the {dst}](enth:{}->{})",
+                r.src, r.dst
+            )
         }
         other => format!("[{other}](enth:{other})"),
     }
@@ -412,16 +440,31 @@ fn involves(patch: &Patch, e: &Element, aspect: Aspect) -> bool {
         Some(dst) => kind_of(dst),
         None => e.main.as_ref().and_then(kind_of),
     };
-    let param = route_dst.as_ref().or(e.main.as_ref()).map(ParamAddr::param).unwrap_or_default();
+    let param = route_dst
+        .as_ref()
+        .or(e.main.as_ref())
+        .map(ParamAddr::param)
+        .unwrap_or_default();
     match (e.flow, kind) {
         (super::element::Flow::Voice, _) => matches!(aspect, A::Pitch | A::Attack),
         (_, Some(ModuleKind::Osc)) if param == "semi" || param == "fine" => {
-            matches!(aspect, A::Pitch | A::Beating | A::Sweep | A::Brightness | A::Movement)
+            matches!(
+                aspect,
+                A::Pitch | A::Beating | A::Sweep | A::Brightness | A::Movement
+            )
         }
-        (_, Some(ModuleKind::Osc)) => matches!(aspect, A::Brightness | A::Harmonics | A::Beating | A::Noisiness | A::Pitch),
+        (_, Some(ModuleKind::Osc)) => matches!(
+            aspect,
+            A::Brightness | A::Harmonics | A::Beating | A::Noisiness | A::Pitch
+        ),
         (_, Some(ModuleKind::Noise)) => matches!(aspect, A::Noisiness | A::Brightness),
-        (_, Some(ModuleKind::Svf)) => matches!(aspect, A::Brightness | A::Harmonics | A::Sweep | A::Movement),
-        (_, Some(ModuleKind::Adsr)) => matches!(aspect, A::Attack | A::Decay | A::Sustain | A::Release),
+        (_, Some(ModuleKind::Svf)) => matches!(
+            aspect,
+            A::Brightness | A::Harmonics | A::Sweep | A::Movement
+        ),
+        (_, Some(ModuleKind::Adsr)) => {
+            matches!(aspect, A::Attack | A::Decay | A::Sustain | A::Release)
+        }
         (_, Some(ModuleKind::Reverb)) => matches!(aspect, A::Release | A::Sustain | A::Decay),
         _ => true,
     }
@@ -435,35 +478,50 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
         let spec = patch.spec(&addr)?;
         Some(value_text(spec, patch.value(&addr)?))
     };
-    let id = |p: &str| e.id.split('.').next().map(|m| format!("{m}.{p}")).unwrap_or_default();
+    let id = |p: &str| {
+        e.id.split('.')
+            .next()
+            .map(|m| format!("{m}.{p}"))
+            .unwrap_or_default()
+    };
     match e.flow {
         super::element::Flow::Source => {
             let module = e.id.as_str();
-            let kind = enth_patch::ModuleId::new(module).ok().and_then(|m| patch.find(&m).map(|(_, x)| x.kind));
-            match kind {
-                Some(ModuleKind::Noise) => format!(
+            let kind = enth_patch::ModuleId::new(module)
+                .ok()
+                .and_then(|m| patch.find(&m).map(|(_, x)| x.kind));
+            if kind == Some(ModuleKind::Noise) {
+                format!(
                     "Noise under the tone: {} noise at {}.",
                     v(&id("color")).unwrap_or_default(),
                     v(&id("level")).unwrap_or_default()
-                ),
-                _ => {
+                )
+            } else {
+                {
                     let wave = v(&id("wave")).unwrap_or_default();
                     let semi = v(&id("semi")).filter(|s| s != "0 st" && s != "+0 st");
                     let fine = v(&id("fine")).filter(|s| s != "0 ct" && s != "+0 ct");
                     let mut bits = vec![format!("a {wave} wave")];
                     bits.extend(semi.map(|s| format!("tuned {s}")));
                     bits.extend(fine.map(|s| format!("detuned {s}")));
-                    bits.extend(v(&id("level")).filter(|l| l != "100 %").map(|l| format!("at {l}")));
+                    bits.extend(
+                        v(&id("level"))
+                            .filter(|l| l != "100 %")
+                            .map(|l| format!("at {l}")),
+                    );
                     format!("{}.", cap(&bits.join(", ")))
                 }
             }
         }
-        super::element::Flow::Filter if e.id.ends_with(".keytrack") => format!(
+        super::element::Flow::Filter if e.id.rsplit('.').next() == Some("keytrack") => format!(
             "The cutoff follows the note: {} key tracking, so higher notes come out brighter.",
             v(&id("keytrack")).unwrap_or_default()
         ),
-        super::element::Flow::Filter if e.id.ends_with(".drive") => {
-            format!("{} of drive into the filter: a little grit and weight.", v(&id("drive")).unwrap_or_default())
+        super::element::Flow::Filter if e.id.rsplit('.').next() == Some("drive") => {
+            format!(
+                "{} of drive into the filter: a little grit and weight.",
+                v(&id("drive")).unwrap_or_default()
+            )
         }
         super::element::Flow::Filter => format!(
             "A {} filter at {} with {} resonance.",
@@ -498,20 +556,24 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
                 _ => "The voice settings.".to_owned(),
             }
         }
-        super::element::Flow::Effects => match e.id.trim_end_matches(|c: char| c.is_ascii_digit()) {
-            "reverb" => format!(
-                "A reverb: {} wet, with a {} tail.",
-                v(&id("wet")).unwrap_or_default(),
-                v(&id("decay")).unwrap_or_default()
-            ),
-            _ => format!("{}.", cap(&e.label)),
-        },
+        super::element::Flow::Effects => {
+            match e.id.trim_end_matches(|c: char| c.is_ascii_digit()) {
+                "reverb" => format!(
+                    "A reverb: {} wet, with a {} tail.",
+                    v(&id("wet")).unwrap_or_default(),
+                    v(&id("decay")).unwrap_or_default()
+                ),
+                _ => format!("{}.", cap(&e.label)),
+            }
+        }
         super::element::Flow::Modulation | super::element::Flow::Macros => {
             let Some(Part::Route(r)) = e.parts.iter().find(|p| matches!(p, Part::Route(_))) else {
                 return format!("{}.", cap(&e.label));
             };
             let src = match &r.src {
-                ModSource::Module(m) => patch.find(m).map_or_else(|| m.to_string(), |(_, x)| cap(&module_name(patch, x))),
+                ModSource::Module(m) => patch
+                    .find(m)
+                    .map_or_else(|| m.to_string(), |(_, x)| cap(&module_name(patch, x))),
                 ModSource::Key => "The note played".to_owned(),
                 ModSource::Velocity => "How hard a note is played".to_owned(),
                 ModSource::ModWheel => "The mod wheel".to_owned(),
@@ -527,13 +589,22 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
             };
             let at = rate.map(|r| format!(" at {r}")).unwrap_or_default();
             match (r.dst.param(), is_env) {
-                ("cutoff", true) => format!("{src} opens the cutoff at the start of each note, then closes it: {}.", e.label),
+                ("cutoff", true) => format!(
+                    "{src} opens the cutoff at the start of each note, then closes it: {}.",
+                    e.label
+                ),
                 ("cutoff", false) => format!("{src} sweeps the cutoff up and down{at}."),
-                ("semi", true) => format!("{src} throws the pitch up at the start of each note and drops it fast: {}.", e.label),
+                ("semi", true) => format!(
+                    "{src} throws the pitch up at the start of each note and drops it fast: {}.",
+                    e.label
+                ),
                 ("semi" | "fine", false) => format!("{src} wobbles the pitch{at}: {}.", e.label),
                 ("level", false) => format!("{src} pulses the level{at}: {}.", e.label),
                 ("level", true) => format!("{src} shapes the level of each note: {}.", e.label),
-                ("pan", _) => format!("{src} moves each voice across the stereo field: {}.", e.label),
+                ("pan", _) => format!(
+                    "{src} moves each voice across the stereo field: {}.",
+                    e.label
+                ),
                 _ => format!("{src} moves the {}: {}.", r.dst, e.label),
             }
         }
@@ -542,10 +613,16 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
 
 /// A module's name as a player reads it: "filter", "second oscillator", "envelope 2", "LFO 1", "reverb".
 fn module_name(patch: &Patch, m: &enth_patch::ModuleInstance) -> String {
-    let n = m.id.as_str().trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    let n =
+        m.id.as_str()
+            .trim_start_matches(|c: char| c.is_ascii_alphabetic());
     match m.kind {
         ModuleKind::Osc => {
-            let i = patch.generators.iter().filter(|g| g.kind == ModuleKind::Osc).position(|g| g.id == m.id);
+            let i = patch
+                .generators
+                .iter()
+                .filter(|g| g.kind == ModuleKind::Osc)
+                .position(|g| g.id == m.id);
             match i {
                 Some(0) => "first oscillator".to_owned(),
                 Some(1) => "second oscillator".to_owned(),
@@ -629,7 +706,8 @@ fn editable(parts: &[&Part]) -> Vec<Selector> {
         }
     };
     for p in parts {
-        let covered = matches!(p, Part::Param(a) if a.module_id().is_some_and(|m| modules.contains(m)));
+        let covered =
+            matches!(p, Part::Param(a) if a.module_id().is_some_and(|m| modules.contains(m)));
         if !covered {
             push(p.selector(), &mut out);
         }
@@ -701,7 +779,9 @@ fn predicates(parts: &[&Part], start: &Patch, target: &Patch, heard: &[Change]) 
         Part::Param(a) => target.spec(a).is_none_or(|spec| {
             !matches!(spec.kind, enth_params::Kind::Float { .. })
                 || spec.perceptual.and_then(aspect_of).is_none_or(|asp| {
-                    heard.iter().any(|c| c.steps >= super::plan::MIN_CHANGE_STEPS && c.aspect == asp)
+                    heard
+                        .iter()
+                        .any(|c| c.steps >= super::plan::MIN_CHANGE_STEPS && c.aspect == asp)
                 })
         }),
         _ => true,
@@ -721,9 +801,10 @@ fn aspect_of(perceptual: &str) -> Option<Aspect> {
         "envelope.release_ms" => Aspect::Release,
         "pitch.f0_hz" => Aspect::Pitch,
         "detune.beating_hz" => Aspect::Beating,
-        "spectrum.centroid_hz" | "spectrum.harmonics_db" | "spectrum.odd_even_ratio" | "spectrum.tilt_db_oct" => {
-            Aspect::Brightness
-        }
+        "spectrum.centroid_hz"
+        | "spectrum.harmonics_db"
+        | "spectrum.odd_even_ratio"
+        | "spectrum.tilt_db_oct" => Aspect::Brightness,
         "noise_ratio" => Aspect::Noisiness,
         _ => return None,
     })
@@ -735,7 +816,11 @@ fn bound_text(spec: &enth_params::ParamSpec, x: f32, v: f32, up: bool) -> String
     let r = spec.clamp(round_out(f64::from(x), 2, up) as f32);
     let r = if up { r.max(v) } else { r.min(v) };
     let shown = spec.display(r).to_string();
-    if spec.parse(&shown).ok().map(f32::to_bits) == Some(r.to_bits()) { shown } else { format!("{r}") }
+    if spec.parse(&shown).ok().map(f32::to_bits) == Some(r.to_bits()) {
+        shown
+    } else {
+        format!("{r}")
+    }
 }
 
 /// `x` rounded to `digits` significant digits, toward +∞ when `up`, else toward −∞.
@@ -765,14 +850,22 @@ fn loose_one(p: &Part, target: &Patch) -> Option<Predicate> {
         Part::Param(a) => {
             let spec = target.spec(a)?;
             let v = target.value(a)?;
-            match spec.kind {
-                enth_params::Kind::Float { .. } => {
+            if let enth_params::Kind::Float { .. } = spec.kind {
+                {
                     let (lo, hi) = match spec.unit {
-                        enth_params::Unit::Semitones => (v - 1.0f32.min(0.5 * v.abs()), v + 1.0f32.min(0.5 * v.abs())),
-                        enth_params::Unit::Cents => (v - 10.0f32.min(0.5 * v.abs()), v + 10.0f32.min(0.5 * v.abs())),
+                        enth_params::Unit::Semitones => {
+                            (v - 1.0f32.min(0.5 * v.abs()), v + 1.0f32.min(0.5 * v.abs()))
+                        }
+                        enth_params::Unit::Cents => (
+                            v - 10.0f32.min(0.5 * v.abs()),
+                            v + 10.0f32.min(0.5 * v.abs()),
+                        ),
                         _ => {
                             let n = spec.to_norm(v);
-                            (spec.from_norm((n - LOOSE_NORM).max(0.0)), spec.from_norm((n + LOOSE_NORM).min(1.0)))
+                            (
+                                spec.from_norm((n - LOOSE_NORM).max(0.0)),
+                                spec.from_norm((n + LOOSE_NORM).min(1.0)),
+                            )
                         }
                     };
                     let (lo, hi) = (spec.clamp(lo.min(v)), spec.clamp(hi.max(v)));
@@ -782,7 +875,8 @@ fn loose_one(p: &Part, target: &Patch) -> Option<Predicate> {
                         hi: Plain::new(bound_text(spec, hi, v, true)),
                     })
                 }
-                _ => {
+            } else {
+                {
                     let shown = spec.display(v).to_string();
                     let text = if spec.parse(&shown).ok().map(f32::to_bits) == Some(v.to_bits()) {
                         shown
@@ -849,13 +943,24 @@ fn decide(
     let parts = step_parts(plan, k, start, target);
     // A round only where closest can solve it: parameters, no switch and no route (closest moves parameters only),
     // and not one the caller found closest cannot pass.
-    let structural = parts.iter().any(|p| matches!(p, Part::Enable(_) | Part::Route(_)));
-    let forced = plan.steps[k].elements.iter().any(|i| no_round.contains(&plan.elements[*i].id));
+    let structural = parts
+        .iter()
+        .any(|p| matches!(p, Part::Enable(_) | Part::Route(_)));
+    let forced = plan.steps[k]
+        .elements
+        .iter()
+        .any(|i| no_round.contains(&plan.elements[*i].id));
     if m.percent <= ROUND_MAX_START && !structural && !forced {
         return Ok((Teach::Round, 0));
     }
     let phrase = plan.steps[k].phrase;
-    let (items, renders) = verify_items(&propose_items(&m.start, &m.target), phrase, start, target, MAX_ITEMS)?;
+    let (items, renders) = verify_items(
+        &propose_items(&m.start, &m.target),
+        phrase,
+        start,
+        target,
+        MAX_ITEMS,
+    )?;
     // What is heard is checked by ear, the sound items alone (a patch predicate beside them could still fail where
     // the measured hints stop: lesson-check's --solve); what no descriptor hears is checked as the parts, loosely.
     // Either way the context predicates tell the goal apart from a neighbour's.
@@ -896,7 +1001,10 @@ fn decide(
 
 /// The label of an element, the caller's when given.
 fn label_of(opts: &Options, e: &Element) -> String {
-    opts.labels.get(&e.id).cloned().unwrap_or_else(|| e.label.clone())
+    opts.labels
+        .get(&e.id)
+        .cloned()
+        .unwrap_or_else(|| e.label.clone())
 }
 
 /// A step's label: its elements' labels in prose.
@@ -926,7 +1034,13 @@ fn step_slug(plan: &Plan, k: usize, used: &mut BTreeSet<String>) -> String {
 // ---------------------------------------------------------------------------------------------------------------
 
 /// The challenge of step `k`: a patch target, its start, only its parts editable, the earlier parts locked.
-fn step_challenge(plan: &Plan, opts: &Options, k: usize, start: &Patch, target: &Patch) -> Challenge {
+fn step_challenge(
+    plan: &Plan,
+    opts: &Options,
+    k: usize,
+    start: &Patch,
+    target: &Patch,
+) -> Challenge {
     let parts = step_parts(plan, k, start, target);
     let mut c = Challenge::new(
         Target::Patch(InlinePatch::new(target.clone())),
@@ -952,12 +1066,15 @@ fn step_challenge(plan: &Plan, opts: &Options, k: usize, start: &Patch, target: 
     c
 }
 
+/// Each step's measure and how it is taught, the merged steps' labels, and the renders spent.
+type Settled = (Vec<(StepMeasure, Teach)>, Vec<String>, u32);
+
+/// A variation goal: its witness, its sound items, its goal sentence, and the renders spent.
+type Variation = (Patch, Vec<String>, String, u32);
+
 /// Measure every step in its context and merge the ones not heard there, until none is left to merge. Returns each
 /// step's measure and how it is taught, the merged steps' labels and the renders spent.
-fn settle(
-    plan: &mut Plan,
-    opts: &Options,
-) -> Result<(Vec<(StepMeasure, Teach)>, Vec<String>, u32), DeconstructError> {
+fn settle(plan: &mut Plan, opts: &Options) -> Result<Settled, DeconstructError> {
     type Key = (Vec<usize>, Vec<usize>);
     let mut cache: BTreeMap<Key, (StepMeasure, Teach)> = BTreeMap::new();
     let mut merged = Vec::new();
@@ -985,20 +1102,17 @@ fn settle(
             }
             out.push(entry);
         }
-        match merge_at {
-            Some(k) => {
-                merged.push(step_label(plan, opts, k));
-                plan.merge(k);
-            }
-            None => {
-                // A lone step that is not heard in context is still taught, as a round.
-                for e in &mut out {
-                    if e.1 == Teach::Merge {
-                        e.1 = Teach::Round;
-                    }
+        if let Some(k) = merge_at {
+            merged.push(step_label(plan, opts, k));
+            plan.merge(k);
+        } else {
+            // A lone step that is not heard in context is still taught, as a round.
+            for e in &mut out {
+                if e.1 == Teach::Merge {
+                    e.1 = Teach::Round;
                 }
-                return Ok((out, merged, renders));
             }
+            return Ok((out, merged, renders));
         }
     }
 }
@@ -1006,8 +1120,12 @@ fn settle(
 /// The variation goal: a brighter version of the preset (its first filter an octave up, or down when it is already
 /// open), checked by a brightness item and the items that keep its character, each verified against the preset and
 /// the witness. `None` when the preset has no filter or nothing verifies.
-fn variation(preset: &Patch) -> Result<Option<(Patch, Vec<String>, String, u32)>, DeconstructError> {
-    let Some(f) = preset.voice_fx.iter().find(|m| m.enabled && m.kind == ModuleKind::Svf) else {
+fn variation(preset: &Patch) -> Result<Option<Variation>, DeconstructError> {
+    let Some(f) = preset
+        .voice_fx
+        .iter()
+        .find(|m| m.enabled && m.kind == ModuleKind::Svf)
+    else {
         return Ok(None);
     };
     let Ok(addr) = ParamAddr::module(f.id.clone(), "cutoff") else {
@@ -1034,7 +1152,11 @@ fn variation(preset: &Patch) -> Result<Option<(Patch, Vec<String>, String, u32)>
     // And not too far: within half an octave past the witness, so "brighter" is this sound made brighter and not any
     // bright sound (a neighbouring lesson's witness, lesson-check's --cross).
     if let Some(b) = to.get(enth_analysis::Feature::Brightness) {
-        let (op, edge) = if brighter { ('<', b * 1.41) } else { ('>', b / 1.41) };
+        let (op, edge) = if brighter {
+            ('<', b * 1.41)
+        } else {
+            ('>', b / 1.41)
+        };
         let item = format!("brightness{op}{}Hz", edge.round());
         if verify_both(&item, preset, &witness)? {
             bright.push(item);
@@ -1052,7 +1174,10 @@ fn variation(preset: &Patch) -> Result<Option<(Patch, Vec<String>, String, u32)>
         if a >= 150.0 {
             keep.push((format!("attack>{}ms", (a / 2.5).round()), "slow to swell"));
         } else {
-            keep.push((format!("attack<{}ms", (a * 2.0 + 30.0).round()), "quick to speak"));
+            keep.push((
+                format!("attack<{}ms", (a * 2.0 + 30.0).round()),
+                "quick to speak",
+            ));
         }
     }
     let mut kept: Vec<(String, &'static str)> = Vec::new();
@@ -1087,7 +1212,12 @@ fn vary_check(preset: &Patch, witness: &Patch, items: Vec<String>) -> Check {
                 .params()
                 .iter()
                 .filter_map(|spec| ParamAddr::module(amp.clone(), spec.key).ok())
-                .filter(|a| preset.value(a).zip(preset.spec(a)).is_some_and(|(v, s)| v.to_bits() != s.default.to_bits()))
+                .filter(|a| {
+                    preset
+                        .value(a)
+                        .zip(preset.spec(a))
+                        .is_some_and(|(v, s)| v.to_bits() != s.default.to_bits())
+                })
                 .filter_map(|a| loose_one(&Part::Param(a), preset))
                 .filter(|p| p.holds(preset, &none) && p.holds(witness, &none))
                 .take(MAX_CONTEXT)
@@ -1120,7 +1250,8 @@ fn verify_both(item: &str, a: &Patch, b: &Patch) -> Result<bool, DeconstructErro
         let r = crate::check::evaluate_sounds_report(std::slice::from_ref(&check), p, opts)
             .map_err(DeconstructError::Sound)?;
         let res = &r[0].report.results[0];
-        if !(res.pass && !res.thin && !res.unstable && res.margin.is_some_and(|m| m >= super::measure::MIN_MARGIN)) {
+        let solid = res.pass && !res.thin && !res.unstable;
+        if !solid || res.margin.is_none_or(|m| m < super::measure::MIN_MARGIN) {
             return Ok(false);
         }
     }
@@ -1146,13 +1277,13 @@ pub fn generate(preset: &Patch, opts: &Options) -> Result<Generated, Deconstruct
         steps: steps_r,
         ..Renders::default()
     };
-    assemble(plan, opts, teach, merged, &mut renders)
+    assemble(plan, opts, &teach, merged, &mut renders)
 }
 
 fn assemble(
     plan: Plan,
     opts: &Options,
-    teach: Vec<(StepMeasure, Teach)>,
+    teach: &[(StepMeasure, Teach)],
     merged: Vec<String>,
     renders: &mut Renders,
 ) -> Result<Generated, DeconstructError> {
@@ -1167,7 +1298,10 @@ fn assemble(
 
     // Patch files: the preset, the start, each step's target (the last is the preset).
     let full_path = format!("patches/{px}.patch.json");
-    patches.insert(full_path.clone(), named(preset, name.clone(), preset.meta.description.clone()));
+    patches.insert(
+        full_path.clone(),
+        named(preset, name.clone(), preset.meta.description.clone()),
+    );
     let start_path = format!("patches/{px}-0.patch.json");
     let target_path = |k: usize| {
         if k + 1 == n {
@@ -1176,7 +1310,13 @@ fn assemble(
             format!("patches/{px}-{}.patch.json", k + 1)
         }
     };
-    let start_path_of = |k: usize| if k == 0 { start_path.clone() } else { target_path(k - 1) };
+    let start_path_of = |k: usize| {
+        if k == 0 {
+            start_path.clone()
+        } else {
+            target_path(k - 1)
+        }
+    };
     let step_labels: Vec<String> = (0..n).map(|k| step_label(&plan, opts, k)).collect();
     patches.insert(
         start_path.clone(),
@@ -1192,13 +1332,21 @@ fn assemble(
             named(
                 &plan.step_target(k),
                 format!("{name}: step {}", k + 1),
-                format!("{name} rebuilt up to step {}: {}.", k + 1, and_list(&step_labels[..=k])),
+                format!(
+                    "{name} rebuilt up to step {}: {}.",
+                    k + 1,
+                    and_list(&step_labels[..=k])
+                ),
             ),
         );
     }
 
     // Intro.
-    let numbered: Vec<String> = step_labels.iter().enumerate().map(|(i, l)| format!("{}. {}", i + 1, cap(l))).collect();
+    let numbered: Vec<String> = step_labels
+        .iter()
+        .enumerate()
+        .map(|(i, l)| format!("{}. {}", i + 1, cap(l)))
+        .collect();
     let intro = format!(
         "# Taking {name} apart\n\n{}\n\nThis lesson rebuilds it part by part, in the order the sound flows:\n\n{}\n\nEach step \
          plays the sound without and with one part, then you rebuild that part by ear.\n",
@@ -1230,7 +1378,10 @@ fn assemble(
         view: StepView::default(),
         hints: Vec::new(),
         kind: StepKind::Listen {
-            examples: vec![example("The whole sound", &full_path, HELD), example("Where we start", &start_path, HELD)],
+            examples: vec![
+                example("The whole sound", &full_path, HELD),
+                example("Where we start", &start_path, HELD),
+            ],
         },
     });
 
@@ -1255,18 +1406,34 @@ fn assemble(
         }
         let involved: Vec<Change> = changes
             .iter()
-            .filter(|c| plan.steps[k].elements.iter().any(|i| involves(&target, &plan.elements[*i], c.aspect)))
+            .filter(|c| {
+                plan.steps[k]
+                    .elements
+                    .iter()
+                    .any(|i| involves(&target, &plan.elements[*i], c.aspect))
+            })
             .cloned()
             .collect();
         // The voice settings are told by their template: their descriptor changes (a median pitch, an attack read
         // across two notes) are the measurement's, not what a listener names.
-        let voice = plan.steps[k].elements.iter().any(|i| plan.elements[*i].flow == super::element::Flow::Voice);
+        let voice = plan.steps[k]
+            .elements
+            .iter()
+            .any(|i| plan.elements[*i].flow == super::element::Flow::Voice);
         let effect = if voice {
             None
         } else {
-            effect_sentence(if involved.is_empty() { &changes } else { &involved })
+            effect_sentence(if involved.is_empty() {
+                &changes
+            } else {
+                &involved
+            })
         };
-        let what: Vec<String> = plan.steps[k].elements.iter().map(|i| what_it_is(&target, &plan.elements[*i])).collect();
+        let what: Vec<String> = plan.steps[k]
+            .elements
+            .iter()
+            .map(|i| what_it_is(&target, &plan.elements[*i]))
+            .collect();
         let hear_id = format!("hear-{s}");
         let build_id = format!("build-{s}");
         texts.insert(
@@ -1275,7 +1442,9 @@ fn assemble(
                 "# {}\n\n{} {}\n\nListen to **Without** and **With**.{}\n",
                 cap(&label),
                 what.join(" "),
-                effect.clone().unwrap_or_else(|| "The change is small: listen closely.".to_owned()),
+                effect
+                    .clone()
+                    .unwrap_or_else(|| "The change is small: listen closely.".to_owned()),
                 phrase_note(phrase)
             ),
         );
@@ -1305,7 +1474,10 @@ fn assemble(
             if let Some(c) = changes.first() {
                 h.push(cue(c).to_owned());
             }
-            h.push(format!("In this step you change only {}.", and_list(&links_plain(&target, &ed))));
+            h.push(format!(
+                "In this step you change only {}.",
+                and_list(&links_plain(&target, &ed))
+            ));
             h
         });
         let view_common = StepView {
@@ -1359,7 +1531,7 @@ fn assemble(
         let items: Vec<String> = match how {
             Teach::Check(c) => {
                 let mut v: Vec<String> = c.sounds().into_iter().flat_map(|s| s.expect).collect();
-                v.extend(check_predicates(c).iter().map(|p| p.to_string()));
+                v.extend(check_predicates(c).iter().map(ToString::to_string));
                 v
             }
             _ => Vec::new(),
@@ -1383,7 +1555,11 @@ fn assemble(
         );
         step_reports.push(StepReport {
             id: build_id.clone(),
-            elements: plan.steps[k].elements.iter().map(|i| plan.elements[*i].id.clone()).collect(),
+            elements: plan.steps[k]
+                .elements
+                .iter()
+                .map(|i| plan.elements[*i].id.clone())
+                .collect(),
             phrase: phrase.0,
             teach: how.name(),
             start_percent: m.percent,
@@ -1398,7 +1574,12 @@ fn assemble(
             hints,
             kind,
         });
-        recap_lines.push(format!("{}. **{}.** {}", k + 1, cap(&label), what.join(" ")));
+        recap_lines.push(format!(
+            "{}. **{}.** {}",
+            k + 1,
+            cap(&label),
+            what.join(" ")
+        ));
     }
 
     // What disappeared?
@@ -1415,23 +1596,37 @@ fn assemble(
             })
             .collect();
         cands.sort_by(|a, b| {
-            let c = |i: &usize| plan.ranks.get(&plan.elements[*i].id).map_or(0.0, super::plan::contribution_of);
+            let c = |i: &usize| {
+                plan.ranks
+                    .get(&plan.elements[*i].id)
+                    .map_or(0.0, super::plan::contribution_of)
+            };
             c(b).total_cmp(&c(a)).then(a.cmp(b))
         });
         cands.truncate(MAX_CANDIDATES);
         if cands.len() >= 2 {
             let list: Vec<(String, Patch)> = cands
                 .iter()
-                .map(|i| (format!("Without {}", label_of(opts, &plan.elements[*i])), plan.without(*i)))
+                .map(|i| {
+                    (
+                        format!("Without {}", label_of(opts, &plan.elements[*i])),
+                        plan.without(*i),
+                    )
+                })
                 .collect();
             let (chosen, closest, r) = pick_options(&list, HELD, MAX_OPTIONS)?;
             renders.choice += r;
             if chosen.len() >= 2 {
                 // In teaching order.
                 let mut picked: Vec<usize> = chosen.iter().map(|c| cands[*c]).collect();
-                let order: Vec<usize> = plan.steps.iter().flat_map(|s| s.elements.iter().copied()).collect();
+                let order: Vec<usize> = plan
+                    .steps
+                    .iter()
+                    .flat_map(|s| s.elements.iter().copied())
+                    .collect();
                 picked.sort_by_key(|i| order.iter().position(|j| j == i));
-                let answer = (enth_dsp::util::rng::fnv1a64(name.as_bytes()) % picked.len() as u64) as usize;
+                let answer =
+                    (enth_dsp::util::rng::fnv1a64(name.as_bytes()) % picked.len() as u64) as usize;
                 let mut options = Vec::new();
                 for i in &picked {
                     let e = &plan.elements[*i];
@@ -1444,7 +1639,11 @@ fn assemble(
                             format!("{name} with {} taken out.", label_of(opts, e)),
                         ),
                     );
-                    options.push(example(&format!("Without {}", label_of(opts, e)), &path, HELD));
+                    options.push(example(
+                        &format!("Without {}", label_of(opts, e)),
+                        &path,
+                        HELD,
+                    ));
                 }
                 let mystery = options[answer].patch.as_str().to_owned();
                 texts.insert(
@@ -1474,7 +1673,10 @@ fn assemble(
                     id: step_id("missing"),
                     text: Some(text_ref("missing.md")),
                     view: StepView::default(),
-                    hints: vec!["Play **Something missing** again, then compare it with each option.".to_owned()],
+                    hints: vec![
+                        "Play **Something missing** again, then compare it with each option."
+                            .to_owned(),
+                    ],
                     kind: StepKind::Choose {
                         options: options.clone(),
                         answer: answer as u8,
@@ -1491,7 +1693,11 @@ fn assemble(
                         options[answer].label
                     )],
                 );
-                missing_report = Some((options.iter().map(|o| o.label.clone()).collect(), answer, closest));
+                missing_report = Some((
+                    options.iter().map(|o| o.label.clone()).collect(),
+                    answer,
+                    closest,
+                ));
             }
         }
     }
@@ -1505,7 +1711,11 @@ fn assemble(
         let path = format!("patches/{px}-variation.patch.json");
         patches.insert(
             path.clone(),
-            named(&witness, format!("{name}, varied"), format!("{name} with its filter moved: one answer to the variation goal.")),
+            named(
+                &witness,
+                format!("{name}, varied"),
+                format!("{name} with its filter moved: one answer to the variation goal."),
+            ),
         );
         let cutoff_link = preset
             .voice_fx
@@ -1535,7 +1745,10 @@ fn assemble(
                 ..StepView::default()
             },
             hints: match cutoff_link {
-                Some(_) => vec!["The filter's cutoff moves the brightness most; leave the envelopes alone.".to_owned()],
+                Some(_) => vec![
+                    "The filter's cutoff moves the brightness most; leave the envelopes alone."
+                        .to_owned(),
+                ],
                 None => Vec::new(),
             },
             kind: StepKind::Do {
@@ -1550,22 +1763,38 @@ fn assemble(
     let fine: Vec<String> = plan
         .fine
         .iter()
-        .filter(|(_, w)| matches!(w, FineWhy::BelowJnd | FineWhy::OverCap | FineWhy::Unobservable))
+        .filter(|(_, w)| {
+            matches!(
+                w,
+                FineWhy::BelowJnd | FineWhy::OverCap | FineWhy::Unobservable
+            )
+        })
         .map(|(i, _)| label_of(opts, &plan.elements[*i]))
         .collect();
     let mut recap = format!("# What made {name}\n\n{}\n", recap_lines.join("\n"));
-    if crate::markdown::parse(&recap).doc.plain().split_whitespace().count() + 3 * fine.len() + 20
+    if crate::markdown::parse(&recap)
+        .doc
+        .plain()
+        .split_whitespace()
+        .count()
+        + 3 * fine.len()
+        + 20
         > crate::markdown::STEP_WORD_BUDGET
     {
         // Too long for one step: the parts by name only.
-        let short: Vec<String> = step_labels.iter().enumerate().map(|(i, l)| format!("{}. {}", i + 1, cap(l))).collect();
+        let short: Vec<String> = step_labels
+            .iter()
+            .enumerate()
+            .map(|(i, l)| format!("{}. {}", i + 1, cap(l)))
+            .collect();
         recap = format!("# What made {name}\n\n{}\n", short.join("\n"));
     }
     if !fine.is_empty() {
-        recap.push_str(&format!(
+        let _ = write!(
+            recap,
             "\nAlso there from the start, too small to hear on a held note: {}.\n",
             and_list(&fine)
-        ));
+        );
     }
     texts.insert("recap.md".into(), recap);
     steps.push(Step {
@@ -1587,11 +1816,14 @@ fn assemble(
                     Part::Enable(_) => continue,
                 };
                 let kind = match addr.target() {
-                    enth_patch::Target::Module(id) => preset.find(id).map(|(_, m)| m.kind.key().to_owned()),
+                    enth_patch::Target::Module(id) => {
+                        preset.find(id).map(|(_, m)| m.kind.key().to_owned())
+                    }
                     enth_patch::Target::Voice => Some("voice".to_owned()),
                     enth_patch::Target::Master => Some("master".to_owned()),
                 };
-                if let Some(key) = kind.and_then(|k| ParamKey::new(&format!("{k}.{}", addr.param())).ok())
+                if let Some(key) =
+                    kind.and_then(|k| ParamKey::new(&format!("{k}.{}", addr.param())).ok())
                     && !teaches.contains(&key)
                 {
                     teaches.push(key);
@@ -1603,10 +1835,9 @@ fn assemble(
         id: opts.lesson.clone(),
         title: opts.title.clone(),
         tier: opts.tier,
-        objective: opts
-            .objective
-            .clone()
-            .unwrap_or_else(|| format!("Hear what each part of {name} does, and rebuild it part by part, by ear.")),
+        objective: opts.objective.clone().unwrap_or_else(|| {
+            format!("Hear what each part of {name} does, and rebuild it part by part, by ear.")
+        }),
         teaches,
         steps,
     };
@@ -1625,7 +1856,12 @@ fn assemble(
                     .iter()
                     .position(|s| s.elements.contains(&i))
                     .map(|k| format!("step {}", k + 1))
-                    .or_else(|| plan.fine.iter().find(|(j, _)| *j == i).map(|(_, w)| format!("fine: {}", w.name())))
+                    .or_else(|| {
+                        plan.fine
+                            .iter()
+                            .find(|(j, _)| *j == i)
+                            .map(|(_, w)| format!("fine: {}", w.name()))
+                    })
                     .unwrap_or_default();
                 ElementReport {
                     id: e.id.clone(),
@@ -1634,7 +1870,8 @@ fn assemble(
                     phrase: r.and_then(|r| r.phrase).map(|p| p.0),
                     jnd: r.map_or(0.0, |r| r.jnd),
                     percent: r.map_or(100.0, |r| r.percent),
-                    changes: r.map_or_else(Vec::new, |r| r.changes.iter().map(Change::words).collect()),
+                    changes: r
+                        .map_or_else(Vec::new, |r| r.changes.iter().map(Change::words).collect()),
                     fate,
                 }
             })

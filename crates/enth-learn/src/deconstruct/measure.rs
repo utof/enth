@@ -17,21 +17,20 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use enth_analysis::descriptors::Want;
-use enth_dsp::util::math;
 use enth_analysis::{Describer, Descriptors, Feature, NoteTiming};
+use enth_challenge::lesson_phrases::{CHORD, LONG_HOLD};
 use enth_challenge::model::{SCORING_SAMPLE_RATE, SCORING_SEED};
-use enth_render::{RenderSpec, render};
 use enth_challenge::patch_round::{Compared, prepare_patch_round};
 use enth_challenge::phrases::{HELD, LEGATO_PAIR, OCTAVE_PAIR};
-use enth_challenge::lesson_phrases::{CHORD, LONG_HOLD};
 use enth_challenge::random::{Visibility, observable};
 use enth_challenge::v2::InlinePatch;
 use enth_challenge::{
-    Challenge, PhraseId, PreparedRound, ScoringSpec, Start, Target, prepare_challenge,
-    score_round,
+    Challenge, PhraseId, PreparedRound, ScoringSpec, Start, Target, prepare_challenge, score_round,
 };
+use enth_dsp::util::math;
 use enth_patch::catalogue::ModuleKind;
 use enth_patch::{ModSource, Patch};
+use enth_render::{RenderSpec, render};
 
 use super::DeconstructError;
 use super::element::{Element, Part, elements, project};
@@ -122,7 +121,11 @@ pub fn scoring() -> ScoringSpec {
 
 /// The `enth compare --target preset --phrase N` round: the preset as the target, its base as the start, the
 /// parameters it moved off their defaults compared.
-fn preset_round(preset: &Patch, base: &Patch, phrase: PhraseId) -> Result<PreparedRound, DeconstructError> {
+fn preset_round(
+    preset: &Patch,
+    base: &Patch,
+    phrase: PhraseId,
+) -> Result<PreparedRound, DeconstructError> {
     let challenge = Challenge::new(
         Target::Patch(InlinePatch::new(preset.clone())),
         Start::Patch {
@@ -131,7 +134,8 @@ fn preset_round(preset: &Patch, base: &Patch, phrase: PhraseId) -> Result<Prepar
         phrase,
         scoring(),
     );
-    prepare_patch_round(challenge, Compared::OffDefaults).map_err(|e| round_error("the preset's round", e))
+    prepare_patch_round(challenge, Compared::OffDefaults)
+        .map_err(|e| round_error("the preset's round", e))
 }
 
 /// The descriptors a heard change is read on, with the aspect and the tolerance (`sound/1`'s component tolerances:
@@ -139,7 +143,11 @@ fn preset_round(preset: &Patch, base: &Patch, phrase: PhraseId) -> Result<Prepar
 /// the held level, 0.05 of noise, 0.2 octave of sweep depth).
 const MOVES: [(Feature, Aspect, Tol); 10] = [
     (Feature::Pitch, Aspect::Pitch, Tol::Cents(25.0)),
-    (Feature::Brightness, Aspect::Brightness, Tol::Ratio(1.1, 0.0)),
+    (
+        Feature::Brightness,
+        Aspect::Brightness,
+        Tol::Ratio(1.1, 0.0),
+    ),
     (Feature::Attack, Aspect::Attack, Tol::Ratio(1.25, 5.0)),
     (Feature::Decay, Aspect::Decay, Tol::Ratio(1.1, 10.0)),
     (Feature::Sustain, Aspect::Sustain, Tol::Abs(2.0)),
@@ -161,13 +169,21 @@ pub const NOISE_FACTOR: f64 = 3.0;
 /// least [`MIN_MOVE_STEPS`] tolerances and [`NOISE_FACTOR`] times its noise over the `noise` renders of `with` (none:
 /// no noise), and for each beat, tremolo, sweep or pitch that `with` has and `without` lacks (or the other way), when
 /// the noise renders agree on its presence.
-pub fn descriptor_changes(with: &Descriptors, without: &Descriptors, noise: &[Descriptors]) -> Vec<Change> {
+pub fn descriptor_changes(
+    with: &Descriptors,
+    without: &Descriptors,
+    noise: &[Descriptors],
+) -> Vec<Change> {
     let mut out = Vec::new();
     for (f, aspect, tol) in MOVES {
-        let stable = noise.iter().all(|n| n.get(f).is_some() == with.get(f).is_some());
+        let stable = noise
+            .iter()
+            .all(|n| n.get(f).is_some() == with.get(f).is_some());
         match (with.get(f), without.get(f)) {
             (Some(a), Some(b)) => {
-                let (Some(da), Some(db)) = (tol.domain(a), tol.domain(b)) else { continue };
+                let (Some(da), Some(db)) = (tol.domain(a), tol.domain(b)) else {
+                    continue;
+                };
                 let steps = (db - da).abs() / tol.unit();
                 let noise_d = noise
                     .iter()
@@ -205,7 +221,10 @@ pub fn descriptor_changes(with: &Descriptors, without: &Descriptors, noise: &[De
 }
 
 /// Describe `patch` through `phrase` at the scoring seed and at `enth check`'s two nuisance seeds.
-fn describe_with_noise(patch: &Patch, phrase: PhraseId) -> Result<(Descriptors, Vec<Descriptors>), DeconstructError> {
+fn describe_with_noise(
+    patch: &Patch,
+    phrase: PhraseId,
+) -> Result<(Descriptors, Vec<Descriptors>), DeconstructError> {
     let main = describe_at(patch, phrase, SCORING_SEED)?;
     let noise = crate::check::NUISANCE_OFFSETS
         .iter()
@@ -222,7 +241,7 @@ fn describe_with_noise(patch: &Patch, phrase: PhraseId) -> Result<(Descriptors, 
 /// [`DeconstructError::Sound`] when a description fails.
 pub fn measure_ablations(preset: &Patch) -> Result<(Ranks, u32), DeconstructError> {
     let els = elements(preset);
-    let base = project(preset, &els, &Default::default());
+    let base = project(preset, &els, &std::collections::BTreeSet::default());
     let mut heard: BTreeMap<u16, (PreparedRound, Descriptors, Vec<Descriptors>)> = BTreeMap::new();
     let mut ranks = Ranks::new();
     let mut renders = 0;
@@ -231,16 +250,16 @@ pub fn measure_ablations(preset: &Patch) -> Result<(Ranks, u32), DeconstructErro
             ranks.insert(e.id.clone(), Rank::unobservable());
             continue;
         };
-        if !heard.contains_key(&phrase.0) {
+        if let std::collections::btree_map::Entry::Vacant(slot) = heard.entry(phrase.0) {
             let round = preset_round(preset, &base, phrase)?;
             let (desc, noise) = describe_with_noise(preset, phrase)?;
-            heard.insert(phrase.0, (round, desc, noise));
+            slot.insert((round, desc, noise));
             renders += PREPARE_RENDERS + 3;
         }
         let (round, desc, noise) = &heard[&phrase.0];
         let without = project(preset, &els, &(0..els.len()).filter(|j| *j != i).collect());
-        let score =
-            score_round(round, &without).map_err(|err| round_error(&format!("the preset without {}", e.id), err))?;
+        let score = score_round(round, &without)
+            .map_err(|err| round_error(&format!("the preset without {}", e.id), err))?;
         let without_desc = describe(&without, phrase)?;
         renders += 2;
         let rows = harmonics_rows(&score.sound.components);
@@ -293,15 +312,23 @@ fn harmonics_rows(rows: &[enth_challenge::Component]) -> Vec<Change> {
 /// # Errors
 /// [`DeconstructError::Round`] when the round cannot be prepared or the start cannot be scored;
 /// [`DeconstructError::Sound`] when a description fails.
-pub fn measure_step(challenge: &Challenge, start: &Patch, target: &Patch) -> Result<StepMeasure, DeconstructError> {
-    let round = prepare_challenge(challenge.clone()).map_err(|e| round_error("a step's round", e))?;
+pub fn measure_step(
+    challenge: &Challenge,
+    start: &Patch,
+    target: &Patch,
+) -> Result<StepMeasure, DeconstructError> {
+    let round =
+        prepare_challenge(challenge.clone()).map_err(|e| round_error("a step's round", e))?;
     let score = score_round(&round, start).map_err(|e| round_error("a step's start", e))?;
     let s = describe(start, challenge.phrase)?;
     let (t, noise) = describe_with_noise(target, challenge.phrase)?;
     Ok(StepMeasure {
         percent: score.sound.percent,
         jnd: score.sound.jnd,
-        changes: merge_changes(harmonics_rows(&score.sound.components), descriptor_changes(&t, &s, &noise)),
+        changes: merge_changes(
+            harmonics_rows(&score.sound.components),
+            descriptor_changes(&t, &s, &noise),
+        ),
         start: s,
         target: t,
     })
@@ -320,17 +347,17 @@ pub fn describe(patch: &Patch, phrase: PhraseId) -> Result<Descriptors, Deconstr
 ///
 /// # Errors
 /// As [`describe`].
-pub fn describe_at(patch: &Patch, phrase: PhraseId, seed: u64) -> Result<Descriptors, DeconstructError> {
+pub fn describe_at(
+    patch: &Patch,
+    phrase: PhraseId,
+    seed: u64,
+) -> Result<Descriptors, DeconstructError> {
     use crate::check::SoundError;
-    let ph = enth_challenge::phrases::phrase(phrase)
-        .ok_or(DeconstructError::Sound(SoundError::UnknownPhrase { phrase: phrase.0 }))?;
+    let ph = enth_challenge::phrases::phrase(phrase).ok_or(DeconstructError::Sound(
+        SoundError::UnknownPhrase { phrase: phrase.0 },
+    ))?;
     let perf = ph.performance();
-    let out = render(
-        patch,
-        &perf,
-        &RenderSpec::new(SCORING_SAMPLE_RATE, seed),
-    )
-    .map_err(|e| {
+    let out = render(patch, &perf, &RenderSpec::new(SCORING_SAMPLE_RATE, seed)).map_err(|e| {
         DeconstructError::Sound(SoundError::Render {
             code: e.code(),
             message: e.to_string(),
@@ -409,7 +436,7 @@ impl Tol {
                 let steps = math::log(y / x).abs() / math::log(factor);
                 (steps, (x * y).sqrt() - floor)
             }
-            Tol::Abs(step) | Tol::Cents(step) => ((b - a).abs() / step, 0.5 * (a + b)),
+            Tol::Abs(step) | Tol::Cents(step) => ((b - a).abs() / step, f64::midpoint(a, b)),
         }
     }
 }
@@ -461,7 +488,9 @@ pub fn propose_items(from: &Descriptors, to: &Descriptors) -> Vec<String> {
                     out.push((steps, format!("{name}{op}{}{unit}", round3(t))));
                 }
             }
-            (None, Some(b)) if matches!(f, Feature::Beating | Feature::Tremolo | Feature::SweepDepth) => {
+            (None, Some(b))
+                if matches!(f, Feature::Beating | Feature::Tremolo | Feature::SweepDepth) =>
+            {
                 out.push((8.0, format!("{name}>{}{unit}", round3(0.5 * b))));
             }
             _ => {}
@@ -492,8 +521,10 @@ pub fn verify_items(
         macros: Vec::new(),
     };
     let opts = SoundOptions { nuisance: true };
-    let s = evaluate_sounds_report(std::slice::from_ref(&check), start, opts).map_err(DeconstructError::Sound)?;
-    let w = evaluate_sounds_report(std::slice::from_ref(&check), witness, opts).map_err(DeconstructError::Sound)?;
+    let s = evaluate_sounds_report(std::slice::from_ref(&check), start, opts)
+        .map_err(DeconstructError::Sound)?;
+    let w = evaluate_sounds_report(std::slice::from_ref(&check), witness, opts)
+        .map_err(DeconstructError::Sound)?;
     let renders = 6;
     let ok = |r: &enth_analysis::expect::ItemResult, pass: bool| {
         r.pass == pass && !r.thin && !r.unstable && r.margin.is_some_and(|m| m.abs() >= MIN_MARGIN)

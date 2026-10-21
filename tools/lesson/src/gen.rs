@@ -19,7 +19,7 @@
     reason = "a command-line tool: it reads presets, writes lessons and times the ablation"
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -63,12 +63,47 @@ const STUDIES: [Study; 6] = [
             ("voice", "the slide"),
         ],
         hints: &[
-            ("filter1", &["Listen to the brightness first, then to the ring at the cutoff: the target is dark and nasal.", "The cutoff sets how dark it is; the resonance sets how much it rings."]),
-            ("filter1.keytrack", &["Two notes an octave apart: listen to whether the high note opens up.", "Key tracking makes the cutoff follow the note you play."]),
-            ("filter1.drive", &["The drive is subtle: listen for a slightly thicker, rougher tone, not for brightness."]),
-            ("env1", &["Listen to the end of each note: does it stop short or hang on?", "The release sets how fast a note dies once the key lets go."]),
-            ("env2 -> filter1.cutoff", &["Listen to the start of each note: a quick wah that closes at once.", "Envelope 2 drives the cutoff; with its sustain at 0 the filter closes again after the snap."]),
-            ("voice", &["The second note starts before the first lets go: does it glide there, or start again?", "Legato keeps one voice playing; the glide time sets how long the slide takes."]),
+            (
+                "filter1",
+                &[
+                    "Listen to the brightness first, then to the ring at the cutoff: the target is dark and nasal.",
+                    "The cutoff sets how dark it is; the resonance sets how much it rings.",
+                ],
+            ),
+            (
+                "filter1.keytrack",
+                &[
+                    "Two notes an octave apart: listen to whether the high note opens up.",
+                    "Key tracking makes the cutoff follow the note you play.",
+                ],
+            ),
+            (
+                "filter1.drive",
+                &[
+                    "The drive is subtle: listen for a slightly thicker, rougher tone, not for brightness.",
+                ],
+            ),
+            (
+                "env1",
+                &[
+                    "Listen to the end of each note: does it stop short or hang on?",
+                    "The release sets how fast a note dies once the key lets go.",
+                ],
+            ),
+            (
+                "env2 -> filter1.cutoff",
+                &[
+                    "Listen to the start of each note: a quick wah that closes at once.",
+                    "Envelope 2 drives the cutoff; with its sustain at 0 the filter closes again after the snap.",
+                ],
+            ),
+            (
+                "voice",
+                &[
+                    "The second note starts before the first lets go: does it glide there, or start again?",
+                    "Legato keeps one voice playing; the glide time sets how long the slide takes.",
+                ],
+            ),
         ],
     },
     Study {
@@ -83,10 +118,34 @@ const STUDIES: [Study; 6] = [
             ("reverb1", "the room"),
         ],
         hints: &[
-            ("osc2", &["Listen above the saw: a thinner, hollow tone an octave higher, much quieter.", "Switch the second oscillator on, pick the pulse wave, tune it up an octave and keep it quiet."]),
-            ("env1", &["Listen to how long each note rings before it is gone.", "A sustain of 0 lets the note die away; the decay sets how fast."]),
-            ("env2 -> filter1.cutoff", &["Listen to the first instant of each note: it starts bright and dulls quickly.", "Route envelope 2 to the cutoff, so each note opens the filter and lets it close."]),
-            ("reverb1", &["Listen after each note: a short, quiet room follows it.", "Switch the reverb on and keep its wet level low."]),
+            (
+                "osc2",
+                &[
+                    "Listen above the saw: a thinner, hollow tone an octave higher, much quieter.",
+                    "Switch the second oscillator on, pick the pulse wave, tune it up an octave and keep it quiet.",
+                ],
+            ),
+            (
+                "env1",
+                &[
+                    "Listen to how long each note rings before it is gone.",
+                    "A sustain of 0 lets the note die away; the decay sets how fast.",
+                ],
+            ),
+            (
+                "env2 -> filter1.cutoff",
+                &[
+                    "Listen to the first instant of each note: it starts bright and dulls quickly.",
+                    "Route envelope 2 to the cutoff, so each note opens the filter and lets it close.",
+                ],
+            ),
+            (
+                "reverb1",
+                &[
+                    "Listen after each note: a short, quiet room follows it.",
+                    "Switch the reverb on and keep its wet level low.",
+                ],
+            ),
         ],
     },
     Study {
@@ -102,11 +161,41 @@ const STUDIES: [Study; 6] = [
             ("reverb1", "the hall"),
         ],
         hints: &[
-            ("osc2", &["Listen for a slow beat, like two strings slightly out of tune.", "Switch the second oscillator on and tune it a few cents sharp."]),
-            ("osc1", &["The beat gets faster when the two saws move further apart.", "Tune the first oscillator a few cents flat, as far as the second is sharp."]),
-            ("filter1", &["Listen to the brightness: the target is warm, with the top taken off.", "Lower the cutoff until the saws lose their edge."]),
-            ("env1", &["Listen to how the note fades in, and how long it hangs on after the key lets go.", "A long attack makes the swell; a long release makes the tail."]),
-            ("reverb1", &["Listen after the note: a long, soft hall carries it on.", "Switch the reverb on with a long decay, and keep the wet level moderate."]),
+            (
+                "osc2",
+                &[
+                    "Listen for a slow beat, like two strings slightly out of tune.",
+                    "Switch the second oscillator on and tune it a few cents sharp.",
+                ],
+            ),
+            (
+                "osc1",
+                &[
+                    "The beat gets faster when the two saws move further apart.",
+                    "Tune the first oscillator a few cents flat, as far as the second is sharp.",
+                ],
+            ),
+            (
+                "filter1",
+                &[
+                    "Listen to the brightness: the target is warm, with the top taken off.",
+                    "Lower the cutoff until the saws lose their edge.",
+                ],
+            ),
+            (
+                "env1",
+                &[
+                    "Listen to how the note fades in, and how long it hangs on after the key lets go.",
+                    "A long attack makes the swell; a long release makes the tail.",
+                ],
+            ),
+            (
+                "reverb1",
+                &[
+                    "Listen after the note: a long, soft hall carries it on.",
+                    "Switch the reverb on with a long decay, and keep the wet level moderate.",
+                ],
+            ),
         ],
     },
     Study {
@@ -124,13 +213,55 @@ const STUDIES: [Study; 6] = [
             ("reverb1", "the hall"),
         ],
         hints: &[
-            ("noise1", &["Listen for air around the tone, like breath across a flute.", "Switch the noise on and mix it in fairly high: the filter keeps it soft."]),
-            ("osc1", &["Listen to the tone under the breath: is it buzzy, or soft and hollow?", "A triangle wave has far fewer harmonics than a saw."]),
-            ("filter1", &["Listen to the top of the breath: how much hiss is left?", "The cutoff trims the breath noise; keep the resonance low."]),
-            ("env1", &["Listen to the start of each note: does it speak at once, or swell in like a breath?", "The attack sets the swell; the release how long the note lingers."]),
-            ("lfo1 -> osc1.fine", &["Listen to the pitch while the note holds: a gentle, regular waver.", "Route an LFO at about five cycles a second to the oscillator's fine tune, and keep it shallow."]),
-            ("voice", &["The second note starts before the first lets go: does it slide there, or start again?", "Legato keeps one voice playing; a short glide makes the slide."]),
-            ("reverb1", &["Listen after each note: a soft hall follows it.", "Switch the reverb on and keep its wet level low."]),
+            (
+                "noise1",
+                &[
+                    "Listen for air around the tone, like breath across a flute.",
+                    "Switch the noise on and mix it in fairly high: the filter keeps it soft.",
+                ],
+            ),
+            (
+                "osc1",
+                &[
+                    "Listen to the tone under the breath: is it buzzy, or soft and hollow?",
+                    "A triangle wave has far fewer harmonics than a saw.",
+                ],
+            ),
+            (
+                "filter1",
+                &[
+                    "Listen to the top of the breath: how much hiss is left?",
+                    "The cutoff trims the breath noise; keep the resonance low.",
+                ],
+            ),
+            (
+                "env1",
+                &[
+                    "Listen to the start of each note: does it speak at once, or swell in like a breath?",
+                    "The attack sets the swell; the release how long the note lingers.",
+                ],
+            ),
+            (
+                "lfo1 -> osc1.fine",
+                &[
+                    "Listen to the pitch while the note holds: a gentle, regular waver.",
+                    "Route an LFO at about five cycles a second to the oscillator's fine tune, and keep it shallow.",
+                ],
+            ),
+            (
+                "voice",
+                &[
+                    "The second note starts before the first lets go: does it slide there, or start again?",
+                    "Legato keeps one voice playing; a short glide makes the slide.",
+                ],
+            ),
+            (
+                "reverb1",
+                &[
+                    "Listen after each note: a soft hall follows it.",
+                    "Switch the reverb on and keep its wet level low.",
+                ],
+            ),
         ],
     },
     Study {
@@ -145,10 +276,34 @@ const STUDIES: [Study; 6] = [
             ("reverb1", "the room"),
         ],
         hints: &[
-            ("osc1", &["Listen to the tone: a pure, round sine, not a buzzy saw.", "Pick the sine wave, and make every note start at the same point of the wave."]),
-            ("env1", &["Listen to how long the thump lasts: a short body, then nothing.", "With the sustain at 0 the decay alone sets how long it lasts."]),
-            ("env2 -> osc1.semi", &["Listen to the very start: the pitch falls from high to low in a flash.", "Route envelope 2 to the oscillator's pitch with a large depth and a very short decay."]),
-            ("reverb1", &["Listen after the hit: a faint, short room.", "Switch the reverb on and keep it very quiet."]),
+            (
+                "osc1",
+                &[
+                    "Listen to the tone: a pure, round sine, not a buzzy saw.",
+                    "Pick the sine wave, and make every note start at the same point of the wave.",
+                ],
+            ),
+            (
+                "env1",
+                &[
+                    "Listen to how long the thump lasts: a short body, then nothing.",
+                    "With the sustain at 0 the decay alone sets how long it lasts.",
+                ],
+            ),
+            (
+                "env2 -> osc1.semi",
+                &[
+                    "Listen to the very start: the pitch falls from high to low in a flash.",
+                    "Route envelope 2 to the oscillator's pitch with a large depth and a very short decay.",
+                ],
+            ),
+            (
+                "reverb1",
+                &[
+                    "Listen after the hit: a faint, short room.",
+                    "Switch the reverb on and keep it very quiet.",
+                ],
+            ),
         ],
     },
     Study {
@@ -163,10 +318,34 @@ const STUDIES: [Study; 6] = [
             ("reverb1", "the hall"),
         ],
         hints: &[
-            ("filter1", &["Listen to which part of the noise is left: a band in the middle, with a whistle in it.", "Switch the filter to band-pass, set the band and add some resonance."]),
-            ("env1", &["Listen to how slowly the wind rises and how long it fades.", "A long attack and a long release make the gust."]),
-            ("lfo1 -> filter1.cutoff", &["Listen to the band while it holds: does it drift up and down slowly?", "Route an LFO slower than once a second to the cutoff."]),
-            ("reverb1", &["Listen after the note: a long hall carries the wind on.", "Switch the reverb on with a long decay."]),
+            (
+                "filter1",
+                &[
+                    "Listen to which part of the noise is left: a band in the middle, with a whistle in it.",
+                    "Switch the filter to band-pass, set the band and add some resonance.",
+                ],
+            ),
+            (
+                "env1",
+                &[
+                    "Listen to how slowly the wind rises and how long it fades.",
+                    "A long attack and a long release make the gust.",
+                ],
+            ),
+            (
+                "lfo1 -> filter1.cutoff",
+                &[
+                    "Listen to the band while it holds: does it drift up and down slowly?",
+                    "Route an LFO slower than once a second to the cutoff.",
+                ],
+            ),
+            (
+                "reverb1",
+                &[
+                    "Listen after the note: a long hall carries the wind on.",
+                    "Switch the reverb on with a long decay.",
+                ],
+            ),
         ],
     },
 ];
@@ -182,13 +361,16 @@ pub fn run(args: &[String]) -> Result<(), String> {
 
 /// The repository root: the nearest ancestor of the working directory with `xtask/layers.toml`.
 fn repo_root() -> Result<PathBuf, String> {
-    let mut dir = std::env::current_dir().map_err(|e| format!("cannot read the working directory: {e}"))?;
+    let mut dir =
+        std::env::current_dir().map_err(|e| format!("cannot read the working directory: {e}"))?;
     loop {
         if dir.join("xtask/layers.toml").is_file() {
             return Ok(dir);
         }
         if !dir.pop() {
-            return Err("run it inside the enth repository (no xtask/layers.toml above here)".to_owned());
+            return Err(
+                "run it inside the enth repository (no xtask/layers.toml above here)".to_owned(),
+            );
         }
     }
 }
@@ -221,7 +403,11 @@ fn deconstruct(args: &[String]) -> Result<(), String> {
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        let mut value = |name: &str| it.next().cloned().ok_or_else(|| format!("{name} needs a value\n{USAGE}"));
+        let mut value = |name: &str| {
+            it.next()
+                .cloned()
+                .ok_or_else(|| format!("{name} needs a value\n{USAGE}"))
+        };
         match a.as_str() {
             "--pack" => pack = Some(PathBuf::from(value("--pack")?)),
             "--id" => id = Some(value("--id")?),
@@ -255,7 +441,13 @@ fn deconstruct(args: &[String]) -> Result<(), String> {
         Some(p) => p,
         None => repo_root()?.join("content/lessons/studies"),
     };
-    let reports = vec![one(&patch, &preset_path.display().to_string(), &opts, &pack, &flags)?];
+    let reports = vec![one(
+        &patch,
+        &preset_path.display().to_string(),
+        &opts,
+        &pack,
+        &flags,
+    )?];
     write_report(&flags, &reports)
 }
 
@@ -279,16 +471,23 @@ fn studies(args: &[String]) -> Result<(), String> {
     let root = repo_root()?;
     let pack = root.join("content/lessons/studies");
     let mut reports = Vec::new();
-    for s in STUDIES.iter().filter(|s| only.as_deref().is_none_or(|o| o == s.id)) {
+    for s in STUDIES
+        .iter()
+        .filter(|s| only.as_deref().is_none_or(|o| o == s.id))
+    {
         let patch = load_preset(&root.join(s.preset))?;
         let mut opts = Options::for_preset(&patch);
         opts.lesson = LessonId::new(s.id)?;
-        opts.prefix = s.id.to_owned();
-        opts.title = s.title.to_owned();
+        s.id.clone_into(&mut opts.prefix);
+        s.title.clone_into(&mut opts.title);
         opts.objective = Some(s.objective.to_owned());
         opts.tier = Tier::Intermediate;
-        opts.tag = "studies".to_owned();
-        opts.labels = s.labels.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        "studies".clone_into(&mut opts.tag);
+        opts.labels = s
+            .labels
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
         opts.hints = s
             .hints
             .iter()
@@ -315,17 +514,26 @@ fn unreachable_rounds(g: &Generated) -> Result<Vec<String>, String> {
     use enth_solver::closest::{ClosestCfg, ClosestJob, RoundSerial, closest_with};
     let mut out = Vec::new();
     for step in &g.lesson.steps {
-        let StepKind::Recreate { challenge, .. } = &step.kind else { continue };
-        let round = enth_challenge::prepare_challenge(challenge.as_ref().clone()).map_err(|e| e.to_string())?;
+        let StepKind::Recreate { challenge, .. } = &step.kind else {
+            continue;
+        };
+        let round = enth_challenge::prepare_challenge(challenge.as_ref().clone())
+            .map_err(|e| e.to_string())?;
         let c = &challenge.constraints;
         let params_of = |sel: &Selector| -> Vec<ParamAddr> {
             let of_target = |t: &Target| -> Vec<ParamAddr> {
                 let specs = match t {
-                    Target::Module(id) => round.start().find(id).map_or(&[][..], |(_, m)| m.kind.params()),
+                    Target::Module(id) => round
+                        .start()
+                        .find(id)
+                        .map_or(&[][..], |(_, m)| m.kind.params()),
                     Target::Voice => Builtin::Voice.params(),
                     Target::Master => Builtin::Master.params(),
                 };
-                specs.iter().filter_map(|sp| ParamAddr::new(t.clone(), sp.key).ok()).collect()
+                specs
+                    .iter()
+                    .filter_map(|sp| ParamAddr::new(t.clone(), sp.key).ok())
+                    .collect()
             };
             match sel {
                 Selector::Param(a) => vec![a.clone()],
@@ -342,8 +550,13 @@ fn unreachable_rounds(g: &Generated) -> Result<Vec<String>, String> {
             free: &free,
             budget: CLOSEST_BUDGET,
         };
-        let found = closest_with(&job, &mut RoundSerial::new(), &ClosestCfg::default(), &mut |p| p.passing.is_none())
-            .map_err(|e| e.to_string())?;
+        let found = closest_with(
+            &job,
+            &mut RoundSerial::new(),
+            &ClosestCfg::default(),
+            &mut |p| p.passing.is_none(),
+        )
+        .map_err(|e| e.to_string())?;
         if !found.passed {
             println!(
                 "  {}: closest reaches {:.1} % within {CLOSEST_BUDGET} renders over {} parameter(s): taught as a Do step",
@@ -361,11 +574,18 @@ fn unreachable_rounds(g: &Generated) -> Result<Vec<String>, String> {
 
 /// Generate, write and report one lesson; the JSON report with the wall time. A round `closest` cannot pass is
 /// regenerated as a Do step (at most a few times: each pass only adds elements).
-fn one(patch: &enth_patch::Patch, source: &str, opts: &Options, pack: &Path, flags: &Flags) -> Result<String, String> {
+fn one(
+    patch: &enth_patch::Patch,
+    source: &str,
+    opts: &Options,
+    pack: &Path,
+    flags: &Flags,
+) -> Result<String, String> {
     let started = Instant::now();
     let mut opts = opts.clone();
     let g = loop {
-        let g = generate(patch, &opts).map_err(|e| format!("{source}: {e} ({}; {})", e.code(), e.hint()))?;
+        let g = generate(patch, &opts)
+            .map_err(|e| format!("{source}: {e} ({}; {})", e.code(), e.hint()))?;
         let bad = unreachable_rounds(&g)?;
         if bad.is_empty() || bad.iter().all(|b| opts.no_round.contains(b)) {
             break g;
@@ -389,7 +609,11 @@ fn one(patch: &enth_patch::Patch, source: &str, opts: &Options, pack: &Path, fla
         );
     }
     if let Some((opts_, answer, closest)) = &g.report.missing {
-        println!("  what disappeared: {} (answer {}), closest pair {closest:.2} JND", opts_.join(" | "), answer + 1);
+        println!(
+            "  what disappeared: {} (answer {}), closest pair {closest:.2} JND",
+            opts_.join(" | "),
+            answer + 1
+        );
     }
     if let Some(items) = &g.report.variation {
         println!("  variation: {}", items.join(", "));
@@ -416,14 +640,21 @@ fn one(patch: &enth_patch::Patch, source: &str, opts: &Options, pack: &Path, fla
 
 fn write_report(flags: &Flags, reports: &[String]) -> Result<(), String> {
     if let Some(path) = &flags.report {
-        fs::write(path, format!("[{}]\n", reports.join(",\n"))).map_err(|e| format!("{}: {e}", path.display()))?;
+        fs::write(path, format!("[{}]\n", reports.join(",\n")))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(())
 }
 
 /// Write `lessons/<id>/lesson.toml`, its texts (an existing one is kept unless `force_text`) and its patches, after
 /// checking the TOML reads back as the generated lesson.
-fn write_lesson(g: &Generated, source: &str, opts: &Options, pack: &Path, force_text: bool) -> Result<(), String> {
+fn write_lesson(
+    g: &Generated,
+    source: &str,
+    opts: &Options,
+    pack: &Path,
+    force_text: bool,
+) -> Result<(), String> {
     let dir = pack.join("lessons").join(opts.lesson.as_str());
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     fs::create_dir_all(pack.join("patches")).map_err(|e| format!("{}: {e}", pack.display()))?;
@@ -446,9 +677,12 @@ fn write_lesson(g: &Generated, source: &str, opts: &Options, pack: &Path, force_
     ];
     header.extend(g.report.lines());
     let toml = lesson_toml(&g.lesson, &header, &g.notes);
-    let back = Lesson::from_toml(&toml).map_err(|e| format!("the generated lesson.toml does not read back: {e}"))?;
+    let back = Lesson::from_toml(&toml)
+        .map_err(|e| format!("the generated lesson.toml does not read back: {e}"))?;
     if back != g.lesson {
-        return Err("the generated lesson.toml reads back as another lesson (a bug in toml_out)".to_owned());
+        return Err(
+            "the generated lesson.toml reads back as another lesson (a bug in toml_out)".to_owned(),
+        );
     }
     write_if_changed(&dir.join("lesson.toml"), toml.as_bytes())?;
     let mut kept = 0;
@@ -463,8 +697,15 @@ fn write_lesson(g: &Generated, source: &str, opts: &Options, pack: &Path, force_
     let named: BTreeSet<&str> = g.texts.keys().map(String::as_str).collect();
     for entry in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
         let path = entry.map_err(|e| e.to_string())?.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
-        if name.ends_with(".md") && !named.contains(name.as_str()) {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_text = Path::new(&name)
+            .extension()
+            .is_some_and(|x| x.eq_ignore_ascii_case("md"));
+        if is_text && !named.contains(name.as_str()) {
             fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("  removed {} (no step names it now)", path.display());
         }
@@ -494,22 +735,33 @@ fn prune_patches(pack: &Path) -> Result<(), String> {
     let lessons = pack.join("lessons");
     for entry in fs::read_dir(&lessons).map_err(|e| format!("{}: {e}", lessons.display()))? {
         let dir = entry.map_err(|e| e.to_string())?.path();
-        let Ok(text) = fs::read_to_string(dir.join("lesson.toml")) else { continue };
+        let Ok(text) = fs::read_to_string(dir.join("lesson.toml")) else {
+            continue;
+        };
         let lesson = Lesson::from_toml(&text).map_err(|e| format!("{}: {e}", dir.display()))?;
         named.extend(lesson.patches().map(|p| p.as_str().to_owned()));
     }
     let dir = pack.join("patches");
-    let mut removed: BTreeMap<String, ()> = BTreeMap::new();
+    let mut removed: BTreeSet<String> = BTreeSet::new();
     for entry in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
         let path = entry.map_err(|e| e.to_string())?.path();
-        let name = format!("patches/{}", path.file_name().and_then(|n| n.to_str()).unwrap_or_default());
+        let name = format!(
+            "patches/{}",
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+        );
         if !named.contains(&name) {
             fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            removed.insert(name, ());
+            removed.insert(name);
         }
     }
     if !removed.is_empty() {
-        println!("removed {} unused patches: {}", removed.len(), removed.keys().cloned().collect::<Vec<_>>().join(", "));
+        println!(
+            "removed {} unused patches: {}",
+            removed.len(),
+            removed.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
     }
     Ok(())
 }
