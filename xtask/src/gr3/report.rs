@@ -57,7 +57,8 @@ pub fn anytime_marks(mode: &str) -> (&'static [f64], &'static str) {
 
 const USAGE: &str =
     "usage: cargo xtask gr3-report [--runs content/gr3/runs.jsonl] [--run RUN | --a RUN --b RUN]
-       [--at 60] [--long-a RUN --long-b RUN] [--long-at 300] [--json]
+       [--at 60] [--long-a RUN --long-b RUN] [--long-at 300]
+       [--rate-from PROBE_RUN [--probe-runs PATH]] [--json]
 With no run named, it lists the runs in the file.";
 
 /// What one target scored at one mark.
@@ -369,7 +370,7 @@ pub fn single(
     runs: &Runs,
     id: &str,
     at: Option<f64>,
-    rate_from: Option<&str>,
+    rate_from: Option<(&Runs, &str)>,
 ) -> Result<(String, Value), String> {
     let run = runs
         .headers
@@ -398,11 +399,11 @@ pub fn single(
                 .unwrap_or("no source given"),
         );
     }
-    if let Some(probe) = rate_from {
+    if let Some((probe_runs, probe)) = rate_from {
         if run.mode == "wall" {
             return Err("--rate-from converts a render-capped run; this one is timed".to_owned());
         }
-        let (rate, locked, n) = probe_rate(runs, probe)?;
+        let (rate, locked, n) = probe_rate(probe_runs, probe)?;
         let secs = equivalence(run)
             .and_then(|e| e.get("seconds").and_then(Value::as_f64))
             .unwrap_or(PRIMARY_AT);
@@ -717,7 +718,7 @@ pub fn gr3_report(args: &[String]) -> Result<(), String> {
                 return Ok(());
             }
             k @ ("--runs" | "--run" | "--a" | "--b" | "--at" | "--long-a" | "--long-b"
-            | "--long-at" | "--rate-from") => {
+            | "--long-at" | "--rate-from" | "--probe-runs") => {
                 let v = args
                     .get(i + 1)
                     .ok_or_else(|| format!("{k} needs a value"))?;
@@ -747,7 +748,16 @@ pub fn gr3_report(args: &[String]) -> Result<(), String> {
             .map_err(|_| format!("--long-at: not a number: {v}"))
     })?;
     let (text, j) = match (kv.get("--run"), kv.get("--a"), kv.get("--b")) {
-        (Some(id), None, None) => single(&runs, id, at, kv.get("--rate-from").map(String::as_str))?,
+        (Some(id), None, None) => {
+            let probe_runs = match kv.get("--probe-runs") {
+                Some(p) => Some(runs::read_runs(Path::new(p))?.0),
+                None => None,
+            };
+            let rate_from = kv
+                .get("--rate-from")
+                .map(|r| (probe_runs.as_ref().unwrap_or(&runs), r.as_str()));
+            single(&runs, id, at, rate_from)?
+        }
         (None, Some(a), Some(b)) => {
             let long = match (kv.get("--long-a"), kv.get("--long-b")) {
                 (Some(x), Some(y)) => Some((x.as_str(), y.as_str(), long_at)),
@@ -917,11 +927,11 @@ mod tests {
         let (out, j) = single(&runs, "c", None, None).unwrap();
         assert!(out.contains("Render-equivalent estimate"), "{out}");
         assert_eq!(j["mark"], json!(4000.0));
-        let (out, j) = single(&runs, "c", None, Some("p")).unwrap();
+        let (out, j) = single(&runs, "c", None, Some((&runs, "p"))).unwrap();
         assert_eq!(j["mark"], json!(3500.0), "{out}");
         assert!(out.contains("3600 renders"), "{out}");
         // A timed run is not converted.
-        assert!(single(&runs, "p", None, Some("p")).is_err());
+        assert!(single(&runs, "p", None, Some((&runs, "p"))).is_err());
     }
 
     #[test]
