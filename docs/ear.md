@@ -6,7 +6,7 @@ R4 trains the ear that sound design needs: which knob moved, how far, where a ba
 
 | Piece | Home | Lane | State |
 | --- | --- | --- | --- |
-| Theory tables, rhythm, ear generator v1 | `enth-music` (L1, new) | MUS; G1–G3 the ladders | Planned (F0e, F1e) |
+| Theory tables, rhythm, ear generator v1 | `enth-music` (L1, new) | MUS; G1–G3 the ladders | MUS built, level 1 of every ladder ([as built](#ear-generator-v1-as-built-lane-mus)); freezes at INT4 (F1e judges the API) |
 | Challenge v3: `Target::Ear`, choice, value and tap answers, ear rendering, timbres, scorers, the ear-challenge code | `enth-challenge` (L4) | CV3 | Planned (F1e; [challenge.md](challenge.md#challenge-v3-planned-lane-cv3-r4)) |
 | The parameter games' items (Spot the change, Dial it in, Ear check) | `enth-challenge` (L4), on v2 draws | CV3; G4 the ladder | Planned |
 | The EQ biquad | `enth-dsp/src/biquad.rs` (L0) | BQ | Planned |
@@ -84,7 +84,7 @@ pub struct Question { timbre: u8, notes: Vec<NoteSpec /* key, vel, start_ms, hol
 pub enum Answer { Choice(u8), Value { key: &'static str, bits: u32 }, Taps(Vec<u32 /* ms */>) }
 ```
 
-A sketch from report 02 §2; the F1e judge fixes the real types.
+A sketch from report 02 §2; the F1e judge fixes the real types. The types as built are in [Ear generator v1, as built](#ear-generator-v1-as-built-lane-mus).
 
 ## The ear generator
 
@@ -94,6 +94,56 @@ A sketch from report 02 §2; the F1e judge fixes the real types.
 - **Answer keys are integer arithmetic**, identical on every platform and engine version; only a generator change moves them, and that is a new frozen version.
 - **Frozen by a golden:** 1,000 specs → a hash, on Linux, Windows and wasm (macOS weekly), like generator v1's. **When it freezes** (this page's default; an open check in [phase-4.md](phase-4.md#open-checks)): at INT4's friend build, the first build that shares ear codes. Until then G1–G3 tune the ladders and update the golden on purpose (the commit names the games and why); after it, a change is ear generator v2.
 - **The parameter games** (Spot the change, Dial it in, Ear check) are not in `enth-music`: they need the catalogue, which is L1 too. Their items are v2 draws built in `enth-challenge`: the game picks the option controls and the one that moves, at the level's distance in parameter steps (design §9's steps: cutoff 2 semitones, times × 1.5, levels 3 dB; generous steps for reverb), in parameter space only, as every generator rule is ([design.md §9](design.md#9-randomizer-and-difficulty)). `ear-check` measures each level's distances with `sound/1` offline; items in its deaf spots are listed as *not measured*.
+
+## Ear generator v1, as built (lane MUS)
+
+Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), with level 1 of every ladder file. Start at `enth_music::ear::EarSpec` and `enth_music::ear::question`. The types are proposals for the F1e judge; the rest is frozen from INT4's friend build.
+
+**Games and ids.** One numbering for every ear game, so a spec names its game with one byte. The parameter games are generated in `enth-challenge` (they need the catalogue), and this crate refuses their ids.
+
+| Id | Game | Generated in | Ladder file | Answer | Levels built |
+| --- | --- | --- | --- | --- | --- |
+| 1, 2, 3 | Spot the change, Dial it in, Ear check | `enth-challenge` (CV3; G4 the ladder) | — | — | refused here (`UnknownGame`) |
+| 4 | Frequency finder | `enth-music` | `ladder::bands` (G3) | a choice of band centre | 1 |
+| 5 | Interval stacks | `enth-music` | `ladder::intervals` (G1) | a choice of interval | 1 |
+| 6 | Chord quality | `enth-music` | `ladder::chords` (G2) | a choice of quality | 1 |
+| 7 | Rhythm pattern | `enth-music` | `ladder::rhythm` (G2) | a choice of one of four patterns | 1 |
+| 8 | Progressions (R4b) | `enth-music` | `ladder::progressions` (G2) | a choice of progression | 1 |
+| 9 | Note naming (R4b, opt-in) | `enth-music` | `ladder::pitch` (G1) | a choice of pitch class | 1 |
+| 10 | Tap back (R4b, after the TAP spike) | `enth-music` | `ladder::taps` (TAP) | tap times | 1 |
+
+**The spec.** `{"game":5,"generator":1,"level":1,"seed":42,"count":20}`: unsigned integers in this order, unknown fields refused. `EarSpec::validate` accepts a generator from 1 to the build's latest (1), a music game, a level from 1 to the game's `max_level()` (at most 15), a seed below 2^53 and a count of 1 to 64; each refusal is a distinct `EarError`, and a build maps any of them to "update enth".
+
+**The question.** `Question { timbre, notes, length_ms, post, answer, options }`, all integers:
+
+| Field | Form |
+| --- | --- |
+| `timbre` | An id into `enth-challenge`'s frozen pool `timbres-v1` (0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad, 5 noise-burst click), and **6, sustained pink noise, which level 1 of Frequency finder needs and the pool must add** (append-only) |
+| `notes` | `NoteSpec { key, velocity, start_ms, hold_ms }`, the same four integers as the challenge crate's `PhraseNote`, so a question becomes a phrase one to one. Keys C1 to C7 (24 to 96, C4 = 60), velocities 1 to 127 |
+| `length_ms` | The last note-off plus a 1 s release tail, at most 10,000 |
+| `post` | An optional `EqBand { kind, freq_hz, gain_cdb, q_milli }`: `Peak`, `LowShelf`, `HighShelf` (the biquad) or `BandPass` (the synth's svf band-pass, Frequency finder's level 1) |
+| `answer` | `Choice(index into options)` or `Taps { onsets_ms, window_ms }` (onsets from the start of the response bar, strictly increasing). No value answer yet: G3's log-slider level adds it, additively |
+| `options` | `Options { kind, ids }`: what the ids mean (an interval size, a chord index, a pitch class, a band centre in Hz, a 16-bit rhythm mask, a progression index) so labels and skills come from the tables; none for taps |
+
+`Question::validate` checks the invariants: C1 to C7, at most 8 notes sounding at once (half-open intervals, as the phrase facts count), at most 10 s, every note inside the clip, a known timbre, a sane band, and a choice that is one of 2 to 12 distinct options. The proptests run it on every game and level.
+
+**Keyed streams.** Item `i` of a game at level `l` draws from `derive(seed, fnv1a64("<game key>/<i>/<l>"))` with the keys `band`, `interval`, `chord`, `rhythm`, `progression`, `pitch` and `tap` (`interval/7/1`). `ear::question(game, level, seed, item)` computes any item at any level, which is what a staircase, a replay and an ear duel's fixed ladder (item `i`'s level a function of `i`) need. Each ladder file documents its **draw order**; it is part of the frozen form. Label games list options in ascending order of their id, so buttons keep their places, and the answer's position is uniform (a test checks it, and that every timbre meets every answer). The rhythm patterns are listed in draw order. Review skill keys come from the right answer (`Question::skill()`): `ear.interval.m3`, `ear.chord.min`, `ear.band.1k`, `ear.pitch.cs`, `ear.progression.i-iv-v-i`, `ear.rhythm.pattern`, `ear.rhythm.taps`.
+
+**Level 1 of each ladder**, as G1 to G3 and TAP find it:
+
+| Game | Level 1 |
+| --- | --- |
+| Interval stacks | P1 against P8, harmonic, root C3 to C5, a saw, an organ or a pad, held 2 s. A unison is one note (a stack of two oscillators on one key); an octave is the root and the key 12 above |
+| Chord quality | Major or minor, root position, root C3 to C4, a pad, an organ or a saw, held 2.5 s |
+| Note naming | Two pitch classes a fourth or more apart (circular distance 5 or 6), one note over C3 to B5, four timbres |
+| Frequency finder | The svf band-pass (Q 8) on noise at one of 125, 250, 500, 2,000, 4,000 or 8,000 Hz; two options at least three octaves apart |
+| Progressions | `I-IV-V-I` against `I-V-vi-IV` in any of 12 major keys, four chords of 1.2 s voiced with small moves (root in the bass, three upper voices), a pad or an organ |
+| Rhythm pattern | Four eighth-note patterns (3 to 6 onsets, the downbeat always struck, syncopation 0 or 1, pairwise at least 3 steps apart) at 100 bpm; a bar of clicks, then two bars of the pattern over the clicks, 8.2 s. Mark the answer on the grid with `options.ids[answer]` |
+| Tap back | A pattern of 3 to 5 eighth-note onsets, syncopation 0, after a bar of clicks; the answer is its onset times in one 2.4 s bar |
+
+**The tables** (`theory`, append-only): 13 intervals, 11 chord qualities (triads, sus, sevenths) with inversions, 13 scales, 12 progressions with `voice_progression`, note names with sharps and flats. **The rhythm grid** (`rhythm`): a bar of 16 sixteenths as a `u16` mask, density, swing as an integer percentage, and the Longuet-Higgins and Lee syncopation measure on the metric weights 0, -1, -2, -3, -4 (the sum, over the onsets, of how far the silence after an onset climbs the hierarchy above it; son clave measures 4, rumba clave 5).
+
+**The golden.** `crates/enth-music/tests/golden/ear-v1.txt`, written by `cargo test -p enth-music --test ear_golden -- --ignored regenerate`: 1,000 specs, the `i`-th cycling through every (game, level) pair with a 53-bit seed from a `SplitMix64` stream and a count of 1 to 20 (every tenth 64); each line holds the spec and the first 16 hex digits of the SHA-256 of the canonical bytes of its questions, and the last line the SHA-256 of all 1,000 digests (`all def541eb…`). `golden.yml` runs it on Linux (x86-64 and aarch64), Windows, macOS and under wasmtime (wasm32-wasip1); it was also run natively in debug and release, and on wasm32-wasip1 under node's WASI, with the same hash. **Not yet frozen:** until INT4's friend build a ladder lane that adds or tunes a level regenerates the file on purpose (adding a level changes every line, since the specs cycle through the pairs), and the commit names the games and why.
 
 ## Rendering and playback
 

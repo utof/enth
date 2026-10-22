@@ -14,6 +14,8 @@ name: golden
 # pinned output hashes (`enth-solver --test propose_kernels`, under FTZ off, FTZ only and FTZ+DAZ, or FZ, where the CPU
 # has them), their parity with ONNX Runtime within 1e-5 on committed fixtures (`--test propose_parity`), the features and
 # decoding under FTZ (`--test propose_ftz`) and feature set 1's pins with the kernels' unit tests (`--lib propose::`).
+# R4 lane MUS adds ear generator v1's golden (docs/ear.md, "The ear generator"): 1,000 specs to one hash, integers only, as a
+# test of enth-music (`--test ear_golden`, the file compiled in) on every leg: Linux, Windows, macOS and wasm32-wasip1 under wasmtime.
 
 on:
   push:
@@ -81,6 +83,12 @@ jobs:
         run: cargo test --locked -p enth-golden
       - name: Harness and golden tests, release
         run: cargo test --release --locked -p enth-golden
+      # R4 lane MUS: ear generator v1's golden (1,000 specs to one hash, integers only): the same file on every leg.
+      - name: Ear generator v1's golden, debug and release (lane MUS)
+        shell: bash
+        run: |
+          cargo test --locked -p enth-music --test ear_golden
+          cargo test --release --locked -p enth-music --test ear_golden
       # R3b lane ONX: the model's inference is bit-exact on every platform (Windows here is MSVC).
       - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins (lane ONX)
         shell: bash
@@ -135,6 +143,11 @@ jobs:
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
         run: cargo test --release --locked --target wasm32-wasip1 -p enth-challenge --test ss_determinism
+      # R4 lane MUS: ear generator v1's golden inside wasmtime. The file is compiled in, so no directory is preopened.
+      - name: Ear generator v1's golden inside wasmtime (lane MUS)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-music --test ear_golden
       # R3b lane ONX: the same kernel output hashes and feature pins inside wasmtime (wasm has no FTZ mode), with and
       # without simd128. The fixtures are compiled in, so no directory is preopened.
       - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins inside wasmtime (lane ONX)
@@ -170,6 +183,8 @@ jobs:
       # sound/1 bits too; ebur128's loudness is compared within 1e-6, not pinned.
       - run: cargo test --release --locked -p enth-analysis --test determinism
       - run: cargo test --release --locked -p enth-challenge --test ss_determinism
+      # R4 lane MUS: ear generator v1's golden on arm64.
+      - run: cargo test --release --locked -p enth-music --test ear_golden
       # R3b lane ONX: the kernel output hashes (FZ off and on), ONNX Runtime parity and feature set 1's pins on arm64.
       - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins (lane ONX)
         run: |
