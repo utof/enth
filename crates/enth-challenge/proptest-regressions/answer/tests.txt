@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b56ef35ddfb5d6b51de8c090d51eecaed5d42a602c3c5bdc13e6dead8b9fdb4f # shrinks to challenge = ChallengeCode { spec: RandomSpec { generator: 1, seed: 0, difficulty: 0, amounts: [None, None, None, None, None, None], musical: 100, template: 0 }, form: Short }, salt = 0, edits = [(92, 492879669, 0.0), (20, 657788882, 0.0), (236, 469693721, 0.0), (57, 3398542541, 0.41824228)], personal = true
