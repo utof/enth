@@ -21,7 +21,7 @@ class TrainConfig:
     workers: int = 6
     buffer_shards: int = 4
     prefetch: int = 4
-    train_mel_dtype: str = "f2"  # what the loader ships to the GPU (autocast feeds the first conv f16 anyway)
+    train_mel_dtype: str = "f4"  # what the loader ships to the GPU: f32, as inference sees it ("f2" halves the bytes)
     dev_limit: int | None = None
     dev_batch: int = 512
     epochs: int = 30  # an upper bound; the time budget usually ends the run first
@@ -32,8 +32,11 @@ class TrainConfig:
     weight_decay: float = 0.05
     beta2: float = 0.99
     grad_clip: float = 5.0
-    amp: bool = True  # FP16 autocast + GradScaler (Turing: no BF16)
-    channels_last: bool = True
+    # FP16 autocast + GradScaler. Off by default: on the desktop's GTX 1660 Ti (Turing TU116, no tensor cores) cuDNN's
+    # FP16 convolutions ran this network 2.4x slower than FP32 (848 against 2,029 samples/s, fwd + bwd + AdamW, batch
+    # 256; lane TR's probe, 2026-10-22). Turn it on for a GPU with tensor cores.
+    amp: bool = False
+    channels_last: bool = False  # NCHW measured faster on the same GPU (1,754 against 2,026 samples/s in FP32)
     eval_every_steps: int = 0  # 0: once per epoch
     log_every_steps: int = 50
     stats_shards: int = 64
