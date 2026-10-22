@@ -1,0 +1,10 @@
+title = "Reverb space"
+objective = "Hear a room's size and the wet level."
+
+[[steps]]
+id = "hear"
+kind = "listen"
+
+[[steps]]
+id = "which"
+kind = "choose"

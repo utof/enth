@@ -1,0 +1,120 @@
+# GR2 answers (enth.gr2-answers/1). Fill this in as you go and send it back with your progress file and your round
+# log (gr2-friends.md says where they are). Write only between the quotes; leave anything you skip as "".
+# Rename the file to your id before sending (p2.gr2.toml, p3.gr2.toml, ...). No names, e-mail addresses or anything
+# private: I will call you by the id.
+
+schema = "enth.gr2-answers/1"
+id = "p2"              # your id, from my message
+protocol = "tour"      # "full" if you do the tests too (pre-test, mid-test, post-test), else "tour"
+pre_form = ""          # full protocol only: the form of your pre-test, "A" or "B" (from my message)
+
+[intake]
+years = ""             # years you have made sounds with synths, a number (0 if never)
+synths = ""            # which synths, if any (optional)
+# How sure you are about each family before you start, 1 (new to me) to 5 (confident); 0 = not answered.
+# oscillators: waveform and pitch; sources: a second oscillator, noise, glide; filter: cutoff, resonance, drive;
+# envelopes: attack, decay, sustain, release, an envelope on the filter; modulation: LFOs (vibrato, wobble);
+# effects: reverb and compressor.
+confidence = { oscillators = 0, sources = 0, filter = 0, envelopes = 0, modulation = 0, effects = 0 }
+
+# One block per lesson of the tour, filled right after it:
+#   vote    = "new" (new to me) or "knew" (I knew it)
+#   pace    = "too_easy", "ok" or "too_hard"
+#   learned = what you learned, in one line (optional; a specific thing helps most)
+# Leave `coded` alone: I fill it in when I read your notes.
+
+[[lessons]]   # 1. How a lesson works
+key = "basics/how-a-lesson-works"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 2. Waveforms
+key = "basics/waveforms"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 3. Two oscillators
+key = "basics/two-oscillators"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 4. Noise
+key = "basics/noise"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 5. Low-pass cutoff
+key = "basics/cutoff"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 6. Drive
+key = "basics/drive"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 7. Decay and sustain
+key = "basics/decay-and-sustain"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 8. Routes and depth
+key = "shaping/routes-and-depth"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 9. Vibrato
+key = "shaping/vibrato"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 10. Glide
+key = "shaping/glide"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 11. Reverb space
+key = "space-and-dynamics/reverb-space"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 12. Compressor level
+key = "space-and-dynamics/compressor-level"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[[lessons]]   # 13. Macros
+key = "space-and-dynamics/macros"
+vote = ""
+pace = ""
+learned = ""
+coded = ""
+
+[debrief]
+pace = ""              # the tour as a whole: "too_easy", "ok" or "too_hard"
+# Name up to three things you learned (one line each):
+things = ["", "", ""]

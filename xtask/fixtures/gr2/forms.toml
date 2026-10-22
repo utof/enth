@@ -1,0 +1,70 @@
+# Made-up forms for gr2-report's tests (GR1's short codes stand in for the real long ones).
+schema = "enth.gr2-forms/1"
+time_limit_s = 180
+structure_step = 10
+mid_after = 2
+
+[[families]]
+id = "osc"
+title = "Oscillators"
+lessons = ["basics/waveforms"]
+
+[[families]]
+id = "filter"
+title = "Filter"
+lessons = ["basics/cutoff"]
+
+[[families]]
+id = "fx"
+title = "Effects"
+lessons = ["space/reverb"]
+
+[[items]]
+family = "osc"
+form = "A"
+code = "1040-1000-000Z-9V"
+
+[[items]]
+family = "osc"
+form = "B"
+code = "1040-1000-000Z-AX"
+
+[[items]]
+family = "osc"
+form = "M"
+code = "1040-1000-000Z-BZ"
+
+[[items]]
+family = "osc"
+form = "D"
+code = "1040-1000-000Z-CH"
+
+[[items]]
+family = "filter"
+form = "A"
+code = "1080-1000-000Z-9T"
+
+[[items]]
+family = "filter"
+form = "B"
+code = "1080-1000-000Z-AW"
+
+[[items]]
+family = "filter"
+form = "M"
+code = "1080-1000-000Z-BY"
+
+[[items]]
+family = "fx"
+form = "A"
+code = "10C0-1000-000Z-96"
+
+[[items]]
+family = "fx"
+form = "B"
+code = "10C0-1000-000Z-A0"
+
+[[items]]
+family = "fx"
+form = "M"
+code = "10C0-1000-000Z-B2"

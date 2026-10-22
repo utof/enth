@@ -473,7 +473,7 @@ Glyphs: `STOP` ■ (new, Inter covers it), `PLAY` ▶, `PREVIOUS` ◀, `NEXT` �
 
 **Left for later:**
 
-- Review waits for lane REV.
+- Review waits for lane REV. *(Since built by lane REV: the browser's **Review • N due** plays the weakest due skill's round and is disabled while a lesson is live or before a lesson with a round is passed; [learn.md's Review](learn.md#review-lane-rev), `editor/learn/browser.rs`, snapshot `learn_review.png`.)*
 - A route selector in a link outlines its destination and its source's card, not its matrix cell or route-list row; a macro selector outlines nothing (the macro bar takes no overlay).
 - A Name step on the player's own patch (no start of its own) still carries a full starter over and overflows beside the pane (LUI's report); a content lane can give it a `hide` list or `layout = "focus"`.
 

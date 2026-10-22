@@ -1,0 +1,28 @@
+# Made up for gr2-report's tests: the tour with votes, no tests.
+schema = "enth.gr2-answers/1"
+id = "p3"
+protocol = "tour"
+
+[[lessons]]
+key = "basics/intro"
+vote = "knew"
+
+[[lessons]]
+key = "basics/waveforms"
+vote = "knew"
+pace = "too_easy"
+learned = "Nothing new."
+coded = "none"
+
+[[lessons]]
+key = "basics/cutoff"
+vote = "new"
+pace = "ok"
+learned = "The cutoff."
+
+[[lessons]]
+key = "space/reverb"
+vote = "new"
+pace = "ok"
+learned = "A bigger room makes a longer tail."
+coded = "specific"

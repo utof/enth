@@ -468,6 +468,10 @@ The `enth` field's optional `learn` object holds the in-flight `LessonRef` (pack
 7. **The session refuses stale results itself**, by job id and revision, and the player's own check stays as a second guard.
 8. **A host load other than the same lesson's ends the live lesson without a restore**, like a host load of another round.
 
+### Review (lane REV)
+
+The Review queue's round source is `crates/enth-session/src/review.rs`: `LearnEdit::review_start` plays the queue's head item (a passed lesson's Recreate step with a seeded sibling seed) as a round of origin `review` (`RoundOrigin::Review`, `RoundSource::Challenge`), stashing like a game round and refused while a lesson is live; it refuses a hint before the first submit (`first_try`), and every played round's rings go to the shell as `LearnRequest::Rings` when it closes. The design, the Leitner boxes and the queue are [learn.md's Review](learn.md#review-lane-rev); the tests are `tests/review.rs`.
+
 ## Create (lane SK3, R3)
 
 `enth-session`'s `create` module is the pure side of "create from sound" ([r3.md](r3.md#the-create-view-and-the-session), [phase-3.md](phase-3.md), freeze point F2s). Like `game` and `learn` it does no I/O, spawns no threads and reads no clocks: **the shell runs the job** (decoding, the intake, the portfolio and the K searches, on the plugin's `enth-create` thread and its per-job pool, [plugin.md](plugin.md#create-lane-sk3-r3)) **and posts back**; the session keeps the read model and turns "Use this" into one undo step. The audio thread never touches it.

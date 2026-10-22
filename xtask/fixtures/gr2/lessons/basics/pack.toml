@@ -1,0 +1,9 @@
+# A made-up pack for gr2-report's tests: only the fields gr2-report reads.
+schema = "enth.pack/1"
+id = "basics"
+lessons = ["intro", "waveforms", "cutoff"]
+
+[[tracks]]
+id = "tour"
+title = "The tour"
+lessons = ["basics/intro", "basics/waveforms", "basics/cutoff", "space/reverb"]
