@@ -175,6 +175,20 @@ Per the degradation policy (docs/r3.md, "Yours to decide", proceeded on): codec,
 - `rate` makes the output file's sample rate vary (8-96 kHz); the trainer decides whether to feed that to the features as is or resample back.
 - Tests: `python3 -m unittest discover -s tests -p 'test_augment_*.py'` (a little over half of the suite's time).
 
+## TR: training propose v0
+
+Lane TR (`enth_ml/model/`, `enth_ml/train/`; design and model card in [docs/r3.md](../docs/r3.md), "The model: propose v0"). **numpy and torch, in the `train` dependency group** (`uv sync --group train`; torch 2.14.1 from the PyTorch CUDA 13.2 index on Linux, numpy 2.5; both BSD-3-Clause; the CUDA libraries torch pulls in are NVIDIA's proprietary runtime). Nothing else in `ml/` needs them, and `tests/test_train_*.py` skip without them.
+
+```
+python -m enth_ml.train run --config enth_ml/train/pilot-v0.toml --set 'train_dirs=["RUN"]' --set 'dev_dirs=["DEV"]' --set out=OUT [--resume]
+python -m enth_ml.train cache RUN RUN-f16        # an f16 training cache of a ds1 run (50 KB a sample instead of 99)
+python -m enth_ml.train eval --ckpt OUT/ckpt-best.pt [--mel f2]
+python -m enth_ml.train report OUT              # learning curves, throughput, GPU use as Markdown
+python -m enth_ml.train info RUN [RUN ...]
+```
+
+It reads lane DG's `ds1` shards (`tools/datagen`, `enth-datagen ds1 gen`) and refuses a run whose layout hash, entry names or feature set are not layout 1's and feature set 1's, or a dev set from the training stream. Each run directory gets `run.json` (commit, `uv.lock` and data manifests' SHA-256, environment, config, model size), `metrics.jsonl`, `gpu.csv` (`nvidia-smi` every 5 s), `ckpt-last.pt` and `ckpt-best.pt`. Logs stay local. On the training desktop (WSL2, no C compiler) `TORCH_DISABLE_NATIVE_JIT=1` is set by the command line, since torch's Triton kernels need a compiler.
+
 ## The ML rules
 
 From [docs/phase-3.md](../docs/phase-3.md#rules-for-every-lane) ("ML rules" and "Held-out hygiene"); they bind every lane that writes here.
