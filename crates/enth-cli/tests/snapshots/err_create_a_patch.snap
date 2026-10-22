@@ -9,7 +9,7 @@ exit: 3
   "error": "unknown_format",
   "exit": 3,
   "file": "[TMP]/p.patch.json",
-  "hint": "`enth create` takes a recording (WAV, FLAC, Ogg Vorbis or MP3); to search for a patch that matches another patch, use `enth match --target PATCH`",
+  "hint": "`enth create` takes a recording (WAV, AIFF, FLAC, Ogg Vorbis or MP3); to search for a patch that matches another patch, use `enth match --target PATCH`",
   "message": "[TMP]/p.patch.json is JSON, not a sound file",
   "schema": "enth.error/1"
 }

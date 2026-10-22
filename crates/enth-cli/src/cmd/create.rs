@@ -10,9 +10,10 @@
 //!
 //! "Create from sound" for agents and GR3 (docs/r3.md, "`enth create`"):
 //!
-//! 1. **Decode** the file: WAV (`hound`), FLAC (`claxon`), Ogg Vorbis (`lewton`), MP3 (`nanomp3`), through the same
-//!    decoder file as the plugin (`enth-plugin/src/create/decode.rs`, included by path), so both shells get the same
-//!    bits; 192 kHz and above are decimated exactly 2:1. `symphonia` (MPL-2.0) waits for the owner's OK.
+//! 1. **Decode** the file: WAV (`hound`), AIFF and AIFF-C (our own reader), FLAC (`claxon`), Ogg Vorbis (`lewton`),
+//!    MP3 (`nanomp3`), through the same decoder file as the plugin (`enth-plugin/src/create/decode.rs`, included by
+//!    path), so both shells get the same bits; 192 kHz and above are decimated exactly 2:1. `symphonia` (MPL-2.0)
+//!    waits for the owner's OK.
 //! 2. **The intake** (`enth_analysis::intake::Intake`, with the decoder's codec hint), then
 //!    `Target::from_intake_scored` (the first `--score-seconds` of the clip, 3 s by default: `create::SCORE_S`);
 //!    `--perf`, `--note`, `--vel` and `--hold` override the key, the velocity and the hold the intake inferred (the
@@ -103,7 +104,7 @@ impl<'a> Objective<'a> {
 /// `enth create`'s arguments.
 #[derive(Clone, Debug, PartialEq, clap::Args)]
 pub struct Args {
-    /// The sound: a WAV, FLAC, Ogg Vorbis or MP3 file (192 kHz and above are decimated 2:1).
+    /// The sound: a WAV, AIFF, FLAC, Ogg Vorbis or MP3 file (192 kHz and above are decimated 2:1).
     #[arg(long, value_name = "FILE")]
     pub target: PathBuf,
     /// K: the candidates refined at once (1 to 16). Fewer come back when the portfolio holds fewer starts (the
@@ -318,7 +319,7 @@ fn from_decode(path: &Path, e: &decode::DecodeError, cap: f64) -> CliError {
         "unknown_format" if looks_like_json(path) => error::invalid(
             e.code,
             format!("{shown} is JSON, not a sound file"),
-            "`enth create` takes a recording (WAV, FLAC, Ogg Vorbis or MP3); to search for a patch that matches another patch, use `enth match --target PATCH`",
+            "`enth create` takes a recording (WAV, AIFF, FLAC, Ogg Vorbis or MP3); to search for a patch that matches another patch, use `enth match --target PATCH`",
         )
         .in_file(&shown),
         code => error::invalid(code, e.message.clone(), e.hint.clone()).in_file(&shown),

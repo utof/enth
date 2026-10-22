@@ -344,6 +344,63 @@ fn flac_ogg_and_mp3_read_through_the_plugins_decoder() {
     }
 }
 
+/// `tone.wav`'s 16-bit samples rewritten as an AIFF (big-endian; lane `INTa`, so no AIFF fixture is committed).
+fn tone_aiff(s: &Scratch) -> String {
+    let wav = std::fs::read(fixture("tone.wav")).unwrap();
+    let at = wav.windows(4).position(|w| w == b"data").unwrap();
+    let len = u32::from_le_bytes(wav[at + 4..at + 8].try_into().unwrap()) as usize;
+    let pcm = &wav[at + 8..at + 8 + len];
+    let frames = (pcm.len() / 2) as u32;
+    let mut comm = 1i16.to_be_bytes().to_vec();
+    comm.extend_from_slice(&frames.to_be_bytes());
+    comm.extend_from_slice(&16i16.to_be_bytes());
+    comm.extend_from_slice(&[0x40, 0x0E, 0xBB, 0x80, 0, 0, 0, 0, 0, 0]); // 48,000 Hz, 80-bit extended
+    let mut ssnd = vec![0u8; 8];
+    for [lo, hi] in pcm.as_chunks::<2>().0 {
+        ssnd.extend_from_slice(&[*hi, *lo]);
+    }
+    let mut body = Vec::new();
+    for (id, b) in [(b"COMM", &comm), (b"SSND", &ssnd)] {
+        body.extend_from_slice(id);
+        body.extend_from_slice(&(b.len() as u32).to_be_bytes());
+        body.extend_from_slice(b);
+    }
+    let mut file = b"FORM".to_vec();
+    file.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
+    file.extend_from_slice(b"AIFF");
+    file.extend_from_slice(&body);
+    let to = s.path("tone.aiff");
+    std::fs::write(&to, file).unwrap();
+    to
+}
+
+#[test]
+fn an_aiff_reads_as_the_same_clip_as_its_wav() {
+    let s = Scratch::new("create_aiff");
+    let go = |target: &str| {
+        let o = run(&[
+            "create",
+            "--target",
+            target,
+            "--candidates",
+            "2",
+            "--budget",
+            "12",
+        ]);
+        assert_eq!(o.code, 0, "{target}: {}", o.stdout);
+        json(&o)
+    };
+    let wav = go(&tone(&s));
+    let aiff = go(&tone_aiff(&s));
+    assert_eq!(aiff["decoded"], "AIFF, 16-bit, 48000 Hz, mono");
+    assert_eq!(aiff["intake"]["cfg"]["codec"]["lossy"], false);
+    assert_eq!(
+        aiff["input"]["audio_sha256"], wav["input"]["audio_sha256"],
+        "the same samples, so the same scored clip"
+    );
+    assert_eq!(timeless(&aiff)["candidates"], timeless(&wav)["candidates"]);
+}
+
 #[test]
 fn the_flags_override_the_inferred_key_velocity_and_hold() {
     let s = Scratch::new("create_perf");

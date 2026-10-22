@@ -13,7 +13,7 @@ Options:
           - table: Tables for people (the default on a terminal)
 
       --target <FILE>
-          The sound: a WAV, FLAC, Ogg Vorbis or MP3 file (192 kHz and above are decimated 2:1)
+          The sound: a WAV, AIFF, FLAC, Ogg Vorbis or MP3 file (192 kHz and above are decimated 2:1)
 
       --candidates <K>
           K: the candidates refined at once (1 to 16). Fewer come back when the portfolio holds fewer starts (the heuristic and the templates are 4; `--bank` adds up to 16 neighbours)

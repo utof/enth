@@ -112,6 +112,82 @@ fn the_decoded_bits_are_pinned_on_this_machine() {
     }
 }
 
+/// `tone.wav`'s samples as an AIFF (`sowt`: an AIFF-C with little-endian samples), written in the test (lane `INTa`):
+/// the repository commits no AIFF fixture.
+fn tone_as_aiff(path: &Path, sowt: bool) {
+    let mut r = hound::WavReader::open(fixture("tone.wav")).unwrap();
+    let spec = r.spec();
+    assert_eq!((spec.channels, spec.bits_per_sample), (1, 16));
+    let samples: Vec<i16> = r.samples::<i16>().map(Result::unwrap).collect();
+    let chunk = |id: &[u8; 4], body: &[u8]| -> Vec<u8> {
+        let mut c = id.to_vec();
+        c.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        c.extend_from_slice(body);
+        if body.len() % 2 == 1 {
+            c.push(0);
+        }
+        c
+    };
+    // 48,000 Hz as an 80-bit extended number.
+    let rate = [0x40, 0x0E, 0xBB, 0x80, 0, 0, 0, 0, 0, 0];
+    let mut comm = 1i16.to_be_bytes().to_vec();
+    comm.extend_from_slice(&(samples.len() as u32).to_be_bytes());
+    comm.extend_from_slice(&16i16.to_be_bytes());
+    comm.extend_from_slice(&rate);
+    if sowt {
+        comm.extend_from_slice(b"sowt\x00\x00");
+    }
+    let mut ssnd = vec![0u8; 8];
+    for s in &samples {
+        ssnd.extend_from_slice(&if sowt {
+            s.to_le_bytes()
+        } else {
+            s.to_be_bytes()
+        });
+    }
+    let body = [
+        chunk(b"COMM", &comm),
+        chunk(b"ANNO", b"enth test"),
+        chunk(b"SSND", &ssnd),
+    ]
+    .concat();
+    let mut file = b"FORM".to_vec();
+    file.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
+    file.extend_from_slice(if sowt { b"AIFC" } else { b"AIFF" });
+    file.extend_from_slice(&body);
+    std::fs::write(path, file).unwrap();
+}
+
+#[test]
+fn aiff_and_aiff_c_decode_to_exactly_the_wavs_samples() {
+    let wav = decode::decode_path(&fixture("tone.wav"), &never).unwrap();
+    for (name, sowt) in [("tone.aiff", false), ("tone-sowt.aifc", true)] {
+        let path = scratch(name);
+        tone_as_aiff(&path, sowt);
+        let d = decode::decode_path(&path, &never).unwrap();
+        assert_eq!(d.interleaved, wav.interleaved, "{name}: the WAV's samples");
+        assert_eq!(
+            (d.format, d.channels, d.sample_rate, d.bits),
+            (Format::Aiff, 1, 48_000, Some(16))
+        );
+        assert_eq!(d.describe(), "AIFF, 16-bit, 48000 Hz, mono");
+        assert_eq!(d.codec.codec, Codec::Pcm);
+        assert!(!d.codec.lossy);
+        let it = Intake::with_cfg(
+            &d.interleaved,
+            d.channels,
+            d.sample_rate,
+            &IntakeCfg {
+                codec: Some(d.codec),
+                ..IntakeCfg::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(it.report.perf.key, 57, "{name}: A3");
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 fn write_wav(path: &Path, rate: u32, bits: u16, float: bool, seconds: f64) {
     let spec = hound::WavSpec {
         channels: 2,

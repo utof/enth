@@ -9,7 +9,7 @@ exit: 3
   "error": "unknown_format",
   "exit": 3,
   "file": "[TMP]/junk.wav",
-  "hint": "use a WAV, FLAC, Ogg Vorbis or MP3 file (M4A/AAC and AIFF are not read yet)",
+  "hint": "use a WAV, AIFF, FLAC, Ogg Vorbis or MP3 file (M4A/AAC is not read yet)",
   "message": "[TMP]/junk.wav is not a sound file this build reads",
   "schema": "enth.error/1"
 }
