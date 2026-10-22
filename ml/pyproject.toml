@@ -18,6 +18,11 @@ dependencies = []
 
 [dependency-groups]
 dev = []
+parity = [
+    "numpy>=2.2",
+    "onnx==1.23.2",
+    "onnxruntime==1.31.0",
+]
 
 [tool.uv]
 # A set of scripts and packages run from this directory (`uv run python -m enth_ml.<package>`), not a distributable
