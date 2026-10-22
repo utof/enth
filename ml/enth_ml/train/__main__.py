@@ -4,6 +4,7 @@
     python -m enth_ml.train eval --ckpt RUN/ckpt-best.pt [--mel f2] [--dev DIR ...]
     python -m enth_ml.train info DIR [DIR ...]
     python -m enth_ml.train report RUN_DIR [--every N]
+    python -m enth_ml.train cache SRC_RUN_DIR OUT_DIR [--workers N]   # an f16 training cache of a ds1 run
 """
 
 from __future__ import annotations
@@ -50,8 +51,16 @@ def main(argv: list[str] | None = None) -> int:
     rp = sub.add_parser("report", help="a run's learning curves and throughput as Markdown")
     rp.add_argument("run")
     rp.add_argument("--every", default="1")
+    cp = sub.add_parser("cache", help="an f16 training cache of a ds1 run")
+    cp.add_argument("src")
+    cp.add_argument("out")
+    cp.add_argument("--workers", default="8")
     args = ap.parse_args(argv)
 
+    if args.cmd == "cache":
+        from .cache import main as cache_main
+
+        return cache_main([args.src, args.out, "--workers", args.workers])
     if args.cmd == "report":
         from .report import main as report_main
 

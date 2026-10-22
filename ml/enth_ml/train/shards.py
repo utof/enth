@@ -71,7 +71,14 @@ def read_shard(path: pathlib.Path | str, names: tuple[str, ...] | None = None, m
     """The shard's arrays (all, or ``names``), each read with one ``numpy.fromfile`` call.
 
     ``mel_dtype="f2"`` converts ``mel`` to ``float16`` after reading (half the memory; see the model card's note on
-    storage)."""
+    storage). A ``.npz`` path is a TR training cache (``cache.py``): its ``mel`` is stored as ``float16``;
+    ``mel_dtype="f2"`` returns it as stored, the default widens it to ``float32`` (exactly)."""
+    if str(path).endswith(".npz"):
+        with np.load(path) as z:
+            out = {k: z[k] for k in (names or z.files) if k in z.files}
+        if "mel" in out and mel_dtype == "f4":
+            out["mel"] = out["mel"].astype(np.float32)
+        return out
     header = read_header(path)
     out: dict[str, np.ndarray] = {}
     for a in header["arrays"]:

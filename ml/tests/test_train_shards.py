@@ -104,6 +104,26 @@ class Shards(unittest.TestCase):
         with self.assertRaises(LayoutMismatch):
             S.load_run(moved)
 
+    def test_f16_cache_reads_like_the_run(self) -> None:
+        from enth_ml.train import shards as S
+        from enth_ml.train.cache import make_cache
+        from train_support import write_run
+
+        src = write_run(self.np, self.dir / "src", "r3/train", 3, 4, 1)
+        r = make_cache(src, self.dir / "cache", workers=2)
+        self.assertEqual(r["converted"], 3)
+        a = S.open_dataset([src])
+        b = S.open_dataset([self.dir / "cache"])
+        self.assertEqual(a.n, b.n)
+        self.assertEqual(b.runs[0].manifest["tr_cache"]["source_manifest_sha256"], a.runs[0].manifest_sha256)
+        x = S.read_shard(a.shards[1][0])
+        y = S.read_shard(b.shards[1][0], mel_dtype="f2")
+        self.assertEqual(y["mel"].dtype, self.np.float16)
+        self.np.testing.assert_array_equal(y["mel"], x["mel"].astype(self.np.float16))
+        self.np.testing.assert_array_equal(y["label"], x["label"])
+        self.assertEqual(S.read_shard(b.shards[0][0], mel_dtype="f4")["mel"].dtype, self.np.float32)
+        self.assertEqual(make_cache(src, self.dir / "cache", workers=2)["converted"], 0, "a rerun skips what is there")
+
     def test_streams_must_differ(self) -> None:
         from enth_ml.train import shards as S
         from train_support import write_run
