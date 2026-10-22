@@ -16,14 +16,15 @@
 //! - `run` runs the model on a synthetic input (`--seed`, a comma-separated list for a batch; else the model's
 //!   `parity.seeds` or `parity.seed` info entry, else 0) or on `--inputs` (`mel` and `context` in a raw tensor file:
 //!   `[3, 128, 64]` and `[5]` for one sample, `[N, 3, 128, 64]` and `[N, 5]` for a batch, whose outputs gain a leading
-//!   `N`), prints each output and the outputs' SHA-256 (what an output golden pins), and with `--expected` the largest
-//!   absolute difference per output against a raw tensor file (ONNX Runtime's, from `ml/enth_ml/export/parity.py`, or
-//!   `PyTorch`'s, from `ml/enth_ml/export/propose.py`): exit 1 above `--tolerance` (default 1e-5). `--write` saves our
-//!   outputs as a raw tensor file, so `ml/` can compare them against its own run. `--decode` decodes every hypothesis
-//!   row (`OutputLayout::decode`, under the hearing a create job would have for that sample's `context`, as told and
-//!   with the key shifted by 3) and, with `--expected`, requires the same drops, the same modules, categoricals and
-//!   routes, and values within `--decode-tolerance` (normalised domain, default 1e-4); it also prints how close any
-//!   decision comes to flipping and whether the confidence order agrees.
+//!   `N`), prints each output and the outputs' SHA-256 (what an output golden pins; for a batch of up to 32, every
+//!   sample's), and with `--expected` the largest absolute difference per output against a raw tensor file (ONNX
+//!   Runtime's, from `ml/enth_ml/export/parity.py`, or `PyTorch`'s, from `ml/enth_ml/export/propose.py`): exit 1
+//!   above `--tolerance` (default 1e-5). `--write` saves our outputs as a raw tensor file, so `ml/` can compare them
+//!   against its own run. `--decode` decodes every hypothesis row (`OutputLayout::decode`, under the hearing a create
+//!   job would have for that sample's `context`, as told and with the key shifted by 3) and, with `--expected`,
+//!   requires the same drops, the same modules, categoricals and routes, and values within `--decode-tolerance`
+//!   (normalised domain, default 1e-4); it also prints how close any decision comes to flipping and whether the
+//!   confidence order agrees.
 //! - `bench` builds conv-stack models of about each `--gflop` (default 0.5 and 2, docs/r3.md's targets) and times
 //!   `Net::run` (the median of `--runs`): information only, wall-clock (docs/benchmarks.md: instruction counts are the
 //!   gate). Run it alone on the machine (`flock -x /tmp/enth-quiet.lock`).
@@ -536,10 +537,13 @@ fn run(a: &RunArgs) -> ExitCode {
         );
     }
     if samples.batched {
-        println!(
-            "outputs sha256 of sample 0 {} (hash a --write file for the whole batch)",
-            hex(&runs[0].sha256())
-        );
+        // Up to 32 samples, every sample's output hash (an output golden's lines); more, only the first's.
+        for (i, r) in runs.iter().enumerate().take(32) {
+            println!("sample {i} outputs sha256 {}", hex(&r.sha256()));
+        }
+        if runs.len() > 32 {
+            println!("(hash a --write file for the whole batch)");
+        }
     } else {
         println!("outputs sha256 {}", hex(&runs[0].sha256()));
     }
