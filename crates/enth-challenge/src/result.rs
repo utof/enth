@@ -114,7 +114,7 @@ pub const KINDS: [u8; 5] = [
 pub const LAYOUT_V1: u8 = 1;
 
 /// The most symbols a version-15 code may have (hyphens not counted): far above the longest answer code (an answer that
-/// changes every leaf of the starter is about 700 symbols).
+/// moves every value of the starter and every macro, and switches every module on, is 547 symbols).
 pub const MAX_SYMBOLS: usize = 4096;
 
 /// Symbols in a scorecard with a short challenge, check symbols and code v1's symbol included.

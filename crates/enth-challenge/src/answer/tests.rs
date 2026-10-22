@@ -749,3 +749,51 @@ fn every_answer_goes_through_code_v1s_decoder() {
     assert!(symbols_of(&l5).len() > 64);
     assert_eq!(ChallengeCode::decode(&l5).unwrap_err().code(), "bad_length");
 }
+
+/// The longest answer a recreate round meets: every value of the starter moved by a knob drag (exact, non-round
+/// floats), every macro moved and every module switched. It stays far below [`MAX_SYMBOLS`](crate::result::MAX_SYMBOLS).
+#[test]
+fn an_answer_that_moves_everything_fits() {
+    let c = code(5, 1);
+    let mut p = start();
+    let mut targets: Vec<Target> = vec![Target::Voice, Target::Master];
+    targets.extend(p.modules().map(|(_, m)| Target::Module(m.id.clone())));
+    for target in targets {
+        let specs = match &target {
+            Target::Voice => Builtin::Voice.params(),
+            Target::Master => Builtin::Master.params(),
+            Target::Module(id) => p.find(id).unwrap().1.kind.params(),
+        };
+        for spec in specs {
+            let addr = ParamAddr::new(target.clone(), spec.key).unwrap();
+            let have = p.value(&addr).unwrap();
+            let u = (spec.to_norm(have) + 0.371_234_5).fract();
+            let v = value(spec, u);
+            let _ = apply(&mut p, &Op::SetParam { addr, value: v });
+        }
+    }
+    for i in 0..8 {
+        let index = MacroIndex::new(i).unwrap();
+        apply(
+            &mut p,
+            &Op::SetMacro {
+                index,
+                value: 0.123_457 * (i as f32 + 1.0),
+            },
+        )
+        .unwrap();
+    }
+    for id in ["osc2", "noise1", "comp1", "reverb1"] {
+        let id = ModuleId::new(id).unwrap();
+        apply(&mut p, &Op::SetEnabled { id, enabled: true }).unwrap();
+    }
+    let a = AnswerCode::new(c, 3, &p).unwrap();
+    println!(
+        "every value moved: {} ops, {} symbols",
+        a.ops(),
+        a.symbols()
+    );
+    assert!(a.ops() > 70, "{}", a.ops());
+    assert!(a.symbols() < 600, "{} symbols", a.symbols());
+    assert_eq!(AnswerCode::decode(&a.encode()).unwrap(), a);
+}
