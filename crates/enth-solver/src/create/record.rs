@@ -150,7 +150,9 @@ pub struct SettingsRecord {
 pub struct ModelRecord {
     /// The model's id (the header's; what each start's provenance names).
     pub id: String,
-    /// SHA-256 of the model file.
+    /// The model file's SHA-256 as its header defines it (`ModelPack::sha256`: the whole file with the hash's own 32
+    /// bytes read as zeros), so it differs from `sha256sum` of the file (the pilot's are `75bbf2fc…` and
+    /// `703aa45f…`).
     pub sha256: String,
     /// `ModelInput::sha256`: the model input's hash (feature set 1, computed from the intake before any override);
     /// `null` when the input could not be computed (a silent window), and the model proposed nothing.

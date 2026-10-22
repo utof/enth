@@ -713,7 +713,8 @@ impl Model {
         &self.id
     }
 
-    /// The model file's SHA-256.
+    /// The model file's SHA-256 as its header defines it (`ModelPack::sha256`: its own 32 bytes read as zeros; not
+    /// `sha256sum`'s).
     #[must_use]
     pub fn sha256(&self) -> [u8; 32] {
         self.sha256
