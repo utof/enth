@@ -18,6 +18,7 @@ Standard library only.
 from __future__ import annotations
 
 import fnmatch
+import functools
 import hashlib
 import os
 import re
@@ -127,8 +128,29 @@ class Exclusions:
     entries: tuple[tuple[str, str], ...]
     sha256: str  # of the files, in name order, so a run can record which lists it checked against
 
+    @functools.cached_property
+    def _by_kind(self) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for k, v in self.entries:
+            out.setdefault(k, []).append(v)
+        return out
+
+    @functools.cached_property
+    def _sha_set(self) -> frozenset[str]:
+        return frozenset(self._by_kind.get("audio-sha256", ()))
+
+    @functools.cached_property
+    def _abs_patterns(self) -> tuple[tuple[str, str], ...]:
+        """(pattern as written, expanded pattern) for the path rules that name absolute locations."""
+        out = []
+        for pattern in self._by_kind.get("path", ()):
+            pat = os.path.expanduser(pattern)
+            if not pat.startswith("~") and os.path.isabs(pat):  # repo-relative patterns concern synth files, not audio
+                out.append((pattern, pat.replace("**", "*")))
+        return tuple(out)
+
     def values(self, kind: str) -> list[str]:
-        return [v for k, v in self.entries if k == kind]
+        return list(self._by_kind.get(kind, ()))
 
     def seed_ranges(self) -> list[tuple[int, int]]:
         out = []
@@ -148,21 +170,22 @@ class Exclusions:
         freesound_pack: int | None = None,
         sha256: str | None = None,
         path: str | Path | None = None,
+        resolved: bool = False,
     ) -> str | None:
-        """The first rule an audio file breaks, or None. Pass whatever the source records about the file."""
-        if freesound_id is not None and str(freesound_id) in self.values("freesound-id"):
+        """The first rule an audio file breaks, or None. Pass whatever the source records about the file.
+
+        ``resolved`` says ``path`` is already absolute with symlinks resolved (the store resolves its directory once).
+        """
+        if freesound_id is not None and str(freesound_id) in self._by_kind.get("freesound-id", ()):
             return f"freesound-id {freesound_id}"
-        if freesound_pack is not None and str(freesound_pack) in self.values("freesound-pack"):
+        if freesound_pack is not None and str(freesound_pack) in self._by_kind.get("freesound-pack", ()):
             return f"freesound-pack {freesound_pack}"
-        if sha256 is not None and sha256 in self.values("audio-sha256"):
+        if sha256 is not None and sha256 in self._sha_set:
             return f"audio-sha256 {sha256[:12]}"
-        if path is not None:
-            p = os.path.realpath(os.path.expanduser(str(path)))
-            for pattern in self.values("path"):
-                pat = os.path.expanduser(pattern)
-                if pat.startswith("~") or not os.path.isabs(pat):
-                    continue  # repo-relative patterns (content/gr3/**) concern synth files, not audio
-                if fnmatch.fnmatch(p, pat.replace("**", "*")):
+        if path is not None and self._abs_patterns:
+            p = str(path) if resolved else os.path.realpath(os.path.expanduser(str(path)))
+            for pattern, pat in self._abs_patterns:
+                if fnmatch.fnmatch(p, pat):
                     return f"path {pattern}"
         return None
 
@@ -215,12 +238,15 @@ class SourceStore:
         data_root: str | Path | None = None,
         dirs: Mapping[str, str | Path] | None = None,
         dev_percent: int = DEV_PERCENT,
+        exclusions: Exclusions | None = None,
     ) -> None:
         self.manifest = manifest or load_manifest()
+        self.exclusions = exclusions
         self.data_root = Path(data_root) if data_root is not None else default_data_root(self.manifest)
         self.dirs = {k: Path(v) for k, v in (dirs or {}).items()}
         self.dev_percent = dev_percent
         self._index: dict[str, list[IndexEntry]] = {}
+        self._entries: dict[tuple[str, str], list[IndexEntry]] = {}
 
     def directory(self, ref: str) -> Path:
         if ref in self.dirs:
@@ -254,9 +280,23 @@ class SourceStore:
             return False
 
     def entries(self, ref: str, partition: str = "train") -> list[IndexEntry]:
-        if partition not in ("train", "dev"):
-            raise ValueError("partition is 'train' or 'dev'")
-        return [e for e in self.index(ref) if partition_of(ref, e.relpath, self.dev_percent) == partition]
+        """The files of ``ref`` in ``partition`` (``train``, ``dev`` or ``all``), minus anything GR3 excludes."""
+        if partition not in ("train", "dev", "all"):
+            raise ValueError("partition is 'train', 'dev' or 'all'")
+        key = (ref, partition)
+        if key not in self._entries:
+            out = [
+                e for e in self.index(ref) if partition == "all" or partition_of(ref, e.relpath, self.dev_percent) == partition
+            ]
+            if self.exclusions is not None:
+                base = os.path.realpath(self.directory(ref))  # resolved once: the index holds no symlinks
+                out = [
+                    e
+                    for e in out
+                    if self.exclusions.audio_excluded(sha256=e.sha256, path=f"{base}/{e.relpath}", resolved=True) is None
+                ]
+            self._entries[key] = out
+        return self._entries[key]
 
     def pick(self, ref: str, u: float, partition: str = "train") -> IndexEntry:
         """The file ``u`` in [0, 1) selects among ``ref``'s files of ``partition``."""
@@ -284,4 +324,5 @@ class SourceStore:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(index_text(entries), encoding="utf-8")
         self._index[ref] = entries
+        self._entries = {k: v for k, v in self._entries.items() if k[0] != ref}
         return out, index_digest(entries), len(entries)

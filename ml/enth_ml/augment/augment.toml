@@ -1,0 +1,197 @@
+# The augmentation config (lane AUG, R3b), schema enth.augment-config/1. Data, not code, like DEG's pools.toml: lane TR's
+# runs record this file's SHA-256, and a change to what a stage does bumps `version`.
+#
+# It composes with the degradation chain (ml/enth_ml/degrade): the DEG pool named in `degrade_pool` draws trim and pad,
+# synthetic rooms, device EQ, synthetic noise, hum, dynamics, mono, band limit, codecs and bit depth exactly as
+# `degrade.make_plan` does (its streams are untouched); this file adds what needs recordings or a second clip:
+#
+#   mix_in     a second render, or a real instrument note, under the clip (docs/r3.md stage 1, p 0.15)
+#   rir        a RECORDED or simulated room impulse response, convolved: replaces a share of DEG's active `room` stages
+#              (docs/r3.md stage 3: "a real or synthetic impulse response", the stage's p stays 0.3)
+#   mic        a microphone's colour: proximity, presence, air, before the recorder's own device EQ
+#   bg_noise   a recorded background noise at an SNR: replaces a share of DEG's active `noise` stages (stage 5)
+#   gain       the recording level (gain staging): the clip's peak lands at `peak_dbfs`, so quantisation, codec noise and
+#              the final normalisation's boost act on a quiet or a hot recording
+#   rate       the file's own sample rate (pitch-preserving: the model's bands are in Hz and the product has no resampler)
+#
+# Merged stage order (a real signal path):
+#   mix_in, attack_cut, tail_trunc, lead_pad, room | rir, mic, eq, noise | bg_noise, hum, dynamics, mono, gain,
+#   band_limit, codec, bit_depth, rate, then normalisation to -23 LUFS.
+#
+# Every variant that draws from recordings names its `source`, a reference into manifest.toml ("openslr-28/sim-small").
+# `check_config` refuses a shipped-training config that names anything but a shipped-training source, and a variant whose
+# source is not on disk is left out (the remaining weights renormalise), so this file works with only OpenSLR 28 fetched.
+#
+# Parameters are written as DEG's pools.toml writes them: a constant, [lo, hi], { log = [lo, hi] }, { choice = [...] }.
+# Disjointness from GR3's held-out pool (tests/test_augment_disjoint.py): no stage here draws from a held-out source, the
+# pool is `train`, and each EQ-like variant differs from every held-out variant in a shared numeric parameter.
+
+schema = "enth.augment-config/1"
+version = 1
+name = "train-v1"
+
+[config]
+purpose = "shipped-training"   # shipped-training | research | eval
+degrade_pool = "train"         # shipped-training and research compose with `train`; eval with `heldout`
+
+# docs/r3.md, the degradation policy (summary.md, "Yours to decide"; proceeded on): codec damage, hum, noise, device EQ and
+# the rest are DAMAGE (the label is the clean render's patch). Room reverb and compression are ambiguous (a pad sampled
+# with its reverb is not damaged), so a sample that went through one carries a dry label and a wet candidate for the
+# patch's own reverb or compressor. Only the engine's own effects are ambiguous; limiters and clippers are not engine
+# effects.
+[label_policy]
+version = 1
+dry_and_wet = ["room", "rir", "dynamics/compressor"]
+
+# --------------------------------------------------------------------------------------------------------------------
+# mix_in: p is the chance a non-clean sample gets a second sound. `layer` needs second renders from the caller
+# (`augment_file(..., layers=[...])`); the others read a recorded source.
+# --------------------------------------------------------------------------------------------------------------------
+[stage.mix_in]
+p = 0.15
+[stage.mix_in.variant.layer]
+kind = "layer"
+weight = 0.7
+rel_db = [-20.0, -6.0]       # the second sound's RMS against the clip's
+offset_ms = [0.0, 300.0]     # how late it starts
+[stage.mix_in.variant.note-layer]
+kind = "layer-recorded"
+weight = 0.3
+source = "tinysol"           # real instrument notes (CC BY); NSynth would do the same
+rel_db = [-20.0, -6.0]
+offset_ms = [0.0, 300.0]
+# A music bed at -10 to -25 dB (docs/r3.md) is `kind = "bed"` with a music source; none is shipped-training yet (MUSAN's
+# music waits for the per-file licence audit, manifest.toml), so no bed variant is listed here.
+
+# --------------------------------------------------------------------------------------------------------------------
+# rir: p is the share of DEG's active room stages swapped for one of these. `wet_db` is the reverberant-to-direct energy
+# ratio, as in DEG; the RT60 is whatever the recording has (it is measured and recorded).
+# --------------------------------------------------------------------------------------------------------------------
+[stage.rir]
+p = 0.5
+[stage.rir.variant.sim-small]
+kind = "recorded"
+weight = 1.0
+source = "openslr-28/sim-small"
+wet_db = [-20.0, 0.0]
+[stage.rir.variant.sim-medium]
+kind = "recorded"
+weight = 1.0
+source = "openslr-28/sim-medium"
+wet_db = [-20.0, 0.0]
+[stage.rir.variant.sim-large]
+kind = "recorded"
+weight = 0.7
+source = "openslr-28/sim-large"
+wet_db = [-20.0, 0.0]
+[stage.rir.variant.but-reverbdb]
+kind = "recorded"
+weight = 2.0
+source = "but-reverbdb/rirs"
+wet_db = [-20.0, 0.0]
+
+# --------------------------------------------------------------------------------------------------------------------
+# mic: a microphone's colour. Each variant's highpass lies below 420 Hz, under the held-out phone-speaker (420-800 Hz) and
+# laptop-box (500-900 Hz) EQs, so the numeric check in tests/test_augment_disjoint.py separates them; a feature whose gain
+# range is [0, 0] is off.
+# --------------------------------------------------------------------------------------------------------------------
+[stage.mic]
+p = 0.25
+[stage.mic.variant.condenser]
+kind = "mic-condenser"
+hp_hz = { log = [30.0, 90.0] }
+prox_hz = { log = [100.0, 250.0] }
+prox_db = [0.0, 3.0]
+peak_hz = { log = [3000.0, 8000.0] }
+peak_gain_db = [1.0, 5.0]
+peak_q = [0.7, 1.5]
+air_hz = { log = [8000.0, 12000.0] }
+air_db = [0.0, 4.0]
+lp_hz = { log = [14000.0, 20000.0] }
+[stage.mic.variant.dynamic]
+kind = "mic-dynamic"
+hp_hz = { log = [60.0, 140.0] }
+prox_hz = { log = [100.0, 250.0] }
+prox_db = [2.0, 6.0]
+peak_hz = { log = [4000.0, 6000.0] }
+peak_gain_db = [2.0, 6.0]
+peak_q = [1.0, 2.0]
+air_hz = { log = [8000.0, 12000.0] }
+air_db = [0.0, 0.0]
+lp_hz = { log = [10000.0, 16000.0] }
+[stage.mic.variant.lavalier]
+kind = "mic-lavalier"
+hp_hz = { log = [100.0, 220.0] }
+prox_hz = { log = [150.0, 350.0] }
+prox_db = [-3.0, 0.0]
+peak_hz = { log = [3000.0, 6000.0] }
+peak_gain_db = [3.0, 7.0]
+peak_q = [0.8, 1.5]
+air_hz = { log = [8000.0, 12000.0] }
+air_db = [-3.0, 0.0]
+lp_hz = { log = [9000.0, 13000.0] }
+[stage.mic.variant.electret]
+kind = "mic-electret"
+hp_hz = { log = [150.0, 380.0] }
+prox_hz = { log = [200.0, 400.0] }
+prox_db = [-2.0, 0.0]
+peak_hz = { log = [2500.0, 4500.0] }
+peak_gain_db = [2.0, 6.0]
+peak_q = [1.0, 2.0]
+air_hz = { log = [6000.0, 9000.0] }
+air_db = [-4.0, 0.0]
+lp_hz = { log = [5000.0, 9000.0] }
+
+# --------------------------------------------------------------------------------------------------------------------
+# bg_noise: p is the share of DEG's active noise stages swapped for a recorded noise, at DEG's training SNR range
+# (docs/r3.md stage 5: 15-50 dB against the clip's RMS). The held-out SNRs (5-20 dB) and collections (DEMAND) are
+# not touched.
+# --------------------------------------------------------------------------------------------------------------------
+[stage.bg_noise]
+p = 0.6
+[stage.bg_noise.variant.pointsource]
+kind = "recorded"
+weight = 1.0
+source = "openslr-28/pointsource-noises"
+snr_db = [15.0, 50.0]
+
+# --------------------------------------------------------------------------------------------------------------------
+# gain: the recording level. The clip's peak is set to peak_dbfs before the band limit, the codec and the bit depth.
+# --------------------------------------------------------------------------------------------------------------------
+[stage.gain]
+p = 0.3
+[stage.gain.variant.level]
+kind = "level"
+peak_dbfs = [-45.0, -3.0]
+
+# --------------------------------------------------------------------------------------------------------------------
+# rate: the file's own sample rate (a proper resample, not DEG's down-and-back). A value equal to the clip's rate does
+# nothing and is recorded as skipped. None lies in the held-out band-limit range (4-7 kHz).
+# --------------------------------------------------------------------------------------------------------------------
+[stage.rate]
+p = 0.15
+[stage.rate.variant.native]
+kind = "native-rate"
+sr_hz = { choice = [8000, 11025, 16000, 22050, 32000, 44100, 96000] }
+
+# --------------------------------------------------------------------------------------------------------------------
+# Profiles force stages on (DEG's stages off unless `deg` names a DEG profile of the pool, whose stages are forced as it
+# says). `rir` and `bg_noise` stand for the room and noise slots drawn from recordings. `all` is built in: every DEG stage and every stage here, the recorded room and noise
+# stacked on the synthetic ones.
+# --------------------------------------------------------------------------------------------------------------------
+[profile.layer]
+stages = ["mix_in"]
+[profile.recorded-room]
+stages = ["rir"]
+[profile.recorded-noise]
+stages = ["bg_noise"]
+[profile.mic]
+stages = ["mic"]
+[profile.levels]
+stages = ["gain", "rate"]
+[profile.recorded-room-mp3]
+stages = ["rir"]
+deg = "mp3"
+[profile.recorded-noise-mp3]
+stages = ["bg_noise"]
+deg = "mp3"

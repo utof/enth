@@ -31,6 +31,8 @@ __all__ = [
     "source_block",
     "temp_dir",
     "manifest_text",
+    "config_text",
+    "recorded_stage",
 ]
 
 
@@ -110,3 +112,20 @@ def build_manifest(sources: str, tools: str = "") -> mf.Manifest:
 
 def temp_dir() -> tempfile.TemporaryDirectory:
     return tempfile.TemporaryDirectory(prefix="enth-augment-test-")
+
+
+def recorded_stage(stage: str, ref: str, *, p: float = 1.0, **params: str) -> str:
+    """A ``[stage.<stage>]`` table with one recorded variant drawing from ``ref`` (``bg_noise``, ``rir`` or ``mix_in``)."""
+    extra = {"bg_noise": 'snr_db = [15.0, 50.0]', "rir": 'wet_db = [-20.0, 0.0]', "mix_in": 'rel_db = [-20.0, -6.0]\noffset_ms = [0.0, 100.0]'}[stage]
+    kind = "layer-recorded" if stage == "mix_in" else "recorded"
+    return f'[stage.{stage}]\np = {p}\n[stage.{stage}.variant.v]\nkind = "{kind}"\nsource = "{ref}"\n{extra}\n'
+
+
+def config_text(*, purpose: str = "shipped-training", pool: str | None = None, stages: str = "", extra: str = "",
+                name: str = "t", version: int = 1) -> str:
+    """Augment-config text for a test: the header for ``purpose`` (the pool follows it unless given), ``stages`` and ``extra``."""
+    pool = pool or ("heldout" if purpose == "eval" else "train")
+    return (
+        f'schema = "enth.augment-config/1"\nversion = {version}\nname = "{name}"\n'
+        f'[config]\npurpose = "{purpose}"\ndegrade_pool = "{pool}"\n' + extra + stages
+    )
