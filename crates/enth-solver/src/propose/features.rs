@@ -25,30 +25,46 @@
 //!    (`enth_challenge::loudness`, bit-exact on every platform, as `sound/1` does; `ebur128` is not). A window at
 //!    or below −70 LUFS is [`FeatureError::Silent`].
 //! 3. **Log-mel:** `enth-analysis`'s `FeatureExtractor::extract_unnormalised` on the scalar FFT path at the file's
-//!    own rate: 64 mel bands from 30 Hz to 16 kHz in Hz, at the three resolutions 2048, 1024 and 512 points with a
-//!    hop of half the size (metric v1's).
-//! 4. **The time grid, in seconds:** the FFT sizes are in samples, so frames per second change with the rate (a
-//!    44.1 kHz file would be 9 % slower than a 48 kHz one, a 22.05 kHz file 2.2×). Each resolution's frames are
-//!    read as a piecewise-constant track (frame m holds from half a hop before its centre to half a hop after; the
-//!    first from the window's start, the last to its end), and each of [`FRAMES`] = 128 blocks of 1/64 s takes the
-//!    **overlap-weighted mean of the mel magnitudes** over its span, then the natural log. Sums run in `f64`, in
-//!    frame order, with `libm`'s `exp` and `log`: the same bits on every platform.
+//!    own rate: 64 mel bands from 30 Hz to 16 kHz in Hz, at three resolutions **scaled to the rate**
+//!    (`FeatureCfg::rate_scaled_fft`, the F3s judge's M4): `n = 2 · round(N · sample_rate / 96,000)` points for
+//!    N = 2048, 1024 and 512 (exactly those at 48 kHz; 1882, 940 and 470 at 44.1 kHz; 4096, 2048 and 1024 at
+//!    96 kHz), with a hop of `n / 2`. So the bins are about 23.4 Hz wide and the windows the same length in seconds
+//!    at every rate, and a band's level does not follow the rate: with fixed sizes a noise band read about 0.5
+//!    nepers louder at 16 kHz and 0.35 quieter at 96 kHz than at 48 (the judge's probe), and the model could not
+//!    tell the rate.
+//! 4. **The time grid, in seconds:** frames per second would still follow any rounding of the sizes, and the grid
+//!    keeps the time axis exact. Each resolution's frames are read as a piecewise-constant track (frame m holds from
+//!    half a hop before its centre to half a hop after; the first from the window's start, the last to its end), and
+//!    each of [`FRAMES`] = 128 blocks of 1/64 s takes the **overlap-weighted mean of the mel magnitudes** over its
+//!    span, then the natural log. Sums run in `f64`, in frame order, with `libm`'s `exp` and `log`: the same bits on
+//!    every platform.
 //! 5. **Empty bands:** a band whose upper edge lies above `min(sample_rate / 2, bandwidth_hz)` (the intake's
-//!    detected low-pass, as OBJ's distance and the k-NN embedding mask it) is set to [`masked`] (`ln 1e-5`, the
-//!    floor of a silent band), so a low-rate or band-limited file has exactly empty top bands.
+//!    detected low-pass, as OBJ's distance and the k-NN embedding mask it) is set to [`masked`] (`logf(1e-5)`, the
+//!    analysis's floor of a silent band, bit for bit), so a low-rate or band-limited file has exactly empty top
+//!    bands.
 //!
 //! **`context`:** `[key − 60, pitch offset, pitched, hold, band limit]`:
 //!
 //! | # | Value | Unit |
 //! | --- | --- | --- |
-//! | 0 | the performance's MIDI key − 60 | semitones |
+//! | 0 | the intake's MIDI key − 60 (the key the model is told) | semitones |
 //! | 1 | `12 · log2(f0 / f(key))` when the intake found a pitch, else 0 | semitones (about ±0.5) |
 //! | 2 | 1 when the intake found a pitch, else 0 | — |
 //! | 3 | the note's hold, capped at [`HOLD_CAP_S`] = 4 s | seconds |
 //! | 4 | `log2(min(sample_rate / 2, bandwidth_hz, 16 kHz) / 16 kHz)` | octaves, at most 0 |
 //!
-//! The performance is the one candidates are rendered with (`create::Target::perf`: the intake's, or a `--perf`
-//! override), so the model is pitch-relative as `ds1`'s labels are (`semi` against the detected note).
+//! **The cue is the intake's, never an override** ([`Cue::from_intake`]; the F3s judge's M1): the key, the pitch and
+//! the hold the intake inferred. A `--perf` override changes how a create job renders, not what the model is told;
+//! [`decode`](super::decode) re-keys the hypotheses onto the job's key. The model is pitch-relative, and so are
+//! `ds1`'s labels: `osc1.semi` and `osc2.semi` against the key the intake reads ([`Cue::key`]), and `osc1.fine`
+//! from [`Cue::pitch_offset`] (layout 1's context entry).
+//!
+//! **Determinism.** Every value is the same on every platform and under any FTZ/DAZ setting (`tests/propose_ftz.rs`):
+//! the scalar FFT path, the in-house loudness, `libm`, and no value of `mel` or `context` is subnormal (a log of an
+//! `f64` is 0 or at least about 1e-16 in magnitude). The scalar FFT's own twiddles come from `libm`, but `rustfft`'s
+//! inner transforms take theirs from `std`'s `f64` `cos` and `sin` (as every analysis in `enth-analysis` does), so
+//! `feature_set_1_is_pinned` runs on every CI leg (Linux, Windows, macOS arm64 and wasm32: lane ONX's hash
+//! step).
 //!
 //! A new definition is a new feature id (and a new model): [`LATEST_FEATURE`] grows, old ids stay readable.
 
@@ -56,10 +72,9 @@ use core::fmt;
 
 use enth_analysis::features::{BANDS, FFT_SIZES, FeatureCfg, FeatureExtractor, MEL_RANGE_HZ};
 use enth_analysis::fft::FftPath;
+use enth_analysis::intake::Intake;
 use enth_challenge::loudness;
 use sha2::{Digest, Sha256};
-
-use crate::create::Target;
 
 /// Feature set 1 (see the [module docs](self)).
 pub const FEATURE_V1: u16 = 1;
@@ -139,20 +154,24 @@ pub fn spec(id: u16) -> Option<&'static FeatureSpec> {
     (id == FEATURE_V1).then_some(&SPEC_V1)
 }
 
-/// The value of a masked (empty) band: `ln 1e-5`, the log-mel floor of a silent band.
+/// The value of a masked (empty) band: `logf(1e-5)`, bit for bit the analysis's log-mel of a silent band
+/// (`logf(0 + 1e-5)`), so padded silence and a masked band hold the same value.
 #[must_use]
 pub fn masked() -> f32 {
-    libm::log(1e-5) as f32
+    libm::logf(1e-5)
 }
 
-/// What the model is told besides the audio: the performance candidates are rendered with and the detected
-/// bandwidth (see the [module docs](self)).
+/// What the model is told besides the audio: the intake's inferred performance and detected bandwidth (see the
+/// [module docs](self)). Always the intake's ([`Cue::from_intake`]), never a `--perf` override: labels are relative
+/// to this key (the F3s judge's M1).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cue {
-    /// The MIDI key played.
+    /// The MIDI key the intake reads (the nearest note to its pitch; 48 when unpitched): the key the model is told.
     pub key: u8,
     /// The intake's pitch reading, when the clip is pitched.
     pub f0_hz: Option<f64>,
+    /// The note-on in the clip (s): the intake's onset, after its pre-roll.
+    pub on_s: f64,
     /// How long the note is held (s).
     pub hold_s: f64,
     /// The intake's detected low-pass (Hz), when it found one.
@@ -160,15 +179,27 @@ pub struct Cue {
 }
 
 impl Cue {
-    /// The cue of a create target: its performance and bandwidth.
+    /// The cue of an intake: its inferred key, pitch, note-on and hold, and its detected bandwidth.
     #[must_use]
-    pub fn from_target(target: &Target) -> Cue {
+    pub fn from_intake(intake: &Intake) -> Cue {
+        let r = &intake.report;
         Cue {
-            key: target.perf.key,
-            f0_hz: target.perf.f0_hz,
-            hold_s: target.perf.hold_s,
-            bandwidth_hz: target.bandwidth_hz,
+            key: r.perf.key,
+            f0_hz: r.perf.f0_hz,
+            on_s: r.perf.on_s,
+            hold_s: r.perf.hold_s,
+            bandwidth_hz: r.degradation.bandwidth_hz,
         }
+    }
+
+    /// `context[1]`: `12 · log2(f0 / f(key))` in semitones when the intake found a pitch (about ±0.5), else `None`.
+    /// Layout 1 decodes `osc1.fine` from it (its context entry).
+    #[must_use]
+    pub fn pitch_offset(&self) -> Option<f64> {
+        let key_hz = 440.0 * libm::pow(2.0, (f64::from(self.key) - 69.0) / 12.0);
+        self.f0_hz
+            .filter(|f| f.is_finite() && *f > 0.0)
+            .map(|f0| 12.0 * libm::log2(f0 / key_hz))
     }
 }
 
@@ -178,6 +209,8 @@ impl Cue {
 pub enum FeatureError {
     /// A rate outside 8,000–191,999 Hz (the analysis's range).
     SampleRate(u32),
+    /// A cue's key above 127.
+    Key(u8),
     /// A sample is NaN or infinite.
     NonFinite,
     /// The window is at or below −70 LUFS.
@@ -190,6 +223,7 @@ impl FeatureError {
     pub fn code(&self) -> &'static str {
         match self {
             FeatureError::SampleRate(_) => "features_sample_rate",
+            FeatureError::Key(_) => "features_key",
             FeatureError::NonFinite => "features_non_finite",
             FeatureError::Silent => "features_silent",
         }
@@ -202,6 +236,7 @@ impl fmt::Display for FeatureError {
             FeatureError::SampleRate(sr) => {
                 write!(f, "{sr} Hz is outside the analysis's 8000 to 191999 Hz")
             }
+            FeatureError::Key(k) => write!(f, "the cue's key {k} is above 127"),
             FeatureError::NonFinite => f.write_str("the clip has a non-finite sample"),
             FeatureError::Silent => {
                 f.write_str("the model's window is silent (at or below -70 LUFS)")
@@ -287,6 +322,9 @@ impl ModelInput {
         if !(8_000..192_000).contains(&sample_rate) {
             return Err(FeatureError::SampleRate(sample_rate));
         }
+        if cue.key > 127 {
+            return Err(FeatureError::Key(cue.key));
+        }
         let sr = f64::from(sample_rate);
         let window = libm::round(WINDOW_S * sr) as usize;
         let audio = &clip[..clip.len().min(window)];
@@ -299,20 +337,21 @@ impl ModelInput {
         for (o, s) in x.iter_mut().zip(audio) {
             *o = s * gain;
         }
-        let mut fx = FeatureExtractor::new(FeatureCfg {
+        let cfg = FeatureCfg {
             sample_rate: sr,
             hop_div: 2,
             target_lufs: TARGET_LUFS,
             with_f0: false,
             fft: FftPath::Scalar,
+            rate_scaled_fft: true,
             ..FeatureCfg::default()
-        });
-        let features = fx.extract_unnormalised(&x);
+        };
+        let features = FeatureExtractor::new(cfg).extract_unnormalised(&x);
         if features.silent {
             return Err(FeatureError::Silent);
         }
         let mut mel = vec![masked(); RESOLUTIONS * FRAMES * BANDS];
-        for (r, &n_fft) in FFT_SIZES.iter().enumerate() {
+        for (r, &n_fft) in cfg.fft_sizes().iter().enumerate() {
             let hop = (n_fft / 2).max(1);
             let out = &mut mel[r * FRAMES * BANDS..(r + 1) * FRAMES * BANDS];
             regrid(&features.logmel[r], n_fft, hop, window, out);
@@ -330,9 +369,8 @@ impl ModelInput {
                 }
             }
         }
-        let key_hz = 440.0 * libm::pow(2.0, (f64::from(cue.key) - 69.0) / 12.0);
-        let (offset, pitched) = match cue.f0_hz.filter(|f| f.is_finite() && *f > 0.0) {
-            Some(f0) => (12.0 * libm::log2(f0 / key_hz), 1.0),
+        let (offset, pitched) = match cue.pitch_offset() {
+            Some(offset) => (offset, 1.0),
             None => (0.0, 0.0),
         };
         let hold = if cue.hold_s.is_finite() {
@@ -351,15 +389,17 @@ impl ModelInput {
         Ok(ModelInput { mel, context })
     }
 
-    /// The input for a create target: its clip, rate and [`Cue::from_target`]. The target's clip is the intake's
-    /// cut to the scored window, which holds the model's 2 s whenever the window is at least 2 s (the default
-    /// [`SCORE_S`](crate::create::SCORE_S) is 3 s); with a shorter `--score-seconds`, pass the intake's own clip to
-    /// [`compute`](Self::compute).
+    /// The input for an intake: its clip, rate and [`Cue::from_intake`]. A create job computes it from the intake,
+    /// before any `--perf` override (the override changes how candidates render, not what the model is told).
     ///
     /// # Errors
     /// As [`compute`](Self::compute).
-    pub fn from_target(target: &Target) -> Result<ModelInput, FeatureError> {
-        ModelInput::compute(&target.audio, target.sample_rate, &Cue::from_target(target))
+    pub fn from_intake(intake: &Intake) -> Result<ModelInput, FeatureError> {
+        ModelInput::compute(
+            &intake.audio,
+            intake.report.sample_rate,
+            &Cue::from_intake(intake),
+        )
     }
 
     /// One `mel` value: resolution `r`, block `t`, band `b`.
@@ -392,9 +432,29 @@ mod tests {
         Cue {
             key: 57,
             f0_hz: Some(220.0),
+            on_s: 0.005,
             hold_s: 0.8,
             bandwidth_hz: None,
         }
+    }
+
+    /// Deterministic white noise (xorshift), `len_s` long at `sr`, after `on_s` of silence.
+    fn noise(sr: u32, on_s: f64, len_s: f64) -> Vec<f32> {
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let n = (len_s * f64::from(sr)) as usize;
+        let on = (on_s * f64::from(sr)) as usize;
+        (0..n)
+            .map(|i| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                if i < on {
+                    0.0
+                } else {
+                    ((x >> 11) as f64 / (1u64 << 53) as f64 - 0.5) as f32 * 0.4
+                }
+            })
+            .collect()
     }
 
     /// A plucked saw at `hz` starting at `on_s`, decaying, `len_s` long at `sr`.
@@ -434,18 +494,77 @@ mod tests {
         assert_eq!(spec(2), None);
     }
 
-    /// Feature set 1 is frozen: a change to anything it reads (the analysis's log-mel, the loudness meter, the grid)
-    /// moves this hash, and needs feature set 2 and a new model, not an edit.
+    /// Feature set 1 is frozen: a change to anything it reads (the analysis's log-mel, the FFT sizes, the loudness
+    /// meter, the grid, the masking) moves one of these hashes, and needs feature set 2 and a new model, not an edit.
+    /// One input per path that differs: a non-48 kHz rate (scaled FFT sizes), a band limit, 16 kHz (masked top bands),
+    /// a clip shorter than the window, unpitched noise, 96 kHz. Run on every CI leg (lane ONX's hash step).
     #[test]
     fn feature_set_1_is_pinned() {
-        let x = pluck(44_100, 196.0, 0.006, 1.3);
-        let m = ModelInput::compute(&x, 44_100, &cue()).unwrap();
-        let again = ModelInput::compute(&x, 44_100, &cue()).unwrap();
-        assert_eq!(m, again);
-        assert_eq!(
-            hex(&m.sha256()),
-            "c51596df6fd89b2ab49d704af50c12e560e510537a9103bfb4f10e90a4036be9"
-        );
+        use core::fmt::Write as _;
+        let unpitched = Cue {
+            key: 48,
+            f0_hz: None,
+            hold_s: 1.2,
+            ..cue()
+        };
+        let banded = Cue {
+            bandwidth_hz: Some(4_000.0),
+            ..cue()
+        };
+        let cases: [(&str, Vec<f32>, u32, Cue, &str); 6] = [
+            (
+                "44.1 kHz pluck",
+                pluck(44_100, 196.0, 0.006, 1.3),
+                44_100,
+                cue(),
+                "2a740d072505bb39fd2aff679c53b41414940738195fa749399f1cf5bfdd6f83",
+            ),
+            (
+                "48 kHz pluck, 4 kHz band limit",
+                pluck(48_000, 220.0, 0.005, 1.5),
+                48_000,
+                banded,
+                "1e1634f338a32dcfa5c41ee4bb5bd8894db8cd193cecca6056c185a4bf5d35ca",
+            ),
+            (
+                "16 kHz pluck",
+                pluck(16_000, 220.0, 0.005, 1.5),
+                16_000,
+                cue(),
+                "b9cb9298f4a0ae27c69e5d6c82f0b0ab1a743082c600cdf8ad81fd02ee7d17e3",
+            ),
+            (
+                "0.1 s clip",
+                pluck(48_000, 440.0, 0.005, 0.1),
+                48_000,
+                cue(),
+                "b9440d3581f6185abc6c55d4af4bddcf94b4d65d2784f6ffe7dc1fb3f89fc3bb",
+            ),
+            (
+                "unpitched noise",
+                noise(48_000, 0.007, 1.0),
+                48_000,
+                unpitched,
+                "8c8848c5088ad3a74dd6107af4574b8ac58584e7828febf944ee9236fa42096e",
+            ),
+            (
+                "96 kHz pluck",
+                pluck(96_000, 220.0, 0.005, 1.5),
+                96_000,
+                cue(),
+                "34ca0bad6772332fbb72d214a43ca76729e64073096f8b7ca80bec06ef31e7a2",
+            ),
+        ];
+        let mut got = String::new();
+        let mut bad = false;
+        for (name, x, sr, c, want) in &cases {
+            let m = ModelInput::compute(x, *sr, c).unwrap();
+            assert_eq!(m, ModelInput::compute(x, *sr, c).unwrap(), "{name}");
+            let h = hex(&m.sha256());
+            bad |= h != *want;
+            let _ = writeln!(got, "{name}: {h}");
+        }
+        assert!(!bad, "feature set 1 moved:\n{got}");
     }
 
     #[test]
@@ -508,6 +627,11 @@ mod tests {
             ModelInput::compute(&x, 7_999, &cue()).unwrap_err().code(),
             "features_sample_rate"
         );
+        let high = Cue { key: 128, ..cue() };
+        assert_eq!(
+            ModelInput::compute(&x, 48_000, &high).unwrap_err().code(),
+            "features_key"
+        );
         let mut bad = x.clone();
         bad[10] = f32::NAN;
         assert_eq!(
@@ -547,5 +671,26 @@ mod tests {
         };
         let d = ModelInput::compute(&x, 48_000, &sharp).unwrap();
         assert!((d.context[1] - 0.3).abs() < 1e-5);
+    }
+
+    /// No input value is subnormal, so a kernel reading them behaves the same with FTZ or DAZ on; padded silence and
+    /// masked bands hold the analysis's floor exactly.
+    #[test]
+    fn no_value_is_subnormal_and_the_floor_is_the_analysiss() {
+        for (x, sr) in [
+            (pluck(48_000, 220.0, 0.005, 0.1), 48_000),
+            (pluck(16_000, 220.0, 0.005, 1.0), 16_000),
+            (noise(44_100, 0.0, 2.5), 44_100),
+        ] {
+            let m = ModelInput::compute(&x, sr, &cue()).unwrap();
+            assert!(m.mel.iter().chain(&m.context).all(|v| !v.is_subnormal()));
+        }
+        assert_eq!(masked(), libm::logf(0.0 + 1e-5));
+        let m = ModelInput::compute(&pluck(48_000, 440.0, 0.005, 0.1), 48_000, &cue()).unwrap();
+        assert_eq!(
+            m.mel_at(0, 127, 30),
+            masked(),
+            "padded silence is the floor"
+        );
     }
 }

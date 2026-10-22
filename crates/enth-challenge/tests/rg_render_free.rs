@@ -6,8 +6,8 @@
 //! table, each up to its test module): outside comments they name no crate but `enth_dsp` (the keyed draws),
 //! `enth_params` and `enth_patch`, reach no module of this crate but `phrases`, `lesson_phrases`, `priors`,
 //! `random`, `spec`, `fingerprint`, `code` and `model`, take nothing from `model` but the `Phrase`, `PhraseId`,
-//! `PhraseNote` and `PhraseError` data types, and never ask a phrase for its `Performance` (the one place `model`
-//! touches `enth-render`). The target fingerprint (`fingerprint`, F1r review M1) and the code module it names its
+//! `PhraseNote`, `PhraseError` and `PhraseView` (a run-time phrase's borrowed notes, lane F3S) data types, and never
+//! ask a phrase for its `Performance` (the one place `model` touches `enth-render`). The target fingerprint (`fingerprint`, F1r review M1) and the code module it names its
 //! prefix from are read too, and the lesson-only phrase table (lane CV2), which the phrase lookup reaches.
 
 const SOURCES: [(&str, &str); 7] = [
@@ -84,9 +84,14 @@ fn the_generator_never_reaches_the_renderer() {
                         .filter(|w| !w.is_empty())
                         .collect();
                     assert!(
-                        names.iter().all(
-                            |w| ["Phrase", "PhraseId", "PhraseNote", "PhraseError"].contains(w)
-                        ),
+                        names.iter().all(|w| [
+                            "Phrase",
+                            "PhraseId",
+                            "PhraseNote",
+                            "PhraseError",
+                            "PhraseView"
+                        ]
+                        .contains(w)),
                         "{file}:{n}: the generator takes more than phrase data from model: {line}"
                     );
                 }

@@ -1,66 +1,71 @@
 propose-layout/1
 generator 1 template 0 width 102
-continuous 33
-0 voice.glide float 0.0..10000.0 Power(4.0) unit=Ms template=0.0
-1 osc1.semi float -48.0..48.0 Linear unit=Semitones template=0.0
-2 osc1.pw float 5.0..95.0 Linear unit=Percent template=50.0
-3 osc1.position float 0.0..100.0 Linear unit=Percent template=0.0
-4 osc2.semi float -48.0..48.0 Linear unit=Semitones template=0.0
-5 osc2.fine float -100.0..100.0 Linear unit=Cents template=0.0
-6 osc2.level float 0.0..100.0 Linear unit=Percent template=100.0
-7 osc2.pw float 5.0..95.0 Linear unit=Percent template=50.0
-8 osc2.position float 0.0..100.0 Linear unit=Percent template=0.0
-9 noise1.level float 0.0..100.0 Linear unit=Percent template=100.0
-10 filter1.cutoff float 20.0..20000.0 Log unit=Hz template=2000.0
-11 filter1.resonance float 0.0..100.0 Linear unit=Percent template=10.0
-12 filter1.keytrack float 0.0..100.0 Linear unit=Percent template=0.0
-13 filter1.drive float 0.0..24.0 Linear unit=Db template=0.0
-14 comp1.threshold float -60.0..0.0 Linear unit=Db template=-18.0
-15 comp1.ratio float 1.0..20.0 Log unit=Ratio template=4.0
-16 comp1.attack float 0.1..100.0 Log unit=Ms template=10.0
-17 comp1.release float 10.0..2000.0 Log unit=Ms template=200.0
-18 reverb1.wet float -60.0..6.0 Linear unit=Db template=-6.0
-19 reverb1.room float 10.0..200.0 Linear unit=Ms template=80.0
-20 reverb1.decay float 100.0..30000.0 Log unit=Ms template=3000.0
-21 reverb1.high_cut float 1000.0..20000.0 Log unit=Hz template=12000.0
-22 env1.attack float 0.0..10000.0 Power(4.0) unit=Ms template=5.0
-23 env1.decay float 0.0..10000.0 Power(4.0) unit=Ms template=300.0
-24 env1.sustain float 0.0..100.0 Linear unit=Percent template=70.0
-25 env1.release float 0.0..20000.0 Power(4.0) unit=Ms template=400.0
-26 env1.velocity float 0.0..100.0 Linear unit=Percent template=0.0
-27 env2.attack float 0.0..10000.0 Power(4.0) unit=Ms template=5.0
-28 env2.decay float 0.0..10000.0 Power(4.0) unit=Ms template=300.0
-29 env2.sustain float 0.0..100.0 Linear unit=Percent template=70.0
-30 env2.release float 0.0..20000.0 Power(4.0) unit=Ms template=400.0
-31 lfo1.rate float 0.01..50.0 Log unit=Hz template=2.0
-32 lfo2.rate float 0.01..50.0 Log unit=Hz template=2.0
-categorical 7
-33..36 voice.mode enum [poly,mono,legato] unit=None template=0.0
-36..41 osc1.wave enum [sine,triangle,saw,pulse,table] unit=None template=2.0
-41..46 osc2.wave enum [sine,triangle,saw,pulse,table] unit=None template=2.0
-46..48 noise1.color enum [white,pink] unit=None template=0.0
-48..52 filter1.mode enum [lp,bp,hp,notch] unit=None template=0.0
-52..59 lfo1.shape enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] unit=None template=0.0
-59..66 lfo2.shape enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] unit=None template=0.0
-structure 4
+row: a non-finite value drops the hypothesis; a subnormal value reads as 0
+continuous 33: clamped to 0..1, then from_norm
+0 voice.glide float 0.0..10000.0 Power(4.0) unit=Ms norm=[0.0, 39.0625, 625.0, 3164.0625, 10000.0] template=0.0
+1 osc1.semi float -48.0..48.0 Linear unit=Semitones norm=[-48.0, -24.0, 0.0, 24.0, 48.0] template=0.0
+2 osc1.pw float 5.0..95.0 Linear unit=Percent norm=[5.0, 27.5, 50.0, 72.5, 95.0] template=50.0
+3 osc1.position float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=0.0
+4 osc2.semi float -48.0..48.0 Linear unit=Semitones norm=[-48.0, -24.0, 0.0, 24.0, 48.0] template=0.0
+5 osc2.fine float -100.0..100.0 Linear unit=Cents norm=[-100.0, -50.0, 0.0, 50.0, 100.0] template=0.0
+6 osc2.level float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=100.0
+7 osc2.pw float 5.0..95.0 Linear unit=Percent norm=[5.0, 27.5, 50.0, 72.5, 95.0] template=50.0
+8 osc2.position float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=0.0
+9 noise1.level float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=100.0
+10 filter1.cutoff float 20.0..20000.0 Log unit=Hz norm=[20.0, 112.46826, 632.4555, 3556.5588, 20000.0] template=2000.0
+11 filter1.resonance float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=10.0
+12 filter1.keytrack float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=0.0
+13 filter1.drive float 0.0..24.0 Linear unit=Db norm=[0.0, 6.0, 12.0, 18.0, 24.0] template=0.0
+14 comp1.threshold float -60.0..0.0 Linear unit=Db norm=[-60.0, -45.0, -30.0, -15.0, 0.0] template=-18.0
+15 comp1.ratio float 1.0..20.0 Log unit=Ratio norm=[1.0, 2.1147425, 4.472136, 9.457417, 20.0] template=4.0
+16 comp1.attack float 0.1..100.0 Log unit=Ms norm=[0.1, 0.56234133, 3.1622777, 17.782795, 100.0] template=10.0
+17 comp1.release float 10.0..2000.0 Log unit=Ms norm=[10.0, 37.60603, 141.42136, 531.8296, 2000.0] template=200.0
+18 reverb1.wet float -60.0..6.0 Linear unit=Db norm=[-60.0, -43.5, -27.0, -10.5, 6.0] template=-6.0
+19 reverb1.room float 10.0..200.0 Linear unit=Ms norm=[10.0, 57.5, 105.0, 152.5, 200.0] template=80.0
+20 reverb1.decay float 100.0..30000.0 Log unit=Ms norm=[100.0, 416.17914, 1732.0508, 7208.434, 30000.0] template=3000.0
+21 reverb1.high_cut float 1000.0..20000.0 Log unit=Hz norm=[1000.0, 2114.7424, 4472.1357, 9457.416, 20000.0] template=12000.0
+22 env1.attack float 0.0..10000.0 Power(4.0) unit=Ms norm=[0.0, 39.0625, 625.0, 3164.0625, 10000.0] template=5.0
+23 env1.decay float 0.0..10000.0 Power(4.0) unit=Ms norm=[0.0, 39.0625, 625.0, 3164.0625, 10000.0] template=300.0
+24 env1.sustain float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=70.0
+25 env1.release float 0.0..20000.0 Power(4.0) unit=Ms norm=[0.0, 78.125, 1250.0, 6328.125, 20000.0] template=400.0
+26 env1.velocity float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=0.0
+27 env2.attack float 0.0..10000.0 Power(4.0) unit=Ms norm=[0.0, 39.0625, 625.0, 3164.0625, 10000.0] template=5.0
+28 env2.decay float 0.0..10000.0 Power(4.0) unit=Ms norm=[0.0, 39.0625, 625.0, 3164.0625, 10000.0] template=300.0
+29 env2.sustain float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0] template=70.0
+30 env2.release float 0.0..20000.0 Power(4.0) unit=Ms norm=[0.0, 78.125, 1250.0, 6328.125, 20000.0] template=400.0
+31 lfo1.rate float 0.01..50.0 Log unit=Hz norm=[0.01, 0.08408964, 0.70710677, 5.9460354, 50.0] template=2.0
+32 lfo2.rate float 0.01..50.0 Log unit=Hz norm=[0.01, 0.08408964, 0.70710677, 5.9460354, 50.0] template=2.0
+categorical 7: the arg-max logit, ties to the lower item
+33..36 voice.mode enum [poly,mono,legato] unit=None norm=[0.0, 1.0, 1.0, 2.0, 2.0] template=0.0
+36..41 osc1.wave enum [sine,triangle,saw,pulse,table] unit=None norm=[0.0, 1.0, 2.0, 3.0, 4.0] template=2.0
+41..46 osc2.wave enum [sine,triangle,saw,pulse,table] unit=None norm=[0.0, 1.0, 2.0, 3.0, 4.0] template=2.0
+46..48 noise1.color enum [white,pink] unit=None norm=[0.0, 0.0, 1.0, 1.0, 1.0] template=0.0
+48..52 filter1.mode enum [lp,bp,hp,notch] unit=None norm=[0.0, 1.0, 2.0, 2.0, 3.0] template=0.0
+52..59 lfo1.shape enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] unit=None norm=[0.0, 2.0, 3.0, 5.0, 6.0] template=0.0
+59..66 lfo2.shape enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] unit=None norm=[0.0, 2.0, 3.0, 5.0, 6.0] template=0.0
+structure 4: on when the logit is above 0
 66 osc2 osc template=off
 67 noise1 noise template=off
 68 comp1 comp template=off
 69 reverb1 reverb template=off
-routes 16
-70 86 env2->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
-71 87 env2->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
-72 88 env2->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
-73 89 env2->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
-74 90 lfo1->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
-75 91 lfo1->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
-76 92 lfo1->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
-77 93 lfo1->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
-78 94 lfo2->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
-79 95 lfo2->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
-80 96 lfo2->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
-81 97 lfo2->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
-82 98 velocity->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
-83 99 velocity->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
-84 100 velocity->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
-85 101 velocity->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
+routes 16: present when the logit is above 0 and the depth is not 0; depth = (2n - 1) * 100 % of the destination's range
+70 86 env2->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents norm=[-100.0, -50.0, 0.0, 50.0, 100.0]
+71 87 env2->osc1.level depth % of float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0]
+72 88 env2->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent norm=[5.0, 27.5, 50.0, 72.5, 95.0]
+73 89 env2->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz norm=[20.0, 112.46826, 632.4555, 3556.5588, 20000.0]
+74 90 lfo1->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents norm=[-100.0, -50.0, 0.0, 50.0, 100.0]
+75 91 lfo1->osc1.level depth % of float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0]
+76 92 lfo1->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent norm=[5.0, 27.5, 50.0, 72.5, 95.0]
+77 93 lfo1->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz norm=[20.0, 112.46826, 632.4555, 3556.5588, 20000.0]
+78 94 lfo2->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents norm=[-100.0, -50.0, 0.0, 50.0, 100.0]
+79 95 lfo2->osc1.level depth % of float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0]
+80 96 lfo2->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent norm=[5.0, 27.5, 50.0, 72.5, 95.0]
+81 97 lfo2->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz norm=[20.0, 112.46826, 632.4555, 3556.5588, 20000.0]
+82 98 velocity->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents norm=[-100.0, -50.0, 0.0, 50.0, 100.0]
+83 99 velocity->osc1.level depth % of float 0.0..100.0 Linear unit=Percent norm=[0.0, 25.0, 50.0, 75.0, 100.0]
+84 100 velocity->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent norm=[5.0, 27.5, 50.0, 72.5, 95.0]
+85 101 velocity->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz norm=[20.0, 112.46826, 632.4555, 3556.5588, 20000.0]
+context osc1.fine = 100 * context[1] clamped to -50.0..50.0 when pitched, else the template's: float -100.0..100.0 Linear unit=Cents norm=[-100.0, -50.0, 0.0, 50.0, 100.0] template=0.0
+told osc1.semi osc2.semi relative to the told key: labels add the first key - the told key, decoding subtracts the job's key - the told key; refused past the range or with filter1.keytrack heard
+window 2.0 s: no loss on env1.release env2.release when the first note-off is at or after it
+canonical labels under the sample's phrase, decoding under the job's performance
