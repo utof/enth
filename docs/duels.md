@@ -8,7 +8,7 @@ R5 lets two friends play the same challenge and compare, with no server, no acco
 | --- | --- | --- | --- |
 | The scorecard, the answer code, the ear result, `result-params-v1`, paste-anything, the daily formula | `enth-challenge/src/{result,answer,paste,daily}.rs` (L4) | RC | Planned (F1e) |
 | `verify` | `enth-challenge/src/verify.rs` (L4) | RC | Planned (F1e) |
-| Duel state; the patch of the first passing submit | `enth-session/src/duel.rs`, additive in `game.rs` (L6) | SE | Planned (F1e) |
+| Duel state; the patch of the first passing submit | `enth-session/src/duel.rs`, additive in `game.rs` (L6) | SE | Built; awaiting the F1e judge |
 | Duel jobs, the clipboard; `enth duel result\|verify`; the REAPER `duel` scenario | `enth-plugin/src/duel.rs`, `enth-cli/src/cmd/duel.rs` (L8) | SKD | Planned (F2d) |
 | The duel card: share, paste, verify, side by side, the sealed answer, the history | `enth-ui/src/editor/duel/` (L7, feature `duel`) | DUI | Planned |
 | GR5, the friend duel sheet, the friend build | `docs/r5-gates.md`, `docs/r5-owner.md`, `docs/duel-friends.md` (all planned) | INT5 | Planned |
@@ -137,6 +137,18 @@ After R4's games exist. An adaptive session would give two players different ite
 ## The duel history
 
 Lane DUI: a local list of duels (the codes, both re-scored results, the date you played), with optional names the receiver types. It lives in a per-user file the shell owns, like the progress file, and leaves the machine only if you send it.
+
+## The session (lane SE)
+
+The pure duel state is built ([session.md](session.md#duel-lane-se-r5a) has the API, the lifecycle and the tests). What it settles, for the other lanes:
+
+- **The player's result** is the first passing submit's scores, time to pass, submit count and assists, with its patch; otherwise the best submit, marked "not passed". It is kept when the round ends, so the answer can still be shared after Restore or Keep. The first played attempt at a duel's code stands.
+- **The round keeps a pass as a diff from its start** (`RoundRecord::compared`, 64 KiB at most) inside the unchanged `ROUND_BYTES`; the best of a round that has not passed is held in memory only. No existing round fixture changed.
+- **Their scorecard is shown at once, as reported. Their answer is sealed** until you have a scored submit or have revealed; ending a round with nothing played does not open it. It is a session guard, not cryptography.
+- **The receiver's re-score decides.** The session posts a `Verify` job to the shell and stores what the worker measured: both re-scores, the commitment check, the claim check and their patch. A mismatch on the same engine is a flag, not a verdict.
+- **Their patch loads as one undo step** with no host writes, never while a round is live; it can be auditioned once, rendered by the shell with the challenge's phrase.
+- **The salt is the shell's:** the session has no randomness and builds no code; the shell draws the salt once per duel and keeps it, with the result, in the duel history.
+- **Not saved in the project.** The duel history is the shell's file (DUI).
 
 ## GR5
 
