@@ -381,6 +381,41 @@ impl Phrase {
     /// The render performance: each note at `start_ms / 1000` s with velocity `velocity / 127`, released after
     /// `hold_ms`, in a render of `length_ms`. Plain IEEE divisions of integers, so the same on every platform.
     pub fn performance(&self) -> Performance {
+        self.view().performance()
+    }
+
+    /// Check the table entry: at least one note, keys at most 127, velocities 1–127, every note starting before the
+    /// end. Lane RG's table test runs it on every phrase.
+    pub fn validate(&self) -> Result<(), PhraseError> {
+        self.view().validate()
+    }
+
+    /// The same notes and length as a [`PhraseView`], which the run-time entry points take
+    /// ([`crate::random::observable_view`]).
+    pub const fn view(&self) -> PhraseView<'static> {
+        PhraseView {
+            notes: self.notes,
+            length_ms: self.length_ms,
+        }
+    }
+}
+
+/// A phrase's notes and length, borrowed for any lifetime (lane F3S, R3b): the same data as a [`Phrase`], for
+/// phrases built at run time, whose notes cannot be `'static` (`ds1`'s phrase sampler draws millions; a create job
+/// plays the performance the intake inferred). [`Phrase::view`] gives a table phrase's;
+/// [`crate::random::observable_view`] and [`crate::phrases::PhraseFacts`] read either, with one implementation, so a
+/// run-time phrase is classified exactly as a table phrase with the same notes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PhraseView<'a> {
+    /// The notes, in the order they sound (same-time notes play in this order).
+    pub notes: &'a [PhraseNote],
+    /// The length of the render, in ms: the notes plus room for the release tail.
+    pub length_ms: u32,
+}
+
+impl PhraseView<'_> {
+    /// The render performance, as [`Phrase::performance`].
+    pub fn performance(&self) -> Performance {
         Performance {
             notes: self
                 .notes
@@ -396,8 +431,8 @@ impl Phrase {
         }
     }
 
-    /// Check the table entry: at least one note, keys at most 127, velocities 1–127, every note starting before the
-    /// end. Lane RG's table test runs it on every phrase.
+    /// The checks of [`Phrase::validate`]: at least one note, keys at most 127, velocities 1–127, every note starting
+    /// before the end.
     pub fn validate(&self) -> Result<(), PhraseError> {
         if self.notes.is_empty() {
             return Err(PhraseError::NoNotes);

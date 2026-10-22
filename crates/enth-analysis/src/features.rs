@@ -36,6 +36,11 @@ pub struct FeatureCfg {
     pub env_hold_frames: usize,
     pub with_f0: bool,
     pub fft: FftPath,
+    /// Scale the three FFT sizes to the rate ([`rate_scaled_fft_size`]): bins about 23.4 Hz wide and windows the
+    /// same length in seconds at every rate, so a band's level does not follow the rate. Off by default (every
+    /// existing analysis, metric v1 and `sound/1` included, keeps [`FFT_SIZES`]); the model's features
+    /// (`propose-logmel/1`, lane F3S) turn it on. At 48 kHz the scaled sizes are [`FFT_SIZES`].
+    pub rate_scaled_fft: bool,
 }
 
 impl Default for FeatureCfg {
@@ -47,7 +52,34 @@ impl Default for FeatureCfg {
             env_hold_frames: 5,
             with_f0: false,
             fft: FftPath::Scalar,
+            rate_scaled_fft: false,
         }
+    }
+}
+
+impl FeatureCfg {
+    /// The FFT size of each log-mel resolution: [`FFT_SIZES`], or with [`rate_scaled_fft`](Self::rate_scaled_fft)
+    /// each scaled to the rate.
+    #[must_use]
+    pub fn fft_sizes(&self) -> [usize; 3] {
+        if self.rate_scaled_fft {
+            FFT_SIZES.map(|n| rate_scaled_fft_size(n, self.sample_rate))
+        } else {
+            FFT_SIZES
+        }
+    }
+}
+
+/// `n` (an FFT size at 48 kHz) scaled to `sample_rate`: `2 · round(n · sample_rate / 96,000)`, at least 2. Even, so
+/// the real FFT takes it; the bins stay `48,000 / n` Hz wide (23.4 Hz at 2048) and the window `n / 48,000` s long
+/// at every rate.
+#[must_use]
+pub fn rate_scaled_fft_size(n: usize, sample_rate: f64) -> usize {
+    let half = libm::round(n as f64 * sample_rate / 96_000.0);
+    if half.is_finite() && half >= 1.0 {
+        2 * half as usize
+    } else {
+        2
     }
 }
 
@@ -156,7 +188,8 @@ impl FeatureExtractor {
     #[must_use]
     pub fn new(cfg: FeatureCfg) -> Self {
         let mut planner = FftPlanner::new(cfg.fft);
-        let res = FFT_SIZES
+        let res = cfg
+            .fft_sizes()
             .iter()
             .map(|&n_fft| {
                 let window = hann(n_fft);
@@ -359,6 +392,58 @@ mod tests {
         assert!((c - 1000.0).abs() < 30.0, "{c}");
         assert_eq!(a.mfcc.len(), a.centroid.len() * N_MFCC);
         assert!(fx.extract(&vec![0.0; 48_000]).silent);
+    }
+
+    #[test]
+    fn rate_scaled_sizes_are_off_by_default_and_the_same_at_48_khz() {
+        assert_eq!(FeatureCfg::default().fft_sizes(), FFT_SIZES);
+        let scaled = |sr: f64| {
+            FeatureCfg {
+                sample_rate: sr,
+                rate_scaled_fft: true,
+                ..FeatureCfg::default()
+            }
+            .fft_sizes()
+        };
+        assert_eq!(scaled(48_000.0), FFT_SIZES);
+        assert_eq!(scaled(96_000.0), [4096, 2048, 1024]);
+        assert_eq!(scaled(44_100.0), [1882, 940, 470]);
+        assert_eq!(scaled(16_000.0), [682, 342, 170]);
+        assert_eq!(scaled(8_000.0), [342, 170, 86]);
+        for sr in [8_000.0, 11_025.0, 22_050.0, 44_100.0, 88_200.0, 191_999.0] {
+            for (n, base) in scaled(sr).iter().zip(FFT_SIZES) {
+                assert!(n.is_multiple_of(2), "{sr}: {n}");
+                // The window's length in seconds is the 48 kHz one within one sample either side.
+                let want = base as f64 * sr / 48_000.0;
+                assert!((*n as f64 - want).abs() <= 1.0, "{sr}: {n} vs {want}");
+            }
+        }
+        // At 48 kHz the option changes nothing.
+        let x = white_noise(SR, 0.3, 0.5, 3);
+        let a = FeatureExtractor::new(FeatureCfg::default()).extract_unnormalised(&x);
+        let b = FeatureExtractor::new(FeatureCfg {
+            rate_scaled_fft: true,
+            ..FeatureCfg::default()
+        })
+        .extract_unnormalised(&x);
+        assert_eq!(a.logmel, b.logmel);
+    }
+
+    #[test]
+    fn rate_scaled_frames_follow_the_scaled_sizes() {
+        let sr = 22_050.0;
+        let cfg = FeatureCfg {
+            sample_rate: sr,
+            rate_scaled_fft: true,
+            ..FeatureCfg::default()
+        };
+        let x = white_noise(22_050.0, 0.5, 0.5, 5);
+        let f = FeatureExtractor::new(cfg).extract_unnormalised(&x);
+        for (r, n) in cfg.fft_sizes().iter().enumerate() {
+            let frames = (x.len() - n) / (n / 2) + 1;
+            assert_eq!(f.logmel[r].len(), frames * BANDS, "{n}");
+            assert!(f.logmel[r].iter().all(|v| v.is_finite()));
+        }
     }
 
     #[test]

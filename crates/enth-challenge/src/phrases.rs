@@ -21,7 +21,7 @@
 //! envelope priors (attack up to the hold, release up to the tail) and the cutoff priors (relative to the reference
 //! note) are the same for every phrase, and picking a phrase never moves a lower category's values.
 
-use crate::model::{Phrase, PhraseId, PhraseNote};
+use crate::model::{Phrase, PhraseId, PhraseNote, PhraseView};
 
 /// The lowest key of every phrase in the table: C3 (MIDI 48, 130.81 Hz). The priors are relative to it.
 pub const REFERENCE_KEY: u8 = 48;
@@ -137,7 +137,7 @@ const fn off(n: &PhraseNote) -> u32 {
     n.start_ms.saturating_add(n.hold_ms)
 }
 
-impl PhraseFacts for Phrase {
+impl PhraseFacts for PhraseView<'_> {
     fn lowest_key(&self) -> u8 {
         self.notes
             .iter()
@@ -198,6 +198,45 @@ impl PhraseFacts for Phrase {
             })
             .max()
             .unwrap_or(0)
+    }
+}
+
+/// A table phrase has the facts of its [`PhraseView`] (one implementation for both).
+impl PhraseFacts for Phrase {
+    fn lowest_key(&self) -> u8 {
+        self.view().lowest_key()
+    }
+
+    fn min_hold_ms(&self) -> u32 {
+        self.view().min_hold_ms()
+    }
+
+    fn tail_ms(&self) -> u32 {
+        self.view().tail_ms()
+    }
+
+    fn has_octave_pair(&self) -> bool {
+        self.view().has_octave_pair()
+    }
+
+    fn has_two_velocities(&self) -> bool {
+        self.view().has_two_velocities()
+    }
+
+    fn has_pitch_change(&self) -> bool {
+        self.view().has_pitch_change()
+    }
+
+    fn has_overlapping_pitch_change(&self) -> bool {
+        self.view().has_overlapping_pitch_change()
+    }
+
+    fn has_detached_pitch_change(&self) -> bool {
+        self.view().has_detached_pitch_change()
+    }
+
+    fn max_simultaneous(&self) -> usize {
+        self.view().max_simultaneous()
     }
 }
 
