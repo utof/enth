@@ -1,0 +1,24 @@
+[package]
+name = "enth-music"
+description = "L1: music theory tables, the 16-step rhythm grid and the frozen ear generator for R4's ear games (docs/ear.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pre-declared by lane S0e (R4/R5, freeze point F0e) so Cargo.lock is resolved before the lanes fan out; lanes use what
+# they need. A core crate (L1): no I/O, threads, clocks or global RNG, integers only, and it builds for wasm32
+# (`cargo xtask wasm-check`, which covers every layer up to 5); the root clippy.toml bans apply. It needs only
+# `enth-dsp`'s `derive` and `fnv1a64` (docs/ear.md, "Where R4 lives"); it cannot read the catalogue (`enth-patch` is L1
+# too and same-layer edges are refused), which is why the parameter games' items live in `enth-challenge`.
+enth-dsp.workspace = true          # derive and fnv1a64: the ear generator's keyed streams (MUS)
+serde.workspace = true             # `EarSpec` and the questions are persisted by Challenge v3 and the codes (MUS, CV3)
+
+[dev-dependencies]
+proptest.workspace = true          # every generated question is valid; every answer key is one of its options (MUS)
+serde_json.workspace = true        # `EarSpec` fixtures (MUS)
+sha2.workspace = true              # ear generator v1's golden: 1,000 specs to one hash (MUS; G1-G3 move it on purpose)
+
+[lints]
+workspace = true

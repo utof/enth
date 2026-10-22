@@ -24,6 +24,7 @@ publish = false
 enth-dsp = { path = "crates/enth-dsp" }
 enth-params = { path = "crates/enth-params" }
 enth-patch = { path = "crates/enth-patch" }
+enth-music = { path = "crates/enth-music" }          # L1 (R4 lane S0e)
 enth-engine = { path = "crates/enth-engine" }
 enth-render = { path = "crates/enth-render" }
 enth-analysis = { path = "crates/enth-analysis" }

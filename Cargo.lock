@@ -1198,6 +1198,7 @@ dependencies = [
  "enth-analysis",
  "enth-dsp",
  "enth-engine",
+ "enth-music",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1218,6 +1219,7 @@ dependencies = [
  "enth-analysis",
  "enth-challenge",
  "enth-learn",
+ "enth-music",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1298,6 +1300,7 @@ dependencies = [
  "enth-analysis",
  "enth-challenge",
  "enth-dsp",
+ "enth-music",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1318,9 +1321,12 @@ version = "0.0.0"
 dependencies = [
  "enth-analysis",
  "enth-challenge",
+ "enth-dsp",
  "enth-learn",
+ "enth-music",
  "enth-params",
  "enth-patch",
+ "enth-render",
  "enth-session",
  "enth-solver",
 ]
@@ -1342,6 +1348,17 @@ dependencies = [
  "sha2",
  "spike-metric",
  "toml",
+]
+
+[[package]]
+name = "enth-music"
+version = "0.0.0"
+dependencies = [
+ "enth-dsp",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -1376,6 +1393,7 @@ dependencies = [
  "enth-challenge",
  "enth-engine",
  "enth-learn",
+ "enth-music",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1414,6 +1432,7 @@ dependencies = [
  "enth-challenge",
  "enth-engine",
  "enth-learn",
+ "enth-music",
  "enth-params",
  "enth-patch",
  "enth-render",
@@ -1464,6 +1483,7 @@ dependencies = [
  "egui_kittest",
  "enth-challenge",
  "enth-learn",
+ "enth-music",
  "enth-params",
  "enth-patch",
  "enth-session",

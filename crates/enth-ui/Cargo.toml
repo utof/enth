@@ -20,6 +20,16 @@ recreate = []
 # browser and the candidate tiles. It reads `enth-session`'s create read model (lane SK3), which always compiles, so it
 # adds no dependency of its own. Off by default until lane PUI (F2s) decides; the plugin's `create` feature forwards it.
 create = []
+# R4/R5 (lane S0e): the Ear view (`editor/ear/`, lane EUI): the header's Ear hook, the round types, the workout, the
+# replay with the answer, thresholds per skill and the practised-days calendar. It reads `enth-session`'s ear read model
+# (lane SE), which always compiles; `enth-music` supplies the labels (intervals, chords, bands) and `enth-learn` the
+# progress file's `drills` field. Off by default until lane EUI (F2e) decides; the plugin's `ear` feature forwards it.
+ear = ["dep:enth-music", "dep:enth-learn"]
+# R5 (lane S0e): the duel card (`editor/duel/`, lanes SKD then DUI): the share line, the paste box, verification, the
+# sealed answer and the local duel history. It reads `enth-challenge`'s result codes and `verify` and `enth-session`'s
+# duel read model (lane SE), which always compile, so it adds no dependency of its own. Off by default until lane DUI
+# decides; the plugin's `duel` feature forwards it.
+duel = []
 # R1/S1 header hook points (lane S0r): each feature turns on its no-op hook in the header (regions/header.rs) until its
 # lane fills it: `recreate` (lane RUI, editor/recreate/), `presets` (lane PBU, editor/browser.rs), `add-module` (lane AM,
 # editor/add_module.rs). The lanes decide whether a feature stays, becomes a default, or goes.
@@ -49,6 +59,8 @@ serde_json.workspace = true
 enth-challenge.workspace = true
 # Pre-declared by lane S0l (R2): the Learn view reads the lesson types and the markdown AST (lane LUI); optional, behind `learn`.
 enth-learn = { workspace = true, optional = true }
+# Pre-declared by lane S0e (R4): the Ear view's labels and the question types it draws (lane EUI); optional, behind `ear`.
+enth-music = { workspace = true, optional = true }
 # glow (OpenGL), not wgpu (ADR-0002); X11 only, like the target machine; the clipboard for text fields.
 eframe = { workspace = true, features = ["glow", "x11", "clipboard"], optional = true }
 

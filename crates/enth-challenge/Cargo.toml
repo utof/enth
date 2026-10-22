@@ -16,6 +16,9 @@ enth-patch.workspace = true        # Patch, addresses, the catalogue, ENGINE_VER
 enth-engine.workspace = true       # module kinds and plan facts the scorers may need (SS, ST)
 enth-render.workspace = true       # the scored render and the phrase as a Performance (SS, phrases)
 enth-analysis.workspace = true     # metric v1, descriptors, Expect lists for the coach (SS, SN)
+# Pre-declared by lane S0e (R4/R5, freeze point F0e): Challenge v3 embeds `EarSpec` in `Target::Ear` and renders its
+# questions (lane CV3, `v3`, `ear.rs`); the ear-challenge and ear-result codes carry one (kinds 3 and 4, lanes CV3 and RC).
+enth-music.workspace = true
 libm.workspace = true              # the only door to transcendentals: priors and the in-house BS.1770 loudness (RG, SS)
 serde.workspace = true             # Challenge v1, RandomSpec, ScoreReport are persisted (CT)
 serde_json.workspace = true        # fixtures and the long code's payload (CT)

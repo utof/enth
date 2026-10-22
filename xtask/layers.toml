@@ -3,6 +3,7 @@
 enth-dsp = 0
 enth-params = 0
 enth-patch = 1
+enth-music = 1
 enth-engine = 2
 enth-render = 3
 enth-analysis = 3

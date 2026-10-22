@@ -22,6 +22,9 @@ enth-learn.workspace = true
 # `enth_solver::create` and the intake's report from `enth_analysis::intake` (lane SK3). L6 may use L3 and L5.
 enth-analysis.workspace = true
 enth-solver.workspace = true
+# Pre-declared by lane S0e (R4/R5): the pure `ear` module holds an ear session's questions and answers (lane SE); `duel`
+# works on `enth-challenge`'s result codes and `verify`, which it already depends on.
+enth-music.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
