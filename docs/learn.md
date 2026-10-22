@@ -15,6 +15,7 @@ R2 teaches sound design on the instrument you keep: lessons of 5–10 minutes, o
 | The Learn view | `enth-ui::editor::learn` (L7) | LUI, LFU | Built ([editor.md](editor.md#the-learn-view-lane-lui)); LFU's follow-ups [below](#learn-follow-ups-lane-lfu) |
 | Deconstruct lessons, the studies | `enth-learn::deconstruct`, `tools/lesson` (`gen`), `content/lessons/studies/` | DEC | Built ([below](#deconstruct-lessons-lane-dec)) |
 | Review (Leitner boxes) | `enth-learn::review`, `enth-session::review` | REV | Built ([below](#review-lane-rev)) |
+| Ear skills, bursts and drills (R4) | `enth-learn::drill`, additive in `review`, `lesson` and `progress` | DRL | Planned ([below](#ear-skills-bursts-and-drills-r4-planned-lane-drl), [ear.md](ear.md)) |
 | The packs | `content/lessons/<pack>/` | C1, C2, C3, DEC | All four built: `basics` (C1, 16 lessons, bundled in the plugin by LFU), `shaping` (C2, 13), `space-and-dynamics` (C3, 7), `studies` (DEC, 6); the last three install from the Packs folder (the friend zip carries them) |
 | GR2 | [r2-gates.md](r2-gates.md), `cargo xtask gr2-report` (`xtask/src/gr2.rs`), `content/gr2/` | INT2 | Built: the automated rows pass; the human half waits for you and your friends ([owner sheet 4](r2-owner.md), [below](#gr2)) |
 
@@ -402,7 +403,18 @@ Every Recreate round's Good, Near and Bad rings give a free signal per skill (a 
 - **The session** (`LearnEdit::review_start`, a default body for fakes): the item plays as a round of the new origin `review` (`RoundOrigin::Review`; `gr1-report` leaves it out). It stashes like a game round, and the next item takes over a live Review round and its stash; it is refused while a lesson is live (`round_live` over a game round of your own). **No hint on the first try:** a Review round refuses a hint before its first submit (`first_try`); after it the coach opens as in any round.
 - **The view:** the shell gives the day (`Editor::set_review_day`) and hands the progress file back after each write (`Editor::set_progress`, when the process's write count moves); the browser's **Review** shows "Review • N due" (its accessible name stays "Review"), plays the queue's head item, and is disabled while a lesson is live and until a lesson with a Recreate round is passed. Each press plays one item; the queue follows the file, so the next press plays the next weakest skill.
 
-Open: route and enable skills; ear questions (Choose steps) as Review items; a Review round does not survive a project reload (a draw target has no code: it restores broken, its stash kept, and the queue offers the item again); the day is UTC, so it turns at local midnight only in UTC.
+Open: route and enable skills; a Review round does not survive a project reload (a draw target has no code: it restores broken, its stash kept, and the queue offers the item again); the day is UTC, so it turns at local midnight only in UTC. ~~Ear questions (Choose steps) as Review items~~ **closed by R4's design** (below).
+
+### Ear skills, bursts and drills (R4, planned: lane DRL)
+
+**Planned (2026-10-22, R4 research; additive, judged at freeze F1e, [phase-4.md](phase-4.md#freezes)).** R4's ear games feed the same boxes, so the skill is the unit of spacing and the game only its vehicle. The design of record is [ear.md](ear.md#the-drill-player); DRL writes the built form here when it lands.
+
+- **Skill keys:** today's `module.param` keys (`svf.cutoff`) plus `ear.*` keys for what has no parameter: `ear.interval.m3`, `ear.chord.min`, `ear.band.1k`. The progress file keeps unknown keys, so an older build keeps them untouched.
+- **Bursts:** 5 items on one skill, in any game, move its box: 4 or 5 right moves it up, 3 holds it, 2 or fewer moves it down. A single answer in a 2–4 option item is 25–50 % guessable, which is why one answer never moves a box.
+- **Ear questions as Review items** (the open item above): a due skill with no Recreate step plays as a burst, and the queue may serve a due `svf.cutoff` as Spot the change one day and Dial it in another.
+- **`StepKind::Drill`** (additive, declared in `requires`): a lesson step that plays a drill (a game, a skill, a level).
+- **A `drills` progress field** (additive, after `review`, omitted while empty; its merge a join like the rest): thresholds per skill over time and the practised days, for the Ear view.
+- **The staircase is 3-down/1-up** (about 79 % success), not Recreate's 2-down/1-up; its run counter stays internal, so there is still no visible streak.
 
 ## Deconstruct lessons (lane DEC)
 
@@ -564,5 +576,6 @@ All planned (report 03 §8); the files are created by S0l or the lane that owns 
 | Delivery | Bundled + Packs folder + a browser button; no network code in R2 | Reports 02 §4, 03 §7 | Adopted; download is yours to decide after GR1 |
 | Progress | Per user, merged on write; per project only the in-flight lesson | Report 03 §3 | Adopted |
 | Review | Leitner boxes per skill, fed by the rings; no streaks, no `fsrs` | Report 01 §5 | Adopted, later lane |
+| Ear skills and drills (R4) | `ear.*` skills beside `module.param`; 5-item bursts move a box; `StepKind::Drill` and a `drills` progress field, additive; 3-down/1-up | [R4 research](../_local/sessions/2026-10-22-r4-r5-ear-games-and-duels/summary.md), report 01 §3 | Planned (DRL, judged at F1e) |
 | Content licence | Text CC BY 4.0, patches and codes CC0, code MIT | Report 02 §9 | Yours to decide; proceed on it |
 | Immutable releases | A repository setting | Report 02 §4.3 | Yours to decide |
