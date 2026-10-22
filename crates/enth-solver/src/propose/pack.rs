@@ -448,6 +448,10 @@ pub enum Budget {
     Parameters,
     /// [`MAX_FLOPS`].
     Flops,
+    /// The net's memory bound (lane ONX, additive): one value above
+    /// [`MAX_VALUE_ELEMENTS`](super::net::MAX_VALUE_ELEMENTS), or the values alive at once above
+    /// [`MAX_LIVE_ELEMENTS`](super::net::MAX_LIVE_ELEMENTS) (`f32` elements).
+    Memory,
 }
 
 /// What of the header does not match this build.
@@ -577,6 +581,7 @@ impl fmt::Display for PackError {
                     Budget::File => "bytes",
                     Budget::Parameters => "parameters",
                     Budget::Flops => "FLOPs per inference",
+                    Budget::Memory => "f32 elements in memory at once",
                 };
                 write!(f, "the model has {found} {name}; the budget is {limit}")
             }
@@ -1400,6 +1405,277 @@ fn check_build(
     Ok(layout)
 }
 
+/// An `f32` as IEEE 754 binary16, rounded to nearest, ties to even (lane ONX, additive): what an exporter stores for
+/// an `f16` tensor. Out-of-range values become infinities (which the reader refuses), NaN stays NaN.
+#[must_use]
+pub fn f32_to_f16(v: f32) -> u16 {
+    let bits = v.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = ((bits >> 23) & 0xff) as i32;
+    let man = bits & 0x007f_ffff;
+    if exp == 0xff {
+        return sign | 0x7c00 | if man != 0 { 0x200 } else { 0 };
+    }
+    // The value is m · 2^(e − 23) with m = 1.man (or 0.man for a subnormal f32, which is far below f16's range).
+    let e = exp - 127;
+    if e > 15 {
+        return sign | 0x7c00;
+    }
+    let m = if exp == 0 { man } else { man | 0x0080_0000 };
+    // Bits to drop: 13 for a normal f16; more below 2⁻¹⁴, where f16 is subnormal (its last bit is 2⁻²⁴).
+    let shift = if e >= -14 { 13 } else { (13 - 14 - e) as u32 };
+    if shift > 24 {
+        return sign;
+    }
+    let kept = m >> shift;
+    let rest = m & ((1u32 << shift) - 1);
+    let half = 1u32 << (shift - 1);
+    let rounded = kept + u32::from(rest > half || (rest == half && kept & 1 == 1));
+    let out = if e >= -14 {
+        // Normal: the implicit bit is in `rounded`'s bit 10; a carry into bit 11 moves the exponent up by one.
+        ((e + 15) as u32) * 0x400 + rounded - 0x400
+    } else {
+        // Subnormal: `rounded` counts 2⁻²⁴s (a carry into 0x400 is the smallest normal, as the bits read).
+        rounded
+    };
+    if out >= 0x7c00 {
+        sign | 0x7c00
+    } else {
+        sign | out as u16
+    }
+}
+
+/// A value of a graph being written by [`ModelBuilder`]: an input, a stored tensor or a node's output (resolved to
+/// value ids when the file is written: inputs, then tensors, then node outputs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Val {
+    /// Input `i` of the feature set (0 `mel`, 1 `context`).
+    Input(u32),
+    /// Stored tensor `i`, in the order they were added.
+    Tensor(u32),
+    /// The output of node `i`, in the order they were added.
+    Node(u32),
+}
+
+impl Val {
+    /// Feature set 1's `mel`, `[3, 128, 64]`.
+    pub const MEL: Val = Val::Input(0);
+    /// Feature set 1's `context`, `[5]`.
+    pub const CONTEXT: Val = Val::Input(1);
+}
+
+/// A writer of `ENTHMODL` format 1 (lane ONX, additive; the byte table is the [module docs](self)'), for fixtures,
+/// output goldens and tools: feature set 1's inputs, layout 1 on generator 1 and template 0 (this build's hash and
+/// width), tensors at multiples of [`TENSOR_ALIGN`], the SHA-256 last. It writes what it is given: the reader, not
+/// the writer, decides whether a graph is valid (a subnormal `f32` weight, a bad attribute or a missing output is
+/// written as asked and refused by [`ModelPack::parse`]).
+#[derive(Clone, Debug)]
+pub struct ModelBuilder {
+    model_id: String,
+    hypotheses: u16,
+    engine: String,
+    flops: u64,
+    ds1: u16,
+    manifest_sha256: [u8; 32],
+    tensors: Vec<(String, DType, Vec<u32>, Vec<u8>)>,
+    nodes: Vec<(OpCode, Vec<Val>, Vec<i32>)>,
+    outputs: Vec<(String, Val, Vec<u32>)>,
+    info: Vec<(String, String)>,
+}
+
+impl ModelBuilder {
+    /// A model with this id and K hypotheses, no tensors, nodes or outputs yet.
+    #[must_use]
+    pub fn new(model_id: &str, hypotheses: u16) -> ModelBuilder {
+        ModelBuilder {
+            model_id: model_id.to_owned(),
+            hypotheses,
+            engine: String::new(),
+            flops: 0,
+            ds1: 0,
+            manifest_sha256: [0; 32],
+            tensors: Vec::new(),
+            nodes: Vec::new(),
+            outputs: Vec::new(),
+            info: Vec::new(),
+        }
+    }
+
+    /// The header's information-only fields: the engine version, the FLOP figure, the `ds1` version and the training
+    /// manifest's SHA-256.
+    pub fn provenance(
+        &mut self,
+        engine: &str,
+        flops: u64,
+        ds1: u16,
+        manifest_sha256: [u8; 32],
+    ) -> &mut Self {
+        engine.clone_into(&mut self.engine);
+        self.flops = flops;
+        self.ds1 = ds1;
+        self.manifest_sha256 = manifest_sha256;
+        self
+    }
+
+    /// An `f32` tensor (row-major values).
+    pub fn tensor(&mut self, name: &str, dims: &[u32], values: &[f32]) -> Val {
+        let bytes = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.tensors
+            .push((name.to_owned(), DType::F32, dims.to_vec(), bytes));
+        Val::Tensor(self.tensors.len() as u32 - 1)
+    }
+
+    /// An `f16` tensor: each value rounded to binary16 ([`f32_to_f16`]); the net reads them back exactly widened.
+    pub fn tensor_f16(&mut self, name: &str, dims: &[u32], values: &[f32]) -> Val {
+        let bytes = values
+            .iter()
+            .flat_map(|v| f32_to_f16(*v).to_le_bytes())
+            .collect();
+        self.tensors
+            .push((name.to_owned(), DType::F16, dims.to_vec(), bytes));
+        Val::Tensor(self.tensors.len() as u32 - 1)
+    }
+
+    /// A node: its op, the values it reads and its attributes (as the op table orders them); returns its output.
+    pub fn node(&mut self, op: OpCode, inputs: &[Val], attrs: &[i32]) -> Val {
+        self.nodes.push((op, inputs.to_vec(), attrs.to_vec()));
+        Val::Node(self.nodes.len() as u32 - 1)
+    }
+
+    /// A graph output: its name, the value and the dims it declares.
+    pub fn output(&mut self, name: &str, value: Val, dims: &[u32]) -> &mut Self {
+        self.outputs.push((name.to_owned(), value, dims.to_vec()));
+        self
+    }
+
+    /// An info entry.
+    pub fn info(&mut self, key: &str, value: &str) -> &mut Self {
+        self.info.push((key.to_owned(), value.to_owned()));
+        self
+    }
+
+    /// The parameters written so far (every tensor's elements).
+    #[must_use]
+    pub fn parameters(&self) -> u64 {
+        self.tensors
+            .iter()
+            .map(|(_, d, _, b)| (b.len() / d.size()) as u64)
+            .sum()
+    }
+
+    /// The file's bytes.
+    ///
+    /// # Panics
+    /// If a name or the model id is longer than its field (64 and 32 bytes), or a value id overflows `u32`.
+    #[must_use]
+    pub fn build(&self) -> Vec<u8> {
+        fn name(out: &mut Vec<u8>, s: &str) {
+            out.push(u8::try_from(s.len()).expect("a name of at most 64 bytes"));
+            out.extend_from_slice(s.as_bytes());
+        }
+        fn dims(out: &mut Vec<u8>, d: &[u32]) {
+            out.push(d.len() as u8);
+            for x in d {
+                out.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        let layout = OutputLayout::v1();
+        let spec = features::SPEC_V1;
+        let n_in = spec.inputs.len() as u32;
+        let n_t = self.tensors.len() as u32;
+        let id = |v: Val| match v {
+            Val::Input(i) => i,
+            Val::Tensor(i) => n_in + i,
+            Val::Node(i) => n_in + n_t + i,
+        };
+        let mut tables = Vec::new();
+        for i in spec.inputs {
+            name(&mut tables, i.name);
+            tables.push(DType::F32 as u8);
+            dims(&mut tables, i.dims);
+        }
+        let mut data: Vec<u8> = Vec::new();
+        for (n, dtype, d, bytes) in &self.tensors {
+            let at = (data.len() as u64).next_multiple_of(TENSOR_ALIGN);
+            data.resize(at as usize, 0);
+            data.extend_from_slice(bytes);
+            name(&mut tables, n);
+            tables.push(*dtype as u8);
+            dims(&mut tables, d);
+            tables.extend_from_slice(&at.to_le_bytes());
+        }
+        for (op, ins, attrs) in &self.nodes {
+            tables.extend_from_slice(&(*op as u16).to_le_bytes());
+            tables.push(ins.len() as u8);
+            tables.push(1);
+            tables.extend_from_slice(&(attrs.len() as u16).to_le_bytes());
+            tables.extend_from_slice(&0u16.to_le_bytes());
+            for v in ins {
+                tables.extend_from_slice(&id(*v).to_le_bytes());
+            }
+            for a in attrs {
+                tables.extend_from_slice(&a.to_le_bytes());
+            }
+        }
+        for (n, v, d) in &self.outputs {
+            name(&mut tables, n);
+            tables.extend_from_slice(&id(*v).to_le_bytes());
+            dims(&mut tables, d);
+        }
+        for (k, v) in &self.info {
+            name(&mut tables, k);
+            tables.extend_from_slice(&(v.len() as u16).to_le_bytes());
+            tables.extend_from_slice(v.as_bytes());
+        }
+        let data_offset = (HEADER_LEN + tables.len()).next_multiple_of(DATA_ALIGN as usize);
+        let mut out = Vec::with_capacity(data_offset + data.len());
+        out.extend_from_slice(&MAGIC);
+        out.extend_from_slice(&FORMAT.to_le_bytes());
+        out.extend_from_slice(&(HEADER_LEN as u16).to_le_bytes());
+        out.extend_from_slice(&OP_SET.to_le_bytes());
+        out.extend_from_slice(&spec.id.to_le_bytes());
+        out.extend_from_slice(&layout.id().to_le_bytes());
+        out.extend_from_slice(&layout.generator().to_le_bytes());
+        out.push(layout.template_id());
+        out.push(0);
+        out.extend_from_slice(&self.hypotheses.to_le_bytes());
+        out.extend_from_slice(&(layout.width() as u32).to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        let mut field = [0u8; 32];
+        field[..self.model_id.len()].copy_from_slice(self.model_id.as_bytes());
+        out.extend_from_slice(&field);
+        let mut engine = [0u8; 16];
+        engine[..self.engine.len()].copy_from_slice(self.engine.as_bytes());
+        out.extend_from_slice(&engine);
+        out.extend_from_slice(&layout.sha256());
+        out.extend_from_slice(&self.parameters().to_le_bytes());
+        out.extend_from_slice(&self.flops.to_le_bytes());
+        for n in [
+            n_in,
+            n_t,
+            self.nodes.len() as u32,
+            self.outputs.len() as u32,
+        ] {
+            out.extend_from_slice(&n.to_le_bytes());
+        }
+        out.extend_from_slice(&(data_offset as u64).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        out.extend_from_slice(&self.ds1.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&(self.info.len() as u32).to_le_bytes());
+        out.extend_from_slice(&self.manifest_sha256);
+        out.extend_from_slice(&[0u8; 24]);
+        out.extend_from_slice(&[0u8; 32]);
+        debug_assert_eq!(out.len(), HEADER_LEN);
+        out.extend_from_slice(&tables);
+        out.resize(data_offset, 0);
+        out.extend_from_slice(&data);
+        let sha: [u8; 32] = Sha256::digest(&out).into();
+        out[SHA_AT..SHA_AT + 32].copy_from_slice(&sha);
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2135,6 +2411,72 @@ mod tests {
             assert!(v > last, "{h:#06x}");
             last = v;
         }
+    }
+
+    /// The builder (lane ONX) writes the pinned format-1 fixture byte for byte from the same graph, so it follows the
+    /// byte table as the independent writer above does.
+    #[test]
+    fn the_builder_writes_the_pinned_fixture() {
+        let mut b = ModelBuilder::new("propose-v0-test", 8);
+        b.provenance("0.2.0", 10_000, 1, [0x5a; 32]);
+        let w1 = b.tensor_f16("head.hyp.weight", &[8 * 102, 5], &vec![1.0; 8 * 102 * 5]);
+        let conf: Vec<f32> = (0..40).map(|i| i as f32 * 0.25).collect();
+        let w2 = b.tensor("head.conf.weight", &[8, 5], &conf);
+        let h = b.node(OpCode::Linear, &[Val::CONTEXT, w1], &[]);
+        let r = b.node(OpCode::Reshape, &[h], &[8, 102]);
+        let c = b.node(OpCode::Linear, &[Val::CONTEXT, w2], &[]);
+        b.output("hypotheses", r, &[8, 102])
+            .output("confidence", c, &[8]);
+        b.info("commit", "0123abc").info("licence", "renders only");
+        let bytes = b.build();
+        assert_eq!(bytes, self::bytes(&Fixture::default()));
+        assert_eq!(bytes.len(), FIXTURE_LEN);
+        assert!(ModelPack::parse(&bytes).is_ok());
+    }
+
+    #[test]
+    fn f32_to_f16_rounds_to_nearest_even_and_inverts_widening() {
+        for h in 0u16..0x7c00 {
+            assert_eq!(f32_to_f16(f16_to_f32(h)), h, "{h:#06x}");
+            assert_eq!(f32_to_f16(f16_to_f32(h | 0x8000)), h | 0x8000, "-{h:#06x}");
+        }
+        let pow2 = |e: i32| f32::from_bits(((127 + e) as u32) << 23);
+        assert_eq!(
+            f32_to_f16(1.0 + pow2(-11)),
+            0x3c00,
+            "a tie goes to the even mantissa"
+        );
+        assert_eq!(
+            f32_to_f16(1.0 + 3.0 * pow2(-11)),
+            0x3c02,
+            "a tie goes to the even mantissa"
+        );
+        assert_eq!(
+            f32_to_f16(1.0 + pow2(-11) + pow2(-20)),
+            0x3c01,
+            "above the tie rounds up"
+        );
+        assert_eq!(f32_to_f16(65_504.0), 0x7bff);
+        assert_eq!(
+            f32_to_f16(65_520.0),
+            0x7c00,
+            "the tie above the largest finite value is infinite"
+        );
+        assert_eq!(
+            f32_to_f16(pow2(-25)),
+            0x0000,
+            "half the smallest subnormal ties to 0"
+        );
+        assert_eq!(f32_to_f16(3.0 * pow2(-26)), 0x0001);
+        assert_eq!(
+            f32_to_f16(pow2(-14) - pow2(-25)),
+            0x0400,
+            "a carry into the smallest normal"
+        );
+        assert_eq!(f32_to_f16(1e-40), 0x0000);
+        assert_eq!(f32_to_f16(-1e-40), 0x8000);
+        assert_eq!(f32_to_f16(f32::INFINITY), 0x7c00);
+        assert!(f16_to_f32(f32_to_f16(f32::NAN)).is_nan());
     }
 
     #[test]

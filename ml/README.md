@@ -14,6 +14,8 @@ Lane S0s (R3, freeze point F0s) declared this skeleton and nothing else: `pyproj
 | `enth_ml/export/` | ONNX and our model file (`enth-model-<id>.bin`), with a 20-input output golden | TR |
 | `tests/` | `ml/`'s own tests (standard library only for the layout; lanes add theirs) | all |
 
+Lane ONX (R3b) added the first dependency group, `parity` (`onnx`, `onnxruntime`, `numpy`; [ONX](#onx-the-model-file-writer-and-onnx-runtime-parity) below), and committed `uv.lock`; `[project] dependencies` stays empty, so the standard-library run below needs nothing installed.
+
 Run every test with no installation: `python3 -m unittest discover -s tests` from `ml/` (the layout test needs `ml/` as the working directory; the DEG tests also run from the repository root with `-s ml/tests`). The DEG and AUG tests need the system `ffmpeg`, and skip without it. The whole suite (262 tests) takes 3.5 to 6 minutes, depending on what else the machine is building; one lane's tests alone: `python3 -m unittest discover -s tests -p 'test_augment_*.py'`.
 
 ## DEG: the degradation chain
@@ -174,6 +176,27 @@ Per the degradation policy (docs/r3.md, "Yours to decide", proceeded on): codec,
 - **Owner questions**: whether to admit the MIT licence (AIR) to the allowlist (it is kept `research-only`); the reading of the point-source noises as CC0; whether to ask Freesound for a Data Packs download and FSD50K's authors about commercial use; a per-file audit of MUSAN's other folders.
 - `rate` makes the output file's sample rate vary (8-96 kHz); the trainer decides whether to feed that to the features as is or resample back.
 - Tests: `python3 -m unittest discover -s tests -p 'test_augment_*.py'` (a little over half of the suite's time).
+
+## ONX: the model file writer and ONNX Runtime parity
+
+Lane ONX (R3b, our scalar kernels; docs/r3.md, "Our own scalar kernels (lane ONX)") added four modules to `enth_ml/export/` and one script:
+
+| Module | What | Needs |
+| --- | --- | --- |
+| `enthmodl.py` | `ModelWriter`: `ENTHMODL` format 1 exactly as `pack.rs` reads it (header, tables, tensors at multiples of 64, the SHA-256). `f32` weights below the smallest normal are flushed to 0, `f16` tensors are rounded to nearest even. It reproduces `pack.rs`'s pinned format-1 fixture byte for byte, and its op table is checked against `pack.rs`'s | standard library |
+| `tensors.py` | `ENTHTNS1`, a raw tensor file: expected outputs, and inputs for `tools/model-check --inputs` | standard library |
+| `synthetic.py` | deterministic inputs and weights from one SplitMix64 stream, bit for bit as `propose::net::synthetic_input`, so a fixture records a seed instead of a 98 KB input | standard library |
+| `onnx_import.py` | ONNX (batch axis 1) to `ENTHMODL`, op by op (the table in its docstring); folds a `BatchNormalization` into the convolution it follows (the folded weight stays `f32`) and turns `Mul(x, Sigmoid(x))` into `Silu`; refuses anything outside op set 1 | `parity` group |
+| `parity.py` | the parity fixtures: four ONNX graphs built with `onnx.helper` (every op of op set 1, and a CNN with an attention block), run through ONNX Runtime on one thread with graph optimisation off, written as `<name>.bin` and `<name>.expected` | `parity` group |
+
+```
+uv run --group parity python -m enth_ml.export.parity --out ../crates/enth-solver/tests/fixtures/propose
+uv run --group parity python -m unittest discover -s tests -p 'test_export_*.py'
+```
+
+The fixtures are committed (about 55 KB in all); `enth-solver`'s `tests/propose_parity.rs` compiles them in and checks our kernels against ONNX Runtime within 1e-5 on every CI leg (measured: at most 3.6e-7), and `tools/model-check run <name>.bin --expected <name>.expected` does the same by hand for any model. Licences: `onnx` Apache-2.0, `onnxruntime` MIT, `numpy` BSD-3-Clause (its wheels bundle OpenBLAS, BSD-3-Clause, and the GCC runtime under its library exception), and the transitive `protobuf` (BSD-3-Clause), `flatbuffers`, `ml-dtypes` and `packaging` (Apache-2.0) and `typing-extensions` (PSF-2.0): all permissive, imported here only, never shipped; nothing is copied into `ml/`.
+
+**For TR:** export through `ModelWriter` (or check your writer against `tests/test_export_enthmodl.py`'s pinned fixture). Run parity against the weights as the file holds them: `f16`-rounded, and a folded `BatchNorm` rounded **after** folding (rounding before folding and again after cost 3e-5 here, three times the tolerance, until the converter kept folded weights in `f32`).
 
 ## The ML rules
 
