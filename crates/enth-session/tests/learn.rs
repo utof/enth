@@ -1421,6 +1421,8 @@ fn the_largest_lesson_and_its_round_fit_the_enth_field() {
         // Lane LFU: "How close am I?" used and a redo's seed, at their longest.
         closest: true,
         sibling: Some(u64::MAX),
+        // Lane SE: only a game round keeps a compared submit, so a lesson round's budget is unchanged.
+        compared: None,
     };
     let instance = InstanceState {
         ui: enth_session::UiState {

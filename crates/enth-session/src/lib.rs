@@ -20,8 +20,8 @@
 //! | [`learn`] | the pure Learn API: stash, step loads, locks in the edit path, jobs, the read model ([`LearnEdit`], [`LearnView`]); [`LearnState`] in the saved state | SL (R2; pre-declared by S0l) |
 //! | [`review`] | the review source: a Review item's sibling round (origin `review`), no hint on its first try, and every played round's first-submit rings out to the shell for the progress file's boxes | REV (R2) |
 //! | [`create`] | the pure create state: jobs out to the shell and results back, the K candidates' read model, "Use this" as one undo step with no host writes; **no saved state** (a create job is not saved). Empty until F2s | SK3 (R3; pre-declared by S0s) |
-//! | [`ear`] | the pure ear state: questions out as jobs, answers and taps back with the shell's times, the read model the Ear view draws; **no saved state** (an ear session is not saved). Empty until F1e | SE (R4; pre-declared by S0e) |
-//! | [`duel`] | the pure duel state: a scorecard and an answer from the round's first passing submit, the Verify job, a friend's answer sealed until you have played; **no saved state**, no networking. Empty until F1e | SE (R5; pre-declared by S0e) |
+//! | [`ear`] | the pure ear state: questions out as jobs, answers and taps back with the shell's times, the read model the Ear view draws; **no saved state** (an ear session is not saved), and never any contact with the engine | SE (R4; pre-declared by S0e) |
+//! | [`duel`] | the pure duel state: the result of the round's first passing submit (or its best, "not passed") with its patch, a friend's scorecard and answer as data, the answer sealed until you have played, the Verify job, their patch as one undo step; **no saved state**, no networking | SE (R5; pre-declared by S0e) |
 //!
 //! P1b stubs (lane S1s): [`Session::activate`], [`Session::pump`]'s active case, [`Session::edit`] and the audition
 //! calls return [`SessionError::Unsupported`] (or `Inactive`) until lane SK fills them in. Everything else is

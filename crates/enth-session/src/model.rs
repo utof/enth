@@ -135,6 +135,12 @@ pub struct Session {
     pub(crate) learn: crate::learn::LearnLive,
     /// The create job's state (lane SK3; never saved): the job, its candidates and the outbox. See [`crate::create`].
     pub(crate) create: crate::create::CreateLive,
+    /// The ear run's state (lane SE, R4; never saved): the run, its questions and answers and the outbox. See
+    /// [`crate::ear`].
+    pub(crate) ear: crate::ear::EarLive,
+    /// The duel's state (lane SE, R5a; never saved): the open duel, the friend's scorecard and sealed answer, the
+    /// verify job and the outbox. See [`crate::duel`].
+    pub(crate) duel: crate::duel::DuelLive,
 }
 
 impl std::fmt::Debug for Session {
@@ -182,6 +188,8 @@ impl Session {
             game: crate::game::GameLive::default(),
             learn: crate::learn::LearnLive::default(),
             create: crate::create::CreateLive::default(),
+            ear: crate::ear::EarLive::default(),
+            duel: crate::duel::DuelLive::default(),
         }
     }
 
