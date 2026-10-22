@@ -117,7 +117,7 @@ struct ResultArgs<'a> {
 }
 
 /// 64 bits of OS randomness: std's `RandomState` keys (drawn from the operating system once per thread) through
-/// SipHash. Never a clock or a counter (docs/duels.md, "Privacy").
+/// `SipHash`. Never a clock or a counter (docs/duels.md, "Privacy").
 fn fresh_salt() -> u64 {
     let mut h = std::hash::RandomState::new().build_hasher();
     h.write(b"enth-duel-salt");
@@ -158,7 +158,7 @@ fn from_verify(e: &VerifyError) -> CliError {
     }
 }
 
-fn assists(a: &CardAssists) -> Vec<String> {
+fn assists(a: CardAssists) -> Vec<String> {
     [
         (a.live_meter, "live meter"),
         (a.dim_unused, "dim unused"),
@@ -177,7 +177,7 @@ fn reported(card: &Scorecard) -> DuelReportedOut {
         submits: f.submits,
         seconds: f64::from(f.time_ds) / 10.0,
         hints: f.assists.hints,
-        assists: assists(&f.assists),
+        assists: assists(f.assists),
     }
 }
 

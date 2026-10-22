@@ -161,6 +161,10 @@ pub struct DuelCheckOut {
 /// A claim beside this computer's re-score. Percentages are in tenths, rounded as the scorecard rounds them.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent flags of one comparison, each a field of the published JSON"
+)]
 pub struct DuelClaimOut {
     /// The claimed sound %.
     pub claimed_sound: f64,

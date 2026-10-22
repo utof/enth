@@ -253,3 +253,163 @@ fn duel_is_listed_in_help_and_its_schemas_in_enth_schema() {
         assert!(o.stdout.contains(&format!("enth.{name}/1")), "{}", o.stdout);
     }
 }
+
+/// A small deterministic generator for the measurement (`SplitMix64`, Vigna's public-domain constants).
+struct Mix(u64);
+
+impl Mix {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// A uniform in `[-1, 1)`.
+    fn signed(&mut self) -> f32 {
+        (self.next() >> 40) as f32 / (1u64 << 23) as f32 - 1.0
+    }
+}
+
+/// `addr` moved by `d` of its knob's travel (the normalised domain), as a drag leaves it: an exact `f32` with no
+/// three-significant-digit form. `None` for a value that is not a float or that the op refuses.
+fn dragged(
+    patch: &enth_patch::Patch,
+    addr: &enth_patch::ParamAddr,
+    from: f32,
+    d: f32,
+) -> Option<enth_patch::Patch> {
+    let spec = patch.spec(addr)?;
+    if !matches!(spec.kind, enth_params::Kind::Float { .. }) {
+        return None;
+    }
+    let value = spec.from_norm((spec.to_norm(from) + d).clamp(0.0, 1.0));
+    let mut out = patch.clone();
+    enth_patch::apply(
+        &mut out,
+        enth_patch::Op::SetParam {
+            addr: addr.clone(),
+            value,
+        },
+    )
+    .ok()?;
+    Some(out)
+}
+
+fn median_max(v: &mut [usize]) -> (usize, usize) {
+    v.sort_unstable();
+    (
+        v.get(v.len() / 2).copied().unwrap_or(0),
+        v.last().copied().unwrap_or(0),
+    )
+}
+
+/// Real answer sizes on **passing** answers (lane SKD, F2d; docs/duels.md, "Sizes", which measured targets as
+/// stand-ins). Per level, 20 seeds of the level's preset:
+///
+/// - **target**: the target itself (what rebuilding it by edits gives, as the REAPER `duel` scenario does);
+/// - **played**: every randomized float dragged off the target by up to 2 % of its knob's travel (halved until the
+///   patch passes `sound/1`), as a player who matched it by ear and mouse leaves it;
+/// - **played + touched**: that, plus three other knobs nudged by up to 0.5 % of their travel and left there (each kept
+///   only if the patch still passes).
+///
+/// Run: `cargo test -p enth-cli --release --test duel -- --ignored --nocapture measure_passing_answer_sizes`.
+#[test]
+#[ignore = "a measurement for docs/duels.md: run it in release with --nocapture"]
+fn measure_passing_answer_sizes() {
+    let mut mix = Mix(0x5EED_D0E1);
+    println!(
+        "level | n | target median, max | played median, max | played+touched median, max | passed"
+    );
+    for level in 1..=5u8 {
+        let preset = SpecPreset::by_id(level).unwrap();
+        let (mut target, mut played, mut touched) = (Vec::new(), Vec::new(), Vec::new());
+        let mut n = 0;
+        for seed in 1..=20u64 {
+            let code = ChallengeCode::short(preset.spec(LATEST_GENERATOR, seed * 7919)).unwrap();
+            let Ok(round) = prepare_round(code.spec()) else {
+                continue;
+            };
+            n += 1;
+            let size = |p: &enth_patch::Patch| {
+                AnswerCode::new(code, mix_salt(seed), p).map(|a| a.symbols())
+            };
+            let passes = |p: &enth_patch::Patch| {
+                enth_challenge::score_round(&round, p).is_ok_and(|r| r.passed)
+            };
+            target.push(size(round.target()).unwrap());
+            // Played: the randomized floats dragged near the target, closer until it passes.
+            let params = round.generated().params.clone();
+            let mut spread = 0.02f32;
+            let mut answer = None;
+            while spread > 1e-4 {
+                let mut p = round.target().clone();
+                for addr in &params {
+                    let from = round.target().value(addr).unwrap_or(0.0);
+                    if let Some(moved) = dragged(&p, addr, from, mix.signed() * spread) {
+                        p = moved;
+                    }
+                }
+                if passes(&p) {
+                    answer = Some(p);
+                    break;
+                }
+                spread /= 2.0;
+            }
+            let Some(p) = answer else {
+                continue;
+            };
+            played.push(size(&p).unwrap());
+            // Touched: three other floats of enabled modules nudged and left there, while it still passes.
+            let others: Vec<enth_patch::ParamAddr> = p
+                .modules()
+                .filter(|(_, m)| m.enabled)
+                .flat_map(|(_, m)| {
+                    m.spec()
+                        .params
+                        .iter()
+                        .filter_map(|s| enth_patch::ParamAddr::module(m.id.clone(), s.key).ok())
+                        .collect::<Vec<_>>()
+                })
+                .filter(|a| !params.contains(a))
+                .collect();
+            let mut q = p.clone();
+            let mut moved = 0;
+            for _ in 0..12 {
+                if moved == 3 || others.is_empty() {
+                    break;
+                }
+                let addr = &others[(mix.next() % others.len() as u64) as usize];
+                let from = q.value(addr).unwrap_or(0.0);
+                if let Some(r) = dragged(&q, addr, from, mix.signed() * 0.005)
+                    && passes(&r)
+                {
+                    q = r;
+                    moved += 1;
+                }
+            }
+            touched.push(size(&q).unwrap());
+        }
+        let (t, p, q) = (
+            median_max(&mut target),
+            median_max(&mut played),
+            median_max(&mut touched),
+        );
+        println!(
+            "{level} | {n} | {}, {} | {}, {} | {}, {} | {} of {n}",
+            t.0,
+            t.1,
+            p.0,
+            p.1,
+            q.0,
+            q.1,
+            played.len()
+        );
+    }
+}
+
+/// A salt for the measurement (the size does not depend on it).
+fn mix_salt(seed: u64) -> u64 {
+    seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
