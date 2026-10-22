@@ -227,12 +227,42 @@ Lane TR (`enth_ml/model/`, `enth_ml/train/`; design and model card in [docs/r3.m
 ```
 python -m enth_ml.train run --config enth_ml/train/pilot-v0.toml --set 'train_dirs=["RUN"]' --set 'dev_dirs=["DEV"]' --set out=OUT [--resume]
 python -m enth_ml.train cache RUN RUN-f16        # an f16 training cache of a ds1 run (50 KB a sample instead of 99)
-python -m enth_ml.train eval --ckpt OUT/ckpt-best.pt [--mel f2]
+python -m enth_ml.train eval --ckpt OUT/ckpt/best.pt [--mel f2]   # the pilot (before TR2): OUT/ckpt-best.pt
 python -m enth_ml.train report OUT              # learning curves, throughput, GPU use as Markdown
 python -m enth_ml.train info RUN [RUN ...]
 ```
 
-It reads lane DG's `ds1` shards (`tools/datagen`, `enth-datagen ds1 gen`) and refuses a run whose layout hash, entry names or feature set are not layout 1's and feature set 1's, or a dev set from the training stream. Each run directory gets `run.json` (commit, `uv.lock` and data manifests' SHA-256, environment, config, model size), `metrics.jsonl`, `gpu.csv` (`nvidia-smi` every 5 s), `ckpt-last.pt` and `ckpt-best.pt`. Logs stay local. On the training desktop (WSL2, no C compiler) `TORCH_DISABLE_NATIVE_JIT=1` is set by the command line, since torch's Triton kernels need a compiler.
+It reads lane DG's `ds1` shards (`tools/datagen`, `enth-datagen ds1 gen`) and refuses a run whose layout hash, entry names or feature set are not layout 1's and feature set 1's, or a dev set from the training stream. Each run directory gets `run.json` (commit, `uv.lock` and data manifests' SHA-256, environment, config, model size), `config.json`, `status.json`, `metrics.jsonl`, `gpu.csv` (`nvidia-smi` every 5 s) and `ckpt/` (below). Logs stay local. On the training machines (WSL2; the desktop has no C compiler) `TORCH_DISABLE_NATIVE_JIT=1` is set by the command line, since torch's Triton kernels need a compiler.
+
+### Stop, resume and crash safety (lane TR2)
+
+```
+python -m enth_ml.train stop RUN_DIR [--wait 180]   # STOP file + SIGTERM: the step ends, a checkpoint is written, exit 75
+python -m enth_ml.train status RUN_DIR [--json]     # step, samples seen, checkpoints, dev best, speed, ETA, alive?
+python -m enth_ml.train resume RUN_DIR [--set workers=6 ...]   # from the newest valid checkpoint, with the run's config.json
+python -m enth_ml.train run --config C ...          # resumes by default when OUT has checkpoints (--no-resume refuses)
+python -m enth_ml.train produce --bin B --gr3 G --staging S --out O --seed-base N --parts P [--keep-newest K]
+python -m enth_ml.train augproduce --bin B --gr3 G --staging S --out O --seed-base N --parts P [--data-dir D]
+```
+
+- **Stopping** (`control.py`): the `stop` command, a `RUN_DIR/STOP` file, SIGTERM or SIGINT end the current step, write a checkpoint and exit with status 75 (stopped, resumable); a start or resume removes a stale `STOP`. Measured: 1-2 s on a CPU test run, 3.5-6 s on a GPU with the data on a local disk, 13-40 s when the step was waiting for a batch from an HDD read through WSL's 9P mount. `status` and `stop` never import torch.
+- **Checkpoints** (`ckpt.py`): `ckpt/periodic-<step>.pt` every `ckpt_every_minutes` (25) and at a stop or the end, **the newest two kept**; `ckpt/best.pt` at every new best dev best-of-K, never rotated. Each is written `tmp` → `fsync` → rename, with a SHA-256 in `ckpt/manifest.json` and in a `.sha256` sidecar. A failed write (WSL's 9P mount of a Windows drive returned ENOMEM under memory pressure) is retried and skipped: training never stops for it; only a stop whose checkpoint cannot be written fails.
+- **Resume**: the newest checkpoint (by step, `best.pt` included) that passes its checksum and loads; a truncated or corrupt one falls back to the next older. It restores the model, the optimiser, the gradient scaler, the WTA loss's running mean, the step and epoch (the LR schedule and the WTA temperature are functions of them: with `max_minutes = 0` there is no wall-clock term), **the epoch's shard list and the number of samples consumed in it** (`data.EpochPlan`: an epoch's sample order depends only on the seed, the epoch and the shard list, not on the number of loader workers), the RNG states, the log accumulators, the best dev loss and the early-stop counter. Tests (`tests/test_train_resume.py`, `tests/test_train_resume_proc.py`, CPU): a run stopped at step k and resumed ends with the same weights, optimiser state and logged losses as one that never stopped (mid-epoch, at an epoch end, twice, with two workers); `kill -9` loses at most one interval, leaves no orphan and still ends identical; a damaged newest checkpoint falls back; rotation keeps 2 + best; the stop command, the STOP file, SIGTERM and SIGINT each stop within the bound with exit 75.
+- **Data that grows** (`produce.py`, `augdata.py`): a training set is rendered in parts (one `ds1` run seed each, a seed base per machine) while the run trains: `train_glob` finds the parts complete at each epoch start; `max_repeat` paces the run (samples seen stay within that many times the distinct samples; it waits at an epoch boundary, and the wait is not training time); `train_window_samples` makes a rolling cache of the newest parts (with `produce --keep-newest`); `replay_from` trains on exactly another run's epochs (same parts, same order), so two arms differ only in their config. `augproduce` makes augmented parts: `ds1 render`, AUG's chain (`shipped_ok` records only; a second clip of the part as the `mix_in` layer), `shards features` (the dry label: degradation is damage), the f16 cache.
+
+### The coordinator's runbook (lane TR2's full run, 2026-10-22)
+
+Each machine has a wrapper that knows its paths (`tr2` for arm A, `tr2b` for arm B on isaac-pc; `tr2` on the desktop), so every command is one line from the laptop. `stop` returns once the process has exited with its checkpoint (it waits up to 300 s); `resume` starts the run detached (it survives the ssh session) and refuses to start a second copy.
+
+| What | isaac-pc (arms A and B; B starts after A) | desktop (idle since the owner moved B) |
+| --- | --- | --- |
+| status | `ssh isaac-pc "wsl -d Ubuntu-24.04 -- bash -lc '~/enth-train/tr2 status'"` (B: `tr2b`) | `ssh desktop /mnt/d/enth-train/tr2/bin/tr2 status` |
+| stop | `ssh isaac-pc "wsl -d Ubuntu-24.04 -- bash -lc '~/enth-train/tr2 stop'"` (B: `tr2b`) | `ssh desktop /mnt/d/enth-train/tr2/bin/tr2 stop` |
+| resume (after a stop, a crash or a reboot) | `ssh isaac-pc "wsl -d Ubuntu-24.04 -- bash -lc '~/enth-train/tr2 resume'"` (B: `tr2b`) | `ssh desktop /mnt/d/enth-train/tr2/bin/tr2 resume` |
+| the last log lines | `... '~/enth-train/tr2 log'` | `ssh desktop /mnt/d/enth-train/tr2/bin/tr2 log` |
+| the renderer | `... '~/enth-train/tr2 produce-status'`; stop it: `... 'touch ~/enth-train/data/train/PRODUCE-STOP'` (between parts) | stopped |
+
+Run directories: A `/home/isaac/enth-train/runs/full-v0-a`, B `/home/isaac/enth-train/runs/full-v0-b` (WSL's own disk; the first minutes of A ran in `/mnt/e/enth-train/tr2/runs/`, moved because WSL's 9P mount of E: returned ENOMEM on large writes). Training parts: `/home/isaac/enth-train/data/train/train-s<seed>-f16` (seeds 101-134). If isaac-pc hangs or reboots, the run is simply not alive any more: `status` says so (the heartbeat is old or the PID is gone) and `resume` carries on from the newest valid checkpoint, losing at most 25 minutes. A run that finished (`state finished`) does nothing when resumed.
 
 ## The ML rules
 

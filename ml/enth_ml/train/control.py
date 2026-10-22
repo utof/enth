@@ -138,6 +138,9 @@ def status_main(argv: list[str]) -> int:
         return 0
     if not st.get("pid"):
         print(f"{a.run}: no status yet (never started here?)")
+        for c in st["checkpoints"]:
+            print(f"ckpt      {c['file']} step {c.get('step')}")
+        return 0
     state = "RUNNING" if st["alive"] else ("not running: " + str(st.get("state", "unknown")))
     print(f"run       {a.run}")
     print(f"process   {state} (pid {st.get('pid')}, heartbeat {_fmt_s(st.get('heartbeat_age_s'))} ago)" + (f"  WARNING: {st['warning']}" if st.get("warning") else ""))

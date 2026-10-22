@@ -4,7 +4,7 @@
     python -m enth_ml.train resume RUN_DIR [--set key=value ...]            # carry on with the run's config.json
     python -m enth_ml.train stop RUN_DIR [--wait SECONDS]                   # checkpoint and exit at the end of a step
     python -m enth_ml.train status RUN_DIR [--json]                         # step, samples, checkpoints, ETA, alive?
-    python -m enth_ml.train eval --ckpt RUN/ckpt-best.pt [--mel f2] [--dev DIR ...]
+    python -m enth_ml.train eval --ckpt RUN/ckpt/best.pt [--mel f2] [--dev DIR ...]
     python -m enth_ml.train info DIR [DIR ...]
     python -m enth_ml.train report RUN_DIR [--every N]
     python -m enth_ml.train cache SRC_RUN_DIR OUT_DIR [--workers N]   # an f16 training cache of a ds1 run
