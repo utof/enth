@@ -135,7 +135,11 @@ fn the_v1_and_v2_fixtures_read_and_write_as_before() {
         let version = if name.starts_with("v1/") { 1 } else { 2 };
         assert_eq!(c.version(), version, "{name}");
         assert_eq!(c.to_json_pretty() + "\n", text, "{name}");
-        assert_eq!(serde_json::from_str::<Challenge>(&text).unwrap(), c, "{name}");
+        assert_eq!(
+            serde_json::from_str::<Challenge>(&text).unwrap(),
+            c,
+            "{name}"
+        );
     }
 }
 
