@@ -2,11 +2,12 @@
 //! fork's captured-shortcut hook, report 02 D6, so the buttons are the way to undo in every host). Built-in cards a
 //! layout places here (layout 1: master) draw as inline knobs at the right end, with every control's menu.
 //!
-//! Five hook points end [`Header::show`] (lanes S0r, R1/S1, S0l, R2, and S0s, R3): Add (`editor/add_module.rs`, feature
-//! `add-module`, lane AM), Presets (`editor/browser.rs`, feature `presets`, lane PBU), Recreate
+//! Six hook points end [`Header::show`] (lanes S0r, R1/S1, S0l, R2, S0s, R3, and S0e, R4): Add (`editor/add_module.rs`,
+//! feature `add-module`, lane AM), Presets (`editor/browser.rs`, feature `presets`, lane PBU), Recreate
 //! (`editor/recreate/bar.rs`, feature `recreate`, lane RUI), Learn (`editor/learn/header.rs`, feature `learn`, lane
-//! LUI) and Create (`editor/create/header.rs`, feature `create`, lane PUI). Each is a no-op until its lane fills it
-//! (Learn's and Create's draw an inert entry, and only once a shell says lessons or create are available).
+//! LUI), Create (`editor/create/header.rs`, feature `create`, lane PUI) and Ear (`editor/ear/header.rs`, feature `ear`,
+//! lane EUI). Each is a no-op until its lane fills it (Learn's, Create's and Ear's draw an inert entry, and only once a
+//! shell says lessons, create or the ear games are available).
 
 use egui::{Align, Align2, Button, Layout, Rect, RichText, Ui, UiBuilder, pos2};
 
@@ -41,6 +42,10 @@ pub struct HeaderView {
     /// shell says create from sound is available.
     #[cfg(feature = "create")]
     pub create: crate::editor::create::HeaderCreate,
+    /// The Ear entry's view (lane EUI's hook, pre-declared by lane S0e): empty, and drawn as nothing, until the shell
+    /// says the ear games are available.
+    #[cfg(feature = "ear")]
+    pub ear: crate::editor::ear::HeaderEar,
 }
 
 /// The header band.
@@ -161,5 +166,8 @@ impl<'a> Header<'a> {
         // Lane S0s (R3): the Create entry joins the same row, left of Learn. Inert until lane PUI fills it.
         #[cfg(feature = "create")]
         crate::editor::create::header::header(&mut buttons, t, inner, self.view, out);
+        // Lane S0e (R4): the Ear entry joins the same row, left of Create. Inert until lane EUI fills it.
+        #[cfg(feature = "ear")]
+        crate::editor::ear::header::header(&mut buttons, t, inner, self.view, out);
     }
 }

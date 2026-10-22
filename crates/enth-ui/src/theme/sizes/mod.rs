@@ -2,7 +2,7 @@
 //! the dimensions of its own area in its own file: `bar`, `card`, `cards` (UI-C), `display`, `editor` (ED1), `handle`,
 //! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
 //! R1/S1 (lane S0r) pre-declared three empty areas: `recreate` (RUI), `browser` (PBU) and `add_module` (AM); R2 (lane S0l) one:
-//! `learn` (LUI); R3 (lane S0s) one: `create` (PUI).
+//! `learn` (LUI); R3 (lane S0s) one: `create` (PUI); R4 and R5 (lane S0e) two: `ear` (EUI) and `duel` (DUI).
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,8 @@ mod card;
 mod cards;
 mod create;
 mod display;
+mod duel;
+mod ear;
 mod editor;
 mod handle;
 mod knob;
@@ -32,6 +34,8 @@ pub use card::CardSizes;
 pub use cards::CardsSizes;
 pub use create::CreateSizes;
 pub use display::DisplaySizes;
+pub use duel::DuelSizes;
+pub use ear::EarSizes;
 pub use editor::EditorSizes;
 pub use handle::HandleSizes;
 pub use knob::KnobSizes;
@@ -85,6 +89,12 @@ pub struct Sizes {
     /// The Create view: drop zone, folder browser, candidate tiles, progress bar (lane PUI; empty until it adds tokens).
     #[serde(default)]
     pub create: CreateSizes,
+    /// The Ear view: column, round types, replay, thresholds, practised-days calendar (lane EUI; empty until it adds tokens).
+    #[serde(default)]
+    pub ear: EarSizes,
+    /// The duel card: share line, paste box, verification, sealed answer, history (lane DUI; empty until it adds tokens).
+    #[serde(default)]
+    pub duel: DuelSizes,
     /// Height of single-line controls: buttons, segmented controls, number fields.
     pub control_height: f32,
 }
@@ -111,6 +121,8 @@ impl Sizes {
             add_module: AddModuleSizes::dark(),
             learn: LearnSizes::dark(),
             create: CreateSizes::dark(),
+            ear: EarSizes::dark(),
+            duel: DuelSizes::dark(),
             control_height: 24.0,
         }
     }
