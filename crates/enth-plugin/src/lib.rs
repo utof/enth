@@ -32,6 +32,8 @@
 //! | [`presets`] | the preset files: the user folder, the lazy scan, saving `Patch::to_json()` | PBC (R1/S1; pre-declared by S0r) |
 //! | `learn` | with the `learn` cargo feature: pack I/O (bundled packs and the Packs folder), the progress file, Learn jobs on the game worker, the session's Learn requests acted on after unlocking | SKL (R2, F2l) |
 //! | `create` | with the `create` cargo feature: the `enth-create` thread, the per-job `rayon` pool (joined per job), cancel within one batch, the wall-clock cap, the file decoders, the k-NN bank's lookup, auditions; the session's create requests acted on after unlocking | SK3 (R3, F2s; pre-declared by S0s) |
+//! | `ear` | with the `ear` cargo feature: ear jobs on the game worker, examples at the host's rate through the Target slot, the "play from the top" flag, the progress file's `drills` field; the tap path (TAP); empty until F2e | SKE (R4; pre-declared by S0e), TAP |
+//! | `duel` | with the `duel` cargo feature: duel jobs (`verify`) on the game worker, the clipboard written on a click and read only on Paste, the duel history file (DUI); no networking code; empty until F2d | SKD (R5; pre-declared by S0e), DUI |
 //! | [`crash`] | the panic hook that writes a local crash file; no network, no signal handlers | PBC (R1/S1) |
 #![allow(
     unsafe_code,
@@ -44,6 +46,10 @@
 pub mod crash;
 #[cfg(feature = "create")]
 pub mod create;
+#[cfg(feature = "duel")]
+pub mod duel;
+#[cfg(feature = "ear")]
+pub mod ear;
 pub mod editor;
 #[cfg(feature = "editor-counts")]
 pub mod editor_counts;
