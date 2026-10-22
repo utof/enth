@@ -463,7 +463,7 @@ fn the_model_records_wire_names_are_pinned() {
     insta::assert_json_snapshot!("model_record", record);
 }
 
-/// What docs/r3.md tells lane EVb: a target that was not overridden gives the intake's proposals from its own clip and
+/// What docs/r3.md tells lane `EVb`: a target that was not overridden gives the intake's proposals from its own clip and
 /// performance (the input reads the clip's first 2 s, which the 3 s scored window holds), so the GR3 kit's proposer,
 /// which sees the target and not the intake, proposes the same starts.
 #[test]
