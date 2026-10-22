@@ -1,0 +1,39 @@
+---
+source: crates/enth-cli/tests/duel.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "answer": "F220-938N-KRKA-YDXW-0G02-0000-004T-20FH-8KAY-117H-ZR05-6DPW-GVNA",
+  "code": "1080-1000-0002-D9",
+  "message": [
+    "enth duel · Level 2 · 1080-1000-0002-D9",
+    "100.0 % in 2:41 · 3 submits · 1 hint",
+    "F120-8010-0000-02D0-01G0-0FT7-T430-S510-WBB6-72FV-VZ80-XMST-MZ5"
+  ],
+  "next": "send the message now (it spoils nothing); once your friend has played, send the answer code; they check it with `enth duel verify 'F220-938N-KRKA-YDXW-0G02-0000-004T-20FH-8KAY-117H-ZR05-6DPW-GVNA'`",
+  "patch": "[TMP]/target.patch.json",
+  "reported": {
+    "assists": [],
+    "hints": 1,
+    "seconds": 161,
+    "submits": 3
+  },
+  "salt": "0123456789abcdef",
+  "schema": "enth.duel-result/1",
+  "score": {
+    "combined": 100,
+    "pass_mark": 90,
+    "passed": true,
+    "sound": 100,
+    "structure": 100
+  },
+  "scorecard": "F120-8010-0000-02D0-01G0-0FT7-T430-S510-WBB6-72FV-VZ80-XMST-MZ5",
+  "symbols": {
+    "answer": 52,
+    "scorecard": 51
+  },
+  "warnings": []
+}
+--- stderr

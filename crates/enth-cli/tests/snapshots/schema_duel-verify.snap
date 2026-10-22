@@ -1,0 +1,391 @@
+---
+source: crates/enth-cli/tests/schemas.rs
+expression: v
+---
+{
+  "$defs": {
+    "DuelCardOut": {
+      "additionalProperties": false,
+      "description": "A scorecard, as reported by the sender's app.",
+      "properties": {
+        "challenge": {
+          "description": "The challenge played.",
+          "type": "string"
+        },
+        "combined": {
+          "description": "The claimed combined %.",
+          "format": "double",
+          "type": "number"
+        },
+        "engine": {
+          "description": "The engine the claim was scored on.",
+          "type": "string"
+        },
+        "engine_here": {
+          "description": "The engine this build runs.",
+          "type": "string"
+        },
+        "lines": {
+          "description": "The two human lines.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "passed": {
+          "description": "Whether it claims a pass.",
+          "type": "boolean"
+        },
+        "reported": {
+          "$ref": "#/$defs/DuelReportedOut",
+          "description": "The reported submits, time and assists."
+        },
+        "scorers": {
+          "description": "The claim's scorer set, by its index.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scorers_known": {
+          "description": "Whether this build has that scorer set.",
+          "type": "boolean"
+        },
+        "sound": {
+          "description": "The claimed sound %, as reported.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "challenge",
+        "lines",
+        "sound",
+        "combined",
+        "passed",
+        "engine",
+        "engine_here",
+        "scorers",
+        "scorers_known",
+        "reported"
+      ],
+      "type": "object"
+    },
+    "DuelCheckOut": {
+      "additionalProperties": false,
+      "description": "One answer code, checked on this computer.",
+      "properties": {
+        "challenge": {
+          "description": "The challenge it was played on.",
+          "type": "string"
+        },
+        "claim": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DuelClaimOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The scorecard's claim beside it, when a scorecard for the same challenge was in the text."
+        },
+        "mine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScoreOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Your patch (`--mine`) scored as its canonical answer on the same prepared round."
+        },
+        "ops": {
+          "description": "The ops it carries.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scorers": {
+          "description": "The scorer set it was scored with (its index).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "symbols": {
+          "description": "Symbols in the answer code.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "theirs": {
+          "$ref": "#/$defs/ScoreOut",
+          "description": "Their answer's score here: checked on your computer."
+        },
+        "warnings": {
+          "description": "Differences that did not stop the check (a long challenge made on another engine).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "challenge",
+        "symbols",
+        "ops",
+        "theirs",
+        "scorers",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "DuelClaimOut": {
+      "additionalProperties": false,
+      "description": "A claim beside this computer's re-score. Percentages are in tenths, rounded as the scorecard rounds them.",
+      "properties": {
+        "as_reported": {
+          "description": "The same numbers and pass with the claim's own scorers: \"as reported\".",
+          "type": "boolean"
+        },
+        "claimed_combined": {
+          "description": "The claimed combined %.",
+          "format": "double",
+          "type": "number"
+        },
+        "claimed_passed": {
+          "description": "Whether it claims a pass.",
+          "type": "boolean"
+        },
+        "claimed_sound": {
+          "description": "The claimed sound %.",
+          "format": "double",
+          "type": "number"
+        },
+        "combined": {
+          "description": "The combined % here, rounded to tenths.",
+          "format": "double",
+          "type": "number"
+        },
+        "commitment_matches": {
+          "description": "The answer is the one the scorecard's salted commitment fixed. False: it was changed after the scorecard\n(flagged, never refused).",
+          "type": "boolean"
+        },
+        "engine_differs": {
+          "description": "The claim was scored on another engine version: both numbers are shown.",
+          "type": "boolean"
+        },
+        "passed": {
+          "description": "Whether it passes here.",
+          "type": "boolean"
+        },
+        "scorers_differ": {
+          "description": "The claim was scored with a scorer set this build lacks: checked with this build's, both numbers shown.",
+          "type": "boolean"
+        },
+        "sound": {
+          "description": "The sound % here, rounded to tenths.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "claimed_sound",
+        "sound",
+        "claimed_combined",
+        "combined",
+        "claimed_passed",
+        "passed",
+        "as_reported",
+        "engine_differs",
+        "scorers_differ",
+        "commitment_matches"
+      ],
+      "type": "object"
+    },
+    "DuelFoundOut": {
+      "additionalProperties": false,
+      "description": "A code found in the text.",
+      "properties": {
+        "code": {
+          "description": "Its canonical text.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`challenge`, `scorecard`, `answer`, `ear_challenge` or `ear_result`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "code"
+      ],
+      "type": "object"
+    },
+    "DuelRefusedOut": {
+      "additionalProperties": false,
+      "description": "A token that looked like a code and did not decode.",
+      "properties": {
+        "error": {
+          "description": "The stable error code (`bad_check`, `code_too_new`, `answer_too_new`, …).",
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to do about it.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The token, as read.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "error",
+        "hint"
+      ],
+      "type": "object"
+    },
+    "DuelReportedOut": {
+      "additionalProperties": false,
+      "description": "What a scorecard reports: the sender's app's numbers, never checked.",
+      "properties": {
+        "assists": {
+          "description": "The live meter, \"dim unused\", \"How close am I?\", a reveal after the pass.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hints": {
+          "description": "Hints used (15 means \"15 or more\").",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seconds": {
+          "description": "Seconds: the time to pass, or the round's active time without a pass (tenths; at most 6553.5, \"or more\").",
+          "format": "double",
+          "type": "number"
+        },
+        "submits": {
+          "description": "Submits up to the compared one (1 to 127; 127 means \"127 or more\").",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "submits",
+        "seconds",
+        "hints",
+        "assists"
+      ],
+      "type": "object"
+    },
+    "ScoreOut": {
+      "additionalProperties": false,
+      "description": "The three percentages of a round's score and its pass decision.",
+      "properties": {
+        "combined": {
+          "description": "Combined %: the challenge's weighted mix of the two.",
+          "format": "double",
+          "type": "number"
+        },
+        "pass_mark": {
+          "description": "The pass mark, in sound %.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "description": "Whether sound % is at or above the pass mark.",
+          "type": "boolean"
+        },
+        "sound": {
+          "description": "Sound %, 0 to 100: how close it sounds. It alone decides `passed`.",
+          "format": "double",
+          "type": "number"
+        },
+        "structure": {
+          "description": "Structure %, 0 to 100: how close the randomized parameters are.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sound",
+        "structure",
+        "combined",
+        "pass_mark",
+        "passed"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "enth.duel-verify/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`enth.duel-verify/1`: every code in the text, and each answer code re-scored on this build against the scorecard\nsent before it. **This computer's scores decide**; a claim is only compared.",
+  "properties": {
+    "cards": {
+      "description": "The scorecards, as reported by their app.",
+      "items": {
+        "$ref": "#/$defs/DuelCardOut"
+      },
+      "type": "array"
+    },
+    "checks": {
+      "description": "Each answer code, checked on this computer.",
+      "items": {
+        "$ref": "#/$defs/DuelCheckOut"
+      },
+      "type": "array"
+    },
+    "found": {
+      "description": "Every code that decoded, in order.",
+      "items": {
+        "$ref": "#/$defs/DuelFoundOut"
+      },
+      "type": "array"
+    },
+    "next": {
+      "description": "What to do next.",
+      "type": "string"
+    },
+    "refused": {
+      "description": "Code-looking tokens that did not decode, with why.",
+      "items": {
+        "$ref": "#/$defs/DuelRefusedOut"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "enth.duel-verify/1",
+      "description": "`enth.duel-verify/1`.",
+      "type": "string"
+    },
+    "wrote": {
+      "description": "Where `--out` wrote the answer's patch.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "found",
+    "refused",
+    "cards",
+    "checks",
+    "next"
+  ],
+  "title": "DuelVerifyOut",
+  "type": "object"
+}

@@ -847,6 +847,26 @@ enum Msg {
     /// The Listen state is no longer ready: drop a set of example loops the player holds (not a round's loop).
     #[cfg(feature = "learn")]
     ClearExamples,
+    /// A shell task (lane SKD's duel jobs, feature `duel`): [`Game::run_task`].
+    #[cfg(feature = "duel")]
+    Task(WorkerTask),
+}
+
+/// A task another part of the shell runs on the game worker (lane SKD's duel jobs: the codes, verify, an audition):
+/// called with the worker's [`Runner`] and the host's rate (0 before the first activation); a loop it returns is
+/// published to the player. It posts its own result; the worker asks the editor for a repaint after it.
+#[cfg(feature = "duel")]
+pub struct WorkerTask(pub Box<TaskFn>);
+
+/// What a [`WorkerTask`] runs.
+#[cfg(feature = "duel")]
+pub type TaskFn = dyn FnOnce(&mut Runner, u32) -> Option<Box<TargetLoop>> + Send;
+
+#[cfg(feature = "duel")]
+impl std::fmt::Debug for WorkerTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WorkerTask")
+    }
 }
 
 /// What the worker shares with the shell's side.
@@ -1005,6 +1025,19 @@ fn work(inner: &Inner) {
                     inner.publish(Box::new(TargetLoop::empty()));
                 }
             }
+            // A shell task (lane SKD): a panic is caught here too (the task posts its own result first if it can).
+            #[cfg(feature = "duel")]
+            Msg::Task(WorkerTask(task)) => {
+                let rate = inner.host_rate.load(Ordering::Acquire);
+                if let Ok(Some(l)) =
+                    panic::catch_unwind(AssertUnwindSafe(|| task(&mut runner, rate)))
+                {
+                    inner.publish(l);
+                }
+                if let Some(ctx) = inner.repaint.lock().as_ref() {
+                    ctx.request_repaint();
+                }
+            }
         }
         inner.busy.fetch_sub(1, Ordering::AcqRel);
     }
@@ -1022,6 +1055,10 @@ pub struct Game {
     /// The host rate a re-render was last asked for (once per change).
     rerender_asked: AtomicU32,
     log: RoundLog,
+    /// The duel shell (lane SKD, feature `duel`): the duels' salts and codes, the worker's posts, the duel log. Here, so
+    /// the editor glue that hands the worker's results back each frame reaches it.
+    #[cfg(feature = "duel")]
+    pub duel: crate::duel::Duel,
 }
 
 impl std::fmt::Debug for Game {
@@ -1071,6 +1108,8 @@ impl Game {
             ready: AtomicBool::new(false),
             rerender_asked: AtomicU32::new(0),
             log: RoundLog::default(),
+            #[cfg(feature = "duel")]
+            duel: crate::duel::Duel::default(),
         }
     }
 
@@ -1180,6 +1219,12 @@ impl Game {
             .queue
             .lock()
             .retain(|m| !matches!(m, Msg::Run(job) if job.id == id));
+    }
+
+    /// Queue a shell task on the worker (lane SKD's duel jobs): it runs after the jobs queued before it.
+    #[cfg(feature = "duel")]
+    pub fn run_task(&self, task: WorkerTask) {
+        self.send(Msg::Task(task));
     }
 
     // --- Learn (lane SKL, feature `learn`) ---------------------------------------------------------------------

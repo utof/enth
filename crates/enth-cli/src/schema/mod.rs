@@ -6,6 +6,7 @@
 //! tests keeps the schemas honest instead.
 
 pub mod create;
+pub mod duel;
 pub mod game;
 pub mod lesson;
 pub mod types;
@@ -15,6 +16,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::Value;
 
 pub use create::*;
+pub use duel::*;
 pub use game::*;
 pub use lesson::*;
 pub use types::*;
@@ -81,6 +83,10 @@ pub mod ids {
     pub const LESSON_CLOSEST: &str = "enth.lesson-closest/1";
     /// `enth create` (lane SK3 built it; lane CLC typed it).
     pub const CREATE: &str = "enth.create/1";
+    /// `enth duel result` (R5a, lane SKD).
+    pub const DUEL_RESULT: &str = "enth.duel-result/1";
+    /// `enth duel verify` (R5a, lane SKD).
+    pub const DUEL_VERIFY: &str = "enth.duel-verify/1";
     /// Every error.
     pub const ERROR: &str = "enth.error/1";
     /// A performance (`--perf`, the WAV chunk).
@@ -311,6 +317,18 @@ pub const ENTRIES: &[Entry] = &[
         id: ids::CREATE,
         describes: "the output of enth create (R3: candidates from a sound file)",
         generate: gen_schema::<CreateOut>,
+    },
+    Entry {
+        name: "duel-result",
+        id: ids::DUEL_RESULT,
+        describes: "the output of enth duel result (R5a: a played patch's scorecard and answer code)",
+        generate: gen_schema::<DuelResultOut>,
+    },
+    Entry {
+        name: "duel-verify",
+        id: ids::DUEL_VERIFY,
+        describes: "the output of enth duel verify (R5a: pasted codes re-scored on this computer)",
+        generate: gen_schema::<DuelVerifyOut>,
     },
 ];
 

@@ -53,6 +53,10 @@ pub enum Intent {
     /// which applies it to the session's `CreateEdit` after the frame (`Editor::apply_create`).
     #[cfg(feature = "create")]
     Create(crate::editor::create::CreateIntent),
+    /// The duel card (lane SKD's minimal card, F2d; lane DUI's card): the editor hands it to its duel state, which
+    /// applies it to the session's `DuelEdit` after the frame (`Editor::apply_duel`); **Share** goes to the shell.
+    #[cfg(feature = "duel")]
+    Duel(crate::editor::duel::DuelIntent),
     /// A drag started on a control: the edits up to the matching `End` are one gesture (one undo step).
     Begin(Grip),
     /// A parameter's new plain value, in real units and valid for its spec.
@@ -135,6 +139,13 @@ impl Intent {
                 reason = "lane SK3's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
             )]
             Intent::Create(_) => Vec::new(),
+            // The duel card's intents go to the session's `DuelEdit` and the shell, never through ops (lane SKD).
+            #[cfg(feature = "duel")]
+            #[allow(
+                clippy::match_same_arms,
+                reason = "lane SKD's arm stays apart from the shared one, so concurrent lanes add arms without a conflict"
+            )]
+            Intent::Duel(_) => Vec::new(),
             Intent::Set { addr, value } => vec![Op::SetParam {
                 addr: addr.clone(),
                 value: *value,

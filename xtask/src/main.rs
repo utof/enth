@@ -115,12 +115,13 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     bundle, then run the pinned clap-validator 0.4.1 (downloaded into target/tools/,
                                     sha256-checked) on the .clap file; the debug bundle has assert_process_allocs on
   reaper-test [--package <pkg>] [--plugin-name <name>] [--release] [--no-build] [--bundle-dir <dir>]
-              [--format clap|vst3] [--scenario <name>]...
+              [--format clap|vst3] [--scenario <name>]... [--features <list>]
                                     local gate: the REAPER scenarios (state, patch-roundtrip, slot-automation,
                                     macro-automation, mod-wheel, undo-state-load, two-instances, editor-smoke,
                                     dirty-flag, starter-project, cross-format) on CLAP and VST3, headless under Xvfb;
                                     --bundle-dir (or
-                                    ENTH_BUNDLE_DIR) runs prebuilt bundles instead of building
+                                    ENTH_BUNDLE_DIR) runs prebuilt bundles instead of building; --features builds
+                                    the bundle with cargo features (`duel` adds the duel scenario)
   reaper-soak [--minutes N] [--bundle-dir <dir>] [--no-build] [--format clap|vst3] [--instances N] [--report FILE]
               [--editor-secs S] [--load-secs S] [--churn-secs S] [--max-pss-mb-per-hour MB] [...]
                                     local gate: the long REAPER soak on the debug bundle (assert_process_allocs on), headless

@@ -22,6 +22,7 @@
 //! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
 //! | `round` | (lane SKR) a Recreate round through the editor's Recreate bar (real clicks), the transport stopped: Start prepares the target, Target ▶ and Mine ▶ sound on the track's meter, a submit is scored, End removes the round and writes the round log |
 //! | `lesson` | (lane SKL; on the default bundle since lane LFU turned the `learn` feature on by default) the tour's first lesson from the bundled `basics` pack through the Learn view (real clicks), the transport stopped: Start, an example sounds on the track's meter, Next to the Try step, Show me passes it (its sound check rendered on the worker) and the progress file records it, the project saved mid-lesson; reopened in a new process, the lesson resumes at its step and moves on |
+//! | `duel` | (lane SKD, F2d; on a bundle built with `--features duel`, where it joins the default run) two instances on two tracks, the transport stopped: instance 1 starts from a saved round whose patch is the target, passes it and shares it through the duel card (real clicks); its message goes through the X clipboard (Copy, then the platform's Paste, Ctrl+V, into instance 2's paste box) and opens a duel; its answer code arrives sealed, opens once instance 2 has given up, and is checked on instance 2's worker "as reported" with the commitment matched (the duel log, `ENTH_DUEL_LOG`) |
 //! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save, each sound named and typed after its track (not "Init") |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
@@ -102,6 +103,7 @@ enum Scenario {
     PresetLoad,
     Round,
     Lesson,
+    Duel,
 }
 
 impl Scenario {
@@ -137,12 +139,14 @@ impl Scenario {
             Scenario::PresetLoad => "preset-load",
             Scenario::Round => "round",
             Scenario::Lesson => "lesson",
+            Scenario::Duel => "duel",
         }
     }
 
     fn parse(text: &str) -> Option<Scenario> {
         match text {
             "state-create" | "state-reload" => Some(Scenario::State),
+            "duel" => Some(Scenario::Duel),
             _ => Scenario::PRODUCT.iter().copied().find(|s| s.name() == text),
         }
     }
@@ -160,6 +164,8 @@ struct Options {
     formats: Vec<Format>,
     /// `--scenario`, any number; empty runs every scenario of the package.
     scenarios: Vec<Scenario>,
+    /// `--features`: cargo features for the bundle build (lane SKD: `duel` adds the `duel` scenario to the default run).
+    features: Vec<String>,
 }
 
 fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
@@ -174,6 +180,7 @@ fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
             .map(PathBuf::from),
         formats: Vec::new(),
         scenarios: Vec::new(),
+        features: Vec::new(),
     };
     let mut args = rest.iter();
     while let Some(arg) = args.next() {
@@ -200,6 +207,15 @@ fn parse_options(args: &[String], root: &Path) -> Result<Options, String> {
                         names.join(", ")
                     )
                 })?);
+            }
+            "--features" => {
+                let list = args.next().ok_or("--features needs a list (e.g. duel)")?;
+                options.features.extend(
+                    list.split(',')
+                        .map(str::trim)
+                        .filter(|f| !f.is_empty())
+                        .map(str::to_owned),
+                );
             }
             "--plugin-name" => {
                 options.plugin_name = args
@@ -324,6 +340,8 @@ const PRODUCT_MACRO_PATCH: &str = include_str!("../reaper/enth-macro-automation.
 const PRODUCT_WHEEL_PATCH: &str = include_str!("../reaper/enth-mod-wheel.patch.json");
 /// `dirty-flag` control: every knob of the first card is bound to a host slot.
 const PRODUCT_DIRTY_CONTROL_PATCH: &str = include_str!("../reaper/enth-dirty-control.patch.json");
+/// `duel` (lane SKD): instance 1's state, the nice-plug fields `patch` and `enth` of a round whose patch is its target.
+const DUEL_ROUND_STATE: &str = include_str!("../reaper/enth-duel-round.state.json");
 
 impl Chunks {
     fn write(out: &Path, format: Format) -> Result<Chunks, String> {
@@ -409,6 +427,10 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         if options.release {
             build_args.push("--release".to_owned());
         }
+        if !options.features.is_empty() {
+            build_args.push("--features".to_owned());
+            build_args.push(options.features.join(","));
+        }
         bundle::bundle(&build_args)?;
     }
     let bundled = match &options.bundle_dir {
@@ -427,7 +449,16 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
         }
     }
     let mut scenarios: Vec<Scenario> = if options.scenarios.is_empty() {
-        Scenario::PRODUCT.to_vec()
+        let mut all = Scenario::PRODUCT.to_vec();
+        // The duel card exists only in a bundle built with the `duel` feature (off by default, lane SKD).
+        if options
+            .features
+            .iter()
+            .any(|f| f == "duel" || f == "enth-plugin/duel")
+        {
+            all.push(Scenario::Duel);
+        }
+        all
     } else {
         options.scenarios.clone()
     };
@@ -691,7 +722,51 @@ fn run_scenario(
         Scenario::PresetLoad => preset_load(sb, report, format, chunks)?,
         Scenario::Round => round(sb, report, format)?,
         Scenario::Lesson => lesson(sb, report, format)?,
+        Scenario::Duel => duel(sb, report, format)?,
     }
+    Ok(())
+}
+
+/// `duel` (lane SKD, F2d): instance 1's saved round, a round on level 2's seed 77 whose patch is the target rebuilt by
+/// edits (`xtask/reaper/enth-duel-round.state.json`, written and checked by `enth-plugin`'s `tests_duel.rs`), so its
+/// first Submit passes. The duel log (`ENTH_DUEL_LOG`), the round log, the crash folder and an empty `HOME` are per
+/// format in the results: with the real home, REAPER loaded an enth installed in `~/.vst3` instead of the VST3 bundle
+/// under test (lane SKD found it: the installed build had no `duel` feature). `xtask/reaper/duel.lua` clicks both instances' duel cards and makes the checks.
+fn duel(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
+    let tag = format.tag();
+    let dirs: Vec<PathBuf> = ["rounds", "crashes", "home"]
+        .iter()
+        .map(|d| sb.out.join(format!("duel-{d}-{tag}")))
+        .collect();
+    for dir in &dirs {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let log = sb.out.join(format!("duel-log-{tag}.jsonl"));
+    let _ = std::fs::remove_file(&log);
+    let fields: serde_json::Value = serde_json::from_str(DUEL_ROUND_STATE)
+        .map_err(|e| format!("enth-duel-round.state.json: {e}"))?;
+    let chunk = chunk::write_state_fields(&sb.out, "duel-round", format, &fields)?;
+    let mut extra = chunk_env(Some(&chunk), None);
+    extra.push(("ENTH_ROUNDS_DIR", dirs[0].display().to_string()));
+    extra.push(("ENTH_CRASH_DIR", dirs[1].display().to_string()));
+    extra.push(("ENTH_DUEL_LOG", log.display().to_string()));
+    // An empty home: REAPER also scans the standard `~/.vst3` (and `~/.clap`), where an installed enth (`cargo xtask
+    // install`, an owner build) would win over the bundle under test, without the `duel` feature.
+    extra.push(("HOME", dirs[2].display().to_string()));
+    let played = run_script(sb, report, format, "duel", "duel", "play", &extra);
+    let get = |k: &str| played.data.get(k).cloned().unwrap_or_default();
+    report.info(
+        &format!("{tag}/duel"),
+        "duel-sizes",
+        format!(
+            "scorecard {} symbols, answer {} symbols (a passing answer: the target rebuilt by edits); codes in {} s, check in {} s",
+            get("scorecard-symbols"),
+            get("answer-symbols"),
+            get("share-s"),
+            get("verify-s")
+        ),
+    );
     Ok(())
 }
 
@@ -1244,6 +1319,8 @@ fn run_reaper(
     let stdout = std::fs::File::create(sb.out.join(format!("{label}.stdout.txt")))
         .map_err(|e| format!("{label}: {e}"))?;
     let stderr = stdout.try_clone().map_err(|e| format!("{label}: {e}"))?;
+    let empty_home = sb.out.join(format!("{label}.home"));
+    std::fs::create_dir_all(&empty_home).map_err(|e| format!("{label}: {e}"))?;
     let mut command = Command::new("xvfb-run");
     command
         .args(["-a", "-s", "-screen 0 1920x1080x24"])
@@ -1255,6 +1332,10 @@ fn run_reaper(
         .env_remove("DISPLAY")
         .env_remove("WAYLAND_DISPLAY")
         .env("GDK_BACKEND", "x11")
+        // An empty home for every launch: REAPER also scans the standard `~/.vst3` and `~/.clap`, so with the real
+        // home it loads an installed enth (`cargo xtask install`) instead of the bundle under test (lane SKD found it
+        // on the VST3 runs, 2026-10-22). A scenario's own `HOME` below still wins.
+        .env("HOME", &empty_home)
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr);

@@ -183,7 +183,7 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
         Cmd::Lesson(args) => lesson::run(&args),
         Cmd::Create(args) => create::run(&args, stdin),
         Cmd::Ear(args) => ear::run(&args),
-        Cmd::Duel(args) => duel::run(&args),
+        Cmd::Duel(args) => duel::run(&args, stdin),
     }
 }
 

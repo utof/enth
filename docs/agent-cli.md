@@ -61,6 +61,7 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth challenge new\|show\|decode` | Make, regenerate and read Recreate challenges and their codes (`enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`) |
 | `enth lesson list\|show\|start\|check\|hint\|closest <pack> …` | A lesson pack's lessons and steps; what a step loads; one do step's check against a patch file; a step's hint; a round's nearest passing patch (`enth.lesson-list/1`, `-show/1`, `-start/1`, `-check/1`, `-hint/1`, `-closest/1`; [below](#lessons-on-the-command-line-enth-lesson)) |
 | `enth create --target <wav\|flac\|ogg\|mp3> [--candidates K] [--seconds S] [--budget N] [--stop-at D] [--score-seconds S] [--bank F] [--perf …] [--out P] [--record F]` | Patches that sound like a recording: the intake finds the sound in the file, a portfolio of starts is screened, K branches are refined by the robust distance; K candidates with their provenance and traces, every start as a patch, and what to do next (`enth.create/1`; [below](#creating-patches-from-a-sound-enth-create)) |
+| `enth duel result <patch> --code <code> [--submits N] [--seconds S] [--hints N] [--salt HEX]` / `enth duel verify <text>… [--mine p] [--out p]` | Duels (R5a): a played patch's scorecard and answer code; a friend's pasted message checked on this computer ([below](#duels-on-the-command-line-enth-duel)) (`enth.duel-result/1`, `enth.duel-verify/1`) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
 | `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
@@ -532,6 +533,35 @@ Choices the command makes, so nobody has to rediscover them:
 - **No silent no-ops.** A file that cannot be a sound, a bank that cannot be read, an output that would overwrite the input and a cap that leaves nothing are errors with a hint, never a result with an empty `candidates`. `--candidates` above the number of starts is not an error (the job runs on what exists), and `notes` says what it did.
 - **The search's tuning stays out of the flags.** `neighbours`, `min_spread`, `lambda`, `first_rung`, `eta` and `finalists` are in `settings` for the record but are `create`'s defaults, tuned on the dev set (EVK); a caller that needs another value uses the solver's API.
 - **A window is a flag, a clip length is not.** `--score-seconds` is `Target::from_intake_scored`'s window, and the robust objective compares the silence after a sound that ends in its floor up to that window (`RobustMetricTarget::from_intake_scored`), so a 5 s window differs from the 3 s default only for a long sound.
+
+## Duels on the command line (`enth duel`)
+
+R5a (lane SKD, freeze point F2d; lane EV4 adds the agent track and the rest of the command). The plugin's duel card on the command line, on the same `enth-challenge` functions, so the CLI checks exactly what the plugin checks ([duels.md](duels.md), [plugin.md](plugin.md#duels-lane-skd-r5a)). **No network code:** a code is text you move through any chat. Scores are **checked on your computer**; times and assists are **reported** (the sender's app's, never checked).
+
+| Command | Output | Does |
+| --- | --- | --- |
+| `enth duel result <patch> --code <code> [--submits N] [--seconds S] [--hints N] [--salt HEX]` | `enth.duel-result/1` | A played patch's two codes. The **answer code** (`AnswerCode::new`: the patch as a diff from the round's start, its `meta`, labels, macro names and slots stripped, so no name survives), the round prepared once and the **canonical answer** scored on it (`score`: what any receiver re-scores), the **scorecard** with the answer's salted commitment, and the share `message` (two human lines and the scorecard). `--submits` (1–127, default 1: the submits up to the compared one), `--seconds` (the time to the pass) and `--hints` (0–15) are what the scorecard reports. The `salt` is 64 bits of OS randomness (std's `RandomState` keys), **never a clock**; keep it with the codes: `--salt` makes the same answer code again, the one the scorecard fixed. A patch that does not pass still gets codes, marked "not passed" (a note says so); exit 0 whenever the codes were made |
+| `enth duel verify <text>… [--mine p] [--out p]` | `enth.duel-verify/1` | Every code in the text (a whole chat message: paste-anything undoes smart dashes, odd spaces, full-width letters and line breaks inside a code; `-` reads stdin): `found` (each code's kind and canonical text), `refused` (code-looking tokens that did not decode, with their code and hint: "a typo", "update enth"), `cards` (each scorecard **as reported**: the claim, the engine, the scorer set, the reported submits, time and assists) and `checks`: each answer code decoded (the challenge regenerated, the ops applied, the 40-bit tail checked), the round prepared once with its scorecard's scorer set when this build has it (else this build's), the answer scored (`theirs`), and the claim beside it (`as_reported`, `engine_differs`, `scorers_differ`, `commitment_matches`: false means the answer was changed after the scorecard; flagged, never refused). `--mine` scores your patch as its canonical answer on the same round (`mine`), so both numbers come from one machine; `--out` writes their answer's patch (one answer code in the text). Exit 0 when the text held a code |
+
+```sh
+enth challenge new --level 2 --seed 77                           # both play 1080-1000-0002-D9
+enth duel result mine.patch.json --code 1080-1000-0002-D9 --submits 3 --seconds 161
+#   send `message` now; keep `answer` and `salt`; send `answer` once your friend has played
+enth duel verify "$(cat their-message.txt)"                       # their scorecard: as reported
+enth duel verify - --mine mine.patch.json < their-answer.txt      # their answer, checked here, beside yours
+```
+
+```json
+{"schema":"enth.duel-verify/1","found":[{"kind":"challenge","code":"1080-1000-0002-D9"},{"kind":"scorecard","code":"F120-…"},{"kind":"answer","code":"F220-…"}],
+ "refused":[],"cards":[{"challenge":"1080-1000-0002-D9","sound":100,"passed":true,"engine":"0.3.0","engine_here":"0.3.0","scorers":1,"scorers_known":true,…}],
+ "checks":[{"challenge":"1080-1000-0002-D9","symbols":52,"ops":3,"theirs":{"sound":100,"structure":100,"combined":100,"pass_mark":90,"passed":true},"scorers":1,
+   "claim":{"claimed_sound":100,"sound":100,"as_reported":true,"engine_differs":false,"scorers_differ":false,"commitment_matches":true,…},"warnings":[]}],
+ "next":"the scores above were checked on your computer; times and assists are reported by their app, and enth can't check them"}
+```
+
+Errors teach: `bad_salt` (not 16 hex digits), `bad_submits`, `bad_seconds`, `bad_hints`, `one_answer` (`--out` with no or several answer codes) are exit 2; `no_code` (nothing code-like in the text), a code's own refusal (`bad_check`, `bad_length`, `code_too_new`, `answer_too_new`, `answer_mismatch`, `target_mismatch`, `not_the_same_challenge`, `unencodable` for a patch an answer code cannot carry) exit 3; a render that fails exit 4; a missing file exit 5. The snapshots are `crates/enth-cli/tests/snapshots/duel_*.snap` and `err_duel_*.snap`.
+
+**A code proves what a patch scores, not who made it or how long it took:** `enth match` passes many challenges in seconds and `enth challenge show --reveal` writes the target, so a duel is for friends (docs/duels.md, "What a code proves").
 
 ## Three typical workflows
 

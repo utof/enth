@@ -1,0 +1,76 @@
+---
+source: crates/enth-cli/tests/duel.rs
+expression: "record(&s, &o, false)"
+---
+exit: 0
+--- stdout
+{
+  "cards": [
+    {
+      "challenge": "1080-1000-0002-D9",
+      "combined": 100,
+      "engine": "0.3.0",
+      "engine_here": "0.3.0",
+      "lines": [
+        "enth duel · Level 2 · 1080-1000-0002-D9",
+        "100.0 % in 2:41 · 3 submits · 1 hint"
+      ],
+      "passed": true,
+      "reported": {
+        "assists": [],
+        "hints": 1,
+        "seconds": 161,
+        "submits": 3
+      },
+      "scorers": 1,
+      "scorers_known": true,
+      "sound": 100
+    }
+  ],
+  "checks": [
+    {
+      "challenge": "1080-1000-0002-D9",
+      "claim": {
+        "as_reported": true,
+        "claimed_combined": 100,
+        "claimed_passed": true,
+        "claimed_sound": 100,
+        "combined": 100,
+        "commitment_matches": true,
+        "engine_differs": false,
+        "passed": true,
+        "scorers_differ": false,
+        "sound": 100
+      },
+      "ops": 3,
+      "scorers": 1,
+      "symbols": 52,
+      "theirs": {
+        "combined": 100,
+        "pass_mark": 90,
+        "passed": true,
+        "sound": 100,
+        "structure": 100
+      },
+      "warnings": []
+    }
+  ],
+  "found": [
+    {
+      "code": "1080-1000-0002-D9",
+      "kind": "challenge"
+    },
+    {
+      "code": "F120-8010-0000-02D0-01G0-0FT7-T430-S510-WBB6-72FV-VZ80-XMST-MZ5",
+      "kind": "scorecard"
+    },
+    {
+      "code": "F220-938N-KRKA-YDXW-0G02-0000-004T-20FH-8KAY-117H-ZR05-6DPW-GVNA",
+      "kind": "answer"
+    }
+  ],
+  "next": "the scores above were checked on your computer; times and assists are reported by their app, and enth can't check them",
+  "refused": [],
+  "schema": "enth.duel-verify/1"
+}
+--- stderr
