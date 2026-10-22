@@ -813,8 +813,8 @@ impl ModelHeader {
 }
 
 impl ModelPack {
-    /// Read a model file and check it against this build, in this order: the magic; the format; the length the
-    /// header gives; the SHA-256; the reserved fields; the op set, feature set, layout, generator and template
+    /// Read a model file and check it against this build, in this order: the magic; the format; the file's size
+    /// ([`MAX_FILE_BYTES`]); the length the header gives; the SHA-256; the reserved fields; the op set, feature set, layout, generator and template
     /// (newer ones are `model_too_new`); the model id, K and the budgets; the tables, the data section and every
     /// weight; then this build's layout hash, width, inputs and outputs (`model_mismatch`).
     ///
