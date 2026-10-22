@@ -521,6 +521,100 @@ A create job does not survive a project reload (the coordinator's decision, kept
 
 For the Create view's A/B, `CreateEdit::create_audition_upload()` (a default method that refuses, so an implementor written before it still builds) asks the shell to play the job's scored clip, level-matched to the candidate auditioned last: `CreateRequest::AuditionUpload { id }` (refused with `no_create_job` before the intake read the file). `CreateView::upload` says the upload was asked for last (a candidate's audition clears it, and keeps `auditioning` as the A/B's other side; Stop clears both), and `CandidateView::rung` carries each branch's rung of successive halving for the view's progress per rung. `create` re-exports `enth_analysis::intake::{Intake, IntakeCfg, IntakeReport, Warning}`, so the editor and its tests name them without depending on `enth-analysis`. Test: `tests/create.rs`'s `the_upload_plays_once_the_intake_read_the_file`.
 
+## Ear (lane SE, R4)
+
+`enth-session`'s `ear` module is the pure side of the ear drills and games ([ear.md](ear.md#the-session-and-the-ear-view), [phase-4.md](phase-4.md), freeze point F1e). Like `game`, `learn` and `create` it does no I/O, spawns no threads and reads no clocks: **time comes from the timestamps the shell passes in** (the clock of `game_tick`), and **the shell runs the jobs** (the frozen generator, then the renders) and posts back. **An ear run never reaches the engine at all:** no plan, no event, no host write, no dirty mark. The shell plays a question's clips through the Target ▶ examples slot, which is its own. The audio thread never touches the session.
+
+### The lifecycle
+
+| Phase | Entered by | Leaves by |
+| --- | --- | --- |
+| (no run) | — | `ear_start(plan)`: a `Prepare` goes out |
+| `Preparing` | `ear_start` | the shell's `Ready` post (the questions), or `Failed` |
+| `Asking` | `Ready`; `ear_next` | `ear_answer(item, answer, at_ms)`: judged at once |
+| `Answered` | `ear_answer` | `ear_next(at_ms)`: the next question opens, or the run is `Done` after the last |
+| `Done`, `Failed` | the last `ear_next`; a failed post | `ear_start` (replaces it), `ear_clear` |
+
+**One question is a round: asked, answered, judged.** The key stays out of the read model (`EarQuestionView::key` is `None`) until the question is answered; after the answer the replay is open, including the clips that give the answer away (`EarExample::after_answer`, refused as `example_hidden` before). The first answer stands (`already_answered`); an answer for any question but the open one is `not_current`, so a late tap for the old question cannot count. `response_ms` is measured from the question's opening to the answer's timestamp, clamped so time never runs backwards.
+
+### Who calls what
+
+| Entry | Thread | Does |
+| --- | --- | --- |
+| `EarEdit::{ear, ear_start, ear_answer, ear_next, ear_play, ear_stop, ear_clear}` | GUI, at the end of the frame | The editor's intents and its read model (`EarView`, rebuilt on every call: the phase, the plan, the open question without its key, the judged results, the error) |
+| `ear_post(id, post)` | GUI (or host main), under the lock | Hands a post back. One for a run the session no longer holds, or one it no longer waits for (a second `Ready`, any post after a failure), is `stale_post` and changes nothing. Questions that do not fit the plan (the wrong count, fewer than 2 or more than 12 options, a key that is no option, more than 8 clips) fail the run and return `wrong_result` |
+| `drain_ear_requests()` | Wherever `drain_requests` is drained | `Prepare(EarPrepare)`, `Cancel(id)`, `Play { id, item, example }`, `Stop`, `Result(EarResult)`; acted on **after unlocking** |
+
+`EarRequest::Result` is the feed for the drill player and the progress file: the session keeps no staircase and no Leitner box, so the shell hands each judged answer (skill, level, right or wrong, the time) to `enth-learn`. Replacing or clearing a run that is still preparing sends a `Cancel`; one that is playing sends a `Stop`.
+
+### The seam is data
+
+**The plan is the one ear spec plus a start item** (lane F1E, the F1e review's M3 and should-fix S3): `EarPlan { spec: EarSpec, first: u32 }`, built with `EarPlan::new(spec).starting_at(first)`, where `EarSpec` is `enth-music`'s type as `enth-challenge` re-exports it (`seed` below 2^53, `count` 1 to 64; a game or level this build cannot play is the shell's prepare job's refusal). Question `k` of the run is item `first + k` of the spec (`enth_challenge::ear::question::questions_at`), so a burst starts where `enth_challenge::ear::find_item(&spec, skill, from)` found its skill; a drill item becomes a plan through `enth_learn::drill::Item::plan` (one mapping). A question arrives as labels, clips and an integer key, and a result leaves as plain fields. Label-choice questions are judged here; value and tap answers join through `enth-challenge`'s `ear-value/1` and `taps/1` (the enums are `non_exhaustive`, so that is additive).
+
+### Nothing is saved
+
+An ear session is not saved in the project, like a create job: `ear` adds **no field** to the `enth` blob, `enth.plugin-state/1` is unchanged, and a host state load leaves a run alone. Thresholds and practised days live in the per-user progress file the shell owns.
+
+### Tests (lane SE)
+
+`tests/ear.rs`: a run from question to answer to result (the key hidden until the answer, one `Result` per judged answer, the times), the first answer standing and only the open question answerable, stale posts and answers refused, a failed job and questions that do not fit the plan, plans out of range, the replay opening with the answer, time never running backwards, nothing saved, no shell request at all (no plan, no host write), and a random sequence of intents and posts (proptest) that never breaks the counts. `tests/ear_duel_audio.rs`: with an `assert_no_alloc` audio thread rendering flat out, twelve ear runs and twelve duels run on the main thread; the audio thread never stops and never allocates. `src/ear.rs`: `Send`, plan ranges, question validity.
+
+## Duel (lane SE, R5a)
+
+`enth-session`'s `duel` module is the pure side of duels on Recreate ([duels.md](duels.md#the-session-lane-se), [phase-4.md](phase-4.md), freeze point F1e). It does no I/O, spawns no threads, reads no clocks and **has no networking: the clipboard is the shell's**, written on a click and read only on an explicit Paste. A duel is a challenge code that the player and a friend both play, plus what the friend sent back; the player plays it as an ordinary Recreate round ([The Recreate round](#the-recreate-round-lane-sg-r1)), and this module is everything around the round.
+
+### The player's result
+
+| | |
+| --- | --- |
+| Which submit | The **first passing submit**, otherwise the best one (highest sound %, then combined %, the earlier on a tie), which the result marks "not passed" (`compared_number` in `game.rs` is the rule) |
+| What it holds | `DuelOwn`: the code, the outcome (passed, not passed, gave up), the compared submit's number and scores (hundredths of a percent), the submit count, the time to pass (**reported**), the active time, the assists, the engine and the scorers the round was judged with, whether it is `settled`, whether the patch is kept |
+| Its patch | `DuelEdit::duel_own()` returns a `DuelResult`: the `DuelOwn` and the compared submit's patch (`None` unless `answer_kept`). It clones the patch, so ask on a click |
+| When it can be shared | `can_share()`: settled, scored and **not revealed**. A pass settles at once; a round that has not passed settles when it ends. **A revealed target gives no scorecard.** `can_share_answer()` also needs the patch |
+| After the round | `Session::game_close` hands the closed record to `duel_note_close`: an open duel on the round's code keeps the result and its patch, so the answer can still be shared after the player pressed Restore or Keep. **The first played attempt at a duel's code stands;** a rematch is a new duel. A round ended before any submit (and with no reveal) has no result |
+| From the shell's history | `duel_set_own(DuelResult::new(own, patch))` restores a result when a duel is reopened after the project closed (refused when the duel holds one: `already_played`) |
+
+### What the round keeps of the first pass (`game.rs`, additive)
+
+`RoundRecord::compared: Option<ComparedSubmit>` holds the first passing submit's number and its patch as `ops_between(start, patch)` in the resolved wire form (`enth_patch::wire`, the form the edit log uses), up to `COMPARED_BYTES` (64 KiB; above it the diff is dropped and only the scores remain). A pass is final, so it is saved with the round and survives a reload. The session keeps the round's `start` (the prepare job's) while it runs and gets it again from the prepare job after a reload, so `answer_kept` is false only until the target is back. The best submit of a round that has not passed can still change, so its patch is held in memory only (`GameLive::best`): the saved record gains no byte, and a reload forgets the patch, not the scores.
+
+**The named F1e check, within `ROUND_BYTES`.** A second whole patch would not fit the budget (the stash 384 KiB, the last submitted patch 128 KiB, the first report 64 KiB, the edit log 64 KiB). The diff is a handful of changed parameters over the start, the same thing an answer code carries. The record's parts, `COMPARED_BYTES` included, are checked at compile time: 384 + 128 + 64 + 64 + 64 KiB, the disputes (11.7 KiB), the submits (31.9 KiB) and the fixed fields (2 KiB) come to about 749.6 KiB, under `ROUND_BYTES` (768 KiB), which is unchanged. The largest-round test (`t3_the_largest_round_fits_the_enth_field`) fills `compared` to its cap and still loads. A record that has not passed writes no `compared`, so every existing round fixture keeps its bytes.
+
+### Their scorecard and answer
+
+| Entry | Does |
+| --- | --- |
+| `duel_open(code)` | Opens a duel on a challenge code (any text `ChallengeCode::decode` reads; the duel keeps the canonical form). Starts no round: the editor starts the Recreate round with `game_start` as for any code. A duel already open is closed first |
+| `duel_import_scorecard(FriendScorecard)` | Holds their scorecard **as reported** by their app: `FriendScorecard { card, text }`, the decoded `enth_challenge::result::Scorecard` itself and its text (should-fix S2 of the F1e review: no hand-copied fields, so every claim, the engine, the time in deciseconds and the scorer set reach the card). Shown at once: it spoils nothing. `DuelView::engine_differs` and `scorers_differ` (a newer build's scorer set, M4) say the view shows both numbers. With no duel open it opens one on the card's challenge; a card for another challenge is `other_challenge`; a newer card replaces it |
+| `duel_import_answer(FriendAnswer)` | Holds their answer code's text **sealed** (kind 2). Opens a duel if none is open |
+| `duel_verify()` | Sends one `Verify` job (at most one runs: `busy`) |
+| `duel_use_answer(name)`, `duel_audition()`, `duel_stop_audition()`, `duel_close()` | Described below |
+
+**Sealed.** Their answer is `AnswerState::Sealed` until the player has played: a scored submit or a reveal (a give-up) on the duel's code. While sealed, nothing of it is in the view (`DuelView` carries no answer text in any state; the text goes to the job only), and `duel_verify`, `duel_use_answer` and `duel_audition` refuse with `answer_sealed`. This is a session guard so the view and the intents behave, **not cryptography**: the source is open and the code decodes. Ending the round without a submit or a reveal does not open it.
+
+**Verify.** `DuelRequest::Verify(DuelVerify { job, duel, code, own, card, answer })` goes to the shell, which runs `enth-challenge`'s `verify` on its game worker (decode, regenerate the target, apply their ops to the start and check the hash, check the scorecard's commitment against the answer when a card is at hand, score with `verify::scorer_set(card)`, compare with the claim) and, on the same prepared round, re-scores `own` (as the answer code carries it, the canonical answer) beside theirs. The result comes back through `duel_job_done(job, DuelJobResult)`. **The receiver's scores decide:** the session stores only what the worker measured (`DuelChecked`: both re-scores, `verify`'s `ClaimCheck` when a card was at hand, with both numbers, both engines, both scorer sets and the commitment (should-fix S2; `commitment_ok()` and `matches_claim()` read it), whether their patch is at hand), and a claimed number never reaches a decision. A result for a job the duel no longer waits for (the answer or the card replaced, the duel closed, another check since) is `stale_job` and changes nothing; a result that does not fit the job (the own re-score or the claim check left out or added, a score above 100 %) fails the check with `wrong_result`; a refusal from the worker (`answer_too_new`, `bad_check`, a hash mismatch) is shown as `VerifyState::Failed`. A change of inputs cancels a running job (`Cancel(job)`) and forgets a finished check. A check made while the round ran stands when the round ends on the same compared submit (`DuelChecked::own_current` says whether the player's score it holds is still the compared one).
+
+**Use their patch.** `duel_use_answer(name)` loads their checked patch through `Session::load_preset`, as "Use this" does in Create: **one undo step, one plan, no host writes**, `PatchEdited` for the dirty mark, named `name` (empty keeps the patch's own name). Refused while sealed, before it is checked (`not_checked`), while a round is live (`round_live`: end it first, Restore brings the player's patch back) and while a lesson is live. `duel_audition()` sends `Audition { duel, code, patch }`, which the shell renders with the challenge's phrase at the host's rate and plays once.
+
+**The salt is the shell's.** The scorecard's commitment is salted; a core crate has no randomness, so the shell draws the salt **from OS randomness, once per duel, never from a clock or a seed** (the answer code carries it in the clear: [duels.md](duels.md#privacy), the F1e review's M6), keeps it with the result in the duel history, and gives it to `enth-challenge`'s code builders. The session builds no code. Its seam with the result codes is `result::Scorecard` (their card) and `verify::ClaimCheck` (the check of it); re-scores stay in the session's hundredths.
+
+### Nothing is saved
+
+Duels live in the per-user history the shell owns (lane DUI). `duel` adds **no field** to the `enth` blob and `enth.plugin-state/1` is unchanged (the round record gains one optional field, above), and a host state load leaves a duel alone.
+
+### Tests (lane SE)
+
+`tests/duel.rs`: the first pass and its patch, the best of a failed round and ties, a reveal giving no scorecard, a result outliving the round, only the duel's code counting, a scorecard shown at once and replaced, the sealed answer refusing every intent until a submit or a reveal, the verify job round trip with stale, misfit and refused results, cancellation on every change of input, a check standing or being forgotten when the round ends, their patch loading as one undo step with no host writes (and audition), the first attempt standing and a history restore, nothing saved, the first pass's patch surviving a reload and the best of a failed round not being saved. `tests/ear_duel_audio.rs` is the `assert_no_alloc` test above. `src/duel.rs`: `Send`, `can_share` rules, import ranges, the verify result fitting its job.
+
+### What the other lanes must provide or wire
+
+| Lane | Needs |
+| --- | --- |
+| RC (`enth-challenge`) | `Scorecard` (the friend's card, as decoded); `verify` returning the receiver's re-scores of both answers and the `ClaimCheck`; `paste` handing the shell typed tokens |
+| SKD (the shell) | The verify and audition jobs on the game worker, the clipboard, the salt (OS randomness, once per duel); posting `Verified::claim` as `DuelVerified::with_claim` through `duel_job_done`; re-scores in hundredths |
+| DUI | Persisting `DuelResult` and the salt in the history; restoring with `duel_open` and `duel_set_own`; drawing `DuelView`; calling `can_share` and `can_share_answer` before offering a share |
+| SKE, EUI, DRL | `EarRequest::Result` as the drill and progress feed; the plan as `EarSpec`; value and tap answers join the enums additively |
+
 ## Decisions
 
 1. **An outbox, not a host trait.** The session pushes `ShellRequest`s (host gesture writes, renames, the monitor bypass, "patch edited") that the shell drains after unlocking. Report 01 passed a `HostSync` trait into every edit instead. The outbox keeps the editor's traits free of host concepts, lets kittest assert on requests, and makes "never call the host under the lock" the natural shape.

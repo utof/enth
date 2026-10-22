@@ -6,11 +6,11 @@ R4 trains the ear that sound design needs: which knob moved, how far, where a ba
 
 | Piece | Home | Lane | State |
 | --- | --- | --- | --- |
-| Theory tables, rhythm, ear generator v1 | `enth-music` (L1, new) | MUS; G1–G3 the ladders | Planned (F0e, F1e) |
+| Theory tables, rhythm, ear generator v1 | `enth-music` (L1, new) | MUS; G1–G3 the ladders | MUS built, level 1 of every ladder ([as built](#ear-generator-v1-as-built-lane-mus)); freezes at INT4 (F1e judges the API) |
 | Challenge v3: `Target::Ear`, choice, value and tap answers, ear rendering, timbres, scorers, the ear-challenge code | `enth-challenge` (L4) | CV3 | Planned (F1e; [challenge.md](challenge.md#challenge-v3-planned-lane-cv3-r4)) |
 | The parameter games' items (Spot the change, Dial it in, Ear check) | `enth-challenge` (L4), on v2 draws | CV3; G4 the ladder | Planned |
 | The EQ biquad | `enth-dsp/src/biquad.rs` (L0) | BQ | Planned |
-| The drill player: staircase, ear skills in Review, `StepKind::Drill`, the `drills` field, the workout composer | `enth-learn` (L5) | DRL | Planned (F1e; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-planned-lane-drl)) |
+| The drill player: staircase, ear skills in Review, `StepKind::Drill`, the `drills` field, the workout composer | `enth-learn` (L5) | DRL | Built (F1e; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl)) |
 | Ear sessions | `enth-session/src/ear.rs` (L6) | SE | Planned (F1e) |
 | Ear jobs, examples, the restart flag; `enth ear` | `enth-plugin/src/ear.rs`, `enth-cli/src/cmd/ear.rs` (L8) | SKE, EV4 | Planned (F2e) |
 | The Ear view | `enth-ui/src/editor/ear/` (L7, feature `ear`) | EUI | Planned |
@@ -84,7 +84,7 @@ pub struct Question { timbre: u8, notes: Vec<NoteSpec /* key, vel, start_ms, hol
 pub enum Answer { Choice(u8), Value { key: &'static str, bits: u32 }, Taps(Vec<u32 /* ms */>) }
 ```
 
-A sketch from report 02 §2; the F1e judge fixes the real types.
+A sketch from report 02 §2; the F1e judge fixes the real types. The types as built are in [Ear generator v1, as built](#ear-generator-v1-as-built-lane-mus).
 
 ## The ear generator
 
@@ -92,8 +92,58 @@ A sketch from report 02 §2; the F1e judge fixes the real types.
 - **Questions are integers:** notes (key, velocity, start and hold in ms), a length, a timbre id, an optional EQ band, the answer and the options. Generated phrases stay within C1–C7, at most 8 notes at once and at most 10 s.
 - **Timbres** come from a frozen pool of our own patches (sine, saw low-pass, pluck, organ table, pad, a noise-burst click), append-only. Pitch drills rotate them, so the timbre is never the cue.
 - **Answer keys are integer arithmetic**, identical on every platform and engine version; only a generator change moves them, and that is a new frozen version.
-- **Frozen by a golden:** 1,000 specs → a hash, on Linux, Windows and wasm (macOS weekly), like generator v1's. **When it freezes** (this page's default; an open check in [phase-4.md](phase-4.md#open-checks)): at INT4's friend build, the first build that shares ear codes. Until then G1–G3 tune the ladders and update the golden on purpose (the commit names the games and why); after it, a change is ear generator v2.
+- **Frozen by a golden:** fixed specs → question-set digests, one block per (game, level), on Linux, Windows and wasm (macOS weekly), like generator v1's. **When it freezes** (this page's default; an open check in [phase-4.md](phase-4.md#open-checks)): at INT4's friend build, the first build that shares ear codes. Until then G1–G3 tune the ladders and update the golden on purpose (the commit names the games and why); after it, a change is ear generator v2.
 - **The parameter games** (Spot the change, Dial it in, Ear check) are not in `enth-music`: they need the catalogue, which is L1 too. Their items are v2 draws built in `enth-challenge`: the game picks the option controls and the one that moves, at the level's distance in parameter steps (design §9's steps: cutoff 2 semitones, times × 1.5, levels 3 dB; generous steps for reverb), in parameter space only, as every generator rule is ([design.md §9](design.md#9-randomizer-and-difficulty)). `ear-check` measures each level's distances with `sound/1` offline; items in its deaf spots are listed as *not measured*.
+
+## Ear generator v1, as built (lane MUS)
+
+Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), with level 1 of every ladder file. Start at `enth_music::ear::EarSpec` and `enth_music::ear::question`. The types are proposals for the F1e judge; the rest is frozen from INT4's friend build.
+
+**Games and ids.** One numbering for every ear game, so a spec names its game with one byte. The parameter games are generated in `enth-challenge` (they need the catalogue), and this crate refuses their ids.
+
+| Id | Game | Generated in | Ladder file | Answer | Levels built |
+| --- | --- | --- | --- | --- | --- |
+| 1, 2, 3 | Spot the change, Dial it in, Ear check | `enth-challenge` (CV3; G4 the ladder) | — | — | refused here (`UnknownGame`) |
+| 4 | Frequency finder | `enth-music` | `ladder::bands` (G3) | a choice of band centre | 1 |
+| 5 | Interval stacks | `enth-music` | `ladder::intervals` (G1) | a choice of interval | 1 |
+| 6 | Chord quality | `enth-music` | `ladder::chords` (G2) | a choice of quality | 1 |
+| 7 | Rhythm pattern | `enth-music` | `ladder::rhythm` (G2) | a choice of one of four patterns | 1 |
+| 8 | Progressions (R4b) | `enth-music` | `ladder::progressions` (G2) | a choice of progression | 1 |
+| 9 | Note naming (R4b, opt-in) | `enth-music` | `ladder::pitch` (G1) | a choice of pitch class | 1 |
+| 10 | Tap back (R4b, after the TAP spike) | `enth-music` | `ladder::taps` (TAP) | tap times | 1 |
+
+**The spec.** `{"game":5,"generator":1,"level":1,"seed":42,"count":20}`: unsigned integers in this order, unknown fields refused. **One type for every game and every crate** (lane F1E, the F1e review's M3): `enth-challenge` re-exports it, and the session's ear plan holds it. `EarSpec::validate_music` accepts a generator from 1 to the build's latest (1), a music game, a level from 1 to the game's `max_level()` (at most 15), a seed below 2^53 and a count of 1 to 64; each refusal is a distinct `EarError`, and a build maps any of them to "update enth". It knows only the music games (the parameter games are `UnknownGame` here); `enth_challenge::ear::validate` checks both families and is what challenges, codes and sessions use. **`generator` is read per family** (should-fix S9): `enth_music::ear::LATEST_GENERATOR` counts games 4 and up, `enth_challenge::ear::params::PARAMS_GENERATOR` games 1 to 3. A released level never changes its questions; a change is that family's next version.
+
+**The question.** `Question { timbre, notes, length_ms, post, answer, options }`, all integers:
+
+| Field | Form |
+| --- | --- |
+| `timbre` | An id into `enth-challenge`'s frozen pool `timbres-v1` (0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad, 5 noise-burst click), and **6, sustained pink noise, which level 1 of Frequency finder needs and the pool must add** (append-only) |
+| `notes` | `NoteSpec { key, velocity, start_ms, hold_ms }`, the same four integers as the challenge crate's `PhraseNote`, so a question becomes a phrase one to one. Keys C1 to C7 (24 to 96, C4 = 60), velocities 1 to 127 |
+| `length_ms` | The last note-off plus a 1 s release tail, at most 10,000 |
+| `post` | An optional `EqBand { kind, freq_hz, gain_cdb, q_milli }`: `Peak`, `LowShelf`, `HighShelf` (the biquad) or `BandPass` (the synth's svf band-pass, Frequency finder's level 1) |
+| `answer` | `Choice(index into options)` or `Taps { onsets_ms, window_ms }` (onsets from the start of the response bar, strictly increasing). No value answer yet: G3's log-slider level adds it, additively |
+| `options` | `Options { kind, ids }`: what the ids mean (an interval size, a chord index, a pitch class, a band centre in Hz, a 16-bit rhythm mask, a progression index) so labels and skills come from the tables; none for taps |
+
+`Question::validate` checks the invariants: C1 to C7, at most 8 notes sounding at once (half-open intervals, as the phrase facts count), at most 10 s, every note inside the clip, a known timbre, a sane band, and a choice that is one of 2 to 12 distinct options. The proptests run it on every game and level.
+
+**Keyed streams.** Item `i` of a game at level `l` draws from `derive(seed, fnv1a64("<game key>/<i>/<l>"))` with the keys `band`, `interval`, `chord`, `rhythm`, `progression`, `pitch` and `tap` (`interval/7/1`). `ear::question(game, level, seed, item)` computes any item at any level, which is what a staircase, a replay and an ear duel's fixed ladder (item `i`'s level a function of `i`) need. Each ladder file documents its **draw order**; it is part of the frozen form. Label games list options in ascending order of their id, so buttons keep their places, and the answer's position is uniform (a test checks it, and that every timbre meets every answer). The rhythm patterns are listed in draw order. Review skill keys come from the right answer (`Question::skill()`): `ear.interval.m3`, `ear.chord.min`, `ear.band.1k`, `ear.pitch.cs`, `ear.progression.i-iv-v-i`, `ear.rhythm.pattern`, `ear.rhythm.taps`. A burst on one skill (the drill player's 5 items) has no field in the spec: `ear::find_skill_item(game, level, seed, skill, from)` scans the keyed items from `from` for the next whose question exercises the skill, so the burst is a function of the seed and two players get the same one.
+
+**Level 1 of each ladder**, as G1 to G3 and TAP find it:
+
+| Game | Level 1 |
+| --- | --- |
+| Interval stacks | P1 against P8, harmonic, root C3 to C5, a saw, an organ or a pad, held 2 s. A unison is one note (a stack of two oscillators on one key); an octave is the root and the key 12 above |
+| Chord quality | Major or minor, root position, root C3 to C4, a pad, an organ or a saw, held 2.5 s |
+| Note naming | Two pitch classes a fourth or more apart (circular distance 5 or 6), one note over C3 to B5, four timbres |
+| Frequency finder | The svf band-pass (Q 8) on noise at one of 125, 250, 500, 2,000, 4,000 or 8,000 Hz; two options at least three octaves apart |
+| Progressions | `I-IV-V-I` against `I-V-vi-IV` in any of 12 major keys, four chords of 1.2 s voiced with small moves (root in the bass, three upper voices), a pad or an organ |
+| Rhythm pattern | Four eighth-note patterns (3 to 6 onsets, the downbeat always struck, syncopation 0 or 1, pairwise at least 3 steps apart) at 100 bpm; a bar of clicks, then two bars of the pattern over the clicks, 8.2 s. Mark the answer on the grid with `options.ids[answer]` |
+| Tap back | A pattern of 3 to 5 eighth-note onsets, syncopation 0, after a bar of clicks; the answer is its onset times in one 2.4 s bar |
+
+**The tables** (`theory`, append-only): 13 intervals, 11 chord qualities (triads, sus, sevenths) with inversions, 13 scales, 12 progressions with `voice_progression`, note names with sharps and flats. **The rhythm grid** (`rhythm`): a bar of 16 sixteenths as a `u16` mask, density, swing as an integer percentage, and the Longuet-Higgins and Lee syncopation measure on the metric weights 0, -1, -2, -3, -4 (the sum, over the onsets, of how far the silence after an onset climbs the hierarchy above it; son clave measures 4, rumba clave 5).
+
+**The golden.** `crates/enth-music/tests/golden/ear-v1.txt`, written by `cargo test -p enth-music --test ear_golden -- --ignored regenerate`: **one block per (game, level)** (should-fix S4 of the F1e review, lane F1E): a `block` line, then 150 specs of that game and level, the `j`-th with a 53-bit seed from a `SplitMix64` stream keyed by (game, level, `j`) and a count of 1 to 20 (every tenth 64), each line the first 16 hex digits of the SHA-256 of the canonical bytes of its questions, then a `sum` line, the SHA-256 of the block's digests. A spec depends only on its game, level and `j`, so **a new level or game appends a block and no existing line changes**, and tuning a level changes its block alone: a ladder lane's diff names its games (MUS's first form cycled 1,000 specs through every pair, so any new level rewrote every line). The test prints a hash of the block sums (`blocks b6449a68…`); `golden.yml` runs it on Linux (x86-64 and aarch64), Windows, macOS and under wasmtime (wasm32-wasip1); lane F1E ran it natively in debug and release and on wasm32-wasip1 under node's WASI, with the same hash. The questions are unchanged by the restructure (the old file still passed before it was replaced). **Not yet frozen:** until INT4's friend build a ladder lane that adds or tunes a level regenerates the file on purpose, and the commit names the games and why.
 
 ## Rendering and playback
 
@@ -103,6 +153,18 @@ A sketch from report 02 §2; the F1e judge fixes the real types.
 - **No host transport.** Stimuli carry their own tempo and count-in, so a game or a duel never depends on a project. Target ▶ already relies on every REAPER setup running effects with the transport stopped; SKE checks it.
 - **Level-matched** within 0.5 LU unless level is the cue.
 - **EQ:** one band from the level's set (7 octave bands at ±12 dB, down to ⅓-octave at ±3 dB, as Quiztones' tiers) on pink noise or a pad, played as two level-matched loops. The band is integers in the question; lane BQ's biquad renders it offline, within 0.1 dB of the cookbook and with the same bits on six targets. S2's EQ module wraps the same primitive later.
+
+## Challenge v3 as built (lane CV3)
+
+**Built 2026-10-22; judged at F1e.** The reference is [challenge.md](challenge.md#challenge-v3-planned-lane-cv3-r4); what a game lane needs to know:
+
+- **One target for every question game.** `Target::Ear(EarSpec)` names games 1 (Spot the change) and 3 (Ear check), generated in `enth_challenge::ear::params` on v2 draws, and games 4 and up, `enth-music`'s. Dial it in (game 2) stays a constrained Recreate round: `ear::params::dial_it_in` gives each round as a v2 draw challenge. An ear target takes phrase 0, the template 0 start, no constraint, and the answer its game asks for.
+- **Level 1 of each parameter game** (two far options, filter against envelope, 6 steps; Ear check from 8 steps on one control drawn per set; Dial it in 6 steps), on the starter through the held note. G4's ladder replaces `params::level`.
+- **The timbre pool `timbres-v1`:** 0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad, 5 noise click, 6 sustained pink noise (MUS's Frequency finder), frozen by SHA-256 and append-only.
+- **Bands:** a band-pass band sets the timbre's own filter (Frequency finder's svf form, rendered by the engine); a peak or shelf band waits for BQ's biquad (`needs_biquad`).
+- **Judged with no render:** `ear/1` (an index), `ear-value/1` (an error in octaves, doublings of ms or the unit, within a tolerance), `taps/1` (after the best-fit offset and a tempo within ±10 %, a one-to-one match; misses and extras count). Keys are integers (a value's `f32` bits), logarithms go through the pinned `libm`.
+- **The ear-challenge code** (kind 3): 19 symbols starting with `F`, code v1's check last; an R1–R3 build reads it as "update enth". A seed above 40 bits has no code, as for a short challenge code.
+- **Closed at F1e (lane F1E):** an `EarSpec` names no skill (the judge accepted it: fixed-ladder duels need none); a burst's focus goes through one resolver over both families, `enth_challenge::ear::find_item(&spec, skill, from)` (should-fix S3), which the session's ear plan takes as its start item. The music games are wired (`ear::music`, `question::music_question`), so every game from 4 to 10 prepares, judges and has a code.
 
 ## Rhythm input
 
@@ -123,18 +185,19 @@ A sketch from report 02 §2; the F1e judge fixes the real types.
 - **What a staircase may move**, one thing at a time: the step in JND units, the number of categories, their similarity, the context (a sine, then generator levels 3–5), roving (note, wave, velocity) and memory load.
 - **A 2-JND floor** (`choice_audibility`'s rule) for morale and fairness, although even impossible items teach a little (Amitay 2006).
 - **No visible streak:** the staircase's run counter stays internal.
-- **Simulated before it ships:** DRL's test retargets to 79 %, holds 75–85 % success, and recovers simulated listeners' thresholds within one step in 90 % of 40-trial runs.
+- **Simulated before it ships:** DRL's test retargets to 79 %, holds 75–85 % success, and recovers simulated listeners' 40-trial thresholds as the F1e judge ruled: **pooled over the simulated listeners, at least 90 % within one level on ladders of about one JND or more per level; every listener-and-start cell at least 75 %; flat ladders at least 90 % within two levels; success at threshold 75–85 %.** 40 answers cannot place a threshold within one level of half a JND (the maximum-likelihood bound is about 89 % there), so the criterion changed, not the rule: G1–G4 build ladders with steps of at least about one JND and list each level's measured distance, and the Ear view shows thresholds as trends.
 
 ## The drill player
 
-Lane DRL, in `enth-learn` (L5). The skill is the unit of spacing; the game is its vehicle ([learn.md](learn.md#ear-skills-bursts-and-drills-r4-planned-lane-drl)).
+Lane DRL, in `enth-learn` (L5). The skill is the unit of spacing; the game is its vehicle ([learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl)).
 
 - **Skill keys:** `module.param` (Review's keys today) and `ear.*` (`ear.interval.m3`, `ear.chord.min`, `ear.band.1k`). The progress file keeps unknown keys, so this is additive.
 - **Bursts:** 5 items on one skill, in any game; 4 or more right moves its box up, 3 holds it, 2 or fewer moves it down. Single answers in 2–4 option items are 25–50 % guessable.
 - **Due skills choose the games.** A due `svf.cutoff` comes back as Spot the change one day, Dial it in another and Frequency finder later: varied retrieval, which is what generalises (Wright 2010). Weakness-targeted training beat uniform training for EQ (Kim 2015).
 - **Interleaving:** each category is met alone first, then confusable ones mix (m3/M3, attack/decay, room/decay); one line of copy says why mixing feels harder (Carvalho & Goldstone 2014).
 - **This closes learn.md's open item** "ear questions as Review items": a due skill without a Recreate step plays as a burst.
-- **`StepKind::Drill`** (additive, declared in `requires`) lets a lesson play a drill; **the `drills` progress field** (additive) keeps thresholds per skill over time and the practised days.
+- **`StepKind::Drill`** (an `enth.lesson/2` piece, so a pack with one says `requires.lesson = 2` and an R2 or R3 build answers "needs a newer enth"; the F1e review's M1) lets a lesson play a drill; **the `drills` progress field** (additive) keeps thresholds per skill over time and the practised days.
+- **As built (2026-10-22, lane DRL):** all of the above is in `enth-learn` and pure; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl) has the built form, the shell's loop and the numbers. Two things differ from the plan's wording. The estimate is the mean of the last up to 12 reversals (a 40-trial track turns about ten times), and "within one step in 90 % of 40-trial runs" holds pooled for steep ladders (a level of about a JND or more: 92 % over 60 simulated listeners), not in every cell and not for ladders of half a JND a level, where 40 answers cannot carry it (79 % within one level, 97 % within two): build ladders with steps of about a JND. The F1e judge ruled the criterion accordingly ([Difficulty and the staircase](#difficulty-and-the-staircase)), and these numbers meet it. And the composer drills every due skill its catalogue lists, so the shell lists only the parameter skills the learner has met.
 
 ## Workouts
 
@@ -166,7 +229,7 @@ Adaptive sessions diverge between players, so two players would hear different i
 - **Audibility:** every option pair is at least 2 JND apart under `sound/1` (at least 6 at L1); items scored on parameter steps are listed apart.
 - **Solvable:** an ideal-observer bot (picks the option nearest by `sound/1`) scores at least 95 % at the top level.
 - **No leaks:** bias bots (always option 1, always the loudest, always the longest) stay at chance ± 3 % over 10,000 items.
-- **Staircases:** simulated listeners with known thresholds get a 40-trial estimate within one step in at least 90 % of runs, and training holds 75–85 % success.
+- **Staircases** (as the F1e judge ruled): simulated listeners' 40-trial estimates are, pooled, within one level in at least 90 % of runs on ladders of about one JND or more per level; every listener-and-start cell at least 75 %; flat ladders within two levels in at least 90 %; training holds 75–85 % success at threshold. ECK checks ladder steps against `sound/1` distances where it can measure them and lists the rest as *not measured*.
 - **Coverage:** every observable Basic-tier P1 parameter is in game 1 or 2, and bursts move Review boxes (proptests, as REV's).
 
 **Human half** (local, per person, as GR2; about 2.5 h for you over two weeks):

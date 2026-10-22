@@ -418,7 +418,7 @@ fn step_out(bundle: &LessonBundle, i: usize, s: &Step, reveal: bool) -> LessonSt
             None,
             witness.as_ref().filter(|_| reveal).map(ToString::to_string),
         ),
-        StepKind::Read => (None, Vec::new(), None, None, None),
+        StepKind::Read | StepKind::Drill(_) => (None, Vec::new(), None, None, None),
     };
     LessonStepOut {
         number: u16::try_from(i + 1).unwrap_or(u16::MAX),

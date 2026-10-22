@@ -279,6 +279,8 @@ pub fn target_lufs(target: &Patch, phrase: &Phrase) -> Result<Option<f64>, Round
 ///   [`Compared::FromStart`](crate::patch_round::Compared::FromStart).
 /// - A draw target (Challenge v2): draw it over the start ([`crate::v2::Draw::draw`]); the drawn parameters are the
 ///   compared ones.
+/// - An ear target (Challenge v3) is no patch round (`bad_answer`): its questions come from
+///   [`crate::ear::question::prepare`], and its answers are judged with no render by [`crate::ear::scorers`].
 pub fn prepare_challenge(challenge: Challenge) -> Result<PreparedRound, RoundError> {
     challenge.validate().map_err(RoundError::Challenge)?;
     let spec = match &challenge.target {
@@ -290,6 +292,12 @@ pub fn prepare_challenge(challenge: Challenge) -> Result<PreparedRound, RoundErr
             );
         }
         Target::Draw(_) => return crate::patch_round::prepare_draw_round(challenge),
+        Target::Ear(_) => {
+            return Err(RoundError::Challenge(ChallengeError::Answer {
+                reason: "an ear target is no patch round: prepare its questions with ear::question::prepare"
+                    .to_owned(),
+            }));
+        }
     };
     let start = random::start(spec.template)?;
     let generated = random::generate(&spec, &start)?;
@@ -543,6 +551,12 @@ mod tests {
                 "structure" | "structure-stub" => c.scoring.structure = id.clone(),
                 "combined" | "combined-stub" => c.scoring.combined = id.clone(),
                 "time" => c.scoring.time = id.clone(),
+                // The ear scorers (lane CV3) judge an ear target's answers through their own dispatch, with no
+                // patch round: each judges its answer kind's right answer as right.
+                "ear" | "ear-value" | "taps" => {
+                    assert!(crate::ear::scorers::judges_its_own_key(&id), "{id}");
+                    continue;
+                }
                 other => panic!("an unexpected scorer kind {other}"),
             }
             assert!(prepare_challenge(c).is_ok(), "{id}");

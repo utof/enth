@@ -52,9 +52,11 @@ use crate::model::{Challenge, Phrase, ScoringSpec};
 pub const SCORE_REPORT_SCHEMA: &str = "enth.score-report/1";
 
 /// Every scorer id this build prepares (lane CV2, for `enth-learn`'s `requires.scorers` check): the three stubs,
-/// `sound/1`, `structure/1`, `combined/1` and the time rule `time/1`. A test prepares each through the round's
-/// dispatch, so the list cannot drift from it; `sound/2` is reserved, not here.
-pub const KNOWN_SCORERS: [ScorerId; 7] = [
+/// `sound/1`, `structure/1`, `combined/1` and the time rule `time/1`, then the ear scorers `ear/1`, `ear-value/1` and
+/// `taps/1` (lane CV3, Challenge v3: [`crate::ear::scorers`], which judge with no render). A test prepares each through
+/// the round's dispatch (the ear scorers through theirs), so the list cannot drift from it; `sound/2` is reserved, not
+/// here.
+pub const KNOWN_SCORERS: [ScorerId; 10] = [
     ScorerId::SOUND_STUB,
     ScorerId::STRUCTURE_STUB,
     ScorerId::COMBINED_STUB,
@@ -62,6 +64,9 @@ pub const KNOWN_SCORERS: [ScorerId; 7] = [
     ScorerId::STRUCTURE_V1,
     ScorerId::COMBINED_V1,
     ScorerId::TIME_V1,
+    ScorerId::EAR_V1,
+    ScorerId::EAR_VALUE_V1,
+    ScorerId::TAPS_V1,
 ];
 
 /// Whether this build prepares the scorer `id` ([`KNOWN_SCORERS`]): a challenge or a pack naming another is a newer

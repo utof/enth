@@ -7,8 +7,8 @@
 
 use std::collections::BTreeMap;
 
-use enth_learn::Lesson;
 use enth_learn::deconstruct::{Options, elements, generate, pack_of, toml_out::lesson_toml};
+use enth_learn::{Lesson, StepKind};
 use enth_patch::{Op, ParamAddr, Patch, RouteAddr, apply};
 
 /// The starter with a dark resonant filter, a filter envelope and a reverb.
@@ -98,6 +98,25 @@ fn a_small_preset_becomes_a_one_lesson_pack_that_reads_back() {
         .bundle(&g.lesson.id)
         .expect("the lesson is in its pack");
     assert_eq!(bundle.lesson.steps.len(), g.lesson.steps.len());
+
+    // `requires` says what the lesson uses, never this build's newest (the F1e review's M2): the highest challenge
+    // version among its Recreate steps (v2 draws today), and the lesson's own version (no drill step: 1). An R2 or R3
+    // build, which reads challenge 2 and lesson 1, can play the pack.
+    let used = g
+        .lesson
+        .steps
+        .iter()
+        .filter_map(|s| match &s.kind {
+            StepKind::Recreate { challenge, .. } => Some(challenge.version()),
+            _ => None,
+        })
+        .max();
+    let requires = &auto.pack.manifest().requires;
+    assert_eq!(requires.challenge, used);
+    assert_eq!(used, Some(2), "the rounds are v2 draws");
+    assert!(used < Some(enth_challenge::model::CHALLENGE_VERSION));
+    assert_eq!(requires.lesson, 1);
+    assert_eq!(requires.lesson, g.lesson.version());
     for text in g.texts.values() {
         assert!(
             enth_learn::markdown::lint(text, enth_learn::markdown::STEP_WORD_BUDGET).is_empty(),

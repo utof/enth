@@ -1,0 +1,37 @@
+{
+  "schema": "enth.challenge/3",
+  "target": {
+    "kind": "ear",
+    "spec": {
+      "game": 3,
+      "generator": 1,
+      "level": 1,
+      "seed": 9007199254740991,
+      "count": 40
+    }
+  },
+  "answer": "choice",
+  "phrase": 0,
+  "start": {
+    "kind": "template",
+    "template": 0
+  },
+  "constraints": {},
+  "assists": {
+    "live_meter": false,
+    "dim_unused": false,
+    "hint_budget": null
+  },
+  "scoring": {
+    "sound": "ear/1",
+    "structure": "ear/1",
+    "combined": "ear/1",
+    "time": "time/1",
+    "sound_weight": 100,
+    "pass_mark": 80
+  },
+  "meta": {
+    "title": "",
+    "tags": []
+  }
+}

@@ -18,6 +18,11 @@
 //! meaning, and a challenge is written at the lowest version that holds it, so a generated round's challenge keeps
 //! its v1 bytes. The file forms, the migration and the new pieces live in [`crate::v2`].
 //!
+//! **Challenge v3** (lane CV3, R4; docs/challenge.md, "Challenge v3"): an ear target ([`Target::Ear`], a question set
+//! from a frozen ear generator) and the answers that are not patches ([`AnswerKind::Choice`], [`AnswerKind::Value`],
+//! [`AnswerKind::Taps`]), judged with no render. Additive in the same way: v1 and v2 read and write as before, and only
+//! a challenge with a v3 piece is written as `enth.challenge/3` ([`crate::v3`]).
+//!
 //! The round's results ([`RoundResult`], [`Outcome`], [`AssistsUsed`], [`Agreement`]) are here too: lane SG's round
 //! produces them and lane GK's round log stores them, with `"schema": "enth.round-result/1"`. A result is an output,
 //! read tolerantly (F1r review M3, S6): unknown fields are ignored, a missing new field takes its default and an
@@ -32,17 +37,19 @@ use crate::score::{ScoreReport, ScorerId};
 use crate::spec::{LATEST_TEMPLATE, PERCENT_MAX, RandomSpec, SpecError};
 pub use crate::v2::Constraints;
 use crate::v2::{Draw, DrawError, InlinePatch};
+use crate::v3::EarError;
+pub use crate::v3::EarSpec;
 
 /// The challenge schema family.
 pub const CHALLENGE_KIND: &str = "enth.challenge";
 
-/// The newest challenge version this build reads and writes (2: Challenge v2, lane CV2). Every version from 1 up
-/// reads; a challenge is written at the lowest version that holds it ([`Challenge::version`]).
-pub const CHALLENGE_VERSION: u32 = 2;
+/// The newest challenge version this build reads and writes (3: Challenge v3, lane CV3; 2 was lane CV2's). Every
+/// version from 1 up reads; a challenge is written at the lowest version that holds it ([`Challenge::version`]).
+pub const CHALLENGE_VERSION: u32 = 3;
 
-/// The `schema` string of the newest version, `enth.challenge/2` (a v1-expressible challenge is still written as
-/// `enth.challenge/1`: [`crate::v2::SCHEMA_V1`]).
-pub const CHALLENGE_SCHEMA: &str = crate::v2::SCHEMA_V2;
+/// The `schema` string of the newest version, `enth.challenge/3` (a challenge without a v3 piece is still written as
+/// `enth.challenge/2` or `enth.challenge/1`: [`crate::v2::SCHEMA_V2`], [`crate::v2::SCHEMA_V1`]).
+pub const CHALLENGE_SCHEMA: &str = crate::v3::SCHEMA_V3;
 
 /// The `schema` string of a [`RoundResult`]: `enth.round-result/1`.
 pub const ROUND_RESULT_SCHEMA: &str = "enth.round-result/1";
@@ -135,7 +142,7 @@ impl Challenge {
     pub fn spec(&self) -> Option<&RandomSpec> {
         match &self.target {
             Target::Seed(spec) => Some(spec),
-            Target::Patch(_) | Target::Draw(_) => None,
+            Target::Patch(_) | Target::Draw(_) | Target::Ear(_) => None,
         }
     }
 
@@ -143,13 +150,17 @@ impl Challenge {
     pub fn draw(&self) -> Option<&Draw> {
         match &self.target {
             Target::Draw(draw) => Some(draw),
-            Target::Seed(_) | Target::Patch(_) => None,
+            Target::Seed(_) | Target::Patch(_) | Target::Ear(_) => None,
         }
     }
 
     /// The lowest version that holds this challenge, the one [`to_json`](Self::to_json) writes: 1 for a seed target
-    /// with its template's start and no constraint (every R1 challenge, byte for byte as v1 wrote it), else 2.
+    /// with its template's start and no constraint (every R1 challenge, byte for byte as v1 wrote it), 3 for an ear
+    /// target or a choice, value or taps answer (Challenge v3), else 2.
     pub fn version(&self) -> u32 {
+        if crate::v3::needs_v3(self) {
+            return 3;
+        }
         let v1 = matches!(self.target, Target::Seed(_))
             && matches!(self.start, Start::Template { .. })
             && self.constraints.is_empty()
@@ -174,6 +185,7 @@ impl Challenge {
                     .phrase;
             }
             Target::Draw(draw) => draw.seed = seed,
+            Target::Ear(spec) => spec.seed = seed,
             Target::Patch(_) => return Err(ChallengeError::NoSeed),
         }
         c.validate()?;
@@ -229,8 +241,14 @@ impl Challenge {
     ///   ([`crate::v2::touches`], the session's table: the round could not be passed), both `bad_selector`;
     /// - no lock on a seed target (`bad_selector`: its draws change with the seed; lock with a draw target);
     /// - a phrase id of either phrase table (`phrase_too_new` for an id this build does not have; 0 is `bad_field`);
-    /// - the scoring percentages.
+    /// - the scoring percentages;
+    /// - a Challenge v3 piece by [`crate::v3`]'s rules instead: an ear target's spec, its phrase 0, template 0 start
+    ///   and no constraint (`bad_ear_target`), the answer its game asks for (`bad_answer`, also for a choice, value or
+    ///   taps answer on another target), and its ear scorer in every scoring slot (`bad_scoring`).
     pub fn validate(&self) -> Result<(), ChallengeError> {
+        if crate::v3::needs_v3(self) {
+            return crate::v3::validate(self);
+        }
         match (&self.target, &self.start) {
             (Target::Seed(spec), start) => {
                 spec.validate().map_err(ChallengeError::Spec)?;
@@ -336,15 +354,25 @@ pub enum Target {
     Patch(InlinePatch),
     /// A seeded draw over the start: `{"kind":"draw","seed":7,"items":[…]}` (v2; [`Draw`]).
     Draw(Draw),
+    /// A question set from a frozen ear generator: `{"kind":"ear","spec":{"game":1,…}}` (v3; [`EarSpec`]). Phrase 0,
+    /// the template 0 start, no constraint, and a choice, value or taps answer ([`crate::v3`]).
+    Ear(EarSpec),
 }
 
-/// What the player answers with. R1 answers with a patch; choice and value answers (ear training) come later.
+/// What the player answers with. R1 answers with a patch; Challenge v3 adds the ear answers, each judged by its ear
+/// scorer with no render ([`crate::ear::scorers`]), and only on an ear target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum AnswerKind {
     /// Rebuild the sound: the player's patch is the answer.
     Patch,
+    /// Pick a label or a clip: an index into the question's options, judged exactly (`ear/1`, v3).
+    Choice,
+    /// Set a value on a knob or slider, judged as an error in perceptual units (`ear-value/1`, v3).
+    Value,
+    /// Tap the onsets back, judged on their timing after a best-fit offset and tempo (`taps/1`, v3).
+    Taps,
 }
 
 /// An id in lane RG's versioned phrase table ([`crate::phrases`]), 1 and up. A phrase's notes never change once
@@ -668,6 +696,27 @@ pub enum ChallengeError {
     },
     /// [`Challenge::with_seed`] on a patch target, which has no seed (`no_seed`).
     NoSeed,
+    /// An ear target's spec is refused (`bad_field`, `out_of_range`, and `code_too_new` for a newer game, generator or
+    /// level; v3).
+    Ear(EarError),
+    /// An ear target with a phrase other than 0, another start than template 0, or a constraint
+    /// (`bad_ear_target`, v3).
+    EarTarget {
+        /// What is wrong.
+        reason: String,
+    },
+    /// An answer the target cannot take: a choice, value or taps answer on a seed, patch or draw target, or an ear
+    /// target answered with something else than its game asks for (`bad_answer`, v3).
+    Answer {
+        /// What is wrong.
+        reason: String,
+    },
+    /// A choice, value or taps answer whose scoring is not its ear scorer in every slot with a sound weight of 100
+    /// and `time/1` (`bad_scoring`, v3).
+    Scoring {
+        /// What is wrong.
+        reason: String,
+    },
 }
 
 impl ChallengeError {
@@ -688,6 +737,10 @@ impl ChallengeError {
             ChallengeError::Draw(e) => e.code(),
             ChallengeError::Selector { .. } | ChallengeError::SeedLock { .. } => "bad_selector",
             ChallengeError::NoSeed => "no_seed",
+            ChallengeError::Ear(e) => e.code(),
+            ChallengeError::EarTarget { .. } => "bad_ear_target",
+            ChallengeError::Answer { .. } => "bad_answer",
+            ChallengeError::Scoring { .. } => "bad_scoring",
         }
     }
 
@@ -724,6 +777,19 @@ impl ChallengeError {
             }
             ChallengeError::NoSeed => {
                 "a patch target has no seed: siblings come from a seed or a draw target".to_owned()
+            }
+            ChallengeError::Ear(e) => e.hint(),
+            ChallengeError::EarTarget { .. } => {
+                "an ear target plays its own questions: phrase 0, the template 0 start and no constraint".to_owned()
+            }
+            ChallengeError::Answer { .. } => {
+                "a choice, value or taps answer needs an ear target, which takes the answer its game asks for"
+                    .to_owned()
+            }
+            ChallengeError::Scoring { .. } => {
+                "an ear answer's scorer (ear/1, ear-value/1, taps/1) fills the sound, structure and combined slots, \
+                 weighted 100, with time/1"
+                    .to_owned()
             }
         }
     }
@@ -762,6 +828,10 @@ impl core::fmt::Display for ChallengeError {
                 write!(f, "selector '{selector}': a seed target takes no lock")
             }
             ChallengeError::NoSeed => f.write_str("a patch target has no seed"),
+            ChallengeError::Ear(e) => write!(f, "the ear target: {e}"),
+            ChallengeError::EarTarget { reason }
+            | ChallengeError::Answer { reason }
+            | ChallengeError::Scoring { reason } => f.write_str(reason),
         }
     }
 }
@@ -991,17 +1061,21 @@ mod tests {
     fn schemas_are_checked() {
         let json = level1().to_json();
         let with = |schema: &str| json.replacen("\"enth.challenge/1\"", schema, 1);
-        // Version 2 is this build's newest (Challenge v2, lane CV2): a v2 file may hold a seed challenge too, and it
-        // reads to the same challenge (written back as v1, the lowest version that holds it).
+        // Version 3 is this build's newest (Challenge v3, lane CV3; 2 was lane CV2's): a v2 or v3 file may hold a seed
+        // challenge too, and it reads to the same challenge (written back as v1, the lowest version that holds it).
         assert_eq!(
             Challenge::from_json(&with("\"enth.challenge/2\"")),
             Ok(level1())
         );
         assert_eq!(
-            Challenge::from_json(&with("\"enth.challenge/3\"")).unwrap_err(),
+            Challenge::from_json(&with("\"enth.challenge/3\"")),
+            Ok(level1())
+        );
+        assert_eq!(
+            Challenge::from_json(&with("\"enth.challenge/4\"")).unwrap_err(),
             ChallengeError::TooNew {
-                found: 3,
-                supported: 2
+                found: 4,
+                supported: 3
             }
         );
         for bad in [
@@ -1028,7 +1102,7 @@ mod tests {
             "bad_challenge"
         );
         // The embedded path runs the same reader: a newer version is refused, an older one migrates.
-        assert!(serde_json::from_str::<Challenge>(&with("\"enth.challenge/3\"")).is_err());
+        assert!(serde_json::from_str::<Challenge>(&with("\"enth.challenge/4\"")).is_err());
         assert_eq!(
             serde_json::from_str::<Challenge>(&with("\"enth.challenge/2\"")).unwrap(),
             level1()

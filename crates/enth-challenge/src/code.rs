@@ -75,8 +75,9 @@ pub const LONG_SYMBOLS_MIN: usize = 35;
 /// The most symbols in a long code (every amount set), the check symbol included.
 pub const LONG_SYMBOLS_MAX: usize = 44;
 
-/// The 32 symbols: Crockford's alphabet, value = position. The check symbol is one of them too.
-const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+/// The 32 symbols: Crockford's alphabet, value = position. The check symbol is one of them too. `pub(crate)` for the
+/// version-15 kinds (`result`, `ear::code`), which end with this check too (lane RC, additive).
+pub(crate) const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// GF(32)'s modulus: x⁵ + x² + 1, a primitive polynomial, so α = x has order 31.
 const GF32_MODULUS: u8 = 0b10_0101;
@@ -591,17 +592,17 @@ const fn times_alpha(v: u8) -> u8 {
 }
 
 /// The word's polynomial at α (Horner, first symbol highest): Σ sᵢ·α^(n−1−i), additions being XOR.
-fn at_alpha(symbols: &[u8]) -> u8 {
+pub(crate) fn at_alpha(symbols: &[u8]) -> u8 {
     symbols.iter().fold(0u8, |acc, &s| times_alpha(acc) ^ s)
 }
 
 /// The check symbol: the value c that makes the data followed by c vanish at α, which is α · (the data at α).
-fn check_value(data: &[u8]) -> u8 {
+pub(crate) fn check_value(data: &[u8]) -> u8 {
     times_alpha(at_alpha(data))
 }
 
 /// The value of a symbol (0–31), after Crockford's case and alias rules.
-fn symbol_value(c: char) -> Option<u8> {
+pub(crate) fn symbol_value(c: char) -> Option<u8> {
     match c.to_ascii_uppercase() {
         'O' => Some(0),
         'I' | 'L' => Some(1),

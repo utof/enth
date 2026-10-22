@@ -269,7 +269,7 @@ fn a_newer_pack_is_refused_and_named() {
 #[test]
 fn requires_must_be_met_and_must_not_lie() {
     for (field, value, want) in [
-        ("lesson", serde_json::json!(2), "requires_unmet"),
+        ("lesson", serde_json::json!(3), "requires_unmet"),
         ("patch", serde_json::json!(9), "requires_unmet"),
         ("challenge", serde_json::json!(99), "requires_unmet"),
         ("generator", serde_json::json!(99), "requires_unmet"),
@@ -318,7 +318,7 @@ fn lessons_are_strict_inputs_too() {
     };
     // A newer lesson is refused and names its pack.
     let e = Pack::from_files(&with_lesson(&edit(&|v| {
-        v["schema"] = "enth.lesson/2".into();
+        v["schema"] = "enth.lesson/3".into();
     })))
     .unwrap_err();
     assert_eq!(e.code(), "lesson_too_new");

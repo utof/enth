@@ -1,0 +1,40 @@
+{
+  "schema": "enth.challenge/3",
+  "target": {
+    "kind": "ear",
+    "spec": {
+      "game": 1,
+      "generator": 1,
+      "level": 1,
+      "seed": 1099511627775,
+      "count": 8
+    }
+  },
+  "answer": "choice",
+  "phrase": 0,
+  "start": {
+    "kind": "template",
+    "template": 0
+  },
+  "constraints": {},
+  "assists": {
+    "live_meter": false,
+    "dim_unused": false,
+    "hint_budget": 0
+  },
+  "scoring": {
+    "sound": "ear/1",
+    "structure": "ear/1",
+    "combined": "ear/1",
+    "time": "time/1",
+    "sound_weight": 100,
+    "pass_mark": 75
+  },
+  "meta": {
+    "title": "Spot the change, level 1",
+    "tags": [
+      "ear",
+      "fixture"
+    ]
+  }
+}

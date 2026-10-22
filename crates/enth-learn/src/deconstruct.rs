@@ -171,17 +171,25 @@ pub fn pack_of(
     })
 }
 
-/// The manifest of a one-lesson pack holding `g`, with `requires` exactly what the lesson uses.
+/// The manifest of a one-lesson pack holding `g`, with `requires` exactly what the lesson uses: its own lesson
+/// version and the highest challenge version among its Recreate steps (never this build's newest).
 pub fn manifest_for(pack_id: &str, g: &Generated) -> Result<Manifest, DeconstructError> {
     let bad = |m: String| {
         DeconstructError::Lesson(crate::error::bad_field(crate::error::Doc::Pack, "id", m))
     };
     let id = PackId::new(pack_id).map_err(bad)?;
-    let rounds = g
+    // The highest challenge version the Recreate steps actually use (their rounds are v2 today), never this build's
+    // newest: a pack must not ask an older build for more than it needs (the F1e review's M2).
+    let challenge = g
         .lesson
         .steps
         .iter()
-        .any(|s| matches!(s.kind, StepKind::Recreate { .. }));
+        .filter_map(|s| match &s.kind {
+            StepKind::Recreate { challenge, .. } => Some(challenge.version()),
+            _ => None,
+        })
+        .max();
+    let rounds = challenge.is_some();
     let mut covers: Vec<KindKey> = Vec::new();
     for step in &g.plan.steps {
         for i in &step.elements {
@@ -211,8 +219,8 @@ pub fn manifest_for(pack_id: &str, g: &Generated) -> Result<Manifest, Deconstruc
             patches: "CC0-1.0".to_owned(),
         },
         requires: Requires {
-            lesson: crate::lesson::LESSON_VERSION,
-            challenge: rounds.then_some(enth_challenge::model::CHALLENGE_VERSION),
+            lesson: g.lesson.version(),
+            challenge,
             patch: enth_patch::file::SCHEMA,
             generator: None,
             scorers: if rounds {

@@ -424,7 +424,8 @@ fn target_edits(challenge: &Challenge, start: &Patch) -> Vec<(String, Op)> {
     let has_route =
         |p: &Patch, r: &RouteAddr| p.routes.iter().any(|x| x.src == r.src && x.dst == r.dst);
     match &challenge.target {
-        Target::Seed(_) => Vec::new(),
+        // An ear target (v3) edits nothing, and takes no constraint.
+        Target::Seed(_) | Target::Ear(_) => Vec::new(),
         Target::Draw(draw) => draw
             .items
             .iter()
@@ -1655,13 +1656,13 @@ struct FileOut<'a> {
     meta: &'a ChallengeMeta,
 }
 
-/// Write `c` at [`Challenge::version`].
+/// Write `c` at [`Challenge::version`] (lane CV3 added version 3, [`crate::v3::SCHEMA_V3`], with the same fields).
 pub(crate) fn write<S: Serializer>(c: &Challenge, s: S) -> Result<S::Ok, S::Error> {
     FileOut {
-        schema: if c.version() == 1 {
-            SCHEMA_V1
-        } else {
-            SCHEMA_V2
+        schema: match c.version() {
+            1 => SCHEMA_V1,
+            2 => SCHEMA_V2,
+            _ => crate::v3::SCHEMA_V3,
         },
         target: &c.target,
         answer: &c.answer,
@@ -1700,7 +1701,9 @@ fn version_of(value: &Value) -> Result<u32, ChallengeError> {
 
 /// Read a challenge of any version this build has (the one strict path of both `Challenge::from_json` and the
 /// embedded serde path): check the schema (`missing_schema`, `bad_schema`, `challenge_too_new`), decode with unknown
-/// fields refused (v1 through its frozen shapes), migrate v1, and validate.
+/// fields refused (v1 through its frozen shapes), migrate v1, and validate. Version 3 (lane CV3) decodes through
+/// [`crate::v3`]; a v2 file holding a v3 piece (an ear target, a choice, value or taps answer) is refused as
+/// `bad_challenge`, as a v1 file holding a v2 piece is.
 pub fn read(value: Value) -> Result<Challenge, ChallengeError> {
     let version = version_of(&value)?;
     let decode_error = |e: serde_json::Error| ChallengeError::BadChallenge {
@@ -1712,7 +1715,7 @@ pub fn read(value: Value) -> Result<Challenge, ChallengeError> {
             .migrate(),
         2 => {
             let f = serde_json::from_value::<FileV2>(value).map_err(decode_error)?;
-            Challenge {
+            let c = Challenge {
                 target: f.target,
                 answer: f.answer,
                 phrase: f.phrase,
@@ -1721,8 +1724,13 @@ pub fn read(value: Value) -> Result<Challenge, ChallengeError> {
                 assists: f.assists,
                 scoring: f.scoring,
                 meta: f.meta,
+            };
+            if c.version() > 2 {
+                return Err(crate::v3::too_new_for(SCHEMA_V2));
             }
+            c
         }
+        3 => crate::v3::read(value)?,
         found => {
             return Err(ChallengeError::TooNew {
                 found,
@@ -1734,14 +1742,15 @@ pub fn read(value: Value) -> Result<Challenge, ChallengeError> {
     Ok(challenge)
 }
 
-/// The on-disk target of v2, for reading: `{"kind":"seed","spec":…}`, `{"kind":"patch","patch":…}`,
-/// `{"kind":"draw","seed":…,"items":[…]}`.
+/// The on-disk target, for reading: `{"kind":"seed","spec":…}`, `{"kind":"patch","patch":…}`,
+/// `{"kind":"draw","seed":…,"items":[…]}`, and v3's `{"kind":"ear","spec":…}` (which [`read`] refuses in a v2 file).
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum TargetFile {
     Seed { spec: RandomSpec },
     Patch { patch: InlinePatch },
     Draw { seed: u64, items: Vec<DrawItem> },
+    Ear { spec: crate::v3::EarSpec },
 }
 
 impl Serialize for Target {
@@ -1766,6 +1775,12 @@ impl Serialize for Target {
                 st.serialize_field("items", &draw.items)?;
                 st.end()
             }
+            Target::Ear(spec) => {
+                let mut st = s.serialize_struct("Target", 2)?;
+                st.serialize_field("kind", "ear")?;
+                st.serialize_field("spec", spec)?;
+                st.end()
+            }
         }
     }
 }
@@ -1776,6 +1791,7 @@ impl<'de> Deserialize<'de> for Target {
             TargetFile::Seed { spec } => Target::Seed(spec),
             TargetFile::Patch { patch } => Target::Patch(patch),
             TargetFile::Draw { seed, items } => Target::Draw(Draw { seed, items }),
+            TargetFile::Ear { spec } => Target::Ear(spec),
         })
     }
 }

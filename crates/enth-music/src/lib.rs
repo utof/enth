@@ -15,13 +15,16 @@
 //! **Owner: lane MUS** (re-exports at F1e). Lane S0e (R4/R5, freeze point F0e) created the crate and declared every file
 //! up front, so the lanes that fill them never edit this one: MUS and the ladder lanes G1 to G3 and TAP name their
 //! items by module path (`enth_music::theory::…`) rather than adding re-exports here. Each file names its owner at the
-//! top. The reference is docs/ear.md; every body is a stub until its lane lands (the freeze order is in docs/phase-4.md).
+//! top. The reference is docs/ear.md. **Built (lane MUS, 2026-10-22):** the tables, the rhythm grid, ear generator v1
+//! and level 1 of every ladder file, with proptests and the generator's golden (`tests/ear_golden.rs`, `tests/golden/`);
+//! the ladder lanes add levels (a row in each file's `LEVELS`) and move the golden on purpose until INT4's friend build
+//! freezes it. Start at [`ear::EarSpec`] and [`ear::question`].
 //!
 //! | File | Holds | Lane |
 //! | --- | --- | --- |
 //! | [`theory`] | interval, chord, scale and progression tables (simple voice leading) and note names | MUS |
 //! | [`rhythm`] | the 16-step rhythm grid, density, swing and the syncopation measure (Longuet-Higgins and Lee) | MUS |
-//! | [`ear`] | `EarSpec { game, generator, level, seed, count }`, `Question`, `Answer`, `Options` and **ear generator v1**, with its golden (1,000 specs to a hash on Linux, Windows and wasm) | MUS |
+//! | [`ear`] | `EarSpec { game, generator, level, seed, count }`, `Question`, `Answer`, `Options` and **ear generator v1**, with its golden (one block of fixed specs per game and level, the same digests on Linux, Windows and wasm) | MUS |
 //! | [`ladder`] | the difficulty ladders, one file per game family (below) | MUS (level 1 of each); G1 to G3; TAP |
 //!
 //! The ladder files, each owned by the lane that tunes it (`ear-check` measures them, docs/ear.md, "GR4"; a ladder

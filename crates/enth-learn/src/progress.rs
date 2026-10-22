@@ -31,6 +31,12 @@
 //! after `lessons` and omitted while empty, so a file without boxes keeps its bytes. It is read as leniently as the
 //! rest, its merge is a join too (per skill, the entry with more rounds), and [`Progress::observe`] applies a round's
 //! rings to it. A `review` value that is not an object is kept verbatim, until a readable one replaces it.
+//!
+//! **The `drills` field** (lane DRL, R4, additive, still `enth.progress/1`): each ear game's level, each skill's
+//! accuracy and thresholds over time and the days practised ([`Drills`](crate::drill::Drills)), written after
+//! `review` and omitted while empty, so a file without drills keeps its bytes. Read as leniently as the rest; its
+//! merge is a join too (`tests/drills.rs`); [`Progress::observe_drill`] applies a finished drill (its bursts move
+//! `review` boxes). A `drills` value that is not an object is kept verbatim, until a readable one replaces it.
 
 use std::collections::BTreeMap;
 
@@ -38,11 +44,12 @@ use serde::Serialize;
 use serde::ser::SerializeMap;
 use serde_json::Value;
 
+use crate::drill::{Drills, Summary};
 use crate::error::{Doc, LearnError};
 use crate::lesson::{Lesson, StepKind};
 use crate::pack::{LessonKey, StepId, schema_version, syntax};
 use crate::player::StepRecord;
-use crate::review::{Day, Review, RoundRings};
+use crate::review::{Burst, Day, Review, RoundRings};
 
 /// The progress version this build writes.
 pub const PROGRESS_VERSION: u32 = 1;
@@ -201,6 +208,9 @@ pub struct Progress {
     pub extra: Extra,
     /// The Leitner boxes per skill (lane REV, additive): see [`crate::review`]. Omitted from the file while empty.
     pub review: Review,
+    /// The ear drills (lane DRL, R4, additive): each game's level, each skill's accuracy and thresholds over time and
+    /// the days practised; see [`crate::drill`]. Omitted from the file while empty.
+    pub drills: Drills,
     /// The highest `enth.progress/<N>` read into this or merged in, at least [`PROGRESS_VERSION`]: what
     /// [`to_json`](Self::to_json) writes, so a newer file an older build rewrites keeps its version (progress changes
     /// are additive only, so nothing it holds is misread under that number).
@@ -214,6 +224,7 @@ impl Default for Progress {
             unread: Extra::new(),
             extra: Extra::new(),
             review: Review::default(),
+            drills: Drills::default(),
             version: PROGRESS_VERSION,
         }
     }
@@ -262,6 +273,12 @@ impl Progress {
                         p.extra.insert(k.clone(), v.clone());
                     }
                 },
+                "drills" => match Drills::read(v) {
+                    Some(drills) => p.drills = drills,
+                    None => {
+                        p.extra.insert(k.clone(), v.clone());
+                    }
+                },
                 _ => {
                     p.extra.insert(k.clone(), v.clone());
                 }
@@ -292,7 +309,9 @@ impl Progress {
             .retain(|k, _| !self.lessons.keys().any(|key| key.to_string() == *k));
         merge_extra(&mut self.extra, &other.extra);
         self.review.merge(&other.review);
+        self.drills.merge(&other.drills);
         self.drop_kept_review();
+        self.drop_kept_drills();
     }
 
     /// Apply one Recreate round's rings to the review boxes on `today` (lane REV; [`Review::observe`]). The shell
@@ -302,10 +321,47 @@ impl Progress {
         self.drop_kept_review();
     }
 
+    /// Apply one finished burst (five items on one skill) to the review boxes on `today` (lane DRL;
+    /// [`Review::observe_burst`]).
+    pub fn observe_burst(&mut self, burst: &Burst, today: Day) {
+        self.review.observe_burst(burst, today);
+        self.drop_kept_review();
+    }
+
+    /// Apply a finished drill on `today` (lane DRL): each of its bursts moves its skill's review box, and the
+    /// `drills` field takes the game's level, the skills' accuracy and thresholds, and the day. A drill with no
+    /// answer changes nothing. The shell calls it on the file it has just re-read, then writes the file back, like
+    /// [`observe`](Self::observe).
+    pub fn observe_drill(&mut self, summary: &Summary, today: Day) {
+        if summary.items == 0 {
+            return;
+        }
+        for burst in &summary.bursts {
+            self.review.observe_burst(burst, today);
+        }
+        self.drills.observe(summary, today);
+        self.drop_kept_review();
+        self.drop_kept_drills();
+    }
+
+    /// Note that the day's workout was played to its end on `today` (lane DRL): the composer then says "done for
+    /// today" ([`crate::workout::compose`]) until tomorrow, and the day joins the calendar of days practised.
+    pub fn finish_workout(&mut self, today: Day) {
+        self.drills.finish_workout(today);
+        self.drop_kept_drills();
+    }
+
     /// A readable `review` field replaces a kept one that was not (written once, never twice).
     fn drop_kept_review(&mut self) {
         if !self.review.is_empty() {
             self.extra.remove("review");
+        }
+    }
+
+    /// A readable `drills` field replaces a kept one that was not (written once, never twice).
+    fn drop_kept_drills(&mut self) {
+        if !self.drills.is_empty() {
+            self.extra.remove("drills");
         }
     }
 
@@ -343,6 +399,9 @@ impl Serialize for Progress {
         m.serialize_entry("lessons", &Merged(&self.lessons, &self.unread))?;
         if !self.review.is_empty() {
             m.serialize_entry("review", &self.review)?;
+        }
+        if !self.drills.is_empty() {
+            m.serialize_entry("drills", &self.drills)?;
         }
         for (k, v) in &self.extra {
             m.serialize_entry(k, v)?;

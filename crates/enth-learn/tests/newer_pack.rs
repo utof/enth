@@ -160,7 +160,7 @@ fn integrity_and_requires_are_never_renamed() {
     // A requires this build lacks keeps its own code (it already says "needs a newer enth").
     let mut manifest = common::test_manifest(&["l"]);
     manifest.engine = NEWER.to_owned();
-    manifest.requires.lesson = 2;
+    manifest.requires.lesson = enth_learn::lesson::LESSON_VERSION + 1;
     let files = common::seal(&manifest, common::test_files(&[("l", &read_step(""))]));
     assert_eq!(refusal(&files).code(), "requires_unmet");
     // A newer pack that this build reads loads.
