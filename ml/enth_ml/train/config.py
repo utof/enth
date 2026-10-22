@@ -21,6 +21,10 @@ class TrainConfig:
     workers: int = 6
     buffer_shards: int = 4
     prefetch: int = 4
+    # Pin the loader's windows (whole windows of shards, ~50-100 MB each) for asynchronous copies. Off: under WSL2 the
+    # pinned pool hit cuMemHostAlloc's limit on the desktop (CUDA out of memory in the pin thread); a pageable copy of
+    # one batch costs a few ms a step.
+    pin_memory: bool = False
     train_mel_dtype: str = "f4"  # what the loader ships to the GPU: f32, as inference sees it ("f2" halves the bytes)
     dev_limit: int | None = None
     dev_batch: int = 512
@@ -63,7 +67,7 @@ class TrainConfig:
 
     # Keys a resume may change (operational); every other key must match the checkpoint's config.
     OPERATIONAL = (
-        "workers", "prefetch", "dev_batch", "epochs", "max_minutes", "log_every_steps", "early_stop_patience",
+        "workers", "prefetch", "pin_memory", "dev_batch", "epochs", "max_minutes", "log_every_steps", "early_stop_patience",
         "early_stop_min_steps", "min_dev_improvement", "min_train_samples", "max_repeat", "data_target_samples",
         "data_wait_max_minutes", "ckpt_every_minutes", "ckpt_every_steps", "keep_checkpoints", "status_every_s",
         "stop_poll_s", "stop_at_step", "out", "train_dirs", "dev_dirs", "train_glob", "eval_every_steps", "eval_at_epoch_end",

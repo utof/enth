@@ -483,7 +483,7 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
             ep_t0 = time.perf_counter()
             win_t0 = time.perf_counter()
             win_data = 0.0
-            batches = batches_from(plan, position, cfg.workers, cfg.prefetch, device_t.type == "cuda", cfg.train_mel_dtype)
+            batches = batches_from(plan, position, cfg.workers, cfg.prefetch, cfg.pin_memory and device_t.type == "cuda", cfg.train_mel_dtype)
             cut = False
             while True:
                 td = time.perf_counter()
