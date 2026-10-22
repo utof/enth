@@ -281,6 +281,37 @@ class Resume(unittest.TestCase):
         ep = [json.loads(x) for x in (self.dir / "replay-c" / "metrics.jsonl").read_text().splitlines() if '"kind": "epoch"' in x]
         self.assertEqual([e["parts"] for e in ep], [1, 1, 1, 2])
 
+    def test_failed_checkpoint_writes_do_not_stop_training(self) -> None:
+        """A disk that refuses writes (WSL's 9P mount gave ENOMEM): periodic saves are retried and skipped, the run
+        goes on and ends with its final checkpoint; a stop whose checkpoint cannot be written raises."""
+        from unittest import mock
+
+        from enth_ml.train import loop
+        from enth_ml.train.ckpt import CheckpointStore
+
+        real = CheckpointStore.save
+
+        def flaky(self, state, kind, meta):
+            if meta["reason"] == "interval":
+                raise OSError(12, "Cannot allocate memory")
+            return real(self, state, kind, meta)
+
+        with mock.patch.object(loop, "CKPT_RETRY_S", 0.0), mock.patch.object(CheckpointStore, "save", flaky):
+            s = loop.train(self.cfg("flaky", ckpt_every_steps=5), device="cpu")
+        self.assertEqual(s["state"], "finished")
+        recs = [json.loads(x) for x in (self.dir / "flaky" / "metrics.jsonl").read_text().splitlines()]
+        self.assertTrue(any(r["kind"] == "ckpt_failed" for r in recs))
+        self.assert_same(self.dir / "flaky")
+
+        def broken(self, state, kind, meta):
+            raise OSError(12, "Cannot allocate memory")
+
+        with mock.patch.object(loop, "CKPT_RETRY_S", 0.0), mock.patch.object(CheckpointStore, "save", broken):
+            with self.assertRaises(OSError):
+                loop.train(self.cfg("broken", stop_at_step=4), device="cpu")
+        st = json.loads((self.dir / "broken" / "status.json").read_text())
+        self.assertEqual(st["state"], "failed")
+
     def test_rolling_window_takes_the_newest_parts(self) -> None:
         import os
 

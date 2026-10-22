@@ -52,6 +52,7 @@ from .metrics import DevMetrics
 from .shards import Dataset, open_dataset, streams_disjoint
 
 RUN_SCHEMA = "enth.train-run/1"
+CKPT_RETRY_S = 10.0  # between attempts at a checkpoint write that failed
 ML = pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -222,6 +223,47 @@ def scan_train(cfg: TrainConfig, cutoff_unix: float | None = None) -> Dataset:
     return open_dataset(dirs, "train")
 
 
+class SafeLog:
+    """``metrics.jsonl``, append-only; a failed write (seen: ENOMEM from WSL's 9P mount of a Windows drive under memory
+    pressure) is retried once on a reopened file, then the record is dropped with a warning: never a crash."""
+
+    def __init__(self, path: pathlib.Path) -> None:
+        self.path = path
+        self.fh = open(path, "a", encoding="utf-8")
+        self.dropped = 0
+
+    def _retry(self, s: str, err: OSError) -> None:
+        print(f"warning: writing {self.path.name} failed ({err!r}); retrying once", flush=True)
+        try:
+            self.fh.close()
+        except OSError:
+            pass
+        time.sleep(1.0)
+        try:
+            self.fh = open(self.path, "a", encoding="utf-8")
+            self.fh.write(s)
+            self.fh.flush()
+        except OSError as err2:
+            self.dropped += 1
+            print(f"warning: {self.path.name}: a record was dropped ({err2!r})", flush=True)
+
+    def write(self, s: str) -> None:
+        try:
+            self.fh.write(s)
+            self.fh.flush()
+        except OSError as err:
+            self._retry(s, err)
+
+    def flush(self) -> None:
+        pass  # every write is flushed
+
+    def close(self) -> None:
+        try:
+            self.fh.close()
+        except OSError:
+            pass
+
+
 class Replay:
     """Another run's epochs, from its ``metrics.jsonl``: when each started, with how many parts and samples."""
 
@@ -388,7 +430,7 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
     (out / ("run.json" if state is None else f"run-resume-{step}.json")).write_text(json.dumps(run, indent=1))
     log_line(json.dumps(run["model"]))
 
-    log = open(out / "metrics.jsonl", "a", encoding="utf-8")
+    log = SafeLog(out / "metrics.jsonl")
     if state is not None:
         log.write(json.dumps({"kind": "resume", "step": step, "epoch": epoch, "position": position, "from": entry["file"], "utc": _utc()}) + "\n")
         log.flush()
@@ -438,12 +480,31 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
             "config": cfg.to_dict(),
         }
 
-    def save(kind: str, reason: str, dev_loss: float | None = None) -> dict:
+    def save(kind: str, reason: str, dev_loss: float | None = None, must: bool = False) -> dict | None:
+        """Write a checkpoint. A failed write is retried; if it keeps failing, training goes on (a periodic one is
+        tried again in two minutes) unless ``must`` (a stop), which raises after the retries."""
         nonlocal last_ckpt_t, last_ckpt_step
         t0 = time.perf_counter()
         d = dev_loss if dev_loss is not None else best_dev
         meta = {"step": step, "epoch": epoch, "position": position, "samples_seen": samples_seen, "reason": reason, "dev_best": None if math.isinf(d) else d}
-        e = store.save(snapshot(), kind, meta)
+        snap = snapshot()
+        e = None
+        for attempt in range(5 if must else 3):
+            try:
+                e = store.save(snap, kind, meta)
+                break
+            except OSError as err:
+                log_line(f"checkpoint write failed ({err!r}), attempt {attempt + 1}; retrying in {CKPT_RETRY_S:.0f} s")
+                log.write(json.dumps({"kind": "ckpt_failed", "step": step, "reason": reason, "error": repr(err)[:200], "utc": _utc()}) + "\n")
+                time.sleep(CKPT_RETRY_S)
+        if e is None:
+            status["checkpoint_error"] = {"step": step, "utc": _utc(), "reason": reason}
+            if must:
+                raise OSError(f"could not write the {reason} checkpoint at step {step}")
+            if kind != "best":
+                last_ckpt_t = time.perf_counter() - max(cfg.ckpt_every_minutes * 60 - 120.0, 0.0)
+            return None
+        status.pop("checkpoint_error", None)
         secs = time.perf_counter() - t0
         if kind != "best":
             last_ckpt_t = time.perf_counter()
@@ -675,7 +736,7 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
             heartbeat("stopping", f"stop requested ({stop.reason})", force=True)
         reason = f"stop ({stop.reason})" if stopped else f"end ({finished_reason})"
         if step != last_ckpt_step or not store.entries("periodic"):
-            save("periodic", reason)
+            save("periodic", reason, must=True)
         if not stopped and final_eval is None:
             final_eval, _ = do_eval(per_entry=True)
             log.write(json.dumps({"kind": "dev", "step": step, "epoch": epoch, "final": True, "elapsed_min": elapsed() / 60.0, "samples_seen": samples_seen, **final_eval}) + "\n")

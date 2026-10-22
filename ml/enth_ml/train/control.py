@@ -66,7 +66,11 @@ class StopFlag:
 
 
 def write_status(run_dir: pathlib.Path, status: dict) -> None:
-    atomic_write_json(pathlib.Path(run_dir) / STATUS_FILE, status | {"pid": os.getpid(), "heartbeat_unix": time.time()})
+    """Best effort: a failed write (a full or flaky disk) is skipped, the next heartbeat tries again."""
+    try:
+        atomic_write_json(pathlib.Path(run_dir) / STATUS_FILE, status | {"pid": os.getpid(), "heartbeat_unix": time.time()})
+    except OSError as err:
+        print(f"warning: status.json not written ({err!r})", flush=True)
 
 
 def _proc_cmdline(pid: int) -> str:
