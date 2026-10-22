@@ -542,6 +542,13 @@ expression: v
           ],
           "description": "The model whose hypotheses joined the starts (`--model`; R3b, additive within `/1`): absent when no\nmodel was used (no `--model`, or the file was refused and the job ran search alone, which `notes` says)."
         },
+        "model_cap": {
+          "description": "The model's share cap (R3b, lane EVM, additive within `/1`): `true` when a model's hypotheses held at most half\nof the branches at screening and at every rung, the default. Present only when a model's starts joined the\njob (absent otherwise, so earlier outputs are unchanged); a record with model starts and no key ran uncapped.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "neighbours": {
           "description": "How many k-NN neighbours were proposed (16).",
           "format": "uint",
