@@ -411,7 +411,7 @@ Open: route and enable skills; a Review round does not survive a project reload 
 
 | Piece | Where | What it is |
 | --- | --- | --- |
-| Ear skills | `review::Skill::ear`, `Skill::parse` | `ear.interval.M3`: the `ear` kind and a dotted path of one to three parts of `[A-Za-z0-9_-]{1,32}`, **case kept** (`M3` and `m3` are two skills). `svf.cutoff` keeps its grammar (`svf.cut.off` is still no skill). `Skill::is_ear`, a label that needs no table (`Interval M3`), serde as a string |
+| Ear skills | `review::Skill::ear`, `Skill::parse` | `ear.interval.M3`: the `ear` kind and a dotted path of **two or three** parts of `[A-Za-z0-9_-]{1,32}`, **case kept** (`M3` and `m3` are two skills). One part (`ear.x`) is refused (should-fix S6, lane F1E): R2 and R3 builds would read it as `module.param` and schedule a module `ear`; every slug has two parts or more. `svf.cutoff` keeps its grammar (`svf.cut.off` is still no skill). `Skill::is_ear`, a label that needs no table (`Interval M3`), serde as a string |
 | Bursts | `review::{Burst, burst_verdict, Review::observe_burst, burst_standings}` | 5 items on one skill: 4 or 5 right is Good (up a box), 3 is Near (holds), 2 or fewer is Bad (down). One answer never moves a box. `burst_standings` lists the due skills with a box that the Recreate queue does not hold |
 | The staircase | `drill::Staircase` | 3 right in a row make the next item one level harder, 1 wrong one level easier; the run counter is private |
 | A drill session | `drill::{DrillSpec, Drill, Item, Answer, Summary}` | a spec and an answer log (`Drill::replay` rebuilds it); bursts finish at 5 answers on a skill, once per skill per session |

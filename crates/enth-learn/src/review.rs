@@ -101,6 +101,11 @@ const MAX_PART: usize = 32;
 /// The kind of an ear skill: `ear.interval.M3`.
 pub const EAR_KIND: &str = "ear";
 
+/// The fewest dotted parts after `ear.` (`interval.M3` is two). One part is refused (should-fix S6 of the F1e review):
+/// `ear.x` has R2 and R3's `module.param` shape (two valid lowercase parts), so an older build's Review would read it
+/// as a parameter of a module kind called `ear`. Every slug `enth-music` and the parameter games give has two or three.
+const MIN_EAR_PARTS: usize = 2;
+
 /// The most dotted parts after `ear.` (`interval.M3` is two).
 const MAX_EAR_PARTS: usize = 3;
 
@@ -142,11 +147,12 @@ impl Skill {
         (valid_part(kind) && valid_part(key)).then(|| Skill(format!("{kind}.{key}")))
     }
 
-    /// An ear skill from the path after `ear.`: one to three dotted parts of letters, digits, `_` and `-`, case
-    /// kept (`interval.M3`, `chord.min`, `band.1k`, `progression.i-iv-v-i`).
+    /// An ear skill from the path after `ear.`: two or three dotted parts of letters, digits, `_` and `-`, case
+    /// kept (`interval.M3`, `chord.min`, `band.1k`, `progression.i-iv-v-i`). One part is refused, so no ear skill has
+    /// the `module.param` shape an R2 or R3 build would misread.
     pub fn ear(path: &str) -> Option<Skill> {
         let parts = path.split('.').count();
-        ((1..=MAX_EAR_PARTS).contains(&parts) && path.split('.').all(valid_ear_part))
+        ((MIN_EAR_PARTS..=MAX_EAR_PARTS).contains(&parts) && path.split('.').all(valid_ear_part))
             .then(|| Skill(format!("{EAR_KIND}.{path}")))
     }
 

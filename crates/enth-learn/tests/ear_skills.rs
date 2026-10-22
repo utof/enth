@@ -20,7 +20,7 @@ fn ear_skills_are_dotted_paths_with_the_case_kept() {
         "ear.chord.min",
         "ear.band.1k",
         "ear.progression.i-iv-v-i",
-        "ear.note",
+        "ear.note.names",
         "ear.a.b.c",
     ] {
         let skill = Skill::parse(text).unwrap_or_else(|| panic!("{text}"));
@@ -37,6 +37,10 @@ fn ear_skills_are_dotted_paths_with_the_case_kept() {
     for text in [
         "ear",
         "ear.",
+        // One part after `ear.` is refused (should-fix S6): an R2 or R3 build would read `ear.note` as a parameter
+        // `note` of a module kind `ear` (two valid lowercase parts), and schedule a module that does not exist.
+        "ear.note",
+        "ear.x",
         "ear..m3",
         "ear.a.b.c.d",
         "ear.interval M3",
@@ -57,11 +61,7 @@ fn ear_skills_print_without_a_table_and_serialize_as_text() {
     assert_eq!(s("ear.interval.M3").label(), "Interval M3");
     assert_eq!(s("ear.chord.min").label(), "Chord min");
     assert_eq!(s("ear.band.1k").label(), "Band 1k");
-    assert_eq!(
-        s("ear.note").label(),
-        "Note",
-        "a family alone is the family"
-    );
+    assert_eq!(s("ear.rhythm.taps").label(), "Rhythm taps");
     assert!(
         s("svf.cutoff").label().contains("Cutoff"),
         "{}",
@@ -79,7 +79,7 @@ fn ear_skills_print_without_a_table_and_serialize_as_text() {
 
 proptest! {
     #[test]
-    fn a_valid_ear_path_survives_text_and_json(path in "[A-Za-z0-9_-]{1,32}(\\.[A-Za-z0-9_-]{1,32}){0,2}") {
+    fn a_valid_ear_path_survives_text_and_json(path in "[A-Za-z0-9_-]{1,32}(\\.[A-Za-z0-9_-]{1,32}){1,2}") {
         let skill = Skill::ear(&path).unwrap();
         prop_assert_eq!(Skill::parse(skill.as_str()), Some(skill.clone()));
         let json = serde_json::to_string(&skill).unwrap();
@@ -88,7 +88,7 @@ proptest! {
 
     #[test]
     fn nothing_else_is_an_ear_path(path in "[ -~]{0,40}") {
-        let ok = (1..=3).contains(&path.split('.').count())
+        let ok = (2..=3).contains(&path.split('.').count())
             && path.split('.').all(|p| !p.is_empty() && p.len() <= 32
                 && p.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
         prop_assert_eq!(Skill::ear(&path).is_some(), ok, "{}", path);
@@ -137,7 +137,7 @@ fn burst_standings_are_the_due_skills_with_a_box_that_the_queue_does_not_hold() 
         "a skill the queue holds is a Recreate step's, not a burst's"
     );
     // A skill nobody has rung has no box: the composer starts those from its catalogue, Review does not list them.
-    assert!(!names(&empty).contains(&"ear.note".to_owned()));
+    assert!(!names(&empty).contains(&"ear.note.names".to_owned()));
     // Later, the box-3 skill is due too, and the order stays the queue's.
     let later: Vec<String> = review::burst_standings(&p, &empty, TODAY + 10)
         .iter()
