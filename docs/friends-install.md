@@ -46,6 +46,10 @@ Then rescan plugins in your DAW (or restart it). If the DAW still says it cannot
 
 Copy `enth-plugin.clap` to `~/.clap/` and the `enth-plugin.vst3` folder to `~/.vst3/`, then rescan in your DAW. It needs a 2024 or newer distribution (glibc 2.39: Ubuntu 24.04, Debian 13, Fedora 40 or newer); on an older one the DAW will not load it, so tell me.
 
+## If your zip has `enth-bank-v1.bin`
+
+Only builds with **Create** (make a patch from a sound file) have this 2.4 MB file. It helps Create find good starting patches; without it Create still works, just less well. Put it in an `enth/Models` folder in your Documents folder (create the folders): `Documents\enth\Models\` on Windows, `~/Documents/enth/Models/` on a Mac or Linux. On Windows and Linux, the folder you copied `enth-plugin.clap` into works too.
+
 ## First sound
 
 Add enth as an instrument on a MIDI track and play some notes. **Start with your volume low**: the first sound can be loud.

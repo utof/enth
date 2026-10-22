@@ -20,6 +20,15 @@ name: release
 # Each zip also carries the lesson packs the plugin does not bundle (`Packs/`: shaping, space-and-dynamics and studies,
 # built by `cargo xtask pack` on the leg; R2 lane INT2) and GR2's friend sheet and answers template, beside GR1's sheet.
 #
+# "Create from sound" (R3a, lane INTa): the by-hand input `create` (off by default, and always off on a tag) builds every
+# bundle with the plugin's `create` feature and puts the k-NN bank, `enth-bank-v1.bin`, in each zip beside the bundles.
+# Each leg builds the bank with `cargo xtask bank` (a few minutes) and checks it against the SHA-256 every GR3 run used
+# (`ENTH_BANK_SHA256` below): renders and the embedding are bit-exact by design, so every OS must give the same bytes,
+# and a leg whose bank differs fails rather than ship an unexpected file (the Linux zip's bank is the same data for
+# every OS). The plugin looks for the bank beside its binary (the `.clap` file on Linux and Windows) and in
+# `<Documents>/enth/Models/` (docs/plugin.md, "Create"); a zip never puts it inside a bundle, where it would break the
+# macOS signature. Friend builds keep `create` off until the owner's 5-sound check passes (docs/r3-owner.md).
+#
 # Artefacts: one zip per OS, uploaded as-is (archive: false, so there is no zip inside a zip), kept for 14 days. Nothing is
 # published and no release is created (permissions stay read-only); the owner downloads the zips and forwards them.
 # `CARGO_BUILD_WARNINGS` is not set here, unlike ci.yml: ci.yml's per-push cross-target guard already fails a warning in
@@ -47,6 +56,10 @@ on:
         description: "Run clap-validator (turn off only to get a build while a validator problem is investigated)"
         type: boolean
         default: true
+      create:
+        description: "Create from sound: the `create` feature on, and the k-NN bank (enth-bank-v1.bin) in each zip (off until the owner's 5-sound check passes)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -58,6 +71,11 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  # The bundles' extra cargo features: `--features create` when the `create` input asks for it (never on a tag).
+  PLUGIN_FEATURES: ${{ (github.event_name == 'workflow_dispatch' && inputs.create) && '--features create' || '' }}
+  # The k-NN bank every GR3 run used (lane F1S's rebuild; docs/r3.md, "The bank"). `cargo xtask bank` regenerates it
+  # bit for bit; the bank step refuses any other file.
+  ENTH_BANK_SHA256: 66d5f3808b5b9d6f14a28c049bee6ef65555a840f13e8f0ac58ae9c5e351a72c
 
 jobs:
   linux:
@@ -104,16 +122,31 @@ jobs:
       # Debug and release bundles share target/bundled, so the debug one is validated first and the release one built after.
       - name: clap-validator on the debug bundle
         if: github.event_name == 'push' || inputs.validate
-        run: cargo xtask validate --package enth-plugin
+        run: |
+          cargo xtask bundle --package enth-plugin --locked $PLUGIN_FEATURES
+          cargo xtask validate --package enth-plugin --no-build
 
       - name: Release bundles (CLAP + VST3)
         run: |
           rm -rf target/bundled
-          cargo xtask bundle --package enth-plugin --release --locked
+          cargo xtask bundle --package enth-plugin --release --locked $PLUGIN_FEATURES
 
       - name: clap-validator on the release bundle
         if: github.event_name == 'push' || inputs.validate
         run: cargo xtask validate --package enth-plugin --release --no-build
+
+      # Create from sound (lane INTa): the k-NN bank, rebuilt and checked against its pin, for the zip.
+      - name: k-NN bank (create builds only)
+        if: github.event_name == 'workflow_dispatch' && inputs.create
+        run: |
+          threads=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+          cargo xtask bank --out bank/enth-bank-v1.bin --threads "$threads"
+          if command -v sha256sum > /dev/null; then actual=$(sha256sum bank/enth-bank-v1.bin | cut -d' ' -f1); else actual=$(shasum -a 256 bank/enth-bank-v1.bin | cut -d' ' -f1); fi
+          echo "enth-bank-v1.bin: $(wc -c < bank/enth-bank-v1.bin) bytes, sha256 $actual"
+          if [ "$actual" != "$ENTH_BANK_SHA256" ]; then
+            echo "::error::enth-bank-v1.bin has SHA-256 $actual, expected $ENTH_BANK_SHA256 (the bank every GR3 run used): not shipping it"
+            exit 1
+          fi
 
       - name: Package
         env:
@@ -127,7 +160,9 @@ jobs:
           cp content/gr2/answers-template.toml "stage/${name}/gr2-answers.toml"
           # The lesson packs the plugin does not bundle (the tour needs shaping and space-and-dynamics; R2 lane INT2).
           cargo xtask pack --out "stage/${name}/Packs" shaping space-and-dynamics studies
-          printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
+          # Create from sound (lane INTa): the k-NN bank beside the bundles, never inside one.
+          if [ -f bank/enth-bank-v1.bin ]; then cp bank/enth-bank-v1.bin "stage/${name}/"; fi
+          printf 'enth %s\ncommit %s\n%s\nrunner %s %s\nfeatures default%s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" "${PLUGIN_FEATURES:+ create}" > "stage/${name}/BUILD.txt"
           (cd stage && zip -q -r -y -X "../${name}.zip" "${name}")
           unzip -l "${name}.zip"
           {
@@ -181,7 +216,7 @@ jobs:
       # `cargo xtask validate` is Linux-only, so the debug bundle is built with `bundle` and the validator is fetched here.
       - name: Debug bundle (for clap-validator)
         if: github.event_name == 'push' || inputs.validate
-        run: cargo xtask bundle --package enth-plugin --locked
+        run: cargo xtask bundle --package enth-plugin --locked $PLUGIN_FEATURES
 
       - name: Fetch clap-validator 0.4.1 (SHA-256 pinned)
         if: github.event_name == 'push' || inputs.validate
@@ -217,7 +252,7 @@ jobs:
       - name: Release bundles (CLAP + VST3)
         run: |
           rm -rf target/bundled
-          cargo xtask bundle --package enth-plugin --release --locked
+          cargo xtask bundle --package enth-plugin --release --locked $PLUGIN_FEATURES
 
       # The research could not link on Windows, so this is the first check that +crt-static took effect. dumpbin comes
       # with the Visual Studio build tools on the runner image; if it cannot be found the check is skipped with a warning.
@@ -247,6 +282,19 @@ jobs:
           & $env:CLAP_VALIDATOR validate 'target\bundled\enth-plugin.clap' --only-failed
           if ($LASTEXITCODE -ne 0) { throw 'clap-validator reported failures on the release bundle' }
 
+      # Create from sound (lane INTa): the k-NN bank, rebuilt and checked against its pin, for the zip.
+      - name: k-NN bank (create builds only)
+        if: github.event_name == 'workflow_dispatch' && inputs.create
+        run: |
+          threads=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+          cargo xtask bank --out bank/enth-bank-v1.bin --threads "$threads"
+          if command -v sha256sum > /dev/null; then actual=$(sha256sum bank/enth-bank-v1.bin | cut -d' ' -f1); else actual=$(shasum -a 256 bank/enth-bank-v1.bin | cut -d' ' -f1); fi
+          echo "enth-bank-v1.bin: $(wc -c < bank/enth-bank-v1.bin) bytes, sha256 $actual"
+          if [ "$actual" != "$ENTH_BANK_SHA256" ]; then
+            echo "::error::enth-bank-v1.bin has SHA-256 $actual, expected $ENTH_BANK_SHA256 (the bank every GR3 run used): not shipping it"
+            exit 1
+          fi
+
       - name: Package
         shell: pwsh
         env:
@@ -264,7 +312,10 @@ jobs:
           # The lesson packs the plugin does not bundle (the tour needs shaping and space-and-dynamics; R2 lane INT2).
           cargo xtask pack --out (Join-Path $stage 'Packs') shaping space-and-dynamics studies
           if ($LASTEXITCODE -ne 0) { throw 'cargo xtask pack failed' }
-          "enth $($env:VERSION)`ncommit $($env:GITHUB_SHA)`n$(rustc --version)`nrunner $($env:RUNNER_OS) $($env:RUNNER_ARCH)" | Set-Content (Join-Path $stage 'BUILD.txt')
+          # Create from sound (lane INTa): the k-NN bank beside the bundles, never inside one.
+          if (Test-Path 'bank\enth-bank-v1.bin') { Copy-Item 'bank\enth-bank-v1.bin' $stage }
+          $features = if ($env:PLUGIN_FEATURES) { 'default create' } else { 'default' }
+          "enth $($env:VERSION)`ncommit $($env:GITHUB_SHA)`n$(rustc --version)`nrunner $($env:RUNNER_OS) $($env:RUNNER_ARCH)`nfeatures $features" | Set-Content (Join-Path $stage 'BUILD.txt')
           $zip = "$name.zip"
           # Zipped from inside stage/, so the zip's one top-level folder is enth-<version>-windows-x86_64. 7-Zip is on the
           # runner image and writes forward slashes; Compress-Archive is the fallback.
@@ -328,7 +379,7 @@ jobs:
 
       - name: Debug bundle (for clap-validator; native arm64)
         if: github.event_name == 'push' || inputs.validate
-        run: cargo xtask bundle --package enth-plugin --locked
+        run: cargo xtask bundle --package enth-plugin --locked $PLUGIN_FEATURES
 
       - name: Fetch clap-validator 0.4.1 (SHA-256 pinned)
         if: github.event_name == 'push' || inputs.validate
@@ -361,7 +412,7 @@ jobs:
       - name: Release bundles (universal CLAP + VST3)
         run: |
           rm -rf target/bundled   # the debug bundle above: lipo writes over its output, so start from nothing
-          cargo xtask bundle --package enth-plugin --release --locked --universal
+          cargo xtask bundle --package enth-plugin --release --locked --universal $PLUGIN_FEATURES
 
       - name: Ad-hoc sign and verify
         run: |
@@ -377,6 +428,19 @@ jobs:
         if: github.event_name == 'push' || inputs.validate
         run: '"$CLAP_VALIDATOR" validate target/bundled/enth-plugin.clap --only-failed'
 
+      # Create from sound (lane INTa): the k-NN bank, rebuilt and checked against its pin, for the zip.
+      - name: k-NN bank (create builds only)
+        if: github.event_name == 'workflow_dispatch' && inputs.create
+        run: |
+          threads=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+          cargo xtask bank --out bank/enth-bank-v1.bin --threads "$threads"
+          if command -v sha256sum > /dev/null; then actual=$(sha256sum bank/enth-bank-v1.bin | cut -d' ' -f1); else actual=$(shasum -a 256 bank/enth-bank-v1.bin | cut -d' ' -f1); fi
+          echo "enth-bank-v1.bin: $(wc -c < bank/enth-bank-v1.bin) bytes, sha256 $actual"
+          if [ "$actual" != "$ENTH_BANK_SHA256" ]; then
+            echo "::error::enth-bank-v1.bin has SHA-256 $actual, expected $ENTH_BANK_SHA256 (the bank every GR3 run used): not shipping it"
+            exit 1
+          fi
+
       - name: Package
         env:
           VERSION: ${{ steps.name.outputs.version }}
@@ -389,7 +453,9 @@ jobs:
           cp content/gr2/answers-template.toml "stage/${name}/gr2-answers.toml"
           # The lesson packs the plugin does not bundle (the tour needs shaping and space-and-dynamics; R2 lane INT2).
           cargo xtask pack --out "stage/${name}/Packs" shaping space-and-dynamics studies
-          printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
+          # Create from sound (lane INTa): the k-NN bank beside the bundles, never inside one (it would break the signature).
+          if [ -f bank/enth-bank-v1.bin ]; then cp bank/enth-bank-v1.bin "stage/${name}/"; fi
+          printf 'enth %s\ncommit %s\n%s\nrunner %s %s\nfeatures default%s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" "${PLUGIN_FEATURES:+ create}" > "stage/${name}/BUILD.txt"
           # Apple's own way to zip a bundle: ditto keeps the symlinks, permissions and the signature intact.
           ditto -c -k --keepParent "stage/${name}" "${name}.zip"
           # The signature must survive the zip: unpack a copy and verify it.
