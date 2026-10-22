@@ -801,6 +801,7 @@ fn create_is_listed_in_help_and_its_schema_in_enth_schema() {
         "--stop-at",
         "--perf",
         "--bank",
+        "--model",
         "--record",
     ] {
         assert!(create_help.contains(flag), "{flag}: {create_help}");
@@ -828,6 +829,194 @@ fn create_is_listed_in_help_and_its_schema_in_enth_schema() {
     ] {
         assert!(v["properties"][field].is_object(), "{field}: {v}");
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A proposal model (`--model`, lane PUIb)
+
+/// Lane EXP's committed tiny fixture (propose v0's architecture at 10,768 parameters, K = 8, id `exp-tiny`; no trained
+/// model), copied into the scratch directory.
+fn exp_tiny(s: &Scratch) -> String {
+    let to = s.path("enth-model-exp-tiny.bin");
+    std::fs::copy(
+        format!(
+            "{}/../enth-solver/tests/fixtures/propose/exp_tiny.bin",
+            env!("CARGO_MANIFEST_DIR")
+        ),
+        &to,
+    )
+    .unwrap();
+    to
+}
+
+fn model_starts(out: &CreateOut) -> usize {
+    out.starts
+        .iter()
+        .filter(|s| matches!(s.provenance, CreateProvenanceOut::Model { .. }))
+        .count()
+}
+
+#[test]
+fn a_model_adds_its_hypotheses_as_starts_and_settings_model_records_it() {
+    let s = Scratch::new("create_model");
+    let wav = tone(&s);
+    let model = exp_tiny(&s);
+    let args = |w: &'static str| -> Vec<&str> {
+        vec![
+            "--target",
+            wav.as_str(),
+            "--candidates",
+            "12",
+            "--budget",
+            "40",
+            "--model",
+            model.as_str(),
+            "--workers",
+            w,
+        ]
+    };
+    let one = args("1");
+    let (o, out) = create(&one);
+    let m = out.settings.model.as_ref().expect("settings.model");
+    assert_eq!((m.id.as_str(), m.hypotheses), ("exp-tiny", 8));
+    assert_eq!(m.sha256.len(), 64);
+    assert_eq!(m.input_sha256.as_ref().map(String::len), Some(64));
+    assert_eq!(m.outputs_sha256.as_ref().map(String::len), Some(64));
+    // Each hypothesis is a start or a dropped one (an exact duplicate of an earlier start is skipped).
+    let n = model_starts(&out);
+    assert!(
+        n >= 1 && n + m.dropped.len() <= 8,
+        "{n} starts, {:?}",
+        m.dropped
+    );
+    // K = 12 keeps every one of the 4 + n starts as a branch.
+    let branches = out
+        .candidates
+        .iter()
+        .filter(|c| matches!(c.provenance, CreateProvenanceOut::Model { .. }))
+        .count();
+    assert_eq!(branches, n);
+    for st in &out.starts {
+        if let CreateProvenanceOut::Model {
+            model, confidence, ..
+        } = &st.provenance
+        {
+            assert_eq!(model, "exp-tiny");
+            assert!(confidence.is_some_and(f64::is_finite));
+        }
+    }
+    assert!(
+        out.notes
+            .iter()
+            .any(|n| n.starts_with("model: exp-tiny from ")),
+        "{:?}",
+        out.notes
+    );
+    assert!(
+        o.stderr.contains("note: model: exp-tiny from "),
+        "{}",
+        o.stderr
+    );
+    // The same bytes for any worker count, the model included.
+    let (o3, _) = create(&args("3"));
+    assert_eq!(timeless(&json(&o)), timeless(&json(&o3)));
+    // The table names the model and its starts.
+    let mut tty = vec!["create"];
+    tty.extend_from_slice(&one);
+    let t = run_tty(&tty);
+    assert_eq!(t.code, 0, "{}", t.stdout);
+    assert!(
+        t.stdout.contains(&format!(
+            "model: exp-tiny ({n} of 8 hypotheses as starts, {n} of them branches)"
+        )),
+        "{}",
+        t.stdout
+    );
+    assert!(t.stdout.contains("model "), "{}", t.stdout);
+    // Without --model, settings has no model key at all (the output is what it was before R3b).
+    let o = run(&[
+        "create",
+        "--target",
+        &wav,
+        "--candidates",
+        "2",
+        "--budget",
+        "8",
+    ]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    assert!(json(&o)["settings"].get("model").is_none(), "{}", o.stdout);
+}
+
+#[test]
+fn a_refused_model_runs_search_alone_and_says_why() {
+    let s = Scratch::new("create_model_refused");
+    let wav = tone(&s);
+    let model = exp_tiny(&s);
+    let mut bytes = std::fs::read(&model).unwrap();
+    bytes[1000] ^= 1;
+    std::fs::write(&model, &bytes).unwrap();
+    let (o, out) = create(&[
+        "--target",
+        &wav,
+        "--candidates",
+        "4",
+        "--budget",
+        "20",
+        "--model",
+        &model,
+    ]);
+    assert!(out.settings.model.is_none());
+    assert_eq!(model_starts(&out), 0);
+    let note = out
+        .notes
+        .iter()
+        .find(|n| n.contains("was refused (model_hash"))
+        .unwrap_or_else(|| panic!("{:?}", out.notes));
+    assert!(
+        note.contains("download it again") && note.contains("running search alone"),
+        "{note}"
+    );
+    assert!(o.stderr.contains("was refused (model_hash"), "{}", o.stderr);
+    // Not a model at all: the same.
+    let junk = s.write("enth-model-junk.bin", "no model here");
+    let (_, out) = create(&[
+        "--target",
+        &wav,
+        "--candidates",
+        "4",
+        "--budget",
+        "20",
+        "--model",
+        &junk,
+    ]);
+    assert!(out.settings.model.is_none());
+    assert!(
+        out.notes.iter().any(|n| n.contains("(not_a_model: ")),
+        "{:?}",
+        out.notes
+    );
+}
+
+#[test]
+fn a_missing_model_file_says_what_to_do() {
+    let s = Scratch::new("create_err_model");
+    let wav = tone(&s);
+    s.settings().bind(|| {
+        assert_snapshot!(
+            "err_create_model_not_found",
+            err(
+                &s,
+                &[
+                    "--target",
+                    &wav,
+                    "--model",
+                    &s.path("enth-model-missing.bin")
+                ],
+                5,
+                "file_not_found"
+            )
+        );
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------

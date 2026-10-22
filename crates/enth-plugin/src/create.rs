@@ -30,6 +30,11 @@
 //! - **The k-NN bank** (`enth-bank-v1.bin`) is looked for beside the plugin's binary, then in
 //!   `$ENTH_MODELS_DIR` or `<Documents>/enth/Models/` ([`bank_paths`]); a missing or refused bank means the job runs on
 //!   the heuristic and the templates, and its notes say so.
+//! - **The proposal model** (R3b, lane `PUIb`, [`model`]): any `enth-model-*.bin` in the same two folders, chosen
+//!   deterministically, parsed once on this thread and kept between jobs until its folder's model files change. Per
+//!   job, after the intake and inside the job's clock, `Model::propose` gives the starts that join the portfolio after
+//!   the k-NN neighbours (`Inputs::proposals`); the intake post names the model (or says why there is none, and the job
+//!   runs search alone), and the end post says how many hypotheses became starts and branches, and the inference time.
 //! - **Audition:** a candidate rendered with the job's performance at the host's rate, handed to the audio thread
 //!   through a lock-free slot ([`AuditionSlot`]) and played once by [`AuditionPlayer`] in `process()` (one atomic
 //!   load per block while nothing plays; it never allocates or frees there). **The A/B against the upload** (lane
@@ -45,6 +50,7 @@
 
 pub mod browse;
 pub mod decode;
+pub mod model;
 
 use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
@@ -63,7 +69,8 @@ use enth_session::create::{
     CreateIntake, CreateJobId, CreatePost, CreateProgress, CreateRequest, CreateRun,
 };
 use enth_solver::create::{
-    Candidate, CreateCfg, CreateJob, CreateStop, Inputs, Portfolio, Target, Template,
+    Candidate, CreateCfg, CreateJob, CreateResult, CreateStop, Inputs, ModelProposals, Portfolio,
+    Provenance, Target, Template,
 };
 use enth_solver::nearest::Bank;
 use enth_solver::robust::RobustMetricTarget;
@@ -233,7 +240,7 @@ pub fn load_bank(paths: &[PathBuf]) -> (Option<(Bank, PathBuf)>, Vec<String>) {
     unsafe_code,
     reason = "dladdr: the only way to learn the loaded plugin's own path on Linux and macOS"
 )]
-fn plugin_binary() -> Option<PathBuf> {
+pub(crate) fn plugin_binary() -> Option<PathBuf> {
     use std::ffi::{CStr, OsStr, c_char, c_int, c_void};
     use std::os::unix::ffi::OsStrExt;
 
@@ -276,7 +283,7 @@ fn plugin_binary() -> Option<PathBuf> {
     unsafe_code,
     reason = "kernel32: the only way to learn the loaded plugin's own path on Windows"
 )]
-fn plugin_binary() -> Option<PathBuf> {
+pub(crate) fn plugin_binary() -> Option<PathBuf> {
     use std::ffi::{OsString, c_void};
     use std::os::windows::ffi::OsStringExt;
 
@@ -302,7 +309,7 @@ fn plugin_binary() -> Option<PathBuf> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn plugin_binary() -> Option<PathBuf> {
+pub(crate) fn plugin_binary() -> Option<PathBuf> {
     None
 }
 
@@ -598,6 +605,10 @@ struct Inner {
     host_rate: AtomicU32,
     /// Where the bank is looked for (`None`: [`bank_paths`] of the real environment).
     bank_paths: Mutex<Option<Vec<PathBuf>>>,
+    /// Where model files are looked for (`None`: [`model::model_dirs`] of the real environment; lane `PUIb`).
+    model_dirs: Mutex<Option<Vec<PathBuf>>>,
+    /// How many times the create thread looked for and parsed the model files (tests: once while they are unchanged).
+    model_loads: AtomicUsize,
     /// The pool's worker count (0: [`search_workers`]).
     workers: AtomicUsize,
     audition: Arc<AuditionSlot>,
@@ -748,6 +759,8 @@ impl Create {
                 repaint: Mutex::new(None),
                 host_rate: AtomicU32::new(0),
                 bank_paths: Mutex::new(None),
+                model_dirs: Mutex::new(None),
+                model_loads: AtomicUsize::new(0),
                 workers: AtomicUsize::new(0),
                 audition: Arc::new(AuditionSlot::default()),
                 target: Mutex::new(None),
@@ -783,6 +796,18 @@ impl Create {
     /// Look for the bank in `paths` instead of the environment's places (tests; `None`: the environment's).
     pub fn set_bank_paths(&self, paths: Option<Vec<PathBuf>>) {
         *self.inner.bank_paths.lock() = paths;
+    }
+
+    /// Look for model files in `dirs` instead of the environment's places (tests; `None`: the environment's; lane
+    /// `PUIb`).
+    pub fn set_model_dirs(&self, dirs: Option<Vec<PathBuf>>) {
+        *self.inner.model_dirs.lock() = dirs;
+    }
+
+    /// How many times the create thread looked for and parsed the model files so far (lane `PUIb`): once while they stay
+    /// unchanged, however many jobs run.
+    pub fn model_loads(&self) -> usize {
+        self.inner.model_loads.load(Ordering::Acquire)
     }
 
     /// The pool's worker count (tests; 0: [`search_workers`]).
@@ -891,8 +916,9 @@ impl Drop for Create {
 }
 
 /// The thread: one message at a time until [`Create`] drops. A panicking job is posted as failed (the crash hook
-/// writes its file) and the thread goes on.
+/// writes its file) and the thread goes on. The proposal model lives here, on this thread, between jobs (lane `PUIb`).
 fn work(inner: &Inner) {
+    let mut models = model::Models::default();
     loop {
         let msg = {
             let mut queue = inner.queue.lock();
@@ -915,7 +941,9 @@ fn work(inner: &Inner) {
                     cancel: Arc::clone(&cancel),
                 });
                 inner.started.fetch_add(1, Ordering::AcqRel);
-                let ran = panic::catch_unwind(AssertUnwindSafe(|| run_job(inner, &run, &cancel)));
+                let ran = panic::catch_unwind(AssertUnwindSafe(|| {
+                    run_job(inner, &run, &cancel, &mut models);
+                }));
                 if ran.is_err() {
                     inner.post(
                         id,
@@ -952,7 +980,7 @@ fn failed(code: &str, message: impl Into<String>, hint: impl Into<String>) -> Cr
 }
 
 /// One job, from the file to its last post.
-fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
+fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool, models: &mut model::Models) {
     let t0 = Instant::now();
     let cap = run
         .settings
@@ -1019,14 +1047,23 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
     if let Some((_, path)) = &bank {
         notes.push(format!("k-NN bank: {}", path.display()));
     }
+    // The proposal model (lane PUIb): looked up and parsed on this thread, kept between jobs while its files stay.
+    let dirs = inner
+        .model_dirs
+        .lock()
+        .clone()
+        .unwrap_or_else(|| model::model_dirs(&SystemEnv, Os::current()));
+    let (found, looked) = models.get(&dirs);
+    if looked {
+        inner.model_loads.fetch_add(1, Ordering::AcqRel);
+    }
+    notes.extend(found.notes.iter().cloned());
     notes.push(format!("objective: {OBJECTIVE}"));
     inner.post(
         id,
-        CreatePost::Intake(Box::new(CreateIntake::new(
-            described,
-            intake.report.clone(),
-            notes,
-        ))),
+        CreatePost::Intake(Box::new(
+            CreateIntake::new(described, intake.report.clone(), notes).with_model(&found.line),
+        )),
     );
     let analysis = match target.analyse() {
         Ok(a) => a,
@@ -1035,12 +1072,24 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
             return;
         }
     };
+    // The model's hypotheses, inside the job's clock (the cap counts inference; the solver reads no clock). Inference
+    // cannot be interrupted: a cancel during it lands when it ends (well under a second in a release build).
+    let proposed: Option<(&model::Loaded, ModelProposals, f64)> = match &found.model {
+        Some(loaded) if !(stopped() || late()) => {
+            let t = Instant::now();
+            let mp = loaded.model.propose(&intake, &target);
+            Some((loaded, mp, t.elapsed().as_secs_f64()))
+        }
+        _ => None,
+    };
     let (init, templates) = templates();
     let inputs = Inputs {
         init: &init,
         templates: &templates,
         bank: bank.as_ref().map(|(b, _)| b),
-        proposals: &[],
+        proposals: proposed
+            .as_ref()
+            .map_or(&[], |(_, mp, _)| mp.starts.as_slice()),
     };
     let mut ccfg = CreateCfg {
         k: run.settings.candidates,
@@ -1113,6 +1162,16 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
         end_notes.push(stop_note(stopped()));
     }
     let result = job.result();
+    if let Some((loaded, mp, seconds)) = &proposed {
+        end_notes.extend(mp.notes.iter().cloned());
+        end_notes.push(model_summary(
+            loaded.model.id(),
+            loaded.model.hypotheses(),
+            mp,
+            &result,
+            *seconds,
+        ));
+    }
     inner.post(
         id,
         CreatePost::Done {
@@ -1122,6 +1181,32 @@ fn run_job(inner: &Inner, run: &CreateRun, cancel: &AtomicBool) {
             notes: end_notes.into_iter().chain(result.notes).collect(),
         },
     );
+}
+
+/// What the model gave the job (lane `PUIb`): how many of its Kₘ hypotheses became starts and branches, and the
+/// inference time.
+fn model_summary(
+    id: &str,
+    hypotheses: usize,
+    mp: &ModelProposals,
+    result: &CreateResult,
+    seconds: f64,
+) -> String {
+    let starts: Vec<_> = result
+        .starts
+        .iter()
+        .filter(|s| matches!(s.provenance, Provenance::Model { .. }))
+        .collect();
+    let branches = starts.iter().filter(|s| s.branch.is_some()).count();
+    // The portfolio skips an exact duplicate of an earlier start.
+    let duplicates = match mp.starts.len().saturating_sub(starts.len()) {
+        0 => String::new(),
+        n => format!(" ({n} skipped as the same patch as an earlier start)"),
+    };
+    format!(
+        "model {id}: {} of its {hypotheses} hypotheses became starts{duplicates}, {branches} of them branches (inference {seconds:.2} s)",
+        starts.len()
+    )
 }
 
 fn stop_note(cancelled: bool) -> String {

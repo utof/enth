@@ -61,6 +61,7 @@ Every error object has `error`, `message`, `exit`, `hint` and `did_you_mean` (po
 | `enth challenge new\|show\|decode` | Make, regenerate and read Recreate challenges and their codes (`enth.challenge-new/2`, `enth.challenge-show/2`, `enth.challenge-decode/1`) |
 | `enth lesson list\|show\|start\|check\|hint\|closest <pack> …` | A lesson pack's lessons and steps; what a step loads; one do step's check against a patch file; a step's hint; a round's nearest passing patch (`enth.lesson-list/1`, `-show/1`, `-start/1`, `-check/1`, `-hint/1`, `-closest/1`; [below](#lessons-on-the-command-line-enth-lesson)) |
 | `enth create --target <wav\|flac\|ogg\|mp3> [--candidates K] [--seconds S] [--budget N] [--stop-at D] [--score-seconds S] [--bank F] [--perf …] [--out P] [--record F]` | Patches that sound like a recording: the intake finds the sound in the file, a portfolio of starts is screened, K branches are refined by the robust distance; K candidates with their provenance and traces, every start as a patch, and what to do next (`enth.create/1`; [below](#creating-patches-from-a-sound-enth-create)) |
+| `enth duel result <patch> --code <code> [--submits N] [--seconds S] [--hints N] [--salt HEX]` / `enth duel verify <text>… [--mine p] [--out p]` | Duels (R5a): a played patch's scorecard and answer code; a friend's pasted message checked on this computer ([below](#duels-on-the-command-line-enth-duel)) (`enth.duel-result/1`, `enth.duel-verify/1`) |
 | `enth validate` / `enth migrate` | Check and upgrade patch files |
 | `enth bench [--patch p] [--voices 8] [--seconds 10]` | Engine speed: ×realtime per core, ns per voice per frame (wall-clock, information only; the regression gate is instruction counts in `xtask`) |
 
@@ -406,7 +407,7 @@ Choices the commands make, so nobody has to rediscover them:
 
 ## Creating patches from a sound (`enth create`)
 
-R3 (lane SK3 built the command and its engine at freeze point F2s; lane CLC finished the flags, typed `enth.create/1`, pinned it with snapshots and wrote this section). `enth create --target kick.wav` is the plugin's "Create from sound" on the command line, the same code ([r3.md](r3.md), [plugin.md](plugin.md#create-lane-sk3-r3)): it decodes a recording; the **intake** finds the sound in it (where it starts and ends, its pitch and hold, and what the upload has lost: a cut-off, a noise floor, clipping); a **portfolio** of starts (the heuristic start, the templates and, with `--bank`, the nearest patches of a k-NN bank) is screened; and K branches are refined by successive halving. Every render is scored by the **robust distance** (`logmel-pool85-robust/1`), which does not pay a candidate for reproducing the recording's noise, band limit or clipping. It is deterministic: the same file, flags and renders give the same bytes for any `--workers`; only the clock fields differ (`elapsed_s`, `rounds[].seconds`). A run the `--seconds` cap stopped repeats as the same job with its `renders` as the budget, on any machine.
+R3 (lane SK3 built the command and its engine at freeze point F2s; lane CLC finished the flags, typed `enth.create/1`, pinned it with snapshots and wrote this section; lane PUIb added `--model`, R3b). `enth create --target kick.wav` is the plugin's "Create from sound" on the command line, the same code ([r3.md](r3.md), [plugin.md](plugin.md#create-lane-sk3-r3)): it decodes a recording; the **intake** finds the sound in it (where it starts and ends, its pitch and hold, and what the upload has lost: a cut-off, a noise floor, clipping); a **portfolio** of starts (the heuristic start, the templates, with `--bank` the nearest patches of a k-NN bank, and with `--model` a model's hypotheses) is screened; and K branches are refined by successive halving. Every render is scored by the **robust distance** (`logmel-pool85-robust/1`), which does not pay a candidate for reproducing the recording's noise, band limit or clipping. It is deterministic: the same file, flags and renders give the same bytes for any `--workers`; only the clock fields differ (`elapsed_s`, `rounds[].seconds`). A run the `--seconds` cap stopped repeats as the same job with its `renders` as the budget, on any machine.
 
 | Flag | Default | Does |
 | --- | --- | --- |
@@ -417,6 +418,7 @@ R3 (lane SK3 built the command and its engine at freeze point F2s; lane CLC fini
 | `--stop-at D` | none | End the job as soon as a candidate's distance is at or below `D` (`stop` reads `goal`). `D` is in the objective's units (`settings.objective`): 0 is identical, and the patch that made a clean sound scores under 0.02. Not `compare`'s units |
 | `--score-seconds S` | 3 | The scored window, 0.1 to 5: every candidate is rendered for, and compared over, the first `S` seconds of the clip (the intake keeps up to 5 s of a file). A shorter window is cheaper per render, a longer one hears more of the decay; a window longer than the clip scores the clip. 3 is the product's setting (`create::SCORE_S`; on the dev set 2 s ended farther on 13 of 30 targets and 5 s was level, [gr3.md](gr3.md)). When it cuts the clip, `notes` says so |
 | `--bank FILE` | none | The k-NN bank, `enth-bank-v1.bin` from `cargo xtask bank`. Without one the job runs on the heuristic and the templates and says so in `notes`. A missing file is `file_not_found` and a file that is not a bank is `not_a_bank` (exit 3); neither is ignored |
+| `--model FILE` | none | A proposal model, `enth-model-<id>.bin` (R3b; lane PUIb). Its hypotheses join the starts after the k-NN neighbours, in descending confidence (its input from the intake before any override, each hypothesis decoded under the performance played), and `settings.model` records it. The file is parsed before the clock starts; inference runs inside `--seconds`. A missing file is `file_not_found` (exit 5). **A file the model reader refuses is not an error** (the model contract, [r3.md](r3.md#refusals)): the job runs search alone, `settings.model` is absent and a note gives the code and the hint (`model_hash`: download it again; `model_mismatch`: use the model released with this build; `model_too_new`: update enth) |
 | `--seed N` | 1 | The search's seed. The same seed, file and renders repeat a run exactly |
 | `--workers N` | every core | Worker threads, 1 to 256. The output is the same for any number |
 | `--perf PERF`, `--note NOTE`, `--vel V`, `--hold T` | the intake's | Override the performance the intake inferred ([below](#the-performance-the-intake-inferred)) |
@@ -446,8 +448,8 @@ Printed **exactly**, unlike the other commands (no 4-digit rounding, keys sorted
 | `schema` | `enth.create/1` |
 | `input` | What the job was given: `audio_sha256` (the scored mono clip; a lossy decoder may differ in its last bits across CPUs, so a replay checks it), `features_sha256`, `sample_rate`, `frames`, `render_seed`, `perf` (`key`, `velocity` 0 to 1, `on_s`, `hold_s`, `duration_s`, `f0_hz`: what was **played**, overrides included), `bandwidth_hz`, `noise_floor_dbfs` (a confirmed floor only) |
 | `intake` | FE's report whole: its settings and the codec hint, the performance it **inferred**, the `span` it kept, the `degradation` it found (bandwidth, floor, clipping, hum, SNR, tail) and its `warnings` |
-| `settings` | What the job ran under: `k`, `budget`, `seed`, `stop_at`, the schedule (`first_rung`, `eta`, `finalists`, `lambda`), `neighbours` and `min_spread`, `objective` (`logmel-pool85-robust/1`), `embedding`, `bank` (`sha256`, `entries`, `generator`) or null, and the `templates` proposed |
-| `starts` | **Every start as a patch file** (`enth schema patch`), with its `provenance`, its `screen_distance` and the `branch` it became (null when screening dropped it). `provenance.kind` is `heuristic`, `template` (with `name`) or `knn` (`rank`, `bank_index`, the generator spec, `embedding_distance`) |
+| `settings` | What the job ran under: `k`, `budget`, `seed`, `stop_at`, the schedule (`first_rung`, `eta`, `finalists`, `lambda`), `neighbours` and `min_spread`, `objective` (`logmel-pool85-robust/1`), `embedding`, `bank` (`sha256`, `entries`, `generator`) or null, the `templates` proposed, and with `--model` **`model`**: its `id`, `sha256` (the file's as its header defines it, with the hash's own 32 bytes read as zeros, so not `sha256sum`'s), `input_sha256` and `outputs_sha256` (what the model was given and gave, so anyone can check inference gave the same bits), `hypotheses` (Kₘ) and the `dropped` ones (`hypothesis`, `code`). **Absent without a model**, so an output without `--model` is what it was before R3b |
+| `starts` | **Every start as a patch file** (`enth schema patch`), with its `provenance`, its `screen_distance` and the `branch` it became (null when screening dropped it). `provenance.kind` is `heuristic`, `template` (with `name`), `knn` (`rank`, `bank_index`, the generator spec, `embedding_distance`) or `model` (`model`, its `hypothesis` from 0, its `confidence`; the table says "model 3" for hypothesis 2). A replay needs neither the bank nor the model file: every start is recorded as a patch |
 | `candidates` | The K branches in branch order: the refined `patch`, its `distance` (smaller is closer), the `proposal_distance` its start had, `state` (`proposed`, `searching`, `done`, `pruned`), `rung`, `renders`, `runs`, and a `trace` of its best distance after each round it ran in |
 | `rounds` | Each round: `renders` so far, `rung` (null for the screening round), `live` branches and `seconds` since the start |
 | `renders`, `stop`, `best`, `notes` | Renders used; why it ended (`budget`, `cancelled` for the `--seconds` cap, `exhausted`, `goal`); the closest candidate's index in `candidates`; notices in the order they arose (what the decoder found, the window, an override, a missing bank, fewer candidates than K, the cap) |
@@ -464,6 +466,7 @@ enth create --target kick.wav --out kick.patch.json --record run.json     # 8 ca
 enth create --target snare.wav --note C2 --hold 0.15s --candidates 4 --out snare.patch.json
 enth create --target pad.flac --bank target/bank/enth-bank-v1.bin --score-seconds 5 --seconds 120
 enth create --target x.wav --stop-at 0.05 --out good-enough.patch.json   # ends once a candidate is that close
+enth create --target pluck.wav --bank enth-bank-v1.bin --model enth-model-propose-v0-pilot.bin --out p.patch.json
 ```
 
 A real run (the plugin's `tone.wav` fixture, an A3 tone; engine 0.3.0, debug build, patches and the intake's report left out):
@@ -524,14 +527,44 @@ Errors (all `enth.error/1` with a `hint`; every flag is checked before the file 
 | 4 | `time_cap` | The `--seconds` cap passed before the first candidate was made (while decoding or in the first round) |
 | 4 | `no_candidate` | No start rendered to a distance (a bug: keep the file and the flags) |
 | 4 | `write_failed` | `--out` or `--record` cannot be written |
-| 5 | `file_not_found` | `--target` or `--bank` is missing or unreadable (the hint for a bank is the bank's) |
+| 5 | `file_not_found` | `--target`, `--bank` or `--model` is missing or unreadable (the hint for a bank is the bank's, for a model the model's) |
 
 Choices the command makes, so nobody has to rediscover them:
 
 - **One objective, the robust distance.** The plugin uses the same, so the CLI judges what the Create view shows. A different objective is a different `settings.objective` id, not a flag; the metric `enth compare` and `enth match` use stays `logmel-l1/1`.
+- **A refused model is a note, a missing one an error.** A model file made for another build, damaged or over a budget leaves the job to search alone and says why (the model contract's rule, the plugin's too); a `--model` path that does not exist is a typo, exit 5.
 - **No silent no-ops.** A file that cannot be a sound, a bank that cannot be read, an output that would overwrite the input and a cap that leaves nothing are errors with a hint, never a result with an empty `candidates`. `--candidates` above the number of starts is not an error (the job runs on what exists), and `notes` says what it did.
 - **The search's tuning stays out of the flags.** `neighbours`, `min_spread`, `lambda`, `first_rung`, `eta` and `finalists` are in `settings` for the record but are `create`'s defaults, tuned on the dev set (EVK); a caller that needs another value uses the solver's API.
 - **A window is a flag, a clip length is not.** `--score-seconds` is `Target::from_intake_scored`'s window, and the robust objective compares the silence after a sound that ends in its floor up to that window (`RobustMetricTarget::from_intake_scored`), so a 5 s window differs from the 3 s default only for a long sound.
+
+## Duels on the command line (`enth duel`)
+
+R5a (lane SKD, freeze point F2d; lane EV4 adds the agent track and the rest of the command). The plugin's duel card on the command line, on the same `enth-challenge` functions, so the CLI checks exactly what the plugin checks ([duels.md](duels.md), [plugin.md](plugin.md#duels-lane-skd-r5a)). **No network code:** a code is text you move through any chat. Scores are **checked on your computer**; times and assists are **reported** (the sender's app's, never checked).
+
+| Command | Output | Does |
+| --- | --- | --- |
+| `enth duel result <patch> --code <code> [--submits N] [--seconds S] [--hints N] [--salt HEX]` | `enth.duel-result/1` | A played patch's two codes. The **answer code** (`AnswerCode::new`: the patch as a diff from the round's start, its `meta`, labels, macro names and slots stripped, so no name survives), the round prepared once and the **canonical answer** scored on it (`score`: what any receiver re-scores), the **scorecard** with the answer's salted commitment, and the share `message` (two human lines and the scorecard). `--submits` (1–127, default 1: the submits up to the compared one), `--seconds` (the time to the pass) and `--hints` (0–15) are what the scorecard reports. The `salt` is 64 bits of OS randomness (std's `RandomState` keys), **never a clock**; keep it with the codes: `--salt` makes the same answer code again, the one the scorecard fixed. A patch that does not pass still gets codes, marked "not passed" (a note says so); exit 0 whenever the codes were made |
+| `enth duel verify <text>… [--mine p] [--out p]` | `enth.duel-verify/1` | Every code in the text (a whole chat message: paste-anything undoes smart dashes, odd spaces, full-width letters and line breaks inside a code; `-` reads stdin): `found` (each code's kind and canonical text), `refused` (code-looking tokens that did not decode, with their code and hint: "a typo", "update enth"), `cards` (each scorecard **as reported**: the claim, the engine, the scorer set, the reported submits, time and assists) and `checks`: each answer code decoded (the challenge regenerated, the ops applied, the 40-bit tail checked), the round prepared once with its scorecard's scorer set when this build has it (else this build's), the answer scored (`theirs`), and the claim beside it (`as_reported`, `engine_differs`, `scorers_differ`, `commitment_matches`: false means the answer was changed after the scorecard; flagged, never refused). `--mine` scores your patch as its canonical answer on the same round (`mine`), so both numbers come from one machine; `--out` writes their answer's patch (one answer code in the text). Exit 0 when the text held a code |
+
+```sh
+enth challenge new --level 2 --seed 77                           # both play 1080-1000-0002-D9
+enth duel result mine.patch.json --code 1080-1000-0002-D9 --submits 3 --seconds 161
+#   send `message` now; keep `answer` and `salt`; send `answer` once your friend has played
+enth duel verify "$(cat their-message.txt)"                       # their scorecard: as reported
+enth duel verify - --mine mine.patch.json < their-answer.txt      # their answer, checked here, beside yours
+```
+
+```json
+{"schema":"enth.duel-verify/1","found":[{"kind":"challenge","code":"1080-1000-0002-D9"},{"kind":"scorecard","code":"F120-…"},{"kind":"answer","code":"F220-…"}],
+ "refused":[],"cards":[{"challenge":"1080-1000-0002-D9","sound":100,"passed":true,"engine":"0.3.0","engine_here":"0.3.0","scorers":1,"scorers_known":true,…}],
+ "checks":[{"challenge":"1080-1000-0002-D9","symbols":52,"ops":3,"theirs":{"sound":100,"structure":100,"combined":100,"pass_mark":90,"passed":true},"scorers":1,
+   "claim":{"claimed_sound":100,"sound":100,"as_reported":true,"engine_differs":false,"scorers_differ":false,"commitment_matches":true,…},"warnings":[]}],
+ "next":"the scores above were checked on your computer; times and assists are reported by their app, and enth can't check them"}
+```
+
+Errors teach: `bad_salt` (not 16 hex digits), `bad_submits`, `bad_seconds`, `bad_hints`, `one_answer` (`--out` with no or several answer codes) are exit 2; `no_code` (nothing code-like in the text), a code's own refusal (`bad_check`, `bad_length`, `code_too_new`, `answer_too_new`, `answer_mismatch`, `target_mismatch`, `not_the_same_challenge`, `unencodable` for a patch an answer code cannot carry) exit 3; a render that fails exit 4; a missing file exit 5. The snapshots are `crates/enth-cli/tests/snapshots/duel_*.snap` and `err_duel_*.snap`.
+
+**A code proves what a patch scores, not who made it or how long it took:** `enth match` passes many challenges in seconds and `enth challenge show --reveal` writes the target, so a duel is for friends (docs/duels.md, "What a code proves").
 
 ## Three typical workflows
 

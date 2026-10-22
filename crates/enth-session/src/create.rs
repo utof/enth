@@ -193,6 +193,9 @@ pub struct CreateIntake {
     pub report: IntakeReport,
     /// What the user should know (a file decimated 2:1, no k-NN bank found).
     pub notes: Vec<String>,
+    /// Which proposal model the job draws starts from, or why none, as one line ("Model: propose-v0 (…)", "No model:
+    /// …"; R3b, lane `PUIb`, additive). `None` from a shell that looks for no model.
+    pub model: Option<String>,
 }
 
 impl CreateIntake {
@@ -203,7 +206,15 @@ impl CreateIntake {
             decoded: decoded.into(),
             report,
             notes,
+            model: None,
         }
+    }
+
+    /// The same post, saying which proposal model the job uses, or why none (lane `PUIb`).
+    #[must_use]
+    pub fn with_model(mut self, line: impl Into<String>) -> Self {
+        self.model = Some(line.into());
+        self
     }
 
     /// The warnings as short sentences.

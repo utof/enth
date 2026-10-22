@@ -172,6 +172,16 @@ exit: 0
       "describes": "the output of enth create (R3: candidates from a sound file)",
       "id": "enth.create/1",
       "name": "create"
+    },
+    {
+      "describes": "the output of enth duel result (R5a: a played patch's scorecard and answer code)",
+      "id": "enth.duel-result/1",
+      "name": "duel-result"
+    },
+    {
+      "describes": "the output of enth duel verify (R5a: pasted codes re-scored on this computer)",
+      "id": "enth.duel-verify/1",
+      "name": "duel-verify"
     }
   ]
 }

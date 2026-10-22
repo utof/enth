@@ -97,6 +97,10 @@ pub struct Editor {
     /// file, the panel and the intents waiting for the session.
     #[cfg(feature = "create")]
     create: super::create::Create,
+    /// The duel card's state (lane SKD's minimal card, F2d; lane DUI's card): the session's duel read model and the
+    /// shell's codes, the paste box, the card and the intents waiting for the session.
+    #[cfg(feature = "duel")]
+    duel: super::duel::Duel,
 }
 
 impl std::fmt::Debug for Editor {
@@ -143,6 +147,8 @@ impl Editor {
             learn_layout: learn_layout(theme),
             #[cfg(feature = "create")]
             create: super::create::Create::default(),
+            #[cfg(feature = "duel")]
+            duel: super::duel::Duel::default(),
         }
     }
 
@@ -351,6 +357,47 @@ impl Editor {
         self.create.set_folder(folder);
     }
 
+    /// Before a frame (lane SKD, F2d): the session's duel (`DuelEdit::duel()`) and the shell's codes, as `set_create`
+    /// hands over a create job. A shell that calls it says duels are available: **Duel** shows in the overview's
+    /// corner, and a duel that opens shows the card.
+    #[cfg(feature = "duel")]
+    pub fn set_duel(
+        &mut self,
+        view: Option<enth_session::duel::DuelView>,
+        shell: super::duel::ShellDuel,
+    ) {
+        self.duel.set_duel(view, shell);
+    }
+
+    /// After a frame (lane SKD): the duel card's intents, applied to the session's `DuelEdit`.
+    #[cfg(feature = "duel")]
+    pub fn apply_duel(&mut self, session: &mut dyn enth_session::duel::DuelEdit) {
+        self.duel.apply(session);
+    }
+
+    /// After a frame (lane SKD): whether the card's **Share result** was clicked. The shell makes the codes (the salt,
+    /// the worker) and hands them back with the next [`Editor::set_duel`].
+    #[cfg(feature = "duel")]
+    pub fn take_duel_share(&mut self) -> bool {
+        self.duel.take_share()
+    }
+
+    /// The duel card's state (tests and the dev window).
+    #[cfg(feature = "duel")]
+    pub fn duel(&self) -> &super::duel::Duel {
+        &self.duel
+    }
+
+    /// The duel card's column (lane SKD, F2d): while it is open, its left edge, `size.duel.pane` from the window's
+    /// right edge as the layouts' margin insets their regions (the Create panel's rule).
+    #[cfg(feature = "duel")]
+    fn duel_column(&self, t: &Theme, rect: Rect) -> Option<f32> {
+        self.duel.card_open().then(|| {
+            let right = (rect.right() - t.space.gap).max(rect.left());
+            (right - t.size.duel.pane).max(rect.left())
+        })
+    }
+
     /// The Create panel (lane SK3, F2s), before the layout: takes a file dropped on the window when create is
     /// available, and, while the panel is open, says where its column starts: `size.create.pane` wide, `space.gap` in
     /// from the window's right edge as the layouts' margin insets their regions. Returns that left edge and whether
@@ -489,9 +536,18 @@ impl Editor {
         // both open, the lesson pane sits left of the Create panel. A file dropped anywhere on the window is chosen,
         // whatever the view (lane FK3's advice), once the shell says create is available.
         #[cfg(feature = "create")]
-        let (column, hovering) = self.create_column(&ctx, t, rect);
+        let (create_split, hovering) = self.create_column(&ctx, t, rect);
+        // The duel card takes the same column while it is open (lane SKD, F2d), and wins it over the Create panel.
+        #[cfg(feature = "duel")]
+        let duel_split = self.duel_column(t, rect);
+        #[cfg(all(feature = "create", feature = "duel"))]
+        let column = duel_split.or(create_split);
+        #[cfg(all(feature = "create", not(feature = "duel")))]
+        let column = create_split;
+        #[cfg(all(feature = "duel", not(feature = "create")))]
+        let column = duel_split;
         let place = |layout: &Layout| {
-            #[cfg(feature = "create")]
+            #[cfg(any(feature = "create", feature = "duel"))]
             if let Some(split) = column {
                 return beside(layout, rect, split);
             }
@@ -510,8 +566,14 @@ impl Editor {
         };
         #[cfg(not(feature = "learn"))]
         let (regions, layout) = (place(&self.layout), &self.layout);
-        #[cfg(feature = "create")]
-        let create_pane = column.map(|split| create_pane(&regions, rect, split, t.space.gap));
+        #[cfg(feature = "duel")]
+        let duel_pane = duel_split.map(|split| create_pane(&regions, rect, split, t.space.gap));
+        #[cfg(all(feature = "create", not(feature = "duel")))]
+        let create_pane = create_split.map(|split| create_pane(&regions, rect, split, t.space.gap));
+        #[cfg(all(feature = "create", feature = "duel"))]
+        let create_pane = create_split
+            .filter(|_| duel_split.is_none())
+            .map(|split| create_pane(&regions, rect, split, t.space.gap));
         // A preset sheet (lane PBU) covers the body: the regions under it are not drawn at all.
         let body = browser::body(&regions);
         #[cfg(feature = "recreate")]
@@ -660,6 +722,20 @@ impl Editor {
                     super::create::panel::show(&mut self.create, ui, t, p, hovering, &mut out);
                 overflow.push(("create", over));
             }
+            // The duel card (lane SKD), in the same column; **Duel** in the overview's corner while it is closed.
+            #[cfg(feature = "duel")]
+            if let Some(p) = duel_pane {
+                let over = super::duel::card::show(&mut self.duel, ui, t, p, &mut out);
+                overflow.push(("duel", over));
+            }
+            #[cfg(feature = "duel")]
+            if let Some(o) = regions
+                .iter()
+                .find(|p| p.region == Region::Overview)
+                .filter(|p| !sheet.is_some_and(|b| browser::covered(p, b)))
+            {
+                super::duel::card::opener(&self.duel, ui, t, o.rect, &mut out);
+            }
             if let Some(b) = sheet {
                 #[cfg(feature = "recreate")]
                 if settings_page {
@@ -723,6 +799,11 @@ impl Editor {
         if self.create.has_queued() {
             ctx.request_repaint();
         }
+        // And the duel card's (lane SKD), the same way: only after a click.
+        #[cfg(feature = "duel")]
+        if self.duel.has_queued() {
+            ctx.request_repaint();
+        }
     }
 
     /// Apply a frame's intents in order: `Begin` opens a gesture, edits inside it merge into one undo step and one
@@ -746,6 +827,8 @@ impl Editor {
                 Intent::Learn(l) => self.learn.push(l.clone()),
                 #[cfg(feature = "create")]
                 Intent::Create(c) => self.create.push(c.clone()),
+                #[cfg(feature = "duel")]
+                Intent::Duel(d) => self.duel.push(d.clone()),
                 Intent::Begin(_) => self.gesture = Some(session.begin_gesture()),
                 Intent::End(_) => {
                     session.end_gesture();
@@ -810,7 +893,7 @@ fn mark_cards(ctx: &Context, cards: &[CardView], fingerprint: &mut Fingerprint) 
 /// regions of the row the header starts (the header and the output region in both built-ins) keep the window's width,
 /// and the rest are placed left of `split`. A layout whose header is not in its top row, or whose regions would
 /// overlap that way (a custom one), is placed left of `split` whole, beside a column the window's height.
-#[cfg(feature = "create")]
+#[cfg(any(feature = "create", feature = "duel"))]
 fn beside(layout: &Layout, rect: Rect, split: f32) -> Vec<Placed> {
     let narrow = layout.regions(Rect::from_min_max(
         rect.min,
@@ -851,7 +934,7 @@ fn beside(layout: &Layout, rect: Rect, split: f32) -> Vec<Placed> {
 /// The Create panel's rectangle beside `regions` ([`beside`]): from `split` to `gap` in from `rect`'s right edge, and
 /// from under the regions that reach past `split` (the layout's top row) to `gap` above the bottom edge, as the
 /// layouts' margin insets their regions.
-#[cfg(feature = "create")]
+#[cfg(any(feature = "create", feature = "duel"))]
 fn create_pane(regions: &[Placed], rect: Rect, split: f32, gap: f32) -> Rect {
     let top = regions
         .iter()

@@ -74,8 +74,18 @@ pub fn write_state_chunk(
     format: Format,
     patch: &str,
 ) -> Result<String, String> {
-    let state =
-        serde_json::json!({ "version": "0.0.0", "params": {}, "fields": { "patch": patch } });
+    write_state_fields(out, name, format, &serde_json::json!({ "patch": patch }))
+}
+
+/// [`write_state_chunk`] with any of the plugin's persistent fields (lane SKD's `duel` scenario: `patch` and `enth`,
+/// a saved round), given as a JSON object of field name to text.
+pub fn write_state_fields(
+    out: &Path,
+    name: &str,
+    format: Format,
+    fields: &serde_json::Value,
+) -> Result<String, String> {
+    let state = serde_json::json!({ "version": "0.0.0", "params": {}, "fields": fields });
     let json = serde_json::to_vec(&state).map_err(|e| format!("state chunk: {e}"))?;
     let mut bytes = Vec::with_capacity(json.len() + 16);
     match format {

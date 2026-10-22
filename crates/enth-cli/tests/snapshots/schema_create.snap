@@ -116,6 +116,27 @@ expression: v
       ],
       "type": "object"
     },
+    "CreateDroppedOut": {
+      "additionalProperties": false,
+      "description": "A model hypothesis that did not become a start.",
+      "properties": {
+        "code": {
+          "description": "Why: `confidence_non_finite`, or a decode error's code (`hypothesis_non_finite`, `hypothesis_rekey`, …).",
+          "type": "string"
+        },
+        "hypothesis": {
+          "description": "Which of the Kₘ.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hypothesis",
+        "code"
+      ],
+      "type": "object"
+    },
     "CreateInputOut": {
       "additionalProperties": false,
       "description": "What the job was given.",
@@ -174,6 +195,54 @@ expression: v
         "frames",
         "render_seed",
         "perf"
+      ],
+      "type": "object"
+    },
+    "CreateModelOut": {
+      "additionalProperties": false,
+      "description": "The model a job drew starts from (`settings.model`). Its starts are recorded as patches with `provenance.kind`\n`model`, so a replay needs neither the model file nor inference; these say which file and which input made them.",
+      "properties": {
+        "dropped": {
+          "default": [],
+          "description": "The hypotheses dropped, in hypothesis order, with why (a non-finite value or confidence, a decode error).",
+          "items": {
+            "$ref": "#/$defs/CreateDroppedOut"
+          },
+          "type": "array"
+        },
+        "hypotheses": {
+          "description": "Kₘ: the hypotheses the model gives per inference.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "The model's id (its header's; what each model start's provenance names).",
+          "type": "string"
+        },
+        "input_sha256": {
+          "description": "The model input's hash (feature set 1, computed from the intake before any `--perf`); null when it could not\nbe computed (a silent window), and the model proposed nothing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outputs_sha256": {
+          "description": "The hash of everything the net output (the golden a model file pins); null when it did not run.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "description": "The model file's SHA-256 as its header defines it: the whole file with the hash's own 32 bytes read as zeros,\nso it differs from `sha256sum` of the file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sha256",
+        "hypotheses"
       ],
       "type": "object"
     },
@@ -321,7 +390,7 @@ expression: v
         },
         {
           "additionalProperties": false,
-          "description": "One of a model's hypotheses (R3b; not produced yet).",
+          "description": "One of a model's hypotheses (R3b, `--model`): decoded under the job's performance, after the k-NN neighbours in\ndescending confidence.",
           "properties": {
             "confidence": {
               "description": "The model's confidence in it, when it has one.",
@@ -461,6 +530,17 @@ expression: v
           "description": "Neighbours closer than this to one already proposed are skipped (nepers).",
           "format": "double",
           "type": "number"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateModelOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The model whose hypotheses joined the starts (`--model`; R3b, additive within `/1`): absent when no\nmodel was used (no `--model`, or the file was refused and the job ran search alone, which `notes` says)."
         },
         "neighbours": {
           "description": "How many k-NN neighbours were proposed (16).",
@@ -1039,7 +1119,7 @@ expression: v
       "description": "FE's intake report, whole: its settings, the performance it **inferred** (before any `--perf`, `--note`,\n`--vel` or `--hold`), the span kept, the degradation it found (bandwidth, floor, clipping, hum, SNR, tail) and\nits warnings. Open here: see docs/r3.md."
     },
     "notes": {
-      "description": "Notices, in the order they arose: what the file's decoding found, a performance override, a missing bank, a\nwindow that cut the clip, fewer candidates than K, a stop at the cap. The same lines go to stderr as `note:`.",
+      "description": "Notices, in the order they arose: what the file's decoding found, the `--model` loaded or refused, a performance\noverride, a missing bank, a model hypothesis dropped, a window that cut the clip, fewer candidates than K, a stop\nat the cap. The same lines go to stderr as `note:`.",
       "items": {
         "type": "string"
       },
@@ -1077,7 +1157,7 @@ expression: v
       "description": "Every setting the job ran under, as the job reports them."
     },
     "starts": {
-      "description": "Every start, as a patch: the heuristic start, the templates, the k-NN neighbours.",
+      "description": "Every start, as a patch: the heuristic start, the templates, the k-NN neighbours, the model's hypotheses.",
       "items": {
         "$ref": "#/$defs/CreateStartOut"
       },
