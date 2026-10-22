@@ -1,0 +1,105 @@
+"""``python -m enth_ml.train``: train propose v0 on ds1 shards, evaluate a checkpoint, or describe a run of shards.
+
+    python -m enth_ml.train run --config pilot.toml [--resume] [--set key=value ...]
+    python -m enth_ml.train eval --ckpt RUN/ckpt-best.pt [--mel f2] [--dev DIR ...]
+    python -m enth_ml.train info DIR [DIR ...]
+    python -m enth_ml.train report RUN_DIR [--every N]
+    python -m enth_ml.train cache SRC_RUN_DIR OUT_DIR [--workers N]   # an f16 training cache of a ds1 run
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+# torch 2.14 routes a few eager ops (a batched outer product, some reductions) to Triton kernels it compiles at first
+# use, and Triton needs a C compiler to build its driver stub. The training desktop has none (no sudo to install one),
+# so the native JIT is off and those ops run on cuBLAS/ATen as before. Set before torch is imported.
+os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
+
+
+def _set(cfg_dict: dict, assignment: str) -> None:
+    key, _, value = assignment.partition("=")
+    try:
+        v = json.loads(value)
+    except json.JSONDecodeError:
+        v = value
+    d = cfg_dict
+    parts = key.split(".")
+    for p in parts[:-1]:
+        d = d.setdefault(p, {})
+    d[parts[-1]] = v
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="python -m enth_ml.train", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run", help="train")
+    r.add_argument("--config", required=True)
+    r.add_argument("--resume", action="store_true")
+    r.add_argument("--set", action="append", default=[], help="override a config key (dotted), value as JSON")
+    r.add_argument("--device", default=None)
+    e = sub.add_parser("eval", help="evaluate a checkpoint on dev")
+    e.add_argument("--ckpt", required=True)
+    e.add_argument("--mel", default="f4", choices=["f4", "f2"])
+    e.add_argument("--dev", action="append", default=None)
+    e.add_argument("--device", default=None)
+    i = sub.add_parser("info", help="describe ds1 run directories")
+    i.add_argument("dirs", nargs="+")
+    rp = sub.add_parser("report", help="a run's learning curves and throughput as Markdown")
+    rp.add_argument("run")
+    rp.add_argument("--every", default="1")
+    cp = sub.add_parser("cache", help="an f16 training cache of a ds1 run")
+    cp.add_argument("src")
+    cp.add_argument("out")
+    cp.add_argument("--workers", default="8")
+    args = ap.parse_args(argv)
+
+    if args.cmd == "cache":
+        from .cache import main as cache_main
+
+        return cache_main([args.src, args.out, "--workers", args.workers])
+    if args.cmd == "report":
+        from .report import main as report_main
+
+        return report_main([args.run, "--every", args.every])
+
+    if args.cmd == "info":
+        from .shards import open_dataset
+
+        ds = open_dataset(args.dirs)
+        print(json.dumps(ds.describe(), indent=1))
+        return 0
+
+    from .config import TrainConfig
+    from .loop import evaluate_checkpoint, train
+
+    if args.cmd == "run":
+        import pathlib
+        import signal
+        import tomllib
+
+        def _stop(signum, frame):  # SIGTERM: unwind, so the GPU monitor stops and the logs close
+            raise SystemExit(128 + signum)
+
+        signal.signal(signal.SIGTERM, _stop)
+
+        p = pathlib.Path(args.config)
+        d = tomllib.loads(p.read_text()) if p.suffix == ".toml" else json.loads(p.read_text())
+        for s in args.set:
+            _set(d, s)
+        cfg = TrainConfig.from_dict(d)
+        summary = train(cfg, resume=args.resume, device=args.device)
+        print(json.dumps({k: v for k, v in summary.items() if k != "last_eval"}, indent=1))
+        return 0
+    if args.cmd == "eval":
+        res = evaluate_checkpoint(args.ckpt, args.dev, args.device, args.mel)
+        print(json.dumps(res, indent=1))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

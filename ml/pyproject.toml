@@ -23,8 +23,22 @@ parity = [
     "onnx==1.23.2",
     "onnxruntime==1.31.0",
 ]
+# Lane TR (R3b): training propose v0. A group, not [project] dependencies, so the stdlib-only lanes (DEG, AUG) and the
+# layout test need nothing installed: `uv sync --group train` on the training machine only. torch is BSD-3-Clause and
+# numpy BSD-3-Clause (README.md, "The ML rules": MIT, Apache or BSD-style only). torch's Linux wheels come from the
+# PyTorch CUDA 13.2 index (Turing, compute 7.5, is kept in CUDA 13; the desktop's driver runs CUDA 13.4); other
+# platforms take PyPI's build.
+train = ["torch==2.14.1", "numpy>=2.3"]
 
 [tool.uv]
 # A set of scripts and packages run from this directory (`uv run python -m enth_ml.<package>`), not a distributable
 # package: no build backend, nothing is built or installed into the environment but the dependencies.
 package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
