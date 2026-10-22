@@ -1,0 +1,53 @@
+{
+  "schema": "enth.result-codes-fixture/1",
+  "codes": [
+    {
+      "name": "scorecard, level 2, passed",
+      "kind": "scorecard",
+      "symbols": 51,
+      "code": "F120-8010-0000-01A0-0100-0F9Q-1C40-S500-0938-NKRK-AYDW-N1XB-RBR"
+    },
+    {
+      "name": "scorecard, level 5, not passed, hints and live meter",
+      "kind": "scorecard",
+      "symbols": 51,
+      "code": "F120-M01Z-ZZZZ-ZZZ0-0100-0DJ5-3R92-3GKH-ZZZZ-ZZZZ-ZZZY-4WV9-T1E"
+    },
+    {
+      "name": "scorecard, custom settings, every assist",
+      "kind": "scorecard",
+      "symbols": 75,
+      "code": "F130-00G0-7ZZZ-ZZZZ-ZZZA-4C00-00C0-0QBF-G1N5-J000-0400-1X6W-5GG3-4NZR-0000-0000-00AG-XBYM-4EG"
+    },
+    {
+      "name": "answer, level 1, the target",
+      "kind": "answer",
+      "symbols": 50,
+      "code": "F23G-7ZXR-014D-2PF0-0802-0000-002M-20RG-F1T1-B1ZR-0CK7-304S-TY"
+    },
+    {
+      "name": "answer, level 3, the target",
+      "kind": "answer",
+      "symbols": 98,
+      "code": "F23G-7ZXR-014D-2PF0-0R02-0000-002M-20RG-F1T1-B1ZH-824J-BG8A-DFWG-0Z8E-4YXG-8TPE-CB9H-WJ4Y-6E83-MDY8-0298-GJSW-0G39-6N7G-7K"
+    },
+    {
+      "name": "answer, level 5, the target",
+      "kind": "answer",
+      "symbols": 172,
+      "code": "F23G-7ZXR-014D-2PF0-1802-0000-002M-20RG-F1T1-B1ZG-S0NX-SJED-ZRHR-G243-AFY4-J508-J9E1-19NS-HYHZ-HRMG-SS0H-61H0-2FRK-S01Y-GW9X-V0HN-CWRP-K10M-JZS4-9WCW-G78V-S88H-6VR4-2Z8V-WG0J-H7T3-9089-522B-7J10-M4CC-GF0Z-DJD3-JSG6"
+    },
+    {
+      "name": "answer, level 3, every op kind and personal fields",
+      "kind": "answer",
+      "symbols": 86,
+      "code": "F220-0000-0000-0004-0R02-0000-000F-C9AJ-8J4S-QW4B-HG43-8H5H-C7QR-KCG0-5J12-QKS0-C8CJ-7TZ5-2XSC-0VD9-JV1B-1T"
+    },
+    {
+      "name": "ear result, five answers",
+      "kind": "ear-result",
+      "symbols": 49,
+      "code": "F420-810C-00EP-YD2M-2M2M-G7TV-2000-0F01-ZR5Y-02CW-80Y4-JM4Y-R"
+    }
+  ]
+}
