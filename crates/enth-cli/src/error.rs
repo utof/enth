@@ -4,7 +4,7 @@
 //! | --- | --- | --- |
 //! | 0 | OK (`check`: every item passed) | |
 //! | 1 | Ran fine, but `check` had failures | |
-//! | 2 | Usage error | `usage`, `bad_expect`, `bad_perf`, `bad_ops_source`, `nothing_to_apply`; the game commands': `bad_level`, `bad_workers`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase`; `not_built_yet` (an R2 or R3 command whose lane has not built it) |
+//! | 2 | Usage error | `usage`, `bad_expect`, `bad_perf`, `bad_ops_source`, `nothing_to_apply`; the game commands': `bad_level`, `bad_workers`, `bad_budget`, `bad_stop_at`, `bad_seconds`, `bad_free`, `bad_amount`, `perf_required`, `perf_fixed`, `phrase_fixed`, `unknown_phrase`; `not_built_yet` (an R2, R3, R4 or R5 command whose lane has not built it) |
 //! | 3 | Validation error | every `enth-patch` code (`unknown_param`, `unknown_module`, `out_of_range`, `bad_json`, ...), `unknown_feature`, `unknown_kind`, `unknown_template`, `unknown_topic`, `unknown_schema`; the game commands': a challenge code's own (`bad_check`, `bad_symbol`, `empty_code`, `code_too_new`, `target_mismatch`, ...), `unknown_category`, `unknown_module`, `unknown_kind` |
 //! | 4 | Render or analysis failure | `render_failed` (and the render's own codes), `analysis_failed`, `unsupported_wav`, `write_failed` |
 //! | 5 | File not found | `file_not_found` |

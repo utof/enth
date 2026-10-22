@@ -34,20 +34,41 @@
 //! | [`v2`] | Challenge v2's pieces (`Target::Draw`, `Target::Patch`, `Start::Patch`, `Constraints { editable, locked }` over one `Selector`), the file forms of both versions and the v1 migration; `AnswerKind::Choice` and `Target::Expectations` are left out (lessons use `enth-learn`'s own) | CV2 |
 //! | [`patch_round`] | `prepare_patch_round`, moved down from `enth-cli`'s `compare.rs`, and `prepare_draw_round` | CV2 |
 //! | [`lesson_phrases`] | the lesson-only phrase ids (`CHORD`, `LONG_HOLD`, `STACCATO`, `STACCATO_RUN`) and their invariants | CV2 |
+//!
+//! R4 and R5 (Challenge v3 and the result codes, freeze point F1e): files pre-declared by lane S0e and filled by lanes CV3
+//! and RC (docs/challenge.md, "Challenge v3" and "Version 15: the kinds behind the escape"; docs/ear.md; docs/duels.md).
+//! `code.rs` stays code v1, frozen: the new kinds sit behind its reserved version-15 escape.
+//!
+//! | File | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`v3`] | Challenge v3's pieces (`Target::Ear(EarSpec)` from `enth-music`, `AnswerKind::{Choice, Value, Taps}`), additive: v1 and v2 read and write as before | CV3 |
+//! | [`ear`] | an ear question to a sound (the frozen timbre pool `timbres-v1/`, a `Performance`, the post-EQ band), the parameter games' items on v2 draws, the scorers `ear/1`, `ear-value/1` and `taps/1`, the ear-challenge code; `ear/ladder.rs` is G4's | CV3; G4 |
+//! | [`result`] | the version-15 kind numbers (reserved by S0e), the scorecard (kind 1) and the ear result (kind 4) | RC |
+//! | [`answer`] | the answer code (kind 2): the patch as a diff through the frozen `result-params-v1` table | RC |
+//! | [`verify`] | `verify`: decode, regenerate, check the hash, re-score with the named scorer set, compare with the claim | RC |
+//! | [`paste`] | paste-anything: every code in a pasted chat message, dashes and zero-width characters normalised | RC |
+//! | [`daily`] | the daily challenge formula `daily::v1` and its golden | RC |
 
+pub mod answer;
 pub mod calibrate;
 pub mod code;
+pub mod daily;
+pub mod ear;
 pub mod fingerprint;
 pub mod lesson_phrases;
 pub mod loudness;
 pub mod model;
+pub mod paste;
 pub mod patch_round;
 pub mod phrases;
 pub mod priors;
 pub mod random;
+pub mod result;
 pub mod score;
 pub mod spec;
 pub mod v2;
+pub mod v3;
+pub mod verify;
 
 pub use code::{ChallengeCode, CodeError, CodeForm, CodeWarning, EngineVersion, TargetPrefix};
 pub use fingerprint::TargetFingerprint;

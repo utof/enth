@@ -25,6 +25,7 @@ enth-patch.workspace = true        # Patch, addresses, ModuleKind, ops: predicat
 enth-render.workspace = true       # a sound check renders a phrase as a Performance (PLY)
 enth-analysis.workspace = true     # the expectation grammar and descriptors for sound checks (PLY)
 enth-challenge.workspace = true    # Challenge (v2 from lane CV2) embedded in a Recreate step (LM)
+enth-music.workspace = true        # R4 (S0e): game and skill ids for the drill player and the workout composer (DRL)
 serde.workspace = true             # pack, lesson, progress are persisted (LM)
 serde_json.workspace = true        # pack.json, lesson.json, progress.json (LM)
 sha2.workspace = true              # SHA-256 per pack file; the LessonRef content prefix (LM)

@@ -5,6 +5,8 @@ pub(crate) mod challenge;
 mod common;
 pub(crate) mod compare;
 pub(crate) mod create;
+pub(crate) mod duel;
+pub(crate) mod ear;
 mod edit;
 pub(crate) mod explain;
 mod game;
@@ -180,6 +182,8 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
         Cmd::Challenge(args) => challenge::run(&args),
         Cmd::Lesson(args) => lesson::run(&args),
         Cmd::Create(args) => create::run(&args, stdin),
+        Cmd::Ear(args) => ear::run(&args),
+        Cmd::Duel(args) => duel::run(&args),
     }
 }
 

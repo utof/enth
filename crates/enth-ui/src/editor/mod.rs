@@ -21,11 +21,15 @@
 //! | `recreate/` | the Recreate UI behind `recreate`: challenge bar and the header's Recreate hook, results, settings | RUI (R1/S1) |
 //! | `learn/` | the Learn view behind `learn`: the header's Learn hook (inert until LUI), the editor's Learn state and the seam, the lesson pane, the lesson browser | LUI (R2; pre-declared by S0l) |
 //! | `create/` | the Create view behind `create`: the header's Create hook (inert until PUI), the editor's Create state and the seam, the drop zone, the folder browser, the candidate tiles, audition and A/B, the progress bar | PUI (R3; pre-declared by S0s) |
+//! | `ear/` | the Ear view behind `ear`: the header's Ear hook (inert until EUI), the editor's Ear state and the seam, the Ear column, every round type, the replay, thresholds and the practised-days calendar | EUI (R4; pre-declared by S0e) |
+//! | `duel/` | the duel card behind `duel`: its seam (inert until SKD), the share line, the paste box, verification, the sealed answer, the duel history | SKD, DUI (R5; pre-declared by S0e) |
 //!
 //! Lane S0r (R1/S1) declared the last three, and three header hook points: `regions/header.rs` calls one no-op
 //! function in each of them, behind its feature, so AM, PBU and RUI fill their header controls in their own files.
 //! Lane S0l (R2) added a fourth, Learn (`learn/header.rs`, feature `learn`), and the `learn/` seam; lane S0s (R3) a fifth, Create
-//! (`create/header.rs`, feature `create`), and the `create/` seam.
+//! (`create/header.rs`, feature `create`), and the `create/` seam; lane S0e (R4 and R5) a sixth, Ear (`ear/header.rs`,
+//! feature `ear`), and the `ear/` seam, and the `duel/` seam, which has no header entry (the duel card attaches to the
+//! Recreate results and the code field; `duel/mod.rs` says how).
 //!
 //! docs/editor.md describes the whole editor.
 //!
@@ -38,6 +42,10 @@ pub mod cards;
 #[cfg(feature = "create")]
 pub mod create;
 mod describe;
+#[cfg(feature = "duel")]
+pub mod duel;
+#[cfg(feature = "ear")]
+pub mod ear;
 mod frame;
 pub mod layout;
 #[cfg(feature = "learn")]

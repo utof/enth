@@ -28,6 +28,12 @@ enth-challenge.workspace = true
 enth-patch.workspace = true
 enth-analysis.workspace = true
 enth-params.workspace = true
+# Pre-declared by lane S0e (R4/R5): `ear-check` (lane ECK, `src/ear/`) draws the ear generator's questions, renders them
+# and measures every option pair under `sound/1` (`enth-render`), simulates listeners and bots with the pinned `rng`
+# (`enth-dsp`), and checks the generator's golden (`enth-music`).
+enth-music.workspace = true
+enth-render.workspace = true
+enth-dsp.workspace = true
 
 [lints]
 workspace = true

@@ -26,6 +26,9 @@ enth-solver.workspace = true
 enth-learn.workspace = true
 # Added by the coordinator (2026-10-21) for a parallel hint evaluator: `enth-analysis`'s `Descriptors` per worker.
 enth-analysis.workspace = true
+# Pre-declared by lane S0e (R4): ear jobs on the game worker and examples at the host's rate (lane SKE); optional, behind
+# the plugin's `ear` feature. The crate is a core crate and `enth-session`'s `ear` always compiles.
+enth-music = { workspace = true, optional = true }
 # Exact pins in the root Cargo.toml (docs/adr/0001-plugin-shell.md). `assert_process_allocs` only has an effect in debug
 # builds: nice-plug gates it on debug_assertions, and the validator's process() calls abort on any allocation.
 nice-plug = { workspace = true, features = ["vst3", "editor", "assert_process_allocs"] }
@@ -71,6 +74,15 @@ create = ["enth-ui/create", "dep:hound", "dep:claxon", "dep:lewton", "dep:nanomp
 # `ENTH_CREATE_HARNESS` naming a sound file, activation runs create jobs on it one after the other until deactivation,
 # which appends an `enth.plugin-create-stats/1` line to `ENTH_CREATE_REPORT`. Off by default; measurement bundles only.
 create-harness = ["create"]
+# R4 (lane S0e): the Ear jobs (src/ear.rs, lane SKE: ear jobs on the game worker, examples at the host's rate, the "play
+# from the top" flag on the Target loop; lane TAP the tap path) and the editor's Ear view (enth-ui/ear). Off by default
+# until lane SKE (F2e) decides; `enth-session`'s `ear`, Challenge v3 and the codes always compile, and an ear session is
+# not saved in the project.
+ear = ["enth-ui/ear", "dep:enth-music"]
+# R5 (lane S0e): the duel jobs (src/duel.rs, lane SKD: verify on the game worker, the clipboard written on a click and
+# read only on Paste; lane DUI the history file) and the editor's duel card (enth-ui/duel). No networking code. Off by
+# default until lane SKD (F2d) decides; the session's `duel`, the result codes and `verify` always compile.
+duel = ["enth-ui/duel"]
 default = ["recreate", "learn"]
 # Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
 # activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by

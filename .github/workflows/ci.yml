@@ -98,7 +98,8 @@ jobs:
   # with content, so the job runs. R2 (lane S0l) adds the plugin's `learn` feature (src/learn.rs), which builds nothing
   # without it, to the clippy line; enth-ui's own `learn` tests (the Learn header hook) run in the test line. R3 (lane S0s)
   # does the same for `create`: the plugin's src/create.rs (with the audio decoders and rayon, optional) and enth-ui's
-  # Create hook and views.
+  # Create hook and views. R4/R5 (lane S0e) does it for `ear` and `duel`: the plugin's src/ear.rs and src/duel.rs build
+  # nothing without their features, and enth-ui's Ear hook, duel card seam and `tests/ear.rs` and `tests/duel.rs` need them.
   editor-features:
     name: editor features (lanes AM, PBU, RUI)
     runs-on: ubuntu-24.04
@@ -121,9 +122,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: >-
           cargo clippy --locked -p enth-ui -p enth-plugin --all-targets
-          --features enth-ui/learn,enth-ui/create,enth-ui/recreate,enth-ui/presets,enth-ui/add-module,enth-plugin/learn,enth-plugin/create
+          --features enth-ui/learn,enth-ui/create,enth-ui/recreate,enth-ui/presets,enth-ui/add-module,enth-ui/ear,enth-ui/duel,enth-plugin/learn,enth-plugin/create,enth-plugin/ear,enth-plugin/duel
           -- -D warnings
-      - run: cargo test --locked -p enth-ui --features learn,create,recreate,presets,add-module
+      - run: cargo test --locked -p enth-ui --features learn,create,recreate,presets,add-module,ear,duel
 
   deny:
     name: cargo-deny ${{ matrix.checks }}

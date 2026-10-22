@@ -564,6 +564,9 @@ impl Editor {
                             // Lane SK3 (F2s): available once the shell hands the editor a create read model.
                             #[cfg(feature = "create")]
                             create: self.create.header(),
+                            // Lane S0e (R4): the ear games are not available until lane SKE hands the editor an Ear state.
+                            #[cfg(feature = "ear")]
+                            ear: super::ear::HeaderEar::default(),
                         };
                         let knobs: Vec<CardView> = layout
                             .parts_in(Region::Header)

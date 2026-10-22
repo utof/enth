@@ -239,6 +239,11 @@ impl Glue {
         #[cfg(feature = "create")]
         self.editor
             .set_create(enth_session::create::CreateEdit::create(session));
+        // The ear games' and the duel card's read models (lanes SKE and SKD, pre-declared by S0e): inert until they land.
+        #[cfg(feature = "ear")]
+        crate::ear::before_frame(&mut self.editor, session);
+        #[cfg(feature = "duel")]
+        crate::duel::before_frame(&mut self.editor, session);
         self.frame(ui, theme, session, pointer_down);
         #[cfg(feature = "recreate")]
         self.apply_game(session);
@@ -246,6 +251,10 @@ impl Glue {
         self.editor.apply_learn(session);
         #[cfg(feature = "create")]
         self.editor.apply_create(session);
+        #[cfg(feature = "ear")]
+        crate::ear::after_frame(&mut self.editor, session);
+        #[cfg(feature = "duel")]
+        crate::duel::after_frame(&mut self.editor, session);
         // The Create view's folder browser (lane PUI): the folder it asked for, listed here (the editor does no I/O).
         #[cfg(feature = "create")]
         if let Some(at) = self.editor.take_create_browse() {

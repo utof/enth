@@ -14,6 +14,7 @@
 //! | `new [--in DIR] <pack> <id>` | `new.rs` | scaffolds a lesson in the authoring layout | LCK |
 //! | `pack [--out DIR] [--check] [PACK...]` | `pack.rs` (reading packs: `source.rs`) | builds `.enthpack` files reproducibly (canonical JSON, sorted entries, the zip epoch's 1980 timestamps, deflate level 9) and compares each with its pins | LCK |
 //! | `gen deconstruct <preset>` | `gen.rs` | writes the factory studies from a preset by ablation | DEC |
+//! | `ear-check [options]` | `ear.rs`, `ear/` | R4's GR4 mechanical half (docs/ear.md): the ear games deterministic, fair and solvable; pre-declared by S0e, refuses to run until ECK builds it | ECK (R4) |
 //!
 //! `.github/workflows/lessons.yml` runs `cargo xtask lesson-check --cross --solve` and `lesson-coverage` (a report
 //! until GR2) on `content/lessons/**`, `tools/lesson/**`, `xtask/**` and every crate a lesson's verdict depends on (a DSP
@@ -27,6 +28,7 @@
 
 mod check;
 mod coverage;
+mod ear;
 mod r#gen; // `gen` is a reserved word in edition 2024; the file is still `gen.rs`
 mod new;
 mod pack;
@@ -41,7 +43,9 @@ const USAGE: &str = "usage: enth-lesson-tool <command> [args...]
   new [--in DIR] <pack> <id>              scaffold a lesson in the authoring layout
   pack [--out DIR] [--check] [<pack>...]  build reproducible .enthpack files and compare them with the pins
   gen deconstruct <preset> | gen studies  a deconstruct lesson by ablation; the six factory studies
-Run it through `cargo xtask lesson-check`, `lesson-coverage`, `lesson new`, `pack` and `lesson-gen`.";
+  ear-check [options]                     (not built yet: R4 lane ECK) GR4's mechanical half: the ear games deterministic,
+                                          fair and solvable
+Run it through `cargo xtask lesson-check`, `lesson-coverage`, `lesson new`, `pack`, `lesson-gen` and `ear-check`.";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -51,6 +55,7 @@ fn main() -> ExitCode {
         Some("new") => new::run(&args[1..]),
         Some("pack") => pack::run(&args[1..]),
         Some("gen") => r#gen::run(&args[1..]),
+        Some("ear-check") => ear::run(&args[1..]),
         _ => Err(USAGE.to_owned()),
     };
     match result {
