@@ -31,10 +31,20 @@
 //! | [`coverage`] | which modules and Basic-tier parameters the lessons touch (`lesson-coverage`) | LCK |
 //! | [`deconstruct`] | the ablation planner `plan(preset, ranks)` | DEC |
 //! | [`review`] | Leitner boxes per skill, fed by Recreate's rings | REV |
+//!
+//! R4 (the drill player, freeze point F1e): files pre-declared by lane S0e and filled by lane DRL (docs/ear.md, "The
+//! drill player" and "Workouts"; docs/learn.md, "Ear skills, bursts and drills"). DRL also edits `review`, `lesson` and
+//! `progress` additively (`ear.*` skills and bursts, `StepKind::Drill`, the `drills` field).
+//!
+//! | File | Holds | Lane |
+//! | --- | --- | --- |
+//! | [`drill`] | the drill player: N questions, the 3-down/1-up staircase, no visible streak | DRL |
+//! | [`workout`] | the pure workout composer: 3 games, due skills choose them, the same workout for the same progress file and day | DRL |
 
 pub mod check;
 pub mod coverage;
 pub mod deconstruct;
+pub mod drill;
 pub mod error;
 pub mod lesson;
 pub mod markdown;
@@ -45,6 +55,7 @@ pub mod progress;
 pub mod reader;
 pub mod review;
 pub mod store;
+pub mod workout;
 
 pub use check::{Check, Cmp, Knob, MacroPin, Plain, Predicate, SoundCheck};
 pub use error::{LearnError, PackName};
