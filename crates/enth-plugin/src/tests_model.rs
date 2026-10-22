@@ -479,3 +479,50 @@ fn the_model_is_parsed_once_and_again_only_when_its_files_change() {
     let (_, again) = models.get(std::slice::from_ref(&dir));
     assert!(first && !again);
 }
+
+/// **The real model, by hand** (ignored: no trained model is committed): with `ENTH_TEST_MODEL` naming a model file
+/// (the pilot, `enth-model-propose-v0-pilot.bin`), a plugin job on `tone.wav` finds it in a folder of its own, parses
+/// it, and its branches include the model's. `ENTH_TEST_MODEL=… cargo test -p enth-plugin --features create --
+/// --ignored the_model_file_named_by_the_environment`.
+#[test]
+#[ignore = "needs a trained model file named by ENTH_TEST_MODEL"]
+fn the_model_file_named_by_the_environment_proposes_in_a_plugin_job() {
+    let Some(file) = std::env::var_os("ENTH_TEST_MODEL") else {
+        panic!("set ENTH_TEST_MODEL to a model file");
+    };
+    let _serial = SERIAL.lock();
+    let dir = folder("job-env-model");
+    let bytes = std::fs::read(&file).unwrap();
+    let name = Path::new(&file)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    write(&dir, &name, &bytes);
+    let c = shell(&dir, 0);
+    let t0 = Instant::now();
+    let ran = run_to_the_end(&c, 1, 8, 300);
+    println!("{:?}", ran.intake.model);
+    for n in ran.intake.notes.iter().chain(&ran.notes) {
+        println!("note: {n}");
+    }
+    println!(
+        "{} candidates, {} from the model, in {:.1} s",
+        ran.candidates.len(),
+        model_branches(&ran.candidates),
+        t0.elapsed().as_secs_f64()
+    );
+    assert!(
+        ran.intake
+            .model
+            .as_deref()
+            .is_some_and(|l| l.starts_with("Model: ")),
+        "{:?}",
+        ran.intake.model
+    );
+    assert!(
+        ran.notes
+            .iter()
+            .any(|n| n.contains("hypotheses became starts"))
+    );
+}
