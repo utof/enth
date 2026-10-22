@@ -1,0 +1,66 @@
+propose-layout/1
+generator 1 template 0 width 102
+continuous 33
+0 voice.glide float 0.0..10000.0 Power(4.0) unit=Ms template=0.0
+1 osc1.semi float -48.0..48.0 Linear unit=Semitones template=0.0
+2 osc1.pw float 5.0..95.0 Linear unit=Percent template=50.0
+3 osc1.position float 0.0..100.0 Linear unit=Percent template=0.0
+4 osc2.semi float -48.0..48.0 Linear unit=Semitones template=0.0
+5 osc2.fine float -100.0..100.0 Linear unit=Cents template=0.0
+6 osc2.level float 0.0..100.0 Linear unit=Percent template=100.0
+7 osc2.pw float 5.0..95.0 Linear unit=Percent template=50.0
+8 osc2.position float 0.0..100.0 Linear unit=Percent template=0.0
+9 noise1.level float 0.0..100.0 Linear unit=Percent template=100.0
+10 filter1.cutoff float 20.0..20000.0 Log unit=Hz template=2000.0
+11 filter1.resonance float 0.0..100.0 Linear unit=Percent template=10.0
+12 filter1.keytrack float 0.0..100.0 Linear unit=Percent template=0.0
+13 filter1.drive float 0.0..24.0 Linear unit=Db template=0.0
+14 comp1.threshold float -60.0..0.0 Linear unit=Db template=-18.0
+15 comp1.ratio float 1.0..20.0 Log unit=Ratio template=4.0
+16 comp1.attack float 0.1..100.0 Log unit=Ms template=10.0
+17 comp1.release float 10.0..2000.0 Log unit=Ms template=200.0
+18 reverb1.wet float -60.0..6.0 Linear unit=Db template=-6.0
+19 reverb1.room float 10.0..200.0 Linear unit=Ms template=80.0
+20 reverb1.decay float 100.0..30000.0 Log unit=Ms template=3000.0
+21 reverb1.high_cut float 1000.0..20000.0 Log unit=Hz template=12000.0
+22 env1.attack float 0.0..10000.0 Power(4.0) unit=Ms template=5.0
+23 env1.decay float 0.0..10000.0 Power(4.0) unit=Ms template=300.0
+24 env1.sustain float 0.0..100.0 Linear unit=Percent template=70.0
+25 env1.release float 0.0..20000.0 Power(4.0) unit=Ms template=400.0
+26 env1.velocity float 0.0..100.0 Linear unit=Percent template=0.0
+27 env2.attack float 0.0..10000.0 Power(4.0) unit=Ms template=5.0
+28 env2.decay float 0.0..10000.0 Power(4.0) unit=Ms template=300.0
+29 env2.sustain float 0.0..100.0 Linear unit=Percent template=70.0
+30 env2.release float 0.0..20000.0 Power(4.0) unit=Ms template=400.0
+31 lfo1.rate float 0.01..50.0 Log unit=Hz template=2.0
+32 lfo2.rate float 0.01..50.0 Log unit=Hz template=2.0
+categorical 7
+33..36 voice.mode enum [poly,mono,legato] unit=None template=0.0
+36..41 osc1.wave enum [sine,triangle,saw,pulse,table] unit=None template=2.0
+41..46 osc2.wave enum [sine,triangle,saw,pulse,table] unit=None template=2.0
+46..48 noise1.color enum [white,pink] unit=None template=0.0
+48..52 filter1.mode enum [lp,bp,hp,notch] unit=None template=0.0
+52..59 lfo1.shape enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] unit=None template=0.0
+59..66 lfo2.shape enum [sine,triangle,saw_up,saw_down,square,sample_hold,smooth_random] unit=None template=0.0
+structure 4
+66 osc2 osc template=off
+67 noise1 noise template=off
+68 comp1 comp template=off
+69 reverb1 reverb template=off
+routes 16
+70 86 env2->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
+71 87 env2->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
+72 88 env2->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
+73 89 env2->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
+74 90 lfo1->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
+75 91 lfo1->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
+76 92 lfo1->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
+77 93 lfo1->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
+78 94 lfo2->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
+79 95 lfo2->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
+80 96 lfo2->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
+81 97 lfo2->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
+82 98 velocity->osc1.fine depth % of float -100.0..100.0 Linear unit=Cents
+83 99 velocity->osc1.level depth % of float 0.0..100.0 Linear unit=Percent
+84 100 velocity->osc1.pw depth % of float 5.0..95.0 Linear unit=Percent
+85 101 velocity->filter1.cutoff depth % of float 20.0..20000.0 Log unit=Hz
