@@ -72,8 +72,9 @@ class Model(unittest.TestCase):
                 return func(*args, **(kwargs or {}))
 
         m = fold_batchnorm(self.model)
+        mel, ctx = self.torch.randn(2, 3, 128, 64), self.torch.randn(2, 5)
         with Record():
-            m(self.torch.randn(2, 3, 128, 64), self.torch.randn(2, 5))
+            m(mel, ctx)
         allowed = {
             # Mul, Add (standardisation, residuals), Conv2d, Silu, AvgPool2d, Reshape, Linear, Concat, MatMul, Slice, Sigmoid
             "__mul__", "mul", "__add__", "add", "conv2d", "silu", "avg_pool2d", "reshape", "linear", "cat", "matmul",
@@ -100,9 +101,10 @@ class Model(unittest.TestCase):
         m.eval()
         mel = t.randn(2, 3, 128, 64) * 2.5 - 9.0
         ctx = t.randn(2, 5)
-        a = m(mel, ctx)
         f = fold_batchnorm(m)
-        b = f(mel, ctx)
+        with t.no_grad():
+            a = m(mel, ctx)
+            b = f(mel, ctx)
         for x, y in zip(a, b):
             self.assertLess(float((x - y).abs().max()), 1e-4)
         self.assertFalse(any(isinstance(mod, t.nn.BatchNorm2d) for mod in f.modules()))
