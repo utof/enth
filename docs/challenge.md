@@ -228,19 +228,150 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 | Lesson phrases: ids, names, invariants, never picked by the generator | `lesson_phrases::tests` |
 | The patch-target preimage pinned; what enters it | `fingerprint::tests` |
 
-## Challenge v3 (planned, lane CV3, R4)
+<a id="challenge-v3-planned-lane-cv3-r4"></a>
 
-**Planned (2026-10-22, R4 research; lane CV3 builds it, and a judge reviews it at freeze F1e with the other R4 and R5 APIs, [phase-4.md](phase-4.md#freezes)).** R4's games need what v2 left out: a target that is not a patch, and answers that are not patches. v3 is additive like v2: v1 and v2 files read as before and are written at the lowest version that holds them, so no R1–R3 challenge changes its bytes. The design is [ear.md](ear.md#where-r4-lives); CV3 replaces this sketch with the built form when it lands.
+## Challenge v3 (lane CV3, R4)
 
-| Piece | What |
+**Status (2026-10-22): built by lane CV3; the F1e judge reviews it with the other R4 and R5 APIs ([phase-4.md](phase-4.md#freezes)).** R4's games need what v2 left out: a target that is not a patch, and answers that are not patches. v3 is additive like v2: v1 and v2 files read as before and are written at the lowest version that holds them, so no R1–R3 challenge changes its bytes (the six v1 and v2 fixture files are pinned by SHA-256, the golden challenges and generator v1's golden pass unchanged). The design is [ear.md](ear.md#where-r4-lives). Code: `enth_challenge::v3` (the pieces, the v3 file, the strict rules), `model` (the same `Challenge`, `Target` and `AnswerKind`, extended) and `ear` (questions, timbres, the parameter games, the scorers, the ear-challenge code).
+
+```json
+{"schema":"enth.challenge/3",
+ "target":{"kind":"ear","spec":{"game":1,"generator":1,"level":1,"seed":42,"count":16}},
+ "answer":"choice","phrase":0,"start":{"kind":"template","template":0},"constraints":{},
+ "assists":{"live_meter":false,"dim_unused":false,"hint_budget":null},
+ "scoring":{"sound":"ear/1","structure":"ear/1","combined":"ear/1","time":"time/1","sound_weight":100,"pass_mark":80},
+ "meta":{"title":"","tags":[]}}
+```
+
+| Piece | JSON | What |
+| --- | --- | --- |
+| `Target::Ear(EarSpec)` | `{"kind":"ear","spec":{…}}` | A question set from a frozen ear generator. `EarSpec { game, generator, level, seed, count }`: integers, the seed below 2⁵³, `count` 1–64, unknown fields refused. A stand-in for `enth_music::ear::EarSpec`, agreed field for field with lane MUS; F1E makes it a `pub use` |
+| `AnswerKind::{Choice, Value, Taps}` | `"choice"`, `"value"`, `"taps"` | An option index, judged exactly (`ear/1`); a value, judged as an error in perceptual units (`ear-value/1`); tap times, judged after a best-fit offset and tempo (`taps/1`). `Patch` stays the default |
+| The scoring of a non-patch answer | the same six keys | Its ear scorer fills `sound` (the score that decides pass), `structure` and `combined` repeat it, the sound weight is 100 (so combined = sound), the time rule `time/1`. `ScoringSpec::ear(answer)` builds it with pass mark 80 (`EAR_PASS_MARK`, about the drills' 79 %) |
+| `Challenge::ear(spec)` | | The canonical ear challenge of a spec: the answer its game asks for, phrase 0, template 0, no constraint, default assists, `ScoringSpec::ear`, no title; validated. `ear_spec()` reads it back; `with_seed` gives a sibling |
+
+### Versions: written at the lowest version
+
+- `Challenge::version` is 3 for an ear target or a choice, value or taps answer, otherwise as before (1 or 2). `CHALLENGE_VERSION` = 3; `CHALLENGE_SCHEMA` and `v3::SCHEMA_V3` are `enth.challenge/3`.
+- **A v2 file holding a v3 piece is refused** (`bad_challenge`), as a v1 file holding a v2 piece is: v2's reader decodes with the live types, then refuses anything whose `version()` is above 2. v1's frozen shapes refuse it before that.
+- A v3 file holding a v1- or v2-expressible challenge reads, and is written back at its lowest version, as v2 does for v1. Version 4 and up is `challenge_too_new`.
+- **Strict inputs, integers only**, as before: an ear challenge holds no float (tested).
+
+### An ear target is strict
+
+| Rule | Refused as |
 | --- | --- |
-| `Target::Ear(EarSpec)` | A question set from the frozen ear generator in `enth-music` (L1, lane MUS): `EarSpec { game, generator, level, seed, count }`, integers only, the seed below 2⁵³. Strict like every target: an ear target takes phrase 0 (its questions carry their own notes) and the template start |
-| `AnswerKind::{Choice, Value, Taps}` | A label or clip index, judged exactly; a value on a knob or slider, scored as an error in perceptual units (octaves, log ms); tap times, scored on the intervals between taps after a best-fit offset. `Patch` stays the default |
-| `ear.rs` | A question → a timbre patch from the frozen, append-only pool `timbres-v1/`, a `Performance` (generated notes within C1–C7, at most 8 at once, at most 10 s, integers only) and an optional post-EQ band rendered through `enth-dsp`'s biquad (lane BQ) |
-| Scorers `ear/1`, `ear-value/1`, `taps/1` | Answer keys are seeded integers, so an ear result is judged with no render, identically on every platform and engine version; only a new frozen generator version moves a key |
-| The ear-challenge code kind | Kind 3 behind version 15 ([below](#version-15-the-kinds-behind-the-escape-r4-r5-planned)) |
+| Phrase 0 (its questions carry their own notes); the template 0 start, never played (they carry their own timbres); no constraint (nothing to edit) | `bad_ear_target` |
+| The answer its game asks for at its level, and never a patch: an ear target is judged with no render | `bad_answer` |
+| A choice, value or taps answer only on an ear target (the parameter games' items are v2 draws inside the ear generator, not challenges of their own) | `bad_answer` |
+| Its ear scorer (any version of the right name) in `sound`, `structure` and `combined`, weight 100, `time/1` | `bad_scoring` |
+| A spec's fields in range; a game, generator and level this build has (ids, versions and levels are append-only, so one it lacks is a newer build's) | `bad_field`, `out_of_range`; `code_too_new` |
 
-The parameter games (Spot the change, Dial it in, Ear check) need no new target: they are v2 draws with a `Choice` or `Value` answer, or a constrained Recreate round on a draw, as lessons already play them. `Target::Expectations` stays out (text goals still have no player).
+A newer ear scorer of the right name (`ear/2`) passes validation and is refused when judged (`unknown_scorer`), as a patch round refuses an unknown scorer at prepare. The patch round (`prepare_challenge`) refuses an ear target (`bad_answer`): its questions come from `ear::question::prepare`.
+
+### Games and who generates them
+
+| Game | Name | Generated by | Answer |
+| --- | --- | --- | --- |
+| 1 | Spot the change | `ear::params` (needs the catalogue) | choice |
+| 2 | Dial it in | `ear::params::dial_it_in`: each round is a **v2 challenge** (a one-item draw, `editable` the control, a patch answer, `sound/1`) | patch, so never an ear target (`bad_answer`) |
+| 3 | Ear check | `ear::params` | choice (the odd interval of 3) |
+| 4 and up | Frequency finder, Interval stacks, Chord quality, Rhythm pattern; 8 progressions, 9 note naming, 10 tap-back | `enth-music`'s ear generator v1 (lane MUS) | choice or taps (a value with G3's slider level) |
+
+**Music games read as `code_too_new` in this build:** MUS's generator is built in parallel, and `ear::music::answer_kind` is the one function F1E wires (MUS's `EarSpec::validate` and `Game::answer_kind(level)`), with the `From` from MUS's `Question` into a `Stimulus` and an `EarKey` in `ear::question`.
+
+### The parameter games' items (`ear::params`)
+
+In parameter space only, as every generator rule is: the base is template 0 (the starter, "Init saw"), heard through the held one-note phrase. A control moves by a whole number of its parameter steps (generator v1's just-noticeable steps: cutoff 2 semitones, times × 1.5, levels 3 dB), up or down as the seed says (the other way when the range stops it first), to a reachable value (3 significant digits); the moved value is a one-value set of a v2 `Draw`, so B is exactly what a lesson's draw plays. Only controls observable through the phrase are offered or moved. Item *i* of game *g* at level *l* draws from `derive(seed, fnv1a64("g/i/l"))`; an Ear check set's one control from `derive(seed, fnv1a64("3/control/l"))`; a bad draw draws again, up to 16 attempts.
+
+| Game, level 1 | Pool | Distance | Item |
+| --- | --- | --- | --- |
+| Spot the change | `filter1.cutoff`, `filter1.resonance`, `env1.decay`, `env1.release` | 6 steps | two options from different modules (filter against envelope), shuffled; the key is the moved option's index |
+| Ear check | the same | 8 steps (the staircase's start) | three intervals, one moved; the key is its position. `ear_check_on(control, steps, …)` is a staircase's trial on a chosen control |
+| Dial it in | the same | 6 steps | a v2 challenge; pass mark 90 until G4 maps the JND tolerance |
+
+**Levels are G4's** (`ear/ladder.rs`): this build has level 1 of each game, so they play end to end; G4's ladder replaces `params::level` and adds the *not measured* list. The items are pinned (100 seeds × 4 items of each game → `b8e57cb7…`); until ear generator v1 freezes at INT4's friend build, a deliberate change updates the pin and the commit names the games.
+
+### A question becomes sound (`ear::question`)
+
+`prepare(&challenge)` validates and returns an `EarSet`: per question, its clips, options (labels, and the control for a parameter game, so the editor can light its knob), key, Review skill (`svf.cutoff`) and measured distance. **No render:** clips render when played (`Clip::render`, at `SCORING_SAMPLE_RATE` with `SCORING_SEED`). A parameter game's clip is a patch through the held phrase; a music game's is a `Stimulus`:
+
+| Field | Rule (`Stimulus::validate`) |
+| --- | --- |
+| `timbre` | an id into the frozen, append-only pool `ear/timbres-v1/` (below); an id this build lacks is `code_too_new` |
+| `notes` | 1–64 `PhraseNote`s, keys C1–C7 (24–96), velocities 1–127, each held at least 1 ms and ending within the clip, in start order, never two at once on one key, at most 8 at once |
+| `length_ms` | 1 to 10,000, the release tail included |
+| `band` | an optional `EqBand { kind, freq_hz, gain_cdb, q_milli }`: integers (Hz, centi-dB, thousandths of Q) |
+
+| Timbre | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Name | sine | saw low-pass | pluck | organ table | pad | noise click | pink noise |
+
+Each timbre is the starter with a few values changed (polyphony 8, filter 1 in place), and each file's SHA-256 is pinned; a new timbre is a new id at the end. Timbre 6 (sustained pink noise) is lane MUS's request for Frequency finder.
+
+**The band.** A `BandPass` band is the synth's own filter (Frequency finder's svf form): filter 1 goes to band-pass at `freq_hz` with the resonance of its Q (`100 · ln(2Q) / ln 50`, inverted from [docs/dsp/svf.md](dsp/svf.md); 3 significant digits), and the engine renders it; its gain must be 0 and its Q 0.5–25. A `Peak`, `LowShelf` or `HighShelf` band (gain ±0.01–24 dB, never 0; Q 0.1–25) is applied after the engine by lane BQ's offline RBJ biquad; until BQ lands, such a clip is refused (`needs_biquad`), never played without its band.
+
+### The ear scorers (`ear::scorers`)
+
+| Id | Judges | How |
+| --- | --- | --- |
+| `ear/1` | `EarAnswer::Choice(u8)` against `EarKey::Choice { index, options }` | exactly: 100 % or 0 % |
+| `ear-value/1` | `EarAnswer::Value(f32)` against a `ValueKey { scale, target_bits, tolerance_milli }` | the error on its scale (`Octaves`: \|log₂(a/k)\|; `LogMs`: \|log₂((a+1)/(k+1))\|; `Linear`: \|a − k\|) through the pinned `libm`; right within the tolerance: 100 % or 0 %, the error reported |
+| `taps/1` | `EarAnswer::Taps(Vec<u32>)` (ms, any clock) against `EarKey::Taps { onsets_ms, window_ms }` | every anchor (an onset against a tap) at tempi of 90–110 % in 2.5 % steps, each scored by a one-to-one monotone match within the window (most hits, then the least summed error, then the first fit): hits / (onsets + extras); right with no miss and no extra |
+
+`judge_set(scoring, keys, answers)` judges a set (an answer may be `None`: wrong, 0 %): the mean of the items' percentages in question order, passing at the challenge's mark. **Nothing in this module takes a patch or audio**, so an ear result is judged identically on every platform and engine version; only a new frozen generator version moves a key. Refusals are never "wrong": `unknown_scorer` (a newer scorer), `bad_answer` (another kind, an index beyond the options, a value its scale cannot measure, unordered or more than 64 taps, a count mismatch), `bad_key` (a key no generator makes). The ids join `score::KNOWN_SCORERS` (10 entries), so a lesson pack may require them.
+
+### The ear-challenge code (kind 3)
+
+`ear::code::EarChallengeCode` carries an `EarSpec` behind code v1's version-15 escape, for ear duels (every item of a spec is at its level, so item *i* depends only on *i*: a fixed ladder, and both players hear the same items; anyone holding the code can compute the keys).
+
+| Field | Bits |
+| --- | --- |
+| form 0, version 15 (the first symbol is always `F`) | 1 + 4 |
+| kind 3; layout 1 | 5 + 4 |
+| game, generator, level | 8 + 8 + 8 |
+| seed (below 2⁴⁰, as a short code keeps it; a longer seed has no code) | 40 |
+| count | 8 |
+| zero padding, then code v1's GF(32) check symbol | 4 + 5 |
+
+**19 symbols at a fixed length**, in groups of four (`F320-8104-0000-0058-80M` is Spot the change, level 1, seed 42, 16 items; four texts are pinned). Code v1's reading rules hold (case, `O`/`I`/`L` aliases, hyphens and spaces), its check catches every single substitution and adjacent swap, and the fixed length catches a dropped or added symbol. `decode` checks, in order: symbols, 2–64 of them, the check, version 15 and kind 3 (`not_ear_challenge` for any other code, so a paste box tries the next kind), a layout this build has (`code_too_new`; 0 is `bad_field`), form 0, the length, the padding, then the spec (`code_too_new` for a newer game, generator or level). **An R1–R3 build reads it as `code_too_new` ("update enth"):** it is at most 64 symbols, ends with code v1's check and carries version 15 (tested through code v1's own `decode`). The GF(32) check is restated in `ear/code.rs` so `code.rs` stays untouched; lane RC's shared version-15 frame in `result.rs` can carry it at F1E with no change of bytes.
+
+### Errors
+
+| Code | When |
+| --- | --- |
+| `bad_ear_target` | an ear target with a phrase other than 0, a start other than template 0, or a constraint |
+| `bad_answer` | a choice, value or taps answer on a seed, patch or draw target; an ear target answered otherwise than its game asks (a patch included); Dial it in as an ear target; an ear target given to the patch round |
+| `bad_scoring` | a non-patch answer whose scorer slots are not its ear scorer, weight 100 and `time/1` |
+| `bad_field`, `out_of_range` | an ear spec's game, generator, level or count 0, a count above 64; a seed from 2⁵³ |
+| `code_too_new` | a game, ear generator or level this build lacks (every music game, until MUS's generator is wired); a timbre id beyond the pool; a newer ear-code layout |
+| `bad_challenge` | a v3 piece in a v1 or v2 file |
+| `bad_question`, `needs_biquad` | a stimulus outside its promises; a peak or shelf band before lane BQ |
+
+### Tests
+
+| What | Where |
+| --- | --- |
+| The v1 and v2 fixture files keep main `567e0df`'s bytes (SHA-256) and read and write back at their version through both readers; `fixtures.rs`'s v1 and v2 tests pass unchanged | `tests/cv3_fixtures.rs`, `tests/fixtures.rs` |
+| v3 fixtures (`challenge/v3/{ear-spot,ear-check,ear-titled}.json`) are what this build writes and reads, are refused under a v1 or v2 schema, prepare with no render, and their oracle scores 100 %; their ear codes round-trip | `tests/cv3_fixtures.rs` |
+| The JSON form pinned; a v2 file refusing a v3 piece; a v3 file reading older challenges; strictness (phrase, start, constraints, answer, scoring); spec ranges and `code_too_new`; siblings | `v3::tests` |
+| The scorers: exact choices, values per scale, taps cancelling a constant latency and a tempo within 10 %, misses and extras, sets and the pass mark; proptests: the right answer is right for every key, judging is total | `ear::scorers::tests` |
+| The items: one option moved by the level's distance, B differing from A in it alone, no position bias over 500 seeds, keyed streams, an Ear check set on one control, Dial it in as a v2 round; pinned | `ear::params::tests` |
+| The pool frozen and audible; stimulus rules; the band-pass band in the timbre; `needs_biquad`; sets prepare, A and B differ, 1,000 keys with no render | `ear::question::tests` |
+| The code's layout pinned; 19 symbols; code v1 reads it as `code_too_new`; other kinds told apart; every refusal's code; proptests: round trip, every substitution and swap caught, decoding never panics | `ear::code::tests` |
+
+### The seams (F1e)
+
+| Lane | What it gets | What it must provide |
+| --- | --- | --- |
+| MUS | `v3::EarSpec` to replace with its own; the timbre ids; `EqBand`'s integers; `EarKey::Choice { index, options }` and `EarKey::Taps { onsets_ms, window_ms }` | `EarSpec::validate` (an unknown game, generator, level or count) and `Game::answer_kind(level)`; per question a timbre id, notes, `length_ms`, an optional band, the key, option labels and a skill (`ear.interval.m3`) |
+| RC | `EarChallengeCode` for paste-anything (a kind-3 token) and the ear result's payload (the same field widths); `EarSet::judge` and `judge_set` to verify an ear result by replay; `EarAnswer` | its shared version-15 frame, which kind 3 may move onto |
+| SE | `ear::question::prepare`, `Clip::render`, `EarSet::judge` | the answers, as `EarAnswer`s, with times from the shell |
+| DRL | each question's skill and measured distance; `params::ear_check_on` for a staircase's trial on a chosen control | — |
+| BQ | `EqBand` (kind, Hz, centi-dB, thousandths of Q) | the peak and shelf render, which `Clip::render` then applies instead of `needs_biquad` |
+| G4 | `params::ParamLevel` and the item builders | the ladder (levels 2 and up, the *not measured* list) behind `params::level` |
+
+The parameter games (Spot the change, Ear check) are ear targets whose items are v2 draws; Dial it in is a constrained Recreate round on a draw, as lessons already play them. `Target::Expectations` stays out (text goals still have no player).
 
 ## `RandomSpec`
 
