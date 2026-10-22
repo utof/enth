@@ -48,6 +48,10 @@ pub const MAX_VALUE_ELEMENTS: u64 = 1 << 24;
 /// The most elements of the values alive at once along the node order (32 Mi `f32`s, 128 MiB), weights aside.
 pub const MAX_LIVE_ELEMENTS: u64 = 1 << 25;
 
+/// The largest stride, padding or dilation a convolution or pool may have (real models use single digits): it keeps
+/// every index of a run inside 32 bits, so a hostile file cannot overflow one on wasm32.
+pub const MAX_GEOMETRY: i32 = 1 << 16;
+
 /// What a node computes, with the shapes it needs resolved at build.
 #[derive(Clone, Debug, PartialEq)]
 enum Step {
@@ -264,6 +268,17 @@ fn infer(op: OpCode, attrs: &[i32], shapes: &[&[usize]]) -> Result<Inferred, Str
     };
     let out_elems =
         |dims: &[usize]| elements(dims).ok_or_else(|| "the output's size overflows".to_owned());
+    // A convolution's attributes are strides, pads and dilations, then the groups; a pool's, the kernel sizes, then
+    // strides and pads.
+    let geometry = match op {
+        OpCode::Conv1d | OpCode::Conv2d => Some(&attrs[..attrs.len() - 1]),
+        OpCode::MaxPool1d | OpCode::AvgPool1d => Some(&attrs[1..]),
+        OpCode::MaxPool2d | OpCode::AvgPool2d => Some(&attrs[2..]),
+        _ => None,
+    };
+    if geometry.is_some_and(|g| g.iter().any(|v| *v > MAX_GEOMETRY)) {
+        return Err(format!("a stride, pad or dilation above {MAX_GEOMETRY}"));
+    }
     match op {
         OpCode::Conv1d | OpCode::Conv2d => {
             let two = op == OpCode::Conv2d;
@@ -761,13 +776,21 @@ impl Net {
                 values[*v as usize] = None;
             }
         }
+        let value = |v: u32| -> Vec<f32> {
+            let v = v as usize;
+            if (self.inputs..self.inputs + tensors).contains(&v) {
+                self.weights[v - self.inputs].clone()
+            } else {
+                values[v].clone().unwrap_or_default()
+            }
+        };
         Ok(Outputs(
             self.outputs
                 .iter()
-                .map(|(name, value, dims)| Output {
+                .map(|(name, v, dims)| Output {
                     name: name.clone(),
                     dims: dims.clone(),
-                    values: values[*value as usize].clone().unwrap_or_default(),
+                    values: value(*v),
                 })
                 .collect(),
         ))
@@ -1047,6 +1070,50 @@ mod tests {
     }
 
     #[test]
+    fn outputs_may_name_inputs_and_tensors_directly() {
+        let net = build(|b| {
+            let t = b.tensor("t", &[3], &[1.0, -2.0, 0.5]);
+            b.output("t", t, &[3]).output("ctx", Val::CONTEXT, &[5]);
+        })
+        .unwrap();
+        let input = synthetic_input(9);
+        let out = net.run(&input).unwrap();
+        assert_eq!(out.get("t").unwrap().values, [1.0, -2.0, 0.5]);
+        assert_eq!(out.get("ctx").unwrap().values, input.context);
+    }
+
+    #[test]
+    fn hostile_geometry_is_refused() {
+        let huge = MAX_GEOMETRY + 1;
+        for attrs in [
+            [huge, 1, 0, 0, 0, 0, 1, 1, 1],
+            [1, 1, 0, huge, 0, 0, 1, 1, 1],
+            [1, 1, 0, 0, 0, 0, 1, huge, 1],
+        ] {
+            let got = refused(|b| {
+                let w = b.tensor("w", &[1, 3, 1, 1], &[0.5; 3]);
+                b.node(OpCode::Conv2d, &[Val::MEL, w], &attrs);
+            });
+            assert!(
+                got.starts_with("model_malformed") && got.contains("stride, pad or dilation"),
+                "{got}"
+            );
+        }
+        let got = refused(|b| {
+            b.node(OpCode::MaxPool1d, &[Val::CONTEXT], &[1, huge, 0, 0]);
+        });
+        assert!(got.contains("stride, pad or dilation"), "{got}");
+        // Groups and kernel sizes are not geometry: a 1×1 conv with groups 3 on 3 channels is fine.
+        assert!(
+            build(|b| {
+                let w = b.tensor("w", &[3, 1, 1, 1], &[0.5; 3]);
+                b.node(OpCode::Conv2d, &[Val::MEL, w], &[1, 1, 0, 0, 0, 0, 1, 1, 3]);
+            })
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn a_graph_over_the_flop_budget_is_refused_before_it_runs() {
         // Four 64-channel 3×3 convolutions over [64, 128, 64]: about 0.6 GFLOP each.
         let got = refused(|b| {
@@ -1097,6 +1164,62 @@ mod tests {
         // At `a`: the two kept heads (102 + 1), c1 and a (mel is freed after c1, context after the heads).
         let peak = 102 + 1 + 786_432 + 12_582_912;
         assert_eq!(net.peak_elements(), peak);
+    }
+
+    /// A model with one node of most kinds, for the mutation property below.
+    fn mixed_model() -> Vec<u8> {
+        let mut b = ModelBuilder::new("onx-mixed", 1);
+        heads(&mut b);
+        let s = b.node(OpCode::Slice, &[Val::MEL], &[1, 0, 16, 2]); // [3, 8, 64]
+        let w = b.tensor("w", &[4, 3, 3, 3], &values(7, 108, 0.25));
+        let c = b.node(OpCode::Conv2d, &[s, w], &[1, 2, 1, 1, 1, 1, 1, 1, 1]);
+        let p = b.node(OpCode::AvgPool2d, &[c], &[2, 2, 2, 2, 1, 1, 0, 0]);
+        let r = b.node(OpCode::Reshape, &[p], &[4, -1]);
+        let t = b.node(OpCode::Transpose, &[r], &[1, 0]);
+        let m = b.node(OpCode::MatMul, &[r, t], &[]);
+        let sm = b.node(OpCode::Softmax, &[m], &[1]);
+        let cc = b.node(OpCode::Concat, &[sm, m], &[0]);
+        let g = b.node(OpCode::GlobalMaxPool, &[cc], &[]);
+        b.output("probe", g, &[8, 1]);
+        b.build()
+    }
+
+    proptest::proptest! {
+        /// Whatever a hostile file's graph says, once the reader accepts it the net refuses it or runs it: never a
+        /// panic in `Net::build` or `Net::run` (attribute, dim and value-id bytes mutated, the SHA-256 recomputed).
+        #[test]
+        fn build_and_run_never_panic_on_mutated_graphs(
+            edits in proptest::collection::vec((0usize..2048, proptest::prelude::any::<u8>()), 1..6),
+        ) {
+            let mut bytes = mixed_model();
+            let tables = 256..usize::try_from(u64::from_le_bytes(bytes[144..152].try_into().unwrap())).unwrap();
+            for (at, v) in edits {
+                let i = tables.start + at % tables.len();
+                bytes[i] = v;
+            }
+            let sha = crate::propose::pack::file_sha256(&bytes);
+            bytes[224..256].copy_from_slice(&sha);
+            if let Ok(pack) = ModelPack::parse(&bytes)
+                && let Ok(net) = Net::build(&pack)
+            {
+                let _ = net.run(&synthetic_input(1));
+            }
+        }
+    }
+
+    #[test]
+    fn the_mixed_model_runs() {
+        let pack = ModelPack::parse(&mixed_model()).unwrap();
+        let net = Net::build(&pack).unwrap();
+        assert_eq!(
+            net.run(&synthetic_input(1))
+                .unwrap()
+                .get("probe")
+                .unwrap()
+                .values
+                .len(),
+            8
+        );
     }
 
     #[test]
