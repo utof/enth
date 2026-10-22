@@ -16,6 +16,9 @@ name: golden
 # decoding under FTZ (`--test propose_ftz`) and feature set 1's pins with the kernels' unit tests (`--lib propose::`).
 # R4 lane MUS adds ear generator v1's golden (docs/ear.md, "The ear generator"): 1,000 specs to one hash, integers only, as a
 # test of enth-music (`--test ear_golden`, the file compiled in) on every leg: Linux, Windows, macOS and wasm32-wasip1 under wasmtime.
+# R4 lane BQ adds the biquad's golden (docs/dsp/biquad.md): 117 peak and shelf sections, their coefficient bits and their output
+# over fixed noise, one line each in crates/enth-dsp/tests/fixtures/biquad-golden.txt (`--test biquad_golden`, the file compiled
+# in), on the six golden targets: Linux x86-64 and aarch64, Windows, macOS arm64, wasm32-wasip1 under wasmtime and the same with simd128.
 
 on:
   push:
@@ -89,6 +92,12 @@ jobs:
         run: |
           cargo test --locked -p enth-music --test ear_golden
           cargo test --release --locked -p enth-music --test ear_golden
+      # R4 lane BQ: the offline biquad's golden (coefficient and output hashes), the same file on every leg.
+      - name: Biquad golden, debug and release (lane BQ)
+        shell: bash
+        run: |
+          cargo test --locked -p enth-dsp --test biquad_golden
+          cargo test --release --locked -p enth-dsp --test biquad_golden
       # R3b lane ONX: the model's inference is bit-exact on every platform (Windows here is MSVC).
       - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins (lane ONX)
         shell: bash
@@ -104,6 +113,7 @@ jobs:
             echo "::group::RUSTFLAGS=$flags"
             RUSTFLAGS="$flags" cargo test --release --locked -p enth-golden --test golden --target-dir target-flags
             RUSTFLAGS="$flags" cargo test --release --locked -p enth-solver --test propose_kernels --test propose_parity --target-dir target-flags
+            RUSTFLAGS="$flags" cargo test --release --locked -p enth-dsp --test biquad_golden --target-dir target-flags
             echo "::endgroup::"
           done
 
@@ -148,6 +158,16 @@ jobs:
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
         run: cargo test --release --locked --target wasm32-wasip1 -p enth-music --test ear_golden
+      # R4 lane BQ: the biquad's golden inside wasmtime, plain and with wasm simd128. The file is compiled in.
+      - name: Biquad golden inside wasmtime (lane BQ)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-dsp --test biquad_golden
+      - name: The biquad golden with wasm simd128 (lane BQ)
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-dsp --test biquad_golden --target-dir target-simd128
       # R3b lane ONX: the same kernel output hashes and feature pins inside wasmtime (wasm has no FTZ mode), with and
       # without simd128. The fixtures are compiled in, so no directory is preopened.
       - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins inside wasmtime (lane ONX)
@@ -185,6 +205,8 @@ jobs:
       - run: cargo test --release --locked -p enth-challenge --test ss_determinism
       # R4 lane MUS: ear generator v1's golden on arm64.
       - run: cargo test --release --locked -p enth-music --test ear_golden
+      # R4 lane BQ: the biquad's golden on arm64.
+      - run: cargo test --release --locked -p enth-dsp --test biquad_golden
       # R3b lane ONX: the kernel output hashes (FZ off and on), ONNX Runtime parity and feature set 1's pins on arm64.
       - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins (lane ONX)
         run: |

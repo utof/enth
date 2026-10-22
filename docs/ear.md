@@ -9,7 +9,7 @@ R4 trains the ear that sound design needs: which knob moved, how far, where a ba
 | Theory tables, rhythm, ear generator v1 | `enth-music` (L1, new) | MUS; G1–G3 the ladders | MUS built, level 1 of every ladder ([as built](#ear-generator-v1-as-built-lane-mus)); freezes at INT4 (F1e judges the API) |
 | Challenge v3: `Target::Ear`, choice, value and tap answers, ear rendering, timbres, scorers, the ear-challenge code | `enth-challenge` (L4) | CV3 | Planned (F1e; [challenge.md](challenge.md#challenge-v3-planned-lane-cv3-r4)) |
 | The parameter games' items (Spot the change, Dial it in, Ear check) | `enth-challenge` (L4), on v2 draws | CV3; G4 the ladder | Planned |
-| The EQ biquad | `enth-dsp/src/biquad.rs` (L0) | BQ | Planned |
+| The EQ biquad | `enth-dsp/src/biquad.rs` (L0) | BQ | Built ([as built](#the-offline-biquad-as-built-lane-bq); [dsp/biquad.md](dsp/biquad.md)); `Clip::render` applies it |
 | The drill player: staircase, ear skills in Review, `StepKind::Drill`, the `drills` field, the workout composer | `enth-learn` (L5) | DRL | Built (F1e; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl)) |
 | Ear sessions | `enth-session/src/ear.rs` (L6) | SE | Planned (F1e) |
 | Ear jobs, examples, the restart flag; `enth ear` | `enth-plugin/src/ear.rs`, `enth-cli/src/cmd/ear.rs` (L8) | SKE, EV4 | Planned (F2e) |
@@ -161,10 +161,21 @@ Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), wit
 - **One target for every question game.** `Target::Ear(EarSpec)` names games 1 (Spot the change) and 3 (Ear check), generated in `enth_challenge::ear::params` on v2 draws, and games 4 and up, `enth-music`'s. Dial it in (game 2) stays a constrained Recreate round: `ear::params::dial_it_in` gives each round as a v2 draw challenge. An ear target takes phrase 0, the template 0 start, no constraint, and the answer its game asks for.
 - **Level 1 of each parameter game** (two far options, filter against envelope, 6 steps; Ear check from 8 steps on one control drawn per set; Dial it in 6 steps), on the starter through the held note. G4's ladder replaces `params::level`.
 - **The timbre pool `timbres-v1`:** 0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad, 5 noise click, 6 sustained pink noise (MUS's Frequency finder), frozen by SHA-256 and append-only.
-- **Bands:** a band-pass band sets the timbre's own filter (Frequency finder's svf form, rendered by the engine); a peak or shelf band waits for BQ's biquad (`needs_biquad`).
+- **Bands:** a band-pass band sets the timbre's own filter (Frequency finder's svf form, rendered by the engine); a peak or shelf band is applied after the engine by BQ's biquad ([as built](#the-offline-biquad-as-built-lane-bq); `needs_biquad` was the answer before BQ landed).
 - **Judged with no render:** `ear/1` (an index), `ear-value/1` (an error in octaves, doublings of ms or the unit, within a tolerance), `taps/1` (after the best-fit offset and a tempo within ±10 %, a one-to-one match; misses and extras count). Keys are integers (a value's `f32` bits), logarithms go through the pinned `libm`.
 - **The ear-challenge code** (kind 3): 19 symbols starting with `F`, code v1's check last; an R1–R3 build reads it as "update enth". A seed above 40 bits has no code, as for a short challenge code.
 - **Closed at F1e (lane F1E):** an `EarSpec` names no skill (the judge accepted it: fixed-ladder duels need none); a burst's focus goes through one resolver over both families, `enth_challenge::ear::find_item(&spec, skill, from)` (should-fix S3), which the session's ear plan takes as its start item. The music games are wired (`ear::music`, `question::music_question`), so every game from 4 to 10 prepares, judges and has a code.
+
+## The offline biquad as built (lane BQ)
+
+**Built 2026-10-22.** The reference is [dsp/biquad.md](dsp/biquad.md); what a game lane needs to know:
+
+- **What it is:** `enth_dsp::biquad`, the Audio EQ Cookbook's `peakingEQ`, `lowShelf` and `highShelf` in their `Q` form, designed and run in `f64` through the pinned `libm` (`pow`, `sin`, `cos`), over an `f32` buffer in place. `Coeffs::design(kind, freq_hz, gain_db, q, sample_rate)` then `Biquad::new(coeffs).process(&mut buf)`; no allocation, any block size gives the same bits, a gain of 0 is the identity bit for bit.
+- **Accuracy:** against the cookbook's analog prototypes under its pre-warped bilinear transform, the coefficients agree to 3.8e-8 dB over 84,672 points and the processed response (impulse response through `process` in `f32`) to 5.1e-5 dB over 285 sections, against the 0.1 dB acceptance. The cookbook's digital curve is squeezed near Nyquist relative to the analog one at the plain frequency (2.2 dB at most for an 8 kHz peak, 7.2 dB for a 16 kHz one, +12 dB, `Q` 1, 48 kHz): the corner is exact, the shape above about 4 kHz is the cookbook's.
+- **The golden:** `crates/enth-dsp/tests/biquad_golden.rs` (117 sections, coefficient bits and output hashes, one sum), run by `golden.yml` on the six golden targets: Linux x86-64 and aarch64, Windows, macOS arm64, wasm32-wasip1 and the same with `simd128`.
+- **Wired in:** `Clip::render` (in `ear/question.rs`) renders a stimulus with the engine and then filters both channels, release tail included, with the section its peak or shelf band designs; the band's integers become `f64` by one IEEE division each (`gain_cdb / 100`, `q_milli / 1000`). `needs_biquad` is no longer returned (the variant and its code stay, so nothing that matches on it moves). A band-pass band never reaches the biquad.
+- **For G3:** the ranges in [challenge.md](challenge.md) (20 Hz to 20 kHz, ±0.01 to ±24 dB, `Q` 0.1 to 25) are well inside the biquad's; a +24 dB boost can pass full scale, so **level matching stays playback's**. The first banded questions are G3's to write: the generator needs no change, only a level that draws a peak or shelf band.
+- **S2's EQ** wraps `Coeffs` and `Biquad`; per-segment coefficient ramps (automation) are its to add.
 
 ## Rhythm input
 
