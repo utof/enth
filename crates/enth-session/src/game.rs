@@ -109,6 +109,16 @@ pub const FIRST_REPORT_BYTES: usize = 64 * 1024;
 /// The longest dispute note kept, in characters (at most 6 bytes each once escaped).
 pub const DISPUTE_CHARS: usize = 2000;
 
+/// The most the first passing submit takes in the saved record ([`ComparedSubmit`]: its number and its diff from the
+/// round's start, as the JSON the record saves; lane SE, R5a). A passing answer's diff is a few hundred bytes; above
+/// the cap the diff is not kept ([`ComparedSubmit::ops`] is `None`). **This is the named F1e check:** the record's
+/// parts, this one included, add up to less than [`ROUND_BYTES`] (compile-time check below, and a test of the largest
+/// round), and the budget stays what it was.
+pub const COMPARED_BYTES: usize = 64 * 1024;
+
+/// The compared submit's own keys and number, at their longest (`{"submit":4294967295,"ops":` and the closing brace).
+const COMPARED_FIXED_BYTES: usize = 48;
+
 /// The budget for the whole saved round: the parts above plus the submits and the record's own fields. Well under
 /// the `enth` field's [`MAX_FIELD_BYTES`](crate::state::MAX_FIELD_BYTES): a round never makes the saved state
 /// unloadable (the largest round is a test).
@@ -124,6 +134,7 @@ const _: () = assert!(
     STASH_BYTES
         + MAX_SUBMITTED_PATCH_BYTES
         + FIRST_REPORT_BYTES
+        + COMPARED_BYTES
         + EDIT_LOG_BYTES
         + 6 * DISPUTE_CHARS
         + MAX_SUBMITS * SUBMIT_BYTES
@@ -398,6 +409,53 @@ pub struct RoundRecord {
     /// (`Challenge::with_seed`), so the restored target matches. Omitted for the step's own challenge.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sibling: Option<u64>,
+    /// The **first passing submit**, and its patch as a diff from the round's start (lane SE, R5a; additive): what a
+    /// duel compares and its answer code carries. Omitted until a game round passes, so every record that has not
+    /// passed keeps its bytes. A round that has not passed compares its best submit instead ([`compared_number`]),
+    /// which the session holds in memory only. [`ComparedSubmit`] says how this fits [`ROUND_BYTES`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compared: Option<ComparedSubmit>,
+}
+
+/// The first passing submit: its number among the round's scored submits and its patch as `ops_between(start, patch)`
+/// (lane SE, R5a). A duel compares the **first passing submit** (its patch, the time to pass and the submit count);
+/// a round that never passed compares its **best** submit (highest sound %, then combined %, the earlier one on a
+/// tie), which a duel marks "not passed" ([`compared_number`] is the rule). A pass is final, so it is saved with the
+/// round and survives a reload; the best submit of a round that has not passed can still change, so it lives in
+/// memory only (a reload forgets its patch, not its scores, and the next best submit brings it back).
+///
+/// **Why a diff.** The record already keeps the last submit's patch ([`RoundRecord::submitted_patch`], up to
+/// [`MAX_SUBMITTED_PATCH_BYTES`]) and the stash ([`STASH_BYTES`]); a second whole patch would not fit
+/// [`ROUND_BYTES`]. A passing answer is a handful of changed parameters over the round's start, so its diff is a few
+/// hundred bytes (an answer code carries the same diff, `docs/duels.md`). The start is the one the target's
+/// generator makes, which the session holds while the round runs and gets again from the prepare job after a reload.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ComparedSubmit {
+    /// Its number among the round's scored submits (1 = the first).
+    pub submit: u32,
+    /// `enth_patch::ops_between(start, patch)` in the resolved wire form (`enth_patch::wire::to_json`, the form the
+    /// edit log uses): `wire::resolve` against the start and `apply_all` give the patch back. `None` when no list of
+    /// ops reproduces the patch or the list takes more than [`COMPARED_BYTES`]: the duel then has the scores but no
+    /// answer to share.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ops: Option<Value>,
+}
+
+/// Which scored submit a duel compares (1-based): the first passing submit, otherwise the best by sound %, then
+/// combined %, the earlier submit winning a tie. `None` without a submit.
+pub fn compared_number(submits: &[SubmitRecord]) -> Option<u32> {
+    let index = submits.iter().position(|s| s.score.passed).or_else(|| {
+        let key = |s: &SubmitRecord| (s.score.sound, s.score.combined);
+        let mut best: Option<usize> = None;
+        for (i, s) in submits.iter().enumerate() {
+            if best.is_none_or(|b| key(s) > key(&submits[b])) {
+                best = Some(i);
+            }
+        }
+        best
+    })?;
+    Some(u32::try_from(index + 1).unwrap_or(u32::MAX))
 }
 
 /// `skip_serializing_if` for a flag the record writes only when set.
@@ -1529,6 +1587,12 @@ pub(crate) struct GameLive {
     /// What the code check reported without stopping the round.
     warnings: Vec<CodeWarning>,
     target: Option<Arc<Patch>>,
+    /// The patch the round started from (the prepare job's `start`, kept while the round runs; lane SE): the diff of
+    /// the first passing submit is taken against it ([`ComparedSubmit`]) and replayed onto it.
+    start: Option<Arc<Patch>>,
+    /// The best submit so far of a round that has not passed (its number and patch; lane SE): what a duel compares
+    /// until a pass. Not saved: it can still change.
+    best: Option<(u32, Arc<Patch>)>,
     /// The randomized parameters, in address order.
     params: Vec<ParamAddr>,
     target_lufs: Option<f32>,
@@ -1623,6 +1687,15 @@ impl GameLive {
     }
 }
 
+/// The compared submit's diff: `patch_text` (the submitted patch as patch-file text) against the round's `start`, in the
+/// resolved wire form, or `None` when no list of ops reproduces it or the list would not fit [`COMPARED_BYTES`].
+fn compared_ops(start: &Patch, patch_text: &str) -> Option<Value> {
+    let patch = decode_patch(patch_text).ok()?.patch;
+    let ops = enth_patch::ops_between(start, &patch)?;
+    let json = enth_patch::wire::to_json(start, &ops);
+    (json.to_string().len() + COMPARED_FIXED_BYTES <= COMPARED_BYTES).then_some(json)
+}
+
 /// One log entry's size in the budget: its ops' JSON plus the entry's own keys and time at their longest.
 fn entry_bytes(ops: &Value) -> usize {
     ops.to_string().len() + 64
@@ -1645,6 +1718,26 @@ impl Session {
     /// The latest shell timestamp ([`Session::game_tick`]'s clock, which the lesson shares; lane SL).
     pub(crate) fn game_now(&self) -> u64 {
         self.game.now
+    }
+
+    /// The live round's challenge, once the target is prepared (lane SE: a duel names the scorers it was judged by).
+    pub(crate) fn game_challenge(&self) -> Option<&Arc<Challenge>> {
+        self.game.challenge.as_ref()
+    }
+
+    /// The patch the live round started from, once the target is prepared (lane SE: the first pass's diff is replayed
+    /// onto it).
+    pub(crate) fn game_start_patch(&self) -> Option<&Arc<Patch>> {
+        self.game.start.as_ref()
+    }
+
+    /// The patch of submit `number` when it is the best of a round that has not passed (lane SE; not saved).
+    pub(crate) fn game_best_patch(&self, number: u32) -> Option<&Arc<Patch>> {
+        self.game
+            .best
+            .as_ref()
+            .filter(|(n, _)| *n == number)
+            .map(|(_, patch)| patch)
     }
 
     /// The live round is a lesson's (lane SL).
@@ -2063,6 +2156,7 @@ impl Session {
         let fresh = record.phase == Phase::Preparing;
         self.game.challenge = Some(Arc::new(challenge));
         self.game.target = Some(Arc::new(target));
+        self.game.start = Some(Arc::new(start.clone()));
         self.game.params = params;
         self.game.target_lufs = target_lufs;
         self.game.warnings = warnings;
@@ -2131,6 +2225,8 @@ impl Session {
         let score = summary(&report);
         let knobs = knobs(&report.structure);
         let rings = rings(&report.structure);
+        let start = self.game.start.clone();
+        let mut best = self.game.best.clone();
         let Some(record) = self.record_mut() else {
             return;
         };
@@ -2143,6 +2239,23 @@ impl Session {
             at_ms: pending.at_ms,
             score,
         });
+        // Lane SE: the duel's compared submit follows the rule in `compared_number` (the first pass, else the best). A
+        // pass is saved with the round as a diff from the start; the best of a round that has not passed is held.
+        let number = record.submits.len() as u32;
+        if record.origin == RoundOrigin::Game && compared_number(&record.submits) == Some(number) {
+            if score.passed {
+                let ops = start
+                    .as_deref()
+                    .and_then(|start| compared_ops(start, &pending.patch));
+                record.compared = Some(ComparedSubmit {
+                    submit: number,
+                    ops,
+                });
+                best = None;
+            } else if let Ok(decoded) = decode_patch(&pending.patch) {
+                best = Some((number, Arc::new(decoded.patch)));
+            }
+        }
         record.submitted_patch =
             (escaped_len(&pending.patch) <= MAX_SUBMITTED_PATCH_BYTES).then_some(pending.patch);
         let first_pass = score.passed && record.time_to_pass_ms.is_none();
@@ -2166,6 +2279,7 @@ impl Session {
         self.game.knobs = knobs;
         self.game.rings = rings;
         self.game.report = Some(Arc::new(report));
+        self.game.best = best;
         self.game.error = None;
         self.game.dirty();
         if let Some((assisted, best)) = lesson_pass {
@@ -2215,6 +2329,8 @@ impl Session {
             self.game.requests.push(GameRequest::Log(Box::new(entry)));
             // Lane REV: the first submit's rings feed the review boxes (every played round but a host load's).
             self.review_note_close(&record, why, self.game.target.clone());
+            // Lane SE: an open duel on this round's code keeps the player's result when the round ends.
+            self.duel_note_close(&record);
         }
         self.game.cancel_all();
         let history = self.game.stash_history.take();

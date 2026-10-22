@@ -2051,6 +2051,13 @@ fn t3_the_largest_round_fits_the_enth_field() {
         // Lane LFU: "How close am I?" used and a redo's seed, at their longest.
         closest: true,
         sibling: Some(u64::MAX),
+        // Lane SE: the duel's compared submit at its cap (a control character takes 6 bytes escaped).
+        compared: Some(enth_session::game::ComparedSubmit {
+            submit: u32::MAX,
+            ops: Some(serde_json::json!([
+                "\u{1}".repeat((enth_session::game::COMPARED_BYTES - 64) / 6)
+            ])),
+        }),
     };
     let instance = InstanceState {
         ui: enth_session::UiState {
