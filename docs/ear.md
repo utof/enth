@@ -104,6 +104,18 @@ A sketch from report 02 §2; the F1e judge fixes the real types.
 - **Level-matched** within 0.5 LU unless level is the cue.
 - **EQ:** one band from the level's set (7 octave bands at ±12 dB, down to ⅓-octave at ±3 dB, as Quiztones' tiers) on pink noise or a pad, played as two level-matched loops. The band is integers in the question; lane BQ's biquad renders it offline, within 0.1 dB of the cookbook and with the same bits on six targets. S2's EQ module wraps the same primitive later.
 
+## Challenge v3 as built (lane CV3)
+
+**Built 2026-10-22; judged at F1e.** The reference is [challenge.md](challenge.md#challenge-v3-planned-lane-cv3-r4); what a game lane needs to know:
+
+- **One target for every question game.** `Target::Ear(EarSpec)` names games 1 (Spot the change) and 3 (Ear check), generated in `enth_challenge::ear::params` on v2 draws, and games 4 and up, `enth-music`'s. Dial it in (game 2) stays a constrained Recreate round: `ear::params::dial_it_in` gives each round as a v2 draw challenge. An ear target takes phrase 0, the template 0 start, no constraint, and the answer its game asks for.
+- **Level 1 of each parameter game** (two far options, filter against envelope, 6 steps; Ear check from 8 steps on one control drawn per set; Dial it in 6 steps), on the starter through the held note. G4's ladder replaces `params::level`.
+- **The timbre pool `timbres-v1`:** 0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad, 5 noise click, 6 sustained pink noise (MUS's Frequency finder), frozen by SHA-256 and append-only.
+- **Bands:** a band-pass band sets the timbre's own filter (Frequency finder's svf form, rendered by the engine); a peak or shelf band waits for BQ's biquad (`needs_biquad`).
+- **Judged with no render:** `ear/1` (an index), `ear-value/1` (an error in octaves, doublings of ms or the unit, within a tolerance), `taps/1` (after the best-fit offset and a tempo within ±10 %, a one-to-one match; misses and extras count). Keys are integers (a value's `f32` bits), logarithms go through the pinned `libm`.
+- **The ear-challenge code** (kind 3): 19 symbols starting with `F`, code v1's check last; an R1–R3 build reads it as "update enth". A seed above 40 bits has no code, as for a short challenge code.
+- **Open for the judge:** an `EarSpec` names no skill, so a burst on one due skill (`ear.interval.m3`) or an Ear check on a chosen control is an item-level call (`params::ear_check_on`), not a spec; music games read as `code_too_new` until MUS's generator is wired (F1E).
+
 ## Rhythm input
 
 **The facts** (report 02 §4, *measured* in the vendored source): egui-baseview sets the frame's input time once per frame and events wait for that frame, so at about 30 fps an editor tap is quantised to up to about 33 ms. Fork patch 4 gives keyboard focus only while a text field is edited, so keys reach the host unless a tap pad takes focus; clicks always arrive. Host notes reach `process()` with a sample offset in the buffer. People also tap tens of milliseconds early (Repp 2005), so tap scoring needs an offset anyway.
