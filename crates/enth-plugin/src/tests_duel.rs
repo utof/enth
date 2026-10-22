@@ -10,6 +10,7 @@
 //! loads it as one undo step with no host writes; the duel log records the share and the states; a refusal from the
 //! worker (another challenge's answer) reaches the card as the check's failure.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -417,4 +418,68 @@ fn an_answer_for_another_challenge_fails_the_check() {
     };
     assert_eq!(f.code, "not_the_same_challenge");
     assert_ne!(f.hint, "");
+}
+
+/// The REAPER `duel` scenario's first instance starts from this state (`xtask/reaper/enth-duel-round.state.json`, the
+/// nice-plug fields `patch` and `enth`): a round on [`fixture_code`], playing, whose patch is the target rebuilt by
+/// edits, so its first Submit passes. REAPER loads it as the instance's state; the round restores and its target is
+/// prepared again on the worker.
+const REAPER_FIXTURE: &str = include_str!("../../../xtask/reaper/enth-duel-round.state.json");
+
+/// The fixture's challenge: level 2, seed 77.
+fn fixture_code() -> ChallengeCode {
+    level2(77)
+}
+
+/// The fixture's fields, made by playing: start the round, rebuild the target by edits, save.
+fn fixture_fields() -> BTreeMap<String, String> {
+    let code = fixture_code();
+    let round = prepare_round(code.spec()).unwrap();
+    let mut host = Host::new();
+    host.play(&code);
+    host.session(|s| {
+        let ops = ops_between(s.patch(), round.target()).unwrap();
+        s.edit(ops, None).unwrap();
+    });
+    host.plugin.host_params().serialize_fields()
+}
+
+/// Regenerates the fixture. Run it (`cargo test -p enth-plugin --features duel -- --ignored write_the_reaper_duel_fixture`)
+/// when `the_reaper_duel_fixture_resumes_a_round_whose_first_submit_passes` fails after a change to the saved state or
+/// the engine; the commit says why.
+#[test]
+#[ignore = "writes xtask/reaper/enth-duel-round.state.json"]
+fn write_the_reaper_duel_fixture() {
+    let fields = fixture_fields();
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../xtask/reaper/enth-duel-round.state.json"
+    );
+    let text = serde_json::to_string_pretty(&fields).unwrap() + "\n";
+    std::fs::write(path, text).unwrap();
+}
+
+#[test]
+fn the_reaper_duel_fixture_resumes_a_round_whose_first_submit_passes() {
+    let fields: BTreeMap<String, String> = serde_json::from_str(REAPER_FIXTURE).unwrap();
+    assert_eq!(
+        fields.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["enth", "patch"]
+    );
+    let mut host = Host::new();
+    host.plugin.host_params().deserialize_fields(&fields);
+    // The saved phase reads `playing` at once; the target is back once the worker has prepared it again.
+    host.until("the restored round's target", |s| {
+        s.round().is_some_and(|r| r.phase == Phase::Playing) && s.game_ab().target_ready
+    });
+    host.session(|s| {
+        assert_eq!(s.round().unwrap().code, fixture_code().to_string());
+        s.game_submit().unwrap();
+    });
+    host.until("the pass", |s| {
+        s.round().is_some_and(|r| r.phase == Phase::Passed)
+    });
+    // And it is shareable at once.
+    let own = host.session(|s| s.duel_own().unwrap());
+    assert!(own.own.can_share_answer(), "{:?}", own.own);
 }
