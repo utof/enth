@@ -511,7 +511,8 @@ fn play_through(h: &mut Harness<'_, App>) -> Vec<String> {
                 }
                 click(h, "Stop listening");
             }
-            StepKind::Read => {}
+            // No shipped lesson has a drill step yet; the Ear view plays them (lane EUI).
+            StepKind::Read | StepKind::Drill(_) => {}
             StepKind::Do { witness, .. } => {
                 let witness = bundle.patch(witness).unwrap().clone();
                 walk_to(h, &witness);

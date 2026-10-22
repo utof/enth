@@ -75,7 +75,7 @@ pub(super) fn lesson(bundle: &LessonBundle, played: &[Played], opts: Options, lo
             StepKind::Choose { options, answer } => {
                 choose_step(bundle, step.id.as_str(), options, *answer, at, log);
             }
-            StepKind::Read | StepKind::Listen { .. } => {}
+            StepKind::Read | StepKind::Listen { .. } | StepKind::Drill(_) => {}
         }
     }
 }

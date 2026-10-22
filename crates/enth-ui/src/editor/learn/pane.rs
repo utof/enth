@@ -257,6 +257,7 @@ fn kind_name(kind: &StepKind) -> &'static str {
         StepKind::Do { .. } => "Try",
         StepKind::Recreate { .. } => "Recreate",
         StepKind::Choose { .. } => "Choose",
+        StepKind::Drill(_) => "Drill",
     }
 }
 

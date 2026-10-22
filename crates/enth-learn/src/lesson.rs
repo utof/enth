@@ -18,6 +18,10 @@
 //! - Ear questions are `StepKind::Choose`, judged by the player (an index); Challenge v2 has no `AnswerKind::Choice`.
 //! - A Recreate step's start and locks are its challenge's (`Start`, `Constraints`): its view may not name a start,
 //!   editable controls or locks, so the session gets one plan and one lock set per step.
+//! - **`StepKind::Drill`** (R4, lane DRL; additive, still `enth.lesson/1`): a step that plays an ear drill ([`DrillStep`]:
+//!   a game, a start level, a number of items, optionally a skill to burst on). A pack that uses one declares it in
+//!   `requires.drill`, so an older build says "update enth" instead of failing inside a lesson. Playing it to the end
+//!   passes the step whatever the score: no content is gated on chords, intervals or note naming.
 
 use std::collections::BTreeSet;
 
@@ -27,8 +31,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::check::Check;
+use crate::drill::DrillStep;
 use crate::error::{Doc, LearnError, bad_field};
 use crate::pack::{LessonId, PatchRef, StepId, TextRef, check_schema, fields, syntax, unique};
+use crate::review::Skill;
 
 pub use enth_challenge::v2::{Selector, Touch, touches};
 
@@ -340,10 +346,13 @@ pub enum StepKind {
         /// The index of the right option.
         answer: u8,
     },
+    /// Play an ear drill (R4): N questions on a game's ladder, the 3-down/1-up staircase, bursts into Review's
+    /// boxes. Passes when the drill is played to its end, whatever the score.
+    Drill(DrillStep),
 }
 
 impl StepKind {
-    /// `read`, `listen`, `do`, `recreate`, `choose`.
+    /// `read`, `listen`, `do`, `recreate`, `choose`, `drill`.
     pub fn name(&self) -> &'static str {
         match self {
             StepKind::Read => "read",
@@ -351,6 +360,7 @@ impl StepKind {
             StepKind::Do { .. } => "do",
             StepKind::Recreate { .. } => "recreate",
             StepKind::Choose { .. } => "choose",
+            StepKind::Drill(_) => "drill",
         }
     }
 }
@@ -441,7 +451,7 @@ impl Lesson {
         for s in &self.steps {
             set.extend(s.view.start.as_ref());
             match &s.kind {
-                StepKind::Read => {}
+                StepKind::Read | StepKind::Drill(_) => {}
                 StepKind::Listen { examples: list } | StepKind::Choose { options: list, .. } => {
                     set.extend(list.iter().map(|e| &e.patch));
                 }
@@ -520,6 +530,17 @@ impl Lesson {
                     }
                 }
                 StepKind::Do { check, .. } => check.validate(&at("check"))?,
+                StepKind::Drill(drill) => {
+                    if let Some((field, message)) = drill.problem() {
+                        return Err(bad_field(Doc::Lesson, at(field), message));
+                    }
+                    if let Some(skill) = drill.skill.as_ref()
+                        && !skill.is_ear()
+                        && let Err(message) = ParamKey::new(skill.as_str())
+                    {
+                        return Err(bad_field(Doc::Lesson, at("skill"), message));
+                    }
+                }
                 StepKind::Recreate { .. } => {
                     if s.view.start.is_some()
                         || !s.view.editable.is_empty()
@@ -577,6 +598,7 @@ enum KindTag {
     Do,
     Recreate,
     Choose,
+    Drill,
 }
 
 /// The on-disk step: flat, with the kind's fields beside the common ones, so `lesson.toml` reads naturally
@@ -604,6 +626,14 @@ struct StepFile {
     options: Vec<Example>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     answer: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    game: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    level: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    items: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    skill: Option<Skill>,
 }
 
 impl LessonFile {
@@ -652,6 +682,10 @@ impl StepFile {
             ("challenge", self.challenge.is_some()),
             ("options", !self.options.is_empty()),
             ("answer", self.answer.is_some()),
+            ("game", self.game.is_some()),
+            ("level", self.level.is_some()),
+            ("items", self.items.is_some()),
+            ("skill", self.skill.is_some()),
         ];
         let allowed: &[&str] = match self.kind {
             KindTag::Read => &[],
@@ -659,6 +693,7 @@ impl StepFile {
             KindTag::Do => &["check", "witness"],
             KindTag::Recreate => &["challenge", "witness"],
             KindTag::Choose => &["options", "answer"],
+            KindTag::Drill => &["game", "level", "items", "skill"],
         };
         if let Some((name, _)) = present.iter().find(|(n, p)| *p && !allowed.contains(n)) {
             return Err(extra(name));
@@ -680,6 +715,13 @@ impl StepFile {
                 options: self.options,
                 answer: self.answer.ok_or_else(|| need("answer"))?,
             },
+            KindTag::Drill => {
+                let mut drill = DrillStep::new(self.game.ok_or_else(|| need("game"))?);
+                drill.level = self.level.unwrap_or(drill.level);
+                drill.items = self.items.unwrap_or(drill.items);
+                drill.skill = self.skill;
+                StepKind::Drill(drill)
+            }
         };
         Ok(Step {
             id: self.id,
@@ -719,6 +761,10 @@ impl From<&Step> for StepFile {
             challenge: None,
             options: Vec::new(),
             answer: None,
+            game: None,
+            level: None,
+            items: None,
+            skill: None,
         };
         match &s.kind {
             StepKind::Read => {}
@@ -740,6 +786,14 @@ impl From<&Step> for StepFile {
                 f.kind = KindTag::Choose;
                 f.options.clone_from(options);
                 f.answer = Some(*answer);
+            }
+            StepKind::Drill(drill) => {
+                f.kind = KindTag::Drill;
+                f.game = Some(drill.game);
+                // The defaults are left out, so a step written plainly reads back as it was written.
+                f.level = (drill.level != 1).then_some(drill.level);
+                f.items = (drill.items != crate::drill::DEFAULT_STEP_ITEMS).then_some(drill.items);
+                f.skill.clone_from(&drill.skill);
             }
         }
         f

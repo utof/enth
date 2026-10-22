@@ -475,7 +475,8 @@ impl Acc {
                 .map(|p| Patch::clone(p));
             let start = own.or_else(|| carried.clone());
             match &step.kind {
-                StepKind::Read | StepKind::Listen { .. } => carried = start,
+                // A drill is a game, not a lesson on a control: it covers nothing here (GR4 counts the games' coverage).
+                StepKind::Read | StepKind::Listen { .. } | StepKind::Drill(_) => carried = start,
                 StepKind::Do { check, witness } => {
                     let kind = if check.sounds().is_empty() {
                         Kind::Patch
