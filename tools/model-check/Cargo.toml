@@ -1,0 +1,19 @@
+[package]
+name = "enth-model-check"
+description = "Dev tool for R3b's model files: header and graph summary, a run with output hashes, parity against expected outputs (ONNX Runtime's, from ml/), and a timing of our scalar kernels (docs/r3.md, lane ONX)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "enth-model-check"
+path = "src/main.rs"
+
+[dependencies]
+# Lane ONX (R3b). A tooling package, exempt from the layer rules (xtask/layers.toml) like the other `tools/*` packages:
+# it reads files and clocks, which enth-solver (L5, pure) must not. Only a crate already in Cargo.lock.
+enth-solver.workspace = true
+
+[lints]
+workspace = true
