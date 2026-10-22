@@ -119,12 +119,12 @@ mod fp {
     pub fn get() -> u64 {
         let v: u64;
         // SAFETY: reads the FPCR system register.
-        unsafe { asm!("mrs {}, fpcr", out(reg) v, options(nomem, nostack, preserves_flags)) };
+        unsafe { asm!("mrs {}, fpcr", out(reg) v, options(nostack, preserves_flags)) };
         v
     }
     pub fn set(v: u64) {
         // SAFETY: writes the FPCR system register; only FZ differs from the current value.
-        unsafe { asm!("msr fpcr, {}", in(reg) v, options(nomem, nostack)) };
+        unsafe { asm!("msr fpcr, {}", in(reg) v, options(nostack)) };
     }
     pub const MODES: [(&str, u64); 2] = [("IEEE (FZ off)", 0), ("FZ on", FZ)];
 }
@@ -146,14 +146,16 @@ mod ftz {
         let old = fp::get();
         let _restore = Restore(old);
         fp::set((old & !fp::MASK) | bits);
-        f()
+        // The result passes through `black_box` before the guard restores the old mode, so the optimiser cannot sink the
+        // closure's arithmetic past the restore (it did on linux-aarch64 in release: golden.yml on 5082fec and 3a573e1).
+        std::hint::black_box(f())
     }
 
     #[test]
     fn ftz_really_changes_float_behaviour_here() {
         // 1e-30 * 1e-10 = 1e-40: subnormal under IEEE, zero under FTZ. Without this the test below could pass
         // vacuously.
-        let product = |a: f32, b: f32| black_box(a) * black_box(b);
+        let product = |a: f32, b: f32| black_box(black_box(a) * black_box(b));
         assert!(with_mode(0, || product(1e-30, 1e-10)).is_subnormal());
         assert_eq!(with_mode(fp::MODES[1].1, || product(1e-30, 1e-10)), 0.0);
     }

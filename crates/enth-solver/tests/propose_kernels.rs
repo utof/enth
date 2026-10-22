@@ -344,7 +344,8 @@ fn kernel_outputs_do_not_depend_on_ftz_or_daz() {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[test]
 fn ftz_really_changes_float_behaviour_here() {
-    let product = |a: f32, b: f32| std::hint::black_box(a) * std::hint::black_box(b);
+    let product =
+        |a: f32, b: f32| std::hint::black_box(std::hint::black_box(a) * std::hint::black_box(b));
     assert!(with_mode(0, || product(1e-30, 1e-10)).is_subnormal());
     assert_eq!(with_mode(modes()[1].1, || product(1e-30, 1e-10)), 0.0);
 }

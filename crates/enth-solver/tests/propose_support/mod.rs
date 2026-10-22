@@ -111,12 +111,12 @@ pub mod fp {
     pub fn get() -> u64 {
         let v: u64;
         // SAFETY: reads the FPCR system register.
-        unsafe { asm!("mrs {}, fpcr", out(reg) v, options(nomem, nostack, preserves_flags)) };
+        unsafe { asm!("mrs {}, fpcr", out(reg) v, options(nostack, preserves_flags)) };
         v
     }
     pub fn set(v: u64) {
         // SAFETY: writes the FPCR system register; only FZ differs from the current value.
-        unsafe { asm!("msr fpcr, {}", in(reg) v, options(nomem, nostack)) };
+        unsafe { asm!("msr fpcr, {}", in(reg) v, options(nostack)) };
     }
     pub const MODES: [(&str, u64); 2] = [("IEEE (FZ off)", 0), ("FZ on", FZ)];
 }
@@ -144,7 +144,9 @@ pub fn with_mode<R>(bits: u64, f: impl FnOnce() -> R) -> R {
     let old = fp::get();
     let _restore = Restore(old);
     fp::set((old & !fp::MASK) | bits);
-    f()
+    // The result passes through `black_box` before the guard restores the old mode, so the optimiser cannot sink the
+    // closure's arithmetic past the restore (it did on linux-aarch64 in release: golden.yml on 5082fec and 3a573e1).
+    std::hint::black_box(f())
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
