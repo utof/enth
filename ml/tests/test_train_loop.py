@@ -104,6 +104,16 @@ class Loop(unittest.TestCase):
         s2 = train(cfg2, resume=True, device="cpu")
         self.assertGreater(s2["steps"], s["steps"])
         self.assertTrue(any(p.name.startswith("run-resume-") for p in out.iterdir()))
+        import contextlib
+        import io
+
+        from enth_ml.train import report
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report.main([str(out)])
+        self.assertIn("| Epoch |", buf.getvalue())
+        self.assertIn("samples_per_s_median", buf.getvalue())
         res = evaluate_checkpoint(out / "ckpt-best.pt", device="cpu")
         res16 = evaluate_checkpoint(out / "ckpt-best.pt", device="cpu", mel_dtype="f2")
         self.assertLess(abs(res["loss_best"] - res16["loss_best"]), 0.05 * res["loss_best"] + 1e-3)

@@ -1,0 +1,47 @@
+# propose v0, the first measured run (lane TR, 2026-10-22): clean ds1 renders, FP32, a 150-minute GPU budget.
+# Data directories are the machine's; pass them on the command line:
+#   python -m enth_ml.train run --config enth_ml/train/pilot-v0.toml \
+#     --set 'train_dirs=["/mnt/d/enth-train/data/ds1-f9362bd/train-s1"]' \
+#     --set 'dev_dirs=["/mnt/d/enth-train/data/ds1-f9362bd/dev-s1"]' --set out=/mnt/d/enth-train/runs/pilot-v0
+seed = 1
+batch_size = 256
+workers = 6
+buffer_shards = 4
+prefetch = 4
+train_mel_dtype = "f4"
+dev_batch = 512
+epochs = 400          # an upper bound: the time budget ends the run
+max_minutes = 150.0   # wall clock, training and evaluation; the LR and the WTA temperature follow it
+lr = 2e-3
+min_lr_frac = 0.02
+warmup_steps = 1000
+weight_decay = 0.05
+beta2 = 0.99
+grad_clip = 5.0
+amp = false           # cuDNN's FP16 is 2.4x slower than FP32 on the GTX 1660 Ti (config.py)
+channels_last = false
+log_every_steps = 100
+stats_shards = 64
+early_stop_patience = 0
+
+[model]
+stem = 24
+widths = [32, 64, 128, 256]
+blocks = [1, 1, 2, 1]
+embed = 384
+hyp_hidden = 128
+conf_hidden = 256
+hypotheses = 8
+
+[loss]
+w_continuous = 1.0
+w_depth = 1.0
+w_categorical = 2.0
+w_structure = 2.0
+w_presence = 1.0
+huber_delta = 1.0
+conf_weight = 0.2
+eps = 0.05
+t_start = 1.0
+t_end = 0.01
+anneal_frac = 0.3

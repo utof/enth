@@ -3,6 +3,7 @@
     python -m enth_ml.train run --config pilot.toml [--resume] [--set key=value ...]
     python -m enth_ml.train eval --ckpt RUN/ckpt-best.pt [--mel f2] [--dev DIR ...]
     python -m enth_ml.train info DIR [DIR ...]
+    python -m enth_ml.train report RUN_DIR [--every N]
 """
 
 from __future__ import annotations
@@ -46,7 +47,15 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--device", default=None)
     i = sub.add_parser("info", help="describe ds1 run directories")
     i.add_argument("dirs", nargs="+")
+    rp = sub.add_parser("report", help="a run's learning curves and throughput as Markdown")
+    rp.add_argument("run")
+    rp.add_argument("--every", default="1")
     args = ap.parse_args(argv)
+
+    if args.cmd == "report":
+        from .report import main as report_main
+
+        return report_main([args.run, "--every", args.every])
 
     if args.cmd == "info":
         from .shards import open_dataset
