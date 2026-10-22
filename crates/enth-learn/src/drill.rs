@@ -37,7 +37,8 @@
 //!
 //! - [`review`](crate::review): `ear.*` skills ([`Skill::ear`]) and 5-item [`Burst`]s
 //!   ([`Review::observe_burst`](crate::review::Review::observe_burst)).
-//! - [`lesson`](crate::lesson): `StepKind::Drill` ([`DrillStep`]), declared in a pack's `requires.drill`.
+//! - [`lesson`](crate::lesson): `StepKind::Drill` ([`DrillStep`]), an `enth.lesson/2` piece, so a pack with one
+//!   says `requires.lesson = 2` and an older build answers "needs a newer enth" (the F1e review's M1).
 //! - [`progress`](crate::progress): the `drills` field ([`Drills`]) and [`Progress::observe_drill`].
 //!
 //! [`Progress::observe_drill`]: crate::progress::Progress::observe_drill
@@ -53,10 +54,6 @@ use crate::review::{BURST_ITEMS, Burst, Day, Skill};
 
 pub use record::{Drills, GameDrill, HISTORY_MAX, Point, SkillDrill};
 pub use staircase::{DOWN, MAX_AVERAGED, MAX_LEVELS, MIN_REVERSALS, Move, Staircase};
-
-/// The drill schema a lesson's `StepKind::Drill` needs: what a pack declares in `requires.drill`. An older build
-/// refuses such a pack with "needs a newer enth" rather than failing inside a lesson.
-pub const DRILL_VERSION: u32 = 1;
 
 /// The ear games' ids, the numbers of `enth-music`'s `EarSpec::game` (1 to 3 are the parameter games, generated in
 /// `enth-challenge`; 4 to 10 the music games).
@@ -227,7 +224,7 @@ impl Ladder {
 // The lesson step
 // ---------------------------------------------------------------------------------------------------------------
 
-/// A lesson step that plays a drill (`StepKind::Drill`, declared in a pack's `requires.drill`): a game, optionally a
+/// A lesson step that plays a drill (`StepKind::Drill`, an `enth.lesson/2` piece): a game, optionally a
 /// skill to burst on, a start level and a number of items. **Playing it to the end passes the step, whatever the
 /// score**: no content is gated on chords, intervals or note naming, and a drill's score feeds the staircase and the
 /// boxes, never the lesson.

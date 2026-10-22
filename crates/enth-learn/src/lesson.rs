@@ -18,10 +18,13 @@
 //! - Ear questions are `StepKind::Choose`, judged by the player (an index); Challenge v2 has no `AnswerKind::Choice`.
 //! - A Recreate step's start and locks are its challenge's (`Start`, `Constraints`): its view may not name a start,
 //!   editable controls or locks, so the session gets one plan and one lock set per step.
-//! - **`StepKind::Drill`** (R4, lane DRL; additive, still `enth.lesson/1`): a step that plays an ear drill ([`DrillStep`]:
-//!   a game, a start level, a number of items, optionally a skill to burst on). A pack that uses one declares it in
-//!   `requires.drill`, so an older build says "update enth" instead of failing inside a lesson. Playing it to the end
-//!   passes the step whatever the score: no content is gated on chords, intervals or note naming.
+//! - **`StepKind::Drill`** (R4, lane DRL): a step that plays an ear drill ([`DrillStep`]: a game, a start level, a
+//!   number of items, optionally a skill to burst on). **It is an `enth.lesson/2` piece** (the F1e review's M1): a
+//!   lesson is written at the lowest version that holds it, as a challenge is ([`Lesson::version`]), so a lesson with
+//!   no drill step keeps `enth.lesson/1` and its bytes, and a v1 file holding a drill step is refused. A pack's
+//!   `requires.lesson` then says 2, which every R2 and R3 build already checks by name and answers "needs a newer
+//!   enth" (`requires_unmet`) before it reads a lesson. Playing a drill to the end passes the step whatever the score:
+//!   no content is gated on chords, intervals or note naming.
 
 use std::collections::BTreeSet;
 
@@ -40,10 +43,13 @@ pub use enth_challenge::v2::{Selector, Touch, touches};
 
 /// The lesson schema family.
 pub const LESSON_KIND: &str = "enth.lesson";
-/// The lesson version this build writes, and the newest it reads.
-pub const LESSON_VERSION: u32 = 1;
-/// The `schema` string this build writes: `enth.lesson/1`.
+/// The newest lesson version this build reads and writes. A lesson is written at the lowest version that holds it
+/// ([`Lesson::version`]): 1, or [`DRILL_LESSON_VERSION`] when it has a drill step.
+pub const LESSON_VERSION: u32 = 2;
+/// The `schema` string of a lesson with no drill step, `enth.lesson/1`: what most lessons are written as.
 pub const LESSON_SCHEMA: &str = "enth.lesson/1";
+/// The lesson version that first holds a [`StepKind::Drill`] step (R4; the F1e review's M1).
+pub const DRILL_LESSON_VERSION: u32 = 2;
 
 /// The most steps a lesson may have.
 pub const MAX_STEPS: usize = 32;
@@ -411,17 +417,55 @@ impl Lesson {
         let version = check_schema(Doc::Lesson, &value, LESSON_VERSION)?;
         let file: LessonFile =
             serde_json::from_str(text).map_err(|e| fields(Doc::Lesson, e.to_string()))?;
-        Ok((file.into_lesson()?, version))
+        Ok((file.into_lesson()?.held_by(version)?, version))
     }
 
     /// Read the authoring `lesson.toml`, with the same checks.
     #[cfg(feature = "toml")]
     pub fn from_toml(text: &str) -> Result<Lesson, LearnError> {
         let value: Value = toml::from_str(text).map_err(|e| syntax(Doc::Lesson, e.to_string()))?;
-        check_schema(Doc::Lesson, &value, LESSON_VERSION)?;
+        let version = check_schema(Doc::Lesson, &value, LESSON_VERSION)?;
         let file: LessonFile =
             serde_json::from_value(value).map_err(|e| fields(Doc::Lesson, e.to_string()))?;
-        file.into_lesson()
+        file.into_lesson()?.held_by(version)
+    }
+
+    /// The lowest lesson version that holds this lesson, the one it is written as: [`DRILL_LESSON_VERSION`] (2) with
+    /// a drill step, else 1. So a lesson with no drill step keeps `enth.lesson/1` and its bytes, and a pack's
+    /// `requires.lesson` says 2 only when it has a drill (the F1e review's M1).
+    pub fn version(&self) -> u32 {
+        if self.first_drill().is_some() {
+            DRILL_LESSON_VERSION
+        } else {
+            1
+        }
+    }
+
+    /// The `schema` string this lesson is written with, `enth.lesson/<version>`.
+    pub fn schema(&self) -> String {
+        format!("{LESSON_KIND}/{}", self.version())
+    }
+
+    /// The index of the first drill step, if any.
+    fn first_drill(&self) -> Option<usize> {
+        self.steps
+            .iter()
+            .position(|s| matches!(s.kind, StepKind::Drill(_)))
+    }
+
+    /// Refuse a piece newer than the file's schema: a drill step in an `enth.lesson/1` file (as a v2 piece in a v1
+    /// challenge file is refused).
+    fn held_by(self, version: u32) -> Result<Lesson, LearnError> {
+        match self.first_drill() {
+            Some(i) if version < DRILL_LESSON_VERSION => Err(bad_field(
+                Doc::Lesson,
+                format!("steps[{i}].kind"),
+                format!(
+                    "a drill step is an {LESSON_KIND}/{DRILL_LESSON_VERSION} piece: an {LESSON_KIND}/{version} file cannot hold it"
+                ),
+            )),
+            _ => Ok(self),
+        }
     }
 
     /// The JSON text: compact, schema first, byte-deterministic (what `lesson.json` holds).
@@ -736,7 +780,7 @@ impl StepFile {
 impl From<&Lesson> for LessonFile {
     fn from(l: &Lesson) -> Self {
         LessonFile {
-            schema: LESSON_SCHEMA.to_owned(),
+            schema: l.schema(),
             id: l.id.clone(),
             title: l.title.clone(),
             tier: l.tier,

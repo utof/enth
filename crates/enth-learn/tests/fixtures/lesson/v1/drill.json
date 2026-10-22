@@ -1,1 +1,0 @@
-{"schema":"enth.lesson/1","id":"ears","title":"Thirds","tier":"basic","objective":"Hear a third.","teaches":["svf.cutoff"],"steps":[{"id":"intro","kind":"read","text":"text.md"},{"id":"thirds","kind":"drill","text":"text.md","game":5,"level":3,"items":15,"skill":"ear.interval.M3"},{"id":"check","kind":"drill","game":3}]}

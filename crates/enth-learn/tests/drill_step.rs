@@ -1,7 +1,7 @@
-//! Lane DRL's lesson step (docs/learn.md, "Ear skills, bursts and drills"): `StepKind::Drill`, additive to
-//! `enth.lesson/1` and declared in a pack's `requires.drill`. Its JSON and TOML forms, its fixture, what a pack must
-//! say about it, and how the player runs it: `Effect::StartDrill` on entering, a pass on `drill_ended` whatever the
-//! score, and `NotHere` anywhere else.
+//! Lane DRL's lesson step (docs/learn.md, "Ear skills, bursts and drills"): `StepKind::Drill`, an `enth.lesson/2`
+//! piece (the F1e review's M1), so a pack with one says `requires.lesson = 2`. Its JSON and TOML forms, its fixture,
+//! what a pack must say about it, what an R2 or R3 build answers, and how the player runs it: `Effect::StartDrill` on
+//! entering, a pass on `drill_ended` whatever the score, and `NotHere` anywhere else.
 
 #![allow(
     clippy::disallowed_methods,
@@ -12,15 +12,21 @@ mod common;
 
 use std::fs;
 
-use enth_learn::drill::{DRILL_VERSION, DrillStep};
-use enth_learn::pack::engine_is_newer;
+use enth_learn::drill::DrillStep;
+use enth_learn::error::Need;
+use enth_learn::lesson::{DRILL_LESSON_VERSION, LESSON_VERSION};
 use enth_learn::review::Skill;
 use enth_learn::{Effect, LearnError, Lesson, Pack, Player, PlayerError, StepKind};
 
-fn lesson_json(steps: &str) -> String {
+fn lesson_at(version: u32, steps: &str) -> String {
     format!(
-        r#"{{"schema":"enth.lesson/1","id":"ears","title":"Thirds","tier":"basic","objective":"Hear a third.","teaches":["svf.cutoff"],"steps":[{steps}]}}"#
+        r#"{{"schema":"enth.lesson/{version}","id":"ears","title":"Thirds","tier":"basic","objective":"Hear a third.","teaches":["svf.cutoff"],"steps":[{steps}]}}"#
     )
+}
+
+/// A lesson with a drill step: `enth.lesson/2`.
+fn lesson_json(steps: &str) -> String {
+    lesson_at(DRILL_LESSON_VERSION, steps)
 }
 
 /// A read step, a drill that bursts on a skill, and a plain drill: the forms of the step.
@@ -32,16 +38,16 @@ fn lesson_text() -> String {
     )
 }
 
-/// A manifest for the pack of `ears`, declaring `drill`.
-fn files(lesson: &str, drill: Option<u32>) -> std::collections::BTreeMap<String, Vec<u8>> {
+/// The sealed pack of `ears`, declaring lesson schema `lesson_version`.
+fn files(lesson: &str, lesson_version: u32) -> std::collections::BTreeMap<String, Vec<u8>> {
     let files = common::test_files(&[("ears", lesson)]);
     let mut manifest = common::test_manifest(&["ears"]);
-    manifest.requires.drill = drill;
+    manifest.requires.lesson = lesson_version;
     common::seal(&manifest, files)
 }
 
 fn pack() -> Pack {
-    Pack::from_files(&files(&lesson_text(), Some(DRILL_VERSION))).unwrap()
+    Pack::from_files(&files(&lesson_text(), DRILL_LESSON_VERSION)).unwrap()
 }
 
 fn player() -> Player {
@@ -86,13 +92,51 @@ fn a_drill_step_reads_and_writes_with_its_defaults_left_out() {
         text.contains(r#"{"id":"check","kind":"drill","game":3}"#),
         "{text}"
     );
+    assert!(text.starts_with(r#"{"schema":"enth.lesson/2","#), "{text}");
     assert_eq!(Lesson::from_json(&text).unwrap(), lesson);
+}
+
+#[test]
+fn a_lesson_is_written_at_the_lowest_version_that_holds_it() {
+    assert_eq!((LESSON_VERSION, DRILL_LESSON_VERSION), (2, 2));
+    let drill = Lesson::from_json(&lesson_text()).unwrap();
+    assert_eq!(
+        (drill.version(), drill.schema().as_str()),
+        (2, "enth.lesson/2")
+    );
+    // No drill step: still `enth.lesson/1`, byte for byte (the v1 fixtures in fixtures.rs pin the rest).
+    let plain_text = lesson_at(1, r#"{"id":"intro","kind":"read","text":"text.md"}"#);
+    let plain = Lesson::from_json(&plain_text).unwrap();
+    assert_eq!(plain.version(), 1);
+    assert_eq!(plain.to_json(), plain_text);
+    // A v2 file with no drill step reads, and is written back at v1.
+    let v2_plain = lesson_at(2, r#"{"id":"intro","kind":"read","text":"text.md"}"#);
+    assert_eq!(Lesson::from_json(&v2_plain).unwrap().to_json(), plain_text);
+}
+
+#[test]
+fn a_v1_file_holding_a_drill_step_is_refused_naming_the_step() {
+    let text = lesson_at(
+        1,
+        r#"{"id":"intro","kind":"read","text":"text.md"},{"id":"a","kind":"drill","game":5}"#,
+    );
+    let err = Lesson::from_json(&text).unwrap_err();
+    assert_eq!(err.code(), "bad_field", "{err}");
+    assert!(err.to_string().contains("steps[1].kind"), "{err}");
+    assert!(err.to_string().contains("enth.lesson/2"), "{err}");
+    // In a pack too, before any requirement is compared.
+    let err = Pack::from_files(&files(&text, 1)).unwrap_err();
+    assert!(err.to_string().contains("enth.lesson/2"), "{err}");
+    // A newer schema still names itself too new.
+    let err =
+        Lesson::from_json(&lesson_at(3, r#"{"id":"a","kind":"drill","game":5}"#)).unwrap_err();
+    assert_eq!(err.code(), "lesson_too_new", "{err}");
 }
 
 #[test]
 fn a_drill_step_reads_from_toml_too() {
     let toml = r#"
-schema = "enth.lesson/1"
+schema = "enth.lesson/2"
 id = "ears"
 title = "Thirds"
 tier = "basic"
@@ -154,10 +198,11 @@ fn a_drill_step_that_does_not_fit_is_refused_naming_the_field() {
     }
 }
 
-/// `tests/fixtures/lesson/v1/drill.json`: the lesson as this build writes it, pinned (regenerate with
-/// `cargo test -p enth-learn --test drill_step -- --ignored regenerate`, then read the diff).
+/// `tests/fixtures/lesson/v2/drill.json`: the lesson as this build writes it, pinned (regenerate with
+/// `cargo test -p enth-learn --test drill_step -- --ignored regenerate`, then read the diff). It lives under `v2`
+/// because a drill step is an `enth.lesson/2` piece; every `v1` fixture keeps its bytes.
 fn fixture_path() -> std::path::PathBuf {
-    common::fixture_dir("lesson").join("drill.json")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lesson/v2/drill.json")
 }
 
 #[test]
@@ -179,46 +224,82 @@ fn regenerate() {
 // The pack says so
 
 #[test]
-fn a_pack_with_a_drill_step_declares_the_drill_schema() {
-    Pack::from_files(&files(&lesson_text(), Some(DRILL_VERSION))).unwrap();
-    let err = Pack::from_files(&files(&lesson_text(), None)).unwrap_err();
-    assert!(err.to_string().contains("drill"), "{err}");
-    // A pack without a drill step needs say nothing (and says nothing in its manifest).
-    let plain = lesson_json(r#"{"id":"intro","kind":"read","text":"text.md"}"#);
-    let pack = Pack::from_files(&files(&plain, None)).unwrap();
-    assert!(!pack.manifest().to_json().contains("drill"));
-    // The declared schema is written, and read back.
-    let declared = pack.manifest().to_json();
-    let with = Pack::from_files(&files(&lesson_text(), Some(DRILL_VERSION))).unwrap();
+fn a_pack_with_a_drill_step_declares_lesson_2() {
+    let pack = Pack::from_files(&files(&lesson_text(), 2)).unwrap();
+    assert_eq!(pack.manifest().requires.lesson, 2);
+    assert!(!pack.manifest().to_json().contains("drill"), "no drill key");
+    // Under-declared: refused as a pack whose `requires` is wrong.
+    let err = Pack::from_files(&files(&lesson_text(), 1)).unwrap_err();
+    assert_eq!(err.code(), "bad_field", "{err}");
     assert!(
-        with.manifest().to_json().contains(r#""drill":1"#),
-        "{declared}"
+        err.to_string().contains("says lesson 1, a lesson uses 2"),
+        "{err}"
     );
-    assert_eq!(with.manifest().requires.drill, Some(DRILL_VERSION));
+    // A pack without a drill step needs only lesson 1.
+    let plain = lesson_at(1, r#"{"id":"intro","kind":"read","text":"text.md"}"#);
+    let pack = Pack::from_files(&files(&plain, 1)).unwrap();
+    assert_eq!(pack.manifest().requires.lesson, 1);
 }
 
 #[test]
-fn a_drill_schema_newer_than_this_build_is_a_requirement_it_names() {
-    for newer in [DRILL_VERSION + 1, 0] {
-        let err = Pack::from_files(&files(&lesson_text(), Some(newer))).unwrap_err();
-        assert!(matches!(err, LearnError::Requires { .. }), "{err}");
-        assert!(err.to_string().contains("drill schema"), "{err}");
+fn a_lesson_schema_newer_than_this_build_is_a_requirement_it_names() {
+    for newer in [LESSON_VERSION + 1, 0] {
+        let err = Pack::from_files(&files(&lesson_text(), newer)).unwrap_err();
+        assert!(
+            matches!(err, LearnError::Requires { need: Need::Lesson(v), .. } if v == newer),
+            "{err}"
+        );
+        assert_eq!(err.code(), "requires_unmet", "{err}");
     }
+    // `requires.drill` is gone: a manifest that says it is refused as an unknown field, as any other.
+    let mut text = common::test_manifest(&["ears"]).to_json();
+    text = text.replacen(r#""requires":{"#, r#""requires":{"drill":1,"#, 1);
+    assert!(
+        enth_learn::pack::Manifest::from_json(&text).is_err(),
+        "{text}"
+    );
 }
 
+/// What an R2 or R3 build answers a drill pack (the F1e review's M1). This build cannot be an older one, so the test
+/// mirrors their `Requires` exactly (`deny_unknown_fields`, no `drill` key, `LESSON_VERSION` 1) and their check: the
+/// manifest decodes, and `requires.lesson = 2` is unmet, which those builds name "needs a newer enth"
+/// (`requires_unmet`) before they read a lesson. Under DRL's `requires.drill` the same manifest failed to decode, and
+/// the pack was listed as damaged.
 #[test]
-fn an_older_build_reads_a_drill_step_as_a_kind_it_lacks_and_asks_for_an_update() {
-    // This build cannot be an older one; a step kind it lacks stands in for the Drill step an older build meets, and
-    // takes the same path: a decode failure that becomes "needs a newer enth" when the pack's engine stamp is newer.
-    let lesson = lesson_json(
-        r#"{"id":"intro","kind":"read","text":"text.md"},{"id":"a","kind":"rhythm","text":"text.md","game":7}"#,
+fn an_r3_build_reads_a_drill_pack_as_needing_a_newer_enth() {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(
+        dead_code,
+        reason = "the fields are read only by serde: the shape is the test"
+    )]
+    struct R3Requires {
+        lesson: u32,
+        #[serde(default)]
+        challenge: Option<u32>,
+        patch: u32,
+        #[serde(default)]
+        generator: Option<u16>,
+        #[serde(default)]
+        scorers: Vec<String>,
+    }
+    const R3_LESSON_VERSION: u32 = 1;
+    let pack = pack();
+    let manifest: serde_json::Value = serde_json::from_str(&pack.manifest().to_json()).unwrap();
+    let r3: R3Requires = serde_json::from_value(manifest["requires"].clone())
+        .expect("an R3 build decodes a drill pack's requires");
+    assert!(
+        r3.lesson == 0 || r3.lesson > R3_LESSON_VERSION,
+        "R3's Requires::unmet gives Need::Lesson({})",
+        r3.lesson
     );
-    let files = common::test_files(&[("ears", &lesson)]);
-    let mut manifest = common::test_manifest(&["ears"]);
-    "9.0.0".clone_into(&mut manifest.engine);
-    assert!(engine_is_newer(&manifest.engine));
-    let err = Pack::from_files(&common::seal(&manifest, files)).unwrap_err();
-    assert_eq!(err.code(), "needs_newer_enth", "{err}");
+    // The same refusal on this build, for a pack that asks more than it reads.
+    let err = Pack::from_files(&files(&lesson_text(), LESSON_VERSION + 1)).unwrap_err();
+    assert_eq!(err.code(), "requires_unmet");
+    assert_eq!(
+        err.hint(),
+        "this pack needs a newer enth: update enth to open it"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------------------------

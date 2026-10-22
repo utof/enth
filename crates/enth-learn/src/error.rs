@@ -82,8 +82,6 @@ pub enum Need {
     Generator(u16),
     /// A scorer this build does not have.
     Scorer(String),
-    /// A drill schema (`Drill` lesson steps) newer than this build's (R4).
-    Drill(u32),
 }
 
 impl fmt::Display for Need {
@@ -94,7 +92,6 @@ impl fmt::Display for Need {
             Need::Patch(v) => write!(f, "patch schema {v}"),
             Need::Generator(v) => write!(f, "generator {v}"),
             Need::Scorer(id) => write!(f, "scorer {id}"),
-            Need::Drill(v) => write!(f, "drill schema {v}"),
         }
     }
 }

@@ -580,11 +580,6 @@ pub struct Requires {
     /// The scorer ids its challenges name.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scorers: Vec<ScorerId>,
-    /// The drill schema of its `Drill` steps (R4, lane DRL); absent when it has none. A pack with a drill step needs
-    /// a build that has the drill player, and an older build says so ("update enth") instead of failing inside a
-    /// lesson.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub drill: Option<u32>,
 }
 
 impl Requires {
@@ -605,11 +600,6 @@ impl Requires {
             && (g == 0 || g > enth_challenge::spec::LATEST_GENERATOR)
         {
             return Some(Need::Generator(g));
-        }
-        if let Some(d) = self.drill
-            && (d == 0 || d > crate::drill::DRILL_VERSION)
-        {
-            return Some(Need::Drill(d));
         }
         self.scorers
             .iter()
@@ -1173,16 +1163,11 @@ struct Used {
     challenge: Option<u32>,
     generator: Option<u16>,
     scorers: BTreeSet<ScorerId>,
-    /// The drill schema a `Drill` step needs, when the pack has one (R4).
-    drill: Option<u32>,
 }
 
 impl Used {
     fn note(&mut self, lesson: &Lesson) {
         for step in &lesson.steps {
-            if matches!(step.kind, StepKind::Drill(_)) {
-                self.drill = self.drill.max(Some(crate::drill::DRILL_VERSION));
-            }
             if let StepKind::Recreate { challenge, .. } = &step.kind {
                 self.challenge = self.challenge.max(Some(challenge.version()));
                 self.generator = self.generator.max(challenge.generator());
@@ -1233,19 +1218,6 @@ impl Used {
             return Err(over(format!(
                 "a challenge names scorer {s}, which requires.scorers lacks"
             )));
-        }
-        match (self.drill, r.drill) {
-            (Some(_), None) => {
-                return Err(over(
-                    "names no drill schema, and a lesson has a Drill step".to_owned(),
-                ));
-            }
-            (Some(used), Some(declared)) if used > declared => {
-                return Err(over(format!(
-                    "says drill {declared}, a Drill step uses {used}"
-                )));
-            }
-            _ => {}
         }
         Ok(())
     }
