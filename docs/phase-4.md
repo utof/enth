@@ -143,7 +143,7 @@ Each lane stops at its own criteria and reports against them.
 | **SE** | Ear and duel lifecycles; stale results refused; the first pass's patch kept and within `ROUND_BYTES` (the largest-round test still passes); no audio-thread contact under `assert_no_alloc` |
 | **DRL** | The staircase against simulated listeners: 75–85 % success at threshold; 40-trial thresholds, as the F1e judge ruled, **pooled at least 90 % within one level on ladders of about one JND or more per level, every listener-and-start cell at least 75 %, flat ladders at least 90 % within two levels**; bursts move boxes (proptests, as REV's); `Progress::merge`'s laws hold with `drills`; the composer gives the same workout for the same progress file and day |
 | **BQ** | The same bits on the six golden targets; within 0.1 dB of the cookbook's response; every existing golden unchanged |
-| **F1E** | Every must-fix closed |
+| **F1E** | Every must-fix closed (and the should-fixes the judge marked for F1E) |
 | **SKD** | The F2d row; real answer sizes measured on passing answers |
 | **DUI** | kittest by label: copy, paste a whole chat message, verify, the sealed answer opening only after a submit or give-up, a load as one undo step; no clipboard read without Paste (a test); 0 idle frames; `leak-test` |
 | **INT5** | The full gate, REAPER and leak green; GR5's automated rows filled; an R3 build's answer to each kind recorded; the friend duel sheet and owner sheet 6 written |
@@ -181,7 +181,7 @@ The tables of record will be `docs/r5-gates.md` (INT5) and `docs/r4-gates.md` (I
 | GR5 | Three async duels finish with both codes verified both ways; any score difference explained by a flagged engine difference | Real duels through your own chat; a two-instance REAPER test stands in | **You** and a friend; INT5 | After INT5 |
 | GR5 | Codes survive chat apps (Discord, Telegram, WhatsApp, Signal, SMS, iMessage), smart punctuation included | A corpus test of mangled pastes in CI; your duel check on real apps | RC, INT5; **you** | F1e; after INT5 |
 | GR5 | No personal data in any code | A test on every kind with `meta.author`, labels and macro names set | RC | F1e |
-| GR5 | The receiver's score decides | The 25 golden challenges: target → result → verify gives the same score bits on Linux, Windows and wasm | RC, INT5 | F1e; wave 4 |
+| GR5 | The receiver's score decides | The 25 golden challenges: target → result → verify gives the same score bits on Linux, Windows and wasm (`enth-golden`'s `gr5_receiver` test, lane F1E: every pinned answer through the answer code and `verify`, bit for bit with the harness and within the pins) | RC, F1E, INT5 | F1e (built); wave 4 |
 | R5a | Ships | The full gate, REAPER, leak; GR5's automated rows; the friend build and sheet | INT5 | Wave 4 |
 | GR4 | Deterministic | 1,000 items per game regenerate identical hashes on the six golden targets | ECK, MUS | CI from wave 3 |
 | GR4 | Fair | Every option pair at least 2 JND apart under `sound/1` (6 at L1), parameter-step items listed apart; bias bots at chance ± 3 % over 10,000 items | ECK, G1–G4 | CI from wave 3 |

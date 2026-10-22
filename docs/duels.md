@@ -168,7 +168,7 @@ The pure duel state is built ([session.md](session.md#duel-lane-se-r5a) has the 
 | Three async duels finish with both codes verified both ways; any score difference is explained by a flagged engine difference | Real duels through your own chat; the default stand-in is a two-instance REAPER test | You and a friend; INT5 |
 | Codes survive a paste through Discord, Telegram, WhatsApp, Signal, SMS and iMessage, smart punctuation included | A corpus test of mangled pastes (dashes, zero-width characters, quotes, line breaks) in CI, plus your duel check on real apps | RC, INT5; you |
 | No name, `meta` or absolute time in any code | A test on every kind, with a patch whose `meta.author` and labels are set | RC |
-| The receiver's score decides, on the 25 golden challenges | Target → result → verify gives the same score bits on Linux, Windows and wasm | RC, INT5 |
+| The receiver's score decides, on the 25 golden challenges | Target → result → verify gives the same score bits on Linux, Windows and wasm: `enth-golden`'s `gr5_receiver` test (lane F1E) sends every pinned answer through the answer code and `verify` on every `golden.yml` leg | RC, F1E, INT5 |
 
 ## Live play later
 
