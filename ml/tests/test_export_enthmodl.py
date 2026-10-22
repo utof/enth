@@ -130,6 +130,23 @@ class Reader(unittest.TestCase):
         self.assertEqual(m.tensor_values(0), list(struct.unpack("<3e", struct.pack("<3e", 0.1, 1e-8, -3.5))))
 
 
+class Golden(unittest.TestCase):
+    """Lane EXP's 20-input output golden of the pilot model (``ml/golden/``): well formed, and tied to a model file."""
+
+    def test_the_pilot_golden_is_well_formed(self) -> None:
+        text = (ROOT / "ml/golden/propose-v0-pilot-20.golden").read_text(encoding="utf-8")
+        rows = [l.split() for l in text.splitlines() if l and not l.startswith("#")]
+        self.assertEqual(len(rows), 20)
+        positions = [int(p) for p, _ in rows]
+        self.assertEqual(positions, sorted(set(positions)))
+        self.assertTrue(0 <= positions[0] and positions[-1] < 9324)
+        for _, h in rows:
+            self.assertRegex(h, r"^[0-9a-f]{64}$")
+        self.assertEqual(len({h for _, h in rows}), 20, "20 different outputs")
+        self.assertRegex(text, r"7605280 bytes, [0-9a-f]{64}")
+        self.assertNotIn("@", text)
+
+
 class Tensors(unittest.TestCase):
     def test_round_trip(self) -> None:
         entries = [("a", (2, 3), [0.5 * i for i in range(6)]), ("hypotheses", (1,), [-1.25])]
