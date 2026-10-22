@@ -246,6 +246,16 @@ impl Glue {
         self.editor.apply_learn(session);
         #[cfg(feature = "create")]
         self.editor.apply_create(session);
+        // The Create view's folder browser (lane PUI): the folder it asked for, listed here (the editor does no I/O).
+        #[cfg(feature = "create")]
+        if let Some(at) = self.editor.take_create_browse() {
+            self.editor
+                .set_create_folder(crate::create::browse::list_at(
+                    &at,
+                    &SystemEnv,
+                    Os::current(),
+                ));
+        }
         // "Open packs folder" (lane LFU): the folder is made if missing, then opened through egui's OpenUrl, which
         // the vendored egui-baseview hands to the system's file manager.
         #[cfg(feature = "learn")]

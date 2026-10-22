@@ -24,6 +24,7 @@
 | `editor/recreate/` | the Recreate UI (lane RUI): the challenge bar in the header row (`bar.rs`), the results drawer in the overview slot (`results.rs`), the randomizer settings page (`settings.rs`), the score overlay (`overlay.rs`), the editor's Recreate state and round intents (`state.rs`); tokens in `theme/sizes/recreate.rs` ([below](#the-recreate-ui-lane-rui)) |
 | `editor/browser.rs`, `editor/browser/` | the preset browser (lane PBU): `Presets` (the editor's preset state), the header's Presets hook (`header.rs`), the browse panel (`panel.rs`), the Save dialog (`save.rs`), the crash notice and report (`crash.rs`); tokens in `theme/sizes/browser.rs` ([below](#the-preset-browser-lane-pbu)) |
 | `editor/learn/`, `editor/layout/learn.json` | the Learn view (lane LUI, feature `learn`): the header's entry (`header.rs`), the editor's Learn state, intents and the lesson overlay (`state.rs`), the lesson pane (`pane.rs`), the lesson browser (`browser.rs`), the built-in layout `learn`; tokens in `theme/sizes/learn.rs` ([below](#the-learn-view-lane-lui)) |
+| `editor/create/` | the Create view (lane PUI, feature `create`): the header's entry (`header.rs`), the editor's Create state, intents and the browser's seam (`state.rs`), the panel's column (`panel.rs`), the drop zone and the intake's findings (`drop_zone.rs`), the folder browser (`browser.rs`), the progress and Cancel (`progress.rs`), the K tiles (`tiles.rs`), the compare area with the A/B against the upload (`audition.rs`); tokens in `theme/sizes/create.rs` ([below](#the-create-view-lane-pui)) |
 
 ## The frame
 
@@ -477,6 +478,70 @@ Glyphs: `STOP` ■ (new, Inter covers it), `PLAY` ▶, `PREVIOUS` ◀, `NEXT` �
 - A route selector in a link outlines its destination and its source's card, not its matrix cell or route-list row; a macro selector outlines nothing (the macro bar takes no overlay).
 - A Name step on the player's own patch (no start of its own) still carries a full starter over and overflows beside the pane (LUI's report); a content lane can give it a `hide` list or `layout = "focus"`.
 
+## The Create view (lane PUI)
+
+**"Create from sound" is a column at the window's right edge: drop a sound (or browse to one), watch K candidates grow, hear each against the upload, take one, undo it.** Lane PUI replaced lane SK3's minimal panel (F2s) with the view in `editor/create/` (feature `create`, which the plugin's `create` feature turns on; off by default). The design of record is [r3.md](r3.md#the-create-view-and-the-session); the job runs in the plugin ([plugin.md](plugin.md#create-lane-sk3-r3)), the state machine is the session's ([session.md](session.md#create-lane-sk3-r3)). Where the column goes, beside layout 1 or beside the lesson pane, is [above](#where-the-pane-goes) ("Beside the Create panel", lane SK3M): `size.create.pane` (320 px) wide, under the layout's top row.
+
+**The seam**, copied from Recreate and Learn: `Editor::set_create(CreateEdit::create())` before every frame (a shell that calls it says create is available: the header shows **Create** and a file dropped anywhere on the window is taken), `Intent::Create(CreateIntent)` while drawing, `Editor::apply_create(&mut dyn CreateEdit)` after the frame; and for the folder browser (the editor does no I/O) `Editor::take_create_browse()` after the frame (a `BrowseAt`: the shell's starting folder or a path) and `Editor::set_create_folder(Folder)` with the shell's listing. The intents: `Toggle`, `Choose(path)`, `Start`, `Cancel`, `Audition(branch, which)`, `AuditionUpload`, `Flip(branch)` (the A/B), `StopAudition`, `Use(branch, which)`, `Clear`, `Select(branch)`, `Browse(at)`, `CloseBrowser`. A queued intent asks egui for one more pass, never a timer. The plugin's glue (`Glue::round_frame`) does all of it, the listing with `create::browse::list_at` (one `read_dir` on the GUI thread).
+
+### The column
+
+Top to bottom, on `surface.card`:
+
+| Part | What |
+| --- | --- |
+| Title | **Create from sound** and **×** (Close; a running job goes on) |
+| The drop zone | `size.create.drop_zone` (56) tall on `surface.recessed`: "Drop a sound file here" and "WAV, FLAC, Ogg Vorbis or MP3, any length"; the chosen file's name and, after the intake, its length and note ("0.80 s • A3"; a clip under 0.1 s in milliseconds); a file dropped while another file's job runs is only chosen, and says "Start it once pluck.wav is done". While files are dragged over the window it lights (`accent.value_wash`, a `stroke.thin` outline in `accent.value`) and reads "Drop to make patches from this sound" |
+| **Browse…**, **Start** | Browse… shows the folder browser (drawn selected while it shows). **A drop or a pick starts a job at once** when none runs; Start runs the chosen file again, each run with the next seed, so it gives new candidates. The last refusal follows in the bad-score ink |
+| The intake's findings | How it decoded ("WAV, 16-bit, 48000 Hz, mono"); "Note A3 (220.0 Hz) • held 0.30 s of 0.60 s" ("No stable pitch" when unpitched); the trim and the damage in one line ("Trimmed 12 ms before the onset • short: kept whole • low-passed at 11.0 kHz • clipped • noise at −60 dBFS", what applies); then each warning of the intake, a bullet in the near-score ink (a chord, a phrase, several notes, a sound past the cap, channels that cancel). **A short sound is shown as it is and never refused** |
+| The progress | The phase ("Reading the file…", "Searching…", "Cancelling…", "Done", "Stopped", "Could not create") with **Cancel** at its right; one bar (`size.create.progress_height`) for renders against the cap or time against the cap, whichever is further, reading "800 of 4,000 renders • 1 of 60 s"; **the rungs**: "Rungs 8 › 4 › 2", the branches that reached each rung of successive halving so far (the current one in the value accent while it runs), then "• 4 searching" or "• 2 finalists". A failure shows "✗ message (code)" and its hint instead |
+| The K tiles | `size.create.tile_columns` (2) to a row, `size.create.tile_height` (40) tall, **in branch order** so a tile never moves while the ranks change: the rank (1 is the closest) in `text.title`, the start's provenance ("heuristic", "template pluck_1osc", "k-NN 3"), the distance in `text.value` ("–" before the first evaluation) and the state (proposed, searching, done, pruned; a pruned tile is dimmed and stays playable and usable), "✓ used" on the one taken last. A click selects it (the value accent's wash and outline); with nothing selected the closest is |
+| The compare area | The selected tile: "Candidate 2 • k-NN 2", "start 0.510 → 0.170 • 100 renders • rung 1"; **▶ Candidate**, **▶ Start** (the proposal it grew from), **▶ Upload**; **A/B**, **■ Stop** and what was asked for last ("▶ the upload"); **Use this** and **Use the start**; "✓ Took candidate 1: the header's Undo gives your patch back" |
+| Notes | The shell's notes on the job (the objective, a missing k-NN bank and where it looked, the cap), in the dimmed ink |
+
+While the folder browser shows it takes the place of everything under Browse…: **◀ Up** (the parent folder), the folder's name (its path as the tooltip) and **×**; the list, `size.create.browser_row` (20) per row, scrolling inside itself after `size.create.browser_rows` (22) rows: sub-folders first ("Samples ›", a click opens it), then the sound files (`browser::is_sound`: wav, wave, flac, ogg, oga, mp3; a click chooses the file, closes the browser and starts the job), each with its size; a folder that cannot be read shows why. Under it a path field ("or type a path") with **Choose**: a sound file's path is chosen, anything else opens as a folder. The browser opens at the listed folder, else the chosen file's, else the shell's start (the plugin: Documents, else home). Nothing is filtered by length or size.
+
+### Audition, A/B and Use this
+
+- **Each ▶ plays once** through the plugin's audition path (lane SK3's one-shot `AuditionSlot`, mixed into the plugin's output): the candidate or its start rendered with the job's performance at the host's rate, or the upload (the job's scored clip, mono, resampled to the host's rate). Nothing plays unless a button is pressed, and the editor never plays audio itself.
+- **A/B** plays the selected candidate if the upload was asked for last (or nothing was), else the upload, so repeated clicks alternate; after **▶ Start** the A/B alternates the start and the upload. **Level-matched** by RMS in the plugin: a candidate louder than the upload plays at the upload's level, and the upload plays at the level of the candidate auditioned last when it is the louder; nothing is amplified. Each side restarts from its beginning (a clip is at most 3 s, `create::SCORE_S`). The button is drawn selected while the upload was asked for last.
+- **Use this** (and **Use the start**) is `CreateEdit::create_use`: one undo step through the session's preset load (one plan, no host writes, `PatchEdited`), the patch named after the file's stem; refused while a lesson is live, with the hint on the panel. The header's **Undo** gives the patch before back.
+
+**Repaint.** The view asks for no frames of its own: the progress bar never animates, and the shell's posts wake the editor (each post asks the open editor for a repaint). In every state an idle editor asks for `Duration::MAX` (`an_idle_create_view_asks_for_no_frames`).
+
+**Accessibility labels** (kittest drives the view by them): "Create" (the header), "Close create", "Drop zone: <file> <length> • <note>", "Browse files", "Start create", "Cancel create"; the phase ("Searching…"), the bar's text ("800 of 4,000 renders • 1 of 60 s"), "Rungs 8 › 4"; "Select candidate n"; "Candidate n • <provenance>", "Play candidate n", "Play the start of candidate n", "Play the upload", "A/B candidate n against the upload", "Stop audition", "Played last: <what>", "Use candidate n", "Use the start of candidate n", "Took candidate n"; the browser's "Parent folder", "Close browser", "Open folder <name>", "Choose <name>", "Sound file path", "Choose file"; each finding and warning by its text.
+
+| Token (`theme/sizes/create.rs`) | Value | For |
+| --- | --- | --- |
+| `size.create.pane` | 320 | the column's width (lane SK3) |
+| `size.create.drop_zone` | 56 | the drop zone's height |
+| `size.create.choose` | 88 | the room the browser's path field leaves for **Choose** |
+| `size.create.tile_height` | 40 | one candidate tile |
+| `size.create.tile_columns` | 2 | tiles per row (K = 8: four rows) |
+| `size.create.rank_width` | 18 | a tile's rank column |
+| `size.create.browser_row` | 20 | one row of the folder list |
+| `size.create.browser_rows` | 22 | the rows the list shows before it scrolls |
+| `size.create.progress_height` | 16 | the progress bar |
+
+Glyphs (existing): `CLOSE` ×, `PLAY` ▶, `STOP` ■, `PREVIOUS` ◀, `PATH` › (a folder, the rungs), `SEND` → (start to candidate), `BULLET` •, `GOOD` ✓, `BAD` ✗, `MENU` … (a cut name).
+
+**The overflow report at 1200 × 800 with Create open** (`tests/create_view.rs`, `Editor::report()`; the four states: the empty panel, the browser over 31 entries, a job running with K = 8 after round 2 with the intake's chord warning and a long bank note, a finished job with the A/B and a candidate taken):
+
+| Case | What does not fit |
+| --- | --- |
+| Init, every state | nothing |
+| The P1 default, the empty panel, the browser, a job running | the layout beside the panel, as without the view (lane SK3M's figures): the band by 276 px sideways, the overview by 111 (tiles) and 63 (routes); **the panel itself never scrolls** (its list scrolls inside itself) |
+| The finished job (its candidate taken, Init with another level) | nothing |
+
+**Tests.** `crates/enth-ui/tests/create_view.rs`, over a real `Session`, the test playing the shell (the intake of a real clip through `enth_analysis`'s intake, re-exported by the session: a synthetic chord, so its warning is real; rounds of K = 8 through rungs 8, 4, 2; the end) and listing folders from a table, by label: **the flow from a drop** (the drop starts the job, the intake's findings and warning, eight tiles, the rungs, a tile selected, its candidate and start played, the A/B both ways, Stop, Done, **Use this** as one undo step named after the file, the header's **Undo** back to the patch before, **Use the start** and undo); **the flow from the folder browser** (the start folder, a folder opened, ◀ Up, a typed folder, a file chosen, a 20 ms clip shown in milliseconds and kept whole); **cancel** (a file dropped meanwhile waits for Start; one `Cancel` in the click's frame, never twice, "Cancelling…", the cancelled job's candidates still usable) and a failure's message and hint; **the overflow report**; **no idle frames**; snapshots (lavapipe, 1200 × 800): `create_empty.png`, `create_browser.png`, `create_running.png`, `create_done.png`. `tests/create_panel.rs` (lane SK3's, kept: the typed path now lives in the browser) and `tests/learn_create.rs` (lane SK3M's; its snapshot `learn_create_open.png` redrawn with the view's empty panel) still pass. Unit tests: `state.rs` (a choice starts a job, a second Start takes the next seed, the browser asks once), `browser.rs` (the listing's order and filter, sizes), `drop_zone.rs` (lengths, note names), `progress.rs` (counts). The plugin: `tests_create.rs`'s `the_upload_plays_level_matched_against_the_candidate_played_last` (a real job; the candidate, then the upload, within 5 % in RMS, louder or quieter) and the resampler and gain; `create/browse.rs` (a real folder: folders first, sound files only, hidden ones left out, a one-byte file listed); the session: `tests/create.rs`'s `the_upload_plays_once_the_intake_read_the_file`.
+
+**Left for later:**
+
+- The A/B restarts each side from its beginning; a flip at the same position (as Recreate's) needs a two-clip player on the audio thread.
+- The settings (K, the time cap) are the session's defaults (8, 60 s); the view has no control for them yet.
+- Whether REAPER drags media items into the plugin window as files is still the open check of [r3.md](r3.md#file-input); the browser is the fallback either way.
+- The dev window does not run create jobs (it has no `enth-create` thread); the view is exercised in kittest and the plugin.
+
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 
 | Token | Value | For |
@@ -559,6 +624,7 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 | (PBU) Snapshots: the header with an edited preset, the browse panel and the Save dialog at 1200 × 800 | `crates/enth-ui/tests/browser_snapshots.rs` (`browser_header.png`, `browser_panel.png`, `browser_save.png`) |
 | (PBU) The plugin's browser over a folder store (a load, its undo step, no host writes, a save with a confirm, exactly `to_json()`), the crash folder offered once | `crates/enth-plugin/src/editor.rs` |
 | (SK3M) The lesson pane and the Create panel together over a real `Session`, by label, at 1200 × 800: neither, Learn only, both and Create only, where each pane goes (the Create column under the header row, the lesson pane left of it, nothing else in the column) and the overflow report for Init and the P1 default; a file dropped beside the lesson pane goes to Create; the snapshot of both open | `crates/enth-ui/tests/learn_create.rs` (`learn_create_open.png`) |
+| (PUI) The Create view over a real `Session`, by label, the test playing the shell: the flow from a drop (the intake's findings, K = 8 tiles through the rungs, select, ▶ candidate and start, the A/B against the upload, Use this as one undo step, the header's Undo), the flow from the folder browser (a short clip kept whole), cancel and a failure, the overflow report at 1200 × 800, no idle frames; snapshots | `crates/enth-ui/tests/create_view.rs` (`create_empty.png`, `create_browser.png`, `create_running.png`, `create_done.png`) |
 
 ## For the next lanes
 

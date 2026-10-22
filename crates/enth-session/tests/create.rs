@@ -339,3 +339,75 @@ fn a_create_job_is_not_saved() {
     let _ = s.load_patch(&text);
     assert!(s.create().is_some());
 }
+
+/// A decaying 220 Hz tone, 0.4 s at 48 kHz, through the intake (lane PUI's A/B needs a job that read its file).
+fn intake() -> enth_session::create::CreateIntake {
+    let sr = 48_000.0_f32;
+    let x: Vec<f32> = (0..19_200)
+        .map(|i| {
+            let t = i as f32 / sr;
+            let phase = (220.0 * t).fract();
+            (if phase < 0.5 { 0.5 } else { -0.5 }) * (1.0 - t / 0.4)
+        })
+        .collect();
+    let it = enth_session::create::Intake::new(&x, 1, 48_000).unwrap();
+    enth_session::create::CreateIntake::new("WAV, 16-bit, 48000 Hz, mono", it.report, Vec::new())
+}
+
+/// Lane PUI (additive): the A/B against the upload. The upload plays only once the intake read the file; it goes out
+/// as its own request, and the view says which side was asked for last (a candidate's audition flips it back; Stop
+/// clears both).
+#[test]
+fn the_upload_plays_once_the_intake_read_the_file() {
+    let mut s = Session::new(init_patch());
+    assert_eq!(
+        s.create_audition_upload().map_err(|e| e.code()),
+        Err("no_create_job")
+    );
+    let id = started(&mut s);
+    assert_eq!(
+        s.create_audition_upload().map_err(|e| e.code()),
+        Err("no_create_job"),
+        "nothing to play before the intake"
+    );
+    s.create_post(id, CreatePost::Intake(Box::new(intake())))
+        .unwrap();
+    let p = with(&init_patch(), "osc1.level", 50.0);
+    round(&mut s, id, vec![candidate(0, p, init_patch(), 0.3)]);
+    s.create_audition(0, Which::Refined).unwrap();
+    s.create_audition_upload().unwrap();
+    let v = s.create().unwrap();
+    assert!(v.upload);
+    assert_eq!(
+        v.auditioning,
+        Some((0, Which::Refined)),
+        "the A/B's other side"
+    );
+    assert_eq!(v.candidates[0].rung, 0);
+    s.create_audition(0, Which::Refined).unwrap();
+    assert!(
+        !s.create().unwrap().upload,
+        "a candidate's audition flips it back"
+    );
+    s.create_audition_upload().unwrap();
+    s.create_stop_audition();
+    let v = s.create().unwrap();
+    assert!(!v.upload && v.auditioning.is_none());
+    let requests: Vec<CreateRequest> = s.drain_create_requests().collect();
+    let kinds: Vec<&str> = requests
+        .iter()
+        .map(|r| match r {
+            CreateRequest::Audition { .. } => "candidate",
+            CreateRequest::AuditionUpload { id: j } => {
+                assert_eq!(*j, id);
+                "upload"
+            }
+            CreateRequest::StopAudition => "stop",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        ["candidate", "upload", "candidate", "upload", "stop"]
+    );
+}

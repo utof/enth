@@ -1,41 +1,46 @@
-//! **Owner: lane PUI** (the Create view, feature `create`). **Lane SK3** wrote this minimal panel for freeze point
-//! F2s, which PUI replaces with the real view (the drop zone, the folder browser, the K tiles, A/B against the upload).
+//! **Owner: lane PUI** (the Create view, feature `create`). Lane SK3 wrote a minimal panel here for freeze point F2s;
+//! lane PUI replaced it with the view.
 //!
 //! The panel takes a column at the window's right edge while it is open (`size.create.pane`), under the layout's top
-//! row; the layout, Learn's included, places the rest beside it (`frame.rs`, `beside`; docs/editor.md, "Beside the
-//! Create panel"). It draws, in plain text with the theme's tokens, top to bottom:
+//! row; the layout, Learn's included, places the rest beside it (`frame.rs`, `beside`; docs/editor.md, "The Create
+//! view"). Top to bottom, on `surface.card`:
 //!
-//! - the title and **Close**;
-//! - the drop zone (`size.create.drop_zone` high): the chosen file's name, or what to drop; it lights while files are
-//!   dragged over the window (any file drop on the editor chooses it, whatever the view: the frame reads egui's
-//!   `dropped_files`), with a path field and **Choose** as the fallback where drops do not reach the editor;
-//! - **Start** and **Cancel**, then the phase, one progress bar (renders against the cap, seconds against the time
-//!   cap) and the job's notes;
-//! - what the intake found: how the file decoded, the note, the length, the warnings;
-//! - the K candidates from best to worst: provenance, state and distance, **▶** (play it once), **▶ start** (the
-//!   proposal it grew from) and **Use this** (one undo step); **■ Stop** while one plays.
+//! - the title, **Create from sound**, and **×** (Close);
+//! - **the drop zone** ([`super::drop_zone`]): what to drop, or the chosen file and its length and note;
+//! - **Browse…** (the folder browser) and **Start** (a run again; a drop or a pick starts by itself), and the last
+//!   refusal in the bad-score ink;
+//! - either **the folder browser** ([`super::browser`]), or the job: **what the intake found**
+//!   ([`super::drop_zone::findings`]), **the progress** with Cancel and the rungs ([`super::progress`]), **the K
+//!   tiles** ([`super::tiles`]), **the compare area** for the selected tile ([`super::audition`]) and, last, the
+//!   shell's notes on the job (the objective, the k-NN bank, the cap), in the dimmed ink.
 //!
-//! Every button has an accessible name, so kittest drives it by label. It asks for no frames of its own: the shell's
-//! posts wake the editor.
+//! The column scrolls if its content does not fit (the frame report lists it as `create`); at 1200 × 800 a job with
+//! K = 8 and its notes fits (`tests/create_view.rs`). Every control has an accessible name, so kittest drives it by
+//! label. It asks for no frames of its own: the shell's posts wake the editor, and nothing in it animates.
 
 use egui::{
-    Align, Button, Label, Layout, ProgressBar, Rect, RichText, Role, ScrollArea, Sense, TextEdit,
-    Ui, UiBuilder, WidgetInfo, vec2,
+    Align, Button, FontId, Galley, Label, Layout, Rect, Response, RichText, Role, ScrollArea, Ui,
+    UiBuilder, WidgetInfo, vec2,
 };
-use enth_session::create::{CandidateState, CreatePhase, CreateStop, Which};
 
 use super::state::{Create, CreateIntent};
 use crate::Theme;
 use crate::editor::cards::{Intent, Intents};
+use crate::theme::glyph;
 
-/// Names a widget for screen readers and tests, whatever its text shows.
-fn named(response: &egui::Response, label: &str) {
+/// Names a widget for screen readers and tests as a button, whatever its text shows.
+pub(crate) fn named(response: &Response, label: &str) {
+    labeled(response, Role::Button, label);
+}
+
+/// Names a widget for screen readers and tests with `role`.
+pub(crate) fn labeled(response: &Response, role: Role, label: &str) {
     let enabled = response.enabled();
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
+    response.widget_info(|| WidgetInfo::labeled(role, enabled, label));
 }
 
 /// A button with `text`, named `label`, enabled when `enabled`; pushes `intent` when clicked.
-fn button(
+pub(crate) fn button(
     ui: &mut Ui,
     t: &Theme,
     text: &str,
@@ -43,7 +48,7 @@ fn button(
     enabled: bool,
     intent: CreateIntent,
     out: &mut Intents,
-) {
+) -> Response {
     let response = ui.add_enabled(
         enabled,
         Button::new(RichText::new(text).font(t.text.body.clone())),
@@ -52,10 +57,32 @@ fn button(
     if response.clicked() {
         out.push(Intent::Create(intent));
     }
+    response
 }
 
-fn line(ui: &mut Ui, t: &Theme, text: &str, color: egui::Color32) {
-    ui.add(Label::new(RichText::new(text).font(t.text.label.clone()).color(color)).wrap());
+/// `text` cut to `width` in `font`, ending with "…" when it was cut.
+pub(crate) fn elided(ui: &Ui, text: &str, font: &FontId, width: f32) -> String {
+    let fits = |s: &str| -> bool {
+        let g: std::sync::Arc<Galley> =
+            ui.painter()
+                .layout_no_wrap(s.to_owned(), font.clone(), ui.visuals().text_color());
+        g.size().x <= width
+    };
+    if fits(text) {
+        return text.to_owned();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let (mut lo, mut hi) = (0, chars.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let candidate: String = chars[..mid].iter().collect::<String>() + glyph::MENU;
+        if fits(&candidate) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    chars[..lo].iter().collect::<String>() + glyph::MENU
 }
 
 /// Draws the panel into `rect` from `create`; `hovering`: files are being dragged over the window. Returns how far its
@@ -77,7 +104,7 @@ pub(crate) fn show(
     ui.set_clip_rect(rect.intersect(ui.clip_rect()));
     ui.painter()
         .rect_filled(rect, t.radius.medium, t.color.surface.card);
-    let inner = rect.shrink2(vec2(t.space.gap, t.space.tight));
+    let inner = rect.shrink2(vec2(t.space.gap, t.space.gap));
     let mut col = ui.new_child(
         UiBuilder::new()
             .max_rect(inner)
@@ -94,28 +121,6 @@ pub(crate) fn show(
     vec2(over.x.max(0.0), over.y.max(0.0))
 }
 
-fn phase_text(phase: CreatePhase) -> &'static str {
-    match phase {
-        CreatePhase::Starting => "Reading the file…",
-        CreatePhase::Searching => "Searching…",
-        CreatePhase::Cancelling => "Cancelling…",
-        CreatePhase::Done(CreateStop::Cancelled) => "Stopped",
-        CreatePhase::Done(_) => "Done",
-        CreatePhase::Failed => "Could not create",
-        _ => "",
-    }
-}
-
-fn state_text(state: CandidateState) -> &'static str {
-    match state {
-        CandidateState::Proposed => "proposed",
-        CandidateState::Searching => "searching",
-        CandidateState::Done => "done",
-        CandidateState::Pruned => "pruned",
-        _ => "",
-    }
-}
-
 fn body(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut Intents) {
     ui.horizontal(|ui| {
         ui.label(
@@ -123,20 +128,35 @@ fn body(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut I
                 .font(t.text.title.clone())
                 .color(t.color.text.primary),
         );
-        button(
-            ui,
-            t,
-            "Close",
-            "Close create",
-            true,
-            CreateIntent::Toggle,
-            out,
-        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            button(
+                ui,
+                t,
+                glyph::CLOSE,
+                "Close create",
+                true,
+                CreateIntent::Toggle,
+                out,
+            )
+            .on_hover_text("Close the panel (a running job goes on)");
+        });
     });
-    drop_zone(create, ui, t, hovering, out);
-    let view = create.view().cloned();
-    let running = view.as_ref().is_some_and(|v| v.phase.running());
+    super::drop_zone::zone(create, ui, t, hovering);
+    let running = create.running();
     ui.horizontal(|ui| {
+        let browsing = create.browsing();
+        let from = create.browse_from();
+        let response = ui.add(
+            Button::new(RichText::new("Browse…").font(t.text.body.clone())).selected(browsing),
+        );
+        named(&response, "Browse files");
+        if response.clicked() {
+            out.push(Intent::Create(if browsing {
+                CreateIntent::CloseBrowser
+            } else {
+                CreateIntent::Browse(from)
+            }));
+        }
         button(
             ui,
             t,
@@ -145,188 +165,55 @@ fn body(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut I
             create.file().is_some() && !running,
             CreateIntent::Start,
             out,
-        );
-        button(
-            ui,
-            t,
-            "Cancel",
-            "Cancel create",
-            running
-                && view
-                    .as_ref()
-                    .is_some_and(|v| v.phase != CreatePhase::Cancelling),
-            CreateIntent::Cancel,
-            out,
-        );
+        )
+        .on_hover_text("Make patches from the chosen sound (again: new candidates)")
+        .on_disabled_hover_text(if running {
+            "A job runs: cancel it first, or wait for it"
+        } else {
+            "Drop or choose a sound file first"
+        });
     });
     if let Some(said) = create.said() {
-        line(ui, t, said, t.color.score.bad);
-    }
-    let Some(view) = view else {
-        return;
-    };
-    let status = ui.label(
-        RichText::new(format!("{}  {}", view.file, phase_text(view.phase)))
-            .font(t.text.label.clone())
-            .color(t.color.text.label),
-    );
-    named(&status, phase_text(view.phase));
-    if let Some(p) = &view.progress {
-        ui.add(
-            ProgressBar::new(p.fraction()).text(
-                RichText::new(format!(
-                    "{} / {} renders · {:.0} / {:.0} s",
-                    p.renders, p.budget, p.seconds, p.cap_s
-                ))
-                .font(t.text.label.clone()),
-            ),
+        let text = format!("{} {said}", glyph::BAD);
+        let shown = ui.add(
+            Label::new(
+                RichText::new(&text)
+                    .font(t.text.label.clone())
+                    .color(t.color.score.bad),
+            )
+            .wrap(),
         );
+        labeled(&shown, Role::Label, &text);
     }
-    if let Some(e) = &view.error {
-        line(
-            ui,
-            t,
-            &format!("{} ({})", e.message, e.code),
-            t.color.score.bad,
-        );
-        line(ui, t, &e.hint, t.color.text.label);
-    }
-    if let Some(intake) = &view.intake {
-        line(ui, t, &intake.decoded, t.color.text.label);
-        let perf = &intake.report.perf;
-        let pitch = perf
-            .f0_hz
-            .map_or_else(|| "unpitched".to_owned(), |f| format!("{f:.1} Hz"));
-        line(
-            ui,
-            t,
-            &format!(
-                "note {} ({pitch}), held {:.2} s, clip {:.2} s",
-                perf.key, perf.hold_s, perf.duration_s
-            ),
-            t.color.text.label,
-        );
-        for w in intake.warnings() {
-            line(ui, t, &format!("⚠ {w}"), t.color.score.near);
-        }
-    }
-    for note in &view.notes {
-        line(ui, t, note, t.color.text.dimmed);
-    }
-    if view.candidates.is_empty() {
+    if create.browsing() {
+        super::browser::show(create, ui, t, out);
         return;
     }
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new("Candidates")
-                .font(t.text.strong.clone())
-                .color(t.color.text.primary),
-        );
-        button(
-            ui,
-            t,
-            "■ Stop",
-            "Stop audition",
-            view.auditioning.is_some(),
-            CreateIntent::StopAudition,
-            out,
-        );
-    });
-    let mut ranked: Vec<_> = view.candidates.iter().collect();
-    ranked.sort_by_key(|c| c.rank);
-    for c in ranked {
-        let distance = c
-            .distance
-            .map_or_else(|| "–".to_owned(), |d| format!("{d:.3}"));
-        let used = view.used.is_some_and(|(b, _)| b == c.branch);
-        let text = format!(
-            "{}. {} · {} · {distance}{}",
-            c.rank + 1,
-            c.label(),
-            state_text(c.state),
-            if used { " · in use" } else { "" }
-        );
-        line(ui, t, &text, t.color.text.primary);
-        ui.horizontal(|ui| {
-            let n = c.rank + 1;
-            button(
-                ui,
-                t,
-                "▶",
-                &format!("Play candidate {n}"),
-                true,
-                CreateIntent::Audition(c.branch, Which::Refined),
-                out,
-            );
-            button(
-                ui,
-                t,
-                "▶ start",
-                &format!("Play the start of candidate {n}"),
-                true,
-                CreateIntent::Audition(c.branch, Which::Proposal),
-                out,
-            );
-            button(
-                ui,
-                t,
-                "Use this",
-                &format!("Use candidate {n}"),
-                true,
-                CreateIntent::Use(c.branch, Which::Refined),
-                out,
-            );
-        });
-    }
-}
-
-/// The drop zone, the path field and **Choose**.
-fn drop_zone(create: &mut Create, ui: &mut Ui, t: &Theme, hovering: bool, out: &mut Intents) {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(width, t.size.create.drop_zone), Sense::hover());
-    let (fill, text) = if hovering {
-        (
-            t.color.surface.raised,
-            "Drop to choose this file".to_owned(),
-        )
-    } else {
-        (
-            t.color.surface.recessed,
-            create.file().map_or_else(
-                || "Drop a sound file here (WAV, FLAC, Ogg Vorbis, MP3)".to_owned(),
-                |f| {
-                    f.file_name().map_or_else(
-                        || f.to_string_lossy().into_owned(),
-                        |n| n.to_string_lossy().into_owned(),
-                    )
-                },
-            ),
-        )
+    let Some(view) = create.view().cloned() else {
+        return;
     };
-    ui.painter().rect_filled(rect, t.radius.small, fill);
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        text,
-        t.text.body.clone(),
-        t.color.text.primary,
-    );
-    ui.horizontal(|ui| {
-        let field = ui.add(
-            TextEdit::singleline(&mut create.path_text)
-                .hint_text("or type a file's path")
-                .font(t.text.label.clone())
-                .desired_width(width - t.size.create.choose),
-        );
-        field.widget_info(|| WidgetInfo::labeled(Role::TextInput, true, "Sound file path"));
-        let typed = create.path_text.trim().to_owned();
-        let response = ui.add_enabled(
-            !typed.is_empty(),
-            Button::new(RichText::new("Choose").font(t.text.body.clone())),
-        );
-        named(&response, "Choose file");
-        if response.clicked() {
-            out.push(Intent::Create(CreateIntent::Choose(typed.into())));
+    super::drop_zone::findings(&view, ui, t);
+    ui.add_space(t.space.tight);
+    super::progress::show(create, &view, ui, t, out);
+    if !view.candidates.is_empty() {
+        ui.add_space(t.space.tight);
+        super::tiles::show(&view, create.selected(), ui, t, out);
+        if let Some(branch) = create.selected() {
+            ui.add_space(t.space.tight);
+            super::audition::show(&view, branch, create.has_intake(), ui, t, out);
         }
-    });
+    }
+    if !view.notes.is_empty() {
+        ui.add_space(t.space.tight);
+        for note in &view.notes {
+            ui.add(
+                Label::new(
+                    RichText::new(note)
+                        .font(t.text.label.clone())
+                        .color(t.color.text.dimmed),
+                )
+                .wrap(),
+            );
+        }
+    }
 }

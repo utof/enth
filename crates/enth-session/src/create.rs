@@ -24,6 +24,11 @@
 //!   name is the file's stem. Refused while a lesson is live, as a preset load is.
 //! - **Audition** ([`CreateEdit::create_audition`]) asks the shell to render a candidate with the job's performance
 //!   at the host's rate and play it once ([`CreateRequest::Audition`]); [`CreateRequest::StopAudition`] stops it.
+//!   **The A/B against the upload** (lane PUI, additive): [`CreateEdit::create_audition_upload`] asks the shell to
+//!   play the job's scored clip, level-matched to the candidate auditioned last ([`CreateRequest::AuditionUpload`]);
+//!   [`CreateView::upload`] says it was asked for last, against [`CreateView::auditioning`]. Each candidate's view
+//!   carries its rung of successive halving ([`CandidateView::rung`]) for the view's progress per rung, and the
+//!   intake's types are re-exported here, so the editor and its tests name them without `enth-analysis`.
 //! - **Nothing is saved.** A create job does not survive a project reload (the coordinator's decision, kept by the
 //!   F1s judge): the patch you take is in the project, the job is not. So this module adds no field to the `enth`
 //!   state blob, `enth.plugin-state/1` is untouched, and host loads leave the create state alone.
@@ -33,7 +38,7 @@
 
 use std::path::PathBuf;
 
-use enth_analysis::intake::{IntakeReport, Warning};
+pub use enth_analysis::intake::{Intake, IntakeCfg, IntakeReport, Warning};
 use enth_patch::Patch;
 pub use enth_solver::create::{Candidate, CandidateState, CreateStop, Provenance};
 
@@ -170,6 +175,12 @@ pub enum CreateRequest {
     },
     /// Stop an audition.
     StopAudition,
+    /// Play the upload once (lane PUI, additive): the job's scored clip at the host's rate, level-matched to the
+    /// candidate auditioned last, so the A/B compares sounds, not levels.
+    AuditionUpload {
+        /// The job whose clip it plays.
+        id: CreateJobId,
+    },
 }
 
 /// What the intake found, for the drop zone: the file, how it decoded, the intake's report whole, the shell's notes.
@@ -351,6 +362,9 @@ pub struct CandidateView {
     pub proposal_distance: Option<f64>,
     /// Renders its search used.
     pub renders: usize,
+    /// The last rung of successive halving it took part in (0, 1, 2, …; lane PUI, additive): the view's progress
+    /// per rung.
+    pub rung: usize,
 }
 
 impl CandidateView {
@@ -406,6 +420,8 @@ pub struct CreateView {
     pub used: Option<(usize, Which)>,
     /// The candidate last auditioned.
     pub auditioning: Option<(usize, Which)>,
+    /// The upload was asked to play last (lane PUI, additive): the A/B's other side, against `auditioning`.
+    pub upload: bool,
     /// Why it failed.
     pub error: Option<CreateFailure>,
     /// What the shell said at the end (the cap, a cancel, a missing bank).
@@ -528,6 +544,14 @@ pub trait CreateEdit {
     fn create_audition(&mut self, branch: usize, which: Which) -> Result<(), CreateError>;
     /// Stop an audition.
     fn create_stop_audition(&mut self);
+    /// Play the upload once, level-matched to the candidate auditioned last (the A/B against the upload; lane PUI,
+    /// additive). The default refuses it, so an implementor written before it still builds.
+    ///
+    /// # Errors
+    /// [`CreateError::NoJob`] when there is no job, or before the intake read the file.
+    fn create_audition_upload(&mut self) -> Result<(), CreateError> {
+        Err(CreateError::NoJob)
+    }
     /// Close the job: a running one is cancelled, and its later posts are stale.
     fn create_clear(&mut self);
 }
@@ -543,6 +567,7 @@ struct JobLive {
     candidates: Vec<Candidate>,
     used: Option<(usize, Which)>,
     auditioning: Option<(usize, Which)>,
+    upload: bool,
     error: Option<CreateFailure>,
     notes: Vec<String>,
 }
@@ -682,10 +707,12 @@ impl CreateEdit for Session {
                     distance: finite(c.distance),
                     proposal_distance: c.proposal_distance.and_then(finite),
                     renders: c.renders,
+                    rung: c.rung,
                 })
                 .collect(),
             used: job.used,
             auditioning: job.auditioning,
+            upload: job.upload,
             error: job.error.clone(),
             notes: job.notes.clone(),
         })
@@ -709,7 +736,7 @@ impl CreateEdit for Session {
             .create
             .job
             .as_ref()
-            .is_some_and(|j| j.auditioning.is_some())
+            .is_some_and(|j| j.auditioning.is_some() || j.upload)
         {
             self.create.requests.push(CreateRequest::StopAudition);
         }
@@ -728,6 +755,7 @@ impl CreateEdit for Session {
             candidates: Vec::new(),
             used: None,
             auditioning: None,
+            upload: false,
             error: None,
             notes: Vec::new(),
         });
@@ -773,6 +801,7 @@ impl CreateEdit for Session {
         });
         if let Some(job) = self.create.job.as_mut() {
             job.auditioning = Some((branch, which));
+            job.upload = false;
         }
         Ok(())
     }
@@ -780,8 +809,24 @@ impl CreateEdit for Session {
     fn create_stop_audition(&mut self) {
         if let Some(job) = self.create.job.as_mut() {
             job.auditioning = None;
+            job.upload = false;
         }
         self.create.requests.push(CreateRequest::StopAudition);
+    }
+
+    fn create_audition_upload(&mut self) -> Result<(), CreateError> {
+        let job = self
+            .create
+            .job
+            .as_mut()
+            .filter(|j| j.intake.is_some())
+            .ok_or(CreateError::NoJob)?;
+        job.upload = true;
+        let id = job.id;
+        self.create
+            .requests
+            .push(CreateRequest::AuditionUpload { id });
+        Ok(())
     }
 
     fn create_clear(&mut self) {
@@ -789,7 +834,7 @@ impl CreateEdit for Session {
             if job.phase.running() && job.phase != CreatePhase::Cancelling {
                 self.create.requests.push(CreateRequest::Cancel(job.id));
             }
-            if job.auditioning.is_some() {
+            if job.auditioning.is_some() || job.upload {
                 self.create.requests.push(CreateRequest::StopAudition);
             }
         }

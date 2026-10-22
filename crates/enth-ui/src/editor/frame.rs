@@ -338,6 +338,19 @@ impl Editor {
         &self.create
     }
 
+    /// After a frame (lane PUI): the folder the Create view's browser asks the shell to list, if it asked. The shell
+    /// lists it (the editor does no I/O) and hands it back with [`Editor::set_create_folder`].
+    #[cfg(feature = "create")]
+    pub fn take_create_browse(&mut self) -> Option<super::create::BrowseAt> {
+        self.create.take_browse()
+    }
+
+    /// The shell's listing of the folder the Create view's browser asked for (lane PUI).
+    #[cfg(feature = "create")]
+    pub fn set_create_folder(&mut self, folder: super::create::Folder) {
+        self.create.set_folder(folder);
+    }
+
     /// The Create panel (lane SK3, F2s), before the layout: takes a file dropped on the window when create is
     /// available, and, while the panel is open, says where its column starts: `size.create.pane` wide, `space.gap` in
     /// from the window's right edge as the layouts' margin insets their regions. Returns that left edge and whether

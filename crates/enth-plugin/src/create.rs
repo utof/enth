@@ -32,12 +32,18 @@
 //!   the heuristic and the templates, and its notes say so.
 //! - **Audition:** a candidate rendered with the job's performance at the host's rate, handed to the audio thread
 //!   through a lock-free slot ([`AuditionSlot`]) and played once by [`AuditionPlayer`] in `process()` (one atomic
-//!   load per block while nothing plays; it never allocates or frees there).
+//!   load per block while nothing plays; it never allocates or frees there). **The A/B against the upload** (lane
+//!   PUI, additive): `CreateRequest::AuditionUpload` plays the job's scored clip through the same slot, resampled to
+//!   the host's rate ([`upload_clip`], linear: for listening only), and both sides are level-matched by RMS: a
+//!   candidate louder than the upload plays at the upload's level, and the upload plays at the level of the candidate
+//!   auditioned last when it is the louder ([`match_gain`]; never amplified).
+//! - **The folder browser's listings** ([`browse`], lane PUI): the editor asks for a folder, the glue lists it.
 //!
 //! The gate under load is `enth-test-host process-stats --gate g1` with a create job running (the `create-harness`
 //! feature, [`harness`]), as lane SKR gated the A/B. Off by default: the plugin's `create` feature gates this module;
 //! the session's `create` always compiles.
 
+pub mod browse;
 pub mod decode;
 
 use std::collections::VecDeque;
@@ -327,6 +333,84 @@ impl AuditionClip {
     pub fn frames(&self) -> usize {
         self.left.len()
     }
+
+    /// The clip's RMS over both channels (lane PUI: the A/B's level match).
+    pub fn rms(&self) -> f32 {
+        let n = self.left.len() + self.right.len();
+        if n == 0 {
+            return 0.0;
+        }
+        let sum: f64 = self
+            .left
+            .iter()
+            .chain(self.right.iter())
+            .map(|s| f64::from(*s) * f64::from(*s))
+            .sum();
+        (sum / n as f64).sqrt() as f32
+    }
+
+    /// Multiply every sample by `gain`.
+    fn scale(&mut self, gain: f32) {
+        if gain != 1.0 {
+            for s in self.left.iter_mut().chain(self.right.iter_mut()) {
+                *s *= gain;
+            }
+        }
+    }
+
+    /// The channels (tests).
+    pub fn channels(&self) -> (&[f32], &[f32]) {
+        (&self.left, &self.right)
+    }
+}
+
+/// The RMS of a mono clip.
+fn rms(x: &[f32]) -> f32 {
+    if x.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = x.iter().map(|s| f64::from(*s) * f64::from(*s)).sum();
+    (sum / x.len() as f64).sqrt() as f32
+}
+
+/// The gain that brings a clip at RMS `level` down to `to` (never up: at most 1; 1 when either is silent).
+pub fn match_gain(level: f32, to: f32) -> f32 {
+    if level > 0.0 && to > 0.0 && level > to {
+        to / level
+    } else {
+        1.0
+    }
+}
+
+/// `x` at `from` Hz resampled to `to` Hz by linear interpolation: for listening only (the A/B), never scored.
+pub fn resample_linear(x: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if from == to || x.is_empty() || from == 0 || to == 0 {
+        return x.to_vec();
+    }
+    let n = ((x.len() as u64 * u64::from(to)) / u64::from(from)).max(1) as usize;
+    let step = f64::from(from) / f64::from(to);
+    (0..n)
+        .map(|i| {
+            let pos = i as f64 * step;
+            let j = pos as usize;
+            let frac = (pos - j as f64) as f32;
+            let a = x.get(j).copied().unwrap_or(0.0);
+            let b = x.get(j + 1).copied().unwrap_or(a);
+            a + (b - a) * frac
+        })
+        .collect()
+}
+
+/// The upload for the A/B (lane PUI): the job's scored clip (mono, at the file's rate) at the host's `rate`, on both
+/// channels, brought down to the RMS of the candidate auditioned last (`against`) when it is louder; as it is
+/// otherwise (a candidate louder than the upload was brought down to it already).
+pub fn upload_clip(target: &Target, rate: u32, against: Option<f32>) -> AuditionClip {
+    let mono = resample_linear(&target.audio, target.sample_rate, rate);
+    let mut clip = AuditionClip::new(mono.clone(), mono);
+    if let Some(level) = against {
+        clip.scale(match_gain(clip.rms(), level));
+    }
+    clip
 }
 
 /// The lock-free hand-off of [`AuditionClip`]s: an incoming slot (to the audio thread) and a retired one (back), each
@@ -486,7 +570,14 @@ impl AuditionPlayer {
 #[derive(Debug)]
 enum Msg {
     Run(CreateRun),
-    Audition { id: CreateJobId, patch: Box<Patch> },
+    Audition {
+        id: CreateJobId,
+        patch: Box<Patch>,
+    },
+    /// Lane PUI: the upload, level-matched to the candidate auditioned last.
+    AuditionUpload {
+        id: CreateJobId,
+    },
     StopAudition,
 }
 
@@ -512,6 +603,8 @@ struct Inner {
     audition: Arc<AuditionSlot>,
     /// The last job's target (its performance and rate), for auditions after it ends.
     target: Mutex<Option<(CreateJobId, Target)>>,
+    /// The RMS of the candidate auditioned last, as it was played (lane PUI): the upload plays at its level.
+    last_rms: Mutex<Option<f32>>,
     /// Jobs started and finished (tests and the harness).
     started: AtomicUsize,
     finished: AtomicUsize,
@@ -558,9 +651,12 @@ impl Inner {
     fn serve_auditions(&self) {
         let msgs: Vec<Msg> = {
             let mut queue = self.queue.lock();
-            let (take, keep): (VecDeque<Msg>, VecDeque<Msg>) = queue
-                .drain(..)
-                .partition(|m| matches!(m, Msg::Audition { .. } | Msg::StopAudition));
+            let (take, keep): (VecDeque<Msg>, VecDeque<Msg>) = queue.drain(..).partition(|m| {
+                matches!(
+                    m,
+                    Msg::Audition { .. } | Msg::AuditionUpload { .. } | Msg::StopAudition
+                )
+            });
             *queue = keep;
             take.into_iter().collect()
         };
@@ -590,9 +686,28 @@ impl Inner {
                     )
                 }));
                 if let Ok(Ok(out)) = rendered {
-                    self.audition
-                        .publish(Box::new(AuditionClip::new(out.left, out.right)));
+                    // Level-matched against the upload (lane PUI): a candidate louder than the upload plays at the
+                    // upload's level; a quieter one as it is, and the upload then plays at its level.
+                    let mut clip = AuditionClip::new(out.left, out.right);
+                    let gain = match_gain(clip.rms(), rms(&target.audio));
+                    clip.scale(gain);
+                    *self.last_rms.lock() = Some(clip.rms());
+                    self.audition.publish(Box::new(clip));
                 }
+            }
+            Msg::AuditionUpload { id } => {
+                let rate = self.host_rate.load(Ordering::Acquire);
+                let target = self
+                    .target
+                    .lock()
+                    .as_ref()
+                    .filter(|(t, _)| *t == id)
+                    .map(|(_, t)| t.clone());
+                let (Some(target), true) = (target, (8_000..=384_000).contains(&rate)) else {
+                    return;
+                };
+                self.audition
+                    .publish(Box::new(upload_clip(&target, rate, *self.last_rms.lock())));
             }
             Msg::StopAudition => self.audition.publish(Box::default()),
             Msg::Run(_) => {}
@@ -636,6 +751,7 @@ impl Create {
                 workers: AtomicUsize::new(0),
                 audition: Arc::new(AuditionSlot::default()),
                 target: Mutex::new(None),
+                last_rms: Mutex::new(None),
                 started: AtomicUsize::new(0),
                 finished: AtomicUsize::new(0),
                 rounds: AtomicUsize::new(0),
@@ -683,6 +799,7 @@ impl Create {
                 CreateRequest::Cancel(id) => self.cancel(id),
                 CreateRequest::Audition { id, patch, .. } => self.send(Msg::Audition { id, patch }),
                 CreateRequest::StopAudition => self.send(Msg::StopAudition),
+                CreateRequest::AuditionUpload { id } => self.send(Msg::AuditionUpload { id }),
                 _ => {}
             }
         }

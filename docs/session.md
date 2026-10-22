@@ -517,6 +517,10 @@ A create job does not survive a project reload (the coordinator's decision, kept
 
 `tests/create.rs`: a job goes out and its posts build the view (ranks by distance, stale posts after the end or for another job), cancel and clear go out once, bad settings and an empty path are refused, "Use this" is one undo step with exactly one plan and no host writes (the proposal loads the same way), audition requests carry the patch, a job is not saved (the `enth` field keeps its bytes) and a host load leaves it alone. `src/create.rs`: settings ranges, the source's name and stem, the progress fraction, `Send`.
 
+### The A/B against the upload (lane PUI, additive)
+
+For the Create view's A/B, `CreateEdit::create_audition_upload()` (a default method that refuses, so an implementor written before it still builds) asks the shell to play the job's scored clip, level-matched to the candidate auditioned last: `CreateRequest::AuditionUpload { id }` (refused with `no_create_job` before the intake read the file). `CreateView::upload` says the upload was asked for last (a candidate's audition clears it, and keeps `auditioning` as the A/B's other side; Stop clears both), and `CandidateView::rung` carries each branch's rung of successive halving for the view's progress per rung. `create` re-exports `enth_analysis::intake::{Intake, IntakeCfg, IntakeReport, Warning}`, so the editor and its tests name them without depending on `enth-analysis`. Test: `tests/create.rs`'s `the_upload_plays_once_the_intake_read_the_file`.
+
 ## Decisions
 
 1. **An outbox, not a host trait.** The session pushes `ShellRequest`s (host gesture writes, renames, the monitor bypass, "patch edited") that the shell drains after unlocking. Report 01 passed a `HostSync` trait into every edit instead. The outbox keeps the editor's traits free of host concepts, lets kittest assert on requests, and makes "never call the host under the lock" the natural shape.
