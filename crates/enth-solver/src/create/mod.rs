@@ -68,13 +68,15 @@ use enth_analysis::features::{FeatureCfg, FeatureExtractor, Features};
 use enth_analysis::intake::Intake;
 use enth_analysis::{Describer, Descriptors};
 use enth_challenge::phrases::{self, HELD};
-use enth_challenge::random::observable;
+use enth_challenge::random::{Dead, Visibility, observable, observable_view};
 use enth_patch::{ModuleKind, ParamAddr, Patch};
 use enth_render::{Note, Performance, RenderSpec};
 use sha2::{Digest, Sha256};
 
 use crate::eval::note_timing;
 use crate::nearest::{self, Bank, Embedding};
+use crate::propose::decode::Hearing;
+use crate::propose::features::Cue;
 use crate::search::{FreeSet, MetricTarget, Objective, SearchError};
 
 pub use candidate::{
@@ -82,8 +84,8 @@ pub use candidate::{
     StartOutcome,
 };
 pub use portfolio::{Portfolio, Start, Template};
-pub use record::{CreateRecord, SCHEMA};
-pub use schedule::{BranchView, CreateJob, Progress};
+pub use record::{CreateRecord, ModelRecord, SCHEMA};
+pub use schedule::{BranchView, CreateJob, Dropped, Model, ModelProposals, Progress};
 
 /// The scored window (s): what every candidate renders and the objective compares, from the clip's first sample
 /// (the pre-roll included). The intake keeps up to 5 s for its analysis, its warnings and audition; scoring the
@@ -307,27 +309,55 @@ impl Target {
     }
 }
 
-/// The parameters a create job searches on `patch`: those the held phrase reveals (`observable`, as `enth match`'s
-/// default), less every envelope's release when the target's note-off falls at or after the clip's end
-/// ([`TargetPerf::release_heard`]).
+/// The parameters a create job searches on `patch`, **aligned with the job's performance** (lane MS, R3b; the F3s
+/// judge's request, completing TP's F1s should-fix 3):
+///
+/// - what the job's one note reveals (`observable_view` under the phrase [`Hearing::job`] builds from `perf`, the
+///   same phrase a model's hypotheses are decoded under, so a decoded start and its search agree);
+/// - **plus the envelope times the job hears in part**, which the mask calls dead because they are not heard to
+///   their end: an attack longer than the hold (the rise up to the note-off is heard, and sets the level the release
+///   starts from) and, when the note-off falls inside the clip, a release longer than the tail (its slope to the
+///   clip's end is heard);
+/// - **less every envelope's release when the note-off falls at or after the clip's end**
+///   ([`TargetPerf::release_heard`]): no release is heard then.
+///
+/// Under the held phrase (TP's first rule) an attack or a release above 1.5 s was never searched, so a decoded pad's
+/// 2 s attack stayed where the start put it. For a one-note job the rest of the mask is the held phrase's (one key,
+/// one velocity), so a start whose envelope times are at most 1.5 s (the templates, generator-v1 neighbours, the
+/// heuristic start) is searched exactly as before. A performance no phrase can hold (a note-on at or after the end)
+/// falls back to the held phrase.
 pub(crate) fn free_set(patch: &Patch, perf: &TargetPerf) -> Result<FreeSet, SearchError> {
-    let phrase =
-        phrases::phrase(HELD).unwrap_or_else(|| unreachable!("the held phrase is in the table"));
-    let mask = observable(patch, phrase);
-    let unheard: Vec<ParamAddr> = if perf.release_heard() {
-        Vec::new()
-    } else {
-        patch
-            .modulators
-            .iter()
-            .filter(|m| m.kind == ModuleKind::Adsr)
-            .filter_map(|m| ParamAddr::module(m.id.clone(), "release").ok())
-            .collect()
+    let cue = Cue {
+        key: perf.key,
+        f0_hz: None,
+        on_s: perf.on_s,
+        hold_s: perf.hold_s,
+        bandwidth_hz: None,
     };
+    let mask = match Hearing::job(&cue, perf) {
+        Ok(hearing) => observable_view(patch, hearing.phrase()),
+        Err(_) => observable(
+            patch,
+            phrases::phrase(HELD)
+                .unwrap_or_else(|| unreachable!("the held phrase is in the table")),
+        ),
+    };
+    let release_heard = perf.release_heard();
+    let releases: Vec<ParamAddr> = patch
+        .modulators
+        .iter()
+        .filter(|m| m.kind == ModuleKind::Adsr)
+        .filter_map(|m| ParamAddr::module(m.id.clone(), "release").ok())
+        .collect();
     let addrs: Vec<ParamAddr> = mask
-        .observable_params()
-        .filter(|a| !unheard.contains(a))
-        .cloned()
+        .params()
+        .filter(|(a, v)| match v {
+            Visibility::Observable => release_heard || !releases.contains(a),
+            Visibility::Dead(Dead::BeyondHold) => true,
+            Visibility::Dead(Dead::BeyondTail) => release_heard,
+            _ => false,
+        })
+        .map(|(a, _)| a.clone())
         .collect();
     FreeSet::new(patch, &addrs)
 }
