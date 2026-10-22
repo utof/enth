@@ -2,7 +2,7 @@
 # Arm B (full-v0-b.toml, the desktop) is the same but for the riskiest change, the discrete-boosted WTA selection.
 # Data: parts rendered while it trains (python -m enth_ml.train produce); pass the machine's paths:
 #   python -m enth_ml.train run --config enth_ml/train/full-v0-a.toml \
-#     --set 'train_glob="/mnt/e/enth-train/tr2/data/train/train-*-f16"' \
+#     --set 'train_glob="/home/isaac/enth-train/data/train/train-*-f16"' \
 #     --set 'dev_dirs=["/mnt/e/enth-train/tr2/data/dev-s1"]' --set 'out="/mnt/e/enth-train/tr2/runs/full-v0-a"'
 # Stop at any point: python -m enth_ml.train stop RUN_DIR; carry on: python -m enth_ml.train resume RUN_DIR.
 seed = 1                 # the same initial weights in both arms

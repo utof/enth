@@ -56,6 +56,9 @@ class TrainConfig:
     # samples (0: every part). On a disk that cannot stream the whole set (the desktop's D:, an HDD read through 9P),
     # the newest parts are the ones still in the host's file cache, having just been written.
     train_window_samples: int = 0
+    # Replay another run's data (its run directory): epoch e trains on exactly the parts that run's epoch e had (the parts
+    # complete at that epoch's start, in its order), so two arms differ only in their config, not in their data.
+    replay_from: str = ""
     max_repeat: float = 0.0  # pacing: an epoch starts only if samples seen stay <= max_repeat x distinct samples (0: off)
     data_target_samples: int = 0  # the producer's planned total; once available, pacing stops waiting
     data_wait_max_minutes: float = 45.0  # pacing gives up waiting after this long without a new part

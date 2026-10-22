@@ -1,10 +1,10 @@
-# propose v0, the full run (lane TR2, 2026-10-22), arm B: the desktop (GTX 1660 Ti, FP32): arm A without its riskiest change.
-# Arm A (full-v0-a.toml, isaac-pc) adds the discrete-boosted WTA selection; the loss and schedule are otherwise the same
-# (FP32 here; the data is a rolling cache, below).
+# propose v0, the full run (lane TR2, 2026-10-22), arm B: arm A (full-v0-a.toml) without its riskiest change, the
+# discrete-boosted WTA selection. Same machine (isaac-pc, after A), precision, batch, schedule, initial weights and DATA:
+# replay_from makes epoch e train on exactly the parts A's epoch e had, in A's order, so the arms differ in one key.
 # Data: parts rendered while it trains (python -m enth_ml.train produce); pass the machine's paths:
 #   python -m enth_ml.train run --config enth_ml/train/full-v0-b.toml \
-#     --set 'train_glob="/mnt/d/enth-train/tr2/data/train/train-*-f16"' \
-#     --set 'dev_dirs=["/mnt/d/enth-train/tr2/data/dev-s1"]' --set 'out="/mnt/d/enth-train/tr2/runs/full-v0-b"'
+#     --set 'train_glob="/home/isaac/enth-train/data/train/train-*-f16"' --set 'replay_from="/mnt/e/enth-train/tr2/runs/full-v0-a"' \
+#     --set 'dev_dirs=["/mnt/e/enth-train/tr2/data/dev-s1"]' --set 'out="/mnt/e/enth-train/tr2/runs/full-v0-b"'
 # Stop at any point: python -m enth_ml.train stop RUN_DIR; carry on: python -m enth_ml.train resume RUN_DIR.
 seed = 1                 # the same initial weights in both arms
 batch_size = 256
@@ -22,7 +22,7 @@ warmup_steps = 1000
 weight_decay = 0.05
 beta2 = 0.99
 grad_clip = 5.0
-amp = false              # the GTX 1660 Ti has no tensor cores: FP32 is 2.4x faster (TR)
+amp = true               # 2080 Ti probe: FP16 autocast 3,942 samples/s against 3,346 in FP32 (batch 256, model alone)
 channels_last = false    # slower with autocast too (3,603)
 log_every_steps = 100
 eval_every_steps = 2000  # dev best-of-K every 512 k samples
@@ -31,14 +31,11 @@ stats_shards = 64
 early_stop_patience = 8  # 4 M samples without a better dev best-of-K
 early_stop_min_steps = 20000
 min_dev_improvement = 0.002
-min_train_samples = 200000   # do not start on the first parts alone
-# Arm B's data is a ROLLING CACHE (the desktop's D: is an HDD read through 9P: streaming 1 M+ samples ran at ~500
-# samples/s, run full-v0-b): each epoch is the newest ~200 k samples (~10 GB, what the Windows file cache held in the
-# pilot at 1,900 samples/s), the renderer keeps adding parts and deletes its oldest beyond 24 (produce --keep-newest 24).
-train_window_samples = 200000
-max_repeat = 0.0             # no pacing: a part stays in the window ~25 min, so each sample is seen ~10x
-data_target_samples = 0
+min_train_samples = 300000   # do not start on the first part alone
+max_repeat = 0.0             # no pacing: replayed epochs exist already (A's pacing decided them)
+data_target_samples = 2000000
 data_wait_max_minutes = 45.0
+replay_from = ""             # set on the command line: A's run directory
 ckpt_every_minutes = 25.0
 keep_checkpoints = 2
 
@@ -65,4 +62,4 @@ eps = 0.05
 t_start = 1.0
 t_end = 0.01
 anneal_frac = 0.3
-select_discrete_boost = 1.0  # arm B: the plain WTA winner (the pilot's)
+select_discrete_boost = 1.0  # arm B: the plain WTA winner (the pilot's); the one difference from arm A

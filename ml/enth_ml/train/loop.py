@@ -194,13 +194,19 @@ def _completed(p: pathlib.Path) -> tuple:
         return (float("inf"), _natural_key(p))
 
 
-def scan_train(cfg: TrainConfig) -> Dataset:
+def scan_train(cfg: TrainConfig, cutoff_unix: float | None = None) -> Dataset:
     """The training set as it stands: ``train_dirs`` plus every complete part ``train_glob`` matches, in the order
-    they were completed; with ``train_window_samples``, only the newest parts holding about that many samples."""
+    they were completed; with ``train_window_samples``, only the newest parts holding about that many samples.
+
+    ``cutoff_unix`` (a replay): only the parts complete by then, in name order (the order the replayed run's scan used)."""
     dirs = [pathlib.Path(d) for d in cfg.train_dirs]
     if cfg.train_glob:
         g = pathlib.Path(cfg.train_glob)
-        found = sorted((p for p in g.parent.glob(g.name) if (p / "manifest.json").exists() and not p.name.endswith((".tmp", ".stage"))), key=_completed)
+        found = [p for p in g.parent.glob(g.name) if (p / "manifest.json").exists() and not p.name.endswith((".tmp", ".stage"))]
+        if cutoff_unix is not None:
+            found = sorted((p for p in found if os.stat(p / "manifest.json").st_mtime <= cutoff_unix), key=_natural_key)
+        else:
+            found = sorted(found, key=_completed)
         found = [p for p in found if p not in dirs]
         if cfg.train_window_samples > 0 and found:
             keep, total = [], 0
@@ -214,6 +220,30 @@ def scan_train(cfg: TrainConfig) -> Dataset:
     if not dirs:
         raise FileNotFoundError("no training data: train_dirs is empty and train_glob matches no complete part")
     return open_dataset(dirs, "train")
+
+
+class Replay:
+    """Another run's epochs, from its ``metrics.jsonl``: when each started, with how many parts and samples."""
+
+    def __init__(self, run_dir: str) -> None:
+        self.dir = pathlib.Path(run_dir)
+        self.epochs: dict[int, dict] = {}
+        for line in (self.dir / "metrics.jsonl").read_text().splitlines():
+            r = json.loads(line)
+            if r.get("kind") == "epoch":
+                self.epochs[int(r["epoch"])] = r  # a resumed run logs an epoch once (its plan is in the checkpoint)
+        if 0 not in self.epochs:
+            raise ValueError(f"{run_dir}: no epoch records to replay")
+        self.run = json.loads((self.dir / "run.json").read_text())
+
+    def cutoff(self, epoch: int) -> float | None:
+        r = self.epochs.get(epoch)
+        return _dt.datetime.fromisoformat(r["utc"]).timestamp() + 0.999 if r else None
+
+    def check(self, epoch: int, ds: Dataset) -> None:
+        r = self.epochs.get(epoch)
+        if r is not None and (len(ds.runs) != r["parts"] or ds.n != r["available"]):
+            raise ValueError(f"replay of epoch {epoch}: {len(ds.runs)} parts / {ds.n} samples, the replayed run had {r['parts']} / {r['available']}")
 
 
 def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allow_config_change: bool = False, stop_flag: StopFlag | None = None) -> dict:
@@ -254,12 +284,13 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
 
     dev_ds = open_dataset(cfg.dev_dirs, "dev")
 
+    replay = Replay(cfg.replay_from) if cfg.replay_from else None
     # The first training data: wait for min_train_samples (a producer may still be rendering the first parts).
     t_wait0 = time.perf_counter()
     wait_s = 0.0
     while True:
         try:
-            train_ds = scan_train(cfg)
+            train_ds = scan_train(cfg, replay.cutoff(0) if replay else None)
             if state is not None or train_ds.n >= cfg.min_train_samples:
                 break
             have = train_ds.n
@@ -284,6 +315,10 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         t0 = time.perf_counter()
         stats = compute_standardisation(train_ds.shards, cfg.stats_shards, cfg.seed)
         log_line(f"standardisation from {int(stats['samples'])} samples in {time.perf_counter() - t0:.1f} s")
+        if replay is not None:
+            mine = _sha256_bytes(b"".join(np.ascontiguousarray(stats[k]).tobytes() for k in ("mel_mean", "mel_std", "ctx_mean", "ctx_std")))
+            same = mine == replay.run.get("standardisation_sha256")
+            log_line(f"replay of {replay.dir}: standardisation {'identical to' if same else 'DIFFERS from'} the replayed run's")
     model.set_standardisation(*(torch.as_tensor(stats[k]) for k in ("mel_mean", "mel_std", "ctx_mean", "ctx_std")))
     model.to(device_t)
     if cfg.channels_last:
@@ -348,6 +383,7 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         "standardisation_sha256": _sha256_bytes(b"".join(np.ascontiguousarray(stats[k]).tobytes() for k in ("mel_mean", "mel_std", "ctx_mean", "ctx_std"))),
         "schedule_steps": schedule_steps,
         "resumed_from": entry if state is not None else None,
+        "replay_of": {"run": replay.dir.name, "epochs": len(replay.epochs), "config_diff": cfg.identity_diff(replay.run["config"])} if replay else None,
     }
     (out / ("run.json" if state is None else f"run-resume-{step}.json")).write_text(json.dumps(run, indent=1))
     log_line(json.dumps(run["model"]))
@@ -476,7 +512,9 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
                 t_w = time.perf_counter()
                 last_growth = time.perf_counter()
                 while True:
-                    train_ds = scan_train(cfg)
+                    train_ds = scan_train(cfg, replay.cutoff(epoch) if replay else None)
+                    if replay is not None:
+                        replay.check(epoch, train_ds)
                     if train_ds.n > available:
                         last_growth = time.perf_counter()
                     available, n_parts = train_ds.n, len(train_ds.runs)

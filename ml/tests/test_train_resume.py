@@ -252,6 +252,35 @@ class Resume(unittest.TestCase):
         self.assertEqual([e["available"] for e in epochs], [30] * 4)
 
 
+    def test_replay_trains_on_the_replayed_runs_data(self) -> None:
+        """Arm B replays arm A's epochs: the same parts per epoch, so the same config gives the same weights."""
+        import os
+        import time
+
+        import numpy as np
+        import torch
+
+        from enth_ml.train.loop import train
+        from train_support import write_run
+
+        parts = self.dir / "replay-parts"
+        write_run(np, parts / "train-s1-f16", "r3/train", 3, 15, 31)
+        glob = str(parts / "train-s*-f16")
+        a = train(self.cfg("replay-a", train_dirs=[], train_glob=glob, schedule_steps=30, epochs=3), device="cpu")
+        late = write_run(np, parts / "train-s2-f16", "r3/train", 3, 15, 32)  # completed after A: B must not see it
+        os.utime(late / "manifest.json", (time.time() + 10, time.time() + 10))
+        b = train(self.cfg("replay-b", train_dirs=[], train_glob=glob, schedule_steps=30, epochs=3, replay_from=str(self.dir / "replay-a")), device="cpu")
+        self.assertEqual((a["steps"], b["steps"]), (b["steps"], a["steps"]))
+        wa, wb = final_weights(self.dir / "replay-a")["model"], final_weights(self.dir / "replay-b")["model"]
+        self.assertTrue(all(torch.equal(wa[k], wb[k]) for k in wa))
+        run_b = json.loads((self.dir / "replay-b" / "run.json").read_text())
+        self.assertEqual(run_b["replay_of"]["config_diff"], ["replay_from"])
+        # Beyond the replayed run's epochs, the replaying run takes every part.
+        c = train(self.cfg("replay-c", train_dirs=[], train_glob=glob, schedule_steps=40, epochs=4, replay_from=str(self.dir / "replay-a")), device="cpu")
+        self.assertEqual(c["state"], "finished")
+        ep = [json.loads(x) for x in (self.dir / "replay-c" / "metrics.jsonl").read_text().splitlines() if '"kind": "epoch"' in x]
+        self.assertEqual([e["parts"] for e in ep], [1, 1, 1, 2])
+
     def test_rolling_window_takes_the_newest_parts(self) -> None:
         import os
 
