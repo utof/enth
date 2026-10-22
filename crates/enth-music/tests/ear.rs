@@ -301,3 +301,39 @@ fn level_one_has_variety() {
         );
     }
 }
+
+/// A burst on one skill: the same seed gives the same items, each of them exercising the skill.
+#[test]
+fn a_burst_on_a_skill_scans_the_keyed_items() {
+    let mut from = 0;
+    let mut items = Vec::new();
+    for _ in 0..5 {
+        let (item, q) =
+            ear::find_skill_item(Game::IntervalStacks, 1, 99, "ear.interval.p8", from).unwrap();
+        assert!(item >= from);
+        assert_eq!(q.skill().as_deref(), Some("ear.interval.p8"));
+        assert_eq!(q, ear::question(Game::IntervalStacks, 1, 99, item).unwrap());
+        items.push(item);
+        from = item + 1;
+    }
+    assert!(items.windows(2).all(|w| w[0] < w[1]));
+    // Every skill a level can ask is found.
+    for game in Game::ALL {
+        let q = ear::question(game, 1, 5, 0).unwrap();
+        let skill = q.skill().unwrap();
+        assert_eq!(
+            ear::find_skill_item(game, 1, 5, &skill, 0).map(|(i, _)| i),
+            Some(0),
+            "{game:?}"
+        );
+    }
+    // A skill the level never asks, and a level the build lacks.
+    assert_eq!(
+        ear::find_skill_item(Game::IntervalStacks, 1, 99, "ear.interval.m3", 0),
+        None
+    );
+    assert_eq!(
+        ear::find_skill_item(Game::IntervalStacks, 9, 99, "ear.interval.p8", 0),
+        None
+    );
+}

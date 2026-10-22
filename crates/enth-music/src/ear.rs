@@ -359,6 +359,29 @@ pub fn question(game: Game, level: u8, seed: u64, item: u32) -> Result<Question,
     })
 }
 
+/// The most items [`find_skill_item`] looks at.
+pub const MAX_SKILL_SCAN: u32 = 4096;
+
+/// The first item at or after `from` whose question exercises `skill` (a key like `ear.interval.m3`, as
+/// [`Question::skill`] names it), with its index; `None` if the game never asks it at this level within
+/// [`MAX_SKILL_SCAN`] items (or the level is not in this build). Items are keyed streams, so scanning generates only
+/// what it looks at, and the result is a function of the seed and `from`: a burst of 5 items on one skill is five calls,
+/// each starting after the last (`from = item + 1`), and two players given the same seed get the same burst.
+#[must_use]
+pub fn find_skill_item(
+    game: Game,
+    level: u8,
+    seed: u64,
+    skill: &str,
+    from: u32,
+) -> Option<(u32, Question)> {
+    question(game, level, seed, from).ok()?;
+    (from..from.saturating_add(MAX_SKILL_SCAN)).find_map(|item| {
+        let q = question(game, level, seed, item).ok()?;
+        (q.skill().as_deref() == Some(skill)).then_some((item, q))
+    })
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The question
 // ---------------------------------------------------------------------------------------------------------------
