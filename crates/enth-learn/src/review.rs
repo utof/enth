@@ -47,6 +47,21 @@
 //! [`MAX_ITEMS`]; when fewer than [`MIN_ITEMS`] skills are due, the weakest of the rest top the queue up. Each item is
 //! the step's challenge with a new seed ([`Challenge::with_seed`]), so it is a problem, never the round the lesson
 //! played. Review gives no hint on the first try: the session's review round refuses one before the first submit.
+//!
+//! # Ear skills and bursts (R4, lane DRL; additive)
+//!
+//! R4's ear games feed the same boxes, so the skill stays the unit of spacing and the game only its vehicle
+//! (docs/ear.md, "The drill player"; docs/learn.md, "Ear skills, bursts and drills"):
+//!
+//! - **`ear.*` skills** beside `module.param`: `ear.interval.M3`, `ear.chord.min`, `ear.band.1k`. They have no
+//!   catalogue parameter, so [`Skill::parse`] reads a dotted path after `ear.` (one to three parts of letters, digits,
+//!   `_` and `-`, case kept: the music tables' slugs are `M3` against `m3`). An older build keeps such an entry
+//!   verbatim as an unreadable one.
+//! - **Bursts** ([`Burst`]): five items on one skill, in any game. Four or five right is a Good ring, three a Near
+//!   one and two or fewer a Bad one, and the box moves by [`moved`], exactly as a Recreate round's ring does. One
+//!   answer never moves a box: a single answer in a two to four option item is 25 to 50 % guessable.
+//! - **A due skill with no Recreate step** plays as a burst ([`burst_standings`]); the workout composer
+//!   ([`crate::workout`]) picks the game.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -57,8 +72,8 @@ use enth_challenge::v2::DrawAt;
 use enth_challenge::{Challenge, StructureScore, Verdict};
 use enth_dsp::util::rng::{derive, fnv1a64};
 use enth_patch::{Builtin, ModuleKind, ParamAddr, Patch, Target as PatchTarget};
-use serde::Serialize;
 use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::lesson::StepKind;
@@ -83,12 +98,19 @@ pub const MAX_ITEMS: usize = 5;
 /// The longest part of a skill's text (a module kind or a parameter key).
 const MAX_PART: usize = 32;
 
+/// The kind of an ear skill: `ear.interval.M3`.
+pub const EAR_KIND: &str = "ear";
+
+/// The most dotted parts after `ear.` (`interval.M3` is two).
+const MAX_EAR_PARTS: usize = 3;
+
 // ---------------------------------------------------------------------------------------------------------------
 // Skills
 // ---------------------------------------------------------------------------------------------------------------
 
 /// A skill: a module kind and a parameter key, `svf.cutoff` (see the [module docs](self)). Text of two parts of
-/// lowercase letters, digits and `_`, so a newer build's module kind is just another skill.
+/// lowercase letters, digits and `_`, so a newer build's module kind is just another skill. R4 adds the `ear` kind,
+/// whose key is a dotted path (`ear.interval.M3`: [`Skill::ear`]).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Skill(String);
 
@@ -101,16 +123,42 @@ fn valid_part(part: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
+/// Whether `part` may be one dotted part of an ear skill's path: letters of either case, digits, `_` and `-`.
+fn valid_ear_part(part: &str) -> bool {
+    !part.is_empty()
+        && part.len() <= MAX_PART
+        && part
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 impl Skill {
-    /// The skill of a module kind (`svf`, or `voice`, `master`) and a parameter key (`cutoff`).
+    /// The skill of a module kind (`svf`, or `voice`, `master`) and a parameter key (`cutoff`); for the `ear` kind
+    /// the key is a dotted path ([`Skill::ear`]).
     pub fn new(kind: &str, key: &str) -> Option<Skill> {
+        if kind == EAR_KIND {
+            return Skill::ear(key);
+        }
         (valid_part(kind) && valid_part(key)).then(|| Skill(format!("{kind}.{key}")))
     }
 
-    /// Read a skill's text (`svf.cutoff`); `None` when it is not two valid parts.
+    /// An ear skill from the path after `ear.`: one to three dotted parts of letters, digits, `_` and `-`, case
+    /// kept (`interval.M3`, `chord.min`, `band.1k`, `progression.i-iv-v-i`).
+    pub fn ear(path: &str) -> Option<Skill> {
+        let parts = path.split('.').count();
+        ((1..=MAX_EAR_PARTS).contains(&parts) && path.split('.').all(valid_ear_part))
+            .then(|| Skill(format!("{EAR_KIND}.{path}")))
+    }
+
+    /// Read a skill's text (`svf.cutoff`, `ear.interval.M3`); `None` when it is not a valid skill.
     pub fn parse(text: &str) -> Option<Skill> {
         let (kind, key) = text.split_once('.')?;
         Skill::new(kind, key)
+    }
+
+    /// Whether this is an ear skill (`ear.*`): one with no catalogue parameter.
+    pub fn is_ear(&self) -> bool {
+        self.kind() == EAR_KIND
     }
 
     /// The skill `addr` exercises in `patch`: its module's kind (or the built-in) and the parameter key. `None` when
@@ -143,6 +191,7 @@ impl Skill {
     /// `Voice Glide`); the text itself for a kind or a key this build does not have.
     pub fn label(&self) -> String {
         let (module, params) = match self.kind() {
+            EAR_KIND => return self.ear_label(),
             "voice" => ("Voice", Builtin::Voice.params()),
             "master" => ("Master", Builtin::Master.params()),
             kind => match ModuleKind::from_key(kind) {
@@ -154,6 +203,43 @@ impl Skill {
             Some(p) => format!("{module} {}", p.name),
             None => self.0.clone(),
         }
+    }
+}
+
+impl Skill {
+    /// An ear skill in words from its path alone (`ear.interval.M3` is `Interval M3`): the family, then the rest as
+    /// written. The Ear view prints the music tables' own names; this is the fallback that needs no table.
+    fn ear_label(&self) -> String {
+        let mut parts = self.key().split('.');
+        let family = parts.next().unwrap_or("");
+        let mut out = String::new();
+        let mut chars = family.chars();
+        if let Some(first) = chars.next() {
+            out.extend(first.to_uppercase());
+            out.push_str(chars.as_str());
+        }
+        for rest in parts {
+            out.push(' ');
+            out.push_str(rest);
+        }
+        out
+    }
+}
+
+impl Serialize for Skill {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Skill {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let text = <std::borrow::Cow<'de, str>>::deserialize(d)?;
+        Skill::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "{text:?} is not a skill (<kind>.<param>, e.g. svf.cutoff, or ear.<family>.<name>)"
+            ))
+        })
     }
 }
 
@@ -339,6 +425,52 @@ impl RoundRings {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Bursts (R4, lane DRL)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// How many items make a burst: five on one skill, in any game.
+pub const BURST_ITEMS: u8 = 5;
+
+/// The fewest right answers in a burst that count as a Good ring (4 of 5): the box moves up.
+pub const BURST_GOOD: u8 = 4;
+
+/// The ring of a burst with `right` of [`BURST_ITEMS`] answers right: 4 or 5 is Good, 3 is Near, 2 or fewer is Bad.
+/// One answer never moves a box, since a single answer in a 2 to 4 option item is 25 to 50 % guessable.
+pub fn burst_verdict(right: u8) -> Verdict {
+    match right.min(BURST_ITEMS) {
+        r if r >= BURST_GOOD => Verdict::Good,
+        3 => Verdict::Near,
+        _ => Verdict::Bad,
+    }
+}
+
+/// A finished burst: five items on one skill, and how many were right. The drill player builds them
+/// ([`Drill::summary`](crate::drill::Drill::summary)); the shell applies them to the progress file with the day
+/// ([`Progress::observe_drill`](crate::progress::Progress::observe_drill), [`Review::observe_burst`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Burst {
+    /// The skill the five items were on.
+    pub skill: Skill,
+    /// How many were right, at most [`BURST_ITEMS`].
+    pub right: u8,
+}
+
+impl Burst {
+    /// A burst of `right` right answers (clamped to [`BURST_ITEMS`]).
+    pub fn new(skill: Skill, right: u8) -> Burst {
+        Burst {
+            skill,
+            right: right.min(BURST_ITEMS),
+        }
+    }
+
+    /// Its ring ([`burst_verdict`]).
+    pub fn verdict(&self) -> Verdict {
+        burst_verdict(self.right)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // The progress field
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -375,6 +507,18 @@ impl Review {
             b.day = b.day.max(today);
             b.rounds = b.rounds.saturating_add(1);
         }
+    }
+
+    /// Apply one finished burst on `today` (R4): the skill's box moves by [`moved`] on the burst's ring (Good up,
+    /// Near holds, Bad down), takes the day (never earlier than the one it had) and counts the burst as a round, as
+    /// [`observe`](Self::observe) does for a Recreate round's rings. A readable entry replaces a kept unreadable one
+    /// under the same skill.
+    pub fn observe_burst(&mut self, burst: &Burst, today: Day) {
+        self.unread.remove(burst.skill.as_str());
+        let b = self.skills.entry(burst.skill.clone()).or_default();
+        b.level = moved(b.level, burst.verdict(), true);
+        b.day = b.day.max(today);
+        b.rounds = b.rounds.saturating_add(1);
     }
 
     /// The join with `other`: per skill the entry that ranks higher (more rounds, the later day, the higher box, the
@@ -584,6 +728,43 @@ impl Queue {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+}
+
+/// `skill`'s standing on `today`: its box and the day it is due (a skill no round has rung is box 1 and due at once).
+pub fn standing(progress: &Progress, skill: &Skill, today: Day) -> Standing {
+    let b = progress.review.get(skill);
+    Standing {
+        skill: skill.clone(),
+        level: b.level,
+        due_day: b.due_day(),
+        due: b.is_due(today),
+    }
+}
+
+/// Put standings in the queue's order on `today`: due first, then the lower box, the earlier due day, then a keyed
+/// draw of the day and the skill (so equal skills take turns from day to day instead of by name), then the name.
+/// Pure: the same standings on the same day sort the same way.
+pub fn sort_standings(standings: &mut [Standing], today: Day) {
+    standings.sort_by(|a, b| a.order(today).cmp(&b.order(today)));
+}
+
+/// The due skills no Recreate step can drill (R4, lane DRL): skills with a box that are due on `today` but that
+/// `queue` does not hold, such as `ear.*` skills, or a parameter whose lesson is not passed yet. A due skill with no
+/// Recreate step plays as a **burst** in a game (the workout composer picks which), and this is how Review sees it.
+/// In the queue's order. A skill no round has rung has no box and is not listed: the composer starts those from its
+/// catalogue.
+pub fn burst_standings(progress: &Progress, queue: &Queue, today: Day) -> Vec<Standing> {
+    let queued: BTreeSet<&Skill> = queue.skills.iter().map(|s| &s.skill).collect();
+    let mut out: Vec<Standing> = progress
+        .review
+        .skills
+        .keys()
+        .filter(|skill| !queued.contains(skill))
+        .map(|skill| standing(progress, skill, today))
+        .filter(|s| s.due)
+        .collect();
+    sort_standings(&mut out, today);
+    out
 }
 
 /// A sibling's seed for a step and a skill on a day: a keyed draw (never the global RNG), within the challenge
