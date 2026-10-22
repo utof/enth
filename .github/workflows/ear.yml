@@ -1,0 +1,67 @@
+name: ear
+
+# R4 Ear-training games (lane S0e's stub, freeze point F0e; docs/ear.md, "GR4"). `ci.yml` ignores `**/*.md`, but the ear
+# games are code and data, and their fairness is a render: a change to the music crate, the ear files of the challenge
+# crate, the drill player, the lesson tool or the DSP can make a game unfair, unsolvable or non-deterministic with nobody
+# touching the game. This workflow runs `cargo xtask ear-check` (GR4's mechanical half, lane ECK) whenever any of them
+# changes.
+#
+# A STUB: `ear-check` is a placeholder that prints "nothing was checked" and exits 0 until lane ECK writes it, so a green
+# run means nothing yet. ECK fills it (determinism on the six golden targets, audibility per level under `sound/1`, an
+# ideal-observer bot at 95 % or more at the top level, bias bots at chance, simulated staircases, coverage; under 10
+# minutes), adds the paths a sound depends on (the engine, analysis, render and patch crates) and the `scripts/gate.sh
+# lane` hook for `enth-music` and the ear files.
+
+on:
+  push:
+    branches: [main]
+    paths:  # the same paths as pull_request: only what can change an ear game runs it
+      - "crates/enth-music/**"
+      - "crates/enth-challenge/**"
+      - "crates/enth-learn/**"
+      - "crates/enth-dsp/src/biquad.rs"
+      - "tools/lesson/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ear.yml"
+  pull_request:
+    paths:
+      - "crates/enth-music/**"
+      - "crates/enth-challenge/**"
+      - "crates/enth-learn/**"
+      - "crates/enth-dsp/src/biquad.rs"
+      - "tools/lesson/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ear.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+  RUST_BACKTRACE: "1"
+
+jobs:
+  ear-check:
+    name: ear-check (a placeholder until lane ECK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check every ear game (a placeholder that exits 0 and says nothing was checked)
+        run: cargo xtask ear-check
