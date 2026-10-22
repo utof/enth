@@ -220,6 +220,7 @@ pub fn manifest_for(pack_id: &str, g: &Generated) -> Result<Manifest, Deconstruc
             } else {
                 Vec::new()
             },
+            drill: None,
         },
         engine: String::new(),
         covers,

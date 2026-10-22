@@ -30,6 +30,7 @@ use enth_challenge::{Challenge, PhraseId};
 use enth_patch::{Op, ParamAddr, Patch, Target};
 
 use crate::check::{Knob, SoundCheck, TouchLog};
+use crate::drill::DrillStep;
 use crate::lesson::{
     ControlCurve, Example, Lesson, Selector, Step, StepKind, StepView, Touch, touches,
 };
@@ -185,6 +186,9 @@ pub enum Effect {
     StartRound(Box<Challenge>),
     /// End the live round: its step was left.
     EndRound,
+    /// Start a Drill step's drill (R4): the shell builds a `DrillSpec` from it ([`DrillStep::spec`]), plays the
+    /// items, and reports the end with [`Player::drill_ended`].
+    StartDrill(DrillStep),
     /// The step's view: layout, highlight, hide, editable (advisory) and the **effective locks** the session
     /// enforces (for a Recreate step, its challenge's).
     View(StepView),
@@ -443,6 +447,15 @@ impl Player {
     /// How many steps the lesson has.
     pub fn step_count(&self) -> u16 {
         u16::try_from(self.visits.len()).unwrap_or(u16::MAX)
+    }
+
+    /// The current step's drill, when it is a Drill step. A step resumed after a reload sends no
+    /// [`Effect::StartDrill`], so the shell starts its drill again from this.
+    pub fn drill_step(&self) -> Option<DrillStep> {
+        match &self.current().kind {
+            StepKind::Drill(drill) => Some(drill.clone()),
+            _ => None,
+        }
     }
 
     /// The current step's round challenge, when it is a Recreate step. A step resumed after a reload sends no
@@ -713,6 +726,23 @@ impl Player {
         Ok(Vec::new())
     }
 
+    /// A Drill step's drill was played to its end (R4): the step passes **whatever the score**, since no content is
+    /// gated on chords, intervals or note naming and a drill's score feeds the staircase and the boxes, never the
+    /// lesson. The shell records the drill itself (`Progress::observe_drill`); the step's own record is `done`.
+    pub fn drill_ended(&mut self) -> Result<Vec<Effect>, PlayerError> {
+        self.live()?;
+        if !matches!(self.current().kind, StepKind::Drill(_)) {
+            return Err(PlayerError::NotHere {
+                call: "drill_ended",
+                kind: self.current().kind.name(),
+            });
+        }
+        if self.phase == StepPhase::Passed {
+            return Ok(Vec::new());
+        }
+        Ok(self.pass(None))
+    }
+
     /// Leave the step forward. A Read or Listen step passes on the way; an unpassed step is left as it is (skipped).
     /// From the last step: [`Effect::Finished`].
     #[allow(
@@ -792,6 +822,11 @@ impl Player {
             StepKind::Recreate { challenge, .. } => {
                 if load {
                     out.push(Effect::StartRound(challenge.clone()));
+                }
+            }
+            StepKind::Drill(drill) => {
+                if load {
+                    out.push(Effect::StartDrill(drill.clone()));
                 }
             }
             _ => {

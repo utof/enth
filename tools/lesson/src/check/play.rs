@@ -259,6 +259,12 @@ pub(super) fn lesson(bundle: &LessonBundle, log: &mut Log) -> Vec<Played> {
                 choose_step(&mut shell, step, options, *answer, &at, log);
                 start.clone()
             }
+            StepKind::Drill(_) => {
+                // A drill is a game with its own tests (the staircase against simulated listeners): the
+                // playthrough leaves the step as it is, like the Read steps around it.
+                log.line(format!("    {} ({}): ok", step.id, step.kind.name()));
+                start.clone()
+            }
         };
         shell.flush(&at, log);
         out.push(Played {
