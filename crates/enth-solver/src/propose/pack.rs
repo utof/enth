@@ -5,7 +5,7 @@
 //! `enth-model-<id>.bin` (the shell reads the file; the solver does no I/O), checks the header, the SHA-256, the
 //! tables and the budgets, and checks the header against **this build**: the output layout's hash
 //! ([`decode::OutputLayout`](super::decode::OutputLayout)), the feature set's inputs
-//! ([`features::SPEC_V1`](super::features::SPEC_V1)) and the output shapes. Any refusal means "Create from sound"
+//! ([`features::SPEC_V1`]) and the output shapes. Any refusal means "Create from sound"
 //! runs R3a (no proposals) and says why, with the error's [`code`](PackError::code) and [`hint`](PackError::hint).
 //!
 //! # The file (`ENTHMODL`, format 1)
@@ -19,8 +19,8 @@
 //! | 8 | format | `u16` | 1; a newer one is refused (`model_too_new`) before anything else is read |
 //! | 10 | header length | `u16` | 256 |
 //! | 12 | op set | `u16` | 1 to [`OP_SET`] (the kernels' op list, below) |
-//! | 14 | feature set | `u16` | 1 to [`LATEST_FEATURE`](super::features::LATEST_FEATURE) |
-//! | 16 | output layout | `u16` | 1 to [`LATEST_LAYOUT`](super::decode::LATEST_LAYOUT) |
+//! | 14 | feature set | `u16` | 1 to [`LATEST_FEATURE`] |
+//! | 16 | output layout | `u16` | 1 to [`LATEST_LAYOUT`] |
 //! | 18 | generator | `u16` | the layout's generator (1) |
 //! | 20 | template | `u8` | the layout's template (0) |
 //! | 21 | reserved | `u8` | 0 |

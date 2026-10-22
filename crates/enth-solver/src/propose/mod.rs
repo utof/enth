@@ -1,5 +1,6 @@
-//! **Owner: lane ONX** (inference, wave 6, freeze point F3s). Pre-declared by lane S0s (R3, freeze point F0s); empty
-//! until ONX writes it. R3b only: nothing in R3a calls it.
+//! **Owners:** lanes F3C and F3S wrote the model contract ([`pack`], [`features`], [`decode`]; judged at freeze point
+//! F3s, docs/r3.md "The model contract (F3s)"), which lane ONX (inference, wave 6) edits only additively; ONX writes
+//! [`ops`] and [`net`]. Pre-declared by lane S0s (R3, freeze point F0s). R3b only: nothing in R3a calls it.
 //!
 //! The model's side of "create from sound" (docs/r3.md, "Our own scalar kernels"): `enth-solver::propose` runs the
 //! small CNN of R3b (K = 8 winner-takes-all hypotheses and a confidence head) on **our own scalar kernels** (not
@@ -11,11 +12,11 @@
 //!
 //! | File | Holds |
 //! | --- | --- |
-//! | [`pack`] | `ModelPack::parse(&[u8])`: the versioned header, sha256, fixture tests |
+//! | [`pack`] | `ModelPack::parse(&[u8])`: the versioned header, sha256, the op set's table, fixture tests |
 //! | [`ops`] | `Conv1d` and `Conv2d`, `Linear`, `LayerNorm`, the activations, pooling, softmax, residual add and concat, attention as Linear + matmul + softmax: a fixed summation order |
 //! | [`net`] | `Net::run`: the layers listed in the pack |
-//! | [`features`] | the model's input from `enth-analysis`'s log-mel on the scalar FFT path |
-//! | [`decode`] | outputs to patches: normalised to plain through `ParamSpec`, onto the template's free set |
+//! | [`features`] | the model's input (feature set 1) from `enth-analysis`'s log-mel on the scalar FFT path |
+//! | [`decode`] | layout 1: hypotheses to patches under a job's `Hearing`, and patches to training labels |
 //!
 //! Budgets: at most about 4 M parameters (f16 in the file, at most 8 MB), at most about 2 GFLOP per inference, the
 //! encoder run once. The model contract (input features, outputs, the header) is frozen at F3s by a judge before any

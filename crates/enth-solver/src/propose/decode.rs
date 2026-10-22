@@ -47,7 +47,7 @@
 //!   a semi of 0 at C4) get one label; a re-key that leaves ±48 semitones, or meets a heard keytrack (which follows
 //!   the played key, not the semis), is refused ([`LayoutError::Rekey`]). The loss mask has no loss on what the
 //!   phrase does not reveal and, when the first note-off falls at or after the model's 2 s window
-//!   ([`WINDOW_S`](super::features::WINDOW_S)), none on the envelopes' releases, which the model cannot see.
+//!   ([`WINDOW_S`]), none on the envelopes' releases, which the model cannot see.
 //! - **Decoding** ([`OutputLayout::decode`], lane MS) writes a hypothesis onto the template (structure, categoricals,
 //!   values, routes), canonicalises it under **the job's performance** ([`Hearing::job`]: the key the job plays, its
 //!   hold and its scored window, so a long attack the job reveals is kept), re-keys the semis from the told key to

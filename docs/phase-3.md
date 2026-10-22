@@ -125,7 +125,7 @@ Sizes are agent-hours (estimates from reports 03 and 04, calibrated on P1b's and
 | **CLC** CLI for R3 | `enth create`'s flags (`--perf` override), schema snapshots, [agent-cli.md](agent-cli.md) | SK3 | 0.75–1.5 | L |
 | **PUI** Create UI | `enth-ui/src/editor/create/*` (drop zone, folder browser, K tiles, audition and A/B, progress, cancel) | F2s, FK3 | 2–3.5 | **H** |
 | **INTa** R3a ships | The R3a table in `docs/r3-gates.md`, [r3.md](r3.md)'s status, owner sheet 5 (`docs/r3-owner.md`) | All R3a lanes | 1.5–2.5 | **H** |
-| **ONX** Inference | `enth-solver/src/propose/{pack,ops,net,features,decode}.rs` (our scalar kernels; bytes passed in), `tools/model-check` (exempt; parity against ONNX Runtime and `tract-nnef`), the kernel-hash step on every CI platform | F3s | 1.5–3 | **H** |
+| **ONX** Inference | `enth-solver/src/propose/{ops,net}.rs` (our scalar kernels; bytes passed in; F3C and F3S wrote `pack`, `features` and `decode`, the F3s contract, which ONX edits only additively), `tools/model-check` (exempt; parity against ONNX Runtime and `tract-nnef`), the kernel-hash step on every CI platform | F3s | 1.5–3 | **H** |
 | **DG** Dataset generator | `tools/datagen/` (exempt): `ds1.rs`, `shards.rs`, `exclude.rs` (`bank.rs` is TP's) | F3s | 1–2 | L |
 | **AUG** Augmentation | `ml/enth_ml/augment/`, the data manifest | DEG | 1–2 | L |
 | **TR** Training | `ml/enth_ml/{model,train,export}/` | DG, AUG, F3s | 2–4, plus 1–3 days of runs | Runtime-heavy |
