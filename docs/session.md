@@ -468,6 +468,10 @@ The `enth` field's optional `learn` object holds the in-flight `LessonRef` (pack
 7. **The session refuses stale results itself**, by job id and revision, and the player's own check stays as a second guard.
 8. **A host load other than the same lesson's ends the live lesson without a restore**, like a host load of another round.
 
+### Review (lane REV)
+
+The Review queue's round source is `crates/enth-session/src/review.rs`: `LearnEdit::review_start` plays the queue's head item (a passed lesson's Recreate step with a seeded sibling seed) as a round of origin `review` (`RoundOrigin::Review`, `RoundSource::Challenge`), stashing like a game round and refused while a lesson is live; it refuses a hint before the first submit (`first_try`), and every played round's rings go to the shell as `LearnRequest::Rings` when it closes. The design, the Leitner boxes and the queue are [learn.md's Review](learn.md#review-lane-rev); the tests are `tests/review.rs`.
+
 ## Create (lane SK3, R3)
 
 `enth-session`'s `create` module is the pure side of "create from sound" ([r3.md](r3.md#the-create-view-and-the-session), [phase-3.md](phase-3.md), freeze point F2s). Like `game` and `learn` it does no I/O, spawns no threads and reads no clocks: **the shell runs the job** (decoding, the intake, the portfolio and the K searches, on the plugin's `enth-create` thread and its per-job pool, [plugin.md](plugin.md#create-lane-sk3-r3)) **and posts back**; the session keeps the read model and turns "Use this" into one undo step. The audio thread never touches it.
@@ -512,6 +516,10 @@ A create job does not survive a project reload (the coordinator's decision, kept
 ### Tests (lane SK3)
 
 `tests/create.rs`: a job goes out and its posts build the view (ranks by distance, stale posts after the end or for another job), cancel and clear go out once, bad settings and an empty path are refused, "Use this" is one undo step with exactly one plan and no host writes (the proposal loads the same way), audition requests carry the patch, a job is not saved (the `enth` field keeps its bytes) and a host load leaves it alone. `src/create.rs`: settings ranges, the source's name and stem, the progress fraction, `Send`.
+
+### The A/B against the upload (lane PUI, additive)
+
+For the Create view's A/B, `CreateEdit::create_audition_upload()` (a default method that refuses, so an implementor written before it still builds) asks the shell to play the job's scored clip, level-matched to the candidate auditioned last: `CreateRequest::AuditionUpload { id }` (refused with `no_create_job` before the intake read the file). `CreateView::upload` says the upload was asked for last (a candidate's audition clears it, and keeps `auditioning` as the A/B's other side; Stop clears both), and `CandidateView::rung` carries each branch's rung of successive halving for the view's progress per rung. `create` re-exports `enth_analysis::intake::{Intake, IntakeCfg, IntakeReport, Warning}`, so the editor and its tests name them without depending on `enth-analysis`. Test: `tests/create.rs`'s `the_upload_plays_once_the_intake_read_the_file`.
 
 ## Decisions
 

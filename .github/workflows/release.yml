@@ -17,6 +17,9 @@ name: release
 # the assets; the Linux asset's digest equals the pin in xtask/src/validate.rs). No signing certificate exists: friends
 # unzip, and on macOS clear the quarantine flag (docs/friends-install.md).
 #
+# Each zip also carries the lesson packs the plugin does not bundle (`Packs/`: shaping, space-and-dynamics and studies,
+# built by `cargo xtask pack` on the leg; R2 lane INT2) and GR2's friend sheet and answers template, beside GR1's sheet.
+#
 # Artefacts: one zip per OS, uploaded as-is (archive: false, so there is no zip inside a zip), kept for 14 days. Nothing is
 # published and no release is created (permissions stay read-only); the owner downloads the zips and forwards them.
 # `CARGO_BUILD_WARNINGS` is not set here, unlike ci.yml: ci.yml's per-push cross-target guard already fails a warning in
@@ -120,7 +123,10 @@ jobs:
           mkdir -p "stage/${name}"
           cp -R target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3 "stage/${name}/"
           cp docs/friends-install.md "stage/${name}/INSTALL.md"
-          cp docs/gr1-friends.md LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          cp docs/gr1-friends.md docs/gr2-friends.md LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          cp content/gr2/answers-template.toml "stage/${name}/gr2-answers.toml"
+          # The lesson packs the plugin does not bundle (the tour needs shaping and space-and-dynamics; R2 lane INT2).
+          cargo xtask pack --out "stage/${name}/Packs" shaping space-and-dynamics studies
           printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
           (cd stage && zip -q -r -y -X "../${name}.zip" "${name}")
           unzip -l "${name}.zip"
@@ -253,7 +259,11 @@ jobs:
           Copy-Item 'target\bundled\enth-plugin.clap' $stage
           Copy-Item -Recurse 'target\bundled\enth-plugin.vst3' $stage
           Copy-Item 'docs\friends-install.md' (Join-Path $stage 'INSTALL.md')
-          Copy-Item 'docs\gr1-friends.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md' $stage
+          Copy-Item 'docs\gr1-friends.md', 'docs\gr2-friends.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md' $stage
+          Copy-Item 'content\gr2\answers-template.toml' (Join-Path $stage 'gr2-answers.toml')
+          # The lesson packs the plugin does not bundle (the tour needs shaping and space-and-dynamics; R2 lane INT2).
+          cargo xtask pack --out (Join-Path $stage 'Packs') shaping space-and-dynamics studies
+          if ($LASTEXITCODE -ne 0) { throw 'cargo xtask pack failed' }
           "enth $($env:VERSION)`ncommit $($env:GITHUB_SHA)`n$(rustc --version)`nrunner $($env:RUNNER_OS) $($env:RUNNER_ARCH)" | Set-Content (Join-Path $stage 'BUILD.txt')
           $zip = "$name.zip"
           # Zipped from inside stage/, so the zip's one top-level folder is enth-<version>-windows-x86_64. 7-Zip is on the
@@ -375,7 +385,10 @@ jobs:
           mkdir -p "stage/${name}"
           cp -R target/bundled/enth-plugin.clap target/bundled/enth-plugin.vst3 "stage/${name}/"
           cp docs/friends-install.md "stage/${name}/INSTALL.md"
-          cp docs/gr1-friends.md LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          cp docs/gr1-friends.md docs/gr2-friends.md LICENSE THIRD_PARTY_NOTICES.md "stage/${name}/"
+          cp content/gr2/answers-template.toml "stage/${name}/gr2-answers.toml"
+          # The lesson packs the plugin does not bundle (the tour needs shaping and space-and-dynamics; R2 lane INT2).
+          cargo xtask pack --out "stage/${name}/Packs" shaping space-and-dynamics studies
           printf 'enth %s\ncommit %s\n%s\nrunner %s %s\n' "$VERSION" "$GITHUB_SHA" "$(rustc --version)" "$RUNNER_OS" "$RUNNER_ARCH" > "stage/${name}/BUILD.txt"
           # Apple's own way to zip a bundle: ditto keeps the symlinks, permissions and the signature intact.
           ditto -c -k --keepParent "stage/${name}" "${name}.zip"

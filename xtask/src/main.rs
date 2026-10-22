@@ -165,7 +165,9 @@ const USAGE: &str = "usage: cargo xtask <command>
   pack [--out DIR] [--check] [<pack>...]
                                     build content/lessons/<pack> into a reproducible .enthpack and compare it with its
                                     pins (R2 lane LCK)
-  gr2-report <progress file>...     (not built yet: R2 lane INT2) the GR2 numbers from the progress files
+  gr2-report [options] <dir>...     the GR2 numbers from what each participant sent back (answers, progress file,
+                                    round log): pre/mid/post-test items, families better or worse, lessons, votes,
+                                    notes, the proposed criteria; --json, --notes, --validate; docs/r2-owner.md (R2 INT2)
   gr3-run --arm A|B|C|D [options]   GR3's four arms over a held-out set of content/gr3/ (wall-clock or render
                                     budget); test runs append to content/gr3/runs.jsonl (R3 lane EVK, docs/gr3.md)
   gr3-report [--run R | --a R --b R] GR3's clause-1 endpoints and decision from content/gr3/runs.jsonl (lane EVK)

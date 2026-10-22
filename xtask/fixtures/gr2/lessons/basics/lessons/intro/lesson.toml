@@ -1,0 +1,6 @@
+title = "How a lesson works"
+objective = "Find your way around a lesson."
+
+[[steps]]
+id = "read"
+kind = "read"

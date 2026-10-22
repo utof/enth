@@ -2,21 +2,21 @@
 
 R2 teaches sound design on the instrument you keep: lessons of 5–10 minutes, one control or idea each, played inside the plugin, from "what is a saw wave" to sound-design studies. A lesson's "recreate this" step is a real Recreate round, so A/B, the rings, the coach and the results drawer come free. Lessons ship as **content packs** (markdown, patches and challenges, no audio), bundled in the build. This page is the design of record; the lane plan is [phase-3.md](phase-3.md), the curriculum is lane CUR's [lesson plan](../content/lessons/PLAN.md), and the evidence is the [R2 research session](../_local/sessions/2026-10-21-r2-learn/summary.md) (reports 01 pedagogy, 02 packs, 03 architecture; the summary wins where it corrects a report).
 
-**Status (2026-10-21): freeze F1l reached.** The lesson model and player (LM), Challenge v2 (CV2) and the session's Learn API (SL) are built and merged, judged together at F1l, and lane F1L closed the judge's findings: after F1l, learn, challenge and session types change only additively ([phase-3.md](phase-3.md#freezes)). The rest is planned. Every decision here is provisional until you steer; work proceeds on it meanwhile. Each lane updates its own section as it lands ([phase-3.md](phase-3.md#rules-for-every-lane)).
+**Status (2026-10-22, lane INT2): every R2 lane is built and merged; GR2 waits for you and your friends.** The lesson model and player (LM, PLY), Challenge v2 (CV2) and the session's Learn API (SL) were judged together at F1l (lane F1L closed the findings), and one lesson ran end to end in the plugin at F2l (SKL); the Learn view, the lesson tools, the four packs (42 lessons), the Review queue and the agent lesson track followed. After F1l, learn, challenge and session types change only additively ([phase-3.md](phase-3.md#freezes)). The automated GR2 checks pass ([r2-gates.md](r2-gates.md)); your steps (the taste check, owner build 4, the friend round and GR2's pre- and post-tests) are on [owner sheet 4](r2-owner.md), the friends' on [gr2-friends.md](gr2-friends.md). Every decision here is provisional until you steer. Each lane updated its own section as it landed ([phase-3.md](phase-3.md#rules-for-every-lane)).
 
 | Piece | Home | Lane | State |
 | --- | --- | --- | --- |
-| Lesson and pack model, player, checks, progress, markdown AST | `enth-learn` (L5) | LM, PLY | Built by LM and judged at F1l ([below](#the-lesson-model-lane-lm)); PLY's predicates, sound and choice evaluation and the markdown AST planned |
+| Lesson and pack model, player, checks, progress, markdown AST | `enth-learn` (L5) | LM, PLY | Built by LM and judged at F1l ([below](#the-lesson-model-lane-lm)); PLY's predicates, sound and choice evaluation and the markdown AST built ([below](#player-and-checks-lane-ply)) |
 | Challenge v2 | `enth-challenge` (L4) | CV2 | Built and judged at F1l ([challenge.md](challenge.md#challenge-v2-lane-cv2-r2)) |
 | Live binding, locks, the `learn` field | `enth-session::learn` (L6) | SL | Built and judged at F1l, on LM's player and CV2's selectors since lane F1L's swap ([session.md](session.md#learn-lane-sl-r2)) |
 | `closest` (the nearest passing patch) | `enth-solver::closest` (L5) | CLS | Built ([match.md](dsp/match.md#closest-closestrs-r2-lane-cls)); the "How close am I?" button on it built by lane LFU ([below](#learn-follow-ups-lane-lfu)) |
-| One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | SKL's part built (F2l): [plugin.md](plugin.md#learn-lane-skl-r2), [agent-cli.md](agent-cli.md#lessons-on-the-command-line-enth-lesson); EV3's `list`, `hint`, `closest` planned |
+| One lesson end to end in the plugin; `enth lesson` | `enth-plugin`, `enth-cli` (L8) | SKL, EV3 | SKL's part built (F2l): [plugin.md](plugin.md#learn-lane-skl-r2), [agent-cli.md](agent-cli.md#lessons-on-the-command-line-enth-lesson); EV3's `list`, `start`, `hint`, `closest` and the agent lesson track built ([agent-evals.md](agent-evals.md#the-lesson-track-r2-lane-ev3)) |
 | `lesson-check`, coverage, `pack`, `lesson new`, `lessons.yml` | `tools/lesson` (`enth-lesson-tool`), `enth-learn::coverage`, xtask drivers | LCK | Built ([below](#lesson-check-lane-lck)) |
 | The Learn view | `enth-ui::editor::learn` (L7) | LUI, LFU | Built ([editor.md](editor.md#the-learn-view-lane-lui)); LFU's follow-ups [below](#learn-follow-ups-lane-lfu) |
 | Deconstruct lessons, the studies | `enth-learn::deconstruct`, `tools/lesson` (`gen`), `content/lessons/studies/` | DEC | Built ([below](#deconstruct-lessons-lane-dec)) |
-| Review (Leitner boxes) | `enth-learn::review` | REV | Planned, later |
-| The packs | `content/lessons/<pack>/` | C1, C2, C3, DEC | `basics` built (C1) and bundled in the plugin (LFU); the rest planned ([PLAN.md](../content/lessons/PLAN.md)) |
-| GR2 | `docs/r2-gates.md`, `gr2-report` (planned) | INT2 | Planned |
+| Review (Leitner boxes) | `enth-learn::review`, `enth-session::review` | REV | Built ([below](#review-lane-rev)) |
+| The packs | `content/lessons/<pack>/` | C1, C2, C3, DEC | All four built: `basics` (C1, 16 lessons, bundled in the plugin by LFU), `shaping` (C2, 13), `space-and-dynamics` (C3, 7), `studies` (DEC, 6); the last three install from the Packs folder (the friend zip carries them) |
+| GR2 | [r2-gates.md](r2-gates.md), `cargo xtask gr2-report` (`xtask/src/gr2.rs`), `content/gr2/` | INT2 | Built: the automated rows pass; the human half waits for you and your friends ([owner sheet 4](r2-owner.md), [below](#gr2)) |
 
 ## The lesson shape
 
@@ -52,7 +52,7 @@ Rules:
 | The Learn view | `enth-ui/src/editor/learn/` | The `editor/recreate/` seam |
 | Pack I/O, the progress file, Learn jobs on the worker | `enth-plugin/src/learn.rs` | Shells translate; the rules come from `enth-learn` |
 | `enth lesson list\|show\|check\|hint\|closest` | `enth-cli/src/cmd/lesson.rs` | Agent evals; stateless like `enth check` |
-| `lesson-check`, `lesson-coverage`, `lesson new`, `lesson-gen`, `pack`, `gr2-report` | `tools/lesson/src/` (the package `enth-lesson-tool`, exempt tooling); `xtask/src/lesson/` and `xtask/src/gr2.rs` are thin drivers that run it, so xtask carries no engine crate | Tooling |
+| `lesson-check`, `lesson-coverage`, `lesson new`, `lesson-gen`, `pack`, `gr2-report` | `tools/lesson/src/` (the package `enth-lesson-tool`, exempt tooling); `xtask/src/lesson/` are thin drivers that run it, so xtask carries no engine crate; `gr2-report` reads plain files and lives in xtask itself (`xtask/src/gr2.rs`, lane INT2) | Tooling |
 
 Rejected: lessons inside `enth-challenge` (11.5k lines with five owners, and packs have a lifecycle challenges don't); session-only lessons (the CLI and the lesson tool could not share the player); an L7 I/O crate (only the plugin needs one until a standalone ships).
 
@@ -544,6 +544,8 @@ All planned (report 03 §8); the files are created by S0l or the lane that owns 
 - **Proposed pass criteria** (yours to set): every participant names a specific new thing in at least 3 lessons, coded by an agent against each lesson's objective; the median participant improves on at least 3 of 10 families, and no family gets worse on average; you name something new and pass a post-test item you failed before. With N = 5, "all improve" gives a one-sided sign test p ≈ 0.03: describe it, don't lean on it.
 - **Privacy:** the progress file and the round log stay local; participants send them by choice, as GR1 works. `cargo xtask gr2-report` (INT2) reads them.
 - **Time:** the full protocol is about 2.5 h per friend; the summary budgets 60–90 min (the tour alone). Which one friends do is an open check for INT2 ([phase-3.md](phase-3.md#open-checks)). Pilot it with you first.
+
+**As built (lane INT2, 2026-10-22).** [Owner sheet 4](r2-owner.md) is the protocol as you run it, [gr2-friends.md](gr2-friends.md) the friends', and [r2-gates.md](r2-gates.md) the table of record. The friend time is settled on phase-3's default: the full protocol where a friend agrees (about 3 h), otherwise the tour with per-lesson votes and the debrief (1½–2 h), with the pre/post rows from you and the full-protocol friends. Three things differ from the table above, each because the plugin cannot do it yet: the tests are **six families**, one long challenge code per family and form (A and B for pre and post, M for the mid-test after lesson 5, D delayed), each randomizing one generator category, played as ordinary Recreate rounds and read from the round log ([content/gr2/](../content/gr2/README.md)); there are **no "what changed?" items** (ear questions play only inside lessons); and **the per-lesson votes and notes are typed** into an answers file (`enth.gr2-answers/1`). `cargo xtask gr2-report <dir>` reads each person's answers, progress file and round log and prints the items, each family better, unchanged or worse, the lessons' votes and the proposed criteria (criterion 2 scaled to 2 of 6 families).
 
 ## Decisions (provisional)
 

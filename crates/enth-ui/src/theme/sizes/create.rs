@@ -15,8 +15,20 @@ pub struct CreateSizes {
     pub pane: f32,
     /// The height of the drop zone.
     pub drop_zone: f32,
-    /// The room the path field leaves for its **Choose** button.
+    /// The room the folder browser's path field leaves for its **Choose** button.
     pub choose: f32,
+    /// The height of one candidate tile (two lines: rank and provenance, then distance and state).
+    pub tile_height: f32,
+    /// The candidate tiles per row (K = 8 makes four rows of two in the 320 px panel).
+    pub tile_columns: usize,
+    /// The rank column at a tile's left ("1" … "8", in `text.title`).
+    pub rank_width: f32,
+    /// The height of one row of the folder browser's list.
+    pub browser_row: f32,
+    /// The most rows the folder browser's list shows before it scrolls (it scrolls inside the panel, never the panel).
+    pub browser_rows: usize,
+    /// The height of the progress bar.
+    pub progress_height: f32,
 }
 
 impl CreateSizes {
@@ -25,7 +37,13 @@ impl CreateSizes {
         Self {
             pane: 320.0,
             drop_zone: 56.0,
-            choose: 80.0,
+            choose: 88.0,
+            tile_height: 40.0,
+            tile_columns: 2,
+            rank_width: 18.0,
+            browser_row: 20.0,
+            browser_rows: 22,
+            progress_height: 16.0,
         }
     }
 }

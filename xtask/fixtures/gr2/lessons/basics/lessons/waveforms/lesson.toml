@@ -1,0 +1,14 @@
+title = "Waveforms"
+objective = "Tell sine, triangle, saw and pulse apart by ear."
+
+[[steps]]
+id = "hear"
+kind = "listen"
+
+[[steps]]
+id = "pick"
+kind = "choose"
+
+[[steps]]
+id = "round"
+kind = "recreate"

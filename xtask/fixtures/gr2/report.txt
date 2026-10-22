@@ -1,0 +1,55 @@
+GR2 report (enth.gr2-report/1)
+Read 9 file(s): 3 people with answers, 3 progress file(s), 3 round log(s) (20 lines); 0 error(s), 1 warning(s), 20 note(s).
+Privacy lint: clean (no email address or home-folder path found)
+  warning p4: no answers file (<id>.gr2.toml): this person is not counted
+Items: a clean pass is a pass within 180 s of active time with no hint, reveal, live meter or dimming; a family is better or worse on a changed pass, or on structure % moving 10 points with the pass unchanged.
+
+Proposed criteria (report 01 §7; you set them)
+  [NOT MET ] every participant names a specific new thing in at least 3 lessons (notes coded against each lesson's objective)
+             lessons with a named new thing: p1 2, p2 2 (+1 uncoded), p3 1 (+1 uncoded)
+  [NOT MET ] the median participant improves on at least 2 families, and no family gets worse on average
+             median families improved 1.5 of 3 over 2 participant(s); no family worse on average
+  [  met   ] you name something new and pass a post-test item you failed before
+             p1: 2 lesson(s) with a named new thing; passed a post-test item failed on the pre-test
+
+People
+  id        protocol  pre  years  conf  tour  lessons  new  knew  named  uncoded  better  same  worse  missing
+  --------  --------  ---  -----  ----  ----  -------  ---  ----  -----  -------  ------  ----  -----  -------
+  p1 (you)  full      A        6   3.7   3/4        3    2     2      2        0       1     2      0        0
+  p2        full      B      1.5   1.5   4/4        4    3     0      2        1       2     0      1        0
+  p3        tour      -        -     -   3/4        3    2     2      1        1       -     -      -        -
+  tour = tour lessons with every step done (progress file); new/knew = per-lesson votes; named = lessons with a note coded specific; better/same/worse/missing = families, post-test against pre-test.
+
+Items per person (pre → mid → post; pass N = clean pass at structure N %; N = structure %, * = helped)
+  id  family        pre       mid      post  delayed  post vs pre  mid vs pre   kept
+  --  ------  ---------  --------  --------  -------  -----------  ----------  -----
+  p1  osc            62  pass 100  pass 100       70       better      better  worse
+  p1  filter        80*        85        75        -         same        same      -
+  p1  fx        pass 90         -   pass 95        -         same           -      -
+  p2  osc      pass 100  pass 100       40*        -        worse        same      -
+  p2  filter         40         -        55        -       better           -      -
+  p2  fx      no submit        20   pass 92        -       better      better      -
+
+Families (full-protocol people)
+  family  lessons  before mid  people  better  same  worse   mean  structure  pre pass  post pass  mid better
+  ------  -------  ----------  ------  ------  ----  -----  -----  ---------  --------  ---------  ----------
+  osc           1           1       2       1     0      1  +0.00     -11.00       1/2        1/2         1/2
+  filter        1           0       2       1     1      0  +0.50      +5.00       0/2        0/2         0/1
+  fx            1           0       2       1     1      0  +0.50     +48.50       1/2        2/2         1/1
+  mean = mean change (-1 to +1); structure = mean structure % change; before mid = the family's tour lessons in the first 2 of the tour (the mid-test comes after them).
+  median families better: 1.5; the staggered mid-test: better on 1 of 2 taught (family, person) pairs, 1 of 2 not yet taught.
+  sign test: 2 of 2 people with more families better than worse (0 ties left out), one-sided p = 0.250. Describe it; with a handful of people, do not lean on it.
+
+Lessons (everyone; the tour first)
+  #  lesson            done  new  knew  easy  ok  hard  named  notes  ear 1st try
+  -  ----------------  ----  ---  ----  ----  --  ----  -----  -----  -----------
+  1  basics/intro         3    0     2     0   0     0      0      0          0/0
+  2  basics/waveforms     3    2     1     1   1     1      2      3          2/3
+  3  basics/cutoff        2    3     0     1   2     0      2      3          1/2
+  4  space/reverb         2    2     1     0   3     0      1      3          2/2
+  done = people who completed it; easy/ok/hard = pace votes; named = people with a specific note; ear 1st try = its ear questions answered with no wrong pick, of those answered.
+
+Notes: 12 in all, 4 not coded yet (`--notes` lists each with its lesson's objective).
+
+Findings
+  p4 played test codes but has no answers file: their items are not counted

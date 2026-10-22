@@ -771,3 +771,118 @@ fn a_finished_view_in_the_session_lets_use_this_load_the_best() {
     assert_eq!(s.patch().meta.name, "tone");
     assert!(s.history().can_undo());
 }
+
+// --- The A/B against the upload (lane PUI, additive) ------------------------------------------------------------
+
+/// Everything `player` plays from now until it has played and stopped (or 30 s pass), left channel then right.
+fn played(player: &mut AuditionPlayer) -> (Vec<f32>, Vec<f32>) {
+    let t0 = Instant::now();
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    let (mut l, mut r) = (vec![0.0f32; 512], vec![0.0f32; 512]);
+    let mut started = false;
+    while t0.elapsed() < Duration::from_secs(30) {
+        l.fill(0.0);
+        r.fill(0.0);
+        player.mix(&mut l, &mut r);
+        if player.playing() {
+            started = true;
+            left.extend_from_slice(&l);
+            right.extend_from_slice(&r);
+        } else if started {
+            left.extend_from_slice(&l);
+            right.extend_from_slice(&r);
+            break;
+        } else {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    (left, right)
+}
+
+fn rms_of(x: &[f32]) -> f64 {
+    (x.iter().map(|v| f64::from(*v) * f64::from(*v)).sum::<f64>() / x.len().max(1) as f64).sqrt()
+}
+
+#[test]
+fn the_upload_plays_level_matched_against_the_candidate_played_last() {
+    let _serial = SERIAL.lock();
+    let c = quiet();
+    c.act(vec![run(1, "tone.wav", 120.0, Some(60), 2)]);
+    let posts = collect(&c, Duration::from_secs(120), ended);
+    let Some((_, CreatePost::Done { candidates, .. })) = posts.last() else {
+        panic!("ends with Done: {:?}", posts.last());
+    };
+    c.set_host_rate(44_100.0);
+    let slot = c.audition_slot();
+    let mut player = AuditionPlayer::new(Arc::clone(&slot));
+    // A candidate, then the upload: the louder of the two comes down to the quieter one's RMS.
+    let best = candidates
+        .iter()
+        .min_by(|a, b| a.distance.total_cmp(&b.distance))
+        .unwrap();
+    for patch in [best.patch.clone(), {
+        // The same candidate 24 dB quieter: it plays as it is, and the upload comes down to its level.
+        let mut p = best.patch.clone();
+        let master: enth_patch::ParamAddr = "master.level".parse().unwrap();
+        let level = p.value(&master).unwrap_or(0.0);
+        enth_patch::apply_all(
+            &mut p,
+            &[enth_patch::Op::SetParam {
+                addr: master,
+                value: level - 24.0,
+            }],
+        )
+        .unwrap();
+        p
+    }] {
+        c.act(vec![CreateRequest::Audition {
+            id: CreateJobId(1),
+            branch: best.branch,
+            which: Which::Refined,
+            patch: Box::new(patch),
+        }]);
+        let (cl, cr) = played(&mut player);
+        assert!(rms_of(&cl) > 0.0, "the candidate played");
+        c.act(vec![CreateRequest::AuditionUpload { id: CreateJobId(1) }]);
+        let (ul, ur) = played(&mut player);
+        assert_eq!(ul, ur, "the upload is mono on both channels");
+        // The scored clip at 44.1 kHz is as long as the candidate's render of it (to a 512-frame block).
+        assert!(
+            ul.len().abs_diff(cl.len()) <= 512,
+            "upload {} frames, candidate {}",
+            ul.len(),
+            cl.len()
+        );
+        let (c_rms, u_rms) = (rms_of(&[cl, cr].concat()), rms_of(&ul));
+        println!("candidate RMS {c_rms:.5}, upload RMS {u_rms:.5}");
+        assert!(
+            (c_rms / u_rms - 1.0).abs() < 0.05,
+            "level-matched: candidate {c_rms}, upload {u_rms}"
+        );
+    }
+    // A stale job's upload plays nothing.
+    c.act(vec![CreateRequest::AuditionUpload { id: CreateJobId(9) }]);
+    std::thread::sleep(Duration::from_millis(50));
+    let (mut l, mut r) = (vec![0.0f32; 512], vec![0.0f32; 512]);
+    player.mix(&mut l, &mut r);
+    assert!(!player.playing() && l.iter().all(|v| *v == 0.0));
+    let _ = c.take_posts();
+}
+
+#[test]
+fn the_level_match_never_amplifies_and_the_resampler_keeps_the_length() {
+    assert_eq!(create::match_gain(0.5, 0.25), 0.5);
+    assert_eq!(create::match_gain(0.25, 0.5), 1.0, "never louder");
+    assert_eq!(create::match_gain(0.0, 0.5), 1.0);
+    assert_eq!(
+        create::match_gain(0.5, 0.0),
+        1.0,
+        "a silent side changes nothing"
+    );
+    let x: Vec<f32> = (0..48_000).map(|i| (i as f32 / 48.0).sin()).collect();
+    let y = create::resample_linear(&x, 48_000, 44_100);
+    assert_eq!(y.len(), 44_100);
+    assert_eq!(create::resample_linear(&x, 48_000, 48_000), x);
+    let up = create::resample_linear(&[0.0, 1.0], 1, 2);
+    assert_eq!(up, [0.0, 0.5, 1.0, 1.0]);
+}

@@ -1,4 +1,5 @@
-//! A create job through lane SK3's minimal Create panel (freeze point F2s; lane PUI's view replaces the panel):
+//! A create job through lane SK3's minimal Create panel (freeze point F2s), kept through lane PUI's view (the typed
+//! path moved into the folder browser, and a choice starts the job by itself; `create_view.rs` is the view's own flow):
 //! kittest drives it by label over a real `Session`, the way the plugin's glue does each frame
 //! (`enth-plugin/src/editor.rs`): the shell's posts handed back (`Session::create_post`), the create view handed over
 //! (`Editor::set_create`), the frame, then the panel's intents applied to the session's `CreateEdit`
@@ -112,6 +113,7 @@ fn start(h: &mut Harness<'_, App>) -> CreateJobId {
         h.query_by_label("Start create").is_some(),
         "the panel opened"
     );
+    click(h, "Browse files");
     h.get_by_label("Sound file path").click();
     h.run();
     h.get_by_label("Sound file path")
