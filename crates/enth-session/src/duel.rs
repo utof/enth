@@ -17,10 +17,12 @@
 //!   is `settled` once the compared submit can no longer change (a pass, a give-up, the round's end), and only a
 //!   settled result with no reveal can be shared: **a revealed target gives no scorecard.** The first played attempt
 //!   at a duel's code stands (a rematch is a new duel).
-//! - **The friend's scorecard and answer arrive as data** ([`FriendScorecard`], [`FriendAnswer`]): the shell decodes
-//!   them with `enth-challenge`'s paste-anything and result codes and hands over the fields the view shows plus the
-//!   code text, which the session never parses beyond the challenge code. The scorecard is shown at once, as
-//!   **reported** by their app. **The answer stays sealed until the player has submitted or given up**
+//! - **The friend's scorecard and answer arrive decoded or as text** ([`FriendScorecard`], [`FriendAnswer`]): the
+//!   shell decodes the scorecard with `enth-challenge`'s paste-anything and hands over the decoded
+//!   `result::Scorecard` itself with its text (should-fix S2 of the F1e review: no hand-copied fields), so the card
+//!   shows every claim, both engines and the scorer set, a newer build's included (M4). The answer stays text: decoding
+//!   it regenerates the target, which is the worker's job. The scorecard is shown at once, as **reported** by their
+//!   app. **The answer stays sealed until the player has submitted or given up**
 //!   ([`AnswerState::Sealed`]): a session guard so the view, the verify job, "use" and audition refuse until then, not
 //!   cryptography (the source is open and the code decodes).
 //! - **The Verify job** ([`DuelRequest::Verify`]) goes out to the shell, which runs `enth-challenge`'s `verify` on the
@@ -34,16 +36,19 @@
 //!   adds no field to the `enth` state blob, `enth.plugin-state/1` is untouched (the round record gains one optional
 //!   field, [`RoundRecord::compared`](crate::game::RoundRecord::compared)), and a host load leaves a duel alone.
 //! - **The salt is the shell's.** The scorecard's commitment is salted; a core crate has no randomness, so the shell
-//!   draws the salt once per duel, keeps it with the result in the history and gives it to `enth-challenge`'s code
+//!   draws the salt from OS randomness once per duel (never from a clock or a seed: the answer code carries it in the
+//!   clear, the F1e review's M6), keeps it with the result in the history and gives it to `enth-challenge`'s code
 //!   builders. The session builds no code.
 //!
-//! The session takes no type from `enth-challenge`'s `result`, `answer` or `verify` (lane RC builds them in
-//! parallel): the seam is plain data, in the units the session uses (scores in hundredths of a percent, as
-//! [`ScoreSummary`]; the claim in tenths, as the scorecard carries it).
+//! The seam with `enth-challenge`'s result codes (should-fix S2): the friend's card is a `result::Scorecard` and the
+//! verify job's claim check is a `verify::ClaimCheck` (both numbers, both engines, both scorer sets, the commitment);
+//! the re-scores stay in the session's own unit (hundredths of a percent, as [`ScoreSummary`]).
 //!
 //! After F2d the session's duel types change only additively (docs/phase-4.md, "Freezes"): the enums and the structs
 //! the shell builds are `non_exhaustive`, with constructors.
 
+use enth_challenge::result::Scorecard;
+use enth_challenge::verify::ClaimCheck;
 use enth_challenge::{AssistsUsed, ChallengeCode, CodeError, EngineVersion, Outcome, ScoringSpec};
 use enth_patch::Patch;
 
@@ -195,77 +200,51 @@ impl DuelOwn {
     }
 }
 
-/// A friend's scorecard as their app **reported** it: the shell decodes the scorecard code (kind 1 behind version 15)
-/// and hands over what the card shows, with the code's text for `verify` (which checks the commitment against the
-/// answer's). The session takes nothing on trust: the receiver's re-score decides.
+/// A friend's scorecard as their app **reported** it (should-fix S2 of the F1e review): the decoded scorecard (kind 1
+/// behind version 15: its challenge, engine, scorer set, claimed sound and combined % in tenths, passed, submits, time
+/// in deciseconds, assists and commitment) and its text for `verify`, which checks the commitment against the answer's.
+/// The session takes nothing on trust: the receiver's re-score decides.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct FriendScorecard {
-    /// The challenge code the card is for (its text; it must decode).
-    pub code: String,
+    /// The scorecard, decoded by the shell (`enth_challenge::paste` or `Scorecard::decode`).
+    pub card: Scorecard,
     /// The scorecard code as pasted, normalised by paste-anything.
     pub text: String,
-    /// The engine their app ran.
-    pub engine: EngineVersion,
-    /// Their sound %, in tenths of a percent (0 to 1000), as the card carries it.
-    pub sound_tenths: u16,
-    /// Their combined %, in tenths of a percent.
-    pub combined_tenths: u16,
-    /// Their compared submit passed.
-    pub passed: bool,
-    /// Their submit count (reported).
-    pub submits: u32,
-    /// Their time to pass, in whole seconds (reported); `None` without a pass.
-    pub time_s: Option<u32>,
-    /// Their assists (reported).
-    pub assists: AssistsUsed,
 }
 
 impl FriendScorecard {
-    /// A scorecard from its decoded fields; the rest defaults and the shell sets it with the builders.
+    /// A decoded scorecard and its text.
     #[must_use]
-    pub fn new(
-        code: impl Into<String>,
-        text: impl Into<String>,
-        engine: EngineVersion,
-        sound_tenths: u16,
-        combined_tenths: u16,
-        passed: bool,
-    ) -> Self {
+    pub fn new(card: Scorecard, text: impl Into<String>) -> Self {
         FriendScorecard {
-            code: code.into(),
+            card,
             text: text.into(),
-            engine,
-            sound_tenths,
-            combined_tenths,
-            passed,
-            submits: 0,
-            time_s: None,
-            assists: AssistsUsed::default(),
         }
     }
 
-    /// With their submit count and time to pass.
+    /// The challenge code the card is for (its canonical text).
     #[must_use]
-    pub fn with_play(mut self, submits: u32, time_s: Option<u32>) -> Self {
-        self.submits = submits;
-        self.time_s = time_s;
-        self
+    pub fn code(&self) -> String {
+        self.card.challenge().to_string()
     }
 
-    /// With their assists.
+    /// The claim was scored on another engine version than this build's: the view shows both numbers.
     #[must_use]
-    pub fn with_assists(mut self, assists: AssistsUsed) -> Self {
-        self.assists = assists;
-        self
+    pub fn engine_differs(&self) -> bool {
+        self.card.fields().engine != EngineVersion::CURRENT
+    }
+
+    /// The claim was scored with a scorer set this build does not have (a newer build's, the F1e review's M4): the card
+    /// shows it as reported, and the re-score uses this build's set, so the view shows both numbers.
+    #[must_use]
+    pub fn scorers_differ(&self) -> bool {
+        !self.card.fields().scorers.is_known()
     }
 
     fn check(&self) -> Result<(), DuelError> {
         if self.text.len() > MAX_CODE_TEXT {
             return Err(DuelError::BadImport("the scorecard text is too long"));
-        }
-        if self.sound_tenths > 1000 || self.combined_tenths > 1000 {
-            return Err(DuelError::BadImport("a score is above 100 %"));
         }
         Ok(())
     }
@@ -329,8 +308,9 @@ impl Rescored {
 }
 
 /// The Verify job: the shell runs `enth-challenge`'s `verify` for `answer` (decode, regenerate `code`'s target, apply
-/// the ops to the start and check the hash, check the scorecard's commitment when `card` is at hand, score with the
-/// named scorer set, compare with the claim) and, with the same evaluator, re-scores `own`.
+/// the ops to the start and check the hash, check the scorecard's commitment when `card` is at hand, score with
+/// `verify::scorer_set(card)`, compare with the claim) and, on the same prepared round, re-scores `own` (as the answer
+/// code carries it: the canonical answer, so both machines score the same patches).
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct DuelVerify {
@@ -359,23 +339,22 @@ pub struct DuelVerified {
     pub theirs: Rescored,
     /// Their patch (the start with their ops applied, the hash checked): what "use" loads and audition plays.
     pub theirs_patch: Option<Box<Patch>>,
-    /// Their answer matches the scorecard's commitment; `None` without a scorecard.
-    pub commitment_ok: Option<bool>,
-    /// Their re-score matches the scorecard's claim (compared at the claim's precision, by `verify`); `None` without
-    /// a scorecard. A mismatch on the same engine is a flag, not a verdict: the receiver's scores decide.
-    pub matches_claim: Option<bool>,
+    /// `verify`'s comparison with their scorecard (should-fix S2): both sound and combined numbers in tenths, both
+    /// passes, both engines, both scorer sets and whether their answer is the committed one. Present exactly when the
+    /// job carried a scorecard. A difference on the same engine and set is a flag, not a verdict: the receiver's scores
+    /// decide.
+    pub claim: Option<ClaimCheck>,
 }
 
 impl DuelVerified {
-    /// A verified answer with its re-scores; the checks default to none.
+    /// A verified answer with its re-scores; no patch and no claim check until set.
     #[must_use]
     pub fn new(own: Option<Rescored>, theirs: Rescored) -> Self {
         DuelVerified {
             own,
             theirs,
             theirs_patch: None,
-            commitment_ok: None,
-            matches_claim: None,
+            claim: None,
         }
     }
 
@@ -386,15 +365,14 @@ impl DuelVerified {
         self
     }
 
-    /// With the commitment and claim checks.
+    /// With `verify`'s claim check (`Verified::claim`).
     #[must_use]
-    pub fn with_checks(mut self, commitment_ok: Option<bool>, matches_claim: Option<bool>) -> Self {
-        self.commitment_ok = commitment_ok;
-        self.matches_claim = matches_claim;
+    pub fn with_claim(mut self, claim: Option<ClaimCheck>) -> Self {
+        self.claim = claim;
         self
     }
 
-    fn check(&self, had_own: bool) -> Result<(), DuelError> {
+    fn check(&self, had_own: bool, had_card: bool) -> Result<(), DuelError> {
         let in_range = |r: &Rescored| r.sound <= 10_000 && r.combined <= 10_000;
         if !in_range(&self.theirs) || self.own.as_ref().is_some_and(|o| !in_range(o)) {
             return Err(DuelError::BadResult("a score is above 100 %"));
@@ -402,6 +380,11 @@ impl DuelVerified {
         if self.own.is_some() != had_own {
             return Err(DuelError::BadResult(
                 "the own answer was re-scored or left out against the job",
+            ));
+        }
+        if self.claim.is_some() != had_card {
+            return Err(DuelError::BadResult(
+                "the claim was checked or left out against the job",
             ));
         }
         Ok(())
@@ -494,10 +477,9 @@ pub struct DuelChecked {
     pub own: Option<Rescored>,
     /// Their patch, re-scored.
     pub theirs: Rescored,
-    /// Their answer matches the scorecard's commitment; `None` without a scorecard.
-    pub commitment_ok: Option<bool>,
-    /// Their re-score matches the scorecard's claim; `None` without a scorecard.
-    pub matches_claim: Option<bool>,
+    /// `verify`'s comparison with their scorecard (both numbers, both engines, both scorer sets, the commitment);
+    /// `None` without a scorecard (should-fix S2).
+    pub claim: Option<ClaimCheck>,
     /// Their patch is at hand, so "use" and audition work.
     pub has_patch: bool,
     /// The player's compared submit is still the one that was re-scored. False when the round went on to a better
@@ -505,10 +487,29 @@ pub struct DuelChecked {
     pub own_current: bool,
 }
 
+impl DuelChecked {
+    /// Their answer matches the scorecard's commitment; `None` without a scorecard.
+    #[must_use]
+    pub fn commitment_ok(&self) -> Option<bool> {
+        self.claim.map(|c| c.commitment_matches)
+    }
+
+    /// Their re-score gives the claimed numbers and pass with the claim's own scorers ("as reported"); `None`
+    /// without a scorecard.
+    #[must_use]
+    pub fn matches_claim(&self) -> Option<bool> {
+        self.claim.map(|c| c.as_reported())
+    }
+}
+
 /// The duel card's read model ([`DuelEdit::duel`]), rebuilt on every call. It holds no patch, and **nothing of a sealed
 /// answer**.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent read-model flags the card shows: two differences to flag, a load, an audition"
+)]
 pub struct DuelView {
     /// The duel.
     pub id: DuelId,
@@ -520,6 +521,9 @@ pub struct DuelView {
     pub card: Option<FriendScorecard>,
     /// Their scorecard comes from another engine version than this build's: the view shows both numbers.
     pub engine_differs: bool,
+    /// Their scorecard names a scorer set this build does not have (the F1e review's M4): shown as reported, and the
+    /// re-score uses this build's set, so the view shows both numbers.
+    pub scorers_differ: bool,
     /// Whether their answer is held, sealed or open.
     pub answer: AnswerState,
     /// The verification.
@@ -732,7 +736,11 @@ struct DuelRun {
 #[derive(Debug)]
 enum VerifyLive {
     Idle,
-    Running { job: DuelJobId, had_own: bool },
+    Running {
+        job: DuelJobId,
+        had_own: bool,
+        had_card: bool,
+    },
     Done,
     Failed(DuelFailure),
 }
@@ -806,11 +814,12 @@ impl Session {
         let Some(run) = self.duel.run.as_mut() else {
             return Err(DuelError::Stale(job));
         };
-        let had_own = match run.verify {
+        let (had_own, had_card) = match run.verify {
             VerifyLive::Running {
                 job: waiting,
                 had_own,
-            } if waiting == job => had_own,
+                had_card,
+            } if waiting == job => (had_own, had_card),
             _ => return Err(DuelError::Stale(job)),
         };
         match result {
@@ -827,7 +836,7 @@ impl Session {
                 Ok(())
             }
             DuelJobResult::Verified(verified) => {
-                if let Err(e) = verified.check(had_own) {
+                if let Err(e) = verified.check(had_own, had_card) {
                     run.verify = VerifyLive::Failed(DuelFailure {
                         code: e.code().to_owned(),
                         message: e.to_string(),
@@ -839,14 +848,12 @@ impl Session {
                     own,
                     theirs,
                     theirs_patch,
-                    commitment_ok,
-                    matches_claim,
+                    claim,
                 } = *verified;
                 run.checked = Some(DuelChecked {
                     own,
                     theirs,
-                    commitment_ok,
-                    matches_claim,
+                    claim,
                     has_patch: theirs_patch.is_some(),
                     own_current: true,
                 });
@@ -1024,7 +1031,11 @@ impl DuelEdit for Session {
             engine_differs: run
                 .card
                 .as_ref()
-                .is_some_and(|c| c.engine != EngineVersion::CURRENT),
+                .is_some_and(FriendScorecard::engine_differs),
+            scorers_differ: run
+                .card
+                .as_ref()
+                .is_some_and(FriendScorecard::scorers_differ),
             answer,
             verify: match &run.verify {
                 VerifyLive::Idle => VerifyState::Idle,
@@ -1097,14 +1108,10 @@ impl DuelEdit for Session {
 
     fn duel_import_scorecard(&mut self, card: FriendScorecard) -> Result<DuelId, DuelError> {
         card.check()?;
-        let id = self.duel_for(&card.code)?;
-        let canonical_code = canonical(&card.code)?;
+        let id = self.duel_for(&card.code())?;
         if let Some(run) = self.duel.run.as_mut() {
             run.forget_check(&mut self.duel.requests);
-            run.card = Some(FriendScorecard {
-                code: canonical_code,
-                ..card
-            });
+            run.card = Some(card);
         }
         Ok(id)
     }
@@ -1143,6 +1150,7 @@ impl DuelEdit for Session {
         self.duel.next_job += 1;
         let job = DuelJobId(self.duel.next_job);
         let had_own = own.is_some();
+        let had_card = card.is_some();
         self.duel.requests.push(DuelRequest::Verify(DuelVerify {
             job,
             duel,
@@ -1152,7 +1160,11 @@ impl DuelEdit for Session {
             answer: text,
         }));
         if let Some(run) = self.duel.run.as_mut() {
-            run.verify = VerifyLive::Running { job, had_own };
+            run.verify = VerifyLive::Running {
+                job,
+                had_own,
+                had_card,
+            };
             run.check_number = number;
             run.checked = None;
             run.theirs_patch = None;
@@ -1246,15 +1258,24 @@ mod tests {
 
     #[test]
     fn imports_out_of_range_are_refused() {
-        let ok = FriendScorecard::new("c", "t", EngineVersion::CURRENT, 934, 900, true);
-        assert!(ok.check().is_ok());
-        let high = FriendScorecard::new("c", "t", EngineVersion::CURRENT, 1001, 900, true);
-        assert_eq!(high.check().map_err(|e| e.code()), Err("bad_import"));
+        // The card's numbers are range-checked by `Scorecard` itself (it cannot hold 100.1 %); the session checks the
+        // texts.
+        let card = enth_challenge::result::Scorecard::decode(
+            "F120-8010-0000-01A0-0100-0F9Q-1C40-S500-0938-NKRK-AYDW-N1XB-RBR",
+        )
+        .unwrap();
+        assert!(FriendScorecard::new(card.clone(), "t").check().is_ok());
+        let long = "A".repeat(MAX_CODE_TEXT + 1);
+        assert_eq!(
+            FriendScorecard::new(card, long.clone())
+                .check()
+                .map_err(|e| e.code()),
+            Err("bad_import")
+        );
         assert_eq!(
             FriendAnswer::new("c", "").check().map_err(|e| e.code()),
             Err("bad_import")
         );
-        let long = "A".repeat(MAX_CODE_TEXT + 1);
         assert!(FriendAnswer::new("c", long).check().is_err());
     }
 
@@ -1262,16 +1283,20 @@ mod tests {
     fn a_verify_result_must_fit_its_job() {
         let theirs = Rescored::new(9342, 9000, true);
         let with_own = DuelVerified::new(Some(Rescored::new(100, 100, false)), theirs);
-        assert!(with_own.check(true).is_ok());
+        assert!(with_own.check(true, false).is_ok());
         assert!(
-            with_own.check(false).is_err(),
+            with_own.check(false, false).is_err(),
             "an own score for no own patch"
         );
         assert!(
-            DuelVerified::new(None, theirs).check(true).is_err(),
+            DuelVerified::new(None, theirs).check(true, false).is_err(),
             "the own patch was not re-scored"
         );
         let high = DuelVerified::new(None, Rescored::new(10_001, 0, true));
-        assert!(high.check(false).is_err());
+        assert!(high.check(false, false).is_err());
+        assert!(
+            DuelVerified::new(None, theirs).check(false, true).is_err(),
+            "the job carried a scorecard and no claim came back"
+        );
     }
 }

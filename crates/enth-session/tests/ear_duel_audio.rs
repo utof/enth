@@ -12,7 +12,9 @@ mod common;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
+use enth_challenge::result::{CardAssists, Commitment, Scorecard, ScorecardFields, ScorerSet};
 use enth_challenge::score::ParamScore;
+use enth_challenge::verify::ClaimCheck;
 use enth_challenge::{
     Combined, Direction, EngineVersion, PhraseId, ScoringSpec, SoundScore, SpecPreset,
     TargetFingerprint,
@@ -232,15 +234,21 @@ fn ear_runs_and_duels_never_stop_the_audio_thread_or_make_it_allocate() {
             let spec: RandomSpec = SpecPreset::by_id(2).unwrap().spec(1, u64::from(round));
             let code = ChallengeCode::short(spec).unwrap().to_string();
             s.duel_open(&code).unwrap();
-            s.duel_import_scorecard(FriendScorecard::new(
-                code.clone(),
-                "CARD",
-                EngineVersion::CURRENT,
-                930,
-                900,
-                true,
-            ))
+            let card = Scorecard::from_fields(ScorecardFields {
+                challenge: ChallengeCode::decode(&code).unwrap(),
+                engine: EngineVersion::CURRENT,
+                scorers: ScorerSet::V1,
+                sound_tenths: 930,
+                combined_tenths: 900,
+                passed: true,
+                submits: 2,
+                time_ds: 600,
+                assists: CardAssists::default(),
+                commitment: Commitment::from_bits(1).unwrap(),
+            })
             .unwrap();
+            s.duel_import_scorecard(FriendScorecard::new(card, "CARD"))
+                .unwrap();
             s.duel_import_answer(FriendAnswer::new(code.clone(), "ANSWER"))
                 .unwrap();
             assert!(
@@ -269,7 +277,19 @@ fn ear_runs_and_duels_never_stop_the_audio_thread_or_make_it_allocate() {
                 DuelJobResult::Verified(Box::new(
                     DuelVerified::new(Some(own_score), Rescored::new(9300, 9000, true))
                         .with_patch(target_patch())
-                        .with_checks(Some(true), Some(true)),
+                        .with_claim(Some(ClaimCheck {
+                            claimed_sound_tenths: 930,
+                            sound_tenths: 930,
+                            claimed_combined_tenths: 900,
+                            combined_tenths: 900,
+                            claimed_passed: true,
+                            passed: true,
+                            claimed_engine: EngineVersion::CURRENT,
+                            engine: EngineVersion::CURRENT,
+                            commitment_matches: true,
+                            claimed_scorers: ScorerSet::V1,
+                            scorers: ScorerSet::V1,
+                        })),
                 )),
             )
             .unwrap();

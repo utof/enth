@@ -6,9 +6,11 @@
 
 mod common;
 
+use enth_challenge::result::{CardAssists, Commitment, Scorecard, ScorecardFields, ScorerSet};
 use enth_challenge::score::{ModuleTerm, ParamScore};
+use enth_challenge::verify::ClaimCheck;
 use enth_challenge::{
-    AssistsUsed, Combined, Direction, EngineVersion, PhraseId, ScoringSpec, SoundScore, SpecPreset,
+    Combined, Direction, EngineVersion, PhraseId, ScoringSpec, SoundScore, SpecPreset,
     TargetFingerprint,
 };
 use enth_patch::canon::exact_hash;
@@ -209,27 +211,70 @@ fn friend_answer() -> FriendAnswer {
     FriendAnswer::new(code(), "AN-ANSWER-CODE-TEXT")
 }
 
+/// A scorecard as the shell decodes it: `code`'s challenge, scored on `engine`, the claim, 3 submits, 95 s.
+fn scorecard(
+    code: &str,
+    engine: EngineVersion,
+    sound: u16,
+    combined: u16,
+    passed: bool,
+) -> Scorecard {
+    Scorecard::from_fields(ScorecardFields {
+        challenge: ChallengeCode::decode(code).unwrap(),
+        engine,
+        scorers: ScorerSet::V1,
+        sound_tenths: sound,
+        combined_tenths: combined,
+        passed,
+        submits: 3,
+        time_ds: 950,
+        assists: CardAssists::default(),
+        commitment: Commitment::from_bits(7).unwrap(),
+    })
+    .unwrap()
+}
+
 fn friend_card() -> FriendScorecard {
     FriendScorecard::new(
-        code(),
+        scorecard(&code(), EngineVersion::CURRENT, 934, 900, true),
         "A-SCORECARD-TEXT",
-        EngineVersion::CURRENT,
-        934,
-        900,
-        true,
     )
-    .with_play(3, Some(95))
+}
+
+/// `verify`'s claim check of `friend_card` against their re-score: as reported, the committed answer.
+fn claim() -> ClaimCheck {
+    ClaimCheck {
+        claimed_sound_tenths: 934,
+        sound_tenths: 934,
+        claimed_combined_tenths: 900,
+        combined_tenths: 900,
+        claimed_passed: true,
+        passed: true,
+        claimed_engine: EngineVersion::CURRENT,
+        engine: EngineVersion::CURRENT,
+        commitment_matches: true,
+        claimed_scorers: ScorerSet::V1,
+        scorers: ScorerSet::V1,
+    }
 }
 
 fn theirs() -> Rescored {
     Rescored::new(9342, 9000, true)
 }
 
+/// The worker's answer to a job that carried no scorecard.
 fn verified(own: Option<Rescored>) -> DuelJobResult {
+    DuelJobResult::Verified(Box::new(
+        DuelVerified::new(own, theirs()).with_patch(target_patch()),
+    ))
+}
+
+/// The worker's answer to a job that carried their scorecard: with `verify`'s claim check.
+fn verified_claimed(own: Option<Rescored>) -> DuelJobResult {
     DuelJobResult::Verified(Box::new(
         DuelVerified::new(own, theirs())
             .with_patch(target_patch())
-            .with_checks(Some(true), Some(true)),
+            .with_claim(Some(claim())),
     ))
 }
 
@@ -444,12 +489,15 @@ fn a_scorecard_is_shown_at_once_as_reported_and_a_newer_one_replaces_it() {
     let v = s.duel().unwrap();
     assert_eq!(v.code, code());
     let card = v.card.clone().unwrap();
+    let f = card.card.fields();
     assert_eq!(
-        (card.sound_tenths, card.combined_tenths, card.passed),
+        (f.sound_tenths, f.combined_tenths, f.passed),
         (934, 900, true)
     );
-    assert_eq!((card.submits, card.time_s), (3, Some(95)));
+    assert_eq!((f.submits, f.time_ds), (3, 950));
+    assert_eq!(card.code(), code());
     assert!(!v.engine_differs);
+    assert!(!v.scorers_differ);
     assert_eq!(
         (v.answer, v.verify.clone(), v.own.is_some()),
         (AnswerState::None, VerifyState::Idle, false)
@@ -462,45 +510,60 @@ fn a_scorecard_is_shown_at_once_as_reported_and_a_newer_one_replaces_it() {
         patch: 1,
     };
     assert_ne!(other_engine, EngineVersion::CURRENT);
-    let newer = FriendScorecard::new(code(), "ANOTHER", other_engine, 500, 450, false)
-        .with_assists(AssistsUsed {
-            hints: 2,
-            ..AssistsUsed::default()
-        });
+    let mut fields = scorecard(&code(), other_engine, 500, 450, false)
+        .fields()
+        .clone();
+    fields.assists.hints = 2;
+    let newer = FriendScorecard::new(Scorecard::from_fields(fields).unwrap(), "ANOTHER");
     s.duel_import_scorecard(newer).unwrap();
     let v = s.duel().unwrap();
     assert!(v.engine_differs);
     let card = v.card.unwrap();
-    assert_eq!((card.text.as_str(), card.assists.hints), ("ANOTHER", 2));
+    assert_eq!(
+        (card.text.as_str(), card.card.fields().assists.hints),
+        ("ANOTHER", 2)
+    );
+
+    // A newer build's scorer set (the F1e review's M4): shown as reported, and the view says both numbers follow.
+    let mut fields = scorecard(&code(), EngineVersion::CURRENT, 900, 880, true)
+        .fields()
+        .clone();
+    fields.scorers = ScorerSet::from_index(2).unwrap();
+    let sound2 = FriendScorecard::new(Scorecard::from_fields(fields).unwrap(), "SOUND-2");
+    s.duel_import_scorecard(sound2).unwrap();
+    let v = s.duel().unwrap();
+    assert!(v.scorers_differ && !v.engine_differs);
+    assert_eq!(v.card.unwrap().card.fields().sound_tenths, 900);
+    let mut fields = scorecard(&code(), other_engine, 500, 450, false)
+        .fields()
+        .clone();
+    fields.assists.hints = 2;
+    s.duel_import_scorecard(FriendScorecard::new(
+        Scorecard::from_fields(fields).unwrap(),
+        "ANOTHER",
+    ))
+    .unwrap();
 
     // A card for another challenge does not replace this duel's; a damaged card is refused.
     assert_eq!(
         s.duel_import_scorecard(FriendScorecard::new(
-            other_code(),
+            scorecard(&other_code(), EngineVersion::CURRENT, 1, 1, false),
             "X",
-            EngineVersion::CURRENT,
-            1,
-            1,
-            false
         ))
         .map_err(|e| e.code()),
         Err("other_challenge")
     );
-    for bad in [
-        FriendScorecard::new(code(), "X", EngineVersion::CURRENT, 1001, 0, true),
-        FriendScorecard::new(code(), "X", EngineVersion::CURRENT, 0, 1001, true),
-        FriendScorecard::new(
-            code(),
-            "X".repeat(MAX_CODE_TEXT + 1),
-            EngineVersion::CURRENT,
-            0,
-            0,
-            true,
-        ),
-        FriendScorecard::new("not a code", "X", EngineVersion::CURRENT, 0, 0, true),
-    ] {
-        assert!(s.duel_import_scorecard(bad).is_err());
-    }
+    // A card's numbers are in range by construction (`Scorecard` refuses 100.1 %); a text too long is refused.
+    let mut fields = scorecard(&code(), EngineVersion::CURRENT, 0, 0, true)
+        .fields()
+        .clone();
+    fields.sound_tenths = 1001;
+    assert!(Scorecard::from_fields(fields).is_err());
+    let long = FriendScorecard::new(
+        scorecard(&code(), EngineVersion::CURRENT, 0, 0, true),
+        "X".repeat(MAX_CODE_TEXT + 1),
+    );
+    assert!(s.duel_import_scorecard(long).is_err());
     assert_eq!(
         s.duel().unwrap().card.unwrap().text,
         "ANOTHER",
@@ -637,29 +700,34 @@ fn the_verify_job_posts_the_receivers_own_scores_and_stale_results_are_refused()
     // A result for a job the duel never asked for is stale and changes nothing.
     let stray = DuelJobId(first.0 + 7);
     assert_eq!(
-        s.duel_job_done(stray, verified(Some(own)))
+        s.duel_job_done(stray, verified_claimed(Some(own)))
             .map_err(|e| e.code()),
         Err("stale_job")
     );
     assert_eq!(s.duel().unwrap().verify, VerifyState::Running);
 
     // The result is what the worker measured; the claim is only compared.
-    s.duel_job_done(first, verified(Some(own))).unwrap();
+    s.duel_job_done(first, verified_claimed(Some(own))).unwrap();
     let v = s.duel().unwrap();
     assert_eq!(v.verify, VerifyState::Done);
     let checked = v.checked.unwrap();
     assert_eq!((checked.own, checked.theirs), (Some(own), theirs()));
     assert_eq!(
         (
-            checked.commitment_ok,
-            checked.matches_claim,
+            checked.commitment_ok(),
+            checked.matches_claim(),
             checked.has_patch,
             checked.own_current
         ),
         (Some(true), Some(true), true, true)
     );
     assert_eq!(
-        s.duel_job_done(first, verified(Some(own)))
+        checked.claim,
+        Some(claim()),
+        "both numbers, engines and sets, as verify gave them"
+    );
+    assert_eq!(
+        s.duel_job_done(first, verified_claimed(Some(own)))
             .map_err(|e| e.code()),
         Err("stale_job"),
         "a job is answered once"
@@ -669,7 +737,7 @@ fn the_verify_job_posts_the_receivers_own_scores_and_stale_results_are_refused()
     // so the own re-score cannot be left out; and no score is above 100 %.
     let second = s.duel_verify().unwrap();
     assert_eq!(
-        s.duel_job_done(second, verified(None))
+        s.duel_job_done(second, verified_claimed(None))
             .map_err(|e| e.code()),
         Err("wrong_result")
     );
@@ -1133,7 +1201,7 @@ fn a_duel_edits_never_reach_the_engine_or_the_host() {
         s.duel_set_own(DuelResult::new(own, Some(target_patch())))
             .unwrap();
         let job = s.duel_verify().unwrap();
-        s.duel_job_done(job, verified(Some(Rescored::new(9300, 9000, true))))
+        s.duel_job_done(job, verified_claimed(Some(Rescored::new(9300, 9000, true))))
             .unwrap();
         s.duel_audition().unwrap();
         s.duel_stop_audition();
