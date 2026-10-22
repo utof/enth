@@ -35,17 +35,28 @@ class Pieces(unittest.TestCase):
         for rt in (0.2, 0.5, 1.2):
             # Energy envelope 10^(-6 t / rt): amplitude 10^(-3 t / rt), the usual definition of an RT60.
             x = [10.0 ** (-3.0 * i / sr / rt) for i in range(int(sr * rt * 1.4))]
-            got, method = rir.estimate_rt60(rir.decay_curve_db(x), sr)
+            got, method, r2 = rir.estimate_rt60(rir.decay_curve_db(x), sr)
             self.assertEqual(method, "T20")
             self.assertAlmostEqual(got, rt, delta=0.04 * rt)
+            self.assertGreater(r2, 0.99)
 
     def test_a_recording_cut_off_while_loud_falls_back_to_t10_or_gives_none(self) -> None:
         # The decay curve of a finite signal ends at -inf only if its last samples are quiet; a signal cut off while
         # still loud never reaches -25 dB (T20 impossible), and a shorter one not even -15 dB (T10 impossible).
-        got, method = rir.estimate_rt60(rir.decay_curve_db([1.0] * 40), 16000)
+        got, method, _ = rir.estimate_rt60(rir.decay_curve_db([1.0] * 40), 16000)
         self.assertEqual(method, "T10")
         self.assertGreater(got, 0.0)
-        self.assertEqual(rir.estimate_rt60(rir.decay_curve_db([1.0] * 12), 16000), (None, None))
+        self.assertEqual(rir.estimate_rt60(rir.decay_curve_db([1.0] * 12), 16000), (None, None, None))
+
+    def test_a_bent_decay_is_estimated_but_its_fit_is_poor(self) -> None:
+        # A quick drop, then a long weak tail: the straight line through -5..-25 dB is a bad description of it.
+        sr = 16000
+        x = [10.0 ** (-3.0 * i / sr / 0.05) for i in range(int(sr * 0.2))] + [0.1 * 10.0 ** (-3.0 * i / sr / 1.0) for i in range(int(sr * 1.5))]
+        straight = [10.0 ** (-3.0 * i / sr / 0.5) for i in range(int(sr * 0.7))]
+        _, _, bent = rir.estimate_rt60(rir.decay_curve_db(x), sr)
+        _, _, line = rir.estimate_rt60(rir.decay_curve_db(straight), sr)
+        self.assertLess(bent, 0.97)
+        self.assertGreater(line, 0.99)
 
     def test_channel_choice(self) -> None:
         self.assertEqual(rir.pick_channels(1, 1, 0.9), [0])
@@ -76,6 +87,7 @@ class FromARecording(unittest.TestCase):
         self.assertAlmostEqual(a.onset_ms[0], 3.0, delta=0.1)
         self.assertAlmostEqual(a.rt60_s, 0.5, delta=0.1)
         self.assertEqual(a.rt60_method, "T20")
+        self.assertGreater(a.rt60_r2, 0.9)
         self.assertEqual(a.offset_samples, int(round(0.002 * 16000)) + 1)
         # Cut where the decay curve passes -45 dB: well under the 0.65 s that was recorded, and above the rt60 / 2.
         self.assertTrue(0.25 < a.tail_s < 0.5, a.tail_s)

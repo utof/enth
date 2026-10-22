@@ -55,6 +55,7 @@ class Analysis:
     onset_ms: list[float] = field(default_factory=list)
     rt60_s: float | None = None
     rt60_method: str | None = None
+    rt60_r2: float | None = None
     tail_s: float = 0.0
     source_channels: int = 1
     source_frames: int = 0
@@ -92,8 +93,9 @@ def decay_curve_db(x: list[float]) -> list[float]:
     return [10.0 * math.log10(max(b / total, 1e-30)) for b in back]
 
 
-def _fit_slope(edc: list[float], sr: int, hi_db: float, lo_db: float) -> float | None:
-    """Least-squares slope (dB per second) of the decay curve between ``hi_db`` and ``lo_db``; None if it never gets there."""
+def _fit_slope(edc: list[float], sr: int, hi_db: float, lo_db: float) -> tuple[float, float] | None:
+    """Least-squares (slope in dB per second, R squared) of the decay curve between ``hi_db`` and ``lo_db``; None if it
+    never gets there."""
     i0 = next((i for i, v in enumerate(edc) if v <= hi_db), None)
     i1 = next((i for i, v in enumerate(edc) if v <= lo_db), None)
     if i0 is None or i1 is None or i1 - i0 < 8:
@@ -103,18 +105,24 @@ def _fit_slope(edc: list[float], sr: int, hi_db: float, lo_db: float) -> float |
     ys = edc[i0 : i1 + 1]
     mx, my = math.fsum(xs) / n, math.fsum(ys) / n
     sxx = math.fsum((a - mx) ** 2 for a in xs)
-    if sxx <= 0.0:
+    syy = math.fsum((b - my) ** 2 for b in ys)
+    if sxx <= 0.0 or syy <= 0.0:
         return None
-    return math.fsum((a - mx) * (b - my) for a, b in zip(xs, ys, strict=True)) / sxx
+    sxy = math.fsum((a - mx) * (b - my) for a, b in zip(xs, ys, strict=True))
+    return sxy / sxx, (sxy * sxy) / (sxx * syy)
 
 
-def estimate_rt60(edc: list[float], sr: int) -> tuple[float | None, str | None]:
-    """RT60 from the decay curve: T20 (-5 to -25 dB) extrapolated to -60 dB, else T10 (-5 to -15 dB), else None."""
+def estimate_rt60(edc: list[float], sr: int) -> tuple[float | None, str | None, float | None]:
+    """(RT60, method, R squared of the fit): T20 (-5 to -25 dB) extrapolated to -60 dB, else T10 (-5 to -15 dB), else Nones.
+
+    A decay that is not a straight line on the dB scale (a quick early drop and a long weak tail) fits badly: the R squared
+    says how far to trust the number, and it is recorded beside it.
+    """
     for name, lo in (("T20", -25.0), ("T10", -15.0)):
-        slope = _fit_slope(edc, sr, -5.0, lo)
-        if slope is not None and slope < 0.0:
-            return -60.0 / slope, name
-    return None, None
+        fit = _fit_slope(edc, sr, -5.0, lo)
+        if fit is not None and fit[0] < 0.0:
+            return -60.0 / fit[0], name, fit[1]
+    return None, None, None
 
 
 def analyse(path: str | Path, out_channels: int, u_chan: float) -> Analysis:
@@ -125,7 +133,7 @@ def analyse(path: str | Path, out_channels: int, u_chan: float) -> Analysis:
     win = max(1, int(round(WINDOW_MS / 1000.0 * sr)))
     tails: list[list[float]] = []
     onsets: list[float] = []
-    rt60s: list[tuple[float, str]] = []
+    rt60s: list[tuple[float, str, float]] = []
     cut_lens: list[int] = []
     for c in picked:
         x = data[c::nch]
@@ -146,13 +154,13 @@ def analyse(path: str | Path, out_channels: int, u_chan: float) -> Analysis:
             tail[len(tail) - fade + k] *= 0.5 * (1.0 + math.cos(math.pi * (k + 1) / (fade + 1)))
         tails.append(tail)
         onsets.append(round(on / sr * 1000.0, 3))
-        r, m = estimate_rt60(edc, sr)
+        r, m, q = estimate_rt60(edc, sr)
         if r is not None:
-            rt60s.append((r, m or ""))
+            rt60s.append((r, m or "", q or 0.0))
         cut_lens.append(len(tail))
     n = max(cut_lens)
     tails = [t + [0.0] * (n - len(t)) for t in tails]
-    rt, method = (rt60s[0][0], rt60s[0][1]) if rt60s else (None, None)
+    rt, method, r2 = rt60s[0] if rt60s else (None, None, None)
     return Analysis(
         sr=sr,
         channels_picked=picked,
@@ -161,6 +169,7 @@ def analyse(path: str | Path, out_channels: int, u_chan: float) -> Analysis:
         onset_ms=onsets,
         rt60_s=None if rt is None else round(rt, 4),
         rt60_method=method,
+        rt60_r2=None if r2 is None else round(r2, 4),
         tail_s=round(n / sr, 4),
         source_channels=nch,
         source_frames=info.frames,

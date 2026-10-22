@@ -44,7 +44,8 @@ def _wet_candidate(rec: dict[str, Any]) -> dict[str, Any] | None:
     if stage == "rir":
         return {
             "stage": stage, "variant": rec["variant"], "recorded": True,
-            "rt60_s": result["rt60_s"], "wet_db": result["wet_db"], "tail_s": result["tail_s"],
+            "rt60_s": result["rt60_s"], "rt60_fit_r2": result["rt60_fit_r2"], "wet_db": result["wet_db"],
+            "tail_s": result["tail_s"],
         }
     if stage == "dynamics" and params.get("kind") == "compressor":
         keys = ("ratio", "thr_below_peak_db", "attack_ms", "release_ms", "makeup_db")

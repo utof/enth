@@ -214,6 +214,7 @@ def apply_rir(ctx: AugCtx, p: dict[str, Any]) -> dict[str, Any]:
         },
         "rt60_s": an.rt60_s,
         "rt60_method": an.rt60_method,
+        "rt60_fit_r2": an.rt60_r2,
         "tail_s": an.tail_s,
         "wet_db": p["wet_db"],
         "kernel": {**meta, "sha256": hashlib.sha256(h.tobytes()).hexdigest()},
