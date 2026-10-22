@@ -41,3 +41,11 @@ ml/** text=auto eol=lf
 
 # Ear generator v1's golden is compared as whole text (`include_str!` == computed): keep LF on every platform (lane MUS, R4).
 crates/enth-music/tests/golden/** text eol=lf
+
+# R4/R5's SHA-pinned text files (the F1e review's should-fix S7, lane F1E): the frozen timbre pool (each file's SHA-256
+# is pinned), and the challenge, result-code, lesson, pack and progress fixtures (pinned by SHA-256 or compared as
+# text). A Windows checkout (core.autocrlf) would turn them CRLF and change every pin, as golden.yml's Windows job did
+# on e47543f, bede6d9, 0b428c8 and 5082fec.
+crates/enth-challenge/src/ear/timbres-v1/** text eol=lf
+crates/enth-challenge/tests/fixtures/** text eol=lf
+crates/enth-learn/tests/fixtures/** text eol=lf
