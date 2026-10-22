@@ -99,6 +99,37 @@ class Writer(unittest.TestCase):
         self.assertEqual(enthmodl.eps_attr(-1.0), struct.unpack("<i", struct.pack("<f", -1.0))[0])
 
 
+class Reader(unittest.TestCase):
+    """Lane EXP's ``enthmodl.read``: the structure of what the writer wrote, read back."""
+
+    def test_it_reads_the_pinned_fixture_back(self) -> None:
+        m = enthmodl.read(pinned_fixture())
+        h = m.header
+        self.assertEqual((h["model_id"], h["engine"], h["ds1"], h["hypotheses"], h["width"]), ("propose-v0-test", "0.2.0", 1, 8, 102))
+        self.assertEqual((h["parameters"], h["flops"], h["manifest_sha256"]), (8 * 102 * 5 + 40, 10_000, b"\x5a" * 32))
+        self.assertEqual([(n, d, dims) for n, d, dims, _ in m.tensors], [("head.hyp.weight", 2, (816, 5)), ("head.conf.weight", 1, (8, 5))])
+        self.assertEqual(m.nodes, [("Linear", (1, 2), ()), ("Reshape", (4,), (8, 102)), ("Linear", (1, 3), ())])
+        self.assertEqual(m.outputs, [("hypotheses", 5, (8, 102)), ("confidence", 6, (8,))])
+        self.assertEqual(m.info, [("commit", "0123abc"), ("licence", "renders only")])
+        self.assertEqual([m.inputs[0][0], m.inputs[1][0]], ["mel", "context"])
+        self.assertEqual(m.tensor_values(1)[:3], [0.0, 0.25, 0.5])
+        self.assertEqual(m.tensor_values(0)[:2], [1.0, 1.0])
+
+    def test_it_refuses_a_damaged_or_foreign_file(self) -> None:
+        good = pinned_fixture()
+        flipped = bytearray(good)
+        flipped[300] ^= 1
+        for why, data in (("not a model", b"ENTHXXXX" + bytes(300)), ("one bit", bytes(flipped)), ("cut short", good[:-1])):
+            with self.subTest(why), self.assertRaises(ValueError):
+                enthmodl.read(data)
+
+    def test_it_reads_an_f16_tensor_exactly(self) -> None:
+        w = ModelWriter("t", 1)
+        w.tensor("a", [3], [0.1, 1e-8, -3.5], "f16")
+        m = enthmodl.read(w.build())
+        self.assertEqual(m.tensor_values(0), list(struct.unpack("<3e", struct.pack("<3e", 0.1, 1e-8, -3.5))))
+
+
 class Tensors(unittest.TestCase):
     def test_round_trip(self) -> None:
         entries = [("a", (2, 3), [0.5 * i for i in range(6)]), ("hypotheses", (1,), [-1.25])]

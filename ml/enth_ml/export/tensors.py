@@ -1,7 +1,9 @@
 """A raw tensor file, ``ENTHTNS1`` (lane ONX): the expected outputs of a parity fixture, and inputs for
 ``tools/model-check --inputs``.
 
-Standard library only. Little-endian: the magic ``ENTHTNS1``, a ``u32`` count, then per tensor its name (a ``u8``
+Standard library only at import (:func:`write_arrays` and :func:`read_arrays` take and return numpy arrays, so a
+parity run over thousands of inputs does not pass through Python lists; numpy is imported where it is used, and a caller
+that has it supplies the arrays). Little-endian: the magic ``ENTHTNS1``, a ``u32`` count, then per tensor its name (a ``u8``
 length and ASCII bytes), its rank (``u8``), its dims (``u32`` each) and its values (``f32``, row-major). The Rust side
 reads it in ``tools/model-check`` and in ``enth-solver``'s ``tests/propose_support``.
 """
@@ -46,6 +48,42 @@ def read(data: bytes) -> list[tuple[str, tuple[int, ...], list[float]]]:
         values = list(struct.unpack_from(f"<{size}f", data, at))
         at += 4 * size
         out.append((name, tuple(dims), values))
+    if at != len(data):
+        raise ValueError(f"{len(data) - at} bytes after the last tensor")
+    return out
+
+
+def write_arrays(tensors: Sequence[tuple[str, "object"]]) -> bytes:
+    """The same file as :func:`write`, from ``(name, array)`` entries whose arrays are numpy's (any dtype: stored as
+    little-endian ``f32``). Large tensors stay in numpy."""
+    out = bytearray(MAGIC) + struct.pack("<I", len(tensors))
+    for name, array in tensors:
+        dims = tuple(array.shape)
+        b = name.encode("ascii")
+        out += bytes([len(b)]) + b + bytes([len(dims)]) + struct.pack(f"<{len(dims)}I", *dims)
+        out += array.astype("<f4", copy=False).tobytes()
+    return bytes(out)
+
+
+def read_arrays(data: bytes) -> dict[str, "object"]:
+    """A tensor file as ``{name: numpy float32 array}`` (numpy imported here)."""
+    import numpy as np
+
+    if data[:8] != MAGIC:
+        raise ValueError("not an ENTHTNS1 file")
+    (count,) = struct.unpack_from("<I", data, 8)
+    at = 12
+    out = {}
+    for _ in range(count):
+        n = data[at]
+        name = data[at + 1 : at + 1 + n].decode("ascii")
+        at += 1 + n
+        rank = data[at]
+        dims = struct.unpack_from(f"<{rank}I", data, at + 1)
+        at += 1 + 4 * rank
+        size = math.prod(dims)
+        out[name] = np.frombuffer(data, dtype="<f4", count=size, offset=at).reshape(dims).astype(np.float32)
+        at += 4 * size
     if at != len(data):
         raise ValueError(f"{len(data) - at} bytes after the last tensor")
     return out
