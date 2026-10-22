@@ -1,0 +1,63 @@
+# propose v0, the full run (lane TR2, 2026-10-22), arm B: the desktop (GTX 1660 Ti, FP32): arm A without its riskiest change.
+# Arm A (full-v0-a.toml, isaac-pc) adds the discrete-boosted WTA selection; everything else is the same (but FP32 here).
+# Data: parts rendered while it trains (python -m enth_ml.train produce); pass the machine's paths:
+#   python -m enth_ml.train run --config enth_ml/train/full-v0-b.toml \
+#     --set 'train_glob="/mnt/d/enth-train/tr2/data/train/train-*-f16"' \
+#     --set 'dev_dirs=["/mnt/d/enth-train/tr2/data/dev-s1"]' --set 'out="/mnt/d/enth-train/tr2/runs/full-v0-b"'
+# Stop at any point: python -m enth_ml.train stop RUN_DIR; carry on: python -m enth_ml.train resume RUN_DIR.
+seed = 1                 # the same initial weights in both arms
+batch_size = 256
+workers = 8
+buffer_shards = 8
+prefetch = 2
+train_mel_dtype = "f2"   # the f16 cache's mel as stored; widened to f32 on the GPU (exact)
+dev_batch = 512
+epochs = 1000            # an upper bound: the schedule or early stopping ends the run
+max_minutes = 0.0        # no time budget: the LR and the WTA temperature follow the step alone (exact resumes)
+schedule_steps = 62500   # 16 M samples seen
+lr = 2e-3
+min_lr_frac = 0.02
+warmup_steps = 1000
+weight_decay = 0.05
+beta2 = 0.99
+grad_clip = 5.0
+amp = false              # the GTX 1660 Ti has no tensor cores: FP32 is 2.4x faster (TR)
+channels_last = false    # slower with autocast too (3,603)
+log_every_steps = 100
+eval_every_steps = 2000  # dev best-of-K every 512 k samples
+eval_at_epoch_end = false
+stats_shards = 64
+early_stop_patience = 8  # 4 M samples without a better dev best-of-K
+early_stop_min_steps = 20000
+min_dev_improvement = 0.002
+min_train_samples = 300000   # do not start on the first part alone
+max_repeat = 8.0             # samples seen <= 8 x distinct samples available: wait for the renderer otherwise
+data_target_samples = 1100000   # what fits on D:
+data_wait_max_minutes = 45.0
+ckpt_every_minutes = 25.0
+keep_checkpoints = 2
+
+[model]
+stem = 24
+widths = [32, 64, 128, 256]
+blocks = [1, 1, 2, 1]
+embed = 384
+hyp_hidden = 128
+conf_hidden = 256
+hypotheses = 8
+
+[loss]
+w_continuous = 1.0
+w_depth = 1.0
+w_categorical = 3.0          # pilot 2: categoricals and presence get more weight (TR's pilot report)
+w_structure = 2.0
+w_presence = 2.0             # pilot 1
+presence_pos_weight = 2.0    # pilot presence recall 0.55
+huber_delta = 1.0
+conf_weight = 0.2
+conf_soft_tau = 0.1          # the confidence learns soft targets from the per-head losses
+eps = 0.05
+t_start = 1.0
+t_end = 0.01
+anneal_frac = 0.3
+select_discrete_boost = 1.0  # arm B: the plain WTA winner (the pilot's)
