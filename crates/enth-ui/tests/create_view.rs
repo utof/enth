@@ -496,7 +496,7 @@ fn the_flow_from_the_folder_browser() {
     click(&mut h, "Create");
     assert!(has(
         &h,
-        "Drop zone: Drop a sound file here WAV, FLAC, Ogg Vorbis or MP3, any length"
+        "Drop zone: Drop a sound file here WAV, AIFF, FLAC, Ogg Vorbis or MP3, any length"
     ));
     assert!(disabled(&h, "Start create"), "nothing chosen yet");
     click(&mut h, "Browse files");

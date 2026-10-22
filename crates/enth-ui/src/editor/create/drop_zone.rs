@@ -99,7 +99,7 @@ pub(crate) fn zone(create: &Create, ui: &mut Ui, t: &Theme, hovering: bool) {
     } else {
         (
             "Drop a sound file here".to_owned(),
-            Some("WAV, FLAC, Ogg Vorbis or MP3, any length".to_owned()),
+            Some("WAV, AIFF, FLAC, Ogg Vorbis or MP3, any length".to_owned()),
         )
     };
     let inner = rect.shrink(t.space.gap);

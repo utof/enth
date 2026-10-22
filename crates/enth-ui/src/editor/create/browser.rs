@@ -26,10 +26,12 @@ use crate::Theme;
 use crate::editor::cards::{Intent, Intents};
 use crate::theme::glyph;
 
-/// The extensions the browser lists as sound files (lower case): what the plugin's decoders read (WAV, FLAC, Ogg
-/// Vorbis, MP3; `docs/r3.md`, "File input"). The decoders sniff the bytes, so a file with another name still decodes
-/// when chosen by its path.
-pub const SOUND_EXTENSIONS: &[&str] = &["wav", "wave", "flac", "ogg", "oga", "mp3"];
+/// The extensions the browser lists as sound files (lower case): what the plugin's decoders read (WAV, AIFF, FLAC,
+/// Ogg Vorbis, MP3; `docs/r3.md`, "File input"; AIFF added by lane `INTa`). The decoders sniff the bytes, so a file with
+/// another name still decodes when chosen by its path.
+pub const SOUND_EXTENSIONS: &[&str] = &[
+    "wav", "wave", "aif", "aiff", "aifc", "flac", "ogg", "oga", "mp3",
+];
 
 /// Whether `path` names a sound file the browser lists, by its extension.
 #[must_use]
@@ -249,7 +251,7 @@ fn list(folder: Option<&Folder>, ui: &mut Ui, t: &Theme, row: f32, out: &mut Int
     if folder.entries.is_empty() {
         ui.add(
             Label::new(
-                RichText::new("No folders or sound files here (WAV, FLAC, Ogg Vorbis, MP3)")
+                RichText::new("No folders or sound files here (WAV, AIFF, FLAC, Ogg Vorbis, MP3)")
                     .font(t.text.label.clone())
                     .color(t.color.text.dimmed),
             )

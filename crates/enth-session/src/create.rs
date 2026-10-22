@@ -490,7 +490,9 @@ impl CreateError {
             }
             CreateError::Stale(_) => "a result for a job that is gone: nothing to do".to_owned(),
             CreateError::BadSettings(what) => format!("fix the setting: {what}"),
-            CreateError::NoFile => "choose a sound file (WAV, FLAC, Ogg Vorbis or MP3)".to_owned(),
+            CreateError::NoFile => {
+                "choose a sound file (WAV, AIFF, FLAC, Ogg Vorbis or MP3)".to_owned()
+            }
             CreateError::Session(e) => e.hint(),
         }
     }
