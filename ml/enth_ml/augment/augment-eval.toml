@@ -1,0 +1,85 @@
+# The held-out augmentation config (lane AUG, R3b), schema enth.augment-config/1: what GR3's synthetic evaluation sets are
+# augmented with, never training. It composes with DEG's `heldout` pool (so its room, EQ, noise, codec... are DEG's held-out
+# variants) and draws recordings only from collections the manifest marks `role = "heldout-eval"` (MIT IR Survey, DEMAND):
+# collections whose licence keeps them out of shipped training (no licence stated; CC BY-SA 3.0) and which no training
+# config may name (tests/test_augment_disjoint.py). Those two are research-only and are not fetched by default: with
+# neither on disk their variants are dropped and the plan runs the rest.
+#
+# Every numeric setting differs from training's (augment.toml) in at least one parameter both define, so a model that
+# learned the training ranges still meets conditions it never saw. Parameters are written as in augment.toml.
+
+schema = "enth.augment-config/1"
+version = 1
+name = "heldout-v1"
+
+[config]
+purpose = "eval"
+degrade_pool = "heldout"
+
+[label_policy]
+version = 1
+dry_and_wet = ["room", "rir", "dynamics/compressor"]
+
+# A second render, louder under the clip than any training layer (training: -20 to -6 dB).
+[stage.mix_in]
+p = 0.15
+[stage.mix_in.variant.layer-loud]
+kind = "layer"
+rel_db = [-5.0, -1.0]
+offset_ms = [300.0, 800.0]
+
+# MIT IR Survey: 271 measured spaces of everyday life, 32 kHz mono. Wetter than any training room (training: -20 to 0 dB).
+[stage.rir]
+p = 0.5
+[stage.rir.variant.mit-survey]
+kind = "recorded"
+source = "mit-ir-survey"
+wet_db = [0.5, 6.0]
+
+# A headset and a phone's bottom mic: high-passes above every training mic's (training: under 380 Hz) and rolled-off tops.
+[stage.mic]
+p = 0.25
+[stage.mic.variant.headset]
+kind = "mic-headset"
+hp_hz = { log = [420.0, 600.0] }
+prox_hz = { log = [250.0, 500.0] }
+prox_db = [-4.0, -1.0]
+peak_hz = { log = [2000.0, 3500.0] }
+peak_gain_db = [4.0, 8.0]
+peak_q = [1.0, 2.5]
+air_hz = { log = [5000.0, 8000.0] }
+air_db = [-6.0, -3.0]
+lp_hz = { log = [4000.0, 6500.0] }
+
+# DEMAND: environmental noise, 16 kHz, 5 to 14.9 dB SNR (training: 15 to 50).
+[stage.bg_noise]
+p = 0.6
+[stage.bg_noise.variant.demand]
+kind = "recorded"
+source = "demand"
+snr_db = [5.0, 14.9]
+
+# Quieter than any training level (training: -45 to -3 dBFS peak).
+[stage.gain]
+p = 0.3
+[stage.gain.variant.quiet]
+kind = "level"
+peak_dbfs = [-70.0, -46.0]
+
+# Rates training never uses (training: 8000, 11025, 16000, 22050, 32000, 44100, 96000).
+[stage.rate]
+p = 0.15
+[stage.rate.variant.odd]
+kind = "native-rate"
+sr_hz = { choice = [12000, 24000, 37800] }
+
+[profile.layer]
+stages = ["mix_in"]
+[profile.recorded-room]
+stages = ["rir"]
+[profile.recorded-noise]
+stages = ["bg_noise"]
+[profile.mic]
+stages = ["mic"]
+[profile.levels]
+stages = ["gain", "rate"]

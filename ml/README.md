@@ -7,13 +7,14 @@ Lane S0s (R3, freeze point F0s) declared this skeleton and nothing else: `pyproj
 | Path | Holds | Lane |
 | --- | --- | --- |
 | `enth_ml/degrade/` | the seeded degradation chain; held-out pools disjoint from training's (tested); [DEG](#deg-the-degradation-chain) | DEG |
-| `enth_ml/augment/` | augmentation and the data manifest (licences per source) | AUG |
+| `enth_ml/augment/` | augmentation on top of DEG's chain (recorded rooms and noises, microphones, levels, rates, layers) and the data manifest (a licence per source, refused for NC and SA); [AUG](#aug-augmentation-and-the-data-manifest) | AUG |
+| `data/fetch.py` | the one script that downloads a dataset named in the manifest, by hand: robots.txt, one request, hash, safe extraction | AUG |
 | `enth_ml/model/` | the proposal network: K = 8 winner-takes-all hypotheses and a confidence head | TR |
 | `enth_ml/train/` | training, with a manifest per run | TR |
 | `enth_ml/export/` | ONNX and our model file (`enth-model-<id>.bin`), with a 20-input output golden | TR |
 | `tests/` | `ml/`'s own tests (standard library only for the layout; lanes add theirs) | all |
 
-Run every test with no installation: `python3 -m unittest discover -s tests` from `ml/` (the layout test needs `ml/` as the working directory; the DEG tests also run from the repository root with `-s ml/tests`). The DEG tests need the system `ffmpeg`, and skip without it.
+Run every test with no installation: `python3 -m unittest discover -s tests` from `ml/` (the layout test needs `ml/` as the working directory; the DEG tests also run from the repository root with `-s ml/tests`). The DEG and AUG tests need the system `ffmpeg`, and skip without it. The whole suite (262 tests) takes 3.5 to 6 minutes, depending on what else the machine is building; one lane's tests alone: `python3 -m unittest discover -s tests -p 'test_augment_*.py'`.
 
 ## DEG: the degradation chain
 
@@ -87,6 +88,93 @@ The same input, seed, pool and profile give the same output bytes **on this mach
 - One clip takes 0.3-1.7 s (up to about 20 ffmpeg calls, one or two per active stage). Baking about 100,000 codec variants for training needs batching (concatenate clips, or call the codec stage alone); that belongs to AUG.
 - Tests: `python3 -m unittest discover -s tests` from `ml/` (about a minute).
 
+## AUG: augmentation and the data manifest
+
+Lane AUG (`enth_ml/augment/`, `data/fetch.py`; design in [docs/r3.md](../docs/r3.md), "Augmentation and licences") puts DEG's chain under a config that adds what needs **recordings or a second clip**, and holds the **data manifest**: one entry per source with its licence, URL, version, hash and the use it allows. **Standard library plus the system `ffmpeg` binary**; the package has no network code (the one script that has is `data/fetch.py`, below), and the only data on this machine is OpenSLR 28 (1.3 GB, fetched on 2026-10-22).
+
+```
+python3 -m enth_ml.augment --in x.wav --out y.wav --seed 7 --record y.json                    # a random chain
+python3 -m enth_ml.augment --in x.wav --out y.wav --seed 7 --profile recorded-room            # a recorded room, forced
+python3 -m enth_ml.augment --in x.wav --out y.wav --seed 7 --profile all --layer other.wav    # every stage, a second render under it
+python3 -m enth_ml.augment --plan --seed 7 --profile mic        # the drawn parameters, no audio (what is on disk decides the variants)
+python3 -m enth_ml.augment --list | --check | --manifest        # stages and sources | are the manifest and config sound | licence table
+python3 -m enth_ml.augment --index openslr-28/sim-small         # hash a collection, write its index, print the digest to pin
+python3 -m enth_ml.augment --sample-seed RUN_SEED SAMPLE_ID [EPOCH]
+python3 data/fetch.py --list | --verify openslr-28 | SOURCE --yes [--research] [--allow-large]
+```
+
+From Python: `augment_file(src, dst, seed=, config=, store=, layers=, profile=, partition=)` returns the record; `make_plan(config, load_pools(), seed, profile)` the plan alone; `sample_seed(run_seed, sample_id, epoch)` the seed of one training sample. `--data-dir` (or `ENTH_DATA_DIR`) says where the collections are; the default is the manifest's `local_root`.
+
+| File | Holds |
+| --- | --- |
+| `manifest.toml`, `manifest.py` | the data manifest (`enth.data-manifest/1`) and the checks: `check_manifest`, `require_shipped` (the gate lane TR calls before it trains shipped weights) |
+| `augment.toml`, `augment-eval.toml` | the training config (`enth.augment-config/1`, purpose `shipped-training`, DEG's `train` pool) and the held-out one (purpose `eval`, DEG's `heldout` pool); versioned, their SHA-256 is in every record |
+| `config.py`, `plan.py` | loading and `check_config`; the merged seeded plan |
+| `sources.py` | a hashed index per collection, the train/dev split by path hash, GR3's exclusion lists |
+| `rir.py`, `stages.py`, `chain.py`, `__main__.py` | recorded impulse responses made ready for `afir`; the six stages; `augment_file`; the command line |
+| `../data/fetch.py` | the downloader |
+
+### How a sample is augmented
+
+`make_plan` draws **DEG's plan untouched** (the same streams, the same clean 15 % of train samples) and adds this package's stages from streams of their own (`derive("augment", "stage", seed, pool, stage)`), so adding a stage or a variant never moves another stage's numbers. The merged order is a signal path: `mix_in`, `attack_cut`, `tail_trunc`, `lead_pad`, `room` | `rir`, `mic`, `eq`, `noise` | `bg_noise`, `hum`, `dynamics`, `mono`, `gain`, `band_limit`, `codec`, `bit_depth`, `rate`, then -23 LUFS. A clean sample stays clean.
+
+| Stage | Draws | How |
+| --- | --- | --- |
+| `mix_in` (p 0.15) | a second sound 6-20 dB under the clip, 0-300 ms late: `layer` (a second render the caller passes, `--layer`) or `layer-recorded` (a real instrument note: TinySOL) | RMS ratio over the clip's length; resampled and channel-matched; the noise and hum that follow measure their SNR against the clip *with* its layer |
+| `rir` (replaces half of DEG's active `room` stages, so the chance of a room stays 0.3) | a **recorded or simulated room**: OpenSLR 28's simulated RIRs (small, medium, large rooms), BUT ReverbDB; `wet_db` -20..0 | the recording becomes DEG's shape: the first sample reaching a quarter of the peak is the onset; the direct window (1 ms before to 2 ms after) is **replaced by a unit impulse** so the recording's own colour never filters the clip; the tail is cut where the energy-decay curve passes -45 dB (4 s at most), resampled if the rates differ (the direct part never is), and scaled to energy `wet_db` below the direct; RT60 is measured (T20, else T10) and recorded with its fit's R squared; one channel of a multichannel recording per clip channel, a mono one on both |
+| `mic` (p 0.25) | a microphone's colour: high-pass 30-380 Hz, proximity shelf, a presence peak, an air shelf, low-pass 5-20 kHz, for four mic types | `highpass`, `lowshelf`, `equalizer`, `highshelf`, `lowpass`; every high-pass lies below the held-out speaker EQs' (420 Hz up); a component above 0.45 of the sample rate is left out |
+| `bg_noise` (replaces 0.6 of DEG's active `noise` stages) | a **recorded background noise** (OpenSLR 28's point-source noises, the Freesound portion of MUSAN) at 15-50 dB SNR | a random excerpt (looped if the noise is shorter than the clip) at the exact SNR against the clip's RMS, measured on the files |
+| `gain` (p 0.3) | the recording level: the clip's peak at -45..-3 dBFS before the band limit, codec and bit depth | so the quantiser, the codec and the final normalisation's boost act on a quiet or a hot recording |
+| `rate` (p 0.15) | the file's own sample rate: 8, 11.025, 16, 22.05, 32, 44.1 or 96 kHz | a proper resample, pitch and duration kept; none lies in the held-out 4-7 kHz band-limit range |
+
+`--profile` forces stages on (and DEG's off unless the profile names a DEG one): `layer`, `recorded-room`, `recorded-noise`, `mic`, `levels` (`gain` and `rate`), `recorded-room-mp3`, `recorded-noise-mp3`; any DEG profile passes through; `all` runs every stage of both chains, the recorded room and noise stacked on the synthetic ones. A profile whose stage has nothing to run (no collection fetched) is refused, naming why; the random chain just leaves that variant out and renormalises the weights, and the plan lists what it left out (`unavailable`).
+
+**Recorded files are chosen by fraction, not name**: the plan holds `u_file`, `u_chan`, `u_start` in [0, 1) and the store maps `u_file` to a file of the collection's **hashed index** when the stage runs (so a new file in a folder changes nothing until the index is rewritten, and a changed file is refused: its SHA-256 is checked at every pick). About 5 % of each collection's files, by a hash of the path, are the `dev` partition, which a validation augmentation draws from and training never does (`--partition dev`); an `eval` config draws from all of a held-out collection. Files GR3 excludes (`content/gr3/exclude-*.txt`: by SHA-256, Freesound id or pack, path) are never picked.
+
+**Seeds.** `sample_seed(run_seed, sample_id, epoch)` is a pure function: the same sample gets a new augmentation every epoch and the same one on every re-run. It is below 2**63 and **never inside GR3's seed block** (770000000000..770999999999: the held-out set's seeds); a hash that lands there is hashed again, and `make_plan` and `augment_file` refuse such a seed. A test holds the constant against `exclude-synth.txt`.
+
+### Labels: damage, or dry and wet
+
+Per the degradation policy (docs/r3.md, "Yours to decide", proceeded on): codec, hum, noise, device or microphone EQ, clipping and the rest are **damage**: the label is the clean render's patch. A **reverb or a compressor is ambiguous**, because the patch has its own, and a pad sampled with its reverb is not damaged. So a record whose chain applied a `room`, a `rir` or a compressor says `label.policy = "dry-and-wet"` and lists each under `label.wet_candidates` with its numbers (`rt60_s`, `wet_db`, `predelay_ms`, or `ratio`, `thr_below_peak_db`, `attack_ms`, `release_ms`, `makeup_db`; a recorded room adds `tail_s` and `rt60_fit_r2`). The dry label is the clean render's patch; lane TR decides, per its loss, whether to train on the dry label, on a wet one (the patch with that reverb or compressor set) or on either. Limiters and clippers are not the engine's effects and stay damage.
+
+### The record
+
+`enth.augment-record/1` (the chain's `CHAIN_VERSION` is 1) is DEG's record plus: `purpose`, `partition`, the config's name, version and SHA-256, the manifest's SHA-256, GR3's exclusion lists' SHA-256, `unavailable`, `layers_supplied`, per stage `sample_rate` (the `rate` stage changes it), `sources_used` (**every recorded file: its reference, path inside the collection, SHA-256, licence and allowed use**), the `label` block above, and **`shipped_ok`**: true when no source used is anything but `shipped-training` and the config is not an `eval` one. Lane TR keeps a sample out of a shipped-weights run when it is false. The clip's own licence is the caller's: a render of ours is fine, a real recording needs its own check. The record holds no path of this machine.
+
+### The data manifest and what the licences say
+
+`manifest.toml` has a **licence read at the source** for every collection (the date, the page, what it says), a URL, a version, the archive's size and SHA-256 once fetched, and a `use`: `shipped-training` (CC0, CC BY, Apache), `research-only` (evaluation or experiments, local) or `excluded`. A part of a source may tighten the source's use, never loosen it, and a source with parts is only as free as its least free part. `check_manifest` refuses a `shipped-training` entry whose licence is NC, SA, ND, Sampling+, unknown, unstated or not on the allowlist; `require_shipped(refs, manifest)` is the gate (it raises `LicenceError`); `check_config` runs it over every source a training config names, and `pick_source` runs it again at every file read. `python3 -m enth_ml.augment --manifest` prints the table. Findings that closed the open check (docs/phase-3.md):
+
+| Collection | Licence, as read | Use |
+| --- | --- | --- |
+| [OpenSLR 28](https://www.openslr.org/28/) (RIRS_NOISES, 1.3 GB, **fetched**) | Apache-2.0 for the archive. Its parts: the 3 x 20,000 **simulated RIRs** are the authors' own; the 843 **point-source noises** are MUSAN's Freesound portion, whose `LICENSE` says all were marked Public Domain on Freesound (recorded as CC0; the owner may veto that reading); the **real RIRs** come from three databases with their own terms | simulated RIRs and point-source noises: `shipped-training`. Real RIRs: AIR (MIT licence file, outside the CC0/CC BY/Apache allowlist), RWCP ("research and development purposes only" at NII and OpenSLR 13) and REVERB 2014 ("available only through LDC"): `research-only` |
+| [BUT ReverbDB](https://speech.fit.vut.cz/software/but-speech-fit-reverb-database) | CC BY 4.0 (page; `read_me.txt` header Apache-2.0) | `shipped-training`; the RIR-only archive is 9.3 GB, over the 3 GB budget: `fetch.py` is ready, `--allow-large` |
+| [MUSAN](https://www.openslr.org/17/) | CC BY 4.0 for the archive; per-folder `LICENSE` files (paper: only public-domain or commercial-use CC material) | `noise-free-sound` (Public Domain) `shipped-training`; `noise-sound-bible` and `music` wait for a per-file audit: `research-only` |
+| [NSynth](https://magenta.tensorflow.org/datasets/nsynth) | CC BY 4.0 | `shipped-training` |
+| [FSD50K](https://zenodo.org/records/4060432) | dataset CC BY, **per-clip licences**: CC0 and CC BY clips ship; CC BY-NC (6,041) and Sampling+ (1,777) do not. The record says to contact the authors for commercial use | split by clip licence; clip audio not fetched |
+| [TinySOL](https://zenodo.org/records/3685367) | CC BY 4.0 | `shipped-training` |
+| [Freesound](https://freesound.org/help/faq/) | per-sound CC. **Training terms** (FAQ, read 2026-10-22): training is fine "as long as individual sounds' Creative Commons licenses are respected": credit CC BY sounds, disclose the training set for CC BY, leave CC BY-NC out of a commercial model; bulk access is the Data Packs Portal (a contact form), not the API, whose terms (4f) bar robots and scraping, and `robots.txt` disallows `/search/`, `/api/`, `/apiv2/` | CC0 and CC BY: `shipped-training`; NC and Sampling+: `research-only`; nothing downloaded; GR3's 48 references are excluded |
+| [MIT IR Survey](https://mcdermottlab.mit.edu/Reverb/IR_Survey.html), [DEMAND](https://zenodo.org/records/1227121), [ESC-50](https://github.com/karolpiczak/ESC-50) | no licence stated; CC BY-SA 3.0 (the description; the metadata says CC BY 4.0, read as SA); CC BY-NC 3.0 | held-out evaluation collections, `research-only`: never training, and the only recordings `augment-eval.toml` may name |
+| [WHAM!](https://web.archive.org/web/20250114184610/http://wham.whisper.ai/) noise, [OpenAIR](https://www.openairlib.net/) | CC BY-NC 4.0; per-upload (some all rights reserved), and the site was unreachable | `excluded`: not fetched, not used, not even for evaluation |
+| AMR-NB (`libopencore-amrnb`), GSM (`libgsm`), AMR-WB (`libvo-amrwbenc`) | Apache-2.0 with a 3GPP note and "not a grant of patent rights"; a permissive TU Berlin notice; Apache-2.0 (read from the installed Debian packages' `copyright`, since SourceForge's `robots.txt` disallows the project pages) | used as subprocesses, in the held-out pool only (`heldout/codec/amr-nb`, `gsm`): no shipped-training sample passes through them; AMR-WB is not drawn |
+| LAME, shine, Opus, ffmpeg; pedalboard, gpuRIR, fdk-aac | LGPL-2+, LGPL-2, BSD-3, GPL-2+ (as built); GPL-3.0, AGPL-3.0, no patent licence | subprocesses only; the last three are never imported or used |
+
+### Disjoint from GR3's held-out set, and tested
+
+`tests/test_augment_disjoint.py` extends DEG's check to everything this package adds. (1) Each variant of `augment.toml` is disjoint, by DEG's own rule, from every related held-out variant (`rir` and `room`, `mic` and `eq`, `bg_noise` and `noise`, `rate` and `band_limit`), and the microphones and rates also differ from the held-out EQs and band limits **by a number in a parameter both define** (a stricter rule than `kind`; its test has teeth). (2) `augment-eval.toml` differs from `augment.toml` the same way, stage by stage. (3) No training config can name a collection the manifest holds out (it is refused, for every held-out reference, under every training purpose), and an `eval` config can name nothing else. (4) Held against the plans: no training plan, over thousands of seeds and every profile, shows a pool, variant or profile that `content/gr3/exclude-degraded.txt` lists, or a seed in a reserved range; instance seeds keep each pool's parity bit; DEG's draws are unchanged. A recorded room is a new generator (`kind = "recorded"`), disjoint from the held-out *synthetic* rooms by DEG's rule, but its RT60 is whatever the recording has, including inside the held-out bands: the held-out room test measures a new generator, not a new RT60.
+
+### `data/fetch.py`: the one script with network code
+
+`python3 data/fetch.py SOURCE --yes` downloads one archive named in the manifest. It refuses an excluded source, a source that cannot train shipped weights (unless `--research`), an archive over 3 GB (unless `--allow-large`), and anything without `--yes` (it prints the licence and where it was read first). It reads the host's `robots.txt` before anything else (own RFC 9309 parser; obeys `Disallow` and `Crawl-delay`; re-checks every redirect), sends `User-Agent: enth-research/0.1` and no other identifying header, makes one request at a time at least 2 s apart, resumes a `.part` with `Range`, never retries after 403, 404, 429 or 5xx, checks size and SHA-256 against the manifest (a first fetch with no pinned hash prints the digest and stops), extracts with no absolute path, no `..` and no link or device, capped in size and file count, into a fresh directory, deletes nothing, and prints each part's index digest next to the pinned one. `--verify` re-hashes without the network. Its tests (`tests/test_augment_fetch.py`) run it against a server on 127.0.0.1 only. Downloaded data is untrusted: nothing in `enth_ml` opens an archive; read extracted files with `python3 -I` from another directory.
+
+### Limits and open items
+
+- **`enth-py` has no compressor yet**, so the `dynamics` compressor is still ffmpeg's `acompressor` (DEG's stand-in). AUG swaps it when `enth-py` exposes one; the wet candidate already carries its parameters.
+- **Not fetched** (budget, or a person must): BUT ReverbDB (9.3 GB), MUSAN (11 GB), NSynth, TinySOL, FSD50K, Freesound, and the held-out MIT IR Survey and DEMAND. Their variants drop out of the plan until the collection is on disk; a run with only OpenSLR 28 uses the simulated rooms and the point-source noises.
+- **Owner questions**: whether to admit the MIT licence (AIR) to the allowlist (it is kept `research-only`); the reading of the point-source noises as CC0; whether to ask Freesound for a Data Packs download and FSD50K's authors about commercial use; a per-file audit of MUSAN's other folders.
+- `rate` makes the output file's sample rate vary (8-96 kHz); the trainer decides whether to feed that to the features as is or resample back.
+- Tests: `python3 -m unittest discover -s tests -p 'test_augment_*.py'` (a little over half of the suite's time).
+
 ## The ML rules
 
 From [docs/phase-3.md](../docs/phase-3.md#rules-for-every-lane) ("ML rules" and "Held-out hygiene"); they bind every lane that writes here.
@@ -96,7 +184,7 @@ From [docs/phase-3.md](../docs/phase-3.md#rules-for-every-lane) ("ML rules" and 
 - **LGPL and GPL tools run only as subprocesses.** LAME, shine and ffmpeg are never imported or linked. **pedalboard (GPL-3.0), gpuRIR (AGPL-3.0) and fdk-aac are never imported.**
 - **Shipped weights train only on our renders plus CC0, CC BY or Apache data.** NC, SA and licence-less sets stay evaluation-only and local. A source's licence is read from the source and recorded in the data manifest.
 - **Features are computed in Rust** (`enth-analysis`, through files `tools/datagen` writes), **never re-implemented in Python.**
-- **Logs stay local.** No telemetry, no experiment tracker that uploads, no network code.
+- **Logs stay local.** No telemetry, no experiment tracker that uploads, no network code in the package. The one exception is `data/fetch.py`, a by-hand downloader of public datasets (it is never imported, and only a person starts it; see AUG above).
 - **Held-out hygiene.** The GR3 sets (`content/gr3/`) freeze with their hashes before any training; tuning happens on dev only; every test run is appended to `content/gr3/runs.jsonl` and none is dropped.
 - **Privacy.** Never put the owner's email, name or other personal details in any request, header, URL or payload; where an API asks for contact info use `enth-research/0.1`. A dataset that needs an account (Freesound's originals) is fetched by the owner, not by an agent.
 
