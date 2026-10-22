@@ -10,7 +10,7 @@
 //! | `schema` | `"enth.create/1"` ([`SCHEMA`]) |
 //! | `input` | the scored clip's SHA-256, the input features' SHA-256, the rate, the frames, the render seed, the performance **played** (an override included), the bandwidth and the confirmed noise floor |
 //! | `intake` | FE's [`IntakeReport`] whole (its settings, the performance it **inferred**, every degradation and warning), when the shell ran the intake; absent for a target built another way |
-//! | `settings` | every [`CreateCfg`] field **the job ran under** (from the result, never the shell's copy), the objective's metric id (the caller's), the embedding id, the bank's SHA-256 and size when one was used, the templates' names |
+//! | `settings` | every [`CreateCfg`] field **the job ran under** (from the result, never the shell's copy), the objective's metric id (the caller's), the embedding id, the bank's SHA-256 and size when one was used, the templates' names; **`model`** when a model proposed starts (R3b, lane MS, additive): its id, the file's SHA-256, the model input's and outputs' hashes, Kₘ and the hypotheses dropped ([`ModelRecord`]) |
 //! | `starts` | **every start as a patch** (patch file schema 1), with its provenance, its screening distance and the branch it became |
 //! | `candidates` | the K branches: the refined patch, its distance, the proposal's distance, state, last rung, renders, runs, trace |
 //! | `rounds` | per round: renders, rung, live branches, and `seconds` when the shell stamped its clock |
@@ -136,6 +136,42 @@ pub struct SettingsRecord {
     pub bank: Option<BankRecord>,
     /// The templates proposed, by name.
     pub templates: Vec<String>,
+    /// The model whose hypotheses joined the starts (R3b, lane MS; additive within `/1`): absent from the JSON when
+    /// no model was used, so a record of a run without one is byte-for-byte what it was, and an older record reads
+    /// back as `None`. The shell sets it from [`ModelProposals::record`](super::ModelProposals::record).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<ModelRecord>,
+}
+
+/// The model a job drew starts from (`settings.model`, lane MS). The starts themselves are recorded as patches with
+/// [`Provenance::Model`], so a replay needs neither the model file nor inference; these say which file and which
+/// input made them, and let anyone check that inference gave the same bits.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelRecord {
+    /// The model's id (the header's; what each start's provenance names).
+    pub id: String,
+    /// SHA-256 of the model file.
+    pub sha256: String,
+    /// `ModelInput::sha256`: the model input's hash (feature set 1, computed from the intake before any override);
+    /// `null` when the input could not be computed (a silent window), and the model proposed nothing.
+    pub input_sha256: Option<String>,
+    /// `Outputs::sha256`: the hash of everything the net output (the golden a model file pins); `null` when it did
+    /// not run.
+    pub outputs_sha256: Option<String>,
+    /// Kₘ: the hypotheses the model gives per inference.
+    pub hypotheses: usize,
+    /// The hypotheses dropped, in hypothesis order, with why (a non-finite value or confidence, a decode error).
+    #[serde(default)]
+    pub dropped: Vec<DroppedRecord>,
+}
+
+/// A hypothesis that did not become a start.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DroppedRecord {
+    /// Which of the Kₘ.
+    pub hypothesis: usize,
+    /// Why: `confidence_non_finite`, or a decode error's code (`hypothesis_non_finite`, `hypothesis_rekey`, …).
+    pub code: String,
 }
 
 /// One start.
@@ -300,6 +336,7 @@ impl CreateRecord {
                     generator: b.header().generator,
                 }),
                 templates: ctx.templates.to_vec(),
+                model: None,
             },
             starts: result
                 .starts

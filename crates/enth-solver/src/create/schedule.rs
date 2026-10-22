@@ -1,4 +1,5 @@
-//! **Owner: lane TP** (the schedule's first version, freeze point F1s); **MS** adds the model's proposals (R3b).
+//! **Owner: lane TP** (the schedule's first version, freeze point F1s); **MS** adds the model's proposals (R3b:
+//! [`Model`], [`ModelProposals`]) and aligns the free set with the job's performance.
 //! Pre-declared by lane S0s (R3).
 //!
 //! [`CreateJob`]: K branches refined by successive halving (docs/r3.md, "K branches and successive halving"), as an
@@ -8,12 +9,14 @@
 //! 1. **Screening (round 0).** One batch renders every start once (at most the budget's worth, in portfolio
 //!    order), so the first K proposals have distances after a single batch. The heuristic start is always kept and
 //!    the best K − 1 others (by distance, ties to the earlier start) become the branches, in start order.
-//! 2. **Branches.** Each branch is its own [`Search`] from its start, over the parameters the held phrase reveals
-//!    (`enth_challenge::random::observable`, as `enth match --free observable`) less the envelopes' release times
-//!    when the target's note-off falls at or after the clip's end, with the target's heuristic and a seed derived
-//!    from the job's seed and its start's index (so a replay from recorded starts draws the same). A branch's search
-//!    has no render cap of its own, so what it draws never depends on the budget. Its first batch begins with its
-//!    start, already rendered in the screening round: that distance is reused rather than rendered again.
+//! 2. **Branches.** Each branch is its own [`Search`] from its start, over the parameters the job's one note reveals
+//!    (`enth_challenge::random::observable_view` under the phrase [`Hearing::job`] builds, the one a model's
+//!    hypotheses decode under), with the envelope times the job hears in part kept and no release when the target's
+//!    note-off falls at or after the clip's end (`create::free_set`, lane MS), with the target's heuristic and a seed
+//!    derived from the job's seed and its start's index (so a replay from recorded starts draws the same). A
+//!    branch's search has no render cap of its own, so what it draws never depends on the budget. Its first batch
+//!    begins with its start, already rendered in the screening round: that distance is reused rather than rendered
+//!    again.
 //! 3. **Rounds.** Each round asks every eligible branch for its next batch, in branch order, concatenates them into
 //!    one batch for the caller's objective, and splits the distances back to each branch's `tell` by index: the
 //!    result is the same for any worker count, and 8 branches × λ 16 keep a pool busy.
@@ -30,7 +33,39 @@
 //!    the run. **A run capped by its budget or its callback is an exact prefix of a longer one**: the evaluated
 //!    patches, in order, are the longer run's first ones, so the render-equivalent twin of a timed run is the same
 //!    job with `budget` = its renders.
+//!
+//! # The model's proposals (R3b, lane MS)
+//!
+//! docs/r3.md, "How the Kₘ hypotheses join a create job". A [`Model`] is a model file's net, built once per file
+//! (on the shell's create thread, never per render: building widens the weights once). Per job,
+//! [`Model::propose`] turns one inference into starts:
+//!
+//! 1. **What the model is told comes from the intake, before any override**: `ModelInput::from_intake`'s input and
+//!    `Cue::from_intake`'s key (a `--perf` override changes how candidates render, not what the model hears).
+//! 2. **One inference** (`Net::run`), on our bit-exact kernels: the same model and input give the same bits on every
+//!    platform, so the starts below are a pure function of the file and the clip.
+//! 3. **Each hypothesis row decodes under the job's performance** (`OutputLayout::decode` with
+//!    [`Hearing::job`]`(&cue, &target.perf)`): canonicalised under the note the job plays, the semis re-keyed from the
+//!    told key to the job's key, `osc1.fine` from the pitch offset. A row with a non-finite confidence, or one that
+//!    does not decode (a non-finite value, a re-key past ±48 semitones), is **dropped and said**, never guessed.
+//! 4. **The starts go in descending confidence (ties to the lower hypothesis)**, each with
+//!    [`Provenance::Model`]` { model, hypothesis, confidence }`. The shell passes them as `Inputs::proposals`, so the
+//!    portfolio puts them after the k-NN neighbours; round 0 screens every start, the heuristic start is always
+//!    kept, and a hypothesis becomes a branch only on its rendered distance: the confidence orders and labels, never
+//!    prunes (the F3s judge's ruling 8).
+//! 5. **The record:** [`ModelProposals::record`] is `enth.create/1`'s `settings.model` (the id, the file's SHA-256,
+//!    the input's and the outputs' hashes, the drops), and [`ModelProposals::notes`] go with the job's notes.
+//!
+//! A refused model file (`ModelPack::parse` or `Net::build`'s `PackError`) is the shell's to report: create then runs
+//! on R3a's starts and says why. The solver reads no clock, so **the cap includes inference by the shell's clock**:
+//! a shell starts its clock before the intake and runs [`Model::propose`] inside it (as `enth create`'s `--seconds`
+//! and the GR3 kit's arm B do), so inference is charged to the job's time and never to its render budget.
+//!
+//! **Deterministic given its proposals** (MS's acceptance): the job is a pure function of the target, the starts and
+//! the settings for any worker count (the schedule above), and the proposals are a pure function of the model file
+//! and the intake; the record keeps every start as a patch, so a replay needs neither the model nor inference.
 
+use enth_analysis::intake::Intake;
 use enth_dsp::util::rng::derive;
 use enth_patch::Patch;
 
@@ -38,9 +73,14 @@ use super::candidate::{
     BranchStep, Candidate, CandidateState, CreateResult, CreateStop, Provenance, RoundInfo,
     StartOutcome,
 };
-use super::portfolio::Portfolio;
+use super::portfolio::{Portfolio, Start};
+use super::record::{DroppedRecord, ModelRecord, hex};
 use super::{Analysis, CreateCfg, CreateError, Target, TargetPerf, free_set};
 use crate::heuristic::Heuristic;
+use crate::propose::decode::{Hearing, OutputLayout};
+use crate::propose::features::{Cue, ModelInput};
+use crate::propose::net::Net;
+use crate::propose::pack::{ModelPack, PackError};
 use crate::search::{FAILED, Search, SearchCfg, SearchError};
 
 /// The stream a branch's search seed derives from (the job's seed, then this, then the start's index).
@@ -616,6 +656,413 @@ impl CreateJob {
             rounds: self.rounds.clone(),
             stop: self.stop.unwrap_or(CreateStop::Cancelled),
             notes: self.notes.clone(),
+        }
+    }
+}
+
+/// Why a model's hypothesis did not become a start.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dropped {
+    /// Which of the Kₘ hypotheses.
+    pub hypothesis: usize,
+    /// A stable code: `confidence_non_finite`, or the decode error's (`hypothesis_non_finite`, `hypothesis_rekey`,
+    /// `hypothesis_width`, `hypothesis_op`).
+    pub code: &'static str,
+    /// What happened, in words.
+    pub message: String,
+}
+
+/// A model file, ready to propose starts for create jobs (see the [module docs](self)): its net, built once, and
+/// what a result records about it.
+#[derive(Clone, Debug)]
+pub struct Model {
+    net: Net,
+    layout: OutputLayout,
+    id: String,
+    sha256: [u8; 32],
+    hypotheses: usize,
+}
+
+impl Model {
+    /// The model in a parsed file: its net built (every shape inferred, the FLOPs recounted, the memory bounded).
+    ///
+    /// # Errors
+    /// `Net::build`'s refusals (`model_malformed`, `model_too_large`): create runs without the model and says why.
+    pub fn new(pack: &ModelPack) -> Result<Model, PackError> {
+        Ok(Model {
+            net: Net::build(pack)?,
+            layout: pack.layout().clone(),
+            id: pack.header().model_id.clone(),
+            sha256: pack.sha256(),
+            hypotheses: usize::from(pack.header().hypotheses),
+        })
+    }
+
+    /// The model in a file's bytes: `ModelPack::parse`, then [`Model::new`].
+    ///
+    /// # Errors
+    /// Every `PackError` (`not_a_model`, `model_too_new`, `model_truncated`, `model_hash`, `model_malformed`,
+    /// `model_too_large`, `model_mismatch`): create runs without the model and says why (the error's `hint`).
+    pub fn parse(bytes: &[u8]) -> Result<Model, PackError> {
+        Model::new(&ModelPack::parse(bytes)?)
+    }
+
+    /// The model's id: what each start's [`Provenance::Model`] names.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// The model file's SHA-256.
+    #[must_use]
+    pub fn sha256(&self) -> [u8; 32] {
+        self.sha256
+    }
+
+    /// Kₘ: the hypotheses per inference.
+    #[must_use]
+    pub fn hypotheses(&self) -> usize {
+        self.hypotheses
+    }
+
+    /// The built net (its FLOPs and peak memory, for a shell that reports them).
+    #[must_use]
+    pub fn net(&self) -> &Net {
+        &self.net
+    }
+
+    /// The starts this model proposes for a job: the input and the cue from `intake` (before any override), decoded
+    /// under `target.perf` (the performance the job plays, the override included). See the [module docs](self).
+    #[must_use]
+    pub fn propose(&self, intake: &Intake, target: &Target) -> ModelProposals {
+        self.propose_clip(
+            &intake.audio,
+            intake.report.sample_rate,
+            &Cue::from_intake(intake),
+            &target.perf,
+        )
+    }
+
+    /// [`propose`](Self::propose) from a clip and a cue (what `ModelInput::compute` reads: the intake's clip, rate
+    /// and cue), decoded under `perf`. A clip whose window is silent or not finite, or a rate the analysis refuses,
+    /// proposes nothing and says why.
+    #[must_use]
+    pub fn propose_clip(
+        &self,
+        clip: &[f32],
+        sample_rate: u32,
+        cue: &Cue,
+        perf: &TargetPerf,
+    ) -> ModelProposals {
+        match ModelInput::compute(clip, sample_rate, cue) {
+            Ok(input) => self.propose_input(&input, cue, perf),
+            Err(e) => self.nothing(
+                None,
+                None,
+                format!(
+                    "model {}: no proposals, the model's input could not be computed ({}: {e})",
+                    self.id,
+                    e.code()
+                ),
+            ),
+        }
+    }
+
+    /// [`propose`](Self::propose) from a computed input and the cue it was computed with, decoded under `perf`.
+    #[must_use]
+    pub fn propose_input(
+        &self,
+        input: &ModelInput,
+        cue: &Cue,
+        perf: &TargetPerf,
+    ) -> ModelProposals {
+        let input_sha256 = Some(input.sha256());
+        let outputs = match self.net.run(input) {
+            Ok(o) => o,
+            Err(e) => {
+                return self.nothing(
+                    input_sha256,
+                    None,
+                    format!(
+                        "model {}: no proposals, inference refused its input ({}: {e})",
+                        self.id,
+                        e.code()
+                    ),
+                );
+            }
+        };
+        let outputs_sha256 = Some(outputs.sha256());
+        let hearing = match Hearing::job(cue, perf) {
+            Ok(h) => h,
+            Err(e) => {
+                return self.nothing(
+                    input_sha256,
+                    outputs_sha256,
+                    format!(
+                        "model {}: no proposals, the job's performance cannot be heard ({}: {e})",
+                        self.id,
+                        e.code()
+                    ),
+                );
+            }
+        };
+        let confidence = outputs.confidence();
+        let k = self.hypotheses.min(confidence.len());
+        let mut dropped = Vec::new();
+        let mut decoded: Vec<(usize, f32, Patch)> = Vec::with_capacity(k);
+        for (h, &c) in confidence.iter().enumerate().take(k) {
+            if !c.is_finite() {
+                dropped.push(Dropped {
+                    hypothesis: h,
+                    code: "confidence_non_finite",
+                    message: format!("its confidence is not finite ({c})"),
+                });
+                continue;
+            }
+            match self.layout.decode(outputs.hypothesis(h), &hearing) {
+                Ok(patch) => decoded.push((h, c, patch)),
+                Err(e) => dropped.push(Dropped {
+                    hypothesis: h,
+                    code: e.code(),
+                    message: e.to_string(),
+                }),
+            }
+        }
+        // Descending confidence, ties to the lower hypothesis (a stable sort over hypothesis order; `-0` and `+0`
+        // tie, as every finite pair compares).
+        decoded.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(core::cmp::Ordering::Equal));
+        let starts = decoded
+            .into_iter()
+            .map(|(hypothesis, c, patch)| Start {
+                patch,
+                provenance: Provenance::Model {
+                    model: self.id.clone(),
+                    hypothesis,
+                    confidence: Some(f64::from(c)),
+                },
+            })
+            .collect();
+        let notes = dropped
+            .iter()
+            .map(|d| {
+                format!(
+                    "model {}: hypothesis {} dropped ({}): {}",
+                    self.id, d.hypothesis, d.code, d.message
+                )
+            })
+            .collect();
+        ModelProposals {
+            starts,
+            dropped,
+            notes,
+            model_id: self.id.clone(),
+            sha256: self.sha256,
+            hypotheses: self.hypotheses,
+            input_sha256,
+            outputs_sha256,
+        }
+    }
+
+    fn nothing(
+        &self,
+        input_sha256: Option<[u8; 32]>,
+        outputs_sha256: Option<[u8; 32]>,
+        note: String,
+    ) -> ModelProposals {
+        ModelProposals {
+            starts: Vec::new(),
+            dropped: Vec::new(),
+            notes: vec![note],
+            model_id: self.id.clone(),
+            sha256: self.sha256,
+            hypotheses: self.hypotheses,
+            input_sha256,
+            outputs_sha256,
+        }
+    }
+}
+
+/// What a model proposed for one job (see the [module docs](self)).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModelProposals {
+    /// The starts, in descending confidence (ties to the lower hypothesis), each with [`Provenance::Model`]: pass
+    /// them as `Inputs::proposals`.
+    pub starts: Vec<Start>,
+    /// The hypotheses dropped, in hypothesis order.
+    pub dropped: Vec<Dropped>,
+    /// What the user should know (each drop, or why the model proposed nothing): add them to the job's notes.
+    pub notes: Vec<String>,
+    model_id: String,
+    sha256: [u8; 32],
+    hypotheses: usize,
+    input_sha256: Option<[u8; 32]>,
+    outputs_sha256: Option<[u8; 32]>,
+}
+
+impl ModelProposals {
+    /// The model input's hash (`ModelInput::sha256`), when the input was computed.
+    #[must_use]
+    pub fn input_sha256(&self) -> Option<[u8; 32]> {
+        self.input_sha256
+    }
+
+    /// The hash of the net's outputs (`Outputs::sha256`), when it ran.
+    #[must_use]
+    pub fn outputs_sha256(&self) -> Option<[u8; 32]> {
+        self.outputs_sha256
+    }
+
+    /// `enth.create/1`'s `settings.model` for the job these starts joined.
+    #[must_use]
+    pub fn record(&self) -> ModelRecord {
+        ModelRecord {
+            id: self.model_id.clone(),
+            sha256: hex(&self.sha256),
+            input_sha256: self.input_sha256.map(|h| hex(&h)),
+            outputs_sha256: self.outputs_sha256.map(|h| hex(&h)),
+            hypotheses: self.hypotheses,
+            dropped: self
+                .dropped
+                .iter()
+                .map(|d| DroppedRecord {
+                    hypothesis: d.hypothesis,
+                    code: d.code.to_owned(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use enth_challenge::phrases::{self, HELD};
+    use enth_challenge::random::{Dead, Visibility, observable};
+    use enth_patch::{ModuleKind, Op, ParamAddr, Patch, apply};
+
+    use super::super::{TargetPerf, free_set};
+
+    fn template(text: &str) -> Patch {
+        enth_patch::file::load(text).unwrap().patch
+    }
+
+    fn with(mut p: Patch, addr: &str, v: f32) -> Patch {
+        apply(
+            &mut p,
+            Op::SetParam {
+                addr: addr.parse().unwrap(),
+                value: v,
+            },
+        )
+        .unwrap();
+        p
+    }
+
+    fn perf(hold_s: f64, duration_s: f64) -> TargetPerf {
+        TargetPerf {
+            key: 57,
+            velocity: 100.0 / 127.0,
+            on_s: 256.0 / 48_000.0,
+            hold_s,
+            duration_s,
+            f0_hz: Some(220.0),
+        }
+    }
+
+    fn free(p: &Patch, perf: &TargetPerf) -> Vec<ParamAddr> {
+        free_set(p, perf).unwrap().addrs().cloned().collect()
+    }
+
+    /// TP's first rule (F1s), kept here to show what changed: the held phrase, less the releases when unheard.
+    fn held_rule(p: &Patch, perf: &TargetPerf) -> Vec<ParamAddr> {
+        let mask = observable(p, phrases::phrase(HELD).unwrap());
+        let releases: Vec<ParamAddr> = p
+            .modulators
+            .iter()
+            .filter(|m| m.kind == ModuleKind::Adsr)
+            .map(|m| ParamAddr::module(m.id.clone(), "release").unwrap())
+            .collect();
+        mask.observable_params()
+            .filter(|a| perf.release_heard() || !releases.contains(a))
+            .cloned()
+            .collect()
+    }
+
+    fn init() -> Patch {
+        template(include_str!(
+            "../../../../content/templates/init.patch.json"
+        ))
+    }
+
+    #[test]
+    fn a_long_attack_under_a_long_hold_is_searched() {
+        // The F3s judge's case: a decoded pad's 2 s attack, heard under a 2.8 s hold. The held phrase (1.5 s) calls it
+        // dead, so TP's rule never searched it.
+        let attack: ParamAddr = "env1.attack".parse().unwrap();
+        let p = with(init(), "env1.attack", 2000.0);
+        let job = perf(2.8, 4.0);
+        assert_eq!(
+            observable(&p, phrases::phrase(HELD).unwrap()).param(&attack),
+            Some(Visibility::Dead(Dead::BeyondHold))
+        );
+        assert!(!held_rule(&p, &job).contains(&attack));
+        assert!(free(&p, &job).contains(&attack));
+    }
+
+    #[test]
+    fn envelope_times_heard_in_part_are_searched() {
+        let attack: ParamAddr = "env2.attack".parse().unwrap();
+        let release: ParamAddr = "env1.release".parse().unwrap();
+        // The pad template's 600 ms attack on a pluck's 0.3 s hold: the rise to the note-off is heard.
+        let pad = template(include_str!(
+            "../../../../content/templates/pad_2osc.patch.json"
+        ));
+        let pad_attack: ParamAddr = "env1.attack".parse().unwrap();
+        assert_eq!(pad.value(&pad_attack), Some(600.0));
+        assert!(free(&pad, &perf(0.3, 3.0)).contains(&pad_attack));
+        // A 1 s release after a note-off 0.5 s before the clip's end: its slope to the end is heard.
+        let p = with(init(), "env1.release", 1000.0);
+        assert!(free(&p, &perf(2.5, 3.0)).contains(&release));
+        // No release at all once the note-off falls at or after the end, whatever its length.
+        for r in [0.0, 50.0, 1000.0] {
+            let p = with(init(), "env1.release", r);
+            assert!(!free(&p, &perf(3.0, 3.0)).contains(&release), "release {r}");
+            assert!(!free(&p, &perf(5.0, 3.0)).contains(&release), "release {r}");
+        }
+        // An envelope that drives nothing stays out (the mask's own rule): init has no env2.
+        assert!(!free(&init(), &perf(0.3, 3.0)).contains(&attack));
+    }
+
+    #[test]
+    fn starts_within_the_held_phrase_are_searched_as_before() {
+        // Templates, generator-v1 neighbours and the heuristic start keep their envelope times within 1.5 s: for them
+        // the job's one note reveals what the held phrase did, so R3a's branches (and EVK's arm A) do not move.
+        let starts = [
+            init(),
+            template(include_str!(
+                "../../../../content/templates/pluck_1osc.patch.json"
+            )),
+            template(include_str!(
+                "../../../../content/templates/pad_2osc.patch.json"
+            )),
+            template(include_str!(
+                "../../../../content/templates/bass_sub.patch.json"
+            )),
+        ];
+        for job in [
+            perf(1.5, 3.0),
+            perf(2.0, 3.0),
+            perf(1.2, 2.5),
+            perf(0.3, 3.0),
+            perf(4.0, 3.0),
+        ] {
+            for p in &starts {
+                assert_eq!(
+                    free(p, &job),
+                    held_rule(p, &job),
+                    "{:?}, {job:?}",
+                    p.meta.name
+                );
+            }
         }
     }
 }

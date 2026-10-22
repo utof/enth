@@ -307,3 +307,100 @@ fn the_intake_report_goes_in_whole_and_reads_back() {
     let read: CreateRecord = serde_json::from_str(&bare).unwrap();
     assert_eq!(read.intake, None);
 }
+
+/// Lane MS (R3b): `settings.model` is additive within `enth.create/1`. A record of a run without a model has no
+/// `model` key (so every record written before R3b, and every run without one, reads and prints as it did), one with
+/// a model names it, its file's SHA-256 and its input's hash, and a model start's provenance survives the round trip.
+#[test]
+fn the_model_setting_is_additive_and_round_trips() {
+    use enth_solver::create::Start;
+    use enth_solver::create::record::{DroppedRecord, ModelRecord};
+
+    let t = target();
+    let init = enth_patch::file::load(include_str!("../../../content/templates/init.patch.json"))
+        .unwrap()
+        .patch;
+    let mut hypothesis = init.clone();
+    enth_patch::apply(
+        &mut hypothesis,
+        enth_patch::Op::SetParam {
+            addr: "env1.decay".parse().unwrap(),
+            value: 240.0,
+        },
+    )
+    .unwrap();
+    let proposals = [Start {
+        patch: hypothesis,
+        provenance: Provenance::Model {
+            model: "propose-v0".to_owned(),
+            hypothesis: 3,
+            confidence: Some(1.25),
+        },
+    }];
+    let inputs = Inputs {
+        init: &init,
+        templates: &[],
+        bank: None,
+        proposals: &proposals,
+    };
+    let cfg = CreateCfg {
+        k: 2,
+        budget: 60,
+        ..CreateCfg::default()
+    };
+    let analysis = t.analyse().unwrap();
+    let mut job = CreateJob::new(
+        &t,
+        &analysis,
+        Portfolio::build(&t, &analysis, &inputs, &cfg),
+        &cfg,
+    )
+    .unwrap();
+    run(&mut job, &mut proxy, &mut |_| true).unwrap();
+    let mut record = CreateRecord::new(
+        &job.result(),
+        &RecordContext {
+            target: &t,
+            analysis: &analysis,
+            intake: None,
+            objective: "proxy/0",
+            bank: None,
+            templates: &[],
+        },
+    );
+    let without = serde_json::to_string_pretty(&record).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&without).unwrap();
+    assert!(
+        v["settings"].get("model").is_none(),
+        "no key without a model"
+    );
+    assert_eq!(v["starts"][1]["provenance"]["kind"], "model");
+    assert_eq!(v["starts"][1]["provenance"]["hypothesis"], 3);
+    let back: CreateRecord = serde_json::from_str(&without).unwrap();
+    assert_eq!(back, record);
+    assert_eq!(back.settings.model, None);
+
+    record.settings.model = Some(ModelRecord {
+        id: "propose-v0".to_owned(),
+        sha256: "ab".repeat(32),
+        input_sha256: Some("cd".repeat(32)),
+        outputs_sha256: Some("ef".repeat(32)),
+        hypotheses: 8,
+        dropped: vec![DroppedRecord {
+            hypothesis: 5,
+            code: "confidence_non_finite".to_owned(),
+        }],
+    });
+    let with = serde_json::to_string_pretty(&record).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&with).unwrap();
+    assert_eq!(v["settings"]["model"]["id"], "propose-v0");
+    assert_eq!(v["settings"]["model"]["input_sha256"], "cd".repeat(32));
+    assert_eq!(v["settings"]["model"]["dropped"][0]["hypothesis"], 5);
+    let back: CreateRecord = serde_json::from_str(&with).unwrap();
+    assert_eq!(back, record);
+    // The starts replay the run without the model: they are recorded as patches.
+    assert_eq!(
+        back.starts().unwrap().starts[1].provenance,
+        proposals[0].provenance
+    );
+}

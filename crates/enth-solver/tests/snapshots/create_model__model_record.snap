@@ -1,0 +1,17 @@
+---
+source: crates/enth-solver/tests/create_model.rs
+expression: record
+---
+{
+  "id": "propose-v0",
+  "sha256": "abababababababababababababababababababababababababababababababab",
+  "input_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "outputs_sha256": null,
+  "hypotheses": 8,
+  "dropped": [
+    {
+      "hypothesis": 3,
+      "code": "hypothesis_rekey"
+    }
+  ]
+}
