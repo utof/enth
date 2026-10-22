@@ -170,7 +170,7 @@ class Resume(unittest.TestCase):
                 data[len(data) // 2] ^= 0xFF
                 newest.write_bytes(bytes(data))
             state, entry = store.load_latest(log=lambda m: None)
-            self.assertEqual((entry["file"], state["step"]), ("periodic-000000015.pt", 15))
+            self.assertEqual((entry["file"], state["step"]), ("periodic-000000015.pt", 15))  # best.pt is at 10 or 11
             s = train(self.cfg(name, ckpt_every_steps=5), device="cpu")
             self.assertEqual(s["state"], "finished")
             self.assert_same(self.dir / name)
@@ -191,6 +191,23 @@ class Resume(unittest.TestCase):
         state2, entry2 = store.load_latest(log=lambda m: None)
         self.assertEqual((entry2["file"], state2["step"]), ("best.pt", state["step"]))
         s = train(self.cfg(name, ckpt_every_steps=5), device="cpu")
+        self.assertEqual(s["state"], "finished")
+        self.assert_same(self.dir / name)
+
+    def test_c_best_newer_than_periodic_is_used(self) -> None:
+        """After a crash, best.pt (written at a dev evaluation) can be newer than the last periodic checkpoint."""
+        from enth_ml.train.ckpt import CheckpointStore
+        from enth_ml.train.loop import train
+
+        name = "best-newest"
+        train(self.cfg(name, ckpt_every_steps=7, stop_at_step=21), device="cpu")
+        store = CheckpointStore(self.dir / name)
+        for e in store.entries("periodic"):
+            if e["step"] > 20:
+                (store.dir / e["file"]).unlink()  # as if killed after the evaluation at step 20 wrote best.pt
+        state, entry = store.load_latest(log=lambda m: None)
+        self.assertEqual((entry["file"], state["step"]), ("best.pt", 20))
+        s = train(self.cfg(name, ckpt_every_steps=7), device="cpu")
         self.assertEqual(s["state"], "finished")
         self.assert_same(self.dir / name)
 

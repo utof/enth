@@ -383,7 +383,8 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
     def save(kind: str, reason: str, dev_loss: float | None = None) -> dict:
         nonlocal last_ckpt_t, last_ckpt_step
         t0 = time.perf_counter()
-        meta = {"step": step, "epoch": epoch, "position": position, "samples_seen": samples_seen, "reason": reason, "dev_best": dev_loss if dev_loss is not None else best_dev}
+        d = dev_loss if dev_loss is not None else best_dev
+        meta = {"step": step, "epoch": epoch, "position": position, "samples_seen": samples_seen, "reason": reason, "dev_best": None if math.isinf(d) else d}
         e = store.save(snapshot(), kind, meta)
         secs = time.perf_counter() - t0
         if kind != "best":
@@ -639,7 +640,7 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         "samples_seen": samples_seen,
         "elapsed_min": elapsed() / 60.0,
         "wait_min": wait_s / 60.0,
-        "best_dev_loss": best_dev,
+        "best_dev_loss": None if math.isinf(best_dev) else best_dev,
         "last_eval": final_eval,
     }
     if not stopped:

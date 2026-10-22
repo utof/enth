@@ -10,8 +10,8 @@ A run directory holds ``ckpt/``:
 
 Every file is written as ``<name>.tmp``, flushed and ``fsync``-ed, then renamed over its final name (and the directory
 synced where the file system allows), so a crash mid-write leaves the previous file intact and at worst a stray
-``.tmp``. ``load_latest`` tries the newest periodic checkpoint first and falls back to the older one, then to
-``best.pt``, skipping any whose bytes do not match their checksum or that ``torch.load`` refuses.
+``.tmp``. ``load_latest`` tries the newest checkpoint first (by step, ``best.pt`` included) and falls back to the next
+older one, skipping any whose bytes do not match their checksum or that ``torch.load`` refuses.
 """
 
 from __future__ import annotations
@@ -157,7 +157,7 @@ class CheckpointStore:
         return entry.get("sha256") is None or hashlib.sha256(data).hexdigest() == entry["sha256"]
 
     def candidates(self) -> list[dict]:
-        """Resume order: periodic checkpoints newest first, then ``best``."""
+        """Resume order: newest step first (periodic before ``best`` on a tie)."""
         es = self.entries()
         periodic = sorted((e for e in es if e.get("kind") == "periodic"), key=lambda e: -int(e.get("step", -1)))
         best = [e for e in es if e.get("kind") == "best"]
@@ -172,9 +172,9 @@ class CheckpointStore:
                     except (OSError, ValueError):
                         info = {"file": p.name, "sha256": None, "step": int(m.group(1)), "kind": "periodic"}
                     extra.append(info)
-        extra.sort(key=lambda e: -int(e.get("step", -1)))
-        allp = sorted(periodic + extra, key=lambda e: -int(e.get("step", -1)))
-        return allp + best
+        # Newest first over every kind (best.pt is a full snapshot too, and after a crash it can be the newest);
+        # a periodic one first on a tie.
+        return sorted(periodic + extra + best, key=lambda e: (-int(e.get("step", -1)), e.get("kind") != "periodic"))
 
     def load_latest(self, log=print) -> tuple[dict | None, dict | None]:
         """The newest checkpoint that passes its checksum and loads; ``(None, None)`` when there is none."""
