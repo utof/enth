@@ -462,3 +462,36 @@ fn the_model_records_wire_names_are_pinned() {
     };
     insta::assert_json_snapshot!("model_record", record);
 }
+
+/// What docs/r3.md tells lane EVb: a target that was not overridden gives the intake's proposals from its own clip and
+/// performance (the input reads the clip's first 2 s, which the 3 s scored window holds), so the GR3 kit's proposer,
+/// which sees the target and not the intake, proposes the same starts.
+#[test]
+fn a_target_not_overridden_proposes_as_its_intake() {
+    let model = Model::parse(&fixture("ms-fixture", false)).unwrap();
+    // A 4.5 s file: the intake keeps more than the 3 s scored window, which the target is cut to.
+    let perf = Performance {
+        notes: vec![Note::new(57, 100.0 / 127.0, 0.05, 3.0)],
+        duration_s: 4.5,
+        ..Performance::default()
+    };
+    let audio = render(&target_patch(), &perf, &RenderSpec::new(SR, DEFAULT_SEED))
+        .unwrap()
+        .mid();
+    let intake = Intake::new(&audio, 1, SR).unwrap();
+    let target = Target::from_intake(&intake, DEFAULT_SEED);
+    assert!(intake.audio.len() > target.audio.len());
+    let p = target.perf;
+    let cue = Cue {
+        key: p.key,
+        f0_hz: p.f0_hz,
+        on_s: p.on_s,
+        hold_s: p.hold_s,
+        bandwidth_hz: target.bandwidth_hz,
+    };
+    assert_eq!(cue, Cue::from_intake(&intake));
+    assert_eq!(
+        model.propose_clip(&target.audio, target.sample_rate, &cue, &target.perf),
+        model.propose(&intake, &target)
+    );
+}
