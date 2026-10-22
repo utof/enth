@@ -59,6 +59,7 @@ Each judged by its exit status, on `r3/inta` (main `b25c609` plus INTa's commits
 | Gate | Result |
 | --- | --- |
 | `scripts/gate.sh full .` | **exit 0** at `d85281a` ("GATE PASSED (full)", 1,577 s at a load of 9–15): fmt, workspace clippy (97 s), layers, wasm-check (40 s), `cargo deny` (bans, licenses, sources), `cargo xtask golden` (engine goldens unchanged), the whole workspace's tests (**2,471 passed, 0 failed**, 42 ignored; 1,258 s), `host-render` (10 cases; cli-equal 63 of 63 equal, 10 skipped by design) and `validate` (36 passed, 0 failed, 8 skipped) |
+| `scripts/gate.sh lane .` | **exit 0** at `83d8a6b` (the docs commit on top; 366 s): fmt, clippy, layers, wasm-check, and the tests of the 5 crates the branch touches (`enth-cli`, `enth-lesson-tool`, `enth-plugin`, `enth-session`, `enth-ui`): 738 passed, 0 failed |
 | `cargo test --locked -p enth-ui --features learn,create`, and CI's `editor-features` line (`learn,create,recreate,presets,add-module`) | exit 0 each: 180 passed (`create_view` 9 with the three redrawn snapshots, `learn_create` 4, `create_panel`) |
 | `cargo test --locked -p enth-plugin --features create -- --nocapture` | exit 0: 152 passed, 1 ignored (`tests_create` with the AIFF test; the latencies in C3–C5) |
 | `cargo test -p enth-cli --test create` | exit 0: 14 passed (the AIFF run among them); also in the full gate |
