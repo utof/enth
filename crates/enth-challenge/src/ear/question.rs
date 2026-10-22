@@ -29,8 +29,8 @@
 //! band-pass band is the synth's own filter, Frequency finder's svf form: it sets the timbre's filter 1 to band-pass at
 //! the band's frequency, with the resonance whose Q it names (`Q = 0.5 · 50^(resonance/100)`, docs/dsp/svf.md),
 //! and the engine renders it. A peaking or shelf band is applied after the engine by `enth-dsp`'s offline RBJ biquad
-//! (lane BQ, planned in `enth-dsp/src/biquad.rs`): until BQ lands, [`Clip::render`] refuses such a clip
-//! (`needs_biquad`) rather than play it without its band.
+//! (lane BQ, `enth-dsp/src/biquad.rs`, docs/dsp/biquad.md): [`Clip::render`] runs one section per channel over the
+//! rendered clip, release tail included, with the band's integers turned to `f64` by one IEEE division each.
 //!
 //! **Level matching** (within 0.5 LU unless level is the cue, docs/ear.md) is playback's: [`crate::loudness`] measures
 //! a rendered clip, and the shell sets the gains.
@@ -315,7 +315,9 @@ pub enum StimulusError {
         /// What is wrong.
         reason: String,
     },
-    /// A peak or shelf band, which the offline biquad renders: lane BQ's, not built yet (`needs_biquad`).
+    /// A peak or shelf band before lane BQ's offline biquad existed (`needs_biquad`). **This build never returns
+    /// it:** [`Clip::render`] applies the biquad. The variant stays so the stable code, and any `match` on it, do not
+    /// move.
     NeedsBiquad,
     /// The render failed (`render_failed`).
     Render {
@@ -369,7 +371,8 @@ pub enum Clip {
 
 impl Clip {
     /// Render the clip offline at [`SCORING_SAMPLE_RATE`] with [`SCORING_SEED`], as the Target slot plays it. A
-    /// stimulus with a peak or shelf band is refused until lane BQ's biquad lands (`needs_biquad`).
+    /// stimulus with a peak or shelf band is rendered by the engine without it and then filtered by `enth-dsp`'s
+    /// offline biquad, one section per channel (a band-pass band is already in the timbre's filter).
     pub fn render(&self) -> Result<RenderOutput, StimulusError> {
         let (patch, perf) = match self {
             Clip::Patch { patch, phrase } => {
@@ -378,21 +381,50 @@ impl Clip {
                 })?;
                 ((**patch).clone(), p.performance())
             }
-            Clip::Stimulus(s) => {
-                if s.post().is_some() {
-                    return Err(StimulusError::NeedsBiquad);
-                }
-                (s.patch()?, s.performance())
-            }
+            Clip::Stimulus(s) => (s.patch()?, s.performance()),
         };
-        enth_render::render(
+        let mut out = enth_render::render(
             &patch,
             &perf,
             &RenderSpec::new(SCORING_SAMPLE_RATE, SCORING_SEED),
         )
         .map_err(|e| StimulusError::Render {
             message: e.to_string(),
-        })
+        })?;
+        if let Clip::Stimulus(s) = self
+            && let Some(band) = s.post()
+        {
+            apply_post_band(&mut out, band);
+        }
+        Ok(out)
+    }
+}
+
+/// The biquad section of a peak or shelf band at a sample rate; `None` for a band-pass band (the timbre's own filter
+/// renders that one). The band's integers become `f64` the way the biquad's golden does it: hundredths of a dB and
+/// thousandths of Q by one IEEE division each.
+fn post_coeffs(band: EqBand, sample_rate: u32) -> Option<enth_dsp::biquad::Coeffs> {
+    let kind = match band.kind {
+        EqKind::Peak => enth_dsp::biquad::Kind::Peak,
+        EqKind::LowShelf => enth_dsp::biquad::Kind::LowShelf,
+        EqKind::HighShelf => enth_dsp::biquad::Kind::HighShelf,
+        EqKind::BandPass => return None,
+    };
+    Some(enth_dsp::biquad::Coeffs::design(
+        kind,
+        f64::from(band.freq_hz),
+        f64::from(band.gain_cdb) / 100.0,
+        f64::from(band.q_milli) / 1000.0,
+        f64::from(sample_rate),
+    ))
+}
+
+/// Filter both channels of a render with a peak or shelf band (each channel starts from a cleared state).
+fn apply_post_band(out: &mut RenderOutput, band: EqBand) {
+    if let Some(coeffs) = post_coeffs(band, out.sample_rate) {
+        for channel in [&mut out.left, &mut out.right] {
+            enth_dsp::biquad::Biquad::new(coeffs).process(channel);
+        }
     }
 }
 
@@ -850,21 +882,42 @@ mod tests {
         assert_eq!(at("mode"), 1.0);
         assert_eq!(s.post(), None);
         assert!(Clip::Stimulus(s).render().is_ok());
-        // A peak waits for the biquad.
-        let peak = Stimulus {
-            band: Some(EqBand {
-                kind: EqKind::Peak,
+        // A peak or shelf band is the offline biquad's, applied to both channels after the engine (lane BQ).
+        let plain = Clip::Stimulus(stim(vec![note(60, 0, 2000)]))
+            .render()
+            .unwrap();
+        for kind in [EqKind::Peak, EqKind::LowShelf, EqKind::HighShelf] {
+            let post = EqBand {
+                kind,
                 freq_hz: 1000,
                 gain_cdb: 600,
                 q_milli: 1414,
-            }),
-            ..stim(vec![note(60, 0, 2000)])
-        };
-        assert_eq!(peak.post().map(|b| b.gain_db()), Some(6.0));
-        assert_eq!(
-            Clip::Stimulus(peak).render().unwrap_err().code(),
-            "needs_biquad"
-        );
+            };
+            let peak = Stimulus {
+                band: Some(post),
+                ..stim(vec![note(60, 0, 2000)])
+            };
+            assert_eq!(peak.post().map(|b| b.gain_db()), Some(6.0));
+            let banded = Clip::Stimulus(peak).render().unwrap();
+            assert_eq!(banded.frames(), plain.frames());
+            let coeffs = post_coeffs(post, plain.sample_rate).unwrap();
+            for (got, source) in [(&banded.left, &plain.left), (&banded.right, &plain.right)] {
+                let mut want = source.clone();
+                enth_dsp::biquad::Biquad::new(coeffs).process(&mut want);
+                assert!(
+                    got.iter()
+                        .zip(&want)
+                        .all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "{kind:?} is the plain render through the biquad"
+                );
+                assert!(
+                    got.iter().zip(source).any(|(a, b)| a != b),
+                    "{kind:?} changes the clip"
+                );
+            }
+        }
+        // A band-pass band is never run through the biquad.
+        assert_eq!(post_coeffs(band, 48_000), None);
         for bad in [
             EqBand {
                 gain_cdb: 100,
@@ -891,6 +944,71 @@ mod tests {
         ] {
             assert_eq!(bad.check().unwrap_err().code(), "bad_question", "{bad:?}");
         }
+    }
+
+    /// The magnitude of the DFT of `x` at `hz` (a direct sum through the pinned `libm`).
+    fn dft_magnitude(x: &[f32], hz: f64) -> f64 {
+        let w = core::f64::consts::TAU * hz / f64::from(SCORING_SAMPLE_RATE);
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (n, v) in x.iter().enumerate() {
+            let phase = w * n as f64;
+            re += f64::from(*v) * libm::cos(phase);
+            im -= f64::from(*v) * libm::sin(phase);
+        }
+        libm::sqrt(re * re + im * im)
+    }
+
+    /// The point of the band: sustained pink noise through a +12 dB peak at 1 kHz is 12 dB louder there (the clip is
+    /// long and its tail silent, so the DFT of the output is the filter's response times the input's), and a low
+    /// shelf and a high shelf move their own ends and leave the other alone.
+    #[test]
+    fn a_post_band_moves_the_level_where_it_says() {
+        let render = |band: Option<EqBand>| {
+            Clip::Stimulus(Stimulus {
+                timbre: PINK_NOISE,
+                notes: vec![note(60, 0, 1000)],
+                length_ms: 2000,
+                band,
+            })
+            .render()
+            .unwrap()
+            .left
+        };
+        let plain = render(None);
+        let db_at = |band: EqBand, hz: f64| {
+            let banded = render(Some(band));
+            20.0 * libm::log10(dft_magnitude(&banded, hz) / dft_magnitude(&plain, hz))
+        };
+        let band = |kind, freq_hz, gain_cdb| EqBand {
+            kind,
+            freq_hz,
+            gain_cdb,
+            q_milli: 1000,
+        };
+        let peak = band(EqKind::Peak, 1000, 1200);
+        assert!(
+            (db_at(peak, 1000.0) - 12.0).abs() < 0.05,
+            "{}",
+            db_at(peak, 1000.0)
+        );
+        assert!(db_at(peak, 100.0).abs() < 0.5);
+        assert!(db_at(peak, 10_000.0).abs() < 0.5);
+        let low = band(EqKind::LowShelf, 500, -1200);
+        assert!(
+            (db_at(low, 60.0) + 12.0).abs() < 0.5,
+            "{}",
+            db_at(low, 60.0)
+        );
+        assert!((db_at(low, 500.0) + 6.0).abs() < 0.05);
+        assert!(db_at(low, 10_000.0).abs() < 0.2);
+        let high = band(EqKind::HighShelf, 4000, 900);
+        assert!(
+            (db_at(high, 15_000.0) - 9.0).abs() < 1.5,
+            "{}",
+            db_at(high, 15_000.0)
+        );
+        assert!((db_at(high, 4000.0) - 4.5).abs() < 0.05);
+        assert!(db_at(high, 200.0).abs() < 0.1);
     }
 
     fn spot(seed: u64) -> Challenge {
