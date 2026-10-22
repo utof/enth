@@ -44,6 +44,8 @@ class DevMetrics:
         self.topk = np.zeros(self.k, dtype=np.int64)
         self.rank_of_winner = np.zeros(self.k, dtype=np.int64)
         self.spearman: list[float] = []
+        self.distinct = 0.0  # summed over samples: distinct joint discrete choices among the K hypotheses
+        self.cat_oracle = np.zeros((len(L.GROUPS), 2))  # some hypothesis right, count
 
     @torch.no_grad()
     def update(self, hyp: torch.Tensor, conf: torch.Tensor, label: torch.Tensor, mask: torch.Tensor) -> None:
@@ -69,6 +71,21 @@ class DevMetrics:
         rl = rl - rl.mean(1, keepdim=True)
         rho = (rc * rl).sum(1) / (rc.norm(dim=1) * rl.norm(dim=1)).clamp_min(1e-9)
         self.spearman.extend(rho.cpu().tolist())
+
+        # Do the K hypotheses explore discrete alternatives? (TR2: the pilot's agreed on them.)
+        s0, s1 = L.STRUCTURE
+        p0, p1 = L.PRESENCE
+        code = torch.cat(
+            [torch.stack([hyp[..., a:bnd].argmax(-1) for _, a, bnd in L.GROUPS], -1), (hyp[..., s0:s1] > 0).long(), (hyp[..., p0:p1] > 0).long()], -1
+        )  # [B, K, G + 4 + 16]
+        eq = (code.unsqueeze(2) == code.unsqueeze(1)).all(-1)  # [B, K, K]
+        earlier = torch.tril(torch.ones(self.k, self.k, dtype=torch.bool, device=hyp.device), diagonal=-1)
+        self.distinct += float((~(eq & earlier).any(-1)).sum().item())
+        for g, (_, a, bnd) in enumerate(L.GROUPS):
+            gm = mask[:, a] > 0.5
+            ok = (hyp[..., a:bnd].argmax(-1) == label[:, a:bnd].argmax(-1).unsqueeze(1)).any(1)
+            self.cat_oracle[g, 0] += (ok & gm).sum().item()
+            self.cat_oracle[g, 1] += gm.sum().item()
 
         perm = self.loss.perm
         for which, idx in (("best", winner), ("top", top)):
@@ -126,6 +143,13 @@ class DevMetrics:
             "mean_winner_rank": float((r * np.arange(self.k)).sum()),
             "spearman": float(np.mean(self.spearman)) if self.spearman else 0.0,
             "regret": out["loss_top"] - out["loss_best"],
+        }
+        oracle = {name: (float(c / t) if t else None) for (name, _, _), (c, t) in zip(L.GROUPS, self.cat_oracle)}
+        known = [v for v in oracle.values() if v is not None]
+        out["discrete"] = {
+            "distinct_mean": self.distinct / n,
+            "categorical_oracle_acc": oracle,
+            "categorical_oracle_mean": float(np.mean(known)) if known else None,
         }
         for which in ("best", "top"):
             errs = [np.concatenate(x) if x else np.zeros(0) for x in self.cont_err[which]]

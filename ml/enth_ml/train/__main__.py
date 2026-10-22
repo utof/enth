@@ -1,10 +1,15 @@
 """``python -m enth_ml.train``: train propose v0 on ds1 shards, evaluate a checkpoint, or describe a run of shards.
 
-    python -m enth_ml.train run --config pilot.toml [--resume] [--set key=value ...]
-    python -m enth_ml.train eval --ckpt RUN/ckpt-best.pt [--mel f2] [--dev DIR ...]
+    python -m enth_ml.train run --config pilot.toml [--set key=value ...]   # resumes when OUT has checkpoints
+    python -m enth_ml.train resume RUN_DIR [--set key=value ...]            # carry on with the run's config.json
+    python -m enth_ml.train stop RUN_DIR [--wait SECONDS]                   # checkpoint and exit at the end of a step
+    python -m enth_ml.train status RUN_DIR [--json]                         # step, samples, checkpoints, ETA, alive?
+    python -m enth_ml.train eval --ckpt RUN/ckpt/best.pt [--mel f2] [--dev DIR ...]
     python -m enth_ml.train info DIR [DIR ...]
     python -m enth_ml.train report RUN_DIR [--every N]
     python -m enth_ml.train cache SRC_RUN_DIR OUT_DIR [--workers N]   # an f16 training cache of a ds1 run
+    python -m enth_ml.train produce --bin B --gr3 G --staging S --out O --seed-base N --parts P   # render parts (produce.py)
+    python -m enth_ml.train augproduce --bin B --gr3 G --staging S --out O --seed-base N --parts P  # augmented parts (augdata.py)
 """
 
 from __future__ import annotations
@@ -36,11 +41,24 @@ def _set(cfg_dict: dict, assignment: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m enth_ml.train", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="train")
+    r = sub.add_parser("run", help="train (resumes from OUT's newest valid checkpoint when there is one)")
     r.add_argument("--config", required=True)
-    r.add_argument("--resume", action="store_true")
+    r.add_argument("--resume", action="store_true", help="the default; kept for old command lines")
+    r.add_argument("--no-resume", action="store_true", help="refuse a directory that already has checkpoints")
+    r.add_argument("--force-config", action="store_true", help="resume although the config's model, loss or optimiser keys changed")
     r.add_argument("--set", action="append", default=[], help="override a config key (dotted), value as JSON")
     r.add_argument("--device", default=None)
+    rs = sub.add_parser("resume", help="carry on with RUN_DIR/config.json")
+    rs.add_argument("run")
+    rs.add_argument("--set", action="append", default=[], help="override an operational key (workers, max_minutes, ...)")
+    rs.add_argument("--force-config", action="store_true")
+    rs.add_argument("--device", default=None)
+    sp = sub.add_parser("stop", help="stop a run at the end of its step, with a checkpoint")
+    sp.add_argument("run")
+    sp.add_argument("--wait", default="180")
+    st = sub.add_parser("status", help="how a run is doing")
+    st.add_argument("run")
+    st.add_argument("--json", action="store_true")
     e = sub.add_parser("eval", help="evaluate a checkpoint on dev")
     e.add_argument("--ckpt", required=True)
     e.add_argument("--mel", default="f4", choices=["f4", "f2"])
@@ -55,8 +73,26 @@ def main(argv: list[str] | None = None) -> int:
     cp.add_argument("src")
     cp.add_argument("out")
     cp.add_argument("--workers", default="8")
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "produce":  # its own parser (produce.py); no torch needed
+        from .produce import main as produce_main
+
+        return produce_main(argv[1:])
+    if argv and argv[0] == "augproduce":  # augmented parts (augdata.py)
+        from .augdata import main as aug_main
+
+        return aug_main(argv[1:])
     args = ap.parse_args(argv)
 
+    if args.cmd == "status":
+        from .control import status_main
+
+        return status_main([args.run] + (["--json"] if args.json else []))
+    if args.cmd == "stop":
+        from .control import stop_main
+
+        return stop_main([args.run, "--wait", args.wait])
     if args.cmd == "cache":
         from .cache import main as cache_main
 
@@ -76,24 +112,25 @@ def main(argv: list[str] | None = None) -> int:
     from .config import TrainConfig
     from .loop import evaluate_checkpoint, train
 
-    if args.cmd == "run":
+    if args.cmd in ("run", "resume"):
         import pathlib
-        import signal
         import tomllib
 
-        def _stop(signum, frame):  # SIGTERM: unwind, so the GPU monitor stops and the logs close
-            raise SystemExit(128 + signum)
+        from .control import EXIT_STOPPED
 
-        signal.signal(signal.SIGTERM, _stop)
-
-        p = pathlib.Path(args.config)
-        d = tomllib.loads(p.read_text()) if p.suffix == ".toml" else json.loads(p.read_text())
+        # SIGTERM and SIGINT are the trainer's (control.StopFlag): it finishes the step, checkpoints and exits.
+        if args.cmd == "run":
+            p = pathlib.Path(args.config)
+            d = tomllib.loads(p.read_text()) if p.suffix == ".toml" else json.loads(p.read_text())
+        else:
+            d = json.loads((pathlib.Path(args.run) / "config.json").read_text())
+            d["out"] = str(pathlib.Path(args.run))
         for s in args.set:
             _set(d, s)
         cfg = TrainConfig.from_dict(d)
-        summary = train(cfg, resume=args.resume, device=args.device)
+        summary = train(cfg, resume=not getattr(args, "no_resume", False), device=args.device, allow_config_change=args.force_config)
         print(json.dumps({k: v for k, v in summary.items() if k != "last_eval"}, indent=1))
-        return 0
+        return EXIT_STOPPED if summary["state"] == "stopped" else 0
     if args.cmd == "eval":
         res = evaluate_checkpoint(args.ckpt, args.dev, args.device, args.mel)
         print(json.dumps(res, indent=1))

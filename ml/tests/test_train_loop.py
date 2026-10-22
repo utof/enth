@@ -82,8 +82,9 @@ class Loop(unittest.TestCase):
         cfg = self.tiny("run-a", epochs=4)
         s = train(cfg, device="cpu")
         out = pathlib.Path(cfg.out)
-        for f in ("run.json", "metrics.jsonl", "ckpt-last.pt", "ckpt-best.pt", "summary.json"):
+        for f in ("run.json", "config.json", "status.json", "metrics.jsonl", "ckpt/manifest.json", "ckpt/best.pt", "summary.json"):
             self.assertTrue((out / f).exists(), f)
+        self.assertEqual(len(list((out / "ckpt").glob("periodic-*.pt"))), 1)
         recs = [json.loads(line) for line in (out / "metrics.jsonl").read_text().splitlines()]
         dev = [r for r in recs if r["kind"] == "dev"]
         self.assertEqual(len(dev), 4)
@@ -99,11 +100,12 @@ class Loop(unittest.TestCase):
             self.assertIn(key, ev)
         self.assertEqual(len(ev["wta"]["win_share"]), 4)
         self.assertIn("osc1.semi", ev["best"]["continuous_per_entry"])
-        # Resume: the step count continues and one more epoch runs.
-        cfg2 = self.tiny("run-a", epochs=5)
-        s2 = train(cfg2, resume=True, device="cpu")
-        self.assertGreater(s2["steps"], s["steps"])
+        # Running a finished run again resumes it and does nothing more (stop and resume: test_train_resume.py).
+        s2 = train(self.tiny("run-a", epochs=4), device="cpu")
+        self.assertEqual((s2["state"], s2["steps"]), ("finished", s["steps"]))
         self.assertTrue(any(p.name.startswith("run-resume-") for p in out.iterdir()))
+        with self.assertRaises(FileExistsError):
+            train(self.tiny("run-a", epochs=4), resume=False, device="cpu")
         import contextlib
         import io
 
@@ -114,8 +116,8 @@ class Loop(unittest.TestCase):
             report.main([str(out)])
         self.assertIn("| Epoch |", buf.getvalue())
         self.assertIn("samples_per_s_median", buf.getvalue())
-        res = evaluate_checkpoint(out / "ckpt-best.pt", device="cpu")
-        res16 = evaluate_checkpoint(out / "ckpt-best.pt", device="cpu", mel_dtype="f2")
+        res = evaluate_checkpoint(out / "ckpt" / "best.pt", device="cpu")
+        res16 = evaluate_checkpoint(out / "ckpt" / "best.pt", device="cpu", mel_dtype="f2")
         self.assertLess(abs(res["loss_best"] - res16["loss_best"]), 0.05 * res["loss_best"] + 1e-3)
 
     def test_time_budget_ends_the_run(self) -> None:

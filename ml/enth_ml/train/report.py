@@ -20,6 +20,12 @@ def _fmt(x, nd: int = 3) -> str:
 
 def load(run: pathlib.Path) -> tuple[list[dict], list[dict]]:
     recs = [json.loads(line) for line in (run / "metrics.jsonl").read_text().splitlines() if line.strip()]
+    # After a crash and a resume, steps after the checkpoint are logged twice: keep the last record of each.
+    last: dict[tuple, dict] = {}
+    for r in recs:
+        if r["kind"] in ("train", "dev"):
+            last[(r["kind"], r["step"], bool(r.get("epoch_complete")))] = r
+    recs = sorted(last.values(), key=lambda r: (r["step"], r["kind"]))
     return [r for r in recs if r["kind"] == "train"], [r for r in recs if r["kind"] == "dev" and "epoch_seconds" in r]
 
 

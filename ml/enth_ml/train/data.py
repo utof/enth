@@ -5,6 +5,14 @@
   which is what a 9P- or network-mounted disk serves fastest), shuffles them together with the previous remainder and
   yields whole batches. ``ds1``'s samples are independent draws per index, so the shuffle is for epoch-to-epoch variety,
   not to break correlations.
+* ``EpochPlan``, ``WindowDataset`` and ``batches_from``: the resumable stream (lane TR2). An epoch's samples are a
+  fixed sequence: the shards in an order drawn from ``(seed, epoch)``, cut into windows of ``buffer_shards``
+  consecutive shards, each window's samples permuted from ``(seed, epoch, window)``; batches are consecutive slices of
+  that sequence (the last partial batch is dropped). A DataLoader worker reads and permutes one whole window at a
+  time (whole-shard reads, which a 9P or network disk serves fastest), the main process cuts batches, carrying the
+  remainder of one window into the next. The sequence depends on nothing else (not on the number of workers), so a
+  checkpoint holds the epoch's shard list and the number of samples consumed, and a resume continues **at the exact
+  sample**: no batch repeated or skipped.
 * ``DevSet``: the dev stream in RAM, in ``f32`` as inference sees it, read in order.
 * ``compute_standardisation``: per-(resolution, band) and per-context means and deviations over training shards; the
   model holds them as ``Mul`` and ``Add`` constants.
@@ -75,6 +83,123 @@ class ShardStream(IterableDataset):
             pending = {k: np.concatenate([p[k] for p in parts]) for k in TRAIN_ARRAYS}
             final = start + self.buffer_shards >= len(mine)
             leftover = yield from self._batches(pending, rng, final)
+
+
+class EpochPlan:
+    """One epoch's sample order over ``shards`` (a list of ``(path, n)``), from ``(seed, epoch)``."""
+
+    def __init__(self, shards: list[tuple[pathlib.Path | str, int]], seed: int, epoch: int, buffer_shards: int, batch_size: int) -> None:
+        if not shards:
+            raise ValueError("no shard to plan an epoch over")
+        self.shards = [(str(p), int(n)) for p, n in shards]
+        self.seed = int(seed)
+        self.epoch = int(epoch)
+        self.buffer_shards = max(1, int(buffer_shards))
+        self.batch_size = int(batch_size)
+        order = np.random.default_rng([self.seed, self.epoch, 11]).permutation(len(self.shards))
+        self.windows = [order[i : i + self.buffer_shards].tolist() for i in range(0, len(order), self.buffer_shards)]
+        sizes = [sum(self.shards[j][1] for j in w) for w in self.windows]
+        self.starts = np.concatenate([[0], np.cumsum(sizes)]).astype(np.int64)
+        self.n = int(self.starts[-1])
+        self.n_batches = self.n // self.batch_size
+
+    @property
+    def samples(self) -> int:
+        """Samples the epoch trains on (whole batches only)."""
+        return self.n_batches * self.batch_size
+
+    def window_perm(self, w: int) -> np.ndarray:
+        return np.random.default_rng([self.seed, self.epoch, int(w), 12]).permutation(int(self.starts[w + 1] - self.starts[w]))
+
+    def locate(self, position: int) -> tuple[int, int]:
+        """The window holding sample ``position`` of the sequence and the offset in it."""
+        w = int(np.searchsorted(self.starts, position, side="right") - 1)
+        return w, int(position - self.starts[w])
+
+    def identity(self) -> dict:
+        """What a checkpoint stores to rebuild the plan exactly."""
+        return {"shards": [[p, n] for p, n in self.shards], "seed": self.seed, "epoch": self.epoch, "buffer_shards": self.buffer_shards, "batch_size": self.batch_size}
+
+    @classmethod
+    def from_identity(cls, d: dict) -> "EpochPlan":
+        return cls([(p, n) for p, n in d["shards"]], d["seed"], d["epoch"], d["buffer_shards"], d["batch_size"])
+
+
+class WindowDataset(torch.utils.data.Dataset):
+    """Item ``w``: window ``w`` of an ``EpochPlan``, its shards read whole, concatenated and permuted."""
+
+    def __init__(self, plan: EpochPlan, mel_dtype: str = "f2") -> None:
+        self.plan = plan
+        self.mel_dtype = mel_dtype
+
+    def __len__(self) -> int:
+        return len(self.plan.windows)
+
+    def __getitem__(self, w: int) -> dict[str, torch.Tensor]:
+        parts = [read_shard(self.plan.shards[j][0], TRAIN_ARRAYS, mel_dtype=self.mel_dtype) for j in self.plan.windows[w]]
+        for (path, n), part in zip((self.plan.shards[j] for j in self.plan.windows[w]), parts):
+            if len(part["label"]) != n:
+                raise ValueError(f"{path}: {len(part['label'])} samples, the manifest says {n}")
+        perm = self.plan.window_perm(w)
+        return {k: torch.from_numpy(np.ascontiguousarray(np.concatenate([p[k] for p in parts])[perm])) for k in TRAIN_ARRAYS}
+
+
+def _ignore_sigint(_worker_id: int) -> None:
+    import signal
+
+    signal.signal(signal.SIGINT, signal.SIG_IGN)  # a Ctrl-C reaches the main process, which stops cleanly
+
+
+def batches_from(plan: EpochPlan, position: int, workers: int, prefetch: int = 2, pin_memory: bool = False, mel_dtype: str = "f2"):
+    """The epoch's batches from sample ``position`` (a multiple of the batch size) on, as dicts of tensors."""
+    bs = plan.batch_size
+    if position % bs:
+        raise ValueError("a resume position is a whole number of batches")
+    if position >= plan.samples:
+        return
+    w0, off = plan.locate(position)
+    ds = WindowDataset(plan, mel_dtype)
+    loader = torch.utils.data.DataLoader(
+        ds,
+        batch_size=None,
+        sampler=list(range(w0, len(plan.windows))),
+        num_workers=workers,
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch if workers > 0 else None,
+        worker_init_fn=_ignore_sigint if workers > 0 else None,
+        persistent_workers=False,
+    )
+    left = plan.samples - position
+    carry: dict[str, torch.Tensor] | None = None
+    first = True
+    try:
+        for win in loader:
+            if first:
+                win = {k: v[off:] for k, v in win.items()}
+                first = False
+            n = len(win["label"])
+            i = 0
+            if carry is not None:  # the remainder of the previous window, completed from the head of this one
+                need = bs - len(carry["label"])
+                if n < need:
+                    carry = {k: torch.cat([carry[k], win[k]]) for k in TRAIN_ARRAYS}
+                    continue
+                yield {k: torch.cat([carry[k], win[k][:need]]) for k in TRAIN_ARRAYS}
+                carry = None
+                i = need
+                left -= bs
+                if left <= 0:
+                    return
+            while i + bs <= n and left > 0:
+                yield {k: v[i : i + bs] for k, v in win.items()}
+                i += bs
+                left -= bs
+            if left <= 0:
+                return
+            if i < n:
+                carry = {k: v[i:] for k, v in win.items()}
+    finally:
+        del loader
 
 
 class DevSet:
