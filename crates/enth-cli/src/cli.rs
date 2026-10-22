@@ -221,4 +221,11 @@ pub enum Cmd {
     // R3 command, pre-declared by lane S0s; lane SK3 built it (F2s) in its own file under `cmd/`, then lane CLC.
     /// Create patches from a sound file: the intake, a start portfolio and K searched candidates (lanes SK3, then CLC).
     Create(crate::cmd::create::Args),
+    // R4 and R5 commands, pre-declared by lane S0e, hidden and answering `not_built_yet` (lanes SKE, then EV4; SKD, then EV4).
+    /// Ear-training games: play and answer questions from the command line (lanes SKE, then EV4).
+    #[command(hide = true)]
+    Ear(crate::cmd::ear::Args),
+    /// Duels: `result` writes a round's codes, `verify` re-scores a pasted one (lanes SKD, then EV4).
+    #[command(hide = true)]
+    Duel(crate::cmd::duel::Args),
 }
