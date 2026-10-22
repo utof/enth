@@ -186,14 +186,31 @@ def _natural_key(p: pathlib.Path) -> list:
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", p.name)]
 
 
+def _completed(p: pathlib.Path) -> tuple:
+    """A part's place in the order parts were completed: its manifest's time (written last), then its name."""
+    try:
+        return (os.stat(p / "manifest.json").st_mtime, _natural_key(p))
+    except OSError:
+        return (float("inf"), _natural_key(p))
+
+
 def scan_train(cfg: TrainConfig) -> Dataset:
-    """The training set as it stands: ``train_dirs`` plus every complete part ``train_glob`` matches (in natural
-    order, so part 10 comes after part 9)."""
+    """The training set as it stands: ``train_dirs`` plus every complete part ``train_glob`` matches, in the order
+    they were completed; with ``train_window_samples``, only the newest parts holding about that many samples."""
     dirs = [pathlib.Path(d) for d in cfg.train_dirs]
     if cfg.train_glob:
         g = pathlib.Path(cfg.train_glob)
-        found = sorted((p for p in g.parent.glob(g.name) if (p / "manifest.json").exists() and not p.name.endswith(".tmp")), key=_natural_key)
-        dirs += [p for p in found if p not in dirs]
+        found = sorted((p for p in g.parent.glob(g.name) if (p / "manifest.json").exists() and not p.name.endswith((".tmp", ".stage"))), key=_completed)
+        found = [p for p in found if p not in dirs]
+        if cfg.train_window_samples > 0 and found:
+            keep, total = [], 0
+            for p in reversed(found):
+                keep.append(p)
+                total += int(json.loads((p / "manifest.json").read_text()).get("kept", 0))
+                if total >= cfg.train_window_samples:
+                    break
+            found = list(reversed(keep))
+        dirs += found
     if not dirs:
         raise FileNotFoundError("no training data: train_dirs is empty and train_glob matches no complete part")
     return open_dataset(dirs, "train")
@@ -302,6 +319,11 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         samples_seen, wait_s = state["samples_seen"], state.get("wait_s", 0.0) + wait_s
         schedule_steps = state["schedule_steps"]
         plan = EpochPlan.from_identity(state["plan"]) if state.get("plan") else None
+        if plan is not None and not all(os.path.exists(p) for p, _ in plan.shards):
+            # A rolling cache deleted a part this epoch used (only possible when resuming from an old checkpoint):
+            # the epoch restarts on the data as it stands. Logged; every other resume is exact.
+            log_line(f"the checkpoint's epoch {epoch} uses parts that are gone: the epoch restarts on the current data")
+            plan, position = None, 0
         acc.copy_(torch.as_tensor(state["acc"]).to(device_t))
         win_counts.copy_(torch.as_tensor(state["win_counts"]).to(device_t))
         win_steps, ep_samples = state["win_steps"], state["ep_samples"]

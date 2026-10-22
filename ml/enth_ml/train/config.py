@@ -52,6 +52,10 @@ class TrainConfig:
     # -- lane TR2: data that grows while the run trains (produce.py writes parts) --------------------------------------
     train_glob: str = ""  # parts found at each epoch start (a part counts once its manifest.json exists), added to train_dirs
     min_train_samples: int = 0  # wait for this many training samples before the first step
+    # A rolling cache: each epoch trains on the newest parts (in the order they were completed) holding about this many
+    # samples (0: every part). On a disk that cannot stream the whole set (the desktop's D:, an HDD read through 9P),
+    # the newest parts are the ones still in the host's file cache, having just been written.
+    train_window_samples: int = 0
     max_repeat: float = 0.0  # pacing: an epoch starts only if samples seen stay <= max_repeat x distinct samples (0: off)
     data_target_samples: int = 0  # the producer's planned total; once available, pacing stops waiting
     data_wait_max_minutes: float = 45.0  # pacing gives up waiting after this long without a new part
@@ -68,7 +72,7 @@ class TrainConfig:
     # Keys a resume may change (operational); every other key must match the checkpoint's config.
     OPERATIONAL = (
         "workers", "prefetch", "pin_memory", "dev_batch", "epochs", "max_minutes", "log_every_steps", "early_stop_patience",
-        "early_stop_min_steps", "min_dev_improvement", "min_train_samples", "max_repeat", "data_target_samples",
+        "early_stop_min_steps", "min_dev_improvement", "min_train_samples", "train_window_samples", "max_repeat", "data_target_samples",
         "data_wait_max_minutes", "ckpt_every_minutes", "ckpt_every_steps", "keep_checkpoints", "status_every_s",
         "stop_poll_s", "stop_at_step", "out", "train_dirs", "dev_dirs", "train_glob", "eval_every_steps", "eval_at_epoch_end",
     )

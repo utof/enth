@@ -15,6 +15,9 @@ looks for (``loop.py``, ``train_glob``). Different machines use different seed b
 * ``OUT/PRODUCE-STOP`` stops it between parts; SIGTERM or SIGINT stops it at once (the running ``gen`` is terminated;
   ``gen`` resumes a part from its finished shards' records, so nothing rendered is lost).
 * ``OUT/produce.jsonl`` gets one line per part: seed, candidates, kept, render seconds and rate, bytes.
+* ``--keep-newest N`` makes it a rolling cache: after each part, its oldest parts beyond the newest N are deleted (the
+  trainer's ``train_window_samples`` should cover far fewer parts than N, so a part leaves the training window long
+  before it is deleted; a resume whose epoch lost a part restarts that epoch, ``loop.py``).
 """
 
 from __future__ import annotations
@@ -75,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--shard-size", type=int, default=256)
     ap.add_argument("--convert-workers", type=int, default=3)
     ap.add_argument("--stream", default="r3/train")
+    ap.add_argument("--keep-newest", type=int, default=0, help="a rolling cache: after each part, delete this producer's oldest parts beyond the newest N (0: keep all)")
     a = ap.parse_args(argv)
 
     out = pathlib.Path(a.out)
@@ -105,6 +109,11 @@ def main(argv: list[str] | None = None) -> int:
             log.write(json.dumps(rec) + "\n")
             log.flush()
             print(f"part {rec['seed']}: converted in {r['convert_seconds']:.0f} s ({r['bytes_written'] / 1e9:.2f} GB)", flush=True)
+            if a.keep_newest > 0:
+                mine = sorted((p for p in out.glob("train-s*-f16") if (p / "manifest.json").exists()), key=lambda p: (p / "manifest.json").stat().st_mtime)
+                for old in mine[: max(0, len(mine) - a.keep_newest)]:
+                    shutil.rmtree(old, ignore_errors=True)
+                    print(f"rolling cache: deleted {old.name}", flush=True)
         except BaseException as e:  # noqa: BLE001 - reported by the main thread
             conv_err.append(e)
 

@@ -252,5 +252,25 @@ class Resume(unittest.TestCase):
         self.assertEqual([e["available"] for e in epochs], [30] * 4)
 
 
+    def test_rolling_window_takes_the_newest_parts(self) -> None:
+        import os
+
+        import numpy as np
+
+        from enth_ml.train.loop import scan_train
+        from train_support import write_run
+
+        parts = self.dir / "rolling"
+        for i, seed in enumerate((7, 30, 12)):  # completed in this order (not the names' order)
+            d = write_run(np, parts / f"train-s{seed}-f16", "r3/train", 2, 15, 20 + seed)
+            os.utime(d / "manifest.json", (1000 + i, 1000 + i))
+        cfg = self.cfg("unused", train_dirs=[], train_glob=str(parts / "train-s*-f16"))
+        self.assertEqual([r.path.name for r in scan_train(cfg).runs], ["train-s7-f16", "train-s30-f16", "train-s12-f16"])
+        cfg.train_window_samples = 40
+        self.assertEqual([r.path.name for r in scan_train(cfg).runs], ["train-s30-f16", "train-s12-f16"])
+        cfg.train_window_samples = 30
+        self.assertEqual([r.path.name for r in scan_train(cfg).runs], ["train-s12-f16"])
+
+
 if __name__ == "__main__":
     unittest.main()

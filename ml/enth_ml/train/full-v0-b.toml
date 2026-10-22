@@ -1,5 +1,6 @@
 # propose v0, the full run (lane TR2, 2026-10-22), arm B: the desktop (GTX 1660 Ti, FP32): arm A without its riskiest change.
-# Arm A (full-v0-a.toml, isaac-pc) adds the discrete-boosted WTA selection; everything else is the same (but FP32 here).
+# Arm A (full-v0-a.toml, isaac-pc) adds the discrete-boosted WTA selection; the loss and schedule are otherwise the same
+# (FP32 here; the data is a rolling cache, below).
 # Data: parts rendered while it trains (python -m enth_ml.train produce); pass the machine's paths:
 #   python -m enth_ml.train run --config enth_ml/train/full-v0-b.toml \
 #     --set 'train_glob="/mnt/d/enth-train/tr2/data/train/train-*-f16"' \
@@ -30,9 +31,13 @@ stats_shards = 64
 early_stop_patience = 8  # 4 M samples without a better dev best-of-K
 early_stop_min_steps = 20000
 min_dev_improvement = 0.002
-min_train_samples = 300000   # do not start on the first part alone
-max_repeat = 8.0             # samples seen <= 8 x distinct samples available: wait for the renderer otherwise
-data_target_samples = 1100000   # what fits on D:
+min_train_samples = 200000   # do not start on the first parts alone
+# Arm B's data is a ROLLING CACHE (the desktop's D: is an HDD read through 9P: streaming 1 M+ samples ran at ~500
+# samples/s, run full-v0-b): each epoch is the newest ~200 k samples (~10 GB, what the Windows file cache held in the
+# pilot at 1,900 samples/s), the renderer keeps adding parts and deletes its oldest beyond 24 (produce --keep-newest 24).
+train_window_samples = 200000
+max_repeat = 0.0             # no pacing: a part stays in the window ~25 min, so each sample is seen ~10x
+data_target_samples = 0
 data_wait_max_minutes = 45.0
 ckpt_every_minutes = 25.0
 keep_checkpoints = 2

@@ -9,6 +9,7 @@
     python -m enth_ml.train report RUN_DIR [--every N]
     python -m enth_ml.train cache SRC_RUN_DIR OUT_DIR [--workers N]   # an f16 training cache of a ds1 run
     python -m enth_ml.train produce --bin B --gr3 G --staging S --out O --seed-base N --parts P   # render parts (produce.py)
+    python -m enth_ml.train augproduce --bin B --gr3 G --staging S --out O --seed-base N --parts P  # augmented parts (augdata.py)
 """
 
 from __future__ import annotations
@@ -78,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
         from .produce import main as produce_main
 
         return produce_main(argv[1:])
+    if argv and argv[0] == "augproduce":  # augmented parts (augdata.py)
+        from .augdata import main as aug_main
+
+        return aug_main(argv[1:])
     args = ap.parse_args(argv)
 
     if args.cmd == "status":
