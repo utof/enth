@@ -13,7 +13,8 @@
 //!
 //! - **shape inference**, op by op, from `pack.rs`'s op table: each input's rank and dims, the channels against the
 //!   groups, the kernel against the padded input, broadcasting, a `Reshape`'s element count, a permutation's rank, a
-//!   slice's range. A graph no exporter makes is `model_malformed`, naming the node;
+//!   slice's range, strides, pads and dilations at most [`MAX_GEOMETRY`]. A graph no exporter makes is
+//!   `model_malformed`, naming the node;
 //! - **the declared outputs** against the inferred shapes (`model_malformed` when they disagree);
 //! - **the FLOP recount** from the shapes, as the op table counts them (`2 ·` the multiply-adds of `Conv1d`,
 //!   `Conv2d`, `Linear` and `MatMul`, 1 per output element of every other op, 0 for `Reshape`, `Transpose`, `Concat`
