@@ -1,5 +1,5 @@
-//! **Owner: lane TP** (`bank`, wave 2) and **DG** (`ds1`, `shards`, `exclude`; after F3s). Pre-declared by lane S0s (R3,
-//! freeze point F0s): every command refuses to run (exit 1) and names its lane.
+//! **Owner: lane TP** (`bank`, wave 2) and **DG** (`ds1`, `shards`, `exclude`; R3b, after F3s). Pre-declared by lane S0s
+//! (R3, freeze point F0s).
 //!
 //! `enth-datagen`: R3's data tooling, as a tooling package so that `cargo xtask` stays light (no engine crate in xtask,
 //! S0r's rule) and so that the engine-bound work has a home. Like `enth-lesson-tool` it is exempt from the layer rules
@@ -9,9 +9,9 @@
 //! | Command | File | Does | Lane |
 //! | --- | --- | --- | --- |
 //! | `bank` | `bank.rs` | renders generator patches at a standard note, pools their log-mel and writes the k-NN bank (seeds plus f16 vectors, a versioned file beside the plugin; `cargo xtask bank` drives it) | TP |
-//! | `ds1` | `ds1.rs` | the versioned sampler `ds1`: the mixture, the phrase sampler, the labels, the filters and the splits by stream key (docs/r3.md, "`ds1`") | DG |
-//! | `shards` | `shards.rs` | deterministic shards of clean renders and their labels, for `ml/` to read as files | DG |
-//! | `exclude` | `exclude.rs` | asserts that no training item is on `content/gr3/`'s exclusion lists | DG |
+//! | `ds1` | `ds1.rs`, `ds1/` | the versioned sampler `ds1`: the mixture, the phrase sampler, the labels, the filters and the splits by stream key; `gen` writes the shards (docs/r3.md, "`ds1`") | DG |
+//! | `shards` | `shards.rs` | the shard file and the run manifest, for `ml/` to read as files; `verify`, `info`, and `features` (degraded clips to shards) | DG |
+//! | `exclude` | `exclude.rs` | the exclusion lists, and `check`: asserts that no training item is on `content/gr3/`'s lists or near its targets | DG |
 //! | `gr3` | `gr3.rs`, `gr3/` | GR3 clause 1's arms over a job `cargo xtask gr3-run` writes; appends the runs (docs/gr3.md) | EVK; `EVb` |
 //!
 //! Renders are bit-exact, so a dataset is a manifest (a sampler version, seeds, a phrase sampler, an augmentation config)
@@ -35,9 +35,11 @@ const USAGE: &str = "usage: enth-datagen <command> [args...]
   bank [--entries N] [--out PATH] [--threads T]   the k-NN retrieval bank (R3 lane TP)
   bank check PATH     re-read a bank, regenerate every entry, re-assert the GR3 exclusions
   bank cost           the per-evaluation cost table (render + features, 1 worker and 8)
-  ds1                 (not built yet: R3 lane DG) the training sampler's manifest
-  shards              (not built yet: R3 lane DG) deterministic shards of clean renders and labels
-  exclude             (not built yet: R3 lane DG) assert that training excludes the GR3 sets
+  ds1 gen --count N --seed S --out DIR [--workers W]   deterministic shards of clean renders and labels (R3 lane DG)
+  ds1 bench|show|anchors|audit|render ...               throughput, one sample, projection, label noise, clean clips
+  shards verify DIR | info DIR                          re-hash and re-read a run
+  shards features --samples F --clips DIR --out DIR     degraded clips to shards (also `features ...`)
+  exclude lists | check DIR [--against DIR]...          the GR3 exclusion lists; assert a run against them
   gr3 run --job FILE  GR3 clause 1's arms over a job (R3 lane EVK; run it through `cargo xtask gr3-run`)
 Run `bank` through `cargo xtask bank`.";
 
@@ -47,6 +49,7 @@ fn main() -> ExitCode {
         Some("bank") => bank::run(&args[1..]),
         Some("ds1") => ds1::run(&args[1..]),
         Some("shards") => shards::run(&args[1..]),
+        Some("features") => shards::run(&[&["features".to_owned()][..], &args[1..]].concat()),
         Some("exclude") => exclude::run(&args[1..]),
         Some("gr3") => gr3::run(&args[1..]),
         _ => Err(USAGE.to_owned()),
