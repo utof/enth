@@ -428,6 +428,16 @@ pub struct CreateCfg {
     pub eta: usize,
     /// How many branches pruning keeps at least: they continue in growing rungs until the cap.
     pub finalists: usize,
+    /// **The model's share cap** (R3b, lane EVM; on by default): whenever branches are chosen (the screening round
+    /// keeps K, each rung keeps its survivors), a model's starts ([`Provenance::Model`]) hold at most half of the
+    /// `n` kept, rounded up (`⌈n / 2⌉`), and the other places go to the other starts or branches by their rank (the
+    /// screening distance, or the branch's best distance). Places the others cannot fill go back to the model's, by
+    /// rank, so the cap never shrinks a selection, and a job without model starts is unchanged. Why: the model's
+    /// hypotheses come from one inference and fail together, and without the cap they took 6 of 7 free branches on
+    /// `gen-d-l2-01` and pruned the k-NN neighbour that reached 0.018 (0.101 with the model; lane `PUIb`). With K = 8:
+    /// at most 4 model branches after screening, 2 of the 4 survivors of the first rung, 1 of the 2 finalists.
+    /// `false` is R3b's first behaviour (MS), which an `enth.create/1` record without `settings.model_cap` replays.
+    pub model_cap: bool,
 }
 
 impl Default for CreateCfg {
@@ -443,11 +453,19 @@ impl Default for CreateCfg {
             first_rung: 50,
             eta: 2,
             finalists: 2,
+            model_cap: true,
         }
     }
 }
 
 impl CreateCfg {
+    /// The most of `n` chosen branches a model's starts may hold: `⌈n / 2⌉` with the
+    /// [`model_cap`](Self::model_cap), else `n`.
+    #[must_use]
+    pub fn model_places(&self, n: usize) -> usize {
+        if self.model_cap { n.div_ceil(2) } else { n }
+    }
+
     /// Rung `r`'s milestone, in a branch's own renders: `first_rung · eta^r` (saturating).
     #[must_use]
     pub fn milestone(&self, rung: usize) -> usize {

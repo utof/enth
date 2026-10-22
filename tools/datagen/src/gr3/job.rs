@@ -100,6 +100,8 @@ impl CfgJob {
             first_rung: self.first_rung,
             eta: self.eta,
             finalists: self.finalists,
+            // The model's share cap (lane EVM): create's default; a run's build says which behaviour it had.
+            model_cap: CreateCfg::default().model_cap,
         }
     }
 }
