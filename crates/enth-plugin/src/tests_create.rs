@@ -372,11 +372,13 @@ fn run(id: u64, file: &str, seconds: f64, budget: Option<usize>, k: usize) -> Cr
 }
 
 /// The tests that run jobs one at a time, so a test that reads the process's thread names sees only its own.
-static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+pub(crate) static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 fn quiet() -> Create {
     let c = Create::new();
     c.set_bank_paths(Some(Vec::new()));
+    // No model either (lane PUIb): a model file in the Documents folder must not change these tests.
+    c.set_model_dirs(Some(Vec::new()));
     c.set_workers(2);
     c
 }
@@ -693,6 +695,7 @@ fn unloading_the_plugin_never_hangs_on_a_running_job() {
     let plugin = crate::Enth::default();
     let shared = Arc::clone(plugin.shared());
     shared.create.set_bank_paths(Some(Vec::new()));
+    shared.create.set_model_dirs(Some(Vec::new()));
     let (started, _) = shared.with_session(|s| {
         s.create_start(
             CreateSource::file(fixture("tone.wav")),

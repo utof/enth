@@ -74,6 +74,8 @@ mod tests_game;
 mod tests_host;
 #[cfg(all(test, feature = "learn"))]
 mod tests_learn;
+#[cfg(all(test, feature = "create"))]
+mod tests_model;
 #[cfg(all(test, feature = "learn"))]
 mod tests_review;
 
