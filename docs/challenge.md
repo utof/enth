@@ -12,6 +12,8 @@
 | [Structure, combined and time](#structure-combined-and-time-lane-st) | ST |
 | [Golden challenges](#golden-challenges-lane-gc) | GC |
 | [Challenge v2](#challenge-v2-lane-cv2-r2) (R2) | CV2 |
+| [Challenge v3](#challenge-v3-planned-lane-cv3-r4) (R4, planned) | CV3 |
+| [Version 15's kinds](#version-15-the-kinds-behind-the-escape-r4-r5-planned), [what older builds print](#what-older-builds-print) and [the daily formula](#the-daily-challenge-formula-r5-planned) (R4, R5, planned) | DOCS4 now; then RC, and CV3 for the ear-challenge kind |
 
 ## How a round uses these types
 
@@ -226,6 +228,20 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 | Lesson phrases: ids, names, invariants, never picked by the generator | `lesson_phrases::tests` |
 | The patch-target preimage pinned; what enters it | `fingerprint::tests` |
 
+## Challenge v3 (planned, lane CV3, R4)
+
+**Planned (2026-10-22, R4 research; lane CV3 builds it, and a judge reviews it at freeze F1e with the other R4 and R5 APIs, [phase-4.md](phase-4.md#freezes)).** R4's games need what v2 left out: a target that is not a patch, and answers that are not patches. v3 is additive like v2: v1 and v2 files read as before and are written at the lowest version that holds them, so no R1–R3 challenge changes its bytes. The design is [ear.md](ear.md#where-r4-lives); CV3 replaces this sketch with the built form when it lands.
+
+| Piece | What |
+| --- | --- |
+| `Target::Ear(EarSpec)` | A question set from the frozen ear generator in `enth-music` (L1, lane MUS): `EarSpec { game, generator, level, seed, count }`, integers only, the seed below 2⁵³. Strict like every target: an ear target takes phrase 0 (its questions carry their own notes) and the template start |
+| `AnswerKind::{Choice, Value, Taps}` | A label or clip index, judged exactly; a value on a knob or slider, scored as an error in perceptual units (octaves, log ms); tap times, scored on the intervals between taps after a best-fit offset. `Patch` stays the default |
+| `ear.rs` | A question → a timbre patch from the frozen, append-only pool `timbres-v1/`, a `Performance` (generated notes within C1–C7, at most 8 at once, at most 10 s, integers only) and an optional post-EQ band rendered through `enth-dsp`'s biquad (lane BQ) |
+| Scorers `ear/1`, `ear-value/1`, `taps/1` | Answer keys are seeded integers, so an ear result is judged with no render, identically on every platform and engine version; only a new frozen generator version moves a key |
+| The ear-challenge code kind | Kind 3 behind version 15 ([below](#version-15-the-kinds-behind-the-escape-r4-r5-planned)) |
+
+The parameter games (Spot the change, Dial it in, Ear check) need no new target: they are v2 draws with a `Choice` or `Value` answer, or a constrained Recreate round on a draw, as lessons already play them. `Target::Expectations` stays out (text goals still have no player).
+
 ## `RandomSpec`
 
 ```rust
@@ -250,7 +266,7 @@ JSON: `{"generator":1,"seed":42,"difficulty":25,"amounts":[null,null,null,null,n
 - **The start patch has no slot assignments and routes no macro or mod wheel, and no target adds such a route** (lane SG's host-automation rule: host automation must not reach a round's patch; F1r review N3). `random::tests::the_start_has_no_slots_and_no_macro_routes_and_targets_add_none` checks it.
 - Levels: the presets put levels 1–5 at difficulty 0, 25, 50, 75 and 100. Any banding that keeps those five in different levels, in order, works; the proposal is 0–20, 21–40, 41–60, 61–80 and 81–100.
 - Template ids are append-only, like preset and phrase ids.
-- A seed made by a formula rather than drawn (a daily challenge's, say) keeps its top 40 bits (`>> 24`), so its code stays short.
+- A seed made by a formula rather than drawn (a daily challenge's, say) keeps its top 40 bits (`>> 24`), so its code stays short. R5's daily formula is [below](#the-daily-challenge-formula-r5-planned) (planned).
 - Generation returns the target patch, the phrase id it picked, the randomized addresses (observable, in address order), because the scorers' `TargetContext` takes all three, and the target's [fingerprint](#the-target-fingerprint).
 
 ### Presets
@@ -278,7 +294,7 @@ Every symbol is a data symbol (F1r review S2): Crockford's mod-37 check, which c
 
 ### Layout
 
-Fields are written most significant bit first and cut into 5-bit symbols; the last symbol is zero-padded. The first symbol is `form << 4 | version`, so every later version can be told apart before its layout is known. **Version 15 is reserved as an escape** (`CODE_VERSION_ESCAPE`, F1r review N2): a later kind of code (R5's result codes, duels) starts with it in either form and puts a kind field next, so the 1-bit form never runs out; versions 2–14 are for new layouts of the two forms, and this build reads any of them as `code_too_new`.
+Fields are written most significant bit first and cut into 5-bit symbols; the last symbol is zero-padded. The first symbol is `form << 4 | version`, so every later version can be told apart before its layout is known. **Version 15 is reserved as an escape** (`CODE_VERSION_ESCAPE`, F1r review N2): a later kind of code (R5's scorecard and answer code, R4's ear codes; [below](#version-15-the-kinds-behind-the-escape-r4-r5-planned)) starts with it in either form and puts a kind field next, so the 1-bit form never runs out; versions 2–14 are for new layouts of the two forms, and this build reads any of them as `code_too_new`.
 
 | Short (65 bits) | Bits |
 | --- | --- |
@@ -309,7 +325,7 @@ The prefix is the first 32 bits of the regenerated target's [fingerprint](#the-t
 The summary asked for about 13 characters carrying the generator and engine versions and a 32-bit prefix; 13 symbols hold 65 bits, which cannot hold all of that. So:
 
 - **The short code holds 64 bits of payload** (version, preset, generator, seed) plus the form bit, in 13 symbols and a check: report 01's form. It carries **no prefix and no engine version.** Its guarantee is that a generator version is frozen and pinned by its spec → fingerprint golden on Linux, Windows and wasm (macOS weekly). A short code names only preset settings, which are exactly what those goldens cover. Two typos can give another valid short code: 1.3 % of random double substitutions with the GF(32) check (264 of 20,000, lane F1R's probe; the judge measured 0.9 % for the mod-37 check), accepted for R1 (F1r review S3). A round's log line carries the target's fingerprint and the engine version, so a replay of a logged code can still tell drift from a different target.
-- **The long code carries both**: the engine version (24 bits, enough for `0.2.0`-style versions up to 255.255.255) and a 32-bit prefix (a drifted target slips through with probability 2⁻³²). It is the form for custom settings. R5's result codes take the escape version: they carry the answer's fingerprint and the scores (a patch is kilobytes, so never the patch itself).
+- **The long code carries both**: the engine version (24 bits, enough for `0.2.0`-style versions up to 255.255.255) and a 32-bit prefix (a drifted target slips through with probability 2⁻³²). It is the form for custom settings. R5's result codes take the escape version, as two kinds: a spoiler-free scorecard (the scores, the claim and a salted commitment to the answer) and an answer code that **does carry the patch**, as a diff from the round's start ([below](#version-15-the-kinds-behind-the-escape-r4-r5-planned); 2026-10-22, R5 research). This page first said "never the patch itself", because a whole patch is kilobytes; a diff is 50–310 symbols.
 
 ### Reading a code
 
@@ -334,7 +350,51 @@ The property tests check the first two exhaustively for every position of 256 ra
 | Long code's fingerprint prefix ≠ the regenerated target's | refused, `target_mismatch` | the round must never be scored against a different target; it means a generator was not frozen, a bug to report |
 | Long code's engine version ≠ this build's | **warning only**, `engine_differs` (`CodeWarning`) | the target patch is the same; only its audio, and so the scores, may differ slightly |
 
-`ChallengeCode::verify(&fingerprint, EngineVersion::CURRENT)` does the last two; a short code passes it (it carries neither). Warning on another engine is right for solo R1; comparing two players' scores across engine versions is R5's concern, and R5 must refuse or rescore on a mismatch (its result codes carry the engine version; F1r review N2).
+`ChallengeCode::verify(&fingerprint, EngineVersion::CURRENT)` does the last two; a short code passes it (it carries neither). Warning on another engine is right for solo R1; comparing two players' scores across engine versions is R5's concern, and R5 must refuse or rescore on a mismatch (its result codes carry the engine version; F1r review N2). 2026-10-22 (R5 research): R5 re-scores, and shows both numbers; it refuses only on a generator or hash mismatch ([duels.md](duels.md#verification)).
+
+### Version 15: the kinds behind the escape (R4, R5; planned)
+
+**Planned (2026-10-22, R4 and R5 research; lane S0e reserves the kinds, lanes RC and CV3 build them, and the F1e judge fixes each layout, [phase-4.md](phase-4.md#freezes)).** A code whose first symbol carries version 15 continues with a 5-bit **kind** and a 4-bit **layout** version, then the kind's own fields. This build refuses every one of them, as `code_too_new` when it fits in code v1's 64 symbols and ends with code v1's check symbol, otherwise as `bad_length` or `bad_check` ([below](#what-older-builds-print)); a build that knows the kind but not its layout refuses it as `code_too_new`. Two refusals are new: an unknown scorer set is `scorer_too_new`, and an answer op on a module kind the build lacks is `answer_too_new` ([duels.md](duels.md#versions-and-refusals)).
+
+| Kind | What it carries | Size | Checks | Lane |
+| --- | --- | --- | --- | --- |
+| 1 **scorecard** | The challenge (a short spec, or a long one behind a flag); the engine version; the scorer set (8 bits, an index into a frozen table of scorer-id tuples, so GR1's `sound/2` can never move a score silently); sound % and combined %; passed; submits; the time to pass; the assists (hints, live meter, dim unused, `closest`); a 60-bit salted commitment to the answer. No patch, so it spoils nothing | About 51 symbols with a short spec, at a fixed length | About 30 check bits, then code v1's GF(32) symbol last | RC |
+| 2 **answer** | The salt; the challenge; the patch as `ops_between(start, answer)` with exact `f32` bits through the frozen, append-only `result-params-v1` table, with `meta`, labels, macro names and slots stripped | About 50, 135 and 255 symbols at levels 1, 3 and 5 (targets as stand-ins; real answers may be 1.2–2× longer) | A 40-bit hash tail, then code v1's GF(32) symbol last ([below](#what-older-builds-print)) | RC |
+| 3 **ear challenge** | An `EarSpec` (game, ear generator, level, seed, count) on a fixed ladder, for ear duels | Short | Code v1's GF(32) symbol | CV3 |
+| 4 **ear result** | The ear challenge, the answers (indices, values or tap times), the time and the assists; verified with no render | About 40–60 symbols | As the scorecard | RC |
+| 5 lesson sibling | Reserved: (pack, lesson, step, seed). Nothing plays it yet | — | — | — |
+
+- **The numbers are this page's proposal.** S0e reserves them as constants, and the F1e judge may renumber them before anything ships. Kind 0 is never written (`bad_field`).
+- **The kind and layout make old builds safe:** a build refuses a kind or layout it doesn't know, before it reads a field.
+- **Long codes need stronger checks than code v1's one symbol,** which lets random damage through 1 time in 32 and cannot catch a truncation in a code of variable length. So a scorecard has a fixed length and about 30 check bits, and an answer a 40-bit hash tail; the scorecard's commitment ties the two together.
+- **Paste-anything** (RC): the paste box takes a whole chat message and decodes every token that is a code (challenge, scorecard, answer), maps dash-like characters to a hyphen and drops zero-width characters. Codes never contain `--`, which phones turn into a dash ([duels.md](duels.md#sharing-and-paste)).
+
+### What older builds print
+
+`decode` (code v1, [above](#reading-a-code)) checks, in order: every character is a symbol; **2 to 64 symbols (`bad_length`), before it reads any field**; the GF(32) check (`bad_check`); the version (`code_too_new` from 2 to 15). Checked against `crates/enth-challenge/src/code.rs` on main `6226c01`. So an R1–R3 build answers:
+
+| Pasted | `decode` returns | Its hint |
+| --- | --- | --- |
+| A scorecard with a short spec (about 51 symbols, code v1's GF(32) symbol last) | `code_too_new` | "made by a newer enth: update enth to play it" |
+| Any code over 64 symbols: a long-spec scorecard, most answer codes | `bad_length` | "a code has 14 symbols, or 35 to 44 for custom settings, hyphens not counted: part of it is missing or extra" |
+| An answer code of 64 symbols or fewer (a level-1 answer is about 50) | `bad_check` in 31 of 32 cases, as if mistyped, **unless** it too ends with code v1's GF(32) symbol; then `code_too_new` | "there is a typo in the code", or "update enth" |
+
+So **every version-15 kind ends with code v1's GF(32) symbol**, one symbol on top of its own check (the research summary asks it of the scorecard; this page extends it to every kind, because a short answer fits in 64 symbols). A short code then reads "update enth" on an old build, and only codes over 64 symbols read "bad length", which no later change can fix. INT5's friend sheet says "update enth" for both; RC's test runs each kind through code v1's decoder ([phase-4.md](phase-4.md#open-checks)).
+
+### The daily challenge formula (R5, planned)
+
+A daily challenge needs no server: every build computes the day's code from the date, as Wordle did ([duels.md](duels.md#the-daily-challenge)). Planned: lane RC writes it as `daily::v1` with a golden of (day, level) → code, and the F1e judge freezes it; after that it never changes.
+
+```text
+day   = whole days since 1970-01-01 in UTC (the shell supplies it, as it does Review's day)
+seed  = derive(derive(fnv1a64(b"enth-daily-v1"), day), level) >> 24     // the top 40 bits
+code  = the short code of preset `level` (1–5) with generator 1 and that seed
+```
+
+- `derive` and `fnv1a64` are `enth-dsp`'s pinned `rng` functions, so the formula is integer arithmetic, the same on every platform. Core crates read no clock: `day` comes from the shell.
+- **The generator is part of the formula:** daily v1 always plays generator 1, so a later generator never changes an old day's challenge; a daily on a newer generator is a new formula (`enth-daily-v2`).
+- The top 40 bits keep the code short (the [rule above](#randomspec)), and the level enters the seed, so the five dailies of a day are unrelated.
+- **The day turns at 00:00 UTC**, which is local midnight only in UTC, as Review's day does. The share line carries the code itself, so a friend in another time zone pastes it rather than relying on "today".
 
 ## Generator versions are frozen
 
