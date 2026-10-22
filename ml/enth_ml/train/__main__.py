@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+# torch 2.14 routes a few eager ops (a batched outer product, some reductions) to Triton kernels it compiles at first
+# use, and Triton needs a C compiler to build its driver stub. The training desktop has none (no sudo to install one),
+# so the native JIT is off and those ops run on cuBLAS/ATen as before. Set before torch is imported.
+os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 
 
 def _set(cfg_dict: dict, assignment: str) -> None:

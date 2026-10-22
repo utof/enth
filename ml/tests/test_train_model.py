@@ -78,7 +78,7 @@ class Model(unittest.TestCase):
         allowed = {
             # Mul, Add (standardisation, residuals), Conv2d, Silu, AvgPool2d, Reshape, Linear, Concat, MatMul, Slice, Sigmoid
             "__mul__", "mul", "__add__", "add", "conv2d", "silu", "avg_pool2d", "reshape", "linear", "cat", "matmul",
-            "__getitem__", "sigmoid",
+            "__getitem__", "sigmoid", "transpose",
             # bookkeeping that computes nothing
             "to", "float", "dim", "size", "__get__", "device", "shape", "type", "is_floating_point",
         }  # fmt: skip

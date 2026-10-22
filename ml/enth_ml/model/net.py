@@ -11,7 +11,9 @@ Built only from op set 1 (``crates/enth-solver/src/propose/pack.rs``), so the ex
   arises), then ``Reshape``; the time axis is kept (8 steps of 250 ms) so envelope timing reaches the heads;
 * the heads are ``Linear``, ``Concat`` (the context), ``Reshape``, ``Silu``, a per-hypothesis ``MatMul`` + ``Add``, and the
   output row is ``Slice`` + ``Sigmoid`` + ``Concat``: continuous values and route depths in 0-1, logits elsewhere,
-  exactly what ``decode`` reads.
+  exactly what ``decode`` reads. The per-hypothesis layer is ``[K, B, H1] @ [K, H1, W]`` in training (``Transpose``
+  either side; a batched matrix product that also back-propagates as one); without the batch axis, as the exporter
+  writes it, it is ``[K, 1, H1] @ [K, H1, W]``.
 
 Shapes carry the batch axis here; the exporter drops it (op set 1 has none).
 """
@@ -131,9 +133,9 @@ class ProposeV0(nn.Module):
         self.act = nn.SiLU()
         k, h1 = cfg.hypotheses, cfg.hyp_hidden
         self.hyp_in = nn.Linear(cfg.embed, k * h1)
-        # Per-hypothesis output layer: [B, K, 1, H1] @ [K, H1, W] + [K, 1, W] (MatMul broadcasting the leading axes).
+        # Per-hypothesis output layer: [K, B, H1] @ [K, H1, W] + [K, W] (MatMul batched over K).
         self.hyp_w = nn.Parameter(torch.empty(k, h1, cfg.width))
-        self.hyp_b = nn.Parameter(torch.zeros(k, 1, cfg.width))
+        self.hyp_b = nn.Parameter(torch.zeros(k, cfg.width))
         with torch.no_grad():
             bound = 1.0 / h1**0.5  # nn.Linear's default range for a fan-in of H1
             self.hyp_w.uniform_(-bound, bound)
@@ -172,8 +174,8 @@ class ProposeV0(nn.Module):
     def heads(self, e: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         k, h1, w = self.cfg.hypotheses, self.cfg.hyp_hidden, self.cfg.width
         b = e.shape[0]
-        h = self.act(self.hyp_in(e)).reshape(b, k, 1, h1)
-        raw = (torch.matmul(h, self.hyp_w) + self.hyp_b).reshape(b, k, w)
+        h = self.act(self.hyp_in(e)).reshape(b, k, h1)
+        raw = torch.matmul(h.transpose(0, 1), self.hyp_w).transpose(0, 1) + self.hyp_b  # [B, K, W]
         c0, c1 = L.CONTINUOUS
         d0, d1 = L.DEPTH
         hyp = torch.cat([torch.sigmoid(raw[..., c0:c1]), raw[..., c1:d0], torch.sigmoid(raw[..., d0:d1])], dim=-1)
