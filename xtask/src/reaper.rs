@@ -729,11 +729,12 @@ fn run_scenario(
 
 /// `duel` (lane SKD, F2d): instance 1's saved round, a round on level 2's seed 77 whose patch is the target rebuilt by
 /// edits (`xtask/reaper/enth-duel-round.state.json`, written and checked by `enth-plugin`'s `tests_duel.rs`), so its
-/// first Submit passes. The duel log (`ENTH_DUEL_LOG`), the round log and the crash folder are per format in the
-/// results. `xtask/reaper/duel.lua` clicks both instances' duel cards and makes the checks.
+/// first Submit passes. The duel log (`ENTH_DUEL_LOG`), the round log, the crash folder and an empty `HOME` are per
+/// format in the results: with the real home, REAPER loaded an enth installed in `~/.vst3` instead of the VST3 bundle
+/// under test (lane SKD found it: the installed build had no `duel` feature). `xtask/reaper/duel.lua` clicks both instances' duel cards and makes the checks.
 fn duel(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
     let tag = format.tag();
-    let dirs: Vec<PathBuf> = ["rounds", "crashes"]
+    let dirs: Vec<PathBuf> = ["rounds", "crashes", "home"]
         .iter()
         .map(|d| sb.out.join(format!("duel-{d}-{tag}")))
         .collect();
@@ -750,6 +751,9 @@ fn duel(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String>
     extra.push(("ENTH_ROUNDS_DIR", dirs[0].display().to_string()));
     extra.push(("ENTH_CRASH_DIR", dirs[1].display().to_string()));
     extra.push(("ENTH_DUEL_LOG", log.display().to_string()));
+    // An empty home: REAPER also scans the standard `~/.vst3` (and `~/.clap`), where an installed enth (`cargo xtask
+    // install`, an owner build) would win over the bundle under test, without the `duel` feature.
+    extra.push(("HOME", dirs[2].display().to_string()));
     let played = run_script(sb, report, format, "duel", "duel", "play", &extra);
     let get = |k: &str| played.data.get(k).cloned().unwrap_or_default();
     report.info(
