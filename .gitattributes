@@ -13,6 +13,11 @@ tests/golden/generator/** text eol=lf
 tests/golden/structure/** text eol=lf
 # The same for Challenge v2's draw golden (golden.yml's Windows job on bede6d9 and 0b428c8).
 tests/golden/draw/** text eol=lf
+# Text pins read with `include_str!` and compared or hashed as text: the model contract's layout, generator v1's
+# catalogue and the reverb fixtures (golden.yml's Windows job failed `the_v1_layout_is_pinned` on 5082fec).
+crates/enth-solver/src/propose/layout-v1.txt text eol=lf
+crates/enth-challenge/src/random/catalogue-v1.txt text eol=lf
+crates/enth-dsp/tests/fixtures/*.txt text eol=lf
 
 # Lesson packs are hashed byte for byte (a pack's manifest lists each file's SHA-256, `cargo xtask pack` builds it
 # reproducibly, and `lesson-check` compares the patches with `Patch::to_json()` as text): keep LF on every platform, or a
