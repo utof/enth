@@ -1,4 +1,4 @@
-//! Lane EVM (R3b): the model's share cap (`CreateCfg::model_cap`, docs/r3.md, "The model's share cap"). Lane PUIb
+//! Lane EVM (R3b): the model's share cap (`CreateCfg::model_cap`, docs/r3.md, "The model's share cap"). Lane `PUIb`
 //! found the model's hypotheses taking 6 of 7 free branches on `gen-d-l2-01`, and successive halving pruning the
 //! k-NN neighbour that would have reached 0.018 (0.101 with the model). With the cap, a model's starts hold at most
 //! half of the places, rounded up, at screening and at every rung, while other starts or branches can fill the rest.
