@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..degrade import chain
-from ..degrade.pools import ALL_PROFILE, STAGE_ORDER, PoolError, PoolSet, draw_all
+from ..degrade.pools import ALL_PROFILE, STAGE_ORDER, PoolSet, draw_all
 from ..degrade.rng import Rng, derive
 from .config import AUG_STAGES, MERGED_ORDER, SLOTS, AugmentConfig
 from .sources import GR3_SEED_RANGES, seed_in_gr3_block

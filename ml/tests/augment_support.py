@@ -33,6 +33,11 @@ __all__ = [
     "manifest_text",
     "config_text",
     "recorded_stage",
+    "make_world",
+    "make_store",
+    "goertzel_db",
+    "write_tone",
+    "read_mono",
 ]
 
 
@@ -129,3 +134,66 @@ def config_text(*, purpose: str = "shipped-training", pool: str | None = None, s
         f'schema = "enth.augment-config/1"\nversion = {version}\nname = "{name}"\n'
         f'[config]\npurpose = "{purpose}"\ndegrade_pool = "{pool}"\n' + extra + stages
     )
+
+
+def write_tone(path: pathlib.Path, freqs: tuple[float, ...], *, sr: int = 16000, dur: float = 0.5, channels: int = 1,
+               amp: float = 0.3) -> None:
+    """Equal-amplitude sines (a steady test signal whose spectrum is known)."""
+    n = int(dur * sr)
+    out = array.array("f")
+    for i in range(n):
+        v = amp * sum(math.sin(2 * math.pi * f * i / sr) for f in freqs) / len(freqs)
+        out.extend([v] * channels)
+    wavio.write_wav_f32(path, sr, channels, out)
+
+
+def read_mono(path: pathlib.Path) -> tuple[int, list[float]]:
+    """(sample rate, first channel as a list)."""
+    info, x = wavio.read_wav(path)
+    return info.sample_rate, list(x[:: info.channels])
+
+
+def goertzel_db(x: list[float], sr: int, freq: float) -> float:
+    """Level of one frequency in ``x`` (Hann windowed Goertzel), in dB re 1."""
+    n = len(x)
+    w = [0.5 - 0.5 * math.cos(2 * math.pi * i / (n - 1)) for i in range(n)]
+    k = 2 * math.cos(2 * math.pi * freq / sr)
+    s1 = s2 = 0.0
+    for v, wi in zip(x, w, strict=True):
+        s0 = v * wi + k * s1 - s2
+        s2, s1 = s1, s0
+    power = s1 * s1 + s2 * s2 - k * s1 * s2
+    return 10.0 * math.log10(max(power, 1e-30)) - 20.0 * math.log10(n / 2.0 * 0.5)
+
+
+def make_world(root: pathlib.Path) -> dict[str, pathlib.Path]:
+    """Small synthetic stand-ins for the packaged config's recorded collections, keyed by manifest reference.
+
+    Real manifest references, so licences and uses are the real ones; the audio is a few seconds of synthetic data.
+    """
+    world = {
+        "openslr-28/sim-small": make_collection(root / "sim-small", "rir", 12, rt60=0.25),
+        "openslr-28/sim-medium": make_collection(root / "sim-medium", "rir", 12, rt60=0.6),
+        "openslr-28/sim-large": make_collection(root / "sim-large", "rir", 12, rt60=1.0),
+        "openslr-28/pointsource-noises": make_collection(root / "noise", "noise", 10),
+    }
+    box = root / "reverbdb"
+    box.mkdir()
+    for i in range(8):
+        write_rir(box / f"mic-{i:02d}.wav", seed=40 + i, rt60=0.5, channels=2 + (i % 2), sr=16000)
+    world["but-reverbdb/rirs"] = box
+    notes = root / "notes"
+    notes.mkdir()
+    for i in range(6):
+        write_pluck(notes / f"note-{i}.wav", channels=1, sr=44100, dur=0.8, f0=200.0 + 40 * i)
+    world["tinysol"] = notes
+    return world
+
+
+def make_store(root: pathlib.Path, dirs: dict[str, pathlib.Path], manifest: mf.Manifest | None = None, **kw):
+    """A SourceStore over ``dirs`` whose data root is an empty directory, so a test never meets the real downloads."""
+    from enth_ml.augment.sources import SourceStore
+
+    empty = root / "empty-data-root"
+    empty.mkdir(exist_ok=True)
+    return SourceStore(manifest or mf.load_manifest(), data_root=empty, dirs=dirs, **kw)
