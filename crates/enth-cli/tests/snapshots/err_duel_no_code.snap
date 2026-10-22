@@ -1,0 +1,15 @@
+---
+source: crates/enth-cli/tests/duel.rs
+expression: "record(&s, &o, false)"
+---
+exit: 3
+--- stdout
+{
+  "did_you_mean": [],
+  "error": "no_code",
+  "exit": 3,
+  "hint": "paste the whole message your friend sent: their scorecard, their answer code, or both",
+  "message": "no code in the text",
+  "schema": "enth.error/1"
+}
+--- stderr

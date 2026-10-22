@@ -7,7 +7,8 @@ mod common;
 use common::{round_trip, run};
 use enth_cli::schema::ErrorOut;
 
-const STUBS: [&str; 2] = ["ear", "duel"];
+// Lane SKD built `duel` (F2d, `tests/duel.rs`); `ear` waits for lane SKE.
+const STUBS: [&str; 1] = ["ear"];
 
 #[test]
 fn every_r4_and_r5_stub_answers_not_built_yet() {
