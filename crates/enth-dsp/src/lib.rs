@@ -4,6 +4,7 @@
 //! it, so no lane edits this file. To split a module into submodules, turn `x.rs` into `x/mod.rs`: `mod x;` still
 //! resolves.
 
+pub mod biquad;
 pub mod compressor;
 pub mod envelope;
 pub mod lfo;
