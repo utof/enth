@@ -257,7 +257,7 @@ def provenance(state: dict, run_json: bytes, weights: str = "f16") -> tuple[int,
         ("data.augmentation", run["augmentation"]),
         ("data.licence", "ds1 clean renders by enth's own engine from generated and perturbed factory-preset patches; no recorded or third-party audio"),
         ("export.weights", "f16: convolution, linear and hypothesis matrices; f32: biases and input standardisation" if weights == "f16" else "f32: every tensor"),
-        ("export.fold", "BatchNorm folded in f32, then rounded once"),
+        ("export.fold", "BatchNorm folded in float64, rounded once to the stored dtype"),
         ("export.tool", "enth_ml.export.propose (lane EXP)"),
     ]
     info = [(k, _ascii(v)) for k, v in info if v is not None]
