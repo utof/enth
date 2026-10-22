@@ -25,7 +25,7 @@ class TrainConfig:
     dev_limit: int | None = None
     dev_batch: int = 512
     epochs: int = 30  # an upper bound; the time budget usually ends the run first
-    max_minutes: float = 180.0  # the GPU budget (wall clock, training and evaluation)
+    max_minutes: float = 180.0  # the GPU budget (training wall clock, evaluation included); 0: none, the schedule is by steps alone
     lr: float = 2e-3
     min_lr_frac: float = 0.02
     warmup_steps: int = 1000
@@ -41,13 +41,43 @@ class TrainConfig:
     log_every_steps: int = 50
     stats_shards: int = 64
     early_stop_patience: int = 0  # evaluations without a new best dev loss before stopping (0: never)
+    early_stop_min_steps: int = 0  # no early stop before this step
+    min_dev_improvement: float = 0.0  # a new best must beat the old one by this much (dev best-of-K)
+    eval_at_epoch_end: bool = True
     schedule_steps: int = 0  # the LR schedule's length (0: from epochs or the time budget's estimate)
+    # -- lane TR2: data that grows while the run trains (produce.py writes parts) --------------------------------------
+    train_glob: str = ""  # parts found at each epoch start (a part counts once its manifest.json exists), added to train_dirs
+    min_train_samples: int = 0  # wait for this many training samples before the first step
+    max_repeat: float = 0.0  # pacing: an epoch starts only if samples seen stay <= max_repeat x distinct samples (0: off)
+    data_target_samples: int = 0  # the producer's planned total; once available, pacing stops waiting
+    data_wait_max_minutes: float = 45.0  # pacing gives up waiting after this long without a new part
+    # -- lane TR2: stop, checkpoints, resume -------------------------------------------------------------------------
+    ckpt_every_minutes: float = 25.0  # periodic checkpoints (training wall clock)
+    ckpt_every_steps: int = 0  # also every N steps (0: off; tests)
+    keep_checkpoints: int = 2  # periodic checkpoints kept (best.pt is kept apart, never rotated)
+    status_every_s: float = 5.0  # how often status.json is rewritten
+    stop_poll_s: float = 2.0  # how often the STOP file is looked for
+    stop_at_step: int = 0  # request a stop (checkpoint, exit) once this step is done (0: never; tests and planned pauses)
     model: ModelConfig = field(default_factory=ModelConfig)
     loss: LossConfig = field(default_factory=LossConfig)
+
+    # Keys a resume may change (operational); every other key must match the checkpoint's config.
+    OPERATIONAL = (
+        "workers", "prefetch", "dev_batch", "epochs", "max_minutes", "log_every_steps", "early_stop_patience",
+        "early_stop_min_steps", "min_dev_improvement", "min_train_samples", "max_repeat", "data_target_samples",
+        "data_wait_max_minutes", "ckpt_every_minutes", "ckpt_every_steps", "keep_checkpoints", "status_every_s",
+        "stop_poll_s", "stop_at_step", "out", "train_dirs", "dev_dirs", "train_glob", "eval_every_steps", "eval_at_epoch_end",
+    )
 
     def to_dict(self) -> dict:
         d = asdict(self)
         return d
+
+    def identity_diff(self, other: dict) -> list[str]:
+        """Keys (outside ``OPERATIONAL``) whose values differ from ``other`` (a checkpoint's config)."""
+        mine = json.loads(json.dumps(self.to_dict()))
+        theirs = json.loads(json.dumps(TrainConfig.from_dict(other).to_dict()))
+        return sorted(k for k in set(mine) | set(theirs) if k not in self.OPERATIONAL and mine.get(k) != theirs.get(k))
 
     @classmethod
     def from_dict(cls, d: dict) -> "TrainConfig":

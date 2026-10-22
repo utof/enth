@@ -17,6 +17,13 @@ Over the Kₘ hypotheses: **winner-takes-all**, annealed then relaxed. Each samp
 ``(1 - eps) * softmax(-L_k / (T * s)) + eps / K`` (``s`` a running mean of the loss, so ``T`` has no units), with the
 temperature ``T`` annealed to 0 (hard WTA: the arg-min) and a floor ``eps`` that keeps every head learning (relaxed WTA).
 The confidence head learns the hard winner by cross-entropy.
+
+Lane TR2's options for the full run (defaults off): a positive-class weight on route presence; the confidence on soft
+targets ``softmax(-L_k / (tau * s))`` from the per-head losses; and a **WTA selection that counts discrete misses more**
+(``select_discrete_boost``): the weights ``q`` (and the hard winner) come from a selection loss whose categorical,
+structure and presence terms are multiplied by the boost, while the gradient still flows through the training loss, so
+a head is made responsible for the samples whose discrete choices it gets right and the heads can specialise on
+discrete alternatives instead of agreeing on them.
 """
 
 from __future__ import annotations
@@ -43,6 +50,10 @@ class LossConfig:
     t_start: float = 1.0  # annealing temperature at step 0 (in units of the running mean loss)
     t_end: float = 0.01
     anneal_frac: float = 0.3  # share of the run over which T falls geometrically; hard WTA after it
+    # Lane TR2 (the full run; every default keeps the pilot's behaviour):
+    presence_pos_weight: float = 1.0  # BCE weight of a present route (the pilot's presence recall was 0.55)
+    conf_soft_tau: float = 0.0  # > 0: the confidence learns softmax(-L_k / (tau * s)) instead of the hard winner
+    select_discrete_boost: float = 1.0  # > 1: the WTA winner is chosen with the discrete terms weighted this much more
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -77,6 +88,8 @@ class ProposeLoss(nn.Module):
         self.register_buffer("perm", torch.tensor(L.swap_permutation(), dtype=torch.long))
         self.register_buffer("running", torch.tensor(0.0))
         self._started = False
+        p0, p1 = L.PRESENCE
+        self.register_buffer("pos_weight", torch.full((p1 - p0,), float(self.cfg.presence_pos_weight)))
         groups = torch.zeros(len(L.GROUPS), L.WIDTH, dtype=torch.bool)
         for g, (_, a, b) in enumerate(L.GROUPS):
             groups[g, a:b] = True
@@ -119,7 +132,8 @@ class ProposeLoss(nn.Module):
         s0, s1 = L.STRUCTURE
         p0, p1 = L.PRESENCE
         bce_s = F.binary_cross_entropy_with_logits(hyp[..., s0:s1], lab[..., s0:s1].expand_as(hyp[..., s0:s1]), reduction="none")
-        bce_p = F.binary_cross_entropy_with_logits(hyp[..., p0:p1], lab[..., p0:p1].expand_as(hyp[..., p0:p1]), reduction="none")
+        pw = self.pos_weight if self.cfg.presence_pos_weight != 1.0 else None
+        bce_p = F.binary_cross_entropy_with_logits(hyp[..., p0:p1], lab[..., p0:p1].expand_as(hyp[..., p0:p1]), reduction="none", pos_weight=pw)
         return {
             "e_cont": e_cont,
             "e_depth": e_depth,
@@ -133,24 +147,21 @@ class ProposeLoss(nn.Module):
             "m_p": msk[..., p0:p1],
         }
 
-    def per_hypothesis(self, hyp: torch.Tensor, label: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """The loss of each hypothesis against one labelling: [B, K]."""
+    def per_hypothesis(self, hyp: torch.Tensor, label: torch.Tensor, mask: torch.Tensor, discrete_boost: float = 1.0) -> torch.Tensor:
+        """The loss of each hypothesis against one labelling: [B, K]. ``discrete_boost`` multiplies the categorical,
+        structure and presence terms (the WTA selection loss; 1 is the training loss)."""
         c = self.cfg
         t = self.terms(hyp, label, mask)
-        num = (
-            c.w_continuous * (huber(t["e_cont"], c.huber_delta) * t["m_cont"]).sum(-1)
-            + c.w_depth * (huber(t["e_depth"], c.huber_delta) * t["m_depth"]).sum(-1)
-            + c.w_categorical * (t["ce"] * t["m_cat"]).sum(-1)
-            + c.w_structure * (t["bce_s"] * t["m_s"]).sum(-1)
-            + c.w_presence * (t["bce_p"] * t["m_p"]).sum(-1)
-        )
+        cont = c.w_continuous * (huber(t["e_cont"], c.huber_delta) * t["m_cont"]).sum(-1) + c.w_depth * (huber(t["e_depth"], c.huber_delta) * t["m_depth"]).sum(-1)
+        disc = c.w_categorical * (t["ce"] * t["m_cat"]).sum(-1) + c.w_structure * (t["bce_s"] * t["m_s"]).sum(-1) + c.w_presence * (t["bce_p"] * t["m_p"]).sum(-1)
         den = t["m_cont"].sum(-1) + t["m_depth"].sum(-1) + t["m_cat"].sum(-1) + t["m_s"].sum(-1) + t["m_p"].sum(-1)
+        num = cont + disc if discrete_boost == 1.0 else cont + discrete_boost * disc
         return num / den.clamp_min(1.0)
 
-    def hypothesis_losses(self, hyp: torch.Tensor, label: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def hypothesis_losses(self, hyp: torch.Tensor, label: torch.Tensor, mask: torch.Tensor, discrete_boost: float = 1.0) -> tuple[torch.Tensor, torch.Tensor]:
         """[B, K] losses with the LFO swap's minimum taken, and which permutation won (0 as labelled, 1 swapped)."""
-        a = self.per_hypothesis(hyp, label, mask)
-        b = self.per_hypothesis(hyp, label[:, self.perm], mask[:, self.perm])
+        a = self.per_hypothesis(hyp, label, mask, discrete_boost)
+        b = self.per_hypothesis(hyp, label[:, self.perm], mask[:, self.perm], discrete_boost)
         swapped = b < a
         return torch.where(swapped, b, a), swapped
 
@@ -166,14 +177,17 @@ class ProposeLoss(nn.Module):
                 # No .item(): a host sync every step would stall the GPU queue.
                 self.running.copy_(0.99 * self.running + 0.01 * m if self._started else m)
                 self._started = True
+            s = self.running.clamp_min(1e-6)
+            boost = self.cfg.select_discrete_boost
+            sel = losses if boost == 1.0 else self.hypothesis_losses(hyp, label.float(), mask.float(), boost)[0]
             if temperature > 0.0:
-                s = self.running.clamp_min(1e-6)
-                q = torch.softmax(-losses / (temperature * s), dim=1)
+                q = torch.softmax(-sel / (temperature * s * (1.0 if boost == 1.0 else boost)), dim=1)
             else:
-                q = F.one_hot(winner, k).float()
+                q = F.one_hot(sel.argmin(dim=1), k).float()
             w = (1.0 - self.cfg.eps) * q + self.cfg.eps / k
+            conf_target = torch.softmax(-losses / (self.cfg.conf_soft_tau * s), dim=1) if self.cfg.conf_soft_tau > 0 else winner
         hyp_loss = (w * losses).sum(1).mean()
-        conf_loss = F.cross_entropy(conf, winner)
+        conf_loss = F.cross_entropy(conf, conf_target)
         total = hyp_loss + self.cfg.conf_weight * conf_loss
         return {
             "total": total,
