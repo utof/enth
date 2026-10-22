@@ -53,7 +53,7 @@
 
 mod mask;
 
-pub use mask::{Dead, Mask, Visibility, observable};
+pub use mask::{Dead, Mask, Visibility, observable, observable_view};
 
 use enth_dsp::util::rng::{derive, fnv1a64};
 use enth_params::{Kind, ParamSpec};

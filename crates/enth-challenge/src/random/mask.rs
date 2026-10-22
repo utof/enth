@@ -30,7 +30,7 @@ use enth_patch::{
     ModSource, ModuleId, ModuleInstance, ModuleKind, ParamAddr, Patch, RouteAddr, Section, Target,
 };
 
-use crate::model::Phrase;
+use crate::model::{Phrase, PhraseView};
 use crate::phrases::PhraseFacts;
 
 /// How a phrase reveals one parameter, route or enable flag. See the [module docs](self).
@@ -181,6 +181,13 @@ impl Mask {
 /// The observability mask of `patch` heard through `phrase` (see the [module docs](self)). Pure, parameter space
 /// only; meant for valid patches (an invalid one gets a best-effort mask).
 pub fn observable(patch: &Patch, phrase: &Phrase) -> Mask {
+    observable_view(patch, phrase.view())
+}
+
+/// [`observable`] for a phrase built at run time (lane F3S, R3b: `ds1`'s sampled phrases, a create job's inferred
+/// performance), whose notes are not `'static`. One implementation: a table phrase and a view with the same notes
+/// get the same mask.
+pub fn observable_view(patch: &Patch, phrase: PhraseView<'_>) -> Mask {
     let mut mask = Mask {
         params: BTreeMap::new(),
         routes: BTreeMap::new(),
@@ -287,7 +294,7 @@ const fn heard(v: Visibility) -> bool {
     matches!(v, Visibility::Observable | Visibility::Gauge)
 }
 
-fn voice_visibility(patch: &Patch, phrase: &Phrase, index: usize) -> Visibility {
+fn voice_visibility(patch: &Patch, phrase: PhraseView<'_>, index: usize) -> Visibility {
     let mode = VoiceMode::from_value(patch.voice.get(VoiceParam::Mode)).unwrap_or(VoiceMode::Poly);
     let glide_mode =
         GlideMode::from_value(patch.voice.get(VoiceParam::GlideMode)).unwrap_or(GlideMode::Always);
@@ -333,7 +340,7 @@ fn voice_visibility(patch: &Patch, phrase: &Phrase, index: usize) -> Visibility 
 
 fn module_visibility(
     patch: &Patch,
-    phrase: &Phrase,
+    phrase: PhraseView<'_>,
     m: &ModuleInstance,
     index: usize,
     first_generator: Option<&ModuleId>,
@@ -387,7 +394,7 @@ fn module_visibility(
     }
 }
 
-fn modulator_visibility(phrase: &Phrase, m: &ModuleInstance, index: usize) -> Visibility {
+fn modulator_visibility(phrase: PhraseView<'_>, m: &ModuleInstance, index: usize) -> Visibility {
     match m.kind {
         ModuleKind::Adsr => match AdsrParam::ALL[index] {
             AdsrParam::Velocity if !phrase.has_two_velocities() => {
@@ -414,7 +421,7 @@ fn modulator_visibility(phrase: &Phrase, m: &ModuleInstance, index: usize) -> Vi
 /// effect or a built-in that is heard, or a heard parameter of a modulator already known to be live.
 fn drives_something(
     patch: &Patch,
-    phrase: &Phrase,
+    phrase: PhraseView<'_>,
     mask: &Mask,
     live: &[&ModuleId],
     id: &ModuleId,
@@ -438,7 +445,7 @@ fn drives_something(
 
 fn route_visibility(
     patch: &Patch,
-    phrase: &Phrase,
+    phrase: PhraseView<'_>,
     mask: &Mask,
     depth: f32,
     src: &ModSource,
@@ -465,5 +472,103 @@ fn route_visibility(
         Some(Visibility::Disabled) => Visibility::Disabled,
         Some(v) if heard(v) => Visibility::Observable,
         _ => Visibility::Dead(Dead::HiddenEnd),
+    }
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::*;
+    use crate::model::PhraseNote;
+    use crate::phrases::{self, TABLE};
+    use crate::random::{start, target};
+    use crate::spec::{Category, RandomSpec};
+
+    /// A run-time phrase (owned notes) with a table phrase's notes gets exactly the table phrase's mask.
+    #[test]
+    fn a_view_with_a_table_phrases_notes_gets_its_mask() {
+        for e in &TABLE {
+            let notes: Vec<PhraseNote> = e.phrase.notes.to_vec();
+            let view = PhraseView {
+                notes: &notes,
+                length_ms: e.phrase.length_ms,
+            };
+            assert_eq!(view.validate(), Ok(()));
+            assert_eq!(view.performance(), e.phrase.performance());
+            for seed in 0..12u64 {
+                let spec = RandomSpec {
+                    generator: 1,
+                    seed: 7_300_000 + seed,
+                    difficulty: 100,
+                    amounts: [None; Category::COUNT],
+                    musical: [100, 50, 0][seed as usize % 3],
+                    template: 0,
+                };
+                let patch = target(&spec).unwrap().patch;
+                assert_eq!(
+                    observable_view(&patch, view),
+                    observable(&patch, &e.phrase),
+                    "{} seed {seed}",
+                    e.name
+                );
+            }
+        }
+    }
+
+    /// A run-time phrase reveals what its own facts reveal: a 2 s attack is heard under a 2.8 s hold (not under the
+    /// held phrase's 1.5 s), and a release under a short note with a long tail.
+    #[test]
+    fn a_run_time_phrase_reveals_what_its_notes_reveal() {
+        let mut p = start(0).unwrap();
+        let attack: ParamAddr = "env1.attack".parse().unwrap();
+        let release: ParamAddr = "env1.release".parse().unwrap();
+        enth_patch::apply(
+            &mut p,
+            enth_patch::Op::SetParam {
+                addr: attack.clone(),
+                value: 2000.0,
+            },
+        )
+        .unwrap();
+        enth_patch::apply(
+            &mut p,
+            enth_patch::Op::SetParam {
+                addr: release.clone(),
+                value: 2000.0,
+            },
+        )
+        .unwrap();
+        let held = phrases::phrase(phrases::HELD).unwrap();
+        assert_eq!(
+            observable(&p, held).param(&attack),
+            Some(Visibility::Dead(Dead::BeyondHold))
+        );
+        let pad = [PhraseNote {
+            key: 52,
+            velocity: 90,
+            start_ms: 0,
+            hold_ms: 2800,
+        }];
+        let m = observable_view(
+            &p,
+            PhraseView {
+                notes: &pad,
+                length_ms: 4000,
+            },
+        );
+        assert!(m.is_observable(&attack));
+        assert_eq!(m.param(&release), Some(Visibility::Dead(Dead::BeyondTail)));
+        let short = [PhraseNote {
+            hold_ms: 300,
+            ..pad[0]
+        }];
+        let m = observable_view(
+            &p,
+            PhraseView {
+                notes: &short,
+                length_ms: 3000,
+            },
+        );
+        assert!(m.is_observable(&release));
+        assert_eq!(m.param(&attack), Some(Visibility::Dead(Dead::BeyondHold)));
     }
 }

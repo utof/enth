@@ -53,7 +53,8 @@ pub use code::{ChallengeCode, CodeError, CodeForm, CodeWarning, EngineVersion, T
 pub use fingerprint::TargetFingerprint;
 pub use model::{
     Agreement, AnswerKind, Assists, AssistsUsed, Challenge, ChallengeError, ChallengeMeta,
-    Constraints, Outcome, Phrase, PhraseId, PhraseNote, RoundResult, ScoringSpec, Start, Target,
+    Constraints, Outcome, Phrase, PhraseId, PhraseNote, PhraseView, RoundResult, ScoringSpec, Start,
+    Target,
 };
 pub use score::round::{
     PreparedRound, RoundError, prepare_challenge, prepare_round, score_round, score_structure,
