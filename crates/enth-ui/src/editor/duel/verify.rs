@@ -16,7 +16,7 @@ use crate::Theme;
 
 /// A claim in tenths of a percent.
 fn tenths(t: u16) -> String {
-    format!("{:.1} %", f64::from(t) / 10.0)
+    format!("{}.{} %", t / 10, t % 10)
 }
 
 /// What the card says about their scorecard, their answer and the check, one line each.
