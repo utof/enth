@@ -118,6 +118,8 @@ miniz_oxide = "=0.9.1"                              # MIT OR Zlib OR Apache-2.0.
 claxon = "=0.4.3"                                   # Apache-2.0. FLAC
 lewton = "=0.10.2"                                  # MIT OR Apache-2.0. Ogg Vorbis
 nanomp3 = "=0.2.0"                                  # MIT OR Apache-2.0. MP3, a safe port of minimp3 (one maintainer: revisit if it stalls)
+# Phase 4 (R4 + R5; docs/phase-4.md, the coordinator's pins, 2026-10-22). Already in Cargo.lock (a transitive dependency).
+getrandom = { version = "=0.4.3", default-features = false }   # MIT OR Apache-2.0. R5a's duel salt: OS randomness, once per duel, never a clock (duels.md, Privacy); enth-plugin only (lane SKD)
 
 # The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork";
 # lane FK). `vendor/` holds the crates.io sources (a pristine-import commit, then one commit per patch: slot rename,
