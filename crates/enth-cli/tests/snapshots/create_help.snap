@@ -39,6 +39,9 @@ Options:
       --bank <FILE>
           The k-NN bank (`enth-bank-v1.bin`, from `cargo xtask bank`). Without it the job runs on the heuristic and the templates
 
+      --model <FILE>
+          A proposal model (`enth-model-<id>.bin`, R3b): its hypotheses join the starts after the k-NN neighbours. A file the model reader refuses (made for another build, damaged) is not an error: the job runs search alone and a note says why
+
       --seed <SEED>
           The search's seed. The same seed, file and renders repeat a run exactly
           

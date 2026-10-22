@@ -4,8 +4,8 @@
 //!
 //! ```text
 //! enth create --target kick.wav [--candidates 8] [--seconds 60] [--budget N] [--stop-at D] [--score-seconds 3]
-//!             [--bank enth-bank-v1.bin] [--perf …|--note A3 --vel 100 --hold 0.4s] [--seed 1] [--workers N]
-//!             [--out best.patch.json] [--record run.json]
+//!             [--bank enth-bank-v1.bin] [--model enth-model-<id>.bin] [--perf …|--note A3 --vel 100 --hold 0.4s]
+//!             [--seed 1] [--workers N] [--out best.patch.json] [--record run.json]
 //! ```
 //!
 //! "Create from sound" for agents and GR3 (docs/r3.md, "`enth create`"):
@@ -19,7 +19,11 @@
 //!    `--perf`, `--note`, `--vel` and `--hold` override the key, the velocity and the hold the intake inferred (the
 //!    onset and the clip stay the intake's).
 //! 3. **The portfolio**: the heuristic start, the templates (`content/templates/`) and, with `--bank`, the k-NN
-//!    neighbours; without a bank the job says so and runs on the rest.
+//!    neighbours; without a bank the job says so and runs on the rest. With `--model` (R3b, lane `PUIb`), the model's
+//!    hypotheses follow, in descending confidence (`create::Model::propose`: its input and cue from the intake before
+//!    any override, each row decoded under the performance played, inside the `--seconds` clock); the model file is
+//!    parsed before the clock starts, as the plugin parses one once for all its jobs. A refused model file is not an
+//!    error: the job runs search alone, and a note gives the code and the hint (docs/r3.md, "Refusals").
 //! 4. **`create`**: K branches refined by successive halving on the CLI's rayon pool, scored by lane OBJ's robust
 //!    distance (`logmel-pool85-robust/1`, `RobustMetricTarget::from_intake_scored`, one `RobustWorker` per thread;
 //!    recorded as the record's `settings.objective`), distances by index, so the result is the same for any
@@ -30,7 +34,7 @@
 //!
 //! **Output:** `enth.create/1` ([`enth_solver::create::record::CreateRecord`]): the intake report whole, every start
 //! as a patch file, the K candidates with their provenance and trace, every round stamped with its seconds, the
-//! decoded audio's and the input features' hashes. **Printed exactly** (no 4-digit rounding, unlike other commands):
+//! decoded audio's and the input features' hashes, and `settings.model` when a model proposed starts. **Printed exactly** (no 4-digit rounding, unlike other commands):
 //! the patches and seeds replay the run. The CLI adds `decoded`, `elapsed_s`, `cap_s`, `score_s`, `played` (the
 //! performance as `enth.perf/1`, for `--perf` elsewhere), `wrote` and `hint` (the record reads leniently, so they
 //! are additive within `/1`). A terminal shows the K candidates as a table. Exit 0 whatever stopped the job once a
@@ -40,7 +44,7 @@
 //! **Errors** (all with a `hint`): exit 2 `bad_candidates`, `bad_seconds`, `bad_budget`, `bad_score_seconds`,
 //! `bad_stop_at`, `bad_workers`, `bad_out`, `bad_perf`, `dur_fixed`; exit 3 `unknown_format`, `bad_file`,
 //! `sample_rate`, `no_audio`, `intake`, `not_a_bank` and the bank's other codes; exit 4 `time_cap`, `no_candidate`,
-//! `write_failed`; exit 5 `file_not_found` (the sound or the bank).
+//! `write_failed`; exit 5 `file_not_found` (the sound, the bank or the model).
 
 #[path = "../../../enth-plugin/src/create/decode.rs"]
 #[allow(
@@ -58,9 +62,11 @@ use enth_patch::Patch;
 use enth_render::DEFAULT_SEED;
 use enth_solver::create::record::{CandidateRecord, CreateRecord, RecordContext};
 use enth_solver::create::{
-    CreateCfg, CreateJob, CreateStop, Inputs, Portfolio, Provenance, SCORE_S, Target, Template,
+    CreateCfg, CreateJob, CreateStop, Inputs, Model, ModelProposals, Portfolio, Provenance,
+    SCORE_S, Target, Template,
 };
 use enth_solver::nearest::Bank;
+use enth_solver::propose::pack::MAX_FILE_BYTES;
 use enth_solver::robust::RobustMetricTarget;
 use rayon::prelude::*;
 use serde_json::Value;
@@ -142,6 +148,11 @@ pub struct Args {
     /// the templates.
     #[arg(long, value_name = "FILE")]
     pub bank: Option<PathBuf>,
+    /// A proposal model (`enth-model-<id>.bin`, R3b): its hypotheses join the starts after the k-NN neighbours. A file
+    /// the model reader refuses (made for another build, damaged) is not an error: the job runs search alone and a note
+    /// says why.
+    #[arg(long, value_name = "FILE")]
+    pub model: Option<PathBuf>,
     /// The search's seed. The same seed, file and renders repeat a run exactly.
     #[arg(long, value_name = "SEED", default_value_t = 1)]
     pub seed: u64,
@@ -348,6 +359,50 @@ fn bank_unreadable(path: &Path, why: &std::io::Error) -> CliError {
     e
 }
 
+/// A model file that cannot be read: exit 5 with the model's own hint.
+fn model_unreadable(path: &Path, why: &std::io::Error) -> CliError {
+    let mut e = error::not_found(&patchio::show(path), why);
+    "pass a model file (enth-model-<id>.bin, the one released with this build), or leave --model out to run search alone"
+        .clone_into(&mut e.0.hint);
+    e
+}
+
+/// The `--model` file, parsed before the clock starts (the plugin parses a model once for all its jobs), and the note
+/// saying what was loaded. A refusal (any `PackError`) is not an error: no model, and the note gives the code and the
+/// hint, so the job runs search alone (docs/r3.md, "Refusals").
+fn load_model(path: &Path) -> Result<(Option<Model>, String), CliError> {
+    let shown = patchio::show(path);
+    let refused = |code: &str, why: String, hint: String| {
+        format!(
+            "the model {shown} was refused ({code}: {why}): {hint}; running search alone, without the model's proposals"
+        )
+    };
+    let len = std::fs::metadata(path)
+        .map_err(|e| model_unreadable(path, &e))?
+        .len();
+    if len > MAX_FILE_BYTES as u64 {
+        let e = enth_solver::propose::pack::PackError::TooLarge {
+            what: enth_solver::propose::pack::Budget::File,
+            found: len,
+            limit: MAX_FILE_BYTES as u64,
+        };
+        return Ok((None, refused(e.code(), e.to_string(), e.hint())));
+    }
+    let bytes = std::fs::read(path).map_err(|e| model_unreadable(path, &e))?;
+    Ok(match Model::parse(&bytes) {
+        Ok(m) => {
+            let note = format!(
+                "model: {} from {shown} ({} hypotheses, {:.2} GFLOP per inference)",
+                m.id(),
+                m.hypotheses(),
+                m.net().flops() as f64 / 1e9
+            );
+            (Some(m), note)
+        }
+        Err(e) => (None, refused(e.code(), e.to_string(), e.hint())),
+    })
+}
+
 /// What `--perf`, `--note`, `--vel` and `--hold` replace of the intake's performance.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[allow(
@@ -468,11 +523,12 @@ fn played(record: &CreateRecord) -> PerfFile {
     }
 }
 
-/// A start in a few words: `heuristic`, `template pluck_1osc`, `k-NN 3`.
+/// A start in a few words: `heuristic`, `template pluck_1osc`, `k-NN 3`, `model 2` (the plugin's tiles say the same).
 fn start_label(p: &Provenance) -> String {
     match p {
         Provenance::Template { name } => format!("template {name}"),
         Provenance::Knn { rank, .. } => format!("k-NN {}", rank + 1),
+        Provenance::Model { hypothesis, .. } => format!("model {}", hypothesis + 1),
         other => other.kind().to_owned(),
     }
 }
@@ -505,6 +561,14 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     check(args)?;
     // The performance flags are read before the file is decoded: a bad `--perf` costs nothing.
     let perf = Perf::from_args(&args.perf_args(), stdin)?;
+    // The model is parsed before the clock starts: a missing file costs nothing, and inference (below) is charged.
+    let (model, model_note) = match &args.model {
+        Some(path) => {
+            let (m, note) = load_model(path)?;
+            (m, Some(note))
+        }
+        None => (None, None),
+    };
     let t0 = Instant::now();
     let cap = args.seconds;
     let late = || t0.elapsed().as_secs_f64() >= cap;
@@ -513,6 +577,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let decoded =
         decode::decode_path(&args.target, &late).map_err(|e| from_decode(&args.target, &e, cap))?;
     let mut notes = decoded.notes();
+    notes.extend(model_note);
     let described = decoded.describe();
     // 2. The intake, with the decoder's codec hint.
     let cfg = IntakeCfg {
@@ -558,6 +623,12 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     let analysis = target
         .analyse()
         .map_err(|e| error::invalid(e.code(), e.to_string(), e.hint()))?;
+    // The model's hypotheses, after the override and inside the clock: its input and cue are the intake's, each row is
+    // decoded under the performance played.
+    let proposals: Option<ModelProposals> = model.as_ref().map(|m| m.propose(&intake, &target));
+    if let Some(mp) = &proposals {
+        notes.extend(mp.notes.iter().cloned());
+    }
     let init = game::init_patch();
     let tmpl: Vec<Template> = templates::TEMPLATES
         .iter()
@@ -571,7 +642,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
         init: &init,
         templates: &tmpl,
         bank: bank.as_ref(),
-        proposals: &[],
+        proposals: proposals.as_ref().map_or(&[], |mp| mp.starts.as_slice()),
     };
     let mut ccfg = CreateCfg {
         k: args.candidates,
@@ -652,6 +723,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
     for (r, s) in record.rounds.iter_mut().zip(&stamps) {
         r.seconds = Some(*s);
     }
+    record.settings.model = proposals.as_ref().map(ModelProposals::record);
     record.notes.splice(0..0, notes);
     let elapsed = t0.elapsed().as_secs_f64();
 
@@ -800,6 +872,21 @@ fn table(
         stop_name(record.stop),
         record.renders
     );
+    if let Some(m) = &record.settings.model {
+        let from_model: Vec<_> = record
+            .starts
+            .iter()
+            .filter(|st| matches!(st.provenance, Provenance::Model { .. }))
+            .collect();
+        let _ = writeln!(
+            s,
+            "model: {} ({} of {} hypotheses as starts, {} of them branches)",
+            m.id,
+            from_model.len(),
+            m.hypotheses,
+            from_model.iter().filter(|st| st.branch.is_some()).count()
+        );
+    }
     let _ = writeln!(
         s,
         "rank  branch  start                  state      distance  proposal"
