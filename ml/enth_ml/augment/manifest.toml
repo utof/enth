@@ -179,11 +179,12 @@ note = "9 rooms, 31 microphones each, about 4.7k RIRs plus room 'silence' record
 [source.archive]
 url = "http://merlin.fit.vutbr.cz/ReverbDB/BUT_ReverbDB_rel_19_06_RIR-Only.tgz"
 bytes = 9308593693
-sha256 = ""
-fetched = false
+sha256 = "d0d14cdd626b4b05401027c5a774b4f24369f4ea38f57480c6fc6e04e9f3f5b5"
+fetched = true
+fetched_on = "2026-10-22"
 local = "dl/BUT_ReverbDB_rel_19_06_RIR-Only.tgz"
 extract_to = "but-reverbdb"
-note = "9.3 GB (HEAD, 2026-10-22): not fetched in this lane (budget 3 GB). `python3 ml/data/fetch.py but-reverbdb` fetches it and prints the SHA-256 to record here."
+note = "9.3 GB: fetched by lane TR2 on the owner's go-ahead (2026-10-22) with `python3 ml/data/fetch.py but-reverbdb --yes --allow-large` onto the training machine's data drive (one GET, resumed once with Range after a local write error); the SHA-256 above is that file's."
 
 [[source.part]]
 id = "rirs"
