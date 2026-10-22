@@ -11,7 +11,8 @@ Lane S0s (R3, freeze point F0s) declared this skeleton and nothing else: `pyproj
 | `data/fetch.py` | the one script that downloads a dataset named in the manifest, by hand: robots.txt, one request, hash, safe extraction | AUG |
 | `enth_ml/model/` | the proposal network: K = 8 winner-takes-all hypotheses and a confidence head | TR |
 | `enth_ml/train/` | training, with a manifest per run | TR |
-| `enth_ml/export/` | ONNX and our model file (`enth-model-<id>.bin`), with a 20-input output golden | TR |
+| `enth_ml/export/` | ONNX and our model file (`enth-model-<id>.bin`), with a 20-input output golden; [ONX](#onx-the-model-file-writer-and-onnx-runtime-parity)'s writer and ONNX Runtime parity, [EXP](#exp-exporting-propose-v0-and-parity-with-pytorch)'s export of the trained model | TR, ONX, EXP |
+| `golden/` | the pilot model's 20-input output golden (a text file of output hashes) | EXP |
 | `tests/` | `ml/`'s own tests (standard library only for the layout; lanes add theirs) | all |
 
 Lane ONX (R3b) added the first dependency group, `parity` (`onnx`, `onnxruntime`, `numpy`; [ONX](#onx-the-model-file-writer-and-onnx-runtime-parity) below), and committed `uv.lock`; `[project] dependencies` stays empty, so the standard-library run below needs nothing installed.
@@ -233,6 +234,29 @@ python -m enth_ml.train info RUN [RUN ...]
 ```
 
 It reads lane DG's `ds1` shards (`tools/datagen`, `enth-datagen ds1 gen`) and refuses a run whose layout hash, entry names or feature set are not layout 1's and feature set 1's, or a dev set from the training stream. Each run directory gets `run.json` (commit, `uv.lock` and data manifests' SHA-256, environment, config, model size), `metrics.jsonl`, `gpu.csv` (`nvidia-smi` every 5 s), `ckpt-last.pt` and `ckpt-best.pt`. Logs stay local. On the training desktop (WSL2, no C compiler) `TORCH_DISABLE_NATIVE_JIT=1` is set by the command line, since torch's Triton kernels need a compiler.
+
+## EXP: exporting propose v0, and parity with PyTorch
+
+Lane EXP (R3b; docs/r3.md, "Export and parity with PyTorch") added `enth_ml/export/propose.py` (**torch and numpy**, the `train` group), a reader to `enthmodl.py` (`read`, standard library), numpy-array tensor files to `tensors.py`, one change to `model/fold.py` (below) and `tools/model-check`'s batch and `--decode` options. One command per step:
+
+```
+python -m enth_ml.export.propose export    --ckpt RUN/ckpt-best.pt --run RUN/run.json --id propose-v0-pilot --out enth-model-propose-v0-pilot.bin
+python -m enth_ml.export.propose inputs    --dev DEV_RUN --count 256 --out dev256.tensors      # real dev inputs, evenly spread (--part I/N, --count 0: all)
+python -m enth_ml.export.propose reference --ckpt RUN/ckpt-best.pt --inputs dev256.tensors --out ref256.tensors [--device cuda]
+enth-model-check run enth-model-propose-v0-pilot.bin --inputs dev256.tensors --expected ref256.tensors --tolerance 1e-4 --decode
+python -m enth_ml.export.propose dev       --ckpt RUN/ckpt-best.pt --weights f16|f32|none      # the dev loss of the weights the file holds
+python -m enth_ml.export.propose diff A B                                                      # the largest difference per tensor
+python -m enth_ml.export.propose fixture   --out ../crates/enth-solver/tests/fixtures/propose  # the committed tiny fixture (exp_tiny)
+```
+
+- **The file holds the weights PyTorch runs.** `as_stored` folds every `BatchNorm` into its convolution and rounds each tensor once to the dtype the file stores (matrices `f16`, biases and the input standardisation `f32`), and the graph is written from that model; the reference outputs are that model's `forward`. The export then reads the file back (`enthmodl.read`) and compares every stored tensor with the model **exactly**, so a graph or layout slip stops the export. Parity therefore measures our kernels' arithmetic, not storage.
+- **The fold runs in `float64`** (`model/fold.py`, TR's file, changed by EXP): in `float32` two torch builds (a CPU wheel and the desktop's CUDA wheel) disagreed by one ulp in some folded biases, so the committed fixture could not be reproduced. The values move by at most an ulp; TR's fold test passes unchanged.
+- **The graph**, without the batch axis (docs/r3.md): standardisation as `Mul` and `Add`, `Conv2d` + `Silu` and residual `Add`s, an `AvgPool2d` over the whole frequency axis, `Reshape`, `Linear`s, `Concat` of the context, per-hypothesis `MatMul` with the head matrices stored `[K, H1, W]` and the bias stored `[K, 1, W]` (numpy's broadcasting is right-aligned), and `Slice` + `Sigmoid` + `Concat` for the output row. It uses 11 of the 24 ops.
+- **Provenance** comes from the run manifest: the header's `ds1` version, engine and the manifest's SHA-256 (the bytes of `run.json`), and 18 info keys (the run, the checkpoint, the commit, data sources and licence, how the weights are stored). No path, user name or other personal detail reaches the file (tested).
+- **The fixture** (`exp_tiny.bin`, 29.5 KB, and PyTorch's outputs on three synthetic inputs, 9.9 KB) is a randomly initialised network of propose v0's shape (10,768 parameters, K = 8) exported the same way; its weights come from the SplitMix64 generator, never torch's, so the bytes do not depend on torch's version. `enth-solver`'s `tests/propose_parity.rs` checks it against our kernels on every CI leg without torch.
+- **The 20-input golden** (`golden/propose-v0-pilot-20.golden`): the SHA-256 of our kernels' outputs on 20 dev inputs, tied to the model file's hash.
+
+Tests: `tests/test_export_propose.py` needs torch (`uv run --group train python -m unittest discover -s tests -p 'test_export_*.py'`; skipped without it); the rest of `test_export_*.py` is standard library or the `parity` group. The pilot model file stays outside the repository.
 
 ## The ML rules
 

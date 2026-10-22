@@ -196,7 +196,7 @@ Each lane stops at its own criteria and reports against them.
 | **ONX** | `wasm-check`; output hashes identical on Linux, Windows, macOS arm64 and wasm32; parity with ONNX Runtime within 1e-5 on exported fixtures |
 | **DG** | Deterministic shards; exclusions asserted; throughput reported |
 | **AUG** | Licences recorded per source; no NC or SA data in shipped-model training |
-| **TR** | Parity between PyTorch and our kernels on fixtures; a model card |
+| **TR** | Parity between PyTorch and our kernels on fixtures; a model card. **Parity met by EXP (2026-10-22):** pilot-v0 exported, within 4.1e-5 of PyTorch on all 9,324 dev inputs ([r3.md](r3.md#export-and-parity-with-pytorch-lane-exp-2026-10-22)) |
 | **MS** | Deterministic given its proposals; a gain on dev |
 | **EVb** | Clause 1 by its rule; the kits made |
 | **PUIb, INTb** | Branches from the model; GR3's rows filled |
