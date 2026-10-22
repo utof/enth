@@ -152,7 +152,7 @@ fn the_golden_covers_every_game_and_level() {
         );
     }
     assert!(specs.iter().any(|s| s.count == MAX_COUNT));
-    assert!(specs.iter().all(|s| s.validate().is_ok()));
+    assert!(specs.iter().all(|s| s.validate_music().is_ok()));
 }
 
 #[test]

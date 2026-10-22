@@ -47,7 +47,7 @@
 //!             flag 1 = 1: long    164 + 7k   generator 16 | seed 64 | difficulty 7 | musical 7 | template 8 |
 //!                                            engine 24 | target prefix 32 | amounts mask 6 | 7 per set amount
 //! engine                               24   major | minor | patch of the build that scored the claim
-//! scorer set                            8   an index into SCORER_SETS (unknown: scorer_too_new)
+//! scorer set                            8   an index into SCORER_SETS (a newer build's is read and shown as reported)
 //! sound, combined                 10 + 10   claimed percent in tenths, 0..=1000
 //! passed                                1
 //! submits                               7   1..=127 (127 means "127 or more")
@@ -62,20 +62,32 @@
 //! absolute times have no field; the time is a duration from the shell's clock, and the scores are claims the
 //! receiver re-scores ([`crate::verify`]). A revealed target gives no scorecard unless the round passed first.
 //!
-//! # The ear result (kind 4, layout 1; provisional until lane CV3's types land)
+//! **A scorer set this build does not have still reads** (the F1e review's M4): the card shows the friend's result as
+//! reported ([`ScorerSet::is_known`] is false), and [`crate::verify`] re-scores with this build's current set and
+//! flags the difference ([`crate::verify::ClaimCheck::scorers_differ`]), so a duel across GR1's `sound/2` works both
+//! ways: the newer build keeps set 1 and checks the older one exactly, the older one checks with what it has.
+//!
+//! # The ear result (kind 4, layout 1)
 //!
 //! ```text
 //! header                               14
 //! ear challenge                        72   game 8 | generator 8 | level 8 | seed 40 | count 8 (kind 3's payload)
+//! ear rules                             8   an index into EAR_RULES: the ear scorers and the pass mark (1: ear/1,
+//!                                           ear-value/1, taps/1, pass 80); a newer build's is read
 //! answers           count × (2 + n)         tag 2: 0 none | 1 choice (4) | 2 value (an f32, the float coding) |
-//!                                           3 taps (count 6, then each tap's time in ms, 14 bits, non-decreasing)
+//!                                           3 taps (count 6, then each tap after the first as ms from the first,
+//!                                           14 bits, non-decreasing; the first is 0 and not written)
 //! time                                 16   deciseconds, saturating
 //! assists                               8   hints 4 | revealed 1 | 3 zero bits (reserved)
 //! ```
 //!
-//! Then the 30-bit check and code v1's symbol: 49 symbols for 16 choice answers. Verified by replaying the answers
-//! against the keys the ear generator gives (no render): F1E wires that once lanes MUS and CV3 land `EarSpec`, the keys
-//! and the ear scorers. Anyone holding the code can compute the keys, and the UI says so.
+//! Then the 30-bit check and code v1's symbol: 50 symbols for 16 choice answers (about 29 choice answers fit 64). The types are the ear vocabulary's
+//! (the F1e review's M3): the spec is `enth-music`'s [`EarSpec`], an answer is [`EarAnswer`] from
+//! [`crate::ear::scorers`]. **Tap answers are stored relative to their first tap**, on any clock the shell used: at
+//! most [`EAR_TAPS_MAX`] taps over a span of at most [`EAR_TAP_MS_MAX`] ms, non-decreasing, the limits `taps/1`
+//! itself judges by, and `taps/1` fits the offset, so the shift changes no score. Verified by replaying the answers
+//! against the keys the ear generator gives, with no render ([`crate::verify::verify_ear`]). Anyone holding the code
+//! can compute the keys, and the UI says so.
 
 use core::fmt;
 use core::fmt::Write as _;
@@ -85,9 +97,12 @@ use sha2::{Digest, Sha256};
 use crate::code::{
     self, CODE_VERSION_ESCAPE, ChallengeCode, CodeError, CodeForm, EngineVersion, TargetPrefix,
 };
-use crate::model::{AssistsUsed, RECREATE_SCORERS, ScoringSpec};
+use crate::ear::scorers;
+pub use crate::ear::scorers::EarAnswer;
+use crate::model::{AnswerKind, AssistsUsed, RECREATE_SCORERS, ScoringSpec};
 use crate::score::{ScoreReport, ScorerId};
 use crate::spec::{Category, RandomSpec, SpecPreset};
+use crate::v3::{EAR_PASS_MARK, EarError, EarSpec};
 
 /// Kind 1 behind version 15: the **scorecard**, sent on finishing. It spoils nothing.
 pub const KIND_SCORECARD: u8 = 1;
@@ -196,11 +211,9 @@ pub enum ResultError {
     /// The challenge inside is refused: a newer generator, preset or template (`code_too_new`), an out-of-range spec, or
     /// a long code whose target this build regenerates differently (`target_mismatch`).
     Challenge(CodeError),
-    /// The scorecard names a scorer set this build does not have (`scorer_too_new`): GR1's `sound/2` will be a new set.
-    ScorerTooNew {
-        /// The set's index.
-        set: u8,
-    },
+    /// The ear challenge inside is refused (the ear-challenge code, kind 3): a newer game, generator or level
+    /// (`code_too_new`), or a field out of range ([`EarError::code`]).
+    Ear(EarError),
     /// The answer holds an op, a module kind, a parameter or a source this build does not have (`answer_too_new`).
     AnswerTooNew {
         /// What is unknown: `op`, `module kind`, `parameter` or `source`.
@@ -230,7 +243,7 @@ impl ResultError {
             ResultError::TooNew { .. } => "code_too_new",
             ResultError::BadField { .. } => "bad_field",
             ResultError::Challenge(e) => e.code(),
-            ResultError::ScorerTooNew { .. } => "scorer_too_new",
+            ResultError::Ear(e) => e.code(),
             ResultError::AnswerTooNew { .. } => "answer_too_new",
             ResultError::AnswerMismatch => "answer_mismatch",
             ResultError::Unencodable { .. } => "unencodable",
@@ -258,9 +271,7 @@ impl ResultError {
                 "the code is damaged, or was not made by enth".to_owned()
             }
             ResultError::Challenge(e) => e.hint(),
-            ResultError::ScorerTooNew { .. } => {
-                "scored by a newer enth's scorers: update enth to check it".to_owned()
-            }
+            ResultError::Ear(e) => e.hint(),
             ResultError::AnswerTooNew { .. } => {
                 "the answer uses something a newer enth has (a module or a control): update enth to check it".to_owned()
             }
@@ -307,9 +318,7 @@ impl fmt::Display for ResultError {
             }
             ResultError::BadField { field, value } => write!(f, "{field} {value} is not valid"),
             ResultError::Challenge(e) => write!(f, "the challenge: {e}"),
-            ResultError::ScorerTooNew { set } => {
-                write!(f, "scorer set {set} is newer than this build's")
-            }
+            ResultError::Ear(e) => write!(f, "the ear challenge: {e}"),
             ResultError::AnswerTooNew { what, value } => {
                 write!(f, "the answer's {what} {value} is newer than this build's")
             }
@@ -699,6 +708,27 @@ pub(crate) fn take_engine(r: &mut Reader<'_>) -> Result<EngineVersion, ResultErr
 }
 
 /// Exact powers of ten in `f64`, 10⁰ to 10⁸.
+/// An ear spec as kind 3 writes it, and kind 4 inside it: game 8 | generator 8 | level 8 | seed 40 | count 8, the
+/// integers of `enth-music`'s [`EarSpec`] in its order (the seed below 2⁴⁰: the caller checks it).
+pub(crate) fn put_ear_spec(w: &mut Bits, spec: &EarSpec) {
+    w.put(u64::from(spec.game), 8);
+    w.put(u64::from(spec.generator), 8);
+    w.put(u64::from(spec.level), 8);
+    w.put(spec.seed, EAR_SEED_BITS);
+    w.put(u64::from(spec.count), 8);
+}
+
+/// The ear spec [`put_ear_spec`] wrote (its ranges are the caller's to check).
+pub(crate) fn take_ear_spec(r: &mut Reader<'_>) -> Result<EarSpec, ResultError> {
+    Ok(EarSpec {
+        game: r.take(8)? as u8,
+        generator: r.take(8)? as u8,
+        level: r.take(8)? as u8,
+        seed: r.take(EAR_SEED_BITS as usize)?,
+        count: r.take(8)? as u8,
+    })
+}
+
 const POW10: [f64; 9] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8];
 
 /// The decimal form's value: `±m · 10^e`, one correctly rounded `f64` operation then the cast to `f32`, so it is the
@@ -765,6 +795,11 @@ const SCORER_SETS: [[ScorerId; 4]; 1] = [[
 
 /// A scorer set: an index into a frozen table of (sound, structure, combined, time) scorer ids with the Recreate
 /// weight and pass-mark rule. What a scorecard's claim was scored with, and what [`crate::verify`] re-scores with.
+///
+/// **It may name a set this build does not have** (the F1e review's M4): a scorecard from a newer build (GR1's
+/// `sound/2`, say) still reads, [`is_known`](Self::is_known) is false, and [`ids`](Self::ids) and
+/// [`scoring`](Self::scoring) are `None`, so the card shows the claim as reported and the re-score uses this build's
+/// [`current`](Self::current) set, flagged ([`crate::verify::scorer_set`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ScorerSet(u8);
 
@@ -780,11 +815,14 @@ impl ScorerSet {
             .map_or(ScorerSet::V1, |i| ScorerSet(i as u8 + 1))
     }
 
-    /// The set with this index, if this build has it.
-    pub fn by_index(index: u8) -> Option<ScorerSet> {
-        (1..=SCORER_SETS.len())
-            .contains(&usize::from(index))
-            .then_some(ScorerSet(index))
+    /// The set with this index, known to this build or not; `None` for 0, which no code writes.
+    pub fn from_index(index: u8) -> Option<ScorerSet> {
+        (index != 0).then_some(ScorerSet(index))
+    }
+
+    /// Whether this build has the set (an older build reads a newer build's index, and cannot score with it).
+    pub fn is_known(self) -> bool {
+        (1..=SCORER_SETS.len()).contains(&usize::from(self.0))
     }
 
     /// The index a code carries.
@@ -792,30 +830,138 @@ impl ScorerSet {
         self.0
     }
 
-    /// The four ids: sound, structure, combined, time.
-    pub fn ids(self) -> [ScorerId; 4] {
-        SCORER_SETS[usize::from(self.0 - 1)].clone()
+    /// The four ids: sound, structure, combined, time; `None` for a set this build does not have.
+    pub fn ids(self) -> Option<[ScorerId; 4]> {
+        self.is_known()
+            .then(|| SCORER_SETS[usize::from(self.0 - 1)].clone())
     }
 
-    /// The scoring a round at `difficulty` uses under this set.
-    pub fn scoring(self, difficulty: u8) -> ScoringSpec {
-        let [sound, structure, combined, time] = self.ids();
-        ScoringSpec::with_scorers(difficulty, sound, structure, combined, time)
+    /// The scoring a round at `difficulty` uses under this set; `None` for a set this build does not have.
+    pub fn scoring(self, difficulty: u8) -> Option<ScoringSpec> {
+        let [sound, structure, combined, time] = self.ids()?;
+        Some(ScoringSpec::with_scorers(
+            difficulty, sound, structure, combined, time,
+        ))
     }
 
     /// The set whose scoring at `difficulty` is exactly `scoring`, if the table has one.
     pub fn of(scoring: &ScoringSpec, difficulty: u8) -> Option<ScorerSet> {
         (1..=SCORER_SETS.len() as u8)
             .map(ScorerSet)
-            .find(|s| s.scoring(difficulty) == *scoring)
+            .find(|s| s.scoring(difficulty).as_ref() == Some(scoring))
     }
 }
 
 impl fmt::Display for ScorerSet {
-    /// `sound/1 + structure/1 + combined/1 + time/1`.
+    /// `sound/1 + structure/1 + combined/1 + time/1`, or `scorer set 2 (a newer enth's)`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ids = self.ids();
-        write!(f, "{} + {} + {} + {}", ids[0], ids[1], ids[2], ids[3])
+        match self.ids() {
+            Some(ids) => write!(f, "{} + {} + {} + {}", ids[0], ids[1], ids[2], ids[3]),
+            None => write!(f, "scorer set {} (a newer enth's)", self.0),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Ear rules (kind 4)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// One row of [`EAR_RULES`]: the scorer of each non-patch answer kind and the pass mark.
+struct EarRulesRow {
+    choice: ScorerId,
+    value: ScorerId,
+    taps: ScorerId,
+    pass_mark: u8,
+}
+
+/// The frozen, append-only table of ear rules an ear result names by index (index − 1 here; index 0 is never written):
+/// what a receiver judges the answers with (should-fix S5). A retuned scorer (`taps/2`) or another pass mark is a new
+/// row; an old index never changes its meaning.
+const EAR_RULES: [EarRulesRow; 1] = [EarRulesRow {
+    choice: ScorerId::EAR_V1,
+    value: ScorerId::EAR_VALUE_V1,
+    taps: ScorerId::TAPS_V1,
+    pass_mark: EAR_PASS_MARK,
+}];
+
+/// The ear rules an ear result was judged by: an index into a frozen table of the ear scorers (`ear/1`,
+/// `ear-value/1`, `taps/1`) and the pass mark (should-fix S5). Kind 4 names it, so the receiver judges with the
+/// sender's rules when it has them, and flags the difference when it does not ([`crate::verify::verify_ear`]). Like
+/// [`ScorerSet`], it may name rules this build does not have ([`is_known`](Self::is_known)).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EarRules(u8);
+
+impl EarRules {
+    /// Rules 1: `ear/1`, `ear-value/1`, `taps/1`, pass at 80 %.
+    pub const V1: EarRules = EarRules(1);
+
+    /// The rules this build gives a new ear challenge ([`ScoringSpec::ear`]).
+    pub fn current() -> EarRules {
+        [AnswerKind::Choice, AnswerKind::Value, AnswerKind::Taps]
+            .iter()
+            .filter_map(|&a| ScoringSpec::ear(a))
+            .find_map(|scoring| EarRules::of(&scoring))
+            .unwrap_or(EarRules::V1)
+    }
+
+    /// The rules with this index, known to this build or not; `None` for 0, which no code writes.
+    pub fn from_index(index: u8) -> Option<EarRules> {
+        (index != 0).then_some(EarRules(index))
+    }
+
+    /// Whether this build has the rules.
+    pub fn is_known(self) -> bool {
+        (1..=EAR_RULES.len()).contains(&usize::from(self.0))
+    }
+
+    /// The index a code carries.
+    pub fn index(self) -> u8 {
+        self.0
+    }
+
+    /// The scoring of an `answer` under these rules (its scorer in the sound, structure and combined slots, weight 100,
+    /// `time/1`, the pass mark); `None` for a patch answer or rules this build does not have.
+    pub fn scoring(self, answer: AnswerKind) -> Option<ScoringSpec> {
+        if !self.is_known() {
+            return None;
+        }
+        let row = &EAR_RULES[usize::from(self.0 - 1)];
+        let id = match answer {
+            AnswerKind::Choice => row.choice.clone(),
+            AnswerKind::Value => row.value.clone(),
+            AnswerKind::Taps => row.taps.clone(),
+            AnswerKind::Patch => return None,
+        };
+        let mut scoring = ScoringSpec::ear(answer)?;
+        scoring.sound = id.clone();
+        scoring.structure = id.clone();
+        scoring.combined = id;
+        scoring.pass_mark = row.pass_mark;
+        Some(scoring)
+    }
+
+    /// The rules whose scoring of `scoring`'s answer kind is exactly `scoring`, if the table has them.
+    pub fn of(scoring: &ScoringSpec) -> Option<EarRules> {
+        let answer = scorers::answer_of(&scoring.sound)?;
+        (1..=EAR_RULES.len() as u8)
+            .map(EarRules)
+            .find(|r| r.scoring(answer).as_ref() == Some(scoring))
+    }
+}
+
+impl fmt::Display for EarRules {
+    /// `ear/1 + ear-value/1 + taps/1, pass 80 %`, or `ear rules 2 (a newer enth's)`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_known() {
+            let row = &EAR_RULES[usize::from(self.0 - 1)];
+            write!(
+                f,
+                "{} + {} + {}, pass {} %",
+                row.choice, row.value, row.taps, row.pass_mark
+            )
+        } else {
+            write!(f, "ear rules {} (a newer enth's)", self.0)
+        }
     }
 }
 
@@ -1018,7 +1164,8 @@ impl Scorecard {
 
     /// Read a scorecard. Checks, in order: the frame ([`unframe`]: symbols, length bounds, code v1's symbol, version,
     /// form, kind, layout), the length the challenge's form fixes (`bad_length`), the 30-bit check (`bad_check`), the
-    /// challenge (as code v1 checks it), the scorer set (`scorer_too_new`), then each field (`bad_field`). Never
+    /// challenge (as code v1 checks it), then each field (`bad_field`; a scorer set of 0). A scorer set this build does
+    /// not have reads ([`ScorerSet::is_known`] false): the card is shown as reported (the F1e review's M4). Never
     /// panics.
     pub fn decode(text: &str) -> Result<Scorecard, ResultError> {
         let f = unframe(text, KIND_SCORECARD, LAYOUT_V1)?;
@@ -1041,13 +1188,11 @@ impl Scorecard {
         let challenge = take_challenge(&mut r)?;
         let engine = take_engine(&mut r)?;
         let set = r.take(8)? as u8;
-        if set == 0 {
-            return Err(ResultError::BadField {
-                field: "scorer set",
-                value: 0,
-            });
-        }
-        let scorers = ScorerSet::by_index(set).ok_or(ResultError::ScorerTooNew { set })?;
+        // Any non-zero set reads, known or not (the F1e review's M4): a newer build's card is shown as reported.
+        let scorers = ScorerSet::from_index(set).ok_or(ResultError::BadField {
+            field: "scorer set",
+            value: 0,
+        })?;
         let sound_tenths = r.take(10)? as u16;
         let combined_tenths = r.take(10)? as u16;
         let passed = r.bool()?;
@@ -1173,49 +1318,26 @@ fn clock(ds: u16) -> String {
 // The ear result (kind 4)
 // ---------------------------------------------------------------------------------------------------------------
 
-/// The ear challenge an ear result answers: kind 3's payload in its order (game, ear generator, level, seed, count;
-/// integers, the seed below 2⁴⁰). **Provisional:** a mirror of lane CV3's `EarSpec` until it lands, so F1E can swap
-/// the type without moving a bit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct EarChallengeRef {
-    /// The game.
-    pub game: u8,
-    /// The ear generator version.
-    pub generator: u8,
-    /// The level.
-    pub level: u8,
-    /// The seed, below 2⁴⁰.
-    pub seed: u64,
-    /// The questions.
-    pub count: u8,
-}
-
-/// Seed bits in an ear challenge.
+/// Seed bits in an ear challenge (kind 3's payload, inside kind 4 too).
 pub const EAR_SEED_BITS: u32 = 40;
 /// The most options a choice answer indexes.
 pub const EAR_CHOICES: u8 = 16;
-/// The most taps one answer holds.
-pub const EAR_TAPS_MAX: usize = 63;
-/// The latest tap, in ms from the question's start.
-pub const EAR_TAP_MS_MAX: u32 = (1 << 14) - 1;
+/// The most taps one answer holds: `taps/1`'s own limit ([`scorers::MAX_TAPS`]).
+pub const EAR_TAPS_MAX: usize = scorers::MAX_TAPS;
+/// The longest span of one tap answer, first tap to last, in ms: `taps/1`'s own limit ([`scorers::MAX_TAP_SPAN_MS`]).
+pub const EAR_TAP_MS_MAX: u32 = scorers::MAX_TAP_SPAN_MS;
 
-/// One ear answer (a mirror of lane CV3's `ear::scorers::EarAnswer`, provisional like [`EarChallengeRef`]).
-#[derive(Clone, Debug, PartialEq)]
-pub enum EarAnswer {
-    /// A label or clip index, below [`EAR_CHOICES`].
-    Choice(u8),
-    /// A value on a knob or slider (finite).
-    Value(f32),
-    /// Tap times in ms from the question's start, non-decreasing, at most [`EAR_TAPS_MAX`] taps up to
-    /// [`EAR_TAP_MS_MAX`].
-    Taps(Vec<u32>),
-}
+/// Bits of a stored tap (its time from the first tap).
+const EAR_TAP_BITS: u32 = 14;
+const _: () = assert!(EAR_TAP_MS_MAX < 1 << EAR_TAP_BITS);
+const _: () = assert!(EAR_TAPS_MAX < 1 << 6);
 
-/// The **ear result** (kind 4): the answers to an ear challenge, the time and the assists. See the [module
-/// docs](self) for the layout.
+/// The **ear result** (kind 4): the answers to an ear challenge, the rules they are judged by, the time and the
+/// assists. See the [module docs](self) for the layout.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EarResult {
-    challenge: EarChallengeRef,
+    challenge: EarSpec,
+    rules: EarRules,
     answers: Vec<Option<EarAnswer>>,
     time_ds: u16,
     hints: u8,
@@ -1223,11 +1345,15 @@ pub struct EarResult {
 }
 
 impl EarResult {
-    /// An ear result: one answer (or `None`) per question, the time in editor-visible milliseconds, the hints used
-    /// (saturating at [`HINTS_MAX`]) and whether the answers were revealed. Refused (`unencodable`) when the answers
-    /// do not match the challenge's count or a value does not fit (see [`EarAnswer`]).
+    /// An ear result: the challenge's spec, the ear `rules` it was judged by ([`EarRules::current`] for this build's),
+    /// one answer (or `None`) per question, the time in editor-visible milliseconds, the hints used (saturating at
+    /// [`HINTS_MAX`]) and whether the answers were revealed. **Tap answers may be on any clock**: each is stored relative
+    /// to its first tap. Refused (`unencodable`) when the seed is 2⁴⁰ or more, the answers do not match the
+    /// challenge's count, or an answer does not fit (a choice of 16 or more, a value that is not finite, taps out of
+    /// order, more than [`EAR_TAPS_MAX`] or spanning more than [`EAR_TAP_MS_MAX`] ms).
     pub fn new(
-        challenge: EarChallengeRef,
+        challenge: EarSpec,
+        rules: EarRules,
         answers: Vec<Option<EarAnswer>>,
         time_ms: u64,
         hints: u8,
@@ -1244,26 +1370,35 @@ impl EarResult {
                 challenge.count
             ));
         }
-        for (i, a) in answers.iter().enumerate() {
+        let mut kept = Vec::with_capacity(answers.len());
+        for (i, a) in answers.into_iter().enumerate() {
+            let a = a.map(relative);
             if let Some(reason) = a.as_ref().and_then(answer_problem) {
                 return bad(format!("answer {}: {reason}", i + 1));
             }
+            kept.push(a);
         }
         Ok(EarResult {
             challenge,
-            answers,
+            rules,
+            answers: kept,
             time_ds: ((time_ms.saturating_add(50)) / 100).min(u64::from(TIME_DS_MAX)) as u16,
             hints: hints.min(HINTS_MAX),
             revealed,
         })
     }
 
-    /// The ear challenge.
-    pub fn challenge(&self) -> &EarChallengeRef {
+    /// The ear challenge's spec.
+    pub fn challenge(&self) -> &EarSpec {
         &self.challenge
     }
 
-    /// The answers, one per question.
+    /// The ear rules the answers were judged by (perhaps a newer build's: [`EarRules::is_known`]).
+    pub fn rules(&self) -> EarRules {
+        self.rules
+    }
+
+    /// The answers, one per question; tap answers relative to their first tap.
     pub fn answers(&self) -> &[Option<EarAnswer>] {
         &self.answers
     }
@@ -1286,12 +1421,8 @@ impl EarResult {
     /// The canonical text.
     pub fn encode(&self) -> String {
         let mut w = Bits::header(KIND_EAR_RESULT, LAYOUT_V1);
-        let c = &self.challenge;
-        w.put(u64::from(c.game), 8);
-        w.put(u64::from(c.generator), 8);
-        w.put(u64::from(c.level), 8);
-        w.put(c.seed, EAR_SEED_BITS);
-        w.put(u64::from(c.count), 8);
+        put_ear_spec(&mut w, &self.challenge);
+        w.put(u64::from(self.rules.index()), 8);
         for a in &self.answers {
             match a {
                 None => w.put(0, 2),
@@ -1306,8 +1437,9 @@ impl EarResult {
                 Some(EarAnswer::Taps(taps)) => {
                     w.put(3, 2);
                     w.put(taps.len() as u64, 6);
-                    for t in taps {
-                        w.put(u64::from(*t), 14);
+                    // The first tap is 0 (stored relative to it), so it is not written.
+                    for t in taps.iter().skip(1) {
+                        w.put(u64::from(*t), EAR_TAP_BITS);
                     }
                 }
             }
@@ -1319,18 +1451,18 @@ impl EarResult {
         text(with_check30(w.into_symbols()))
     }
 
-    /// Read an ear result. Checks: the frame, the 30-bit check, then each field (`bad_field`). Never panics.
+    /// Read an ear result. Checks: the frame, the 30-bit check, then each field (`bad_field`: ear rules of 0, an answer
+    /// that does not fit, the reserved bits). The spec is not checked against this build: an ear result names what its
+    /// sender played, and [`crate::verify::verify_ear`] refuses a spec this build cannot replay. Never panics.
     pub fn decode(text: &str) -> Result<EarResult, ResultError> {
         let f = unframe(text, KIND_EAR_RESULT, LAYOUT_V1)?;
         let body = strip_check30(&f.data)?;
         let mut r = Reader::at(body, HEADER_BITS);
-        let challenge = EarChallengeRef {
-            game: r.take(8)? as u8,
-            generator: r.take(8)? as u8,
-            level: r.take(8)? as u8,
-            seed: r.take(EAR_SEED_BITS as usize)?,
-            count: r.take(8)? as u8,
-        };
+        let challenge = take_ear_spec(&mut r)?;
+        let rules = EarRules::from_index(r.take(8)? as u8).ok_or(ResultError::BadField {
+            field: "ear rules",
+            value: 0,
+        })?;
         let mut answers = Vec::with_capacity(usize::from(challenge.count));
         for _ in 0..challenge.count {
             let a = match r.take(2)? {
@@ -1340,8 +1472,11 @@ impl EarResult {
                 _ => {
                     let n = r.take(6)? as usize;
                     let mut taps = Vec::with_capacity(n);
-                    for _ in 0..n {
-                        taps.push(r.take(14)? as u32);
+                    if n > 0 {
+                        taps.push(0);
+                    }
+                    for _ in 1..n {
+                        taps.push(r.take(EAR_TAP_BITS as usize)? as u32);
                     }
                     Some(EarAnswer::Taps(taps))
                 }
@@ -1369,6 +1504,7 @@ impl EarResult {
         }
         Ok(EarResult {
             challenge,
+            rules,
             answers,
             time_ds,
             hints,
@@ -1383,16 +1519,31 @@ impl fmt::Display for EarResult {
     }
 }
 
-/// What makes an answer unencodable, if anything.
+/// A tap answer relative to its first tap (taps on any clock become times from the first); other answers as they are.
+/// Taps out of order are left as they are, for [`answer_problem`] to refuse.
+fn relative(a: EarAnswer) -> EarAnswer {
+    match a {
+        EarAnswer::Taps(t) if t.windows(2).all(|p| p[0] <= p[1]) => {
+            let first = t.first().copied().unwrap_or(0);
+            EarAnswer::Taps(t.into_iter().map(|ms| ms - first).collect())
+        }
+        other => other,
+    }
+}
+
+/// What makes an answer unencodable, if anything (taps already relative to their first).
 fn answer_problem(a: &EarAnswer) -> Option<&'static str> {
     match a {
         EarAnswer::Choice(i) if *i >= EAR_CHOICES => Some("a choice index is below 16"),
         EarAnswer::Value(v) if !v.is_finite() => Some("a value is finite"),
         EarAnswer::Taps(t) if t.len() > EAR_TAPS_MAX => Some("at most 63 taps"),
-        EarAnswer::Taps(t) if t.iter().any(|&ms| ms > EAR_TAP_MS_MAX) => {
-            Some("a tap is at most 16383 ms from the start")
-        }
         EarAnswer::Taps(t) if t.windows(2).any(|p| p[1] < p[0]) => Some("taps are in time order"),
+        EarAnswer::Taps(t) if t.first().is_some_and(|&ms| ms != 0) => {
+            Some("taps are stored relative to the first")
+        }
+        EarAnswer::Taps(t) if t.last().is_some_and(|&ms| ms > EAR_TAP_MS_MAX) => {
+            Some("taps span at most 16383 ms")
+        }
         _ => None,
     }
 }

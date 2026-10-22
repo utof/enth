@@ -13,7 +13,7 @@
 //! | --- | --- |
 //! | `Level` | one row of the ladder: the pool of answers, the number of options, the distance rule between them, the root and timbre ranges, the hold. Its fields are `pub`: `ear-check` lists every level's distances from them |
 //! | `LEVELS` | the rows; level `n` is `LEVELS[n - 1]` |
-//! | `MAX_LEVEL` | `LEVELS.len()`; `Game::max_level` and `EarSpec::validate` read it, so a new row is playable and proptested the moment it lands |
+//! | `MAX_LEVEL` | `LEVELS.len()`; `Game::max_level` and `EarSpec::validate_music` read it, so a new row is playable and proptested the moment it lands |
 //! | `question(level, rng)` | the item: it draws from the keyed stream `rng` in the order the file's docs name (**part of the frozen form**) and returns a valid `Question` |
 //!
 //! To add a level: add a row to `LEVELS` (and the code its fields need, which must not change what the existing rows

@@ -334,9 +334,7 @@ proptest! {
             challenge
         };
         let mut answer = generated.patch.clone();
-        let mut added = false;
         for (kind, a, u) in edits {
-            added |= kind % 12 == 8;
             mutate(&mut answer, kind, a, u);
         }
         if personal {
@@ -349,10 +347,9 @@ proptest! {
         prop_assert_eq!(back.encode(), text.clone());
         prop_assert!(enth_patch::canon::identical(back.answer(), code.answer()));
         prop_assert_eq!(canonical_hash(back.answer()), canonical_hash(&answer));
-        if !added {
-            prop_assert_eq!(exact_hash(back.answer()), exact_hash(&answer));
-            prop_assert!(enth_patch::canon::identical(back.answer(), &stripped_of(&answer)));
-        }
+        // Exactly, ids included, added modules too: an app-given id keeps its number (should-fix S1).
+        prop_assert_eq!(exact_hash(back.answer()), exact_hash(&answer));
+        prop_assert!(enth_patch::canon::identical(back.answer(), &stripped_of(&answer)));
         prop_assert_eq!(back.commitment(), code.commitment());
         prop_assert_eq!(back.salt(), salt);
         prop_assert!(!text.contains("--"));
@@ -448,6 +445,133 @@ fn no_name_meta_label_macro_name_slot_or_custom_id_survives() {
             "{needle}"
         );
     }
+}
+
+/// Should-fix S1: an added module keeps an id the app gave (its number in 6 bits), so the canonical answer renders
+/// what the player heard (the engine seeds a module from its id); the lowest free id and an id the player typed both
+/// write 0 and decode to the lowest free id, so no typed name survives.
+#[test]
+fn an_added_module_keeps_an_app_given_id() {
+    let challenge = code(1, 42);
+    let target = target_of(&challenge);
+    let add = |p: &mut Patch, id: &str| {
+        let mut m = ModuleInstance::new(ModuleId::new(id).unwrap(), ModuleKind::Osc);
+        m.values[0] = 2.0;
+        let at = Position {
+            section: ModuleKind::Osc.section(),
+            index: p.generators.len(),
+        };
+        apply(p, &Op::AddModule { at, module: m }).unwrap();
+    };
+    let free = target.free_id(ModuleKind::Osc);
+    let n: u32 = free.as_str().trim_start_matches("osc").parse().unwrap();
+    let rebuilt = |answer: &Patch| {
+        let code = AnswerCode::new(challenge, 5, answer).unwrap();
+        AnswerCode::decode(&code.encode()).unwrap().answer().clone()
+    };
+    // A number above the lowest free one (the player added two and removed the first) is kept.
+    let kept = format!("osc{}", n + 4);
+    let mut answer = target.clone();
+    add(&mut answer, &kept);
+    let back = rebuilt(&answer);
+    assert!(
+        back.find(&ModuleId::new(&kept).unwrap()).is_some(),
+        "{kept} kept"
+    );
+    assert_eq!(exact_hash(&back), exact_hash(&answer));
+    // The lowest free id, a typed name and a number past 6 bits all decode to the lowest free id.
+    for id in [
+        free.as_str().to_owned(),
+        "lead".to_owned(),
+        "osc64".to_owned(),
+    ] {
+        let mut answer = target.clone();
+        add(&mut answer, &id);
+        let back = rebuilt(&answer);
+        assert!(back.find(&free).is_some(), "{id} becomes {free}");
+        assert_eq!(canonical_hash(&back), canonical_hash(&answer));
+    }
+    // A taken id number is a field no encoder writes.
+    let mut w = Bits::header(KIND_ANSWER, LAYOUT_V1);
+    w.put(1, SALT_BITS);
+    put_challenge(&mut w, &challenge);
+    put_op_code(&mut w, OP_ADD_MODULE);
+    w.put(ModuleKind::Osc as u64, KIND_BITS);
+    w.put(0, PLACE_BITS);
+    w.put_bool(true);
+    w.put(1, ID_BITS);
+    w.put(RUN_END, PARAM_BITS);
+    end(&mut w);
+    let mut w = Bits::continuing(w.into_symbols());
+    w.put(0, TAIL_BITS);
+    assert_eq!(
+        AnswerCode::decode(&text(w.into_symbols())).unwrap_err(),
+        ResultError::BadField {
+            field: "module id",
+            value: 1
+        }
+    );
+}
+
+/// Should-fix S10: the encoder checks its rebuild against the stripped answer, module ids aside, so a value that
+/// overflowed its bits would be refused (`unencodable`) rather than share another patch. The check itself, on the
+/// differences it must see and the ones it must not.
+#[test]
+fn the_rebuild_check_sees_every_difference_but_ids_and_stripped_fields() {
+    let challenge = code(5, 1234);
+    let answer = target_of(&challenge);
+    assert!(same_ids_aside(&answer, &answer));
+    let mut personal = answer.clone();
+    personalize(&mut personal);
+    assert!(same_ids_aside(&answer, &personal), "stripped fields aside");
+    // A typed id, renumbered (with every route and the amp envelope following it).
+    let mut renamed = answer.clone();
+    let mut m = ModuleInstance::new(ModuleId::new("wob").unwrap(), ModuleKind::Lfo);
+    m.values[1] = 3.0;
+    let at = Position {
+        section: ModuleKind::Lfo.section(),
+        index: renamed.modulators.len(),
+    };
+    apply(
+        &mut renamed,
+        &Op::AddModule {
+            at,
+            module: m.clone(),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut renamed,
+        &Op::InsertRoute {
+            index: 0,
+            route: Route {
+                src: ModSource::Module(ModuleId::new("wob").unwrap()),
+                dst: "filter1.cutoff".parse().unwrap(),
+                depth: 20.0,
+            },
+        },
+    )
+    .unwrap();
+    let code = AnswerCode::new(challenge, 1, &renamed).unwrap();
+    assert!(same_ids_aside(code.answer(), &renamed));
+    assert!(code.answer().find(&ModuleId::new("wob").unwrap()).is_none());
+    // What must be seen: a value, a route's depth, a module's enabled flag, a macro.
+    let mut value = answer.clone();
+    value.master[0] += 1.0;
+    let mut depth = renamed.clone();
+    depth.routes[0].depth = 21.0;
+    let mut enabled = answer.clone();
+    enabled.generators[0].enabled = !enabled.generators[0].enabled;
+    let mut macro_value = answer.clone();
+    macro_value.macros[1].value = if macro_value.macros[1].value == 0.25 {
+        0.75
+    } else {
+        0.25
+    };
+    assert!(!same_ids_aside(&answer, &value));
+    assert!(!same_ids_aside(code.answer(), &depth));
+    assert!(!same_ids_aside(&answer, &enabled));
+    assert!(!same_ids_aside(&answer, &macro_value));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

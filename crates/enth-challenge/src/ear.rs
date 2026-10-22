@@ -19,15 +19,15 @@
 //! up (Frequency finder, Interval stacks, Chord quality, Rhythm pattern; then progressions, note naming, tap-back) are
 //! `enth-music`'s ear generator v1 (lane MUS). [`answer_kind`] is the one registry both families answer through.
 //!
-//! **The seam with `enth-music`, until MUS's generator is merged.** This build has no music game yet, so games 4 and
-//! up read as `code_too_new` ("update enth"). Wiring them is mechanical, in this file and [`question`] only: [`music`]
-//! maps `enth_music::ear::EarSpec::validate` and `Game::answer_kind(level)` here, and [`question::prepare`] turns each
-//! `enth_music::ear::Question` into a [`question::Stimulus`] (timbre, notes, length, band) and a
-//! [`scorers::EarKey`], with its labels and skill. What MUS provides, agreed with lane MUS: the fields of
-//! [`EarSpec`] field for field; timbre ids into `timbres-v1` (0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad,
-//! 5 noise-burst click, 6 sustained pink noise); notes as (key 24 to 96, velocity 1 to 127, start and hold in ms);
-//! `length_ms` with the release tail; the band as [`question::EqBand`]'s integers; the key as an option index (with the
-//! option count), or onsets and a window for taps.
+//! **The seam with `enth-music`** (wired by lane F1E, the F1e review's M3 and M5). [`EarSpec`] is `enth-music`'s type,
+//! re-exported; [`validate`] checks a spec for both families; [`music`] maps `enth_music::ear::EarSpec::validate_music`
+//! and `Game::answer_kind(level)` into the one registry; and [`question::prepare`] turns each
+//! `enth_music::ear::Question` into a [`question::Stimulus`] (timbre, notes, length, band) and a [`scorers::EarKey`],
+//! with its labels (`Options::labels`) and skill (`Question::skill`). One [`question::EqBand`]: `enth-music`'s. What
+//! MUS provides: timbre ids into `timbres-v1` (0 sine, 1 saw low-pass, 2 pluck, 3 organ table, 4 pad, 5 noise-burst
+//! click, 6 sustained pink noise); notes as (key 24 to 96, velocity 1 to 127, start and hold in ms); `length_ms` with
+//! the release tail; the band's integers; the key as an option index (with the option count), or onsets and a window
+//! for taps.
 
 pub mod code;
 pub mod ladder;
@@ -36,10 +36,46 @@ pub mod question;
 pub mod scorers;
 
 use crate::model::AnswerKind;
-use crate::v3::{EarError, EarSpec};
+use crate::spec::MAX_SEED;
+use crate::v3::{EarError, MAX_EAR_COUNT};
+
+pub use crate::v3::EarSpec;
+
+/// **The check of an ear spec, for both families** (the F1e review's M3; CV3's checks, moved here when `EarSpec`
+/// became `enth-music`'s type): every field in range (`bad_field` for a game, generator, level or count of 0 or a
+/// count above [`MAX_EAR_COUNT`]; `out_of_range` for a seed from 2⁵³), then a game, generator and level this build has
+/// (`code_too_new`: they are append-only, so one this build lacks is a newer build's). Returns the answer the game asks
+/// for at its level: a choice for Spot the change, Ear check and the label games, taps for Tap back, a patch for Dial
+/// it in (a Recreate round, so never an ear target's answer). Every challenge, code and session check goes through
+/// here; `enth-music`'s `EarSpec::validate_music` knows only the music games.
+pub fn validate(spec: &EarSpec) -> Result<AnswerKind, EarError> {
+    for (field, value) in [
+        ("game", spec.game),
+        ("generator", spec.generator),
+        ("level", spec.level),
+        ("count", spec.count),
+    ] {
+        if value == 0 {
+            return Err(EarError::BadField {
+                field,
+                value: u64::from(value),
+            });
+        }
+    }
+    if spec.count > MAX_EAR_COUNT {
+        return Err(EarError::BadField {
+            field: "count",
+            value: u64::from(spec.count),
+        });
+    }
+    if spec.seed > MAX_SEED {
+        return Err(EarError::SeedOutOfRange { seed: spec.seed });
+    }
+    answer_kind(spec)
+}
 
 /// The answer `spec`'s game asks for at its level, after checking that this build has the game, the generator and the
-/// level (`code_too_new` otherwise). The fields' own ranges are [`EarSpec::validate`]'s, which calls this.
+/// level (`code_too_new` otherwise). The fields' own ranges are [`validate`]'s, which calls this.
 pub fn answer_kind(spec: &EarSpec) -> Result<AnswerKind, EarError> {
     if params::is_params_game(spec.game) {
         params::answer_kind(spec)
@@ -48,17 +84,46 @@ pub fn answer_kind(spec: &EarSpec) -> Result<AnswerKind, EarError> {
     }
 }
 
-/// The music games' side of the registry: `enth-music`'s ear generator (lane MUS).
+/// The music games' side of the registry: `enth-music`'s ear generator v1 (lane MUS), wired by lane F1E (the F1e
+/// review's M5).
 pub mod music {
+    use enth_music::ear::{self as music, EarError as MusicError};
+
     use crate::model::AnswerKind;
     use crate::v3::{EarError, EarSpec};
 
-    /// The answer a music game asks for. **No music game is merged in this build** (lane MUS builds ear generator
-    /// v1 in parallel), so every game from 4 up is `code_too_new` here; F1E maps `enth_music::ear::EarSpec::validate`
-    /// (an unknown game, generator or level is `code_too_new`) and `Game::answer_kind(level)` (choice or taps; a value
-    /// with G3's slider level) into this function.
+    /// The answer a music game asks for at the spec's level: `enth-music`'s check of the game, the generator and the
+    /// level (each unknown one `code_too_new`: they are append-only), then `Game::answer_kind(level)` (a choice, or taps
+    /// for Tap back). Range errors are [`super::validate`]'s, which runs first.
     pub fn answer_kind(spec: &EarSpec) -> Result<AnswerKind, EarError> {
-        Err(EarError::GameTooNew { game: spec.game })
+        let game = spec.validate_music().map_err(|e| refusal(spec, e))?;
+        Ok(match game.answer_kind(spec.level) {
+            music::AnswerKind::Choice => AnswerKind::Choice,
+            music::AnswerKind::Taps => AnswerKind::Taps,
+        })
+    }
+
+    /// `enth-music`'s refusal as this crate's.
+    pub(crate) fn refusal(spec: &EarSpec, e: MusicError) -> EarError {
+        match e {
+            MusicError::UnknownGenerator(generator) => EarError::GeneratorTooNew {
+                game: spec.game,
+                generator,
+                latest: music::LATEST_GENERATOR,
+            },
+            MusicError::LevelUnavailable { game, level, max } => EarError::LevelTooNew {
+                game,
+                level,
+                top: max,
+            },
+            MusicError::SeedTooLarge(seed) => EarError::SeedOutOfRange { seed },
+            MusicError::BadCount(count) => EarError::BadField {
+                field: "count",
+                value: u64::from(count),
+            },
+            // An unknown game, and any refusal a later enth-music adds: a newer build's.
+            _ => EarError::GameTooNew { game: spec.game },
+        }
     }
 }
 
@@ -81,6 +146,38 @@ mod tests {
             seed: 1,
             count: 20,
         };
-        assert_eq!(music.validate().unwrap_err().code(), "code_too_new");
+        assert_eq!(validate(&music), Ok(AnswerKind::Choice));
+        // Every music game's level 1 is in this build; a level past its ladder, a newer generator and a newer game
+        // are a newer build's.
+        for game in enth_music::ear::Game::ALL {
+            let spec = EarSpec::new(game, 1, 7, 10);
+            let want = if game == enth_music::ear::Game::TapBack {
+                AnswerKind::Taps
+            } else {
+                AnswerKind::Choice
+            };
+            assert_eq!(validate(&spec), Ok(want), "{game:?}");
+            let top = game.max_level();
+            for newer in [
+                EarSpec {
+                    level: top + 1,
+                    ..spec
+                },
+                EarSpec {
+                    generator: enth_music::ear::LATEST_GENERATOR + 1,
+                    ..spec
+                },
+            ] {
+                assert_eq!(
+                    validate(&newer).unwrap_err().code(),
+                    "code_too_new",
+                    "{newer:?}"
+                );
+            }
+        }
+        assert_eq!(
+            validate(&EarSpec { game: 11, ..music }).unwrap_err().code(),
+            "code_too_new"
+        );
     }
 }

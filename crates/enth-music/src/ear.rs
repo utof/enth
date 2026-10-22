@@ -202,6 +202,15 @@ impl Game {
 /// The settings of a set of questions. Persisted inside `enth-challenge`'s `Target::Ear` (challenge v3) and in the
 /// ear-challenge code, so the JSON form is these fields in this order, every number an unsigned integer:
 /// `{"game":5,"generator":1,"level":1,"seed":42,"count":20}`.
+///
+/// **The one ear spec** (the F1e review's M3): `enth-challenge` re-exports this type as `v3::EarSpec` and
+/// `model::EarSpec`, and the session's ear plan holds it, so there is no second copy to drift. Games 1 to 3 (the
+/// parameter games) and 4 and up (this crate's music games) share it; `enth_challenge::ear::validate` checks both
+/// families, [`EarSpec::validate_music`] only this crate's.
+///
+/// **`generator` is read per family** (should-fix S9): games 1 to 3 count it in `enth-challenge`'s
+/// `ear::params::PARAMS_GENERATOR`, games 4 and up in this crate's [`LATEST_GENERATOR`]. Two counters, one field: a
+/// released level never changes its questions, and a change to a family's questions is that family's next version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EarSpec {
@@ -231,10 +240,14 @@ impl EarSpec {
         }
     }
 
-    /// Check the spec against this build: a generator it has, a game it generates, a level of that game's ladder, a
-    /// seed below 2^53 and a count of 1 to [`MAX_COUNT`]. Returns the game. Every error means "this build cannot play
-    /// this spec" (a newer build's code reads `code_too_new`).
-    pub fn validate(&self) -> Result<Game, EarError> {
+    /// Check the spec against **this crate's music games only**: a generator it has, a game it generates (4 to 10), a
+    /// level of that game's ladder, a seed below 2^53 and a count of 1 to [`MAX_COUNT`]. Returns the game. Every error
+    /// means "this build cannot play this spec" (a newer build's code reads `code_too_new`).
+    ///
+    /// **Music-only** (the F1e review's M3): the parameter games, 1 to 3, are [`EarError::UnknownGame`] here because
+    /// `enth-challenge` generates them. The check for both families, what every challenge, code and session uses, is
+    /// `enth_challenge::ear::validate`; the name says so, so a caller cannot mistake this one for it.
+    pub fn validate_music(&self) -> Result<Game, EarError> {
         if self.generator == 0 || self.generator > LATEST_GENERATOR {
             return Err(EarError::UnknownGenerator(self.generator));
         }
@@ -257,7 +270,7 @@ impl EarSpec {
 
     /// Question `item` of the set, at the spec's level (`item < count`).
     pub fn question(&self, item: u32) -> Result<Question, EarError> {
-        let game = self.validate()?;
+        let game = self.validate_music()?;
         if item >= u32::from(self.count) {
             return Err(EarError::ItemOutOfRange {
                 item,
@@ -269,7 +282,7 @@ impl EarSpec {
 
     /// All `count` questions, in order.
     pub fn questions(&self) -> Result<Vec<Question>, EarError> {
-        let game = self.validate()?;
+        let game = self.validate_music()?;
         (0..u32::from(self.count))
             .map(|item| question(game, self.level, self.seed, item))
             .collect()
@@ -872,12 +885,12 @@ mod tests {
     #[test]
     fn specs_are_checked_against_the_build() {
         let ok = EarSpec::new(Game::IntervalStacks, 1, 42, 20);
-        assert_eq!(ok.validate(), Ok(Game::IntervalStacks));
+        assert_eq!(ok.validate_music(), Ok(Game::IntervalStacks));
         assert_eq!(ok.generator, GENERATOR_V1);
         let bad = |f: fn(&mut EarSpec)| {
             let mut s = ok;
             f(&mut s);
-            s.validate().unwrap_err()
+            s.validate_music().unwrap_err()
         };
         assert_eq!(bad(|s| s.generator = 0), EarError::UnknownGenerator(0));
         assert_eq!(bad(|s| s.generator = 2), EarError::UnknownGenerator(2));
@@ -904,7 +917,7 @@ mod tests {
         let mut top = ok;
         top.seed = MAX_SEED;
         top.count = MAX_COUNT;
-        assert!(top.validate().is_ok());
+        assert!(top.validate_music().is_ok());
         assert_eq!(
             ok.question(20),
             Err(EarError::ItemOutOfRange {

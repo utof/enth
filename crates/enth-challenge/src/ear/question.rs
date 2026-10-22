@@ -98,66 +98,57 @@ pub fn timbre(id: TimbreId) -> Option<Patch> {
     enth_patch::file::load(text).ok().map(|f| f.patch)
 }
 
-/// The kind of an [`EqBand`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum EqKind {
-    /// A peaking band (boost or cut around the frequency), through the biquad.
-    Peak,
-    /// A low shelf, through the biquad.
-    LowShelf,
-    /// A high shelf, through the biquad.
-    HighShelf,
-    /// The synth's band-pass filter at the frequency (Frequency finder's svf form): set in the timbre's filter 1.
-    BandPass,
-}
+/// One EQ band of a question, in integers: **`enth-music`'s type** (the F1e review's M3: one `EqBand`, the one with
+/// serde, which a question carries). The kind ([`EqKind`]), the centre (peak, band-pass) or corner (shelf) frequency,
+/// 20 to 20,000 Hz; the gain in hundredths of a dB, ±2,400 (±24 dB), never 0 for a peak or a shelf (a flat band is no
+/// band) and 0 for a band-pass; the quality factor in thousandths (1,414 is an octave-wide peak), 500 to 25,000 for a
+/// band-pass (the svf's Q range), 100 to 25,000 otherwise. What this crate needs of it is [`BandExt`].
+pub use enth_music::ear::{EqBand, EqKind};
 
-/// One EQ band of a question, in integers (lane MUS's question carries it; agreed with MUS).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct EqBand {
-    /// The kind.
-    pub kind: EqKind,
-    /// The centre (peak, band-pass) or corner (shelf) frequency, 20 to 20,000 Hz.
-    pub freq_hz: u16,
-    /// The gain in hundredths of a dB, ±2,400 (±24 dB), never 0 for a peak or a shelf (a flat band is no band); 0 for a
-    /// band-pass.
-    pub gain_cdb: i16,
-    /// The quality factor in thousandths (1,414 is an octave-wide peak); 500 to 25,000 for a band-pass (the svf's Q
-    /// range), 100 to 25,000 otherwise.
-    pub q_milli: u16,
-}
-
-impl EqBand {
+/// What rendering needs of an [`EqBand`]: its values in real units, where it is applied, and the ranges above.
+pub trait BandExt {
     /// The frequency in Hz.
-    pub fn freq(&self) -> f32 {
+    fn freq(&self) -> f32;
+    /// The gain in dB (`gain_cdb / 100`, one IEEE division: the same bits everywhere).
+    fn gain_db(&self) -> f32;
+    /// The quality factor (`q_milli / 1000`).
+    fn q(&self) -> f32;
+    /// Whether the band is applied after the engine (a peak or a shelf: the biquad) rather than in the timbre.
+    fn is_post(&self) -> bool;
+    /// The svf resonance (%) whose Q is this band's: `100 · ln(2Q) / ln 50`, quantized as generator v1 quantizes
+    /// (three significant digits), in 0 to 100.
+    fn resonance(&self) -> f32;
+    /// Check the ranges in [`EqBand`]'s docs.
+    ///
+    /// # Errors
+    /// [`StimulusError::Band`] naming what is out of range.
+    fn check(&self) -> Result<(), StimulusError>;
+}
+
+impl BandExt for EqBand {
+    fn freq(&self) -> f32 {
         f32::from(self.freq_hz)
     }
 
-    /// The gain in dB (`gain_cdb / 100`, one IEEE division: the same bits everywhere).
-    pub fn gain_db(&self) -> f32 {
+    fn gain_db(&self) -> f32 {
         f32::from(self.gain_cdb) / 100.0
     }
 
-    /// The quality factor (`q_milli / 1000`).
-    pub fn q(&self) -> f32 {
+    fn q(&self) -> f32 {
         f32::from(self.q_milli) / 1000.0
     }
 
-    /// Whether the band is applied after the engine (a peak or a shelf: the biquad) rather than in the timbre.
-    pub fn is_post(&self) -> bool {
+    fn is_post(&self) -> bool {
         self.kind != EqKind::BandPass
     }
 
-    /// The svf resonance (%) whose Q is this band's: `100 · ln(2Q) / ln 50`, quantized as generator v1 quantizes
-    /// (three significant digits), in 0 to 100.
-    pub fn resonance(&self) -> f32 {
+    fn resonance(&self) -> f32 {
         let q = f64::from(self.q_milli) / 1000.0;
         let r = 100.0 * libm::log(2.0 * q) / libm::log(50.0);
         crate::random::sig3(r.clamp(0.0, 100.0) as f32)
     }
 
-    /// Check the ranges above.
-    pub fn validate(&self) -> Result<(), StimulusError> {
+    fn check(&self) -> Result<(), StimulusError> {
         let bad = |reason: String| Err(StimulusError::Band { reason });
         if !(20..=20_000).contains(&self.freq_hz) {
             return bad(format!("{} Hz is outside 20 Hz to 20 kHz", self.freq_hz));
@@ -253,7 +244,7 @@ impl Stimulus {
             }
         }
         if let Some(band) = &self.band {
-            band.validate()?;
+            band.check()?;
         }
         Ok(())
     }
@@ -301,7 +292,7 @@ impl Stimulus {
 
     /// The band applied after the engine (a peak or a shelf), if any.
     pub fn post(&self) -> Option<EqBand> {
-        self.band.filter(EqBand::is_post)
+        self.band.filter(BandExt::is_post)
     }
 }
 
@@ -474,9 +465,9 @@ impl EarSet {
     }
 }
 
-/// Prepare an ear challenge's questions: validate it, then generate each question from its game's family. Not an ear
-/// target: `bad_answer`. A music game is `code_too_new` in this build (lane MUS's generator is not merged; see
-/// [`super`]). No render: clips are rendered when played.
+/// Prepare an ear challenge's questions: validate it, then generate each question from its game's family (games 1 to
+/// 3 here, 4 and up `enth-music`'s ear generator v1). Not an ear target: `bad_answer`. No render: clips are rendered
+/// when played.
 pub fn prepare(challenge: &Challenge) -> Result<EarSet, ChallengeError> {
     challenge.validate()?;
     let Target::Ear(spec) = &challenge.target else {
@@ -494,7 +485,7 @@ pub fn prepare(challenge: &Challenge) -> Result<EarSet, ChallengeError> {
 
 /// The questions of `spec`, in order (its answer keys need no render).
 pub fn questions(spec: &EarSpec) -> Result<Vec<EarQuestion>, ChallengeError> {
-    spec.validate().map_err(ChallengeError::Ear)?;
+    super::validate(spec).map_err(ChallengeError::Ear)?;
     match spec.game {
         SPOT_THE_CHANGE => (0..spec.count).map(|i| spot_question(spec, i)).collect(),
         EAR_CHECK => (0..spec.count).map(|i| check_question(spec, i)).collect(),
@@ -502,11 +493,75 @@ pub fn questions(spec: &EarSpec) -> Result<Vec<EarQuestion>, ChallengeError> {
             reason: "Dial it in's rounds are v2 draw challenges (ear::params::dial_it_in)"
                 .to_owned(),
         }),
-        // Music games: `super::music` refuses them before this, until lane MUS's generator is wired.
-        game => Err(ChallengeError::Ear(crate::v3::EarError::GameTooNew {
-            game,
-        })),
+        // The music games: `enth-music`'s ear generator v1 (`super::validate` has checked the game and level).
+        _ => spec
+            .questions()
+            .map_err(|e| ChallengeError::Ear(super::music::refusal(spec, e)))?
+            .iter()
+            .enumerate()
+            .map(|(i, q)| music_question(i as u8, q))
+            .collect(),
     }
+}
+
+/// A music question as an ear question (the F1e review's M5): its [`Stimulus`] (the timbre, the notes as a phrase's,
+/// the length and the band), its options' labels (`Options::labels`), its key (a choice index of the option count, or
+/// the onsets and window of a tap answer) and its skill (`Question::skill`). The stimulus is checked here
+/// ([`Stimulus::validate`]), so a question this crate would not play is refused before it is asked.
+pub fn music_question(
+    index: u8,
+    q: &enth_music::ear::Question,
+) -> Result<EarQuestion, ChallengeError> {
+    let stimulus = Stimulus {
+        timbre: q.timbre,
+        notes: q
+            .notes
+            .iter()
+            .map(|n| PhraseNote {
+                key: n.key,
+                velocity: n.velocity,
+                start_ms: n.start_ms,
+                hold_ms: n.hold_ms,
+            })
+            .collect(),
+        length_ms: q.length_ms,
+        band: q.post,
+    };
+    let bad = |reason: String| ChallengeError::Answer { reason };
+    stimulus
+        .validate()
+        .map_err(|e| bad(format!("music question {index}: {e}")))?;
+    let options: Vec<EarOption> = q
+        .options
+        .labels()
+        .into_iter()
+        .map(|label| EarOption {
+            label,
+            control: None,
+        })
+        .collect();
+    let key = match &q.answer {
+        enth_music::ear::Answer::Choice(i) => EarKey::Choice {
+            index: *i,
+            options: u8::try_from(q.options.ids.len())
+                .map_err(|_| bad(format!("music question {index}: too many options")))?,
+        },
+        enth_music::ear::Answer::Taps {
+            onsets_ms,
+            window_ms,
+        } => EarKey::Taps(scorers::TapsKey {
+            onsets_ms: onsets_ms.clone(),
+            window_ms: *window_ms,
+        }),
+    };
+    Ok(EarQuestion {
+        index,
+        clips: vec![Clip::Stimulus(stimulus)],
+        options,
+        key,
+        skill: q.skill(),
+        steps: None,
+    })
 }
 
 /// A Spot the change question: A, then B; the options' knob names; the moved option's index.
@@ -793,11 +848,7 @@ mod tests {
                 ..band
             },
         ] {
-            assert_eq!(
-                bad.validate().unwrap_err().code(),
-                "bad_question",
-                "{bad:?}"
-            );
+            assert_eq!(bad.check().unwrap_err().code(), "bad_question", "{bad:?}");
         }
     }
 
@@ -898,5 +949,58 @@ mod tests {
             n += qs.len();
         }
         assert_eq!(n, 1000);
+    }
+
+    /// The F1e review's M5: level 1 of every music game prepares through this crate (`enth-music`'s questions as
+    /// stimuli and keys, no render), every stimulus is one this crate plays, the labels and skill come through, and an
+    /// oracle that answers each key's right answer scores 100 % with the challenge's own scorer.
+    #[test]
+    fn every_music_game_prepares_at_level_1_and_its_oracle_scores_100() {
+        for game in enth_music::ear::Game::ALL {
+            for seed in [0u64, 1, 42, 9_007_199_254_740_991] {
+                let spec = EarSpec::new(game, 1, seed, 20);
+                let challenge = Challenge::ear(spec).unwrap_or_else(|e| panic!("{game:?}: {e}"));
+                let set = prepare(&challenge).unwrap_or_else(|e| panic!("{game:?} {seed}: {e}"));
+                assert_eq!(set.questions().len(), 20);
+                for (i, q) in set.questions().iter().enumerate() {
+                    let music = enth_music::ear::question(game, 1, seed, i as u32).unwrap();
+                    assert_eq!(q.index as usize, i);
+                    assert_eq!(q.skill, music.skill(), "{game:?}");
+                    let [Clip::Stimulus(stimulus)] = q.clips.as_slice() else {
+                        panic!("{game:?}: one stimulus");
+                    };
+                    assert_eq!(stimulus.validate(), Ok(()));
+                    assert_eq!(stimulus.timbre, music.timbre);
+                    assert_eq!(stimulus.length_ms, music.length_ms);
+                    assert_eq!(stimulus.notes.len(), music.notes.len());
+                    assert_eq!(
+                        q.options
+                            .iter()
+                            .map(|o| o.label.clone())
+                            .collect::<Vec<_>>(),
+                        music.options.labels()
+                    );
+                    match (&q.key, game.answer_kind(1)) {
+                        (EarKey::Choice { options, .. }, enth_music::ear::AnswerKind::Choice) => {
+                            assert_eq!(usize::from(*options), q.options.len());
+                        }
+                        (EarKey::Taps(_), enth_music::ear::AnswerKind::Taps) => {}
+                        (key, kind) => panic!("{game:?}: {key:?} for {kind:?}"),
+                    }
+                }
+                let oracle: Vec<Option<EarAnswer>> =
+                    set.keys().iter().map(|k| Some(k.right_answer())).collect();
+                let score = set.judge(&oracle).unwrap();
+                assert_eq!(
+                    (score.right, score.percent, score.passed),
+                    (20, 100.0, true),
+                    "{game:?}"
+                );
+                // A wrong first answer costs a question (a choice) or its share (taps).
+                let mut one_off = oracle.clone();
+                one_off[0] = None;
+                assert!(set.judge(&one_off).unwrap().percent < 100.0);
+            }
+        }
     }
 }

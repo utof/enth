@@ -4,8 +4,10 @@
 //! fixture must decode to its case on every later build, and this build must write the same symbols for it. The
 //! regenerate step writes the file only when it is missing; a new layout adds `result/v2/` beside it.
 //!
-//! The pinned hash is set at F1e (the F1e judge may still change a layout before then, which regenerates the file on
-//! purpose: delete it, run this test, read the diff, update the hash).
+//! The pinned hash was set at F1e by lane F1E, after the judge's layout changes (should-fix S1: an added module's id
+//! number in the answer code; S5: the ear rules in the ear result; the F1e review's M3: taps stored from the first
+//! tap) and with an ear challenge (kind 3) added, so every version-15 kind has a frozen code here. From F1e on, the
+//! file never changes: a new layout adds `result/v2/` beside it.
 
 #![allow(
     clippy::disallowed_methods,
@@ -17,13 +19,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use enth_challenge::answer::AnswerCode;
+use enth_challenge::ear::code::EarChallengeCode;
+use enth_challenge::model::EarSpec;
 use enth_challenge::paste::{self, Found};
 use enth_challenge::random;
 use enth_challenge::result::{
-    CardAssists, Commitment, EarAnswer, EarChallengeRef, EarResult, Scorecard, ScorecardFields,
-    ScorerSet,
+    CardAssists, Commitment, EarAnswer, EarResult, EarRules, Scorecard, ScorecardFields, ScorerSet,
 };
 use enth_challenge::{ChallengeCode, EngineVersion, RandomSpec, SpecPreset, TargetPrefix};
+use enth_music::ear::Game;
 use enth_patch::{
     MacroIndex, ModSource, ModuleId, ModuleInstance, ModuleKind, Op, Patch, PatchMeta, Position,
     Route, apply,
@@ -32,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// The SHA-256 of `result/v1/codes.json`.
-const CODES_SHA256: &str = "49b0d98a909ea0daec67bcf3187f438a3c26a28dcf82605b087d1d858755f3d1";
+const CODES_SHA256: &str = "82dc0247779d9bf1cca228976be67b48941ce3505cc9e44e16b37bcb18c5e19d";
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Fixture {
@@ -232,13 +236,14 @@ fn cases() -> Vec<(String, String, String)> {
         AnswerCode::new(c, 1, &structural()).unwrap().encode(),
     );
     let ear = EarResult::new(
-        EarChallengeRef {
+        EarSpec {
             game: 1,
             generator: 1,
             level: 3,
             seed: 123_456_789,
             count: 5,
         },
+        EarRules::V1,
         vec![
             Some(EarAnswer::Choice(0)),
             Some(EarAnswer::Choice(5)),
@@ -252,6 +257,13 @@ fn cases() -> Vec<(String, String, String)> {
     )
     .unwrap();
     push("ear result, five answers", "ear-result", ear.encode());
+    let ear_challenge =
+        EarChallengeCode::new(EarSpec::new(Game::IntervalStacks, 1, 123_456_789, 20)).unwrap();
+    push(
+        "ear challenge, interval stacks, level 1",
+        "ear-challenge",
+        ear_challenge.encode(),
+    );
     out
 }
 
@@ -310,6 +322,7 @@ fn every_frozen_code_decodes_to_its_kind() {
             Found::Scorecard(_) => "scorecard",
             Found::Answer(_) => "answer",
             Found::EarResult(_) => "ear-result",
+            Found::EarChallenge(_) => "ear-challenge",
             _ => "other",
         };
         assert_eq!(kind, e.kind, "{}", e.name);

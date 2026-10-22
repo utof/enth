@@ -40,14 +40,20 @@
     {
       "name": "answer, level 3, every op kind and personal fields",
       "kind": "answer",
-      "symbols": 86,
-      "code": "F220-0000-0000-0004-0R02-0000-000F-C9AJ-8J4S-QW4B-HG43-8H5H-C7QR-KCG0-5J12-QKS0-C8CJ-7TZ5-2XSC-0VD9-JV1B-1T"
+      "symbols": 87,
+      "code": "F220-0000-0000-0004-0R02-0000-000F-C9AJ-8092-CVY2-5RR2-1M8J-RP3V-W9P8-02S0-HBSW-G646-93XF-JHEW-P0VD-9JV1-B1C"
     },
     {
       "name": "ear result, five answers",
       "kind": "ear-result",
-      "symbols": 49,
-      "code": "F420-810C-00EP-YD2M-2M2M-G7TV-2000-0F01-ZR5Y-02CW-80Y4-JM4Y-R"
+      "symbols": 47,
+      "code": "F420-810C-00EP-YD2M-2G2G-AJ0Z-BC80-Y03Z-GBW0-4SRG-SFM8-9H2"
+    },
+    {
+      "name": "ear challenge, interval stacks, level 1",
+      "kind": "ear-challenge",
+      "symbols": 19,
+      "code": "F321-8104-00EP-YD2M-A0N"
     }
   ]
 }

@@ -11,8 +11,9 @@
 //!
 //! ```text
 //! header                     14   'F', kind 2, layout 1
-//! salt                       64   drawn by the shell (core crates have no RNG); it keeps the commitment from being
-//!                                 brute-forced over a small answer space
+//! salt                       64   64 bits of OS randomness, drawn by the shell once per duel (core crates have no
+//!                                 RNG); it keeps the commitment from being brute-forced over a small answer space.
+//!                                 Sent in the clear, so never derived from a clock or a seed (below)
 //! challenge          61 or 165+   as in the scorecard (code v1's short or long payload behind a flag)
 //! ops                             until END, below
 //! padding                         zero bits to the end of a symbol
@@ -30,7 +31,7 @@
 //! | `1 0010` | `InsertRoute` | index 6, source, destination (target 5, parameter 4), depth (an `f32`) |
 //! | `1 0011` | `RemoveRoute` | route index 6 |
 //! | `1 0100` | `SetDepth` | route index 6, depth |
-//! | `1 0101` | `AddModule` | kind 4, index in its section 3, enabled 1, then (parameter 4, value) pairs for the values that differ from the table's defaults, then 15 |
+//! | `1 0101` | `AddModule` | kind 4, index in its section 3, enabled 1, id number 6, then (parameter 4, value) pairs for the values that differ from the table's defaults, then 15 |
 //! | `1 0110` | `RemoveModule` | module 5 |
 //! | `1 0111` | `Move` | module 5, index 3 |
 //! | `1 1000` | `SetAmpEnv` | module 5 |
@@ -38,9 +39,14 @@
 //! | `1 1010`–`1 1111` | reserved | refused as `answer_too_new` |
 //!
 //! - **Targets** are places in the patch as it is at that op, never ids: 0 is `voice`, 1 `master`, 2 + i the i-th
-//!   module in file order (sections in order). A module the answer adds takes the lowest free `<prefix><n>` id, as
-//!   `add` does, so **no id the player typed survives** (a renamed module that runs in `free` phase mode starts its
-//!   notes at other phases, which can move a score by a hair; the receiver's number decides).
+//!   module in file order (sections in order).
+//! - **An added module's id** (should-fix S1): the engine seeds a module's random streams from its id
+//!   (`fnv1a64(id)`), and `osc`'s default phase mode is `free`, so a renumbered module renders other phases. An id the
+//!   app gave (`<prefix><n>`, `n` from 1 to 63) keeps its number in 6 bits; **an id the player typed (`wobble`,
+//!   `sam`) is never written**: it is 0, as is the lowest free `<prefix><n>` (what `add` gives), and decoding gives the
+//!   lowest free id. So no typed name survives, and the canonical answer renders what the player heard. (Measured at
+//!   F1e: a renumbered oscillator changed the audio, max |a − b| 0.05–1.9, and no `sound/1` or `structure/1` score in
+//!   600 rows; the number is insurance against a phase-sensitive `sound/2`.)
 //! - **A source** is 3 bits: 0 a module (then a target), 1 velocity, 2 key, 3 the mod wheel, 4 a macro (then 3 bits);
 //!   5–7 are refused as `answer_too_new`.
 //! - **Parameters** are indices into the frozen, append-only [`result-params-v1`](RESULT_PARAMS_V1) table, which fixes
@@ -50,6 +56,11 @@
 //!   lacks is `answer_too_new`, as is a module kind it lacks.
 //! - **Stripped before encoding:** `SetMeta` (`PatchMeta::author` can hold a real name), labels, macro names and
 //!   automation slots, so no name, label, `meta` or slot survives; none of them changes the sound.
+//! - **The salt** (the F1e review's M6, a privacy rule no test here can catch): 64 bits of **OS randomness** (std's
+//!   `RandomState` keys, or `getrandom`), drawn **once per duel** by the shell and kept with the result in the duel
+//!   history, and **never derived from a clock or a seed**. The code carries the salt in the clear: a salt made from
+//!   the shell's `fresh_seed` (a bijection of wall-clock nanoseconds, hidden only by a 40-bit mask) would put the
+//!   absolute time, to the nanosecond, into every answer code.
 //!
 //! **The canonical answer** is the round's start with the encoded ops applied: the player's patch without the stripped
 //! fields. The tail and the commitment hash it, with the salt and the target's fingerprint:
@@ -112,6 +123,8 @@ const PLACE_BITS: u32 = 3;
 const KIND_BITS: u32 = 4;
 /// Bits of a macro index.
 const MACRO_BITS: u32 = 3;
+/// Bits of an added module's id number (`n` of `<prefix><n>`; 0 is the lowest free id).
+const ID_BITS: u32 = 6;
 /// Bits of a source tag.
 const SOURCE_BITS: u32 = 3;
 
@@ -346,10 +359,16 @@ impl PartialEq for AnswerCode {
 impl Eq for AnswerCode {}
 
 impl AnswerCode {
-    /// The answer code of `answer`, a patch played on `challenge`'s round, with `salt` (drawn by the shell, never
-    /// reused; it is kept to send this code later). The patch is diffed from the challenge's start, stripped of `meta`,
-    /// labels, macro names and slots, and rebuilt to check the encoding. Refused (`unencodable`) when the patch is not
-    /// reachable from the start by ops; the challenge's own refusals (`code_too_new`, `target_mismatch`) pass through.
+    /// The answer code of `answer`, a patch played on `challenge`'s round, with `salt`. The patch is diffed from the
+    /// challenge's start, stripped of `meta`, labels, macro names and slots, and rebuilt from the bits written, which
+    /// must give the stripped patch back, module ids aside (should-fix S10). Refused (`unencodable`) when the patch is
+    /// not reachable from the start by ops, or does not rebuild (a value outside its field); the challenge's own
+    /// refusals (`code_too_new`, `target_mismatch`) pass through.
+    ///
+    /// **The salt** (the F1e review's M6): 64 bits of OS randomness (std's `RandomState` keys, or `getrandom`), drawn
+    /// once per duel and kept with the result, so the same answer code can be made again to match the scorecard's
+    /// commitment. **Never derive it from a clock or a seed:** the code carries it in the clear, so a salt from the
+    /// shell's `fresh_seed` (wall-clock nanoseconds through a bijection) would put the absolute time into the code.
     pub fn new(
         challenge: ChallengeCode,
         salt: u64,
@@ -374,6 +393,12 @@ impl AnswerCode {
             })?;
         r.finish()?;
         debug_assert_eq!(decoded, count);
+        if !same_ids_aside(&rebuilt, answer) {
+            return Err(ResultError::Unencodable {
+                reason: "the encoding does not rebuild the answer (a value outside its field)"
+                    .to_owned(),
+            });
+        }
         let tail = digest(TAIL_MAGIC, salt, &target, &rebuilt, phrase);
         let mut w = Bits::continuing(core::mem::take(&mut data));
         w.put(top_bits(&tail, TAIL_BITS), TAIL_BITS);
@@ -741,6 +766,7 @@ fn encode_op(w: &mut Bits, p: &Patch, op: &Op) -> Result<(), ResultError> {
             w.put(module.kind as u64, KIND_BITS);
             w.put(at.index as u64, PLACE_BITS);
             w.put_bool(module.enabled);
+            w.put(id_number(p, module), ID_BITS);
             for (i, e) in row.iter().enumerate() {
                 let v = module
                     .get(e.key)
@@ -773,6 +799,69 @@ fn encode_op(w: &mut Bits, p: &Patch, op: &Op) -> Result<(), ResultError> {
         other => return Err(unencodable(format!("{} is not encoded", other.name()))),
     }
     Ok(())
+}
+
+/// The id number an added module is written with (should-fix S1): `n` for an id `<prefix><n>` the app gave (`n` from
+/// 1 to 63), unless it is the lowest free id, which decoding gives anyway; 0 for that and for any id the player typed.
+fn id_number(p: &Patch, module: &ModuleInstance) -> u64 {
+    let prefix = module.kind.spec().id_prefix;
+    let n = module
+        .id
+        .as_str()
+        .strip_prefix(prefix)
+        .and_then(|digits| digits.parse::<u32>().ok())
+        .filter(|&n| (1..1 << ID_BITS).contains(&n))
+        .filter(|&n| ModuleId::numbered(prefix, n).is_ok_and(|id| id == module.id));
+    match n {
+        Some(n) if p.free_id(module.kind) != module.id => u64::from(n),
+        _ => 0,
+    }
+}
+
+/// Whether `rebuilt` is `answer` without the stripped fields (`meta`, labels, macro names, slots; the engine stamp),
+/// module ids aside (should-fix S10): the same modules (kind, enabled flag, values) in the same places, the same routes
+/// between the same places with the same depths, the amplitude envelope in the same place, and the same voice, master
+/// and macro values. A field that overflowed its bits would rebuild another patch, and is refused rather than shared.
+fn same_ids_aside(rebuilt: &Patch, answer: &Patch) -> bool {
+    let a: Vec<(Position, &ModuleInstance)> = answer.modules().collect();
+    let b: Vec<(Position, &ModuleInstance)> = rebuilt.modules().collect();
+    if a.len() != b.len() {
+        return false;
+    }
+    let same_modules = a.iter().zip(&b).all(|((pa, ma), (pb, mb))| {
+        pa == pb && ma.kind == mb.kind && ma.enabled == mb.enabled && ma.values == mb.values
+    });
+    // An id of the answer, as the rebuilt patch names the module in its place.
+    let renamed = |id: &ModuleId| {
+        a.iter()
+            .position(|(_, m)| &m.id == id)
+            .map(|i| b[i].1.id.clone())
+    };
+    let same_target = |x: &Target, y: &Target| match (x, y) {
+        (Target::Module(i), Target::Module(j)) => renamed(i).as_ref() == Some(j),
+        _ => x == y,
+    };
+    let same_source = |x: &ModSource, y: &ModSource| match (x, y) {
+        (ModSource::Module(i), ModSource::Module(j)) => renamed(i).as_ref() == Some(j),
+        _ => x == y,
+    };
+    let same_routes = answer.routes.len() == rebuilt.routes.len()
+        && answer.routes.iter().zip(&rebuilt.routes).all(|(x, y)| {
+            same_source(&x.src, &y.src)
+                && same_target(x.dst.target(), y.dst.target())
+                && x.dst.param() == y.dst.param()
+                && x.depth == y.depth
+        });
+    same_modules
+        && same_routes
+        && renamed(&answer.voice.amp_env).as_ref() == Some(&rebuilt.voice.amp_env)
+        && answer.voice.values == rebuilt.voice.values
+        && answer.master == rebuilt.master
+        && answer
+            .macros
+            .iter()
+            .zip(&rebuilt.macros)
+            .all(|(x, y)| x.value == y.value)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -954,12 +1043,21 @@ fn decode_ops(r: &mut Reader<'_>, start: &Patch) -> Result<(Patch, usize), Resul
                     })?;
                 let index = r.take(PLACE_BITS as usize)? as usize;
                 let enabled = r.bool()?;
+                let n = r.take(ID_BITS as usize)?;
+                let id = if n == 0 {
+                    p.free_id(kind)
+                } else {
+                    ModuleId::numbered(kind.spec().id_prefix, n as u32)
+                        .ok()
+                        .filter(|id| p.find(id).is_none())
+                        .ok_or(bad("module id", n))?
+                };
                 let owner = Owner::Module(kind);
                 let row = owner.table().ok_or(ResultError::AnswerTooNew {
                     what: "module kind",
                     value: k,
                 })?;
-                let mut module = ModuleInstance::new(p.free_id(kind), kind);
+                let mut module = ModuleInstance::new(id, kind);
                 module.enabled = enabled;
                 // The table's frozen defaults first, then the values the code carries.
                 for e in row {

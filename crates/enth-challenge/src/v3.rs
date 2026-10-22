@@ -33,7 +33,7 @@
 
 use core::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::ear::scorers;
@@ -42,7 +42,6 @@ use crate::model::{
     Target,
 };
 use crate::score::ScorerId;
-use crate::spec::MAX_SEED;
 use crate::v2::Constraints;
 
 /// The `schema` string of a v3 challenge.
@@ -65,65 +64,18 @@ pub const EAR_PASS_MARK: u8 = 80;
 /// questions. Integers only, the seed below 2⁵³. JSON `{"game":1,"generator":1,"level":1,"seed":42,"count":16}`,
 /// unknown fields refused.
 ///
-/// **A stand-in for `enth_music::ear::EarSpec`** (lane MUS, agreed field for field: the same fields in the same order,
-/// the same derives and JSON). When MUS's type is merged, this one becomes `pub use enth_music::ear::EarSpec`, and
-/// nothing else changes (docs/challenge.md, "Challenge v3": the seam with `enth-music`).
+/// **One type, `enth-music`'s** (the F1e review's M3): CV3's stand-in agreed with MUS field for field, and is now a
+/// re-export, so the challenge, the codes and the session hold the same type. Its check for both families is
+/// [`crate::ear::validate`] (a range check, then a game, generator and level this build has); `enth-music`'s own
+/// [`EarSpec::validate_music`] knows only the music games.
 ///
 /// Games keep docs/ear.md's numbers: 1 Spot the change, 2 Dial it in and 3 Ear check are the parameter games
 /// ([`crate::ear::params`]); 4 Frequency finder, 5 Interval stacks, 6 Chord quality, 7 Rhythm pattern and 8 up are
 /// `enth-music`'s. Item `i` draws from its own keyed stream (`derive(seed, fnv1a64("game/i/level"))`), so a
-/// question never depends on another, and every player of a spec hears the same set.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EarSpec {
-    /// The game (docs/ear.md's number, 1 and up).
-    pub game: u8,
-    /// The ear generator version, 1 and up. A released version never changes its questions.
-    pub generator: u8,
-    /// The level on the game's ladder, 1 and up.
-    pub level: u8,
-    /// The seed, at most 2⁵³ − 1 (a code keeps 40 bits of it).
-    pub seed: u64,
-    /// How many questions, 1 to [`MAX_EAR_COUNT`].
-    pub count: u8,
-}
-
-impl EarSpec {
-    /// Check the spec: every field in range (`bad_field`, `out_of_range` for the seed), then a game, generator and
-    /// level this build has (`code_too_new`: game ids, generator versions and levels are append-only, so one this
-    /// build lacks is a newer build's).
-    pub fn validate(&self) -> Result<(), EarError> {
-        self.answer().map(|_| ())
-    }
-
-    /// The answer the spec's game asks for at its level, after [`validate`](Self::validate)'s checks: a choice for
-    /// Spot the change and Ear check, a patch for Dial it in (a Recreate round, so never an ear target's answer).
-    pub fn answer(&self) -> Result<AnswerKind, EarError> {
-        for (field, value) in [
-            ("game", self.game),
-            ("generator", self.generator),
-            ("level", self.level),
-            ("count", self.count),
-        ] {
-            if value == 0 {
-                return Err(EarError::BadField {
-                    field,
-                    value: u64::from(value),
-                });
-            }
-        }
-        if self.count > MAX_EAR_COUNT {
-            return Err(EarError::BadField {
-                field: "count",
-                value: u64::from(self.count),
-            });
-        }
-        if self.seed > MAX_SEED {
-            return Err(EarError::SeedOutOfRange { seed: self.seed });
-        }
-        crate::ear::answer_kind(self)
-    }
-}
+/// question never depends on another, and every player of a spec hears the same set. `generator` is read per family
+/// (should-fix S9): [`crate::ear::params::PARAMS_GENERATOR`] for games 1 to 3, `enth_music::ear::LATEST_GENERATOR`
+/// for 4 and up.
+pub use enth_music::ear::EarSpec;
 
 /// Why an [`EarSpec`] is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,7 +188,7 @@ pub(crate) fn validate(c: &Challenge) -> Result<(), ChallengeError> {
             ),
         });
     };
-    let asked = spec.answer().map_err(ChallengeError::Ear)?;
+    let asked = crate::ear::validate(spec).map_err(ChallengeError::Ear)?;
     if c.phrase != EAR_PHRASE {
         return Err(ChallengeError::EarTarget {
             reason: format!(
@@ -350,7 +302,7 @@ impl Challenge {
     /// [`validate`](Self::validate) refuses it (`code_too_new` for a newer game, generator or level; `bad_answer` for
     /// Dial it in, whose rounds are v2 draw challenges).
     pub fn ear(spec: EarSpec) -> Result<Challenge, ChallengeError> {
-        let answer = spec.answer().map_err(ChallengeError::Ear)?;
+        let answer = crate::ear::validate(&spec).map_err(ChallengeError::Ear)?;
         let scoring = ScoringSpec::ear(answer).ok_or_else(|| ChallengeError::Answer {
             reason: format!(
                 "game {} asks for a patch: its rounds are v2 draw challenges (ear::params::dial_it_in)",
@@ -429,6 +381,7 @@ mod tests {
     use super::*;
     use crate::ear::params::SPOT_THE_CHANGE;
     use crate::model::CHALLENGE_VERSION;
+    use crate::spec::MAX_SEED;
 
     fn spot(seed: u64) -> EarSpec {
         EarSpec {
@@ -607,7 +560,7 @@ mod tests {
 
     #[test]
     fn ear_specs_are_checked() {
-        let code = |s: EarSpec| s.validate().map_err(|e| e.code());
+        let code = |s: EarSpec| crate::ear::validate(&s).map(drop).map_err(|e| e.code());
         assert_eq!(code(spot(MAX_SEED)), Ok(()));
         assert_eq!(
             code(EarSpec {
@@ -691,7 +644,7 @@ mod tests {
             game: crate::ear::params::DIAL_IT_IN,
             ..spot(1)
         };
-        assert_eq!(spec.answer(), Ok(AnswerKind::Patch));
+        assert_eq!(crate::ear::validate(&spec), Ok(AnswerKind::Patch));
         assert_eq!(Challenge::ear(spec).unwrap_err().code(), "bad_answer");
     }
 

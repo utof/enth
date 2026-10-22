@@ -131,14 +131,14 @@ pub(crate) fn any_ear_result() -> impl Strategy<Value = EarResult> {
     )
         .prop_map(
             |(game, generator, level, seed, answers, time_ms, hints, revealed)| {
-                let challenge = EarChallengeRef {
+                let challenge = EarSpec {
                     game,
                     generator,
                     level,
                     seed,
                     count: answers.len() as u8,
                 };
-                EarResult::new(challenge, answers, time_ms, hints, revealed).unwrap()
+                EarResult::new(challenge, EarRules::V1, answers, time_ms, hints, revealed).unwrap()
             },
         )
 }
@@ -297,13 +297,14 @@ fn every_version_15_code_starts_with_f() {
     assert_eq!(CODE_VERSION_ESCAPE, 15);
     assert!(sample_card().encode().starts_with('F'));
     let ear = EarResult::new(
-        EarChallengeRef {
+        EarSpec {
             game: 1,
             generator: 1,
             level: 1,
             seed: 5,
             count: 0,
         },
+        EarRules::V1,
         vec![],
         0,
         0,
@@ -437,7 +438,7 @@ fn scorecard_refusals() {
     // Every field fine: decodes.
     let ok = craft(KIND_SCORECARD, 1, |w| card_fields(w, 1, 1, 4));
     assert!(Scorecard::decode(&ok).is_ok(), "{ok}");
-    let cases: [(String, &str); 9] = [
+    let cases: [(String, &str); 8] = [
         (
             craft(KIND_SCORECARD, 2, |w| card_fields(w, 1, 1, 4)),
             "code_too_new",
@@ -452,10 +453,6 @@ fn scorecard_refusals() {
             "wrong_kind",
         ),
         (craft(9, 1, |w| card_fields(w, 1, 1, 4)), "code_too_new"),
-        (
-            craft(KIND_SCORECARD, 1, |w| card_fields(w, 1, 2, 4)),
-            "scorer_too_new",
-        ),
         (
             craft(KIND_SCORECARD, 1, |w| card_fields(w, 1, 0, 4)),
             "bad_field",
@@ -474,10 +471,9 @@ fn scorecard_refusals() {
         assert_eq!(e.code(), want, "{text}: {e}");
         assert!(!e.hint().is_empty() && !e.to_string().is_empty());
     }
-    // A newer generator and a newer scorer set say "update enth".
+    // A newer generator and a newer layout say "update enth" (a newer scorer set reads: the F1e review's M4).
     for text in [
         craft(KIND_SCORECARD, 1, |w| card_fields(w, 2, 1, 4)),
-        craft(KIND_SCORECARD, 1, |w| card_fields(w, 1, 2, 4)),
         craft(KIND_SCORECARD, 2, |w| card_fields(w, 1, 1, 4)),
     ] {
         assert!(
@@ -652,11 +648,11 @@ fn the_share_lines_follow_duels_md() {
 #[test]
 fn scorer_set_1_is_this_builds_recreate_scoring() {
     assert_eq!(ScorerSet::current(), ScorerSet::V1);
-    assert_eq!(ScorerSet::V1.ids(), RECREATE_SCORERS);
+    assert_eq!(ScorerSet::V1.ids(), Some(RECREATE_SCORERS));
     for d in 0..=100 {
         assert_eq!(
             ScorerSet::V1.scoring(d),
-            ScoringSpec::recreate(d),
+            Some(ScoringSpec::recreate(d)),
             "difficulty {d}"
         );
         assert_eq!(
@@ -664,31 +660,103 @@ fn scorer_set_1_is_this_builds_recreate_scoring() {
             Some(ScorerSet::V1)
         );
     }
-    assert_eq!(ScorerSet::by_index(0), None);
-    assert_eq!(ScorerSet::by_index(2), None);
+    // Any non-zero index reads (the F1e review's M4); only this build's sets are known and score.
+    assert_eq!(ScorerSet::from_index(0), None);
+    let newer = ScorerSet::from_index(2).unwrap();
+    assert!(ScorerSet::V1.is_known());
+    assert!(!newer.is_known());
+    assert_eq!((newer.ids(), newer.scoring(50)), (None, None));
+    assert_eq!(newer.index(), 2);
     assert_eq!(
         ScorerSet::V1.to_string(),
         "sound/1 + structure/1 + combined/1 + time/1"
+    );
+    assert_eq!(newer.to_string(), "scorer set 2 (a newer enth's)");
+}
+
+/// The F1e review's M4: a scorecard naming a scorer set this build does not have (GR1's `sound/2`, say) reads, so the
+/// card shows the friend's result as reported; checking it is `verify`'s, with this build's set.
+#[test]
+fn a_scorecard_with_a_newer_scorer_set_reads_as_reported() {
+    let text = craft(KIND_SCORECARD, 1, |w| card_fields(w, 1, 2, 4));
+    let card = Scorecard::decode(&text).unwrap();
+    assert_eq!(card.fields().scorers.index(), 2);
+    assert!(!card.fields().scorers.is_known());
+    assert_eq!(card.encode(), text, "it writes back as it came");
+    assert!(matches!(
+        crate::paste::decode(&text),
+        Ok(crate::paste::Found::Scorecard(_))
+    ));
+}
+
+#[test]
+fn ear_rules_1_are_this_builds_ear_scoring() {
+    use crate::model::AnswerKind;
+    assert_eq!(EarRules::current(), EarRules::V1);
+    for answer in [AnswerKind::Choice, AnswerKind::Value, AnswerKind::Taps] {
+        let scoring = ScoringSpec::ear(answer).unwrap();
+        assert_eq!(EarRules::V1.scoring(answer), Some(scoring.clone()));
+        assert_eq!(EarRules::of(&scoring), Some(EarRules::V1));
+    }
+    assert_eq!(EarRules::V1.scoring(AnswerKind::Patch), None);
+    assert_eq!(EarRules::from_index(0), None);
+    let newer = EarRules::from_index(2).unwrap();
+    assert!(!newer.is_known());
+    assert_eq!(newer.scoring(AnswerKind::Choice), None);
+    assert_eq!(
+        EarRules::V1.to_string(),
+        "ear/1 + ear-value/1 + taps/1, pass 80 %"
     );
 }
 
 #[test]
 fn ear_result_refusals() {
-    let ear = |count: u8| EarChallengeRef {
+    let ear = |count: u8| EarSpec {
         game: 1,
         generator: 1,
         level: 2,
         seed: 3,
         count,
     };
-    assert!(EarResult::new(ear(2), vec![None], 0, 0, false).is_err());
-    assert!(EarResult::new(ear(1), vec![Some(EarAnswer::Choice(16))], 0, 0, false).is_err());
-    assert!(EarResult::new(ear(1), vec![Some(EarAnswer::Value(f32::NAN))], 0, 0, false).is_err());
-    assert!(EarResult::new(ear(1), vec![Some(EarAnswer::Taps(vec![5, 3]))], 0, 0, false).is_err());
+    assert!(EarResult::new(ear(2), EarRules::V1, vec![None], 0, 0, false).is_err());
     assert!(
         EarResult::new(
             ear(1),
-            vec![Some(EarAnswer::Taps(vec![20_000]))],
+            EarRules::V1,
+            vec![Some(EarAnswer::Choice(16))],
+            0,
+            0,
+            false
+        )
+        .is_err()
+    );
+    assert!(
+        EarResult::new(
+            ear(1),
+            EarRules::V1,
+            vec![Some(EarAnswer::Value(f32::NAN))],
+            0,
+            0,
+            false
+        )
+        .is_err()
+    );
+    assert!(
+        EarResult::new(
+            ear(1),
+            EarRules::V1,
+            vec![Some(EarAnswer::Taps(vec![5, 3]))],
+            0,
+            0,
+            false
+        )
+        .is_err()
+    );
+    assert!(
+        EarResult::new(
+            ear(1),
+            EarRules::V1,
+            vec![Some(EarAnswer::Taps(vec![0, 20_000]))],
             0,
             0,
             false
@@ -697,12 +765,13 @@ fn ear_result_refusals() {
     );
     let mut seed = ear(0);
     seed.seed = 1 << 40;
-    assert!(EarResult::new(seed, vec![], 0, 0, false).is_err());
+    assert!(EarResult::new(seed, EarRules::V1, vec![], 0, 0, false).is_err());
     let fields = |w: &mut Bits, reserved: u64| {
         w.put(1, 8);
         w.put(1, 8);
         w.put(2, 8);
         w.put(3, 40);
+        w.put(1, 8);
         w.put(1, 8);
         w.put(2, 2);
         w.put(1, 1);
@@ -719,6 +788,7 @@ fn ear_result_refusals() {
         w.put(2, 8);
         w.put(3, 40);
         w.put(0, 8);
+        w.put(1, 8);
         w.put(0, 16);
         w.put(0, 5);
         w.put(0b101, 3);
@@ -738,18 +808,56 @@ fn ear_result_refusals() {
     );
 }
 
-/// Sixteen choice answers, as a Spot-the-change round: about 49 symbols, which an old build reads as "update enth".
+/// The F1e review's M3: taps on any clock are stored relative to their first tap, so the same taps from another
+/// clock give the same code; the limits are `taps/1`'s (63 taps, a span of 16,383 ms).
 #[test]
-fn a_sixteen_item_ear_result_is_about_49_symbols() {
+fn ear_taps_are_stored_relative_to_the_first() {
+    let spec = EarSpec {
+        game: 10,
+        generator: 1,
+        level: 1,
+        seed: 9,
+        count: 1,
+    };
+    let at = |taps: Vec<u32>| {
+        EarResult::new(
+            spec,
+            EarRules::V1,
+            vec![Some(EarAnswer::Taps(taps))],
+            0,
+            0,
+            false,
+        )
+    };
+    let zero = at(vec![0, 240, 510, 760]).unwrap();
+    let late = at(vec![81_000_000, 81_000_240, 81_000_510, 81_000_760]).unwrap();
+    assert_eq!(zero.encode(), late.encode());
+    assert_eq!(late.answers(), zero.answers());
+    assert_eq!(EarResult::decode(&late.encode()).unwrap(), zero);
+    assert!(at(vec![7, 7 + EAR_TAP_MS_MAX]).is_ok());
+    assert!(at(vec![7, 8 + EAR_TAP_MS_MAX]).is_err());
+    assert!(at(vec![5; EAR_TAPS_MAX]).is_ok());
+    assert!(at(vec![5; EAR_TAPS_MAX + 1]).is_err());
+    assert!(at(vec![]).is_ok());
+    // A stored first tap is always 0, so it costs no bits: the code holds 6 + 14 × (n − 1) bits for n taps.
+    let one = at(vec![123]).unwrap();
+    assert_eq!(one.answers(), &[Some(EarAnswer::Taps(vec![0]))]);
+}
+
+/// Sixteen choice answers, as a Spot-the-change round: 50 symbols with the ear rules (should-fix S5: 8 bits more than
+/// RC's 49), which an old build reads as "update enth".
+#[test]
+fn a_sixteen_item_ear_result_is_50_symbols() {
     let answers = (0..16).map(|i| Some(EarAnswer::Choice(i % 4))).collect();
     let ear = EarResult::new(
-        EarChallengeRef {
+        EarSpec {
             game: 1,
             generator: 1,
             level: 3,
             seed: (1 << 40) - 1,
             count: 16,
         },
+        EarRules::V1,
         answers,
         95_000,
         0,
@@ -757,7 +865,7 @@ fn a_sixteen_item_ear_result_is_about_49_symbols() {
     )
     .unwrap();
     let n = symbols_of(&ear.encode()).len();
-    assert_eq!(n, 49);
+    assert_eq!(n, 50);
     assert_old_builds_say_update(&ear.encode());
 }
 
@@ -767,13 +875,14 @@ fn a_long_ear_result_reads_bad_length_on_old_builds() {
         .map(|i| Some(EarAnswer::Value(i as f32 * 0.123_457)))
         .collect();
     let ear = EarResult::new(
-        EarChallengeRef {
+        EarSpec {
             game: 2,
             generator: 1,
             level: 1,
             seed: 1,
             count: 40,
         },
+        EarRules::V1,
         answers,
         1,
         0,

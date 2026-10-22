@@ -164,7 +164,7 @@ pub(crate) fn answer_kind(spec: &EarSpec) -> Result<AnswerKind, EarError> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParamError {
-    /// The spec is refused ([`EarSpec::validate`]).
+    /// The spec is refused ([`super::validate`]).
     Spec(EarError),
     /// The game is not a parameter game, or not this function's.
     WrongGame {
@@ -390,7 +390,7 @@ fn checked(spec: &EarSpec, game: u8) -> Result<ParamLevel, ParamError> {
     if spec.game != game {
         return Err(ParamError::WrongGame { game: spec.game });
     }
-    spec.validate().map_err(ParamError::Spec)?;
+    super::validate(spec).map_err(ParamError::Spec)?;
     level(spec.game, spec.level).ok_or(ParamError::Spec(EarError::LevelTooNew {
         game: spec.game,
         level: spec.level,
@@ -558,9 +558,18 @@ mod tests {
             );
         }
         assert_eq!(level(SPOT_THE_CHANGE, 2), None);
-        assert_eq!(spec(SPOT_THE_CHANGE, 1, 1).answer(), Ok(AnswerKind::Choice));
-        assert_eq!(spec(EAR_CHECK, 1, 1).answer(), Ok(AnswerKind::Choice));
-        assert_eq!(spec(DIAL_IT_IN, 1, 1).answer(), Ok(AnswerKind::Patch));
+        assert_eq!(
+            super::super::validate(&spec(SPOT_THE_CHANGE, 1, 1)),
+            Ok(AnswerKind::Choice)
+        );
+        assert_eq!(
+            super::super::validate(&spec(EAR_CHECK, 1, 1)),
+            Ok(AnswerKind::Choice)
+        );
+        assert_eq!(
+            super::super::validate(&spec(DIAL_IT_IN, 1, 1)),
+            Ok(AnswerKind::Patch)
+        );
     }
 
     #[test]

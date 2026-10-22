@@ -5,10 +5,9 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::result::{
-    CardAssists, Commitment, EarAnswer, EarChallengeRef, ScorecardFields, ScorerSet,
-};
+use crate::result::{CardAssists, Commitment, EarAnswer, EarRules, ScorecardFields, ScorerSet};
 use crate::spec::SpecPreset;
+use crate::v3::EarSpec;
 
 fn challenge(level: u8, seed: u64) -> ChallengeCode {
     ChallengeCode::short(SpecPreset::by_id(level).unwrap().spec(1, seed)).unwrap()
@@ -38,13 +37,14 @@ fn answer(level: u8, seed: u64) -> AnswerCode {
 
 fn ear() -> EarResult {
     EarResult::new(
-        EarChallengeRef {
+        EarSpec {
             game: 1,
             generator: 1,
             level: 2,
             seed: 77,
             count: 3,
         },
+        EarRules::V1,
         vec![
             Some(EarAnswer::Choice(2)),
             None,
@@ -57,6 +57,17 @@ fn ear() -> EarResult {
     .unwrap()
 }
 
+/// An ear challenge (kind 3): Interval stacks, level 1 (the F1e review's M5: the corpus covers every kind).
+fn ear_challenge() -> crate::ear::code::EarChallengeCode {
+    crate::ear::code::EarChallengeCode::new(EarSpec::new(
+        enth_music::ear::Game::IntervalStacks,
+        1,
+        123_456_789,
+        20,
+    ))
+    .unwrap()
+}
+
 /// One code of each kind, with its canonical text.
 fn corpus_codes() -> Vec<String> {
     vec![
@@ -64,6 +75,7 @@ fn corpus_codes() -> Vec<String> {
         scorecard().encode(),
         answer(1, 5).encode(),
         answer(4, 9).encode(),
+        ear_challenge().encode(),
         ear().encode(),
     ]
 }
@@ -172,8 +184,9 @@ fn a_whole_message_gives_every_code_in_order_each_once() {
     let [line1, line2] = card.share_lines();
     let a = answer(3, 11);
     let message = format!(
-        "{line1}\n{line2}\n{card}\n\nand my answer (don't peek): {a}\nagain: {card}\n{}",
-        ear()
+        "{line1}\n{line2}\n{card}\n\nand my answer (don't peek): {a}\nagain: {card}\n{}\nears: {}",
+        ear(),
+        ear_challenge()
     );
     let pasted = paste(&message);
     let found: Vec<String> = pasted.found.iter().map(Found::encode).collect();
@@ -183,13 +196,15 @@ fn a_whole_message_gives_every_code_in_order_each_once() {
             challenge(2, 42).encode(),
             card.encode(),
             a.encode(),
-            ear().encode()
+            ear().encode(),
+            ear_challenge().encode()
         ]
     );
     assert!(matches!(pasted.found[0], Found::Challenge(_)));
     assert!(matches!(pasted.found[1], Found::Scorecard(_)));
     assert!(matches!(pasted.found[2], Found::Answer(_)));
     assert!(matches!(pasted.found[3], Found::EarResult(_)));
+    assert!(matches!(pasted.found[4], Found::EarChallenge(_)));
     assert_eq!(pasted.refused.len(), 0, "{:?}", pasted.refused);
 }
 
@@ -214,11 +229,20 @@ fn a_typo_or_a_newer_kind_is_refused_with_its_reason() {
     assert_eq!(pasted.found.len(), 0);
     assert_eq!(pasted.refused.len(), 1, "{pasted:?}");
     assert_eq!(pasted.refused[0].error.code(), "bad_check");
-    // A kind this build does not read (an ear challenge, until F1E wires CV3's decoder; or a newer kind).
-    for kind in [3u8, 9] {
-        let mut w = crate::result::Bits::header(kind, 1);
-        w.put(12345, 40);
-        let text = crate::result::text(w.into_symbols());
+    // A kind this build does not read (a newer kind), and an ear challenge of a game this build lacks.
+    let mut w = crate::result::Bits::header(9, 1);
+    w.put(12345, 40);
+    let newer_kind = crate::result::text(w.into_symbols());
+    let mut w = crate::result::Bits::header(crate::result::KIND_EAR_CHALLENGE, 1);
+    crate::result::put_ear_spec(
+        &mut w,
+        &EarSpec {
+            game: 99,
+            ..*ear_challenge().spec()
+        },
+    );
+    let newer_game = crate::result::text(w.into_symbols());
+    for text in [newer_kind, newer_game] {
         let pasted = paste(&text);
         assert_eq!(pasted.refused.len(), 1, "{pasted:?}");
         assert_eq!(pasted.refused[0].error.code(), "code_too_new");
@@ -264,6 +288,10 @@ fn decode_reads_every_kind() {
         Ok(Found::Answer(_))
     ));
     assert!(matches!(decode(&ear().encode()), Ok(Found::EarResult(_))));
+    assert!(matches!(
+        decode(&ear_challenge().encode()),
+        Ok(Found::EarChallenge(c)) if c == ear_challenge()
+    ));
     assert_eq!(decode("").unwrap_err().code(), "empty_code");
 }
 

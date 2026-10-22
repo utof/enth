@@ -40,8 +40,13 @@ pub const EAR_SCORERS: [ScorerId; 3] =
 /// The most onsets a taps key holds (two bars of sixteenths).
 pub const MAX_ONSETS: usize = 32;
 
-/// The most taps an answer may hold (twice [`MAX_ONSETS`]; more is refused, not judged).
-pub const MAX_TAPS: usize = 64;
+/// The most taps an answer may hold (about twice [`MAX_ONSETS`]; more is refused, not judged). 63, so every answer this
+/// judges fits the ear result's 6-bit count (the F1e review's M3).
+pub const MAX_TAPS: usize = 63;
+
+/// The longest span of an answer's taps, first to last, in ms (about 16 s, two bars at 60 bpm with room; more is
+/// refused, not judged): the ear result stores each tap's time from the first in 14 bits (the F1e review's M3).
+pub const MAX_TAP_SPAN_MS: u32 = (1 << 14) - 1;
 
 /// The tempo ratios `taps/1` tries, in per mille of the key's tempo: ±10 % in 2.5 % steps.
 pub const TAPS_TEMPI: [i64; 9] = [900, 925, 950, 975, 1000, 1025, 1050, 1075, 1100];
@@ -193,7 +198,9 @@ pub enum EarAnswer {
     Choice(u8),
     /// A value, in the parameter's or slider's real unit.
     Value(f32),
-    /// Tap times in ms, in the order they came (non-decreasing), on any clock: the offset is fitted.
+    /// Tap times in ms, in the order they came (non-decreasing), on any clock: the offset is fitted, so `taps` and
+    /// `taps − taps[0]` judge the same (the ear result stores them relative to the first). At most [`MAX_TAPS`] taps
+    /// over at most [`MAX_TAP_SPAN_MS`].
     Taps(Vec<u32>),
 }
 
@@ -464,6 +471,16 @@ fn judge_taps(key: &TapsKey, taps: &[u32]) -> Result<Judged, EarScoreError> {
     if taps.windows(2).any(|w| w[0] > w[1]) {
         return Err(EarScoreError::BadAnswer {
             reason: "the taps are not in time order".to_owned(),
+        });
+    }
+    if let (Some(first), Some(last)) = (taps.first(), taps.last())
+        && last - first > MAX_TAP_SPAN_MS
+    {
+        return Err(EarScoreError::BadAnswer {
+            reason: format!(
+                "the taps span {} ms (at most {MAX_TAP_SPAN_MS})",
+                last - first
+            ),
         });
     }
     let n = onsets.len();
@@ -846,6 +863,35 @@ mod tests {
             .code(),
             "bad_answer"
         );
+        // The limits are the ear result's (the F1e review's M3): 63 taps over at most 16,383 ms, on any clock.
+        assert_eq!(MAX_TAPS, crate::result::EAR_TAPS_MAX);
+        assert!(
+            judge(
+                &ScorerId::TAPS_V1,
+                &key,
+                &EarAnswer::Taps(vec![0; MAX_TAPS])
+            )
+            .is_ok()
+        );
+        let late = 5_000_000;
+        assert!(
+            judge(
+                &ScorerId::TAPS_V1,
+                &key,
+                &EarAnswer::Taps(vec![late, late + MAX_TAP_SPAN_MS])
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            judge(
+                &ScorerId::TAPS_V1,
+                &key,
+                &EarAnswer::Taps(vec![late, late + MAX_TAP_SPAN_MS + 1])
+            )
+            .unwrap_err()
+            .code(),
+            "bad_answer"
+        );
         for bad in [taps(&[], 50), taps(&[0, 0], 50), taps(&[0, 10], 0)] {
             assert_eq!(
                 judge(&ScorerId::TAPS_V1, &bad, &EarAnswer::Taps(vec![0]))
@@ -912,6 +958,49 @@ mod tests {
             let shifted = EarAnswer::Taps(onsets.iter().map(|x| x + late).collect());
             let j = judge(&ScorerId::TAPS_V1, &key, &shifted).unwrap();
             prop_assert!(j.right, "{j:?}");
+        }
+
+        /// The F1e review's M3: `taps` and `taps − taps[0]` judge the same (the fit's offset absorbs the shift), so the
+        /// ear result may store taps relative to the first tap, and the shell may pass any clock. Only the fitted
+        /// offset moves, by the shift.
+        #[test]
+        fn taps_relative_to_the_first_judge_the_same(
+            onsets in proptest::collection::vec(1u32..900, 1..12),
+            t in proptest::collection::vec(0u32..1200, 0..20),
+            start in 0u32..2_000_000,
+            window in 1u16..120,
+        ) {
+            let mut key_onsets = vec![0u32];
+            for g in &onsets {
+                key_onsets.push(key_onsets.last().unwrap() + g);
+            }
+            key_onsets.truncate(MAX_ONSETS);
+            let key = EarKey::Taps(TapsKey { onsets_ms: key_onsets, window_ms: window });
+            let mut taps = vec![start];
+            for g in &t {
+                taps.push(taps.last().unwrap() + g);
+            }
+            let relative: Vec<u32> = taps.iter().map(|x| x - taps[0]).collect();
+            let a = judge(&ScorerId::TAPS_V1, &key, &EarAnswer::Taps(taps.clone()));
+            let b = judge(&ScorerId::TAPS_V1, &key, &EarAnswer::Taps(relative));
+            match (a, b) {
+                (Ok(a), Ok(b)) => {
+                    prop_assert_eq!(a.right, b.right);
+                    prop_assert_eq!(a.percent.to_bits(), b.percent.to_bits());
+                    let (Detail::Taps(x), Detail::Taps(y)) = (a.detail, b.detail) else {
+                        panic!("taps details");
+                    };
+                    prop_assert_eq!(
+                        (x.hits, x.misses, x.extras, x.error_ms, x.tempo_permille),
+                        (y.hits, y.misses, y.extras, y.error_ms, y.tempo_permille)
+                    );
+                    if x.hits > 0 {
+                        prop_assert_eq!(x.offset_ms - y.offset_ms, i64::from(taps[0]));
+                    }
+                }
+                (Err(a), Err(b)) => prop_assert_eq!(a, b),
+                (a, b) => prop_assert!(false, "{a:?} against {b:?}"),
+            }
         }
 
         /// Judging never panics, and a percentage is always within 0-100.

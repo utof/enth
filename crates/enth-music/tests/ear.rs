@@ -63,7 +63,7 @@ proptest! {
     #[test]
     fn validate_agrees_with_generation(game in 0u8..=12, generator in 0u8..=3, level in 0u8..=17, seed in prop_oneof![0u64..1000, (MAX_SEED - 2)..=(MAX_SEED + 2)], count in 0u8..=66) {
         let spec = EarSpec { game, generator, level, seed, count };
-        let valid = spec.validate().is_ok();
+        let valid = spec.validate_music().is_ok();
         prop_assert_eq!(valid, spec.questions().is_ok());
         if valid {
             prop_assert!((4..=10).contains(&game) && generator == 1 && level >= 1 && seed <= MAX_SEED);
@@ -104,13 +104,13 @@ fn a_spec_has_a_fixed_json_form() {
 #[test]
 fn refused_specs_say_why() {
     let ok = EarSpec::new(Game::TapBack, 1, 1, 1);
-    assert!(ok.validate().is_ok());
+    assert!(ok.validate_music().is_ok());
     let level_past_the_ladder = EarSpec {
         level: Game::TapBack.max_level() + 1,
         ..ok
     };
     assert_eq!(
-        level_past_the_ladder.validate(),
+        level_past_the_ladder.validate_music(),
         Err(EarError::LevelUnavailable {
             game: 10,
             level: Game::TapBack.max_level() + 1,
@@ -120,7 +120,7 @@ fn refused_specs_say_why() {
     // The parameter games are generated in enth-challenge, not here.
     for id in [ear::SPOT_THE_CHANGE, ear::DIAL_IT_IN, ear::EAR_CHECK] {
         assert_eq!(
-            EarSpec { game: id, ..ok }.validate(),
+            EarSpec { game: id, ..ok }.validate_music(),
             Err(EarError::UnknownGame(id))
         );
     }

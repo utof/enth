@@ -2,7 +2,8 @@
 //! reference is docs/duels.md, "Sharing and paste".
 //!
 //! **Paste-anything.** The plugin and the CLI share it: [`paste`] takes a whole chat message and returns every code in
-//! it that decodes (a challenge, a scorecard, an answer, an ear result), several per paste, in order, each once. No
+//! it that decodes (a challenge, a scorecard, an answer, an ear challenge, an ear result), several per paste, in order,
+//! each once. No
 //! clipboard access here: the shell writes the clipboard on a click and reads it only on an explicit Paste.
 //!
 //! What a chat app or a phone does to a code, and what this undoes ([`normalize`]):
@@ -25,9 +26,10 @@ use core::fmt;
 
 use crate::answer::AnswerCode;
 use crate::code::{CODE_VERSION_ESCAPE, ChallengeCode, CodeError};
+use crate::ear::code::EarChallengeCode;
 use crate::result::{
-    EarResult, KIND_ANSWER, KIND_EAR_RESULT, KIND_SCORECARD, MAX_SYMBOLS, ResultError, Scorecard,
-    unframe_any,
+    EarResult, KIND_ANSWER, KIND_EAR_CHALLENGE, KIND_EAR_RESULT, KIND_SCORECARD, MAX_SYMBOLS,
+    ResultError, Scorecard, unframe_any,
 };
 
 /// One code found in a paste.
@@ -42,6 +44,8 @@ pub enum Found {
     Answer(Box<AnswerCode>),
     /// An ear result (kind 4).
     EarResult(EarResult),
+    /// An ear challenge (kind 3): route it to the Ear view (the F1e review's M5).
+    EarChallenge(EarChallengeCode),
 }
 
 impl Found {
@@ -52,6 +56,7 @@ impl Found {
             Found::Scorecard(c) => c.encode(),
             Found::Answer(c) => c.encode(),
             Found::EarResult(c) => c.encode(),
+            Found::EarChallenge(c) => c.encode(),
         }
     }
 }
@@ -61,7 +66,8 @@ impl Found {
 pub enum PasteError {
     /// As a challenge code.
     Challenge(CodeError),
-    /// As a version-15 code (a scorecard, an answer, an ear result, or a kind this build does not read).
+    /// As a version-15 code (a scorecard, an answer, an ear challenge, an ear result, or a kind this build does not
+    /// read).
     Result(ResultError),
 }
 
@@ -112,8 +118,8 @@ pub struct Pasted {
     pub refused: Vec<Refused>,
 }
 
-/// Read one code of any kind: a challenge code, or a version-15 code by its kind. A kind this build does not read (the
-/// ear challenge until F1E wires lane CV3's decoder, or a newer one) is `code_too_new`.
+/// Read one code of any kind: a challenge code, or a version-15 code by its kind. A kind this build does not read (a
+/// newer one) is `code_too_new`.
 pub fn decode(text: &str) -> Result<Found, PasteError> {
     let first = text
         .chars()
@@ -130,6 +136,7 @@ pub fn decode(text: &str) -> Result<Found, PasteError> {
     let r = match kind {
         KIND_SCORECARD => Scorecard::decode(text).map(Found::Scorecard),
         KIND_ANSWER => AnswerCode::decode(text).map(|a| Found::Answer(Box::new(a))),
+        KIND_EAR_CHALLENGE => EarChallengeCode::decode(text).map(Found::EarChallenge),
         KIND_EAR_RESULT => EarResult::decode(text).map(Found::EarResult),
         other => Err(ResultError::TooNew {
             what: "kind",
