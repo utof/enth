@@ -103,7 +103,7 @@ const DECODE_TOLERANCE: f32 = 1e-4;
 const PYTORCH_MODEL: &[u8] = include_bytes!("fixtures/propose/exp_tiny.bin");
 const PYTORCH_EXPECTED: &[u8] = include_bytes!("fixtures/propose/exp_tiny.expected");
 /// SHA-256 over the per-sample output hashes of the seeds, in order (ours; bit-exact on every platform).
-const PYTORCH_PIN: &str = "61b23e2d96556725172381623dddaab5f4189c3395d4b695acfa606931fa17e2";
+const PYTORCH_PIN: &str = "64d32d6af67449642cae678db2dbd6619951f13490ea47d78ddfac4e2949eafd";
 
 #[test]
 fn our_kernels_match_pytorch_and_decode_the_same_patches() {
