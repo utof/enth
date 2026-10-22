@@ -660,6 +660,8 @@ struct Agg {
     skips: BTreeMap<String, u64>,
     sources: BTreeMap<String, u64>,
     rates: BTreeMap<u32, u64>,
+    /// The first few reasons of each skip code, to read what a count means.
+    examples: BTreeMap<String, Vec<String>>,
     timing: Timing,
 }
 
@@ -674,6 +676,11 @@ impl Agg {
         }
         for (k, v) in other.rates {
             *self.rates.entry(k).or_default() += v;
+        }
+        for (k, v) in other.examples {
+            let mine = self.examples.entry(k).or_default();
+            mine.extend(v);
+            mine.truncate(4);
         }
         self.timing.add(&other.timing);
         self
@@ -717,7 +724,13 @@ fn bench(args: &[String]) -> Result<(), String> {
                         *a.sources.entry(s.source.name().to_owned()).or_default() += 1;
                         *a.rates.entry(s.rate).or_default() += 1;
                     }
-                    Err(skip) => *a.skips.entry(skip.code.to_owned()).or_default() += 1,
+                    Err(skip) => {
+                        *a.skips.entry(skip.code.to_owned()).or_default() += 1;
+                        a.examples
+                            .entry(skip.code.to_owned())
+                            .or_default()
+                            .push(format!("sample {i}: {}", skip.detail));
+                    }
                 }
                 a
             })
@@ -748,6 +761,11 @@ fn bench(args: &[String]) -> Result<(), String> {
     println!("kept by source: {:?}", agg.sources);
     println!("kept by rate: {:?}", agg.rates);
     println!("skips by code: {:?}", agg.skips);
+    for (code, ex) in &agg.examples {
+        for e in ex {
+            println!("  {code}: {e}");
+        }
+    }
     Ok(())
 }
 
@@ -875,6 +893,9 @@ fn anchors_cmd(args: &[String]) -> Result<(), String> {
         }
         for r in &m.dropped_routes {
             println!("  dropped route {r}");
+        }
+        for r in &m.modules {
+            println!("  module {r}");
         }
     }
     Ok(())

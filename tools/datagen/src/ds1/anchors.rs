@@ -194,6 +194,9 @@ pub struct Moved {
     pub dropped_routes: Vec<String>,
     /// Layout entries projection changed (clamped into range): normally none.
     pub clamped: usize,
+    /// Modules the preset has and the template does not (projection leaves them out), and modules whose switch the
+    /// projection changes without a structure head to carry it, as `id (kind, on)` or `id: on -> off`.
+    pub modules: Vec<String>,
     /// The pooled log-mel distance between the preset and its projection at the reference note, in nepers.
     pub nepers: Option<f64>,
 }
@@ -299,6 +302,24 @@ pub fn measure(layout: &OutputLayout, a: &Anchor) -> Moved {
                 .is_some_and(|v| e.spec.clamp(v) != v)
         })
         .count();
+    let mut modules = Vec::new();
+    for (_, m) in a.original.modules() {
+        match a.projected.find(&m.id) {
+            None => modules.push(format!(
+                "{} ({:?}, {})",
+                m.id,
+                m.kind,
+                if m.enabled { "on" } else { "off" }
+            )),
+            Some((_, p)) if p.enabled != m.enabled => modules.push(format!(
+                "{}: {} -> {}",
+                m.id,
+                if m.enabled { "on" } else { "off" },
+                if p.enabled { "on" } else { "off" }
+            )),
+            Some(_) => {}
+        }
+    }
     let nepers = match (embedding_of(&a.original), embedding_of(&a.projected)) {
         (Some(x), Some(y)) => x.distance(&y),
         _ => None,
@@ -309,6 +330,7 @@ pub fn measure(layout: &OutputLayout, a: &Anchor) -> Moved {
         reset_audible,
         dropped_routes,
         clamped,
+        modules,
         nepers,
     }
 }

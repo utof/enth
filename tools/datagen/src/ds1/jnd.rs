@@ -2,9 +2,10 @@
 //! in Rust so that `ml/` never re-implements `ParamSpec` (docs/r3.md, "Who computes what").
 //!
 //! Which step: the loss of docs/r3.md's propose v0 table counts continuous error "in JND units (25 ct; 10 % for times
-//! and Hz; 2 dB)". Those three are used for pitch, times and frequencies, and levels in dB. Every other unit keeps
-//! generator v1's gameplay step (`enth_challenge::priors::jnd`: percentages 10 points, a level in percent 3 dB, ...),
-//! which is the project's one other definition of "audibly different". A step is a distance in plain units, so its
+//! and Hz; 2 dB)". Those are used for pitch (25 ct, so 0.25 of a semitone), times, frequencies and ratios (10 %), and
+//! levels (2 dB, whether the parameter is in dB or a level in percent). The units that table does not name keep generator
+//! v1's gameplay step (`enth_challenge::priors::jnd`): a percentage 10 points, an octave count 1/6, an angle 30 degrees.
+//! A step is a distance in plain units, so its
 //! width in the normalised domain depends on where the value sits (a time on a power scale, a cutoff on a log scale),
 //! and the manifest carries both:
 //!

@@ -175,6 +175,28 @@ Per the degradation policy (docs/r3.md, "Yours to decide", proceeded on): codec,
 - `rate` makes the output file's sample rate vary (8-96 kHz); the trainer decides whether to feed that to the features as is or resample back.
 - Tests: `python3 -m unittest discover -s tests -p 'test_augment_*.py'` (a little over half of the suite's time).
 
+## DG: reading `ds1` shards
+
+`cargo run -p enth-datagen --release -- ds1 gen --count N --seed S --out DIR` (lane DG, [docs/r3.md](../docs/r3.md#what-lane-dg-built-ds1-v1-2026-10-22)) writes the training data as files; **Python never computes a feature or a label**. `DIR` holds `manifest.json` (its SHA-256 is what the exporter copies into the model's header: the `ds1` version, the feature-set id, the layout id and SHA-256, the exclusion lists' hash; plus the per-entry loss scale `jnd.scale` [102], the 102 entry names, and the skips by code) and `shard-NNNNNN.bin`. A shard is little-endian: `ENTHSHRD`, `u32` format 1, `u32` header length, a JSON header padded to byte 1024 that lists each array's `dtype`, `shape` and `offset`; the arrays start at multiples of 64. Per sample: `mel` `[3, 128, 64]`, `context` `[5]`, `label` [102] and `mask` [102] (all `f32`; the mask is 0.0 or 1.0, multiply the loss by it), and `index`, `seed`, `gen_seed` (`u64`), `rate` (`u32`) and `source` (`u8`: 0 `v1`, 1 `preset`, 2 `uniform`). A shard is a pure function of its window of candidate indices, so re-rendering it gives the same bytes; the `r3/train`, `r3/dev` and `r3/test` streams are disjoint by construction (never split by index).
+
+```python
+import json, struct
+import numpy as np
+
+def read_shard(path):
+    raw = open(path, "rb").read()
+    assert raw[:8] == b"ENTHSHRD" and struct.unpack_from("<I", raw, 8)[0] == 1
+    (hlen,) = struct.unpack_from("<I", raw, 12)
+    header = json.loads(raw[16:16 + hlen])
+    out = {}
+    for a in header["arrays"]:
+        out[a["name"]] = np.frombuffer(raw, dtype=a["dtype"], count=int(np.prod(a["shape"])),
+                                       offset=a["offset"]).reshape(a["shape"])  # or np.fromfile(path, ..., offset=)
+    return header, out
+```
+
+Degraded clips come back through Rust too: the chain writes a degraded copy of each clean clip (`ds1 render` makes `clips/*.wav` and a `samples.jsonl` of `{stream, run_seed, index, clip, degrade}` lines), and `enth-datagen shards features --samples F --clips DIR --out DIR` runs the product's intake on it and writes shards whose labels are relative to the key the intake read from **that** clip. `enth-datagen exclude check DIR [--against DIR]...` asserts a run against `content/gr3/`'s lists again.
+
 ## The ML rules
 
 From [docs/phase-3.md](../docs/phase-3.md#rules-for-every-lane) ("ML rules" and "Held-out hygiene"); they bind every lane that writes here.
