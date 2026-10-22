@@ -31,7 +31,8 @@ class Parity(unittest.TestCase):
                     self.assertLessEqual(worst, 1e-6, f"{name}.{n}")
 
     def test_the_fixtures_are_small(self) -> None:
-        total = sum(p.stat().st_size for p in FIXTURES.iterdir())
+        # ONX's four ONNX Runtime fixtures; lane EXP's exp_tiny pair is held to its own bound in test_export_propose.py.
+        total = sum(p.stat().st_size for p in FIXTURES.iterdir() if p.name.startswith("onnx_"))
         self.assertLess(total, 80_000, "commit only small fixtures")
 
     def test_what_op_set_1_cannot_express_is_refused(self) -> None:

@@ -12,4 +12,12 @@ Lane ONX added (R3b, the kernels' parity with ONNX Runtime):
 * ``synthetic``: deterministic inputs and weights, bit for bit as ``propose::net::synthetic_input``;
 * ``onnx_import``: ONNX (batch axis 1) to ``ENTHMODL``, for graphs inside op set 1 (needs the ``parity`` group);
 * ``parity``: the ONNX Runtime fixtures under ``crates/enth-solver/tests/fixtures/propose/``.
+
+Lane EXP added (R3b, the pilot model's export and its parity with our kernels):
+
+* ``propose`` (needs torch): propose v0 to ``ENTHMODL``: BatchNorm folded and the weights rounded once to what the file
+  stores, the graph written from that model, the header's ids and the info table from the run manifest, the reference
+  outputs of a parity run, real dev inputs as a tensor file, and the committed tiny fixture (``exp_tiny``);
+* ``enthmodl.read`` and ``tensors.write_arrays`` / ``read_arrays``: a reader of the file's structure, and numpy-array
+  tensor files (a parity run over thousands of inputs).
 """

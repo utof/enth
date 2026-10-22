@@ -17,11 +17,15 @@ from .net import ConvBN, ProposeV0
 
 @torch.no_grad()
 def fold_conv_bn(conv: nn.Conv2d, bn: nn.BatchNorm2d) -> nn.Conv2d:
-    """A ``Conv2d`` with a bias that computes ``bn(conv(x))`` in eval mode."""
-    w = conv.weight
-    std = torch.sqrt(bn.running_var + bn.eps)
-    gamma = bn.weight if bn.affine else torch.ones_like(std)
-    beta = bn.bias if bn.affine else torch.zeros_like(std)
+    """A ``Conv2d`` with a bias that computes ``bn(conv(x))`` in eval mode.
+
+    The arithmetic runs in ``float64`` and is rounded to the convolution's dtype once (lane EXP): the folded weights
+    and biases are then the same bits on every CPU and torch build, which a committed fixture needs (in ``float32`` the
+    biases differed by an ulp between two builds), and the fold itself adds no rounding of its own."""
+    w = conv.weight.double()
+    std = torch.sqrt(bn.running_var.double() + bn.eps)
+    gamma = bn.weight.double() if bn.affine else torch.ones_like(std)
+    beta = bn.bias.double() if bn.affine else torch.zeros_like(std)
     scale = gamma / std
     fused = nn.Conv2d(
         conv.in_channels,
@@ -32,10 +36,10 @@ def fold_conv_bn(conv: nn.Conv2d, bn: nn.BatchNorm2d) -> nn.Conv2d:
         dilation=conv.dilation,
         groups=conv.groups,
         bias=True,
-    ).to(w.device, w.dtype)
+    ).to(conv.weight.device, conv.weight.dtype)
     fused.weight.copy_(w * scale.reshape(-1, 1, 1, 1))
-    b0 = conv.bias if conv.bias is not None else torch.zeros_like(bn.running_mean)
-    fused.bias.copy_((b0 - bn.running_mean) * scale + beta)
+    b0 = conv.bias.double() if conv.bias is not None else torch.zeros_like(std)
+    fused.bias.copy_((b0 - bn.running_mean.double()) * scale + beta)
     return fused
 
 

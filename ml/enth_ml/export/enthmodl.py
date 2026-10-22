@@ -13,6 +13,10 @@ resolves them when the file is written, so tensors and nodes may be added in any
 
 Op set 1's codes and attribute counts are :data:`OPS` (``pack.rs``'s ``OPS``; ``tests/test_export_enthmodl.py``
 checks the two tables agree).
+
+Lane EXP added :func:`read`, a reader of the same bytes (the header, the five tables, the SHA-256), so an exporter can
+read its own file back and compare every stored weight with the model it came from. It checks the structure, not the
+budgets or the layout: the Rust reader (``ModelPack::parse``) is still the judge of a file.
 """
 
 from __future__ import annotations
@@ -257,3 +261,109 @@ class ModelWriter:
         out += data
         out[SHA_AT : SHA_AT + 32] = hashlib.sha256(out).digest()
         return bytes(out)
+
+
+# -- reading -----------------------------------------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class ParsedModel:
+    """What :func:`read` finds in a file: the header's fields by name, and the five tables as the file holds them."""
+
+    header: dict
+    inputs: list[tuple[str, int, tuple[int, ...]]]
+    #: ``(name, dtype code, dims, offset into the data section)``
+    tensors: list[tuple[str, int, tuple[int, ...], int]]
+    #: ``(op name, input value ids, attributes)``
+    nodes: list[tuple[str, tuple[int, ...], tuple[int, ...]]]
+    #: ``(name, value id, dims)``
+    outputs: list[tuple[str, int, tuple[int, ...]]]
+    info: list[tuple[str, str]]
+    data: bytes
+
+    def tensor_values(self, index: int) -> list[float]:
+        """Tensor ``index``'s values widened to Python floats (exact: ``f16`` and ``f32`` both fit a double)."""
+        _, dtype, dims, at = self.tensors[index]
+        n = math.prod(dims)
+        return list(struct.unpack_from(f"<{n}{'f' if dtype == F32 else 'e'}", self.data, at))
+
+
+def read(data: bytes) -> ParsedModel:
+    """Parse an ``ENTHMODL`` format 1 file's structure (see the module docstring).
+
+    Raises ``ValueError`` for a file that is not format 1, whose SHA-256 disagrees or whose tables run past the bytes."""
+    if len(data) < HEADER_LEN or data[:8] != MAGIC:
+        raise ValueError("not an ENTHMODL file")
+    fmt, hlen, op_set, feature, layout, generator = struct.unpack_from("<HHHHHH", data, 8)
+    if fmt != FORMAT or hlen != HEADER_LEN:
+        raise ValueError(f"format {fmt}, header length {hlen}: this reader reads format {FORMAT}")
+    template, _, k, width, _ = struct.unpack_from("<BBHII", data, 20)
+    parameters, flops = struct.unpack_from("<QQ", data, 112)
+    n_in, n_t, n_n, n_o = struct.unpack_from("<IIII", data, 128)
+    data_offset, data_len = struct.unpack_from("<QQ", data, 144)
+    ds1, _, n_info = struct.unpack_from("<HHI", data, 160)
+    if data_offset + data_len != len(data):
+        raise ValueError("the file is not exactly the header's offset plus length")
+    zeroed = bytearray(data)
+    zeroed[SHA_AT : SHA_AT + 32] = bytes(32)
+    if hashlib.sha256(zeroed).digest() != data[SHA_AT : SHA_AT + 32]:
+        raise ValueError("the file's SHA-256 does not match")
+
+    def text(raw: bytes) -> str:
+        return raw.split(b"\0", 1)[0].decode("ascii")
+
+    header = {
+        "format": fmt,
+        "op_set": op_set,
+        "feature_set": feature,
+        "layout": layout,
+        "generator": generator,
+        "template": template,
+        "hypotheses": k,
+        "width": width,
+        "model_id": text(data[32:64]),
+        "engine": text(data[64:80]),
+        "layout_sha256": bytes(data[80:112]),
+        "parameters": parameters,
+        "flops": flops,
+        "ds1": ds1,
+        "manifest_sha256": bytes(data[168:200]),
+        "sha256": bytes(data[SHA_AT : SHA_AT + 32]),
+    }
+    at = HEADER_LEN
+
+    def take(n: int) -> bytes:
+        nonlocal at
+        if at + n > data_offset:
+            raise ValueError("a table runs past the data offset")
+        b = data[at : at + n]
+        at += n
+        return b
+
+    def name() -> str:
+        return take(take(1)[0]).decode("ascii")
+
+    def dims() -> tuple[int, ...]:
+        rank = take(1)[0]
+        return struct.unpack(f"<{rank}I", take(4 * rank))
+
+    inputs = [(name(), take(1)[0], dims()) for _ in range(n_in)]
+    tensor_table = []
+    for _ in range(n_t):
+        n, dtype, d = name(), take(1)[0], dims()
+        tensor_table.append((n, dtype, d, struct.unpack("<Q", take(8))[0]))
+    nodes = []
+    for _ in range(n_n):
+        code, n_i, n_out, n_a, _ = struct.unpack("<HBBHH", take(8))
+        if n_out != 1:
+            raise ValueError("a node with other than one output")
+        ids = struct.unpack(f"<{n_i}I", take(4 * n_i))
+        attrs = struct.unpack(f"<{n_a}i", take(4 * n_a))
+        nodes.append(({c: n for n, (c, *_) in OPS.items()}[code], ids, attrs))
+    outputs = [(name(), struct.unpack("<I", take(4))[0], dims()) for _ in range(n_o)]
+    info = []
+    for _ in range(n_info):
+        key = name()
+        (n,) = struct.unpack("<H", take(2))
+        info.append((key, take(n).decode("ascii")))
+    return ParsedModel(header, inputs, tensor_table, nodes, outputs, info, bytes(data[data_offset:]))
