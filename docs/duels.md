@@ -40,7 +40,7 @@ Report 03 §1 looked at Wordle, Heardle, seeded roguelikes, ghost races, corresp
 
 ## The two codes
 
-Both take code v1's reserved version-15 escape. **Lane RC built them (2026-10-22), for the F1e judge,** who may still change a layout; the bit layouts, the op table, `result-params-v1`, the checks and what older builds print are in [challenge.md](challenge.md#version-15-the-kinds-behind-the-escape-r4-r5).
+Both take code v1's reserved version-15 escape. **Lane RC built them (2026-10-22); the F1e judge reviewed them and lane F1E closed the findings,** so from freeze F1e on they change only additively (a new layout, never an edit); the bit layouts, the op table, `result-params-v1`, the checks and what older builds print are in [challenge.md](challenge.md#version-15-the-kinds-behind-the-escape-r4-r5).
 
 **Why two codes, not one** (the summary's correction of report 02): the scorecard spoils nothing, so you send it the moment you finish, and its salted commitment shows your answer was fixed before you saw your friend's. The answer code follows once both have played.
 
@@ -54,9 +54,10 @@ Both take code v1's reserved version-15 escape. **Lane RC built them (2026-10-22
 
 - **Which submit a duel compares** (question 4): the **first passing submit** (its patch, the time to pass and the submit count); otherwise the best submit, marked "not passed". The session keeps only the latest submitted patch today, so lane SE adds the patch at the first pass (additive, within the round's saved budget: a named F1e check). `Scorecard::new` takes that submit's `ScoreReport`, the round's `ScoringSpec`, the submits, the time in milliseconds, the `AssistsUsed` and the answer code's commitment; a reveal before a pass gives no scorecard.
 - **The answer** is `ops_between(start, answer)` in binary, in its order: a run of `SetParam`s per target (5 bits for the target, then 4 bits per parameter and its value), the other ops behind a 5-bit code. Targets are places in the patch, never ids; parameters are indices into **`result-params-v1`**, a frozen, append-only table of keys, value codings and defaults, as generator v1 freezes its catalogue snapshot. A float is 16 bits when it has three significant digits (a typed or quantized value) and its exact 33 bits otherwise. No deflated whole patch is needed: an added module carries only its values off the table's defaults.
-- **Stripped before encoding:** `SetMeta` (`PatchMeta` has `author`, which can hold a real name), labels, macro names and slots; and an added module takes the lowest free `<prefix><n>` id, so no id the player typed survives either. A test gives a patch with all of them set and the same patch without them, and gets the same symbols.
+- **Stripped before encoding:** `SetMeta` (`PatchMeta` has `author`, which can hold a real name), labels, macro names and slots; an added module keeps an id number the app gave (`osc3`, 6 bits; should-fix S1, so the receiver renders the phases the player heard) and any id the player typed becomes the lowest free `<prefix><n>`, so no typed name survives either. A test gives a patch with all of them set and the same patch without them, and gets the same symbols.
+- **The salt** (the F1e review's M6): 64 bits of **OS randomness**, drawn by the shell once per duel and kept with the result; **never derived from a clock or a seed**, because the code carries it in the clear ([Privacy](#privacy)).
 - **Decoding rebuilds the answer:** it regenerates the target, applies the ops to the start and checks the 40-bit tail, which hashes the salt, the target's fingerprint and the rebuilt answer. A damaged code or a build that regenerates another start or target is refused there (`answer_mismatch`), before anything is scored.
-- **The commitment** is the first 60 bits of SHA-256 over the salt, the target's fingerprint and the rebuilt answer (under its own magic). It is salted because a level-1 answer space (waveforms × semitones) is only hundreds of patches, so a bare hash could be brute-forced. The shell draws the salt and keeps it with the round; it builds the answer code on finishing, puts its commitment in the scorecard, and sends the answer code later.
+- **The commitment** is the first 60 bits of SHA-256 over the salt, the target's fingerprint and the rebuilt answer (under its own magic). It is salted because a level-1 answer space (waveforms × semitones) is only hundreds of patches, so a bare hash could be brute-forced. The shell draws the salt (OS randomness, once per duel) and keeps it with the result **before the scorecard reaches the clipboard**; it builds the answer code on finishing (`AnswerCode::new(challenge, salt, &patch)`), puts its commitment in the scorecard (`Scorecard::new(…, code.commitment())`, only when `can_share()`), and sends the answer code later. A salt lost before the answer is sent makes a rebuilt answer miss its commitment, which looks like cheating.
 
 ### Sizes
 
@@ -76,11 +77,11 @@ Each extra knob left off three significant digits costs about 8 symbols. The sol
 
 1. decode (`AnswerCode::decode`: the challenge regenerated, the ops applied to the start, the tail checked; `Scorecard::decode`);
 2. check the pair: the same challenge (`not_the_same_challenge`), and whether the answer is the one the scorecard's commitment fixed (`ClaimCheck::commitment_matches`: reported, not refused);
-3. prepare the round with the scorecard's scorer set, or this build's without a scorecard;
+3. prepare the round with the scorecard's scorer set when this build has it, otherwise (a newer build's set, or no scorecard) with this build's current set (`verify::scorer_set`; the F1e review's M4);
 4. score the rebuilt answer (`score_round`);
-5. compare with the claim (`ClaimCheck`: the claimed and the re-scored sound % and combined % in tenths, passed, both engines; `as_reported()`).
+5. compare with the claim (`ClaimCheck`: the claimed and the re-scored sound % and combined % in tenths, passed, both engines and both scorer sets; `as_reported()`, false when the sets differ; `engine_differs()`, `scorers_differ()`).
 
-One prepare plus one scored render takes under about 1 s. A duel prepares once (`verify::prepare`) and verifies both answers on it (`verify_prepared`), so both numbers come from one machine and one scorer set. **The receiver's own re-score of both answers decides;** a claimed number never does. An ear result needs no render: the answers are replayed against the key ([below](#ear-duels)); that replay waits for lanes MUS and CV3's keys (F1E).
+One prepare plus one scored render takes under about 1 s. A duel prepares once (`verify::prepare` with `verify::scorer_set(card)`) and verifies both answers on it (`verify_prepared` on theirs, and a re-score of your own **canonical** answer, `AnswerCode::answer()`), so both numbers come from one machine, one scorer set and the same patches the codes carry. **The receiver's own re-score of both answers decides;** a claimed number never does. An ear result needs no render: `verify::verify_ear` replays the answers against the generator's keys ([below](#ear-duels)).
 
 ### Versions and refusals
 
@@ -88,7 +89,7 @@ One prepare plus one scored render takes under about 1 s. A duel prepares once (
 | --- | --- |
 | Another engine version | Re-score and **show both numbers** ("claimed 93.4 on 0.3.0, 92.9 here"): `ClaimCheck::engine_differs` |
 | An unknown kind, layout or form, or a generator, preset or template this build lacks | `code_too_new` |
-| An unknown scorer set | `scorer_too_new` (GR1's `sound/2` will be a new set; old ids are kept) |
+| An unknown scorer set (a newer build's, GR1's `sound/2` say) | **Read and shown as reported** (the F1e review's M4); re-scored with this build's current set and **both numbers shown**: `ClaimCheck::scorers_differ`. Both sides then score on the older set, since every build keeps its old sets, so a duel across the update works both ways |
 | An answer op, module kind, parameter or source this build lacks | `answer_too_new` |
 | A generator or hash mismatch | **Refused** at decode (`target_mismatch` for a long challenge's prefix, `answer_mismatch` for the tail): the round is never judged against a different target or a damaged answer |
 | An answer that is not the committed one | Scored, and flagged: it is not the answer the scorecard fixed |
@@ -131,6 +132,7 @@ A friend's answer stays sealed until you've submitted or given up (question 6). 
 - **A code carries no name, machine id or absolute time** (durations only), and no patch `meta` or file path. RC's test asserts it on every kind.
 - **Names are optional and local:** the receiver may label a pasted result ("from: Sam") in the local duel history. The chat already shows the sender.
 - **Seeds keep today's 40-bit mask.** `fresh_seed` (`crates/enth-plugin/src/game.rs`) mixes wall-clock nanoseconds through a bijective finalizer; an unmasked seed would reveal its creation time to the nanosecond, while 40 bits leave about 80 candidate instants a day.
+- **The answer code's salt is OS randomness, never a clock** (the F1e review's M6). The salt is 64 bits in the clear in every answer code, so it is drawn from the operating system (std's `RandomState` keys, or `getrandom`, which is already in `Cargo.lock`; a new direct dependency is the coordinator's call), **once per duel**, and kept with the result in the duel history. It is **never derived from a clock or a seed**: a salt from `fresh_seed` would carry the absolute time, to the nanosecond, in every answer code, which is exactly why seeds are masked. No test in `enth-challenge` can catch it; lane SKD follows the rule and DUI persists the salt.
 - **No telemetry and no network** in async duels.
 
 ## The daily challenge
@@ -139,7 +141,7 @@ One challenge per level per day, from a frozen formula of the UTC day (question 
 
 ## Ear duels
 
-After R4's games exist. An adaptive session would give two players different items, so **ear duels use a fixed ladder** (item *i*'s level depends only on *i*). An ear-challenge code (kind 3) carries the `EarSpec`; an ear-result code (kind 4, about 40–60 symbols) carries the answers, verified by replay against the key with no render. **Anyone holding the code can compute the answer keys,** and the UI says so plainly.
+After R4's games exist. An adaptive session would give two players different items, so **ear duels use a fixed ladder** (item *i*'s level depends only on *i*). An ear-challenge code (kind 3, 19 symbols) carries the `EarSpec`; paste-anything reads it (`Found::EarChallenge`, for the Ear view). An ear-result code (kind 4, 50 symbols for 16 choice answers) carries the spec, the **ear rules** it was judged by (should-fix S5), the answers (taps relative to the first tap, on any clock) and the time; `verify::verify_ear` replays it against the generator's keys with no render, with the result's rules when this build has them (else its own, flagged). **Anyone holding the code can compute the answer keys,** and the UI says so plainly.
 
 ## The duel history
 
@@ -154,7 +156,7 @@ The pure duel state is built ([session.md](session.md#duel-lane-se-r5a) has the 
 - **Their scorecard is shown at once, as reported. Their answer is sealed** until you have a scored submit or have revealed; ending a round with nothing played does not open it. It is a session guard, not cryptography.
 - **The receiver's re-score decides.** The session posts a `Verify` job to the shell and stores what the worker measured: both re-scores, the commitment check, the claim check and their patch. A mismatch on the same engine is a flag, not a verdict.
 - **Their patch loads as one undo step** with no host writes, never while a round is live; it can be auditioned once, rendered by the shell with the challenge's phrase.
-- **The salt is the shell's:** the session has no randomness and builds no code; the shell draws the salt once per duel and keeps it, with the result, in the duel history.
+- **The salt is the shell's:** the session has no randomness and builds no code; the shell draws the salt from OS randomness once per duel (never from a clock or a seed, [Privacy](#privacy)) and keeps it, with the result, in the duel history.
 - **Not saved in the project.** The duel history is the shell's file (DUI).
 
 ## GR5

@@ -596,7 +596,7 @@ An ear session is not saved in the project, like a create job: `ear` adds **no f
 
 **Use their patch.** `duel_use_answer(name)` loads their checked patch through `Session::load_preset`, as "Use this" does in Create: **one undo step, one plan, no host writes**, `PatchEdited` for the dirty mark, named `name` (empty keeps the patch's own name). Refused while sealed, before it is checked (`not_checked`), while a round is live (`round_live`: end it first, Restore brings the player's patch back) and while a lesson is live. `duel_audition()` sends `Audition { duel, code, patch }`, which the shell renders with the challenge's phrase at the host's rate and plays once.
 
-**The salt is the shell's.** The scorecard's commitment is salted; a core crate has no randomness, so the shell draws the salt once per duel, keeps it with the result in the duel history, and gives it to `enth-challenge`'s code builders. The session builds no code and takes no `enth-challenge` result-code type: the seam is plain data, in the units the session uses.
+**The salt is the shell's.** The scorecard's commitment is salted; a core crate has no randomness, so the shell draws the salt **from OS randomness, once per duel, never from a clock or a seed** (the answer code carries it in the clear: [duels.md](duels.md#privacy), the F1e review's M6), keeps it with the result in the duel history, and gives it to `enth-challenge`'s code builders. The session builds no code and takes no `enth-challenge` result-code type: the seam is plain data, in the units the session uses.
 
 ### Nothing is saved
 

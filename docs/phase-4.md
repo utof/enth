@@ -141,7 +141,7 @@ Each lane stops at its own criteria and reports against them.
 | **CV3** | v1 and v2 fixtures read and are written byte for byte as before; v3 fixtures; an ear target's strictness (phrase 0, the template start); the golden challenges and generator v1's golden unchanged; ear scorers judge with no render |
 | **RC** | Round trips (proptest); every single substitution and adjacent swap caught on every kind, and a truncation caught; frozen fixtures with a pinned SHA; a size-budget test per level; no name, `meta`, label, macro name, slot or absolute time survives (a patch with them set); the refusals; every kind through code v1's decoder (`code_too_new` at 64 symbols or fewer, `bad_length` above); paste-anything on a corpus of mangled pastes; the daily formula's golden |
 | **SE** | Ear and duel lifecycles; stale results refused; the first pass's patch kept and within `ROUND_BYTES` (the largest-round test still passes); no audio-thread contact under `assert_no_alloc` |
-| **DRL** | The staircase against simulated listeners: 75–85 % success, thresholds within one step in 90 % of 40-trial runs; bursts move boxes (proptests, as REV's); `Progress::merge`'s laws hold with `drills`; the composer gives the same workout for the same progress file and day |
+| **DRL** | The staircase against simulated listeners: 75–85 % success at threshold; 40-trial thresholds, as the F1e judge ruled, **pooled at least 90 % within one level on ladders of about one JND or more per level, every listener-and-start cell at least 75 %, flat ladders at least 90 % within two levels**; bursts move boxes (proptests, as REV's); `Progress::merge`'s laws hold with `drills`; the composer gives the same workout for the same progress file and day |
 | **BQ** | The same bits on the six golden targets; within 0.1 dB of the cookbook's response; every existing golden unchanged |
 | **F1E** | Every must-fix closed |
 | **SKD** | The F2d row; real answer sizes measured on passing answers |
@@ -185,7 +185,7 @@ The tables of record will be `docs/r5-gates.md` (INT5) and `docs/r4-gates.md` (I
 | R5a | Ships | The full gate, REAPER, leak; GR5's automated rows; the friend build and sheet | INT5 | Wave 4 |
 | GR4 | Deterministic | 1,000 items per game regenerate identical hashes on the six golden targets | ECK, MUS | CI from wave 3 |
 | GR4 | Fair | Every option pair at least 2 JND apart under `sound/1` (6 at L1), parameter-step items listed apart; bias bots at chance ± 3 % over 10,000 items | ECK, G1–G4 | CI from wave 3 |
-| GR4 | Solvable | An ideal-observer bot at 95 % or more at the top level; simulated listeners' 40-trial thresholds within one step in 90 % of runs | ECK, DRL | CI from wave 3 |
+| GR4 | Solvable | An ideal-observer bot at 95 % or more at the top level; simulated listeners' 40-trial thresholds pooled at least 90 % within one level on ladders of about one JND or more per level, every listener-and-start cell at least 75 %, flat ladders at least 90 % within two (the F1e judge's ruling); ladder steps checked against `sound/1` where it measures, the rest listed *not measured* | ECK, DRL | CI from wave 3 |
 | GR4 | Covers the synth | Every observable Basic-tier parameter in game 1 or 2; bursts move Review boxes | ECK, G4, DRL | CI from wave 4 |
 | GR4 | You and friends hear finer differences on trained skills | The retest pilot sets the bar; 4 skills, 2 trained and 2 held out, counterbalanced; two weeks; described, not tested (N = 3–6) | INT4's `gr4-report`; **you and at least two friends** | After owner build 6 |
 | R4 | Ships | The full gate, REAPER, leak, soak; GR4's mechanical rows; the friend build | INT4 | Wave 8 |
@@ -256,7 +256,7 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 | Real answer sizes from passing answers (the measured sizes used targets as stand-ins; real ones may be 1.2–2× longer) | SKD | F2d |
 | Paste survival across chat apps, iOS smart punctuation, phone data detectors underlining codes | INT5; your duel check | Wave 4 |
 | `sound/1`'s deaf spots in the parameter games: the *not measured* list and its listening review | G4, ECK | Waves 3–4 |
-| 3-down/1-up in simulation: 75–85 % success, thresholds within one step in 90 % of runs | DRL | Wave 2 |
+| 3-down/1-up in simulation: 75–85 % success, thresholds pooled 90 % within one level on ~1-JND ladders, every cell 75 %, flat ladders 90 % within two (ruled at F1e; DRL measured 92.2 % pooled, worst cell 77.3 %, flat 97 % within two) | DRL | Done (F1e) |
 | Every REAPER setup runs effects with the transport stopped (Target ▶ already relies on it) | SKE | F2e |
 | The Ear column's overflow at 1200 × 800 | EUI | Wave 6 |
 | The daily formula and the UTC day boundary (as Review's, it turns at local midnight only in UTC) | RC | F1e |

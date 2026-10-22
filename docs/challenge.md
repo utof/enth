@@ -245,7 +245,7 @@ One typed selector, `v2::Selector`, for every lane: the challenge's constraints,
 
 | Piece | JSON | What |
 | --- | --- | --- |
-| `Target::Ear(EarSpec)` | `{"kind":"ear","spec":{…}}` | A question set from a frozen ear generator. `EarSpec { game, generator, level, seed, count }`: integers, the seed below 2⁵³, `count` 1–64, unknown fields refused. A stand-in for `enth_music::ear::EarSpec`, agreed field for field with lane MUS; F1E makes it a `pub use` |
+| `Target::Ear(EarSpec)` | `{"kind":"ear","spec":{…}}` | A question set from a frozen ear generator. `EarSpec { game, generator, level, seed, count }`: integers, the seed below 2⁵³, `count` 1–64, unknown fields refused. **`enth-music`'s type**, re-exported as `v3::EarSpec` and `model::EarSpec` (lane F1E, the F1e review's M3): the challenge, the ear codes and the session's ear plan hold the one type. `ear::validate(&spec)` checks it for both families (MUS's `EarSpec::validate_music` knows only the music games). `generator` is **read per family** (should-fix S9): `ear::params::PARAMS_GENERATOR` counts games 1–3, `enth_music::ear::LATEST_GENERATOR` games 4 and up; a released level never changes, and a change is that family's next version |
 | `AnswerKind::{Choice, Value, Taps}` | `"choice"`, `"value"`, `"taps"` | An option index, judged exactly (`ear/1`); a value, judged as an error in perceptual units (`ear-value/1`); tap times, judged after a best-fit offset and tempo (`taps/1`). `Patch` stays the default |
 | The scoring of a non-patch answer | the same six keys | Its ear scorer fills `sound` (the score that decides pass), `structure` and `combined` repeat it, the sound weight is 100 (so combined = sound), the time rule `time/1`. `ScoringSpec::ear(answer)` builds it with pass mark 80 (`EAR_PASS_MARK`, about the drills' 79 %) |
 | `Challenge::ear(spec)` | | The canonical ear challenge of a spec: the answer its game asks for, phrase 0, template 0, no constraint, default assists, `ScoringSpec::ear`, no title; validated. `ear_spec()` reads it back; `with_seed` gives a sibling |
@@ -278,7 +278,7 @@ A newer ear scorer of the right name (`ear/2`) passes validation and is refused 
 | 3 | Ear check | `ear::params` | choice (the odd interval of 3) |
 | 4 and up | Frequency finder, Interval stacks, Chord quality, Rhythm pattern; 8 progressions, 9 note naming, 10 tap-back | `enth-music`'s ear generator v1 (lane MUS) | choice or taps (a value with G3's slider level) |
 
-**Music games read as `code_too_new` in this build:** MUS's generator is built in parallel, and `ear::music::answer_kind` is the one function F1E wires (MUS's `EarSpec::validate` and `Game::answer_kind(level)`), with the `From` from MUS's `Question` into a `Stimulus` and an `EarKey` in `ear::question`.
+**The music games are wired** (lane F1E, the F1e review's M5): `ear::music::answer_kind` maps MUS's `EarSpec::validate_music` (an unknown game, generator or level is `code_too_new`) and `Game::answer_kind(level)` (a choice, or taps for Tap back), and `ear::question::music_question` turns each `enth_music::ear::Question` into a `Stimulus` (checked by `Stimulus::validate` before it is asked) and an `EarKey`, with its labels (`Options::labels`) and skill (`Question::skill`). Level 1 of games 4–10 prepares with no render and its oracle scores 100 % (`ear::question::tests`).
 
 ### The parameter games' items (`ear::params`)
 
@@ -301,7 +301,7 @@ In parameter space only, as every generator rule is: the base is template 0 (the
 | `timbre` | an id into the frozen, append-only pool `ear/timbres-v1/` (below); an id this build lacks is `code_too_new` |
 | `notes` | 1–64 `PhraseNote`s, keys C1–C7 (24–96), velocities 1–127, each held at least 1 ms and ending within the clip, in start order, never two at once on one key, at most 8 at once |
 | `length_ms` | 1 to 10,000, the release tail included |
-| `band` | an optional `EqBand { kind, freq_hz, gain_cdb, q_milli }`: integers (Hz, centi-dB, thousandths of Q) |
+| `band` | an optional `EqBand { kind, freq_hz, gain_cdb, q_milli }`: integers (Hz, centi-dB, thousandths of Q); **`enth-music`'s type**, the one a question carries (`question::BandExt` holds the real units and the ranges) |
 
 | Timbre | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -319,7 +319,9 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | `ear-value/1` | `EarAnswer::Value(f32)` against a `ValueKey { scale, target_bits, tolerance_milli }` | the error on its scale (`Octaves`: \|log₂(a/k)\|; `LogMs`: \|log₂((a+1)/(k+1))\|; `Linear`: \|a − k\|) through the pinned `libm`; right within the tolerance: 100 % or 0 %, the error reported |
 | `taps/1` | `EarAnswer::Taps(Vec<u32>)` (ms, any clock) against `EarKey::Taps { onsets_ms, window_ms }` | every anchor (an onset against a tap) at tempi of 90–110 % in 2.5 % steps, each scored by a one-to-one monotone match within the window (most hits, then the least summed error, then the first fit): hits / (onsets + extras); right with no miss and no extra |
 
-`judge_set(scoring, keys, answers)` judges a set (an answer may be `None`: wrong, 0 %): the mean of the items' percentages in question order, passing at the challenge's mark. **Nothing in this module takes a patch or audio**, so an ear result is judged identically on every platform and engine version; only a new frozen generator version moves a key. Refusals are never "wrong": `unknown_scorer` (a newer scorer), `bad_answer` (another kind, an index beyond the options, a value its scale cannot measure, unordered or more than 64 taps, a count mismatch), `bad_key` (a key no generator makes). The ids join `score::KNOWN_SCORERS` (10 entries), so a lesson pack may require them.
+`judge_set(scoring, keys, answers)` judges a set (an answer may be `None`: wrong, 0 %): the mean of the items' percentages in question order, passing at the challenge's mark. **Nothing in this module takes a patch or audio**, so an ear result is judged identically on every platform and engine version; only a new frozen generator version moves a key. Refusals are never "wrong": `unknown_scorer` (a newer scorer), `bad_answer` (another kind, an index beyond the options, a value its scale cannot measure, unordered taps, more than 63 of them or a span over 16,383 ms, a count mismatch), `bad_key` (a key no generator makes). The ids join `score::KNOWN_SCORERS` (10 entries), so a lesson pack may require them.
+
+**Tap answers** (the F1e review's M3): at most 63 taps (`MAX_TAPS`) over a span of at most 16,383 ms (`MAX_TAP_SPAN_MS`), non-decreasing, on any clock the shell uses. `taps/1` fits the offset, so `taps` and `taps − taps[0]` judge the same (a proptest), and the ear result stores them relative to the first tap: every answer `taps/1` judges is encodable. A retune of `taps/1` is `taps/2` and a new ear-rules index, never an edit.
 
 ### The ear-challenge code (kind 3)
 
@@ -334,7 +336,7 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | count | 8 |
 | zero padding, then code v1's GF(32) check symbol | 4 + 5 |
 
-**19 symbols at a fixed length**, in groups of four (`F320-8104-0000-0058-80M` is Spot the change, level 1, seed 42, 16 items; four texts are pinned). Code v1's reading rules hold (case, `O`/`I`/`L` aliases, hyphens and spaces), its check catches every single substitution and adjacent swap, and the fixed length catches a dropped or added symbol. `decode` checks, in order: symbols, 2–64 of them, the check, version 15 and kind 3 (`not_ear_challenge` for any other code, so a paste box tries the next kind), a layout this build has (`code_too_new`; 0 is `bad_field`), form 0, the length, the padding, then the spec (`code_too_new` for a newer game, generator or level). **An R1–R3 build reads it as `code_too_new` ("update enth"):** it is at most 64 symbols, ends with code v1's check and carries version 15 (tested through code v1's own `decode`). The GF(32) check is restated in `ear/code.rs` so `code.rs` stays untouched; lane RC's shared version-15 frame in `result.rs` can carry it at F1E with no change of bytes.
+**19 symbols at a fixed length**, in groups of four (`F320-8104-0000-0058-80M` is Spot the change, level 1, seed 42, 16 items; four texts are pinned). It is written and read on `result.rs`'s version-15 frame (`Bits`, `Reader`, `text`, `unframe`; lane F1E, the F1e review's M3, with no change of bytes: the four pinned texts are unchanged), so it reads as every kind does: code v1's reading rules (case, `O`/`I`/`L` aliases, hyphens and spaces), its check catching every single substitution and adjacent swap, the fixed length catching a dropped or added symbol. `decode` checks, in order: the frame (symbols, 4–4,096 of them, the check, version 15, the reserved form `code_too_new`, kind 3: `wrong_kind` for another known kind or a challenge code, `code_too_new` for an unknown kind; a layout this build has, `code_too_new`, 0 `bad_field`), the fixed length (`bad_length`), the padding (`bad_field`), then the spec (`ear::validate`: `code_too_new` for a newer game, generator or level, as `ResultError::Ear`). Its errors are `ResultError`s, so paste-anything reads it beside the others (`Found::EarChallenge`). **An R1–R3 build reads it as `code_too_new` ("update enth"):** it is at most 64 symbols, ends with code v1's check and carries version 15 (tested through code v1's own `decode`). Every music game has a code (games 4–10 round-trip).
 
 ### Errors
 
@@ -344,7 +346,8 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | `bad_answer` | a choice, value or taps answer on a seed, patch or draw target; an ear target answered otherwise than its game asks (a patch included); Dial it in as an ear target; an ear target given to the patch round |
 | `bad_scoring` | a non-patch answer whose scorer slots are not its ear scorer, weight 100 and `time/1` |
 | `bad_field`, `out_of_range` | an ear spec's game, generator, level or count 0, a count above 64; a seed from 2⁵³ |
-| `code_too_new` | a game, ear generator or level this build lacks (every music game, until MUS's generator is wired); a timbre id beyond the pool; a newer ear-code layout |
+| `code_too_new` | a game, ear generator or level this build lacks; a timbre id beyond the pool; a newer ear-code layout, kind or form |
+| `wrong_kind` | another version-15 kind, or a challenge code, given to the ear-challenge decoder |
 | `bad_challenge` | a v3 piece in a v1 or v2 file |
 | `bad_question`, `needs_biquad` | a stimulus outside its promises; a peak or shelf band before lane BQ |
 
@@ -355,17 +358,17 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | The v1 and v2 fixture files keep main `567e0df`'s bytes (SHA-256) and read and write back at their version through both readers; `fixtures.rs`'s v1 and v2 tests pass unchanged | `tests/cv3_fixtures.rs`, `tests/fixtures.rs` |
 | v3 fixtures (`challenge/v3/{ear-spot,ear-check,ear-titled}.json`) are what this build writes and reads, are refused under a v1 or v2 schema, prepare with no render, and their oracle scores 100 %; their ear codes round-trip | `tests/cv3_fixtures.rs` |
 | The JSON form pinned; a v2 file refusing a v3 piece; a v3 file reading older challenges; strictness (phrase, start, constraints, answer, scoring); spec ranges and `code_too_new`; siblings | `v3::tests` |
-| The scorers: exact choices, values per scale, taps cancelling a constant latency and a tempo within 10 %, misses and extras, sets and the pass mark; proptests: the right answer is right for every key, judging is total | `ear::scorers::tests` |
+| The scorers: exact choices, values per scale, taps cancelling a constant latency and a tempo within 10 %, misses and extras, the 63-tap and 16,383 ms limits, sets and the pass mark; proptests: the right answer is right for every key, `taps` and `taps − taps[0]` judge the same, judging is total | `ear::scorers::tests` |
 | The items: one option moved by the level's distance, B differing from A in it alone, no position bias over 500 seeds, keyed streams, an Ear check set on one control, Dial it in as a v2 round; pinned | `ear::params::tests` |
-| The pool frozen and audible; stimulus rules; the band-pass band in the timbre; `needs_biquad`; sets prepare, A and B differ, 1,000 keys with no render | `ear::question::tests` |
-| The code's layout pinned; 19 symbols; code v1 reads it as `code_too_new`; other kinds told apart; every refusal's code; proptests: round trip, every substitution and swap caught, decoding never panics | `ear::code::tests` |
+| The pool frozen and audible; stimulus rules; the band-pass band in the timbre; `needs_biquad`; sets prepare, A and B differ, 1,000 keys with no render; level 1 of every music game prepares with no render and its oracle scores 100 % | `ear::question::tests` |
+| The code's layout pinned; 19 symbols; code v1 reads it as `code_too_new`; other kinds told apart (`wrong_kind`); every refusal's code; the music games' codes round-trip; proptests: round trip, every substitution and swap caught, decoding never panics | `ear::code::tests` |
 
-### The seams (F1e)
+### The seams (F1e, closed by lane F1E)
 
 | Lane | What it gets | What it must provide |
 | --- | --- | --- |
-| MUS | `v3::EarSpec` to replace with its own; the timbre ids; `EqBand`'s integers; `EarKey::Choice { index, options }` and `EarKey::Taps { onsets_ms, window_ms }` | `EarSpec::validate` (an unknown game, generator, level or count) and `Game::answer_kind(level)`; per question a timbre id, notes, `length_ms`, an optional band, the key, option labels and a skill (`ear.interval.m3`) |
-| RC | `EarChallengeCode` for paste-anything (a kind-3 token) and the ear result's payload (the same field widths); `EarSet::judge` and `judge_set` to verify an ear result by replay; `EarAnswer` | its shared version-15 frame, which kind 3 may move onto |
+| MUS | Its `EarSpec` and `EqBand` are the only copies (re-exported here); the timbre ids; `EarKey::Choice { index, options }` and `EarKey::Taps { onsets_ms, window_ms }` | `EarSpec::validate_music` (music games only) and `Game::answer_kind(level)`; per question a timbre id, notes, `length_ms`, an optional band, the key, option labels and a skill (`ear.interval.m3`): wired through `ear::music` and `question::music_question` |
+| RC | `EarChallengeCode` for paste-anything (`Found::EarChallenge`) and the ear result's payload (`result::put_ear_spec`, the same field widths); `verify::verify_ear` replays an ear result through `EarSet` and `judge_set`; `ear::scorers::EarAnswer` is the ear result's answer type | its shared version-15 frame, which kind 3 now uses |
 | SE | `ear::question::prepare`, `Clip::render`, `EarSet::judge` | the answers, as `EarAnswer`s, with times from the shell |
 | DRL | each question's skill and measured distance; `params::ear_check_on` for a staircase's trial on a chosen control | — |
 | BQ | `EqBand` (kind, Hz, centi-dB, thousandths of Q) | the peak and shelf render, which `Clip::render` then applies instead of `needs_biquad` |
@@ -503,7 +506,7 @@ The property tests check the first two exhaustively for every position of 256 ra
 | 1 **scorecard** | the challenge, the engine, the scorer set, sound % and combined % (tenths), passed, submits, the time, the assists, a 60-bit salted commitment to the answer. No patch: it spoils nothing | **51** with a short challenge, always; 72–81 with custom settings | RC |
 | 2 **answer** | a 64-bit salt, the challenge, the patch as `ops_between(start, answer)` through `result-params-v1`, a 40-bit tail | level 1–5 targets as answers: median 46, 56, 92, 110, 152 (max 50, 61, 98, 130, 188); solver answers in the table below | RC |
 | 3 **ear challenge** | an `EarSpec`: game 8, ear generator 8, level 8, seed 40, count 8 | 19 | CV3 |
-| 4 **ear result** | kind 3's payload, one answer per question, the time, the assists | 49 for 16 choice answers | RC |
+| 4 **ear result** | kind 3's payload, the ear rules (should-fix S5), one answer per question (taps stored from the first tap), the time, the assists | 50 for 16 choice answers (about 29 fit 64) | RC |
 | 5 lesson sibling | reserved: (pack, lesson, step, seed); nothing plays it yet | — | — |
 
 **The scorecard (kind 1, layout 1)** is 219 bits with a short challenge:
@@ -512,7 +515,7 @@ The property tests check the first two exhaustively for every position of 256 ra
 | --- | --- | --- |
 | Challenge | 1 + 60, or 1 + 164 + 7k | a flag, then code v1's short payload (preset, generator, seed) or long one (the whole spec, the engine, the target prefix, the amounts) without its form and version, checked as code v1 checks it |
 | Engine | 24 | the build that scored the claim |
-| Scorer set | 8 | an index into the frozen, append-only `SCORER_SETS` table: set 1 is `sound/1`, `structure/1`, `combined/1`, `time/1` **with** the Recreate weight and pass-mark rule (`ScoringSpec::with_scorers`), so GR1's `sound/2` or a new pass mark is a new set. Unknown: `scorer_too_new`; 0: `bad_field` |
+| Scorer set | 8 | an index into the frozen, append-only `SCORER_SETS` table: set 1 is `sound/1`, `structure/1`, `combined/1`, `time/1` **with** the Recreate weight and pass-mark rule (`ScoringSpec::with_scorers`), so GR1's `sound/2` or a new pass mark is a new set. **An index this build lacks still reads** (the F1e review's M4): the card shows the friend's result as reported (`ScorerSet::is_known` false; `ids()` and `scoring()` are `None`), and `verify` re-scores with this build's current set and flags the difference (`ClaimCheck::scorers_differ`). 0: `bad_field` |
 | Sound, combined | 10 + 10 | the claim in tenths of a percent, 0–1000 |
 | Passed | 1 | the compared submit: the first passing one, otherwise the best, "not passed" |
 | Submits | 7 | 1–127 (127 reads "127+"; 0 is `bad_field`) |
@@ -524,7 +527,9 @@ The property tests check the first two exhaustively for every position of 256 ra
 
 #### The answer code
 
-**Layout 1** (`result-params-v1`): the header, a 64-bit salt, the challenge as in the scorecard, the ops until END, zero bits to the end of a symbol, the 40-bit tail and code v1's symbol. The salt is drawn by the shell (core crates have no RNG) and kept with the round, so the code can be made again later; it keeps the commitment from being brute-forced over a small answer space.
+**Layout 1** (`result-params-v1`): the header, a 64-bit salt, the challenge as in the scorecard, the ops until END, zero bits to the end of a symbol, the 40-bit tail and code v1's symbol. The salt keeps the commitment from being brute-forced over a small answer space, and is kept with the round, so the code can be made again later.
+
+**The salt rule (privacy; the F1e review's M6).** The salt is **64 bits of OS randomness** (std's `RandomState` keys, or `getrandom`), drawn by the shell **once per duel** (core crates have no RNG) and kept with the result in the duel history. It is **never derived from a clock or a seed.** The answer code carries the salt in the clear, and the shell's obvious source, `fresh_seed` (`enth-plugin/src/game.rs`), is a bijection of wall-clock nanoseconds that only a 40-bit mask hides: an unmasked salt from it would put the absolute time, to the nanosecond, into every answer code. No test in `enth-challenge` can catch this, so the rule lives here, in [duels.md](duels.md#privacy) and on `AnswerCode::new`.
 
 Each op, in `ops_between`'s order (so every patch between the start and the answer is valid):
 
@@ -535,7 +540,7 @@ Each op, in `ops_between`'s order (so every patch between the start and the answ
 | `1 0001` | `SetEnabled` | module 5, enabled 1 |
 | `1 0010` | `InsertRoute` | index 6, source, destination (target 5, parameter 4), depth |
 | `1 0011`, `1 0100` | `RemoveRoute`, `SetDepth` | route index 6 (and the depth) |
-| `1 0101` | `AddModule` | kind 4, place in its section 3, enabled 1, then (parameter, value) pairs for the values off `result-params-v1`'s defaults, then 15 |
+| `1 0101` | `AddModule` | kind 4, place in its section 3, enabled 1, id number 6, then (parameter, value) pairs for the values off `result-params-v1`'s defaults, then 15 |
 | `1 0110`, `1 0111`, `1 1000` | `RemoveModule`, `Move`, `SetAmpEnv` | module 5 (and the place 3 for `Move`) |
 | `1 1001` | `SetMacro` | macro 3, value |
 | `1 1010`–`1 1111` | reserved | `answer_too_new` |
@@ -543,7 +548,9 @@ Each op, in `ops_between`'s order (so every patch between the start and the answ
 - **Targets are places, never ids:** 0 is `voice`, 1 `master`, 2 + i the i-th module in file order, in the patch as it is at that op. A source is 3 bits (a module, velocity, key, the mod wheel, a macro; 5–7 are `answer_too_new`).
 - **`result-params-v1`** is the frozen, append-only table of each owner's parameters (the seven module kinds by discriminant, then `voice` and `master`): the key, the value coding and the default an added module starts from, so no catalogue change moves an old code. An index this build's table lacks, or a module kind it lacks, is `answer_too_new`. A test pins the table's bytes and checks it against the live catalogue (a catalogue change that breaks it needs a new layout).
 - **Values:** an `f32` in the **float coding**: `0`, a sign, a 10-bit mantissa and a 4-bit exponent (±m·10^e, e from −8 to 7) when that gives the same bits, which every three-significant-digit value does (16 bits); otherwise `1` and the exact 32 bits (33). An integer in its range's bits, an enum index in a field with room for one more item, a toggle in one bit. Route depths and macro values are `f32`s.
-- **Stripped before encoding:** `SetMeta` (`PatchMeta::author` can hold a real name), labels, macro names and slots; none changes the sound. A module the answer adds takes the lowest free `<prefix><n>` id, as `add` does, so **no id the player typed survives** (a renamed module in `free` phase mode starts its notes at other phases, which can move a score by a hair; the receiver's number decides). The test proves it by giving a patch with every personal field set and the same patch without them, and getting the same symbols.
+- **Stripped before encoding:** `SetMeta` (`PatchMeta::author` can hold a real name), labels, macro names and slots; none changes the sound. The test proves it by giving a patch with every personal field set and the same patch without them, and getting the same symbols.
+- **An added module's id** (should-fix S1, lane F1E): the engine seeds a module from its id (`fnv1a64(id)`) and `osc`'s default phase mode is `free`, so a renumbered module renders other phases (measured at F1e: the audio differed by 0.05–1.9 at most, and no `sound/1` or `structure/1` score in 600 rows moved). An id the app gave (`<prefix><n>`, `n` 1–63) keeps its number in 6 bits; **the lowest free id and any id the player typed write 0**, and decoding gives the lowest free `<prefix><n>`, so **no typed name survives** and the canonical answer renders what the player heard. Insurance against a phase-sensitive `sound/2`.
+- **The rebuild is checked** (should-fix S10): `AnswerCode::new` decodes what it wrote and compares the rebuilt patch with the stripped answer, module ids aside (modules, places, values, routes, the amplitude envelope, voice, master and macro values); a value outside its field would rebuild another patch, so it is refused (`unencodable`) instead of shared.
 - **The canonical answer** is the start with the encoded ops applied: the player's patch without the stripped fields. The tail and the commitment hash it with the salt and the target's [fingerprint](#the-target-fingerprint):
 
   ```text
@@ -571,17 +578,18 @@ The solver searches values only (modules and routes stay as the start has them),
 
 **Checks and what they catch:** code v1's symbol, every single substitution and adjacent swap (the property tests run every position of 256 random codes of each kind); the scorecard's fixed length and its 30-bit check, a truncation and other random damage (1 in 2³⁰ slips through); the answer's 40-bit tail, a truncation, any damage and any decoding drift (1 in 2⁴⁰). The commitment is 60 bits, so a sender who prepares two answers in advance could find a pair with one commitment in about 2³⁰ hashes and choose between them later: out of scope for friends.
 
-**The ear result (kind 4, layout 1; provisional on lane CV3's types):** the header, kind 3's 72-bit payload in its order (`EarChallengeRef` mirrors CV3's `EarSpec` until F1E swaps the type), one answer per question (2-bit tag: none; a choice, 4 bits; a value, the float coding; taps, a count of 6 bits then each tap's time in ms in 14 bits, in order), the time in deciseconds (16), hints (4), revealed (1), three zero bits, the 30-bit check and code v1's symbol. Its verification replays the answers against the ear generator's keys with no render; F1E wires that once MUS and CV3 land the keys and scorers.
+**The ear result (kind 4, layout 1; lane F1E closed it at F1e):** the header, kind 3's 72-bit payload in its order (`enth-music`'s `EarSpec`), the **ear rules** (8 bits, should-fix S5: an index into the frozen, append-only `EAR_RULES` table; rules 1 are `ear/1`, `ear-value/1`, `taps/1` and the pass mark 80, so the receiver judges by the sender's rules and a retuned `taps/2` is a new index; an index this build lacks reads, is judged by this build's rules, and is flagged; 0 is `bad_field`), one answer per question (2-bit tag: none; a choice, 4 bits; a value, the float coding; taps, a count of 6 bits then each tap after the first as ms from the first in 14 bits, non-decreasing; the first is always 0 and not written), the time in deciseconds (16), hints (4), revealed (1), three zero bits, the 30-bit check and code v1's symbol. The answer type is `ear::scorers::EarAnswer`; **taps arrive on any clock** and are stored relative to the first tap (at most 63 over at most 16,383 ms: `taps/1`'s own limits, so every answer it judges fits; `taps/1` fits the offset, so the shift changes no score). Decoding does not check the spec against this build. **`verify::verify_ear` replays the answers against the ear generator's keys with no render** (`judge_set`, the result's rules when this build has them): `code_too_new` for a game, generator or level this build lacks, `bad_answer` for an answer of another kind than its question's.
 
 | Refusal | When |
 | --- | --- |
-| `code_too_new` | an unknown kind, layout or form; a challenge with a generator, preset or template this build lacks |
-| `scorer_too_new` | a scorecard's scorer set this build lacks |
+| `code_too_new` | an unknown kind, layout or form; a challenge with a generator, preset or template this build lacks; an ear challenge's game, generator or level this build lacks |
 | `answer_too_new` | an op, module kind, parameter or source this build lacks |
 | `answer_mismatch` | the answer does not rebuild to its tail, or an op does not apply |
 | `target_mismatch` | a long challenge whose target this build regenerates differently |
 | `wrong_kind` | another kind than the one asked for (`found: None` for a challenge code) |
 | `bad_symbol`, `bad_length`, `bad_check`, `bad_field`, `empty_code` | as code v1 |
+
+**Not refused** (the F1e review's M4): a scorecard naming a scorer set this build lacks reads and is shown as reported; there is no `scorer_too_new` any more. `verify` re-scores it with this build's current set and flags the difference, so a duel across GR1's `sound/2` works both ways (each build keeps every set it ever had). Likewise an ear result naming ear rules this build lacks.
 
 **Paste-anything** (`paste::paste`, [duels.md](duels.md#sharing-and-paste)): dashes read as hyphens, zero-width characters dropped, odd spaces read as spaces, full-width letters read as ASCII; each token tried alone, and capital-and-digit tokens split by spaces or a line break also joined, longest first; every code that decodes comes back once, in order, and a code-looking token that does not decode comes back with its error. `paste::decode` reads one code of any kind.
 
@@ -593,7 +601,8 @@ The solver searches values only (modules and routes stay as the start has them),
 | --- | --- | --- |
 | A scorecard with a short challenge (51 symbols) | `code_too_new` | "made by a newer enth: update enth to play it" |
 | An answer of 64 symbols or fewer (most level-1 answers: targets 42–50, dragged up to 56) | `code_too_new` | "update enth" |
-| An ear result of 64 symbols or fewer (16 choice answers: 49) | `code_too_new` | "update enth" |
+| An ear result of 64 symbols or fewer (16 choice answers: 50) | `code_too_new` | "update enth" |
+| An ear challenge (19 symbols) | `code_too_new` | "update enth" |
 | Any code over 64 symbols: a scorecard with custom settings, most answers from level 2 up, a level-1 answer that touched extra knobs | `bad_length` | "a code has 14 symbols, or 35 to 44 for custom settings, hyphens not counted: part of it is missing or extra" |
 
 Checked by RC's tests on every kind: the scorecard and ear-result property tests, every answer of the answer round-trip property test, the size tests and the frozen fixtures (`tests/fixtures/result/v1/codes.json`, SHA-256 pinned in `tests/result_codes.rs`) all go through `ChallengeCode::decode`. INT5's friend sheet says "update enth" for both readings.

@@ -112,7 +112,7 @@ Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), wit
 | 9 | Note naming (R4b, opt-in) | `enth-music` | `ladder::pitch` (G1) | a choice of pitch class | 1 |
 | 10 | Tap back (R4b, after the TAP spike) | `enth-music` | `ladder::taps` (TAP) | tap times | 1 |
 
-**The spec.** `{"game":5,"generator":1,"level":1,"seed":42,"count":20}`: unsigned integers in this order, unknown fields refused. `EarSpec::validate` accepts a generator from 1 to the build's latest (1), a music game, a level from 1 to the game's `max_level()` (at most 15), a seed below 2^53 and a count of 1 to 64; each refusal is a distinct `EarError`, and a build maps any of them to "update enth".
+**The spec.** `{"game":5,"generator":1,"level":1,"seed":42,"count":20}`: unsigned integers in this order, unknown fields refused. **One type for every game and every crate** (lane F1E, the F1e review's M3): `enth-challenge` re-exports it, and the session's ear plan holds it. `EarSpec::validate_music` accepts a generator from 1 to the build's latest (1), a music game, a level from 1 to the game's `max_level()` (at most 15), a seed below 2^53 and a count of 1 to 64; each refusal is a distinct `EarError`, and a build maps any of them to "update enth". It knows only the music games (the parameter games are `UnknownGame` here); `enth_challenge::ear::validate` checks both families and is what challenges, codes and sessions use. **`generator` is read per family** (should-fix S9): `enth_music::ear::LATEST_GENERATOR` counts games 4 and up, `enth_challenge::ear::params::PARAMS_GENERATOR` games 1 to 3. A released level never changes its questions; a change is that family's next version.
 
 **The question.** `Question { timbre, notes, length_ms, post, answer, options }`, all integers:
 
@@ -164,7 +164,7 @@ Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), wit
 - **Bands:** a band-pass band sets the timbre's own filter (Frequency finder's svf form, rendered by the engine); a peak or shelf band waits for BQ's biquad (`needs_biquad`).
 - **Judged with no render:** `ear/1` (an index), `ear-value/1` (an error in octaves, doublings of ms or the unit, within a tolerance), `taps/1` (after the best-fit offset and a tempo within ±10 %, a one-to-one match; misses and extras count). Keys are integers (a value's `f32` bits), logarithms go through the pinned `libm`.
 - **The ear-challenge code** (kind 3): 19 symbols starting with `F`, code v1's check last; an R1–R3 build reads it as "update enth". A seed above 40 bits has no code, as for a short challenge code.
-- **Open for the judge:** an `EarSpec` names no skill, so a burst on one due skill (`ear.interval.m3`) or an Ear check on a chosen control is an item-level call (`params::ear_check_on`), not a spec; music games read as `code_too_new` until MUS's generator is wired (F1E).
+- **Closed at F1e (lane F1E):** an `EarSpec` names no skill (the judge accepted it: fixed-ladder duels need none); a burst's focus goes through one resolver over both families, `enth_challenge::ear::find_item(&spec, skill, from)` (should-fix S3), which the session's ear plan takes as its start item. The music games are wired (`ear::music`, `question::music_question`), so every game from 4 to 10 prepares, judges and has a code.
 
 ## Rhythm input
 
@@ -185,7 +185,7 @@ Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), wit
 - **What a staircase may move**, one thing at a time: the step in JND units, the number of categories, their similarity, the context (a sine, then generator levels 3–5), roving (note, wave, velocity) and memory load.
 - **A 2-JND floor** (`choice_audibility`'s rule) for morale and fairness, although even impossible items teach a little (Amitay 2006).
 - **No visible streak:** the staircase's run counter stays internal.
-- **Simulated before it ships:** DRL's test retargets to 79 %, holds 75–85 % success, and recovers simulated listeners' thresholds within one step in 90 % of 40-trial runs.
+- **Simulated before it ships:** DRL's test retargets to 79 %, holds 75–85 % success, and recovers simulated listeners' 40-trial thresholds as the F1e judge ruled: **pooled over the simulated listeners, at least 90 % within one level on ladders of about one JND or more per level; every listener-and-start cell at least 75 %; flat ladders at least 90 % within two levels; success at threshold 75–85 %.** 40 answers cannot place a threshold within one level of half a JND (the maximum-likelihood bound is about 89 % there), so the criterion changed, not the rule: G1–G4 build ladders with steps of at least about one JND and list each level's measured distance, and the Ear view shows thresholds as trends.
 
 ## The drill player
 
@@ -197,7 +197,7 @@ Lane DRL, in `enth-learn` (L5). The skill is the unit of spacing; the game is it
 - **Interleaving:** each category is met alone first, then confusable ones mix (m3/M3, attack/decay, room/decay); one line of copy says why mixing feels harder (Carvalho & Goldstone 2014).
 - **This closes learn.md's open item** "ear questions as Review items": a due skill without a Recreate step plays as a burst.
 - **`StepKind::Drill`** (an `enth.lesson/2` piece, so a pack with one says `requires.lesson = 2` and an R2 or R3 build answers "needs a newer enth"; the F1e review's M1) lets a lesson play a drill; **the `drills` progress field** (additive) keeps thresholds per skill over time and the practised days.
-- **As built (2026-10-22, lane DRL):** all of the above is in `enth-learn` and pure; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl) has the built form, the shell's loop and the numbers. Two things differ from the plan's wording. The estimate is the mean of the last up to 12 reversals (a 40-trial track turns about ten times), and "within one step in 90 % of 40-trial runs" holds pooled for steep ladders (a level of about a JND or more: 92 % over 60 simulated listeners), not in every cell and not for ladders of half a JND a level, where 40 answers cannot carry it (79 % within one level, 97 % within two): build ladders with steps of about a JND. And the composer drills every due skill its catalogue lists, so the shell lists only the parameter skills the learner has met.
+- **As built (2026-10-22, lane DRL):** all of the above is in `enth-learn` and pure; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl) has the built form, the shell's loop and the numbers. Two things differ from the plan's wording. The estimate is the mean of the last up to 12 reversals (a 40-trial track turns about ten times), and "within one step in 90 % of 40-trial runs" holds pooled for steep ladders (a level of about a JND or more: 92 % over 60 simulated listeners), not in every cell and not for ladders of half a JND a level, where 40 answers cannot carry it (79 % within one level, 97 % within two): build ladders with steps of about a JND. The F1e judge ruled the criterion accordingly ([Difficulty and the staircase](#difficulty-and-the-staircase)), and these numbers meet it. And the composer drills every due skill its catalogue lists, so the shell lists only the parameter skills the learner has met.
 
 ## Workouts
 
@@ -229,7 +229,7 @@ Adaptive sessions diverge between players, so two players would hear different i
 - **Audibility:** every option pair is at least 2 JND apart under `sound/1` (at least 6 at L1); items scored on parameter steps are listed apart.
 - **Solvable:** an ideal-observer bot (picks the option nearest by `sound/1`) scores at least 95 % at the top level.
 - **No leaks:** bias bots (always option 1, always the loudest, always the longest) stay at chance ± 3 % over 10,000 items.
-- **Staircases:** simulated listeners with known thresholds get a 40-trial estimate within one step in at least 90 % of runs, and training holds 75–85 % success.
+- **Staircases** (as the F1e judge ruled): simulated listeners' 40-trial estimates are, pooled, within one level in at least 90 % of runs on ladders of about one JND or more per level; every listener-and-start cell at least 75 %; flat ladders within two levels in at least 90 %; training holds 75–85 % success at threshold. ECK checks ladder steps against `sound/1` distances where it can measure them and lists the rest as *not measured*.
 - **Coverage:** every observable Basic-tier P1 parameter is in game 1 or 2, and bursts move Review boxes (proptests, as REV's).
 
 **Human half** (local, per person, as GR2; about 2.5 h for you over two weeks):
