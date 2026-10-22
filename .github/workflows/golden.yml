@@ -10,6 +10,10 @@ name: golden
 # "same patch + seed = same samples" contract. The older spike-only checks stay in engine-golden.yml.
 # R1/S1 lane GC adds the golden challenges (tests/golden/challenges/, the `gc_challenges` test of enth-golden): they
 # run inside every `cargo test -p enth-golden` below (Linux, Windows and macOS, wasm32-wasip1 under wasmtime), and the `challenges` job adds the analysis and scoring determinism they stand on.
+# R3b lane ONX adds the kernel-hash step to every leg (docs/r3.md, the determinism contract, point 1): our scalar kernels'
+# pinned output hashes (`enth-solver --test propose_kernels`, under FTZ off, FTZ only and FTZ+DAZ, or FZ, where the CPU
+# has them), their parity with ONNX Runtime within 1e-5 on committed fixtures (`--test propose_parity`), the features and
+# decoding under FTZ (`--test propose_ftz`) and feature set 1's pins with the kernels' unit tests (`--lib propose::`).
 
 on:
   push:
@@ -77,6 +81,12 @@ jobs:
         run: cargo test --locked -p enth-golden
       - name: Harness and golden tests, release
         run: cargo test --release --locked -p enth-golden
+      # R3b lane ONX: the model's inference is bit-exact on every platform (Windows here is MSVC).
+      - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins (lane ONX)
+        shell: bash
+        run: |
+          cargo test --release --locked -p enth-solver --test propose_kernels --test propose_parity --test propose_ftz
+          cargo test --release --locked -p enth-solver --lib propose::
       # Both flag sets enable FMA. Rust never contracts a * b + c, and the code never calls mul_add, so nothing may change.
       - name: Same hashes with the runner's own CPU features and with explicit FMA/AVX2 (Linux x86-64)
         if: runner.os == 'Linux' && runner.arch == 'X64'
@@ -85,6 +95,7 @@ jobs:
           for flags in "-C target-cpu=native" "-C target-feature=+fma,+avx2"; do
             echo "::group::RUSTFLAGS=$flags"
             RUSTFLAGS="$flags" cargo test --release --locked -p enth-golden --test golden --target-dir target-flags
+            RUSTFLAGS="$flags" cargo test --release --locked -p enth-solver --test propose_kernels --test propose_parity --target-dir target-flags
             echo "::endgroup::"
           done
 
@@ -124,6 +135,19 @@ jobs:
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
         run: cargo test --release --locked --target wasm32-wasip1 -p enth-challenge --test ss_determinism
+      # R3b lane ONX: the same kernel output hashes and feature pins inside wasmtime (wasm has no FTZ mode), with and
+      # without simd128. The fixtures are compiled in, so no directory is preopened.
+      - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins inside wasmtime (lane ONX)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: |
+          cargo test --release --locked --target wasm32-wasip1 -p enth-solver --test propose_kernels --test propose_parity
+          cargo test --release --locked --target wasm32-wasip1 -p enth-solver --lib propose::
+      - name: The kernel hashes with wasm simd128
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run
+        run: cargo test --release --locked --target wasm32-wasip1 -p enth-solver --test propose_kernels --test propose_parity --target-dir target-simd128
 
   # Every push and pull request since 2026-10-21 (see the header). macos-latest is arm64. If it disagrees with the
   # x86-64 hashes, the difference is a determinism bug to find, not a hash to override; a `[platform_hash]` entry in
@@ -146,6 +170,11 @@ jobs:
       # sound/1 bits too; ebur128's loudness is compared within 1e-6, not pinned.
       - run: cargo test --release --locked -p enth-analysis --test determinism
       - run: cargo test --release --locked -p enth-challenge --test ss_determinism
+      # R3b lane ONX: the kernel output hashes (FZ off and on), ONNX Runtime parity and feature set 1's pins on arm64.
+      - name: Kernel output hashes, ONNX Runtime parity and feature set 1's pins (lane ONX)
+        run: |
+          cargo test --release --locked -p enth-solver --test propose_kernels --test propose_parity --test propose_ftz
+          cargo test --release --locked -p enth-solver --lib propose::
 
   # R1/S1 lane GC. The golden challenges (tests/golden/challenges/: generator hashes, scores and their margins) and RG's
   # 1,000-hash generator golden are tests of enth-golden, so the `hashes` job, the `wasm` job and the `macos` job
