@@ -309,7 +309,7 @@ In parameter space only, as every generator rule is: the base is template 0 (the
 
 Each timbre is the starter with a few values changed (polyphony 8, filter 1 in place), and each file's SHA-256 is pinned; a new timbre is a new id at the end. Timbre 6 (sustained pink noise) is lane MUS's request for Frequency finder.
 
-**The band.** A `BandPass` band is the synth's own filter (Frequency finder's svf form): filter 1 goes to band-pass at `freq_hz` with the resonance of its Q (`100 · ln(2Q) / ln 50`, inverted from [docs/dsp/svf.md](dsp/svf.md); 3 significant digits), and the engine renders it; its gain must be 0 and its Q 0.5–25. A `Peak`, `LowShelf` or `HighShelf` band (gain ±0.01–24 dB, never 0; Q 0.1–25) is applied after the engine by lane BQ's offline RBJ biquad; until BQ lands, such a clip is refused (`needs_biquad`), never played without its band.
+**The band.** A `BandPass` band is the synth's own filter (Frequency finder's svf form): filter 1 goes to band-pass at `freq_hz` with the resonance of its Q (`100 · ln(2Q) / ln 50`, inverted from [docs/dsp/svf.md](dsp/svf.md); 3 significant digits), and the engine renders it; its gain must be 0 and its Q 0.5–25. A `Peak`, `LowShelf` or `HighShelf` band (gain ±0.01–24 dB, never 0; Q 0.1–25) is applied after the engine by lane BQ's offline RBJ biquad ([dsp/biquad.md](dsp/biquad.md)): `Clip::render` filters both channels of the rendered clip with it. (Before BQ landed such a clip was refused, `needs_biquad`; this build never returns it.)
 
 ### The ear scorers (`ear::scorers`)
 
@@ -349,7 +349,7 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | `code_too_new` | a game, ear generator or level this build lacks; a timbre id beyond the pool; a newer ear-code layout, kind or form |
 | `wrong_kind` | another version-15 kind, or a challenge code, given to the ear-challenge decoder |
 | `bad_challenge` | a v3 piece in a v1 or v2 file |
-| `bad_question`, `needs_biquad` | a stimulus outside its promises; a peak or shelf band before lane BQ |
+| `bad_question`, `needs_biquad` | a stimulus outside its promises; a peak or shelf band before lane BQ (the code is kept, but a build with BQ never returns it) |
 
 ### Tests
 
@@ -360,7 +360,7 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | The JSON form pinned; a v2 file refusing a v3 piece; a v3 file reading older challenges; strictness (phrase, start, constraints, answer, scoring); spec ranges and `code_too_new`; siblings | `v3::tests` |
 | The scorers: exact choices, values per scale, taps cancelling a constant latency and a tempo within 10 %, misses and extras, the 63-tap and 16,383 ms limits, sets and the pass mark; proptests: the right answer is right for every key, `taps` and `taps − taps[0]` judge the same, judging is total | `ear::scorers::tests` |
 | The items: one option moved by the level's distance, B differing from A in it alone, no position bias over 500 seeds, keyed streams, an Ear check set on one control, Dial it in as a v2 round; pinned | `ear::params::tests` |
-| The pool frozen and audible; stimulus rules; the band-pass band in the timbre; `needs_biquad`; sets prepare, A and B differ, 1,000 keys with no render; level 1 of every music game prepares with no render and its oracle scores 100 % | `ear::question::tests` |
+| The pool frozen and audible; stimulus rules; the band-pass band in the timbre; a peak or shelf band is the plain render through the biquad, and moves the level where it says (lane BQ); sets prepare, A and B differ, 1,000 keys with no render; level 1 of every music game prepares with no render and its oracle scores 100 % | `ear::question::tests` |
 | The code's layout pinned; 19 symbols; code v1 reads it as `code_too_new`; other kinds told apart (`wrong_kind`); every refusal's code; the music games' codes round-trip; proptests: round trip, every substitution and swap caught, decoding never panics | `ear::code::tests` |
 
 ### The seams (F1e, closed by lane F1E)
@@ -371,7 +371,7 @@ Each timbre is the starter with a few values changed (polyphony 8, filter 1 in p
 | RC | `EarChallengeCode` for paste-anything (`Found::EarChallenge`) and the ear result's payload (`result::put_ear_spec`, the same field widths); `verify::verify_ear` replays an ear result through `EarSet` and `judge_set`; `ear::scorers::EarAnswer` is the ear result's answer type | its shared version-15 frame, which kind 3 now uses |
 | SE | `ear::question::prepare`, `Clip::render`, `EarSet::judge` | the answers, as `EarAnswer`s, with times from the shell |
 | DRL | each question's skill and measured distance; `params::ear_check_on` for a staircase's trial on a chosen control | — |
-| BQ | `EqBand` (kind, Hz, centi-dB, thousandths of Q) | the peak and shelf render, which `Clip::render` then applies instead of `needs_biquad` |
+| BQ | `EqBand` (kind, Hz, centi-dB, thousandths of Q) | the peak and shelf render, which `Clip::render` now applies instead of `needs_biquad` (done by BQ: [dsp/biquad.md](dsp/biquad.md)) |
 | G4 | `params::ParamLevel` and the item builders | the ladder (levels 2 and up, the *not measured* list) behind `params::level` |
 
 The parameter games (Spot the change, Ear check) are ear targets whose items are v2 draws; Dial it in is a constrained Recreate round on a draw, as lessons already play them. `Target::Expectations` stays out (text goals still have no player).

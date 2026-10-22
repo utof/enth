@@ -8,9 +8,9 @@
 //! so the engine never calls it.
 //!
 //! **The shape.** [`Coeffs`] designs a section (`f64`, `a0` divided out) from a [`Kind`], a frequency, a gain in dB, a
-//! `Q` and a sample rate; [`Biquad`] runs it over an `f32` buffer in place. Design and state are `f64`: a 20 Hz peak
-//! at 48 kHz has poles within `1e-4` of the unit circle, which `f32` coefficients cannot place, and offline there is
-//! nothing to save by rounding early. The direct form is **transposed direct form II**
+//! `Q` and a sample rate; [`Biquad`] runs it over an `f32` buffer in place. Design and state are `f64`: a low or
+//! narrow band has its poles close to the unit circle, where a biquad's rounding noise grows like `1/w0²` (about `1e5`
+//! at 20 Hz and 48 kHz), and offline there is nothing to save by rounding early. The direct form is **transposed direct form II**
 //! (`y = b0·x + s1`, `s1 = b1·x − a1·y + s2`, `s2 = b2·x − a2·y`): two states, five products, written in one fixed
 //! order with no `mul_add`, so every target (including a wasm32 build and a CPU with FMA) computes the same bits.
 //!
@@ -512,7 +512,7 @@ mod tests {
                         let c = Coeffs::design(kind, f0, gain, q, sr);
                         let (h, settled) = impulse_response(c, 1 << 19);
                         if !settled {
-                            // The longest rings (a 20 Hz boost at Q 25 takes minutes): the coefficient test covers them.
+                            // The longest rings (a boosted 20 Hz band at Q 25 rings for more than 10 s): the coefficient test covers them.
                             skipped += 1;
                             continue;
                         }
@@ -543,8 +543,8 @@ mod tests {
     }
 
     #[test]
-    fn a_low_band_with_a_narrow_q_is_exact_in_f64_where_f32_would_not_be() {
-        // 40 Hz, Q 8 at 96 kHz: poles within 1e-3 of the unit circle. The processed response still matches.
+    fn a_low_narrow_band_at_a_high_rate_still_matches_the_cookbook() {
+        // 40 Hz, Q 8 at 96 kHz: poles about 1e-4 from the unit circle. The processed response still matches.
         let sr = 96_000.0;
         let c = Coeffs::peak(40.0, 12.0, 8.0, sr);
         let (h, settled) = impulse_response(c, 1 << 20);
