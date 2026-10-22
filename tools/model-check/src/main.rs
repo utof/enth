@@ -1,21 +1,29 @@
-//! **Owner: lane ONX** (R3b; docs/r3.md, "Our own scalar kernels (lane ONX)").
+//! **Owner: lane ONX** (R3b; docs/r3.md, "Our own scalar kernels (lane ONX)"); lane EXP added batch inputs, several
+//! seeds and `--decode` (the PyTorch parity of the exported model).
 //!
 //! `enth-model-check`: a dev tool for model files (`enth-model-<id>.bin`, `ENTHMODL` format 1). A tooling package,
 //! exempt from the layer rules: it reads files and clocks, and runs `enth-solver`'s pure inference on them.
 //!
 //! ```text
 //! enth-model-check info  <model.bin>
-//! enth-model-check run   <model.bin> [--seed N | --inputs <file>] [--expected <file>] [--tolerance 1e-5] [--write <file>]
+//! enth-model-check run   <model.bin> [--seed N[,N...] | --inputs <file>] [--expected <file>] [--tolerance 1e-5]
+//!                         [--write <file>] [--decode [--decode-tolerance 1e-4]]
 //! enth-model-check bench [--gflop 0.5]... [--runs 5]
 //! ```
 //!
 //! - `info` prints the header, the tables and what [`Net::build`] says: the FLOP recount, the peak memory, or the
 //!   refusal (its code and hint, as create would report it).
-//! - `run` runs the model once on a synthetic input (`--seed`, else the model's `parity.seed` info entry, else 0) or on
-//!   `--inputs` (`mel` and `context` in a raw tensor file), prints each output and the outputs' SHA-256 (what an
-//!   output golden pins), and with `--expected` the largest absolute difference per output against a raw tensor file
-//!   (ONNX Runtime's, from `ml/enth_ml/export/parity.py`, or `PyTorch`'s): exit 1 above `--tolerance` (default 1e-5).
-//!   `--write` saves our outputs as a raw tensor file, so `ml/` can compare them against its own run.
+//! - `run` runs the model on a synthetic input (`--seed`, a comma-separated list for a batch; else the model's
+//!   `parity.seeds` or `parity.seed` info entry, else 0) or on `--inputs` (`mel` and `context` in a raw tensor file:
+//!   `[3, 128, 64]` and `[5]` for one sample, `[N, 3, 128, 64]` and `[N, 5]` for a batch, whose outputs gain a leading
+//!   `N`), prints each output and the outputs' SHA-256 (what an output golden pins), and with `--expected` the largest
+//!   absolute difference per output against a raw tensor file (ONNX Runtime's, from `ml/enth_ml/export/parity.py`, or
+//!   `PyTorch`'s, from `ml/enth_ml/export/propose.py`): exit 1 above `--tolerance` (default 1e-5). `--write` saves our
+//!   outputs as a raw tensor file, so `ml/` can compare them against its own run. `--decode` decodes every hypothesis
+//!   row (`OutputLayout::decode`, under the hearing a create job would have for that sample's `context`, as told and
+//!   with the key shifted by 3) and, with `--expected`, requires the same drops, the same modules, categoricals and
+//!   routes, and values within `--decode-tolerance` (normalised domain, default 1e-4); it also prints how close any
+//!   decision comes to flipping and whether the confidence order agrees.
 //! - `bench` builds conv-stack models of about each `--gflop` (default 0.5 and 2, docs/r3.md's targets) and times
 //!   `Net::run` (the median of `--runs`): information only, wall-clock (docs/benchmarks.md: instruction counts are the
 //!   gate). Run it alone on the machine (`flock -x /tmp/enth-quiet.lock`).
@@ -34,8 +42,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use enth_solver::propose::features::ModelInput;
-use enth_solver::propose::net::{Net, synthetic_input};
+use enth_solver::create::TargetPerf;
+use enth_solver::propose::decode::{Hearing, HearingError, OutputLayout};
+use enth_solver::propose::features::{Cue, ModelInput};
+use enth_solver::propose::net::{Net, Outputs, synthetic_input};
 use enth_solver::propose::pack::{ModelBuilder, ModelPack, OpCode, PackError, Val};
 
 /// One tensor of a raw tensor file.
@@ -109,7 +119,7 @@ fn hex(b: &[u8]) -> String {
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: enth-model-check info <model.bin>\n       enth-model-check run <model.bin> [--seed N | --inputs FILE] [--expected FILE] [--tolerance 1e-5] [--write FILE]\n       enth-model-check bench [--gflop G]... [--runs N]"
+        "usage: enth-model-check info <model.bin>\n       enth-model-check run <model.bin> [--seed N[,N...] | --inputs FILE] [--expected FILE] [--tolerance 1e-5] [--write FILE] [--decode [--decode-tolerance 1e-4]]\n       enth-model-check bench [--gflop G]... [--runs N]"
     );
     ExitCode::from(2)
 }
@@ -191,11 +201,260 @@ fn info(path: &PathBuf) -> ExitCode {
 
 struct RunArgs {
     model: PathBuf,
-    seed: Option<u64>,
+    seeds: Option<Vec<u64>>,
     inputs: Option<PathBuf>,
     expected: Option<PathBuf>,
     tolerance: f32,
     write: Option<PathBuf>,
+    decode: bool,
+    decode_tolerance: f32,
+}
+
+/// The samples of a run: one (`batched` false: outputs keep their model dims) or several (outputs gain a leading `N`).
+struct Samples {
+    inputs: Vec<ModelInput>,
+    batched: bool,
+}
+
+fn read_tensor_file(path: &PathBuf) -> Result<Vec<Tensor>, ExitCode> {
+    match load(path).map(|b| read_tensors(&b)) {
+        Ok(Ok(t)) => Ok(t),
+        Ok(Err(e)) => {
+            eprintln!("enth-model-check: {}: {e}", path.display());
+            Err(ExitCode::from(2))
+        }
+        Err(c) => Err(c),
+    }
+}
+
+/// `mel` `[3, 128, 64]` and `context` `[5]` (one sample), or `[N, 3, 128, 64]` and `[N, 5]` (a batch) from a tensor file.
+fn samples_from_file(path: &PathBuf) -> Result<Samples, ExitCode> {
+    let t = read_tensor_file(path)?;
+    let bad = |why: &str| {
+        eprintln!("enth-model-check: {}: {why}", path.display());
+        ExitCode::from(2)
+    };
+    let (Some(mel), Some(ctx)) = (
+        t.iter().find(|x| x.name == "mel"),
+        t.iter().find(|x| x.name == "context"),
+    ) else {
+        return Err(bad("needs tensors mel and context"));
+    };
+    let (mel_len, batched) = match mel.dims.as_slice() {
+        [3, 128, 64] => (3 * 128 * 64, false),
+        [_, 3, 128, 64] => (3 * 128 * 64, true),
+        _ => return Err(bad("mel is [3, 128, 64] or [N, 3, 128, 64]")),
+    };
+    let n = if batched { mel.dims[0] as usize } else { 1 };
+    let want: &[u32] = if batched { &[n as u32, 5] } else { &[5] };
+    if ctx.dims != want || mel.values.len() != n * mel_len {
+        return Err(bad("context is [5] or [N, 5], one row per mel"));
+    }
+    let inputs = (0..n)
+        .map(|i| {
+            let mut context = [0.0f32; 5];
+            context.copy_from_slice(&ctx.values[i * 5..(i + 1) * 5]);
+            ModelInput {
+                mel: mel.values[i * mel_len..(i + 1) * mel_len].to_vec(),
+                context,
+            }
+        })
+        .collect();
+    Ok(Samples { inputs, batched })
+}
+
+/// The outputs of every sample as tensors: as the model declares them, or with a leading `N` for a batch.
+fn combine(runs: &[Outputs], batched: bool) -> Vec<Tensor> {
+    let first = runs[0].all();
+    (0..first.len())
+        .map(|j| {
+            let mut dims = first[j].dims.clone();
+            if batched {
+                dims.insert(0, runs.len() as u32);
+            }
+            Tensor {
+                name: first[j].name.clone(),
+                dims,
+                values: runs
+                    .iter()
+                    .flat_map(|r| r.all()[j].values.iter().copied())
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+/// Hypothesis indices from the most to the least confident (ties: the lower index), as create orders proposals.
+fn order(conf: &[f32]) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..conf.len()).collect();
+    idx.sort_by(|&a, &b| conf[b].total_cmp(&conf[a]).then(a.cmp(&b)));
+    idx
+}
+
+/// The hearing a create job would have for a sample whose model input is told `context`: the intake's cue rebuilt from
+/// the context (key `60 + context[0]`, the pitch offset when `context[2]` says pitched, the hold capped at 4 s), a
+/// scored window of 3 s from an onset 7 ms in, and one note on the told key plus `key_shift` (a `--perf` override).
+fn job_hearing(context: &[f32; 5], key_shift: i32) -> Result<Hearing, HearingError> {
+    let key = (context[0].round() as i32 + 60).clamp(0, 127);
+    let pitched = context[2] > 0.5;
+    let f0_hz = pitched.then(|| {
+        440.0 * ((f64::from(key) - 69.0) / 12.0 + f64::from(context[1]) / 12.0).exp2()
+    });
+    let hold_s = f64::from(context[3]).clamp(0.08, 4.0);
+    let cue = Cue {
+        key: key as u8,
+        f0_hz,
+        on_s: 0.007,
+        hold_s,
+        bandwidth_hz: None,
+    };
+    let perf = TargetPerf {
+        key: (key + key_shift).clamp(0, 127) as u8,
+        velocity: 100.0 / 127.0,
+        on_s: 0.007,
+        hold_s,
+        duration_s: 3.0,
+        f0_hz,
+    };
+    Hearing::job(&cue, &perf)
+}
+
+/// Decodes every hypothesis row of `ours` (and of `expected`, when given) under a job's hearing and compares the
+/// patches. Returns whether every row agrees: the same drops, and in every kept row the same modules, categoricals and
+/// routes, and every continuous value (and route depth) within `tolerance` in the normalised domain.
+fn decode_report(
+    layout: &OutputLayout,
+    ours: &Tensor,
+    expected: Option<&Tensor>,
+    contexts: &[[f32; 5]],
+    tolerance: f32,
+) -> bool {
+    let h = layout.width();
+    let rows_per = ours.dims[ours.dims.len() - 2] as usize;
+    let mut all_ok = true;
+    for (mode, shift) in [("as told", 0), ("key +3 (a perf override)", 3)] {
+        let (mut rows, mut exact, mut close, mut dropped, mut mixed, mut discrete, mut over) =
+            (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        let mut worst = 0.0f32;
+        let mut first_problem: Option<String> = None;
+        for (n, context) in contexts.iter().enumerate() {
+            let Ok(hearing) = job_hearing(context, shift) else {
+                continue;
+            };
+            for k in 0..rows_per {
+                let at = (n * rows_per + k) * h;
+                let a = layout.decode(&ours.values[at..at + h], &hearing);
+                rows += 1;
+                let Some(exp) = expected else {
+                    if a.is_err() {
+                        dropped += 1;
+                    } else {
+                        exact += 1;
+                    }
+                    continue;
+                };
+                let b = layout.decode(&exp.values[at..at + h], &hearing);
+                let (pa, pb) = match (a, b) {
+                    (Err(x), Err(y)) if x.code() == y.code() => {
+                        dropped += 1;
+                        continue;
+                    }
+                    (Ok(pa), Ok(pb)) => (pa, pb),
+                    (x, y) => {
+                        mixed += 1;
+                        first_problem.get_or_insert_with(|| {
+                            format!(
+                                "sample {n} hypothesis {k}: ours {:?}, expected {:?}",
+                                x.map(|_| "a patch").map_err(|e| e.code()),
+                                y.map(|_| "a patch").map_err(|e| e.code())
+                            )
+                        });
+                        continue;
+                    }
+                };
+                if pa == pb {
+                    exact += 1;
+                    continue;
+                }
+                let mut why = None;
+                let mut row_worst = 0.0f32;
+                let modules_a: Vec<_> = pa.modules().map(|(_, m)| (m.id.clone(), m.enabled)).collect();
+                let modules_b: Vec<_> = pb.modules().map(|(_, m)| (m.id.clone(), m.enabled)).collect();
+                if modules_a != modules_b {
+                    why = Some("the modules switched on differ".to_owned());
+                }
+                for e in layout.categorical() {
+                    if pa.value(&e.addr) != pb.value(&e.addr) {
+                        why.get_or_insert_with(|| format!("{} differs", e.addr));
+                    }
+                }
+                if pa.routes.len() != pb.routes.len() {
+                    why.get_or_insert_with(|| "the routes differ".to_owned());
+                } else {
+                    for (x, y) in pa.routes.iter().zip(&pb.routes) {
+                        if x.src != y.src || x.dst != y.dst {
+                            why.get_or_insert_with(|| "the routes differ".to_owned());
+                        }
+                        row_worst = row_worst.max((x.depth - y.depth).abs() / 100.0);
+                    }
+                }
+                for e in layout.continuous() {
+                    if let (Some(x), Some(y)) = (pa.value(&e.addr), pb.value(&e.addr)) {
+                        row_worst = row_worst.max((e.spec.to_norm(x) - e.spec.to_norm(y)).abs());
+                    }
+                }
+                worst = worst.max(row_worst);
+                if let Some(w) = why {
+                    discrete += 1;
+                    first_problem
+                        .get_or_insert_with(|| format!("sample {n} hypothesis {k}: {w}"));
+                } else if row_worst > tolerance {
+                    over += 1;
+                    first_problem.get_or_insert_with(|| {
+                        format!("sample {n} hypothesis {k}: a value is {row_worst:.3e} apart")
+                    });
+                } else {
+                    close += 1;
+                }
+            }
+        }
+        let ok = mixed == 0 && discrete == 0 && over == 0;
+        all_ok &= ok;
+        if expected.is_some() {
+            println!(
+                "decode, {mode}: {rows} rows: {exact} bit-identical patches, {close} equal in modules, categoricals and routes with values within {tolerance:.0e}, {dropped} dropped by both, {discrete} differ in a decision, {over} over the tolerance, {mixed} dropped by one only; worst normalised difference {worst:.3e}: {}",
+                if ok { "pass" } else { "FAIL" }
+            );
+        } else {
+            println!("decode, {mode}: {rows} rows: {exact} decoded, {dropped} dropped");
+        }
+        if let Some(p) = first_problem {
+            println!("  first problem: {p}");
+        }
+    }
+    all_ok
+}
+
+/// How close any of our rows comes to a decision flipping: the smallest `|logit|` of a switch or a route's presence,
+/// and the smallest gap between a categorical group's best and second-best logit.
+fn decision_margin(layout: &OutputLayout, rows: &Tensor) -> (f32, f32) {
+    let h = layout.width();
+    let mut sign = f32::INFINITY;
+    let mut gap = f32::INFINITY;
+    for row in rows.values.chunks_exact(h) {
+        for e in layout.enables() {
+            sign = sign.min(row[e.offset].abs());
+        }
+        for c in layout.routes() {
+            sign = sign.min(row[c.presence].abs());
+        }
+        for e in layout.categorical() {
+            let mut v: Vec<f32> = row[e.offset..e.offset + e.len()].to_vec();
+            v.sort_by(|a, b| b.total_cmp(a));
+            gap = gap.min(v[0] - v[1]);
+        }
+    }
+    (sign, gap)
 }
 
 fn run(a: &RunArgs) -> ExitCode {
@@ -211,55 +470,58 @@ fn run(a: &RunArgs) -> ExitCode {
         Ok(n) => n,
         Err(e) => return refused(&e),
     };
-    let input = if let Some(path) = &a.inputs {
-        let t = match load(path).map(|b| read_tensors(&b)) {
-            Ok(Ok(t)) => t,
-            Ok(Err(e)) => {
-                eprintln!("enth-model-check: {}: {e}", path.display());
-                return ExitCode::from(2);
-            }
+    let samples = if let Some(path) = &a.inputs {
+        let s = match samples_from_file(path) {
+            Ok(s) => s,
             Err(c) => return c,
         };
-        let get = |name: &str| t.iter().find(|x| x.name == name).map(|x| x.values.clone());
-        let (Some(mel), Some(context)) = (get("mel"), get("context")) else {
-            eprintln!(
-                "enth-model-check: {} needs tensors mel and context",
-                path.display()
-            );
-            return ExitCode::from(2);
-        };
-        let Ok(context) = <[f32; 5]>::try_from(context.as_slice()) else {
-            eprintln!(
-                "enth-model-check: context has {} values, not 5",
-                context.len()
-            );
-            return ExitCode::from(2);
-        };
-        println!("input: {}", path.display());
-        ModelInput { mel, context }
+        println!("input: {} ({} samples)", path.display(), s.inputs.len());
+        s
     } else {
-        let seed = a
-            .seed
-            .or_else(|| pack.info_value("parity.seed").and_then(|s| s.parse().ok()))
-            .unwrap_or(0);
-        println!("input: synthetic, seed {seed}");
-        synthetic_input(seed)
-    };
-    let started = Instant::now();
-    let out = match net.run(&input) {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("enth-model-check: {} ({e})", e.code());
-            return ExitCode::from(2);
+        let seeds = a
+            .seeds
+            .clone()
+            .or_else(|| {
+                pack.info_value("parity.seeds")
+                    .map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+            })
+            .or_else(|| {
+                pack.info_value("parity.seed")
+                    .and_then(|s| s.parse().ok())
+                    .map(|s| vec![s])
+            })
+            .unwrap_or_else(|| vec![0]);
+        println!("input: synthetic, seed {seeds:?}");
+        Samples {
+            batched: seeds.len() > 1,
+            inputs: seeds.iter().map(|s| synthetic_input(*s)).collect(),
         }
     };
+    let started = Instant::now();
+    let mut runs = Vec::with_capacity(samples.inputs.len());
+    for input in &samples.inputs {
+        match net.run(input) {
+            Ok(o) => runs.push(o),
+            Err(e) => {
+                eprintln!("enth-model-check: {} ({e})", e.code());
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if runs.is_empty() {
+        eprintln!("enth-model-check: no input sample");
+        return ExitCode::from(2);
+    }
     let ms = started.elapsed().as_secs_f64() * 1e3;
     println!(
-        "ran {} ({:.3} GFLOP) in {ms:.1} ms (wall clock, information only)",
+        "ran {} ({:.3} GFLOP) on {} sample(s) in {ms:.1} ms, {:.1} ms each (wall clock, information only)",
         a.model.display(),
-        net.flops() as f64 / 1e9
+        net.flops() as f64 / 1e9,
+        runs.len(),
+        ms / runs.len() as f64
     );
-    for o in out.all() {
+    let out = combine(&runs, samples.batched);
+    for o in &out {
         let finite = o.values.iter().all(|v| v.is_finite());
         println!(
             "output {} {:?}{}",
@@ -268,64 +530,108 @@ fn run(a: &RunArgs) -> ExitCode {
             if finite { "" } else { " NON-FINITE" }
         );
     }
-    println!("outputs sha256 {}", hex(&out.sha256()));
+    if samples.batched {
+        println!(
+            "outputs sha256 of sample 0 {} (hash a --write file for the whole batch)",
+            hex(&runs[0].sha256())
+        );
+    } else {
+        println!("outputs sha256 {}", hex(&runs[0].sha256()));
+    }
     if let Some(path) = &a.write {
-        let tensors: Vec<Tensor> = out
-            .all()
-            .iter()
-            .map(|o| Tensor {
-                name: o.name.clone(),
-                dims: o.dims.clone(),
-                values: o.values.clone(),
-            })
-            .collect();
-        if let Err(e) = std::fs::write(path, write_tensors(&tensors)) {
+        if let Err(e) = std::fs::write(path, write_tensors(&out)) {
             eprintln!("enth-model-check: cannot write {}: {e}", path.display());
             return ExitCode::from(2);
         }
         println!("wrote {}", path.display());
     }
-    let Some(path) = &a.expected else {
-        return ExitCode::SUCCESS;
+    let expected = match &a.expected {
+        Some(path) => match read_tensor_file(path) {
+            Ok(t) => Some(t),
+            Err(c) => return c,
+        },
+        None => None,
     };
-    let expected = match load(path).map(|b| read_tensors(&b)) {
-        Ok(Ok(t)) => t,
-        Ok(Err(e)) => {
-            eprintln!("enth-model-check: {}: {e}", path.display());
-            return ExitCode::from(2);
-        }
-        Err(c) => return c,
-    };
-    let mut worst = 0.0f32;
     let mut ok = true;
-    for t in &expected {
-        let Some(ours) = out.get(&t.name) else {
-            println!("parity {}: the model has no such output", t.name);
-            ok = false;
-            continue;
-        };
-        if ours.dims != t.dims {
-            println!(
-                "parity {}: dims {:?}, expected {:?}",
-                t.name, ours.dims, t.dims
-            );
-            ok = false;
-            continue;
+    if let Some(expected) = &expected {
+        let mut worst = 0.0f32;
+        for t in expected {
+            let Some(ours) = out.iter().find(|o| o.name == t.name) else {
+                println!("parity {}: the model has no such output", t.name);
+                ok = false;
+                continue;
+            };
+            if ours.dims != t.dims {
+                println!(
+                    "parity {}: dims {:?}, expected {:?}",
+                    t.name, ours.dims, t.dims
+                );
+                ok = false;
+                continue;
+            }
+            let mut w = 0.0f32;
+            for (x, y) in ours.values.iter().zip(&t.values) {
+                let d = (x - y).abs();
+                w = if d.is_nan() { f32::INFINITY } else { w.max(d) };
+            }
+            println!("parity {}: max |ours - expected| = {w:.3e}", t.name);
+            worst = worst.max(w);
         }
-        let mut w = 0.0f32;
-        for (x, y) in ours.values.iter().zip(&t.values) {
-            let d = (x - y).abs();
-            w = if d.is_nan() { f32::INFINITY } else { w.max(d) };
-        }
-        println!("parity {}: max |ours - expected| = {w:.3e}", t.name);
-        worst = worst.max(w);
+        ok &= worst <= a.tolerance;
+        println!(
+            "parity: max {worst:.3e} against a tolerance of {:.0e}: {}",
+            a.tolerance,
+            if ok { "pass" } else { "FAIL" }
+        );
     }
-    ok &= worst <= a.tolerance;
-    println!(
-        "parity: max {worst:.3e} against a tolerance of {:.0e}: {}",
-        a.tolerance,
-        if ok { "pass" } else { "FAIL" }
-    );
+    if a.decode {
+        let h = pack.header();
+        let layout = match OutputLayout::build(h.layout, h.generator, h.template) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("enth-model-check: the layout does not build: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        let Some(hyp) = out.iter().find(|o| o.name == "hypotheses") else {
+            eprintln!("enth-model-check: the model has no hypotheses output");
+            return ExitCode::from(2);
+        };
+        let contexts: Vec<[f32; 5]> = samples.inputs.iter().map(|i| i.context).collect();
+        let exp_hyp = expected
+            .as_ref()
+            .and_then(|e| e.iter().find(|t| t.name == "hypotheses"));
+        if expected.is_some() && exp_hyp.is_none() {
+            println!("decode: the expected file has no hypotheses");
+            ok = false;
+        }
+        let (sign, gap) = decision_margin(&layout, hyp);
+        println!(
+            "decision margins in our rows: smallest |logit| of a switch or a route {sign:.3e}, smallest gap between a categorical's top two {gap:.3e} (a difference of this size between the two runs could flip a decision)"
+        );
+        ok &= decode_report(&layout, hyp, exp_hyp, &contexts, a.decode_tolerance);
+        let exp_conf = expected
+            .as_ref()
+            .and_then(|e| e.iter().find(|t| t.name == "confidence"));
+        if let (Some(ec), Some(oc)) = (exp_conf, out.iter().find(|t| t.name == "confidence")) {
+            let k = oc.dims[oc.dims.len() - 1] as usize;
+            let n = oc.values.len() / k;
+            let (mut same, mut top1) = (0usize, 0usize);
+            let mut tightest = f32::INFINITY;
+            for i in 0..n {
+                let (x, y) = (&oc.values[i * k..(i + 1) * k], &ec.values[i * k..(i + 1) * k]);
+                let (ox, oy) = (order(x), order(y));
+                same += usize::from(ox == oy);
+                top1 += usize::from(ox[0] == oy[0]);
+                for w in ox.windows(2) {
+                    tightest = tightest.min(x[w[0]] - x[w[1]]);
+                }
+            }
+            println!(
+                "confidence order: {same} of {n} samples rank all {k} hypotheses identically, {top1} the same first (the smallest gap between neighbours in our ranking is {tightest:.3e})"
+            );
+        }
+    }
     if ok {
         ExitCode::SUCCESS
     } else {
@@ -429,27 +735,41 @@ fn main() -> ExitCode {
         "run" if !rest.is_empty() => {
             let mut a = RunArgs {
                 model: PathBuf::from(&rest[0]),
-                seed: None,
+                seeds: None,
                 inputs: None,
                 expected: None,
                 tolerance: 1e-5,
                 write: None,
+                decode: false,
+                decode_tolerance: 1e-4,
             };
             let mut it = rest[1..].iter();
             while let Some(flag) = it.next() {
+                if flag == "--decode" {
+                    a.decode = true;
+                    continue;
+                }
                 let Some(value) = it.next() else {
                     return usage();
                 };
                 match flag.as_str() {
-                    "--seed" => match value.parse() {
-                        Ok(s) => a.seed = Some(s),
-                        Err(_) => return usage(),
-                    },
+                    "--seed" => {
+                        let seeds: Result<Vec<u64>, _> =
+                            value.split(',').map(|s| s.trim().parse()).collect();
+                        match seeds {
+                            Ok(s) if !s.is_empty() => a.seeds = Some(s),
+                            _ => return usage(),
+                        }
+                    }
                     "--inputs" => a.inputs = Some(PathBuf::from(value)),
                     "--expected" => a.expected = Some(PathBuf::from(value)),
                     "--write" => a.write = Some(PathBuf::from(value)),
                     "--tolerance" => match value.parse() {
                         Ok(t) => a.tolerance = t,
+                        Err(_) => return usage(),
+                    },
+                    "--decode-tolerance" => match value.parse() {
+                        Ok(t) => a.decode_tolerance = t,
                         Err(_) => return usage(),
                     },
                     _ => return usage(),
