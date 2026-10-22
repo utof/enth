@@ -9,8 +9,8 @@ R5 lets two friends play the same challenge and compare, with no server, no acco
 | The scorecard, the answer code, the ear result, `result-params-v1`, paste-anything, the daily formula | `enth-challenge/src/{result,answer,paste,daily}.rs` (L4) | RC | Built, for the F1e judge (the ear result's replay waits for CV3's keys) |
 | `verify` | `enth-challenge/src/verify.rs` (L4) | RC | Built, for the F1e judge |
 | Duel state; the patch of the first passing submit | `enth-session/src/duel.rs`, additive in `game.rs` (L6) | SE | Built; awaiting the F1e judge |
-| Duel jobs, the clipboard; `enth duel result\|verify`; the REAPER `duel` scenario | `enth-plugin/src/duel.rs`, `enth-cli/src/cmd/duel.rs` (L8) | SKD | Planned (F2d) |
-| The duel card: share, paste, verify, side by side, the sealed answer, the history | `enth-ui/src/editor/duel/` (L7, feature `duel`) | DUI | Planned |
+| Duel jobs, the clipboard; `enth duel result\|verify`; the REAPER `duel` scenario | `enth-plugin/src/duel.rs`, `enth-cli/src/cmd/duel.rs` (L8) | SKD | Built (F2d): [below](#the-shell-lane-skd) |
+| The duel card: share, paste, verify, side by side, the sealed answer, the history | `enth-ui/src/editor/duel/` (L7, feature `duel`) | SKD (the minimal card), then DUI | Minimal card built (F2d); DUI's card planned |
 | GR5, the friend duel sheet, the friend build | `docs/r5-gates.md`, `docs/r5-owner.md`, `docs/duel-friends.md` (all planned) | INT5 | Planned |
 
 ## What makes serverless duels last
@@ -61,13 +61,27 @@ Both take code v1's reserved version-15 escape. **Lane RC built them (2026-10-22
 
 ### Sizes
 
-Symbols, code v1's included (40 seeds per level, 8 for the solver; reports 02 and 03 measured targets as stand-ins). "Dragged" moves every changed value off three significant digits, "touched" adds three more knobs, and the solver searched 1,500 renders over the drawn or every observable parameter, like `enth match`. Lane SKD measures real passing answers at F2d.
+Symbols, code v1's included (40 seeds per level, 8 for the solver; reports 02 and 03 measured targets as stand-ins). "Dragged" moves every changed value off three significant digits, "touched" adds three more knobs, and the solver searched 1,500 renders over the drawn or every observable parameter, like `enth match`. Lane SKD measured real passing answers at F2d ([below the table](#passing-answers-lane-skd-f2d)).
 
 | Level | Target (median, max) | Dragged | Touched | Solver, drawn | Solver, observable | Report 02 | Report 03 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 46, 50 | 49, 56 | 74, 75 | 48, 56 | 107, 107 | 51, 62 | 49 |
 | 3 | 92, 98 | 123, 132 | 144, 147 | 113, 117 | 100, 109 | 141, 154 | 133 |
 | 5 | 152, 188 | 212, 263 | 230, 271 | 176, 181 | 110, 125 | 254, 309 | 259 |
+
+#### Passing answers (lane SKD, F2d)
+
+Measured on 2026-10-22 with answers that **pass** `sound/1` (`enth-cli`'s `measure_passing_answer_sizes`, 20 seeds per level, every answer passed): "played" drags every randomized float off the target by up to 2 % of its knob's travel (closer until it passes), as a player who matched it by ear and mouse leaves it; "touched" also leaves three other knobs nudged by up to 0.5 %, kept only while the answer passes. The REAPER `duel` scenario's real round (level 2, seed 77, the target rebuilt by edits, then shared from the plugin) gave an answer of **52 symbols** and a scorecard of 51.
+
+| Level | Target (median, max) | Played, passing | Played and touched, passing |
+| --- | --- | --- | --- |
+| 1 | 46, 50 | 49, 56 | 68, 85 |
+| 2 | 56, 60 | 66, 75 | 86, 99 |
+| 3 | 92, 96 | 123, 132 | 139, 151 |
+| 4 | 109, 123 | 144, 168 | 157, 183 |
+| 5 | 152, 190 | 212, 269 | 228, 291 |
+
+So real passing answers are about 1.1–1.4 times the target's size, at most about 290 symbols at level 5: inside Discord's 2,000 characters, not inside one SMS above level 1. **A level-1 answer with touched knobs is usually above 64 symbols**, so an R1–R3 build reads it "bad length", not "update enth" (the friend sheet should say both). The solver's answers were not measured again.
 
 Each extra knob left off three significant digits costs about 8 symbols. The solver moves values only, so at levels 4 and 5 it rarely passes; over every observable parameter it moves about eleven knobs to exact values, about 105 symbols at any level, the likeliest shape of an agent's answer. Every answer of 64 symbols or fewer reads "update enth" on an R1–R3 build, a longer one "bad length".
 
@@ -158,6 +172,17 @@ The pure duel state is built ([session.md](session.md#duel-lane-se-r5a) has the 
 - **Their patch loads as one undo step** with no host writes, never while a round is live; it can be auditioned once, rendered by the shell with the challenge's phrase.
 - **The salt is the shell's:** the session has no randomness and builds no code; the shell draws the salt from OS randomness once per duel (never from a clock or a seed, [Privacy](#privacy)) and keeps it, with the result, in the duel history.
 - **Not saved in the project.** The duel history is the shell's file (DUI).
+
+## The shell (lane SKD)
+
+Built at F2d ([plugin.md](plugin.md#duels-lane-skd-r5a), [agent-cli.md](agent-cli.md#duels-on-the-command-line-enth-duel)); the plugin's `duel` feature is **off by default** until DUI's card and INT5's friend build:
+
+- **Share** (the card's click): the player's result is cloned on the click, a duel opens on its code, the duel's salt is drawn, and the game worker makes the codes: `AnswerCode::new(challenge, salt, &patch)`, the round prepared once with the round's own scorer set, the **canonical answer** scored, `Scorecard::new(…, code.commitment())`. The scorecard claims the canonical answer's score, which is what every receiver re-scores, so the same engine reads "as reported".
+- **The salt:** `getrandom::u64` in the plugin, std's `RandomState` keys in the CLI; drawn once per duel at its first Share and kept with its codes (a second Share gives the same codes); never a clock or a seed. **DUI writes it to the history** with the codes before Copy is offered.
+- **Verify** on the game worker in the F1e order: decode, prepare once with `verify::scorer_set(card)`, `verify_prepared` on theirs, your canonical answer re-scored on the same round, `DuelVerified…with_claim(v.claim)`; an answer for another challenge fails as `not_the_same_challenge`. **Audition** through the Learn examples slot (no new audio-thread code), never while a round's target holds it.
+- **The clipboard** is written with egui's `copy_text` inside a click on Copy and **never read**: a paste is the platform's Paste into the card's paste box, and Read hands the text to `paste::paste`. `Found::EarChallenge` is named on the card for the Ear view (SKE routes it).
+- **The minimal card** (`enth-ui`'s `editor/duel/`): a column at the window's right edge, opened from **Duel** in the overview's corner; its controls in fixed rows (Share result, Copy message, Copy answer; the paste box; Read, Verify, Use theirs, ▶ Theirs; Play, Close duel), then the text, worded as [Wording](#wording) says. DUI replaces it.
+- **Checked:** the REAPER `duel` scenario (two instances, the X clipboard, a saved round passed and shared, the answer sealed, then checked as reported with the commitment matched: 15 of 15 checks); `enth duel result|verify` with insta snapshots; two real instances through the worker in `enth-plugin`'s `tests_duel.rs`.
 
 ## GR5
 
