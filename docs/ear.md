@@ -10,7 +10,7 @@ R4 trains the ear that sound design needs: which knob moved, how far, where a ba
 | Challenge v3: `Target::Ear`, choice, value and tap answers, ear rendering, timbres, scorers, the ear-challenge code | `enth-challenge` (L4) | CV3 | Planned (F1e; [challenge.md](challenge.md#challenge-v3-planned-lane-cv3-r4)) |
 | The parameter games' items (Spot the change, Dial it in, Ear check) | `enth-challenge` (L4), on v2 draws | CV3; G4 the ladder | Planned |
 | The EQ biquad | `enth-dsp/src/biquad.rs` (L0) | BQ | Planned |
-| The drill player: staircase, ear skills in Review, `StepKind::Drill`, the `drills` field, the workout composer | `enth-learn` (L5) | DRL | Planned (F1e; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-planned-lane-drl)) |
+| The drill player: staircase, ear skills in Review, `StepKind::Drill`, the `drills` field, the workout composer | `enth-learn` (L5) | DRL | Built (F1e; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl)) |
 | Ear sessions | `enth-session/src/ear.rs` (L6) | SE | Planned (F1e) |
 | Ear jobs, examples, the restart flag; `enth ear` | `enth-plugin/src/ear.rs`, `enth-cli/src/cmd/ear.rs` (L8) | SKE, EV4 | Planned (F2e) |
 | The Ear view | `enth-ui/src/editor/ear/` (L7, feature `ear`) | EUI | Planned |
@@ -127,7 +127,7 @@ A sketch from report 02 §2; the F1e judge fixes the real types.
 
 ## The drill player
 
-Lane DRL, in `enth-learn` (L5). The skill is the unit of spacing; the game is its vehicle ([learn.md](learn.md#ear-skills-bursts-and-drills-r4-planned-lane-drl)).
+Lane DRL, in `enth-learn` (L5). The skill is the unit of spacing; the game is its vehicle ([learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl)).
 
 - **Skill keys:** `module.param` (Review's keys today) and `ear.*` (`ear.interval.m3`, `ear.chord.min`, `ear.band.1k`). The progress file keeps unknown keys, so this is additive.
 - **Bursts:** 5 items on one skill, in any game; 4 or more right moves its box up, 3 holds it, 2 or fewer moves it down. Single answers in 2–4 option items are 25–50 % guessable.
@@ -135,6 +135,7 @@ Lane DRL, in `enth-learn` (L5). The skill is the unit of spacing; the game is it
 - **Interleaving:** each category is met alone first, then confusable ones mix (m3/M3, attack/decay, room/decay); one line of copy says why mixing feels harder (Carvalho & Goldstone 2014).
 - **This closes learn.md's open item** "ear questions as Review items": a due skill without a Recreate step plays as a burst.
 - **`StepKind::Drill`** (additive, declared in `requires`) lets a lesson play a drill; **the `drills` progress field** (additive) keeps thresholds per skill over time and the practised days.
+- **As built (2026-10-22, lane DRL):** all of the above is in `enth-learn` and pure; [learn.md](learn.md#ear-skills-bursts-and-drills-r4-lane-drl) has the built form, the shell's loop and the numbers. Two things differ from the plan's wording. The estimate is the mean of the last up to 12 reversals (a 40-trial track turns about ten times), and "within one step in 90 % of 40-trial runs" holds pooled for steep ladders (a level of about a JND or more: 92 % over 60 simulated listeners), not in every cell and not for ladders of half a JND a level, where 40 answers cannot carry it (79 % within one level, 97 % within two): build ladders with steps of about a JND. And the composer drills every due skill its catalogue lists, so the shell lists only the parameter skills the learner has met.
 
 ## Workouts
 
