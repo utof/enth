@@ -46,6 +46,9 @@ nanomp3 = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
 # `raw_value`: the `patch` field carries `Patch::to_json()` verbatim (docs/session.md); no extra crates.
 serde_json = { workspace = true, features = ["raw_value"] }
+# R5a (lane SKD): the duel's salt, 64 bits of OS randomness drawn once per duel and never from a clock or a seed
+# (docs/duels.md, "Privacy"; pinned in [workspace.dependencies] by the coordinator); optional, behind `duel`.
+getrandom = { workspace = true, optional = true }
 
 [features]
 # A timing histogram of `process()` inside the plugin (src/rt_stats.rs, docs/plugin.md "rt-stats"): off by default;
@@ -79,10 +82,12 @@ create-harness = ["create"]
 # until lane SKE (F2e) decides; `enth-session`'s `ear`, Challenge v3 and the codes always compile, and an ear session is
 # not saved in the project.
 ear = ["enth-ui/ear", "dep:enth-music"]
-# R5 (lane S0e): the duel jobs (src/duel.rs, lane SKD: verify on the game worker, the clipboard written on a click and
-# read only on Paste; lane DUI the history file) and the editor's duel card (enth-ui/duel). No networking code. Off by
-# default until lane SKD (F2d) decides; the session's `duel`, the result codes and `verify` always compile.
-duel = ["enth-ui/duel"]
+# R5 (lane S0e): the duel jobs (src/duel.rs, lane SKD: the codes, verify and audition on the game worker, the salt from
+# OS randomness; lane DUI the history file) and the editor's duel card (enth-ui/duel), whose clipboard is written on a
+# click and never read (a paste is the platform's Paste into its box). No networking code. Off by default (lane SKD,
+# F2d: lane DUI's card and INT5's friend build decide when it turns on); the session's `duel`, the result codes and
+# `verify` always compile.
+duel = ["enth-ui/duel", "dep:getrandom"]
 default = ["recreate", "learn"]
 # Lane SKR: the `process-stats --ab` measurement harness (src/game.rs, `harness`): with `ENTH_AB_TOGGLE_MS` set,
 # activation starts a round and `process()` flips Target ▶ and Mine ▶ itself every that many ms of audio. Off by
