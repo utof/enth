@@ -8,7 +8,9 @@
 //!
 //! 1. **Screening (round 0).** One batch renders every start once (at most the budget's worth, in portfolio
 //!    order), so the first K proposals have distances after a single batch. The heuristic start is always kept and
-//!    the best K − 1 others (by distance, ties to the earlier start) become the branches, in start order.
+//!    the best K − 1 others (by distance, ties to the earlier start) become the branches, in start order, with a
+//!    model's starts holding at most `⌈K / 2⌉` of the K places while other starts remain ([`CreateCfg::model_cap`],
+//!    lane EVM).
 //! 2. **Branches.** Each branch is its own [`Search`] from its start, over the parameters the job's one note reveals
 //!    (`enth_challenge::random::observable_view` under the phrase [`Hearing::job`] builds, the one a model's
 //!    hypotheses decode under), with the envelope times the job hears in part kept and no release when the target's
@@ -25,7 +27,8 @@
 //!    default): a branch asks for batches until it has reached it (a batch boundary, so it can run over by less than
 //!    one batch) and then waits; when every live branch has reached it or ended, the branches are ranked by their
 //!    best distance (ties to the lower branch) and the best `⌈live / eta⌉` survive, at least
-//!    [`CreateCfg::finalists`]. The finalists then continue through the growing rungs until the cap: from 8
+//!    [`CreateCfg::finalists`], with a model's branches holding at most half of them, rounded up, while other
+//!    branches are live (the same cap). The finalists then continue through the growing rungs until the cap: from 8
 //!    branches, 4 survive their 50th render, 2 their 100th, and those 2 go on.
 //! 5. **The budget is only a hard cap.** A round whose batches would pass it keeps the whole batches that fit, in
 //!    branch order up to the first that does not, and is the last round. Nothing else depends on the budget, and
@@ -52,7 +55,9 @@
 //!    [`Provenance::Model`]` { model, hypothesis, confidence }`. The shell passes them as `Inputs::proposals`, so the
 //!    portfolio puts them after the k-NN neighbours; round 0 screens every start, the heuristic start is always
 //!    kept, and a hypothesis becomes a branch only on its rendered distance: the confidence orders and labels, never
-//!    prunes (the F3s judge's ruling 8).
+//!    prunes (the F3s judge's ruling 8). **The model's share cap** (lane EVM, [`CreateCfg::model_cap`], on by
+//!    default) keeps the hypotheses from crowding out the other sources: at screening and at every rung they hold at
+//!    most half of the places, rounded up, while other starts or branches can fill the rest.
 //! 5. **The record:** [`ModelProposals::record`] is `enth.create/1`'s `settings.model` (the id, the file's SHA-256,
 //!    the input's and the outputs' hashes, the drops), and [`ModelProposals::notes`] go with the job's notes.
 //!
@@ -88,6 +93,42 @@ const BRANCH_STREAM: u64 = 0x4352_4541_5445_4252; // "CREATEBR"
 
 /// A branch's search has no cap of its own: the job's budget is the only one (see the module docs, point 2).
 const UNCAPPED: usize = usize::MAX;
+
+/// Whether a start is one of a model's hypotheses (what [`CreateCfg::model_cap`] counts).
+fn is_model(p: &Provenance) -> bool {
+    matches!(p, Provenance::Model { .. })
+}
+
+/// The first `n` of `ranked` (best first) with at most `model_places` of them model starts: a model start past its
+/// places is skipped while others remain, and the places the others cannot fill go back to the skipped model starts
+/// in rank order, so the result always has `min(n, ranked.len())` entries (in rank order within each kind). A pure
+/// function of the ranking, so the cap keeps the job deterministic for any worker count (lane EVM).
+fn capped(
+    ranked: &[usize],
+    n: usize,
+    model: impl Fn(usize) -> bool,
+    model_places: usize,
+) -> Vec<usize> {
+    let mut out = Vec::with_capacity(n);
+    let mut skipped = Vec::new();
+    let mut models = 0usize;
+    for &i in ranked {
+        if out.len() == n {
+            break;
+        }
+        if !model(i) {
+            out.push(i);
+        } else if models < model_places {
+            models += 1;
+            out.push(i);
+        } else {
+            skipped.push(i);
+        }
+    }
+    let room = n.saturating_sub(out.len());
+    out.extend(skipped.into_iter().take(room));
+    out
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
@@ -350,8 +391,17 @@ impl CreateJob {
             .div_ceil(self.cfg.eta)
             .max(self.cfg.finalists)
             .min(live.len());
-        for &b in &self.ranked(&live)[keep..] {
-            self.branches[b].state = CandidateState::Pruned;
+        // The best `keep` by rank, under the model's share cap (`CreateCfg::model_cap`, lane EVM).
+        let survivors = capped(
+            &self.ranked(&live),
+            keep,
+            |b| is_model(&self.starts[self.branches[b].start].provenance),
+            self.cfg.model_places(keep),
+        );
+        for b in live {
+            if !survivors.contains(&b) {
+                self.branches[b].state = CandidateState::Pruned;
+            }
         }
         self.begin_rung(r + 1);
     }
@@ -508,11 +558,17 @@ impl CreateJob {
                     .collect();
                 let d = |i: usize| self.starts[i].screen_distance.unwrap_or(FAILED);
                 others.sort_by(|&a, &b| d(a).total_cmp(&d(b)).then(a.cmp(&b)));
-                let mut kept: Vec<usize> = heuristic
-                    .into_iter()
-                    .chain(others)
-                    .take(self.cfg.k)
-                    .collect();
+                // K places (or every screened start): the heuristic's, then the others by rank under the model's
+                // share cap (`CreateCfg::model_cap`, lane EVM).
+                let n = self.cfg.k.min(distances.len());
+                let rest = n - usize::from(heuristic.is_some());
+                let others = capped(
+                    &others,
+                    rest,
+                    |i| is_model(&self.starts[i].provenance),
+                    self.cfg.model_places(n),
+                );
+                let mut kept: Vec<usize> = heuristic.into_iter().chain(others).collect();
                 kept.sort_unstable();
                 self.make_branches(&kept)?;
                 if self.used >= self.cfg.budget {
@@ -1065,5 +1121,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- the model's share cap (lane EVM) ----
+
+    use super::capped;
+
+    /// `ranked` best first; the model starts are the ones in `models`.
+    fn pick(ranked: &[usize], n: usize, models: &[usize], places: usize) -> Vec<usize> {
+        capped(ranked, n, |i| models.contains(&i), places)
+    }
+
+    #[test]
+    fn the_cap_skips_model_starts_past_their_places_while_others_remain() {
+        // 8 ranked, the best five from the model: four places leave room for the three best others.
+        let ranked = [10, 11, 12, 13, 14, 1, 2, 3];
+        let models = [10, 11, 12, 13, 14];
+        assert_eq!(pick(&ranked, 7, &models, 4), [10, 11, 12, 13, 1, 2, 3]);
+        // Without the cap (every place open to the model): the plain best 7.
+        assert_eq!(pick(&ranked, 7, &models, 7), [10, 11, 12, 13, 14, 1, 2]);
+        // A rung keeping 2 of 4 live with one place for the model: the best model branch and the best other.
+        assert_eq!(pick(&[10, 11, 1, 2], 2, &[10, 11], 1), [10, 1]);
+    }
+
+    #[test]
+    fn the_cap_never_shrinks_a_selection() {
+        // Too few others: the skipped model starts take the places left, in rank order.
+        let ranked = [10, 11, 12, 13, 14, 15, 1];
+        let models = [10, 11, 12, 13, 14, 15];
+        assert_eq!(pick(&ranked, 4, &models, 2), [10, 11, 1, 12]);
+        assert_eq!(pick(&ranked, 7, &models, 4).len(), 7);
+        // Only model starts: the plain best n.
+        assert_eq!(pick(&[10, 11, 12], 2, &[10, 11, 12], 1), [10, 11]);
+        // Fewer than n to choose from: all of them.
+        assert_eq!(pick(&[1, 10], 5, &[10], 1), [1, 10]);
+        // No model starts: the plain best n, whatever the places.
+        assert_eq!(pick(&[3, 1, 2], 2, &[], 0), [3, 1]);
+    }
+
+    #[test]
+    fn the_cap_places_are_half_rounded_up_and_off_means_all() {
+        let on = super::super::CreateCfg::default();
+        assert!(on.model_cap, "on by default");
+        assert_eq!(
+            (1..=8).map(|n| on.model_places(n)).collect::<Vec<_>>(),
+            [1, 1, 2, 2, 3, 3, 4, 4]
+        );
+        let off = super::super::CreateCfg {
+            model_cap: false,
+            ..on
+        };
+        assert_eq!(off.model_places(8), 8);
     }
 }

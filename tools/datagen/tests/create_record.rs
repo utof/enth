@@ -404,3 +404,87 @@ fn the_model_setting_is_additive_and_round_trips() {
         proposals[0].provenance
     );
 }
+
+/// Lane EVM: `settings.model_cap` (`CreateCfg::model_cap`) is written only when a model's starts joined the job, so a
+/// record without them is byte-for-byte what it was; one with model starts and no key (written before the cap) reads
+/// back uncapped.
+#[test]
+fn the_model_cap_is_written_only_with_model_starts_and_absent_reads_uncapped() {
+    use enth_solver::create::Start;
+
+    let t = target();
+    let init = enth_patch::file::load(include_str!("../../../content/templates/init.patch.json"))
+        .unwrap()
+        .patch;
+    let record_for = |proposals: &[Start]| {
+        let inputs = Inputs {
+            init: &init,
+            templates: &[],
+            bank: None,
+            proposals,
+        };
+        let cfg = CreateCfg {
+            k: 2,
+            budget: 60,
+            ..CreateCfg::default()
+        };
+        let analysis = t.analyse().unwrap();
+        let mut job = CreateJob::new(
+            &t,
+            &analysis,
+            Portfolio::build(&t, &analysis, &inputs, &cfg),
+            &cfg,
+        )
+        .unwrap();
+        run(&mut job, &mut proxy, &mut |_| true).unwrap();
+        CreateRecord::new(
+            &job.result(),
+            &RecordContext {
+                target: &t,
+                analysis: &analysis,
+                intake: None,
+                objective: "proxy/0",
+                bank: None,
+                templates: &[],
+            },
+        )
+    };
+
+    // No model starts: no key.
+    let plain = record_for(&[]);
+    let v: serde_json::Value = serde_json::to_value(&plain).unwrap();
+    assert!(v["settings"].get("model_cap").is_none());
+    assert!(plain.cfg().model_cap, "the job's own setting (the default)");
+
+    // A model start: the key, true by default, round-tripping.
+    let mut hypothesis = init.clone();
+    enth_patch::apply(
+        &mut hypothesis,
+        enth_patch::Op::SetParam {
+            addr: "env1.decay".parse().unwrap(),
+            value: 240.0,
+        },
+    )
+    .unwrap();
+    let proposals = [Start {
+        patch: hypothesis,
+        provenance: Provenance::Model {
+            model: "propose-v0".to_owned(),
+            hypothesis: 0,
+            confidence: Some(0.5),
+        },
+    }];
+    let capped = record_for(&proposals);
+    let text = serde_json::to_string_pretty(&capped).unwrap();
+    let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["settings"]["model_cap"], true);
+    let back: CreateRecord = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, capped);
+    assert!(back.cfg().model_cap);
+
+    // The same record without the key (as written before the cap): uncapped.
+    v["settings"].as_object_mut().unwrap().remove("model_cap");
+    let old: CreateRecord = serde_json::from_value(v).unwrap();
+    assert_eq!(old.settings.model_cap, None);
+    assert!(!old.cfg().model_cap);
+}

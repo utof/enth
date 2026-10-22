@@ -10,7 +10,7 @@
 //! | `schema` | `"enth.create/1"` ([`SCHEMA`]) |
 //! | `input` | the scored clip's SHA-256, the input features' SHA-256, the rate, the frames, the render seed, the performance **played** (an override included), the bandwidth and the confirmed noise floor |
 //! | `intake` | FE's [`IntakeReport`] whole (its settings, the performance it **inferred**, every degradation and warning), when the shell ran the intake; absent for a target built another way |
-//! | `settings` | every [`CreateCfg`] field **the job ran under** (from the result, never the shell's copy), the objective's metric id (the caller's), the embedding id, the bank's SHA-256 and size when one was used, the templates' names; **`model`** when a model proposed starts (R3b, lane MS, additive): its id, the file's SHA-256, the model input's and outputs' hashes, Kₘ and the hypotheses dropped ([`ModelRecord`]) |
+//! | `settings` | every [`CreateCfg`] field **the job ran under** (from the result, never the shell's copy), the objective's metric id (the caller's), the embedding id, the bank's SHA-256 and size when one was used, the templates' names; **`model`** when a model proposed starts (R3b, lane MS, additive): its id, the file's SHA-256, the model input's and outputs' hashes, Kₘ and the hypotheses dropped ([`ModelRecord`]); **`model_cap`** when a model's starts joined the job (lane EVM, additive: [`CreateCfg::model_cap`]) |
 //! | `starts` | **every start as a patch** (patch file schema 1), with its provenance, its screening distance and the branch it became |
 //! | `candidates` | the K branches: the refined patch, its distance, the proposal's distance, state, last rung, renders, runs, trace |
 //! | `rounds` | per round: renders, rung, live branches, and `seconds` when the shell stamped its clock |
@@ -141,6 +141,11 @@ pub struct SettingsRecord {
     /// back as `None`. The shell sets it from [`ModelProposals::record`](super::ModelProposals::record).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<ModelRecord>,
+    /// [`CreateCfg::model_cap`] (R3b, lane EVM; additive within `/1`): written only when a model's starts joined the
+    /// job, the one case where it changes anything, so a record without them is byte-for-byte what it was. Absent
+    /// from a record with model starts (one written before the cap), it reads back as `false`: the job ran uncapped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_cap: Option<bool>,
 }
 
 /// The model a job drew starts from (`settings.model`, lane MS). The starts themselves are recorded as patches with
@@ -339,6 +344,11 @@ impl CreateRecord {
                 }),
                 templates: ctx.templates.to_vec(),
                 model: None,
+                model_cap: result
+                    .starts
+                    .iter()
+                    .any(|s| matches!(s.provenance, Provenance::Model { .. }))
+                    .then_some(cfg.model_cap),
             },
             starts: result
                 .starts
@@ -402,6 +412,13 @@ impl CreateRecord {
             first_rung: s.first_rung,
             eta: s.eta,
             finalists: s.finalists,
+            // Absent: no model starts (the cap changes nothing; the default) or a record from before the cap.
+            model_cap: s.model_cap.unwrap_or_else(|| {
+                !self
+                    .starts
+                    .iter()
+                    .any(|st| matches!(st.provenance, Provenance::Model { .. }))
+            }),
         }
     }
 

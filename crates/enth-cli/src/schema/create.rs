@@ -148,6 +148,11 @@ pub struct CreateSettingsOut {
     /// model was used (no `--model`, or the file was refused and the job ran search alone, which `notes` says).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<CreateModelOut>,
+    /// The model's share cap (R3b, lane EVM, additive within `/1`): `true` when a model's hypotheses held at most half
+    /// of the branches at screening and at every rung, the default. Present only when a model's starts joined the
+    /// job (absent otherwise, so earlier outputs are unchanged); a record with model starts and no key ran uncapped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_cap: Option<bool>,
 }
 
 /// The model a job drew starts from (`settings.model`). Its starts are recorded as patches with `provenance.kind`
