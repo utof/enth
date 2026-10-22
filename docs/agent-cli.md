@@ -410,7 +410,7 @@ R3 (lane SK3 built the command and its engine at freeze point F2s; lane CLC fini
 
 | Flag | Default | Does |
 | --- | --- | --- |
-| `--target FILE` | required | The sound: WAV, FLAC, Ogg Vorbis or MP3, read by the plugin's own decoder (so both shells get the same bits). 192 kHz and above are decimated exactly 2:1; M4A/AAC and AIFF are not read yet. A short sound is never rejected for its length. Render and analysis run at the file's own rate, with no resampling |
+| `--target FILE` | required | The sound: WAV, AIFF (and AIFF-C), FLAC, Ogg Vorbis or MP3, read by the plugin's own decoder (so both shells get the same bits). 192 kHz and above are decimated exactly 2:1; M4A/AAC is not read yet. A short sound is never rejected for its length. Render and analysis run at the file's own rate, with no resampling |
 | `--candidates K` | 8 | The branches refined at once, 1 to 16. Fewer come back when the portfolio holds fewer starts (4 without a bank: the heuristic and three templates; a bank adds up to 16 neighbours), and `notes` says so |
 | `--seconds S` | 60 | The wall-clock cap, above 0 and at most 300 (every result arrives in under 5 minutes), from decoding to the last candidate. Checked before every render; a batch it interrupts is dropped. A capped run depends on the machine's speed. If it passes before the first round ends there is no candidate to give: `time_cap`, exit 4, never an empty result |
 | `--budget N` | 4000 | The most renders, at least 1. Only a cap: the schedule never depends on it, so a run is a prefix of any longer one. The last round keeps the whole batches that fit, so `renders` can be a few under `N` |
