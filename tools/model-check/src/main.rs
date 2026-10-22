@@ -1,5 +1,5 @@
 //! **Owner: lane ONX** (R3b; docs/r3.md, "Our own scalar kernels (lane ONX)"); lane EXP added batch inputs, several
-//! seeds and `--decode` (the PyTorch parity of the exported model).
+//! seeds and `--decode` (the `PyTorch` parity of the exported model).
 //!
 //! `enth-model-check`: a dev tool for model files (`enth-model-<id>.bin`, `ENTHMODL` format 1). A tooling package,
 //! exempt from the layer rules: it reads files and clocks, and runs `enth-solver`'s pure inference on them.
@@ -49,6 +49,7 @@ use enth_solver::propose::net::{Net, Outputs, synthetic_input};
 use enth_solver::propose::pack::{ModelBuilder, ModelPack, OpCode, PackError, Val};
 
 /// One tensor of a raw tensor file.
+#[derive(Clone)]
 struct Tensor {
     name: String,
     dims: Vec<u32>,
@@ -297,9 +298,8 @@ fn order(conf: &[f32]) -> Vec<usize> {
 fn job_hearing(context: &[f32; 5], key_shift: i32) -> Result<Hearing, HearingError> {
     let key = (context[0].round() as i32 + 60).clamp(0, 127);
     let pitched = context[2] > 0.5;
-    let f0_hz = pitched.then(|| {
-        440.0 * ((f64::from(key) - 69.0) / 12.0 + f64::from(context[1]) / 12.0).exp2()
-    });
+    let f0_hz = pitched
+        .then(|| 440.0 * ((f64::from(key) - 69.0) / 12.0 + f64::from(context[1]) / 12.0).exp2());
     let hold_s = f64::from(context[3]).clamp(0.08, 4.0);
     let cue = Cue {
         key: key as u8,
@@ -378,8 +378,14 @@ fn decode_report(
                 }
                 let mut why = None;
                 let mut row_worst = 0.0f32;
-                let modules_a: Vec<_> = pa.modules().map(|(_, m)| (m.id.clone(), m.enabled)).collect();
-                let modules_b: Vec<_> = pb.modules().map(|(_, m)| (m.id.clone(), m.enabled)).collect();
+                let modules_a: Vec<_> = pa
+                    .modules()
+                    .map(|(_, m)| (m.id.clone(), m.enabled))
+                    .collect();
+                let modules_b: Vec<_> = pb
+                    .modules()
+                    .map(|(_, m)| (m.id.clone(), m.enabled))
+                    .collect();
                 if modules_a != modules_b {
                     why = Some("the modules switched on differ".to_owned());
                 }
@@ -388,15 +394,15 @@ fn decode_report(
                         why.get_or_insert_with(|| format!("{} differs", e.addr));
                     }
                 }
-                if pa.routes.len() != pb.routes.len() {
-                    why.get_or_insert_with(|| "the routes differ".to_owned());
-                } else {
+                if pa.routes.len() == pb.routes.len() {
                     for (x, y) in pa.routes.iter().zip(&pb.routes) {
                         if x.src != y.src || x.dst != y.dst {
                             why.get_or_insert_with(|| "the routes differ".to_owned());
                         }
                         row_worst = row_worst.max((x.depth - y.depth).abs() / 100.0);
                     }
+                } else {
+                    why.get_or_insert_with(|| "the routes differ".to_owned());
                 }
                 for e in layout.continuous() {
                     if let (Some(x), Some(y)) = (pa.value(&e.addr), pb.value(&e.addr)) {
@@ -406,8 +412,7 @@ fn decode_report(
                 worst = worst.max(row_worst);
                 if let Some(w) = why {
                     discrete += 1;
-                    first_problem
-                        .get_or_insert_with(|| format!("sample {n} hypothesis {k}: {w}"));
+                    first_problem.get_or_insert_with(|| format!("sample {n} hypothesis {k}: {w}"));
                 } else if row_worst > tolerance {
                     over += 1;
                     first_problem.get_or_insert_with(|| {
@@ -619,7 +624,10 @@ fn run(a: &RunArgs) -> ExitCode {
             let (mut same, mut top1) = (0usize, 0usize);
             let mut tightest = f32::INFINITY;
             for i in 0..n {
-                let (x, y) = (&oc.values[i * k..(i + 1) * k], &ec.values[i * k..(i + 1) * k]);
+                let (x, y) = (
+                    &oc.values[i * k..(i + 1) * k],
+                    &ec.values[i * k..(i + 1) * k],
+                );
                 let (ox, oy) = (order(x), order(y));
                 same += usize::from(ox == oy);
                 top1 += usize::from(ox[0] == oy[0]);
@@ -797,5 +805,124 @@ fn main() -> ExitCode {
             bench(&gflops, runs)
         }
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lane EXP's `PyTorch` fixture, the one `enth-solver`'s `propose_parity` test checks in CI.
+    const MODEL: &[u8] =
+        include_bytes!("../../../crates/enth-solver/tests/fixtures/propose/exp_tiny.bin");
+    const EXPECTED: &[u8] =
+        include_bytes!("../../../crates/enth-solver/tests/fixtures/propose/exp_tiny.expected");
+
+    /// The fixture's outputs on its own seeds, batched as `run` combines them.
+    fn fixture_run() -> (ModelPack, Vec<ModelInput>, Vec<Tensor>) {
+        let pack = ModelPack::parse(MODEL).unwrap();
+        let net = Net::build(&pack).unwrap();
+        let inputs: Vec<ModelInput> = pack
+            .info_value("parity.seeds")
+            .unwrap()
+            .split(',')
+            .map(|s| synthetic_input(s.parse().unwrap()))
+            .collect();
+        let runs: Vec<Outputs> = inputs.iter().map(|i| net.run(i).unwrap()).collect();
+        let out = combine(&runs, true);
+        (pack, inputs, out)
+    }
+
+    #[test]
+    fn order_ranks_by_descending_confidence_and_ties_go_to_the_lower_index() {
+        assert_eq!(order(&[0.5, 2.0, 0.5, -1.0]), [1, 0, 2, 3]);
+        assert_eq!(order(&[1.0]), [0]);
+    }
+
+    #[test]
+    fn tensor_files_round_trip() {
+        let t = vec![
+            Tensor {
+                name: "a".to_owned(),
+                dims: vec![2, 3],
+                values: vec![0.0, 1.5, -2.0, 3.25, 4.0, 5.0],
+            },
+            Tensor {
+                name: "hypotheses".to_owned(),
+                dims: vec![1],
+                values: vec![-0.125],
+            },
+        ];
+        let back = read_tensors(&write_tensors(&t)).unwrap();
+        assert_eq!(back.len(), 2);
+        for (x, y) in t.iter().zip(&back) {
+            assert_eq!((&x.name, &x.dims, &x.values), (&y.name, &y.dims, &y.values));
+        }
+        assert!(read_tensors(b"NOTATENS\0\0\0\0").is_err());
+    }
+
+    #[test]
+    fn batched_outputs_gain_a_leading_dimension() {
+        let (_, inputs, out) = fixture_run();
+        assert_eq!(out[0].name, "hypotheses");
+        assert_eq!(out[0].dims, [inputs.len() as u32, 8, 102]);
+        assert_eq!(out[1].dims, [inputs.len() as u32, 8]);
+        assert_eq!(out[0].values.len(), inputs.len() * 8 * 102);
+    }
+
+    #[test]
+    fn the_pytorch_fixture_agrees_and_decodes_the_same() {
+        let (pack, inputs, out) = fixture_run();
+        let expected = read_tensors(EXPECTED).unwrap();
+        for t in &expected {
+            let ours = out.iter().find(|o| o.name == t.name).unwrap();
+            assert_eq!(ours.dims, t.dims);
+            let worst = ours
+                .values
+                .iter()
+                .zip(&t.values)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(worst < 1e-5, "{}: {worst:.3e}", t.name);
+        }
+        let h = pack.header();
+        let layout = OutputLayout::build(h.layout, h.generator, h.template).unwrap();
+        let contexts: Vec<[f32; 5]> = inputs.iter().map(|i| i.context).collect();
+        let exp_hyp = expected.iter().find(|t| t.name == "hypotheses");
+        assert!(decode_report(&layout, &out[0], exp_hyp, &contexts, 1e-4));
+    }
+
+    #[test]
+    fn a_flipped_switch_is_a_decode_failure() {
+        let (pack, inputs, out) = fixture_run();
+        let h = pack.header();
+        let layout = OutputLayout::build(h.layout, h.generator, h.template).unwrap();
+        let contexts: Vec<[f32; 5]> = inputs.iter().map(|i| i.context).collect();
+        let mut bad = out[0].clone();
+        let at = layout.enables()[0].offset;
+        for row in bad.values.chunks_exact_mut(layout.width()) {
+            row[at] = if row[at] > 0.0 { -50.0 } else { 50.0 };
+        }
+        assert!(!decode_report(
+            &layout,
+            &out[0],
+            Some(&bad),
+            &contexts,
+            1e-4
+        ));
+        let (sign, gap) = decision_margin(&layout, &bad);
+        assert!(sign >= 0.0 && gap >= 0.0);
+    }
+
+    #[test]
+    fn a_job_hears_the_contexts_key_pitch_and_hold() {
+        let unpitched = job_hearing(&[-2.0, 0.3, 0.0, 99.0, 0.0], 0).unwrap();
+        assert_eq!(unpitched.told_key(), 58);
+        assert_eq!(unpitched.pitch_offset(), None);
+        let pitched = job_hearing(&[0.0, 0.25, 1.0, 0.01, 0.0], 3).unwrap();
+        assert_eq!(pitched.told_key(), 60);
+        assert_eq!(pitched.shift(), 3);
+        let offset = pitched.pitch_offset().unwrap();
+        assert!((offset - 0.25).abs() < 1e-9, "{offset}");
     }
 }
