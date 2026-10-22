@@ -88,7 +88,7 @@ eframe = { version = "=0.37.0", default-features = false }   # MIT OR Apache-2.0
 clack-host = "=0.2.0"                               # MIT OR Apache-2.0
 clack-extensions = "=0.2.0"                         # MIT OR Apache-2.0. Members add the extension features they use
 clack-plugin = "=0.2.0"                             # MIT OR Apache-2.0. dev-dependency of the test host: an in-process test plugin
-x11rb = "=0.13.2"                                   # MIT OR Apache-2.0. Pure-Rust X11 client: the host-side parent window for embedded editors. baseview pulls the same version in
+x11rb = "=0.14.0"                                   # MIT OR Apache-2.0. Pure-Rust X11 client: the host-side parent window for embedded editors. baseview pulls the same version in
 libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-host timing: clock_gettime, setrlimit(RLIMIT_RTTIME), sched_setaffinity (research 03)
 
 # R1/S1 dependencies (lane S0r, freeze point F0r; research session 2026-10-20-r1-s1-recreate-and-instrument). Same rules
