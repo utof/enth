@@ -24,7 +24,7 @@
 //! | --- | --- | --- |
 //! | [`theory`] | interval, chord, scale and progression tables (simple voice leading) and note names | MUS |
 //! | [`rhythm`] | the 16-step rhythm grid, density, swing and the syncopation measure (Longuet-Higgins and Lee) | MUS |
-//! | [`ear`] | `EarSpec { game, generator, level, seed, count }`, `Question`, `Answer`, `Options` and **ear generator v1**, with its golden (1,000 specs to a hash on Linux, Windows and wasm) | MUS |
+//! | [`ear`] | `EarSpec { game, generator, level, seed, count }`, `Question`, `Answer`, `Options` and **ear generator v1**, with its golden (one block of fixed specs per game and level, the same digests on Linux, Windows and wasm) | MUS |
 //! | [`ladder`] | the difficulty ladders, one file per game family (below) | MUS (level 1 of each); G1 to G3; TAP |
 //!
 //! The ladder files, each owned by the lane that tunes it (`ear-check` measures them, docs/ear.md, "GR4"; a ladder

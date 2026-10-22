@@ -23,10 +23,11 @@
 //! - **Options stay put.** A label game lists its options in ascending order of their id (the interval size, the
 //!   chord index, the pitch class, the band's frequency), so the buttons do not move between items; the answer's
 //!   position is uniform. A pattern game lists its options in draw order.
-//! - **Frozen by a golden.** 1,000 specs to a hash, on Linux, Windows and wasm (`tests/ear_golden.rs`, file
-//!   `tests/golden/ear-v1.txt`). It freezes at INT4's friend build, the first that shares ear codes; until then the
-//!   ladder lanes (G1 to G3, TAP) update the golden on purpose and the commit names the games and why. After it, a
-//!   change is ear generator v2.
+//! - **Frozen by a golden.** Fixed specs to question-set digests, one block per (game, level), on Linux, Windows and
+//!   wasm (`tests/ear_golden.rs`, file `tests/golden/ear-v1.txt`): a new level appends a block and no existing line
+//!   changes. It freezes at INT4's friend build, the first that shares ear codes; until then the ladder lanes (G1 to
+//!   G3, TAP) update the golden on purpose and the commit names the games and why. After it, a change is ear
+//!   generator v2.
 //!
 //! The parameter games (Spot the change, Dial it in, Ear check; ids 1 to 3) are not here: they need the catalogue, and
 //! live in `enth-challenge` on v2 draws. Their ids are reserved so the numbering is one list.
