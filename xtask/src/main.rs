@@ -10,11 +10,13 @@ mod agent_eval;
 mod bank;
 mod bench;
 mod bundle;
+mod ear;
 mod engine;
 mod golden;
 mod gr1_report;
 mod gr2;
 mod gr3;
+mod gr4;
 mod host_render;
 mod leak;
 mod lesson;
@@ -172,6 +174,9 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     budget); test runs append to content/gr3/runs.jsonl (R3 lane EVK, docs/gr3.md)
   gr3-report [--run R | --a R --b R] GR3's clause-1 endpoints and decision from content/gr3/runs.jsonl (lane EVK)
   bank [options]                    (not built yet: R3 lane TP) build the k-NN retrieval bank (drives `enth-datagen bank`)
+  ear-check                         (placeholder: R4 lane ECK) GR4's mechanical half: the ear games deterministic, fair and
+                                    solvable (docs/ear.md); it passes without checking anything until ECK builds it
+  gr4-report [options] <dir>...     (not built yet: R4 lane INT4) the GR4 numbers from what each participant sent back
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
                                     rewrite the expected files (refused under CI; prints the changed cases)
@@ -205,6 +210,8 @@ fn main() -> ExitCode {
         Some("gr3-run") => gr3::gr3_run(&args[1..]),
         Some("gr3-report") => gr3::gr3_report(&args[1..]),
         Some("bank") => bank::bank(&args[1..]),
+        Some("ear-check") => ear::ear_check(&args[1..]),
+        Some("gr4-report") => gr4::gr4_report(&args[1..]),
         Some("lesson-check") => lesson::lesson_check(&args[1..]),
         Some("lesson-coverage") => lesson::lesson_coverage(&args[1..]),
         Some("lesson") => lesson::lesson(&args[1..]),
