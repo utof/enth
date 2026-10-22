@@ -78,7 +78,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "run":
         import pathlib
+        import signal
         import tomllib
+
+        def _stop(signum, frame):  # SIGTERM: unwind, so the GPU monitor stops and the logs close
+            raise SystemExit(128 + signum)
+
+        signal.signal(signal.SIGTERM, _stop)
 
         p = pathlib.Path(args.config)
         d = tomllib.loads(p.read_text()) if p.suffix == ".toml" else json.loads(p.read_text())
