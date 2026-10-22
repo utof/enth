@@ -244,7 +244,7 @@ def provenance(state: dict, run_json: bytes, weights: str = "f16") -> tuple[int,
             f"embed{mc['embed']} hyp{mc['hyp_hidden']} conf{mc['conf_hidden']} K{mc['hypotheses']}",
         ),
         ("train.run", pathlib.PurePosixPath(str(cfg["out"]).replace("\\", "/")).name),
-        ("train.checkpoint", f"best, epoch {int(state['epoch']) + 1}, step {int(state['step'])}"),
+        ("train.checkpoint", f"best, after {int(state['epoch'])} epochs, step {int(state['step'])}"),
         ("train.dev_best_of_k", f"{float(state['best_dev']):.6f}"),
         ("train.seed", cfg["seed"]),
         ("train.commit", env["commit"] + (" (dirty)" if env.get("dirty") else "")),
@@ -426,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         out = pathlib.Path(args.out)
         out.write_bytes(data)
         sha = hashlib.sha256(data).hexdigest()
-        print(json.dumps({"file": out.name, "bytes": len(data), "sha256": sha, "epoch": int(state["epoch"]) + 1, "step": int(state["step"])}, indent=1))
+        print(json.dumps({"file": out.name, "bytes": len(data), "sha256": sha, "epochs": int(state["epoch"]), "step": int(state["step"])}, indent=1))
         return 0
     if args.cmd == "inputs":
         arrays = pick_dev_inputs(args.dev, args.count, args.part)

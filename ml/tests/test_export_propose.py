@@ -150,13 +150,13 @@ class Exporter(unittest.TestCase):
     def test_provenance_comes_from_the_run_manifest(self) -> None:
         propose = self.propose
         raw = run_json()
-        state = {"epoch": 39, "step": 28995, "best_dev": 1.7736472788924875}
+        state = {"epoch": 40, "step": 28995, "best_dev": 1.7736472788924875}
         ds1, engine, manifest, info = propose.provenance(state, raw)
         self.assertEqual((ds1, engine), (1, "0.3.0"))
         self.assertEqual(manifest, hashlib.sha256(raw).digest())
         d = dict(info)
         self.assertEqual(d["train.run"], "pilot-v0")
-        self.assertEqual(d["train.checkpoint"], "best, epoch 40, step 28995")
+        self.assertEqual(d["train.checkpoint"], "best, after 40 epochs, step 28995")
         self.assertEqual(d["train.commit"], "f6d055fde86cb1a4895aaf45e272d2dfefd1103d")
         self.assertIn("r3/train seed 1, 100 samples", d["data.train"])
         self.assertTrue(all(len(v) <= 1024 and v.isascii() and v.isprintable() for v in d.values()))
