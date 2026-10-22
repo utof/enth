@@ -6,8 +6,9 @@
 //! dragged over the window. It shows what to drop, or the chosen file's name and, once the shell's intake post
 //! arrived, the clip's length and its note (a file chosen while another file's job runs says it waits for Start).
 //!
-//! Under it, the intake's findings, in `text.label`: how the file decoded; the note (its name and f0, or "no stable
-//! pitch"), how long it is held and the clip's length; the trim (the lead-in cut before the onset, a short sound
+//! Under it, the intake's findings, in `text.label`: how the file decoded; which proposal model the job uses, or why
+//! none (R3b, lane `PUIb`: "Model: propose-v0 (enth-model-propose-v0.bin)", "No model: search alone …", when the shell
+//! says); the note (its name and f0, or "no stable pitch"), how long it is held and the clip's length; the trim (the lead-in cut before the onset, a short sound
 //! padded); what the upload lost (a low-pass, clipping, a confirmed noise floor); then the intake's warnings in the
 //! near-score ink with a bullet (a chord, a phrase, several notes, a sound longer than the cap). **A short sound is
 //! shown as it is, never refused**: its length reads in milliseconds below 0.1 s, and "short: kept whole" says it was
@@ -146,6 +147,11 @@ pub(crate) fn findings(view: &CreateView, ui: &mut Ui, t: &Theme) {
         shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
     };
     line(ui, intake.decoded.clone(), t.color.text.label);
+    // Which proposal model the job draws starts from, or why none (R3b, lane PUIb): a shell without a lookup says
+    // nothing.
+    if let Some(model) = &intake.model {
+        line(ui, model.clone(), t.color.text.label);
+    }
     let note = perf.f0_hz.map_or_else(
         || "No stable pitch".to_owned(),
         |f| format!("Note {} ({f:.1} Hz)", key_name(perf.key)),

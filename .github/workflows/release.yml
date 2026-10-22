@@ -29,6 +29,11 @@ name: release
 # `<Documents>/enth/Models/` (docs/plugin.md, "Create"); a zip never puts it inside a bundle, where it would break the
 # macOS signature. Friend builds keep `create` off until the owner's 5-sound check passes (docs/r3-owner.md).
 #
+# A proposal model (R3b, lane PUIb) would ship the same way: `enth-model-<id>.bin` in each zip beside the bundles and
+# the bank, never inside a bundle; the plugin looks for `enth-model-*.bin` in the same two folders (docs/plugin.md,
+# "The proposal model"). No step ships one yet: a trained model is not in the repository (it is MBs and comes from a
+# training run), so shipping it needs the file as an input and its SHA-256 pinned here, as the bank's is.
+#
 # Artefacts: one zip per OS, uploaded as-is (archive: false, so there is no zip inside a zip), kept for 14 days. Nothing is
 # published and no release is created (permissions stay read-only); the owner downloads the zips and forwards them.
 # `CARGO_BUILD_WARNINGS` is not set here, unlike ci.yml: ci.yml's per-push cross-target guard already fails a warning in

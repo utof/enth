@@ -37,7 +37,7 @@ pub struct CreateOut {
     pub intake: Option<Value>,
     /// Every setting the job ran under, as the job reports them.
     pub settings: CreateSettingsOut,
-    /// Every start, as a patch: the heuristic start, the templates, the k-NN neighbours.
+    /// Every start, as a patch: the heuristic start, the templates, the k-NN neighbours, the model's hypotheses.
     pub starts: Vec<CreateStartOut>,
     /// The K candidates (fewer when the portfolio held fewer starts, or the budget ended the screening), in branch
     /// order.
@@ -50,8 +50,9 @@ pub struct CreateOut {
     pub stop: CreateStopOut,
     /// The closest candidate: its index in `candidates` (null when no candidate has a distance).
     pub best: Option<usize>,
-    /// Notices, in the order they arose: what the file's decoding found, a performance override, a missing bank, a
-    /// window that cut the clip, fewer candidates than K, a stop at the cap. The same lines go to stderr as `note:`.
+    /// Notices, in the order they arose: what the file's decoding found, the `--model` loaded or refused, a performance
+    /// override, a missing bank, a model hypothesis dropped, a window that cut the clip, fewer candidates than K, a stop
+    /// at the cap. The same lines go to stderr as `note:`.
     pub notes: Vec<String>,
     /// How the file was read: `WAV, 16-bit, 48000 Hz, mono`.
     pub decoded: String,
@@ -143,6 +144,42 @@ pub struct CreateSettingsOut {
     pub bank: Option<CreateBankOut>,
     /// The templates proposed as starts, by name.
     pub templates: Vec<String>,
+    /// The model whose hypotheses joined the starts (`--model`; R3b, additive within `/1`): absent when no
+    /// model was used (no `--model`, or the file was refused and the job ran search alone, which `notes` says).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<CreateModelOut>,
+}
+
+/// The model a job drew starts from (`settings.model`). Its starts are recorded as patches with `provenance.kind`
+/// `model`, so a replay needs neither the model file nor inference; these say which file and which input made them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateModelOut {
+    /// The model's id (its header's; what each model start's provenance names).
+    pub id: String,
+    /// The model file's SHA-256 as its header defines it: the whole file with the hash's own 32 bytes read as zeros,
+    /// so it differs from `sha256sum` of the file.
+    pub sha256: String,
+    /// The model input's hash (feature set 1, computed from the intake before any `--perf`); null when it could not
+    /// be computed (a silent window), and the model proposed nothing.
+    pub input_sha256: Option<String>,
+    /// The hash of everything the net output (the golden a model file pins); null when it did not run.
+    pub outputs_sha256: Option<String>,
+    /// Kₘ: the hypotheses the model gives per inference.
+    pub hypotheses: usize,
+    /// The hypotheses dropped, in hypothesis order, with why (a non-finite value or confidence, a decode error).
+    #[serde(default)]
+    pub dropped: Vec<CreateDroppedOut>,
+}
+
+/// A model hypothesis that did not become a start.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateDroppedOut {
+    /// Which of the Kₘ.
+    pub hypothesis: usize,
+    /// Why: `confidence_non_finite`, or a decode error's code (`hypothesis_non_finite`, `hypothesis_rekey`, …).
+    pub code: String,
 }
 
 /// The k-NN bank a job retrieved from.
@@ -184,7 +221,8 @@ pub enum CreateProvenanceOut {
         /// Its embedding distance to the upload, in nepers.
         embedding_distance: f64,
     },
-    /// One of a model's hypotheses (R3b; not produced yet).
+    /// One of a model's hypotheses (R3b, `--model`): decoded under the job's performance, after the k-NN neighbours in
+    /// descending confidence.
     Model {
         /// The model file's id.
         model: String,
