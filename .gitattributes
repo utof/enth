@@ -38,3 +38,6 @@ content/gr3/**/*.aiff binary
 # ml/ is Python and text, LF everywhere (a script that fails on a CRLF shebang is a bad afternoon). `text=auto` so a binary
 # artefact somebody commits by choice (a tiny fixture, a model file) is left alone.
 ml/** text=auto eol=lf
+
+# Ear generator v1's golden is compared as whole text (`include_str!` == computed): keep LF on every platform (lane MUS, R4).
+crates/enth-music/tests/golden/** text eol=lf
