@@ -7,14 +7,20 @@ mod common;
 use common::init_patch;
 use enth_session::ear::{
     EarAnswer, EarEdit, EarError, EarExample, EarKey, EarPhase, EarPlan, EarPost, EarQuestion,
-    EarRequest, EarRunId, MAX_SEED,
+    EarRequest, EarRunId, EarSpec, MAX_SEED,
 };
 use enth_session::game::EditorView;
 use enth_session::{Session, ShellRequest};
 use proptest::prelude::*;
 
 fn plan(count: u8) -> EarPlan {
-    EarPlan::new(1, 1, 3, 4242, count)
+    EarPlan::new(EarSpec {
+        game: 1,
+        generator: 1,
+        level: 3,
+        seed: 4242,
+        count,
+    })
 }
 
 /// Three label questions: the right option is 0, 1, 2; the second has a clip that gives the answer away.
@@ -355,9 +361,27 @@ fn a_failed_job_and_questions_that_do_not_fit_fail_the_run() {
 fn plans_out_of_range_start_nothing() {
     let mut s = Session::new(init_patch());
     for bad in [
-        EarPlan::new(1, 1, 1, MAX_SEED + 1, 5),
-        EarPlan::new(1, 1, 1, 7, 0),
-        EarPlan::new(1, 1, 1, 7, 65),
+        EarPlan::new(EarSpec {
+            game: 1,
+            generator: 1,
+            level: 1,
+            seed: MAX_SEED + 1,
+            count: 5,
+        }),
+        EarPlan::new(EarSpec {
+            game: 1,
+            generator: 1,
+            level: 1,
+            seed: 7,
+            count: 0,
+        }),
+        EarPlan::new(EarSpec {
+            game: 1,
+            generator: 1,
+            level: 1,
+            seed: 7,
+            count: 65,
+        }),
     ] {
         assert_eq!(s.ear_start(bad).map_err(|e| e.code()), Err("bad_ear_plan"));
         assert_ne!(EarError::BadPlan("x").hint(), "");

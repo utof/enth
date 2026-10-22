@@ -74,6 +74,52 @@ pub fn validate(spec: &EarSpec) -> Result<AnswerKind, EarError> {
     answer_kind(spec)
 }
 
+/// The most items [`find_item`] looks at in a parameter game (its items are numbered by a byte).
+pub const MAX_PARAMS_SCAN: u32 = 256;
+
+/// **The one resolver of a burst's focus, over both families** (should-fix S3): the first item at or after `from`
+/// of `spec`'s game, level and seed whose question exercises `skill` (a Review key: `ear.interval.m3`, `svf.cutoff`),
+/// or `None` when the game never asks it within its scan (or this build cannot play the spec). Items are keyed
+/// streams, so the answer is a function of the spec and `from`, and two players given the same spec get the same
+/// burst. The spec's `count` is not a bound: a focused run asks item `first` onwards.
+///
+/// | Game | How |
+/// | --- | --- |
+/// | 4 and up (music) | `enth_music::ear::find_skill_item`: the right answer's skill, over up to 4,096 items |
+/// | 1 Spot the change | the moved option's control (`svf.cutoff`), over items `from` to 255 |
+/// | 2 Dial it in | the round's one editable control, over items `from` to 255 |
+/// | 3 Ear check | a set measures one control ([`params::ear_check_control`]): `from` itself when that control is the skill's, else `None`; a staircase on a chosen control is [`params::ear_check_on`] |
+pub fn find_item(spec: &EarSpec, skill: &str, from: u32) -> Option<u32> {
+    validate(spec).ok()?;
+    if !params::is_params_game(spec.game) {
+        let game = enth_music::ear::Game::from_id(spec.game)?;
+        return enth_music::ear::find_skill_item(game, spec.level, spec.seed, skill, from)
+            .map(|(item, _)| item);
+    }
+    let base = params::base();
+    let skill_of = |addr: &enth_patch::ParamAddr| question::control_skill(&base, addr);
+    match spec.game {
+        params::EAR_CHECK => {
+            let control = params::ear_check_control(spec).ok()?;
+            (from < MAX_PARAMS_SCAN && skill_of(&control).as_deref() == Some(skill)).then_some(from)
+        }
+        params::SPOT_THE_CHANGE => (from..MAX_PARAMS_SCAN).find(|&i| {
+            params::spot_the_change(spec, i as u8).is_ok_and(|item| {
+                skill_of(&item.options[usize::from(item.key)]).as_deref() == Some(skill)
+            })
+        }),
+        params::DIAL_IT_IN => (from..MAX_PARAMS_SCAN).find(|&i| {
+            params::dial_it_in(spec, i as u8).is_ok_and(|round| {
+                round.constraints.editable.iter().any(|sel| match sel {
+                    crate::v2::Selector::Param(addr) => skill_of(addr).as_deref() == Some(skill),
+                    _ => false,
+                })
+            })
+        }),
+        _ => None,
+    }
+}
+
 /// The answer `spec`'s game asks for at its level, after checking that this build has the game, the generator and the
 /// level (`code_too_new` otherwise). The fields' own ranges are [`validate`]'s, which calls this.
 pub fn answer_kind(spec: &EarSpec) -> Result<AnswerKind, EarError> {
@@ -178,6 +224,77 @@ mod tests {
         assert_eq!(
             validate(&EarSpec { game: 11, ..music }).unwrap_err().code(),
             "code_too_new"
+        );
+    }
+
+    /// Should-fix S3: one resolver finds a burst's item in either family, and a run from that item asks it first.
+    #[test]
+    fn find_item_resolves_a_focus_in_both_families() {
+        // A music game: the found item's question exercises the skill, and nothing before it from `from` does.
+        let spec = EarSpec::new(enth_music::ear::Game::IntervalStacks, 1, 4242, 1);
+        let first = question::questions_at(&spec, 0).unwrap()[0]
+            .skill
+            .clone()
+            .unwrap();
+        let other = (1..200)
+            .find_map(|i| {
+                let q =
+                    enth_music::ear::question(enth_music::ear::Game::IntervalStacks, 1, 4242, i)
+                        .ok()?;
+                q.skill().filter(|s| *s != first)
+            })
+            .unwrap();
+        let at = find_item(&spec, &other, 0).unwrap();
+        assert!(at > 0);
+        let run = question::questions_at(&spec, at).unwrap();
+        assert_eq!(run[0].skill.as_deref(), Some(other.as_str()));
+        assert_eq!(run[0].index, 0);
+        assert_eq!(find_item(&spec, &other, at), Some(at));
+        assert_eq!(
+            find_item(&spec, "ear.chord.min", 0),
+            None,
+            "a skill the game never asks"
+        );
+        // Spot the change: the moved control's skill.
+        let spot = EarSpec {
+            game: params::SPOT_THE_CHANGE,
+            generator: 1,
+            level: 1,
+            seed: 77,
+            count: 1,
+        };
+        let skill = question::questions_at(&spot, 9).unwrap()[0]
+            .skill
+            .clone()
+            .unwrap();
+        let at = find_item(&spot, &skill, 0).unwrap();
+        assert!(at <= 9);
+        assert_eq!(
+            question::questions_at(&spot, at).unwrap()[0]
+                .skill
+                .as_deref(),
+            Some(skill.as_str())
+        );
+        assert_eq!(find_item(&spot, &skill, MAX_PARAMS_SCAN), None);
+        // Ear check: the set's one control, or nothing.
+        let check = EarSpec {
+            game: params::EAR_CHECK,
+            ..spot
+        };
+        let control = question::questions_at(&check, 0).unwrap()[0]
+            .skill
+            .clone()
+            .unwrap();
+        assert_eq!(find_item(&check, &control, 3), Some(3));
+        assert_eq!(find_item(&check, "ear.interval.m3", 3), None);
+        // A spec this build cannot play finds nothing.
+        assert_eq!(find_item(&EarSpec { game: 99, ..spot }, &skill, 0), None);
+        // A parameter game's run stops at item 255.
+        assert_eq!(
+            question::questions_at(&EarSpec { count: 2, ..spot }, 255)
+                .unwrap_err()
+                .code(),
+            "bad_answer"
         );
     }
 }

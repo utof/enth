@@ -21,13 +21,20 @@
 //! ```text
 //! let mut drill = Drill::new(DrillSpec::new(game, levels, items, seed).starting_at(start).focused_on(skills))?;
 //! while let Some(item) = drill.next_item() {
-//!     // ask the generator for question `item.index` at `item.level` from `item.seed`
-//!     // (enth_music::ear::question(game, item.level, item.seed, item.index)), or start a one-question
-//!     // session run seeded `item.run_seed()`; play it; judge the answer
-//!     drill.answer(Answer::new(item.index, skill_of_the_question, correct))?;
+//!     let (spec, first) = item.plan();                  // the one mapping (below)
+//!     session.ear_start(EarPlan::new(spec).starting_at(first))?;  // one question; play it; judge the answer
+//!     // on EarRequest::Result { skill, correct, .. } (its `item` is always 0 in a one-question run):
+//!     drill.answer(Answer::new(item.index, Skill::parse(&skill), correct))?;
 //! }
 //! progress.observe_drill(&drill.summary(), today); // bursts move boxes; levels, accuracy, thresholds, the day
 //! ```
+//!
+//! **The one mapping from a drill item to a session run** ([`Item::plan`], should-fix S3 of the F1e review): a
+//! one-question `EarSpec` of the item's game, generator and level, seeded [`Item::run_seed`] (keyed from the drill's
+//! seed and the item's number, so two items never share a draw), starting at item 0, or, for an item with a focus,
+//! at the first item of that seed whose question exercises the focus skill (`enth_challenge::ear::find_item`, one
+//! resolver over both families). A focus the game cannot give leaves item 0. Ear check measures one control per set,
+//! so a staircase on a chosen control is `enth_challenge::ear::params::ear_check_on`, not a plan.
 //!
 //! The session's `EarRequest::Result` carries the skill, the level and whether the answer was right: that is an
 //! [`Answer`]. A session can stop at any time; [`Drill::summary`] counts what was answered and a burst that did not
@@ -435,15 +442,35 @@ pub struct Item {
     pub generator: u8,
     /// The staircase's level for it: the ladder row the generator draws from.
     pub level: u8,
-    /// The drill's seed: the question is `question(game, level, seed, index)`.
+    /// The drill's seed. The item's own question comes from [`Item::plan`] (keyed from this seed and the index).
     pub seed: u64,
     /// The skill the drill wants this item to be about (a burst's), when the game can give it.
     pub focus: Option<Skill>,
 }
 
 impl Item {
-    /// A seed for a one-question run of the session (`EarPlan { count: 1 }`, whose item index is 0): keyed from the
-    /// seed and the item's number, so two items never share a draw.
+    /// **The one mapping to a session run** (should-fix S3; see the [module docs](self)): the one-question
+    /// `EarSpec` of the item (its game, generator and level, seeded [`run_seed`](Self::run_seed)) and the item of
+    /// that spec to ask: 0, or for a focused item the first whose question exercises the focus
+    /// (`enth_challenge::ear::find_item`). The shell starts `EarPlan::new(spec).starting_at(first)`.
+    pub fn plan(&self) -> (enth_challenge::model::EarSpec, u32) {
+        let spec = enth_challenge::model::EarSpec {
+            game: self.game,
+            generator: self.generator,
+            level: self.level,
+            seed: self.run_seed(),
+            count: 1,
+        };
+        let first = self
+            .focus
+            .as_ref()
+            .and_then(|skill| enth_challenge::ear::find_item(&spec, skill.as_str(), 0))
+            .unwrap_or(0);
+        (spec, first)
+    }
+
+    /// A seed for a one-question run of the session ([`Item::plan`]'s): keyed from the seed and the item's number,
+    /// so two items never share a draw.
     pub fn run_seed(&self) -> u64 {
         derive(
             self.seed,

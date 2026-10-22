@@ -485,22 +485,57 @@ pub fn prepare(challenge: &Challenge) -> Result<EarSet, ChallengeError> {
 
 /// The questions of `spec`, in order (its answer keys need no render).
 pub fn questions(spec: &EarSpec) -> Result<Vec<EarQuestion>, ChallengeError> {
+    questions_at(spec, 0)
+}
+
+/// `spec.count` questions of `spec` from item `first` on: what a session run asks when its plan starts at a burst's
+/// item ([`super::find_item`], should-fix S3). Question `k` is item `first + k` of the keyed streams; its `index` is
+/// `k`. A parameter game's items are numbered by a byte, so `first + count` is at most 256 there (`bad_answer`).
+pub fn questions_at(spec: &EarSpec, first: u32) -> Result<Vec<EarQuestion>, ChallengeError> {
     super::validate(spec).map_err(ChallengeError::Ear)?;
+    let item = |k: u8| -> Result<u8, ChallengeError> {
+        u8::try_from(first + u32::from(k)).map_err(|_| ChallengeError::Answer {
+            reason: format!(
+                "a parameter game's items are numbered 0 to 255, not {}",
+                first + u32::from(k)
+            ),
+        })
+    };
+    let reindexed = |q: Result<EarQuestion, ChallengeError>, k: u8| {
+        q.map(|mut q| {
+            q.index = k;
+            q
+        })
+    };
     match spec.game {
-        SPOT_THE_CHANGE => (0..spec.count).map(|i| spot_question(spec, i)).collect(),
-        EAR_CHECK => (0..spec.count).map(|i| check_question(spec, i)).collect(),
+        SPOT_THE_CHANGE => (0..spec.count)
+            .map(|k| reindexed(spot_question(spec, item(k)?), k))
+            .collect(),
+        EAR_CHECK => (0..spec.count)
+            .map(|k| reindexed(check_question(spec, item(k)?), k))
+            .collect(),
         DIAL_IT_IN => Err(ChallengeError::Answer {
             reason: "Dial it in's rounds are v2 draw challenges (ear::params::dial_it_in)"
                 .to_owned(),
         }),
         // The music games: `enth-music`'s ear generator v1 (`super::validate` has checked the game and level).
-        _ => spec
-            .questions()
-            .map_err(|e| ChallengeError::Ear(super::music::refusal(spec, e)))?
-            .iter()
-            .enumerate()
-            .map(|(i, q)| music_question(i as u8, q))
-            .collect(),
+        game => {
+            let game = enth_music::ear::Game::from_id(game).ok_or(ChallengeError::Ear(
+                crate::v3::EarError::GameTooNew { game },
+            ))?;
+            (0..spec.count)
+                .map(|k| {
+                    let q = enth_music::ear::question(
+                        game,
+                        spec.level,
+                        spec.seed,
+                        first + u32::from(k),
+                    )
+                    .map_err(|e| ChallengeError::Ear(super::music::refusal(spec, e)))?;
+                    music_question(k, &q)
+                })
+                .collect()
+        }
     }
 }
 
@@ -650,6 +685,12 @@ fn knob_options(base: &Patch, controls: &[ParamAddr]) -> Vec<EarOption> {
             }
         })
         .collect()
+}
+
+/// The Review skill of a control on `patch`: its module's kind (or the built-in) and its key (`svf.cutoff`), as
+/// `enth-learn`'s `Skill::of`. What a parameter game's question trains, and what [`super::find_item`] matches.
+pub fn control_skill(patch: &Patch, addr: &ParamAddr) -> Option<String> {
+    skill_of(patch, addr)
 }
 
 /// The Review skill of a control: its module's kind (or the built-in) and its key (`svf.cutoff`), as `enth-learn`'s

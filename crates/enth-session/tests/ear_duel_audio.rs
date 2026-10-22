@@ -24,7 +24,7 @@ use enth_session::duel::{
     DuelEdit, DuelJobResult, DuelRequest, DuelVerified, FriendAnswer, FriendScorecard, Rescored,
 };
 use enth_session::ear::{
-    EarAnswer, EarEdit, EarExample, EarPlan, EarPost, EarQuestion, EarRequest,
+    EarAnswer, EarEdit, EarExample, EarPlan, EarPost, EarQuestion, EarRequest, EarSpec,
 };
 use enth_session::game::{
     Challenge, ChallengeCode, EditorView, EndChoice, GameEdit, GameRequest, JobKind, JobResult,
@@ -128,7 +128,15 @@ fn answer_jobs(s: &mut Session) {
 
 /// One ear run, every call: the questions posted, played, answered, replayed, moved past.
 fn ear_run(s: &mut Session, seed: u64, now: u64) {
-    let run = s.ear_start(EarPlan::new(1, 1, 3, seed, 3)).unwrap();
+    let run = s
+        .ear_start(EarPlan::new(EarSpec {
+            game: 1,
+            generator: 1,
+            level: 3,
+            seed,
+            count: 3,
+        }))
+        .unwrap();
     let questions = (0..3u8)
         .map(|i| {
             EarQuestion::choice(

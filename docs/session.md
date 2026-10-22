@@ -549,7 +549,7 @@ For the Create view's A/B, `CreateEdit::create_audition_upload()` (a default met
 
 ### The seam is data
 
-The plan mirrors `enth-music`'s `EarSpec` integers (`game`, `generator`, `level`, `seed` below 2^53, `count` 1 to 64), a question arrives as labels, clips and an integer key, and a result leaves as plain fields, so the session depends on no type that MUS, CV3 or DRL build in parallel. Label-choice questions are judged here; value and tap answers join when `enth-challenge`'s `ear-value/1` and `taps/1` exist (the enums are `non_exhaustive`, so that is additive). The F1e judge may swap the plan for `EarSpec` itself.
+**The plan is the one ear spec plus a start item** (lane F1E, the F1e review's M3 and should-fix S3): `EarPlan { spec: EarSpec, first: u32 }`, built with `EarPlan::new(spec).starting_at(first)`, where `EarSpec` is `enth-music`'s type as `enth-challenge` re-exports it (`seed` below 2^53, `count` 1 to 64; a game or level this build cannot play is the shell's prepare job's refusal). Question `k` of the run is item `first + k` of the spec (`enth_challenge::ear::question::questions_at`), so a burst starts where `enth_challenge::ear::find_item(&spec, skill, from)` found its skill; a drill item becomes a plan through `enth_learn::drill::Item::plan` (one mapping). A question arrives as labels, clips and an integer key, and a result leaves as plain fields. Label-choice questions are judged here; value and tap answers join through `enth-challenge`'s `ear-value/1` and `taps/1` (the enums are `non_exhaustive`, so that is additive).
 
 ### Nothing is saved
 

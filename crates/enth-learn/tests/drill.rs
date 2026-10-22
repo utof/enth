@@ -162,7 +162,9 @@ fn within_one_over(listeners: &[Listener]) -> (f64, (f64, String)) {
     (sum / count, worst)
 }
 
-/// Thresholds within one step in 90 % of 40-trial runs, for listeners on a steep ladder (a level is a JND or more).
+/// The F1e judge's criterion (docs/phase-4.md, DRL's acceptance): pooled over the simulated listeners, at least 90 %
+/// of 40-trial thresholds within one level on ladders of about one JND or more per level, and every listener-and-start
+/// cell at least 75 % (flat ladders: at least 90 % within two levels, below).
 ///
 /// Measured (300 runs each, 60 listeners, 3 starts): 92.2 % of all runs, and no listener-and-start below 77 %. The
 /// worst cells are 3- and 4-option listeners with a 3 % lapse rate who start a level below their threshold: their
@@ -472,6 +474,45 @@ fn a_drill_is_its_spec_and_its_answers() {
     let short = Drill::replay(spec, log[..19].to_vec()).unwrap();
     assert!(!short.is_done());
     assert_eq!(live.summary().items, 20);
+}
+
+/// Should-fix S3: the one mapping from a drill item to a session run. A focused item's run starts at an item whose
+/// question exercises the focus; an unfocused one at item 0; each item has its own seed.
+#[test]
+fn an_item_maps_to_one_run_that_asks_its_focus() {
+    // Level 1 of Interval stacks asks a unison or an octave.
+    let p8 = Skill::parse("ear.interval.p8").unwrap();
+    let mut d =
+        Drill::new(DrillSpec::new(game::INTERVAL_STACKS, 1, 12, 99).focused_on(vec![p8])).unwrap();
+    let mut seeds = std::collections::BTreeSet::new();
+    while let Some(item) = d.next_item() {
+        let (spec, first) = item.plan();
+        assert_eq!(
+            (spec.game, spec.level, spec.count),
+            (game::INTERVAL_STACKS, item.level, 1)
+        );
+        assert_eq!(spec.seed, item.run_seed());
+        assert!(seeds.insert(spec.seed), "two items share a seed");
+        let asked = enth_challenge::ear::question::questions_at(&spec, first).unwrap();
+        let skill = asked[0].skill.clone();
+        match &item.focus {
+            Some(f) => assert_eq!(skill.as_deref(), Some(f.as_str()), "item {}", item.index),
+            None => assert_eq!(first, 0),
+        }
+        d.answer(Answer::new(
+            item.index,
+            skill.and_then(|s| Skill::parse(&s)),
+            true,
+        ))
+        .unwrap();
+    }
+    // The focus's burst finished on its own skill (a free item may finish another).
+    assert!(
+        d.summary()
+            .bursts
+            .iter()
+            .any(|b| b.skill.as_str() == "ear.interval.p8" && b.right == 5)
+    );
 }
 
 #[test]

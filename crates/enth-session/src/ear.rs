@@ -8,17 +8,17 @@
 //! the engine at all** (no plan, no event, no host write; the shell plays the stimuli through the Target ▶ examples
 //! slot, which is its own).
 //!
-//! - **A run is a set of questions** ([`EarPlan`]: game, generator, level, seed, count, the integers of
-//!   `enth-music`'s `EarSpec`). [`EarEdit::ear_start`] asks the shell for them ([`EarRequest::Prepare`]: the frozen
+//! - **A run is a set of questions** ([`EarPlan`]: `enth-music`'s `EarSpec`, the one ear spec, and the item it starts
+//!   at, a burst's focus from `enth_challenge::ear::find_item`). [`EarEdit::ear_start`] asks the shell for them ([`EarRequest::Prepare`]: the frozen
 //!   generator, then the renders, about 0.3 s for ten); the shell posts them back ([`EarPost::Ready`]), and the run
 //!   asks the first. **One question is a round: asked, answered, judged.** [`EarEdit::ear_answer`] judges at once and
 //!   hands the shell the result ([`EarRequest::Result`]: the skill, the level, right or wrong, the time), which the
 //!   drill player turns into its staircase and Review's boxes and the progress file keeps; the question's key stays
 //!   hidden until then, and [`EarEdit::ear_next`] moves on. After the answer the replay is open: every example,
 //!   including the ones that give the answer away ([`EarExample::after_answer`]).
-//! - **The seam is data.** The session takes no type from `enth-music`, `enth-challenge`'s `ear` or `enth-learn`'s
-//!   drill player (their lanes build them in parallel): the plan mirrors `EarSpec`'s integers, a question arrives as
-//!   labels and an integer key, and a result leaves as plain fields. Choice answers are judged here; value and tap
+//! - **The seam is data, on the one ear spec.** The plan holds `EarSpec` itself (lane F1E, the F1e review's M3: SE's
+//!   mirror of its integers is gone) and a start item (should-fix S3); a question arrives as labels and an integer key,
+//!   and a result leaves as plain fields. The session takes no type from `enth-learn`'s drill player. Choice answers are judged here; value and tap
 //!   answers join when `enth-challenge`'s `ear-value/1` and `taps/1` exist (the enums are `non_exhaustive`, so that is
 //!   additive).
 //! - **Nothing is saved.** An ear session is not saved in the project, like a create job: this module adds **no
@@ -38,53 +38,58 @@ pub const MAX_QUESTIONS: usize = 64;
 pub const MAX_OPTIONS: usize = 12;
 /// The most clips a question renders (the Target ▶ examples slot holds at most 8 position-locked loops).
 pub const MAX_EXAMPLES: usize = 8;
-/// The largest seed of a plan: below 2^53, like `EarSpec`'s.
-pub const MAX_SEED: u64 = (1 << 53) - 1;
+/// The largest seed of a plan: below 2^53, `EarSpec`'s own limit.
+pub const MAX_SEED: u64 = enth_music::ear::MAX_SEED;
 
 /// A run's id: every post carries it; a post for a run the session no longer holds is stale.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EarRunId(pub u64);
 
-/// What a run is asked for: the integers of `enth-music`'s `EarSpec { game, generator, level, seed, count }` (the F1e
-/// judge may swap the type for it; the shell converts either way).
+pub use enth_challenge::model::EarSpec;
+
+/// What a run is asked for (the F1e review's M3 and should-fix S3): **the one ear spec** (`enth-music`'s `EarSpec`,
+/// as `enth-challenge` re-exports it: game, generator, level, seed, count) and **the item it starts at**. Question
+/// `k` of the run is item `first + k` of the spec's keyed streams (`enth_challenge::ear::question::questions_at`), so
+/// a burst on a skill starts where `enth_challenge::ear::find_item(&spec, skill, from)` found it; `first` is 0
+/// otherwise. A drill item becomes a plan through `enth_learn::drill::Item::plan` (one documented mapping).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct EarPlan {
-    /// The game (its number in `enth-music`'s tables).
-    pub game: u8,
-    /// The ear generator's version.
-    pub generator: u8,
-    /// The level (the staircase's, chosen by the drill player).
-    pub level: u8,
-    /// The seed, at most [`MAX_SEED`].
-    pub seed: u64,
-    /// How many questions (1 to [`MAX_QUESTIONS`]).
-    pub count: u8,
+    /// The questions: the game, the generator, the level (the staircase's, chosen by the drill player), the seed (at
+    /// most [`MAX_SEED`]) and how many (1 to [`MAX_QUESTIONS`]).
+    pub spec: EarSpec,
+    /// The item of the spec the run starts at.
+    pub first: u32,
 }
 
 impl EarPlan {
-    /// A plan from its integers; [`EarPlan::check`] says whether it is in range.
+    /// A plan of `spec`'s questions from item 0; [`EarPlan::check`] says whether it is in range.
     #[must_use]
-    pub fn new(game: u8, generator: u8, level: u8, seed: u64, count: u8) -> Self {
-        EarPlan {
-            game,
-            generator,
-            level,
-            seed,
-            count,
-        }
+    pub fn new(spec: EarSpec) -> Self {
+        EarPlan { spec, first: 0 }
     }
 
-    /// Whether the plan is in range.
+    /// The same plan from item `first` (a burst's focus).
+    #[must_use]
+    pub fn starting_at(mut self, first: u32) -> Self {
+        self.first = first;
+        self
+    }
+
+    /// Whether the plan is in range. A game or level this build cannot play is the shell's prepare job's refusal
+    /// (`EarPost::Failed`), not this check's.
     ///
     /// # Errors
     /// [`EarError::BadPlan`] naming the first field out of range.
     pub fn check(&self) -> Result<(), EarError> {
-        if self.seed > MAX_SEED {
+        if self.spec.seed > MAX_SEED {
             return Err(EarError::BadPlan("the seed must be below 2^53"));
         }
-        if !(1..=MAX_QUESTIONS).contains(&usize::from(self.count)) {
+        if !(1..=MAX_QUESTIONS).contains(&usize::from(self.spec.count)) {
             return Err(EarError::BadPlan("count must be 1 to 64"));
+        }
+        if self.first.checked_add(u32::from(self.spec.count)).is_none() {
+            return Err(EarError::BadPlan("the first item is too far"));
         }
         Ok(())
     }
@@ -579,7 +584,7 @@ impl Session {
         };
         match post {
             EarPost::Ready { questions } => {
-                let fits = if questions.len() == usize::from(run.plan.count) {
+                let fits = if questions.len() == usize::from(run.plan.spec.count) {
                     questions.iter().try_for_each(EarQuestion::check)
                 } else {
                     Err(EarError::BadPost("the count differs from the plan's"))
@@ -640,7 +645,7 @@ impl EarEdit for Session {
             phase: run.phase,
             plan: run.plan,
             count: if run.questions.is_empty() {
-                u32::from(run.plan.count)
+                u32::from(run.plan.spec.count)
             } else {
                 run.questions.len() as u32
             },
@@ -791,16 +796,72 @@ mod tests {
 
     #[test]
     fn plans_out_of_range_are_refused() {
-        assert_eq!(EarPlan::new(1, 1, 1, 7, 10).check(), Ok(()));
-        assert_eq!(EarPlan::new(1, 1, 1, MAX_SEED, 64).check(), Ok(()));
+        assert_eq!(
+            EarPlan::new(EarSpec {
+                game: 1,
+                generator: 1,
+                level: 1,
+                seed: 7,
+                count: 10
+            })
+            .check(),
+            Ok(())
+        );
+        assert_eq!(
+            EarPlan::new(EarSpec {
+                game: 1,
+                generator: 1,
+                level: 1,
+                seed: MAX_SEED,
+                count: 64
+            })
+            .check(),
+            Ok(())
+        );
         for bad in [
-            EarPlan::new(1, 1, 1, MAX_SEED + 1, 10),
-            EarPlan::new(1, 1, 1, u64::MAX, 10),
-            EarPlan::new(1, 1, 1, 7, 0),
-            EarPlan::new(1, 1, 1, 7, 65),
+            EarPlan::new(EarSpec {
+                game: 1,
+                generator: 1,
+                level: 1,
+                seed: MAX_SEED + 1,
+                count: 10,
+            }),
+            EarPlan::new(EarSpec {
+                game: 1,
+                generator: 1,
+                level: 1,
+                seed: u64::MAX,
+                count: 10,
+            }),
+            EarPlan::new(EarSpec {
+                game: 1,
+                generator: 1,
+                level: 1,
+                seed: 7,
+                count: 0,
+            }),
+            EarPlan::new(EarSpec {
+                game: 1,
+                generator: 1,
+                level: 1,
+                seed: 7,
+                count: 65,
+            }),
         ] {
             assert_eq!(bad.check().map_err(|e| e.code()), Err("bad_ear_plan"));
         }
+        // A burst's plan starts at its item (should-fix S3), as far as the items go.
+        let spec = EarSpec {
+            game: 5,
+            generator: 1,
+            level: 1,
+            seed: 7,
+            count: 10,
+        };
+        let burst = EarPlan::new(spec).starting_at(41);
+        assert_eq!((burst.spec, burst.first), (spec, 41));
+        assert_eq!(burst.check(), Ok(()));
+        assert!(EarPlan::new(spec).starting_at(u32::MAX).check().is_err());
     }
 
     #[test]
