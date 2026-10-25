@@ -391,6 +391,30 @@ class Extraction(Case):
         self.assertEqual((stats["files"], stats["skipped_members"]), (1, 2))
         self.assertEqual(sorted(p.name for p in (self.dir / "out").iterdir()), ["ok.wav"])
 
+    def test_a_root_directory_entry_is_skipped_but_a_file_named_dot_still_stops_everything(self) -> None:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as t:
+            for root in (".", "./"):
+                ti = tarfile.TarInfo(root)
+                ti.type = tarfile.DIRTYPE
+                t.addfile(ti)
+            ti = tarfile.TarInfo("./rir/a.wav")
+            ti.size = 2
+            t.addfile(ti, io.BytesIO(b"ab"))
+        stats = self.extract(buf.getvalue(), name="root.tgz")
+        self.assertEqual((stats["files"], stats["bytes"], stats["skipped_members"]), (1, 2, 0))
+        self.assertTrue((self.dir / "out" / "rir" / "a.wav").is_file())
+        import shutil
+
+        shutil.rmtree(self.dir / "out")
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as t:
+            ti = tarfile.TarInfo(".")
+            ti.size = 1
+            t.addfile(ti, io.BytesIO(b"x"))
+        with self.assertRaisesRegex(fetch.FetchError, "climbs"):
+            self.extract(buf.getvalue(), name="dotfile.tgz")
+
     def test_a_bomb_and_a_flood_are_stopped(self) -> None:
         with self.assertRaisesRegex(fetch.FetchError, "expands past"):
             self.extract(zip_bytes({"zeros.bin": bytes(2_000_000)}), max_bytes=1_000_000)
