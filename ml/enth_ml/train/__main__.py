@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     cd.add_argument("--from-step", type=int, required=True)
     cd.add_argument("--steps", type=int, required=True)
     cd.add_argument("--out", required=True)
-    cd.add_argument("--set", action="append", default=[], help="decay_shape, min_lr_frac or an operational key")
+    cd.add_argument("--set", action="append", default=[], help="decay_shape or an operational key (workers, persample_evals, ...)")
     cd.add_argument("--device", default=None)
     i = sub.add_parser("info", help="describe ds1 run directories")
     i.add_argument("dirs", nargs="+")

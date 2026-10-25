@@ -179,14 +179,14 @@ def evaluate(model: ProposeV0, loss_fn: ProposeLoss, dev: DevSet, device: torch.
 PERSAMPLE_SCHEMA = "enth.dev-persample/1"
 
 
-def write_persample(out_dir: pathlib.Path, step: int, arrays: dict, extra: dict | None = None) -> pathlib.Path:
-    """``dev-persample-<step>.npz`` (atomically): ``best``, ``top``, ``meank`` (f32), ``winner``, ``distinct``,
-    ``source`` (u8), ``index`` (u64) per dev sample, and ``step``; ``compare.py`` reads it."""
+def write_persample(out_dir: pathlib.Path, step: int, arrays: dict, extra: dict | None = None, path: pathlib.Path | None = None) -> pathlib.Path:
+    """``dev-persample-<step>.npz`` in ``out_dir`` (or at ``path``), atomically: ``best``, ``top``, ``meank`` (f32),
+    ``winner``, ``distinct``, ``source`` (u8), ``index`` (u64) per dev sample, and ``step``; ``compare.py`` reads it."""
     import io
 
     from .ckpt import atomic_write_bytes
 
-    path = pathlib.Path(out_dir) / f"dev-persample-{int(step):09d}.npz"
+    path = pathlib.Path(path) if path is not None else pathlib.Path(out_dir) / f"dev-persample-{int(step):09d}.npz"
     meta = {"schema": PERSAMPLE_SCHEMA, "step": int(step), **(extra or {})}
     buf = io.BytesIO()
     np.savez(buf, step=np.int64(step), meta=np.frombuffer(json.dumps(meta).encode(), dtype=np.uint8), **arrays)
@@ -873,13 +873,6 @@ def evaluate_checkpoint(path: str | pathlib.Path, dev_dirs: list[str] | None = N
     dev = DevSet(dev_ds.shards, cfg.dev_limit)
     res = evaluate(model, loss_fn, dev, device_t, cfg, mel_dtype=mel_dtype, persample=persample_out is not None)
     if persample_out is not None:
-        import io
-
-        from .ckpt import atomic_write_bytes
-
-        per = res.pop("persample")
-        meta = {"schema": PERSAMPLE_SCHEMA, "step": int(state["step"]), "checkpoint": pathlib.Path(path).name, "loss_best": res["loss_best"]}
-        buf = io.BytesIO()
-        np.savez(buf, step=np.int64(state["step"]), meta=np.frombuffer(json.dumps(meta).encode(), dtype=np.uint8), **per)
-        atomic_write_bytes(pathlib.Path(persample_out), buf.getvalue())
+        extra = {"checkpoint": pathlib.Path(path).name, "loss_best": res["loss_best"]}
+        write_persample(pathlib.Path(persample_out).parent, int(state["step"]), res.pop("persample"), extra, path=pathlib.Path(persample_out))
     return res

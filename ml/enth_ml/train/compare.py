@@ -14,8 +14,8 @@ comma-separated list of replicate runs (other seeds), paired by position: ``comp
   of samples each run is better on, and the correlation of the two runs' per-sample losses;
 * the discrete metrics (distinct joint choices among the K, the categorical oracle, presence recall, the confidence's
   top-1) from each run's ``metrics.jsonl`` at that step, each with a **jitter band**: twice the combined
-  second-difference noise of the two runs' own dev curves over their last third (Rice's estimator, sd(Δ²x)/√6), and
-  the per-sample distinct choices as a paired test;
+  second-difference noise of the two runs' own dev curves over the last third of their evaluation grid (at least 5
+  evaluations; Rice's estimator, sd(Δ²x)/√6), and the per-sample distinct choices as a paired test;
 * best-of-K per data source (generator v1, preset, uniform);
 * **the verdict**, on best-of-K: "B better" or "A better" when the gap is over ``max(3 x paired SE, 2 x seed SD)``
   (and, with replicates, every seed's gap has the same sign), else "no decision at this tier". The seed SD is measured
@@ -207,7 +207,9 @@ def discrete_at(run: pathlib.Path | None, step: int | None) -> dict:
         return {}
     at = [r for r in recs if int(r["step"]) == step] if step is not None else []
     rec = at[-1] if at else None
-    tail = recs[-max(5, len(recs) // 3) :]
+    # The jitter on the evaluation grid only: a final evaluation off the grid (12,500 after 12,000) would bend Δ².
+    grid = [r for r in recs if not r.get("final")] or recs
+    tail = grid[-max(5, len(grid) // 3) :]
     out = {}
     for label, path in DISCRETE:
         out[label] = {"value": _get(rec, path) if rec else None, "jitter": rice_jitter([_get(r, path) for r in tail])}

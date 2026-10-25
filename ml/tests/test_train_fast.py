@@ -238,6 +238,10 @@ class Fast(unittest.TestCase):
             branch.cooldown(self.dir / "wsd-parent", 10, 5, self.dir / "wsd-branch")
         with self.assertRaises(ValueError):
             branch.plan_branch(self.dir / "wsd-parent", 20, 8, self.dir / "wsd-b4", ["lr=0.1"])
+        with self.assertRaises(ValueError):
+            branch.plan_branch(self.dir / "wsd-parent", 20, 8, self.dir / "wsd-b4", ["min_lr_frac=0.1"])
+        cfg, _, b4 = branch.plan_branch(self.dir / "wsd-parent", 20, 8, self.dir / "wsd-b4", ['decay_shape="linear"', "workers=0"])
+        self.assertEqual((cfg.decay_shape, b4["decay_shape"], cfg.persample_evals, cfg.early_stop_patience), ("linear", "linear", "final", 0))
 
     def test_persample_files_and_the_final_best(self) -> None:
         import numpy as np

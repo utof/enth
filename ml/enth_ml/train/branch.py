@@ -74,9 +74,11 @@ def plan_branch(run_dir: str | pathlib.Path, from_step: int, steps: int, out: st
     cfg = TrainConfig.from_dict(d)
     S.check(cfg)
     diff = cfg.identity_diff(state["config"])
-    extra = [k for k in diff if k not in ("cooldown_from", "cooldown_steps", "decay_shape", "min_lr_frac")]
+    # decay_shape shapes only decays, and a branch starts before the parent's own: the one identity key a branch may
+    # change. (min_lr_frac would also move a cosine parent's schedule before the branch, so it stays the parent's.)
+    extra = [k for k in diff if k not in ("cooldown_from", "cooldown_steps", "decay_shape")]
     if extra:
-        raise ValueError(f"a branch may change only the decay (decay_shape, min_lr_frac) and operational keys; --set changed {extra}")
+        raise ValueError(f"a branch may change only decay_shape and operational keys; --set changed {extra}")
     state = dict(state)
     state["config"] = cfg.to_dict()
     branch = {
