@@ -483,3 +483,178 @@ fn the_reaper_duel_fixture_resumes_a_round_whose_first_submit_passes() {
     let own = host.session(|s| s.duel_own().unwrap());
     assert!(own.own.can_share_answer(), "{:?}", own.own);
 }
+
+/// Pass `code` in `host` by rebuilding its target with edits, then Share and wait for the codes.
+fn pass_and_share(host: &mut Host, code: &ChallengeCode) -> enth_ui::editor::duel::ShareCodes {
+    let round = prepare_round(code.spec()).unwrap();
+    host.play(code);
+    host.session(|s| {
+        let ops = ops_between(s.patch(), round.target()).unwrap();
+        s.edit(ops, None).unwrap();
+        s.game_submit().unwrap();
+    });
+    host.until("the pass", |s| {
+        s.round().is_some_and(|r| r.phase == Phase::Passed)
+    });
+    let shared = Arc::clone(host.plugin.shared());
+    host.frame(vec![DuelIntent::Share], |_| ());
+    host.until("the codes", |s| {
+        s.duel()
+            .is_some_and(|d| shared.game.duel.codes_of(d.id).is_some())
+    });
+    let id = host.session(|s| s.duel().unwrap().id);
+    shared.game.duel.codes_of(id).unwrap()
+}
+
+/// **A duel survives closing the plugin** (lane DUI): A shares (the salt and the codes are in A's history file before
+/// the card can offer Copy) and closes; B reads A's message, passes, shares and checks A's answer (B's file keeps it
+/// all); A, in a new instance, pastes B's message and answer: the duel resumes from A's file with A's result, the same
+/// salt and the same codes (a Share gives them again, unchanged), B's answer opens at once, and A's check re-scores
+/// A's own canonical answer beside B's; the name A types is kept; a third instance reopens the duel from the history
+/// with **Open**, which checks it again.
+#[test]
+fn a_duel_survives_closing_the_plugin() {
+    use crate::duel::history::HistoryFile;
+
+    let dirs = TempDir::new("history");
+    let a_file = dirs.0.join("a").join("duels.json");
+    let b_file = dirs.0.join("b").join("duels.json");
+    let code = level2(91);
+
+    // A passes and shares, then closes.
+    let (salt, a_codes, a_entry) = {
+        let mut a = Host::new();
+        let shared = Arc::clone(a.plugin.shared());
+        shared.game.duel.set_history_path(Some(a_file.clone()));
+        let codes = pass_and_share(&mut a, &code);
+        let id = a.session(|s| s.duel().unwrap().id);
+        let salt = shared.game.duel.salt_of(id).unwrap();
+        let entries = HistoryFile::new(Some(a_file.clone())).load();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        let e = &entries[0];
+        assert_eq!(e.code, code.to_string());
+        assert_eq!(e.salt(), Some(salt), "the salt is on disk");
+        let own = e.own.as_ref().expect("A's result and codes are on disk");
+        assert_eq!(own.answer, codes.answer);
+        assert_eq!(own.message, codes.message);
+        assert_eq!(own.scorecard, codes.scorecard);
+        assert_eq!(shared.game.duel.entry_of(id), Some(e.id));
+        (salt, codes, e.id)
+    };
+
+    // B reads A's message and answer, passes, shares, and checks A's answer.
+    let b_codes = {
+        let mut b = Host::new();
+        let shared = Arc::clone(b.plugin.shared());
+        shared.game.duel.set_history_path(Some(b_file.clone()));
+        b.frame(
+            vec![
+                DuelIntent::PasteText(format!("{}\n\n{}", a_codes.message, a_codes.answer)),
+                DuelIntent::Read,
+            ],
+            |_| (),
+        );
+        assert_eq!(b.session(|s| s.duel().unwrap().answer), AnswerState::Sealed);
+        let codes = pass_and_share(&mut b, &code);
+        b.frame(vec![DuelIntent::Verify], |_| ());
+        b.until("B's check", |s| {
+            s.duel().is_some_and(|d| d.verify == VerifyState::Done)
+        });
+        b.session(|_| ());
+        let entries = HistoryFile::new(Some(b_file.clone())).load();
+        assert_eq!(entries.len(), 1, "one duel, one entry: {entries:?}");
+        let e = &entries[0];
+        assert_eq!(e.card.as_deref(), Some(a_codes.scorecard.as_str()));
+        assert_eq!(e.answer.as_deref(), Some(a_codes.answer.as_str()));
+        assert!(e.own.is_some() && e.salt().is_some());
+        let checked = e.checked.as_ref().expect("B's check is kept");
+        assert_eq!(checked.as_reported, Some(true));
+        assert_eq!(checked.commitment_ok, Some(true));
+        codes
+    };
+
+    // A again, in a new instance: B's message and answer pasted; the duel resumes from A's file.
+    let checked = {
+        let mut a = Host::new();
+        let shared = Arc::clone(a.plugin.shared());
+        let shell = &shared.game.duel;
+        shell.set_history_path(Some(a_file.clone()));
+        a.frame(
+            vec![
+                DuelIntent::PasteText(format!(
+                    "your turn\n{}\n{}",
+                    b_codes.message, b_codes.answer
+                )),
+                DuelIntent::Read,
+            ],
+            |_| (),
+        );
+        let view = a.session(|s| s.duel().unwrap());
+        assert!(view.own.is_some(), "A's result came back from the history");
+        assert_eq!(
+            view.answer,
+            AnswerState::Open,
+            "A has played: B's answer opens"
+        );
+        assert_eq!(shell.salt_of(view.id), Some(salt), "the same salt");
+        assert_eq!(
+            shell.codes_of(view.id),
+            Some(a_codes.clone()),
+            "the same codes"
+        );
+        assert_eq!(
+            shell.entry_of(view.id),
+            Some(a_entry),
+            "kept in the same entry"
+        );
+        // Share again: the same codes, nothing made.
+        a.frame(vec![DuelIntent::Share], |_| ());
+        a.session(|_| ());
+        assert_eq!(shell.codes_of(view.id), Some(a_codes.clone()));
+        a.frame(vec![DuelIntent::Verify], |_| ());
+        a.until("A's check", |s| {
+            s.duel().is_some_and(|d| d.verify == VerifyState::Done)
+        });
+        let checked = a.session(|s| s.duel().unwrap().checked.unwrap());
+        assert_eq!(checked.matches_claim(), Some(true));
+        assert_eq!(checked.commitment_ok(), Some(true));
+        assert_eq!(checked.theirs.sound, 10_000);
+        assert_eq!(
+            checked.own.map(|o| o.sound),
+            Some(10_000),
+            "A's restored canonical answer, re-scored beside B's"
+        );
+        a.frame(vec![DuelIntent::Name("Sam".to_owned())], |_| ());
+        a.session(|_| ());
+        let entries = HistoryFile::new(Some(a_file.clone())).load();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        let e = &entries[0];
+        assert_eq!(e.id, a_entry);
+        assert_eq!(e.card.as_deref(), Some(b_codes.scorecard.as_str()));
+        assert_eq!(e.answer.as_deref(), Some(b_codes.answer.as_str()));
+        assert_eq!(e.name, "Sam");
+        assert!(e.checked.is_some());
+        checked
+    };
+
+    // A third instance: Open on the history's row restores the duel and checks it again.
+    let mut a = Host::new();
+    let shared = Arc::clone(a.plugin.shared());
+    shared.game.duel.set_history_path(Some(a_file.clone()));
+    a.frame(vec![DuelIntent::Toggle], |_| ());
+    a.session(|_| ());
+    a.frame(vec![DuelIntent::OpenHistory(a_entry)], |_| ());
+    a.until("the reopened check", |s| {
+        s.duel().is_some_and(|d| d.verify == VerifyState::Done)
+    });
+    let view = a.session(|s| s.duel().unwrap());
+    assert_eq!(view.code, code.to_string());
+    assert!(view.own.is_some() && view.card.is_some());
+    assert_eq!(
+        view.checked.as_ref().map(|c| c.theirs),
+        Some(checked.theirs)
+    );
+    assert_eq!(view.checked.as_ref().and_then(|c| c.own), checked.own);
+    assert_eq!(shared.game.duel.salt_of(view.id), Some(salt));
+    assert_eq!(shared.game.duel.codes_of(view.id), Some(a_codes));
+}

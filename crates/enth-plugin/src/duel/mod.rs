@@ -1,5 +1,5 @@
-//! **Owner: lane SKD** (the Duel skeleton, freeze point F2d; feature `duel`), then **DUI** (the history file under
-//! `duel/`, additively). Pre-declared by lane S0e (R4/R5, freeze point F0e).
+//! **Owner: lane SKD** (the Duel skeleton, freeze point F2d; feature `duel`), then **DUI** (the history file,
+//! [`history`], and its wiring here, additively). Pre-declared by lane S0e (R4/R5, freeze point F0e).
 //!
 //! The plugin's side of duels (docs/duels.md, "The flow", "Verification" and "Privacy"; docs/plugin.md, "Duels"). Shells
 //! translate and hold no product rules: the codes, `verify` and paste-anything are `enth-challenge`'s, the state machine
@@ -14,8 +14,17 @@
 //!   thread's next frame ([`before_frame`]); each post asks the editor for a repaint.
 //! - **The salt** (the F1e review's M6): 64 bits of OS randomness (`getrandom::u64`), drawn **once per duel**, when the
 //!   player first shares it, and kept with the duel's codes before anything can be copied. **Never derived from a clock
-//!   or a seed** (the answer code carries it in the clear): no OS randomness, no codes. Lane DUI writes it to the duel
-//!   history; until then it lives as long as the plugin instance.
+//!   or a seed** (the answer code carries it in the clear): no OS randomness, no codes. **It is written to the duel
+//!   history with the codes, on the worker, before the codes reach the card** (lane DUI), so Copy is never offered for
+//!   a salt that could be lost; when the history cannot be written (no home folder, a full disk) the codes are still
+//!   offered and the card says they last only until the plugin closes.
+//! - **The duel history** ([`history`], lane DUI): `<Documents>/enth/Duels/duels.json`, one entry per duel: the salt,
+//!   your result and codes, their codes, the last check, a name you typed. Kept on Share (the worker, above), on every
+//!   Read that imports their codes, on every check and on a name typed (after unlocking, in [`Duel::act`]). **A duel
+//!   survives closing the editor, the plugin and the project:** the card's history lists the duels with **Open**, which
+//!   restores one (your result through `DuelEdit::duel_set_own`, its salt and codes, their codes, and a new check if it
+//!   had one); and a duel that opens on a code you played before (their message pasted the next day) resumes the
+//!   newest unfinished entry on that code by itself: the first played attempt at a code stands.
 //! - **The clipboard is written on a click and never read here.** The card writes it with egui's `copy_text` inside a
 //!   click on Copy; a paste is the platform's Paste (Ctrl+V, ⌘V) into the card's paste box, which egui-baseview turns
 //!   into text. This file has no clipboard access at all.
@@ -26,6 +35,8 @@
 //!
 //! The editor glue calls [`before_frame`] and [`after_frame`] around each frame (`editor.rs`'s `round_frame`), and every
 //! drain of the session hands the duel requests to [`Duel::act`] after unlocking (`lib.rs`'s `with_session`).
+
+pub mod history;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -38,11 +49,13 @@ use enth_patch::Patch;
 use enth_session::Session;
 use enth_session::duel::{
     AnswerState, DuelEdit, DuelId, DuelJobId, DuelJobResult, DuelOwn, DuelRequest, DuelVerified,
-    DuelVerify, DuelView, Rescored, VerifyState,
+    DuelVerify, DuelView, FriendAnswer, FriendScorecard, Rescored, VerifyState,
 };
 use enth_ui::editor::Editor;
-use enth_ui::editor::duel::{ShareCodes, ShellDuel};
+use enth_ui::editor::duel::{HistoryRow, ImportKind, ShareCodes, ShellAsks, ShellDuel};
 use parking_lot::Mutex;
+
+use self::history::{Checked, Entry, HistoryFile, Own, next_id, today};
 
 #[cfg(feature = "learn")]
 use crate::game::TargetLoop;
@@ -68,7 +81,58 @@ pub fn draw_salt() -> Result<u64, String> {
 #[derive(Debug)]
 enum Post {
     Verified(DuelJobId, DuelJobResult),
-    Shared(DuelId, Result<ShareCodes, String>),
+    /// The codes (or why not), and why they could not be kept in the history.
+    Shared(DuelId, Result<ShareCodes, String>, Option<String>),
+}
+
+/// How many history rows the card is handed (it lists the first few; the rest stay in the file).
+const ROWS: usize = 50;
+
+/// The duel history as this instance knows it: the file's entries (as last read or written), and which of the
+/// session's duels is kept in which entry.
+#[derive(Debug, Default)]
+struct Store {
+    file: HistoryFile,
+    entries: Vec<Entry>,
+    loaded: bool,
+    /// The session's duels and the entries they are kept in.
+    bound: Vec<(DuelId, u64)>,
+    /// The session's duels whose own result came from another entry than theirs (copied into a new entry).
+    seeded: Vec<(DuelId, u64)>,
+    /// The session's duels already looked up in the history (a resume happens once, when the duel opens).
+    seen: Vec<DuelId>,
+}
+
+impl Store {
+    fn bound_of(&self, duel: DuelId) -> Option<u64> {
+        self.bound.iter().find(|(d, _)| *d == duel).map(|(_, e)| *e)
+    }
+
+    fn bind(&mut self, duel: DuelId, entry: u64) {
+        self.bound.retain(|(d, _)| *d != duel);
+        self.bound.push((duel, entry));
+    }
+
+    fn entry(&self, id: u64) -> Option<&Entry> {
+        self.entries.iter().find(|e| e.id == id)
+    }
+
+    /// The newest entry on `code` that holds your result: the first played attempt at a code stands.
+    fn own_on(&self, code: &str) -> Option<&Entry> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|e| e.code == code && e.own.is_some())
+    }
+
+    fn rows(&self) -> Vec<HistoryRow> {
+        self.entries
+            .iter()
+            .rev()
+            .take(ROWS)
+            .map(Entry::row)
+            .collect()
+    }
 }
 
 /// What the worker's tasks share with the shell.
@@ -77,12 +141,87 @@ struct Inner {
     posts: Mutex<Vec<Post>>,
     /// The verify job the session waits for (0: none): a cancelled job that has not run yet is skipped.
     verify_wanted: AtomicU64,
+    /// The duel history (lane DUI). Short locks; never the session's.
+    store: Mutex<Store>,
+    /// Held across a history file read or write, so this instance's writes keep their order.
+    io: Mutex<()>,
 }
 
 impl Inner {
     fn post(&self, post: Post) {
         self.posts.lock().push(post);
     }
+
+    /// Read the history file into the store.
+    fn load(&self) {
+        let _io = self.io.lock();
+        let file = self.store.lock().file.clone();
+        let entries = file.load();
+        let mut store = self.store.lock();
+        store.entries = entries;
+        store.loaded = true;
+    }
+
+    /// Change the history entry `duel` (on `code`) is kept in, made when it has none (with your result and salt
+    /// copied from the entry it was resumed from, if any): under the file's lock, then the store follows the file.
+    fn keep(
+        &self,
+        duel: DuelId,
+        code: &str,
+        change: impl FnOnce(&mut Entry),
+    ) -> Result<u64, String> {
+        let _io = self.io.lock();
+        let (file, bound, seed) = {
+            let store = self.store.lock();
+            let seed = store
+                .seeded
+                .iter()
+                .find(|(d, _)| *d == duel)
+                .map(|(_, e)| *e);
+            (store.file.clone(), store.bound_of(duel), seed)
+        };
+        let (id, entries) = file
+            .update(|entries| {
+                let at =
+                    bound.and_then(|id| entries.iter().position(|e| e.id == id && e.code == code));
+                let at = at.unwrap_or_else(|| {
+                    let mut entry = Entry {
+                        id: next_id(entries),
+                        code: code.to_owned(),
+                        day: today(),
+                        ..Entry::default()
+                    };
+                    if let Some(from) = seed.and_then(|s| entries.iter().find(|e| e.id == s)) {
+                        entry.salt.clone_from(&from.salt);
+                        entry.own.clone_from(&from.own);
+                        entry.day = from.day;
+                    }
+                    entries.push(entry);
+                    entries.len() - 1
+                });
+                change(&mut entries[at]);
+                entries[at].id
+            })
+            .map_err(|e| format!("this duel could not be kept on this computer ({e})"))?;
+        let mut store = self.store.lock();
+        store.entries = entries;
+        store.loaded = true;
+        store.bind(duel, id);
+        Ok(id)
+    }
+}
+
+/// A change to the open duel's history entry, made after unlocking ([`Duel::act`]).
+#[derive(Debug)]
+enum Keep {
+    /// Their scorecard, as read.
+    Card(String),
+    /// Their answer code, as read.
+    Answer(String),
+    /// What a check measured.
+    Checked(Checked),
+    /// Their name, as typed.
+    Name(String),
 }
 
 /// A duel's salt and codes.
@@ -106,6 +245,8 @@ pub struct Duel {
     said: Mutex<Option<String>>,
     /// Tasks queued under the session lock, sent to the worker after unlocking ([`Duel::act`]).
     pending: Mutex<Vec<WorkerTask>>,
+    /// History changes queued under the session lock, written after unlocking ([`Duel::act`]).
+    keeps: Mutex<Vec<(DuelId, String, Keep)>>,
     /// The shell could not play an audition: the next frame stops it in the session.
     stop_audition: AtomicBool,
     log: Mutex<Option<PathBuf>>,
@@ -115,12 +256,20 @@ pub struct Duel {
 
 impl Default for Duel {
     fn default() -> Self {
+        let inner = Inner::default();
+        // The history file where the environment puts it; none in unit tests, which set one with
+        // `Duel::set_history_path` (the user's Documents are never touched by a test).
+        if cfg!(not(test)) {
+            inner.store.lock().file =
+                HistoryFile::from_env(&crate::presets::SystemEnv, crate::presets::Os::current());
+        }
         Duel {
-            inner: Arc::default(),
+            inner: Arc::new(inner),
             salted: Mutex::new(Vec::new()),
             making: Mutex::new(None),
             said: Mutex::new(None),
             pending: Mutex::new(Vec::new()),
+            keeps: Mutex::new(Vec::new()),
             stop_audition: AtomicBool::new(false),
             log: Mutex::new(
                 std::env::var_os("ENTH_DUEL_LOG")
@@ -154,6 +303,42 @@ impl Duel {
     /// Write the duel log to `path` instead of `ENTH_DUEL_LOG` (tests).
     pub fn set_log_path(&self, path: Option<PathBuf>) {
         *self.log.lock() = path;
+    }
+
+    /// Keep the duel history in the file at `path` instead of the environment's (tests); it is read again.
+    pub fn set_history_path(&self, path: Option<PathBuf>) {
+        let mut store = self.inner.store.lock();
+        store.file = HistoryFile::new(path);
+        store.loaded = false;
+    }
+
+    /// The duel history as this instance last read or wrote it, oldest first (tests).
+    pub fn history(&self) -> Vec<Entry> {
+        self.inner.store.lock().entries.clone()
+    }
+
+    /// The history entry `duel` is kept in, if any.
+    pub fn entry_of(&self, duel: DuelId) -> Option<u64> {
+        self.inner.store.lock().bound_of(duel)
+    }
+
+    /// Keep `salt` and `codes` for `duel` on `code` (a duel restored from the history).
+    fn restore_codes(
+        &self,
+        duel: DuelId,
+        code: &str,
+        salt: Option<u64>,
+        codes: Option<ShareCodes>,
+    ) {
+        let Some(salt) = salt else { return };
+        let mut salted = self.salted.lock();
+        salted.retain(|s| s.duel != duel);
+        salted.push(Salted {
+            duel,
+            code: code.to_owned(),
+            salt,
+            codes,
+        });
     }
 
     /// The salt of `duel` on `code`: the one drawn for it, else a new draw kept with it.
@@ -196,17 +381,27 @@ impl Duel {
                 "Pass the round, or end it, before you share".to_owned()
             }));
         }
+        let code = match ChallengeCode::decode(&own.code) {
+            Ok(c) => c,
+            Err(e) => return self.say(Some(format!("{e}: {}", e.hint()))),
+        };
+        let text = code.to_string();
+        // Codes made once (or restored from the history) stand: a second Share gives the same codes.
+        let made = |duel: DuelId| {
+            self.salted
+                .lock()
+                .iter()
+                .any(|s| s.duel == duel && s.code == text && s.codes.is_some())
+        };
+        if session.duel().is_some_and(|v| v.code == text && made(v.id)) {
+            return;
+        }
         let Some(patch) = result.answer else {
             return self.say(Some(
                 "Your answer's patch is not here yet (the target is being prepared again): try again in a moment"
                     .to_owned(),
             ));
         };
-        let code = match ChallengeCode::decode(&own.code) {
-            Ok(c) => c,
-            Err(e) => return self.say(Some(format!("{e}: {}", e.hint()))),
-        };
-        let text = code.to_string();
         let duel = match session.duel() {
             Some(v) if v.code == text => v.id,
             _ => match session.duel_open(&text) {
@@ -234,7 +429,19 @@ impl Duel {
                         .unwrap_or_else(|_| {
                             Err("making the codes failed (see the crash folder)".to_owned())
                         });
-                inner.post(Post::Shared(duel, made));
+                // The salt and the codes go to the history before the card can offer Copy.
+                let unkept = match &made {
+                    Ok(codes) => inner
+                        .keep(duel, &codes.code, |e| {
+                            e.set_salt(job.salt);
+                            e.own = Some(Own::of(&job.own, codes));
+                            e.day = today();
+                        })
+                        .err()
+                        .map(|e| format!("{e}: your codes last until the plugin closes")),
+                    Err(_) => None,
+                };
+                inner.post(Post::Shared(duel, made, unkept));
                 None
             })));
     }
@@ -244,6 +451,17 @@ impl Duel {
     /// audition rendered on the worker and played through the Learn examples slot (not while a round's target holds
     /// that slot), a stop clears it.
     pub fn act(&self, game: &Game, requests: Vec<DuelRequest>) {
+        for (duel, code, keep) in std::mem::take(&mut *self.keeps.lock()) {
+            let kept = self.inner.keep(duel, &code, |e| match keep {
+                Keep::Card(text) => e.card = Some(text),
+                Keep::Answer(text) => e.answer = Some(text),
+                Keep::Checked(c) => e.checked = Some(c),
+                Keep::Name(name) => e.set_name(&name),
+            });
+            if let Err(e) = kept {
+                self.say(Some(e));
+            }
+        }
         for task in std::mem::take(&mut *self.pending.lock()) {
             game.run_task(task);
         }
@@ -314,13 +532,147 @@ impl Duel {
         self.say(Some(why.to_owned()));
     }
 
-    /// What the card shows of the shell for the open duel.
+    /// What the card shows of the shell for the open duel, and the history.
     fn shell_view(&self, view: Option<&DuelView>) -> ShellDuel {
         let id = view.map(|v| v.id);
+        let store = self.inner.store.lock();
+        let entry = id.and_then(|id| store.bound_of(id));
         ShellDuel {
             codes: id.and_then(|id| self.codes_of(id)),
             making: self.making.lock().is_some(),
             said: self.said.lock().clone(),
+            history: store.rows(),
+            entry,
+            name: entry
+                .and_then(|e| store.entry(e))
+                .map(|e| e.name.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Queue a change to the history entry of the open duel, written after unlocking.
+    fn queue_keep(&self, view: &DuelView, keep: Keep) {
+        self.keeps.lock().push((view.id, view.code.clone(), keep));
+    }
+
+    /// Restore `entry` into the session's duel `duel` (its view `view`): your result (from this entry, else from the
+    /// newest entry on its code that has one), its salt and codes, and their codes the session does not hold yet.
+    fn restore(
+        &self,
+        session: &mut Session,
+        view: &DuelView,
+        entry: &Entry,
+        own_from: Option<&Entry>,
+    ) {
+        let own_from = own_from.filter(|_| view.own.is_none());
+        if let Some(from) = own_from
+            && let Some(own) = &from.own
+        {
+            let _ = session.duel_set_own(own.result(&view.code));
+            self.restore_codes(
+                view.id,
+                &view.code,
+                from.salt(),
+                Some(own.codes(&view.code)),
+            );
+        }
+        if view.card.is_none()
+            && let Some(text) = &entry.card
+            && let Ok(card) = enth_challenge::result::Scorecard::decode(text)
+        {
+            let _ = session.duel_import_scorecard(FriendScorecard::new(card, text.clone()));
+        }
+        if view.answer == AnswerState::None
+            && let Some(text) = &entry.answer
+        {
+            let _ = session.duel_import_answer(FriendAnswer::new(view.code.clone(), text.clone()));
+        }
+    }
+
+    /// A duel that just opened, looked up once: if you have not played it here, the newest entry on its code with your
+    /// result restores it (the first played attempt stands), and the newest unfinished entry on its code whose
+    /// scorecard does not differ from the duel's keeps it.
+    fn resume(&self, session: &mut Session) {
+        let Some(view) = DuelEdit::duel(session) else {
+            return;
+        };
+        let load = {
+            let mut store = self.inner.store.lock();
+            if store.seen.contains(&view.id) {
+                return;
+            }
+            store.seen.push(view.id);
+            if store.bound_of(view.id).is_some() || view.own.is_some() {
+                return;
+            }
+            !store.loaded
+        };
+        // The file as it is now (another instance may have played this code since).
+        if load {
+            self.inner.load();
+        }
+        let (entry, own_from) = {
+            let mut store = self.inner.store.lock();
+            let card = view.card.as_ref().map(|c| c.text.as_str());
+            let entry = store
+                .entries
+                .iter()
+                .rev()
+                .find(|e| {
+                    e.code == view.code
+                        && !e.finished()
+                        && (card.is_none() || e.card.is_none() || e.card.as_deref() == card)
+                })
+                .cloned();
+            let own_from = store.own_on(&view.code).cloned();
+            match (&entry, &own_from) {
+                (Some(e), _) => store.bind(view.id, e.id),
+                (None, Some(from)) => store.seeded.push((view.id, from.id)),
+                (None, None) => return,
+            }
+            (entry, own_from)
+        };
+        let empty = Entry::default();
+        let entry = entry.as_ref().unwrap_or(&empty);
+        let own_from = entry.own.is_some().then_some(entry).or(own_from.as_ref());
+        self.restore(session, &view, entry, own_from);
+    }
+
+    /// **Open** on a history row: a duel opens on its code (the open one closes), kept in that entry, restored, and
+    /// checked again if it was checked before.
+    fn open(&self, session: &mut Session, id: u64) {
+        if !self.inner.store.lock().loaded {
+            self.inner.load();
+        }
+        let (entry, own_from) = {
+            let store = self.inner.store.lock();
+            let Some(entry) = store.entry(id).cloned() else {
+                drop(store);
+                return self.say(Some("that duel is no longer in the history".to_owned()));
+            };
+            let own_from = store.own_on(&entry.code).cloned();
+            (entry, own_from)
+        };
+        let duel = match session.duel_open(&entry.code) {
+            Ok(d) => d,
+            Err(e) => return self.say(Some(format!("{e}: {}", e.hint()))),
+        };
+        {
+            let mut store = self.inner.store.lock();
+            store.bind(duel, entry.id);
+            store.seen.push(duel);
+        }
+        let Some(view) = DuelEdit::duel(session) else {
+            return;
+        };
+        let own_from = if entry.own.is_some() {
+            Some(&entry)
+        } else {
+            own_from.as_ref()
+        };
+        self.restore(session, &view, &entry, own_from);
+        if entry.checked.is_some() {
+            let _ = session.duel_verify();
         }
     }
 
@@ -414,11 +766,16 @@ pub fn before_frame(editor: &mut Editor, session: &mut Session, game: &Game) {
     let posts = std::mem::take(&mut *duel.inner.posts.lock());
     for post in posts {
         match post {
-            // A result the duel no longer waits for is refused as stale, harmlessly.
+            // A result the duel no longer waits for is refused as stale, harmlessly. A check kept in the history.
             Post::Verified(job, result) => {
-                let _ = session.duel_job_done(job, result);
+                if session.duel_job_done(job, result).is_ok()
+                    && let Some(view) = DuelEdit::duel(session)
+                    && let Some(c) = &view.checked
+                {
+                    duel.queue_keep(&view, Keep::Checked(Checked::of(c)));
+                }
             }
-            Post::Shared(id, made) => {
+            Post::Shared(id, made, unkept) => {
                 let mut making = duel.making.lock();
                 if *making == Some(id) {
                     *making = None;
@@ -438,12 +795,26 @@ pub fn before_frame(editor: &mut Editor, session: &mut Session, game: &Game) {
                         if let Some(s) = duel.salted.lock().iter_mut().find(|s| s.duel == id) {
                             s.codes = Some(codes);
                         }
+                        duel.say(unkept);
                     }
                     Err(e) => duel.say(Some(e)),
                 }
             }
         }
     }
+    // The history: read when the card shows and it has not been read (another instance may have written since).
+    let card_open = editor.duel().card_open();
+    let read = {
+        let store = duel.inner.store.lock();
+        card_open && !store.loaded
+    };
+    if read {
+        duel.inner.load();
+    }
+    if !card_open {
+        duel.inner.store.lock().loaded = false;
+    }
+    duel.resume(session);
     if duel.stop_audition.swap(false, Ordering::AcqRel) {
         session.duel_stop_audition();
     }
@@ -456,11 +827,36 @@ pub fn before_frame(editor: &mut Editor, session: &mut Session, game: &Game) {
 /// After a frame, under the session lock: the card's intents applied to the session's duel, then **Share** (the codes
 /// queued for the worker, sent after unlocking).
 pub fn after_frame(editor: &mut Editor, session: &mut Session, game: &Game) {
+    let duel = &game.duel;
     editor.apply_duel(session);
-    if editor.take_duel_share() {
-        game.duel.share(session);
+    let ShellAsks {
+        share,
+        open,
+        imported,
+        name,
+    } = editor.take_duel_asks();
+    if let Some(id) = open {
+        duel.open(session, id);
     }
-    game.duel.log_state(DuelEdit::duel(session).as_ref());
+    // A duel a Read opened resumes from the history before what it imported is kept.
+    duel.resume(session);
+    if let Some(view) = DuelEdit::duel(session) {
+        for i in imported {
+            match i.kind {
+                ImportKind::Scorecard => duel.queue_keep(&view, Keep::Card(i.text)),
+                ImportKind::Answer => duel.queue_keep(&view, Keep::Answer(i.text)),
+                // A challenge alone keeps nothing: the duel is kept once something of it is.
+                ImportKind::Challenge => {}
+            }
+        }
+        if let Some(name) = name {
+            duel.queue_keep(&view, Keep::Name(name));
+        }
+    }
+    if share {
+        duel.share(session);
+    }
+    duel.log_state(DuelEdit::duel(session).as_ref());
 }
 
 /// What the codes are made from.
