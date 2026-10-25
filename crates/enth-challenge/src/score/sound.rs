@@ -382,6 +382,26 @@ impl Readings {
     }
 }
 
+/// **For tools that compare renders of different phrases** (lane ECK's `ear-check`; additive, nothing in `sound/1`'s
+/// scoring changes): `sound/1`'s analysis of one render, the same bits `prepare` and `score` take their clips from.
+/// `mid` is the render's mid channel at [`SCORING_SAMPLE_RATE`]; `phrase` supplies the first note's timing for the
+/// readings the guard reads (`with_readings`). The scorer itself compares two patches under one phrase; a music
+/// question's options differ in their notes, so `ear-check` renders them itself and measures them with this and
+/// [`clip_distance`], in the JND units of a target's own [`SoundPrepared`] (floor, scale and guard floors).
+pub fn analyse_render(
+    mid: &[f32],
+    phrase: &Phrase,
+    with_readings: bool,
+) -> Result<Clip, ScoreError> {
+    Analyser::new().clip(mid, phrase, with_readings)
+}
+
+/// Metric v1.1 between two analysed clips, 0 when both are silent: the `distance` `sound/1` scores with (see
+/// [`analyse_render`]).
+pub fn clip_distance(a: &Clip, b: &Clip) -> f64 {
+    distance(&a.pooled, &b.pooled)
+}
+
 /// The feature extractor, describer and FFT planner of one scoring call (scalar FFT path throughout).
 struct Analyser {
     fx: FeatureExtractor,
