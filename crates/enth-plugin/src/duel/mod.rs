@@ -117,12 +117,14 @@ impl Store {
         self.entries.iter().find(|e| e.id == id)
     }
 
-    /// The newest entry on `code` that holds your result: the first played attempt at a code stands.
-    fn own_on(&self, code: &str) -> Option<&Entry> {
+    /// The newest entry on `code` that holds your result (the first played attempt at a code stands), leaving out the
+    /// sender's own entry when the codes they sent are among its codes (two instances sharing one history file, as in
+    /// the REAPER `duel` scenario: you cannot duel yourself).
+    fn own_on(&self, code: &str, sent: &[&str]) -> Option<&Entry> {
         self.entries
             .iter()
             .rev()
-            .find(|e| e.code == code && e.own.is_some())
+            .find(|e| e.code == code && e.own.is_some() && !senders(e, sent))
     }
 
     fn rows(&self) -> Vec<HistoryRow> {
@@ -133,6 +135,14 @@ impl Store {
             .map(Entry::row)
             .collect()
     }
+}
+
+/// Whether `entry` is the sender's own: its share holds one of the codes `sent` (their scorecard or answer).
+fn senders(entry: &Entry, sent: &[&str]) -> bool {
+    entry.own.as_ref().is_some_and(|o| {
+        sent.iter()
+            .any(|t| !t.is_empty() && (o.scorecard == *t || o.answer == *t))
+    })
 }
 
 /// What the worker's tasks share with the shell.
@@ -594,7 +604,7 @@ impl Duel {
     /// A duel that just opened, looked up once: if you have not played it here, the newest entry on its code with your
     /// result restores it (the first played attempt stands), and the newest unfinished entry on its code whose
     /// scorecard does not differ from the duel's keeps it.
-    fn resume(&self, session: &mut Session) {
+    fn resume(&self, session: &mut Session, imported: &[enth_ui::editor::duel::Imported]) {
         let Some(view) = DuelEdit::duel(session) else {
             return;
         };
@@ -616,6 +626,10 @@ impl Duel {
         let (entry, own_from) = {
             let mut store = self.inner.store.lock();
             let card = view.card.as_ref().map(|c| c.text.as_str());
+            let sent: Vec<&str> = card
+                .into_iter()
+                .chain(imported.iter().map(|i| i.text.as_str()))
+                .collect();
             let entry = store
                 .entries
                 .iter()
@@ -623,10 +637,11 @@ impl Duel {
                 .find(|e| {
                     e.code == view.code
                         && !e.finished()
+                        && !senders(e, &sent)
                         && (card.is_none() || e.card.is_none() || e.card.as_deref() == card)
                 })
                 .cloned();
-            let own_from = store.own_on(&view.code).cloned();
+            let own_from = store.own_on(&view.code, &sent).cloned();
             match (&entry, &own_from) {
                 (Some(e), _) => store.bind(view.id, e.id),
                 (None, Some(from)) => store.seeded.push((view.id, from.id)),
@@ -652,7 +667,11 @@ impl Duel {
                 drop(store);
                 return self.say(Some("that duel is no longer in the history".to_owned()));
             };
-            let own_from = store.own_on(&entry.code).cloned();
+            let sent: Vec<&str> = [entry.card.as_deref(), entry.answer.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect();
+            let own_from = store.own_on(&entry.code, &sent).cloned();
             (entry, own_from)
         };
         let duel = match session.duel_open(&entry.code) {
@@ -816,7 +835,7 @@ pub fn before_frame(editor: &mut Editor, session: &mut Session, game: &Game) {
     if !card_open {
         duel.inner.store.lock().loaded = false;
     }
-    duel.resume(session);
+    duel.resume(session, &[]);
     if duel.stop_audition.swap(false, Ordering::AcqRel) {
         session.duel_stop_audition();
     }
@@ -841,7 +860,7 @@ pub fn after_frame(editor: &mut Editor, session: &mut Session, game: &Game) {
         duel.open(session, id);
     }
     // A duel a Read opened resumes from the history before what it imported is kept.
-    duel.resume(session);
+    duel.resume(session, &imported);
     if let Some(view) = DuelEdit::duel(session) {
         for i in imported {
             match i.kind {

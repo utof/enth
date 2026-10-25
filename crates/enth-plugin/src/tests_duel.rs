@@ -658,3 +658,57 @@ fn a_duel_survives_closing_the_plugin() {
     assert_eq!(shared.game.duel.salt_of(view.id), Some(salt));
     assert_eq!(shared.game.duel.codes_of(view.id), Some(a_codes));
 }
+
+/// Two instances that share one history file (one user, as in the REAPER `duel` scenario) stay two players: B reading
+/// A's message does not take A's entry for its own (A's answer stays sealed for B), and each keeps its own entry.
+#[test]
+fn two_instances_sharing_one_history_file_stay_two_players() {
+    use crate::duel::history::HistoryFile;
+
+    let dirs = TempDir::new("one-file");
+    let file = dirs.0.join("duels.json");
+    let code = level2(93);
+    let mut a = Host::new();
+    a.plugin
+        .shared()
+        .game
+        .duel
+        .set_history_path(Some(file.clone()));
+    let codes = pass_and_share(&mut a, &code);
+    let mut b = Host::new();
+    let shared_b = Arc::clone(b.plugin.shared());
+    shared_b.game.duel.set_history_path(Some(file.clone()));
+    b.frame(
+        vec![
+            DuelIntent::PasteText(codes.message.clone()),
+            DuelIntent::Read,
+        ],
+        |_| (),
+    );
+    b.frame(
+        vec![
+            DuelIntent::PasteText(codes.answer.clone()),
+            DuelIntent::Read,
+        ],
+        |_| (),
+    );
+    let view = b.session(|s| s.duel().unwrap());
+    assert!(
+        view.own.is_none(),
+        "B has not played: A's result is not B's"
+    );
+    assert_eq!(view.answer, AnswerState::Sealed);
+    assert_eq!(shared_b.game.duel.salt_of(view.id), None);
+    b.play(&code);
+    b.session(|s| s.game_reveal().unwrap());
+    b.frame(vec![DuelIntent::Verify], |_| ());
+    b.until("B's check", |s| {
+        s.duel().is_some_and(|d| d.verify == VerifyState::Done)
+    });
+    b.session(|_| ());
+    let entries = HistoryFile::new(Some(file)).load();
+    assert_eq!(entries.len(), 2, "A's entry and B's: {entries:?}");
+    assert!(entries[0].own.is_some() && entries[0].checked.is_none());
+    assert!(entries[1].own.is_none() && entries[1].checked.is_some());
+    assert_eq!(entries[1].answer.as_deref(), Some(codes.answer.as_str()));
+}
