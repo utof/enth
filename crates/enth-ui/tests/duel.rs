@@ -388,8 +388,8 @@ fn a_pasted_message_imports_their_scorecard_and_the_answer_stays_sealed_until_yo
     );
 }
 
-/// The REAPER `duel` scenario clicks these points (offsets into the plugin's window at 1200 x 800, layout "lanes"):
-/// `xtask/reaper/duel.lua`'s `POINTS` must change with them.
+/// The REAPER `duel` scenario clicks these points (offsets into the plugin's window at 1200 x 800, layout "lanes"; the
+/// Paste button since lane DUI, for the answer): `xtask/reaper/duel.lua`'s `POINTS` must change with them.
 #[test]
 fn reaper_points_hit_their_duel_controls() {
     const OPENER: (f32, f32) = (32.0, 746.0);
@@ -397,6 +397,7 @@ fn reaper_points_hit_their_duel_controls() {
     const COPY_MESSAGE: (f32, f32) = (1002.0, 104.0);
     const COPY_ANSWER: (f32, f32) = (1105.0, 104.0);
     const PASTE: (f32, f32) = (1020.0, 156.0);
+    const PASTE_BUTTON: (f32, f32) = (1156.0, 132.0);
     const READ: (f32, f32) = (882.0, 208.0);
     const VERIFY: (f32, f32) = (937.0, 208.0);
     const PLAY: (f32, f32) = (880.0, 236.0);
@@ -419,6 +420,7 @@ fn reaper_points_hit_their_duel_controls() {
     hits(&h, "Copy message", COPY_MESSAGE);
     hits(&h, "Copy answer", COPY_ANSWER);
     hits(&h, "Paste box", PASTE);
+    hits(&h, "Paste from clipboard", PASTE_BUTTON);
     hits(&h, "Read pasted codes", READ);
     hits(&h, "Verify their answer", VERIFY);
     hits(&h, "Play this challenge", PLAY);
