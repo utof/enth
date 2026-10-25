@@ -9,8 +9,9 @@ R5 lets two friends play the same challenge and compare, with no server, no acco
 | The scorecard, the answer code, the ear result, `result-params-v1`, paste-anything, the daily formula | `enth-challenge/src/{result,answer,paste,daily}.rs` (L4) | RC | Built, for the F1e judge (the ear result's replay waits for CV3's keys) |
 | `verify` | `enth-challenge/src/verify.rs` (L4) | RC | Built, for the F1e judge |
 | Duel state; the patch of the first passing submit | `enth-session/src/duel.rs`, additive in `game.rs` (L6) | SE | Built; awaiting the F1e judge |
-| Duel jobs, the clipboard; `enth duel result\|verify`; the REAPER `duel` scenario | `enth-plugin/src/duel.rs`, `enth-cli/src/cmd/duel.rs` (L8) | SKD | Built (F2d): [below](#the-shell-lane-skd) |
-| The duel card: share, paste, verify, side by side, the sealed answer, the history | `enth-ui/src/editor/duel/` (L7, feature `duel`) | SKD (the minimal card), then DUI | Minimal card built (F2d); DUI's card planned |
+| Duel jobs, the clipboard; `enth duel result\|verify`; the REAPER `duel` scenario | `enth-plugin/src/duel/mod.rs` (was `duel.rs`), `enth-cli/src/cmd/duel.rs` (L8) | SKD | Built (F2d): [below](#the-shell-lane-skd) |
+| The duel card: share, paste, verify, side by side, the sealed answer, the history | `enth-ui/src/editor/duel/` (L7, feature `duel`) | SKD (the minimal card), then DUI | Built (lane DUI): [below](#the-card-and-the-history-lane-dui), [editor.md](editor.md#the-duel-card-lane-dui) |
+| The duel history file: the salt and your codes, their codes, the checks | `enth-plugin/src/duel/history.rs` (L8) | DUI | Built: [The duel history](#the-duel-history) |
 | GR5, the friend duel sheet, the friend build | `docs/r5-gates.md`, `docs/r5-owner.md`, `docs/duel-friends.md` (all planned) | INT5 | Planned |
 
 ## What makes serverless duels last
@@ -134,7 +135,7 @@ One prepare plus one scored render takes under about 1 s. A duel prepares once (
 - **Crockford base32 survives chats:** digits and capital letters dodge markdown (`_`, `*`, `~` and the backtick), which breaks base64url and base58.
 - **Chat limits:** a 300-symbol code fits Discord (2,000 characters), Telegram (4,096), WhatsApp and Signal, but not one SMS (160 GSM-7 characters, 70 once an emoji appears). A scorecard (about 60 characters with hyphens) fits everywhere, one SMS included.
 - **Paste-anything** (RC's `paste.rs`, built; the plugin and the CLI share it): `paste::paste` takes a whole message and returns every token that decodes (challenge, scorecard, answer, ear result), several per paste, each once, in order, and the code-looking tokens that do not decode with their reason ("a typo", "update enth"). It maps every dash-like character to a hyphen (phones' smart punctuation turns `--` into a dash, so codes never contain `--`), drops zero-width characters and soft hyphens, reads non-breaking spaces as spaces and full-width letters as ASCII, and joins capital-and-digit pieces that a line break or spaces split. A corpus test runs every kind through 35 manglings (dashes, zero-width characters, markdown, quotes, links, line wraps, full-width letters and their combinations).
-- **The clipboard** is written on a click and read only on an explicit Paste, never on its own.
+- **The clipboard** is written on a click and read only on an explicit Paste, never on its own: the platform's Paste into the paste box, or the card's **Paste** button, whose click alone asks for it (egui's `RequestPaste`, which egui-baseview answers since fork patch 13, lane FK4; the REAPER `duel` scenario pastes the answer that way). A kittest proves no other frame asks.
 - **Untested:** phone data detectors underlining a code as a phone number (INT5 and your duel check).
 
 ## Spoilers, and the duel as a lesson
@@ -146,7 +147,7 @@ A friend's answer stays sealed until you've submitted or given up (question 6). 
 - **A code carries no name, machine id or absolute time** (durations only), and no patch `meta` or file path. RC's test asserts it on every kind.
 - **Names are optional and local:** the receiver may label a pasted result ("from: Sam") in the local duel history. The chat already shows the sender.
 - **Seeds keep today's 40-bit mask.** `fresh_seed` (`crates/enth-plugin/src/game.rs`) mixes wall-clock nanoseconds through a bijective finalizer; an unmasked seed would reveal its creation time to the nanosecond, while 40 bits leave about 80 candidate instants a day.
-- **The answer code's salt is OS randomness, never a clock** (the F1e review's M6). The salt is 64 bits in the clear in every answer code, so it is drawn from the operating system (std's `RandomState` keys, or `getrandom`, which is already in `Cargo.lock`; a new direct dependency is the coordinator's call), **once per duel**, and kept with the result in the duel history. It is **never derived from a clock or a seed**: a salt from `fresh_seed` would carry the absolute time, to the nanosecond, in every answer code, which is exactly why seeds are masked. No test in `enth-challenge` can catch it; lane SKD follows the rule and DUI persists the salt.
+- **The answer code's salt is OS randomness, never a clock** (the F1e review's M6). The salt is 64 bits in the clear in every answer code, so it is drawn from the operating system (std's `RandomState` keys, or `getrandom`, which is already in `Cargo.lock`; a new direct dependency is the coordinator's call), **once per duel**, and kept with the result in the duel history. It is **never derived from a clock or a seed**: a salt from `fresh_seed` would carry the absolute time, to the nanosecond, in every answer code, which is exactly why seeds are masked. No test in `enth-challenge` can catch it; lane SKD follows the rule and DUI persists the salt (in the duel history, written before Copy is offered).
 - **No telemetry and no network** in async duels.
 
 ## The daily challenge
@@ -159,7 +160,14 @@ After R4's games exist. An adaptive session would give two players different ite
 
 ## The duel history
 
-Lane DUI: a local list of duels (the codes, both re-scored results, the date you played), with optional names the receiver types. It lives in a per-user file the shell owns, like the progress file, and leaves the machine only if you send it.
+Lane DUI: a local list of duels (the codes, both re-scored results, the date you played), with optional names the receiver types. It lives in a per-user file the shell owns, like the progress file, and leaves the machine only if you send it. **Built** (`enth-plugin/src/duel/history.rs`):
+
+- **Where:** `<Documents>/enth/Duels/duels.json` (beside Presets, Packs and Learn), or `$ENTH_DUELS_DIR/duels.json`. No home folder, no file: duels then last as long as the plugin instance, and the card says so.
+- **What** (`enth.duel-history/1`, at most 200 entries, the oldest dropped first): per duel, the challenge code, **the UTC day you played** (a day number: a date, never a time of day), **the salt** (16 hex digits), your result (the compared submit's scores, the submits, the times in milliseconds, the assists, the engine) with **your share message, scorecard and answer code** (which carries your canonical patch), their scorecard and answer code as pasted (a sealed answer stays in the file; the card shows nothing of it until you have played), the last check (both re-scores, "as reported", the commitment), and a name **only if you typed one** (at most 40 characters).
+- **No personal data:** no account, machine id, file path, user name or time of day, and no patch `meta` (the codes strip it, and no patch is stored but through the answer codes). A test writes a patch whose `meta` holds a name and finds no name but the typed one, no path, and only the documented keys.
+- **The salt is written before Copy is offered:** the worker that makes the codes writes the salt and the codes to the file, then hands the codes to the card (the F1e review's M6: a salt lost before the answer is sent makes a rebuilt answer miss its commitment). A file that cannot be written still gives the codes, with the card saying they last until the plugin closes.
+- **Writes** take a lock file, re-read, change, write a temporary file and rename it: a crash mid-write leaves the old file or none, and two instances (in one host or two) never lose each other's entries (a four-thread test). A file that is not a history file is set aside, never overwritten; a newer enth's is read and never written.
+- **A duel survives closing the editor, the plugin and the project.** The card lists the newest duels with **Open**: the duel opens on its code with your result (`DuelEdit::duel_set_own`), its salt and codes (so **Copy answer** gives the same code as before), their codes, and a new check if it had one. And a duel that opens on a code you played before (their message pasted the next day) resumes the newest unfinished entry on that code by itself: **the first played attempt at a code stands**, so your result, salt and codes come back, their answer opens at once, and the check re-scores your canonical answer beside theirs. A checked duel is finished: a later duel on its code resumes only through **Open**, apart from your result, which is the code's first attempt. An entry whose share holds a code your friend sent is theirs, never yours (two instances on one history file, as in the REAPER `duel` scenario, stay two players: you cannot duel yourself).
 
 ## The session (lane SE)
 
@@ -183,6 +191,32 @@ Built at F2d ([plugin.md](plugin.md#duels-lane-skd-r5a), [agent-cli.md](agent-cl
 - **The clipboard** is written with egui's `copy_text` inside a click on Copy and **never read**: a paste is the platform's Paste into the card's paste box, and Read hands the text to `paste::paste`. `Found::EarChallenge` is named on the card for the Ear view (SKE routes it).
 - **The minimal card** (`enth-ui`'s `editor/duel/`): a column at the window's right edge, opened from **Duel** in the overview's corner; its controls in fixed rows (Share result, Copy message, Copy answer; the paste box; Read, Verify, Use theirs, ▶ Theirs; Play, Close duel), then the text, worded as [Wording](#wording) says. DUI replaces it.
 - **Checked:** the REAPER `duel` scenario (two instances, the X clipboard, a saved round passed and shared, the answer sealed, then checked as reported with the commitment matched: 15 of 15 checks); `enth duel result|verify` with insta snapshots; two real instances through the worker in `enth-plugin`'s `tests_duel.rs`.
+
+## The card and the history (lane DUI)
+
+Built on lane SKD's shell ([editor.md](editor.md#the-duel-card-lane-dui) has the card, [The duel history](#the-duel-history) the file):
+
+- **The card:** the share row; the paste box with **Paste** (the one click that reads the clipboard) and **Read**; Verify, Use theirs, ▶ Theirs; Play and Close duel; then **You** (your result and codes), **Your friend** (an optional name, the **two results side by side**, their scorecard as reported, the sealed answer, the check), **History** (the newest duels, each with **Open**) and the About line. Scores say on the grid whether they were **checked** on this computer or **reported**; times and assists are reported on both sides.
+- **The sealed answer** opens after a scored submit or a give-up, never while a round runs with nothing submitted; their patch loads as one undo step that the header's Undo takes back.
+- **Checked:** kittests by label (copy, paste a whole chat message, Paste only on its click, verify, side by side, the sealed answer after a give-up and after a submit, a load as one undo step, the history and Open, the name, the over-64-symbols note, no idle frames); the plugin's `a_duel_survives_closing_the_plugin` (A shares and closes; B reads, passes, shares and checks; A in a new instance pastes B's message and answer and gets its result, the same salt and the same codes back, and checks; a third instance reopens the duel with Open); the history file's own tests; the REAPER `duel` scenario's history checks (both instances' entries in one file).
+
+### "Bad length" on touched level-1 answers (found by the coordinator; measured by lane DUI)
+
+**The cause is the old builds' length limit, not the encoding.** An R1–R3 build's code v1 decoder refuses more than 64 symbols as `bad_length` before it reads anything else (`code.rs`'s `MAX_SYMBOLS`). An answer code's frame is 189 bits whatever the answer (header 14, salt 64, a short challenge 61, END 5, tail 40, code v1's symbol 5: 38 symbols), and each knob a drag leaves off three significant digits costs 37 bits (its 4-bit parameter and its exact 33-bit `f32`), plus 10 per module touched. So a level-1 answer (about 46 symbols) with three touched knobs passes 64. The float coding is already as tight as the frozen rule allows (16 bits for a three-significant-digit value, else the exact bits), so no change inside the frozen layout shortens it. **Nothing was changed** (F1e: persisted forms change only additively); the card says so when your answer is over 64 symbols ("an enth from before duels calls it "bad length". Your friend needs to update enth."), and INT5's friend sheet should say both lines.
+
+Two ways out, sized for the R5a release step (touched passing answers, lane SKD's method, 20 seeds per level, measured 2026-10-25):
+
+| Level | Today: median, max (over 64) | A. Multi-part: parts, median and max | B. Quantized: median, max (over 64) | B: still passes | B: largest drop in sound |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 68, 85 (16 of 20) | 2, 2 | 58, 68 (3 of 20) | 20 of 20 | 3.2 points |
+| 2 | 86, 99 (20) | 2, 2 | 68, 76 (14) | 20 of 20 | 2.6 |
+| 3 | 139, 151 (20) | 3, 3 | 101, 110 (20) | 18 of 20 | 2.2 |
+| 4 | 157, 183 (20) | 3, 4 | 117, 135 (20) | 20 of 20 | 2.0 |
+| 5 | 228, 291 (20) | 4, 5 | 166, 206 (20) | 20 of 20 | 2.4 |
+
+- **A. Multi-part answers** (a new version-15 kind or answer layout, additive): the answer's bits split into parts of at most 64 symbols, each with the version-15 header, a part index and count (3 bits each) and code v1's symbol, so **every part reads "update enth" on an R1–R3 build, at every level**. About 27 bits (5–6 symbols) per part; 2 parts at levels 1–2, up to 5 at level 5. Paste-anything gathers the parts of one answer (it already reads several codes per paste) and refuses a missing part plainly. Work: RC's `result.rs`/`answer.rs`/`paste.rs` additions with frozen fixtures, the corpus test, a judge's look (it is a persisted form), the card's Copy giving the parts on separate lines: about 1.5–2.5 agent-hours. It only changes what old builds print; it makes nothing shorter.
+- **B. Quantized answers** (no format change: the 16-bit float coding exists): the shell rounds each changed value to the coding's three significant digits before `AnswerCode::new`, so the canonical answer the scorecard claims is the rounded patch. It shortens every answer by about a quarter, but **only fixes most of level 1** (3 of 20 still over 64) and not level 2 and above; and it changes the patch you share (sound up to 3.2 points lower here, and **2 of 20 level-3 answers stopped passing**), so it needs a guard (share the rounded patch only when it still passes, else the exact one) and a product decision against duels.md's "exact `f32` bits". Work: about 0.5–1 agent-hour in the shell plus the guard's tests.
+- **Neither** (today): codes stay as they are; an R1–R3 friend reads "bad length" for most answers and "update enth" for the rest, and the friend sheet says both mean "update enth". Old builds are a shrinking set once the friend build ships.
 
 ## GR5
 

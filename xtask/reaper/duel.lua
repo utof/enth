@@ -9,7 +9,9 @@
 --   a-shared:        Duel, Share result: the duel log has A's codes (a scorecard and an answer code, made on A's worker
 --                    with the salt drawn from OS randomness);
 --   b-card:          A's Copy message, then B's Duel, paste box, Ctrl+V, Read: B holds A's scorecard as reported;
---   b-sealed:        A's Copy answer, then B's paste and Read: A's answer is held, sealed (B has not played);
+--   b-sealed:        A's Copy answer, then B's **Paste** button (lane DUI: the card asks for the clipboard with egui's
+--                    RequestPaste, which fork patch 13 answers; what arrives is read at once): A's answer is held,
+--                    sealed (B has not played);
 --   b-played:        B's Play (a round on the duel's challenge), Target ▶ until it sounds, Reveal (B gives up): the
 --                    answer opens;
 --   b-checked:       B's Verify: checked on B's worker, "as reported", the commitment matched, their patch at hand;
@@ -31,6 +33,7 @@ local POINTS = {
   copy_message = { 1002, 104 },
   copy_answer = { 1105, 104 },
   paste = { 1020, 156 },
+  paste_button = { 1156, 132 },
   read = { 882, 208 },
   verify = { 937, 208 },
   play = { 880, 236 },
@@ -175,10 +178,11 @@ safe(function()
                 or "no scorecard in B's duel: the paste did not arrive?")
               if not card then return finish() end
               click(a, "copy_answer")
-              paste_and_read(b)
+              -- The card's Paste button this time (lane DUI): one click reads the clipboard and the paste box's text.
+              click(b, "paste_button")
               wait_until(function() return logged('"answer":"sealed"') end, 10, 0.2, function(sealed)
-                check("b-sealed", sealed, sealed and "A's answer is held sealed: B has not played"
-                  or "no sealed answer in B's duel")
+                check("b-sealed", sealed, sealed and "A's answer, pasted with the Paste button, is held sealed: B has not played"
+                  or "no sealed answer in B's duel (the Paste button: fork patch 13's RequestPaste)")
                 if not sealed then return finish() end
                 click(b, "play")
                 until_target_sounds(b, tb, 30, function(b_ready, b_peak)

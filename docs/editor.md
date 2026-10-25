@@ -25,6 +25,7 @@
 | `editor/browser.rs`, `editor/browser/` | the preset browser (lane PBU): `Presets` (the editor's preset state), the header's Presets hook (`header.rs`), the browse panel (`panel.rs`), the Save dialog (`save.rs`), the crash notice and report (`crash.rs`); tokens in `theme/sizes/browser.rs` ([below](#the-preset-browser-lane-pbu)) |
 | `editor/learn/`, `editor/layout/learn.json` | the Learn view (lane LUI, feature `learn`): the header's entry (`header.rs`), the editor's Learn state, intents and the lesson overlay (`state.rs`), the lesson pane (`pane.rs`), the lesson browser (`browser.rs`), the built-in layout `learn`; tokens in `theme/sizes/learn.rs` ([below](#the-learn-view-lane-lui)) |
 | `editor/create/` | the Create view (lane PUI, feature `create`): the header's entry (`header.rs`), the editor's Create state, intents and the browser's seam (`state.rs`), the panel's column (`panel.rs`), the drop zone and the intake's findings (`drop_zone.rs`), the folder browser (`browser.rs`), the progress and Cancel (`progress.rs`), the K tiles (`tiles.rs`), the compare area with the A/B against the upload (`audition.rs`); tokens in `theme/sizes/create.rs` ([below](#the-create-view-lane-pui)) |
+| `editor/duel/` | the duel card (lanes SKD, then DUI; feature `duel`): its entry points and rows (`card.rs`), the editor's duel state, intents and the seam to the shell (`state.rs`), the share line and the copy buttons (`share.rs`), the paste box, **Paste** and Read (`paste.rs`), verification and the two results side by side (`verify.rs`), the sealed answer's buttons (`answer.rs`), the history list (`history.rs`); tokens in `theme/sizes/duel.rs` ([below](#the-duel-card-lane-dui)) |
 
 ## The frame
 
@@ -543,6 +544,58 @@ Glyphs (existing): `CLOSE` ×, `PLAY` ▶, `STOP` ■, `PREVIOUS` ◀, `PATH` �
 - The settings (K, the time cap) are the session's defaults (8, 60 s); the view has no control for them yet.
 - Whether REAPER drags media items into the plugin window as files is still the open check of [r3.md](r3.md#file-input); the browser is the fallback either way.
 - The dev window does not run create jobs (it has no `enth-create` thread); the view is exercised in kittest and the plugin.
+
+## The duel card (lane DUI)
+
+**Duels with a friend over any chat: share a round's result, paste their whole message, check their answer on this computer, compare side by side, open their sealed answer once you have played, load it as one undo step, and find every duel again in the history.** Lane DUI grew lane SKD's minimal card (F2d) into the card in `editor/duel/` (feature `duel`, which the plugin's `duel` feature turns on; off by default until INT5's friend build). The design of record is [duels.md](duels.md); the jobs, the salt and the history file are the plugin's ([plugin.md](plugin.md#duels-lane-skd-r5a), `enth-plugin/src/duel/`), the state machine is the session's ([session.md](session.md#duel-lane-se-r5a)).
+
+**Where.** No header entry: **Duel** sits in the overview region's bottom-left corner while the card is closed, and the card takes a column at the window's right edge (`size.duel.pane`, 340 px, under the layout's top row), as the Create panel does; the duel card wins the column while both are open. A duel that opens (a paste, a Share, **Open** in the history) opens the card.
+
+**The seam.** `Editor::set_duel(DuelEdit::duel(), ShellDuel)` before every frame (a shell that calls it says duels are available); `Intent::Duel(DuelIntent)` while drawing; `Editor::apply_duel(&mut dyn DuelEdit)` after the frame; then `Editor::take_duel_asks()` (lane DUI; `take_duel_share()` is lane SKD's and still works) hands the shell a `ShellAsks`: **Share** clicked, a history entry to reopen, the codes a Read imported (so the shell keeps the friend's in the history) and the friend's name typed. `ShellDuel` carries the shell's codes, "making", what it said, the history rows (`HistoryRow`, newest first), the open duel's history entry and its name. A queued intent or ask asks egui for one more pass, never a timer.
+
+**The card,** top to bottom on `surface.card`; the rows of controls never move (the REAPER `duel` scenario clicks them by position, and `reaper_points_hit_their_duel_controls` pins the points):
+
+| Part | What |
+| --- | --- |
+| Title | **Duel** and **×** (closes the card; the duel stays open) |
+| Share row | **Share result** (the shell makes the scorecard and the answer code on its worker, the salt from OS randomness, and keeps them in the history before they reach the card), **Copy message**, **Copy answer** (egui's `copy_text`, inside the click and nowhere else) |
+| The paste box | `size.duel.paste_height` (72) tall, "Paste your friend's whole message here (Ctrl+V)"; **Paste** at its right (`size.duel.paste_button`, 52, kept for it) |
+| Their row | **Read** (paste-anything on the box: every challenge, scorecard and answer code in a whole chat message, mangled or not), **Verify**, **Use theirs**, **▶ Theirs** / **■ Stop** |
+| Play row | **Play** (a Recreate round on the duel's challenge, through the bar's code start) and **Close duel** |
+| What was said | the shell's and the session's refusals in the bad-score ink with ✗; "Reading the clipboard… If nothing arrives, click the box and press Ctrl+V." while a Paste click waits |
+| **You** | your result ("Passed, 3 submits: 93.4 % sound in 2:41 (reported)"), why it cannot be shared yet, the share message, "Scorecard 51 symbols; answer code 68 symbols: send it once your friend has played." and, **over 64 symbols, "Your answer code is longer than 64 symbols: an enth from before duels calls it "bad length". Your friend needs to update enth."** |
+| **Your friend** | their name (optional, "kept on this computer"; at most 40 characters; sent to the shell when the field is left, never in a code); what the last Read found; "Duel on <code>"; **the two results side by side**; their scorecard **as reported**; the sealed answer; the check **checked on your computer**, with both engines or scorer sets when they differ, the commitment, your own patch re-scored on the same check, their time "reported by their app; enth can't check times"; "Their patch is loaded: Undo takes it back." |
+| **History** | the newest `history::SHOWN` (8) duels kept on this computer, newest first: "2026-10-24 · 1080-1000-0001-AB · you 93.4 % · them 92.9 % checked here, as reported · from Sam" (their sound **reported** until a check ran), each with **Open** ("Open now" on the open duel); then "N older duels are kept in the history file." |
+| About | "Duel codes are for friends. A code proves what a patch scores, not who made it or how long it took. enth's own tools can solve any challenge.", said once |
+
+**Side by side** (`verify::sides`): a grid of three columns (the row's name, **You**, and **Them** or the name you typed), at least `size.duel.side_column` (72) each: sound, passed, submits (up to the compared one), time, assists. Your sound is your round's until a check re-scores it beside theirs; theirs is their scorecard's until the check. **A score says on the cell where it comes from** ("100.0 %, checked", "93.4 %, reported"); times and assists are reported on both sides, which the line under the grid says ("Checked: scored on this computer. Times and assists are reported by each app; enth can't check them."). Each cell's accessible name says whose and what ("Their sound: 93.4 %, checked on your computer", "Your time: 2:41, reported").
+
+**The clipboard.** Written only by **Copy message** and **Copy answer**, inside the click. **Read only on an explicit Paste:** the platform's own (Ctrl+V, ⌘V) into the focused box, which the integration turns into text, or the card's **Paste**, whose click (and no other frame) sends egui's `ViewportCommand::RequestPaste`; the `Event::Paste` that answers it replaces the box's text and is read at once (a box with the keyboard focus takes a paste itself, so it is never inserted twice). egui-winit (the dev window) answers `RequestPaste`, and so does **egui-baseview in the plugin since fork patch 13 (lane FK4)**: it reads the clipboard once per request and hands the next frame one `Event::Paste`. An empty clipboard answers nothing, and the note under the box says to press Ctrl+V in the box instead. The REAPER `duel` scenario pastes the friend's message with Ctrl+V and their answer with **Paste**, through the X clipboard.
+
+**The sealed answer.** Their answer code stays sealed until you have a scored submit or have given up (the session's guard): nothing of it shows, and Verify, Use theirs and ▶ Theirs stay off ("Their answer opens once you have submitted or given up"). A live round with nothing submitted keeps it sealed. **Use theirs** loads their checked patch as **one undo step** through the session's preset load (no host writes), refused while a round is live ("end your round first"); the header's **Undo** gives your patch back.
+
+**The history** is the plugin's file (`<Documents>/enth/Duels/duels.json`, `ENTH_DUELS_DIR`; [duels.md](duels.md#the-duel-history)): the card only lists the rows the shell hands it and asks for **Open**. The shell restores the duel (your result, its salt and codes, so **Copy answer** gives the same code as before, their codes) and checks it again if it was checked; a duel that opens on a code you played before (their message pasted the next day) resumes by itself.
+
+**Repaint.** The card asks for no frames of its own: nothing animates, the shell's posts wake the editor, and a Paste click waits without a timer. Idle, it asks for `Duration::MAX` with a duel checked, its history listed, and a Paste click waiting (`an_idle_duel_card_asks_for_no_frames`).
+
+**Accessibility labels** (kittest drives the card by them): "Open duel card", "Close duel card", "Share result", "Copy message", "Copy answer", "Paste box", "Paste from clipboard", "Read pasted codes", "Verify their answer", "Use their patch", "Audition their patch", "Stop audition", "Play this challenge", "Close duel", "Friend's name", "Open duel <id>"; the grid's "Column: You", "Column: <name>", "<Your|Their> <sound|passed|submits|time|assists>: <value>[, <where it comes from>]"; every line by its text.
+
+| Token (`theme/sizes/duel.rs`) | Value | For |
+| --- | --- | --- |
+| `size.duel.pane` | 340 | the card's column (lane SKD) |
+| `size.duel.paste_height` | 72 | the paste box (lane SKD) |
+| `size.duel.opener` | 64 | **Duel** in the overview's corner (lane SKD) |
+| `size.duel.paste_button` | 52 | the room kept at the paste box's right for **Paste** |
+| `size.duel.side_column` | 72 | the narrowest column of the side-by-side grid |
+
+Glyphs (existing): `CLOSE` ×, `PLAY` ▶, `STOP` ■, `BAD` ✗.
+
+**Tests.** `crates/enth-ui/tests/duel.rs`, over a real `Session`, the test playing the game worker and the duel worker with the real `enth-challenge` functions, by label: the card opens and closes; **copy** (the clipboard written only inside a Copy click); **no clipboard read without Paste** (hovering, typing, every other click and many frames send no `RequestPaste`; one Paste click sends one; its answer is read; a paste into the focused box goes in once); **a whole chat message** pasted, mangled as a phone does it, and read; **the sealed answer** opening after a give-up and after a submit (not while a round runs with nothing submitted); **verify** ("as reported", the commitment matched) and **side by side** by the cells' names; **a load as one undo step** that one Undo takes back; the history rows and **Open**; the name sent when the field is left; the over-64-symbols note; **no idle frames**; the REAPER points. Unit tests: `state.rs`, `history.rs` (dates from day numbers, a row's wording). The plugin's side is in `enth-plugin`'s `duel/history.rs` and `tests_duel.rs` (`a_duel_survives_closing_the_plugin`).
+
+**Left for later:**
+
+- The history has no "forget this duel" control; the file is the user's to edit or delete.
+- An answer code over 64 symbols reads "bad length" on an enth from before duels: a code-format question for the R5a release step ([duels.md](duels.md#the-card-and-the-history-lane-dui)), not the card's.
 
 ## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
 
