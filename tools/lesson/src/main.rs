@@ -14,7 +14,7 @@
 //! | `new [--in DIR] <pack> <id>` | `new.rs` | scaffolds a lesson in the authoring layout | LCK |
 //! | `pack [--out DIR] [--check] [PACK...]` | `pack.rs` (reading packs: `source.rs`) | builds `.enthpack` files reproducibly (canonical JSON, sorted entries, the zip epoch's 1980 timestamps, deflate level 9) and compares each with its pins | LCK |
 //! | `gen deconstruct <preset>` | `gen.rs` | writes the factory studies from a preset by ablation | DEC |
-//! | `ear-check [options]` | `ear.rs`, `ear/` | R4's GR4 mechanical half (docs/ear.md): the ear games deterministic, fair and solvable; pre-declared by S0e, refuses to run until ECK builds it | ECK (R4) |
+//! | `ear-check [options]` | `ear.rs`, `ear/` | R4's GR4 mechanical half (docs/ear.md, "`ear-check` as built"): the ear games deterministic (golden digests), audible under `sound/1`, solvable, without leaks (bias bots), staircases simulated; the shipped games, level by level | ECK (R4) |
 //!
 //! `.github/workflows/lessons.yml` runs `cargo xtask lesson-check --cross --solve` and `lesson-coverage` (a report
 //! until GR2) on `content/lessons/**`, `tools/lesson/**`, `xtask/**` and every crate a lesson's verdict depends on (a DSP
@@ -43,8 +43,8 @@ const USAGE: &str = "usage: enth-lesson-tool <command> [args...]
   new [--in DIR] <pack> <id>              scaffold a lesson in the authoring layout
   pack [--out DIR] [--check] [<pack>...]  build reproducible .enthpack files and compare them with the pins
   gen deconstruct <preset> | gen studies  a deconstruct lesson by ablation; the six factory studies
-  ear-check [options]                     (not built yet: R4 lane ECK) GR4's mechanical half: the ear games deterministic,
-                                          fair and solvable
+  ear-check [options]                     GR4's mechanical half: the ear games deterministic, audible, solvable, without
+                                          leaks, staircases simulated (--help for the options)
 Run it through `cargo xtask lesson-check`, `lesson-coverage`, `lesson new`, `pack`, `lesson-gen` and `ear-check`.";
 
 fn main() -> ExitCode {

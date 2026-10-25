@@ -1,0 +1,11 @@
+# enth-lesson-tool ear-check: digests of 1,000 items per (game, level), the question and the clip of every option
+# (tools/lesson/src/ear/golden.rs). g=game l=level; 4 seeds of 250 items; a new level or game appends a line.
+g=01 l=01 sha256=fc0983a5c020ee6a467f5d10b2946257dadd4fe884add547b37cb4460045b110
+g=03 l=01 sha256=089614f01b76619353cadad29bb721a620b6d086531acc72114f2d70967d8e10
+g=04 l=01 sha256=4dc312d53d8ae581e2b2c4c13cb9a1ce7fe59e930b3213183d9bccf11f3b0977
+g=05 l=01 sha256=6d1429aec2a3a03f0278608f077994046713e629c0896d1d7879db49dab821ef
+g=06 l=01 sha256=08a3d918227934a1df8987786df821ad33ef1945ce3df538481a6a499f2a604d
+g=07 l=01 sha256=14efff7355c64892a58d1da86d1488b550dd474b7d199d1085dba351bfbfc5b3
+g=08 l=01 sha256=be7ce8f02b283a440b6dc2a6baeb0ba007ffc7abe0f43f428b6eba0dcf4a666c
+g=09 l=01 sha256=11979b74ad8d47d7e18a89bb09b68dd3a8f6eb26f482ba6d4ed5f0ee2c15c1b3
+g=10 l=01 sha256=4ca5e340794c9b408fea3b67a40a6aa15f8456b344a55b362a870b15ee7044ab

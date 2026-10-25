@@ -18,9 +18,14 @@
 //!
 //! To add a level: add a row to `LEVELS` (and the code its fields need, which must not change what the existing rows
 //! draw), run `cargo test -p enth-music` (the proptests check validity at every level), then `cargo test -p enth-music
-//! --test ear_golden -- --ignored regenerate` and say in the commit which games moved and why. Adding a level changes
-//! every line of the golden, because its specs cycle through every (game, level) pair. A level must stay within C1 to
-//! C7, at most 8 notes at once and at most 10 s ([`crate::ear::Question::validate`]).
+//! --test ear_golden -- --ignored regenerate` and say in the commit which games moved and why. A new level appends its
+//! own block to the golden and no existing line changes (tuning a level changes that block alone). A level must stay
+//! within C1 to C7, at most 8 notes at once and at most 10 s ([`crate::ear::Question::validate`]).
+
+//! **A fifth thing, kept beside them** ([`with_answer`], lane ECK): what a question would sound like if its right answer
+//! were another option, everything else held. `ear-check` measures every option pair with it, and a change to a game's
+//! `question` that its builder has not followed fails `cargo test -p enth-music` (`tests/with_answer.rs`), so change the
+//! builder in the same commit. Tap back has no options and no builder.
 
 pub mod bands;
 pub mod chords;
@@ -29,3 +34,4 @@ pub mod pitch;
 pub mod progressions;
 pub mod rhythm;
 pub mod taps;
+pub mod with_answer;

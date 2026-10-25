@@ -15,7 +15,7 @@ R4 trains the ear that sound design needs: which knob moved, how far, where a ba
 | Ear jobs, examples, the restart flag; `enth ear` | `enth-plugin/src/ear.rs`, `enth-cli/src/cmd/ear.rs` (L8) | SKE, EV4 | Planned (F2e) |
 | The Ear view | `enth-ui/src/editor/ear/` (L7, feature `ear`) | EUI | Planned |
 | Tap input | Fork patch 12 (`vendor/egui-baseview`), the plugin's tap path | FK4, TAP | Planned |
-| `ear-check` | `tools/lesson`, `cargo xtask ear-check`, `ear.yml` | ECK | Planned |
+| `ear-check` | `tools/lesson/src/ear/`, `cargo xtask ear-check`, `ear.yml`, the `scripts/gate.sh lane` hook | ECK | Built ([as built](#ear-check-as-built-lane-eck)) |
 | GR4 | `docs/r4-gates.md`, `cargo xtask gr4-report` (both planned) | INT4 | Planned |
 
 ## Why sound-design games come first
@@ -73,7 +73,7 @@ Report 02 §3. Every target is deterministic; answer keys are seeded integers, s
 | `ear.rs`: questions as jobs, answers and taps with times from the shell, nothing saved per project (like Create) | `enth-session` (L6) | The seams of `game`, `learn` and `create` |
 | `editor/ear/`, feature `ear`, the header hook, `sizes/ear.rs` | `enth-ui` (L7) | A right column like Create's, so a parameter game keeps a card in view |
 | Ear jobs on the game worker, examples at the host's rate, the tap path; `enth ear` | `enth-plugin`, `enth-cli` (L8) | Shells translate |
-| `ear-check`: oracle, random, bias and deaf players, audibility per level, the golden | `tools/lesson`, driven by `cargo xtask ear-check` | As `lesson-check` |
+| `ear-check`: oracle, random, bias and deaf players, audibility per level, the golden | `tools/lesson`, driven by `cargo xtask ear-check` | As `lesson-check` (built: [as built](#ear-check-as-built-lane-eck)) |
 
 **Rejected:** everything inside `enth-challenge` (one crate fewer, but the result codes, v3 and the ladder tuning would collide; question 9 keeps it open); an L4 `enth-ear` (`enth-challenge` must embed `EarSpec`, and an L4 → L4 edge is refused); drills as `Choose` steps (`Choose` options are clips, while drills are open-ended and use labels).
 
@@ -177,6 +177,67 @@ Built 2026-10-22 in `enth-music` (L1: `theory`, `rhythm`, `ear`, `ladder/`), wit
 - **For G3:** the ranges in [challenge.md](challenge.md) (20 Hz to 20 kHz, ±0.01 to ±24 dB, `Q` 0.1 to 25) are well inside the biquad's; a +24 dB boost can pass full scale, so **level matching stays playback's**. The first banded questions are G3's to write: the generator needs no change, only a level that draws a peak or shelf band.
 - **S2's EQ** wraps `Coeffs` and `Biquad`; per-segment coefficient ramps (automation) are its to add.
 
+## `ear-check` as built (lane ECK)
+
+**Built 2026-10-25.** `cargo xtask ear-check [options]` drives `enth-lesson-tool ear-check` (`tools/lesson/src/ear/`; `--help` lists the options: `--items`, `--bot-items`, `--runs`, `--jobs`, `--seed`, `--only`, `--strict`, `--ladders enforce|report`, `--update-golden`). It plays every level of every shipped game and prints one report; the exit status is the verdict.
+
+**What it plays.** An *item* is a question plus the clip of **every option as it would be if that option were the answer** (the counterfactual). Music games get theirs from `enth_music::ladder::with_answer` (the question with another right answer; identity-tested: for the question's own answer it returns the question). Spot the change gets the base and one patch per option, each moved by that control (the other direction when the wanted one is out of range); Ear check gets the base and the odd interval. Anything that implements `EarGame` (id, levels, `item(level, seed, index)`) can be checked, which is how the tests plant bad games.
+
+**Players, all judged through the real `ear/1`:**
+
+| Player | Picks | What it finds |
+| --- | --- | --- |
+| Oracle | the key | 100 % right, or the key and the judge disagree |
+| Random, deaf | uniformly; `item index mod options` | a key that follows the order of play |
+| Bias bots: first, last, longest, loudest (note energy), highest, densest | the extreme option of one property, ties by a seeded draw | a leak: the key correlates with a property of the options |
+| Ideal observer | the option whose clip is within 1 JND of the right clip (guesses among those); the change must be at least 1 JND to be detected | a pair `sound/1` cannot tell apart; exact expected accuracy, no sampling |
+| Loudest as rendered | the option with the highest rendered loudness | a finding only: playback level-matches ([above](#rendering-and-playback)), so it never fails |
+
+**Checks and the exit policy.** A **hard** check fails the run always; a **ladder** check is reported for a game that has one level (G1–G4's ladders are still to come) and fails the run for a game with two levels or more; `--strict` (`--ladders enforce`) makes every ladder check hard, `--ladders report` makes none.
+
+| Check | Gate | Holds when |
+| --- | --- | --- |
+| `golden-music` | hard | `crates/enth-music/tests/golden/ear-v1.txt`, recomputed from the file's own seeds and counts with the build's generator, has 0 differences and no missing or extra block |
+| `golden-items` | hard | every (game, level)'s 1,000 items (4 seeds of 250: question and every option's clip) digest to the line in `tools/lesson/src/ear/golden/items-v1.txt` |
+| `structure` | hard | every item draws, draws the same twice, names a Review skill key, and the judge accepts every answer (music: the counterfactual of the key is the question) |
+| `bursts` | hard | each skill a cell exercises finds five items and a burst of them moves its Review boxes |
+| `oracle`, `chance` | hard | the key through the judge is 100 %; random and deaf are at chance ± 3 % (five standard errors on a run shorter than 10,000 items) |
+| `bias` | hard | every bias bot at chance ± 3 % over 10,000 items per level (same allowance) |
+| `bias-render` | note | the loudest option as rendered is at chance, with a binomial allowance |
+| `audibility` | ladder | every option pair of a 24-item sample per level is at least 2 JND apart, 6 at level 1 |
+| `observer` | ladder | at the top level the ideal observer scores at least 95 % |
+| `staircase` | ladder | for a game of four levels or more, and for Ear check's step ladder: the F1e judge's criteria (below) |
+| `coverage` | ladder | every observable Basic-tier P1 parameter is in the pool of game 1 or 2 |
+
+**`sound/1` offline.** `sound/1` only compares patches under one table phrase, and a music clip's notes are not a table phrase, so `ear/metric.rs` replays its pipeline over any clip: the scoring-seed render (and the biquad band of an EQ question), the pooled log-mel at -23 LUFS, the nuisance floor from two other-seed renders, the scale from 16 jittered copies, and the pitch and odd-harmonic guard. It uses `enth-challenge`'s own functions (`analyse_render` and `clip_distance`, two additive public functions in `score/sound.rs`), and a test pins it to `score_round`'s `jnd` on a patch pair to 1e-9, so a change to `sound/1` moves both.
+
+**Not measured, listed apart:** pairs whose clips hold the same pitch classes for the same total time and differ only in order or timing (rhythm patterns, progressions' voice order, which a pooled spectrum cannot hear); the ideal observer is credited with telling such a pair apart, so an unmeasured pair never makes a level look unsolvable. Ear check's parameter steps of controls `sound/1` cannot hear (attack under 60 ms, sustain, detune) are `DEAF`, and are listed, not counted.
+
+**Staircases.** `enth_learn::drill::Staircase` (3-down/1-up, estimate the mean of the last 12 reversals at most) plays 40 trials, 300 runs per cell, against a Gaussian m-alternative listener with `d' = 0.954 x acuity x JND` (acuities 0.5, 0.7, 1, 1.4, 2; lapse 0 and 3 %), whose threshold is where it is 79.4 % right on the game's own **measured** ladder (one row per level: the median closest pair, in JND). A ladder is simulated from four levels; at least three of the five acuities must have a threshold on it; a ladder is steep from a median 0.75 JND per level and must be monotone (a harder level at most 0.25 JND easier). The ruling checked is the F1e one: steep, at least 90 % pooled within one level and every listener-and-start cell at least 75 %; flat, at least 90 % within two; success at threshold 75 to 85 %.
+
+**How a game lane uses it.**
+
+- A new level of a music game is a `LEVELS` entry plus an appended block in the music golden; of a parameter game, the new rows of `params::level`. Run `cargo xtask ear-check --update-golden` and commit the lines it lists as moved (the commit message says which games and why; it is refused under CI). Level 2 makes the ladder checks hard for that game: `cargo xtask ear-check --only <game>` is the loop.
+- A level that fails `audibility` names its closest pair (item, seed, options) in the report: replay it with `--only <game> --items N`; fix the generator, or if `sound/1` is deaf there, say so in the game's doc and ask for the pair to be listed as not measured (the `order_only` and `DEAF` tables are in `audibility.rs`).
+
+**Numbers on main today (2026-10-25).** The hard checks pass for every game. The run is 109 s on the dev machine (4 threads, 8 s golden, 91 s levels, 10 s staircases) and 54 s on a quiet 12-thread desktop, with identical output on both; the release build of the tool is the rest of CI's time (about 5 min cold at 2 jobs, one to two minutes with `rust-cache` warm), so the workflow takes well under its 10 minutes. `gate.sh lane` ran it as its last step (83 s there, build included). Today's single levels fail some ladder criteria, reported and not failing:
+
+| Game | Closest pair, min / median (6 JND at L1) | Observer (95 %) | Not measured |
+| --- | --- | --- | --- |
+| Spot the change | 0.0 / 2.0 | 85.4 % | 0 of 72 |
+| Ear check | 0.0 / 0.4 | 33.3 % | 0 of 96 |
+| Frequency finder | 9.4 / 11.4 | 100 % | 0 of 24 |
+| Interval stacks | 0.8 / 1.0 | 77.1 % | 0 of 24 |
+| Chord quality | 0.1 / 48.4 | 91.7 % | 0 of 24 |
+| Rhythm pattern | 2.3 / 4.4 | 100 % (credit) | 29 of 144 |
+| Progressions | 0.1 / 0.2 | 50.0 % | 0 of 24 |
+| Note naming | 20.4 / 25.9 | 100 % | 0 of 24 |
+| Tap back | no options | n/a | n/a |
+
+Ear check's reference step ladder (8 steps, one control per set), simulated as a ladder: `filter1.cutoff` is steep (0.77 JND per level) and places 92.6 % within one level, but its worst cell (acuity 0.5, from the hard end) is 72.7 %, under 75 %; `filter1.resonance` is flat and passes (94.2 % within two); `env1.decay` is inaudible through the held phrase (0.0 to 0.2 JND at every step); `env1.release` is flat and not monotone. Coverage: 4 of the 10 observable Basic-tier parameters are in game 1 or 2's pool (missing `osc1.wave`, `osc1.semi`, `osc1.fine`, `filter1.mode`, `env1.attack`, `env1.sustain`).
+
+**Open.** The golden's six-target run is for the music generator (`golden.yml`, by `ear_golden.rs`); the parameter games' items digest runs on `ear.yml`'s Linux runner only. The rendered-loudness note says Ear check's odd interval is louder as rendered, which playback's level matching must cover. `sound/1` hears a unison and an octave 0.8 JND apart, and progressions' order 0.1 JND apart: G1 and G2's L1 pairs need another cue, or the 6-JND bar for those games needs the owner's ruling.
+
 ## Rhythm input
 
 **The facts** (report 02 §4, *measured* in the vendored source): egui-baseview sets the frame's input time once per frame and events wait for that frame, so at about 30 fps an editor tap is quantised to up to about 33 ms. Fork patch 4 gives keyboard focus only while a text field is edited, so keys reach the host unless a tap pad takes focus; clicks always arrive. Host notes reach `process()` with a sample offset in the buffer. People also tap tens of milliseconds early (Repp 2005), so tap scoring needs an offset anyway.
@@ -234,7 +295,7 @@ Adaptive sessions diverge between players, so two players would hear different i
 
 **Gate GR4** (proposed; the owner sets the criteria): the games are deterministic, fair and solvable, and you and your friends hear finer differences on trained skills than on held-out ones. The table of record will be `docs/r4-gates.md` (INT4, planned).
 
-**Mechanical half** (CI: `cargo xtask ear-check`, lane ECK):
+**Mechanical half** (CI: `cargo xtask ear-check`, lane ECK; built, with its exit policy and today's numbers: [as built](#ear-check-as-built-lane-eck)):
 
 - **Determinism:** 1,000 items per game regenerate identical hashes on the six golden targets.
 - **Audibility:** every option pair is at least 2 JND apart under `sound/1` (at least 6 at L1); items scored on parameter steps are listed apart.
