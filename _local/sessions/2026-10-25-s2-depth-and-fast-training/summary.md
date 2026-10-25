@@ -161,7 +161,7 @@ ADR-0006 stands.
 ## Docs to change (lane DOCS-S2)
 
 - `docs/roadmap.md`: S2 pulled forward and re-aimed; the date line.
-- **New `docs/phase-s2.md`:** the S2a lane plan (06 §5 with this summary's corrections), freezes F0d, F1d, F2d and F3d, ownership, acceptance.
+- **New `docs/phase-s2.md`:** the S2a lane plan (06 §5 with this summary's corrections), freezes F0m, F1m, F2m and F3m (report 06's F0d–F3d, renamed because phase-4.md already has an F2d), ownership, acceptance.
 - `docs/README.md`: the status line, and the reading-order row for phase-s2.md.
 - `docs/r3.md` "Training" and `ml/README.md`: the tiered loop, once FTL lands.
 - `docs/dsp/` stubs: S0d.

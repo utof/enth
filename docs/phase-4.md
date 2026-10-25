@@ -262,4 +262,5 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 | The daily formula and the UTC day boundary (as Review's, it turns at local midnight only in UTC) | RC | F1e |
 | **macOS's local-network permission** for later live play: behaviour when the DAW lacks the usage key; Windows' first-listen alert naming the DAW; unloading an async runtime in a plugin | A live-duel research session | Before any live-duel lane |
 | No R3b root-manifest edits in flight before S0e | The coordinator | Wave 1 |
+| **The answer code's room for S2a's kinds:** 11 reserved kinds against 9 free of 16, and 15 parameters per kind; widening it (and fixing `bad_length`) before the friend build is free now (D3, your call; [phase-s2.md](phase-s2.md#the-answer-code-r5a-d3)) | DUI's report; INT5 or an ANS lane; You | Before the friend build |
 | The 12 questions; silence means the defaults | You | Any time |
