@@ -1,6 +1,6 @@
 //! **Owner: lane DUI.** Size tokens for the duel card: the share line, the paste box, verification, the sealed answer and the
-//! duel history (component tier). Pre-declared empty by lane S0e (R5); lane SKD added the minimal card's three (F2d): the
-//! lane adds its tokens here and nowhere else (docs/design-system.md, "Token files"). Every field gets a serde default
+//! duel history (component tier). Pre-declared empty by lane S0e (R5); lane SKD added the minimal card's three (F2d), lane
+//! DUI the Paste button's room and the side-by-side grid's column: the lane adds its tokens here and nowhere else (docs/design-system.md, "Token files"). Every field gets a serde default
 //! (the dark theme's value), so older theme files still load.
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,10 @@ pub struct DuelSizes {
     pub paste_height: f32,
     /// The width of the button that opens the card from the overview's corner.
     pub opener: f32,
+    /// The room kept at the paste box's right for **Paste** (lane DUI): the box takes the rest of the row.
+    pub paste_button: f32,
+    /// The narrowest column of the side-by-side grid (you, them; lane DUI).
+    pub side_column: f32,
 }
 
 impl DuelSizes {
@@ -25,6 +29,8 @@ impl DuelSizes {
             pane: 340.0,
             paste_height: 72.0,
             opener: 64.0,
+            paste_button: 52.0,
+            side_column: 72.0,
         }
     }
 }

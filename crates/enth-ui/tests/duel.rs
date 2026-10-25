@@ -6,16 +6,21 @@
 //! `score_round`, `verify::prepare`, `verify::verify_prepared`).
 //!
 //! What is checked: nothing changes until a shell says duels are available; **Duel** opens the card and × closes it;
-//! the clipboard is written only inside a click on **Copy** (egui's `CopyText`) and never on its own, and nothing ever
-//! reads it (a paste is the platform's Paste into the box); a whole chat message pasted and read imports the friend's
-//! scorecard (shown as reported) and their answer, which stays sealed until the player has played; after a give-up the
-//! answer opens, is checked on this computer ("as reported", the commitment matched) and loads as one undo step; and
-//! the REAPER `duel` scenario's click points hit their controls.
+//! the clipboard is written only inside a click on **Copy** (egui's `CopyText`) and never on its own, and **read only on
+//! Paste** (lane DUI): no frame but a click on **Paste** sends egui's `RequestPaste`, and the `Event::Paste` that answers
+//! it fills the box and is read; a whole chat message pasted and read imports the friend's scorecard (shown as
+//! reported) and their answer, which stays sealed until the player has played, and opens after a give-up or after a
+//! submit; it is checked on this computer ("as reported", the commitment matched), the two results stand side by side,
+//! and it loads as one undo step that Undo takes back; the history lists its rows and **Open** asks the shell for one;
+//! the friend's name goes to the shell when the field is left; an answer over 64 symbols says what older builds print;
+//! an idle card asks for no frames; and the REAPER `duel` scenario's click points hit their controls.
 #![cfg(all(feature = "duel", feature = "recreate"))]
 
 mod common;
 
-use egui::{OutputCommand, UiBuilder};
+use std::time::Duration;
+
+use egui::{OutputCommand, UiBuilder, ViewportCommand, ViewportId};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use enth_challenge::answer::AnswerCode;
@@ -30,7 +35,7 @@ use enth_session::duel::{
 use enth_session::game::{EditorView, GameEdit, GameRequest, Job, JobKind, JobResult, Prepared};
 use enth_ui::Theme;
 use enth_ui::editor::Editor;
-use enth_ui::editor::duel::{ShareCodes, ShellDuel};
+use enth_ui::editor::duel::{HistoryRow, ShareCodes, ShellAsks, ShellDuel};
 
 /// The editor, its session, and what the shell would do between frames.
 struct App {
@@ -43,8 +48,12 @@ struct App {
     shell: ShellDuel,
     /// Share clicks the shell took.
     shares: u32,
+    /// What else the card asked of the shell (a history entry to open, imported codes, a name), in order.
+    asks: Vec<ShellAsks>,
     /// The clipboard writes the frames asked for, in order.
     copies: Vec<String>,
+    /// Clipboard reads the frames asked the integration for (`ViewportCommand::RequestPaste`).
+    paste_requests: usize,
 }
 
 fn app(duels: bool) -> App {
@@ -57,7 +66,9 @@ fn app(duels: bool) -> App {
         duels,
         shell: ShellDuel::default(),
         shares: 0,
+        asks: Vec::new(),
         copies: Vec::new(),
+        paste_requests: 0,
     }
 }
 
@@ -133,8 +144,12 @@ fn harness(app: App) -> Harness<'static, App> {
                 app.editor.apply_game(&mut app.session, &mut || 42);
                 if app.duels {
                     app.editor.apply_duel(&mut app.session);
-                    if app.editor.take_duel_share() {
+                    let mut asks = app.editor.take_duel_asks();
+                    if std::mem::take(&mut asks.share) {
                         app.shares += 1;
+                    }
+                    if asks != ShellAsks::default() {
+                        app.asks.push(asks);
                     }
                 }
                 app.session.drain_requests().for_each(drop);
@@ -158,6 +173,12 @@ fn harness(app: App) -> Harness<'static, App> {
                         let _ = app.session.duel_job_done(v.job, result);
                     }
                 }
+                app.paste_requests += ui.ctx().viewport(|v| {
+                    v.commands
+                        .iter()
+                        .filter(|c| matches!(c, ViewportCommand::RequestPaste))
+                        .count()
+                });
                 app.copies.extend(
                     ui.ctx()
                         .output(|o| o.commands.clone())
@@ -407,4 +428,302 @@ fn reaper_points_hit_their_duel_controls() {
     click(&mut h, "Play this challenge");
     h.run_steps(4);
     hits(&h, "Reveal", REVEAL);
+}
+
+/// **No clipboard read without Paste** (lane DUI): hovering, typing, every other click and many frames send no
+/// `RequestPaste`; a click on **Paste** sends exactly one, and the integration's answer (an `Event::Paste`) fills the
+/// box and is read at once. A paste into the focused box (the platform's own Paste) goes into the box once.
+#[test]
+fn the_clipboard_is_read_only_on_a_paste_click() {
+    let (challenge, codes, _) = friends_codes();
+    let mut a = app(true);
+    a.shell.codes = Some(codes.clone());
+    let mut h = harness(a);
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    h.run_steps(10);
+    for label in ["Share result", "Copy message", "Copy answer", "Paste box"] {
+        click(&mut h, label);
+    }
+    h.event(egui::Event::Text("typed".to_owned()));
+    h.run_steps(3);
+    click(&mut h, "Read pasted codes");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(10);
+    assert_eq!(h.state().paste_requests, 0, "no read without Paste");
+    // Paste: one request, and the card waits for its answer.
+    h.get_by_label("Paste from clipboard").click();
+    h.run_steps(1);
+    assert_eq!(h.state().paste_requests, 1, "one read, on the click");
+    assert!(h.state().editor.duel().paste_pending());
+    h.run_steps(10);
+    assert!(has_text(&h, "Reading the clipboard"));
+    assert_eq!(h.state().paste_requests, 1, "and none after");
+    // The integration answers: the whole message goes in the box and is read.
+    h.event(egui::Event::Paste(format!("gg \u{2014} {}", codes.message)));
+    h.run_steps(3);
+    assert!(!h.state().editor.duel().paste_pending());
+    let view = DuelEdit::duel(&h.state().session).expect("the pasted message opened a duel");
+    assert_eq!(view.code, challenge.to_string());
+    assert!(view.card.is_some(), "their scorecard was read");
+    assert_eq!(h.state().editor.duel().paste_text(), "", "read and cleared");
+    assert!(
+        h.state()
+            .asks
+            .iter()
+            .any(|a| a.imported.iter().any(|i| i.text == codes.scorecard)),
+        "the shell is handed the imported scorecard to keep: {:?}",
+        h.state().asks
+    );
+    // The platform's Paste into the focused box: once, in the box, and no request.
+    click(&mut h, "Paste box");
+    h.event(egui::Event::Paste("hello".to_owned()));
+    h.run_steps(3);
+    assert_eq!(h.state().editor.duel().paste_text(), "hello");
+    assert_eq!(h.state().paste_requests, 1);
+}
+
+/// The sealed answer opens after a **submit**, not only after a give-up; while the round runs with nothing submitted it
+/// stays sealed, and Verify stays off.
+#[test]
+fn the_sealed_answer_opens_after_a_submit() {
+    let (_, codes, _) = friends_codes();
+    let mut h = harness(app(true));
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    paste_and_read(&mut h, &format!("{}\n{}", codes.message, codes.answer));
+    assert_eq!(
+        DuelEdit::duel(&h.state().session).unwrap().answer,
+        AnswerState::Sealed
+    );
+    click(&mut h, "Play this challenge");
+    h.run_steps(4);
+    assert!(h.state().session.round().is_some());
+    h.run_steps(5);
+    assert_eq!(
+        DuelEdit::duel(&h.state().session).unwrap().answer,
+        AnswerState::Sealed,
+        "a live round with nothing submitted keeps it sealed"
+    );
+    assert!(!enabled(&h, "Verify their answer"));
+    click(&mut h, "Submit");
+    h.run_steps(4);
+    let view = DuelEdit::duel(&h.state().session).unwrap();
+    assert_eq!(view.answer, AnswerState::Open, "a scored submit opens it");
+    assert!(enabled(&h, "Verify their answer"));
+    click(&mut h, "Verify their answer");
+    h.run_steps(3);
+    assert!(has_text(
+        &h,
+        "Checked on your computer: their patch scores 100.0 %, as reported"
+    ));
+    // Side by side: their sound checked here, yours from your submit re-scored on the same check.
+    assert!(
+        h.query_by_label("Their sound: 100.0 %, checked on your computer")
+            .is_some()
+    );
+    let own = DuelEdit::duel(&h.state().session)
+        .unwrap()
+        .checked
+        .unwrap()
+        .own
+        .expect("your submit re-scored beside theirs");
+    assert!(
+        h.query_by_label(&format!(
+            "Your sound: {:.1} %, checked on your computer",
+            f64::from(own.sound) / 100.0
+        ))
+        .is_some()
+    );
+    assert!(h.query_by_label("Their time: 2:41, reported").is_some());
+    assert!(h.query_by_label("Their submits: 3").is_some());
+}
+
+/// Their patch loads as **one undo step**: Undo brings the patch from before back.
+#[test]
+fn their_patch_loads_as_one_undo_step() {
+    let (_, codes, target) = friends_codes();
+    let mut h = harness(app(true));
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    paste_and_read(&mut h, &format!("{}\n{}", codes.message, codes.answer));
+    click(&mut h, "Play this challenge");
+    h.run_steps(4);
+    click(&mut h, "Reveal");
+    h.run_steps(3);
+    click(&mut h, "Verify their answer");
+    h.run_steps(3);
+    click(&mut h, "End");
+    click(&mut h, "End and restore my patch");
+    let before = h.state().session.patch().clone();
+    click(&mut h, "Use their patch");
+    assert!(has_text(&h, "Their patch is loaded: Undo takes it back."));
+    assert!(
+        h.state()
+            .session
+            .history()
+            .next_undo()
+            .is_some_and(|step| step.load.is_some()),
+        "a load step"
+    );
+    let mut loaded = h.state().session.patch().clone();
+    loaded.meta = target.meta.clone();
+    loaded.engine.clone_from(&target.engine);
+    assert_eq!(loaded, target);
+    click(&mut h, "Undo");
+    assert_eq!(
+        h.state().session.patch(),
+        &before,
+        "one Undo takes their whole patch back"
+    );
+    assert!(
+        h.state()
+            .session
+            .history()
+            .next_redo()
+            .is_some_and(|step| step.load.is_some()),
+        "the load is the step undone"
+    );
+}
+
+fn rows() -> Vec<HistoryRow> {
+    (1..=10)
+        .rev()
+        .map(|id| HistoryRow {
+            id,
+            code: format!("1080-1000-{id:04}-AB"),
+            day: 20_740 + id as u32,
+            own: Some(9_000 + id as u16),
+            claimed: Some(900),
+            checked: (id % 2 == 0).then_some(9_010),
+            as_reported: (id % 2 == 0).then_some(true),
+            name: if id == 10 {
+                "Sam".to_owned()
+            } else {
+                String::new()
+            },
+        })
+        .collect()
+}
+
+/// The history lists the newest rows (the rest are counted), each with **Open**, which asks the shell to reopen it.
+#[test]
+fn the_history_lists_its_rows_and_open_asks_the_shell() {
+    let mut a = app(true);
+    a.shell.history = rows();
+    let mut h = harness(a);
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    assert!(has_text(
+        &h,
+        "2026-10-24 · 1080-1000-0010-AB · you 90.1 % · them 90.1 % checked here, as reported · from Sam"
+    ));
+    assert!(has_text(&h, "them 90.0 % reported"));
+    assert!(has_text(&h, "2 older duels are kept in the history file."));
+    assert!(
+        h.query_by_label("Open duel 2").is_none(),
+        "only the newest rows"
+    );
+    click(&mut h, "Open duel 7");
+    assert_eq!(
+        h.state().asks.last().and_then(|a| a.open),
+        Some(7),
+        "the shell reopens it"
+    );
+}
+
+/// The friend's name, typed for the open duel, goes to the shell when the field is left; the side-by-side grid heads
+/// their column with it.
+#[test]
+fn a_typed_name_goes_to_the_shell_when_the_field_is_left() {
+    let (_, codes, _) = friends_codes();
+    let mut h = harness(app(true));
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    assert!(
+        h.query_by_label("Friend's name").is_none(),
+        "no name field without a duel"
+    );
+    paste_and_read(&mut h, &codes.message);
+    click(&mut h, "Friend's name");
+    h.event(egui::Event::Text("Sam".to_owned()));
+    h.run_steps(2);
+    assert!(
+        h.state().asks.iter().all(|a| a.name.is_none()),
+        "nothing while typing"
+    );
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(
+        h.state().asks.last().and_then(|a| a.name.clone()),
+        Some("Sam".to_owned())
+    );
+    // The shell hands the kept name back with the entry.
+    h.state_mut().shell.name = "Sam".to_owned();
+    h.state_mut().shell.entry = Some(1);
+    h.run_steps(3);
+    assert!(h.query_by_label("Column: Sam").is_some());
+}
+
+/// An answer code over 64 symbols says what an enth from before duels prints for it.
+#[test]
+fn a_long_answer_says_older_builds_read_bad_length() {
+    let (_, mut codes, _) = friends_codes();
+    let mut a = app(true);
+    a.shell.codes = Some(codes.clone());
+    let mut h = harness(a);
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    assert!(
+        !has_text(&h, "\"bad length\""),
+        "{} symbols",
+        codes.answer_symbols
+    );
+    codes.answer_symbols = 68;
+    h.state_mut().shell.codes = Some(codes);
+    h.run_steps(3);
+    assert!(has_text(
+        &h,
+        "an enth from before duels calls it \"bad length\""
+    ));
+}
+
+/// **0 idle frames**: the card open with a duel checked, its history listed, and with a Paste click waiting, asks for
+/// no repaint once input stops.
+#[test]
+fn an_idle_duel_card_asks_for_no_frames() {
+    let (_, codes, _) = friends_codes();
+    let mut a = app(true);
+    a.shell.history = rows();
+    a.shell.codes = Some(codes.clone());
+    let mut h = harness(a);
+    h.run_steps(3);
+    click(&mut h, "Open duel card");
+    let idle = |h: &mut Harness<'_, App>, what: &str| {
+        h.key_press(egui::Key::Escape);
+        h.run_steps(10);
+        for n in 0..4 {
+            h.step();
+            let delay = h.output().viewport_output[&ViewportId::ROOT].repaint_delay;
+            assert_eq!(
+                delay,
+                Duration::MAX,
+                "{what}: frame {n} asked for a repaint"
+            );
+        }
+    };
+    idle(&mut h, "the card with its history");
+    paste_and_read(&mut h, &format!("{}\n{}", codes.message, codes.answer));
+    idle(&mut h, "a sealed answer");
+    click(&mut h, "Play this challenge");
+    h.run_steps(4);
+    click(&mut h, "Reveal");
+    h.run_steps(3);
+    click(&mut h, "Verify their answer");
+    h.run_steps(3);
+    click(&mut h, "End");
+    click(&mut h, "End and restore my patch");
+    idle(&mut h, "a checked duel, side by side");
+    h.get_by_label("Paste from clipboard").click();
+    idle(&mut h, "a Paste click waiting");
 }

@@ -382,6 +382,13 @@ impl Editor {
         self.duel.take_share()
     }
 
+    /// After a frame (lane DUI): everything the duel card asks of the shell, taken once: **Share result**, a history
+    /// entry to reopen, the codes a Read imported (the shell keeps them in the duel history), the friend's name typed.
+    #[cfg(feature = "duel")]
+    pub fn take_duel_asks(&mut self) -> super::duel::ShellAsks {
+        self.duel.take_asks()
+    }
+
     /// The duel card's state (tests and the dev window).
     #[cfg(feature = "duel")]
     pub fn duel(&self) -> &super::duel::Duel {

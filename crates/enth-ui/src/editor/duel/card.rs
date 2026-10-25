@@ -7,17 +7,22 @@
 //! duels are available ([`Duel::available`]), so a build, a kittest frame or a dev window that never says so draws
 //! exactly as before.
 //!
-//! Lane SKD's minimal card, top to bottom on `surface.card`, **the controls first, in rows that never move** (the
-//! REAPER `duel` scenario clicks them by position; `tests/duel.rs` pins the points), then the text:
+//! The card, top to bottom on `surface.card`, **the controls first, in rows that never move** (the REAPER `duel`
+//! scenario clicks them by position; `tests/duel.rs` pins the points; lane SKD's minimal card set them, lane DUI kept
+//! them), then the text:
 //!
 //! 1. **Duel** and **×**;
 //! 2. **Share result**, **Copy message**, **Copy answer** ([`super::share`]): the codes are made by the shell; a copy
 //!    writes the clipboard inside the click and nowhere else;
-//! 3. the paste box (the platform's Paste puts a whole chat message in it);
+//! 3. the paste box (the platform's Paste puts a whole chat message in it) and **Paste** at its right
+//!    ([`super::paste::button`]: the one click that reads the clipboard; what it brings is read at once);
 //! 4. **Read**, **Verify**, **Use theirs**, **▶ Theirs** / **■ Stop** ([`super::answer`]);
 //! 5. **Play** (the duel's challenge, through the Recreate bar's code start) and **Close duel**;
-//! 6. what the shell or the session said, your result, the codes, their scorecard **as reported**, the sealed answer,
-//!    the verification **checked on your computer** ([`super::verify`]), and the About line.
+//! 6. what the shell or the session said; **You**: your result and the codes (and, over 64 symbols, that an enth from
+//!    before duels reads the answer as "bad length"); **Your friend**: their optional name (kept on this computer
+//!    only), what the last Read found, the two results **side by side**, their scorecard **as reported**, the sealed
+//!    answer, the verification **checked on your computer** ([`super::verify`]); **History**: your duels on this
+//!    computer, each with **Open** ([`super::history`]); and the About line, said once.
 //!
 //! Every control has an accessible name, so kittest drives it by label. It asks for no frames of its own: the shell's
 //! posts wake the editor, and nothing in it animates.
@@ -187,15 +192,22 @@ fn body(duel: &mut Duel, ui: &mut Ui, t: &Theme, out: &mut Intents) {
     });
     // 2. Share and copy.
     ui.horizontal(|ui| super::share::buttons(duel, ui, t, out));
-    // 3. The paste box: the platform's Paste puts a whole chat message here; nothing reads the clipboard otherwise.
+    // 3. The paste box: the platform's Paste puts a whole chat message here, and so does **Paste** at its right (the
+    //    one click that reads the clipboard); nothing reads it otherwise.
+    super::paste::arrived(duel, ui, out);
     let mut text = duel.paste_text().to_owned();
-    let edit = ui.add_sized(
-        vec2(ui.available_width(), t.size.duel.paste_height),
-        TextEdit::multiline(&mut text)
-            .font(t.text.label.clone())
-            .hint_text("Paste your friend's whole message here (Ctrl+V)"),
-    );
-    labeled(&edit, Role::TextInput, "Paste box");
+    ui.horizontal_top(|ui| {
+        let width = ui.available_width() - t.size.duel.paste_button - ui.spacing().item_spacing.x;
+        let edit = ui.add_sized(
+            vec2(width, t.size.duel.paste_height),
+            TextEdit::multiline(&mut text)
+                .id(super::paste::box_id())
+                .font(t.text.label.clone())
+                .hint_text("Paste your friend's whole message here (Ctrl+V)"),
+        );
+        labeled(&edit, Role::TextInput, "Paste box");
+        super::paste::button(ui, t, out);
+    });
     if text != duel.paste_text() {
         out.push(Intent::Duel(DuelIntent::PasteText(text)));
     }
@@ -234,15 +246,45 @@ fn body(duel: &mut Duel, ui: &mut Ui, t: &Theme, out: &mut Intents) {
     if let Some(said) = duel.said().map(str::to_owned) {
         refusal(ui, t, &said);
     }
+    if duel.paste_pending() {
+        line(
+            ui,
+            t,
+            "Reading the clipboard… If nothing arrives, click the box and press Ctrl+V.",
+            true,
+        );
+    }
     heading(ui, t, "You");
     super::share::text(duel, ui, t);
     heading(ui, t, "Your friend");
+    if duel.view().is_some() {
+        name(duel, ui, t, out);
+    }
     for read in duel.read_lines().to_vec() {
         line(ui, t, &read, true);
     }
     super::verify::text(duel, ui, t);
+    heading(ui, t, "History");
+    super::history::list(duel, ui, t, out);
     ui.add_space(t.space.tight);
     line(ui, t, ABOUT, true);
+}
+
+/// Their name, typed by you for the open duel (optional; kept only in the history on this computer, never in a
+/// code): the shell hears of it when the field is left.
+fn name(duel: &mut Duel, ui: &mut Ui, t: &Theme, out: &mut Intents) {
+    let kept = duel.shell().name.clone();
+    let edit = ui.add_sized(
+        vec2(ui.available_width(), t.size.control_height),
+        TextEdit::singleline(duel.name_buffer())
+            .char_limit(super::state::NAME_CHARS)
+            .font(t.text.label.clone())
+            .hint_text("Their name (optional, kept on this computer)"),
+    );
+    labeled(&edit, Role::TextInput, "Friend's name");
+    if edit.lost_focus() && duel.name_text().trim() != kept.trim() {
+        out.push(Intent::Duel(DuelIntent::Name(duel.name_text().to_owned())));
+    }
 }
 
 /// **Play**: start a Recreate round on the duel's challenge, through the Recreate bar's code start (feature

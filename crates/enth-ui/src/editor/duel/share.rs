@@ -11,6 +11,11 @@ use egui::Ui;
 use enth_challenge::Outcome;
 
 use super::card::{button, line};
+
+/// The longest code an enth build from before duels (R1–R3) reads: code v1's decoder refuses more symbols as "bad
+/// length" before it reads anything else, so a longer answer code reads "bad length" there and a shorter one "code
+/// too new" ("update enth"). Answers grow about 7 symbols per knob left at an exact value (docs/duels.md, "Sizes").
+pub const OLD_BUILD_SYMBOLS: usize = 64;
 use super::state::{Duel, DuelIntent};
 use crate::Theme;
 use crate::editor::cards::Intents;
@@ -134,6 +139,16 @@ pub fn text(duel: &Duel, ui: &mut Ui, t: &Theme) {
             ),
             true,
         );
+        if codes.answer_symbols > OLD_BUILD_SYMBOLS {
+            line(
+                ui,
+                t,
+                &format!(
+                    "Your answer code is longer than {OLD_BUILD_SYMBOLS} symbols: an enth from before duels calls it \"bad length\". Your friend needs to update enth."
+                ),
+                true,
+            );
+        }
     }
     if let Some(what) = duel.copied() {
         line(ui, t, &format!("Copied the {what}."), true);
