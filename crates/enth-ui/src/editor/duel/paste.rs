@@ -10,8 +10,8 @@
 //! - the card's **Paste** button ([`button`]): its click, and nothing else in the editor, sends egui's
 //!   `ViewportCommand::RequestPaste`, so the integration reads the clipboard and answers with an `Event::Paste`
 //!   ([`arrived`] takes it while the click waits, unless the box has the keyboard focus and takes it itself); the text
-//!   replaces the box's and is read at once. egui-winit (the dev window) answers it; egui-baseview answers it from
-//!   fork patch 13 (lane FK4) on, and until then the click changes nothing but the note under the box, which says to
+//!   replaces the box's and is read at once. egui-winit (the dev window) answers it, and so does egui-baseview in the
+//!   plugin since fork patch 13 (lane FK4). An empty clipboard answers nothing: the note under the box then says to
 //!   press Ctrl+V in the box instead.
 //!
 //! **Read** ([`read`]) hands the box's text to [`paste::paste`]. Decoding an answer code regenerates the challenge's
