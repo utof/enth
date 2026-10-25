@@ -168,9 +168,9 @@ pub struct Control {
     pub value: f32,
 }
 
-/// What is played: notes, automation, controller moves and the length of the render. Build with
+/// What is played: notes, automation, controller moves, the tempo and the length of the render. Build with
 /// `..Default::default()` (fields may be added, with defaults), or [`Performance::note`].
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Performance {
     /// The notes, in any order (same-frame events follow this order).
     pub notes: Vec<Note>,
@@ -180,6 +180,26 @@ pub struct Performance {
     pub controls: Vec<Control>,
     /// Length of the render in seconds (frames = `round(duration_s · sample_rate)`).
     pub duration_s: f64,
+    /// The tempo in beats per minute, a deterministic render input (S2a decision D5): what a tempo-synced module
+    /// (an `lfo` with `sync`, the `mseg`, the `delay`) will read. Default [`DEFAULT_TEMPO_BPM`] (140). **No module
+    /// reads it yet** and the engine does not receive it (lane TMP adds the tempo event, applied at segment
+    /// boundaries, and the plugin's per-block host tempo), so today it changes no render.
+    pub tempo_bpm: f64,
+}
+
+/// The default tempo of a [`Performance`], in beats per minute (S2a decision D5: bass music sits near 140).
+pub const DEFAULT_TEMPO_BPM: f64 = 140.0;
+
+impl Default for Performance {
+    fn default() -> Self {
+        Self {
+            notes: Vec::new(),
+            automation: Vec::new(),
+            controls: Vec::new(),
+            duration_s: 0.0,
+            tempo_bpm: DEFAULT_TEMPO_BPM,
+        }
+    }
 }
 
 impl Performance {

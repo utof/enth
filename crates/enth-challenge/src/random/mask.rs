@@ -389,8 +389,22 @@ fn module_visibility(
             "dry" => Visibility::Gauge,
             _ => Visibility::Observable,
         },
-        // Modulators are classified by `modulator_visibility`.
-        ModuleKind::Adsr | ModuleKind::Lfo => Visibility::Observable,
+        // Modulators are classified by `modulator_visibility`. S2a's reserved kinds: generator v1 never draws or
+        // starts with one, so v1's masks never meet them; their rules (a silent `wt` that still feeds an audio route,
+        // and the rest) come with S2b's mask rules for layout 2.
+        ModuleKind::Adsr
+        | ModuleKind::Lfo
+        | ModuleKind::Dist
+        | ModuleKind::Wt
+        | ModuleKind::Ott
+        | ModuleKind::Comb
+        | ModuleKind::Formant
+        | ModuleKind::Mseg
+        | ModuleKind::Chorus
+        | ModuleKind::Phaser
+        | ModuleKind::Eq
+        | ModuleKind::Delay
+        | ModuleKind::Ladder => Visibility::Observable,
     }
 }
 

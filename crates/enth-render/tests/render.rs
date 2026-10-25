@@ -403,3 +403,22 @@ fn bad_input_is_a_typed_error() {
         "invalid_value"
     );
 }
+
+/// S2a decision D5 (lane S0d, F0m): a performance's tempo defaults to 140 BPM, and a patch with no tempo-synced module
+/// (every patch before S2a's synced modules) renders the same bits at any tempo.
+#[test]
+fn the_tempo_defaults_to_140_and_an_unsynced_patch_ignores_it() {
+    assert_eq!(Performance::default().tempo_bpm, 140.0);
+    assert_eq!(Performance::note(60, 0.8, 0.1, 0.2).tempo_bpm, 140.0);
+    let spec = RenderSpec::default();
+    let at = |bpm: f64| {
+        let perf = Performance {
+            tempo_bpm: bpm,
+            ..chord(0.3, 0.6)
+        };
+        bits(&render(&every_kind(), &perf, &spec).unwrap())
+    };
+    let base = at(140.0);
+    assert_eq!(at(90.0), base);
+    assert_eq!(at(174.0), base);
+}

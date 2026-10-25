@@ -66,6 +66,18 @@ pub fn short_name(kind: ModuleKind) -> &'static str {
         ModuleKind::Lfo => "LFO",
         ModuleKind::Reverb => "Reverb",
         ModuleKind::Comp => "Comp",
+        // S2a's reserved kinds (hidden from the Add menu until INT-S2a; SKS and EDS own their cards).
+        ModuleKind::Dist => "Dist",
+        ModuleKind::Wt => "WT",
+        ModuleKind::Ott => "OTT",
+        ModuleKind::Comb => "Comb",
+        ModuleKind::Formant => "Formant",
+        ModuleKind::Mseg => "MSEG",
+        ModuleKind::Chorus => "Chorus",
+        ModuleKind::Phaser => "Phaser",
+        ModuleKind::Eq => "EQ",
+        ModuleKind::Delay => "Delay",
+        ModuleKind::Ladder => "Ladder",
     }
 }
 

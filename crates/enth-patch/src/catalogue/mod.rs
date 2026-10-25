@@ -24,6 +24,31 @@
 //! | `voice` (built-in) | — | — | voice | `mode`, `polyphony`, `glide`, `glide_mode`, `pan`; plus `amp_env`, a module id |
 //! | `master` (built-in) | — | — | global | `level` |
 //!
+//! # Reserved S2a kinds
+//!
+//! S2a (docs/phase-s2.md) appended its kinds at once (lane S0d, freeze F0m), so the order lanes merge in never sets
+//! a persisted discriminant. Each is **hidden** ([`ModuleSpec::hidden`]): the Add menu, `enth modules`, the
+//! generator and `lesson-coverage` never list it ([`ModuleKind::listed`]), while patches, the engine and the CLI
+//! accept it by key, so the module lanes can build and test it. Lane INT-S2a clears the flag per kind once the kind
+//! has its lesson. Until F1m each table is S0d's placeholder, which lane CAT replaces. The order follows the plan's
+//! (D1), with the cut list's kinds last, so that if the answer code is not widened (D3) the two kinds past its
+//! 16-kind cap are the first two cut (`ladder`, `delay`). **No reserved kind adds an item to an enum that generator
+//! v1 or R3b's layout 1 pins** (S2 rule 1).
+//!
+//! | Discriminant | Kind | Section | Id prefix | Rate | Lane |
+//! | --- | --- | --- | --- | --- | --- |
+//! | 7 | `dist` | `voice_fx` | `dist` | voice | DST |
+//! | 8 | `wt` | `generators` | `wt` | voice | WT |
+//! | 9 | `ott` | `fx` | `ott` | global | OTT |
+//! | 10 | `comb` | `voice_fx` | `comb` | voice | FLT |
+//! | 11 | `formant` | `voice_fx` | `formant` | voice | FLT |
+//! | 12 | `mseg` | `modulators` | `mseg` | voice | MSEG |
+//! | 13 | `chorus` | `fx` | `chorus` | global | MOD |
+//! | 14 | `phaser` | `fx` | `phaser` | global | MOD |
+//! | 15 | `eq` | `fx` | `eq` | global | EQ |
+//! | 16 | `delay` | `fx` | `delay` | global | DLY |
+//! | 17 | `ladder` | `voice_fx` | `ladder` | voice | FLT |
+//!
 //! # Checked at compile time
 //!
 //! Each table is declared with `params!`, which evaluates [`enth_params::check_table`] in a `const` item. So this
@@ -66,26 +91,48 @@ use crate::model::Section;
 
 mod adsr;
 mod builtin;
+mod chorus;
+mod comb;
 mod comp;
+mod delay;
+mod dist;
+mod eq;
+mod formant;
+mod ladder;
 mod lfo;
+mod mseg;
 mod noise;
 mod osc;
+mod ott;
+mod phaser;
 mod reverb;
 mod svf;
+mod wt;
 
 pub use adsr::{ADSR_PARAMS, AdsrParam};
 pub use builtin::{
     Builtin, GLIDE_MODES, GlideMode, MACRO_VALUE, MASTER_PARAMS, MasterParam, VOICE_MODES,
     VOICE_PARAMS, VoiceMode, VoiceParam,
 };
+pub use chorus::{CHORUS_PARAMS, ChorusParam};
+pub use comb::{COMB_PARAMS, CombParam};
 pub use comp::{COMP_PARAMS, CompParam};
+pub use delay::{DELAY_PARAMS, DelayParam};
+pub use dist::{DIST_PARAMS, DistParam};
+pub use eq::{EQ_PARAMS, EqParam};
+pub use formant::{FORMANT_PARAMS, FormantParam};
+pub use ladder::{LADDER_PARAMS, LadderParam};
 pub use lfo::{
     LFO_PARAMS, LFO_SCOPES, LFO_SHAPES, LfoParam, LfoScope, LfoShape, POLARITIES, Polarity,
 };
+pub use mseg::{MSEG_PARAMS, MsegParam};
 pub use noise::{NOISE_COLORS, NOISE_PARAMS, NoiseColor, NoiseParam};
 pub use osc::{OSC_PARAMS, OscParam, WAVES, WAVETABLES, Wave, Wavetable};
+pub use ott::{OTT_PARAMS, OttParam};
+pub use phaser::{PHASER_PARAMS, PhaserParam};
 pub use reverb::{REVERB_PARAMS, ReverbParam};
 pub use svf::{FILTER_MODES, FilterMode, SVF_PARAMS, SvfParam};
+pub use wt::{WT_PARAMS, WtParam};
 
 /// Smoothing for gains, mixes and other continuous controls on the audio path.
 pub(crate) const SMOOTH: Smoothing = Smoothing::Linear { ms: 10.0 };
@@ -137,6 +184,29 @@ pub enum ModuleKind {
     Reverb = 5,
     /// Stereo compressor with soft knee and make-up gain, global.
     Comp = 6,
+    // S2a's reserved kinds (lane S0d, F0m): hidden until INT-S2a clears `ModuleSpec::hidden` per kind.
+    /// Distortion per voice (reserved, S2a lane DST).
+    Dist = 7,
+    /// Wavetable oscillator with PM, AM and ring modulation from other generators (reserved, S2a lane WT).
+    Wt = 8,
+    /// Three-band upward and downward compressor, global (reserved, S2a lane OTT).
+    Ott = 9,
+    /// Keytracked comb filter per voice (reserved, S2a lane FLT).
+    Comb = 10,
+    /// Formant (vowel) filter per voice (reserved, S2a lane FLT).
+    Formant = 11,
+    /// Multi-segment envelope with a fixed point count (reserved, S2a lane MSEG).
+    Mseg = 12,
+    /// Stereo chorus with a flanger mode, global (reserved, S2a lane MOD).
+    Chorus = 13,
+    /// Stereo phaser, global (reserved, S2a lane MOD).
+    Phaser = 14,
+    /// Parametric equaliser on the biquad, global (reserved, S2a lane EQ).
+    Eq = 15,
+    /// Stereo delay, synced in beats or in ms, global (reserved, S2a lane DLY).
+    Delay = 16,
+    /// Four-pole ladder low-pass per voice (reserved, S2a lane FLT; first on the cut list).
+    Ladder = 17,
 }
 
 /// The descriptor of a module kind: identity, where it lives, and its parameter table.
@@ -160,6 +230,10 @@ pub struct ModuleSpec {
     pub params: &'static [ParamSpec],
     /// Tier and one plain sentence for learners and agents (`enth modules`).
     pub learn: LearnMeta,
+    /// A reserved kind (S2a, lane S0d): the Add menu, `enth modules`, the generator and `lesson-coverage` never list
+    /// it ([`ModuleKind::listed`]), and user-facing suggestions leave it out. Patches, the engine and the CLI still
+    /// accept it by key. Lane INT-S2a clears it per kind once the kind has its lesson (docs/phase-s2.md, rule 6).
+    pub hidden: bool,
 }
 
 /// Every module kind, indexed by `ModuleKind as usize`.
@@ -176,6 +250,7 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Basic,
             desc: "A pitched tone: sine, triangle, saw, pulse with width, or a wavetable, with hard sync to the first oscillator.",
         },
+        hidden: false,
     },
     ModuleSpec {
         kind: ModuleKind::Noise,
@@ -189,6 +264,7 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Intermediate,
             desc: "Unpitched hiss, white or pink, for breath, attack transients and texture.",
         },
+        hidden: false,
     },
     ModuleSpec {
         kind: ModuleKind::Svf,
@@ -202,6 +278,7 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Basic,
             desc: "A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.",
         },
+        hidden: false,
     },
     ModuleSpec {
         kind: ModuleKind::Adsr,
@@ -215,6 +292,7 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Basic,
             desc: "An attack-decay-sustain-release envelope per note, 0 to 1; one of them is the voice's amplitude envelope.",
         },
+        hidden: false,
     },
     ModuleSpec {
         kind: ModuleKind::Lfo,
@@ -228,6 +306,7 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Intermediate,
             desc: "A slow repeating modulator for vibrato, tremolo and sweeps, per voice or shared by all voices.",
         },
+        hidden: false,
     },
     ModuleSpec {
         kind: ModuleKind::Reverb,
@@ -241,6 +320,7 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Intermediate,
             desc: "A stereo room or hall after the voices: adds space, width and a tail.",
         },
+        hidden: false,
     },
     ModuleSpec {
         kind: ModuleKind::Comp,
@@ -254,6 +334,161 @@ pub static CATALOGUE: [ModuleSpec; ModuleKind::ALL.len()] = [
             tier: Tier::Advanced,
             desc: "Evens out loudness after the voices: turns loud parts down above a threshold, then makes up the gain.",
         },
+        hidden: false,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Dist,
+        key: "dist",
+        name: "Distortion",
+        id_prefix: "dist",
+        section: Section::VoiceFx,
+        time_based: false,
+        params: &DIST_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "Per-voice distortion: clipping, wavefolding, bitcrushing and downsampling, blended with the dry signal.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Wt,
+        key: "wt",
+        name: "Wavetable",
+        id_prefix: "wt",
+        section: Section::Generators,
+        time_based: false,
+        params: &WT_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A wavetable oscillator whose phase or amplitude another source can modulate: FM, PM, AM and ring modulation.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Ott,
+        key: "ott",
+        name: "OTT",
+        id_prefix: "ott",
+        section: Section::Fx,
+        time_based: false,
+        params: &OTT_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Advanced,
+            desc: "Three-band upward and downward compression after the voices: the loud, dense, bright bass-music sound.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Comb,
+        key: "comb",
+        name: "Comb filter",
+        id_prefix: "comb",
+        section: Section::VoiceFx,
+        time_based: false,
+        params: &COMB_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A keytracked comb filter per voice: metallic, resonant tones and plucked strings.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Formant,
+        key: "formant",
+        name: "Formant filter",
+        id_prefix: "formant",
+        section: Section::VoiceFx,
+        time_based: false,
+        params: &FORMANT_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A vowel filter per voice that morphs between vowel shapes: talking and growling basses.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Mseg,
+        key: "mseg",
+        name: "MSEG",
+        id_prefix: "mseg",
+        section: Section::Modulators,
+        time_based: false,
+        params: &MSEG_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A drawn multi-segment envelope or LFO, free or tempo-synced: the wobbles and rhythmic movement of bass music.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Chorus,
+        key: "chorus",
+        name: "Chorus",
+        id_prefix: "chorus",
+        section: Section::Fx,
+        time_based: true,
+        params: &CHORUS_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A stereo chorus or flanger after the voices: width and movement from short modulated delays.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Phaser,
+        key: "phaser",
+        name: "Phaser",
+        id_prefix: "phaser",
+        section: Section::Fx,
+        time_based: true,
+        params: &PHASER_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A phaser after the voices: sweeping notches from a chain of all-pass filters.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Eq,
+        key: "eq",
+        name: "EQ",
+        id_prefix: "eq",
+        section: Section::Fx,
+        time_based: false,
+        params: &EQ_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A parametric equaliser after the voices: boost or cut bands of the spectrum.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Delay,
+        key: "delay",
+        name: "Delay",
+        id_prefix: "delay",
+        section: Section::Fx,
+        time_based: true,
+        params: &DELAY_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "Echoes after the voices, timed in milliseconds or synced to the tempo in beats.",
+        },
+        hidden: true,
+    },
+    ModuleSpec {
+        kind: ModuleKind::Ladder,
+        key: "ladder",
+        name: "Ladder filter",
+        id_prefix: "ladder",
+        section: Section::VoiceFx,
+        time_based: false,
+        params: &LADDER_PARAMS,
+        learn: LearnMeta {
+            tier: Tier::Intermediate,
+            desc: "A Moog-style four-pole ladder low-pass per voice: a fat, resonant sweep.",
+        },
+        hidden: true,
     },
 ];
 
@@ -267,6 +502,17 @@ impl ModuleKind {
         ModuleKind::Lfo,
         ModuleKind::Reverb,
         ModuleKind::Comp,
+        ModuleKind::Dist,
+        ModuleKind::Wt,
+        ModuleKind::Ott,
+        ModuleKind::Comb,
+        ModuleKind::Formant,
+        ModuleKind::Mseg,
+        ModuleKind::Chorus,
+        ModuleKind::Phaser,
+        ModuleKind::Eq,
+        ModuleKind::Delay,
+        ModuleKind::Ladder,
     ];
 
     /// The descriptor of this kind.
@@ -291,6 +537,18 @@ impl ModuleKind {
     #[inline]
     pub const fn section(self) -> Section {
         self.spec().section
+    }
+
+    /// Whether this is a reserved kind that user-facing lists leave out ([`ModuleSpec::hidden`]).
+    #[inline]
+    pub const fn is_hidden(self) -> bool {
+        self.spec().hidden
+    }
+
+    /// Every kind the Add menu, `enth modules`, the generator, `lesson-coverage` and user-facing suggestions may
+    /// list, in discriminant order: [`ModuleKind::ALL`] without the hidden (reserved) kinds.
+    pub fn listed() -> impl Iterator<Item = ModuleKind> + Clone {
+        ModuleKind::ALL.iter().copied().filter(|k| !k.is_hidden())
     }
 
     /// The kind with this key (exact match: keys are lowercase).
@@ -318,8 +576,25 @@ impl ModuleKind {
     /// structural, so the rate of a module only changes through a recompile).
     pub fn rate(self, values: &[f32]) -> Rate {
         match self {
-            ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Svf | ModuleKind::Adsr => Rate::Voice,
-            ModuleKind::Reverb | ModuleKind::Comp => Rate::Global,
+            // S2a's reserved kinds run at their sections' rate (an MSEG per voice: a global twin would be another
+            // kind, S2 rule 4).
+            ModuleKind::Osc
+            | ModuleKind::Noise
+            | ModuleKind::Svf
+            | ModuleKind::Adsr
+            | ModuleKind::Dist
+            | ModuleKind::Wt
+            | ModuleKind::Comb
+            | ModuleKind::Formant
+            | ModuleKind::Mseg
+            | ModuleKind::Ladder => Rate::Voice,
+            ModuleKind::Reverb
+            | ModuleKind::Comp
+            | ModuleKind::Ott
+            | ModuleKind::Chorus
+            | ModuleKind::Phaser
+            | ModuleKind::Eq
+            | ModuleKind::Delay => Rate::Global,
             ModuleKind::Lfo => match values
                 .get(LfoParam::Scope.index())
                 .copied()
@@ -359,7 +634,7 @@ impl UnknownKind {
 
 impl fmt::Display for UnknownKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let keys: Vec<&str> = ModuleKind::ALL.iter().map(|k| k.key()).collect();
+        let keys: Vec<&str> = ModuleKind::listed().map(ModuleKind::key).collect();
         write!(
             f,
             "unknown module kind '{}'; the kinds are {}",
@@ -466,6 +741,75 @@ mod tests {
             ModuleKind::Reverb.rate(&ModuleKind::Reverb.defaults()),
             Rate::Global
         );
+    }
+
+    /// F0m (lane S0d): every S2a kind's discriminant, key, section and id prefix are persisted from the freeze on.
+    /// If this fails, a discriminant moved: put it back (append a new kind at the end instead).
+    #[test]
+    fn the_reserved_s2a_kinds_keep_their_discriminants() {
+        let want: [(u8, &str, Section, &str); 11] = [
+            (7, "dist", Section::VoiceFx, "dist"),
+            (8, "wt", Section::Generators, "wt"),
+            (9, "ott", Section::Fx, "ott"),
+            (10, "comb", Section::VoiceFx, "comb"),
+            (11, "formant", Section::VoiceFx, "formant"),
+            (12, "mseg", Section::Modulators, "mseg"),
+            (13, "chorus", Section::Fx, "chorus"),
+            (14, "phaser", Section::Fx, "phaser"),
+            (15, "eq", Section::Fx, "eq"),
+            (16, "delay", Section::Fx, "delay"),
+            (17, "ladder", Section::VoiceFx, "ladder"),
+        ];
+        for (index, key, section, prefix) in want {
+            let k = ModuleKind::from_key(key).unwrap();
+            assert_eq!(k as u8, index, "{key}");
+            assert_eq!(k.section(), section, "{key}");
+            assert_eq!(k.spec().id_prefix, prefix, "{key}");
+            assert!(k.is_hidden(), "{key} is hidden until INT-S2a");
+        }
+        assert_eq!(ModuleKind::ALL.len(), 18);
+    }
+
+    /// The hide flag: the listed kinds are exactly P1's seven, in discriminant order, and a reserved kind's key is
+    /// still accepted (patches, the engine and the CLI take it) but left out of the unknown-kind message.
+    #[test]
+    fn listed_kinds_leave_out_the_reserved_ones() {
+        let listed: Vec<&str> = ModuleKind::listed().map(ModuleKind::key).collect();
+        assert_eq!(
+            listed,
+            ["osc", "noise", "svf", "adsr", "lfo", "reverb", "comp"]
+        );
+        assert_eq!("wt".parse::<ModuleKind>(), Ok(ModuleKind::Wt));
+        let msg = UnknownKind("analog".to_owned()).to_string();
+        assert_eq!(
+            msg,
+            "unknown module kind 'analog'; the kinds are osc, noise, svf, adsr, lfo, reverb, comp"
+        );
+    }
+
+    #[test]
+    fn reserved_kinds_run_at_their_sections_rate() {
+        for &k in ModuleKind::ALL.iter().filter(|k| k.is_hidden()) {
+            let want = match k.section() {
+                Section::Fx => Rate::Global,
+                Section::Generators | Section::VoiceFx | Section::Modulators => Rate::Voice,
+            };
+            assert_eq!(k.rate(&k.defaults()), want, "{k}");
+        }
+    }
+
+    #[test]
+    fn only_wt_has_audio_parameters_so_far() {
+        let audio: Vec<String> = CATALOGUE
+            .iter()
+            .flat_map(|m| {
+                m.params
+                    .iter()
+                    .filter(|p| p.flags.audio)
+                    .map(move |p| format!("{}.{}", m.key, p.key))
+            })
+            .collect();
+        assert_eq!(audio, ["wt.pm", "wt.am"]);
     }
 
     #[test]

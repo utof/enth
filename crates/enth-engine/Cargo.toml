@@ -12,6 +12,8 @@ enth-params.workspace = true
 enth-patch.workspace = true
 libm.workspace = true
 rtrb.workspace = true
+# S2a lane S0d (F0m): SIMD lanes for unison (lane UNI), within clippy.toml's bans on wide's non-deterministic methods.
+wide.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
@@ -63,6 +65,51 @@ harness = false
 
 [[bench]]
 name = "swap"  # P1b lane RT: the plan swap's spiky blocks on the G1 patch (instant swap, crossfading swap, crossfade)
+harness = false
+
+# S2a (docs/phase-s2.md): one placeholder per reserved kind, declared up front by lane S0d (freeze F0m) for the same reason.
+[[bench]]
+name = "dist"  # S2a lane DST
+harness = false
+
+[[bench]]
+name = "wt"  # S2a lane WT
+harness = false
+
+[[bench]]
+name = "ott"  # S2a lane OTT
+harness = false
+
+[[bench]]
+name = "comb"  # S2a lane FLT
+harness = false
+
+[[bench]]
+name = "formant"  # S2a lane FLT
+harness = false
+
+[[bench]]
+name = "mseg"  # S2a lane MSEG
+harness = false
+
+[[bench]]
+name = "chorus"  # S2a lane MOD
+harness = false
+
+[[bench]]
+name = "phaser"  # S2a lane MOD
+harness = false
+
+[[bench]]
+name = "eq"  # S2a lane EQ
+harness = false
+
+[[bench]]
+name = "delay"  # S2a lane DLY
+harness = false
+
+[[bench]]
+name = "ladder"  # S2a lane FLT
 harness = false
 
 [lints]

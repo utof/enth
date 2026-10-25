@@ -1316,6 +1316,18 @@ fn kind_noun(kind: ModuleKind) -> &'static str {
         ModuleKind::Lfo => "LFO",
         ModuleKind::Reverb => "reverb",
         ModuleKind::Comp => "compressor",
+        // S2a's reserved kinds (lane MTC refines the coach when they are listed).
+        ModuleKind::Dist => "distortion",
+        ModuleKind::Wt => "wavetable oscillator",
+        ModuleKind::Ott => "OTT compressor",
+        ModuleKind::Comb => "comb filter",
+        ModuleKind::Formant => "formant filter",
+        ModuleKind::Mseg => "MSEG",
+        ModuleKind::Chorus => "chorus",
+        ModuleKind::Phaser => "phaser",
+        ModuleKind::Eq => "EQ",
+        ModuleKind::Delay => "delay",
+        ModuleKind::Ladder => "ladder filter",
     }
 }
 

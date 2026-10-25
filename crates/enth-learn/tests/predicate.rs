@@ -24,7 +24,8 @@ fn id_for(kind: ModuleKind, n: u8) -> ModuleId {
 /// Every parameter a predicate can name: (address, spec) for module kinds and the built-ins.
 fn params() -> Vec<(ParamAddr, &'static ParamSpec)> {
     let mut out = Vec::new();
-    for m in CATALOGUE {
+    // The listed kinds: lessons never name a reserved S2a kind (`ModuleSpec::hidden`) until INT-S2a lists it.
+    for m in CATALOGUE.iter().filter(|m| !m.hidden) {
         for spec in m.kind.params() {
             out.push((
                 ParamAddr::new(Target::Module(id_for(m.kind, 1)), spec.key).unwrap(),
@@ -238,10 +239,10 @@ fn forms(spec: &ParamSpec, v: f32) -> Vec<String> {
     out
 }
 
-/// A patch with every module kind once, so every parameter address resolves.
+/// A patch with every listed module kind once, so every parameter address [`params`] names resolves.
 fn full_patch() -> Patch {
     let mut p = Patch::init();
-    for m in CATALOGUE {
+    for m in CATALOGUE.iter().filter(|m| !m.hidden) {
         let id = id_for(m.kind, 1);
         if p.find(&id).is_none() {
             let section = m.kind.section();

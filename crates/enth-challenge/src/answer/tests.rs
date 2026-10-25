@@ -105,15 +105,17 @@ fn result_params_v1_covers_the_catalogue() {
             }
         }
     };
-    for kind in ModuleKind::ALL {
-        let (owner, row) = RESULT_PARAMS_V1[*kind as usize];
+    // The listed kinds: a reserved S2a kind (`ModuleSpec::hidden`) is refused by the encoder as "not in layout 1"
+    // until it is listed, and must be in the table (or a widened layout, D3) before INT-S2a clears its flag.
+    for kind in ModuleKind::listed() {
+        let (owner, row) = RESULT_PARAMS_V1[kind as usize];
         assert_eq!(owner, kind.key());
         check(owner, row, kind.params());
     }
     assert_eq!(
-        ModuleKind::ALL.len(),
+        ModuleKind::listed().count(),
         KINDS_V1,
-        "a new kind is appended to the table"
+        "a new listed kind is appended to the table"
     );
     check("voice", VOICE_V1, Builtin::Voice.params());
     check("master", MASTER_V1, Builtin::Master.params());
@@ -247,7 +249,8 @@ fn mutate(p: &mut Patch, kind: u8, a: u32, u: f32) {
             value: u,
         },
         8 => {
-            let kind = ModuleKind::ALL[a as usize % ModuleKind::ALL.len()];
+            let listed: Vec<ModuleKind> = ModuleKind::listed().collect();
+            let kind = listed[a as usize % listed.len()];
             let mut m = ModuleInstance::new(p.free_id(kind), kind);
             let i = (a / 7) as usize % m.values.len();
             m.values[i] = value(&kind.params()[i], u);

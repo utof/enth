@@ -8,6 +8,8 @@ publish.workspace = true
 [dependencies]
 # Pre-declared by lane S0 so Cargo.lock is resolved before the lanes fan out; lanes use what they need.
 libm.workspace = true
+# S2a lane S0d (F0m): SIMD lanes for unison (lane UNI), within clippy.toml's bans on wide's non-deterministic methods.
+wide.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

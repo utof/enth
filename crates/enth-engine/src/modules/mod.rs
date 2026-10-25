@@ -14,27 +14,67 @@
 //! | `reverb` | `reverb.rs` | global processor | pass-through | FX1 |
 //! | `comp` | `comp.rs` | global processor | pass-through | FX2 |
 //!
+//! S2a's reserved kinds (docs/phase-s2.md) got the same treatment from lane S0d (freeze F0m): a stub file each, with
+//! every dispatch arm below already written, so a module lane edits only its own file. They are hidden from the Add
+//! menu, `enth modules` and the generator until lane INT-S2a clears the flag.
+//!
+//! | Kind | File | Role | S0d stub | Lane |
+//! | --- | --- | --- | --- | --- |
+//! | `dist` | `dist.rs` | voice processor (per-voice effect) | pass-through | DST |
+//! | `wt` | `wt.rs` | voice processor (generator) | silent | WT (then UNI) |
+//! | `ott` | `ott.rs` | global processor | pass-through | OTT |
+//! | `comb` | `comb.rs` | voice processor (per-voice effect) | pass-through | FLT |
+//! | `formant` | `formant.rs` | voice processor (per-voice effect) | pass-through | FLT |
+//! | `mseg` | `mseg.rs` | voice modulator | outputs 0 | MSEG |
+//! | `chorus` | `chorus.rs` | global processor | pass-through | MOD |
+//! | `phaser` | `phaser.rs` | global processor | pass-through | MOD |
+//! | `eq` | `eq.rs` | global processor | pass-through | EQ |
+//! | `delay` | `delay.rs` | global processor | pass-through | DLY |
+//! | `ladder` | `ladder.rs` | voice processor (per-voice effect) | pass-through | FLT |
+//!
 //! A lane replaces the body of its own file and keeps the constructor, `Type::new(values: &[f32], cfg:
 //! &PrepareCfg) -> Type`, and the role trait implementation(s) (see [`crate::module`] for the rules). Nothing else in
 //! the engine changes when a module lands.
 
 pub mod adsr;
+pub mod chorus;
+pub mod comb;
 pub mod comp;
+pub mod delay;
+pub mod dist;
+pub mod eq;
+pub mod formant;
+pub mod ladder;
 pub mod lfo;
+pub mod mseg;
 pub mod noise;
 pub mod osc;
+pub mod ott;
+pub mod phaser;
 pub mod reverb;
 pub mod svf;
+pub mod wt;
 
 use enth_patch::{ModuleKind, Rate};
 
 pub use adsr::Adsr;
+pub use chorus::Chorus;
+pub use comb::Comb;
 pub use comp::Comp;
+pub use delay::Delay;
+pub use dist::Dist;
+pub use eq::Eq;
+pub use formant::Formant;
+pub use ladder::Ladder;
 pub use lfo::Lfo;
+pub use mseg::Mseg;
 pub use noise::Noise;
 pub use osc::Osc;
+pub use ott::Ott;
+pub use phaser::Phaser;
 pub use reverb::Reverb;
 pub use svf::Svf;
+pub use wt::Wt;
 
 use crate::module::{
     GlobalCx, GlobalModCx, GlobalModulator, GlobalProcessor, GlobalStart, PrepareCfg, Role,
@@ -70,6 +110,16 @@ pub enum VoiceProcessorImpl {
     Noise(Noise),
     /// `svf`.
     Svf(Svf),
+    /// `dist` (S2a, reserved).
+    Dist(Dist),
+    /// `wt` (S2a, reserved).
+    Wt(Wt),
+    /// `comb` (S2a, reserved).
+    Comb(Comb),
+    /// `formant` (S2a, reserved).
+    Formant(Formant),
+    /// `ladder` (S2a, reserved).
+    Ladder(Ladder),
 }
 
 /// The voice modulators.
@@ -82,6 +132,8 @@ pub enum VoiceModulatorImpl {
     Adsr(Adsr),
     /// `lfo` with `scope = voice`.
     Lfo(Lfo),
+    /// `mseg` (S2a, reserved).
+    Mseg(Mseg),
 }
 
 /// The global modulators.
@@ -104,6 +156,16 @@ pub enum GlobalProcessorImpl {
     Reverb(Reverb),
     /// `comp`.
     Comp(Comp),
+    /// `ott` (S2a, reserved).
+    Ott(Ott),
+    /// `chorus` (S2a, reserved).
+    Chorus(Chorus),
+    /// `phaser` (S2a, reserved).
+    Phaser(Phaser),
+    /// `eq` (S2a, reserved).
+    Eq(Eq),
+    /// `delay` (S2a, reserved).
+    Delay(Delay),
 }
 
 impl ModuleImpl {
@@ -140,6 +202,39 @@ impl ModuleImpl {
             }
             ModuleKind::Comp => {
                 ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Comp(Comp::new(values, cfg)))
+            }
+            ModuleKind::Dist => {
+                ModuleImpl::VoiceProcessor(VoiceProcessorImpl::Dist(Dist::new(values, cfg)))
+            }
+            ModuleKind::Wt => {
+                ModuleImpl::VoiceProcessor(VoiceProcessorImpl::Wt(Wt::new(values, cfg)))
+            }
+            ModuleKind::Comb => {
+                ModuleImpl::VoiceProcessor(VoiceProcessorImpl::Comb(Comb::new(values, cfg)))
+            }
+            ModuleKind::Formant => {
+                ModuleImpl::VoiceProcessor(VoiceProcessorImpl::Formant(Formant::new(values, cfg)))
+            }
+            ModuleKind::Ladder => {
+                ModuleImpl::VoiceProcessor(VoiceProcessorImpl::Ladder(Ladder::new(values, cfg)))
+            }
+            ModuleKind::Mseg => {
+                ModuleImpl::VoiceModulator(VoiceModulatorImpl::Mseg(Mseg::new(values, cfg)))
+            }
+            ModuleKind::Ott => {
+                ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Ott(Ott::new(values, cfg)))
+            }
+            ModuleKind::Chorus => {
+                ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Chorus(Chorus::new(values, cfg)))
+            }
+            ModuleKind::Phaser => {
+                ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Phaser(Phaser::new(values, cfg)))
+            }
+            ModuleKind::Eq => {
+                ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Eq(Eq::new(values, cfg)))
+            }
+            ModuleKind::Delay => {
+                ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Delay(Delay::new(values, cfg)))
             }
         }
     }
@@ -208,6 +303,11 @@ impl VoiceProcessorImpl {
             VoiceProcessorImpl::Osc(_) => ModuleKind::Osc,
             VoiceProcessorImpl::Noise(_) => ModuleKind::Noise,
             VoiceProcessorImpl::Svf(_) => ModuleKind::Svf,
+            VoiceProcessorImpl::Dist(_) => ModuleKind::Dist,
+            VoiceProcessorImpl::Wt(_) => ModuleKind::Wt,
+            VoiceProcessorImpl::Comb(_) => ModuleKind::Comb,
+            VoiceProcessorImpl::Formant(_) => ModuleKind::Formant,
+            VoiceProcessorImpl::Ladder(_) => ModuleKind::Ladder,
         }
     }
 
@@ -217,6 +317,13 @@ impl VoiceProcessorImpl {
             (VoiceProcessorImpl::Osc(a), VoiceProcessorImpl::Osc(b)) => a.copy_state_from(b),
             (VoiceProcessorImpl::Noise(a), VoiceProcessorImpl::Noise(b)) => a.copy_state_from(b),
             (VoiceProcessorImpl::Svf(a), VoiceProcessorImpl::Svf(b)) => a.copy_state_from(b),
+            (VoiceProcessorImpl::Dist(a), VoiceProcessorImpl::Dist(b)) => a.copy_state_from(b),
+            (VoiceProcessorImpl::Wt(a), VoiceProcessorImpl::Wt(b)) => a.copy_state_from(b),
+            (VoiceProcessorImpl::Comb(a), VoiceProcessorImpl::Comb(b)) => a.copy_state_from(b),
+            (VoiceProcessorImpl::Formant(a), VoiceProcessorImpl::Formant(b)) => {
+                a.copy_state_from(b);
+            }
+            (VoiceProcessorImpl::Ladder(a), VoiceProcessorImpl::Ladder(b)) => a.copy_state_from(b),
             _ => return false,
         }
         true
@@ -228,6 +335,11 @@ impl VoiceProcessorImpl {
             VoiceProcessorImpl::Osc(m) => m.start_voice(start),
             VoiceProcessorImpl::Noise(m) => m.start_voice(start),
             VoiceProcessorImpl::Svf(m) => m.start_voice(start),
+            VoiceProcessorImpl::Dist(m) => m.start_voice(start),
+            VoiceProcessorImpl::Wt(m) => m.start_voice(start),
+            VoiceProcessorImpl::Comb(m) => m.start_voice(start),
+            VoiceProcessorImpl::Formant(m) => m.start_voice(start),
+            VoiceProcessorImpl::Ladder(m) => m.start_voice(start),
         }
     }
 
@@ -237,6 +349,11 @@ impl VoiceProcessorImpl {
             VoiceProcessorImpl::Osc(m) => m.process(cx),
             VoiceProcessorImpl::Noise(m) => m.process(cx),
             VoiceProcessorImpl::Svf(m) => m.process(cx),
+            VoiceProcessorImpl::Dist(m) => m.process(cx),
+            VoiceProcessorImpl::Wt(m) => m.process(cx),
+            VoiceProcessorImpl::Comb(m) => m.process(cx),
+            VoiceProcessorImpl::Formant(m) => m.process(cx),
+            VoiceProcessorImpl::Ladder(m) => m.process(cx),
         }
     }
 
@@ -247,6 +364,11 @@ impl VoiceProcessorImpl {
             VoiceProcessorImpl::Osc(m) => m.subnormals(),
             VoiceProcessorImpl::Noise(m) => m.subnormals(),
             VoiceProcessorImpl::Svf(m) => m.subnormals(),
+            VoiceProcessorImpl::Dist(m) => m.subnormals(),
+            VoiceProcessorImpl::Wt(m) => m.subnormals(),
+            VoiceProcessorImpl::Comb(m) => m.subnormals(),
+            VoiceProcessorImpl::Formant(m) => m.subnormals(),
+            VoiceProcessorImpl::Ladder(m) => m.subnormals(),
         }
     }
 }
@@ -258,6 +380,7 @@ impl VoiceModulatorImpl {
         match self {
             VoiceModulatorImpl::Adsr(_) => ModuleKind::Adsr,
             VoiceModulatorImpl::Lfo(_) => ModuleKind::Lfo,
+            VoiceModulatorImpl::Mseg(_) => ModuleKind::Mseg,
         }
     }
 
@@ -270,6 +393,9 @@ impl VoiceModulatorImpl {
             (VoiceModulatorImpl::Lfo(a), VoiceModulatorImpl::Lfo(b)) => {
                 VoiceModulator::copy_state_from(a, b);
             }
+            (VoiceModulatorImpl::Mseg(a), VoiceModulatorImpl::Mseg(b)) => {
+                VoiceModulator::copy_state_from(a, b);
+            }
             _ => return false,
         }
         true
@@ -280,6 +406,7 @@ impl VoiceModulatorImpl {
         match self {
             VoiceModulatorImpl::Adsr(m) => VoiceModulator::start_voice(m, start),
             VoiceModulatorImpl::Lfo(m) => VoiceModulator::start_voice(m, start),
+            VoiceModulatorImpl::Mseg(m) => VoiceModulator::start_voice(m, start),
         }
     }
 
@@ -288,6 +415,7 @@ impl VoiceModulatorImpl {
         match self {
             VoiceModulatorImpl::Adsr(m) => VoiceModulator::tick(m, cx),
             VoiceModulatorImpl::Lfo(m) => VoiceModulator::tick(m, cx),
+            VoiceModulatorImpl::Mseg(m) => VoiceModulator::tick(m, cx),
         }
     }
 
@@ -297,6 +425,7 @@ impl VoiceModulatorImpl {
         match self {
             VoiceModulatorImpl::Adsr(m) => m.voice_finished(v),
             VoiceModulatorImpl::Lfo(m) => m.voice_finished(v),
+            VoiceModulatorImpl::Mseg(m) => m.voice_finished(v),
         }
     }
 
@@ -306,6 +435,7 @@ impl VoiceModulatorImpl {
         match self {
             VoiceModulatorImpl::Adsr(m) => VoiceModulator::subnormals(m),
             VoiceModulatorImpl::Lfo(m) => VoiceModulator::subnormals(m),
+            VoiceModulatorImpl::Mseg(m) => VoiceModulator::subnormals(m),
         }
     }
 }
@@ -359,6 +489,11 @@ impl GlobalProcessorImpl {
         match self {
             GlobalProcessorImpl::Reverb(_) => ModuleKind::Reverb,
             GlobalProcessorImpl::Comp(_) => ModuleKind::Comp,
+            GlobalProcessorImpl::Ott(_) => ModuleKind::Ott,
+            GlobalProcessorImpl::Chorus(_) => ModuleKind::Chorus,
+            GlobalProcessorImpl::Phaser(_) => ModuleKind::Phaser,
+            GlobalProcessorImpl::Eq(_) => ModuleKind::Eq,
+            GlobalProcessorImpl::Delay(_) => ModuleKind::Delay,
         }
     }
 
@@ -369,6 +504,15 @@ impl GlobalProcessorImpl {
                 a.copy_state_from(b);
             }
             (GlobalProcessorImpl::Comp(a), GlobalProcessorImpl::Comp(b)) => a.copy_state_from(b),
+            (GlobalProcessorImpl::Ott(a), GlobalProcessorImpl::Ott(b)) => a.copy_state_from(b),
+            (GlobalProcessorImpl::Chorus(a), GlobalProcessorImpl::Chorus(b)) => {
+                a.copy_state_from(b);
+            }
+            (GlobalProcessorImpl::Phaser(a), GlobalProcessorImpl::Phaser(b)) => {
+                a.copy_state_from(b);
+            }
+            (GlobalProcessorImpl::Eq(a), GlobalProcessorImpl::Eq(b)) => a.copy_state_from(b),
+            (GlobalProcessorImpl::Delay(a), GlobalProcessorImpl::Delay(b)) => a.copy_state_from(b),
             _ => return false,
         }
         true
@@ -382,6 +526,15 @@ impl GlobalProcessorImpl {
                 a.take_state_from(b);
             }
             (GlobalProcessorImpl::Comp(a), GlobalProcessorImpl::Comp(b)) => a.take_state_from(b),
+            (GlobalProcessorImpl::Ott(a), GlobalProcessorImpl::Ott(b)) => a.take_state_from(b),
+            (GlobalProcessorImpl::Chorus(a), GlobalProcessorImpl::Chorus(b)) => {
+                a.take_state_from(b);
+            }
+            (GlobalProcessorImpl::Phaser(a), GlobalProcessorImpl::Phaser(b)) => {
+                a.take_state_from(b);
+            }
+            (GlobalProcessorImpl::Eq(a), GlobalProcessorImpl::Eq(b)) => a.take_state_from(b),
+            (GlobalProcessorImpl::Delay(a), GlobalProcessorImpl::Delay(b)) => a.take_state_from(b),
             _ => return false,
         }
         true
@@ -392,6 +545,11 @@ impl GlobalProcessorImpl {
         match self {
             GlobalProcessorImpl::Reverb(m) => m.reset(start),
             GlobalProcessorImpl::Comp(m) => m.reset(start),
+            GlobalProcessorImpl::Ott(m) => m.reset(start),
+            GlobalProcessorImpl::Chorus(m) => m.reset(start),
+            GlobalProcessorImpl::Phaser(m) => m.reset(start),
+            GlobalProcessorImpl::Eq(m) => m.reset(start),
+            GlobalProcessorImpl::Delay(m) => m.reset(start),
         }
     }
 
@@ -400,6 +558,11 @@ impl GlobalProcessorImpl {
         match self {
             GlobalProcessorImpl::Reverb(m) => m.process(cx),
             GlobalProcessorImpl::Comp(m) => m.process(cx),
+            GlobalProcessorImpl::Ott(m) => m.process(cx),
+            GlobalProcessorImpl::Chorus(m) => m.process(cx),
+            GlobalProcessorImpl::Phaser(m) => m.process(cx),
+            GlobalProcessorImpl::Eq(m) => m.process(cx),
+            GlobalProcessorImpl::Delay(m) => m.process(cx),
         }
     }
 
@@ -409,6 +572,11 @@ impl GlobalProcessorImpl {
         match self {
             GlobalProcessorImpl::Reverb(m) => m.is_silent(),
             GlobalProcessorImpl::Comp(m) => m.is_silent(),
+            GlobalProcessorImpl::Ott(m) => m.is_silent(),
+            GlobalProcessorImpl::Chorus(m) => m.is_silent(),
+            GlobalProcessorImpl::Phaser(m) => m.is_silent(),
+            GlobalProcessorImpl::Eq(m) => m.is_silent(),
+            GlobalProcessorImpl::Delay(m) => m.is_silent(),
         }
     }
 
@@ -418,6 +586,11 @@ impl GlobalProcessorImpl {
         match self {
             GlobalProcessorImpl::Reverb(m) => m.subnormals(),
             GlobalProcessorImpl::Comp(m) => m.subnormals(),
+            GlobalProcessorImpl::Ott(m) => m.subnormals(),
+            GlobalProcessorImpl::Chorus(m) => m.subnormals(),
+            GlobalProcessorImpl::Phaser(m) => m.subnormals(),
+            GlobalProcessorImpl::Eq(m) => m.subnormals(),
+            GlobalProcessorImpl::Delay(m) => m.subnormals(),
         }
     }
 }
@@ -463,7 +636,8 @@ mod tests {
                 assert_eq!(m.subnormals(), 0, "{kind} starts clean");
             }
         }
-        // Each (role, kind) pair below is one variant of a role enum: 3 + 2 + 1 + 2.
+        // Each (role, kind) pair below is one variant of a role enum: 3 + 2 + 1 + 2, plus S2a's reserved kinds
+        // (5 + 1 + 5).
         let expected: std::collections::BTreeSet<_> = [
             (Role::VoiceProcessor, ModuleKind::Osc),
             (Role::VoiceProcessor, ModuleKind::Noise),
@@ -473,6 +647,17 @@ mod tests {
             (Role::GlobalModulator, ModuleKind::Lfo),
             (Role::GlobalProcessor, ModuleKind::Reverb),
             (Role::GlobalProcessor, ModuleKind::Comp),
+            (Role::VoiceProcessor, ModuleKind::Dist),
+            (Role::VoiceProcessor, ModuleKind::Wt),
+            (Role::VoiceProcessor, ModuleKind::Comb),
+            (Role::VoiceProcessor, ModuleKind::Formant),
+            (Role::VoiceProcessor, ModuleKind::Ladder),
+            (Role::VoiceModulator, ModuleKind::Mseg),
+            (Role::GlobalProcessor, ModuleKind::Ott),
+            (Role::GlobalProcessor, ModuleKind::Chorus),
+            (Role::GlobalProcessor, ModuleKind::Phaser),
+            (Role::GlobalProcessor, ModuleKind::Eq),
+            (Role::GlobalProcessor, ModuleKind::Delay),
         ]
         .into_iter()
         .collect();

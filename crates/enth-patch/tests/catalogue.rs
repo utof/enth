@@ -47,6 +47,7 @@ fn spec_json(p: &ParamSpec) -> Value {
         automatable,
         structural,
         periodic,
+        audio,
     } = flags;
     let LearnMeta { tier, desc } = learn;
     let kind = match kind {
@@ -73,6 +74,11 @@ fn spec_json(p: &ParamSpec) -> Value {
         Smoothing::Linear { ms } => json!({ "linear_ms": ms }),
         Smoothing::OnePole { ms } => json!({ "one_pole_ms": ms }),
     };
+    // `audio` (S2a) is written only when set, so the snapshot of the P1 kinds, none of which has it, stays as it was.
+    let mut flags = json!({ "modulatable": modulatable, "automatable": automatable, "structural": structural, "periodic": periodic });
+    if audio {
+        flags["audio"] = json!(true);
+    }
     json!({
         "key": key,
         "name": name,
@@ -81,39 +87,45 @@ fn spec_json(p: &ParamSpec) -> Value {
         "default": default,
         "default_text": p.display(default).to_string(),
         "smoothing": smoothing,
-        "flags": { "modulatable": modulatable, "automatable": automatable, "structural": structural, "periodic": periodic },
+        "flags": flags,
         "tier": tier.name(),
         "desc": desc,
         "perceptual": perceptual,
     })
 }
 
+fn module_json(m: &ModuleSpec) -> Value {
+    let ModuleSpec {
+        kind,
+        key,
+        name,
+        id_prefix,
+        section,
+        time_based,
+        params,
+        learn: LearnMeta { tier, desc },
+        hidden: _,
+    } = *m;
+    json!({
+        "index": kind as u8,
+        "key": key,
+        "name": name,
+        "id_prefix": id_prefix,
+        "section": section.key(),
+        "time_based": time_based,
+        "tier": tier.name(),
+        "desc": desc,
+        "params": params.iter().map(spec_json).collect::<Vec<_>>(),
+    })
+}
+
+/// The listed kinds (the hidden S2a ones are in `reserved_kinds`'s snapshot until INT-S2a clears their flag, when a
+/// kind moves from that snapshot to this one).
 fn catalogue_json() -> Value {
     let modules: Vec<Value> = CATALOGUE
         .iter()
-        .map(|m| {
-            let ModuleSpec {
-                kind,
-                key,
-                name,
-                id_prefix,
-                section,
-                time_based,
-                params,
-                learn: LearnMeta { tier, desc },
-            } = *m;
-            json!({
-                "index": kind as u8,
-                "key": key,
-                "name": name,
-                "id_prefix": id_prefix,
-                "section": section.key(),
-                "time_based": time_based,
-                "tier": tier.name(),
-                "desc": desc,
-                "params": params.iter().map(spec_json).collect::<Vec<_>>(),
-            })
-        })
+        .filter(|m| !m.hidden)
+        .map(module_json)
         .collect();
     let builtins: Vec<Value> = Builtin::ALL
         .iter()
@@ -140,6 +152,18 @@ fn catalogue_json() -> Value {
 #[test]
 fn catalogue() {
     insta::assert_json_snapshot!(catalogue_json());
+}
+
+/// The reserved S2a kinds (lane S0d, F0m): fixed discriminants, keys, id prefixes and sections; placeholder tables
+/// that lane CAT replaces before F1m (each change shows up here).
+#[test]
+fn reserved_kinds() {
+    let reserved: Vec<Value> = CATALOGUE
+        .iter()
+        .filter(|m| m.hidden)
+        .map(module_json)
+        .collect();
+    insta::assert_json_snapshot!(reserved);
 }
 
 #[test]
@@ -284,6 +308,9 @@ fn print_markdown() {
         if p.flags.periodic {
             f.push("periodic");
         }
+        if p.flags.audio {
+            f.push("audio");
+        }
         f.join(", ")
     }
     fn table(title: &str, params: &[ParamSpec]) {
@@ -305,7 +332,8 @@ fn print_markdown() {
         }
         println!();
     }
-    for m in &CATALOGUE {
+    // Reserved S2a kinds stay out of docs/dsp/catalogue.md until INT-S2a lists them (lane CAT regenerates it).
+    for m in CATALOGUE.iter().filter(|m| !m.hidden) {
         table(
             &format!(
                 "`{}` — {} ({}, ids `{}1`, `{}2`…)",

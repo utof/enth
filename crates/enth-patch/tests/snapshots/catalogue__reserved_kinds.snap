@@ -1,0 +1,472 @@
+---
+source: crates/enth-patch/tests/catalogue.rs
+expression: reserved
+---
+[
+  {
+    "desc": "Per-voice distortion: clipping, wavefolding, bitcrushing and downsampling, blended with the dry signal.",
+    "id_prefix": "dist",
+    "index": 7,
+    "key": "dist",
+    "name": "Distortion",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "voice_fx",
+    "tier": "intermediate",
+    "time_based": false
+  },
+  {
+    "desc": "A wavetable oscillator whose phase or amplitude another source can modulate: FM, PM, AM and ring modulation.",
+    "id_prefix": "wt",
+    "index": 8,
+    "key": "wt",
+    "name": "Wavetable",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Output level of this oscillator into the voice, as a linear percentage.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Level",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Phase-modulation input: an audio route from another generator lands here, and its depth sets the index.",
+        "flags": {
+          "audio": true,
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "pm",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "PM",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Amplitude-modulation input (bipolar is ring modulation): an audio route from another generator lands here.",
+        "flags": {
+          "audio": true,
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "am",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "AM",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      }
+    ],
+    "section": "generators",
+    "tier": "intermediate",
+    "time_based": false
+  },
+  {
+    "desc": "Three-band upward and downward compression after the voices: the loud, dense, bright bass-music sound.",
+    "id_prefix": "ott",
+    "index": 9,
+    "key": "ott",
+    "name": "OTT",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "fx",
+    "tier": "advanced",
+    "time_based": false
+  },
+  {
+    "desc": "A keytracked comb filter per voice: metallic, resonant tones and plucked strings.",
+    "id_prefix": "comb",
+    "index": 10,
+    "key": "comb",
+    "name": "Comb filter",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "voice_fx",
+    "tier": "intermediate",
+    "time_based": false
+  },
+  {
+    "desc": "A vowel filter per voice that morphs between vowel shapes: talking and growling basses.",
+    "id_prefix": "formant",
+    "index": 11,
+    "key": "formant",
+    "name": "Formant filter",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "voice_fx",
+    "tier": "intermediate",
+    "time_based": false
+  },
+  {
+    "desc": "A drawn multi-segment envelope or LFO, free or tempo-synced: the wobbles and rhythmic movement of bass music.",
+    "id_prefix": "mseg",
+    "index": 12,
+    "key": "mseg",
+    "name": "MSEG",
+    "params": [
+      {
+        "default": 1000.0,
+        "default_text": "1s",
+        "desc": "How long one pass through the drawn shape takes.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "length",
+        "kind": {
+          "k": null,
+          "max": 60000.0,
+          "min": 1.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Length",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "ms"
+      }
+    ],
+    "section": "modulators",
+    "tier": "intermediate",
+    "time_based": false
+  },
+  {
+    "desc": "A stereo chorus or flanger after the voices: width and movement from short modulated delays.",
+    "id_prefix": "chorus",
+    "index": 13,
+    "key": "chorus",
+    "name": "Chorus",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "fx",
+    "tier": "intermediate",
+    "time_based": true
+  },
+  {
+    "desc": "A phaser after the voices: sweeping notches from a chain of all-pass filters.",
+    "id_prefix": "phaser",
+    "index": 14,
+    "key": "phaser",
+    "name": "Phaser",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "fx",
+    "tier": "intermediate",
+    "time_based": true
+  },
+  {
+    "desc": "A parametric equaliser after the voices: boost or cut bands of the spectrum.",
+    "id_prefix": "eq",
+    "index": 15,
+    "key": "eq",
+    "name": "EQ",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "fx",
+    "tier": "intermediate",
+    "time_based": false
+  },
+  {
+    "desc": "Echoes after the voices, timed in milliseconds or synced to the tempo in beats.",
+    "id_prefix": "delay",
+    "index": 16,
+    "key": "delay",
+    "name": "Delay",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "fx",
+    "tier": "intermediate",
+    "time_based": true
+  },
+  {
+    "desc": "A Moog-style four-pole ladder low-pass per voice: a fat, resonant sweep.",
+    "id_prefix": "ladder",
+    "index": 17,
+    "key": "ladder",
+    "name": "Ladder filter",
+    "params": [
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mix",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mix",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      }
+    ],
+    "section": "voice_fx",
+    "tier": "intermediate",
+    "time_based": false
+  }
+]

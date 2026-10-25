@@ -1494,11 +1494,26 @@ fn playable(
 /// The category of a module kind, as generator v1 orders them (for a hand-made round's [`Randomized`] list).
 fn category_of_kind(kind: Option<ModuleKind>) -> Category {
     match kind {
-        Some(ModuleKind::Osc | ModuleKind::Noise) => Category::Oscillators,
-        Some(ModuleKind::Svf) => Category::Filter,
+        // S2a's reserved kinds sit with their section's P1 kinds (generator v1 never draws one).
+        Some(ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Wt) => Category::Oscillators,
+        Some(
+            ModuleKind::Svf
+            | ModuleKind::Dist
+            | ModuleKind::Comb
+            | ModuleKind::Formant
+            | ModuleKind::Ladder,
+        ) => Category::Filter,
         Some(ModuleKind::Adsr) => Category::Envelopes,
-        Some(ModuleKind::Lfo) => Category::Modulation,
-        Some(ModuleKind::Reverb | ModuleKind::Comp) => Category::Effects,
+        Some(ModuleKind::Lfo | ModuleKind::Mseg) => Category::Modulation,
+        Some(
+            ModuleKind::Reverb
+            | ModuleKind::Comp
+            | ModuleKind::Ott
+            | ModuleKind::Chorus
+            | ModuleKind::Phaser
+            | ModuleKind::Eq
+            | ModuleKind::Delay,
+        ) => Category::Effects,
         None => Category::Structure,
     }
 }

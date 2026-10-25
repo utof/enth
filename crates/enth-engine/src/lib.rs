@@ -18,7 +18,9 @@
 //! pass-throughs and silence); lanes D1, D2, FX1 and FX2 replace the stubs. Lane S2b added the voice manager's
 //! modes ([`voice`]: stealing, mono, legato, glide, choke, voice-end reports), smoothing ([`params`]), the
 //! modulation matrix with macros and the mod wheel ([`modulation`]) and the plan swap with state carry ([`swap`],
-//! [`Engine::with_link`]).
+//! [`Engine::with_link`]). S2a's lane S0d appended its reserved kinds as stubs and two seam files, [`routing`]
+//! (lane RTE: audio routes between generators) and [`stereo`] (lane SVP: the stereo voice path), so those lanes edit
+//! different files.
 //!
 //! Real-time rules (AGENTS.md): `process` and everything it calls never allocate, free, lock, log, do I/O or panic;
 //! no `std::sync::mpsc`, no unbounded channels, no `Mutex`/`RwLock` (clippy bans); every ring and queue has an
@@ -35,8 +37,10 @@ pub mod module;
 pub mod modules;
 pub mod params;
 pub mod plan;
+pub mod routing;
 pub mod seed;
 pub mod segment;
+pub mod stereo;
 pub mod swap;
 pub mod tap;
 pub mod voice;

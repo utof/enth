@@ -58,7 +58,7 @@ impl EnumItem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "four independent flags, mirroring CLAP's parameter flags"
+    reason = "independent flags: four mirror CLAP's parameter flags, `audio` is enth's own"
 )]
 pub struct Flags {
     /// Modulation routes may target it. Only `Float` parameters, never structural ones.
@@ -71,6 +71,12 @@ pub struct Flags {
     /// The value wraps around instead of clamping (phase knobs; CLAP's `IS_PERIODIC`). Linear `Float` or `Int`
     /// only.
     pub periodic: bool,
+    /// An audio-rate route destination (S2a, lane S0d; the contract is lane RTE's, docs/phase-s2.md): the carrier
+    /// input of a phase or amplitude modulation (`wt.pm`, `wt.am`). Only a generator source may target it, and a
+    /// generator source may target only an `audio` parameter; such routes run at audio rate through per-generator
+    /// buffers and stay out of the control-rate matrix. `Float` only, never structural. No P1 parameter has it, and
+    /// it is not part of generator v1's pinned flag column or R3b's layout 1.
+    pub audio: bool,
 }
 
 impl Flags {
@@ -80,6 +86,7 @@ impl Flags {
         automatable: false,
         structural: false,
         periodic: false,
+        audio: false,
     };
     /// Host-automatable, not modulatable. The builders' default.
     pub const AUTOMATABLE: Flags = Flags {
@@ -87,6 +94,7 @@ impl Flags {
         automatable: true,
         structural: false,
         periodic: false,
+        audio: false,
     };
     /// Modulatable and automatable.
     pub const MODULATABLE: Flags = Flags {
@@ -94,6 +102,7 @@ impl Flags {
         automatable: true,
         structural: false,
         periodic: false,
+        audio: false,
     };
     /// Structural: changing it recompiles the plan; neither modulatable nor automatable.
     pub const STRUCTURAL: Flags = Flags {
@@ -101,6 +110,7 @@ impl Flags {
         automatable: false,
         structural: true,
         periodic: false,
+        audio: false,
     };
 }
 
@@ -165,7 +175,8 @@ pub struct LearnMeta {
 ///   `Toggle` have [`Unit::None`];
 /// - `default` is valid: finite, in range, integral for `Int`/`Enum`/`Toggle`, never `-0.0`;
 /// - `modulatable` only on `Float`; `structural` excludes `modulatable` and `automatable`; `periodic` only on a
-///   Linear `Float` or an `Int`; smoothing only on `Float`, with a finite `ms > 0`.
+///   Linear `Float` or an `Int`; smoothing only on `Float`, with a finite `ms > 0`;
+/// - `audio` only on a `Float` that is not structural.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ParamSpec {
     /// Stable key within the module kind (`"cutoff"`). Renaming one is a migration.
@@ -308,6 +319,13 @@ impl ParamSpec {
     #[must_use]
     pub const fn periodic(mut self) -> Self {
         self.flags.periodic = true;
+        self
+    }
+
+    /// An audio-rate route destination ([`Flags::audio`]): only generator sources may target it.
+    #[must_use]
+    pub const fn audio(mut self) -> Self {
+        self.flags.audio = true;
         self
     }
 
@@ -709,6 +727,14 @@ pub const fn check_spec(table: &str, s: &ParamSpec) {
     }
     if s.flags.periodic && !matches!(s.kind, Kind::Float { .. } | Kind::Int { .. }) {
         fail(&[table, ".", k, ": periodic needs a Float or Int parameter"]);
+    }
+    if s.flags.audio && (!float || s.flags.structural) {
+        fail(&[
+            table,
+            ".",
+            k,
+            ": an audio parameter is a Float and not structural",
+        ]);
     }
     match s.smoothing {
         Smoothing::None => {}

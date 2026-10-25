@@ -386,11 +386,27 @@ fn level_of(start: &Patch, addr: &ParamAddr) -> u8 {
     let category = match addr.target() {
         Target::Voice | Target::Master => Category::Structure,
         Target::Module(id) => match start.find(id).map(|(_, m)| m.kind) {
-            Some(ModuleKind::Osc | ModuleKind::Noise) => Category::Oscillators,
-            Some(ModuleKind::Svf) => Category::Filter,
+            // S2a's reserved kinds sit with their section's P1 kinds (lane MTC may refine this when they are listed).
+            Some(ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Wt) => Category::Oscillators,
+            Some(
+                ModuleKind::Svf
+                | ModuleKind::Dist
+                | ModuleKind::Comb
+                | ModuleKind::Formant
+                | ModuleKind::Ladder,
+            ) => Category::Filter,
             Some(ModuleKind::Adsr) => Category::Envelopes,
-            Some(ModuleKind::Lfo) => Category::Modulation,
-            Some(ModuleKind::Reverb | ModuleKind::Comp) | None => Category::Effects,
+            Some(ModuleKind::Lfo | ModuleKind::Mseg) => Category::Modulation,
+            Some(
+                ModuleKind::Reverb
+                | ModuleKind::Comp
+                | ModuleKind::Ott
+                | ModuleKind::Chorus
+                | ModuleKind::Phaser
+                | ModuleKind::Eq
+                | ModuleKind::Delay,
+            )
+            | None => Category::Effects,
         },
     };
     unlock_level(category)
