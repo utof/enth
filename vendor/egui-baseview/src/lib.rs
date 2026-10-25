@@ -1,3 +1,4 @@
+pub mod arrival;
 mod renderer;
 mod translate;
 mod window;
@@ -7,7 +8,8 @@ use baseview::WindowSize;
 pub use keyboard_types::Key;
 pub use renderer::GraphicsConfig;
 pub use window::{
-    EguiWindow, EguiWindowSettings, Frame, KeyCapture, KeyboardFocus, RepaintNotifier,
+    EguiWindow, EguiWindowSettings, Frame, KEYBOARD_CLAIM_KEY, KeyCapture, KeyboardFocus,
+    RepaintNotifier, claim_keyboard,
 };
 
 /// Implement this trait to run an app with egui-baseview.
