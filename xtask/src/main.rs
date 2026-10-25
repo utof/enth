@@ -175,8 +175,9 @@ const USAGE: &str = "usage: cargo xtask <command>
                                     budget); test runs append to content/gr3/runs.jsonl (R3 lane EVK, docs/gr3.md)
   gr3-report [--run R | --a R --b R] GR3's clause-1 endpoints and decision from content/gr3/runs.jsonl (lane EVK)
   bank [options]                    (not built yet: R3 lane TP) build the k-NN retrieval bank (drives `enth-datagen bank`)
-  ear-check                         (placeholder: R4 lane ECK) GR4's mechanical half: the ear games deterministic, fair and
-                                    solvable (docs/ear.md); it passes without checking anything until ECK builds it
+  ear-check [options]               GR4's mechanical half (docs/ear.md): the ear games deterministic (golden digests),
+                                    audible, solvable, without leaks (bias bots at chance), staircases simulated;
+                                    --strict hardens the ladder checks, --help lists the options (R4 lane ECK)
   gr4-report [options] <dir>...     (not built yet: R4 lane INT4) the GR4 numbers from what each participant sent back
   wasm-hash [--simd128]             spike-engine render and patch hashes: native = wasm32-wasip1 = golden
   golden [--update] [--wasm]        golden renders of tests/golden: compare every case (--wasm: under wasmtime) or
