@@ -286,6 +286,11 @@ def _safe_relpath(name: str) -> PurePosixPath:
     return PurePosixPath(*parts)
 
 
+def _is_root_dir(name: str) -> bool:
+    """A directory entry naming the archive's own root (``.``, ``./``): BUT ReverbDB's tarball carries one; it names nothing to extract."""
+    return bool(name) and not name.startswith("/") and PurePosixPath(name).parts == ()
+
+
 def safe_extract(archive: Path, dest: Path, max_bytes: int, max_files: int = MAX_FILES) -> dict[str, int]:
     """Extract ``archive`` (zip or tar) into the new directory ``dest``; returns counts of files, bytes and skipped members."""
     if dest.exists():
@@ -311,6 +316,7 @@ def safe_extract(archive: Path, dest: Path, max_bytes: int, max_files: int = MAX
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as z:
             infos = z.infolist()
+            infos = [i for i in infos if not (i.is_dir() and _is_root_dir(i.filename))]
             plan = [(i, _safe_relpath(i.filename.rstrip("/"))) for i in infos]  # every name checked before any byte is written
             for info, rel in plan:
                 mode = (info.external_attr >> 16) & 0o170000
@@ -323,7 +329,7 @@ def safe_extract(archive: Path, dest: Path, max_bytes: int, max_files: int = MAX
                         put(rel, r)
     elif tarfile.is_tarfile(archive):
         with tarfile.open(archive, "r:*") as t:
-            members = t.getmembers()
+            members = [m for m in t.getmembers() if not (m.isdir() and _is_root_dir(m.name))]
             plan = [(m, _safe_relpath(m.name.rstrip("/"))) for m in members]
             for m, rel in plan:
                 if m.isdir():
