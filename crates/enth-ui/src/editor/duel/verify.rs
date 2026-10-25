@@ -23,6 +23,11 @@ use super::share::{clock, hundredths};
 use super::state::Duel;
 use crate::Theme;
 
+/// Where a number was measured: on this computer.
+const CHECKED: &str = "checked on your computer";
+/// Where a number comes from: their app (or yours, for times and assists).
+const REPORTED: &str = "reported";
+
 /// A claim in tenths of a percent.
 fn tenths(t: u16) -> String {
     format!("{}.{} %", t / 10, t % 10)
@@ -200,7 +205,7 @@ fn your_side(own: &DuelOwn, view: &DuelView) -> Side {
         .as_ref()
         .and_then(|c| c.own.filter(|_| c.own_current));
     let sound = match (rescored, own.score) {
-        (Some(r), _) => (hundredths(r.sound), "checked on your computer"),
+        (Some(r), _) => (hundredths(r.sound), CHECKED),
         (None, Some(s)) => (hundredths(s.sound), "your round"),
         (None, None) => ("no score".to_owned(), "your round"),
     };
@@ -211,7 +216,7 @@ fn your_side(own: &DuelOwn, view: &DuelView) -> Side {
                 "your round",
             )
         },
-        |r| (yes_no(r.passed).to_owned(), "checked on your computer"),
+        |r| (yes_no(r.passed).to_owned(), CHECKED),
     );
     Side {
         sound,
@@ -227,16 +232,13 @@ fn their_side(card: Option<&FriendScorecard>, view: &DuelView) -> Side {
     let f = card.map(|c| c.card.fields());
     let checked = view.checked.as_ref();
     let sound = match (checked, f) {
-        (Some(c), _) => (hundredths(c.theirs.sound), "checked on your computer"),
-        (None, Some(f)) => (tenths(f.sound_tenths), "reported"),
+        (Some(c), _) => (hundredths(c.theirs.sound), CHECKED),
+        (None, Some(f)) => (tenths(f.sound_tenths), REPORTED),
         (None, None) => ("–".to_owned(), "not known yet"),
     };
     let passed = match (checked, f) {
-        (Some(c), _) => (
-            yes_no(c.theirs.passed).to_owned(),
-            "checked on your computer",
-        ),
-        (None, Some(f)) => (yes_no(f.passed).to_owned(), "reported"),
+        (Some(c), _) => (yes_no(c.theirs.passed).to_owned(), CHECKED),
+        (None, Some(f)) => (yes_no(f.passed).to_owned(), REPORTED),
         (None, None) => ("–".to_owned(), "not known yet"),
     };
     Side {
@@ -258,16 +260,40 @@ pub fn both(view: &DuelView) -> Option<(Option<Side>, Option<Side>)> {
 }
 
 /// A grid row: what it is, then your cell and theirs, each with its accessible tail.
-type Row<'a> = (&'a str, (&'a str, Option<&'a str>), (&'a str, Option<&'a str>));
+type Row<'a> = (
+    &'a str,
+    (&'a str, Option<&'a str>),
+    (&'a str, Option<&'a str>),
+);
 
 /// A grid cell: `text`, named "`who` `what`: `text`" (with its tail when it has one).
 fn cell(ui: &mut Ui, t: &Theme, text: &str, name: &str, tail: Option<&str>, strong: bool) {
-    let rich = RichText::new(text).font(if strong {
+    cell_with(ui, t, text, name, tail, strong, false);
+}
+
+/// A grid cell whose score says on the cell itself where it comes from when `says` ("checked" for this computer,
+/// "reported" for their app); its accessible name always does.
+fn cell_with(
+    ui: &mut Ui,
+    t: &Theme,
+    text: &str,
+    name: &str,
+    tail: Option<&str>,
+    strong: bool,
+    says: bool,
+) {
+    // A score says where it comes from on the cell itself: "checked" (this computer) or "reported" (their app).
+    let visible = match tail {
+        Some(CHECKED) if says => format!("{text}, checked"),
+        Some(REPORTED) if says => format!("{text}, reported"),
+        _ => text.to_owned(),
+    };
+    let rich = RichText::new(visible).font(if strong {
         t.text.strong.clone()
     } else {
         t.text.label.clone()
     });
-    let shown = ui.add(Label::new(rich.color(t.color.text.primary)));
+    let shown = ui.add(Label::new(rich.color(t.color.text.primary)).wrap());
     let name = match tail {
         Some(tail) if !tail.is_empty() => format!("{name}: {text}, {tail}"),
         _ => format!("{name}: {text}"),
@@ -315,13 +341,13 @@ pub fn sides(duel: &Duel, ui: &mut Ui, t: &Theme) {
                 ("submits", (&yours.submits, None), (&theirs.submits, None)),
                 (
                     "time",
-                    (&yours.time, Some("reported")),
-                    (&theirs.time, Some("reported")),
+                    (&yours.time, Some(REPORTED)),
+                    (&theirs.time, Some(REPORTED)),
                 ),
                 (
                     "assists",
-                    (&yours.assists, Some("reported")),
-                    (&theirs.assists, Some("reported")),
+                    (&yours.assists, Some(REPORTED)),
+                    (&theirs.assists, Some(REPORTED)),
                 ),
             ];
             for (what, (mine, my_tail), (their, their_tail)) in rows {
@@ -331,15 +357,24 @@ pub fn sides(duel: &Duel, ui: &mut Ui, t: &Theme) {
                         .font(t.text.label.clone())
                         .color(t.color.text.label),
                 );
-                cell(ui, t, mine, &format!("Your {what}"), my_tail, false);
-                cell(ui, t, their, &format!("Their {what}"), their_tail, false);
+                let says = matches!(what, "sound" | "passed");
+                cell_with(ui, t, mine, &format!("Your {what}"), my_tail, false, says);
+                cell_with(
+                    ui,
+                    t,
+                    their,
+                    &format!("Their {what}"),
+                    their_tail,
+                    false,
+                    says,
+                );
                 ui.end_row();
             }
         });
     line(
         ui,
         t,
-        "Scores marked checked come from this computer; their unchecked numbers, times and assists are reported.",
+        "Checked: scored on this computer. Times and assists are reported by each app; enth can't check them.",
         true,
     );
 }
