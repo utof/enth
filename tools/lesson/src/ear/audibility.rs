@@ -107,6 +107,27 @@ impl Measured {
             .min_by(f64::total_cmp)
     }
 
+    /// The closest measured pair or change and what it is: the distance and "options 1 and 2" or "the change of
+    /// option 1" (Spot the change) or "the base against the odd interval" (Ear check).
+    #[must_use]
+    pub fn closest_what(&self, layout: Layout) -> Option<(f64, String)> {
+        let pairs = self.pairs.iter().filter_map(|p| {
+            p.jnd
+                .ok()
+                .map(|j| (j, format!("options {} and {}", p.a, p.b)))
+        });
+        let changes = self.changes.iter().enumerate().filter_map(|(k, c)| {
+            c.ok().map(|j| {
+                let what = match layout {
+                    Layout::OddOne => "the base against the odd interval".to_owned(),
+                    _ => format!("the change of option {k}"),
+                };
+                (j, what)
+            })
+        });
+        pairs.chain(changes).min_by(|a, b| a.0.total_cmp(&b.0))
+    }
+
     /// How many pairs and changes `sound/1` could not measure.
     #[must_use]
     pub fn unmeasured(&self) -> usize {
@@ -294,6 +315,9 @@ pub struct Summary {
     pub reasons: Vec<(&'static str, usize)>,
     /// The ideal observer's expected score over the items.
     pub observer: f64,
+    /// Where the closest pair of all is: the item (its seed and index) and the pair (set by the caller, which has the
+    /// items; `None` until then).
+    pub worst: Option<String>,
 }
 
 impl Summary {
@@ -350,5 +374,6 @@ pub fn summarise(level: u8, layout: Layout, items: &[Measured]) -> Summary {
                 .sum::<f64>()
                 / items.len() as f64
         },
+        worst: None,
     }
 }

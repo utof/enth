@@ -340,7 +340,22 @@ fn assemble(
     if let Some((first, _)) = measured.first() {
         let layout = first.layout;
         let ms: Vec<Measured> = measured.iter().map(|(_, m)| m.clone()).collect();
-        let summary = audibility::summarise(level, layout, &ms);
+        let mut summary = audibility::summarise(level, layout, &ms);
+        summary.worst = measured
+            .iter()
+            .filter_map(|(item, m)| {
+                m.closest_what(layout).map(|(d, what)| {
+                    (
+                        d,
+                        format!(
+                            "{what} of item {} (seed {}) at {d:.1} JND",
+                            item.index, item.seed
+                        ),
+                    )
+                })
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, text)| text);
         let mean_options =
             measured.iter().map(|(i, _)| i.options as f64).sum::<f64>() / measured.len() as f64;
         res.row = summary.median.map(|jnd| Row {
@@ -600,13 +615,16 @@ fn judge_cell(c: &CellResult, r: &mut Report) {
             Gate::Ladder,
             c.levels,
             format!(
-                "closest pair min {} p10 {} median {} JND against {:.0} needed; {} of {} items short; {un} of {all} pairs not measured",
+                "closest pair min {} p10 {} median {} JND against {:.0} needed; {} of {} items short; {un} of {all} pairs not measured{}",
                 jnd(s.min),
                 jnd(s.p10),
                 jnd(s.median),
                 s.need,
                 s.short,
-                s.items
+                s.items,
+                s.worst
+                    .as_ref()
+                    .map_or_else(String::new, |w| format!("; the closest is {w}")),
             ),
         );
         if c.level == c.levels {

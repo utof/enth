@@ -384,6 +384,12 @@ fn an_inaudible_pair_is_found() {
         .find(|c| c.name == "audibility" && c.cell.ends_with("L2"));
     // The two-level game is a delivered ladder, so the failure is hard (a one-level stub only reports, below).
     assert!(found.is_some(), "{}", r.report.summary(Ladders::Auto));
+    // The report names the pair: options 0 and 1, the same clip, at 0.0 JND.
+    let detail = &found.unwrap().detail;
+    assert!(
+        detail.contains("the closest is options 0 and 1 of item"),
+        "{detail}"
+    );
     assert!(
         !r.report
             .failures(Ladders::Report)
@@ -541,6 +547,23 @@ fn the_items_digest_notices_a_change() {
         &computed,
     );
     assert!(found.iter().any(|f| f.detail.contains("does not have")));
+}
+
+#[test]
+fn the_items_file_reads_back_as_what_was_written() {
+    let text = format!(
+        "# header\ng=05 l=01 sha256={}\ng=05 l=02 sha256={}\n",
+        "ab".repeat(32),
+        "cd".repeat(32)
+    );
+    let read = golden::parse_items(&text);
+    assert_eq!(read.len(), 2);
+    assert_eq!(golden::compare_items(&text, &read).len(), 0);
+    // A line that moved is listed, so `--update-golden` can say which.
+    let mut moved = read.clone();
+    moved[1].2 = "ef".repeat(32);
+    moved.push((6, 1, "01".repeat(32)));
+    assert_eq!(golden::compare_items(&text, &moved).len(), 2);
 }
 
 #[test]

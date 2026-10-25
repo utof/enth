@@ -57,7 +57,7 @@ const USAGE: &str = "usage: enth-lesson-tool ear-check [options]
   --strict           ladder criteria fail the run for every game (--ladders enforce)
   --ladders MODE     auto (the default: hard from two levels), enforce, report
   --only GAME        only this game (an id or part of a name); repeatable
-  --update-golden    rewrite tools/lesson/src/ear/golden/items-v1.txt (refused under CI) and stop
+  --update-golden    rewrite tools/lesson/src/ear/golden/items-v1.txt, listing the lines that move (refused under CI), and stop
 Exit 0 when nothing hard failed, 1 otherwise; the report is on stdout.";
 
 struct Options {
@@ -160,6 +160,13 @@ fn update_golden() -> Result<(), String> {
         return Err("--update-golden is refused under CI: a golden changes on purpose, locally, and the commit message says why".to_owned());
     }
     let text = golden::items_file(&golden::cells())?;
+    // What moves, so the commit message can say which games and why: lines added, changed, dropped.
+    let before = std::fs::read_to_string(items_path()).unwrap_or_default();
+    let moved = golden::compare_items(&before, &golden::parse_items(&text));
+    for f in &moved {
+        println!("  {}: {}", f.cell, f.detail);
+    }
+    println!("{} line(s) move", moved.len());
     std::fs::write(items_path(), &text).map_err(|e| format!("{}: {e}", items_path().display()))?;
     println!(
         "wrote {} ({} lines)",

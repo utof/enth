@@ -380,6 +380,20 @@ pub fn items_file(games: &[(Shipped, u8)]) -> Result<String, String> {
     Ok(out)
 }
 
+/// The (game, level, digest) lines of an items digest file (lines that do not read are skipped).
+#[must_use]
+pub fn parse_items(text: &str) -> Vec<(u8, u8, String)> {
+    text.lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let g = words.next()?.strip_prefix("g=")?.parse().ok()?;
+            let l = words.next()?.strip_prefix("l=")?.parse().ok()?;
+            let d = words.next()?.strip_prefix("sha256=")?;
+            Some((g, l, d.to_owned()))
+        })
+        .collect()
+}
+
 /// Compare the committed items digest with `computed` (one line per (game, level)); completeness included.
 #[must_use]
 pub fn compare_items(committed: &str, computed: &[(u8, u8, String)]) -> Vec<Finding> {
