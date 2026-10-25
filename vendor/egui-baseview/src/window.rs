@@ -77,8 +77,30 @@ pub enum KeyboardFocus {
     /// ([`Context::text_edit_focused()`](egui::Context::text_edit_focused)), and give it back to
     /// the host when that ends or when the window loses the focus to another window. The rest of
     /// the time the window receives no key at all, so every key goes to the host.
+    ///
+    /// enth fork (patch 12): a widget that is not a text field (a tap pad) takes the keyboard the
+    /// same way with [`claim_keyboard`].
     #[default]
     WhileTyping,
+}
+
+/// enth fork (patch 12): the key (through `egui::Id::unique`) of the keyboard claim in the context's
+/// temporary data, an [`egui::Id`]; see [`claim_keyboard`].
+pub const KEYBOARD_CLAIM_KEY: &str = "egui_baseview::keyboard_claim";
+
+/// enth fork (patch 12): under [`KeyboardFocus::WhileTyping`], takes the keyboard after this frame
+/// for the widget `id`, as a focused text field does (a tap pad that listens for keys).
+///
+/// Call it in every frame that wants the keyboard: the window reads the claim after each frame
+/// and clears it. It counts only while `id` has egui's focus (give it with
+/// [`Response::request_focus`](egui::Response::request_focus), on a press for instance), so it
+/// ends as a text edit does: on Escape, a click elsewhere, the widget going away, or another
+/// window taking the focus (the window then takes egui's focus away, and does not take the
+/// keyboard back until the widget is focused again). Under [`KeyboardFocus::OnClick`] it does
+/// nothing. Code that depends only on egui can make the same claim with
+/// `ctx.data_mut(|d| d.insert_temp(egui::Id::unique(KEYBOARD_CLAIM_KEY), id))`.
+pub fn claim_keyboard(ctx: &egui::Context, id: egui::Id) {
+    ctx.data_mut(|data| data.insert_temp(egui::Id::unique(KEYBOARD_CLAIM_KEY), id));
 }
 
 /// Settings used when creating a new window
@@ -399,6 +421,9 @@ pub struct EguiWindow<A: App> {
     /// Whether the window currently takes keyboard input (`WhileTyping` only).
     typing: Cell<bool>,
 
+    /// enth fork (patch 12): when each event of `egui_input.events` arrived, index for index.
+    arrivals: RefCell<Vec<Instant>>,
+
     // Re-use the allocations from the previous output.
     full_output: RefCell<FullOutput>,
 
@@ -506,6 +531,7 @@ impl<A: App> EguiWindow<A> {
             poll_repaint_timer_handle,
             keyboard_focus,
             typing: Cell::new(false),
+            arrivals: RefCell::new(Vec::new()),
         })
     }
 
@@ -583,13 +609,29 @@ impl<A: App> EguiWindow<A> {
     }
 
     /// Under [`KeyboardFocus::WhileTyping`]: makes the window take keyboard input exactly while a
-    /// text field has egui's focus. Called after every frame, when egui's focus is up to date.
+    /// text field has egui's focus, or (enth fork, patch 12) a focused widget claimed it this frame
+    /// ([`claim_keyboard`]). Called after every frame, when egui's focus is up to date.
     fn sync_keyboard_focus(&self) {
+        let typing = {
+            let inner = self.inner.borrow();
+            let egui_ctx = &inner.egui_ctx;
+
+            // A claim lasts one frame.
+            let claim = egui_ctx.data_mut(|data| {
+                let key = egui::Id::unique(KEYBOARD_CLAIM_KEY);
+                let claim = data.get_temp::<egui::Id>(key);
+                data.remove::<egui::Id>(key);
+                claim
+            });
+            let claimed = claim.is_some_and(|id| egui_ctx.memory(|memory| memory.has_focus(id)));
+
+            egui_ctx.text_edit_focused() || claimed
+        };
+
         if self.keyboard_focus != KeyboardFocus::WhileTyping {
             return;
         }
 
-        let typing = self.inner.borrow().egui_ctx.text_edit_focused();
         self.set_typing(typing);
     }
 
@@ -667,6 +709,16 @@ impl<A: App> WindowHandler for EguiWindow<A> {
             (egui_input.take(), logical_size)
         };
 
+        // enth fork (patch 12): the stamps of the events this frame takes, for `arrival::stamps`.
+        // `on_event` keeps them in step with the events; should they ever differ, an event without
+        // a stamp gets the frame's instant, its latest possible arrival.
+        let stamps: Arc<[Instant]> = {
+            let mut arrivals = self.arrivals.borrow_mut();
+            debug_assert_eq!(arrivals.len(), egui_input.events.len());
+            arrivals.resize(egui_input.events.len(), Instant::now());
+            arrivals.drain(..).collect()
+        };
+
         // Re-use the allocations from the previous output.
         let mut full_output = self.full_output.borrow_mut();
 
@@ -678,6 +730,8 @@ impl<A: App> WindowHandler for EguiWindow<A> {
                 clipboard_ctx: _,
                 frame,
             } = &mut *inner;
+
+            crate::arrival::store(egui_ctx, stamps, self.start_time);
 
             egui_ctx.run_ui(egui_input, |ui| user_app.ui(ui, frame))
         };
@@ -837,6 +891,9 @@ impl<A: App> WindowHandler for EguiWindow<A> {
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
+        // enth fork (patch 12): the event's arrival, before any work on it (`arrival`).
+        let arrived = Instant::now();
+
         let mut return_status = EventStatus::Captured;
 
         // Parent/embedded windows do not always gain keyboard focus
@@ -1065,6 +1122,11 @@ impl<A: App> WindowHandler for EguiWindow<A> {
             },
             _ => do_repaint = false,
         }
+
+        // enth fork (patch 12): every egui event this baseview event produced arrived with it.
+        self.arrivals
+            .borrow_mut()
+            .resize(egui_input.events.len(), arrived);
 
         if do_repaint {
             self.window.request_redraw();
