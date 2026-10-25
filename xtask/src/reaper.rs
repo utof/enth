@@ -22,7 +22,7 @@
 //! | `preset-load` | a user preset loaded through the editor's browser (real clicks): the patch changes, the bookmark is saved, no host parameter moves, the project is dirty, and one editor Undo and Redo take the whole load back and again; ▶ held with the transport stopped is measured (lane PBU) |
 //! | `round` | (lane SKR) a Recreate round through the editor's Recreate bar (real clicks), the transport stopped: Start prepares the target, Target ▶ and Mine ▶ sound on the track's meter, a submit is scored, End removes the round and writes the round log |
 //! | `lesson` | (lane SKL; on the default bundle since lane LFU turned the `learn` feature on by default) the tour's first lesson from the bundled `basics` pack through the Learn view (real clicks), the transport stopped: Start, an example sounds on the track's meter, Next to the Try step, Show me passes it (its sound check rendered on the worker) and the progress file records it, the project saved mid-lesson; reopened in a new process, the lesson resumes at its step and moves on |
-//! | `duel` | (lane SKD, F2d; on a bundle built with `--features duel`, where it joins the default run) two instances on two tracks, the transport stopped: instance 1 starts from a saved round whose patch is the target, passes it and shares it through the duel card (real clicks); its message goes through the X clipboard (Copy, then the platform's Paste, Ctrl+V, into instance 2's paste box) and opens a duel; its answer code arrives sealed, opens once instance 2 has given up, and is checked on instance 2's worker "as reported" with the commitment matched (the duel log, `ENTH_DUEL_LOG`) |
+//! | `duel` | (lane SKD, F2d; on a bundle built with `--features duel`, where it joins the default run) two instances on two tracks, the transport stopped: instance 1 starts from a saved round whose patch is the target, passes it and shares it through the duel card (real clicks); its message goes through the X clipboard (Copy, then the platform's Paste, Ctrl+V, into instance 2's paste box) and opens a duel; its answer code arrives sealed, opens once instance 2 has given up, and is checked on instance 2's worker "as reported" with the commitment matched (the duel log, `ENTH_DUEL_LOG`); lane DUI: both instances' duel history file (`ENTH_DUELS_DIR`) keeps the sharer's salt and codes and the receiver's check |
 //! | `starter-project` | (CLAP) the project `cargo xtask starter-project` writes opens with the starter patch on each of its four tracks, and `extract-presets` gets it back from REAPER's save, each sound named and typed after its track (not "Init") |
 //! | `cross-format` | CLAP and VST3 agree: parameter ids, the saved patch, the rendered audio |
 //!
@@ -734,7 +734,7 @@ fn run_scenario(
 /// under test (lane SKD found it: the installed build had no `duel` feature). `xtask/reaper/duel.lua` clicks both instances' duel cards and makes the checks.
 fn duel(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String> {
     let tag = format.tag();
-    let dirs: Vec<PathBuf> = ["rounds", "crashes", "home"]
+    let dirs: Vec<PathBuf> = ["rounds", "crashes", "home", "duels"]
         .iter()
         .map(|d| sb.out.join(format!("duel-{d}-{tag}")))
         .collect();
@@ -754,7 +754,10 @@ fn duel(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String>
     // An empty home: REAPER also scans the standard `~/.vst3` (and `~/.clap`), where an installed enth (`cargo xtask
     // install`, an owner build) would win over the bundle under test, without the `duel` feature.
     extra.push(("HOME", dirs[2].display().to_string()));
+    // The duel history (lane DUI): both instances keep theirs in one file, in the results.
+    extra.push(("ENTH_DUELS_DIR", dirs[3].display().to_string()));
     let played = run_script(sb, report, format, "duel", "duel", "play", &extra);
+    duel_history(report, &format!("{tag}/duel"), &dirs[3], &log);
     let get = |k: &str| played.data.get(k).cloned().unwrap_or_default();
     report.info(
         &format!("{tag}/duel"),
@@ -768,6 +771,57 @@ fn duel(sb: &Sandbox, report: &mut Report, format: Format) -> Result<(), String>
         ),
     );
     Ok(())
+}
+
+/// `duel`'s history checks (lane DUI): the two instances' duel history file (`ENTH_DUELS_DIR/duels.json`,
+/// `enth.duel-history/1`) holds the sharer's entry (the salt, 16 hex digits, and the codes the duel log saw shared) and
+/// the receiver's (the sharer's scorecard and answer code, and its check: "as reported", the commitment matched).
+fn duel_history(report: &mut Report, scope: &str, dir: &Path, log: &Path) {
+    let shared: Option<serde_json::Value> = std::fs::read_to_string(log).ok().and_then(|t| {
+        t.lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .find(|l| l["event"] == "share")
+    });
+    let text = std::fs::read_to_string(dir.join("duels.json")).unwrap_or_default();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let entries = doc["entries"].as_array().cloned().unwrap_or_default();
+    report.add(
+        scope,
+        "history-file",
+        doc["schema"] == "enth.duel-history/1" && entries.len() == 2,
+        format!(
+            "{} entries in {}",
+            entries.len(),
+            dir.join("duels.json").display()
+        ),
+    );
+    let Some(shared) = shared else {
+        report.add(scope, "history-salt", false, "no share in the duel log");
+        return;
+    };
+    let sharer = entries
+        .iter()
+        .find(|e| e["own"]["answer"] == shared["answer"]);
+    report.add(
+        scope,
+        "history-salt",
+        sharer.is_some_and(|e| {
+            e["salt"].as_str().is_some_and(|s| s.len() == 16)
+                && e["own"]["scorecard"] == shared["scorecard"]
+        }),
+        "the sharer's entry: its salt and the codes it shared",
+    );
+    let receiver = entries
+        .iter()
+        .find(|e| e["answer"] == shared["answer"] && e["card"] == shared["scorecard"]);
+    report.add(
+        scope,
+        "history-check",
+        receiver.is_some_and(|e| {
+            e["checked"]["as_reported"] == true && e["checked"]["commitment_ok"] == true
+        }),
+        "the receiver's entry: the sharer's codes and the check",
+    );
 }
 
 /// `lesson` (lane SKL, F2l; on the default bundles since lane LFU): two launches (`play`, then `reload` in a new
