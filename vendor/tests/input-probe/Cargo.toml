@@ -1,0 +1,28 @@
+[package]
+name = "input-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Two probes of the vendored egui-baseview under Xvfb (vendor/README.md, "Tests"): `tap-probe` (fork patch 12: arrival
+# stamps per event and a tap pad's keyboard claim) and `paste-probe` (fork patch 13: ViewportCommand::RequestPaste).
+# `paste-probe` and the library use no patched API, so they also build against upstream egui-baseview 0.9.0 (the
+# negative control in run.sh).
+
+[dependencies]
+egui-baseview = { version = "0.9.0", default-features = false, features = ["opengl", "tracing"] }
+baseview = "0.4.1"
+egui = { version = "=0.37.0", default-features = false }
+raw-window-handle = "0.6"
+x11rb = { version = "=0.13.2", features = ["xtest"] }
+
+[workspace]
+
+[patch.crates-io]
+baseview = { path = "../../baseview" }
+egui-baseview = { path = "../../egui-baseview" }
+
+[profile.dev]
+debug = "line-tables-only"
+[profile.dev.package."*"]
+debug = false
