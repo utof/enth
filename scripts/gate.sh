@@ -6,7 +6,9 @@
 #                                     every crate that depends on them (`cargo xtask affected`, against the merge
 #                                     base with main; ENTH_GATE_BASE=<rev> names another base). When the change
 #                                     touches content/lessons/, also `cargo xtask lesson-check` (every pack) and
-#                                     `lesson-check --cross --solve` on the packs it touches.
+#                                     `lesson-check --cross --solve` on the packs it touches. When it touches the
+#                                     ear generator, the ear files or `sound/1` (enth-music, the challenge crate's ear
+#                                     files, tools/lesson/src/ear*), also `cargo xtask ear-check` (R4, lane ECK).
 #   scripts/gate.sh full <worktree>   Everything, for the coordinator before a merge: the lane checks with the
 #                                     whole workspace's tests, plus cargo-deny (bans, licenses, sources), golden,
 #                                     host-render and validate on the default plugin (`cargo xtask host-render`,
@@ -132,6 +134,17 @@ if [ "$mode" = lane ]; then
     if [ "${#lesson_packs[@]}" -gt 0 ]; then
       step lesson-solve cargo xtask lesson-check --cross --solve "${lesson_packs[@]}"
     fi
+  fi
+  # R4 lane ECK: a change to the ear generator (`enth-music`), the ear files of the challenge crate, `sound/1` (which
+  # measures every audibility), the drill player's staircase or the ear-check files runs `cargo xtask ear-check`
+  # (docs/ear.md, "`ear-check` as built"): the golden digests, the leaks, the audibility and the staircases of the
+  # shipped games. Same base and same changes (committed, uncommitted, untracked) as the lesson hook above.
+  ear_paths=(crates/enth-music crates/enth-challenge/src/ear.rs crates/enth-challenge/src/ear crates/enth-challenge/src/v3.rs
+    crates/enth-challenge/src/score/sound.rs crates/enth-challenge/src/calibrate.rs crates/enth-learn/src/drill.rs
+    crates/enth-learn/src/drill tools/lesson/src/ear.rs tools/lesson/src/ear xtask/src/ear.rs)
+  ear_changes=$({ git diff --name-only "$lesson_base" -- "${ear_paths[@]}"; git ls-files --others --exclude-standard -- "${ear_paths[@]}"; } | sort -u)
+  if [ -n "$ear_changes" ]; then
+    step ear-check cargo xtask ear-check
   fi
 else
   step deny cargo deny --locked check bans licenses sources
