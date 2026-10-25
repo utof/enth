@@ -5,6 +5,8 @@ A run directory holds ``ckpt/``:
 * ``periodic-<step>.pt``: written every ``ckpt_every_minutes`` (and when a run is stopped or ends); **the newest two
   are kept**, older ones are deleted only after the new one and the manifest are on disk;
 * ``best.pt``: the checkpoint with the lowest dev best-of-K so far; replaced only by a better one, never rotated;
+* ``keep-<step>.pt`` (lane FTL, ``ckpt_keep_every_steps``): kept for good, never rotated: the stable-phase points a
+  cooldown branch starts from;
 * ``manifest.json`` (``enth.train-ckpt/1``): per file its step, epoch, position in the epoch, kind, size, SHA-256 and
   time; each ``.pt`` also has a ``.pt.sha256`` sidecar, so a lost manifest still leaves every checksum.
 
@@ -105,18 +107,24 @@ class CheckpointStore:
 
     # -- writing ----------------------------------------------------------------------------------------------------
     def save(self, state: dict, kind: str, meta: dict) -> dict:
-        """Write ``state`` as a ``periodic`` (also used for stops and the end) or ``best`` checkpoint; returns its
-        manifest entry. ``meta`` (step, epoch, position, dev loss, reason) goes into the entry."""
+        """Write ``state`` as a ``periodic`` (also used for stops and the end), ``best`` or ``keep`` checkpoint; returns
+        its manifest entry. ``meta`` (step, epoch, position, dev loss, reason) goes into the entry."""
         import torch
 
         self.dir.mkdir(parents=True, exist_ok=True)
         buf = io.BytesIO()
         torch.save(state, buf)
         data = buf.getvalue()
-        name = "best.pt" if kind == "best" else f"periodic-{int(meta['step']):09d}.pt"
+        if kind == "best":
+            name = "best.pt"
+        elif kind == "keep":
+            name = f"keep-{int(meta['step']):09d}.pt"
+        else:
+            name = f"periodic-{int(meta['step']):09d}.pt"
+            kind = "periodic"
         entry = {
             "file": name,
-            "kind": "best" if kind == "best" else "periodic",
+            "kind": kind,
             "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(),
             "utc": _utc(),
@@ -127,7 +135,7 @@ class CheckpointStore:
         m = self.manifest()
         es = [e for e in m["entries"] if e.get("file") != name]
         es.append(entry)
-        if kind != "best":
+        if kind == "periodic":
             periodic = sorted((e for e in es if e.get("kind") == "periodic"), key=lambda e: int(e.get("step", -1)))
             drop = periodic[: max(0, len(periodic) - self.keep)]
             es = [e for e in es if e not in drop]
@@ -160,7 +168,7 @@ class CheckpointStore:
         """Resume order: newest step first (periodic before ``best`` on a tie)."""
         es = self.entries()
         periodic = sorted((e for e in es if e.get("kind") == "periodic"), key=lambda e: -int(e.get("step", -1)))
-        best = [e for e in es if e.get("kind") == "best"]
+        best = [e for e in es if e.get("kind") in ("best", "keep")]
         # Files on disk that the manifest does not know (a crash between the rename and the manifest): try them too.
         known = {e["file"] for e in es}
         extra = []
@@ -195,3 +203,16 @@ class CheckpointStore:
     def best(self) -> dict | None:
         b = self.entries("best")
         return b[0] if b else None
+
+    def at_step(self, step: int) -> list[dict]:
+        """Every checkpoint written at ``step`` (periodic first, then keep, then best): the ones a branch can start from."""
+        order = {"periodic": 0, "keep": 1, "best": 2}
+        return sorted((e for e in self.entries() if int(e.get("step", -1)) == int(step)), key=lambda e: order.get(e.get("kind"), 3))
+
+    def load(self, entry: dict) -> dict:
+        """The checkpoint ``entry`` names, after its checksum; raises ``ValueError`` when it fails or does not load."""
+        import torch
+
+        if not self.verify(entry):
+            raise ValueError(f"checkpoint {entry['file']}: missing, truncated or failed its SHA-256")
+        return torch.load(self.dir / entry["file"], map_location="cpu", weights_only=False)

@@ -1,0 +1,20 @@
+# propose v0, tier T1 of the fast loop (lane FTL, 2026-10-25; ml/README.md, "Fast loop"): full-v0-b's network, loss and
+# optimiser on a fixed slice of the parts that already exist, 1/5 of the full run's steps, the schedule compressed so it
+# ends at a low learning rate, and per-sample dev losses for `compare`. About 11 min an arm on the 2080 Ti. Pass the
+# machine's paths (the slice: 7 parts, about 427 k samples, read from WSL's own disk; on a machine whose disk cannot
+# stream it, 4 parts and --set train_in_ram=true, about 12 GB):
+#   python -m enth_ml.train run --config enth_ml/train/proxy-v0.toml --no-resume \
+#     --set 'train_dirs=["P1","P2","P3","P4","P5","P6","P7"]' --set 'dev_dirs=["DEV"]' --set seed=1 --set 'out="RUNS/proxy-b-s1"'
+# Arm A of the calibration: --set loss.select_discrete_boost=3.0 (full-v0-a's one difference).
+base = "full-v0-b.toml"
+schedule_steps = 12500     # 3.2 M samples seen at batch 256: 1/5 of the full run (about 7.5 repeats of a 427 k slice)
+warmup_steps = 500
+eval_every_steps = 1000    # 12 evaluations and the final one, each with its per-sample file
+persample_evals = "all"    # dev-persample-<step>.npz at every evaluation (37 KB a field)
+early_stop_patience = 0    # a proxy runs its whole (short) schedule: it is compared at its end
+max_repeat = 0.0           # a fixed slice: no pacing, no producer
+train_glob = ""
+replay_from = ""
+min_train_samples = 0
+data_target_samples = 0
+ckpt_every_minutes = 10.0

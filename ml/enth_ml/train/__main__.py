@@ -4,7 +4,10 @@
     python -m enth_ml.train resume RUN_DIR [--set key=value ...]            # carry on with the run's config.json
     python -m enth_ml.train stop RUN_DIR [--wait SECONDS]                   # checkpoint and exit at the end of a step
     python -m enth_ml.train status RUN_DIR [--json]                         # step, samples, checkpoints, ETA, alive?
-    python -m enth_ml.train eval --ckpt RUN/ckpt/best.pt [--mel f2] [--dev DIR ...]
+    python -m enth_ml.train eval --ckpt RUN/ckpt/best.pt [--mel f2] [--dev DIR ...] [--persample OUT.npz]
+    python -m enth_ml.train smoke --config C --dev DIR [--model-check BIN] [--device cpu]   # T0: go or no-go in minutes
+    python -m enth_ml.train compare RUN_A RUN_B [--step N] [--seed-sd X]   # paired per-sample test and a verdict
+    python -m enth_ml.train cooldown RUN_DIR --from-step N --steps M --out OUT   # a decayed branch of a stable phase
     python -m enth_ml.train info DIR [DIR ...]
     python -m enth_ml.train report RUN_DIR [--every N]
     python -m enth_ml.train cache SRC_RUN_DIR OUT_DIR [--workers N]   # an f16 training cache of a ds1 run
@@ -26,16 +29,9 @@ os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 
 
 def _set(cfg_dict: dict, assignment: str) -> None:
-    key, _, value = assignment.partition("=")
-    try:
-        v = json.loads(value)
-    except json.JSONDecodeError:
-        v = value
-    d = cfg_dict
-    parts = key.split(".")
-    for p in parts[:-1]:
-        d = d.setdefault(p, {})
-    d[parts[-1]] = v
+    from .config import set_key
+
+    set_key(cfg_dict, assignment)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,6 +60,14 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--mel", default="f4", choices=["f4", "f2"])
     e.add_argument("--dev", action="append", default=None)
     e.add_argument("--device", default=None)
+    e.add_argument("--persample", default=None, help="also write the per-sample dev file (compare reads it) here")
+    cd = sub.add_parser("cooldown", help="branch a decayed copy of a run from one of its checkpoints and train it")
+    cd.add_argument("run")
+    cd.add_argument("--from-step", type=int, required=True)
+    cd.add_argument("--steps", type=int, required=True)
+    cd.add_argument("--out", required=True)
+    cd.add_argument("--set", action="append", default=[], help="decay_shape or an operational key (workers, persample_evals, ...)")
+    cd.add_argument("--device", default=None)
     i = sub.add_parser("info", help="describe ds1 run directories")
     i.add_argument("dirs", nargs="+")
     rp = sub.add_parser("report", help="a run's learning curves and throughput as Markdown")
@@ -83,6 +87,14 @@ def main(argv: list[str] | None = None) -> int:
         from .augdata import main as aug_main
 
         return aug_main(argv[1:])
+    if argv and argv[0] == "compare":  # its own parser (compare.py); numpy only
+        from .compare import main as compare_main
+
+        return compare_main(argv[1:])
+    if argv and argv[0] == "smoke":  # its own parser (smoke.py)
+        from .smoke import main as smoke_main
+
+        return smoke_main(argv[1:])
     args = ap.parse_args(argv)
 
     if args.cmd == "status":
@@ -114,14 +126,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd in ("run", "resume"):
         import pathlib
-        import tomllib
 
         from .control import EXIT_STOPPED
 
         # SIGTERM and SIGINT are the trainer's (control.StopFlag): it finishes the step, checkpoints and exits.
         if args.cmd == "run":
-            p = pathlib.Path(args.config)
-            d = tomllib.loads(p.read_text()) if p.suffix == ".toml" else json.loads(p.read_text())
+            d = TrainConfig.load_dict(args.config)  # base = "..." inherits another config's keys
         else:
             d = json.loads((pathlib.Path(args.run) / "config.json").read_text())
             d["out"] = str(pathlib.Path(args.run))
@@ -132,9 +142,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({k: v for k, v in summary.items() if k != "last_eval"}, indent=1))
         return EXIT_STOPPED if summary["state"] == "stopped" else 0
     if args.cmd == "eval":
-        res = evaluate_checkpoint(args.ckpt, args.dev, args.device, args.mel)
+        res = evaluate_checkpoint(args.ckpt, args.dev, args.device, args.mel, args.persample)
         print(json.dumps(res, indent=1))
         return 0
+    if args.cmd == "cooldown":
+        from .branch import cooldown
+        from .control import EXIT_STOPPED
+
+        summary = cooldown(args.run, args.from_step, args.steps, args.out, args.set, args.device)
+        print(json.dumps({k: v for k, v in summary.items() if k != "last_eval"}, indent=1))
+        return EXIT_STOPPED if summary["state"] == "stopped" else 0
     return 2
 
 

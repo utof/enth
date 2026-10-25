@@ -27,9 +27,13 @@ def _rank_desc(x: torch.Tensor) -> torch.Tensor:
 
 
 class DevMetrics:
-    def __init__(self, loss: ProposeLoss, k: int) -> None:
+    """``persample=True`` (lane FTL) also keeps each sample's best, top and mean-K loss, the winner and the number of
+    distinct joint discrete choices, for :meth:`persample` (the paired comparison's input)."""
+
+    def __init__(self, loss: ProposeLoss, k: int, persample: bool = False) -> None:
         self.loss = loss
         self.k = k
+        self.keep = persample
         self.reset()
 
     def reset(self) -> None:
@@ -46,6 +50,7 @@ class DevMetrics:
         self.spearman: list[float] = []
         self.distinct = 0.0  # summed over samples: distinct joint discrete choices among the K hypotheses
         self.cat_oracle = np.zeros((len(L.GROUPS), 2))  # some hypothesis right, count
+        self.per: dict[str, list[np.ndarray]] = defaultdict(list)
 
     @torch.no_grad()
     def update(self, hyp: torch.Tensor, conf: torch.Tensor, label: torch.Tensor, mask: torch.Tensor) -> None:
@@ -80,7 +85,14 @@ class DevMetrics:
         )  # [B, K, G + 4 + 16]
         eq = (code.unsqueeze(2) == code.unsqueeze(1)).all(-1)  # [B, K, K]
         earlier = torch.tril(torch.ones(self.k, self.k, dtype=torch.bool, device=hyp.device), diagonal=-1)
-        self.distinct += float((~(eq & earlier).any(-1)).sum().item())
+        firsts = ~(eq & earlier).any(-1)  # [B, K]: the first hypothesis of each distinct choice
+        self.distinct += float(firsts.sum().item())
+        if self.keep:
+            self.per["best"].append(best_l.cpu().numpy().astype(np.float32))
+            self.per["top"].append(losses[ar, top].cpu().numpy().astype(np.float32))
+            self.per["meank"].append(losses.mean(1).cpu().numpy().astype(np.float32))
+            self.per["winner"].append(winner.cpu().numpy().astype(np.uint8))
+            self.per["distinct"].append(firsts.sum(-1).cpu().numpy().astype(np.uint8))
         for g, (_, a, bnd) in enumerate(L.GROUPS):
             gm = mask[:, a] > 0.5
             ok = (hyp[..., a:bnd].argmax(-1) == label[:, a:bnd].argmax(-1).unsqueeze(1)).any(1)
@@ -117,6 +129,10 @@ class DevMetrics:
             pt = lab[:, p0:p1] > 0.5
             for col, val in enumerate(((pp & pt), (pp & ~pt), (~pp & pt), (~pp & ~pt))):
                 self.pres[which][:, col] += (val & pm).sum(0).cpu().numpy()
+
+    def persample(self) -> dict[str, np.ndarray]:
+        """The kept per-sample arrays, in dev order (empty without ``persample=True``)."""
+        return {k: np.concatenate(v) for k, v in self.per.items()}
 
     def summary(self, per_entry: bool = True) -> dict:
         n = max(self.n, 1)

@@ -17,7 +17,7 @@ Lane S0s (R3, freeze point F0s) declared this skeleton and nothing else: `pyproj
 
 Lane ONX (R3b) added the first dependency group, `parity` (`onnx`, `onnxruntime`, `numpy`; [ONX](#onx-the-model-file-writer-and-onnx-runtime-parity) below), and committed `uv.lock`; `[project] dependencies` stays empty, so the standard-library run below needs nothing installed.
 
-Run every test with no installation: `python3 -m unittest discover -s tests` from `ml/` (the layout test needs `ml/` as the working directory; the DEG tests also run from the repository root with `-s ml/tests`). The DEG and AUG tests need the system `ffmpeg`, and skip without it. The whole suite (262 tests) takes 3.5 to 6 minutes, depending on what else the machine is building; one lane's tests alone: `python3 -m unittest discover -s tests -p 'test_augment_*.py'`.
+Run every test with no installation: `python3 -m unittest discover -s tests` from `ml/` (the layout test needs `ml/` as the working directory; the DEG tests also run from the repository root with `-s ml/tests`). The DEG and AUG tests need the system `ffmpeg`, and skip without it. The whole suite (348 tests with torch installed, 2026-10-25) takes 3.5 to 13 minutes, depending on what else the machine is building; one lane's tests alone: `python3 -m unittest discover -s tests -p 'test_augment_*.py'`.
 
 ## DEG: the degradation chain
 
@@ -264,6 +264,100 @@ Each machine has a wrapper that knows its paths (`tr2` for arm A, `tr2b` for arm
 | the renderer | `... '~/enth-train/tr2 produce-status'`; stop it: `... 'touch ~/enth-train/data/train/PRODUCE-STOP'` (between parts) | stopped |
 
 Run directories: A `/home/isaac/enth-train/runs/full-v0-a`, B `/home/isaac/enth-train/runs/full-v0-b` (WSL's own disk; the first minutes of A ran in `/mnt/e/enth-train/tr2/runs/`, moved because WSL's 9P mount of E: returned ENOMEM on large writes). Training parts: `/home/isaac/enth-train/data/train/train-s<seed>-f16` (seeds 101-134). If isaac-pc hangs or reboots, the run is simply not alive any more: `status` says so (the heartbeat is old or the PID is gone) and `resume` carries on from the newest valid checkpoint, losing at most 25 minutes. A run that finished (`state finished`) does nothing when resumed.
+
+## Fast loop: minutes to an hour, not hours (lane FTL)
+
+The owner's goal: a faster feedback loop, with no more waiting many hours for a result. The 2026-10-25 research session (`_local/sessions/2026-10-25-s2-depth-and-fast-training/`, summary.md, 01 and 02) measured where an iteration's 4.3 h went. **Rendering is the slow part, not training:** 3.1 h rendered 2.07 M samples, and B trained in 51 min on data that already existed. So recipe experiments reuse the existing samples, and only a new layout or augmentation renders, overnight. A short run ranks changes if it **finishes its learning-rate schedule** (a compressed schedule correlates 0.91 with full training; an early checkpoint of a long run only 0.75–0.79). Every comparison is **paired**: both arms on the same machine, with the same seeds, data order and dev samples, compared per sample.
+
+| Tier | Budget | What runs | Data | May decide | May not |
+| --- | --- | --- | --- | --- | --- |
+| **T0** smoke | ≤ 5 min (measured: 179 s on the loaded laptop CPU, full-v0-b's network) | `train smoke`: budgets, overfit a few dev samples, export round trip, kernel parity | 64 dev samples on a CPU, 256 on a GPU | Go or no-go: a crash, a NaN, a loss that does not fall, a budget, the export, our kernels | Any ranking |
+| **T1** proxy | about 11 min an arm on the 2080 Ti (estimate: 3.2 M samples at B's 5,575 a second) | `proxy-v0.toml`: full width, 12,500 steps (1/5 of the full run), the schedule decayed to 2 %, then `train compare` | a fixed slice of the existing parts: 7 (427 k samples) from the machine's own disk, or 4 (about 240 k, 12 GB) with `train_in_ram` | Kill a change worse by more than the threshold; promote the best 1–3; pick a sweep value | Ship; claim a gain under the threshold; data-size effects (they go to T2) |
+| **T2** confirm | ≤ 2 h | full-v0-b's schedule (51 min) on all 2.07 M existing samples, or a WSD trunk with cooldown branches; export; create at 250 and 500 renders on the 30 GR3 dev targets (about 2 min an arm instead of 11–22) | all existing parts | The recipe for T3, by the paired rule with seed noise | Ship |
+| **T3** ship | overnight | new renders (`produce`, `augproduce`) before training, never beside it; the full run; create at 4,000; GR3's test half for a release | fresh | Ship | — |
+
+**The threshold** (`train compare`'s verdict, on dev best-of-K): a gap counts when it is over `max(3 x paired SE, 2 x seed SD)`, and, with replicates, every seed's gap has the same sign. The paired SE is the dev-sample noise (A against B: 0.0031, so the full runs' 0.0172 gap is 5.6 SE). **The seed SD is not measured yet:** until the T1 calibration below gives it, `compare` leaves it out and says so, and a T1 verdict is provisional. Large discrete effects (head diversity, the categorical oracle) settle early and resolve at T1; best-of-K gaps of about 1 % may need T2.
+
+### The commands
+
+```bash
+# T0: go or no-go (writes smoke.json; exit 1 on a failed check). --model-check adds our kernels' parity (8 inputs, 1e-4).
+python -m enth_ml.train smoke --config enth_ml/train/proxy-v0.toml --dev DEV --out OUT [--model-check target/release/enth-model-check] [--device cpu]
+
+# T1: one arm (paths are the machine's; the 7 parts and DEV as below), then the paired comparison.
+python -m enth_ml.train run --config enth_ml/train/proxy-v0.toml --no-resume --set 'train_dirs=["P1",...,"P7"]' \
+  --set 'dev_dirs=["DEV"]' --set seed=1 --set 'out="RUNS/proxy-b-s1"'           # a change: one more --set (or a config with base = "proxy-v0.toml")
+python -m enth_ml.train compare RUNS/proxy-a-s1 RUNS/proxy-b-s1 [--step N] [--seed-sd X] [--json]
+python -m enth_ml.train compare RUNS/proxy-a-s1,RUNS/proxy-a-s2 RUNS/proxy-b-s1,RUNS/proxy-b-s2   # replicates: measures the seed SD
+
+# Per-sample dev losses of any checkpoint (old runs included), for compare:
+python -m enth_ml.train eval --ckpt RUN/ckpt/best.pt --dev DEV --persample OUT.npz
+
+# T2 with cheap cooldowns: a WSD trunk keeps stable-phase checkpoints; each branch decays from one of them.
+python -m enth_ml.train run --config enth_ml/train/full-v0-b.toml --set 'lr_schedule="wsd"' --set ckpt_keep_every_steps=12500 ...
+python -m enth_ml.train cooldown RUNS/trunk --from-step 25000 --steps 5000 --out RUNS/trunk-cd25k   # a finished model at 40 %
+
+# T2's create eval: search alone once per build (reusable), the model's arm, read at 250 and 500 renders.
+python -m enth_ml.export.propose export --ckpt RUN/ckpt/best.pt --run RUN/run.json --id ID --out enth-model-ID.bin
+cargo xtask gr3-run --arm A --split dev --mode renders --budget 500 --workers 6 --out RUNS.jsonl
+cargo xtask gr3-run --arm B --split dev --mode renders --budget 500 --workers 6 --model enth-model-ID.bin --out RUNS.jsonl
+cargo xtask gr3-report --runs RUNS.jsonl --a A_RUN --b B_RUN --at 250     # and --at 500
+```
+
+`gr3-run --model` (dev only, arms B and C) runs `enth-datagen gr3 proposals --job JOB --model M --out F` first: the kit's own upload and intake per target, then `Model::propose` (lane MS), written as the `enth.gr3-proposals/1` file the arms read (it replaces the scratch tool lanes MS and EVM used). A render-budget run's marks include 250 and 500, and a checkpoint is the run that budget would give, so `--budget 500` reads exactly what a 4,000-render run reads there. Search alone's run is reusable while the build is unchanged.
+
+### What the pieces do
+
+| Key or command | What |
+| --- | --- |
+| `smoke` (`smoke.py`) | The config's network and loss on a few real dev samples: budgets (2²² parameters, 2³¹ FLOPs, op set 1), best-of-K must fall ≥ 70 % with every loss finite and every head winning at least once, `export/propose.py`'s export read back exactly, and with `--model-check` `enth-model-check run --tolerance 1e-4 --decode` on 8 inputs. Defaults: 64 samples, 100 steps of 64 on a CPU; 256, 300 of 256 on a GPU |
+| `proxy-v0.toml` | `base = "full-v0-b.toml"` (a config's `base` inherits another's keys, tables merged key by key) with 02's T1 keys: 12,500 steps, warmup 500, an evaluation every 1,000 with its per-sample file, no early stop, no pacing, no producer. Arm A of the calibration is `--set loss.select_discrete_boost=3.0` |
+| `persample_evals` | `"final"` or `"all"`: `dev-persample-<step>.npz` beside the run's logs, per dev sample: best-of-K, top-ranked and mean-K losses, the winning head, the distinct joint discrete choices, the source and the stream index (about 200 KB). A final evaluation that improves now rewrites `best.pt` (lane EVM's end-of-run quirk) |
+| `compare` (`compare.py`, numpy only) | Pairs the files by sample index: mean difference, SE, a bootstrap 95 % CI, Wilcoxon, the share each run wins, per source; the discrete metrics from `metrics.jsonl` with jitter bands (twice the combined second-difference noise of the two runs' last third of evaluations); the verdict "A better", "B better" or "no decision at this tier" |
+| `lr_schedule = "wsd"` | Warmup, the peak LR held, then a decay over the last `decay_frac` (0.2) or `decay_steps`, shaped `1-sqrt` (default), `linear` or `cosine`. `"cosine"` stays the default, and every existing config trains bit for bit as before (tested, and checked against main's code). The WSD literature's constant LR was about half of cosine's peak: a calibration item |
+| `anneal_steps` | The WTA temperature anneals over this many steps, whatever the run's length (0: `anneal_frac` of the run, as before). Which one ranks correctly across tiers is an experiment (01 §2.3) |
+| `weight_decay_tau_samples` | AdamW's decay as a timescale: the weight decay is set so that `1 / (lr x wd)` steps at the peak LR is this many samples (full-v0-b's 0.05 is 2.56 M); it then holds when a proxy changes the batch or the LR |
+| `ckpt_keep_every_steps`, `cooldown` | Kept checkpoints (`ckpt/keep-<step>.pt`, never rotated); `cooldown RUN --from-step N --steps M --out OUT` resumes TR2's exact state at step N with the decay from there, and ends after M steps. It equals a run that had the two keys from its first step, bit for bit (tested); `branch.json` records the parent and the checkpoint's SHA-256 |
+| `train_in_ram` | The slice read once into RAM (f16 mel, about 50 KB a sample), batches cut from there in exactly the order the disk gives (tested): no loader workers, no disk reads. Refused above `train_in_ram_max_gb` (14) or 85 % of the available memory: 240 k samples fit the 2080 Ti machine's 20 GB WSL, 427 k do not |
+
+### The validation protocol (01 §6), before T1 decides anything
+
+1. **Replay A against B at T1, 2 seeds each** (the first command below), then at T2 with WSD. Does B stay about 1 % ahead on best-of-K, and A ahead on the discrete metrics? A against B changes the WTA selection, so this also tests the anneal coupling.
+2. **Measure seed noise:** 3 seeds of the T1 baseline (and 2 at T2); `compare` with replicates prints the seed SD to pass as `--seed-sd` afterwards.
+3. **Forward-calibrate the next 5 or more changes at both T1 and T2**, whatever T1 says. T1 keeps its kill power only if its sign agrees with T2's at least 80 % of the time for gaps over 2 SE; otherwise it kills gross failures only.
+4. **Keep a decision log** (tier, knob, Delta, CI, verdict) beside the runs (`exp-fast/decisions.md`); re-check after layout 2 or any trunk change.
+5. **On the next shipped model, check T2's ordering against T3** (fresh data, create at 4,000).
+
+### Running it on the training machines
+
+Everything a fast-loop run writes goes under `~/enth-train/exp-fast/` on the machine; the existing parts and the frozen tools are read only. Both arms of a comparison run on the same machine, one at a time, and only when `nvidia-smi` shows the GPU idle (never beside someone else's job, never beside a renderer). From the laptop (the code: the commit to test, unpacked beside the runs):
+
+```bash
+# ship the code (once per commit; an archive has no .git, so run.json's commit is empty: the runs' names carry it)
+git archive COMMIT ml | ssh <the 2080 Ti machine> 'mkdir -p ~/enth-train/exp-fast && tar -x -C ~/enth-train/exp-fast'
+# is the GPU idle? (in WSL, nvidia-smi is /usr/lib/wsl/lib/nvidia-smi)
+ssh <the 2080 Ti machine> 'nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv; nvidia-smi --query-compute-apps=pid --format=csv'
+# a run, detached (it survives the ssh session): stop it with `... -m enth_ml.train stop RUN`, watch it with `... status RUN`
+ssh <the 2080 Ti machine> 'cd ~/enth-train/exp-fast/ml && nohup setsid ~/enth-train/venv/bin/python -m enth_ml.train run ... > ../runs/NAME.log 2>&1 &'
+```
+
+**The first job on an idle GPU: the T1 calibration** (A against B, seeds 1 and 2; about 45 min of GPU), in the 2080 Ti machine's WSL:
+
+```bash
+source ~/enth-train/env.sh; E=~/enth-train/exp-fast; mkdir -p $E/runs; cd $E/ml; PY=~/enth-train/venv/bin/python
+# the dev set into exp-fast (about 1 min on 16 threads; the same 9,324 samples as r3/dev seed 1 of the full runs)
+~/enth-train/enth-datagen-3a573e1 ds1 gen --count 10000 --seed 1 --stream r3/dev --out $E/dev-s1 --workers 16 --shard-size 256 --gr3 ~/enth-train/gr3-3a573e1
+$PY -m enth_ml.train smoke --config enth_ml/train/proxy-v0.toml --dev $E/dev-s1 --out $E/runs/smoke     # T0 first (about a minute on the GPU, estimate)
+PARTS=$(printf '"%s",' ~/enth-train/data/train/train-s10{1..7}-f16); PARTS="[${PARTS%,}]"
+for seed in 1 2; do for arm in b a; do
+  boost=$([ $arm = a ] && echo 3.0 || echo 1.0)
+  $PY -m enth_ml.train run --config enth_ml/train/proxy-v0.toml --no-resume --set "train_dirs=$PARTS" --set "dev_dirs=[\"$E/dev-s1\"]" \
+    --set loss.select_discrete_boost=$boost --set seed=$seed --set "out=\"$E/runs/proxy-$arm-s$seed\"" > $E/runs/proxy-$arm-s$seed.log 2>&1
+done; done
+$PY -m enth_ml.train compare $E/runs/proxy-a-s1,$E/runs/proxy-a-s2 $E/runs/proxy-b-s1,$E/runs/proxy-b-s2 | tee $E/runs/calibration.md
+```
+
+(Wrap the loop in a script under `exp-fast/` and start it with `nohup setsid … &` so it survives the session.) **Reading it** (02 §4): the seed SD from the replicates; the proxy reproduces the discrete ordering if distinct choices, the categorical oracle and presence recall favour A in both seeds; it reproduces best-of-K if B leads in both seeds by more than twice the seed SD. If only the discrete part reproduces, T1 ranks large effects only, and best-of-K changes of about 1 % go to T2. On the 1660 Ti machine instead (02 §4): 5 to 8 of its newest parts (30.4 k samples each, so 152–244 k) with `--set train_in_ram=true` if its WSL has the memory (about 50 KB a sample), `--set amp=false` (FP16 is 2.4x slower there) and `--set schedule_steps=8000`: about 20 min a run, so about 80 min for the four.
 
 ## EXP: exporting propose v0, and parity with PyTorch
 

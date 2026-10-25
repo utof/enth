@@ -12,7 +12,7 @@
 //! | `ds1` | `ds1.rs`, `ds1/` | the versioned sampler `ds1`: the mixture, the phrase sampler, the labels, the filters and the splits by stream key; `gen` writes the shards (docs/r3.md, "`ds1`") | DG |
 //! | `shards` | `shards.rs` | the shard file and the run manifest, for `ml/` to read as files; `verify`, `info`, and `features` (degraded clips to shards) | DG |
 //! | `exclude` | `exclude.rs` | the exclusion lists, and `check`: asserts that no training item is on `content/gr3/`'s lists or near its targets | DG |
-//! | `gr3` | `gr3.rs`, `gr3/` | GR3 clause 1's arms over a job `cargo xtask gr3-run` writes; appends the runs (docs/gr3.md) | EVK; `EVb` |
+//! | `gr3` | `gr3.rs`, `gr3/` | GR3 clause 1's arms over a job `cargo xtask gr3-run` writes; appends the runs (docs/gr3.md); `gr3 proposals`, a model's proposals file for a job (`gr3/propose.rs`) | EVK; `EVb`; FTL |
 //!
 //! Renders are bit-exact, so a dataset is a manifest (a sampler version, seeds, a phrase sampler, an augmentation config)
 //! and clean audio never needs shipping or backing up. Features are computed by `enth-analysis`, never re-implemented in
@@ -41,6 +41,7 @@ const USAGE: &str = "usage: enth-datagen <command> [args...]
   shards features --samples F --clips DIR --out DIR     degraded clips to shards (also `features ...`)
   exclude lists | check DIR [--against DIR]...          the GR3 exclusion lists; assert a run against them
   gr3 run --job FILE  GR3 clause 1's arms over a job (R3 lane EVK; run it through `cargo xtask gr3-run`)
+  gr3 proposals --job FILE --model M --out F [--side S]   a model's proposals for a job's targets (lane FTL)
 Run `bank` through `cargo xtask bank`.";
 
 fn main() -> ExitCode {
