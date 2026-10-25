@@ -1,6 +1,6 @@
-"""The training loop: FP16 autocast with a gradient scaler, AdamW, warmup then cosine on the run's progress, WTA
-annealing, dev evaluation, checkpoints and a run manifest. Logs stay local (JSONL and CSV in the run directory);
-nothing is uploaded.
+"""The training loop: FP16 autocast with a gradient scaler, AdamW, warmup then cosine on the run's progress (or WSD,
+and cooldown branches: ``schedule.py``), WTA annealing, dev evaluation, checkpoints and a run manifest. Logs stay local
+(JSONL and CSV in the run directory); nothing is uploaded.
 
 Progress is ``max(step / schedule_steps, elapsed / budget)``, so the learning rate and the WTA temperature follow
 whichever budget (steps or wall-clock minutes) ends the run first; ``elapsed`` is training time (stops and waits for
@@ -19,6 +19,12 @@ kernels are deterministic; ``tests/test_train_resume.py``), and a ``kill -9`` lo
 **Data that grows.** With ``train_glob``, each epoch trains on the parts complete when it starts (``produce.py``
 renders them meanwhile); ``max_repeat`` paces the run so samples seen stay within that many times the distinct samples
 available, waiting at an epoch boundary for more parts (the wait is logged and does not count as training time).
+
+**The fast loop (lane FTL).** ``persample_evals`` writes each evaluated sample's losses to ``dev-persample-<step>.npz``
+(``compare.py`` pairs two runs by sample); a final evaluation that improves rewrites ``best.pt``; ``train_in_ram``
+cuts the batches from a slice held in RAM (``data.RamSlice``), in the same order as from disk; ``ckpt_keep_every_steps``
+keeps stable-phase checkpoints that ``cooldown`` branches from; a branch (``cooldown_from``, ``cooldown_steps``) ends
+after its decay.
 """
 
 from __future__ import annotations
@@ -45,8 +51,9 @@ from ..model import layout as L
 from ..model.net import ProposeV0, count_flops, count_parameters, exported_parameter_count
 from .ckpt import CheckpointStore, atomic_write_json
 from .config import TrainConfig
+from . import schedule as S
 from .control import StopFlag, write_status
-from .data import DevSet, EpochPlan, batches_from, compute_standardisation
+from .data import DevSet, EpochPlan, RamSlice, batches_from, batches_from_ram, compute_standardisation
 from .loss import ProposeLoss
 from .metrics import DevMetrics
 from .shards import Dataset, open_dataset, streams_disjoint
@@ -140,18 +147,17 @@ def _param_groups(model: torch.nn.Module, weight_decay: float) -> list[dict]:
     return [{"params": decay, "weight_decay": weight_decay}, {"params": no_decay, "weight_decay": 0.0}]
 
 
-def lr_factor(progress: float, step: int, warmup: int, min_frac: float) -> float:
-    if step < warmup:
-        return (step + 1) / warmup
-    p = min(max(progress, 0.0), 1.0)
-    return min_frac + (1.0 - min_frac) * 0.5 * (1.0 + math.cos(math.pi * p))
+# The cosine schedule (every run before lane FTL), kept under its old name; ``schedule.lr_factor`` dispatches.
+lr_factor = S.lr_factor_cosine
 
 
 @torch.no_grad()
-def evaluate(model: ProposeV0, loss_fn: ProposeLoss, dev: DevSet, device: torch.device, cfg: TrainConfig, mel_dtype: str = "f4", per_entry: bool = True) -> dict:
+def evaluate(model: ProposeV0, loss_fn: ProposeLoss, dev: DevSet, device: torch.device, cfg: TrainConfig, mel_dtype: str = "f4", per_entry: bool = True, persample: bool = False) -> dict:
+    """Dev metrics; ``persample=True`` adds ``"persample"``: each sample's arrays (``DevMetrics.persample``) with the
+    dev set's ``source`` and ``index``."""
     model.eval()
     loss_fn.eval()
-    m = DevMetrics(loss_fn, cfg.model.hypotheses)
+    m = DevMetrics(loss_fn, cfg.model.hypotheses, persample=persample)
     t0 = time.perf_counter()
     for b in dev.batches(cfg.dev_batch, mel_dtype=mel_dtype):
         mel = b["mel"].to(device, non_blocking=True).float()
@@ -163,9 +169,29 @@ def evaluate(model: ProposeV0, loss_fn: ProposeLoss, dev: DevSet, device: torch.
         m.update(hyp, conf, b["label"].to(device), b["mask"].to(device))
     out = m.summary(per_entry=per_entry)
     out["eval_seconds"] = time.perf_counter() - t0
+    if persample:
+        out["persample"] = m.persample() | {k: v for k, v in dev.meta.items()}
     model.train()
     loss_fn.train()
     return out
+
+
+PERSAMPLE_SCHEMA = "enth.dev-persample/1"
+
+
+def write_persample(out_dir: pathlib.Path, step: int, arrays: dict, extra: dict | None = None) -> pathlib.Path:
+    """``dev-persample-<step>.npz`` (atomically): ``best``, ``top``, ``meank`` (f32), ``winner``, ``distinct``,
+    ``source`` (u8), ``index`` (u64) per dev sample, and ``step``; ``compare.py`` reads it."""
+    import io
+
+    from .ckpt import atomic_write_bytes
+
+    path = pathlib.Path(out_dir) / f"dev-persample-{int(step):09d}.npz"
+    meta = {"schema": PERSAMPLE_SCHEMA, "step": int(step), **(extra or {})}
+    buf = io.BytesIO()
+    np.savez(buf, step=np.int64(step), meta=np.frombuffer(json.dumps(meta).encode(), dtype=np.uint8), **arrays)
+    atomic_write_bytes(path, buf.getvalue())
+    return path
 
 
 def _rng_state(device_t: torch.device) -> dict:
@@ -292,6 +318,9 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
     """Train, or resume from the newest valid checkpoint in ``cfg.out`` (``resume=False`` refuses a directory that has
     one). Returns a summary whose ``state`` is ``finished`` (budget, epochs or early stop) or ``stopped`` (on request:
     a checkpoint was written and ``run`` can carry on from it)."""
+    S.check(cfg)
+    if cfg.persample_evals not in ("", "final", "all"):
+        raise ValueError(f"persample_evals {cfg.persample_evals!r}: \"\", \"final\" or \"all\"")
     dev_name = device or ("cuda" if torch.cuda.is_available() else "cpu")
     device_t = torch.device(dev_name)
     out = pathlib.Path(cfg.out)
@@ -366,7 +395,7 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
     if cfg.channels_last:
         model = model.to(memory_format=torch.channels_last)
     loss_fn = ProposeLoss(train_ds.jnd_table, train_ds.jnd_scale, cfg.loss).to(device_t)
-    opt = torch.optim.AdamW(_param_groups(model, cfg.weight_decay), lr=cfg.lr, betas=(0.9, cfg.beta2), fused=device_t.type == "cuda")
+    opt = torch.optim.AdamW(_param_groups(model, S.weight_decay(cfg)), lr=cfg.lr, betas=(0.9, cfg.beta2), fused=device_t.type == "cuda")
     use_amp = cfg.amp and device_t.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
@@ -424,10 +453,22 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         },
         "standardisation_sha256": _sha256_bytes(b"".join(np.ascontiguousarray(stats[k]).tobytes() for k in ("mel_mean", "mel_std", "ctx_mean", "ctx_std"))),
         "schedule_steps": schedule_steps,
+        "schedule": {
+            "lr_schedule": cfg.lr_schedule,
+            "warmup_steps": cfg.warmup_steps,
+            "decay_steps": S.wsd_decay_steps(cfg, schedule_steps) if cfg.lr_schedule == "wsd" else None,
+            "decay_shape": cfg.decay_shape if (cfg.lr_schedule == "wsd" or cfg.cooldown_steps) else None,
+            "cooldown": {"from_step": cfg.cooldown_from, "steps": cfg.cooldown_steps, "end_step": S.end_step(cfg)} if cfg.cooldown_steps else None,
+            "anneal": {"steps": cfg.loss.anneal_steps} if cfg.loss.anneal_steps > 0 else {"frac": cfg.loss.anneal_frac, "steps": round(cfg.loss.anneal_frac * schedule_steps)},
+            "weight_decay": S.weight_decay(cfg),
+            "weight_decay_tau_samples": S.weight_decay_tau_samples(cfg),
+        },
         "resumed_from": entry if state is not None else None,
+        "branch_of": json.loads((out / "branch.json").read_text()) if (out / "branch.json").exists() else None,
         "replay_of": {"run": replay.dir.name, "epochs": len(replay.epochs), "config_diff": cfg.identity_diff(replay.run["config"])} if replay else None,
     }
-    (out / ("run.json" if state is None else f"run-resume-{step}.json")).write_text(json.dumps(run, indent=1))
+    # run.json once (a cooldown branch's first start writes it too, its state being the parent's); then one per resume.
+    (out / ("run.json" if state is None or not (out / "run.json").exists() else f"run-resume-{step}.json")).write_text(json.dumps(run, indent=1))
     log_line(json.dumps(run["model"]))
 
     log = SafeLog(out / "metrics.jsonl")
@@ -444,6 +485,9 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
     finished_reason: str | None = None
     available = train_ds.n
     n_parts = len(train_ds.runs)
+    end_at = S.end_step(cfg)  # a cooldown branch's last step (0: the schedule or the budget ends the run)
+    ram: RamSlice | None = None
+    last_eval = {"step": -1, "persample": False}  # the newest evaluation: its step, and whether it wrote its file
 
     def elapsed() -> float:
         return time.perf_counter() - t_start
@@ -501,12 +545,12 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
             status["checkpoint_error"] = {"step": step, "utc": _utc(), "reason": reason}
             if must:
                 raise OSError(f"could not write the {reason} checkpoint at step {step}")
-            if kind != "best":
+            if kind == "periodic":
                 last_ckpt_t = time.perf_counter() - max(cfg.ckpt_every_minutes * 60 - 120.0, 0.0)
             return None
         status.pop("checkpoint_error", None)
         secs = time.perf_counter() - t0
-        if kind != "best":
+        if kind == "periodic":
             last_ckpt_t = time.perf_counter()
             last_ckpt_step = step
         log.write(json.dumps({"kind": "ckpt", "file": e["file"], "step": step, "epoch": epoch, "position": position, "reason": reason, "seconds": secs, "bytes": e["bytes"], "utc": e["utc"]}) + "\n")
@@ -551,9 +595,14 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         )
         write_status(out, status)
 
-    def do_eval(per_entry: bool) -> tuple[dict, bool]:
+    def do_eval(per_entry: bool, final: bool = False) -> tuple[dict, bool]:
         nonlocal best_dev, evals_since_best
-        ev = evaluate(model, loss_fn, dev, device_t, cfg, per_entry=per_entry)
+        keep = cfg.persample_evals == "all" or (final and cfg.persample_evals == "final")
+        ev = evaluate(model, loss_fn, dev, device_t, cfg, per_entry=per_entry, persample=keep)
+        if keep:
+            per = ev.pop("persample")
+            write_persample(out, step, per, {"run": out.name, "loss_best": ev["loss_best"], "samples_seen": samples_seen})
+        last_eval.update(step=step, persample=keep)
         improved = ev["loss_best"] < best_dev - cfg.min_dev_improvement
         if improved:
             best_dev = ev["loss_best"]
@@ -601,10 +650,19 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
                 ep_samples = 0
                 log.write(json.dumps({"kind": "epoch", "epoch": epoch, "step": step, "samples": plan.samples, "parts": n_parts, "available": available, "utc": _utc()}) + "\n")
                 log.flush()
+            if cfg.train_in_ram and (ram is None or not ram.covers(plan)):
+                t_r = time.perf_counter()
+                ram = None  # release the old slice before reading the new one
+                ram = RamSlice(plan.shards, cfg.train_mel_dtype, cfg.train_in_ram_max_gb)
+                log.write(json.dumps({"kind": "ram", "step": step, "epoch": epoch, "samples": ram.n, "bytes": ram.bytes, "seconds": time.perf_counter() - t_r}) + "\n")
+                log_line(f"train_in_ram: {ram.n} samples ({ram.bytes / 2**30:.2f} GiB) read in {time.perf_counter() - t_r:.0f} s")
             ep_t0 = time.perf_counter()
             win_t0 = time.perf_counter()
             win_data = 0.0
-            batches = batches_from(plan, position, cfg.workers, cfg.prefetch, cfg.pin_memory and device_t.type == "cuda", cfg.train_mel_dtype)
+            if cfg.train_in_ram:
+                batches = batches_from_ram(plan, position, ram, cfg.prefetch)
+            else:
+                batches = batches_from(plan, position, cfg.workers, cfg.prefetch, cfg.pin_memory and device_t.type == "cuda", cfg.train_mel_dtype)
             cut = False
             while True:
                 td = time.perf_counter()
@@ -613,14 +671,19 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
                     break
                 win_data += time.perf_counter() - td
                 p = progress_now()
-                if p >= 1.0:
+                if end_at:
+                    if step >= end_at:  # a cooldown branch ends after its decay, wherever the parent's schedule is
+                        finished_reason = "cooldown"
+                        cut = True
+                        break
+                elif p >= 1.0:
                     finished_reason = "budget"
                     cut = True
                     break
-                f = lr_factor(p, step, cfg.warmup_steps, cfg.min_lr_frac)
+                f = S.lr_factor(cfg, p, step, schedule_steps)
                 for g in opt.param_groups:
                     g["lr"] = cfg.lr * f
-                temp = cfg.loss.temperature(p)
+                temp = cfg.loss.temperature(p, step)
                 mel = b["mel"].to(device_t, non_blocking=True).float()
                 if cfg.channels_last:
                     mel = mel.contiguous(memory_format=torch.channels_last)
@@ -699,6 +762,8 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
                 if cfg.stop_at_step and step >= cfg.stop_at_step:
                     stop.request(f"stop_at_step {cfg.stop_at_step}")
                 heartbeat("running")
+                if cfg.ckpt_keep_every_steps > 0 and step % cfg.ckpt_keep_every_steps == 0:
+                    save("keep", f"kept every {cfg.ckpt_keep_every_steps} steps")
                 due_t = cfg.ckpt_every_minutes > 0 and time.perf_counter() - last_ckpt_t >= cfg.ckpt_every_minutes * 60
                 due_s = cfg.ckpt_every_steps > 0 and step - last_ckpt_step >= cfg.ckpt_every_steps
                 if due_t or due_s:
@@ -737,9 +802,18 @@ def train(cfg: TrainConfig, resume: bool = True, device: str | None = None, allo
         reason = f"stop ({stop.reason})" if stopped else f"end ({finished_reason})"
         if step != last_ckpt_step or not store.entries("periodic"):
             save("periodic", reason, must=True)
-        if not stopped and final_eval is None:
-            final_eval, _ = do_eval(per_entry=True)
-            log.write(json.dumps({"kind": "dev", "step": step, "epoch": epoch, "final": True, "elapsed_min": elapsed() / 60.0, "samples_seen": samples_seen, **final_eval}) + "\n")
+        # A final evaluation unless the newest one (an epoch end's) was at this very step; an epoch end's from earlier
+        # (a run cut mid-epoch by its budget) no longer stands in for it.
+        if not stopped and (final_eval is None or last_eval["step"] != step):
+            final_eval, improved = do_eval(per_entry=True, final=True)
+            log.write(json.dumps({"kind": "dev", "step": step, "epoch": epoch, "final": True, "elapsed_min": elapsed() / 60.0, "samples_seen": samples_seen, "improved": improved, **final_eval}) + "\n")
+            if improved:
+                # The end-of-run quirk lane EVM found: a final evaluation that improves now rewrites best.pt too.
+                save("best", "dev improved (final evaluation)", final_eval["loss_best"])
+        elif not stopped and cfg.persample_evals == "final" and not last_eval["persample"]:
+            # The last evaluation was an epoch end's (eval_at_epoch_end) without its per-sample file: write it now.
+            ev_f = evaluate(model, loss_fn, dev, device_t, cfg, per_entry=False, persample=True)
+            write_persample(out, step, ev_f.pop("persample"), {"run": out.name, "loss_best": ev_f["loss_best"], "samples_seen": samples_seen})
         log.write(json.dumps({"kind": "stop" if stopped else "end", "step": step, "epoch": epoch, "position": position, "reason": reason, "utc": _utc()}) + "\n")
         log.flush()
         heartbeat("stopped" if stopped else "finished", reason, force=True)
@@ -783,9 +857,9 @@ def _utc() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
 
 
-def evaluate_checkpoint(path: str | pathlib.Path, dev_dirs: list[str] | None = None, device: str | None = None, mel_dtype: str = "f4") -> dict:
+def evaluate_checkpoint(path: str | pathlib.Path, dev_dirs: list[str] | None = None, device: str | None = None, mel_dtype: str = "f4", persample_out: str | pathlib.Path | None = None) -> dict:
     """Load a checkpoint and evaluate it on dev (``mel_dtype="f2"``: the features rounded to f16 first, the storage
-    question)."""
+    question). ``persample_out``: also write its per-sample file there (``compare`` reads it, as a run's own)."""
     state = torch.load(path, map_location="cpu", weights_only=False)
     cfg = TrainConfig.from_dict(state["config"])
     device_t = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -797,4 +871,15 @@ def evaluate_checkpoint(path: str | pathlib.Path, dev_dirs: list[str] | None = N
         model = model.to(memory_format=torch.channels_last)
     loss_fn = ProposeLoss(dev_ds.jnd_table, dev_ds.jnd_scale, cfg.loss).to(device_t)
     dev = DevSet(dev_ds.shards, cfg.dev_limit)
-    return evaluate(model, loss_fn, dev, device_t, cfg, mel_dtype=mel_dtype)
+    res = evaluate(model, loss_fn, dev, device_t, cfg, mel_dtype=mel_dtype, persample=persample_out is not None)
+    if persample_out is not None:
+        import io
+
+        from .ckpt import atomic_write_bytes
+
+        per = res.pop("persample")
+        meta = {"schema": PERSAMPLE_SCHEMA, "step": int(state["step"]), "checkpoint": pathlib.Path(path).name, "loss_best": res["loss_best"]}
+        buf = io.BytesIO()
+        np.savez(buf, step=np.int64(state["step"]), meta=np.frombuffer(json.dumps(meta).encode(), dtype=np.uint8), **per)
+        atomic_write_bytes(pathlib.Path(persample_out), buf.getvalue())
+    return res

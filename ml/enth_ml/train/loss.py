@@ -50,6 +50,9 @@ class LossConfig:
     t_start: float = 1.0  # annealing temperature at step 0 (in units of the running mean loss)
     t_end: float = 0.01
     anneal_frac: float = 0.3  # share of the run over which T falls geometrically; hard WTA after it
+    # Lane FTL: > 0 anneals over this many steps instead (absolute, whatever the run's length), so a proxy, a long run
+    # and a cooldown branch share one temperature curve; 0 keeps anneal_frac (the share of the run's progress).
+    anneal_steps: int = 0
     # Lane TR2 (the full run; every default keeps the pilot's behaviour):
     presence_pos_weight: float = 1.0  # BCE weight of a present route (the pilot's presence recall was 0.55)
     conf_soft_tau: float = 0.0  # > 0: the confidence learns softmax(-L_k / (tau * s)) instead of the hard winner
@@ -58,8 +61,14 @@ class LossConfig:
     def to_dict(self) -> dict:
         return asdict(self)
 
-    def temperature(self, progress: float) -> float:
-        """T at ``progress`` in [0, 1] of the run: geometric from ``t_start`` to ``t_end``, then 0 (hard)."""
+    def temperature(self, progress: float, step: int | None = None) -> float:
+        """T at ``progress`` in [0, 1] of the run (or, with ``anneal_steps``, at ``step``): geometric from ``t_start`` to
+        ``t_end``, then 0 (hard)."""
+        if self.anneal_steps > 0 and step is not None:
+            if step >= self.anneal_steps:
+                return 0.0
+            r = step / self.anneal_steps
+            return float(self.t_start * (self.t_end / self.t_start) ** r)
         if self.anneal_frac <= 0 or progress >= self.anneal_frac:
             return 0.0
         r = progress / self.anneal_frac

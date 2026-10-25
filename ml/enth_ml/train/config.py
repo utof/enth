@@ -69,6 +69,28 @@ class TrainConfig:
     status_every_s: float = 5.0  # how often status.json is rewritten
     stop_poll_s: float = 2.0  # how often the STOP file is looked for
     stop_at_step: int = 0  # request a stop (checkpoint, exit) once this step is done (0: never; tests and planned pauses)
+    # Also keep a checkpoint every N steps, never rotated (ckpt/keep-<step>.pt): the stable-phase points a cooldown
+    # branches from (python -m enth_ml.train cooldown). 0: off.
+    ckpt_keep_every_steps: int = 0
+    # -- lane FTL: the fast loop (schedule.py; ml/README.md, "Fast loop") -------------------------------------------------
+    lr_schedule: str = "cosine"  # "cosine" (every run before FTL) or "wsd": warmup, a constant LR, then a decay
+    decay_frac: float = 0.2  # wsd: the share of schedule_steps the decay takes (the last 20 %)
+    decay_steps: int = 0  # wsd: the decay's length in steps instead (0: from decay_frac)
+    decay_shape: str = "1-sqrt"  # the shape of a wsd decay and of a cooldown: "1-sqrt", "linear" or "cosine"
+    # A cooldown branch (written by `cooldown`, never by hand): the parent's schedule up to cooldown_from, then a decay
+    # to min_lr_frac over cooldown_steps, and the run ends.
+    cooldown_from: int = 0
+    cooldown_steps: int = 0
+    # > 0: AdamW's weight decay is set so that the decayed weights' timescale at the peak LR, 1 / (lr * wd) steps, is
+    # this many samples (wd = batch_size / (tau * lr)); 0: weight_decay as written (full-v0-b: 2.56 M samples).
+    weight_decay_tau_samples: float = 0.0
+    # Per-sample dev losses for paired comparisons (`compare`): "final" writes dev-persample-<step>.npz at the end,
+    # "all" at every evaluation, "" never.
+    persample_evals: str = ""
+    # Hold the training shards in RAM (as the loader ships them: f16 mel ~50 KB a sample, so 240 k samples ~12 GB) and
+    # cut batches from there: no loader workers, no disk reads. The same samples in the same order as from disk.
+    train_in_ram: bool = False
+    train_in_ram_max_gb: float = 14.0  # refuse to start when the slice needs more (or more than 85 % of MemAvailable)
     model: ModelConfig = field(default_factory=ModelConfig)
     loss: LossConfig = field(default_factory=LossConfig)
 
@@ -78,6 +100,7 @@ class TrainConfig:
         "early_stop_min_steps", "min_dev_improvement", "min_train_samples", "train_window_samples", "max_repeat", "data_target_samples",
         "data_wait_max_minutes", "ckpt_every_minutes", "ckpt_every_steps", "keep_checkpoints", "status_every_s",
         "stop_poll_s", "stop_at_step", "out", "train_dirs", "dev_dirs", "train_glob", "eval_every_steps", "eval_at_epoch_end",
+        "ckpt_keep_every_steps", "persample_evals", "train_in_ram", "train_in_ram_max_gb",
     )
 
     def to_dict(self) -> dict:
@@ -97,9 +120,41 @@ class TrainConfig:
         loss = LossConfig(**d.pop("loss", {}))
         return cls(model=model, loss=loss, **d)
 
-    @classmethod
-    def load(cls, path: str | pathlib.Path) -> "TrainConfig":
+    @staticmethod
+    def load_dict(path: str | pathlib.Path, _depth: int = 0) -> dict:
+        """A config file as a dict. ``base = "other.toml"`` (a path relative to this file) inherits that file's keys,
+        which this file's override; tables (``[model]``, ``[loss]``) merge key by key."""
         p = pathlib.Path(path)
         text = p.read_text(encoding="utf-8")
         d = tomllib.loads(text) if p.suffix == ".toml" else json.loads(text)
-        return cls.from_dict(d)
+        base = d.pop("base", None)
+        if base:
+            if _depth >= 8:
+                raise ValueError(f"{p}: base files nest more than 8 deep (a cycle?)")
+            d = _merge(TrainConfig.load_dict(p.parent / base, _depth + 1), d)
+        return d
+
+    @classmethod
+    def load(cls, path: str | pathlib.Path) -> "TrainConfig":
+        return cls.from_dict(cls.load_dict(path))
+
+
+def set_key(cfg_dict: dict, assignment: str) -> None:
+    """Apply ``key=value`` (a dotted key; the value as JSON, else as a string) to a config dict: ``--set``."""
+    key, _, value = assignment.partition("=")
+    try:
+        v = json.loads(value)
+    except json.JSONDecodeError:
+        v = value
+    d = cfg_dict
+    parts = key.split(".")
+    for part in parts[:-1]:
+        d = d.setdefault(part, {})
+    d[parts[-1]] = v
+
+
+def _merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
