@@ -555,16 +555,18 @@ impl Duel {
         self.keeps.lock().push((view.id, view.code.clone(), keep));
     }
 
-    /// Restore `entry` into the session's duel `duel` (its view `view`): your result (from this entry, else from the
-    /// newest entry on its code that has one), its salt and codes, and their codes the session does not hold yet.
+    /// Restore `entry` into the session's duel (its view `view`): your result (from this entry, else from the newest
+    /// entry on its code that has one; over a live round's on the same code only when `first_stands`, as **Open**
+    /// does), its salt and codes, and their codes the session does not hold yet.
     fn restore(
         &self,
         session: &mut Session,
         view: &DuelView,
         entry: &Entry,
         own_from: Option<&Entry>,
+        first_stands: bool,
     ) {
-        let own_from = own_from.filter(|_| view.own.is_none());
+        let own_from = own_from.filter(|_| first_stands || view.own.is_none());
         if let Some(from) = own_from
             && let Some(own) = &from.own
         {
@@ -635,7 +637,7 @@ impl Duel {
         let empty = Entry::default();
         let entry = entry.as_ref().unwrap_or(&empty);
         let own_from = entry.own.is_some().then_some(entry).or(own_from.as_ref());
-        self.restore(session, &view, entry, own_from);
+        self.restore(session, &view, entry, own_from, false);
     }
 
     /// **Open** on a history row: a duel opens on its code (the open one closes), kept in that entry, restored, and
@@ -670,7 +672,7 @@ impl Duel {
         } else {
             own_from.as_ref()
         };
-        self.restore(session, &view, &entry, own_from);
+        self.restore(session, &view, &entry, own_from, true);
         if entry.checked.is_some() {
             let _ = session.duel_verify();
         }
