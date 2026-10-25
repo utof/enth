@@ -1260,6 +1260,7 @@ dependencies = [
  "assert_no_alloc",
  "libm",
  "proptest",
+ "wide",
 ]
 
 [[package]]
@@ -1274,6 +1275,7 @@ dependencies = [
  "libm",
  "proptest",
  "rtrb",
+ "wide",
 ]
 
 [[package]]

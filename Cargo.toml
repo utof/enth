@@ -120,6 +120,10 @@ lewton = "=0.10.2"                                  # MIT OR Apache-2.0. Ogg Vor
 nanomp3 = "=0.2.0"                                  # MIT OR Apache-2.0. MP3, a safe port of minimp3 (one maintainer: revisit if it stalls)
 # Phase 4 (R4 + R5; docs/phase-4.md, the coordinator's pins, 2026-10-22). Already in Cargo.lock (a transitive dependency).
 getrandom = { version = "=0.4.3", default-features = false }   # MIT OR Apache-2.0. R5a's duel salt: OS randomness, once per duel, never a clock (duels.md, Privacy); enth-plugin only (lane SKD)
+# S2a (docs/phase-s2.md, lane S0d, freeze F0m). Version and licence read from the crates.io API on 2026-10-25 (1.7.1 is the
+# newest, 2026-09-14; already in Cargo.lock through spike-engine and nanomp3). S0d lists it in enth-dsp and enth-engine, the
+# crates expected to use it (lane UNI first: unison on f32x8 lanes), so Cargo.lock is resolved up front.
+wide = "=1.7.1"                                     # Zlib OR Apache-2.0 OR MIT. SIMD lanes (f32x4, f32x8) with a scalar fallback, compile-time width only. Bit-exact only for + - * / sqrt, min, max, abs, floor, ceil, trunc, round, compares and blends: its fused, approximate, transcendental and target-ordered methods are banned in clippy.toml
 
 # The vendored fork of nice-plug and baseview (research session 2026-10-19-p1b-plugin-editor, summary.md, decision "Fork";
 # lane FK). `vendor/` holds the crates.io sources (a pristine-import commit, then one commit per patch: slot rename,

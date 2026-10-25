@@ -12,6 +12,8 @@ enth-params.workspace = true
 enth-patch.workspace = true
 libm.workspace = true
 rtrb.workspace = true
+# S2a lane S0d (F0m): SIMD lanes for unison (lane UNI), within clippy.toml's bans on wide's non-deterministic methods.
+wide.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
