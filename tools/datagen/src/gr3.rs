@@ -4,6 +4,7 @@
 //!
 //! ```text
 //! enth-datagen gr3 run --job JOB.json      # the arms over the job's targets; one JSON line per target appended
+//! enth-datagen gr3 proposals --job JOB.json --model M --out F [--side S]   # a model's proposals file (lane FTL)
 //! ```
 //!
 //! # What a run does, per target (docs/gr3.md has the protocol)
@@ -51,6 +52,7 @@
 pub mod arm;
 pub mod job;
 pub mod machine;
+pub mod propose;
 pub mod record;
 pub mod target;
 
@@ -66,8 +68,8 @@ use self::arm::{Ctx, FileProposer, Proposer};
 use self::job::{Arm, Job};
 use self::record::{RunEnd, RunHeader};
 
-const USAGE: &str =
-    "usage: enth-datagen gr3 run --job JOB.json   (run it through `cargo xtask gr3-run`)";
+const USAGE: &str = "usage: enth-datagen gr3 run --job JOB.json   (run it through `cargo xtask gr3-run`)
+       enth-datagen gr3 proposals --job JOB.json --model enth-model-<id>.bin --out proposals.json [--side side.json]";
 
 /// `gr3`: run a job.
 pub fn run(args: &[String]) -> Result<(), String> {
@@ -84,6 +86,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 serde_json::from_str(&text).map_err(|e| format!("the job {path}: {e}"))?;
             run_job(&job)
         }
+        Some("proposals") => propose::run(&args[1..]),
         _ => Err(USAGE.to_owned()),
     }
 }

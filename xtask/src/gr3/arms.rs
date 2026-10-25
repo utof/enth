@@ -25,14 +25,16 @@ use super::runs::{self, Set};
 
 const USAGE: &str = "usage: cargo xtask gr3-run --arm A|B|C|D [--split test|dev] [--set core|rest|available|full]
        [--ids ID,ID...] [--mode wall|renders] [--seconds 60] [--budget N] [--twin-of RUN_ID [--at MARK]]
-       [--workers 8] [--bank PATH|none] [--bank-entries N] [--proposals FILE (dev only)]
+       [--workers 8] [--bank PATH|none] [--bank-entries N] [--proposals FILE (dev only)] [--model FILE (dev only)]
        [--k 8] [--first-rung 50] [--eta 2] [--finalists 2] [--neighbours 16] [--min-spread 0.25]
        [--lambda 0] [--seed 1] [--score-seconds 3] [--marks M,M...] [--out PATH (dev only)] [--runs PATH]
        [--note TEXT] [--no-lock] [--dry-run] [--tool PATH]
        [--endpoint RENDERS --equivalent-seconds S --rate-source TEXT]   (a render run standing for a timed one)
        cargo xtask gr3-run --rate-probe   (the idle-rate probe: 8 dev targets, 60 s each under flock -x, ~10 min)
 Defaults: test split, core set, wall-clock mode at 60 s, 8 workers, the bank `cargo xtask bank` writes,
-create's own settings (docs/gr3.md lists the tuned defaults). Test runs append to content/gr3/runs.jsonl.";
+create's own settings (docs/gr3.md lists the tuned defaults). Test runs append to content/gr3/runs.jsonl.
+--model (arms B and C, dev): `enth-datagen gr3 proposals` writes the model's proposals for the job's targets first
+(target/gr3/proposals/RUN_ID.json), then the arms run on them: the fast create eval (ml/README.md, section Fast loop).";
 
 /// The options.
 #[derive(Debug, Default)]
@@ -98,7 +100,7 @@ impl Opts {
     }
 
     fn check_known(&self) -> Result<(), String> {
-        const KNOWN: [&str; 30] = [
+        const KNOWN: [&str; 31] = [
             "--arm",
             "--split",
             "--set",
@@ -112,6 +114,7 @@ impl Opts {
             "--bank",
             "--bank-entries",
             "--proposals",
+            "--model",
             "--k",
             "--first-rung",
             "--eta",
@@ -325,11 +328,26 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
                     .to_owned(),
             );
         }
-        if o.get("--proposals").is_some() {
+        if o.get("--proposals").is_some() || o.get("--model").is_some() {
             return Err(
                 "a proposals file is a dry run of arms B and C, never a GR3 result: use it on dev"
                     .to_owned(),
             );
+        }
+    }
+    // --model: the proposals file is written by `enth-datagen gr3 proposals` before the arms run (lane FTL).
+    let model = o.get("--model").map(PathBuf::from);
+    if let Some(m) = &model {
+        if o.get("--proposals").is_some() {
+            return Err("--model writes the proposals file itself: drop --proposals".to_owned());
+        }
+        if arm != "B" && arm != "C" {
+            return Err(format!(
+                "--model is for arms B and C (arm {arm} uses no proposals)"
+            ));
+        }
+        if !m.is_file() {
+            return Err(format!("no model file at {}", m.display()));
         }
     }
     let synth_sha = runs::check_freeze(&gr3)?;
@@ -474,6 +492,13 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
     };
     let run_id = format!("{}-{arm}-{cap}-{split}-{set_name}", now_id());
     let twin_of = twin.as_ref().map(|(of, _)| of.clone());
+    let proposals_out = model
+        .as_ref()
+        .map(|_| tdir.join(format!("gr3/proposals/{run_id}.json")));
+    let proposals: Option<String> = proposals_out
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .or_else(|| o.get("--proposals").map(str::to_owned));
     let budgets: std::collections::BTreeMap<String, usize> = twin
         .map(|(_, (b, _))| b.into_iter().collect())
         .unwrap_or_default();
@@ -544,7 +569,7 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
         "cfg": cfg,
         "bank": bank,
         "bank_entries": bank_entries,
-        "proposals": o.get("--proposals"),
+        "proposals": proposals,
         "split": split,
         "header": header,
         "targets": targets,
@@ -563,6 +588,13 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
         out.display()
     );
     println!("gr3-run: job {}", job_path.display());
+    if let (Some(m), Some(p)) = (&model, &proposals_out) {
+        println!(
+            "gr3-run: proposals of {} -> {} (enth-datagen gr3 proposals)",
+            m.display(),
+            p.display()
+        );
+    }
     if o.flag("--dry-run") {
         for t in &picked {
             println!("  {}", t.id);
@@ -573,6 +605,9 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
     // ---- build (shared lock), then run (the tool locks per target in wall mode) ----
     if let Some(tool) = o.get("--tool") {
         // A frozen tool binary (a long sweep keeps one build however the tree moves meanwhile).
+        if let (Some(m), Some(p)) = (&model, &proposals_out) {
+            run_proposals(Path::new(tool), &job_path, m, p)?;
+        }
         return run_tool(Path::new(tool), &job_path, &out);
     }
     let status = Command::new("flock")
@@ -592,7 +627,32 @@ pub fn gr3_run(args: &[String]) -> Result<(), String> {
     if !status.success() {
         return Err("building enth-datagen failed (report above)".to_owned());
     }
-    run_tool(&tdir.join("release/enth-datagen"), &job_path, &out)
+    let bin = tdir.join("release/enth-datagen");
+    if let (Some(m), Some(p)) = (&model, &proposals_out) {
+        run_proposals(&bin, &job_path, m, p)?;
+    }
+    run_tool(&bin, &job_path, &out)
+}
+
+/// `enth-datagen gr3 proposals`: the model's proposals for the job's targets, before the arms run (`--model`).
+fn run_proposals(bin: &Path, job_path: &Path, model: &Path, out: &Path) -> Result<(), String> {
+    let side = out.with_extension("side.json");
+    let status = Command::new(bin)
+        .args(["gr3", "proposals", "--job"])
+        .arg(job_path)
+        .arg("--model")
+        .arg(model)
+        .arg("--out")
+        .arg(out)
+        .arg("--side")
+        .arg(&side)
+        .status()
+        .map_err(|e| format!("cannot run {}: {e}", bin.display()))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("enth-datagen gr3 proposals: failed (report above)".to_owned())
+    }
 }
 
 fn run_tool(bin: &Path, job_path: &Path, out: &Path) -> Result<(), String> {
@@ -608,5 +668,50 @@ fn run_tool(bin: &Path, job_path: &Path, out: &Path) -> Result<(), String> {
             "enth-datagen gr3 run: failed (report above; whatever ran is recorded in {})",
             out.display()
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `--model` (lane FTL): refused where a proposals file is (a test run), with `--proposals`, for arms without
+    //! proposals, and for a missing file; each refusal comes before any file of `content/gr3/` is read.
+    use super::gr3_run;
+
+    fn run(args: &[&str]) -> String {
+        let v: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
+        gr3_run(&v).unwrap_err()
+    }
+
+    #[test]
+    fn model_refusals() {
+        assert!(run(&["--arm", "B", "--model", "m.bin"]).contains("never a GR3 result"));
+        assert!(
+            run(&[
+                "--arm",
+                "B",
+                "--split",
+                "dev",
+                "--model",
+                "m.bin",
+                "--proposals",
+                "p.json"
+            ])
+            .contains("drop --proposals")
+        );
+        assert!(
+            run(&["--arm", "A", "--split", "dev", "--model", "m.bin"]).contains("arms B and C")
+        );
+        assert!(
+            run(&[
+                "--arm",
+                "C",
+                "--split",
+                "dev",
+                "--model",
+                "/nonexistent/enth-model.bin"
+            ])
+            .contains("no model file")
+        );
+        assert!(run(&["--arm", "B", "--modle", "m.bin"]).contains("unknown option --modle"));
     }
 }
