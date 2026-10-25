@@ -644,6 +644,47 @@ impl<A: App> EguiWindow<A> {
             log_keyboard_error(&e);
         }
     }
+
+    /// enth fork (patch 13): answers [`ViewportCommand::RequestPaste`] as eframe does: reads the
+    /// clipboard's text and gives it to the next frame as one [`egui::Event::Paste`], with Windows
+    /// line endings as `\n`; an empty clipboard pastes nothing. The clipboard is read here (once
+    /// per request) and on the paste shortcut while a text field has the keyboard, never otherwise.
+    fn paste_into_next_frame(&self) {
+        let contents = {
+            let mut inner = self.inner.borrow_mut();
+            let Some(clipboard_ctx) = inner.clipboard_ctx.as_mut() else {
+                return;
+            };
+            match clipboard_ctx.get_contents() {
+                Ok(contents) => contents,
+                Err(err) => {
+                    #[cfg(any(feature = "tracing", feature = "log"))]
+                    error!("Paste error: {}", err);
+
+                    #[cfg(not(any(feature = "tracing", feature = "log")))]
+                    let _ = err;
+
+                    return;
+                }
+            }
+        };
+
+        let contents = contents.replace("\r\n", "\n");
+        if contents.is_empty() {
+            return;
+        }
+
+        let arrived = Instant::now();
+        let mut egui_input = self.egui_input.borrow_mut();
+        egui_input.events.push(egui::Event::Paste(contents));
+        // Patch 12: the paste's stamp is when its text arrived.
+        self.arrivals
+            .borrow_mut()
+            .resize(egui_input.events.len(), arrived);
+        drop(egui_input);
+
+        self.window.request_redraw();
+    }
 }
 
 fn log_keyboard_error(error: &baseview::Error) {
@@ -761,6 +802,7 @@ impl<A: App> WindowHandler for EguiWindow<A> {
             )));
         }
 
+        let mut paste_requested = false;
         for command in viewport_output.commands.iter() {
             match command {
                 ViewportCommand::Close => {
@@ -775,8 +817,16 @@ impl<A: App> WindowHandler for EguiWindow<A> {
                 ViewportCommand::Focus => {
                     self.window.focus()?;
                 }
+                // enth fork (patch 13): a paste the app asked for (a Paste button).
+                ViewportCommand::RequestPaste => {
+                    paste_requested = true;
+                }
                 _ => {}
             }
+        }
+
+        if paste_requested {
+            self.paste_into_next_frame();
         }
 
         if let Some(new_size) = new_size {
