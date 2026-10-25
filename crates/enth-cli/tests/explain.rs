@@ -24,8 +24,7 @@ fn explain(args: &[&str]) -> (enth_cli::Output, ExplainOut) {
 
 #[test]
 fn every_parameter_of_the_catalogue_can_be_explained() {
-    let mut owners: Vec<(String, Vec<(&'static str, &'static str)>)> = ModuleKind::ALL
-        .iter()
+    let mut owners: Vec<(String, Vec<(&'static str, &'static str)>)> = ModuleKind::listed()
         .map(|k| {
             (
                 k.key().to_owned(),

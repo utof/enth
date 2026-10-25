@@ -429,6 +429,7 @@ fn slot_and_macro_automation_and_the_mod_wheel_render_like_the_cli_at_every_bloc
             },
         ],
         duration_s: f64::from(frames as u32) / sr,
+        ..Performance::default()
     };
     let expected = cli(&patch, &perf);
     assert!(loud(&expected));

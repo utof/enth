@@ -162,6 +162,7 @@ impl Source {
                     automation,
                     controls,
                     duration_s: frames as f64 / f64::from(sample_rate),
+                    ..Performance::default()
                 };
                 let spec = RenderSpec::new(sample_rate, seed.unwrap_or(enth_render::DEFAULT_SEED));
                 let out = enth_render::render(&patch, &perf, &spec)

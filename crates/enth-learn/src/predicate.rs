@@ -180,7 +180,7 @@ pub fn parse_line(text: &str) -> Result<Predicate, PredicateError> {
     let p = if let Some(rest) = keyword(t, "has") {
         let key = single_token(rest).ok_or_else(|| err("has takes one module kind (has svf)"))?;
         let kind = ModuleKind::from_key(key).ok_or_else(|| {
-            let kinds: Vec<&str> = ModuleKind::ALL.iter().map(|k| k.key()).collect();
+            let kinds: Vec<&str> = ModuleKind::listed().map(ModuleKind::key).collect();
             err(&format!(
                 "'{key}' is not a module kind ({})",
                 kinds.join(", ")

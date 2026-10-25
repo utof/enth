@@ -45,7 +45,7 @@ mod tests {
             p.engine.is_empty(),
             "a fresh instance stamps its own engine version"
         );
-        for &kind in ModuleKind::ALL {
+        for kind in ModuleKind::listed() {
             assert!(
                 p.modules().any(|(_, m)| m.kind == kind),
                 "{kind:?} is in Init"

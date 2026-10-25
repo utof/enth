@@ -53,13 +53,13 @@ pub enum Group {
 }
 
 impl Group {
-    /// Every table, in catalogue order: the module kinds, then `voice`, `master` and the macro knob. A module kind
-    /// added to the catalogue joins at once, so it is a hole until a lesson teaches it (AGENTS.md: a user-facing
-    /// module comes with a lesson).
+    /// Every table, in catalogue order: the listed module kinds, then `voice`, `master` and the macro knob. A
+    /// module kind added to the catalogue joins at once, so it is a hole until a lesson teaches it (AGENTS.md: a
+    /// user-facing module comes with a lesson). A reserved S2a kind (`ModuleSpec::hidden`) joins when INT-S2a clears
+    /// its flag, so coverage never meets a kind without a lesson (docs/phase-s2.md, rule 6).
     pub fn all() -> Vec<Group> {
-        ModuleKind::ALL
-            .iter()
-            .map(|k| Group::Module(*k))
+        ModuleKind::listed()
+            .map(Group::Module)
             .chain([Group::Voice, Group::Master, Group::Macro])
             .collect()
     }

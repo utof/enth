@@ -1436,7 +1436,7 @@ mod tests {
     fn reverb_is_empty(plan: &Plan, i: usize) -> bool {
         match &plan.fx[i].module {
             GlobalProcessorImpl::Reverb(r) => r.core().is_state_zero(),
-            GlobalProcessorImpl::Comp(_) => unreachable!("index of the reverb"),
+            _ => unreachable!("index of the reverb"),
         }
     }
 

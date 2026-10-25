@@ -122,12 +122,13 @@ fn first_title(kind: ModuleKind) -> &'static str {
         ModuleKind::Lfo => "LFO 1",
         ModuleKind::Reverb => "Reverb 1",
         ModuleKind::Comp => "Comp 1",
+        k => unreachable!("{k}: a reserved kind is not in the Add menu"),
     }
 }
 
 #[test]
 fn every_kind_is_added_and_removed_with_one_undo_step_each() {
-    for &kind in ModuleKind::ALL {
+    for kind in ModuleKind::listed() {
         let mut h = harness(Patch::init());
         let start = h.state().session.patch().clone();
         let new = start.free_id(kind);

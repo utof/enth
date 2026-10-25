@@ -111,12 +111,10 @@ pub fn section_of(part: Part) -> Option<Section> {
     }
 }
 
-/// The kinds a section holds, in catalogue order.
+/// The kinds a section offers, in catalogue order: the listed ones only, so a reserved S2a kind
+/// (`ModuleSpec::hidden`) never appears in an Add menu until INT-S2a clears its flag.
 pub fn kinds(section: Section) -> impl Iterator<Item = ModuleKind> {
-    ModuleKind::ALL
-        .iter()
-        .copied()
-        .filter(move |k| k.section() == section)
+    ModuleKind::listed().filter(move |k| k.section() == section)
 }
 
 /// A section's heading in the add menus.
@@ -571,11 +569,27 @@ mod tests {
     }
 
     #[test]
-    fn every_kind_is_offered_in_its_own_section() {
+    fn every_listed_kind_is_offered_in_its_own_section() {
         let offered: Vec<ModuleKind> = Section::ALL.into_iter().flat_map(kinds).collect();
-        assert_eq!(offered.len(), ModuleKind::ALL.len());
+        assert_eq!(offered.len(), ModuleKind::listed().count());
         for kind in offered {
             assert!(kinds(kind.section()).any(|k| k == kind));
+        }
+    }
+
+    /// The hide flag (S2a, F0m): no reserved kind is in any section's Add menu.
+    #[test]
+    fn no_reserved_kind_is_offered() {
+        let hidden: Vec<ModuleKind> = ModuleKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_hidden())
+            .collect();
+        assert_eq!(hidden.len(), 11);
+        for section in Section::ALL {
+            for kind in kinds(section) {
+                assert!(!kind.is_hidden(), "{kind} is offered in {section:?}");
+            }
         }
     }
 

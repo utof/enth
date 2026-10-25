@@ -138,10 +138,11 @@ pub fn run(args: &Args, stdin: &str) -> Res {
 // ---------------------------------------------------------------------------------------------------------------
 
 fn unknown_kind(name: &str) -> CliError {
-    let mut pool: Vec<&str> = ModuleKind::ALL.iter().map(|k| k.key()).collect();
-    pool.extend(CATALOGUE.iter().map(|m| m.id_prefix));
+    // Reserved S2a kinds are accepted by key but never suggested (`ModuleSpec::hidden`).
+    let mut pool: Vec<&str> = ModuleKind::listed().map(ModuleKind::key).collect();
+    pool.extend(CATALOGUE.iter().filter(|m| !m.hidden).map(|m| m.id_prefix));
     pool.extend(["voice", "master"]);
-    let mut known: Vec<String> = ModuleKind::ALL.iter().map(|k| k.key().to_owned()).collect();
+    let mut known: Vec<String> = ModuleKind::listed().map(|k| k.key().to_owned()).collect();
     known.extend(["voice".to_owned(), "master".to_owned()]);
     error::invalid(
         "unknown_kind",

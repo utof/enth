@@ -75,8 +75,10 @@ pub fn schema(name: Option<&str>) -> Res {
 pub fn modules() -> Reply {
     let out = ModulesOut {
         schema: ids::MODULES.to_owned(),
+        // The listed kinds: a reserved S2a kind stays out until INT-S2a clears its flag (`ModuleSpec::hidden`).
         modules: CATALOGUE
             .iter()
+            .filter(|m| !m.hidden)
             .map(|m| ModuleKindOut {
                 kind: m.key.to_owned(),
                 name: m.name.to_owned(),
@@ -133,10 +135,11 @@ fn resolve_target(name: &str, patch: Option<&Path>) -> Result<Target, CliError> 
     if let Some(k) = ModuleKind::from_key(n).or_else(|| aliases::kind_for_name(n)) {
         return Ok(Target::Kind(k));
     }
-    let mut pool: Vec<&str> = ModuleKind::ALL.iter().map(|k| k.key()).collect();
-    pool.extend(CATALOGUE.iter().map(|m| m.id_prefix));
+    // Reserved S2a kinds are accepted by key but never suggested (`ModuleSpec::hidden`).
+    let mut pool: Vec<&str> = ModuleKind::listed().map(ModuleKind::key).collect();
+    pool.extend(CATALOGUE.iter().filter(|m| !m.hidden).map(|m| m.id_prefix));
     pool.extend(["voice", "master"]);
-    let mut known: Vec<String> = ModuleKind::ALL.iter().map(|k| k.key().to_owned()).collect();
+    let mut known: Vec<String> = ModuleKind::listed().map(|k| k.key().to_owned()).collect();
     known.extend(["voice".to_owned(), "master".to_owned()]);
     Err(error::invalid(
         "unknown_kind",

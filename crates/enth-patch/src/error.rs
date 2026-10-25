@@ -497,11 +497,13 @@ fn rate_name(r: Rate) -> &'static str {
     }
 }
 
-/// Every parameter key of every module kind, `voice` and `master`.
+/// Every parameter key of every listed module kind (reserved kinds are left out of suggestions), `voice` and
+/// `master`.
 fn all_param_keys() -> Vec<&'static str> {
     use crate::catalogue::{CATALOGUE, MASTER_PARAMS, VOICE_PARAMS};
     let mut keys: Vec<&'static str> = CATALOGUE
         .iter()
+        .filter(|m| !m.hidden)
         .flat_map(|m| m.params.iter().map(|p| p.key))
         .chain(VOICE_PARAMS.iter().map(|p| p.key))
         .chain(MASTER_PARAMS.iter().map(|p| p.key))
@@ -512,7 +514,7 @@ fn all_param_keys() -> Vec<&'static str> {
 }
 
 fn kind_keys() -> Vec<&'static str> {
-    ModuleKind::ALL.iter().map(|k| k.key()).collect()
+    ModuleKind::listed().map(ModuleKind::key).collect()
 }
 
 impl fmt::Display for PatchError {

@@ -249,6 +249,18 @@ fn display(ui: &mut Ui, t: &Theme, view: &CardView, rect: Rect, out: &mut Intent
             let curve = |x| shapes::compressor(threshold, ratio, knee, makeup, x);
             Display::new(t, Trace::Curve(&curve), size).paint(ui, rect);
         }
+        // S2a's reserved kinds draw no picture yet (lanes SKS and EDS give them one).
+        ModuleKind::Dist
+        | ModuleKind::Wt
+        | ModuleKind::Ott
+        | ModuleKind::Comb
+        | ModuleKind::Formant
+        | ModuleKind::Mseg
+        | ModuleKind::Chorus
+        | ModuleKind::Phaser
+        | ModuleKind::Eq
+        | ModuleKind::Delay
+        | ModuleKind::Ladder => {}
     }
 }
 

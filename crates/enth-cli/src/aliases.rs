@@ -146,6 +146,7 @@ pub fn target_keys(patch: Option<&Patch>, target: &str) -> Vec<&'static str> {
     }
     let mut keys: Vec<&'static str> = CATALOGUE
         .iter()
+        .filter(|m| !m.hidden)
         .flat_map(|m| m.params.iter().map(|p| p.key))
         .chain(Builtin::Voice.params().iter().map(|p| p.key))
         .chain(Builtin::Master.params().iter().map(|p| p.key))

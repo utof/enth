@@ -636,6 +636,18 @@ fn module_name(patch: &Patch, m: &enth_patch::ModuleInstance) -> String {
         ModuleKind::Lfo => format!("LFO {n}"),
         ModuleKind::Reverb => "reverb".to_owned(),
         ModuleKind::Comp => "compressor".to_owned(),
+        // S2a's reserved kinds (lane MTC refines deconstruct's wording when they are listed).
+        ModuleKind::Dist => "distortion".to_owned(),
+        ModuleKind::Wt => format!("wavetable oscillator {n}"),
+        ModuleKind::Ott => "OTT compressor".to_owned(),
+        ModuleKind::Comb => "comb filter".to_owned(),
+        ModuleKind::Formant => "formant filter".to_owned(),
+        ModuleKind::Mseg => format!("MSEG {n}"),
+        ModuleKind::Chorus => "chorus".to_owned(),
+        ModuleKind::Phaser => "phaser".to_owned(),
+        ModuleKind::Eq => "EQ".to_owned(),
+        ModuleKind::Delay => "delay".to_owned(),
+        ModuleKind::Ladder => "ladder filter".to_owned(),
     }
 }
 
