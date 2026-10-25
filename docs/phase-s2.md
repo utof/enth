@@ -2,7 +2,7 @@
 
 **Goal: modules for wobble, growl, reese and FM bass, with no existing hash, golden or code moved.** S2 (Depth) is pulled forward and re-aimed at bass music. A dubstep sound is a mid-range bass whose timbre moves in tempo-locked patterns over a clean mono sub, and enth makes about 3 of the 14 sound families today (sub, basic wobble, two-saw reese, sync screech). S2a adds, in this order, tempo and distortion; FM, PM, AM and ring mod between generators in a new wavetable oscillator `wt`; OTT, comb and formant filters and an MSEG; unison on SIMD, chorus, flanger, phaser, EQ and a synced delay; then templates, lessons and a friend build. Its gate GS2a ([below](#the-gs2a-checks)): nothing that exists moves, a G2 reference patch stays within its CPU budget, every module's aliasing is measured, [report 04](../_local/sessions/2026-10-25-s2-depth-and-fast-training/04-dubstep-anatomy.md)'s ten patch sketches are matched in create, and you make a wobble, a growl, a reese and an FM bass you like. **S2a takes heavy slot S** (R3b's local heavy lanes are done and its training runs on the remote GPUs), beside R4 and R5 in slot L ([phase-4.md](phase-4.md)).
 
-Size: **about 35–63 agent-hours** (report 06 §5's 34–57 plus the unison split and the MSEG lane; its own rows add to 34–59). Critical path: S0d → RTE + CAT → F1D → WT → SKS → EDS → INT-S2a, about 11–20 agent-hours; R2 took about twice its plan in wall time, so expect **about 22–40 h of wall time**. Most lanes are light builds (dsp, engine, patch), so they fit beside R4 and R5; only S0d, SKS, EDS and INT-S2a are heavy.
+Size: **about 35–63 agent-hours** (report 06 §5's 34–57 plus the unison split and the MSEG lane; its own rows add to 34–59). Critical path: S0d → RTE + CAT → F1M → WT → SKS → EDS → INT-S2a, about 11–20 agent-hours; R2 took about twice its plan in wall time, so expect **about 22–40 h of wall time**. Most lanes are light builds (dsp, engine, patch), so they fit beside R4 and R5; only S0d, SKS, EDS and INT-S2a are heavy.
 
 **Status (2026-10-25): planned; nothing is built.** The research session is done, and its decisions are provisional until you steer; work proceeds on the defaults meanwhile: [`_local/sessions/2026-10-25-s2-depth-and-fast-training/`](../_local/sessions/2026-10-25-s2-depth-and-fast-training/summary.md) (the summary wins where it corrects a report; [report 06 §5](../_local/sessions/2026-10-25-s2-depth-and-fast-training/06-architecture-impact.md#5-s2a-lane-plan) is the lane plan this page adapts). [roadmap.md](roadmap.md) and [README.md](README.md) were updated the same day (lane DOCS-S2), and [phase-4.md](phase-4.md)'s open checks gained one row on the answer code. The faster R3b training loop (lane FTL) is separate: it updates [r3.md](r3.md) and `ml/README.md` when it lands, S2a does not wait for it, and **no full training run starts before layout 2** ([S2b](#s2b-outline)).
 
@@ -39,7 +39,7 @@ Lanes should read these before the tables.
    | `voice.mode` | poly, mono, legato |
 
    `osc.table`, `osc.phase_mode` and `voice.glide_mode` are not pinned.
-2. **Prefer a new kind to a parameter on an old one.** A new parameter on an existing kind rehashes every patch of that kind (render caches and `enth sound`'s `patch_hash`; codes, rounds and duels use key-based fingerprints that skip defaults and are safe). So parameters added to an existing kind (`lfo`'s `sync` and `beats`, and whatever CAT decides for envelope times) go in **once, at F1d**. Nothing may change a field layout 1 reads (a range, scale, unit, item list or template-0 value of one of its 102 entries).
+2. **Prefer a new kind to a parameter on an old one.** A new parameter on an existing kind rehashes every patch of that kind (render caches and `enth sound`'s `patch_hash`; codes, rounds and duels use key-based fingerprints that skip defaults and are safe). So parameters added to an existing kind (`lfo`'s `sync` and `beats`, and whatever CAT decides for envelope times) go in **once, at F1m**. Nothing may change a field layout 1 reads (a range, scale, unit, item list or template-0 value of one of its 102 entries).
 3. **Every effect gets `mix`** (at 0 it returns its input bit for bit), **and the voice-FX and FX chains take several instances of one kind** (two `dist` modules keep separate state, seeds and swap carry; each lane tests it). `MAX_VOICE_FX` and `MAX_FX` stay 4 unless the sketches need more ([open checks](#open-checks)).
 4. **A kind lives in one section.** A distortion wanted both per voice and global is two kinds.
 5. **The determinism rules of [AGENTS.md](../AGENTS.md) apply to every new line.** `libm` or polynomial shapers, a fixed summation order, no fused operations, flush denormals in code, seeds from the voice seed and the module id (a unison copy's phase comes from `derive(voice_seed, k)`, never from a parameter value), and **`wide`'s traps are banned** (`recip`, `recip_sqrt`, `exp`, `exp2`, `ln`, `sin_cos`, `pow`, `exp_m1`, `ln_1p`) beside the fused operations already in `clippy.toml`.
@@ -55,64 +55,64 @@ The summary's corrections stand ([summary](../_local/sessions/2026-10-25-s2-dept
 | Report 03 puts unison first; 04 and 05 put distortion first | **Distortion and tempo first.** Unison needs the stereo bus and SIMD, and alone adds width more than new timbres, so it lands after the PM routing | The summary |
 | Report 06's S2a has no MSEG; 04 calls it the biggest single dubstep modulator | **Lane MSEG**, a new kind with a fixed point count that CAT decides (variable-length data fits neither the catalogue nor a model layout) | The summary |
 | 04 asks for envelope times above 10 s | An existing range cannot move (the catalogue's normalisation and the layout-1 hash), so **a new parameter or a new envelope kind**, decided by CAT, built by lane MSEG | The summary; this plan |
-| Report 06 makes `wt` with PM and unison the F2d skeleton | `wt` with PM is F2d; **lane UNI lands unison mono-first after PM**, on `wide` lanes, so F2d never waits on SIMD. F2d's gate loses "G2 measured"; G2B measures it once unison and OTT exist | The summary; this plan |
+| Report 06 makes `wt` with PM and unison the F2m skeleton | `wt` with PM is F2m; **lane UNI lands unison mono-first after PM**, on `wide` lanes, so F2m never waits on SIMD. F2m's gate loses "G2 measured"; G2B measures it once unison and OTT exist | The summary; this plan |
 | 06 puts tempo's default at 120 and the summary (D5) at 140 | **140**: only a synced module reads it and no patch before S2 has one. Code v1 is frozen, so tempo enters a challenge's render spec with the first version that can draw a synced module (generator v2, S2b) | The summary; this plan |
 | The summary names SVP or WT for `wide`'s bans | **S0d pins `wide` and writes the bans** (root files are S0d's, [hotspots](#rules-for-every-lane)); UNI, `wide`'s first user, owns the six-target golden | This plan |
 | Report 06's waves run MOD before OTT and have no MSEG or UNI lane of their own | D1's order: DST and WT, then OTT, FLT and MSEG, then UNI, MOD, EQ and DLY | The summary; this plan |
 | 04's coverage percentages | Judgment; TPL and GS2a replace them with a count of the ten sketches matched | The summary |
-| phase-4.md already has an **F2d** (R5a's duel skeleton) and a lane **G2** (the chord and rhythm ladders) | This page keeps report 06's names; here F2d is the `wt` skeleton and "G2" is the reference patch. Say "S2's F2d" where a sentence could mean either | This plan |
+| phase-4.md already has an **F2d** (R5a's duel skeleton) and a lane **G2** (the chord and rhythm ladders) | S2's freezes take an **m** (modules): F0m, F1m, F2m, F3m, and the judge-fix lane is F1M, so no freeze name means two things. "G2" here is the reference patch (after G1's); the ladder lane keeps its name in phase-4.md | This plan |
 | The answer code has 9 free kinds and S2a reserves 11 | D3, [below](#the-answer-code-r5a-d3) | This plan |
 
 ## Freezes
 
-After **F1d** the S2a catalogue (keys, units, ranges, scales, defaults, sections, flags) changes only through the coordinator, who names the lanes it moves; after **F2d** the routing contract too. Discriminants are fixed at **F0d**, so merge order never sets a persisted number.
+After **F1m** the S2a catalogue (keys, units, ranges, scales, defaults, sections, flags) changes only through the coordinator, who names the lanes it moves; after **F2m** the routing contract too. Discriminants are fixed at **F0m**, so merge order never sets a persisted number.
 
 | Freeze | What is merged | Gate before the fan-out |
 | --- | --- | --- |
-| **F0d** | S0d: every S2a kind appended as a hidden stub with its discriminant fixed, the arms in every exhaustive match, the hide flag, the `audio` parameter flag, `Performance::tempo_bpm`, the `wide` pin and bans, the aliasing harness, bench files, golden folders and `docs/dsp` stubs | The Done-means gate is green ([AGENTS.md](../AGENTS.md#done-means)), judged by exit status; **every golden, fixture, generator-v1 golden and `layout-v1.txt` unchanged, v0-b still loads**; G1 within budget |
-| **F1d** | RTE, SVP, CAT and TMP: the S2a catalogue, the audio-route contract, the stereo flag, tempo and the context additions, "no items on pinned enums" written into `catalogue/mod.rs`, and D3's answer or the table rows it needs | **A judge agent (Opus)** reviews them together, because every persisted key goes to friends. Named checks: the v1 pin and layout hash unchanged; 73 goldens bit-exact; mono patches through the stereo-capable loop bit-exact; kind and parameter counts within the answer cap, or the widened one; the six points of the audio-route contract ([06 §3.1](../_local/sessions/2026-10-25-s2-depth-and-fast-training/06-architecture-impact.md#31-fmpmamrm-between-generators)); tempo's place in the render spec. Then F1D closes the must-fix items |
-| **F2d** | SKS: `wt` with PM from another generator, end to end (engine, six targets, CLI, card, `host-render`, `cli-equal`, REAPER) | `cli-equal` on a `wt` golden; the REAPER `wt` scenario; `validate`, `host-render`, `leak-test`; G1 unchanged; `wt`'s budget recorded |
-| **F3d** (S2b) | Generator v2, template 1, layout 2: the data freeze for the next model | The v1 golden unchanged; layout 2's first 102 entries equal layout 1's; template 1 with the new modules off renders bit-identically to template 0 |
+| **F0m** | S0d: every S2a kind appended as a hidden stub with its discriminant fixed, the arms in every exhaustive match, the hide flag, the `audio` parameter flag, `Performance::tempo_bpm`, the `wide` pin and bans, the aliasing harness, bench files, golden folders and `docs/dsp` stubs | The Done-means gate is green ([AGENTS.md](../AGENTS.md#done-means)), judged by exit status; **every golden, fixture, generator-v1 golden and `layout-v1.txt` unchanged, v0-b still loads**; G1 within budget |
+| **F1m** | RTE, SVP, CAT and TMP: the S2a catalogue, the audio-route contract, the stereo flag, tempo and the context additions, "no items on pinned enums" written into `catalogue/mod.rs`, and D3's answer or the table rows it needs | **A judge agent (Opus)** reviews them together, because every persisted key goes to friends. Named checks: the v1 pin and layout hash unchanged; 73 goldens bit-exact; mono patches through the stereo-capable loop bit-exact; kind and parameter counts within the answer cap, or the widened one; the six points of the audio-route contract ([06 §3.1](../_local/sessions/2026-10-25-s2-depth-and-fast-training/06-architecture-impact.md#31-fmpmamrm-between-generators)); tempo's place in the render spec. Then F1M closes the must-fix items |
+| **F2m** | SKS: `wt` with PM from another generator, end to end (engine, six targets, CLI, card, `host-render`, `cli-equal`, REAPER) | `cli-equal` on a `wt` golden; the REAPER `wt` scenario; `validate`, `host-render`, `leak-test`; G1 unchanged; `wt`'s budget recorded |
+| **F3m** (S2b) | Generator v2, template 1, layout 2: the data freeze for the next model | The v1 golden unchanged; layout 2's first 102 entries equal layout 1's; template 1 with the new modules off renders bit-identically to template 0 |
 
 ## Lanes
 
-Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are marked). H = heavy local build (nice-plug, egui or a vendored crate), L = light. Kind names are working names until F0d merges and persisted after it.
+Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are marked). H = heavy local build (nice-plug, egui or a vendored crate), L = light. Kind names are working names until F0m merges and persisted after it.
 
 **The spine**
 
 | Lane | Owns | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
 | **DOCS-S2** Docs | This page; the summary's doc rows in roadmap.md and README.md | The summary | 0.75–1 | L |
-| **S0d** Workspace prep (→ F0d) | The reserved kinds and stubs (`catalogue/<kind>.rs`, `modules/<kind>.rs`, the arms in `mask.rs`, `present.rs` and `rate()`); the hide flag; the `audio` flag; `Performance::tempo_bpm`; one seam file each for RTE and SVP, so they edit different files; `benches/<kind>.rs`, golden folders and `docs/dsp/<kind>.md` stubs; the spectral aliasing harness the module lanes share; the `wide` pin in `[workspace.dependencies]` and its bans in `clippy.toml` | DOCS-S2; no root-manifest edit in flight | 1–2 (this plan adds up to 0.5 for `wide` and the harness) | **H** once |
-| **RTE** Routing (→ F1d) | Audio routes: `validate.rs` (an `audio` parameter accepts only generator sources, and a generator source targets only `audio` parameters), the `canon.rs` check, `plan.rs` (topological order, ties in patch order, `audio_cycle`), per-generator pre-level buffers, `engine.rs` step 7, `VoiceCx::audio_in`, `docs/dsp/engine.md` | F0d | 2–3.5 | L |
-| **SVP** Stereo voice path (→ F1d) | The per-plan `stereo` flag, `voice_fx` instantiated twice when it is set, the balance law; no-alloc and swap-carry tests | F0d | 1.5–3 | L |
-| **CAT** Catalogue (→ F1d) | Every S2a `ParamSpec` table with the counts checked against the answer cap; the pinned-enum rule; the rows `answer.rs` needs, handed to ANS or RC (`answer.rs` is R5's). **Decides** the MSEG's fixed point count, the form of envelope times above 10 s, what `lfo` gains, and whether `wt`'s unison parameters are in F1d's list | F0d; reports 03–05 | 1–2 | L |
-| **TMP** Tempo (→ F1d) | `Performance::tempo_bpm` and a tempo event applied at segment boundaries; the plugin maps nice-plug's per-block `Transport::tempo`; `enth render --bpm`; `lfo`'s `sync` and `beats` (divisions with dotted and triplet feels, stepped under modulation) and the retrigger and one-shot modes CAT adds | F0d | 0.75–1.5 | L |
-| **V1F** (optional) | Generator v1 and layout 1 read frozen copies of the specs, which would lift rule 1. Not planned | F0d | 1–2 | L |
-| **F1D** The F1d judge's findings | Its must-fix items, in the files they name | RTE, SVP, CAT, TMP | 0.5–1.5 | L, Opus |
+| **S0d** Workspace prep (→ F0m) | The reserved kinds and stubs (`catalogue/<kind>.rs`, `modules/<kind>.rs`, the arms in `mask.rs`, `present.rs` and `rate()`); the hide flag; the `audio` flag; `Performance::tempo_bpm`; one seam file each for RTE and SVP, so they edit different files; `benches/<kind>.rs`, golden folders and `docs/dsp/<kind>.md` stubs; the spectral aliasing harness the module lanes share; the `wide` pin in `[workspace.dependencies]` and its bans in `clippy.toml` | DOCS-S2; no root-manifest edit in flight | 1–2 (this plan adds up to 0.5 for `wide` and the harness) | **H** once |
+| **RTE** Routing (→ F1m) | Audio routes: `validate.rs` (an `audio` parameter accepts only generator sources, and a generator source targets only `audio` parameters), the `canon.rs` check, `plan.rs` (topological order, ties in patch order, `audio_cycle`), per-generator pre-level buffers, `engine.rs` step 7, `VoiceCx::audio_in`, `docs/dsp/engine.md` | F0m | 2–3.5 | L |
+| **SVP** Stereo voice path (→ F1m) | The per-plan `stereo` flag, `voice_fx` instantiated twice when it is set, the balance law; no-alloc and swap-carry tests | F0m | 1.5–3 | L |
+| **CAT** Catalogue (→ F1m) | Every S2a `ParamSpec` table with the counts checked against the answer cap; the pinned-enum rule; the rows `answer.rs` needs, handed to ANS or RC (`answer.rs` is R5's). **Decides** the MSEG's fixed point count, the form of envelope times above 10 s, what `lfo` gains, and whether `wt`'s unison parameters are in F1m's list | F0m; reports 03–05 | 1–2 | L |
+| **TMP** Tempo (→ F1m) | `Performance::tempo_bpm` and a tempo event applied at segment boundaries; the plugin maps nice-plug's per-block `Transport::tempo`; `enth render --bpm`; `lfo`'s `sync` and `beats` (divisions with dotted and triplet feels, stepped under modulation) and the retrigger and one-shot modes CAT adds | F0m | 0.75–1.5 | L |
+| **V1F** (optional) | Generator v1 and layout 1 read frozen copies of the specs, which would lift rule 1. Not planned | F0m | 1–2 | L |
+| **F1M** The F1m judge's findings | Its must-fix items, in the files they name | RTE, SVP, CAT, TMP | 0.5–1.5 | L, Opus |
 
 **The modules.** Each delivers rule 7's list. Sources and costs: [report 05](../_local/sessions/2026-10-25-s2-depth-and-fast-training/05-dsp-algorithms-and-sources.md).
 
 | Lane | Kind (section) | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
-| **DST** | `dist` (voice_fx): soft, hard, sine and triangle fold, asymmetric, bitcrush, downsample; ADAA-1 per voice; zero-latency 2× or 4× IIR oversampling (`enth-dsp::resample`, coefficients designed from the paper); drive, bias, tone, `mix`. A global twin is a second kind | F1d | 1.5–2.5 | L |
-| **WT** (→ F2d) | `wt` (generators): generated tables (FM-index sweeps, formant-swept saws, sparse metal spectra), phase warps (bend and the like), `pm`, `am` (bipolar is ring mod) and `feedback`, on phase-read waves only, so PM never meets a polyBLEP shape; at most 15 parameters | F1d | 2–3.5 (this plan, from 3–5) | L |
-| **FLT** | `comb` (keytracked), `formant` (a continuous vowel path) and last `ladder` (TPT Moog) (voice_fx) | F1d | 2–4 | L |
-| **OTT** | `ott` (fx): three bands, upward and downward per band, on the compressor's detector | F1d | 2–3 | L |
-| **MSEG** | `mseg` (modulators): a fixed point count, a curve per segment, a length synced or in ms, loop, one-shot and sustain-loop; and **envelope times above 10 s** in CAT's form (a parameter or a kind) | F1d, TMP | 1.5–2.5 (this plan) | L |
+| **DST** | `dist` (voice_fx): soft, hard, sine and triangle fold, asymmetric, bitcrush, downsample; ADAA-1 per voice; zero-latency 2× or 4× IIR oversampling (`enth-dsp::resample`, coefficients designed from the paper); drive, bias, tone, `mix`. A global twin is a second kind | F1m | 1.5–2.5 | L |
+| **WT** (→ F2m) | `wt` (generators): generated tables (FM-index sweeps, formant-swept saws, sparse metal spectra), phase warps (bend and the like), `pm`, `am` (bipolar is ring mod) and `feedback`, on phase-read waves only, so PM never meets a polyBLEP shape; at most 15 parameters | F1m | 2–3.5 (this plan, from 3–5) | L |
+| **FLT** | `comb` (keytracked), `formant` (a continuous vowel path) and last `ladder` (TPT Moog) (voice_fx) | F1m | 2–4 | L |
+| **OTT** | `ott` (fx): three bands, upward and downward per band, on the compressor's detector | F1m | 2–3 | L |
+| **MSEG** | `mseg` (modulators): a fixed point count, a curve per segment, a length synced or in ms, loop, one-shot and sustain-loop; and **envelope times above 10 s** in CAT's form (a parameter or a kind) | F1m, TMP | 1.5–2.5 (this plan) | L |
 | **UNI** | Unison inside `wt`: mono first on `wide` f32x8 lanes with a fixed horizontal sum, detune and blend, then stereo spread through SVP's bus; the six-target golden for `wide`'s exact subset | WT, SVP, S0d's `wide` | 1.5–2.5 (this plan) | L |
-| **MOD** | `chorus` (with a flanger mode) and `phaser` on one modulated-delay core (fx) | F1d | 2–3 | L |
-| **EQ** | `eq` (fx) wrapping [`enth-dsp/src/biquad.rs`](dsp/biquad.md) (lane BQ owns it; per-segment coefficient ramps are EQ's to add) | F1d | 1–1.5 | L |
-| **DLY** | `delay` (fx), synced in beats | F1d, TMP | 1–2 | L |
+| **MOD** | `chorus` (with a flanger mode) and `phaser` on one modulated-delay core (fx) | F1m | 2–3 | L |
+| **EQ** | `eq` (fx) wrapping [`enth-dsp/src/biquad.rs`](dsp/biquad.md) (lane BQ owns it; per-segment coefficient ramps are EQ's to add) | F1m | 1–1.5 | L |
+| **DLY** | `delay` (fx), synced in beats | F1m, TMP | 1–2 | L |
 
 **Integration**
 
 | Lane | Owns | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
-| **SKS** (→ F2d) | `wt` and an audio route through the plugin and the editor; `host-render`, `cli-equal`; the REAPER scenario | WT | 1.5–2.5 | **H** |
-| **MTC** Matcher holes | The `structure/1` matcher's kind families (`score/matching.rs`, so a new kind pairs instead of scoring 0), the coach, deconstruct and the CLI aliases | F1d | 1–1.5 | L |
+| **SKS** (→ F2m) | `wt` and an audio route through the plugin and the editor; `host-render`, `cli-equal`; the REAPER scenario | WT | 1.5–2.5 | **H** |
+| **MTC** Matcher holes | The `structure/1` matcher's kind families (`score/matching.rs`, so a new kind pairs instead of scoring 0), the coach, deconstruct and the CLI aliases | F1m | 1–1.5 | L |
 | **G2B** G2 patch | The G2 reference patch, its budget (default 8 voices), the real-time row and the swap blocks | WT, UNI, DST, OTT | 1–1.5 | L |
-| **EDS** Editor density | Dense cards (a focus region or a second layout), audio-route drag; kittest, the overflow report, `leak-test` | F2d; G2B's patch | 2–4 | **H** |
+| **EDS** Editor density | Dense cards (a focus region or a second layout), audio-route drag; kittest, the overflow report, `leak-test` | F2m; G2B's patch | 2–4 | **H** |
 | **TPL** Templates | Create templates: growl, reese, wobble and FM bass | WT, DST, FLT | 1–2 | L |
 | **LS2** Lessons | A lesson per user-facing kind | Each kind | 4–8 | L, Opus |
 | **EV5** Agent evals | Agent-eval families (eval version 4) | SKS | 1–1.5 | L |
@@ -137,15 +137,15 @@ Not an S2a lane: it is **R5a's change**, because `answer.rs` is R5's and phase-4
 | Wave | Slot S (heavy) | Light | Starts when |
 | --- | --- | --- | --- |
 | 0 | — | DOCS-S2 | The summary is sent |
-| 1 | S0d (→ F0d) | — | DOCS-S2 merged; no root-manifest edit in flight |
-| 2 | — | TMP, CAT, RTE, SVP (→ F1d); V1F if chosen | F0d |
-| 3 | — | DST and WT first; then MTC, FLT | F1d |
-| 4 | SKS (→ F2d) | OTT, MSEG, UNI; then MOD, EQ, DLY | WT merged for SKS and UNI |
-| 5 | EDS | G2B, TPL, EV5; LS2 as kinds land | F2d; G2B before EDS's overflow check |
+| 1 | S0d (→ F0m) | — | DOCS-S2 merged; no root-manifest edit in flight |
+| 2 | — | TMP, CAT, RTE, SVP (→ F1m); V1F if chosen | F0m |
+| 3 | — | DST and WT first; then MTC, FLT | F1m |
+| 4 | SKS (→ F2m) | OTT, MSEG, UNI; then MOD, EQ, DLY | WT merged for SKS and UNI |
+| 5 | EDS | G2B, TPL, EV5; LS2 as kinds land | F2m; G2B before EDS's overflow check |
 | 6 | INT-S2a, then listening and a friend build | LS2 | Everything merged |
 
 - **The machine alone:** INT-S2a's REAPER, soak and timing steps and G2B's timing runs take `flock -x /tmp/enth-quiet.lock` and never overlap phase 4's INT lanes or TAP's timing runs.
-- **Critical path:** S0d (1–2) → RTE + CAT (2–3.5) → F1D (0.5–1.5) → WT (2–3.5) → SKS (1.5–2.5) → EDS (2–4) → INT-S2a (2–3), about 11–20 agent-hours. UNI → G2B → INT-S2a is shorter. Your sittings come on top.
+- **Critical path:** S0d (1–2) → RTE + CAT (2–3.5) → F1M (0.5–1.5) → WT (2–3.5) → SKS (1.5–2.5) → EDS (2–4) → INT-S2a (2–3), about 11–20 agent-hours. UNI → G2B → INT-S2a is shorter. Your sittings come on top.
 
 ## Acceptance per lane
 
@@ -154,7 +154,7 @@ Each lane stops at its own criteria and reports against them.
 | Lane | Acceptance |
 | --- | --- |
 | **DOCS-S2** | Every "Docs to change" row of the summary that is this lane's applied; every relative link and anchor it wrote resolves |
-| **S0d** | The F0d row: every golden, fixture, v1 golden and layout hash unchanged, reserved kinds invisible, `wasm-check` green with `wide` |
+| **S0d** | The F0m row: every golden, fixture, v1 golden and layout hash unchanged, reserved kinds invisible, `wasm-check` green with `wide` |
 | **RTE** | No-audio-route patches bit-exact (73 goldens); a non-`audio` destination and a cycle refused; apply and inverse proptest with audio routes; no-alloc over a swap that adds one |
 | **SVP** | Mono bit-exact; stereo with spread 0 equals mono on both channels; swap carry; no-alloc |
 | **CAT** | `const` checks; kind and parameter counts within the cap in force; every new parameter round-trips in an answer code; the decisions it owns written down |
@@ -165,7 +165,7 @@ Each lane stops at its own criteria and reports against them.
 | **UNI** | Lanes equal a scalar reference bit for bit on six targets; a sub-voice's seed never depends on a parameter value (a test); 16 voices × 7 inside G2's budget; spread 0 equals mono |
 | **MSEG** | Loop, one-shot and sustain-loop; a synced length exact at host blocks 1, 64, 100 and 4096 across a tempo change; point edits apply and invert |
 | **MOD, EQ, DLY** | The crossfade swap's copied buffers measured (the P1b p99 swap block was 797 µs against a 1,333 µs deadline); a delay time exact in beats; EQ within 0.1 dB of the cookbook |
-| **SKS** | The F2d row; CLI = plugin for a `wt` golden |
+| **SKS** | The F2m row; CLI = plugin for a `wt` golden |
 | **MTC** | Each new kind pairs in `structure/1`; v1 golden challenges unchanged |
 | **G2B** | G2 within its budget; p99 under 25 % of the 64-frame deadline with an edit every 250 ms |
 | **EDS** | Nothing scrolls at 1200 × 800 for G2 in the chosen layout; 0 idle frames; `leak-test` |
@@ -180,7 +180,7 @@ The table of record will be `docs/s2a-gates.md` (INT-S2a), planned. Proposed; yo
 
 | Check | How | Who | When |
 | --- | --- | --- | --- |
-| Nothing moved | The 73 goldens on six targets, the generator-v1 golden, `layout-v1.txt`, every fixture unchanged; v0-b loads and create runs with "model layout 1: P1 modules only" recorded | S0d, RTE, INT-S2a | F0d; each merge |
+| Nothing moved | The 73 goldens on six targets, the generator-v1 golden, `layout-v1.txt`, every fixture unchanged; v0-b loads and create runs with "model layout 1: P1 modules only" recorded | S0d, RTE, INT-S2a | F0m; each merge |
 | Real time | G2 within its budget; the p99 row with edits every 250 ms; the swap blocks | G2B | Wave 5 |
 | Aliasing | Each module's spectral test inside its bound | Each module lane | At its merge |
 | Coverage | Report 04's ten sketches (S1–S10) matched in create; the count replaces 04's judged percentages | TPL | Wave 5 |
@@ -204,7 +204,7 @@ The table of record will be `docs/s2a-gates.md` (INT-S2a), planned. Proposed; yo
 
 Sittings, this plan's estimate (about 1.5–2 h): read the summary and answer D3, 15–20 min; an optional taste check of the exported WAVs of DST and WT (agents export them and never play them), 15 min in wave 4; owner build 7 and the four sounds, 60–90 min after INT-S2a. Friends get the friend build; no friend round is planned for S2a.
 
-Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod arrive through `wt`, unison follows PM, no kind appends an item to a pinned enum, every effect has `mix`, latency stays zero, the answer code is widened now, and S2b waits for F2d.**
+Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod arrive through `wt`, unison follows PM, no kind appends an item to a pinned enum, every effect has `mix`, latency stays zero, the answer code is widened now, and S2b waits for F2m.**
 
 ## Rules for every lane
 
@@ -221,7 +221,7 @@ Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod ar
   | Hotspot | Who edits it |
   | --- | --- |
   | `Cargo.lock`, `[workspace.dependencies]`, `[patch.crates-io]`, `clippy.toml` | S0d (the `wide` pin and bans); afterwards the coordinator only |
-  | `enth-patch/src/catalogue/mod.rs` (`ModuleKind`, `CATALOGUE`, `ALL`) | S0d (every kind, discriminants fixed); CAT the rule text. Each `catalogue/<kind>.rs` table: CAT until F1d, then a change through the coordinator |
+  | `enth-patch/src/catalogue/mod.rs` (`ModuleKind`, `CATALOGUE`, `ALL`) | S0d (every kind, discriminants fixed); CAT the rule text. Each `catalogue/<kind>.rs` table: CAT until F1m, then a change through the coordinator |
   | `canon.rs`, `validate.rs` | RTE |
   | `plan.rs`, `engine.rs`, `module.rs` | RTE (routing) and SVP (stereo) each through their own seam file; the call sites are the only lines both touch |
   | `enth-render`'s `Performance` | TMP, additive |
@@ -250,7 +250,7 @@ Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod ar
 
 ## S2b outline
 
-S2b is the data freeze for the next model and is **not planned here**. It follows F2d and gets its own short plan (with a research note if the module set has moved) when S2a's modules are in. Outline, from the summary and [report 06 §4](../_local/sessions/2026-10-25-s2-depth-and-fast-training/06-architecture-impact.md#4-the-model): generator v2 (or a `ds2` sampler), **template 1** (template 0 plus the S2a modules switched off), mask and label rules for the new segments, and **layout 2 as layout 1's 102 entries plus appended segments**, so the 2 M ds1 clips are relabelled instead of re-rendered, only new structure is rendered (overnight), and v0-b warm-starts the new head; training runs through the tiered loop (T1 proxy, T2 confirm, T3 ship) on the remote GPUs; create keeps working because S2a sounds enter through templates. A kind that wants a variable-length input, an envelope follower and a global distortion twin are S2b candidates.
+S2b is the data freeze for the next model and is **not planned here**. It follows F2m and gets its own short plan (with a research note if the module set has moved) when S2a's modules are in. Outline, from the summary and [report 06 §4](../_local/sessions/2026-10-25-s2-depth-and-fast-training/06-architecture-impact.md#4-the-model): generator v2 (or a `ds2` sampler), **template 1** (template 0 plus the S2a modules switched off), mask and label rules for the new segments, and **layout 2 as layout 1's 102 entries plus appended segments**, so the 2 M ds1 clips are relabelled instead of re-rendered, only new structure is rendered (overnight), and v0-b warm-starts the new head; training runs through the tiered loop (T1 proxy, T2 confirm, T3 ship) on the remote GPUs; create keeps working because S2a sounds enter through templates. A kind that wants a variable-length input, an envelope follower and a global distortion twin are S2b candidates.
 
 ## Deferred
 
@@ -263,14 +263,14 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 | Check | Owner | When |
 | --- | --- | --- |
 | The answer code's design: bits per kind, parameter and place; multi-part against quantised answers | DUI's report; INT5 or an ANS lane; your D3 | Before R5a's friend build |
-| The MSEG's point count (8–16, against the 15 parameters per kind in force) and envelope times above 10 s (a parameter or a kind) | CAT | F1d |
-| Whether `wt`'s unison parameters are in F1d's catalogue (inert until UNI, hidden with the kind) or UNI appends them to the still-unreleased kind | CAT | F1d |
-| Where tempo lives in a challenge's render spec, since code v1 cannot grow | TMP, CAT; the F1d judge | F1d |
+| The MSEG's point count (8–16, against the 15 parameters per kind in force) and envelope times above 10 s (a parameter or a kind) | CAT | F1m |
+| Whether `wt`'s unison parameters are in F1m's catalogue (inert until UNI, hidden with the kind) or UNI appends them to the still-unreleased kind | CAT | F1m |
+| Where tempo lives in a challenge's render spec, since code v1 cannot grow | TMP, CAT; the F1m judge | F1m |
 | Chain depth: `MAX_VOICE_FX` and `MAX_FX` are 4; 8 is the most `PLACE_BITS` allows and older builds refuse more than 4 | TPL, from the ten sketches | Wave 5 |
 | G2's voice count and budget (default 8 voices, at most 12,000 instructions per frame as G1) | G2B | Wave 5 |
-| How module lanes measure aliasing (a hash cannot see it): the sweep and the bound | S0d's harness, each module lane | F0d; each merge |
-| `wide`'s determinism: the bans and a six-target golden, and an arm runner's hash run before SIMD lands | S0d, UNI | F0d; UNI |
-| OTT's defaults come from one or two blogs: read Ableton's preset or measure Xfer's | OTT, CAT | F1d |
+| How module lanes measure aliasing (a hash cannot see it): the sweep and the bound | S0d's harness, each module lane | F0m; each merge |
+| `wide`'s determinism: the bans and a six-target golden, and an arm runner's hash run before SIMD lands | S0d, UNI | F0m; UNI |
+| OTT's defaults come from one or two blogs: read Ableton's preset or measure Xfer's | OTT, CAT | F1m |
 | Per-file licences of each port (Dexed MSFA, Faust functions, Mutable Instruments files) | Each module lane | NOTICE entries, as for the reverb |
 | Who clears each kind's hide flag, and when against GR2 | INT-S2a | Wave 6 |
 | T1's seed noise and agreement with T2 (training, not S2a) | Lane FTL, then the first idle GPU | Not S2a's |
