@@ -82,7 +82,12 @@ fn chords(q: &Question, quality: u32) -> Option<Vec<NoteSpec>> {
 fn pitch(q: &Question, pc: u32) -> Option<Vec<NoteSpec>> {
     let first = *q.notes.first()?;
     let key = (first.key / 12 * 12).checked_add(u8::try_from(pc).ok().filter(|pc| *pc < 12)?)?;
-    Some(vec![note(key, first.velocity, first.start_ms, first.hold_ms)])
+    Some(vec![note(
+        key,
+        first.velocity,
+        first.start_ms,
+        first.hold_ms,
+    )])
 }
 
 /// Frequency finder: the same band form at the centre `hz`.

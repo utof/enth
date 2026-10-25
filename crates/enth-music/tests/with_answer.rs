@@ -71,5 +71,8 @@ fn every_other_option_is_a_valid_question_that_sounds_different() {
 #[test]
 fn a_missing_option_has_no_counterfactual() {
     let q = question(Game::IntervalStacks, 1, SEED, 0).unwrap();
-    assert_eq!(with_answer(Game::IntervalStacks, 1, &q, q.options.ids.len()), None);
+    assert_eq!(
+        with_answer(Game::IntervalStacks, 1, &q, q.options.ids.len()),
+        None
+    );
 }
