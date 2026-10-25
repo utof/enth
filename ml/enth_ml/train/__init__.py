@@ -11,7 +11,10 @@ is not bit-reproducible; the artefact that must be is the hashed model file. Log
 * ``loss``: masked JND-unit Huber and cross-entropy terms, the LFO swap, annealed and relaxed winner-takes-all, the
   confidence's cross-entropy on the winner;
 * ``metrics``: dev errors in JND units, accuracies, WTA statistics, the confidence's ranking;
-* ``config``, ``loop``, ``__main__``: ``python -m enth_ml.train run --config <file>`` (``uv sync --group train`` first).
+* ``config``, ``loop``, ``__main__``: ``python -m enth_ml.train run --config <file>`` (``uv sync --group train`` first);
+* lane FTL's fast loop (ml/README.md, "Fast loop"): ``schedule`` (cosine, WSD and cooldown branches, weight decay as a
+  timescale), ``smoke`` (tier T0), ``compare`` (the paired per-sample test and its verdict; numpy only), ``branch``
+  (``cooldown``) and ``proxy-v0.toml`` (tier T1).
 
 The first measured run (2026-10-22, lane TR) trained on the desktop's GTX 1660 Ti; its numbers are in docs/r3.md's TR
 model card.
