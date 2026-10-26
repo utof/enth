@@ -44,7 +44,7 @@ exit: 0
       },
       "ops": 3,
       "scorers": 1,
-      "symbols": 52,
+      "symbols": 54,
       "theirs": {
         "combined": 100,
         "pass_mark": 90,
@@ -65,7 +65,7 @@ exit: 0
       "kind": "scorecard"
     },
     {
-      "code": "F220-938N-KRKA-YDXW-0G02-0000-004T-20FH-8KAY-117H-ZR05-6DPW-GVNA",
+      "code": "F220-938N-KRKA-YDXW-0G02-0000-004T-101Z-GM2D-BR11-7HZY-056D-PWGV-NS",
       "kind": "answer"
     }
   ],

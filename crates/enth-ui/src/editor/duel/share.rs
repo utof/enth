@@ -14,7 +14,7 @@ use super::card::{button, line};
 
 /// The longest code an enth build from before duels (R1–R3) reads: code v1's decoder refuses more symbols as "bad
 /// length" before it reads anything else, so a longer answer code reads "bad length" there and a shorter one "code
-/// too new" ("update enth"). Answers grow about 7 symbols per knob left at an exact value (docs/duels.md, "Sizes").
+/// too new" ("update enth"). Answers grow about 8 symbols per knob left at an exact value (docs/duels.md, "Sizes").
 pub const OLD_BUILD_SYMBOLS: usize = 64;
 use super::state::{Duel, DuelIntent};
 use crate::Theme;
