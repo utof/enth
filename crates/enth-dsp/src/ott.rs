@@ -12,7 +12,8 @@
 //!   lvl    = 20·log10(max(env, 1e-10))                   dBFS
 //!   G      = a_down · down_b(lvl) + a_up · up_b(lvl)     dB: downward ≤ 0 above its threshold, upward ≥ 0 below its
 //!   gs    += k_smooth·(G − gs)                           one-pole gain smoother, time constant attack/2
-//!   out_b  = band_b · 10^(gs/20) · band_gain_b
+//!   out_b  = band_b · 10^(gs/20) · band_gain_b           the lift is cut where it would carry a sample over the
+//!                                                          upward threshold + 20 dB (the onset guard, below)
 //! wet    = (low' + mid + high) · output                  low' = the low band through an allpass at high_split
 //! out    = in·(1 − mix) + wet·mix                        mix 0 returns the input, bit for bit
 //! ```
@@ -26,6 +27,12 @@
 //!   2012, eq. 4) and the upward branch is the same curve mirrored about the level axis. Upward gain is capped at
 //!   [`UP_CAP_DB`] and fades to zero between [`UP_FADE_TOP_DB`] and [`UP_FADE_BOTTOM_DB`], so silence is not lifted.
 //!   The thresholds, ratios and times of the three bands are [`BAND_SPECS`]: this lane's constants.
+//! - **The onset guard.** The detector has no look-ahead (latency is 0), so a loud sample can meet a lift that was
+//!   computed for the quiet signal before it: a note that starts after a gap, lifted by up to [`UP_CAP_DB`], would
+//!   leave the module 20 dB or more over its input for the first milliseconds. A lift therefore never carries a band
+//!   sample above the band's upward threshold plus [`LIFT_CEILING_ABOVE_THRESHOLD_DB`]: where it would, the lift is cut
+//!   for that sample (never below the downward gain) and forgotten. A steady signal is brought to the upward
+//!   threshold, a noise to about 12 dB over it, so the guard binds only on the first few milliseconds of an onset.
 //! - **Intensity** is the slope: `a_down = depth·downward`, `a_up = depth·upward` (both 0–1) scale the dB gain of
 //!   each curve, so depth 0 is the identity (every band at 0 dB, the flat split) and depth 1 the full curves.
 //!
@@ -51,6 +58,11 @@ pub const UP_CAP_DB: f32 = 30.0;
 pub const UP_FADE_TOP_DB: f32 = -84.0;
 /// …and zero at and below this one, with a straight line in dB between, so silence and dither are not lifted.
 pub const UP_FADE_BOTTOM_DB: f32 = -96.0;
+
+/// A lift never carries a sample above this many dB over the band's upward threshold (see [`Ott`]'s docs: the
+/// onset guard). Well above any steady lifted signal (a sine comes out at the threshold, noise 12 dB over it), so it
+/// binds only when a loud sample meets a lift computed for a quiet one.
+pub const LIFT_CEILING_ABOVE_THRESHOLD_DB: f32 = 20.0;
 
 /// Sample rate used before `prepare` is called.
 const DEFAULT_SAMPLE_RATE: f32 = 48_000.0;
@@ -399,10 +411,13 @@ struct BandDyn {
     k_attack: f32,
     k_release: f32,
     k_smooth: f32,
+    /// The linear sample level a lift may not carry a sample over.
+    ceiling: f32,
     /// Amplitude follower state, linear, `>= 0`.
     env: f32,
-    /// Smoothed gain in dB (positive lifts), before the band gain.
-    gs: f32,
+    /// Smoothed downward gain in dB (`<= 0`) and upward gain in dB (`>= 0`), before the band gain.
+    gs_down: f32,
+    gs_up: f32,
 }
 
 impl BandDyn {
@@ -412,8 +427,12 @@ impl BandDyn {
             k_attack: 1.0,
             k_release: 1.0,
             k_smooth: 1.0,
+            ceiling: libm::exp2f(
+                (spec.up_threshold_db + LIFT_CEILING_ABOVE_THRESHOLD_DB) * LOG2_PER_DB,
+            ),
             env: 0.0,
-            gs: 0.0,
+            gs_down: 0.0,
+            gs_up: 0.0,
         }
     }
 
@@ -424,7 +443,13 @@ impl BandDyn {
         self.k_release = one_pole_gain(release_ms, sample_rate);
     }
 
-    /// The linear compression gain for the detector input `e` (the louder channel's band sample, `>= 0`).
+    /// The smoothed compression gain in dB.
+    fn gain_db(&self) -> f32 {
+        self.gs_down + self.gs_up
+    }
+
+    /// The linear compression gain for this frame. `e` is the louder channel's band sample, `>= 0`: it drives the
+    /// follower, and it is the sample the onset guard looks at.
     #[inline(always)]
     fn gain(&mut self, e: f32, a_down: f32, a_up: f32) -> f32 {
         let k = if e > self.env {
@@ -434,9 +459,26 @@ impl BandDyn {
         };
         self.env = flush(self.env + k * (e - self.env));
         let level_db = DB_PER_LOG2 * libm::log2f(self.env.max(MIN_LEVEL));
-        let target = self.curve.gain_db(level_db, a_down, a_up);
-        self.gs = flush(self.gs + self.k_smooth * (target - self.gs));
-        libm::exp2f(self.gs * LOG2_PER_DB)
+        let down = self.curve.down_db(level_db);
+        let up = self.curve.up_db(level_db);
+        self.gs_down = flush(self.gs_down + self.k_smooth * (a_down * down - self.gs_down));
+        self.gs_up = flush(self.gs_up + self.k_smooth * (a_up * up - self.gs_up));
+        let mut gain = libm::exp2f((self.gs_down + self.gs_up) * LOG2_PER_DB);
+        // The onset guard. The detector has no look-ahead, so a loud sample can meet a lift that was computed for the
+        // quiet signal before it (60 dB of lift, a note that starts after a gap) and leave 20 dB over its input. A lift
+        // never carries a sample over the ceiling: it is cut for this sample (to unity at worst: the downward gain
+        // stays) and forgotten, so it does not come back until the detector asks for it. It never binds on a steady
+        // signal, which a lift brings to the upward threshold.
+        if self.gs_up > 0.0 && gain * e > self.ceiling {
+            let g_down = libm::exp2f(self.gs_down * LOG2_PER_DB);
+            let allowed = (self.ceiling / e).max(g_down);
+            if allowed < gain {
+                gain = allowed;
+                self.gs_up =
+                    flush((DB_PER_LOG2 * libm::log2f(allowed / g_down)).clamp(0.0, self.gs_up));
+            }
+        }
+        gain
     }
 }
 
@@ -498,7 +540,8 @@ impl Ott {
         self.chan = [Channel::default(); 2];
         for b in &mut self.band {
             b.env = 0.0;
-            b.gs = 0.0;
+            b.gs_down = 0.0;
+            b.gs_up = 0.0;
         }
     }
 
@@ -550,7 +593,7 @@ impl Ott {
     /// negative squashes. For a meter; read it after `process`.
     #[must_use]
     pub fn band_gain_db(&self, b: usize) -> f32 {
-        self.band.get(b).map_or(0.0, |d| d.gs)
+        self.band.get(b).map_or(0.0, BandDyn::gain_db)
     }
 
     /// The band's detector level in dBFS (the follower's reading).
@@ -567,7 +610,10 @@ impl Ott {
     #[must_use]
     pub fn is_idle(&self) -> bool {
         self.chan.iter().all(Channel::is_zero)
-            && self.band.iter().all(|b| b.env == 0.0 && b.gs == 0.0)
+            && self
+                .band
+                .iter()
+                .all(|b| b.env == 0.0 && b.gs_down == 0.0 && b.gs_up == 0.0)
     }
 
     /// How many state values are subnormal; always 0 for a healthy processor. For the engine's tail test.
@@ -580,7 +626,9 @@ impl Ott {
             + self
                 .band
                 .iter()
-                .filter(|b| b.env.is_subnormal() || b.gs.is_subnormal())
+                .filter(|b| {
+                    b.env.is_subnormal() || b.gs_down.is_subnormal() || b.gs_up.is_subnormal()
+                })
                 .count()
     }
 
@@ -643,7 +691,8 @@ impl Ott {
             wet_r += xr * gain;
         }
         let gout = f64::from(g.output);
-        let (wet_l, wet_r) = ((wet_l * gout) as f32, (wet_r * gout) as f32);
+        // Flushed: an input from the subnormal range must not leave as one (the engine's FTZ-independence rule).
+        let (wet_l, wet_r) = (flush((wet_l * gout) as f32), flush((wet_r * gout) as f32));
 
         // Dry/wet: 0 is the input bit for bit (a NaN input passes as it is), 1 is the wet signal.
         if g.mix <= 0.0 {

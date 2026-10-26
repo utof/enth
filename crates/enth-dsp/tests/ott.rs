@@ -14,8 +14,8 @@
 use assert_no_alloc::assert_no_alloc;
 use core::fmt::Write as _;
 use enth_dsp::ott::{
-    BAND_SPECS, BANDS, BandCurve, KNEE_DB, Ott, OttParams, UP_CAP_DB, UP_FADE_BOTTOM_DB,
-    UP_FADE_TOP_DB,
+    BAND_SPECS, BANDS, BandCurve, KNEE_DB, LIFT_CEILING_ABOVE_THRESHOLD_DB, Ott, OttParams,
+    UP_CAP_DB, UP_FADE_BOTTOM_DB, UP_FADE_TOP_DB,
 };
 
 // `AllocDisabler` exists only in debug builds (assert_no_alloc's `disable_release` default): release builds run the
@@ -452,5 +452,620 @@ fn a_steady_sine_in_each_band_follows_the_documented_curve() {
             }
         }
         eprintln!("{table}  worst error {worst:.3} dB (rising and falling sweeps)\n");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Intensity, the plain gains and mix
+
+/// A mid-band sine at `p_db` through the mid probe's splits with `set` applied: its settled output gain in dB.
+fn mid_gain_with(p_db: f64, set: impl FnOnce(&mut OttParams)) -> f64 {
+    let probe = &PROBES[1];
+    let p = params(|p| {
+        p.low_split_hz = probe.low_split;
+        p.high_split_hz = probe.high_split;
+        set(p);
+    });
+    let mut o = ott_with(&p);
+    settled_out_db(&mut o, probe, p_db, 96_000, 24_000) - p_db
+}
+
+#[test]
+fn depth_scales_both_curves_linearly_in_db_and_the_two_knobs_pick_one() {
+    let spec = &BAND_SPECS[1];
+    // -60 dBFS is in the upward region, -4 dBFS in the downward one (the detector reads about 1 dB lower).
+    let seen = |p: f64| {
+        follower_level_db(
+            PROBES[1].hz,
+            undb(p),
+            f64::from(spec.attack_ms),
+            f64::from(spec.release_ms),
+        )
+    };
+    let full_up = curve_db(spec, seen(-60.0), 0.0, 1.0);
+    let full_down = curve_db(spec, seen(-4.0), 1.0, 0.0);
+    assert!(full_up > 15.0 && full_down < -5.0, "{full_up} {full_down}");
+    let mut worst = 0.0_f64;
+    for &depth in &[0.0_f32, 10.0, 30.0, 50.0, 75.0, 100.0] {
+        let d = f64::from(depth) / 100.0;
+        let up = mid_gain_with(-60.0, |p| p.depth = depth);
+        let down = mid_gain_with(-4.0, |p| p.depth = depth);
+        worst = worst
+            .max((up - d * full_up).abs())
+            .max((down - d * full_down).abs());
+        assert!(
+            (up - d * full_up).abs() < 0.06,
+            "depth {depth}: upward {up} vs {}",
+            d * full_up
+        );
+        assert!(
+            (down - d * full_down).abs() < 0.06,
+            "depth {depth}: downward {down} vs {}",
+            d * full_down
+        );
+    }
+    // `upward` and `downward` scale their own curve (times depth) and leave the other alone.
+    for &k in &[0.0_f32, 25.0, 60.0] {
+        let kd = f64::from(k) / 100.0;
+        let up = mid_gain_with(-60.0, |p| {
+            p.depth = 100.0;
+            p.upward = k;
+        });
+        let up_other = mid_gain_with(-60.0, |p| {
+            p.depth = 100.0;
+            p.downward = k;
+        });
+        let down = mid_gain_with(-4.0, |p| {
+            p.depth = 100.0;
+            p.downward = k;
+        });
+        let down_other = mid_gain_with(-4.0, |p| {
+            p.depth = 100.0;
+            p.upward = k;
+        });
+        assert!((up - kd * full_up).abs() < 0.06, "upward {k}: {up}");
+        assert!(
+            (up_other - full_up).abs() < 0.06,
+            "downward {k} must not touch the lift: {up_other}"
+        );
+        assert!((down - kd * full_down).abs() < 0.06, "downward {k}: {down}");
+        assert!(
+            (down_other - full_down).abs() < 0.06,
+            "upward {k} must not touch the reduction: {down_other}"
+        );
+    }
+    eprintln!(
+        "depth and the knobs: gain is depth x curve, worst deviation {worst:.3} dB (upward {full_up:.2} dB at -60, downward {full_down:.2} dB at -4)"
+    );
+}
+
+#[test]
+fn the_plain_gains_are_plain() {
+    // depth 0 leaves the bands alone, so each gain is its own dB, and they add.
+    for (name, set, want) in [
+        (
+            "input +6",
+            (|p: &mut OttParams| p.input_db = 6.0) as fn(&mut OttParams),
+            6.0,
+        ),
+        ("output -9", |p| p.output_db = -9.0, -9.0),
+        ("mid_gain +4", |p| p.mid_gain_db = 4.0, 4.0),
+        (
+            "input +6 output -9 mid +4",
+            |p| {
+                p.input_db = 6.0;
+                p.output_db = -9.0;
+                p.mid_gain_db = 4.0;
+            },
+            1.0,
+        ),
+    ] {
+        let g = mid_gain_with(-30.0, |p| {
+            p.depth = 0.0;
+            set(p);
+        });
+        assert!((g - want).abs() < 0.02, "{name}: {g} dB, want {want}");
+    }
+    // The other bands' gains do not reach a mid sine (the splits isolate it).
+    let g = mid_gain_with(-30.0, |p| {
+        p.depth = 0.0;
+        p.low_gain_db = 12.0;
+        p.high_gain_db = -12.0;
+    });
+    assert!(g.abs() < 0.05, "{g}");
+    // Each band's gain on its own sine.
+    for probe in &PROBES {
+        let p = params(|p| {
+            p.depth = 0.0;
+            p.low_split_hz = probe.low_split;
+            p.high_split_hz = probe.high_split;
+            match probe.band {
+                0 => p.low_gain_db = -7.0,
+                1 => p.mid_gain_db = -7.0,
+                _ => p.high_gain_db = -7.0,
+            }
+        });
+        let mut o = ott_with(&p);
+        let g = settled_out_db(&mut o, probe, -20.0, 96_000, 24_000) + 20.0;
+        assert!((g + 7.0).abs() < 0.05, "{} band gain -7: {g}", probe.name);
+    }
+}
+
+fn noise(seed: u32, n: usize, amp: f32) -> Vec<f32> {
+    let mut x = seed;
+    (0..n)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            amp * ((x >> 8) as f32 / 8_388_608.0 - 1.0)
+        })
+        .collect()
+}
+
+fn run(p: &OttParams, l: &[f32], r: &[f32], chunk: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut o = ott_with(p);
+    let (mut yl, mut yr) = (l.to_vec(), r.to_vec());
+    for (a, b) in yl.chunks_mut(chunk).zip(yr.chunks_mut(chunk)) {
+        o.process_in_place(a, b);
+    }
+    (yl, yr)
+}
+
+#[test]
+fn mix_zero_is_the_input_bit_for_bit_and_mix_blends_the_two() {
+    let (l, r) = (noise(1, 20_000, 0.8), noise(2, 20_000, 0.5));
+    for depth in [0.0, 30.0, 100.0] {
+        let zero = params(|p| {
+            p.mix = 0.0;
+            p.depth = depth;
+        });
+        let (yl, yr) = run(&zero, &l, &r, SEG);
+        assert!(
+            yl.iter()
+                .zip(&l)
+                .chain(yr.iter().zip(&r))
+                .all(|(a, b)| a.to_bits() == b.to_bits()),
+            "depth {depth}: mix 0 passes the input bit for bit"
+        );
+        let full = params(|p| p.depth = depth);
+        let half = params(|p| {
+            p.depth = depth;
+            p.mix = 50.0;
+        });
+        let (wl, _) = run(&full, &l, &r, SEG);
+        let (hl, _) = run(&half, &l, &r, SEG);
+        for i in 0..l.len() {
+            assert_eq!(hl[i], l[i] * 0.5 + wl[i] * 0.5, "mix 50 % at frame {i}");
+        }
+    }
+}
+
+#[test]
+fn a_dry_blend_notches_the_crossovers_which_is_why_depth_is_not_dry_wet() {
+    // depth 0 and unity gains: the wet path is A1·A2·x, so mix 50 % gives (1 + A1·A2)/2 against the input: a null where
+    // the two allpasses together turn the phase by 180 degrees. Measured against that closed form.
+    let (f1, f2) = (88.3_f64, 2_500.0_f64);
+    let p = params(|p| {
+        p.depth = 0.0;
+        p.mix = 50.0;
+    });
+    let mut out = String::new();
+    for f in [
+        50.0, 80.0, 88.0, 100.0, 200.0, 1_000.0, 2_000.0, 2_500.0, 3_000.0, 8_000.0,
+    ] {
+        let mut o = ott_with(&p);
+        let got = through(&mut o, f, 0.5, 96_000, 48_000);
+        let h = cmul(ap2(f, f1), ap2(f, f2));
+        let want = cabs((f64::midpoint(1.0, h.0), 0.5 * h.1));
+        let g = cabs(got) / 0.5;
+        let _ = writeln!(
+            out,
+            "  {f:>7.0} Hz  measured {:+8.2} dB  closed form {:+8.2} dB",
+            db(g),
+            db(want)
+        );
+        assert!(
+            (db(g) - db(want)).abs() < 0.1 || (g < 0.01 && want < 0.01),
+            "{f} Hz: {} vs {}",
+            db(g),
+            db(want)
+        );
+    }
+    eprintln!("mix 50 % at depth 0 (the dry blend of a band split):\n{out}");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Silence, bad input, the tail, latency, block size
+
+#[test]
+fn silence_in_gives_exact_zeros_for_any_setting() {
+    for p in [
+        OttParams::DEFAULT,
+        params(|p| {
+            p.depth = 100.0;
+            p.input_db = 24.0;
+            p.output_db = 24.0;
+            p.low_gain_db = 24.0;
+            p.mid_gain_db = 24.0;
+            p.high_gain_db = 24.0;
+            p.mix = 100.0;
+        }),
+    ] {
+        let z = vec![0.0_f32; 4_096];
+        let (yl, yr) = run(&p, &z, &z, SEG);
+        assert!(yl.iter().chain(&yr).all(|x| x.to_bits() == 0));
+    }
+}
+
+#[test]
+fn non_finite_input_does_not_poison_the_state() {
+    let p = params(|p| p.depth = 100.0);
+    let n = 8_192;
+    let clean = noise(7, n, 0.6);
+    let mut dirty = clean.clone();
+    for i in (100..140).step_by(3) {
+        dirty[i] = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY][(i / 3) % 3];
+    }
+    // The wet path treats them as zero: the same bits as feeding zeros there, and all finite.
+    let mut zeroed = clean.clone();
+    for i in (100..140).step_by(3) {
+        zeroed[i] = 0.0;
+    }
+    let (a, _) = run(&p, &dirty, &dirty, SEG);
+    let (b, _) = run(&p, &zeroed, &zeroed, SEG);
+    assert!(a.iter().all(|x| x.is_finite()));
+    assert_eq!(
+        a.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        b.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
+    // At mix 0 the dry sample passes as it is (a NaN stays a NaN for that frame), and the next ones are fine.
+    let dry = params(|p| p.mix = 0.0);
+    let (c, _) = run(&dry, &dirty, &dirty, SEG);
+    assert!(c[100].is_nan() && c[200].is_finite());
+}
+
+#[test]
+fn a_forty_second_tail_holds_no_subnormal_and_reaches_idle() {
+    for time in [100.0_f32, 400.0] {
+        let p = params(|p| {
+            p.depth = 100.0;
+            p.time = time;
+            p.input_db = 12.0;
+        });
+        let mut o = ott_with(&p);
+        let mut rng = noise(11, 48_000, 0.9);
+        let mut quiet = vec![0.0_f32; SEG];
+        let mut max_sub = 0;
+        let mut idle_at = None;
+        // One second of loud noise, then 40 s of silence (the tail), checked every second.
+        for chunk in rng.chunks_mut(SEG) {
+            let mut r = chunk.to_vec();
+            o.process_in_place(chunk, &mut r);
+        }
+        for sec in 0..40 {
+            for _ in 0..(48_000 / SEG) {
+                quiet.fill(0.0);
+                let mut r = vec![0.0_f32; SEG];
+                o.process_in_place(&mut quiet, &mut r);
+                assert!(quiet.iter().all(|x| x.is_finite() && !x.is_subnormal()));
+            }
+            max_sub = max_sub.max(o.count_subnormals());
+            if idle_at.is_none() && o.is_idle() {
+                idle_at = Some(sec);
+            }
+        }
+        assert_eq!(max_sub, 0, "time {time} %: subnormal values in the state");
+        assert!(idle_at.is_some(), "time {time} %: never idle in 40 s");
+        eprintln!(
+            "tail at time {time} %: idle after {} s, 0 subnormals",
+            idle_at.unwrap() + 1
+        );
+    }
+}
+
+#[test]
+fn latency_is_zero_an_impulse_leaves_on_the_frame_it_enters() {
+    let o = Ott::new();
+    assert_eq!(o.latency_samples(), 0);
+    for p in [
+        params(|p| p.depth = 0.0),
+        params(|p| p.depth = 100.0),
+        OttParams::DEFAULT,
+    ] {
+        let mut l = vec![0.0_f32; 256];
+        l[0] = 1.0;
+        let mut r = l.clone();
+        let mut o = ott_with(&p);
+        o.process_in_place(&mut l[..SEG], &mut r[..SEG]);
+        assert!(
+            l[0].abs() > 0.1,
+            "the first frame already carries the impulse: {}",
+            l[0]
+        );
+        // And it is causal: nothing before an impulse placed later.
+        let mut l = vec![0.0_f32; 256];
+        l[100] = 1.0;
+        let mut r = l.clone();
+        let mut o = ott_with(&p);
+        for (a, b) in l.chunks_mut(SEG).zip(r.chunks_mut(SEG)) {
+            o.process_in_place(a, b);
+        }
+        assert!(l[..100].iter().all(|x| *x == 0.0) && l[100].abs() > 0.1);
+    }
+}
+
+#[test]
+fn the_block_size_is_not_an_input_in_whole_segments() {
+    let (l, r) = (noise(3, 24_000, 0.7), noise(4, 24_000, 0.4));
+    let p = params(|p| p.depth = 100.0);
+    let reference = run(&p, &l, &r, SEG);
+    for chunk in [64, 128, 480, 960, 24_000] {
+        assert!(run(&p, &l, &r, chunk) == reference, "chunk {chunk}");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The platform hash and allocation
+
+/// FNV-1a 64 over the little-endian bytes of `f32` bit patterns.
+struct Fnv(u64);
+
+impl Fnv {
+    fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
+    }
+    fn f32(&mut self, x: f32) {
+        for b in x.to_bits().to_le_bytes() {
+            self.0 ^= u64::from(b);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+}
+
+/// Hash of the scenario below. The same constant must hold natively (debug and release, `-C target-cpu=native`) and on
+/// `wasm32-wasip1` under wasmtime (docs/dsp/ott.md has the commands).
+const HASH_GOLDEN: u64 = 0x2e24_790f_2cbd_7392;
+
+fn scenario_hash() -> u64 {
+    const SEGMENT: usize = 9_600; // 300 calls of 32 frames, 0.2 s
+    let mut o = Ott::new();
+    o.prepare(FS);
+    let mut rng = noise(0x0e17_5eed, 1, 1.0);
+    let _ = &mut rng;
+    let mut state = 0x0e17_5eed_u32;
+    let mut unit = move || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        (state >> 8) as f32 / 8_388_608.0 - 1.0
+    };
+    let sets = [
+        OttParams::DEFAULT,
+        params(|p| {
+            p.depth = 100.0;
+            p.time = 30.0;
+            p.input_db = 9.0;
+            p.low_split_hz = 140.0;
+            p.high_split_hz = 5_000.0;
+            p.mix = 80.0;
+        }),
+        params(|p| {
+            p.depth = 70.0;
+            p.time = 400.0;
+            p.upward = 40.0;
+            p.low_gain_db = -4.0;
+            p.mid_gain_db = 3.0;
+            p.high_gain_db = 6.0;
+            p.output_db = -3.0;
+        }),
+        params(|p| {
+            p.depth = 100.0;
+            p.downward = 0.0;
+            p.low_split_hz = 60.0;
+            p.high_split_hz = 800.0;
+        }),
+    ];
+    let mut hash = Fnv::new();
+    let mut n = 0_usize;
+    let mut prev = sets[0];
+    for segment in 0..8_usize {
+        for call in 0..SEGMENT / SEG {
+            let mut l = [0.0_f32; SEG];
+            let mut r = [0.0_f32; SEG];
+            for i in 0..SEG {
+                let t = n + i;
+                let (a, b) = match segment {
+                    0 => (
+                        (0.7 * libm::sin(TAU * 55.0 * t as f64 / FSD)) as f32,
+                        (0.4 * libm::sin(TAU * 1_310.0 * t as f64 / FSD)) as f32,
+                    ),
+                    1 => (0.0, 0.0),
+                    2 => (0.5 * unit(), 0.5 * unit()),
+                    3 => {
+                        let on = (t % 2_400) < 480;
+                        (
+                            if on {
+                                (0.9 * libm::sin(TAU * 1_000.0 * t as f64 / FSD)) as f32
+                            } else {
+                                1e-4 * unit()
+                            },
+                            1e-4 * unit(),
+                        )
+                    }
+                    4 => {
+                        let k = (t - 4 * SEGMENT) as f64 / SEGMENT as f64;
+                        (
+                            (libm::sin(TAU * 440.0 * t as f64 / FSD) * undb(-70.0 * (1.0 - k)))
+                                as f32,
+                            0.0,
+                        )
+                    }
+                    5 => (
+                        if (t - 5 * SEGMENT) < SEGMENT / 2 {
+                            0.7
+                        } else {
+                            0.0
+                        },
+                        0.0,
+                    ),
+                    6 => (
+                        if (t - 6 * SEGMENT) < SEGMENT / 2 {
+                            1.0e-40
+                        } else {
+                            0.0
+                        },
+                        1.0e-39,
+                    ),
+                    _ => (
+                        if (t / 100).is_multiple_of(2) {
+                            1.0
+                        } else {
+                            -1.0
+                        },
+                        0.9 * unit(),
+                    ),
+                };
+                l[i] = a;
+                r[i] = b;
+            }
+            // Settings change every call: a different set every 40th call, ramped from the previous call's.
+            let mut cur = sets[(call / 40 + segment) % sets.len()];
+            cur.depth = (cur.depth + 0.25 * call as f32).min(100.0);
+            o.set_ramp(&prev, &cur);
+            prev = cur;
+            o.process_in_place(&mut l, &mut r);
+            for i in 0..SEG {
+                hash.f32(l[i]);
+                hash.f32(r[i]);
+            }
+            for b in 0..BANDS {
+                hash.f32(o.band_gain_db(b));
+            }
+            n += SEG;
+        }
+    }
+    hash.0
+}
+
+#[test]
+fn render_hash_is_the_same_on_every_platform() {
+    let h = scenario_hash();
+    // Visible with `--nocapture`, so a native run and a wasmtime run can be compared by eye or by `diff`.
+    eprintln!("ott-hash {h:016x}");
+    assert_eq!(
+        h, HASH_GOLDEN,
+        "ott render hash changed: update HASH_GOLDEN only for a deliberate change"
+    );
+}
+
+#[test]
+fn process_allocates_nothing() {
+    let mut o = Ott::new();
+    o.prepare(FS);
+    let l = noise(5, 1_024, 0.8);
+    let r = noise(6, 1_024, 0.8);
+    let (mut a, mut b) = (l.clone(), r.clone());
+    let wild = OttParams {
+        depth: f32::NAN,
+        time: -1.0,
+        low_split_hz: 1e9,
+        ..OttParams::DEFAULT
+    };
+    let mut sink = 0.0_f32;
+    assert_no_alloc(|| {
+        for round in 0..64_u32 {
+            let from = params(|p| p.depth = 10.0 + round as f32);
+            let to = params(|p| {
+                p.depth = 20.0 + round as f32;
+                p.time = 20.0 + 10.0 * round as f32;
+                p.low_split_hz = 50.0 + round as f32;
+            });
+            o.set_ramp(&from, &to);
+            for (x, y) in a.chunks_mut(SEG).zip(b.chunks_mut(SEG)) {
+                o.process_in_place(x, y);
+            }
+            sink += o.band_gain_db(0) + o.band_level_db(1);
+            if round % 16 == 15 {
+                o.set_params(&wild);
+                o.reset();
+                o.prepare(FS * 2.0);
+                o.prepare(FS);
+                a.copy_from_slice(&l);
+                b.copy_from_slice(&r);
+            }
+        }
+    });
+    assert!(sink.is_finite());
+}
+
+/// The peak (linear) of the left output over the 100 ms after a step from `from_db` to `to_db` dBFS of a sine at `hz`.
+fn step_peak(p: &OttParams, hz: f64, from_db: f64, to_db: f64) -> f64 {
+    let mut o = ott_with(p);
+    let mut l = [0.0_f32; SEG];
+    let mut r = [0.0_f32; SEG];
+    let jump = 48_000;
+    let mut peak = 0.0_f64;
+    let mut n = 0;
+    while n < jump + 4_800 {
+        for i in 0..SEG {
+            let a = if n + i < jump {
+                undb(from_db)
+            } else {
+                undb(to_db)
+            };
+            let x = (a * libm::sin(TAU * hz * (n + i) as f64 / FSD)) as f32;
+            l[i] = x;
+            r[i] = x;
+        }
+        o.process_in_place(&mut l, &mut r);
+        for (i, &y) in l.iter().enumerate() {
+            if n + i >= jump {
+                peak = peak.max(f64::from(y).abs());
+            }
+        }
+        n += SEG;
+    }
+    peak
+}
+
+/// No look-ahead means a lift computed for a quiet passage meets the first cycles of a loud note. The onset guard
+/// holds those cycles to the louder of the band's upward threshold + 20 dB and what the same step does at depth 0
+/// (the crossovers' own onset ripple: +0.7 dB on a mid-band sine), plus half a dB. Without the guard a -60 -> -6 dBFS
+/// step at depth 100 left the mid band at +15 dBFS.
+#[test]
+fn a_note_after_a_gap_is_not_thrown_far_over_its_input() {
+    for (band, hz, ls, hs) in [
+        (0, 60.0, 500.0, 10_000.0),
+        (1, 1_000.0, 40.0, 10_000.0),
+        (2, 8_000.0, 40.0, 500.0),
+    ] {
+        let ceiling_db =
+            f64::from(BAND_SPECS[band].up_threshold_db + LIFT_CEILING_ABOVE_THRESHOLD_DB);
+        for &(from_db, to_db) in &[(-60.0_f64, -6.0_f64), (-40.0, -6.0), (-60.0, -20.0)] {
+            let flat = db(step_peak(
+                &params(|p| {
+                    p.depth = 0.0;
+                    p.low_split_hz = ls;
+                    p.high_split_hz = hs;
+                }),
+                hz,
+                from_db,
+                to_db,
+            ));
+            for depth in [30.0_f32, 100.0] {
+                let p = params(|p| {
+                    p.depth = depth;
+                    p.low_split_hz = ls;
+                    p.high_split_hz = hs;
+                });
+                let peak = db(step_peak(&p, hz, from_db, to_db));
+                let allowed = flat.max(ceiling_db) + 0.5;
+                assert!(
+                    peak <= allowed,
+                    "band {band} {hz} Hz depth {depth}: {from_db} -> {to_db} dBFS peaks at {peak:+.2} dBFS, over {allowed:+.2} (flat split {flat:+.2})"
+                );
+            }
+        }
     }
 }
