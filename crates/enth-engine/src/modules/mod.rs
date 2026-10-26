@@ -300,16 +300,7 @@ impl VoiceProcessorImpl {
     /// stereo voice path it is given a right channel (`VoiceCx::io_r`); every other module is mono.
     #[must_use]
     pub fn is_stereo(&self) -> bool {
-        match self {
-            VoiceProcessorImpl::Wt(wt) => wt.is_stereo(),
-            VoiceProcessorImpl::Osc(_)
-            | VoiceProcessorImpl::Noise(_)
-            | VoiceProcessorImpl::Svf(_)
-            | VoiceProcessorImpl::Dist(_)
-            | VoiceProcessorImpl::Comb(_)
-            | VoiceProcessorImpl::Formant(_)
-            | VoiceProcessorImpl::Ladder(_) => false,
-        }
+        matches!(self, VoiceProcessorImpl::Wt(wt) if wt.is_stereo())
     }
 
     /// How many copies of its signal this generator renders per voice: a `wt`'s `unison`, 1 for every other module.
