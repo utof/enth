@@ -26,8 +26,12 @@
 
 use core::fmt;
 
-use enth_engine::{CompileError, Engine, Event, EventKind, NoteKey, PrepareCfg, compile};
+use enth_engine::{CompileError, Engine, Event, EventKind, NoteKey, PrepareCfg, compile_with};
 use enth_patch::{MacroIndex, ModSource, ParamAddr, Patch};
+
+/// The stereo voice path's switch, for [`render_with_stereo`] (re-exported so the golden harness needs no engine
+/// dependency).
+pub use enth_engine::StereoMode;
 
 /// The render seed used when nothing else is given (the engine spike's, `0x0E17_5EED`). The CLI's `--seed` and a
 /// challenge's seed replace it.
@@ -226,6 +230,9 @@ pub struct RenderStats {
     pub dropped_events: u64,
     /// Voices still sounding at the end.
     pub voices_at_end: usize,
+    /// The plan ran the stereo voice path (its stereo flag; lane SVP). `false` for every patch until unison spread
+    /// (lane UNI), unless the render forced it ([`render_with_stereo`]).
+    pub stereo: bool,
 }
 
 /// A stereo render.
@@ -352,6 +359,22 @@ pub fn render_with_block(
     spec: &RenderSpec,
     block: usize,
 ) -> Result<RenderOutput, RenderError> {
+    render_with_stereo(patch, perf, spec, block, StereoMode::Auto)
+}
+
+/// [`render_with_block`] with a say in the engine's stereo voice path (lane SVP): [`StereoMode::Forced`] runs the
+/// patch through the stereo path with mono content, which must give the same bits as [`render`] (the golden harness
+/// checks every case). [`StereoMode::Auto`] is `render_with_block`.
+///
+/// # Errors
+/// As [`render`].
+pub fn render_with_stereo(
+    patch: &Patch,
+    perf: &Performance,
+    spec: &RenderSpec,
+    block: usize,
+    stereo: StereoMode,
+) -> Result<RenderOutput, RenderError> {
     let sr = f64::from(spec.sample_rate);
     let cfg = PrepareCfg::new(spec.sample_rate as f32);
     if !cfg.is_supported() {
@@ -367,7 +390,8 @@ pub fn render_with_block(
         )));
     }
     let frames = (d * sr).round() as usize;
-    let (plan, map) = compile(patch, &cfg)?;
+    let (plan, map) = compile_with(patch, &cfg, stereo)?;
+    let stereo_path = plan.is_stereo();
     let to_frame = |t: f64| (t * sr).round() as u64;
 
     // (frame, event); a stable sort by frame keeps the order below for same-frame events.
@@ -464,6 +488,7 @@ pub fn render_with_block(
             dropped_notes: s.dropped_notes,
             dropped_events: s.dropped_events,
             voices_at_end: engine.active_voices().len(),
+            stereo: stereo_path,
         },
     })
 }
