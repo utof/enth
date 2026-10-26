@@ -37,6 +37,9 @@ pub const CODES: &[&str] = &[
     "wrong_section",
     "wrong_kind",
     "not_a_source",
+    "not_audio_dest",
+    "not_audio_source",
+    "audio_cycle",
     "too_many",
     "wrong_value_count",
     "no_such_route",
@@ -110,12 +113,33 @@ pub enum PatchError {
         /// The kind it is.
         found: ModuleKind,
     },
-    /// A route source that is not a modulator. Code `not_a_source`.
+    /// A route source that is neither a modulator nor a generator (an effect). Code `not_a_source`.
     NotASource {
         /// The module.
         id: String,
         /// Its kind.
         kind: ModuleKind,
+    },
+    /// A generator driving a parameter that is not an audio input (S2a lane RTE). Code `not_audio_dest`.
+    NotAudioDest {
+        /// The generator.
+        src: String,
+        /// The destination, `module.param`.
+        addr: String,
+    },
+    /// A control source (a modulator, velocity, key, the mod wheel or a macro) driving an audio input (S2a lane
+    /// RTE). Code `not_audio_source`.
+    NotAudioSource {
+        /// The source as written.
+        src: String,
+        /// The audio parameter, `module.param`.
+        addr: String,
+    },
+    /// An audio route that would close a loop between generators, a generator driving itself included (S2a lane
+    /// RTE). Code `audio_cycle`.
+    AudioCycle {
+        /// The route that closes the loop, `src -> dst`.
+        route: String,
     },
     /// An index past the end of what it indexes (a position in a section, a route index). Code `bad_index`.
     BadIndex {
@@ -275,6 +299,9 @@ impl PatchError {
             PatchError::WrongSection { .. } => "wrong_section",
             PatchError::WrongKind { .. } => "wrong_kind",
             PatchError::NotASource { .. } => "not_a_source",
+            PatchError::NotAudioDest { .. } => "not_audio_dest",
+            PatchError::NotAudioSource { .. } => "not_audio_source",
+            PatchError::AudioCycle { .. } => "audio_cycle",
             PatchError::BadIndex { .. } => "bad_index",
             PatchError::TooMany { .. } => "too_many",
             PatchError::WrongValueCount { .. } => "wrong_value_count",
@@ -321,8 +348,17 @@ impl PatchError {
                 found,
             } => format!("'{id}' is an {found}, not an {expected}"),
             PatchError::NotASource { id, kind } => {
-                format!("'{id}' is an {kind}; only modulators can be route sources")
+                format!("'{id}' is an {kind}; only modulators and generators can be route sources")
             }
+            PatchError::NotAudioDest { src, addr } => format!(
+                "{addr} is not an audio input, and the generator '{src}' can only drive an audio input"
+            ),
+            PatchError::NotAudioSource { src, addr } => format!(
+                "{addr} is an audio input, and '{src}' is not a generator: only a generator can drive it"
+            ),
+            PatchError::AudioCycle { route } => format!(
+                "the route {route} would make generators feed each other in a loop (or one drive itself)"
+            ),
             PatchError::BadIndex { what, index, max } => {
                 format!("{what} {index} is out of range (the largest is {max})")
             }
@@ -402,7 +438,19 @@ impl PatchError {
             }
             PatchError::WrongKind { expected, .. } => format!("pick an {expected} module"),
             PatchError::NotASource { .. } => {
-                "sources are adsr and lfo modules, velocity, key, modwheel and macro1..macro8"
+                "sources are adsr and lfo modules, velocity, key, modwheel and macro1..macro8; a generator is a source only for an audio input (a parameter flagged `audio` in `enth params <kind>`)"
+                    .to_owned()
+            }
+            PatchError::NotAudioDest { .. } => {
+                "a generator's output goes only to an audio input: a parameter flagged `audio` in `enth params <kind>` (such as wt.pm); use a modulator to move any other parameter"
+                    .to_owned()
+            }
+            PatchError::NotAudioSource { .. } => {
+                "an audio input takes the output of a generator; route an oscillator or another generator to it, and use feedback inside the module for a loop"
+                    .to_owned()
+            }
+            PatchError::AudioCycle { .. } => {
+                "audio flows one way: a generator can feed a later one, never itself or something that feeds it; feedback is a parameter inside a module, not a route"
                     .to_owned()
             }
             PatchError::BadIndex { .. } => "leave the index out to append".to_owned(),
