@@ -61,7 +61,9 @@ impl EnumItem {
     reason = "independent flags: four mirror CLAP's parameter flags, `audio` is enth's own"
 )]
 pub struct Flags {
-    /// Modulation routes may target it. Only `Float` parameters, never structural ones.
+    /// Modulation routes may target it. `Float` parameters, and `Enum` ones (S2a, lane TMP: `lfo.beats`; the engine
+    /// takes `from_norm` of the summed route, which rounds a discrete value, so a modulated enum steps through its
+    /// items in order and never interpolates); never structural ones.
     pub modulatable: bool,
     /// An automation slot may expose it to the host. Never structural ones (each change would recompile the plan).
     pub automatable: bool,
@@ -174,7 +176,7 @@ pub struct LearnMeta {
 /// - `Int`: `min < max`, both within ±2^24; `Enum`: at least two items with valid, unique keys; `Enum` and
 ///   `Toggle` have [`Unit::None`];
 /// - `default` is valid: finite, in range, integral for `Int`/`Enum`/`Toggle`, never `-0.0`;
-/// - `modulatable` only on `Float`; `structural` excludes `modulatable` and `automatable`; `periodic` only on a
+/// - `modulatable` only on `Float` and `Enum`; `structural` excludes `modulatable` and `automatable`; `periodic` only on a
 ///   Linear `Float` or an `Int`; smoothing only on `Float`, with a finite `ms > 0`;
 /// - `audio` only on a `Float` that is not structural.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -714,8 +716,13 @@ pub const fn check_spec(table: &str, s: &ParamSpec) {
             ": enum and toggle parameters have Unit::None",
         ]);
     }
-    if s.flags.modulatable && !float {
-        fail(&[table, ".", k, ": only Float parameters may be modulatable"]);
+    if s.flags.modulatable && !(float || matches!(s.kind, Kind::Enum(_))) {
+        fail(&[
+            table,
+            ".",
+            k,
+            ": only Float and Enum parameters may be modulatable",
+        ]);
     }
     if s.flags.structural && (s.flags.modulatable || s.flags.automatable) {
         fail(&[
@@ -890,6 +897,44 @@ mod tests {
         let t = ParamSpec::toggle("sync", "Sync", false).basic("x");
         assert_eq!(t.from_norm(0.49), 0.0);
         assert_eq!(t.from_norm(0.5), 1.0);
+    }
+
+    const FEELS: [EnumItem; 4] = [
+        EnumItem::new("a", "A", "First."),
+        EnumItem::new("b", "B", "Second."),
+        EnumItem::new("c", "C", "Third."),
+        EnumItem::new("d", "D", "Fourth."),
+    ];
+    /// A modulatable enum passes the compile-time check (S2a, lane TMP: `lfo.beats`).
+    const STEPPED: ParamSpec = ParamSpec::enumeration("beats", "Beats", &FEELS, 1)
+        .modulatable()
+        .intermediate("x");
+    const _: () = check_spec("test", &STEPPED);
+
+    #[test]
+    fn a_modulated_enum_steps_through_its_items_in_order() {
+        assert!(STEPPED.flags.modulatable && STEPPED.flags.automatable);
+        // The matrix takes `from_norm` of the summed route: a sweep of the normalised value visits every item once,
+        // in order, with exact integers and no value in between.
+        let mut last = -1.0f32;
+        let mut visited = Vec::new();
+        for i in 0..=1000 {
+            let v = STEPPED.from_norm(i as f32 / 1000.0);
+            assert_eq!(v.fract(), 0.0, "{i}: {v}");
+            assert!(v >= last, "{i}: {v} after {last}");
+            if v != last {
+                visited.push(v as usize);
+            }
+            last = v;
+        }
+        assert_eq!(visited, [0, 1, 2, 3]);
+        // Out-of-range sums clamp to the first and last item.
+        assert_eq!(STEPPED.from_norm(-3.0), 0.0);
+        assert_eq!(STEPPED.from_norm(7.0), 3.0);
+        // And an item's own normalised position gives the item back.
+        for item in 0..4 {
+            assert_eq!(STEPPED.from_norm(STEPPED.to_norm(item as f32)), item as f32);
+        }
     }
 
     #[test]

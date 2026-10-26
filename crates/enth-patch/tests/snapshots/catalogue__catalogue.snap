@@ -1153,6 +1153,178 @@ expression: catalogue_json()
           "smoothing": null,
           "tier": "advanced",
           "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "off",
+          "desc": "Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "sync",
+          "kind": {
+            "type": "toggle"
+          },
+          "name": "Tempo sync",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 10.0,
+          "default_text": "quarter",
+          "desc": "The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "beats",
+          "kind": {
+            "items": [
+              {
+                "desc": "A thirty-second-note triplet: twelve cycles per beat, a very fast flutter.",
+                "key": "thirty_second_triplet",
+                "name": "1/32T"
+              },
+              {
+                "desc": "A thirty-second note: eight cycles per beat, a buzz.",
+                "key": "thirty_second",
+                "name": "1/32"
+              },
+              {
+                "desc": "A sixteenth-note triplet: six cycles per beat.",
+                "key": "sixteenth_triplet",
+                "name": "1/16T"
+              },
+              {
+                "desc": "A dotted thirty-second note: sixteen cycles in three beats, an uneven flutter.",
+                "key": "thirty_second_dotted",
+                "name": "1/32D"
+              },
+              {
+                "desc": "A sixteenth note: four cycles per beat.",
+                "key": "sixteenth",
+                "name": "1/16"
+              },
+              {
+                "desc": "An eighth-note triplet: three cycles per beat.",
+                "key": "eighth_triplet",
+                "name": "1/8T"
+              },
+              {
+                "desc": "A dotted sixteenth note: eight cycles in three beats.",
+                "key": "sixteenth_dotted",
+                "name": "1/16D"
+              },
+              {
+                "desc": "An eighth note: two cycles per beat.",
+                "key": "eighth",
+                "name": "1/8"
+              },
+              {
+                "desc": "A quarter-note triplet: three cycles in two beats.",
+                "key": "quarter_triplet",
+                "name": "1/4T"
+              },
+              {
+                "desc": "A dotted eighth note: four cycles in three beats, a syncopated bounce.",
+                "key": "eighth_dotted",
+                "name": "1/8D"
+              },
+              {
+                "desc": "A quarter note: one cycle per beat.",
+                "key": "quarter",
+                "name": "1/4"
+              },
+              {
+                "desc": "A half-note triplet: three cycles in four beats.",
+                "key": "half_triplet",
+                "name": "1/2T"
+              },
+              {
+                "desc": "A dotted quarter note: two cycles in three beats.",
+                "key": "quarter_dotted",
+                "name": "1/4D"
+              },
+              {
+                "desc": "A half note: one cycle every two beats.",
+                "key": "half",
+                "name": "1/2"
+              },
+              {
+                "desc": "A whole-note triplet: three cycles in two bars.",
+                "key": "bar_triplet",
+                "name": "1 bar T"
+              },
+              {
+                "desc": "A dotted half note: one cycle every three beats.",
+                "key": "half_dotted",
+                "name": "1/2D"
+              },
+              {
+                "desc": "A whole note: one cycle per bar of four beats.",
+                "key": "bar",
+                "name": "1 bar"
+              },
+              {
+                "desc": "A two-bar triplet: three cycles in four bars.",
+                "key": "two_bars_triplet",
+                "name": "2 bars T"
+              },
+              {
+                "desc": "A dotted whole note: one cycle every six beats, a bar and a half.",
+                "key": "bar_dotted",
+                "name": "1 bar D"
+              },
+              {
+                "desc": "One cycle every two bars: a slow swell.",
+                "key": "two_bars",
+                "name": "2 bars"
+              },
+              {
+                "desc": "One cycle every three bars.",
+                "key": "two_bars_dotted",
+                "name": "2 bars D"
+              },
+              {
+                "desc": "One cycle every four bars: a whole phrase.",
+                "key": "four_bars",
+                "name": "4 bars"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Beats",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "intermediate",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "off",
+          "desc": "On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "one_shot",
+          "kind": {
+            "type": "toggle"
+          },
+          "name": "One shot",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
         }
       ],
       "section": "modulators",

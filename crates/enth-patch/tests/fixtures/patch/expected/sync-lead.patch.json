@@ -108,7 +108,10 @@
         "scope": "voice",
         "phase_mode": "reset",
         "phase": 0.0,
-        "seed": 0.0
+        "seed": 0.0,
+        "sync": false,
+        "beats": "quarter",
+        "one_shot": false
       }
     },
     {
@@ -122,7 +125,10 @@
         "scope": "voice",
         "phase_mode": "reset",
         "phase": 0.0,
-        "seed": 0.0
+        "seed": 0.0,
+        "sync": false,
+        "beats": "quarter",
+        "one_shot": false
       }
     }
   ],
