@@ -242,6 +242,7 @@ Eight instances fit on one thread. Sixteen need several threads, which hosts pro
   - a second large-state effect lands (S2: a delay or a chorus adds its own copy to the same block);
   - the host-level xrun check attributes an xrun to an edit;
   - `benches/swap.rs`'s `crossfade_swap` budget has to grow.
+- **S2a lane MOD, 2026-10-27: the chorus is not that second effect.** It copies 32 KiB at a crossfading swap (64 KiB at 96 kHz, 128 KiB at 192 kHz; the phaser 128 bytes), and the copy measured alone is 1 µs warm and at most 15 µs at p99 cold at 48 kHz, against the reverb's 221–452 µs. With both effects in the G1 chain the plugin's crossfading swap block moved by no more than the run-to-run spread (median p99 1,086 µs against 1,049 µs without, on a machine at load 3–14 where the unchanged G1 patch itself read 919–1,150 µs). The `delay` lane's rings are the next candidate; the figures and the method are in [dsp/chorus.md](dsp/chorus.md#memory-and-the-plan-swap).
 
 **Event floods** (`--flood N`). One flood every 250 ms for 60 s, at load 4–7. Each flood block also presses the chord again (16 note-ons).
 

@@ -28,6 +28,8 @@ Everything is `f64` with the pinned `libm` and a fixed loop order, so a measurem
 | Generator (`wt`) | The generator itself at a sweep of pitches; with PM from another generator, at a high index | Its fundamental; with a modulator at a ratio `p/q` in lowest terms, `f0 / q` |
 | Modulator (`mseg`) | Not an audio path | — |
 
+**The modulated effects add a second thing the measure cannot separate.** A moving delay or corner makes sidebands that are the effect itself (a chorus is a frequency modulation, a swept phaser an amplitude and phase modulation), and they fall outside the ±8 guard bins as soon as the sweep is fast, so the bound is recorded frozen and at the slowest sweep (0.01 Hz, full depth), where those stay inside the guard bins, and the fast sweeps are recorded as information. Measured 2026-10-26: the chorus is at the floor frozen (−92.6 dB) and −103.4 … −35.1 dB from 110 Hz to 10.5 kHz at the slowest full-depth sweep, which is its four-point Lagrange read's error rising as the fourth power of the frequency ([chorus.md](chorus.md#aliasing)); the phaser, a rational filter, is at the floor in every case that is not a fast sweep, −90.8 dB at worst at its defaults ([phaser.md](phaser.md#aliasing)).
+
 The engine's sine is a clean input: −93 to −120 dB from key 33 to 105 (`tests/alias.rs`), which is the measure's own floor: the window leaks about −92 dB beyond its main lobe, so nothing measures lower than about −93 dB at low pitches.
 
 ## Recording a bound
