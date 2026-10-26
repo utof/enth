@@ -136,9 +136,9 @@ fn compile(get: impl Fn(usize) -> f32) -> Shape {
     for (i, point) in points.iter_mut().enumerate().take(n) {
         let base = MSEG_POINT_BASE + 3 * i;
         *point = Point {
-            time: f64::from(get(base)) / 100.0,
-            level: f64::from(get(base + 1)) / 100.0,
-            curve: f64::from(get(base + 2)) / 100.0,
+            time: f64::from(get(base)),
+            level: f64::from(get(base + 1)),
+            curve: f64::from(get(base + 2)),
         };
     }
     let bipolar = Polarity::from_value(get(MsegParam::Polarity.index())) == Some(Polarity::Bipolar);
@@ -241,6 +241,7 @@ fn step(
     held: bool,
     velocity: f64,
 ) -> f32 {
+    let was = track.cursor;
     track.cursor.advance(shape, inc, held);
     let out = shape.output(track.cursor.level(shape), velocity);
     if track.glide_left > 0 {
@@ -252,8 +253,11 @@ fn step(
         };
     }
     if edited && glide_ok {
-        // Go on from where the old shape (and the glide still running) would be, and glide to the new one.
-        let old = before.output(track.cursor.level(before), velocity);
+        // Go on from where the old shape (and the glide still running) would be, and glide to the new one. The old
+        // shape moves its own copy of the cursor: a mode or loop-point change can send the new one somewhere else.
+        let mut shadow = was;
+        shadow.advance(before, inc, held);
+        let old = before.output(shadow.level(before), velocity);
         let jump = old + track.glide - out;
         if jump.abs() > GLIDE_FLOOR {
             track.glide = jump;
@@ -393,6 +397,10 @@ impl GlobalModulator for Mseg {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::cast_lossless,
+    reason = "loop indices in the tests' closed forms"
+)]
 mod tests {
     use super::*;
     use crate::module::{GlobalParams, NoteState, VoiceParams};
@@ -407,7 +415,7 @@ mod tests {
     /// The documented curve, written out here with no code shared with the core.
     fn bend(c: f64, u: f64) -> f64 {
         if c >= 1.0 {
-            return if u > 0.0 { 1.0 } else { 0.0 };
+            return 1.0;
         }
         if c <= -1.0 {
             return 0.0;
@@ -669,7 +677,7 @@ mod tests {
             let rig = hold_then_jump(&[(MsegParam::Sync, 0.0), (MsegParam::Length, length)]);
             (rig, n, format!("{length} ms"))
         };
-        let cases = [
+        let cases = vec![
             synced(120.0, Beats::Quarter, 750),
             synced(90.0, Beats::Quarter, 1000),
             synced(150.0, Beats::Quarter, 600),
@@ -950,7 +958,7 @@ mod tests {
         close(first, 1.0 / 750.0 / 0.2, 1e-6, "rising");
         for _ in 0..2000 {
             let y = rig.tick_global(true, false);
-            assert!(y >= 0.0 && y <= 1.0);
+            assert!((0.0..=1.0).contains(&y));
         }
         close(
             rig.tick_global(true, false),

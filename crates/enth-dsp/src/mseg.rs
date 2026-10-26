@@ -11,9 +11,10 @@
 //!
 //! # The shape
 //!
-//! Points have a time, a level (both `0..=1`) and a curve (`-1..=1`) for the segment that leaves them. A point's
-//! effective time is its own or the previous point's, whichever is later, so points never cross and equal times make
-//! a vertical edge. With `x` the position and `i` the last point whose time is at or before `x`:
+//! Points have a time, a level (both `0..=100` %) and a curve (`-100..=100` %) for the segment that leaves them, in the
+//! parameters' own units. A point's effective time is its own or the previous point's, whichever is later, so points
+//! never cross and equal times make a vertical edge. With `x` the position and `i` the last point whose time is at or
+//! before `x`:
 //!
 //! - before the first point's time the output holds that point's level;
 //! - between point `i` and `i + 1`: `level[i] + (level[i+1] − level[i]) · f(u)`, `u = (x − t[i]) / (t[i+1] − t[i])`;
@@ -26,12 +27,22 @@
 //! Report 05's rational curve, `f(u) = u / (u + k(1 − u))`, with `k` from the curve `c ∈ (−1, 1)` as
 //! `k = (1 − c) / (1 + c)`: `c = 0` gives `k = 1`, a straight line; `c > 0` gives `k < 1`, early (fast, then slow);
 //! `c < 0` gives `k > 1`, late. The curve for `−c` is the one for `c` turned half a revolution
-//! (`f₋c(u) = 1 − f_c(1 − u)`). The ends are exact steps: `c = +1` jumps to the next level at once (`f = 1` for
-//! `u > 0`, the point's own level at `u = 0` exactly) and `c = −1` holds the level and jumps at the next point
-//! (`f = 0` for `u < 1`), so 16 points with `−1` curves are a 16-step pattern. One division, no `pow`.
+//! (`f₋c(u) = 1 − f_c(1 − u)`). The ends are exact steps: `c = +1` jumps to the next level at once (`f = 1`: the
+//! position being at or after the point's time means the jump is made) and `c = −1` holds the level and jumps at the
+//! next point (`f = 0` for `u < 1`; reaching that point's time ends the hold), so 16 points with `−1` curves are a
+//! 16-step pattern. One division, no `pow`.
 //!
-//! Everything is `f64` with `+ − × ÷` only, so the output is the same on every platform; the module casts the result
-//! to `f32` once.
+//! # Exact point times
+//!
+//! A point's time is turned into a position **once, exactly**: `ceil(time % · 2⁶⁴ / 100)` in `u128` (a percent value is
+//! an exact binary number, so this is the true quotient rounded up), and the shape is looked up by comparing integer
+//! positions. With the increments rounded up too, a position reaches a point's position at exactly the step where
+//! the ideal position reaches the point's time: a point at 30 % of a 750-step length is reached at step 225, a sustain
+//! loop of 20 % of it takes 150 steps every lap, and a 16-step pattern whose steps land on segment boundaries steps
+//! on them, whatever `0.3` is in binary floating point.
+//!
+//! Everything is `f64` with `+ − × ÷` only (and `u128` integer division), so the output is the same on every
+//! platform; the module casts the result to `f32` once.
 
 /// The most points a shape has.
 pub const POINTS: usize = 16;
@@ -40,6 +51,7 @@ pub const POINTS: usize = 16;
 const TWO_POW_64: f64 = 4_294_967_296.0 * 4_294_967_296.0;
 
 /// 2⁻⁵³.
+#[cfg(test)]
 const INV_2_53: f64 = 1.0 / 9_007_199_254_740_992.0;
 
 /// How the shape plays.
@@ -53,15 +65,15 @@ pub enum Mode {
     SustainLoop,
 }
 
-/// One point as the core takes it: shares of the length and the level (`0..=1`) and the curve (`-1..=1`) of the
-/// segment that leaves it. Out-of-range values are clamped by [`Shape::new`].
+/// One point as the core takes it, in the parameters' units: the time and level in percent (`0..=100`) and the curve
+/// of the segment that leaves it in percent (`-100..=100`). Out-of-range values are clamped by [`Shape::new`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Point {
-    /// Where the point sits, as a share of the length.
+    /// Where the point sits, as a percent of the length.
     pub time: f64,
-    /// The level at the point.
+    /// The level at the point, in percent.
     pub level: f64,
-    /// The bend of the segment leaving the point: 0 straight, positive early, negative late, ±1 the two steps.
+    /// The bend of the segment leaving the point: 0 straight, positive early, negative late, ±100 the two steps.
     pub curve: f64,
 }
 
@@ -102,13 +114,7 @@ impl Bend {
         match self {
             Bend::Linear => u,
             Bend::Rational(k) => u / (u + k * (1.0 - u)),
-            Bend::Jump => {
-                if u > 0.0 {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
+            Bend::Jump => 1.0,
             Bend::Hold => 0.0,
         }
     }
@@ -123,23 +129,39 @@ pub struct Shape {
     mode: Mode,
     bipolar: bool,
     velocity: f64,
-    time: [f64; POINTS],
+    /// Each point's effective position (running maximum of the exact positions of the times).
+    at: [u64; POINTS],
     level: [f64; POINTS],
     bend: [Bend; POINTS],
     loop_start: u64,
     loop_end: u64,
 }
 
-/// A share of the length as a position: `round-down(t · 2⁶⁴)`, saturating at the last position for `t = 1`.
+/// A share of the length as a position: `round-down(t · 2⁶⁴)`, saturating at the last position for `t = 1`. For the
+/// start phase and for tests; point times use [`time_position`], which is exact.
 fn position_of(t: f64) -> u64 {
     // `as` saturates, and the product of a share in [0, 1] is exact apart from the f64 rounding of `t`.
     (t * TWO_POW_64) as u64
 }
 
 /// A position as a share of the length: its top 53 bits, exact in `f64`, in `[0, 1)`.
-#[inline]
+#[cfg(test)]
 fn share_of(pos: u64) -> f64 {
     (pos >> 11) as f64 * INV_2_53
+}
+
+/// The position of a point at `percent` of the length: `ceil(percent · 2⁶⁴ / 100)`, computed exactly (the `f64` is an
+/// exact binary number; the quotient is done in `u128`). 0 for a time of 0 or NaN, and `u64::MAX` (the last position)
+/// for 100 %.
+fn time_position(percent: f64) -> u64 {
+    if percent.is_nan() || percent <= 0.0 {
+        return 0;
+    }
+    if percent >= 100.0 {
+        return u64::MAX;
+    }
+    let (mantissa, exponent) = parts_f64(percent);
+    ceil_scaled(mantissa, exponent, 100, 0)
 }
 
 impl Shape {
@@ -154,27 +176,22 @@ impl Shape {
             mode,
             bipolar: false,
             velocity: 0.0,
-            time: [1.0; POINTS],
+            at: [u64::MAX; POINTS],
             level: [0.0; POINTS],
             bend: [Bend::Linear; POINTS],
             loop_start: 0,
             loop_end: 0,
         };
-        let mut previous = 0.0f64;
+        let mut previous = 0u64;
         for (i, p) in used.iter().enumerate() {
-            let t = if p.time.is_nan() {
-                0.0
-            } else {
-                p.time.clamp(0.0, 1.0)
-            };
-            previous = previous.max(t);
-            shape.time[i] = previous;
+            previous = previous.max(time_position(p.time));
+            shape.at[i] = previous;
             shape.level[i] = if p.level.is_nan() {
                 0.0
             } else {
-                p.level.clamp(0.0, 1.0)
+                p.level.clamp(0.0, 100.0) / 100.0
             };
-            shape.bend[i] = Bend::new(p.curve);
+            shape.bend[i] = Bend::new(p.curve / 100.0);
         }
         shape.with_loop(shape.n, shape.n)
     }
@@ -185,8 +202,8 @@ impl Shape {
     pub fn with_loop(mut self, start: usize, end: usize) -> Shape {
         let end = end.clamp(1, self.n);
         let start = start.clamp(1, self.n).min(end);
-        self.loop_start = position_of(self.time[start - 1]);
-        self.loop_end = position_of(self.time[end - 1]);
+        self.loop_start = self.at[start - 1];
+        self.loop_end = self.at[end - 1];
         self
     }
 
@@ -215,10 +232,11 @@ impl Shape {
         self.n
     }
 
-    /// Point `i`'s effective time (0-based), a share of the length.
+    /// Point `i`'s effective time (0-based), as a share of the length (for tests and display; the shape itself is
+    /// looked up by position).
     #[must_use]
     pub fn time(&self, i: usize) -> f64 {
-        self.time[i]
+        self.at[i] as f64 / TWO_POW_64
     }
 
     /// The level held after the last point: the end of a one-shot, or of the release of a sustain loop.
@@ -236,23 +254,28 @@ impl Shape {
     /// The level (`0..=1`) at position `pos`. See the module docs for the shape.
     #[must_use]
     pub fn value(&self, pos: u64) -> f64 {
-        let x = share_of(pos);
         let n = self.n;
-        if x < self.time[0] {
+        if pos < self.at[0] {
             return self.level[0];
         }
         let mut i = 0;
-        while i + 1 < n && self.time[i + 1] <= x {
+        while i + 1 < n && self.at[i + 1] <= pos {
             i += 1;
         }
         if i + 1 < n {
-            // `time[i + 1]` is after `x`, which is not before `time[i]`: a segment of positive width.
-            let (t0, t1) = (self.time[i], self.time[i + 1]);
-            self.segment(i, self.level[i], self.level[i + 1], (x - t0) / (t1 - t0))
+            // `at[i + 1]` is after `pos`, which is not before `at[i]`: a segment of positive width.
+            let (t0, t1) = (self.at[i], self.at[i + 1]);
+            self.segment(
+                i,
+                self.level[i],
+                self.level[i + 1],
+                (pos - t0) as f64 / (t1 - t0) as f64,
+            )
         } else if self.mode == Mode::Loop {
-            // `x < 1` and `x >= time[n - 1]`, so the tail has positive width.
-            let t0 = self.time[n - 1];
-            self.segment(i, self.level[i], self.level[0], (x - t0) / (1.0 - t0))
+            // The tail runs from the last point to the end of the length (position 2⁶⁴), where the loop joins.
+            let t0 = self.at[n - 1];
+            let width = (u64::MAX - t0) as f64 + 1.0;
+            self.segment(i, self.level[i], self.level[0], (pos - t0) as f64 / width)
         } else {
             self.level[n - 1]
         }
@@ -464,27 +487,20 @@ pub fn length_increment(length_ms: f32, sample_rate: f32, step: usize) -> u64 {
 mod tests {
     use super::*;
 
+    /// A point from shares of the length, the level and the curve (`-1..=1`): the core takes percent.
+    fn pt(time: f64, level: f64, curve: f64) -> Point {
+        Point {
+            time: time * 100.0,
+            level: level * 100.0,
+            curve: curve * 100.0,
+        }
+    }
+
     /// A triangle 0 → 1 → 0 over the length.
     fn triangle(mode: Mode) -> Shape {
         Shape::new(
             mode,
-            &[
-                Point {
-                    time: 0.0,
-                    level: 0.0,
-                    curve: 0.0,
-                },
-                Point {
-                    time: 0.5,
-                    level: 1.0,
-                    curve: 0.0,
-                },
-                Point {
-                    time: 1.0,
-                    level: 0.0,
-                    curve: 0.0,
-                },
-            ],
+            &[pt(0.0, 0.0, 0.0), pt(0.5, 1.0, 0.0), pt(1.0, 0.0, 0.0)],
         )
     }
 
@@ -506,42 +522,14 @@ mod tests {
     fn the_curve_is_the_rational_formula_and_symmetric() {
         // Two points, 0 → 1, with a curve c on the segment leaving the first.
         for c in [-0.9f64, -0.5, -0.1, 0.1, 0.5, 0.9] {
-            let s = Shape::new(
-                Mode::OneShot,
-                &[
-                    Point {
-                        time: 0.0,
-                        level: 0.0,
-                        curve: c,
-                    },
-                    Point {
-                        time: 1.0,
-                        level: 1.0,
-                        curve: 0.0,
-                    },
-                ],
-            );
+            let s = Shape::new(Mode::OneShot, &[pt(0.0, 0.0, c), pt(1.0, 1.0, 0.0)]);
             let k = (1.0 - c) / (1.0 + c);
             for j in 1..20 {
                 let u = f64::from(j) / 20.0;
                 let want = u / (u + k * (1.0 - u));
                 assert!((at(&s, u) - want).abs() < 1e-12, "c = {c}, u = {u}");
                 // The curve for −c is this one turned half a revolution.
-                let mirror = Shape::new(
-                    Mode::OneShot,
-                    &[
-                        Point {
-                            time: 0.0,
-                            level: 0.0,
-                            curve: -c,
-                        },
-                        Point {
-                            time: 1.0,
-                            level: 1.0,
-                            curve: 0.0,
-                        },
-                    ],
-                );
+                let mirror = Shape::new(Mode::OneShot, &[pt(0.0, 0.0, -c), pt(1.0, 1.0, 0.0)]);
                 assert!(
                     (at(&mirror, 1.0 - u) - (1.0 - at(&s, u))).abs() < 1e-12,
                     "c = {c}, u = {u}"
@@ -552,23 +540,7 @@ mod tests {
 
     #[test]
     fn plus_and_minus_one_are_the_two_steps() {
-        let step = |c: f64| {
-            Shape::new(
-                Mode::OneShot,
-                &[
-                    Point {
-                        time: 0.25,
-                        level: 0.2,
-                        curve: c,
-                    },
-                    Point {
-                        time: 0.75,
-                        level: 0.9,
-                        curve: 0.0,
-                    },
-                ],
-            )
-        };
+        let step = |c: f64| Shape::new(Mode::OneShot, &[pt(0.25, 0.2, c), pt(0.75, 0.9, 0.0)]);
         let (jump, hold) = (step(1.0), step(-1.0));
         assert_eq!(
             at(&jump, 0.1),
@@ -577,8 +549,8 @@ mod tests {
         );
         assert_eq!(
             at(&jump, 0.25),
-            0.2,
-            "at the point itself it has not jumped"
+            0.9,
+            "at the point's time the jump is made (reaching a time passes it)"
         );
         assert_eq!(at(&jump, 0.2500001), 0.9, "just after it, the next level");
         assert_eq!(at(&jump, 0.74), 0.9);
@@ -597,23 +569,7 @@ mod tests {
         // Point 3 asks for a time before point 2: it sits at point 2's time, a vertical edge up to its level.
         let s = Shape::new(
             Mode::OneShot,
-            &[
-                Point {
-                    time: 0.0,
-                    level: 0.0,
-                    curve: 0.0,
-                },
-                Point {
-                    time: 0.5,
-                    level: 0.0,
-                    curve: 0.0,
-                },
-                Point {
-                    time: 0.2,
-                    level: 1.0,
-                    curve: 0.0,
-                },
-            ],
+            &[pt(0.0, 0.0, 0.0), pt(0.5, 0.0, 0.0), pt(0.2, 1.0, 0.0)],
         );
         assert_eq!(s.time(2), 0.5);
         assert_eq!(at(&s, 0.4999), 0.0);
@@ -627,18 +583,7 @@ mod tests {
 
     #[test]
     fn a_loop_heads_back_to_the_first_level_and_a_one_shot_holds_the_last() {
-        let pts = [
-            Point {
-                time: 0.0,
-                level: 0.2,
-                curve: 0.0,
-            },
-            Point {
-                time: 0.5,
-                level: 1.0,
-                curve: 0.0,
-            },
-        ];
+        let pts = [pt(0.0, 0.2, 0.0), pt(0.5, 1.0, 0.0)];
         let looped = Shape::new(Mode::Loop, &pts);
         let once = Shape::new(Mode::OneShot, &pts);
         // Loop: 0.2 → 1 over the first half, then back to 0.2 over the second.
@@ -647,21 +592,7 @@ mod tests {
         assert_eq!(at(&once, 0.75), 1.0);
         assert_eq!(once.final_level(), 1.0);
         // Before the first point's time the first level is held.
-        let late = Shape::new(
-            Mode::OneShot,
-            &[
-                Point {
-                    time: 0.4,
-                    level: 0.7,
-                    curve: 0.0,
-                },
-                Point {
-                    time: 1.0,
-                    level: 0.0,
-                    curve: 0.0,
-                },
-            ],
-        );
+        let late = Shape::new(Mode::OneShot, &[pt(0.4, 0.7, 0.0), pt(1.0, 0.0, 0.0)]);
         assert_eq!(at(&late, 0.1), 0.7);
     }
 
@@ -836,11 +767,7 @@ mod tests {
 
     /// 0 → 1 at 0.25, then 0.5 at 0.5, 1 at 0.75 and back to 0 at 1: a sustain loop over points 2 to 3.
     fn sustain() -> Shape {
-        let p = |time, level| Point {
-            time,
-            level,
-            curve: 0.0,
-        };
+        let p = |time: f64, level: f64| pt(time, level, 0.0);
         Shape::new(
             Mode::SustainLoop,
             &[
@@ -883,11 +810,7 @@ mod tests {
 
     #[test]
     fn equal_loop_points_hold_a_level_until_the_release() {
-        let p = |time, level| Point {
-            time,
-            level,
-            curve: 0.0,
-        };
+        let p = |time: f64, level: f64| pt(time, level, 0.0);
         let shape =
             Shape::new(Mode::SustainLoop, &[p(0.0, 0.0), p(0.5, 1.0), p(1.0, 0.0)]).with_loop(2, 2);
         let inc = 1u64 << 61; // an eighth per step
@@ -931,11 +854,7 @@ mod tests {
 
     #[test]
     fn loop_points_are_clamped_to_the_used_points() {
-        let p = |time, level| Point {
-            time,
-            level,
-            curve: 0.0,
-        };
+        let p = |time: f64, level: f64| pt(time, level, 0.0);
         let pts = [p(0.0, 0.0), p(0.5, 1.0), p(1.0, 0.0)];
         // End above the points counts as the last, a start after the end as the end.
         let a = Shape::new(Mode::SustainLoop, &pts).with_loop(2, 16);
@@ -948,5 +867,47 @@ mod tests {
         assert_eq!(b.loop_end, position_of(0.5));
         let c = Shape::new(Mode::SustainLoop, &pts).with_loop(0, 0);
         assert_eq!((c.loop_start, c.loop_end), (0, 0));
+    }
+
+    #[test]
+    fn point_times_are_exact_positions_rounded_up() {
+        // 30 % of 2⁶⁴ is 3 · 2⁶⁴ / 10, which is no integer: the position is the next one up.
+        assert_eq!(u128::from(time_position(30.0)), (3u128 << 64).div_ceil(10));
+        assert_eq!(time_position(12.5), 1 << 61);
+        assert_eq!(time_position(50.0), 1 << 63);
+        assert_eq!(time_position(0.0), 0);
+        assert_eq!(time_position(100.0), u64::MAX);
+        assert_eq!(time_position(250.0), u64::MAX);
+        assert_eq!(time_position(f64::NAN), 0);
+        assert_eq!(time_position(-3.0), 0);
+        // A tiny positive time is at least one count, never zero.
+        assert_eq!(time_position(1e-300), 1);
+        // The running position of a sustain loop at 30 % to 50 % of a 750-step length is reached at step 225 and
+        // wraps every 150 steps for ever: no lap is a step longer because `0.3` is not exact in binary.
+        let q = |time: f64, level: f64| Point {
+            time,
+            level,
+            curve: 0.0,
+        };
+        let shape = Shape::new(
+            Mode::SustainLoop,
+            &[q(0.0, 0.0), q(30.0, 100.0), q(50.0, 50.0), q(100.0, 0.0)],
+        )
+        .with_loop(2, 3);
+        let inc = synced_increment(120.0, (1, 1), 48_000.0, 32);
+        let mut cursor = Cursor::new(0);
+        let mut wraps = Vec::new();
+        let mut last = 0u64;
+        for step in 1..=225 + 150 * 200 {
+            cursor.advance(&shape, inc, true);
+            if cursor.position() < last {
+                wraps.push(step);
+            }
+            last = cursor.position();
+        }
+        assert_eq!(wraps.len(), 200);
+        for (lap, &step) in wraps.iter().enumerate() {
+            assert_eq!(step, 375 + 150 * lap, "lap {lap}");
+        }
     }
 }
