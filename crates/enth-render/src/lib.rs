@@ -9,7 +9,14 @@
 //! Times in a [`Performance`] are seconds; they become frames as `round(t · sample_rate)` in `f64`, and the engine
 //! applies each event at the first 32-frame segment boundary at or after its frame. Events at the same frame apply
 //! in this order: automation first, then controls (macros and the mod wheel) in performance order, then notes in
-//! performance order, each note's on before its off.
+//! performance order, each note's on before its off. The tempo events (the performance's `tempo_bpm` at time 0, then
+//! its `tempo_changes`) come before all of these at the same frame.
+//!
+//! **Tempo (S2a, lane TMP).** [`Performance::tempo_bpm`] is a render input like the notes: the renderer sends it to
+//! the engine as a tempo event at frame 0 (and each of [`Performance::tempo_changes`] at its time), so it applies at
+//! a 32-frame segment boundary and the host block size stays out of the render. A tempo outside
+//! [`MIN_TEMPO_BPM`]`..=`[`MAX_TEMPO_BPM`] (20 to 999) is a [`RenderError::BadPerformance`], not clamped. A patch with
+//! no tempo-synced module renders the same bits at every tempo.
 //!
 //! The render seed ([`RenderSpec::seed`]) is the only source of randomness: free-running oscillator phases and every
 //! other random stream derive from it, the module id and the note index, never from the patch. Re-rendering with
@@ -26,6 +33,7 @@
 
 use core::fmt;
 
+use enth_engine::tempo;
 use enth_engine::{CompileError, Engine, Event, EventKind, NoteKey, PrepareCfg, compile};
 use enth_patch::{MacroIndex, ModSource, ParamAddr, Patch};
 
@@ -168,6 +176,17 @@ pub struct Control {
     pub value: f32,
 }
 
+/// A tempo change during a render (S2a, lane TMP): from `time_s` on, the tempo is `bpm`. The engine applies it at
+/// the first 32-frame segment boundary at or after the frame, like every event; a synced module's phase stays
+/// continuous across it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TempoChange {
+    /// Time in seconds, `>= 0`.
+    pub time_s: f64,
+    /// The new tempo in beats per minute, [`MIN_TEMPO_BPM`] to [`MAX_TEMPO_BPM`].
+    pub bpm: f64,
+}
+
 /// What is played: notes, automation, controller moves, the tempo and the length of the render. Build with
 /// `..Default::default()` (fields may be added, with defaults), or [`Performance::note`].
 #[derive(Clone, Debug, PartialEq)]
@@ -180,15 +199,18 @@ pub struct Performance {
     pub controls: Vec<Control>,
     /// Length of the render in seconds (frames = `round(duration_s · sample_rate)`).
     pub duration_s: f64,
-    /// The tempo in beats per minute, a deterministic render input (S2a decision D5): what a tempo-synced module
-    /// (an `lfo` with `sync`, the `mseg`, the `delay`) will read. Default [`DEFAULT_TEMPO_BPM`] (140). **No module
-    /// reads it yet** and the engine does not receive it (lane TMP adds the tempo event, applied at segment
-    /// boundaries, and the plugin's per-block host tempo), so today it changes no render.
+    /// The tempo in beats per minute from the start, a deterministic render input (S2a decision D5): what a
+    /// tempo-synced module (an `lfo` with `sync`, later the `mseg` and the `delay`) reads. Default
+    /// [`DEFAULT_TEMPO_BPM`] (140); [`MIN_TEMPO_BPM`] to [`MAX_TEMPO_BPM`] (20 to 999) or the render is refused. The
+    /// renderer sends it as a tempo event at frame 0; a patch with no synced module renders the same bits at every
+    /// tempo.
     pub tempo_bpm: f64,
+    /// Tempo changes during the render, in any order (same-frame changes apply in this order), each applied at the
+    /// first segment boundary at or after its time. Empty by default; `enth render --bpm` sets only `tempo_bpm`.
+    pub tempo_changes: Vec<TempoChange>,
 }
 
-/// The default tempo of a [`Performance`], in beats per minute (S2a decision D5: bass music sits near 140).
-pub const DEFAULT_TEMPO_BPM: f64 = 140.0;
+pub use tempo::{DEFAULT_TEMPO_BPM, MAX_TEMPO_BPM, MIN_TEMPO_BPM};
 
 impl Default for Performance {
     fn default() -> Self {
@@ -198,6 +220,7 @@ impl Default for Performance {
             controls: Vec::new(),
             duration_s: 0.0,
             tempo_bpm: DEFAULT_TEMPO_BPM,
+            tempo_changes: Vec::new(),
         }
     }
 }
@@ -332,7 +355,7 @@ impl From<CompileError> for RenderError {
 /// # Errors
 /// A patch that does not compile, a sample rate outside 8–384 kHz, or a bad performance (non-finite or negative
 /// times, an off before its on, a key above 127, a velocity outside 0–1, a length over [`MAX_SECONDS`], automation
-/// of an unknown parameter or with a non-finite value, a control value outside 0–1).
+/// of an unknown parameter or with a non-finite value, a control value outside 0–1, a tempo outside 20–999 BPM).
 pub fn render(
     patch: &Patch,
     perf: &Performance,
@@ -367,12 +390,39 @@ pub fn render_with_block(
         )));
     }
     let frames = (d * sr).round() as usize;
+    if !tempo::is_valid(perf.tempo_bpm) {
+        return Err(RenderError::BadPerformance(format!(
+            "tempo_bpm {} is outside {MIN_TEMPO_BPM}..={MAX_TEMPO_BPM}",
+            perf.tempo_bpm
+        )));
+    }
+    for t in &perf.tempo_changes {
+        if !(t.time_s.is_finite() && t.time_s >= 0.0 && tempo::is_valid(t.bpm)) {
+            return Err(RenderError::BadPerformance(format!(
+                "tempo change to {} BPM at time {}: times are finite and >= 0, tempos {MIN_TEMPO_BPM}..={MAX_TEMPO_BPM}",
+                t.bpm, t.time_s
+            )));
+        }
+    }
     let (plan, map) = compile(patch, &cfg)?;
     let to_frame = |t: f64| (t * sr).round() as u64;
 
     // (frame, event); a stable sort by frame keeps the order below for same-frame events.
-    let mut events: Vec<(u64, EventKind)> =
-        Vec::with_capacity(perf.automation.len() + perf.controls.len() + 2 * perf.notes.len());
+    let mut events: Vec<(u64, EventKind)> = Vec::with_capacity(
+        1 + perf.tempo_changes.len()
+            + perf.automation.len()
+            + perf.controls.len()
+            + 2 * perf.notes.len(),
+    );
+    events.push((
+        0,
+        EventKind::Tempo {
+            bpm: perf.tempo_bpm,
+        },
+    ));
+    for t in &perf.tempo_changes {
+        events.push((to_frame(t.time_s), EventKind::Tempo { bpm: t.bpm }));
+    }
     for a in &perf.automation {
         if !(a.time_s.is_finite() && a.time_s >= 0.0) {
             return Err(RenderError::BadPerformance(format!(
