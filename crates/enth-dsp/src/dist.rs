@@ -131,7 +131,9 @@ pub trait Curve {
     fn anti(u: f64) -> f64;
 }
 
-/// `ln cosh(u)`, stable for any `u`: `|u| + ln(1 + e^(−2|u|)) − ln 2`.
+/// `ln cosh(u)`, stable for any `u`: `|u| + ln(1 + e^(−2|u|)) − ln 2`, and just `|u| − ln 2` beyond 20 where the second
+/// term is below 1e-17. (A hand-rolled exponential and logarithm, polynomial on a reduced range, measured no
+/// cheaper than `libm`'s in instructions, so this stays on `libm`.)
 #[inline(always)]
 fn ln_cosh(u: f64) -> f64 {
     let a = u.abs();
@@ -628,6 +630,12 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
+/// A control at ramp position `t`; with static controls (`a == b`) the value itself.
+#[inline(always)]
+fn at<const STATIC: bool>(a: f64, b: f64, t: f64) -> f64 {
+    if STATIC { b } else { lerp(a, b, t) }
+}
+
 /// One voice of `dist`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Voice {
@@ -726,24 +734,35 @@ impl Voice {
             (c0 - FADE_STEP).max(0.0)
         };
         self.fade = c1;
+        // Static controls (the usual case) skip the per-sample interpolation altogether.
+        let st = a == b;
+        macro_rules! go {
+            ($shape:expr) => {
+                if st {
+                    run::<_, true>(self, su, a, b, (c0, c1), io, $shape);
+                } else {
+                    run::<_, false>(self, su, a, b, (c0, c1), io, $shape);
+                }
+            };
+        }
         match (su.mode, su.factor) {
-            (Mode::Soft, 1) => run(self, su, a, b, (c0, c1), io, clip::<SoftCurve, 1>),
-            (Mode::Soft, 2) => run(self, su, a, b, (c0, c1), io, clip::<SoftCurve, 2>),
-            (Mode::Soft, _) => run(self, su, a, b, (c0, c1), io, clip::<SoftCurve, 4>),
-            (Mode::Hard, 1) => run(self, su, a, b, (c0, c1), io, clip::<HardCurve, 1>),
-            (Mode::Hard, 2) => run(self, su, a, b, (c0, c1), io, clip::<HardCurve, 2>),
-            (Mode::Hard, _) => run(self, su, a, b, (c0, c1), io, clip::<HardCurve, 4>),
-            (Mode::Asymmetric, 1) => run(self, su, a, b, (c0, c1), io, clip::<AsymCurve, 1>),
-            (Mode::Asymmetric, 2) => run(self, su, a, b, (c0, c1), io, clip::<AsymCurve, 2>),
-            (Mode::Asymmetric, _) => run(self, su, a, b, (c0, c1), io, clip::<AsymCurve, 4>),
-            (Mode::SineFold, 1) => run(self, su, a, b, (c0, c1), io, clip::<SineCurve, 1>),
-            (Mode::SineFold, 2) => run(self, su, a, b, (c0, c1), io, clip::<SineCurve, 2>),
-            (Mode::SineFold, _) => run(self, su, a, b, (c0, c1), io, clip::<SineCurve, 4>),
-            (Mode::TriangleFold, 1) => run(self, su, a, b, (c0, c1), io, clip::<TriCurve, 1>),
-            (Mode::TriangleFold, 2) => run(self, su, a, b, (c0, c1), io, clip::<TriCurve, 2>),
-            (Mode::TriangleFold, _) => run(self, su, a, b, (c0, c1), io, clip::<TriCurve, 4>),
-            (Mode::Bitcrush, _) => run(self, su, a, b, (c0, c1), io, crush),
-            (Mode::Downsample, _) => run(self, su, a, b, (c0, c1), io, hold),
+            (Mode::Soft, 1) => go!(clip::<SoftCurve, 1>),
+            (Mode::Soft, 2) => go!(clip::<SoftCurve, 2>),
+            (Mode::Soft, _) => go!(clip::<SoftCurve, 4>),
+            (Mode::Hard, 1) => go!(clip::<HardCurve, 1>),
+            (Mode::Hard, 2) => go!(clip::<HardCurve, 2>),
+            (Mode::Hard, _) => go!(clip::<HardCurve, 4>),
+            (Mode::Asymmetric, 1) => go!(clip::<AsymCurve, 1>),
+            (Mode::Asymmetric, 2) => go!(clip::<AsymCurve, 2>),
+            (Mode::Asymmetric, _) => go!(clip::<AsymCurve, 4>),
+            (Mode::SineFold, 1) => go!(clip::<SineCurve, 1>),
+            (Mode::SineFold, 2) => go!(clip::<SineCurve, 2>),
+            (Mode::SineFold, _) => go!(clip::<SineCurve, 4>),
+            (Mode::TriangleFold, 1) => go!(clip::<TriCurve, 1>),
+            (Mode::TriangleFold, 2) => go!(clip::<TriCurve, 2>),
+            (Mode::TriangleFold, _) => go!(clip::<TriCurve, 4>),
+            (Mode::Bitcrush, _) => go!(crush),
+            (Mode::Downsample, _) => go!(hold),
         }
         self.flush();
     }
@@ -775,8 +794,15 @@ impl Voice {
 /// The sample loop, generic over the shaper so that each mode and factor compiles to straight code. `fade` is the
 /// blend with the raw input at the start and end of the block (1, 1 in steady state).
 #[inline(always)]
-fn run<F>(v: &mut Voice, su: &Setup, a: &Ctl, b: &Ctl, fade: (f64, f64), io: &mut [f32], shape: F)
-where
+fn run<F, const STATIC: bool>(
+    v: &mut Voice,
+    su: &Setup,
+    a: &Ctl,
+    b: &Ctl,
+    fade: (f64, f64),
+    io: &mut [f32],
+    shape: F,
+) where
     F: Fn(&mut Shaper, f64, &Dig) -> f64,
 {
     let inv_n = 1.0 / io.len() as f64;
@@ -790,11 +816,11 @@ where
         } else {
             (0.0, x)
         };
-        let u = lerp(a.gain, b.gain, t) * hi + lerp(a.bias, b.bias, t);
+        let u = at::<STATIC>(a.gain, b.gain, t) * hi + at::<STATIC>(a.bias, b.bias, t);
         let dig = Dig {
-            level: lerp(a.level, b.level, t),
-            inv: lerp(a.inv_level, b.inv_level, t),
-            step: lerp(a.step, b.step, t),
+            level: at::<STATIC>(a.level, b.level, t),
+            inv: at::<STATIC>(a.inv_level, b.inv_level, t),
+            step: at::<STATIC>(a.step, b.step, t),
         };
         let w = shape(&mut v.sh, u, &dig);
         let mut wet = v.dc.step(su.dc_r, w);
@@ -809,10 +835,10 @@ where
             v.tone.s = wet;
             v.tone_ap.s = dry;
         } else {
-            wet = v.tone.lp(lerp(a.tone_g, b.tone_g, t), wet);
-            dry = 2.0 * v.tone_ap.lp(lerp(a.tone_ga, b.tone_ga, t), dry) - dry;
+            wet = v.tone.lp(at::<STATIC>(a.tone_g, b.tone_g, t), wet);
+            dry = 2.0 * v.tone_ap.lp(at::<STATIC>(a.tone_ga, b.tone_ga, t), dry) - dry;
         }
-        let m = lerp(a.mix, b.mix, t);
+        let m = at::<STATIC>(a.mix, b.mix, t);
         let blend = (1.0 - m) * dry + m * wet;
         let out = if full {
             blend
@@ -1070,6 +1096,113 @@ mod tests {
             ] {
                 for (k, g) in [(1, g1), (2, g2), (4, g4)] {
                     assert!(g > 8.0, "{name} {hz} Hz x{k}: ADAA gains only {g:.1} dB");
+                }
+            }
+        }
+    }
+
+    /// Prints the response tables of `docs/dsp/dist.md` (`cargo test -p enth-dsp --lib print_response_tables --
+    /// --ignored --nocapture`).
+    #[test]
+    #[ignore = "prints the tables of docs/dsp/dist.md"]
+    fn print_response_tables() {
+        let gain = |su: &Setup, c: &Ctl, hz: f64, amp: f64| {
+            let w = 2.0 * PI * hz / f64::from(SR);
+            let y = render(su, c, 24_000, |i| amp * sin(w * i as f64));
+            let (a, _) = tone_of(&y, hz, 12_000);
+            db(a / amp)
+        };
+        let freqs = [
+            50.0, 100.0, 300.0, 1_000.0, 3_000.0, 6_000.0, 8_000.0, 10_000.0, 12_000.0,
+        ];
+        println!("wet (mix 100) and mix 50 %, drive 0 dB, amplitude 0.01, soft, tone open (dB):");
+        for (label, f) in [("off", 1usize), ("x2", 2), ("x4", 4)] {
+            let su = Setup::new(Mode::Soft, f, 20.0, SR);
+            let wet = ctl(0.0, 0.0, 8.0, 6_000.0, 20_000.0, 100.0);
+            let half = ctl(0.0, 0.0, 8.0, 6_000.0, 20_000.0, 50.0);
+            let row = |c: &Ctl| {
+                freqs
+                    .iter()
+                    .map(|&hz| format!("{:6.2}", gain(&su, c, hz, 0.01)))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            println!("{label:>4} wet : {}", row(&wet));
+            println!("{label:>4} mix50: {}", row(&half));
+        }
+        println!("freqs: {freqs:?}");
+        println!("tone (x2, drive 0 dB): measured vs one-pole, dB");
+        let su = Setup::new(Mode::Soft, 2, 20.0, SR);
+        for tone in [500.0f32, 2_000.0, 4_000.0] {
+            let c = ctl(0.0, 0.0, 8.0, 6_000.0, tone, 100.0);
+            let g = tan(PI * f64::from(tone) / f64::from(SR));
+            for hz in [
+                f64::from(tone) * 0.25,
+                f64::from(tone),
+                f64::from(tone) * 2.0,
+            ] {
+                let r = tan(PI * hz / f64::from(SR)) / g;
+                let want = db(1.0 / (1.0 + r * r).sqrt());
+                let got = gain(&su, &c, hz, 0.01);
+                println!(
+                    "tone {tone:6} at {hz:7.1} Hz: {got:6.2} vs {want:6.2} ({:+.2})",
+                    got - want
+                );
+            }
+        }
+        println!("keep_lows 400 Hz, hard clip, drive 24 dB, amplitude 0.5: fundamental gain (dB)");
+        let su = Setup::new(Mode::Hard, 2, 400.0, SR);
+        let c = ctl(24.0, 0.0, 8.0, 6_000.0, 20_000.0, 100.0);
+        for hz in [20.0, 40.0, 60.0, 100.0] {
+            println!("{hz:6.1} Hz: {:6.3}", gain(&su, &c, hz, 0.5));
+        }
+    }
+
+    /// Every mode at the supported sample rates and at the extremes of every control stays finite and bounded.
+    #[test]
+    fn extremes_and_sample_rates_stay_finite_and_bounded() {
+        let modes = [
+            Mode::Soft,
+            Mode::Hard,
+            Mode::Asymmetric,
+            Mode::SineFold,
+            Mode::TriangleFold,
+            Mode::Bitcrush,
+            Mode::Downsample,
+        ];
+        for sr in [22_050.0f32, 44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            for mode in modes {
+                for factor in [1, 2, 4] {
+                    for (drive, bias, bits, rate, tone, keep, mix) in [
+                        (
+                            48.0f32, 100.0f32, 1.0f32, 100.0f32, 100.0f32, 1_000.0f32, 100.0f32,
+                        ),
+                        (0.0, -100.0, 16.0, 192_000.0, 20_000.0, 20.0, 50.0),
+                        (48.0, 0.0, 8.0, 6_000.0, 100.0, 20.0, 100.0),
+                        (24.0, -50.0, 3.5, 12_000.0, 3_000.0, 400.0, 1.0),
+                    ] {
+                        let su = Setup::new(mode, factor, keep, sr);
+                        let c = Ctl::new(drive, bias, bits, rate, tone, mix, sr);
+                        let mut v = Voice::ZERO;
+                        let mut peak = 0f32;
+                        for blk in 0..300 {
+                            let mut block = [0f32; 32];
+                            for (k, s) in block.iter_mut().enumerate() {
+                                let i = (blk * 32 + k) as f64;
+                                *s = (0.9 * sin(0.05 * i) + 0.2 * sin(2.9 * i)) as f32;
+                            }
+                            v.process(&su, &c, &c, &mut block);
+                            for s in block {
+                                assert!(s.is_finite(), "{mode:?} x{factor} {sr} Hz");
+                                peak = peak.max(s.abs());
+                            }
+                        }
+                        // A unit-curve output, the lows, the dry path and the overshoot of the filters: well below 8.
+                        assert!(
+                            peak < 8.0,
+                            "{mode:?} x{factor} {sr} Hz {drive} dB: peak {peak}"
+                        );
+                    }
                 }
             }
         }
