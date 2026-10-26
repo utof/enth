@@ -604,8 +604,11 @@ mod tests {
 
     use super::*;
 
-    /// The REAPER harness's fixture: the patch `patch-roundtrip` loads, which REAPER saves back byte for byte.
-    const ROUNDTRIP_PATCH: &str = include_str!("../reaper/enth-roundtrip.patch.json");
+    /// The patch `patch-roundtrip` loaded when REAPER saved the two projects below, which REAPER saved back byte for
+    /// byte: a frozen copy of the recording's patch, since `reaper/enth-roundtrip.patch.json` follows the catalogue
+    /// (S2a F1m: the lfo's three new parameters) and the projects are only re-recorded by a REAPER run
+    /// (`cargo xtask reaper-test`).
+    const ROUNDTRIP_PATCH: &str = include_str!("preset/roundtrip-recorded.patch.json");
     /// Projects REAPER 7.82 saved in `reaper-test`'s `patch-roundtrip` (lane INT's run, the `-a` save), one per
     /// format, unedited.
     const SAVED_CLAP: &str = include_str!("preset/roundtrip-clap.rpp");
@@ -613,6 +616,8 @@ mod tests {
     /// The project `cargo xtask starter-project` writes, as REAPER 7.82 saved it in `reaper-test`'s `starter-project`
     /// (R1/S1 lane INT's run, under Xvfb), unedited: four tracks holding Init.
     const SAVED_STARTER: &str = include_str!("preset/starter-clap-saved.rpp");
+    /// The Init patch that project held when REAPER saved it: a frozen copy, as for `ROUNDTRIP_PATCH`.
+    const RECORDED_INIT: &str = include_str!("preset/starter-recorded.patch.json");
 
     #[test]
     fn reaper_projects_give_back_the_patch_byte_for_byte() {
@@ -823,12 +828,13 @@ mod tests {
         let mut presets = Vec::new();
         for (i, instance) in found.iter().enumerate() {
             assert_eq!(
-                instance.patch, STARTER_PATCH,
+                instance.patch, RECORDED_INIT,
                 "REAPER kept Init byte for byte"
             );
             let (text, problems) =
                 preset_text(&instance.patch, &preset_title(instance, "g1", i)).unwrap();
             assert!(problems.is_empty(), "{problems:?}");
+            // `preset_text` writes the current form, which the live Init is in.
             assert_eq!(without_meta(&text), without_meta(STARTER_PATCH));
             let got = meta(&text);
             assert_eq!(got.description, "");
