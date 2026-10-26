@@ -32,7 +32,8 @@
 //!   idle wrapper with silent input returns at once, so skipping the call (as the engine does) gives the same bits
 //!   as making it. The first non-silent input wakes the core with
 //!   [`restart_from_silence`](enth_dsp::phaser::Phaser::restart_from_silence): the sweep restarts at phase 0.
-//! - **Swaps.** `copy_state_from` and `take_state_from` copy the 200 bytes of state.
+//! - **Swaps.** `copy_state_from` and `take_state_from` copy the core's 128 bytes of state: a swap of either kind
+//!   costs nothing worth measuring (`docs/dsp/phaser.md`, "Swap cost").
 //!
 //! # Flags for the global FX bypass (lane S2b)
 //!
@@ -216,6 +217,22 @@ mod tests {
 
     fn views(vals: &[f32]) -> GlobalParams<'_> {
         GlobalParams::from_slices(vals, vals, vals)
+    }
+
+    #[test]
+    fn the_state_is_a_hundred_odd_bytes_and_a_swap_copies_no_heap() {
+        // 24 all-pass states, 2 feedback samples, 2 coefficients, a phase and the sample rate (docs/dsp/phaser.md,
+        // "Swap cost"): what a crossfading swap copies, and the figure that page quotes.
+        assert!(
+            core::mem::size_of::<Core>() <= 136,
+            "{}",
+            core::mem::size_of::<Core>()
+        );
+        assert!(
+            core::mem::size_of::<Phaser>() <= 160,
+            "{}",
+            core::mem::size_of::<Phaser>()
+        );
     }
 
     fn step(p: &mut Phaser, vals: &[f32], l: &mut Block, r: &mut Block) {
