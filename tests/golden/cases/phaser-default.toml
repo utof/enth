@@ -1,0 +1,20 @@
+description = "S2a MOD: the phaser at its defaults (6 stages, 0.3 Hz, depth 50 % = 1.5 octaves, centre 1 kHz, feedback 30 %, width 50 %, mix 100 %) on a three-note saw chord with off-grid times. Guards the all-pass chain, the TPT coefficient ramp, the feedback normalisation and the level-matched sum. The reference voice goes through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope curves change."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 1.3 },
+    { key = 57, velocity = 1.0, on_s = 0.0171, off_s = 1.3 },
+    { key = 64, velocity = 1.0, on_s = 0.3, off_s = 1.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 8 }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "phaser1", kind = "phaser", params = {} }]

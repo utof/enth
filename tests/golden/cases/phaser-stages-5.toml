@@ -1,0 +1,20 @@
+description = "S2a MOD: five stages (an odd count: two notches and a half) at 1 Hz, depth 60 %, centre 1.5 kHz, feedback -40 %, width 50 %, on a three-note saw chord. Guards the odd stage count and the negative feedback."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 1.3 },
+    { key = 57, velocity = 1.0, on_s = 0.0171, off_s = 1.3 },
+    { key = 64, velocity = 1.0, on_s = 0.3, off_s = 1.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 8 }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "phaser1", kind = "phaser", params = { stages = 5, rate = 1, depth = 60, center = 1500, feedback = -40 } }]
