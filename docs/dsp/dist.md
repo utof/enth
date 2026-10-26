@@ -323,7 +323,7 @@ Listening files for these (a saw and a growl through each shape and factor) are 
 
 | Row (phase-s2.md, every module lane; then lane DST's own) | How | Where |
 | --- | --- | --- |
-| Same bits on six targets | `f64` with `util::math`, fixed order, no fused operations; 11 golden cases, checked natively by `cargo xtask golden` | the goldens; the cross-target run is the gate's |
+| Same bits on six targets | `f64` with `util::math`, fixed order, no fused operations; 11 golden cases, equal on x86_64 Linux (`cargo xtask golden`) and on `wasm32-wasip1` under wasmtime (`cargo xtask golden --wasm`, 2026-10-26); the Windows and macOS targets run in CI | the goldens |
 | FTZ-independent | every recursive state flushed in code per block; the render is the same bits under every FTZ/DAZ setting | `ftz::the_render_is_the_same_under_every_ftz_mode` |
 | Zero subnormals after a 40 s tail | 0 subnormal output samples and states for three modes, every voice ended | `a_40_s_tail_through_dist_has_no_subnormals_and_every_voice_ends` |
 | Latency 0 | the oversampler is causal IIR; the module reports none | [Zero-latency IIR oversampling](#zero-latency-iir-oversampling) |
