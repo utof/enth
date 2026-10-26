@@ -7,7 +7,9 @@
 //!
 //! **Tempo sync and one-shot (S2a, lane TMP, appended at freeze F1m).** `sync`, `beats` and `one_shot` come after
 //! the seven parameters layout 1 reads, with neutral defaults (sync off: `rate` in Hz as always; one-shot off), so
-//! an unsynced patch renders the same bits. `beats` is the note-division enum shared with the other synced
+//! an unsynced patch renders the same bits. All three are `advanced`, behind a card's "More": the P1 editor layout
+//! (1200 by 800, nothing scrolls) has no room for three more rows on the LFO card, and the dense cards of F2m (lane
+//! EDS) are where `sync` and `beats` move up a tier. `beats` is the note-division enum shared with the other synced
 //! parameters ([`Beats`], in `catalogue/mod.rs`; its lengths are exact rationals of a beat, [`Beats::length`]), not
 //! an item of the pinned `lfo.shape`; `docs/dsp/lfo.md` justifies the list.
 
@@ -78,10 +80,10 @@ params! {
             .not_automatable()
             .advanced("The random seed used in seeded phase mode, including the random shapes."),
         Sync = ParamSpec::toggle("sync", "Tempo sync", false)
-            .intermediate("Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored."),
+            .advanced("Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored."),
         Beats = ParamSpec::enumeration("beats", "Beats", &BEATS, Beats::Quarter.index())
             .modulatable()
-            .intermediate("The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first."),
+            .advanced("The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first."),
         OneShot = ParamSpec::toggle("one_shot", "One shot", false)
             .advanced("On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value."),
     }

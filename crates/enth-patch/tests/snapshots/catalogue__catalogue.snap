@@ -1171,7 +1171,7 @@ expression: catalogue_json()
           "name": "Tempo sync",
           "perceptual": null,
           "smoothing": null,
-          "tier": "intermediate",
+          "tier": "advanced",
           "unit": "none"
         },
         {
@@ -1318,7 +1318,7 @@ expression: catalogue_json()
           "name": "Beats",
           "perceptual": null,
           "smoothing": null,
-          "tier": "intermediate",
+          "tier": "advanced",
           "unit": "none"
         },
         {
