@@ -9,10 +9,10 @@
 //!
 //! A test checks that every entry names a key and an item that exist in the catalogue.
 
-use enth_params::{EnumItem, Kind, ParamSpec};
+use enth_params::{EnumItem, Kind, ParamSpec, Tier};
 use enth_patch::ModuleKind;
 
-use super::view::CardKind;
+use super::view::{CardKind, VISIBLE_TIER};
 use crate::Theme;
 use crate::theme::Category;
 
@@ -94,6 +94,17 @@ pub fn category(kind: CardKind) -> Category {
     }
 }
 
+/// The tiers a card of this kind shows before its "More" disclosure: [`VISIBLE_TIER`] (basic and intermediate), except
+/// for a kind with more intermediate controls than a strip's row holds. `wt` has 18 parameters, 5 of them basic: it
+/// shows those and keeps the other 13 behind "More", in rows of what the strip fits (lane SKS; lane EDS's dense cards
+/// may change this).
+pub fn visible_tier(kind: CardKind) -> Tier {
+    match kind {
+        CardKind::Module(ModuleKind::Wt) => Tier::Basic,
+        _ => VISIBLE_TIER,
+    }
+}
+
 /// Short labels for parameters whose catalogue name is too long for a knob cell: (kind, key, label).
 pub const LABELS: &[(&str, &str, &str)] = &[
     ("osc", "semi", "Semi"),
@@ -106,6 +117,10 @@ pub const LABELS: &[(&str, &str, &str)] = &[
     ("svf", "keytrack", "Key track"),
     ("lfo", "phase_mode", "Start"),
     ("lfo", "phase", "Phase"),
+    ("wt", "table", "Table"),
+    ("wt", "warp_amount", "Amount"),
+    ("wt", "phase_mode", "Start"),
+    ("wt", "phase", "Phase"),
     ("reverb", "room", "Room"),
     ("reverb", "early", "Early"),
     ("reverb", "low_damp", "Low damp"),
@@ -127,6 +142,12 @@ pub const ITEMS: &[(&str, &str, &str, &str)] = &[
     ("lfo", "shape", "smooth_random", "Smooth"),
     ("lfo", "scope", "voice", "Voice"),
     ("lfo", "phase_mode", "seeded", "Seed"),
+    ("wt", "table", "fm", "FM"),
+    ("wt", "table", "fm_octave", "FM oct"),
+    ("wt", "table", "formant", "Formant"),
+    ("wt", "table", "metal", "Metal"),
+    ("wt", "warp", "asymmetric", "Asym"),
+    ("wt", "phase_mode", "seeded", "Seed"),
 ];
 
 /// The enum parameter a card's header names after its title (an oscillator's wave, a filter's mode), if any.
@@ -135,6 +156,7 @@ pub const HEADER_ENUM: &[(&str, &str)] = &[
     ("noise", "color"),
     ("svf", "mode"),
     ("lfo", "shape"),
+    ("wt", "table"),
     ("voice", "mode"),
 ];
 

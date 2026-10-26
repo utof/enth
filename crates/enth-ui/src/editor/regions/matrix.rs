@@ -16,10 +16,14 @@ use crate::widgets::MatrixGrid;
 /// The routes as a grid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatrixView {
-    /// Columns: the sources that have routes, modulators first, then velocity, key, the mod wheel and macros.
+    /// Columns: the sources that have routes: generators (audio routes, S2a) first, then modulators, velocity, key, the
+    /// mod wheel and macros.
     pub sources: Vec<(ModSource, String)>,
     /// Rows: the routed destinations, in the order of the patch's cards and their parameters.
     pub targets: Vec<(ParamAddr, String)>,
+    /// Per row of `targets`: it is an audio input (S2a: `wt`'s `pm` and `am`), fed by generators' output through audio
+    /// routes, whose depth is a share of the source's output (lane SKS).
+    pub audio: Vec<bool>,
     /// Depths in percent, row-major (`targets.len() × sources.len()`); 0 where there is no route.
     pub depths: Vec<f32>,
     /// The cells that hold a route (a route may have depth 0), row-major: the compact route list's rows (lane ED2).
@@ -40,6 +44,7 @@ impl MatrixView {
             sources.push((src.clone(), source_name(patch, &src)));
         }
         let mut targets: Vec<(ParamAddr, String)> = Vec::new();
+        let mut audio: Vec<bool> = Vec::new();
         let cards = Section::ALL
             .into_iter()
             .flat_map(|s| patch.section(s).iter().map(|m| CardView::module(patch, m)))
@@ -49,6 +54,7 @@ impl MatrixView {
                 if !p.routes.is_empty() {
                     let name = format!("{} {}", card.title, present::label(card.kind, p.spec));
                     targets.push((p.addr.clone(), name));
+                    audio.push(p.spec.flags.audio);
                 }
             }
         }
@@ -66,6 +72,7 @@ impl MatrixView {
         MatrixView {
             sources,
             targets,
+            audio,
             depths,
             routes,
             scores: Vec::new(),
@@ -99,21 +106,24 @@ impl MatrixView {
     }
 }
 
-/// Modulators in patch order, then velocity, key, the mod wheel, macros by index.
+/// Generators (audio routes) and modulators in patch order, then velocity, key, the mod wheel, macros by index.
 fn source_rank(patch: &Patch, src: &ModSource) -> (u8, usize) {
     match src {
-        ModSource::Module(id) => (
-            0,
-            patch
-                .modulators
-                .iter()
-                .position(|m| &m.id == id)
-                .unwrap_or(usize::MAX),
-        ),
-        ModSource::Velocity => (1, 0),
-        ModSource::Key => (2, 0),
-        ModSource::ModWheel => (3, 0),
-        ModSource::Macro(i) => (4, i.get()),
+        ModSource::Module(id) => match patch.generators.iter().position(|m| &m.id == id) {
+            Some(i) => (0, i),
+            None => (
+                1,
+                patch
+                    .modulators
+                    .iter()
+                    .position(|m| &m.id == id)
+                    .unwrap_or(usize::MAX),
+            ),
+        },
+        ModSource::Velocity => (2, 0),
+        ModSource::Key => (3, 0),
+        ModSource::ModWheel => (4, 0),
+        ModSource::Macro(i) => (5, i.get()),
     }
 }
 

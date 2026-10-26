@@ -144,7 +144,7 @@ impl CardView {
             enabled: Some(module.enabled),
             amp_env: patch.voice.amp_env == module.id,
             params,
-            visible: VISIBLE_TIER,
+            visible: present::visible_tier(CardKind::Module(module.kind)),
             more_open: false,
             place: Place::of(patch, &module.id),
             enable_score: None,

@@ -187,6 +187,9 @@ fn interval(spec: &ParamSpec, a: f32, b: f32) -> String {
 /// normalised position by depth/100 times the source, clamped to the range (design.md §1).
 pub fn route_means(p: &Patch, src: &ModSource, dst: &ParamAddr, depth: f32) -> Option<String> {
     let spec = p.spec(dst)?;
+    if spec.flags.audio {
+        return audio_route_means(p, src, dst, depth);
+    }
     let base = p.value(dst)?;
     let (min, max) = (spec.min(), spec.max());
     let n0 = f64::from(spec.to_norm(base));
@@ -224,6 +227,63 @@ pub fn route_means(p: &Patch, src: &ModSource, dst: &ParamAddr, depth: f32) -> O
             show(Some(spec), hi),
             interval(spec, base, hi),
         )
+    })
+}
+
+/// What an audio route's depth does (S2a, lane SKS): the share of the source generator's output (a sample from -1
+/// to 1, before the source's level) that reaches the audio input, and what the input does with it (`docs/dsp/wt.md`):
+/// `pm` bends the phase by `pm_index * pm * depth * x` radians, `am` multiplies the gain `am + depth * x`. The depth is
+/// not a distance along the input's own range, so none of the modulation text applies.
+fn audio_route_means(p: &Patch, src: &ModSource, dst: &ParamAddr, depth: f32) -> Option<String> {
+    let value = f64::from(p.value(dst)?);
+    let owner = dst.module_id()?;
+    let d = f64::from(depth) / 100.0;
+    let share = format!("{}% of {src}'s output", round4(f64::from(depth)));
+    Some(match dst.param() {
+        "pm" => {
+            let index = ParamAddr::module(owner.clone(), "pm_index")
+                .ok()
+                .and_then(|a| p.value(&a))
+                .map_or(1.0, f64::from);
+            let peak = index * value / 100.0 * d.abs();
+            let heard = if peak == 0.0 {
+                "; nothing is heard until pm_index, pm and the depth are all above 0"
+            } else {
+                ""
+            };
+            format!(
+                "{src} phase-modulates {owner}: the phase moves by up to +-{} rad as {src} swings -1 to 1 \
+                 (pm_index {} x pm {}% x {share}){heard}; an audio route's depth is a share of {src}'s output, \
+                 not of {dst}'s range",
+                round4(peak),
+                round4(index),
+                round4(value),
+            )
+        }
+        "am" => {
+            let base = value / 100.0;
+            let swing = d.abs();
+            if base == 0.0 {
+                format!(
+                    "{src} ring-modulates {owner}: its gain is {share} itself, -{} to +{} as {src} swings -1 to 1, so \
+                     the carrier disappears (am 0%)",
+                    round4(swing),
+                    round4(swing),
+                )
+            } else {
+                format!(
+                    "{src} amplitude-modulates {owner}: its gain swings {}..{} around {} as {src} swings -1 to 1 \
+                     (am {}% {} {}% of {src}'s output)",
+                    round4(base - swing),
+                    round4(base + swing),
+                    round4(base),
+                    round4(value),
+                    if depth < 0.0 { "-" } else { "+" },
+                    round4(f64::from(depth.abs())),
+                )
+            }
+        }
+        _ => format!("{src}'s output, {share}, is added to the audio input {dst}"),
     })
 }
 

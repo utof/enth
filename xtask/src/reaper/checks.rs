@@ -552,6 +552,165 @@ pub fn mod_wheel(out: &Path, report: &mut Report, format: Format) {
     );
 }
 
+// ---- wt ------------------------------------------------------------------------------------------------------------
+
+/// The notes of `wt.lua` that are measured: the even ones play key 48 (C3) and the odd ones key 55 (G3), from the third
+/// note on (the offline render restarts the plugin about 30 ms in, so the first two are never judged). Fifteen notes of a
+/// pitch, so the median survives a few that REAPER dropped.
+const WT_KEY_48: [usize; 15] = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30];
+const WT_KEY_55: [usize; 15] = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31];
+
+/// What the engine renders for `enth-wt.patch.json` played by `wt.lua`'s notes (`enth render --perf` with the same 32
+/// notes at 48 kHz, each note measured over 0.01 to 0.10 s after its start as `Notes::measure` does): the median RMS and
+/// the median roughness of the notes of key 48 and of key 55. The plugin renders the same samples as the CLI at every
+/// host block size (`cli-equal`), so a host that adds nothing gets these numbers.
+///
+/// `WT_ROUGHNESS_WITHOUT_ROUTE` is the roughness of the same patch with the audio route removed. The route phase-modulates
+/// the wavetable by 1.8 rad, which adds sidebands: the sound is about 40 % rougher with it than without it, so the
+/// roughness tells a host that dropped the route (a wavetable alone) from one that kept it.
+const WT_LEVEL: [f64; 2] = [0.1719, 0.1741];
+const WT_ROUGHNESS: [f64; 2] = [0.0782, 0.1081];
+const WT_ROUGHNESS_WITHOUT_ROUTE: [f64; 2] = [0.0554, 0.0751];
+
+/// `wt`: a patch with a wavetable oscillator and an audio route survives the load, a save, a reload in a new process and
+/// a second render, and sounds as the engine renders it. `fixture` is the patch file in the plugin's own serialisation.
+pub fn wt(out: &Path, report: &mut Report, format: Format, fixture: &str) {
+    let scope = format!("{}/wt", format.tag());
+    let (created, reloaded) = match (
+        Saved::read(out, format, "wt-create"),
+        Saved::read(out, format, "wt-reload"),
+    ) {
+        (Ok(a), Ok(b)) => (a, b),
+        (a, b) => {
+            let why = a.err().or(b.err()).unwrap_or_default();
+            report.add(&scope, "state-decoded", false, why);
+            return;
+        }
+    };
+    let text = |s: &Saved| s.patch_text().unwrap_or_default().to_owned();
+    let (before, after, want) = (text(&created), text(&reloaded), fixture.trim_end());
+    report.add(
+        &scope,
+        "patch-saved-as-loaded",
+        !before.is_empty() && before == want,
+        if before == want {
+            format!("{} bytes, identical to the patch file", before.len())
+        } else {
+            first_difference(&before, want)
+        },
+    );
+    report.add(
+        &scope,
+        "patch-survives-reload",
+        !before.is_empty() && before == after,
+        if before == after {
+            format!("{} bytes, identical after the reload", before.len())
+        } else {
+            first_difference(&before, &after)
+        },
+    );
+    let count = created.0["params"]
+        .as_object()
+        .map_or(0, serde_json::Map::len);
+    report.add(
+        &scope,
+        "params-survive",
+        count > 0 && created.0["params"] == reloaded.0["params"],
+        format!("{count} saved parameters, the same after the reload"),
+    );
+    let patch = reloaded.patch().unwrap_or_default();
+    let wt = patch["generators"]
+        .as_array()
+        .and_then(|g| g.iter().find(|g| g["kind"] == "wt"));
+    let route = patch["routes"]
+        .as_array()
+        .and_then(|r| r.iter().find(|r| r["dst"] == "wt1.pm"));
+    report.add(
+        &scope,
+        "wt-and-audio-route-kept",
+        wt.is_some_and(|g| g["id"] == "wt1" && g["params"]["table"] == "formant")
+            && route.is_some_and(|r| r["src"] == "osc1" && near(r["depth"].as_f64(), 60.0, 1e-9)),
+        format!(
+            "after the reload: wt {:?}, route {} -> {} at {:?} %",
+            wt.map(|g| g["id"].as_str().unwrap_or_default()),
+            route.map_or("-", |r| r["src"].as_str().unwrap_or_default()),
+            route.map_or("-", |r| r["dst"].as_str().unwrap_or_default()),
+            route.and_then(|r| r["depth"].as_f64())
+        ),
+    );
+    let tag = format.tag();
+    let mut heard = Vec::new();
+    for (label, file) in [
+        ("first", format!("render-wt-{tag}.wav")),
+        ("reloaded", format!("render-wt-{tag}-reload.wav")),
+    ] {
+        let Some(wav) = load_render(out, report, &format!("{scope}/{label}"), &file, 4.0) else {
+            return;
+        };
+        let notes = Notes::measure(&wav, NOTES);
+        let level = [
+            median_at(&notes.rms, &WT_KEY_48),
+            median_at(&notes.rms, &WT_KEY_55),
+        ];
+        let rough = [
+            median_at(&notes.roughness, &WT_KEY_48),
+            median_at(&notes.roughness, &WT_KEY_55),
+        ];
+        report.add(
+            &scope,
+            &format!("wt-sounds-{label}"),
+            level.iter().all(|l| *l > 0.01),
+            format!("level {:.4} (key 48), {:.4} (key 55)", level[0], level[1]),
+        );
+        let level_error: Vec<f64> = (0..2).map(|i| level[i] / WT_LEVEL[i] - 1.0).collect();
+        report.add(
+            &scope,
+            &format!("wt-level-is-the-engines-{label}"),
+            level_error.iter().all(|e| e.abs() < 0.05),
+            format!(
+                "level {:.4} and {:.4} against the engine's {:.4} and {:.4} ({:+.1} %, {:+.1} %)",
+                level[0],
+                level[1],
+                WT_LEVEL[0],
+                WT_LEVEL[1],
+                100.0 * level_error[0],
+                100.0 * level_error[1]
+            ),
+        );
+        let rough_error: Vec<f64> = (0..2).map(|i| rough[i] / WT_ROUGHNESS[i] - 1.0).collect();
+        let with_route = (0..2).all(|i| {
+            (rough[i] - WT_ROUGHNESS[i]).abs() < (rough[i] - WT_ROUGHNESS_WITHOUT_ROUTE[i]).abs()
+        });
+        report.add(
+            &scope,
+            &format!("audio-route-is-heard-{label}"),
+            with_route && rough_error.iter().all(|e| e.abs() < 0.10),
+            format!(
+                "roughness {:.4} and {:.4} against the engine's {:.4} and {:.4} with the route ({:+.1} %, {:+.1} %), {:.4} and {:.4} without it",
+                rough[0],
+                rough[1],
+                WT_ROUGHNESS[0],
+                WT_ROUGHNESS[1],
+                100.0 * rough_error[0],
+                100.0 * rough_error[1],
+                WT_ROUGHNESS_WITHOUT_ROUTE[0],
+                WT_ROUGHNESS_WITHOUT_ROUTE[1]
+            ),
+        );
+        heard.push(notes);
+    }
+    let (median_difference, outliers) = compare_levels(&heard[0], &heard[1], 2, 0.05);
+    report.add(
+        &scope,
+        "reloaded-project-sounds-the-same",
+        median_difference < 0.02 && outliers <= 2,
+        format!(
+            "notes 3-32 of the two renders differ in level by {:.2} % (median), {outliers} notes by more than 5 %",
+            median_difference * 100.0
+        ),
+    );
+}
+
 /// CLAP and VST3 sound the same: the notes' levels agree from the third note on (a dropped note is tolerated, up to
 /// two). The first notes are reported, not judged: see the `info` row.
 pub fn renders_agree(out: &Path, report: &mut Report, kind: &str, first: Format, second: Format) {
@@ -574,7 +733,7 @@ pub fn renders_agree(out: &Path, report: &mut Report, kind: &str, first: Format,
         &name,
         median_difference < 0.02 && outliers <= 2,
         format!(
-            "the {kind}-automation notes 3-32 differ in level by {:.2} % (median), {outliers} notes by more than 5 %",
+            "the {kind} render's notes 3-32 differ in level by {:.2} % (median), {outliers} notes by more than 5 %",
             median_difference * 100.0
         ),
     );

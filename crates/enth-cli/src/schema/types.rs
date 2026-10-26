@@ -308,6 +308,10 @@ pub struct ParamOut {
     pub accepts: Vec<String>,
     /// Routes may modulate it.
     pub modulatable: bool,
+    /// An audio input (S2a: `wt`'s `pm` and `am`): a generator's output routes here, never a modulator, and the
+    /// route's depth is a share of that output. Absent unless true.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub audio: bool,
     /// Host automation may drive it.
     pub automatable: bool,
     /// Changing it rebuilds the voice plan.

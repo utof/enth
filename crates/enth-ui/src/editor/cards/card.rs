@@ -6,7 +6,7 @@
 
 use egui::{Rect, Response, Ui, UiBuilder};
 use enth_patch::ModuleKind;
-use enth_patch::catalogue::{FilterMode, LfoShape, NoiseColor, Wave, Wavetable};
+use enth_patch::catalogue::{FilterMode, LfoShape, NoiseColor, Warp, Wave, Wavetable, WtTable};
 
 use super::format::{signed_percent, value_text};
 use super::intent::{Grip, Hovered, Intent, Intents};
@@ -93,11 +93,7 @@ impl<'a> Card<'a> {
                 card = card.action(more);
             }
             card = match self.shape {
-                CardShape::Strip => card.rows(if view.more_open && view.has_more() {
-                    2
-                } else {
-                    1
-                }),
+                CardShape::Strip => card.rows(strip_rows(view)),
                 CardShape::Stacked => card.stacked(display_height(t, view)),
             };
             let mut display_out = Intents::default();
@@ -249,9 +245,17 @@ fn display(ui: &mut Ui, t: &Theme, view: &CardView, rect: Rect, out: &mut Intent
             let curve = |x| shapes::compressor(threshold, ratio, knee, makeup, x);
             Display::new(t, Trace::Curve(&curve), size).paint(ui, rect);
         }
-        // S2a's reserved kinds draw no picture yet (lanes SKS and EDS give them one).
+        ModuleKind::Wt => {
+            let wave = shapes::wt(
+                WtTable::from_value(value("table")),
+                norm("position"),
+                Warp::from_value(value("warp")),
+                value("warp_amount") / 100.0,
+            );
+            Display::new(t, Trace::Wave(&wave), size).paint(ui, rect);
+        }
+        // S2a's other reserved kinds draw no picture yet (lane EDS gives them one).
         ModuleKind::Dist
-        | ModuleKind::Wt
         | ModuleKind::Ott
         | ModuleKind::Comb
         | ModuleKind::Formant
@@ -297,16 +301,36 @@ fn params(ui: &mut Ui, t: &Theme, view: &CardView, shape: CardShape, out: &mut I
             }
             match shape {
                 CardShape::Strip => {
-                    ui.horizontal_top(|ui| {
-                        for p in group {
-                            control(ui, t, view, p, Form::Cell, out);
-                        }
-                    });
+                    // One row per group, or more when it holds more cells than a row does (lane SKS).
+                    for row in group.chunks(STRIP_ROW_CELLS) {
+                        ui.horizontal_top(|ui| {
+                            for p in row {
+                                control(ui, t, view, p, Form::Cell, out);
+                            }
+                        });
+                    }
                 }
                 CardShape::Stacked => lane_group(ui, t, view, &group, out),
             }
         }
     });
+}
+
+/// The knob cells one row of a strip holds: an oscillator's eight shown controls, the most a strip's row has at the
+/// editor's default window. A group of more (a `wt`'s 13 parameters behind "More", lane SKS) takes more rows; a card
+/// whose groups hold no more than this lays out as it always did, whatever the width it is given.
+const STRIP_ROW_CELLS: usize = 8;
+
+/// The rows of knob cells a strip needs: each of the shown and the opened groups takes one row, or more when its cells
+/// do not fit one.
+fn strip_rows(view: &CardView) -> usize {
+    let rows = |n: usize| n.div_ceil(STRIP_ROW_CELLS);
+    let hidden = if view.more_open {
+        view.hidden().count()
+    } else {
+        0
+    };
+    (rows(view.shown().count()) + rows(hidden)).max(1)
 }
 
 /// One group of a lane card: its segmented enums as rows, then its cells spread over rows.
@@ -565,10 +589,15 @@ fn knob(
 /// The status line's reading of a control: its path, its value, the routes into it with their depths, and the
 /// automation slots that drive it.
 fn hovered(view: &CardView, p: &ParamView) -> Hovered {
+    // An audio input's routes are generators' audio, a share of each output (lane SKS).
+    let audio = p.spec.flags.audio;
     let mut modulation: Vec<String> = p
         .routes
         .iter()
-        .map(|r| format!("{} {}", r.name, signed_percent(r.depth)))
+        .map(|r| {
+            let kind = if audio { " audio" } else { "" };
+            format!("{}{kind} {}", r.name, signed_percent(r.depth))
+        })
         .collect();
     modulation.extend(
         p.slots

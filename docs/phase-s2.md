@@ -71,7 +71,7 @@ After **F1m** the S2a catalogue (keys, units, ranges, scales, defaults, sections
 | --- | --- | --- |
 | **F0m** | S0d: every S2a kind appended as a hidden stub with its discriminant fixed, the arms in every exhaustive match, the hide flag, the `audio` parameter flag, `Performance::tempo_bpm`, the `wide` pin and bans, the aliasing harness, bench files, golden folders and `docs/dsp` stubs | The Done-means gate is green ([AGENTS.md](../AGENTS.md#done-means)), judged by exit status; **every golden, fixture, generator-v1 golden and `layout-v1.txt` unchanged, v0-b still loads**; G1 within budget |
 | **F1m** | RTE, SVP, CAT and TMP: the S2a catalogue, the audio-route contract, the stereo flag, tempo and the context additions, "no items on pinned enums" written into `catalogue/mod.rs`, and D3's answer or the table rows it needs | **A judge agent (Opus)** reviews them together, because every persisted key goes to friends. Named checks: the v1 pin and layout hash unchanged; 73 goldens bit-exact; mono patches through the stereo-capable loop bit-exact; kind and parameter counts within the answer cap, or the widened one; the six points of the audio-route contract ([06 §3.1](../_local/sessions/2026-10-25-s2-depth-and-fast-training/06-architecture-impact.md#31-fmpmamrm-between-generators)); tempo's place in the render spec. Then F1M closes the must-fix items |
-| **F2m** | SKS: `wt` with PM from another generator, end to end (engine, six targets, CLI, card, `host-render`, `cli-equal`, REAPER) | `cli-equal` on a `wt` golden; the REAPER `wt` scenario; `validate`, `host-render`, `leak-test`; G1 unchanged; `wt`'s budget recorded |
+| **F2m** | SKS: `wt` with PM from another generator, end to end (engine, six targets, CLI, card, `host-render`, `cli-equal`, REAPER) | `cli-equal` on a `wt` golden; the REAPER `wt` scenario; `validate`, `host-render`, `leak-test`; G1 unchanged; `wt`'s budget recorded — **SKS, 2026-10-26 (branch `s2/sks`), all met:** `cli-equal` 76 of 76 compared equal at host blocks 1, 64, 100 and 4096 (the 14 `wt` cases, 13 compared; `wt-automation` needs a profile), and the plugin golden has `wt-audio-route`; the REAPER `wt` scenario 19 of 19 on CLAP and VST3, the whole `reaper-test` exit 0 with 364 checks; `validate` 36 passed; `host-render` 11 cases; `leak-test` (isaac) 14.46 KB per editor cycle against the limit 26; G1 603,291,345 instructions on the branch and on main `c1f016f` (no change); `wt`'s budget line in [benchmarks.md](benchmarks.md); `gate.sh lane` exit 0 (794 tests) |
 | **F3m** (S2b) | Generator v2, template 1, layout 2: the data freeze for the next model | The v1 golden unchanged; layout 2's first 102 entries equal layout 1's; template 1 with the new modules off renders bit-identically to template 0 |
 
 ## Lanes
@@ -109,7 +109,7 @@ Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are mar
 
 | Lane | Owns | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
-| **SKS** (→ F2m) | `wt` and an audio route through the plugin and the editor; `host-render`, `cli-equal`; the REAPER scenario | WT | 1.5–2.5 | **H** |
+| **SKS** (→ F2m) | `wt` and an audio route through the plugin and the editor; `host-render`, `cli-equal`; the REAPER scenario. **Done 2026-10-26** (branch `s2/sks`; results in the F2m row) | WT | 1.5–2.5 | **H** |
 | **MTC** Matcher holes | The `structure/1` matcher's kind families (`score/matching.rs`, so a new kind pairs instead of scoring 0), the coach, deconstruct and the CLI aliases | F1m | 1–1.5 | L |
 | **G2B** G2 patch | The G2 reference patch, its budget (default 8 voices), the real-time row and the swap blocks | WT, UNI, DST, OTT | 1–1.5 | L |
 | **EDS** Editor density | Dense cards (a focus region or a second layout), audio-route drag; kittest, the overflow report, `leak-test` | F2m; G2B's patch | 2–4 | **H** |
@@ -231,8 +231,8 @@ Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod ar
   | `answer.rs`, `result-params-v1` | Not S2a's: ANS, RC or the coordinator, with CAT's rows |
   | `random/` (generator v1), `layout-v1.txt` | Nobody; frozen |
   | `score/matching.rs`, `coach.rs`, `deconstruct/`, `aliases.rs` | MTC |
-  | `enth-ui`'s editor, `sizes/` | SKS (the minimum), then EDS, tokens only in its own file |
-  | `enth-plugin`, `enth-cli` | SKS; no module is a host parameter (the 72 ids stay) |
+  | `enth-ui`'s editor, `sizes/` | SKS (the minimum), then EDS, tokens only in its own file. SKS touched `editor/cards/{present,view,shapes,card,menu}.rs` (`wt`'s visible tier, `STRIP_ROW_CELLS`, its display, audio texts), `editor/modulate.rs` and `editor/regions/{matrix,routes}.rs` ([editor.md](editor.md#the-wt-card-and-audio-routes-lane-sks-f2m)); EDS may replace the first two |
+  | `enth-plugin`, `enth-cli` | SKS; no module is a host parameter (the 72 ids stay). SKS changed `enth-plugin`'s tests only (`tests_host.rs`, `tests/cli-equal.profile.toml`) and, in `enth-cli`, `route_means`, `explain`, `info` and the `audio` flag of `params` (`schema/{types,game}.rs`, two schema snapshots) |
   | `content/lessons`, `lessons.yml` | LS2; `content/agent-evals` EV5; create templates TPL |
   | REAPER and timing | INT-S2a and G2B take `flock -x` |
 

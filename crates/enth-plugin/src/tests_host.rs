@@ -992,3 +992,386 @@ fn a_reset_sends_the_hosts_tempo_to_the_fresh_engine_again() {
     assert!(loud(&expected));
     assert!(same(&(l[4_800..].to_vec(), r[4_800..].to_vec()), &expected));
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// S2a: a `wt` fed by an audio route (lane SKS, freeze F2m)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The plugin-level `wt` golden patch: a sine `osc1` an octave up at level 0 (an operator, heard only through its
+/// route) into `wt1`'s `pm` at 60 %, `wt1` on the formant table with `pm_index` 3, macro 1 on `wt1.feedback` (+40 %),
+/// slot 1 on `wt1.pm_index` and slot 2 on `wt1.position`.
+const WT_GOLDEN: &str = include_str!("../../../tools/test-host/golden/enth-plugin.wt.patch.json");
+
+fn wt_golden() -> Patch {
+    enth_patch::file::load(WT_GOLDEN).unwrap().patch
+}
+
+fn addr(text: &str) -> ParamAddr {
+    text.parse().unwrap()
+}
+
+fn route_addr(src: &str, dst: &str) -> enth_patch::RouteAddr {
+    enth_patch::RouteAddr {
+        src: src.parse().unwrap(),
+        dst: addr(dst),
+    }
+}
+
+/// The performance the `wt` renders play (a note's last number is its end, in seconds): two notes, no automation.
+fn wt_notes(frames: u32) -> Performance {
+    Performance {
+        notes: vec![Note::new(57, 0.9, 0.0, 0.4), Note::new(64, 0.7, 0.05, 0.35)],
+        duration_s: f64::from(frames) / f64::from(SR),
+        ..Performance::default()
+    }
+}
+
+/// The host's notes of [`wt_notes`], from the start of a render call.
+fn wt_schedule() -> Vec<At> {
+    vec![
+        on(0, 57, 0, 0.9),
+        on(2_400, 64, 1, 0.7),
+        off(16_800, 64, 1),
+        off(19_200, 57, 0),
+    ]
+}
+
+/// The edit through the session the way the editor makes it (the GUI thread's lock), returning what it did.
+fn edit(host: &Host, ops: Vec<enth_patch::Op>) -> enth_session::Applied {
+    let shared = Arc::clone(host.plugin.shared());
+    let (applied, _) = shared.with_session(|s| enth_session::SessionEdit::edit(s, ops, None));
+    applied.unwrap_or_else(|e| panic!("the edit was refused: {e:?}"))
+}
+
+/// The session's latest plan epoch.
+fn epoch(host: &Host) -> u64 {
+    host.plugin.shared().session.lock().status().epoch
+}
+
+/// Pumps the session until the plan an edit needed has been sent (the background worker's job, which the fake host
+/// does not run).
+fn settle(host: &Host) {
+    for _ in 0..2_000 {
+        let ((), _) = host.plugin.shared().with_session(|s| {
+            s.pump();
+        });
+        if !host.plugin.shared().session.lock().status().compile_pending {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("the plan was never sent");
+}
+
+fn tail(a: &(Vec<f32>, Vec<f32>), from: usize) -> (Vec<f32>, Vec<f32>) {
+    (a.0[from..].to_vec(), a.1[from..].to_vec())
+}
+
+fn param_ids(plugin: &Enth) -> Vec<String> {
+    plugin
+        .host_params()
+        .param_map()
+        .into_iter()
+        .map(|(id, _, _)| id)
+        .collect()
+}
+
+#[test]
+fn the_wt_golden_file_is_exactly_the_patch_json_of_a_wt_fed_by_an_audio_route() {
+    let patch = wt_golden();
+    assert_eq!(patch.to_json(), WT_GOLDEN, "exactly `Patch::to_json()`");
+    let kinds: Vec<_> = patch.generators.iter().map(|m| m.kind.key()).collect();
+    assert_eq!(kinds, ["osc", "wt"]);
+    let audio = &patch.routes[0];
+    assert_eq!(
+        (audio.src.to_string(), audio.dst.to_string(), audio.depth),
+        ("osc1".to_owned(), "wt1.pm".to_owned(), 60.0)
+    );
+    assert!(patch.spec(&audio.dst).unwrap().flags.audio);
+    assert_eq!(
+        patch.slots[0].as_ref().map(ToString::to_string).as_deref(),
+        Some("wt1.pm_index")
+    );
+    assert_eq!(
+        patch.slots[1].as_ref().map(ToString::to_string).as_deref(),
+        Some("wt1.position")
+    );
+}
+
+#[test]
+fn a_wt_patch_with_an_audio_route_is_saved_back_byte_for_byte_and_adds_no_host_parameter() {
+    let fresh = Enth::default();
+    let ids = param_ids(&fresh);
+    assert_eq!(ids.len(), 72);
+    let host = Host::new(Some(WT_GOLDEN), None);
+    let saved = host.plugin.host_params().serialize_fields();
+    assert_eq!(
+        saved["patch"], WT_GOLDEN,
+        "the patch comes back byte for byte"
+    );
+    assert_eq!(
+        param_ids(&host.plugin),
+        ids,
+        "no module is a host parameter"
+    );
+    let name = |p: HostParam| host.plugin.host_params().param(p).display_name();
+    assert_eq!(name(slot(1)), "Wavetable 1 · PM index");
+    assert_eq!(name(slot(2)), "Wavetable 1 · Position");
+    assert_eq!(name(slot(3)), "Slot 3");
+
+    // A second instance loading the saved state saves the same bytes, holds the same patch and plays the same samples.
+    let mut again = Host::new(Some(&saved["patch"]), None);
+    assert_eq!(again.plugin.host_params().serialize_fields(), saved);
+    let (a, b) = (
+        host.plugin.shared().session.lock().patch().clone(),
+        again.plugin.shared().session.lock().patch().clone(),
+    );
+    assert!(enth_patch::canon::identical(&a, &b));
+    assert_eq!(a.routes, b.routes);
+    let mut first = host;
+    let (x, y) = (
+        first.render(4_800, 64, &wt_schedule()),
+        again.render(4_800, 64, &wt_schedule()),
+    );
+    assert!(loud(&x) && same(&x, &y));
+}
+
+#[test]
+fn a_wt_with_an_audio_route_renders_like_the_cli_with_slot_and_macro_automation_at_every_block_size()
+ {
+    let patch = wt_golden();
+    let frames = 24_000;
+    let sr = f64::from(SR);
+    let at_frame = |f: u32| f64::from(f) / sr;
+    let pm_index = addr("wt1.pm_index");
+    let position = addr("wt1.position");
+    let spec = |a: &ParamAddr| patch.spec(a).unwrap();
+    let mut perf = wt_notes(frames);
+    perf.automation = vec![
+        Automation {
+            time_s: at_frame(4_000),
+            addr: pm_index.clone(),
+            value: spec(&pm_index).from_norm(0.6),
+        },
+        Automation {
+            time_s: at_frame(9_100),
+            addr: position.clone(),
+            value: spec(&position).from_norm(0.9),
+        },
+        Automation {
+            time_s: at_frame(14_000),
+            addr: pm_index.clone(),
+            value: spec(&pm_index).from_norm(0.1),
+        },
+    ];
+    perf.controls = vec![Control {
+        time_s: at_frame(6_000),
+        controller: Controller::Macro(MacroIndex::new(0).unwrap()),
+        value: 0.8,
+    }];
+    let expected = cli(&patch, &perf);
+    assert!(loud(&expected));
+    let still = cli(&patch, &wt_notes(frames));
+    assert!(!same(&expected, &still), "the automation is audible");
+    let mut schedule = wt_schedule();
+    schedule.extend([
+        at(4_000, HostEvent::Param(slot(1), 0.6)),
+        at(6_000, HostEvent::Param(macro_(1), 0.8)),
+        at(9_100, HostEvent::Param(slot(2), 0.9)),
+        at(14_000, HostEvent::Param(slot(1), 0.1)),
+    ]);
+    schedule.sort_by_key(|a| a.frame);
+    for block in BLOCKS {
+        let mut host = Host::new(Some(WT_GOLDEN), None);
+        let got = host.render(frames as usize, block, &schedule);
+        assert!(same(&got, &expected), "block {block}");
+    }
+}
+
+#[test]
+fn an_editor_edit_of_wt_parameters_reaches_the_engine_as_value_events_like_the_clis_automation() {
+    // `semi` is an unslotted modulatable parameter; `pm` and `am` are the audio inputs' base values. All three move
+    // at the block boundary where the edit is made, as a value event, with no new plan.
+    let patch = wt_golden();
+    let (first, frames) = (4_800_usize, 14_400_usize);
+    let sr = f64::from(SR);
+    let mut perf = wt_notes(frames as u32);
+    for (key, value) in [("wt1.semi", -5.0), ("wt1.pm", 50.0), ("wt1.am", 80.0)] {
+        perf.automation.push(Automation {
+            time_s: first as f64 / sr,
+            addr: addr(key),
+            value,
+        });
+    }
+    let expected = cli(&patch, &perf);
+    let ops: Vec<enth_patch::Op> = [("wt1.semi", -5.0), ("wt1.pm", 50.0), ("wt1.am", 80.0)]
+        .into_iter()
+        .map(|(key, value)| enth_patch::Op::SetParam {
+            addr: addr(key),
+            value,
+        })
+        .collect();
+    for block in BLOCKS {
+        let mut host = Host::new(Some(WT_GOLDEN), None);
+        let (mut left, mut right) = host.render(first, block, &wt_schedule());
+        let epoch_before = epoch(&host);
+        let applied = edit(&host, ops.clone());
+        assert!(!applied.recompile && applied.events == 3, "{applied:?}");
+        assert_eq!(epoch(&host), epoch_before, "no new plan");
+        let rest: Vec<At> = wt_schedule()
+            .into_iter()
+            .filter(|a| a.frame as usize >= first)
+            .map(|a| At {
+                frame: a.frame - first as u64,
+                ..a
+            })
+            .collect();
+        let (l, r) = host.render(frames - first, block, &rest);
+        left.extend(l);
+        right.extend(r);
+        assert!(same(&(left, right), &expected), "block {block}");
+    }
+}
+
+/// One host render call's schedule from absolute frame `from` of [`wt_schedule`], its frames relative to `from`.
+fn wt_schedule_from(from: usize) -> Vec<At> {
+    wt_schedule()
+        .into_iter()
+        .filter(|a| a.frame as usize >= from)
+        .map(|a| At {
+            frame: a.frame - from as u64,
+            ..a
+        })
+        .collect()
+}
+
+/// A plugin that played `wt_schedule` for `first` frames with `loaded` as its patch, then had `change` happen (an
+/// editor edit or a host load), the plan it needed sent, and played on to `frames`.
+fn wt_with_change(
+    loaded: &str,
+    block: usize,
+    (first, frames): (usize, usize),
+    change: impl FnOnce(&Host),
+) -> (Vec<f32>, Vec<f32>) {
+    let mut host = Host::new(Some(loaded), None);
+    let (mut left, mut right) = host.render(first, block, &wt_schedule());
+    change(&host);
+    settle(&host);
+    let (l, r) = host.render(frames - first, block, &wt_schedule_from(first));
+    left.extend(l);
+    right.extend(r);
+    (left, right)
+}
+
+#[test]
+fn raising_an_audio_routes_depth_is_a_depth_event_that_settles_on_the_bits_of_a_patch_with_it() {
+    // Raised, not lowered: a `wt` reads its table at a mip level that follows a tracked, slowly decaying estimate of
+    // its phase increment (docs/dsp/wt.md), so after a lowered depth the old, brighter estimate lingers for tens of
+    // milliseconds; a raised one takes over at once, and the render holds the patch's bits as soon as the 10 ms ramp
+    // has landed.
+    let route = route_addr("osc1", "wt1.pm");
+    let (first, frames) = (4_800_usize, 14_400_usize);
+    let mut quieter = wt_golden();
+    enth_patch::apply(
+        &mut quieter,
+        enth_patch::Op::SetDepth {
+            route: route.clone(),
+            depth: 30.0,
+        },
+    )
+    .unwrap();
+    let quiet = cli(&quieter, &wt_notes(frames as u32));
+    let loud_one = cli(&wt_golden(), &wt_notes(frames as u32));
+    assert!(!same(&quiet, &loud_one), "the depth is audible");
+    for block in BLOCKS {
+        let mut host = Host::new(Some(&quieter.to_json()), None);
+        let (mut left, mut right) = host.render(first, block, &wt_schedule());
+        assert!(same(
+            &(left.clone(), right.clone()),
+            &(quiet.0[..first].to_vec(), quiet.1[..first].to_vec())
+        ));
+        let before = epoch(&host);
+        let applied = edit(
+            &host,
+            vec![enth_patch::Op::SetDepth {
+                route: route.clone(),
+                depth: 60.0,
+            }],
+        );
+        assert!(!applied.recompile && applied.events == 1, "{applied:?}");
+        assert_eq!(epoch(&host), before, "a depth event, no new plan");
+        let (l, r) = host.render(frames - first, block, &wt_schedule_from(first));
+        left.extend(l);
+        right.extend(r);
+        let got = (left, right);
+        assert!(!same(&tail(&got, first), &tail(&quiet, first)), "it moved");
+        // The ramp lands 480 frames after the edit; by 6 000 the plugin holds the bits of the patch loaded with it.
+        assert!(
+            same(&tail(&got, 6_000), &tail(&loud_one, 6_000)),
+            "block {block}"
+        );
+    }
+}
+
+#[test]
+fn removing_and_adding_an_audio_route_in_the_editor_sound_like_the_host_loading_the_patch_without_and_with_it()
+ {
+    // Both are plan swaps. The editor's edit and the host's load of the same patch must give the same samples at
+    // every host block size: a removed audible route crossfades (256 frames), an added one ramps in from 0 over 10 ms.
+    let route = route_addr("osc1", "wt1.pm");
+    let (first, frames) = (4_800_usize, 14_400_usize);
+    let mut bare = wt_golden();
+    enth_patch::apply(
+        &mut bare,
+        enth_patch::Op::RemoveRoute {
+            route: route.clone(),
+        },
+    )
+    .unwrap();
+    let load = |host: &Host, patch: &Patch| {
+        let mut fields = BTreeMap::new();
+        fields.insert("patch".to_owned(), patch.to_json());
+        host.plugin.host_params().deserialize_fields(&fields);
+    };
+    let kept = wt_with_change(WT_GOLDEN, 64, (first, frames), |_| {});
+    let without = cli(&bare, &wt_notes(frames as u32));
+    for block in [1, 64, 100, 4096] {
+        // Removal.
+        let edited = wt_with_change(WT_GOLDEN, block, (first, frames), |host| {
+            let before = epoch(host);
+            let applied = edit(
+                host,
+                vec![enth_patch::Op::RemoveRoute {
+                    route: route.clone(),
+                }],
+            );
+            assert!(applied.recompile, "{applied:?}");
+            assert!(epoch(host) >= before);
+        });
+        let loaded = wt_with_change(WT_GOLDEN, block, (first, frames), |host| load(host, &bare));
+        assert!(same(&edited, &loaded), "removal, block {block}");
+        assert!(!same(&edited, &kept), "the route is gone");
+        assert!(loud(&edited));
+        // Addition, back from the patch without it.
+        let bare_text = bare.to_json();
+        let edited = wt_with_change(&bare_text, block, (first, frames), |host| {
+            let applied = edit(
+                host,
+                vec![enth_patch::Op::InsertRoute {
+                    index: 0,
+                    route: enth_patch::Route {
+                        src: route.src.clone(),
+                        dst: route.dst.clone(),
+                        depth: 60.0,
+                    },
+                }],
+            );
+            assert!(applied.recompile, "{applied:?}");
+        });
+        let loaded = wt_with_change(&bare_text, block, (first, frames), |host| {
+            load(host, &wt_golden());
+        });
+        assert!(same(&edited, &loaded), "addition, block {block}");
+        assert!(!same(&edited, &without), "it was added");
+    }
+}

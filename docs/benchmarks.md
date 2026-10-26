@@ -281,6 +281,7 @@ The other engine budgets were re-measured on `0f4f29d` with `cargo xtask bench`,
 | `lfo` voice_sine 1v / 16v, voice_random_16v, global_sine_16v | 4,009,093 / 39,817,448 / 38,663,288 / 37,255,081 | 5,064,000 / 53,822,000 / 52,553,000 / 48,175,000 | 20.8 / 26.0 / 26.4 / 22.7 % | −12.9 / −18.6 / −19.1 / −14.9 % |
 | `noise` white_1v / white_16v / pink_16v | 4,822,796 / 53,714,046 / 81,665,046 | 5,710,000 / 65,660,000 / 96,400,000 | 15.5 / 18.2 / 15.3 % | (in docs/dsp/noise.md) |
 | `osc` saw_1v / saw_16v / triangle / pulse / sine / table / table_on_frame / synced_saw (16v) | 5,500,975 / 64,012,267 / 76,596,219 / 71,927,439 / 77,056,725 / 117,189,897 / 102,562,855 / 66,549,593 | 6,830,000 / 80,640,000 / 94,490,000 / 89,370,000 / 94,990,000 / 139,170,000 / 123,080,000 / 83,430,000 | 15.8–20.6 % | (in docs/dsp/osc.md) |
+| `wt` plain_1v / plain_16v / pm_16v / full_16v (S2a lane WT's budgets, recorded by lane SKS; measured on the SKS branch) | 8,534,956 / 111,925,466 / 121,159,455 / 171,778,450 | 9,409,000 / 123,490,000 / 133,776,000 / 187,692,000 | 9.3 / 9.4 / 9.4 / 8.5 % | (in docs/dsp/wt.md) |
 
 Proposed for the coordinator; lane RT changed none of these budgets.
 
