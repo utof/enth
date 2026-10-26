@@ -1064,6 +1064,7 @@ mod tests {
         // Level 0: nothing reaches the voice, but the route carries the full oscillator (the FM operator pattern).
         let mut p = patch(&["osc1", "wt1"], &[route("osc1", "wt1.pm", 100.0)]);
         p.generators[0].values[OscParam::Level.index()] = 0.0;
+        p.generators[1].values[WtParam::Level.index()] = 0.0; // the carrier sounds since lane WT
         let (mut plan, _) = compile(&p, &PrepareCfg::new(48_000.0)).unwrap();
         let seen = run(&mut plan, 2);
         let last = seen.last().unwrap();
@@ -1112,9 +1113,11 @@ mod tests {
 
     #[test]
     fn the_voice_sum_stays_in_patch_order() {
-        // Run order is [osc2, osc1... ]: the same generators with and without a route into a silent wt sum alike.
+        // Run order is [osc2, osc1... ]: the same generators with and without a route into a wt (PM index 0) sum alike.
         let mut with = patch(&["wt1", "osc1", "osc2"], &[route("osc2", "wt1.pm", 40.0)]);
         with.generators[2].values[OscParam::Fine.index()] = 11.0;
+        // Since lane WT the carrier sounds; with a PM index of 0 the route changes none of its bits.
+        with.generators[0].values[WtParam::PmIndex.index()] = 0.0;
         let mut without = with.clone();
         without.routes.clear();
         let (mut a, _) = compile(&with, &PrepareCfg::new(48_000.0)).unwrap();

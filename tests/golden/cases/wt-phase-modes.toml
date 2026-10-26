@@ -1,0 +1,22 @@
+description = "WT: the three phase modes on the fm table at position 40 %, whose timbre depends on the start phase: wt1 free (render seed, module id, note index), wt2 seeded (seed 7) and wt3 reset at 90 degrees, three notes in a row so each note starts at its own phases; level 30 %, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.25 },
+    { key = 57, velocity = 1.0, on_s = 0.4, off_s = 0.65 },
+    { key = 57, velocity = 1.0, on_s = 0.8, off_s = 1.05 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "wt1", kind = "wt", params = { table = "fm", position = 40, phase_mode = "free", level = 30 } },
+    { id = "wt2", kind = "wt", params = { table = "fm", position = 40, phase_mode = "seeded", seed = 7, semi = 12, level = 30 } },
+    { id = "wt3", kind = "wt", params = { table = "fm", position = 40, phase_mode = "reset", phase = 90, semi = -12, level = 30 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

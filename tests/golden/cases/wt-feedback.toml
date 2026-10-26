@@ -1,0 +1,21 @@
+description = "WT: feedback on the sine table at 0, 30, 60 and 100 %, one wt module each at level 25 % and semitones 0, -12, +12, -24 around A3; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "wt1", kind = "wt", params = { feedback = 0, level = 25 } },
+    { id = "wt2", kind = "wt", params = { feedback = 30, semi = -12, level = 25 } },
+    { id = "wt3", kind = "wt", params = { feedback = 60, semi = 12, level = 25 } },
+    { id = "wt4", kind = "wt", params = { feedback = 100, semi = -24, level = 25 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

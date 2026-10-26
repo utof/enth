@@ -116,7 +116,7 @@ Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are mar
 | **TPL** Templates | Create templates: growl, reese, wobble and FM bass | WT, DST, FLT | 1–2 | L |
 | **LS2** Lessons | A lesson per user-facing kind | Each kind | 4–8 | L, Opus |
 | **EV5** Agent evals | Agent-eval families (eval version 4) | SKS | 1–1.5 | L |
-| **INT-S2a** S2a ships | The full gate, the GS2a table, owner sheet 8, a friend build, the hide flag cleared per kind | Everything | 2–3 | **H** |
+| **INT-S2a** S2a ships | The full gate, the GS2a table, owner sheet 8, a friend build, the hide flag cleared per kind, and **one `ENGINE_VERSION` bump for all of S2a** (both constants, `enth-engine` and `enth-patch::file`; module lanes don't bump it, because the kinds stay hidden and no existing render changes until the flag clears) | Everything | 2–3 | **H** |
 
 **Totals:** about 35–63 agent-hours: the spine 7.5–14.5, the modules 14.5–24.5, integration 13.5–24 (V1F, if chosen, adds 1–2).
 

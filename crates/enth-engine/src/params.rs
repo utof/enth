@@ -25,7 +25,7 @@ use enth_dsp::util::math::exp;
 use enth_params::{ParamSpec, Smoothing};
 use enth_patch::catalogue::{
     AdsrParam, CompParam, LfoParam, MasterParam, NoiseParam, OscParam, ReverbParam, SvfParam,
-    VoiceParam,
+    VoiceParam, WtParam,
 };
 
 use crate::module::{MAX_VOICES, SEG, VoiceIdx};
@@ -75,6 +75,7 @@ param_index!(
     CompParam,
     VoiceParam,
     MasterParam,
+    WtParam,
 );
 
 /// One module's parameters in the per-voice table. Cheap to copy.

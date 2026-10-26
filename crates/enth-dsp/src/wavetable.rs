@@ -61,10 +61,10 @@ pub const fn level_len(level: usize) -> usize {
 }
 
 /// The master sine table's length (the longest level).
-const MASTER_LEN: usize = 32 * MAX_HARMONIC;
+pub(crate) const MASTER_LEN: usize = 32 * MAX_HARMONIC;
 
 /// Per-level sample counts and start offsets inside a frame (each level is followed by its guards).
-const LEN: [usize; LEVELS] = {
+pub(crate) const LEN: [usize; LEVELS] = {
     let mut a = [0; LEVELS];
     let mut l = 0;
     while l < LEVELS {
@@ -73,7 +73,7 @@ const LEN: [usize; LEVELS] = {
     }
     a
 };
-const OFFSET: [usize; LEVELS + 1] = {
+pub(crate) const OFFSET: [usize; LEVELS + 1] = {
     let mut a = [0; LEVELS + 1];
     let mut l = 0;
     while l < LEVELS {
@@ -83,7 +83,7 @@ const OFFSET: [usize; LEVELS + 1] = {
     a
 };
 /// Floats per frame (all levels with their guards).
-const FRAME_STRIDE: usize = OFFSET[LEVELS];
+pub(crate) const FRAME_STRIDE: usize = OFFSET[LEVELS];
 
 /// The five generated tables, in the catalogue's order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -150,51 +150,7 @@ impl Wavetable {
     /// Generate `kind` from scratch (tens of milliseconds; allocates). Prefer [`Wavetable::shared`].
     #[must_use]
     pub fn generate(kind: TableKind) -> Self {
-        let sine = sine_table();
-        let mut data = vec![0.0f32; FRAMES * FRAME_STRIDE].into_boxed_slice();
-        let mut sin_coef = [0.0f64; MAX_HARMONIC + 1];
-        let mut cos_coef = [0.0f64; MAX_HARMONIC + 1];
-        let mut acc = vec![0.0f64; MASTER_LEN];
-        for frame in 0..FRAMES {
-            let pos = frame as f64 / (FRAMES - 1) as f64;
-            sin_coef.fill(0.0);
-            cos_coef.fill(0.0);
-            harmonics(kind, pos, &mut sin_coef, &mut cos_coef);
-            let mut scale = 1.0;
-            // Level 0 first: its peak is the frame's scale for every level.
-            for level in 0..LEVELS {
-                let n = LEN[level];
-                let step = MASTER_LEN / n;
-                let acc = &mut acc[..n];
-                acc.fill(0.0);
-                for k in 1..=top_harmonic(level) {
-                    let (s, c) = (sin_coef[k], cos_coef[k]);
-                    if s != 0.0 {
-                        for (i, a) in acc.iter_mut().enumerate() {
-                            *a += s * sine[(k * i * step) & (MASTER_LEN - 1)];
-                        }
-                    }
-                    if c != 0.0 {
-                        // cos(x) = sin(x + π/2): a quarter turn is a quarter of the master table.
-                        for (i, a) in acc.iter_mut().enumerate() {
-                            *a += c * sine[(k * i * step + MASTER_LEN / 4) & (MASTER_LEN - 1)];
-                        }
-                    }
-                }
-                if level == 0 {
-                    let peak = acc.iter().fold(0.0f64, |m, x| m.max(x.abs()));
-                    scale = if peak > 0.0 { 1.0 / peak } else { 1.0 };
-                }
-                let base = frame * FRAME_STRIDE + OFFSET[level];
-                let row = &mut data[base..base + n + GUARD];
-                for (dst, src) in row[1..=n].iter_mut().zip(acc.iter()) {
-                    *dst = (*src * scale) as f32;
-                }
-                row[0] = row[n];
-                row[n + 1] = row[1];
-                row[n + 2] = row[2];
-            }
-        }
+        let data = build(&mut |pos, s, c| harmonics(kind, pos, s, c));
         Self { kind, data }
     }
 
@@ -214,8 +170,7 @@ impl Wavetable {
     /// One level of one frame: `x(-1), x(0), …, x(N-1), x(N), x(N+1)` with `N = level_len(level)`.
     #[must_use]
     pub fn row(&self, frame: usize, level: usize) -> &[f32] {
-        let base = frame * FRAME_STRIDE + OFFSET[level];
-        &self.data[base..base + LEN[level] + GUARD]
+        row_in(&self.data, frame, level)
     }
 
     /// Read `level` at the frame position `frame_pos` (`0 ..= FRAMES − 1`, clamped) and `phase` (`0 ≤ phase < 1`):
@@ -232,31 +187,104 @@ impl Wavetable {
     #[inline(always)]
     #[must_use]
     pub fn cursor(&self, level: usize, frame_pos: f32) -> Cursor<'_> {
-        let fp = frame_pos.max(0.0).min((FRAMES - 1) as f32);
-        // On the last frame the weight is 0 and `b` repeats `a`.
-        let fi = (fp as usize).min(FRAMES - 1);
-        let lv = level.min(LEVELS - 1);
-        Cursor {
-            a: self.row(fi, lv),
-            b: self.row((fi + 1).min(FRAMES - 1), lv),
-            weight: fp - fi as f32,
-            len: LEN[lv] as f32,
-            mask: LEN[lv] - 1,
-        }
+        cursor_in(&self.data, level, frame_pos)
     }
 
     /// FNV-1a (64 bit) over the little-endian bits of every float, in storage order: a fingerprint for tests and
     /// docs ("the table data is the same on every platform").
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for x in &*self.data {
-            for b in x.to_bits().to_le_bytes() {
-                h ^= u64::from(b);
-                h = h.wrapping_mul(0x0000_0100_0000_01b3);
-            }
+        fingerprint_of(&self.data)
+    }
+}
+
+/// [`Wavetable::fingerprint`] over any table data.
+pub(crate) fn fingerprint_of(data: &[f32]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for x in data {
+        for b in x.to_bits().to_le_bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }
-        h
+    }
+    h
+}
+
+/// A harmonic filler: see [`build`].
+pub(crate) type Filler<'a> = dyn FnMut(f64, &mut [f64], &mut [f64]) + 'a;
+
+/// Build the data of one table from a harmonic filler: `fill(pos, s, c)` writes the coefficients of `sin(k·x)` into
+/// `s[k]` and of `cos(k·x)` into `c[k]` (`k = 1..=`[`MAX_HARMONIC`]) for the frame position `pos` in `[0, 1]`. The
+/// layout is the one described at the top of this module; this is the whole generator, shared by [`Wavetable`] and
+/// the `wt` module's tables (`crate::wt`), so both are built by the same code in the same order.
+pub(crate) fn build(fill: &mut Filler<'_>) -> Box<[f32]> {
+    let sine = sine_table();
+    let mut data = vec![0.0f32; FRAMES * FRAME_STRIDE].into_boxed_slice();
+    let mut sin_coef = [0.0f64; MAX_HARMONIC + 1];
+    let mut cos_coef = [0.0f64; MAX_HARMONIC + 1];
+    let mut acc = vec![0.0f64; MASTER_LEN];
+    for frame in 0..FRAMES {
+        let pos = frame as f64 / (FRAMES - 1) as f64;
+        sin_coef.fill(0.0);
+        cos_coef.fill(0.0);
+        fill(pos, &mut sin_coef, &mut cos_coef);
+        let mut scale = 1.0;
+        // Level 0 first: its peak is the frame's scale for every level.
+        for level in 0..LEVELS {
+            let n = LEN[level];
+            let step = MASTER_LEN / n;
+            let acc = &mut acc[..n];
+            acc.fill(0.0);
+            for k in 1..=top_harmonic(level) {
+                let (s, c) = (sin_coef[k], cos_coef[k]);
+                if s != 0.0 {
+                    for (i, a) in acc.iter_mut().enumerate() {
+                        *a += s * sine[(k * i * step) & (MASTER_LEN - 1)];
+                    }
+                }
+                if c != 0.0 {
+                    // cos(x) = sin(x + π/2): a quarter turn is a quarter of the master table.
+                    for (i, a) in acc.iter_mut().enumerate() {
+                        *a += c * sine[(k * i * step + MASTER_LEN / 4) & (MASTER_LEN - 1)];
+                    }
+                }
+            }
+            if level == 0 {
+                let peak = acc.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+                scale = if peak > 0.0 { 1.0 / peak } else { 1.0 };
+            }
+            let base = frame * FRAME_STRIDE + OFFSET[level];
+            let row = &mut data[base..base + n + GUARD];
+            for (dst, src) in row[1..=n].iter_mut().zip(acc.iter()) {
+                *dst = (*src * scale) as f32;
+            }
+            row[0] = row[n];
+            row[n + 1] = row[1];
+            row[n + 2] = row[2];
+        }
+    }
+    data
+}
+
+/// One level of one frame in table data laid out by [`build`].
+pub(crate) fn row_in(data: &[f32], frame: usize, level: usize) -> &[f32] {
+    let base = frame * FRAME_STRIDE + OFFSET[level];
+    &data[base..base + LEN[level] + GUARD]
+}
+
+/// The cursor of [`Wavetable::cursor`] over any data laid out by [`build`].
+#[inline(always)]
+pub(crate) fn cursor_in(data: &[f32], level: usize, frame_pos: f32) -> Cursor<'_> {
+    let fp = frame_pos.max(0.0).min((FRAMES - 1) as f32);
+    // On the last frame the weight is 0 and `b` repeats `a`.
+    let fi = (fp as usize).min(FRAMES - 1);
+    let lv = level.min(LEVELS - 1);
+    Cursor {
+        a: row_in(data, fi, lv),
+        b: row_in(data, (fi + 1).min(FRAMES - 1), lv),
+        weight: fp - fi as f32,
+        len: LEN[lv] as f32,
+        mask: LEN[lv] - 1,
     }
 }
 
@@ -308,7 +336,7 @@ impl Cursor<'_> {
 /// 4-point Hermite (Catmull-Rom form) between `w[1]` and `w[2]` at `fr`, the form of stmlib's `InterpolateHermite`
 /// (`xm1 = w[0]`, `x0 = w[1]`, `x1 = w[2]`, `x2 = w[3]`).
 #[inline(always)]
-fn hermite(w: &[f32], fr: f32) -> f32 {
+pub(crate) fn hermite(w: &[f32], fr: f32) -> f32 {
     let (xm1, x0, x1, x2) = (w[0], w[1], w[2], w[3]);
     let c = (x1 - xm1) * 0.5;
     let v = x0 - x1;
@@ -357,7 +385,7 @@ pub fn level_for(dt: f32, limit: f32) -> usize {
     clippy::needless_range_loop,
     reason = "k is the harmonic number in every formula as well as the index into s and c"
 )]
-fn harmonics(kind: TableKind, pos: f64, s: &mut [f64], c: &mut [f64]) {
+pub(crate) fn harmonics(kind: TableKind, pos: f64, s: &mut [f64], c: &mut [f64]) {
     let top = MAX_HARMONIC;
     match kind {
         TableKind::Basic => {
