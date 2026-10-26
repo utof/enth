@@ -314,6 +314,15 @@ impl Chorus {
         self.phase = 0;
     }
 
+    /// The addresses of the two delay lines (test support: an O(1) exchange moves them, a copy does not).
+    #[must_use]
+    pub fn line_ptrs(&self) -> [usize; 2] {
+        [
+            self.lines[0].as_ptr() as usize,
+            self.lines[1].as_ptr() as usize,
+        ]
+    }
+
     /// The sweep's phase (test support).
     #[must_use]
     pub fn phase(&self) -> u64 {
