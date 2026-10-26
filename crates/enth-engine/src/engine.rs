@@ -50,6 +50,7 @@ use crate::module::{
 use crate::params::ParamId;
 use crate::plan::Plan;
 use crate::segment::{EVENT_CAPACITY, EventQueue, Fifo};
+use crate::stereo::{Gains, StereoPath, mix_voice};
 use crate::swap::{AudioLink, Cmd, Link, LinkCapacity, rings};
 use crate::tap::{Tap, store_f32};
 use crate::tempo::{self, DEFAULT_TEMPO_BPM};
@@ -67,6 +68,8 @@ pub const MONITOR_BYPASS_FADE_MS: f32 = 20.0;
 /// Scratch buses, boxed so the engine stays small to move.
 struct Buses {
     voice: VoiceBus,
+    /// The right channel of the voice bus, used only while a plan's stereo flag is set (lane SVP).
+    voice_r: VoiceBus,
     scratch: VoiceBus,
     sync: SyncBus,
     left: Block,
@@ -192,6 +195,7 @@ impl Engine {
             glide: Glide::new(),
             buses: Box::new(Buses {
                 voice: [[0.0; SEG]; MAX_VOICES],
+                voice_r: [[0.0; SEG]; MAX_VOICES],
                 scratch: [[0.0; SEG]; MAX_VOICES],
                 sync: [[NO_SYNC; SEG]; MAX_VOICES],
                 left: [0.0; SEG],
@@ -532,6 +536,7 @@ impl Engine {
         };
         let mut out = Out {
             voice: &mut buses.voice,
+            voice_r: &mut buses.voice_r,
             scratch: &mut buses.scratch,
             sync: &mut buses.sync,
             left: &mut buses.left,
@@ -1117,6 +1122,7 @@ struct SegmentCx<'a> {
 /// The buses steps 3–8 write.
 struct Out<'a> {
     voice: &'a mut VoiceBus,
+    voice_r: &'a mut VoiceBus,
     scratch: &'a mut VoiceBus,
     sync: &'a mut SyncBus,
     left: &'a mut Block,
@@ -1149,6 +1155,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
         gmod_cur,
         gmod_prev,
         out,
+        stereo,
         ..
     } = plan;
 
@@ -1216,6 +1223,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     }
 
     // 7. Voices.
+    let stereo_on = stereo.is_on();
     for &v in active {
         buses.voice[v] = [0.0; SEG];
     }
@@ -1244,6 +1252,9 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             }
         }
     }
+    if stereo_on {
+        StereoPath::split(active, buses.voice, buses.voice_r);
+    }
     for slot in voice_fx.iter_mut() {
         slot.module.process(&mut VoiceCx {
             voices: active,
@@ -1253,6 +1264,9 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             sync_out: None,
             sync_in: None,
         });
+    }
+    if stereo_on {
+        stereo.process(active, notes, voice_table, buses.voice_r);
     }
     *buses.left = [0.0; SEG];
     *buses.right = [0.0; SEG];
@@ -1275,6 +1289,12 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
         let a1 = vmod_cur[amp][v];
         let (l0, r0) = (a0 * ql, a0 * qr);
         let (dl, dr) = (a1 * pl - l0, a1 * pr - r0);
+        if stereo_on {
+            let (xl, xr) = (&buses.voice[v], &buses.voice_r[v]);
+            let g = Gains { l0, dl, r0, dr };
+            mix_voice(buses.left, buses.right, xl, xr, g, cx.voices.fade(v));
+            continue;
+        }
         let voice = &buses.voice[v];
         if let Some((f0, f1)) = cx.voices.fade(v) {
             // A steal fade: the amp-and-pan ramp times a linear fade to silence over 64 frames.

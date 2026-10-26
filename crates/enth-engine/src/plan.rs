@@ -49,6 +49,7 @@ use crate::modules::{
 };
 use crate::params::{GlobalTable, ParamId, Span, VoiceTable};
 use crate::seed::{global_seed, module_key, voice_seed};
+use crate::stereo::{StartCx, StereoMode, StereoPath};
 
 /// The specs of the macro and mod-wheel sources in the global table.
 static MACRO_SPECS: [ParamSpec; MACRO_SOURCES] = [MACRO_VALUE; MACRO_SOURCES];
@@ -182,6 +183,8 @@ pub struct Plan {
     /// Slots (bit `i` = slot index `i`) whose remembered host value this plan forgets instead of re-applying when
     /// it swaps in ([`Plan::forget_host_slots`]; F1b review).
     pub(crate) forget_slots: u64,
+    /// The stereo voice path (lane SVP): the plan's flag and the right-channel `voice_fx` instances.
+    pub(crate) stereo: StereoPath,
 }
 
 impl fmt::Debug for Plan {
@@ -240,6 +243,14 @@ impl Plan {
     #[must_use]
     pub fn polyphony(&self) -> usize {
         self.polyphony
+    }
+
+    /// Whether the plan runs the stereo voice path ([`crate::stereo`]): the voice bus is left and right, and each
+    /// `voice_fx` module has a second, right-channel instance. `false` for every patch until lane UNI, unless
+    /// [`compile_with`] forced it.
+    #[must_use]
+    pub fn is_stereo(&self) -> bool {
+        self.stereo.is_on()
     }
 
     /// The ids of the modules that run, in segment order: global modulators, voice modulators, generators,
@@ -326,7 +337,7 @@ impl Plan {
             .sum::<usize>()
             + crate::module::count_subnormals(&self.gmod_cur)
             + crate::module::count_subnormals(&self.gmod_prev);
-        voice + vmods + gmods + fx + outs + self.out.subnormals()
+        voice + vmods + gmods + fx + outs + self.out.subnormals() + self.stereo.subnormals()
     }
 
     /// Reset every global module (engine start).
@@ -415,12 +426,14 @@ impl Plan {
             voice_fx,
             voice_mods,
             voice_table,
+            stereo,
             ..
         } = self;
         for slot in generators.iter_mut().chain(voice_fx.iter_mut()) {
             slot.module
                 .start_voice(&voice_start(slot, v, notes, voice_table, render_seed));
         }
+        stereo.start_voice(v, notes, voice_table, render_seed);
         for slot in voice_mods.iter_mut() {
             slot.module
                 .start_voice(&voice_start(slot, v, notes, voice_table, render_seed));
@@ -450,7 +463,8 @@ impl Plan {
                 GlobalModulatorImpl::kind,
             )
             .1
-            || pair(&self.fx, &old.fx, GlobalProcessorImpl::kind).1;
+            || pair(&self.fx, &old.fx, GlobalProcessorImpl::kind).1
+            || self.stereo.is_on() != old.stereo.is_on();
         let move_fx = !changed;
         let Plan {
             generators,
@@ -464,6 +478,7 @@ impl Plan {
             vmod_prev,
             gmod_cur,
             gmod_prev,
+            stereo,
             ..
         } = self;
 
@@ -490,6 +505,18 @@ impl Plan {
                 }
             }
         }
+
+        stereo.carry_from(
+            voice_fx,
+            &old.voice_fx,
+            &old.stereo,
+            &StartCx {
+                active,
+                notes,
+                table: voice_table,
+                render_seed,
+            },
+        );
 
         let (pairs, _) = pair(voice_mods, &old.voice_mods, VoiceModulatorImpl::kind);
         for (i, slot) in voice_mods.iter_mut().enumerate() {
@@ -556,7 +583,7 @@ const MAX_ROLE_SLOTS: usize = 8;
 
 /// Match the slots of a new role list to the old one by (id, kind): `pairs[i]` is the old index of new slot `i`.
 /// The flag says whether a module was added or removed.
-fn pair<M>(
+pub(crate) fn pair<M>(
     new: &[Slot<M>],
     old: &[Slot<M>],
     kind: impl Fn(&M) -> ModuleKind,
@@ -804,6 +831,20 @@ fn check_values(
 /// An invalid patch (the checks are a subset of S1b's `validate`, enough to never hand the audio thread a bad
 /// value), an unsupported sample rate, or a route the engine cannot run ([`CompileError::BadRoute`]).
 pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), CompileError> {
+    compile_with(patch, cfg, StereoMode::Auto)
+}
+
+/// [`compile`] with a say in the stereo voice path (lane SVP): [`StereoMode::Forced`] sets the plan's stereo flag
+/// for any patch, which tests and benches use to run the stereo path with mono content. [`StereoMode::Auto`] is
+/// `compile`.
+///
+/// # Errors
+/// As [`compile`].
+pub fn compile_with(
+    patch: &Patch,
+    cfg: &PrepareCfg,
+    stereo: StereoMode,
+) -> Result<(Plan, PlanMap), CompileError> {
     if !cfg.is_supported() {
         return Err(CompileError::UnsupportedSampleRate(cfg.sample_rate));
     }
@@ -902,6 +943,7 @@ pub fn compile(patch: &Patch, cfg: &PrepareCfg) -> Result<(Plan, PlanMap), Compi
         slots: [SlotEntry::default(); SLOTS],
         tap_params: Vec::new(),
         forget_slots: 0,
+        stereo: StereoPath::new(stereo, patch),
     };
 
     for section in Section::ALL {
@@ -1126,6 +1168,7 @@ fn add_module(
             if section == Section::Generators {
                 plan.generators.push(slot);
             } else {
+                plan.stereo.mirror(&slot, m, plan.cfg);
                 plan.voice_fx.push(slot);
             }
         }
