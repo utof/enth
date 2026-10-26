@@ -211,6 +211,8 @@ mod tests {
                 io: &mut self.io,
                 sync_out: None,
                 sync_in: None,
+                audio_in: None,
+                pre_level: None,
             });
             self.io[0]
         }

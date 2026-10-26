@@ -446,9 +446,83 @@ fn every_refusal_has_its_code_path_and_hint() {
 
     // --- Files: routes and slots -------------------------------------------------------------------------------
     c.file(
-        "a route from an oscillator",
+        "a route from an oscillator to a filter (a generator drives only an audio input)",
         |v| v["routes"] = json!([{"src": "osc1", "dst": "filter1.cutoff", "depth": 10}]),
+        &[("routes[0].dst", "not_audio_dest")],
+    );
+    c.file(
+        "a route from a filter",
+        |v| v["routes"] = json!([{"src": "filter1", "dst": "osc1.semi", "depth": 10}]),
         &[("routes[0].src", "not_a_source")],
+    );
+    // S2a lane RTE: the audio routes. `wt` carries the S0d placeholder inputs `pm` and `am`.
+    c.file(
+        "a control source into an audio input",
+        |v| {
+            v["generators"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "wt1", "kind": "wt"}));
+            v["routes"] = json!([{"src": "env2", "dst": "wt1.pm", "depth": 10}]);
+        },
+        &[("routes[0].src", "not_audio_source")],
+    );
+    c.file(
+        "velocity into an audio input",
+        |v| {
+            v["generators"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "wt1", "kind": "wt"}));
+            v["routes"] = json!([{"src": "velocity", "dst": "wt1.am", "depth": 10}]);
+        },
+        &[("routes[0].src", "not_audio_source")],
+    );
+    c.file(
+        "an oscillator into a wavetable's audio input is fine",
+        |v| {
+            v["generators"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "wt1", "kind": "wt"}));
+            v["routes"] = json!([{"src": "osc1", "dst": "wt1.pm", "depth": 10}]);
+        },
+        &[],
+    );
+    c.file(
+        "an oscillator into the level of a wavetable",
+        |v| {
+            v["generators"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "wt1", "kind": "wt"}));
+            v["routes"] = json!([{"src": "osc1", "dst": "wt1.level", "depth": 10}]);
+        },
+        &[("routes[0].dst", "not_audio_dest")],
+    );
+    c.file(
+        "a generator driving itself",
+        |v| {
+            v["generators"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "wt1", "kind": "wt"}));
+            v["routes"] = json!([{"src": "wt1", "dst": "wt1.pm", "depth": 10}]);
+        },
+        &[("routes[0]", "audio_cycle")],
+    );
+    c.file(
+        "two wavetables feeding each other",
+        |v| {
+            let gens = v["generators"].as_array_mut().unwrap();
+            gens.push(json!({"id": "wt1", "kind": "wt"}));
+            gens.push(json!({"id": "wt2", "kind": "wt"}));
+            v["routes"] = json!([
+                {"src": "wt1", "dst": "wt2.pm", "depth": 10},
+                {"src": "wt2", "dst": "wt1.am", "depth": 10}
+            ]);
+        },
+        &[("routes[1]", "audio_cycle")],
     );
     c.file(
         "a route to a module that is not there",
@@ -818,11 +892,75 @@ fn every_refusal_has_its_code_path_and_hint() {
         "unknown_module",
     );
     c.op(
-        "route: from an oscillator",
+        "route: from an oscillator to a filter",
         &p,
         &route_op(0, ModSource::Module(m("osc1")), "filter1.cutoff", 1.0),
+        "not_audio_dest",
+    );
+    c.op(
+        "route: from a filter",
+        &p,
+        &route_op(0, ModSource::Module(m("filter1")), "osc1.semi", 1.0),
         "not_a_source",
     );
+    {
+        // S2a lane RTE: the audio routes through the op.
+        let mut a = p.clone();
+        for id in ["wt1", "wt2"] {
+            let index = a.generators.len();
+            apply(
+                &mut a,
+                &Op::AddModule {
+                    at: Position {
+                        section: Section::Generators,
+                        index,
+                    },
+                    module: ModuleInstance::new(m(id), ModuleKind::Wt),
+                },
+            )
+            .unwrap();
+        }
+        c.op(
+            "route: an envelope into an audio input",
+            &a,
+            &route_op(0, ModSource::Module(m("env2")), "wt1.pm", 1.0),
+            "not_audio_source",
+        );
+        c.op(
+            "route: a macro into an audio input",
+            &a,
+            &route_op(
+                0,
+                ModSource::Macro(MacroIndex::new(0).unwrap()),
+                "wt1.pm",
+                1.0,
+            ),
+            "not_audio_source",
+        );
+        c.op(
+            "route: an oscillator into a wavetable's level",
+            &a,
+            &route_op(0, ModSource::Module(m("osc1")), "wt1.level", 1.0),
+            "not_audio_dest",
+        );
+        c.op(
+            "route: a wavetable into itself",
+            &a,
+            &route_op(0, ModSource::Module(m("wt1")), "wt1.pm", 1.0),
+            "audio_cycle",
+        );
+        apply(
+            &mut a,
+            route_op(0, ModSource::Module(m("wt1")), "wt2.pm", 50.0),
+        )
+        .unwrap();
+        c.op(
+            "route: back from the carrier",
+            &a,
+            &route_op(1, ModSource::Module(m("wt2")), "wt1.am", 50.0),
+            "audio_cycle",
+        );
+    }
     c.op(
         "route: to an enum",
         &p,

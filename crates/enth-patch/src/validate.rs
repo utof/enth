@@ -13,10 +13,15 @@
 //!    canonically** (`not_canonical`): never `-0.0`, and never the top of a periodic range, because **a phase of 360
 //!    is stored as 0** (decided in S1b: one spelling per sound keeps the file round trip and both hashes exact).
 //!    The same holds for `voice`, `master`, macros and route depths.
-//! 4. **Routes:** the source is a modulator that exists or a built-in (`unknown_module`, `not_a_source`); the
-//!    destination exists and is `modulatable` (`unknown_module`, `unknown_param`, `not_modulatable`); `|depth| <=
-//!    100`; no (src, dst) twice (`duplicate_route`); at most 64 (`too_many`); a per-voice source never drives a
-//!    global destination (`route_rate_mismatch`).
+//! 4. **Routes:** the source is a modulator that exists, a built-in or a generator (`unknown_module`,
+//!    `not_a_source`); the destination exists and is `modulatable` (`unknown_module`, `unknown_param`,
+//!    `not_modulatable`); `|depth| <= 100`; no (src, dst) twice (`duplicate_route`); at most 64 (`too_many`); a
+//!    per-voice source never drives a global destination (`route_rate_mismatch`).
+//!    **Audio routes** (S2a lane RTE, [`RouteKind::Audio`]): a generator is a source only for an `audio` parameter
+//!    (the destination of a generator route that is not one is `not_audio_dest`), an `audio` parameter takes only a
+//!    generator (`not_audio_source`; it is never `modulatable`, so no control route reaches it), and the audio
+//!    routes together form no loop, a generator driving itself included (`audio_cycle`, reported on the route that
+//!    closes it). The depth of an audio route is the same −100..100 %.
 //! 5. **The amplitude envelope** `voice.amp_env` names an `adsr` in `modulators` (`unknown_module`, `wrong_kind`)
 //!    that is **enabled** (`in_use_as_amp_env`): a disabled amp envelope would leave voices that never end.
 //! 6. **Slots** point at existing `automatable` parameters (`unknown_module`, `unknown_param`, `not_automatable`);
@@ -30,10 +35,10 @@ use std::collections::BTreeSet;
 
 use enth_params::{DEPTH, ParamSpec};
 
-use crate::addr::{ModSource, RouteAddr, SlotIndex};
+use crate::addr::{ModSource, ModuleId, RouteAddr, SlotIndex, Target};
 use crate::catalogue::{MACRO_VALUE, MASTER_PARAMS, ModuleKind, Rate, VOICE_PARAMS};
 use crate::error::{Invalid, PatchError, Violation};
-use crate::model::{MAX_ROUTES, Patch, Section};
+use crate::model::{MAX_ROUTES, Patch, Route, Section};
 use crate::ops::{canonical_value, locate, resolve};
 
 /// Check a patch against every invariant. `Ok` means it can be compiled, hashed and written.
@@ -144,45 +149,36 @@ pub fn violations(p: &Patch) -> Vec<Violation> {
         ));
     }
     let mut routes: BTreeSet<RouteAddr> = BTreeSet::new();
+    // The audio routes accepted so far, as (source, destination) module ids: each new one is checked against these
+    // for a loop, so a file with several loops reports each route that closes one.
+    let mut audio: Vec<(&ModuleId, &ModuleId)> = Vec::new();
     for (i, r) in p.routes.iter().enumerate() {
         let at = format!("routes[{i}]");
-        let mut ok = true;
-        if let ModSource::Module(id) = &r.src {
-            match locate(p, id) {
-                Err(e) => {
-                    ok = false;
-                    out.push(Violation::new(format!("{at}.src"), e));
-                }
-                Ok((pos, m)) if pos.section != Section::Modulators => {
-                    ok = false;
-                    out.push(Violation::new(
-                        format!("{at}.src"),
-                        PatchError::NotASource {
-                            id: id.to_string(),
-                            kind: m.kind,
-                        },
-                    ));
-                }
-                Ok(_) => {}
-            }
+        let check = check_route_ends(p, r);
+        let mut ok = check.src_error.is_none() && check.dst_error.is_none();
+        if let Some(e) = check.src_error {
+            out.push(Violation::new(format!("{at}.src"), e));
         }
-        match resolve(p, &r.dst) {
+        match check.dst_error {
             // The module's own value count is reported where the module is; not again for every route to it.
-            Err(PatchError::WrongValueCount { .. }) => ok = false,
-            Err(e) => {
-                ok = false;
-                out.push(Violation::new(format!("{at}.dst"), e));
-            }
-            Ok((_, spec)) if !spec.flags.modulatable => {
+            Some(PatchError::WrongValueCount { .. }) | None => {}
+            Some(e) => out.push(Violation::new(format!("{at}.dst"), e)),
+        }
+        if ok
+            && check.kind == Some(RouteKind::Audio)
+            && let (ModSource::Module(src), Some(dst)) = (&r.src, r.dst.module_id())
+        {
+            if reaches(&audio, dst, src) {
                 ok = false;
                 out.push(Violation::new(
-                    format!("{at}.dst"),
-                    PatchError::NotModulatable {
-                        addr: r.dst.to_string(),
+                    &at,
+                    PatchError::AudioCycle {
+                        route: route_label(r),
                     },
                 ));
+            } else {
+                audio.push((src, dst));
             }
-            Ok(_) => {}
         }
         check_value(
             &format!("{at}.depth"),
@@ -248,6 +244,165 @@ pub fn violations(p: &Patch) -> Vec<Violation> {
         }
     }
     out
+}
+
+/// What a route carries (S2a, lane RTE).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RouteKind {
+    /// Control rate: a modulator, velocity, key, the mod wheel or a macro moves a `modulatable` parameter, through
+    /// the modulation matrix (once per segment).
+    Control,
+    /// Audio rate: a generator's pre-level output feeds an `audio` parameter of a generator (FM, PM, AM, ring
+    /// modulation), per frame, scaled by the route's depth. Never in the modulation matrix.
+    Audio,
+}
+
+/// Whether `src` is a generator of the patch (an audio source).
+pub fn is_generator_source(p: &Patch, src: &ModSource) -> bool {
+    matches!(src, ModSource::Module(id)
+        if p.find(id).is_some_and(|(pos, _)| pos.section == Section::Generators))
+}
+
+/// Whether `dst` names a parameter flagged `audio` (an audio input).
+pub fn is_audio_dest(p: &Patch, dst: &crate::addr::ParamAddr) -> bool {
+    p.spec(dst).is_some_and(|spec| spec.flags.audio)
+}
+
+/// The verdict of [`check_route_ends`].
+#[derive(Debug)]
+pub struct RouteEnds {
+    /// `None` when an end is wrong (or does not resolve).
+    pub kind: Option<RouteKind>,
+    /// What is wrong with the source, reported at `routes[i].src`.
+    pub src_error: Option<PatchError>,
+    /// What is wrong with the destination, reported at `routes[i].dst`. It includes `wrong_value_count` of the
+    /// destination module, which `validate` reports where the module is and not again for each route.
+    pub dst_error: Option<PatchError>,
+}
+
+/// The two ends of a route against the routing contract: the source exists and is a modulator, a built-in or a
+/// generator (`unknown_module`, `not_a_source`); the destination exists (`unknown_module`, `unknown_param`); and then
+/// either a control route (a non-generator source into a `modulatable` parameter: `not_modulatable`) or an audio
+/// route (a generator into an `audio` parameter), with the two mixed up refused (`not_audio_dest`: a generator into
+/// a parameter that is not an audio input; `not_audio_source`: a control source into one that is). `validate` and
+/// the `InsertRoute` op share it, so the file and the op agree on every code. It says nothing about depth, rate,
+/// duplicates or loops.
+pub fn check_route_ends(p: &Patch, r: &Route) -> RouteEnds {
+    let mut src_error = None;
+    let mut generator = false;
+    if let ModSource::Module(id) = &r.src {
+        match locate(p, id) {
+            Err(e) => src_error = Some(e),
+            Ok((pos, m)) => match pos.section {
+                Section::Modulators => {}
+                Section::Generators => generator = true,
+                Section::VoiceFx | Section::Fx => {
+                    src_error = Some(PatchError::NotASource {
+                        id: id.to_string(),
+                        kind: m.kind,
+                    });
+                }
+            },
+        }
+    }
+    let spec = match resolve(p, &r.dst) {
+        Ok((_, spec)) => spec,
+        Err(e) => {
+            return RouteEnds {
+                kind: None,
+                src_error,
+                dst_error: Some(e),
+            };
+        }
+    };
+    let (kind, src_error, dst_error) = match (src_error, generator, spec.flags.audio) {
+        // The source is wrong already; say nothing more about the destination unless it is plainly not a target.
+        (Some(e), _, audio) => (
+            None,
+            Some(e),
+            (!audio && !spec.flags.modulatable).then(|| not_modulatable(r)),
+        ),
+        (None, true, true) => (Some(RouteKind::Audio), None, None),
+        (None, true, false) => (
+            None,
+            None,
+            Some(PatchError::NotAudioDest {
+                src: r.src.to_string(),
+                addr: r.dst.to_string(),
+            }),
+        ),
+        (None, false, true) => (
+            None,
+            Some(PatchError::NotAudioSource {
+                src: r.src.to_string(),
+                addr: r.dst.to_string(),
+            }),
+            None,
+        ),
+        (None, false, false) if !spec.flags.modulatable => (None, None, Some(not_modulatable(r))),
+        (None, false, false) => (Some(RouteKind::Control), None, None),
+    };
+    RouteEnds {
+        kind,
+        src_error,
+        dst_error,
+    }
+}
+
+fn not_modulatable(r: &Route) -> PatchError {
+    PatchError::NotModulatable {
+        addr: r.dst.to_string(),
+    }
+}
+
+/// `src -> dst`, as the errors write a route.
+fn route_label(r: &Route) -> String {
+    format!("{} -> {}", r.src, r.dst)
+}
+
+/// The audio routes of a patch as (source, destination) module ids: every route from a generator to a parameter of a
+/// module. Routes with an end that does not exist are not listed.
+fn audio_edges(p: &Patch) -> Vec<(&ModuleId, &ModuleId)> {
+    p.routes
+        .iter()
+        .filter(|r| is_generator_source(p, &r.src) && is_audio_dest(p, &r.dst))
+        .filter_map(|r| match (&r.src, r.dst.target()) {
+            (ModSource::Module(src), Target::Module(dst)) => Some((src, dst)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether `to` can be reached from `from` along `edges` (a module reaches itself).
+fn reaches(edges: &[(&ModuleId, &ModuleId)], from: &ModuleId, to: &ModuleId) -> bool {
+    let mut seen: Vec<&ModuleId> = vec![from];
+    let mut next = 0;
+    while let Some(&at) = seen.get(next) {
+        if at == to {
+            return true;
+        }
+        next += 1;
+        for &(src, dst) in edges {
+            if src == at && !seen.contains(&dst) {
+                seen.push(dst);
+            }
+        }
+    }
+    false
+}
+
+/// Whether adding the audio route `route` to `p` would close a loop between generators: the route's destination
+/// already reaches its source through the audio routes `p` has, or the two are one module (a self-route). `false`
+/// for a route that is not an audio route. The `InsertRoute` op calls it.
+pub fn closes_audio_cycle(p: &Patch, route: &Route) -> bool {
+    match (&route.src, route.dst.target()) {
+        (ModSource::Module(src), Target::Module(dst))
+            if is_generator_source(p, &route.src) && is_audio_dest(p, &route.dst) =>
+        {
+            reaches(&audio_edges(p), dst, src)
+        }
+        _ => false,
+    }
 }
 
 fn check_amp_env(p: &Patch, out: &mut Vec<Violation>) {

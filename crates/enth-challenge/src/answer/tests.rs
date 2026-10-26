@@ -54,15 +54,51 @@ fn table_text() -> String {
 }
 
 /// `result-params-v1` is frozen: these bytes never change (a new parameter is appended, which changes this hash on
-/// purpose and keeps every old line; a changed line is a new layout).
+/// purpose and keeps every old line; a changed line is a new layout). Lane CAT appended S2a's kinds 7–17 after
+/// `voice` and `master` at F1m, and lane TMP appended `lfo`'s `sync`, `beats` and `one_shot` (indices 7 to 9), so this hash
+/// moved twice and [`f1e_entries_are_unchanged`] pins what F1e froze.
 #[test]
 fn result_params_v1_is_pinned() {
     let hex: String = hex(&Sha256::digest(table_text().as_bytes()));
     assert_eq!(
         hex,
-        "5481b6640da59df3afb7902720221bceefe832c9b92c80793e59ff11dabe9610",
+        "c8063919b2be6721dc80085f8ba11533d6a1b71427efd03fcfd6ac9fc5e2788d",
         "{}",
         table_text()
+    );
+}
+
+/// F1e's entries, the only ones an answer code could carry before F1m, are byte for byte what F1e froze: the lines
+/// of the table text whose owner and index F1e's table had hash to F1e's pin. Appended entries (S2a's kinds, `lfo`'s
+/// tempo parameters) are skipped, so this holds whatever is appended.
+#[test]
+fn f1e_entries_are_unchanged() {
+    const F1E_ROWS: [(&str, usize); 9] = [
+        ("osc", 11),
+        ("noise", 2),
+        ("svf", 5),
+        ("adsr", 5),
+        ("lfo", 7),
+        ("reverb", 10),
+        ("comp", 7),
+        ("voice", 5),
+        ("master", 1),
+    ];
+    let mut old = String::new();
+    for (owner, len) in F1E_ROWS {
+        for line in table_text().lines() {
+            let mut fields = line.split(' ');
+            let (o, i) = (fields.next().unwrap(), fields.next().unwrap());
+            if o == owner && i.parse::<usize>().unwrap() < len {
+                old.push_str(line);
+                old.push('\n');
+            }
+        }
+    }
+    assert_eq!(
+        hex(&Sha256::digest(old.as_bytes())),
+        "9f73b92ffa6c7f393d241226b8a299c0c1cfc3e5b2c5c8720b415842a9b6a9f1",
+        "{old}"
     );
 }
 
@@ -109,18 +145,20 @@ fn result_params_v1_covers_the_catalogue() {
             }
         }
     };
-    // The listed kinds: a reserved S2a kind (`ModuleSpec::hidden`) is refused by the encoder as "not in layout 1"
-    // until it is listed, and must be in the table (or a widened layout, D3) before INT-S2a clears its flag.
-    for kind in ModuleKind::listed() {
-        let (owner, row) = RESULT_PARAMS_V1[kind as usize];
-        assert_eq!(owner, kind.key());
-        check(owner, row, kind.params());
+    // Every kind, the hidden S2a ones too (lane CAT added their rows at F1m), through the kind-to-row map: rows 7 and
+    // 8 are voice and master, so kind k >= 7 is row k + 2. A listed kind must have a row; a later hidden kind may join
+    // without one until its row is appended.
+    for &kind in ModuleKind::ALL {
+        let Some(row) = kind_row(kind) else {
+            assert!(kind.is_hidden(), "{kind}: a listed kind needs a row");
+            continue;
+        };
+        let (owner, entries) = RESULT_PARAMS_V1[row];
+        assert_eq!(owner, kind.key(), "row {row}");
+        check(owner, entries, kind.params());
     }
-    assert_eq!(
-        ModuleKind::listed().count(),
-        KINDS_V1,
-        "a new listed kind is appended to the table"
-    );
+    assert_eq!(RESULT_PARAMS_V1[KINDS_F1E].0, "voice");
+    assert_eq!(RESULT_PARAMS_V1[KINDS_F1E + 1].0, "master");
     check("voice", VOICE_V1, Builtin::Voice.params());
     check("master", MASTER_V1, Builtin::Master.params());
 }
@@ -326,13 +364,12 @@ fn the_wider_fields_round_trip_at_the_bit_level() {
     assert_eq!(r.take(PARAM_BITS as usize).unwrap(), 62);
 }
 
-/// S2a's reserved kinds (7 to 17, `delay` and `ladder` among them) have no table row until the catalogue lane adds
-/// them (lane CAT owns that): a code that names one is `answer_too_new`, kinds 16 and 17 included (`KIND_BITS` 4 stopped
-/// at 15), and the encoder refuses an answer that holds one (`unencodable`, "not in layout 1").
+/// A kind past the catalogue (18 to 63, the last `KIND_BITS` holds) has no row: a code that names one is
+/// `answer_too_new` ("update enth").
 #[test]
-fn a_reserved_kind_has_no_row_yet() {
+fn a_kind_past_the_catalogue_has_no_row() {
     let c = code(1, 5);
-    for kind in KINDS_V1 as u64..ModuleKind::ALL.len() as u64 {
+    for kind in ModuleKind::ALL.len() as u64..1 << KIND_BITS {
         let text = craft(&c, |w| {
             put_op_code(w, OP_ADD_MODULE);
             w.put(kind, KIND_BITS);
@@ -346,24 +383,143 @@ fn a_reserved_kind_has_no_row_yet() {
             "kind {kind}"
         );
     }
-    let target = target_of(&c);
-    let reserved: Vec<&ModuleKind> = ModuleKind::ALL
-        .iter()
-        .filter(|k| **k as usize >= KINDS_V1)
-        .collect();
-    assert_eq!(reserved.len(), ModuleKind::ALL.len() - KINDS_V1);
-    for kind in reserved {
-        let mut with = target.clone();
-        let at = Position {
-            section: kind.section(),
-            index: with.section(kind.section()).len(),
-        };
-        let module = ModuleInstance::new(with.free_id(*kind), *kind);
-        apply(&mut with, &Op::AddModule { at, module }).unwrap();
-        let e = AnswerCode::new(c, 1, &with).unwrap_err();
-        assert_eq!(e.code(), "unencodable", "{kind}: {e}");
-        assert!(e.to_string().contains("not in layout 1"), "{kind}: {e}");
+}
+
+/// A value of `spec` other than its default, reachable on its knob.
+fn off_default(spec: &enth_params::ParamSpec, salt: u32) -> f32 {
+    [0.37, 0.81, 0.13, 0.62, 1.0, 0.0]
+        .into_iter()
+        .map(|u: f32| value(spec, (u + salt as f32 * 0.071) % 1.0))
+        .chain([spec.max(), spec.min()])
+        .find(|v| v.to_bits() != spec.default.to_bits())
+        .unwrap_or_else(|| panic!("{}: no value off its default", spec.key))
+}
+
+/// Lane CAT (F1m): every parameter of S2a's kinds 7–17 round-trips in an answer code. Per kind, two answers: one adds
+/// a module with **every** parameter off its default, the other adds a default module and sets every parameter by
+/// `SetParam` to other values (`ops_between` folds both into the `AddModule`'s (parameter, value) pairs, which use the
+/// same indices as a `SetParam` run, since the start never holds a reserved kind); each also routes a macro to up to
+/// eight modulatable parameters (`InsertRoute` writes the parameter index too). The decoded answer is the stripped
+/// answer exactly, ids included. The kinds stay hidden from the Add menu and `enth modules`, but a patch may name them
+/// by key.
+#[test]
+fn every_s2a_parameter_round_trips() {
+    let challenge = code(3, 77);
+    let target = target_of(&challenge);
+    let mut checked = 0;
+    for &kind in ModuleKind::ALL.iter().filter(|k| k.is_hidden()) {
+        for edit in [false, true] {
+            let mut answer = target.clone();
+            let section = kind.section();
+            // Room in the section: drop modules from its end until one more fits (never the amp envelope).
+            while answer.section(section).len() >= section.max_len() {
+                let id = answer.section(section).last().unwrap().id.clone();
+                apply(&mut answer, &Op::RemoveModule { id }).unwrap();
+            }
+            let id = answer.free_id(kind);
+            let mut module = ModuleInstance::new(id.clone(), kind);
+            if !edit {
+                for (i, spec) in kind.params().iter().enumerate() {
+                    module.values[i] = off_default(spec, i as u32);
+                }
+            }
+            let at = Position {
+                section,
+                index: answer.section(section).len(),
+            };
+            apply(&mut answer, &Op::AddModule { at, module }).unwrap();
+            if edit {
+                for (i, spec) in kind.params().iter().enumerate() {
+                    let addr = ParamAddr::new(Target::Module(id.clone()), spec.key).unwrap();
+                    let value = off_default(spec, 7 + i as u32);
+                    apply(&mut answer, &Op::SetParam { addr, value }).unwrap();
+                }
+            }
+            for (i, spec) in kind
+                .params()
+                .iter()
+                .filter(|s| s.flags.modulatable)
+                .enumerate()
+                .take(8)
+            {
+                let route = Route {
+                    src: ModSource::Macro(MacroIndex::new(i).unwrap()),
+                    dst: ParamAddr::new(Target::Module(id.clone()), spec.key).unwrap(),
+                    depth: 25.0 + i as f32,
+                };
+                let index = answer.routes.len();
+                apply(&mut answer, &Op::InsertRoute { index, route }).unwrap();
+            }
+            let code = AnswerCode::new(challenge, 9, &answer)
+                .unwrap_or_else(|e| panic!("{kind} (edit {edit}): {e}"));
+            let back = AnswerCode::decode(&code.encode())
+                .unwrap_or_else(|e| panic!("{kind} (edit {edit}): {e}"));
+            assert_eq!(back, code, "{kind}");
+            assert_eq!(exact_hash(back.answer()), exact_hash(&answer), "{kind}");
+            assert!(
+                enth_patch::canon::identical(back.answer(), &stripped_of(&answer)),
+                "{kind} (edit {edit})"
+            );
+            let m = back.answer().find(&id).map(|(_, m)| m.clone()).unwrap();
+            for (i, spec) in kind.params().iter().enumerate() {
+                if !edit {
+                    assert_ne!(
+                        m.values[i].to_bits(),
+                        spec.default.to_bits(),
+                        "{kind}.{}",
+                        spec.key
+                    );
+                }
+            }
+            checked += kind.params().len();
+        }
     }
+    // dist 9, wt 18, ott 12, comb 5, formant 5, mseg 59, chorus 9, phaser 9, eq 13, delay 8, ladder 6, twice.
+    assert_eq!(checked, 2 * 153);
+}
+
+/// An MSEG is a route source like any modulator (a voice source to a voice destination), and its last point's
+/// parameters (index 56 to 58, the highest any row uses) are written and read back.
+#[test]
+fn an_mseg_routes_and_its_last_point_round_trips() {
+    let challenge = code(3, 78);
+    let mut answer = target_of(&challenge);
+    let id = answer.free_id(ModuleKind::Mseg);
+    let at = Position {
+        section: Section::Modulators,
+        index: answer.modulators.len(),
+    };
+    apply(
+        &mut answer,
+        &Op::AddModule {
+            at,
+            module: ModuleInstance::new(id.clone(), ModuleKind::Mseg),
+        },
+    )
+    .unwrap();
+    let osc = answer.generators[0].id.clone();
+    let route = Route {
+        src: ModSource::Module(id.clone()),
+        dst: ParamAddr::new(Target::Module(osc), "semi").unwrap(),
+        depth: 12.5,
+    };
+    apply(&mut answer, &Op::InsertRoute { index: 0, route }).unwrap();
+    for (key, value) in [
+        ("points", 16.0),
+        ("time16", 93.75),
+        ("level16", 40.0),
+        ("curve16", -100.0),
+    ] {
+        let addr = ParamAddr::new(Target::Module(id.clone()), key).unwrap();
+        apply(&mut answer, &Op::SetParam { addr, value }).unwrap();
+    }
+    let code = AnswerCode::new(challenge, 3, &answer).unwrap();
+    let back = AnswerCode::decode(&code.encode()).unwrap();
+    assert_eq!(exact_hash(back.answer()), exact_hash(&answer));
+    assert_eq!(
+        kind_row(ModuleKind::Mseg).map(|r| RESULT_PARAMS_V1[r].1.len()),
+        Some(59)
+    );
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -867,18 +1023,12 @@ fn answer_refusals() {
         // Reserved op codes.
         (craft(&c, |w| put_op_code(w, 10)), "answer_too_new"),
         (craft(&c, |w| put_op_code(w, 15)), "answer_too_new"),
-        // A module kind this build lacks: the first reserved one, `ladder` (17), and the last the field holds (63).
+        // A module kind this build lacks: the first past the catalogue (18, after `ladder`) and the last the field
+        // holds (63).
         (
             craft(&c, |w| {
                 put_op_code(w, OP_ADD_MODULE);
-                w.put(7, KIND_BITS);
-            }),
-            "answer_too_new",
-        ),
-        (
-            craft(&c, |w| {
-                put_op_code(w, OP_ADD_MODULE);
-                w.put(17, KIND_BITS);
+                w.put(ModuleKind::ALL.len() as u64, KIND_BITS);
             }),
             "answer_too_new",
         ),

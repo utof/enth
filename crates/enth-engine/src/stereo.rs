@@ -217,6 +217,8 @@ impl StereoPath {
                 io: &mut *io,
                 sync_out: None,
                 sync_in: None,
+                audio_in: None,
+                pre_level: None,
             });
         }
     }
@@ -431,6 +433,8 @@ mod tests {
                 io: &mut *io,
                 sync_out: None,
                 sync_in: None,
+                audio_in: None,
+                pre_level: None,
             });
         }
     }

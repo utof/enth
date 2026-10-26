@@ -50,8 +50,12 @@
 //!   `in_use_as_amp_env`: name another envelope with `SetAmpEnv` first.
 //! - A route may never send a per-voice source to a global destination (`route_rate_mismatch`). Changing an LFO's
 //!   `scope` is checked against its routes the same way, so the rule survives structural edits.
-//! - There is no cycle rule: a modulator may modulate an earlier one, or itself, and reads that source's
-//!   previous-segment value (docs/design.md §2).
+//! - There is no cycle rule for control routes: a modulator may modulate an earlier one, or itself, and reads that
+//!   source's previous-segment value (docs/design.md §2).
+//! - **Audio routes** (S2a lane RTE): a generator may drive only an `audio` parameter (`not_audio_dest`), an `audio`
+//!   parameter takes only a generator (`not_audio_source`), and audio routes never form a loop, a generator driving
+//!   itself included (`audio_cycle`): audio runs in one direction, and feedback is a parameter inside a module. The
+//!   rules are `validate::check_route_ends` and `validate::closes_audio_cycle`, shared with the file layer.
 
 use core::borrow::Borrow;
 
@@ -62,7 +66,8 @@ use crate::addr::{
 };
 use crate::catalogue::{Builtin, MACRO_VALUE, MASTER_PARAMS, ModuleKind, Rate, VOICE_PARAMS};
 use crate::error::{OpError, PatchError};
-use crate::model::{MAX_ROUTES, ModuleInstance, Patch, PatchMeta, Route, Section};
+use crate::model::{MAX_ROUTES, ModuleInstance, Patch, PatchMeta, Route};
+use crate::validate::{check_route_ends, closes_audio_cycle};
 
 /// One edit to a patch. See the [module docs](self) for what each does and its inverse.
 ///
@@ -620,19 +625,15 @@ fn move_module(p: &mut Patch, id: &ModuleId, to: Position) -> Result<Vec<Op>, Op
 
 fn check_route(p: &Patch, route: &Route) -> Result<f32, PatchError> {
     let depth = canonical_value(&DEPTH, route.depth)?;
-    if let ModSource::Module(id) = &route.src {
-        let (pos, m) = locate(p, id)?;
-        if pos.section != Section::Modulators {
-            return Err(PatchError::NotASource {
-                id: id.to_string(),
-                kind: m.kind,
-            });
-        }
+    // The routing contract (control and audio routes, S2a lane RTE) is `validate`'s, shared so a file and an op
+    // refuse the same routes with the same codes.
+    let ends = check_route_ends(p, route);
+    if let Some(e) = ends.src_error.or(ends.dst_error) {
+        return Err(e);
     }
-    let (_, spec) = resolve(p, &route.dst)?;
-    if !spec.flags.modulatable {
-        return Err(PatchError::NotModulatable {
-            addr: route.dst.to_string(),
+    if closes_audio_cycle(p, route) {
+        return Err(PatchError::AudioCycle {
+            route: route_text(&route.src, &route.dst),
         });
     }
     check_route_rate(p, route, None)?;

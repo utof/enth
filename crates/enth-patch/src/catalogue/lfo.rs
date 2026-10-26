@@ -179,4 +179,28 @@ mod tests {
             "no item was added to the pinned lfo.shape"
         );
     }
+
+    /// Allowing `modulatable` on an enum (S2a, lane TMP) is opt-in per parameter, and `lfo.beats` is the only one that
+    /// opts in: every other enum in the catalogue, builtins and reserved kinds included, stays non-modulatable.
+    #[test]
+    fn lfo_beats_is_the_only_modulatable_enum() {
+        use super::super::{Builtin, ModuleKind};
+        use enth_params::Kind;
+        let mut found = Vec::new();
+        for kind in ModuleKind::ALL {
+            for p in kind.params() {
+                if matches!(p.kind, Kind::Enum(_)) && p.flags.modulatable {
+                    found.push(format!("{}.{}", kind.key(), p.key));
+                }
+            }
+        }
+        for b in Builtin::ALL {
+            for p in b.params() {
+                if matches!(p.kind, Kind::Enum(_)) && p.flags.modulatable {
+                    found.push(format!("{}.{}", b.key(), p.key));
+                }
+            }
+        }
+        assert_eq!(found, ["lfo.beats"]);
+    }
 }
