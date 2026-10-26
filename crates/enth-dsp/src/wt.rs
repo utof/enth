@@ -526,9 +526,11 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// What a segment works out before its sample loop, shared by one voice and by each copy of a unison voice
-/// ([`unison`]): the phase modulation in cycles and its steepest step, the warp (the identity at amount 0) with its
-/// primary parameter at the two ends, and the warp's steepest read-rate gain.
+/// What a segment works out before its sample loop, for each copy of a unison voice ([`unison`]): the phase
+/// modulation in cycles and its steepest step, the warp (the identity at amount 0) with its primary parameter at the
+/// two ends, and the warp's steepest read-rate gain. [`Voice::render`] works the same out inline, step for step (kept
+/// apart: calling this from it costs about 1 % of the plain oscillator's instructions); the unison tests hold the
+/// two to the same bits.
 struct Prologue<const N: usize> {
     off: [f32; N],
     pm_slope: f32,
@@ -624,17 +626,41 @@ impl Voice {
 
     /// Render `N` frames into `out`.
     pub fn render<const N: usize>(&mut self, s: &Segment<'_, N>, out: &mut [f32; N]) {
-        // 1 and 2. The phase modulation in cycles and its steepest step, and the warp's constants at the two ends.
-        let Prologue {
-            off,
-            pm_slope,
-            warp,
-            x,
-            steepest,
-        } = prologue(s, &mut self.last_off);
+        // 1. The phase modulation in cycles, and its steepest step across the segment.
+        let mut off = [0.0f32; N];
+        let mut pm_slope = 0.0f32;
+        if let Some(pm) = s.pm {
+            let (g0, dg) = (s.pm_gain[0], s.pm_gain[1] - s.pm_gain[0]);
+            let mut last = self.last_off;
+            for i in 0..N {
+                let o = (g0 + dg * Ramp::<N>::W[i]) * pm[i];
+                off[i] = o;
+                pm_slope = pm_slope.max((o - last).abs());
+                last = o;
+            }
+            self.last_off = flush(last);
+        } else {
+            self.last_off = 0.0;
+        }
+
+        // 2. The warp's constants at the two ends.
+        let warp = if s.warp_amount[0] == 0.0 && s.warp_amount[1] == 0.0 {
+            Warp::Off
+        } else {
+            s.warp
+        };
+        let x = [
+            warp.primary(s.warp_amount[0]),
+            warp.primary(s.warp_amount[1]),
+        ];
 
         // 3. The mip level from the tracked effective increment.
         let dt_max = s.dt[0].max(s.dt[1]);
+        let steepest = if warp == Warp::Off {
+            1.0
+        } else {
+            warp.slope(x[0]).max(warp.slope(x[1]))
+        };
         self.tracked = flush((self.tracked * TRACK_DECAY).max(steepest * (dt_max + pm_slope)));
         let level = level_for(self.tracked, s.limit);
         let new = Reader::new(s.table, level, s.frame_pos);

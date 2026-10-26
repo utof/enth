@@ -85,6 +85,55 @@ pub(crate) fn unison_count(values: &[f32]) -> usize {
     })
 }
 
+/// The mix of voice `v` at the start and at the end of the segment, from the smoothed parameters, through `cache` (the
+/// voice's end-of-segment mix of the last call). A key that matches the cache costs nothing: the end of one segment
+/// is the start of the next.
+fn mixes(cache: &mut Option<CachedMix>, n: usize, p: &VoiceParams<'_>, v: usize) -> [Mix; 2] {
+    let key = |detune: f32, blend: f32, spread: f32| {
+        [
+            n as u32,
+            detune.to_bits(),
+            blend.to_bits(),
+            spread.to_bits(),
+        ]
+    };
+    let at = |prev: bool| {
+        if prev {
+            (
+                p.prev(WtParam::Detune, v),
+                p.prev(WtParam::Blend, v),
+                p.prev(WtParam::Spread, v),
+            )
+        } else {
+            (
+                p.cur(WtParam::Detune, v),
+                p.cur(WtParam::Blend, v),
+                p.cur(WtParam::Spread, v),
+            )
+        }
+    };
+    let build = |(detune, blend, spread): (f32, f32, f32)| {
+        Mix::new(n, detune, blend / 100.0, spread / 100.0)
+    };
+    let (e0, e1) = (at(true), at(false));
+    let (k0, k1) = (key(e0.0, e0.1, e0.2), key(e1.0, e1.1, e1.2));
+    let cached = *cache;
+    let m0 = match cached {
+        Some(c) if c.key == k0 => c.mix,
+        _ => build(e0),
+    };
+    let m1 = if k1 == k0 {
+        m0
+    } else {
+        match cached {
+            Some(c) if c.key == k1 => c.mix,
+            _ => build(e1),
+        }
+    };
+    *cache = Some(CachedMix { key: k1, mix: m1 });
+    [m0, m1]
+}
+
 /// The table the catalogue's `table` enum names.
 fn table_kind(table: WtTable) -> WtKind {
     match table {
@@ -138,56 +187,6 @@ impl Wt {
     #[must_use]
     pub fn copies(&self) -> usize {
         self.unison
-    }
-
-    /// The mix of voice `v` at the start and at the end of the segment, from the smoothed parameters. A key that
-    /// matches the cache costs nothing: the end of one segment is the start of the next.
-    fn mixes(&mut self, v: usize, p: &VoiceParams<'_>) -> [Mix; 2] {
-        let n = self.unison;
-        let key = |detune: f32, blend: f32, spread: f32| {
-            [
-                n as u32,
-                detune.to_bits(),
-                blend.to_bits(),
-                spread.to_bits(),
-            ]
-        };
-        let k0 = key(
-            p.prev(WtParam::Detune, v),
-            p.prev(WtParam::Blend, v),
-            p.prev(WtParam::Spread, v),
-        );
-        let k1 = key(
-            p.cur(WtParam::Detune, v),
-            p.cur(WtParam::Blend, v),
-            p.cur(WtParam::Spread, v),
-        );
-        let build = |detune: f32, blend: f32, spread: f32| {
-            Mix::new(n, detune, blend / 100.0, spread / 100.0)
-        };
-        let cached = self.mix[v];
-        let m0 = match cached {
-            Some(c) if c.key == k0 => c.mix,
-            _ => build(
-                p.prev(WtParam::Detune, v),
-                p.prev(WtParam::Blend, v),
-                p.prev(WtParam::Spread, v),
-            ),
-        };
-        let m1 = if k1 == k0 {
-            m0
-        } else {
-            match cached {
-                Some(c) if c.key == k1 => c.mix,
-                _ => build(
-                    p.cur(WtParam::Detune, v),
-                    p.cur(WtParam::Blend, v),
-                    p.cur(WtParam::Spread, v),
-                ),
-            }
-        };
-        self.mix[v] = Some(CachedMix { key: k1, mix: m1 });
-        [m0, m1]
     }
 
     /// The table this oscillator plays.
@@ -314,7 +313,6 @@ impl VoiceProcessor for Wt {
                 ),
                 None => (false, false),
             };
-            let mix = (self.unison >= 2).then(|| self.mixes(v, &p));
             // Radians of phase per unit of input -> cycles.
             let pm_gain = |index: f32, trim: f32| index * (trim * 0.01) * CYCLES_PER_RADIAN;
             let seg = Segment {
@@ -348,7 +346,7 @@ impl VoiceProcessor for Wt {
                 p.cur(WtParam::Level, v) * 0.01,
             );
 
-            let Some(mix) = mix else {
+            if self.unison < 2 {
                 let out = &mut cx.io[v];
                 self.voice[v].render(&seg, out);
                 apply_am(out, a0, a1, am);
@@ -358,9 +356,10 @@ impl VoiceProcessor for Wt {
                 }
                 apply_gain(out, l0, l1);
                 continue;
-            };
+            }
 
             // Unison (lane UNI): the copies on lanes. The routes carry the mono mix, whatever the spread does.
+            let mix = mixes(&mut self.mix[v], self.unison, &p, v);
             let useg = UnisonSegment { seg, mix };
             if let Some(io_r) = cx.io_r.as_deref_mut() {
                 let mut mid = cx.pre_level.as_deref_mut().map(|pre| &mut pre[v]);
