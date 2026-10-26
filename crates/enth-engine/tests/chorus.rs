@@ -879,6 +879,10 @@ fn the_plan_swap_carries_the_delay_lines() {
 /// Wall-clock time is information only (docs/benchmarks.md, "Measurement hygiene"); `docs/dsp/chorus.md` quotes it.
 #[test]
 #[ignore = "timing, information only: run it by hand under the exclusive lock"]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a clock, because the thing measured is wall time; it gates nothing and runs only by hand"
+)]
 fn swap_copy_cost_is_microseconds() {
     use enth_dsp::chorus::Chorus;
     use std::time::Instant;
