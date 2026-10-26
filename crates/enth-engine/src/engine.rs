@@ -685,7 +685,7 @@ impl Engine {
                     }
                     Cmd::Depth { epoch, id, depth } => {
                         if epoch == self.plan.epoch {
-                            self.plan.matrix.set_depth(usize::from(id.0), depth);
+                            self.plan.set_route_depth(id, depth);
                         } else {
                             self.stale_events += 1;
                         }
@@ -1119,6 +1119,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
         master_builtin,
         macros,
         matrix,
+        audio,
         vmod_cur,
         vmod_prev,
         gmod_cur,
@@ -1131,6 +1132,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     voice_table.advance(active, reset);
     global_table.advance();
     matrix.advance_depths();
+    audio.advance_depths();
     let routed = !matrix.is_empty();
     let mut macro_values = [0.0; MACRO_SOURCES];
     macro_values.copy_from_slice(&global_table.cur[macros.range()]);
@@ -1192,7 +1194,29 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     for &v in active {
         buses.voice[v] = [0.0; SEG];
     }
-    for (g, slot) in generators.iter_mut().enumerate() {
+    // With audio routes (lane RTE) the generators run in route order, each into its own buffer, and sum in patch
+    // order (`routing`); the plain loop below then has nothing left to run. Without, it is the only path.
+    if !audio.is_empty() {
+        audio.render(active, *sync_master, buses.voice, buses.sync, |g, ports| {
+            let slot = &mut generators[g];
+            slot.module.process(&mut VoiceCx {
+                voices: active,
+                notes,
+                params: voice_table.view(slot.params),
+                io: ports.io,
+                sync_out: ports.sync_out,
+                sync_in: ports.sync_in,
+                audio_in: ports.audio_in,
+                pre_level: ports.pre_level,
+            });
+        });
+    }
+    let plain = if audio.is_empty() {
+        generators.len()
+    } else {
+        0
+    };
+    for (g, slot) in generators.iter_mut().enumerate().take(plain) {
         let (sync_out, sync_in) = match *sync_master {
             Some(m) if g == m => {
                 for &v in active {
@@ -1210,6 +1234,8 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             io: buses.scratch,
             sync_out,
             sync_in,
+            audio_in: None,
+            pre_level: None,
         });
         for &v in active {
             for (acc, x) in buses.voice[v].iter_mut().zip(&buses.scratch[v]) {
@@ -1225,6 +1251,8 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             io: buses.voice,
             sync_out: None,
             sync_in: None,
+            audio_in: None,
+            pre_level: None,
         });
     }
     *buses.left = [0.0; SEG];

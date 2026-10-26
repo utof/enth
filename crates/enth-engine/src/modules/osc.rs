@@ -252,6 +252,10 @@ impl VoiceProcessor for Osc {
                     }
                 }
             }
+            // An audio route leaves this oscillator (lane RTE): what travels is the output before the level ramp.
+            if let Some(pre) = cx.pre_level.as_deref_mut() {
+                pre[v] = *out;
+            }
             apply_level(
                 out,
                 p.prev(OscParam::Level, v) * 0.01,

@@ -546,6 +546,8 @@ fn step(m: &mut ModuleImpl, values: &[f32], k: usize, notes: &NoteState) -> Vec<
                 io: &mut io,
                 sync_out: None,
                 sync_in: None,
+                audio_in: None,
+                pre_level: None,
             });
             VOICES.iter().flat_map(|&v| io[v]).collect()
         }
