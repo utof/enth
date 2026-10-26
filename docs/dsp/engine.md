@@ -123,6 +123,60 @@ During a crossfade, steps 3–8 run for both plans (the replaced one first) over
 - **Voice bus and pan (decided for F2):** voices are mono (one generator sum per voice, so the per-voice effects run once, not twice), placed into a stereo bus by `voice.pan` with a constant-power law: `θ = (pan + 1)·π/4`, gains `(cos θ, sin θ)` in `f64` via `libm`, −3 dB and exactly equal at the centre, exactly `(1, 0)` and `(0, 1)` at the ends. The pan gains ramp with the amp gain. Effects (`fx`) are stereo. Unison spread would need a stereo voice bus; it is not in P1.
 - **Master:** `master.level` (dB → gain through `math::db_to_gain`) ramps per segment and is skipped at exactly 0 dB. The pan and master gain caches live in the plan (`plan::Output`) and are carried at a swap.
 
+## Stereo voice path
+
+Lane SVP (S2a, freeze F1m); `stereo.rs`, with call sites in `plan.rs` and `engine.rs`. Until S2a a voice was mono from the generator sum to the pan stage (the bullet "Voice bus and pan" above). Unison spread (lane UNI) and a stereo voice effect need two channels in between, so a plan can now run its voices in stereo. Research report 06 §3.2; phase-s2.md, the SVP row.
+
+**The flag.** A plan carries one `stereo` flag (`Plan::is_stereo`), set in `compile_with(patch, cfg, mode)`; `compile` is its `StereoMode::Auto` case. `Auto` takes `stereo::patch_needs_stereo(patch)`, which is **`false` for every patch today**: no generator or voice effect makes a per-voice stereo signal. Lane UNI replaces its body (a `wt` with unison spread above 0). `StereoMode::Forced` sets the flag for any patch, which is how tests and the bench run the stereo path with mono content. The flag is a property of a compiled plan: changing it is a recompile and a swap, never an edit.
+
+**While the flag is clear nothing changes.** There are no right-channel instances, no bus copy and no second balance loop. The engine tests the flag once per segment and once per active voice. On the G1 bench the mono path moved by **+246,505 instructions of 602,615,188 (+0.04 %, 2.6 per frame)**, measured on the same machine before and after (2026-10-26, gungraun 0.20.0); all 73 goldens are unchanged.
+
+**While it is set,** step 7 changes in three places and nowhere else:
+
+1. After the generator sum, `StereoPath::split` copies each active voice's left bus to the right bus: a mono source is the same signal on both channels. (Lane UNI's stereo generator will write its right channel here instead; `split` is the one function that changes.)
+2. The `voice_fx` chain runs on the left bus as before, then **the same chain runs again on the right bus**: every `voice_fx` module has a second instance, built in `compile` from the same patch values (`StereoPath::mirror`), in the same order. A right instance shares its left twin's **parameter span**, so there is one set of knobs, smoothers and modulation routes and no new `ParamId`, `PlanMap` entry or answer-code field; its **state is its own**. Two modules of one kind keep separate state on each channel, as S2 rule 3 asks.
+3. The amp stage and the pan become `stereo::mix_voice`, the balance below.
+
+**Seeds** come from the module id and the channel. The left instance keeps the mono key, `fnv1a64(id)`, so everything it does is the mono path's. The right instance gets `channel_key(key, Right) = derive(key, RIGHT_STREAM)` in both places a module sees a key: `VoiceStart::seed` (`voice_seed(render_seed, key, note_index)`) and `VoiceStart::module_key` (the `seeded` phase mode's rule). Seeds still never depend on parameter values or on the patch hash. No voice effect reads its seed today, so the channels are bit-equal at zero spread. A voice effect that does use random numbers in its audio path would decorrelate its right channel, which is what a stereo effect wants; one that must equal mono at spread 0 must not.
+
+**The balance law.** `voice.pan` (−100…+100 %) on a stereo voice is a **constant-power balance**: each channel is scaled by the mono pan law's gain for its own side and is never mixed into the other. With `(gl, gr) = (cos θ, sin θ)`, `θ = (pan + 1)·π/4` (`constant_power_pan`, in `f64` via `libm`) and `amp` the amp envelope's per-sample ramp:
+
+```text
+out_l += x_l · amp · gl            out_r += x_r · amp · gr
+```
+
+- **A mono source gives the mono path's bits on both channels.** This fixes the law. Stereo with zero spread must equal mono, so the gains must be the mono law's, and `mix_voice` forms each channel's product exactly as the mono stage does (the same cached and ramped `(gl, gr)`, the same `a0·q`/`a1·p − a0·q` ramp, the same steal-fade factor, in the same order). A unity-centre balance (the console kind) cannot meet it: it would make a stereo voice 3 dB louder than the same voice with the flag clear.
+- **The centre is −3 dB per channel**, hard left passes the left channel at unity and silences the right, hard right the opposite: a balance drops the far channel, it does not fold it in.
+- **Power:** for two uncorrelated channels of equal power the sum is constant over the whole range (`cos²θ + sin²θ = 1`), as a panned mono voice's is.
+- The pan gains, their ramps and the steal fades are the mono stage's, so the swap carries them (`Plan::out`) and a glide or a `key → voice.pan` route behaves the same.
+
+**Swap carry** (`Plan::carry_from` → `StereoPath::carry_from`, on the audio thread, no allocation). The right instances of the new plan exist already: `compile` built them on the main thread.
+
+| Old plan | New plan | Right instances | Crossfade |
+| --- | --- | --- | --- |
+| stereo | stereo | pair with the old right instance of the same (id, kind) and copy its state; one with no partner starts every active voice (right-channel seeds) | only if a module was added or removed, as for any edit |
+| mono | stereo | copy the **old left** instance's state: the signal was mono, so the right channel continues exactly as the left was | **yes** |
+| stereo | mono | none; the old plan's go back with it on the return ring and are freed on the main thread | **yes** |
+| mono | mono | none | as before |
+
+A flag change counts as a structural change, so the swap crossfades (256 frames, the equal-gain raised cosine; the old plan keeps running its own path). With mono content the two plans give the same bits and the fade is the identity, so turning the flag on or off cannot click; with real stereo content (lane UNI) the fade carries the change over 256 frames instead of one sample. A toggle during a crossfade waits in the ring like any plan. The cost of a flag change is the crossfade's: both plans run for 8 segments, and the right instances' state is copied with the rest.
+
+**Real-time.** The right-channel instances, the 4 KB right voice bus (`Buses::voice_r`, in the boxed `Buses`) and the right chain's parameter views are all allocated in `compile` or `Engine::new`. `process` and the swap allocate nothing with the flag on (`assert_no_alloc` over rendering, a burst of steals through a four-effect chain, and 30 toggles with a one-slot return ring).
+
+**CPU** (instruction counts, gungraun, G1 = `benches/g1.rs`, 16 voices, 2 s, 2026-10-26):
+
+| Run | Instructions | Per frame | Against |
+| --- | --- | --- | --- |
+| G1, main `2809273` | 602,615,188 | 6,277 | — |
+| G1, this branch (flag clear) | 602,861,693 | 6,280 | +0.04 %; budget 650,000,000 |
+| G1, flag forced on (`benches/stereo.rs`) | 647,369,152 | 6,743 | +7.4 % over the mono path |
+
+Forced stereo on G1 costs the second `svf` per voice, the bus copy and the two-channel balance: **+464 instructions per frame**; the reverb and the compressor run once. A patch whose voice chain is heavier (S2a's distortion, comb, formant and ladder) pays that chain twice, which is the price of a stereo voice effect; the G2 reference patch (lane G2B) measures it with unison. Lane UNI's cost is its own.
+
+**What lane UNI and the later module lanes use.** UNI turns the flag on in `patch_needs_stereo` (a function of the patch's values only, never of a running plan) and writes its right channel where `split` is called. A voice effect needs nothing: it is instantiated twice by the engine, and its module API did not change. A module that wants to know its channel does not exist yet; if one does, it gets a field in `VoiceStart` rather than a second trait.
+
+**Tests.** `stereo.rs` (unit): the key rule (pinned) and the right instance's start; the right chain equals a second mono instance fed the right input; the balance arithmetic against the mono stage, hard left and right, no leakage, constant power; the carry for stereo to stereo (each channel keeps its own state, with different states in the channels so the test is not vacuous), mono to stereo (right from the old left) and an added module. `tests/stereo.rs`: forced stereo equals mono on both channels for G1, every voice mode with steals and glide, every voice-effect kind (two filters, `dist`, `comb`, `formant`, `ladder`), pans from −100 to +100 with a `key → voice.pan` route and a cutoff LFO, at host blocks 32, 100 and 512; a recompile, an edit, an added and a removed effect, and both toggles; thirty toggles with a return ring of one; steals through a four-effect chain; a 40 s tail (no subnormals in output or in the right instances' state, no voices left) — all under `assert_no_alloc`. `tests/golden/tests/stereo_path.rs`: the flag is clear for each of the 72 patch cases in `cases/`, and each renders the same bits on both channels with the flag forced on (`enth_render::render_with_stereo`), which ties the stereo path to the existing hashes on every target without new files. `RenderStats::stereo` reports the flag.
+
 ## Plan swap
 
 `swap.rs` (rings, `Link`), `plan.rs` (`Plan::carry_from`), `engine.rs` (step 1, the crossfade). Design.md §3; report 01 §5.

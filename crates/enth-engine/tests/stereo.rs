@@ -437,3 +437,28 @@ fn rendering_with_the_flag_on_allocates_nothing_even_with_every_voice_stolen() {
     assert!(e.stats().stolen_voices > 0, "steals happened");
     assert_eq!(e.stats().dropped_notes, 0);
 }
+
+#[test]
+fn a_40_s_release_tail_through_the_stereo_path_has_no_subnormals_and_every_voice_ends() {
+    // tests/tail.rs for a forced-stereo plan: the right instances' state is scanned too (`Engine::subnormals`).
+    let patch = common::every_kind_patch(3_000.0);
+    let mut e = Engine::new(plan(&patch, StereoMode::Forced), SEED);
+    let notes = vec![
+        note(48, 0, 48_000),
+        note(55, 0, 48_000),
+        note(60, 960, 48_000),
+        note(64, 1_920, 52_800),
+    ];
+    let (mut output, mut state, mut non_finite, mut calls) = (0, 0, 0, 0usize);
+    drive(&mut e, &events(&notes), 40 * 48_000, 512, |e, l, r| {
+        output += l.iter().chain(r).filter(|x| x.is_subnormal()).count();
+        non_finite += l.iter().chain(r).filter(|x| !x.is_finite()).count();
+        if calls.is_multiple_of(16) {
+            state = state.max(e.subnormals());
+        }
+        calls += 1;
+    });
+    state = state.max(e.subnormals());
+    assert_eq!((output, state, non_finite), (0, 0, 0));
+    assert_eq!(e.active_voices().len(), 0, "voices must end below -100 dB");
+}

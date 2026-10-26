@@ -1196,6 +1196,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     }
 
     // 7. Voices.
+    let stereo_on = stereo.is_on();
     for &v in active {
         buses.voice[v] = [0.0; SEG];
     }
@@ -1224,7 +1225,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             }
         }
     }
-    if stereo.is_on() {
+    if stereo_on {
         StereoPath::split(active, buses.voice, buses.voice_r);
     }
     for slot in voice_fx.iter_mut() {
@@ -1237,7 +1238,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             sync_in: None,
         });
     }
-    if stereo.is_on() {
+    if stereo_on {
         stereo.process(active, notes, voice_table, buses.voice_r);
     }
     *buses.left = [0.0; SEG];
@@ -1261,7 +1262,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
         let a1 = vmod_cur[amp][v];
         let (l0, r0) = (a0 * ql, a0 * qr);
         let (dl, dr) = (a1 * pl - l0, a1 * pr - r0);
-        if stereo.is_on() {
+        if stereo_on {
             let (xl, xr) = (&buses.voice[v], &buses.voice_r[v]);
             let g = Gains { l0, dl, r0, dr };
             mix_voice(buses.left, buses.right, xl, xr, g, cx.voices.fade(v));
