@@ -1,0 +1,16 @@
+description = "S2a FLT, formant mix: the vowel 'o' (F1 360 Hz, F2 640 Hz) at resonance 80 % blended 40 % with the dry saw at 110 Hz (key 45): the body stays, the vowel colours it. Guards the blend."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.8, on_s = 0.0, off_s = 0.6 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "formant1", kind = "formant", params = { f1 = 360, f2 = 640, resonance = 80, mix = 40 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

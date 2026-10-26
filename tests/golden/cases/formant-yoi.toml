@@ -1,0 +1,23 @@
+description = "S2a FLT, the 'yoi' of report 04 and preset S6: a saw at 165 Hz (key 52) through F1 240 Hz and F2 2400 Hz, a one-shot envelope (350 ms up, 350 ms down) routed to f2 at -57.4 % (down to 640 Hz) and to f1 at +17.6 % (up to 360 Hz): i, o, i. Resonance 70 %. Guards the per-sample coefficient ramps along a sweep of both formants and the log-scale route depths."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [{ key = 52, velocity = 0.8, on_s = 0.0, off_s = 1.4 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "formant1", kind = "formant", params = { f1 = 240, f2 = 2400, resonance = 70 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "env2", kind = "adsr", params = { attack = 350, decay = 350, sustain = 0, release = 0 } },
+]
+routes = [
+    { src = "env2", dst = "formant1.f2", depth = -57.4 },
+    { src = "env2", dst = "formant1.f1", depth = 17.6 },
+]
