@@ -14,8 +14,9 @@ mod common;
 
 use common::{Note, SEED, SR, bits, drive, engine, events, id, note, render};
 use enth_dsp::alias::{FFT_LEN, Measure, Sweep};
+use enth_dsp::util::math::{log2, log10, pow};
 use enth_engine::module::count_subnormals;
-use enth_patch::catalogue::{AdsrParam, CombParam, LfoParam, OscParam, Wave};
+use enth_patch::catalogue::{AdsrParam, CombParam, FormantParam, LfoParam, OscParam, Wave};
 use enth_patch::{ModuleInstance, ModuleKind, Patch, Route};
 
 #[cfg(debug_assertions)]
@@ -68,6 +69,10 @@ fn held_after(patch: &Patch, key: u8, preroll: usize) -> Vec<f32> {
 }
 
 /// The aliasing sweep of `patch` over `keys`, printed for the docs, asserted below `bound_db`.
+#[allow(
+    clippy::print_stderr,
+    reason = "test diagnostics: the sweep table the docs quote"
+)]
 fn alias_sweep(patch: &Patch, keys: &[u8], preroll: usize, bound_db: f64, what: &str) -> Sweep {
     let sweep = Sweep::run_keys(keys, f64::from(SR), &Measure::REPORT_02, |key| {
         held_after(patch, key, preroll)
@@ -374,7 +379,7 @@ fn amplitude_at(x: &[f32], hz: f64, n: usize) -> f64 {
 /// out over the same sine without the module, measured over the last 32,768 of 240,000 frames (a ring at feedback
 /// 90 % has fallen by 1e-5 by then). The sine is `440 · 2^((key − 69)/12)` Hz.
 fn sine_gain_db(m: Option<ModuleInstance>, key: u8) -> f64 {
-    let hz = 440.0 * 2.0f64.powf((f64::from(key) - 69.0) / 12.0);
+    let hz = 440.0 * pow(2.0, (f64::from(key) - 69.0) / 12.0);
     let mut patch = sine_patch();
     patch.modulators[0].values[AdsrParam::Sustain.index()] = 100.0;
     let dry = {
@@ -386,7 +391,7 @@ fn sine_gain_db(m: Option<ModuleInstance>, key: u8) -> f64 {
         None => patch,
     };
     let (l, _, _) = render(&patch, &[note(key, 0, 400_000)], 240_000, 512, SEED);
-    20.0 * (amplitude_at(&l, hz, 32_768) / dry).log10()
+    20.0 * log10(amplitude_at(&l, hz, 32_768) / dry)
 }
 
 /// The defining response, end to end: a sine through the comb at three keys (C2, C4, C6), with the comb's `semi`
@@ -397,7 +402,7 @@ fn sine_gain_db(m: Option<ModuleInstance>, key: u8) -> f64 {
 /// about 1 dB, hid the shape, where a sine is exact.)
 #[test]
 fn the_comb_gain_at_its_teeth_and_valleys_is_the_closed_forms() {
-    let valley_db = 20.0 * (0.1f64 / 1.9).log10();
+    let valley_db = 20.0 * log10(0.1f64 / 1.9);
     for fb in [90.0f32, -90.0] {
         for key in [36u8, 60, 84] {
             // On a tooth the sine is at k·f for fb > 0 and at (k − ½)·f for fb < 0 (the comb has gone down an octave).
@@ -411,14 +416,14 @@ fn the_comb_gain_at_its_teeth_and_valleys_is_the_closed_forms() {
             } else {
                 &[1.0, 2.0, 3.0]
             };
-            let sine_hz = 440.0 * 2.0f64.powf((f64::from(key) - 69.0) / 12.0);
+            let sine_hz = 440.0 * pow(2.0, (f64::from(key) - 69.0) / 12.0);
             for (what, ratios, target_db, tol_db) in [
                 ("tooth", teeth, 0.0, 0.2),
                 ("valley", valleys, valley_db, 0.2),
             ] {
                 for &r in ratios {
                     // The comb's frequency is the sine's over r: semi = −12·log2(r) at 100 % key tracking.
-                    let semi = (-12.0 * r.log2()) as f32;
+                    let semi = (-12.0 * log2(r)) as f32;
                     let semi = if semi == 0.0 { 0.0 } else { semi }; // a patch holds no -0.0
                     if sine_hz / r < 20.0 {
                         continue;
@@ -431,13 +436,12 @@ fn the_comb_gain_at_its_teeth_and_valleys_is_the_closed_forms() {
                         SR,
                     );
                     let closed = 20.0
-                        * enth_dsp::comb::response(
+                        * log10(enth_dsp::comb::response(
                             &t,
                             f64::from(fb) / 100.0,
                             sine_hz,
                             f64::from(SR),
-                        )
-                        .log10();
+                        ));
                     assert!(
                         (measured - closed).abs() < 0.05,
                         "fb {fb}, key {key}, {what} {r}: engine {measured:.3} dB, closed form {closed:.3} dB"
@@ -608,6 +612,220 @@ fn a_comb_never_allocates_in_process() {
     lfo.values[LfoParam::Rate.index()] = 30.0;
     p.modulators.push(lfo);
     p.routes = vec![route("lfo1", "comb1.semi", 80.0)];
+    let out = guarded(&p, &phrase(), 48_000);
+    assert!(out.iter().all(|x| x.is_finite()) && out.iter().any(|&x| x != 0.0));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// formant
+// ---------------------------------------------------------------------------------------------------------------
+
+fn formant(set: &[(FormantParam, f32)]) -> ModuleInstance {
+    let set: Vec<(usize, f32)> = set.iter().map(|&(p, v)| (p.index(), v)).collect();
+    module("formant1", ModuleKind::Formant, &set)
+}
+
+/// The formant for a sine at key `key` with the first formant on it: `f1` is the sine's frequency clamped into the
+/// catalogue's 100 Hz … 1 kHz and `shift` brings the rest (the sine at any key from 25 Hz to 4 kHz lands exactly on a
+/// peak, `M` high), at `resonance` percent. A sine far from the peaks would be attenuated by tens of dB, and the
+/// measure (alias power over harmonic power) would read the engine's sine floor shaped by the filter, not aliasing.
+fn formant_on_the_sine(key: u8, resonance: f32) -> ModuleInstance {
+    let hz = 440.0 * pow(2.0, (f64::from(key) - 69.0) / 12.0);
+    let f1 = hz.clamp(100.0, 1_000.0);
+    let shift = 12.0 * log2(hz / f1);
+    formant(&[
+        (FormantParam::F1, f1 as f32),
+        (FormantParam::Shift, shift as f32),
+        (FormantParam::Resonance, resonance),
+    ])
+}
+
+/// A formant is a linear filter; the measure reads the engine's own sine floor through it. The sine sits on the first
+/// formant (`formant_on_the_sine`), at resonance 50 % (Q 10), 100 % (Q 50, a ring that takes 2 s to fall 100 dB at
+/// the lowest keys: 2.5 s of pre-roll) and 0 % (Q 2).
+#[test]
+fn a_formant_adds_no_aliasing() {
+    let keys = [33u8, 45, 57, 69, 81, 93, 105];
+    for (resonance, preroll) in [(50.0f32, 24_000usize), (100.0, 120_000), (0.0, 8_192)] {
+        let sweep = Sweep::run_keys(&keys, f64::from(SR), &Measure::REPORT_02, |key| {
+            held_after(
+                &with(sine_patch(), formant_on_the_sine(key, resonance)),
+                key,
+                preroll,
+            )
+        });
+        let what = format!("formant, sine on f1, resonance {resonance} %");
+        eprintln!("{what}:\n{}", sweep.table());
+        sweep.assert_below(BOUND_FORMANT_DB, &what);
+    }
+}
+
+/// Measured 2026-10-26 (`docs/dsp/formant.md`): the worst point of the three sweeps (-92.6 dB) plus 1.6 dB.
+const BOUND_FORMANT_DB: f64 = -91.0;
+
+/// The defining response, end to end: a sine at four keys through the formant at the six vowels of report 04's table
+/// (default resonance) and at resonance 100 % for the "a", gains the engine gives are the closed form's
+/// (`enth_dsp::formant::response`) within 0.05 dB.
+#[test]
+fn the_formant_gain_is_the_closed_form() {
+    use enth_dsp::formant::{Tuning, response};
+    let vowels = [
+        (240.0f32, 2_400.0f32),
+        (390.0, 2_300.0),
+        (850.0, 1_610.0),
+        (750.0, 940.0),
+        (360.0, 640.0),
+        (250.0, 595.0),
+    ];
+    let mut cases: Vec<(f32, f32, f32)> = vowels.iter().map(|&(a, b)| (a, b, 50.0)).collect();
+    cases.push((850.0, 1_610.0, 100.0));
+    cases.push((850.0, 1_610.0, 0.0));
+    for (f1, f2, res) in cases {
+        for key in [45u8, 57, 69, 81] {
+            let sine_hz = 440.0 * pow(2.0, (f64::from(key) - 69.0) / 12.0);
+            let m = formant(&[
+                (FormantParam::F1, f1),
+                (FormantParam::F2, f2),
+                (FormantParam::Resonance, res),
+            ]);
+            let measured = sine_gain_db(Some(m), key);
+            let t = Tuning::new(f1, f2, 0.0, res, SR);
+            let closed = 20.0 * log10(response(&t, sine_hz, f64::from(SR)));
+            assert!(
+                (measured - closed).abs() < 0.05,
+                "{f1}/{f2} res {res}, key {key}: engine {measured:.3} dB, closed form {closed:.3} dB"
+            );
+        }
+    }
+}
+
+/// `mix` 0 is the identity, bit for bit, however hard the formant is set: the patch with it renders the same bits as
+/// the patch without, on both channels, over a phrase with overlapping notes.
+#[test]
+fn formant_mix_zero_renders_the_same_bits_as_no_formant() {
+    let bare = Patch::init();
+    let (bl, br) = phrase_bits(&bare);
+    assert!(bl.iter().any(|&b| b != 0));
+    for (name, m) in [
+        ("defaults", formant(&[(FormantParam::Mix, 0.0)])),
+        (
+            "resonance 100, shift -24, f1 100",
+            formant(&[
+                (FormantParam::Mix, 0.0),
+                (FormantParam::Resonance, 100.0),
+                (FormantParam::Shift, -24.0),
+                (FormantParam::F1, 100.0),
+            ]),
+        ),
+    ] {
+        let (l, r) = phrase_bits(&with(Patch::init(), m));
+        assert_eq!(l, bl, "{name}: left");
+        assert_eq!(r, br, "{name}: right");
+    }
+}
+
+/// Two formants in a chain keep separate state: the second at `mix` 0 changes nothing about the first's render, and
+/// swapping them changes the output.
+#[test]
+fn two_formants_keep_separate_state() {
+    let a = [(FormantParam::Resonance, 85.0), (FormantParam::F1, 300.0)];
+    let b = [(FormantParam::F2, 700.0), (FormantParam::Shift, 7.0)];
+    let inst = |name: &str, set: &[(FormantParam, f32)]| {
+        let set: Vec<(usize, f32)> = set.iter().map(|&(p, v)| (p.index(), v)).collect();
+        module(name, ModuleKind::Formant, &set)
+    };
+    let one = phrase_bits(&with(Patch::init(), inst("formant1", &a)));
+    let silent_second = with(
+        with(Patch::init(), inst("formant1", &a)),
+        module(
+            "formant2",
+            ModuleKind::Formant,
+            &[
+                (FormantParam::Mix.index(), 0.0),
+                (FormantParam::Resonance.index(), 99.0),
+            ],
+        ),
+    );
+    assert_eq!(phrase_bits(&silent_second), one);
+    let ab = with(
+        with(Patch::init(), inst("formant1", &a)),
+        inst("formant2", &b),
+    );
+    let ba = with(
+        with(Patch::init(), inst("formant1", &b)),
+        inst("formant2", &a),
+    );
+    let (xab, xba) = (phrase_bits(&ab), phrase_bits(&ba));
+    assert_ne!(xab, one);
+    assert_ne!(xab, xba);
+    assert_eq!(phrase_bits(&ab), xab);
+}
+
+/// LFOs at 50, 37, 43 and 29 Hz sweeping `f1` and `f2` over their ranges, `shift` and `resonance` at the maximum: finite
+/// and bounded for 10 s of overlapping notes.
+#[test]
+fn a_formant_survives_audio_rate_modulation_of_everything() {
+    let mut p = Patch::init();
+    p = with(p, formant(&[(FormantParam::Resonance, 90.0)]));
+    for (i, rate) in [50.0f32, 37.0, 43.0, 29.0].into_iter().enumerate() {
+        let mut lfo = ModuleInstance::new(id(&format!("lfo{}", i + 1)), ModuleKind::Lfo);
+        lfo.values[LfoParam::Rate.index()] = rate;
+        p.modulators.push(lfo);
+    }
+    p.routes = vec![
+        route("lfo1", "formant1.f1", 100.0),
+        route("lfo2", "formant1.f2", 100.0),
+        route("lfo3", "formant1.shift", 100.0),
+        route("lfo4", "formant1.resonance", 100.0),
+    ];
+    let peak = stress_peak(&p, 10);
+    let dry = stress_peak(&Patch::init(), 10);
+    eprintln!("formant under audio-rate modulation: peak {peak}, dry {dry}");
+    // Measured 1.46 times the dry peak; the make-up can put a resonant peak up to 20 dB over the input.
+    assert!(peak < 3.0 * dry, "peak {peak}, dry {dry}");
+}
+
+#[test]
+fn a_40_s_tail_through_formants_holds_no_subnormals() {
+    let sharp = formant(&[
+        (FormantParam::Resonance, 100.0),
+        (FormantParam::F1, 100.0),
+        (FormantParam::Shift, -24.0),
+    ]);
+    let mut vowel = formant(&[(FormantParam::F1, 240.0), (FormantParam::F2, 2_400.0)]);
+    vowel.id = id("formant2");
+    assert_clean_tail(
+        "formant x2, 3 s release",
+        &tail_patch(3_000.0, vec![sharp.clone(), vowel.clone()]),
+    );
+    assert_clean_tail(
+        "formant x2, 20 s release",
+        &tail_patch(20_000.0, vec![sharp, vowel]),
+    );
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[test]
+fn a_formant_renders_the_same_bits_under_every_ftz_mode() {
+    let p = tail_patch(
+        3_000.0,
+        vec![formant(&[
+            (FormantParam::Resonance, 95.0),
+            (FormantParam::F1, 300.0),
+        ])],
+    );
+    ftz::assert_same_in_every_mode("formant, 20 s", &p, 20);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn a_formant_never_allocates_in_process() {
+    let mut p = Patch::init();
+    p = with(p, formant(&[(FormantParam::Resonance, 95.0)]));
+    let mut lfo = ModuleInstance::new(id("lfo1"), ModuleKind::Lfo);
+    lfo.values[LfoParam::Rate.index()] = 30.0;
+    p.modulators.push(lfo);
+    p.routes = vec![route("lfo1", "formant1.f2", 80.0)];
     let out = guarded(&p, &phrase(), 48_000);
     assert!(out.iter().all(|x| x.is_finite()) && out.iter().any(|&x| x != 0.0));
 }
