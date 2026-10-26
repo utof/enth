@@ -120,6 +120,37 @@ impl PerfArgs {
     }
 }
 
+const BPM_HINT: &str = "--bpm takes beats per minute from 20 to 999 (default 140), like --bpm 174; a beat is a quarter note";
+
+/// The tempo of `--bpm`: a number of beats per minute (an optional `bpm` suffix is allowed), 20 to 999.
+pub fn parse_bpm(text: &str) -> Result<f64, CliError> {
+    let t = text.trim();
+    let number = t
+        .strip_suffix("bpm")
+        .or_else(|| t.strip_suffix("BPM"))
+        .unwrap_or(t)
+        .trim();
+    let bpm: f64 = number.parse().map_err(|_| {
+        error::usage(
+            "bad_bpm",
+            format!("'{t}' is not a tempo in beats per minute"),
+            BPM_HINT,
+        )
+    })?;
+    if !enth_render::tempo_is_valid(bpm) {
+        return Err(error::usage(
+            "bad_bpm",
+            format!(
+                "--bpm {t} is outside {}..={} beats per minute",
+                enth_render::MIN_TEMPO_BPM,
+                enth_render::MAX_TEMPO_BPM
+            ),
+            BPM_HINT,
+        ));
+    }
+    Ok(bpm)
+}
+
 /// The name of a MIDI key (`48` is `C3`).
 pub fn note_name(key: u8) -> String {
     let k = usize::from(key);

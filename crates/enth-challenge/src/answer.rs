@@ -385,6 +385,10 @@ const LFO_V1: &[ResultParam] = &[
     item("phase_mode", 2, 1.0),
     f("phase", 0.0),
     int("seed", 0, 16, 0.0),
+    // Appended at F1m (S2a, lane TMP): tempo sync, its note division (25 items in 5 bits, a quarter note) and one-shot.
+    toggle("sync", 0.0),
+    item("beats", 5, 11.0),
+    toggle("one_shot", 0.0),
 ];
 
 /// `reverb`.

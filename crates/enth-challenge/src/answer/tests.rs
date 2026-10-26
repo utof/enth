@@ -6,7 +6,7 @@ use core::fmt::Write as _;
 
 use enth_params::Kind;
 use enth_patch::canon::{canonical_hash, exact_hash};
-use enth_patch::catalogue::Builtin;
+use enth_patch::catalogue::{Builtin, LfoParam};
 use enth_patch::{PatchMeta, SlotIndex, apply};
 use proptest::prelude::*;
 use sha2::{Digest, Sha256};
@@ -55,13 +55,14 @@ fn table_text() -> String {
 
 /// `result-params-v1` is frozen: these bytes never change (a new parameter is appended, which changes this hash on
 /// purpose and keeps every old line; a changed line is a new layout). Lane CAT appended S2a's kinds 7–17 after
-/// `voice` and `master` at F1m, so this hash moved and [`f1e_entries_are_unchanged`] pins what F1e froze.
+/// `voice` and `master` at F1m, and lane TMP appended `lfo`'s `sync`, `beats` and `one_shot` (indices 7 to 9), so this hash
+/// moved twice and [`f1e_entries_are_unchanged`] pins what F1e froze.
 #[test]
 fn result_params_v1_is_pinned() {
     let hex: String = hex(&Sha256::digest(table_text().as_bytes()));
     assert_eq!(
         hex,
-        "c067471ff736aaba0533b2274dd3504937bd2d714ef9b281016527961d6ac733",
+        "c8063919b2be6721dc80085f8ba11533d6a1b71427efd03fcfd6ac9fc5e2788d",
         "{}",
         table_text()
     );
@@ -1268,6 +1269,77 @@ fn the_commitment_depends_on_the_salt_the_answer_and_the_challenge() {
     let other = code(2, 4);
     assert_ne!(AnswerCode::new(other, 1, &t).unwrap().commitment(), a);
     assert!(a.bits() < 1 << 60);
+}
+
+/// The three parameters `lfo` gained at F1m (lane TMP) are in the table's `lfo` row, appended after the seven of
+/// layout 1, and an answer that sets them rebuilds with them: every division of `beats` (the first, the default,
+/// the last and the rest), sync and one-shot on and off.
+#[test]
+fn the_lfo_tempo_parameters_round_trip_in_an_answer() {
+    let (owner, row) = RESULT_PARAMS_V1[ModuleKind::Lfo as usize];
+    assert_eq!(owner, "lfo");
+    let keys: Vec<_> = row.iter().map(|e| e.key).collect();
+    assert_eq!(
+        keys,
+        [
+            "shape",
+            "rate",
+            "polarity",
+            "scope",
+            "phase_mode",
+            "phase",
+            "seed",
+            "sync",
+            "beats",
+            "one_shot"
+        ]
+    );
+    assert_eq!(row[7].coding, Coding::Toggle);
+    assert_eq!(row[8].coding, Coding::Enum { bits: 5 });
+    assert_eq!(row[9].coding, Coding::Toggle);
+    assert_eq!(
+        row[8].default,
+        enth_patch::catalogue::Beats::Quarter.index() as f32
+    );
+    let challenge = code(5, 1234);
+    let base = target_of(&challenge);
+    for (n, beats) in enth_patch::catalogue::Beats::ALL.iter().enumerate() {
+        let mut answer = base.clone();
+        let mut lfo = ModuleInstance::new(answer.free_id(ModuleKind::Lfo), ModuleKind::Lfo);
+        lfo.values[LfoParam::Sync.index()] = f32::from(u8::from(n % 2 == 0));
+        lfo.values[LfoParam::Beats.index()] = beats.index() as f32;
+        lfo.values[LfoParam::OneShot.index()] = f32::from(u8::from(n % 3 == 0));
+        let at = Position {
+            section: ModuleKind::Lfo.section(),
+            index: answer.modulators.len(),
+        };
+        let id = lfo.id.clone();
+        apply(&mut answer, &Op::AddModule { at, module: lfo }).unwrap();
+        let code = AnswerCode::new(challenge, 1, &answer).unwrap();
+        let back = AnswerCode::decode(&code.encode()).unwrap();
+        assert_eq!(back, code);
+        assert_eq!(
+            exact_hash(back.answer()),
+            exact_hash(&answer),
+            "{}",
+            beats.key()
+        );
+        let (_, m) = back.answer().find(&id).expect("the lfo is in the answer");
+        assert_eq!(
+            [
+                m.values[LfoParam::Sync.index()],
+                m.values[LfoParam::Beats.index()],
+                m.values[LfoParam::OneShot.index()],
+            ],
+            [
+                f32::from(u8::from(n % 2 == 0)),
+                beats.index() as f32,
+                f32::from(u8::from(n % 3 == 0)),
+            ],
+            "{}",
+            beats.key()
+        );
+    }
 }
 
 /// The answer bytes are a frozen preimage: pinned on the starter.

@@ -59,7 +59,7 @@ exit: 0
       "id_prefix": "lfo",
       "kind": "lfo",
       "name": "LFO",
-      "params": 7,
+      "params": 10,
       "section": "modulators",
       "summary": "A slow repeating modulator for vibrato, tremolo and sweeps, per voice or shared by all voices.",
       "tier": "intermediate"

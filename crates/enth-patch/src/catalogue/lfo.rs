@@ -4,10 +4,18 @@
 //! Polarity belongs to the source (design.md §2): a bipolar LFO runs −1..1, a unipolar one 0..1, and a route only
 //! carries a depth. Random shapes (`sample_hold`, `smooth_random`) draw from the render seed, or from `seed` in
 //! the `seeded` phase mode; never from the patch hash.
+//!
+//! **Tempo sync and one-shot (S2a, lane TMP, appended at freeze F1m).** `sync`, `beats` and `one_shot` come after
+//! the seven parameters layout 1 reads, with neutral defaults (sync off: `rate` in Hz as always; one-shot off), so
+//! an unsynced patch renders the same bits. All three are `advanced`, behind a card's "More": the P1 editor layout
+//! (1200 by 800, nothing scrolls) has no room for three more rows on the LFO card, and the dense cards of F2m (lane
+//! EDS) are where `sync` and `beats` move up a tier. `beats` is the note-division enum shared with the other synced
+//! parameters ([`Beats`], in `catalogue/mod.rs`; its lengths are exact rationals of a beat, [`Beats::length`]), not
+//! an item of the pinned `lfo.shape`; `docs/dsp/lfo.md` justifies the list.
 
 use enth_params::{ParamSpec, Scale, Unit, enum_items, params};
 
-use super::{PHASE_MODES, PhaseMode, SMOOTH};
+use super::{BEATS, Beats, PHASE_MODES, PhaseMode, SMOOTH};
 
 enum_items! {
     /// The LFO's waveform.
@@ -71,5 +79,128 @@ params! {
         Seed = ParamSpec::int("seed", "Seed", Unit::None, 0, 65_535, 0)
             .not_automatable()
             .advanced("The random seed used in seeded phase mode, including the random shapes."),
+        Sync = ParamSpec::toggle("sync", "Sync", false)
+            .advanced("Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored."),
+        Beats = ParamSpec::enumeration("beats", "Beats", &BEATS, Beats::Quarter.index())
+            .modulatable()
+            .advanced("The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first."),
+        OneShot = ParamSpec::toggle("one_shot", "One shot", false)
+            .advanced("On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_shared_divisions_cover_what_the_lfo_needs() {
+        // 1/32 to 4 bars, with the triplet and dotted neighbours, are all in the shared list.
+        let all = Beats::ALL;
+        for key in [
+            "thirty_second",
+            "sixteenth_triplet",
+            "eighth_triplet",
+            "eighth_dotted",
+            "quarter_triplet",
+            "quarter_dotted",
+            "four_bars",
+        ] {
+            assert!(all.iter().any(|b| b.key() == key), "{key} is missing");
+        }
+        assert_eq!(Beats::ThirtySecond.length(), (1, 8));
+        assert_eq!(Beats::FourBars.length(), (16, 1));
+        assert_eq!(Beats::Quarter.length(), (1, 1));
+        // Triplets are 2/3 of the straight length, dotted ones 3/2.
+        let value = |b: Beats| {
+            let (n, m) = b.length();
+            f64::from(n) / f64::from(m)
+        };
+        for (s, t, d) in [
+            (
+                Beats::ThirtySecond,
+                Beats::ThirtySecondTriplet,
+                Beats::ThirtySecondDotted,
+            ),
+            (
+                Beats::Sixteenth,
+                Beats::SixteenthTriplet,
+                Beats::SixteenthDotted,
+            ),
+            (Beats::Eighth, Beats::EighthTriplet, Beats::EighthDotted),
+            (Beats::Quarter, Beats::QuarterTriplet, Beats::QuarterDotted),
+            (Beats::Half, Beats::HalfTriplet, Beats::HalfDotted),
+            (Beats::Bar, Beats::BarTriplet, Beats::BarDotted),
+            (Beats::TwoBars, Beats::TwoBarsTriplet, Beats::TwoBarsDotted),
+        ] {
+            assert!(
+                (value(t) - value(s) * 2.0 / 3.0).abs() < 1e-12,
+                "{}",
+                t.key()
+            );
+            assert!((value(d) - value(s) * 1.5).abs() < 1e-12, "{}", d.key());
+        }
+    }
+
+    #[test]
+    fn the_new_parameters_are_neutral_and_appended() {
+        let n = LfoParam::COUNT;
+        assert_eq!(n, 10);
+        // Layout 1 reads the first seven in this order: nothing moved.
+        for (i, key) in [
+            "shape",
+            "rate",
+            "polarity",
+            "scope",
+            "phase_mode",
+            "phase",
+            "seed",
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(LFO_PARAMS[i].key, *key);
+        }
+        assert_eq!(LfoParam::Sync.index(), 7);
+        assert_eq!(LfoParam::Beats.index(), 8);
+        assert_eq!(LfoParam::OneShot.index(), 9);
+        assert_eq!(LfoParam::Sync.spec().default, 0.0);
+        assert_eq!(LfoParam::OneShot.spec().default, 0.0);
+        assert_eq!(
+            LfoParam::Beats.spec().default,
+            Beats::Quarter.index() as f32
+        );
+        // `beats` is the one modulatable enum; the shape stays a plain, unmodulatable enum.
+        assert!(LfoParam::Beats.spec().flags.modulatable);
+        assert!(!LfoParam::Shape.spec().flags.modulatable);
+        assert_eq!(
+            LfoShape::COUNT,
+            7,
+            "no item was added to the pinned lfo.shape"
+        );
+    }
+
+    /// Allowing `modulatable` on an enum (S2a, lane TMP) is opt-in per parameter, and `lfo.beats` is the only one that
+    /// opts in: every other enum in the catalogue, builtins and reserved kinds included, stays non-modulatable.
+    #[test]
+    fn lfo_beats_is_the_only_modulatable_enum() {
+        use super::super::{Builtin, ModuleKind};
+        use enth_params::Kind;
+        let mut found = Vec::new();
+        for kind in ModuleKind::ALL {
+            for p in kind.params() {
+                if matches!(p.kind, Kind::Enum(_)) && p.flags.modulatable {
+                    found.push(format!("{}.{}", kind.key(), p.key));
+                }
+            }
+        }
+        for b in Builtin::ALL {
+            for p in b.params() {
+                if matches!(p.kind, Kind::Enum(_)) && p.flags.modulatable {
+                    found.push(format!("{}.{}", b.key(), p.key));
+                }
+            }
+        }
+        assert_eq!(found, ["lfo.beats"]);
     }
 }

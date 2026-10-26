@@ -140,6 +140,10 @@ pub enum Cmd {
         /// The render seed (default: the fixed default seed).
         #[arg(long, value_name = "SEED")]
         seed: Option<u64>,
+        /// The tempo in beats per minute, 20 to 999: what a tempo-synced module (an lfo with sync on) follows; a
+        /// beat is a quarter note. A patch with no synced module renders the same at every tempo.
+        #[arg(long, value_name = "BPM", default_value = "140")]
+        bpm: String,
     },
     /// Perceptual descriptors of a patch (rendered first) or a WAV.
     Describe {

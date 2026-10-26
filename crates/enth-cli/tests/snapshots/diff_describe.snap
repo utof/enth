@@ -213,13 +213,16 @@ exit: 0
       "at": "modulators[1]",
       "id": "lfo1",
       "params": {
+        "beats": "quarter",
+        "one_shot": false,
         "phase": 0.0,
         "phase_mode": "reset",
         "polarity": "bipolar",
         "rate": 0.3,
         "scope": "voice",
         "seed": 0.0,
-        "shape": "sine"
+        "shape": "sine",
+        "sync": false
       }
     },
     {

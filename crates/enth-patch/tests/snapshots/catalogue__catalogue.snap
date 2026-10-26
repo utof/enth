@@ -1153,6 +1153,193 @@ expression: catalogue_json()
           "smoothing": null,
           "tier": "advanced",
           "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "off",
+          "desc": "Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "sync",
+          "kind": {
+            "type": "toggle"
+          },
+          "name": "Sync",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        },
+        {
+          "default": 11.0,
+          "default_text": "quarter",
+          "desc": "The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first.",
+          "flags": {
+            "automatable": true,
+            "modulatable": true,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "beats",
+          "kind": {
+            "items": [
+              {
+                "desc": "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate.",
+                "key": "sixty_fourth",
+                "name": "1/64"
+              },
+              {
+                "desc": "A thirty-second-note triplet: a twelfth of a beat.",
+                "key": "thirty_second_triplet",
+                "name": "1/32T"
+              },
+              {
+                "desc": "A thirty-second note: an eighth of a beat.",
+                "key": "thirty_second",
+                "name": "1/32"
+              },
+              {
+                "desc": "A sixteenth-note triplet: a sixth of a beat.",
+                "key": "sixteenth_triplet",
+                "name": "1/16T"
+              },
+              {
+                "desc": "A dotted thirty-second note: three sixteenths of a beat.",
+                "key": "thirty_second_dotted",
+                "name": "1/32D"
+              },
+              {
+                "desc": "A sixteenth note: a quarter of a beat.",
+                "key": "sixteenth",
+                "name": "1/16"
+              },
+              {
+                "desc": "An eighth-note triplet: a third of a beat.",
+                "key": "eighth_triplet",
+                "name": "1/8T"
+              },
+              {
+                "desc": "A dotted sixteenth note: three eighths of a beat.",
+                "key": "sixteenth_dotted",
+                "name": "1/16D"
+              },
+              {
+                "desc": "An eighth note: half a beat.",
+                "key": "eighth",
+                "name": "1/8"
+              },
+              {
+                "desc": "A quarter-note triplet: two thirds of a beat.",
+                "key": "quarter_triplet",
+                "name": "1/4T"
+              },
+              {
+                "desc": "A dotted eighth note: three quarters of a beat, a syncopated bounce.",
+                "key": "eighth_dotted",
+                "name": "1/8D"
+              },
+              {
+                "desc": "A quarter note: one beat.",
+                "key": "quarter",
+                "name": "1/4"
+              },
+              {
+                "desc": "A half-note triplet: four thirds of a beat.",
+                "key": "half_triplet",
+                "name": "1/2T"
+              },
+              {
+                "desc": "A dotted quarter note: a beat and a half.",
+                "key": "quarter_dotted",
+                "name": "1/4D"
+              },
+              {
+                "desc": "A half note: two beats.",
+                "key": "half",
+                "name": "1/2"
+              },
+              {
+                "desc": "A whole-note triplet: two thirds of a bar.",
+                "key": "bar_triplet",
+                "name": "1 bar T"
+              },
+              {
+                "desc": "A dotted half note: three beats.",
+                "key": "half_dotted",
+                "name": "1/2D"
+              },
+              {
+                "desc": "A whole note: one bar of four beats.",
+                "key": "bar",
+                "name": "1 bar"
+              },
+              {
+                "desc": "A two-bar triplet: four thirds of a bar.",
+                "key": "two_bars_triplet",
+                "name": "2 bars T"
+              },
+              {
+                "desc": "A dotted whole note: a bar and a half.",
+                "key": "bar_dotted",
+                "name": "1 bar D"
+              },
+              {
+                "desc": "Two bars: a slow swell.",
+                "key": "two_bars",
+                "name": "2 bars"
+              },
+              {
+                "desc": "Three bars.",
+                "key": "two_bars_dotted",
+                "name": "2 bars D"
+              },
+              {
+                "desc": "Four bars: a whole phrase.",
+                "key": "four_bars",
+                "name": "4 bars"
+              },
+              {
+                "desc": "Eight bars: a riser or a long build.",
+                "key": "eight_bars",
+                "name": "8 bars"
+              },
+              {
+                "desc": "Sixteen bars: the longest build.",
+                "key": "sixteen_bars",
+                "name": "16 bars"
+              }
+            ],
+            "type": "enum"
+          },
+          "name": "Beats",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
+        },
+        {
+          "default": 0.0,
+          "default_text": "off",
+          "desc": "On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value.",
+          "flags": {
+            "automatable": true,
+            "modulatable": false,
+            "periodic": false,
+            "structural": false
+          },
+          "key": "one_shot",
+          "kind": {
+            "type": "toggle"
+          },
+          "name": "One shot",
+          "perceptual": null,
+          "smoothing": null,
+          "tier": "advanced",
+          "unit": "none"
         }
       ],
       "section": "modulators",

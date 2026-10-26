@@ -104,6 +104,19 @@ fn set(p: &mut Patch, addr: &ParamAddr, value: f32) {
     .unwrap();
 }
 
+/// Parameters appended to a kind after `structure/1` froze, as (module kind, parameter key). The `moved` answer
+/// picks its parameters by index into the observable list, so a longer list would move every pick and the golden
+/// with it, though the scorer did not change: the picks stay among the parameters that existed at the freeze. S2a
+/// F1m (lane TMP): `lfo.sync`, `lfo.beats` and `lfo.one_shot`.
+const APPENDED_AFTER_FREEZE: &[(&str, &str)] =
+    &[("lfo", "sync"), ("lfo", "beats"), ("lfo", "one_shot")];
+
+fn existed_at_the_freeze(target: &Patch, addr: &ParamAddr) -> bool {
+    addr.module_id()
+        .and_then(|id| target.find(id))
+        .is_none_or(|(_, m)| !APPENDED_AFTER_FREEZE.contains(&(m.kind.key(), addr.param())))
+}
+
 /// The target with two observable parameters moved to values picked from the index (integers only, so exact).
 fn moved(i: u64, target: &Patch, observable: &[ParamAddr]) -> Patch {
     let mut out = target.clone();
@@ -217,6 +230,7 @@ fn compute() -> String {
             .generated()
             .mask()
             .observable_params()
+            .filter(|a| existed_at_the_freeze(target, a))
             .cloned()
             .collect();
         let w = round.challenge().scoring.sound_weight;

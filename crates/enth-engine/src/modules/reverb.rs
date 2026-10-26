@@ -403,6 +403,7 @@ mod tests {
         let (mut l, mut rr) = ([0.0; SEG], [0.0; SEG]);
         for _ in 0..10 {
             r.process(&mut GlobalCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 params: views(&vals),
                 left: &mut l,
                 right: &mut rr,
@@ -413,6 +414,7 @@ mod tests {
         // A click wakes it and the tail follows.
         l[0] = 1.0;
         r.process(&mut GlobalCx {
+            tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
             params: views(&vals),
             left: &mut l,
             right: &mut rr,

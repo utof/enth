@@ -28,6 +28,13 @@
 //! the module id and the note index, or from the module's own `seed` in the seeded mode), never from the patch.
 //! The draw order is fixed: the start phase if random, then the cycle's value `a`, then the next cycle's `b`, then
 //! one draw per wrap.
+//!
+//! **Tempo sync and one-shot (S2a, lane TMP).** [`Lfo::set_synced`] sets the increment from a cycle length in beats
+//! and a tempo instead of a rate in Hz ([`synced_increment`]): the same accumulator, so the phase is exact in beats
+//! (the only error is the `f64` rounding of the increment) and continuous across a tempo change, which the engine
+//! applies at a segment boundary. [`Lfo::set_one_shot`] makes the LFO run exactly one cycle from the phase it had when
+//! it was armed, then hold the value it reached at the end of the cycle (the left limit at the start phase: a saw
+//! up holds +1, not the −1 it would wrap to). The unsynced, free-running path is the one above, bit for bit.
 
 use crate::util::math::sinf;
 use crate::util::rng::Rng;
@@ -70,7 +77,11 @@ pub enum StartPhase {
 /// saturating at 2⁶⁴ − 1 for absurd rates. Not finite or non-positive rates stop the LFO.
 #[must_use]
 pub fn phase_increment(rate_hz: f32, sample_rate: f32, step: usize) -> u64 {
-    let cycles = f64::from(rate_hz) * step as f64 / f64::from(sample_rate);
+    cycles_to_increment(f64::from(rate_hz) * step as f64 / f64::from(sample_rate))
+}
+
+/// `round(cycles · 2⁶⁴)` for a number of cycles per step; 0 for anything not finite or not positive.
+fn cycles_to_increment(cycles: f64) -> u64 {
     if cycles > 0.0 && cycles.is_finite() {
         // `as` saturates, and f64 rounds the product to 53 bits.
         (cycles * TWO_POW_64 + 0.5) as u64
@@ -79,12 +90,52 @@ pub fn phase_increment(rate_hz: f32, sample_rate: f32, step: usize) -> u64 {
     }
 }
 
+/// The phase increment of one control step of `step` frames when one cycle lasts `num / den` beats at `bpm` beats
+/// per minute: `round(bpm / 60 · (den / num) · step / fs · 2⁶⁴)`. A quarter note is `(1, 1)`, a dotted eighth `(3, 4)`.
+/// The cycle length stays a ratio of integers until the one division, so the increment is the `f64` rounding of the
+/// exact value (about 1e-16 relative), and the phase after any number of steps at one tempo is exact in beats. A
+/// tempo that is not finite or not positive stops the LFO, as a non-positive rate does.
+#[must_use]
+pub fn synced_increment(bpm: f64, cycle_beats: (u32, u32), sample_rate: f32, step: usize) -> u64 {
+    let (num, den) = cycle_beats;
+    if num == 0 {
+        return 0;
+    }
+    let cycles =
+        bpm * f64::from(den) * step as f64 / (60.0 * f64::from(num) * f64::from(sample_rate));
+    cycles_to_increment(cycles)
+}
+
+/// What the cached increment was computed from, so a repeated setting costs a comparison and not a division.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum IncKey {
+    /// Nothing yet.
+    None,
+    /// A rate: the bits of the `f32` Hz value.
+    Hz(u32),
+    /// A tempo and a cycle length: the bits of the `f64` BPM and the cycle in beats.
+    Beats(u64, (u32, u32)),
+}
+
+/// The one-shot state.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Shot {
+    /// Free-running (the default, and the only state of an unarmed LFO).
+    Off,
+    /// One cycle from `start`: `left` is the phase still to travel, or a whole cycle (2⁶⁴, which a `u64` cannot
+    /// hold) while `fresh`.
+    Run { start: u64, left: u64, fresh: bool },
+    /// The cycle is over: the phase is parked just before `start` and the value is held.
+    Hold,
+}
+
 /// One LFO.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Lfo {
     phase: u64,
     inc: u64,
-    rate_bits: u32,
+    inc_key: IncKey,
+    shot: Shot,
     a: f32,
     b: f32,
     rng: Rng,
@@ -109,7 +160,8 @@ impl Lfo {
         Self {
             phase,
             inc: 0,
-            rate_bits: 0,
+            inc_key: IncKey::None,
+            shot: Shot::Off,
             a,
             b,
             rng,
@@ -119,11 +171,48 @@ impl Lfo {
     /// Set the rate, recomputing the increment only when it changed.
     #[inline]
     pub fn set_rate(&mut self, rate_hz: f32, sample_rate: f32, step: usize) {
-        let bits = rate_hz.to_bits();
-        if bits != self.rate_bits || self.inc == 0 {
-            self.rate_bits = bits;
+        let key = IncKey::Hz(rate_hz.to_bits());
+        if key != self.inc_key || self.inc == 0 {
+            self.inc_key = key;
             self.inc = phase_increment(rate_hz, sample_rate, step);
         }
+    }
+
+    /// Set the speed from a tempo and a cycle length in beats (`(num, den)` beats per cycle), recomputing the
+    /// increment only when either changed. The phase is continuous: a tempo change moves the speed from the next
+    /// step on.
+    #[inline]
+    pub fn set_synced(&mut self, bpm: f64, cycle_beats: (u32, u32), sample_rate: f32, step: usize) {
+        let key = IncKey::Beats(bpm.to_bits(), cycle_beats);
+        if key != self.inc_key || self.inc == 0 {
+            self.inc_key = key;
+            self.inc = synced_increment(bpm, cycle_beats, sample_rate, step);
+        }
+    }
+
+    /// Arm or disarm the one-shot mode; call it every step with the parameter's value. Armed (from free-running),
+    /// the LFO starts one cycle from the phase it has now; the engine arms a voice's LFO at its first step, so the
+    /// cycle starts at the note's start phase. Armed already, nothing changes (a cycle in flight is not restarted,
+    /// and a held value stays held). Disarmed, it runs again from where it is.
+    #[inline]
+    pub fn set_one_shot(&mut self, on: bool) {
+        match (on, self.shot) {
+            (true, Shot::Off) => {
+                self.shot = Shot::Run {
+                    start: self.phase,
+                    left: 0,
+                    fresh: true,
+                };
+            }
+            (false, Shot::Run { .. } | Shot::Hold) => self.shot = Shot::Off,
+            _ => {}
+        }
+    }
+
+    /// Whether a one-shot cycle has run its course and the value is held.
+    #[must_use]
+    pub fn is_held(&self) -> bool {
+        self.shot == Shot::Hold
     }
 
     /// The raw 64-bit phase (test support): the cycle position is `phase / 2⁶⁴`.
@@ -142,13 +231,52 @@ impl Lfo {
     /// wraps, the cycle's random value moves on (one draw).
     #[inline]
     pub fn tick(&mut self, shape: Shape) -> f32 {
-        let (p, wrapped) = self.phase.overflowing_add(self.inc);
+        match self.shot {
+            Shot::Off => {
+                let (p, wrapped) = self.phase.overflowing_add(self.inc);
+                self.phase = p;
+                if wrapped {
+                    self.a = self.b;
+                    self.b = self.rng.bipolar_f32();
+                }
+            }
+            Shot::Run { start, left, fresh } => self.step_one_shot(start, left, fresh),
+            Shot::Hold => {}
+        }
+        self.value(shape)
+    }
+
+    /// One step of a running one-shot cycle. A step that reaches the start phase again ends the cycle: the phase
+    /// parks one count before `start` (the left limit, so a saw up holds +1) and the value is held from then on. The
+    /// random stream moves on at a wrap only when the wrap comes before the end of the cycle, so a cycle that starts
+    /// at phase 0 holds its own value and never draws the next cycle's.
+    fn step_one_shot(&mut self, start: u64, left: u64, fresh: bool) {
+        let inc = self.inc;
+        if !fresh && inc >= left {
+            // The wrap is `2⁶⁴ − phase` away (a whole cycle from phase 0); the end of the cycle is `left` away.
+            let to_wrap = 0u64.wrapping_sub(self.phase);
+            if self.phase != 0 && to_wrap < left {
+                self.a = self.b;
+                self.b = self.rng.bipolar_f32();
+            }
+            self.phase = start.wrapping_sub(1);
+            self.shot = Shot::Hold;
+            return;
+        }
+        let (p, wrapped) = self.phase.overflowing_add(inc);
         self.phase = p;
         if wrapped {
             self.a = self.b;
             self.b = self.rng.bipolar_f32();
         }
-        self.value(shape)
+        // Still short of the end. A whole cycle (2⁶⁴) less `inc` is `0 − inc` in 64 bits; a stopped LFO (`inc` 0) has
+        // travelled nothing, so a fresh cycle stays whole.
+        let (left, fresh) = match (inc, fresh) {
+            (0, _) => (left, fresh),
+            (_, true) => (0u64.wrapping_sub(inc), false),
+            (_, false) => (left - inc, false),
+        };
+        self.shot = Shot::Run { start, left, fresh };
     }
 
     /// The value of `shape` at the present phase, without advancing.
@@ -388,6 +516,291 @@ mod tests {
         assert_eq!(unipolar(-1.0), 0.0);
         assert_eq!(unipolar(0.0), 0.5);
         assert_eq!(unipolar(1.0), 1.0);
+    }
+
+    /// `phase_increment`'s exact value for integer inputs, in 128-bit arithmetic: `round(bpm · den · step · 2⁶⁴ /
+    /// (60 · num · fs))`.
+    fn exact_synced(bpm: u128, num: u128, den: u128, fs: u128, step: u128) -> u128 {
+        let top = bpm * den * step * (1u128 << 64);
+        let bottom = 60 * num * fs;
+        (top + bottom / 2) / bottom
+    }
+
+    #[test]
+    fn the_synced_increment_is_the_exact_ratio_to_f64_rounding() {
+        for bpm in [20u128, 90, 128, 140, 174, 999] {
+            for (num, den) in [
+                (1u32, 12u32),
+                (1, 8),
+                (1, 3),
+                (3, 4),
+                (1, 1),
+                (3, 2),
+                (8, 3),
+                (16, 1),
+            ] {
+                for fs in [44_100u128, 48_000, 96_000] {
+                    let got = synced_increment(bpm as f64, (num, den), fs as f32, 32);
+                    let want = exact_synced(bpm, u128::from(num), u128::from(den), fs, 32);
+                    let off = (i128::from(got) - want as i128).unsigned_abs();
+                    // Half a count of rounding to an integer, plus a few units of f64's 53-bit precision.
+                    assert!(
+                        off as f64 <= 1.0 + 4e-16 * want as f64,
+                        "{bpm} BPM {num}/{den} beats at {fs}: {got} vs {want}"
+                    );
+                }
+            }
+        }
+        // A cycle of one beat at 120 BPM and 48 kHz with 32-frame steps: 1/750 of a cycle per step.
+        let inc = synced_increment(120.0, (1, 1), 48_000.0, 32) as f64;
+        assert!((inc / TWO_POW_64 - 1.0 / 750.0).abs() < 1e-15);
+        // A rate of bpm / 60 / beats Hz is the same speed as the unsynced path, to rounding.
+        let hz = (140.0f64 / 60.0 / (2.0 / 3.0)) as f32;
+        let a = phase_increment(hz, 48_000.0, 32) as f64;
+        let b = synced_increment(140.0, (2, 3), 48_000.0, 32) as f64;
+        assert!(
+            (a / b - 1.0).abs() < 1e-6,
+            "f32 rate rounding only: {a} {b}"
+        );
+        // Nothing sensible: stopped.
+        assert_eq!(synced_increment(0.0, (1, 1), SR, 32), 0);
+        assert_eq!(synced_increment(-140.0, (1, 1), SR, 32), 0);
+        assert_eq!(synced_increment(f64::NAN, (1, 1), SR, 32), 0);
+        assert_eq!(synced_increment(f64::INFINITY, (1, 1), SR, 32), 0);
+        assert_eq!(synced_increment(140.0, (0, 1), SR, 32), 0);
+    }
+
+    #[test]
+    fn a_synced_lfo_is_exact_in_beats_over_ten_minutes() {
+        // Cycles after N steps at one tempo: wraps + the phase fraction, against bpm / 60 / beats · seconds.
+        for (bpm, beats) in [
+            (140.0f64, (1u32, 1u32)),
+            (140.0, (2, 3)),
+            (174.0, (3, 4)),
+            (90.0, (1, 4)),
+            (128.5, (16, 1)),
+        ] {
+            let mut l = Lfo::new(1, StartPhase::Cycles(0.0));
+            l.set_synced(bpm, beats, SR, 32);
+            let steps = 600 * 1500; // 600 s at 48 kHz in 32-frame steps
+            let (mut wraps, mut last) = (0u64, l.phase());
+            for _ in 0..steps {
+                let _ = l.tick(Shape::Sine);
+                if l.phase() < last {
+                    wraps += 1;
+                }
+                last = l.phase();
+            }
+            let cycles = wraps as f64 + l.phase() as f64 / TWO_POW_64;
+            let want = bpm / 60.0 * f64::from(beats.1) / f64::from(beats.0) * 600.0;
+            assert!(
+                (cycles / want - 1.0).abs() < 1e-12,
+                "{bpm} BPM {beats:?}: {cycles} cycles vs {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tempo_change_keeps_the_phase_and_changes_the_speed() {
+        let mut l = Lfo::new(1, StartPhase::Cycles(0.3));
+        l.set_synced(120.0, (1, 1), SR, 32);
+        let inc = l.increment();
+        l.set_synced(120.0, (1, 1), SR, 32);
+        assert_eq!(l.increment(), inc, "cached");
+        let _ = l.tick(Shape::Sine);
+        let ph = l.phase();
+        l.set_synced(240.0, (1, 1), SR, 32);
+        assert_eq!(l.phase(), ph, "continuous");
+        assert!(
+            (l.increment() as f64 / inc as f64 - 2.0).abs() < 1e-12,
+            "double speed"
+        );
+        // Back to Hz and back to beats: each setting wins over the cache of the other.
+        l.set_rate(2.0, SR, 32);
+        assert_eq!(l.increment(), phase_increment(2.0, SR, 32));
+        l.set_synced(240.0, (1, 1), SR, 32);
+        assert_eq!(l.increment(), synced_increment(240.0, (1, 1), SR, 32));
+    }
+
+    /// 1/64 of a cycle per step: 64 steps make one cycle exactly.
+    fn lfo_64() -> Lfo {
+        let mut l = Lfo::new(1, StartPhase::Cycles(0.0));
+        l.set_rate(23.4375, SR, 32); // 23.4375 · 32 / 48000 = 1/64
+        assert_eq!(l.increment(), 1 << 58);
+        l
+    }
+
+    #[test]
+    fn one_shot_runs_one_cycle_then_holds() {
+        for shape in [
+            Shape::Sine,
+            Shape::Triangle,
+            Shape::SawUp,
+            Shape::SawDown,
+            Shape::Square,
+        ] {
+            let mut free = lfo_64();
+            let mut shot = lfo_64();
+            shot.set_one_shot(true);
+            for k in 1..=63 {
+                shot.set_one_shot(true);
+                let (f, s) = (free.tick(shape), shot.tick(shape));
+                assert_eq!(
+                    f.to_bits(),
+                    s.to_bits(),
+                    "{shape:?} step {k} is the free-running value"
+                );
+                assert!(!shot.is_held());
+            }
+            // The 64th step completes the cycle: the held value is the end of the cycle, not the wrapped start.
+            let end = shot.tick(shape);
+            assert!(shot.is_held(), "{shape:?}");
+            let want = match shape {
+                Shape::Sine | Shape::Triangle => 0.0,
+                Shape::SawUp => 1.0,
+                Shape::SawDown | Shape::Square => -1.0,
+                _ => unreachable!(),
+            };
+            assert!(
+                (end - want).abs() < 1e-5,
+                "{shape:?}: held {end}, want {want}"
+            );
+            for _ in 0..500 {
+                assert_eq!(shot.tick(shape).to_bits(), end.to_bits(), "{shape:?} holds");
+            }
+        }
+    }
+
+    #[test]
+    fn one_shot_from_a_start_phase_ends_where_it_started() {
+        // Start at a quarter turn: the saw rises to 1, wraps, rises to just under the start again and holds -0.5.
+        let mut l = Lfo::new(1, StartPhase::Cycles(0.25));
+        l.set_rate(23.4375, SR, 32);
+        l.set_one_shot(true);
+        let mut ys = Vec::new();
+        for _ in 0..70 {
+            l.set_one_shot(true);
+            ys.push(l.tick(Shape::SawUp));
+        }
+        assert!(l.is_held());
+        assert!((ys[63] + 0.5).abs() < 1e-5, "{}", ys[63]);
+        assert!(ys[62] < ys[63], "still rising into the end of the cycle");
+        assert!(
+            ys[..47].windows(2).all(|w| w[1] > w[0]),
+            "rises to the top of the cycle"
+        );
+        assert_eq!(ys[47], -1.0, "step 48 is the wrap, back to the bottom");
+        assert!(
+            ys[47..64].windows(2).all(|w| w[1] > w[0]),
+            "rising again to the start phase"
+        );
+        assert!(ys[63..].iter().all(|y| y.to_bits() == ys[63].to_bits()));
+        // A cycle that does not divide into whole steps: the last step is partial, the hold is the same.
+        let mut odd = Lfo::new(1, StartPhase::Cycles(0.25));
+        odd.set_rate(21.3, SR, 32);
+        odd.set_one_shot(true);
+        let mut held_at = None;
+        let steps: Vec<f32> = (0..200)
+            .map(|k| {
+                let y = odd.tick(Shape::SawUp);
+                if odd.is_held() && held_at.is_none() {
+                    held_at = Some(k);
+                }
+                y
+            })
+            .collect();
+        // 21.3 Hz is 0.01420 of a cycle per step: the cycle ends in step 71 (index 70), part way through it.
+        assert_eq!(held_at, Some(70));
+        assert!((steps[70] + 0.5).abs() < 1e-5, "{}", steps[70]);
+        assert!(
+            steps[70..]
+                .iter()
+                .all(|y| y.to_bits() == steps[70].to_bits())
+        );
+        assert!(
+            steps[69] < steps[70],
+            "the last step still rises into the end of the cycle"
+        );
+    }
+
+    #[test]
+    fn one_shot_random_shapes_hold_their_own_cycle() {
+        // From phase 0 nothing is drawn at the end: sample & hold holds the cycle's first value, and smooth random
+        // ends on the second.
+        let mut r = Rng::new(7);
+        let (a, b) = (r.bipolar_f32(), r.bipolar_f32());
+        let mut sh = Lfo::new(7, StartPhase::Cycles(0.0));
+        sh.set_rate(23.4375, SR, 32);
+        sh.set_one_shot(true);
+        let ys: Vec<f32> = (0..200).map(|_| sh.tick(Shape::SampleHold)).collect();
+        assert!(ys.iter().all(|y| *y == a), "held {a}: {ys:?}");
+        let mut sm = Lfo::new(7, StartPhase::Cycles(0.0));
+        sm.set_rate(23.4375, SR, 32);
+        sm.set_one_shot(true);
+        let zs: Vec<f32> = (0..200).map(|_| sm.tick(Shape::SmoothRandom)).collect();
+        assert!((zs[63] - b).abs() < 1e-5, "{} vs {b}", zs[63]);
+        assert!(zs[63..].iter().all(|z| z.to_bits() == zs[63].to_bits()));
+        // From half a cycle the wrap comes mid-cycle and draws once: the hold is the second value.
+        let mut mid = Lfo::new(7, StartPhase::Cycles(0.5));
+        mid.set_rate(23.4375, SR, 32);
+        mid.set_one_shot(true);
+        let ms: Vec<f32> = (0..200).map(|_| mid.tick(Shape::SampleHold)).collect();
+        assert_eq!(*ms.last().unwrap(), b);
+        assert_eq!(ms[0], a);
+    }
+
+    #[test]
+    fn disarming_runs_again_and_arming_starts_a_new_cycle_from_here() {
+        let mut l = lfo_64();
+        l.set_one_shot(true);
+        for _ in 0..70 {
+            let _ = l.tick(Shape::SawUp);
+        }
+        assert!(l.is_held());
+        let parked = l.phase();
+        l.set_one_shot(false);
+        assert!(!l.is_held());
+        let y = l.tick(Shape::SawUp);
+        assert_eq!(l.phase(), parked.wrapping_add(1 << 58));
+        assert!(
+            (y + 0.96875).abs() < 1e-5,
+            "{y}: a step into the cycle (x = 1/64) after the parked phase"
+        );
+        // Arming mid-run: one more full cycle from this phase.
+        let from = l.phase();
+        l.set_one_shot(true);
+        for k in 1..=64 {
+            let _ = l.tick(Shape::Sine);
+            assert_eq!(l.is_held(), k == 64, "step {k}");
+        }
+        assert_eq!(l.phase(), from.wrapping_sub(1));
+        // A stopped LFO never completes a cycle.
+        let mut stopped = Lfo::new(1, StartPhase::Cycles(0.0));
+        stopped.set_rate(0.0, SR, 32);
+        stopped.set_one_shot(true);
+        for _ in 0..100 {
+            let _ = stopped.tick(Shape::Sine);
+        }
+        assert!(!stopped.is_held());
+        stopped.set_rate(23.4375, SR, 32);
+        for _ in 0..64 {
+            let _ = stopped.tick(Shape::Sine);
+        }
+        assert!(stopped.is_held(), "a whole cycle after it starts moving");
+    }
+
+    #[test]
+    fn one_shot_is_off_by_default_and_changes_nothing_when_off() {
+        let mut a = lfo_64();
+        let mut b = lfo_64();
+        for _ in 0..500 {
+            b.set_one_shot(false);
+            assert_eq!(
+                a.tick(Shape::Triangle).to_bits(),
+                b.tick(Shape::Triangle).to_bits()
+            );
+        }
+        assert!(!b.is_held());
     }
 
     /// FNV-1a over the bit patterns of 20 s of control-rate output, per shape: pinned so a change is deliberate.

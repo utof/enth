@@ -18,7 +18,7 @@
 //! | `noise` | `generators` | `noise` | voice | `color`, `level` |
 //! | `svf` | `voice_fx` | `filter` | voice | `mode`, `cutoff`, `resonance`, `keytrack`, `drive` |
 //! | `adsr` | `modulators` | `env` | voice | `attack`, `decay`, `sustain`, `release`, `velocity` |
-//! | `lfo` | `modulators` | `lfo` | voice or global (`scope`) | `shape`, `rate`, `polarity`, `scope`, `phase_mode`, `phase`, `seed` |
+//! | `lfo` | `modulators` | `lfo` | voice or global (`scope`) | `shape`, `rate`, `polarity`, `scope`, `phase_mode`, `phase`, `seed`, `sync`, `beats`, `one_shot` |
 //! | `reverb` | `fx` | `reverb` | global | `dry`, `wet`, `room`, `decay`, `early`, `detune`, `low_cut`, `high_cut`, `low_damp`, `high_damp` |
 //! | `comp` | `fx` | `comp` | global | `threshold`, `ratio`, `attack`, `release`, `knee`, `makeup`, `mix` |
 //! | `voice` (built-in) | — | — | voice | `mode`, `polyphony`, `glide`, `glide_mode`, `pan`; plus `amp_env`, a module id |

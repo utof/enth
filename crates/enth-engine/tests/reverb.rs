@@ -57,6 +57,7 @@ impl Rig {
     fn run(&mut self, l: &mut Block, r: &mut Block) {
         let params = GlobalParams::from_slices(&self.vals, &self.vals, &self.vals);
         self.module.process(&mut GlobalCx {
+            tempo_bpm: enth_engine::tempo::DEFAULT_TEMPO_BPM,
             params,
             left: l,
             right: r,

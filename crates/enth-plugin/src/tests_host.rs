@@ -134,6 +134,9 @@ enum HostEvent {
     Note(Ev),
     Param(HostParam, f32),
     Reset,
+    /// The host's transport reports this tempo from the block that starts at this frame on (lane TMP): like a
+    /// parameter change it splits the block, because the host gives one tempo per block.
+    Tempo(f64),
 }
 
 #[derive(Clone, Debug)]
@@ -295,7 +298,7 @@ impl Host {
             // Split at parameter changes, as nice-plug does with sample-accurate automation.
             let mut cuts: Vec<usize> = todo
                 .iter()
-                .filter(|a| matches!(a.event, HostEvent::Param(..)))
+                .filter(|a| matches!(a.event, HostEvent::Param(..) | HostEvent::Tempo(_)))
                 .map(|a| a.frame as usize)
                 .filter(|&f| f > b0)
                 .collect();
@@ -303,10 +306,15 @@ impl Host {
             let mut s0 = b0;
             for s1 in cuts.into_iter().chain([b1]) {
                 for a in &todo {
-                    if let HostEvent::Param(p, v) = a.event
-                        && a.frame as usize == s0
-                    {
-                        self.set_param(p, v);
+                    if a.frame as usize != s0 {
+                        continue;
+                    }
+                    match a.event {
+                        HostEvent::Param(p, v) => self.set_param(p, v),
+                        HostEvent::Tempo(bpm) => {
+                            self.ctx.transport.as_mut().expect("a transport").tempo = Some(bpm);
+                        }
+                        _ => {}
                     }
                 }
                 let events: Vec<Ev> = todo
@@ -871,4 +879,116 @@ fn voice_info_reports_the_plans_voice_count_at_activation_and_after_a_swap() {
     assert_eq!(host.ctx.capacities.borrow().len(), 1, "reported once");
     let _ = NoteKey::new(0, 0);
     let _ = EventKind::ModWheel { value: 0.0 };
+}
+
+/// The golden patch with its LFO synced to the tempo (1/8T) and deep enough on the cutoff to hear.
+fn synced_golden() -> Patch {
+    use enth_patch::catalogue::{Beats, LfoParam};
+    let mut patch = golden();
+    let lfo = patch
+        .modulators
+        .iter_mut()
+        .find(|m| m.id.as_str() == "lfo1")
+        .expect("the golden patch has lfo1");
+    lfo.values[LfoParam::Sync.index()] = 1.0;
+    lfo.values[LfoParam::Beats.index()] = Beats::EighthTriplet.index() as f32;
+    let route = patch
+        .routes
+        .iter_mut()
+        .find(|r| r.dst.to_string() == "filter1.cutoff")
+        .expect("lfo1 drives the cutoff");
+    route.depth = 70.0;
+    patch
+}
+
+#[test]
+fn the_hosts_tempo_drives_a_synced_lfo_like_the_renders_tempo_at_every_block_size() {
+    let patch = synced_golden();
+    let text = patch.to_json();
+    let frames = 14_400; // 0.3 s
+    let sr = f64::from(SR);
+    let notes = vec![Note::new(48, 1.0, 0.0, 0.25), Note::new(55, 0.5, 0.02, 0.2)];
+    let schedule = |tempo: &[(u64, f64)]| {
+        let mut s = vec![
+            on(0, 48, 0, 1.0),
+            on(960, 55, 1, 0.5),
+            off(9_600, 55, 1),
+            off(12_000, 48, 0),
+        ];
+        s.extend(tempo.iter().map(|&(f, bpm)| at(f, HostEvent::Tempo(bpm))));
+        s.sort_by_key(|a| a.frame);
+        s
+    };
+
+    // No tempo from the host: 140, which is the render's default.
+    let default = cli(
+        &patch,
+        &Performance {
+            notes: notes.clone(),
+            duration_s: 0.3,
+            ..Performance::default()
+        },
+    );
+    assert!(loud(&default));
+    for block in BLOCKS {
+        let mut host = Host::new(Some(&text), None);
+        assert!(
+            same(&host.render(frames, block, &schedule(&[])), &default),
+            "no tempo, block {block}"
+        );
+    }
+
+    // The host starts at 100 BPM and changes it twice, at frames the grid does not hit (3,001 and 9,100).
+    let perf = Performance {
+        notes,
+        duration_s: 0.3,
+        tempo_bpm: 100.0,
+        tempo_changes: vec![
+            enth_render::TempoChange {
+                time_s: 3_001.0 / sr,
+                bpm: 174.0,
+            },
+            enth_render::TempoChange {
+                time_s: 9_100.0 / sr,
+                bpm: 63.5,
+            },
+        ],
+        ..Performance::default()
+    };
+    let expected = cli(&patch, &perf);
+    assert!(
+        !same(&expected, &default),
+        "the tempo is audible in a synced patch"
+    );
+    let host_tempo = [(0, 100.0), (3_001, 174.0), (9_100, 63.5)];
+    for block in BLOCKS {
+        let mut host = Host::new(Some(&text), None);
+        let got = host.render(frames, block, &schedule(&host_tempo));
+        assert!(same(&got, &expected), "block {block}");
+    }
+}
+
+#[test]
+fn a_reset_sends_the_hosts_tempo_to_the_fresh_engine_again() {
+    let patch = synced_golden();
+    let text = patch.to_json();
+    let mut host = Host::new(Some(&text), None);
+    let schedule = [
+        at(0, HostEvent::Tempo(174.0)),
+        on(0, 60, 0, 0.8),
+        at(4_800, HostEvent::Reset),
+        on(4_800, 64, 2, 0.8),
+        off(14_400, 64, 2),
+    ];
+    let (l, r) = host.render(24_000, 64, &schedule);
+    // After the reset the engine counts from 0 at its default tempo and the host's 174 BPM is told again.
+    let perf = Performance {
+        notes: vec![Note::new(64, 0.8, 0.0, 0.2)],
+        duration_s: 0.4,
+        tempo_bpm: 174.0,
+        ..Performance::default()
+    };
+    let expected = cli(&patch, &perf);
+    assert!(loud(&expected));
+    assert!(same(&(l[4_800..].to_vec(), r[4_800..].to_vec()), &expected));
 }

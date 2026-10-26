@@ -422,3 +422,151 @@ fn the_tempo_defaults_to_140_and_an_unsynced_patch_ignores_it() {
     assert_eq!(at(90.0), base);
     assert_eq!(at(174.0), base);
 }
+
+/// Two saws and a synced voice LFO on the pitch of the first (S2a, lane TMP): the tempo is a real input here.
+fn synced_vibrato() -> Patch {
+    use enth_patch::Route;
+    use enth_patch::catalogue::Beats;
+    let mut p = two_saws();
+    let mut lfo = ModuleInstance::new(id("lfo1"), ModuleKind::Lfo);
+    lfo.values[LfoParam::Sync.index()] = 1.0;
+    lfo.values[LfoParam::Beats.index()] = Beats::EighthDotted.index() as f32;
+    p.modulators.push(lfo);
+    p.routes.push(Route {
+        src: "lfo1".parse().unwrap(),
+        dst: "osc1.fine".parse().unwrap(),
+        depth: 60.0,
+    });
+    p
+}
+
+#[test]
+fn a_synced_patch_follows_the_tempo_and_a_mid_render_change_is_block_size_independent() {
+    use enth_render::TempoChange;
+    let spec = RenderSpec::default();
+    let patch = synced_vibrato();
+    let at = |bpm: f64| {
+        bits(
+            &render(
+                &patch,
+                &Performance {
+                    tempo_bpm: bpm,
+                    ..chord(0.6, 1.2)
+                },
+                &spec,
+            )
+            .unwrap(),
+        )
+    };
+    let (b90, b140, b174) = (at(90.0), at(140.0), at(174.0));
+    assert_ne!(b90, b140, "the tempo is an input of a synced patch");
+    assert_ne!(b140, b174);
+    assert_eq!(at(140.0), b140, "and the same tempo gives the same bits");
+
+    // A tempo change at 0.5 s (inside a host block at every block size below), one NaN-free awkward time included.
+    let perf = Performance {
+        tempo_bpm: 100.0,
+        tempo_changes: vec![
+            TempoChange {
+                time_s: 0.5,
+                bpm: 174.0,
+            },
+            TempoChange {
+                time_s: 0.7013,
+                bpm: 63.0,
+            },
+        ],
+        ..chord(0.6, 1.2)
+    };
+    let reference = bits(&render_with_block(&patch, &perf, &spec, 32).unwrap());
+    for block in [1, 64, 100, 4096] {
+        let out = render_with_block(&patch, &perf, &spec, block).unwrap();
+        assert_eq!(bits(&out), reference, "block {block}");
+    }
+    // The change is causal: before 0.5 s the render is the one at the initial tempo, after it another one.
+    let frames = 57_600;
+    let first = Performance {
+        tempo_bpm: 100.0,
+        ..chord(0.6, 1.2)
+    };
+    let plain = render(&patch, &first, &spec).unwrap();
+    let changed = render(&patch, &perf, &spec).unwrap();
+    assert_eq!(changed.left[..24_000], plain.left[..24_000]);
+    assert_ne!(changed.left[24_000..], plain.left[24_000..]);
+    assert_eq!(changed.frames(), frames);
+    // A change at time 0 is the same as the initial tempo.
+    let zero = Performance {
+        tempo_bpm: 140.0,
+        tempo_changes: vec![TempoChange {
+            time_s: 0.0,
+            bpm: 90.0,
+        }],
+        ..chord(0.6, 1.2)
+    };
+    assert_eq!(bits(&render(&patch, &zero, &spec).unwrap()), b90);
+
+    // An unsynced patch ignores every tempo and tempo change.
+    let plain_patch = every_kind();
+    let unsynced = |perf: Performance| bits(&render(&plain_patch, &perf, &spec).unwrap());
+    assert_eq!(unsynced(perf.clone()), unsynced(chord(0.6, 1.2)));
+}
+
+#[test]
+fn a_tempo_outside_20_to_999_is_a_typed_error_not_a_clamp() {
+    use enth_render::{MAX_TEMPO_BPM, MIN_TEMPO_BPM, TempoChange};
+    let spec = RenderSpec::default();
+    let p = Patch::init();
+    let code = |perf: Performance| render(&p, &perf, &spec).unwrap_err().code();
+    for bpm in [
+        19.99,
+        999.01,
+        0.0,
+        -120.0,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    ] {
+        assert_eq!(
+            code(Performance {
+                tempo_bpm: bpm,
+                ..chord(0.1, 0.2)
+            }),
+            "bad_performance",
+            "{bpm}"
+        );
+        let change = TempoChange { time_s: 0.1, bpm };
+        assert_eq!(
+            code(Performance {
+                tempo_changes: vec![change],
+                ..chord(0.1, 0.2)
+            }),
+            "bad_performance",
+            "{bpm}"
+        );
+    }
+    for time_s in [-0.1, f64::NAN, f64::INFINITY] {
+        let change = TempoChange { time_s, bpm: 120.0 };
+        assert_eq!(
+            code(Performance {
+                tempo_changes: vec![change],
+                ..chord(0.1, 0.2)
+            }),
+            "bad_performance",
+            "{time_s}"
+        );
+    }
+    // The ends are in.
+    for bpm in [MIN_TEMPO_BPM, MAX_TEMPO_BPM] {
+        assert!(
+            render(
+                &p,
+                &Performance {
+                    tempo_bpm: bpm,
+                    ..chord(0.1, 0.2)
+                },
+                &spec
+            )
+            .is_ok()
+        );
+    }
+}

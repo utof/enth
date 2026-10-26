@@ -46,6 +46,7 @@ fn a_gate_envelope_is_exact() {
         let mut out = [0.5; MAX_VOICES];
         let tick = |env: &mut Adsr, notes: &NoteState, out: &mut [f32; MAX_VOICES]| {
             env.tick(&mut VoiceModCx {
+                tempo_bpm: enth_engine::tempo::DEFAULT_TEMPO_BPM,
                 voices: &[v],
                 notes,
                 params,

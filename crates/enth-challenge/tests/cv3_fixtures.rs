@@ -25,6 +25,10 @@ use enth_challenge::{Challenge, ChallengeMeta, PhraseId, ScorerId};
 use sha2::{Digest, Sha256};
 
 /// The v1 and v2 challenge fixtures, as main `567e0df` (before Challenge v3) has them.
+///
+/// `v2/draw.json` and `v2/patch.json` were regenerated at F1m (S2a, lane TMP): they embed a patch with an `lfo`, and
+/// `Patch::to_json()` is dense, so the file now carries the lfo's three new parameters at their defaults
+/// (`sync`, `beats`, `one_shot`); the challenge itself is unchanged.
 const V1_V2_SHA256: [(&str, &str); 6] = [
     (
         "v1/custom.json",
@@ -40,11 +44,11 @@ const V1_V2_SHA256: [(&str, &str); 6] = [
     ),
     (
         "v2/draw.json",
-        "e35bb4d8606a8123ea8367bfdf08b19ba8645af3dc25080903d5247ca1d822c9",
+        "4d6ed65c3f9d9c0b25c8eb2e9303ceb4ca459eb7e5aa29076639b5dc4926765c",
     ),
     (
         "v2/patch.json",
-        "57aff26da23617ac15eea5f521327eab126381178055b8e882dcbe375a418c88",
+        "2c173d46115a9f6ed721c63f9d9f14f0ff5b1c9403c5d87121999e9e42c7724a",
     ),
     (
         "v2/seed-editable.json",
