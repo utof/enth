@@ -11,7 +11,7 @@ The table lane DLY implements, generated from `crates/enth-patch/src/catalogue/d
 
 - **Time:** `beats` of the tempo with `sync` (exact in beats across tempo changes), else `time`; never above 2 s (the rings are sized from `time`'s maximum at `prepare`), so a synced time past 2 s (a bar below 120 BPM) plays at 2 s. `beats` offers the shared list up to a bar (`DELAY_BEATS`, the same indices as `Beats`).
 - **Loop:** each repeat passes `low_cut` and `high_cut` and returns at `feedback` (a soft clip keeps 100 % bounded); `ping_pong` crosses the repeats.
-- **The effect's own output is the dry signal plus the echoes**, so `mix` scales the echoes against an unchanged dry signal (100 %: the first echo as loud as the dry, filtered); 0 % is the input bit for bit. Time changes glide or crossfade, never click.
+- **The effect's own output is the dry signal plus the echoes**, so `mix` scales the echoes against an unchanged dry signal (100 %: the first echo as loud as the dry, filtered); 0 % is the input bit for bit. Time changes glide or crossfade, never click. This is the one documented exception to the level-bounded rule for feedback effects (catalogue rule 3): the repeats are separate events in time that fall away with `feedback` (a soft clip bounds 100 %), the dry signal passes unchanged, and nothing is normalised.
 - **Defaults:** a gentle useful setting: a synced dotted eighth, feedback 35 %, low cut 150 Hz, high cut 6 kHz.
 
 ### `delay` — Delay (fx, ids `delay1`, `delay2`…; 8 parameters)

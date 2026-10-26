@@ -105,7 +105,9 @@ impl<'a> VoiceParams<'a> {
     }
 
     /// The parameter's base value: the patch value or the latest value event, before smoothing and modulation. The
-    /// value to use in `start_voice`, and for discrete parameters (they are never smoothed or modulated).
+    /// value to use in `start_voice`, and for discrete parameters, which are never smoothed. Most are never
+    /// modulated either, except an `Enum` flagged `modulatable` (S2a: `lfo.beats`, F1m lane TMP): read that one with
+    /// [`cur`](Self::cur), which holds the rounded item index of the modulated value.
     #[inline(always)]
     #[must_use]
     pub fn base(&self, p: impl ParamIndex) -> f32 {

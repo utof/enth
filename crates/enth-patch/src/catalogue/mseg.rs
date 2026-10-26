@@ -57,7 +57,7 @@ enum_items! {
         /// Repeats the whole length.
         Loop = ("loop", "Loop", "Repeats the shape for as long as the note lasts: a drawn LFO for wobbles and rhythms."),
         /// Runs once, then holds the last level.
-        OneShot = ("one_shot", "One-shot", "Plays the shape once from the note's start, then holds the last level: an envelope of any length."),
+        OneShot = ("one_shot", "One shot", "Plays the shape once from the note's start, then holds the last level: an envelope of any length."),
         /// Loops a region while the note is held, then plays to the end.
         SustainLoop = ("sustain_loop", "Sustain loop", "Plays to the loop end, loops between loop start and loop end while the note is held, then plays the rest after release."),
     }
@@ -78,7 +78,7 @@ params! {
     pub enum MsegParam in MSEG_PARAMS {
         Mode = ParamSpec::enumeration("mode", "Mode", &MSEG_MODES, MsegMode::Loop.index())
             .basic("How the shape plays: loop (a drawn LFO), one-shot (an envelope) or sustain loop (loops while the note is held)."),
-        Sync = ParamSpec::toggle("sync", "Tempo sync", true)
+        Sync = ParamSpec::toggle("sync", "Sync", true)
             .basic("On: the shape's length is beats of the song's tempo. Off: it is length, in milliseconds."),
         Length = ParamSpec::float("length", "Length", Unit::Ms, 10.0, 60_000.0, Scale::Log, 1_000.0)
             .modulatable()
@@ -91,9 +91,9 @@ params! {
         Scope = ParamSpec::enumeration("scope", "Scope", &MSEG_SCOPES, MsegScope::Voice.index())
             .structural()
             .intermediate("One MSEG per voice or one global MSEG; only a global MSEG can modulate effects. Changing it rebuilds the plan."),
-        Phase = ParamSpec::float("phase", "Start", Unit::Degrees, 0.0, 360.0, Scale::Linear, 0.0)
+        Phase = ParamSpec::float("phase", "Start phase", Unit::Degrees, 0.0, 360.0, Scale::Linear, 0.0)
             .periodic()
-            .advanced("Where in the shape each note starts, as a share of the length (180deg starts halfway)."),
+            .advanced("Where in the shape each note starts, as a share of the length (180° starts halfway)."),
         Velocity = ParamSpec::float("velocity", "Velocity", Unit::Percent, 0.0, 100.0, Scale::Linear, 0.0)
             .intermediate("How much note velocity scales the output: 0 % ignores velocity, 100 % follows it fully."),
         Points = ParamSpec::int("points", "Points", Unit::None, 2, 16, 3)

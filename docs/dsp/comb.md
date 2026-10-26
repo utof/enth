@@ -9,9 +9,9 @@
 
 The table lane FLT implements, generated from `crates/enth-patch/src/catalogue/comb.rs` by `cargo test -p enth-patch --test catalogue -- --ignored --nocapture print_reserved_markdown`. After F1m a key, unit, range, scale, default or flag changes only through the coordinator. The file's doc comment states the signal path the meanings assume; the decisions behind the table are in [catalogue.md](catalogue.md#s2a-decisions-lane-cat-f1m).
 
-- **Pitch:** `261.63 Hz · 2^((semi + keytrack · (pitch − 60)) / 12)` with `keytrack` as a fraction (svf's key-60 reference), so at 100 % and `semi` 0 the teeth sit on the note's harmonics and follow glides.
-- **Structure:** `y = x + feedback · lowpass(y[n − period])` (the low-pass is `damping`, open at 20 kHz; negative feedback puts the teeth between the harmonics), then `mix` (0 % bit for bit). A noise burst and feedback near 99 % make a Karplus–Strong pluck; an LFO on `semi` flanges.
-- **Defaults:** a gentle useful setting: feedback 50 %, damping 10 kHz.
+- **Pitch:** `f = max(20 Hz, 261.63 Hz · 2^((semi + keytrack · (pitch − 60)) / 12))` with `keytrack` as a fraction (svf's key-60 reference), so at 100 % and `semi` 0 the teeth sit on the note's harmonics and follow glides. **The frequency is clamped to at least 20 Hz**, which bounds the per-voice delay line: the period is at most 50 ms (2,400 samples at 48 kHz). Without the clamp, `semi` −48 at key 0 is 0.5 Hz, a 2 s buffer for every voice. (The comb also needs a period of at least two samples; the clamp's upper end is lane FLT's.)
+- **Structure and level:** `y[n] = (1 − |feedback|) · x[n] + feedback · lowpass(y[n − period])` (the low-pass is `damping`, open at 20 kHz; negative feedback puts the teeth between the harmonics), then `mix` (0 % bit for bit). The loop's input is scaled by `1 − |feedback|`, so the gain at the teeth peaks at 0 dB at every `feedback` (the bare `x + feedback · lowpass(y[n − period])` peaks at `1 / (1 − |feedback|)`: +6 dB on every harmonic of a keytracked note at the default 50 %, +40 dB at 99 %). A noise burst and feedback near 99 % make a Karplus–Strong pluck, a quiet one since the burst is scaled by `1 − |feedback|`; an LFO on `semi` flanges. Lane FLT measures the level (catalogue rule 3).
+- **Defaults:** a gentle useful setting: feedback 50 %, damping 10 kHz; no louder than its input.
 
 ### `comb` — Comb filter (voice_fx, ids `comb1`, `comb2`…; 5 parameters)
 

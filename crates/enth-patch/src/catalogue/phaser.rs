@@ -11,9 +11,16 @@
 //! What the table's meanings assume (lane MOD implements it): `stages` all-passes (an even count gives `stages / 2`
 //! notches; an odd count is allowed and adds a half), their corner swept around `center` by `depth` (in octaves: 100 %
 //! is ±3 octaves) at `rate` Hz or one cycle per `beats` when `sync` is on; the right channel's sweep runs `width` × 180°
-//! behind the left's. **The effect's own output is the dry signal plus the all-pass chain** (that sum makes the
-//! notches), so `mix` 100 % is the full phaser and `mix` 0 % returns the input bit for bit. A global effect: only
-//! global sources modulate it.
+//! behind the left's.
+//!
+//! **The effect's own output is the dry signal plus the all-pass chain, level-matched** (that sum makes the notches):
+//! `wet = chain(v)` with `v[n] = (1 − |feedback|) · x[n] + feedback · wet[n − 1]` (the feedback is taken around the whole
+//! chain, and its input is scaled by `1 − |feedback|`), and the output at `mix` 100 % is `(x + wet) / 2`. So the level is
+//! bounded: the chain's gain peaks at 0 dB at every `feedback` (the bare `x + feedback · wet` loop peaks at
+//! `1 / (1 − |feedback|)`, +40 dB at 99 %), and where the dry and the wet are in phase the sum is 0 dB and not +6 dB.
+//! A freshly added phaser changes a full-scale saw's level by at most about 3 dB. `mix` blends the input (0 %, bit for
+//! bit) with that sum (100 %). A global effect: only global sources modulate it. Lane MOD measures the level and may
+//! choose another normalisation that keeps the same bound.
 //!
 //! At its defaults it is **a gentle useful setting**: a slow six-stage sweep around 1 kHz with light feedback.
 
@@ -30,18 +37,18 @@ params! {
             .modulatable()
             .smoothing(SMOOTH)
             .basic("How fast the notches sweep, in cycles per second, when tempo sync is off."),
-        Sync = ParamSpec::toggle("sync", "Tempo sync", false)
+        Sync = ParamSpec::toggle("sync", "Sync", false)
             .intermediate("On: one sweep lasts beats of the song's tempo, and rate is ignored."),
         Beats = ParamSpec::enumeration("beats", "Beats", &BEATS, Beats::Bar.index())
             .intermediate("How long one sweep lasts when tempo sync is on, as a note division."),
         Depth = ParamSpec::float("depth", "Depth", Unit::Percent, 0.0, 100.0, Scale::Linear, 50.0)
             .modulatable()
             .smoothing(SMOOTH)
-            .basic("How far the notches sweep around the centre: 100 % is three octaves either way."),
-        Center = ParamSpec::float("center", "Centre", Unit::Hz, 50.0, 10_000.0, Scale::Log, 1_000.0)
+            .basic("How far the notches sweep around the center: 100 % is three octaves either way."),
+        Center = ParamSpec::float("center", "Center", Unit::Hz, 50.0, 10_000.0, Scale::Log, 1_000.0)
             .modulatable()
             .smoothing(SMOOTH)
-            .intermediate("The frequency the notches sweep around; with depth at 0 % a static, comb-like colour here.")
+            .intermediate("The frequency the notches sweep around; with depth at 0 % a static, comb-like color here.")
             .moves("spectrum.centroid_hz"),
         Feedback = ParamSpec::float("feedback", "Feedback", Unit::Percent, -99.0, 99.0, Scale::Linear, 30.0)
             .modulatable()

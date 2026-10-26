@@ -70,7 +70,7 @@ enum_items! {
         /// The phase bends towards one end of the cycle (Massive's Bend, a Casio CZ-style phase distortion).
         Bend = ("bend", "Bend", "Bends the cycle so the wave's detail bunches up at the start (positive) or the end (negative): brighter, nasal tones."),
         /// Opposite bends in the two halves of the cycle.
-        Asym = ("asym", "Asymmetric bend", "Bends the two halves of the cycle in opposite directions: a pulse-width-like change for any wave."),
+        Asymmetric = ("asymmetric", "Asymmetric bend", "Bends the two halves of the cycle in opposite directions: a pulse-width-like change for any wave."),
         /// The cycle is squeezed into part of the period, the rest holding still.
         Squeeze = ("squeeze", "Squeeze", "Plays the whole cycle in a shorter part of the period and holds the rest: a thinner, pulse-like buzz."),
         /// The phase runs faster and wraps, like hard sync.
@@ -137,12 +137,12 @@ params! {
         Detune = ParamSpec::float("detune", "Detune", Unit::Cents, 0.0, 100.0, Scale::Linear, 20.0)
             .modulatable()
             .smoothing(SMOOTH)
-            .intermediate("How far the outermost unison copies sit from the centre, in cents (±): small values thicken, large ones sound like a detuned chord.")
+            .intermediate("How far the outermost unison copies sit from the center, in cents (±): small values thicken, large ones sound like a detuned chord.")
             .moves("detune.beating_hz"),
         Blend = ParamSpec::float("blend", "Blend", Unit::Percent, 0.0, 100.0, Scale::Linear, 100.0)
             .modulatable()
             .smoothing(SMOOTH)
-            .advanced("Level of the side unison copies against the centre one: 0 % is the centre alone, 100 % every copy equal."),
+            .advanced("Level of the side unison copies against the center one: 0 % is the center alone, 100 % every copy equal."),
         Spread = ParamSpec::float("spread", "Spread", Unit::Percent, 0.0, 100.0, Scale::Linear, 50.0)
             .modulatable()
             .smoothing(SMOOTH)

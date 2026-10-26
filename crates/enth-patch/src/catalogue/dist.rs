@@ -15,9 +15,20 @@
 //!    is no split and the whole input is distorted.
 //! 2. `drive` (gain) and `bias` (a DC offset) go into the curve `mode` names, oversampled by `oversample` for the
 //!    clipping and folding curves; `bitcrush` uses `bits` and `downsample` uses `rate` (their aliasing is the point, so
-//!    `oversample` does not apply to them). A DC blocker after the curve removes what `bias` adds.
+//!    `oversample` does not apply to them). **`rate` runs up to 192 kHz so that its top is the identity at every
+//!    supported sample rate** (up to 192 kHz): a downsample rate at or above the engine's sample rate holds nothing and
+//!    passes the input unchanged, so the knob can always be turned fully off. A DC blocker after the curve removes
+//!    what `bias` adds.
 //! 3. `tone` is a low-pass after the curve.
-//! 4. `mix` blends the input (0 %, returned bit for bit) with the result (100 %).
+//! 4. `mix` blends the input (0 %, returned bit for bit) with the result (100 %). **The blend is against a
+//!    phase-matched dry path**: the oversampler's IIR half-bands, the `keep_lows` crossover and the `tone` low-pass all
+//!    shift phase, so a plain dry copy would comb the blend wherever the curve is nearly linear (a quiet signal, or
+//!    `drive` near 0 dB). The dry signal that `mix` blends is therefore the input put through the same phase response
+//!    as the wet path's linear stages (for example an all-pass with that phase, or the crossover's own all-pass
+//!    output), so wet and dry stay aligned at every frequency; how is lane DST's choice. At `mix` 0 % the dry path
+//!    is not used and the input is returned bit for bit (the step from the matched dry path to the raw input changes
+//!    phase, never level). The test: with `drive` 0 dB and a level well below the curve's
+//!    knee, `mix` 50 % has a flat magnitude response, within ±0.5 dB from 50 Hz to 10 kHz.
 //!
 //! At its defaults it is **a gentle useful setting**: 6 dB into the soft curve, warmth on a full-scale oscillator and
 //! nearly nothing on a quiet one.
@@ -34,11 +45,11 @@ enum_items! {
         /// Flat-topped clipping.
         Hard = ("hard", "Hard clip", "Cuts the peaks flat: bright, buzzy and aggressive."),
         /// A soft curve that treats the two halves differently, so even harmonics appear.
-        Asym = ("asym", "Asymmetric", "Clips the top and bottom differently, like a tube or a diode: thicker, with even harmonics."),
+        Asymmetric = ("asymmetric", "Asymmetric", "Clips the top and bottom differently, like a tube or a diode: thicker, with even harmonics."),
         /// The signal folds back through a sine once it passes the limit.
         SineFold = ("sine_fold", "Sine fold", "Folds the wave back on itself in smooth curves: rich, metallic and vocal as drive rises."),
         /// The signal folds back linearly at the limits.
-        TriFold = ("tri_fold", "Triangle fold", "Folds the wave back at sharp corners: brighter and buzzier than the sine fold."),
+        TriangleFold = ("triangle_fold", "Triangle fold", "Folds the wave back at sharp corners: brighter and buzzier than the sine fold."),
         /// Fewer amplitude steps (`bits`).
         Bitcrush = ("bitcrush", "Bitcrush", "Fewer volume steps, set by bits: gritty digital noise that follows the signal."),
         /// A lower sample rate, held between samples (`rate`).
@@ -77,10 +88,10 @@ params! {
             .modulatable()
             .smoothing(SMOOTH)
             .intermediate("Bit depth in bitcrush mode, fractions allowed: 16 is clean, 8 is gritty, 2 is a buzz. Other modes ignore it."),
-        Rate = ParamSpec::float("rate", "Rate", Unit::Hz, 100.0, 48_000.0, Scale::Log, 6_000.0)
+        Rate = ParamSpec::float("rate", "Rate", Unit::Hz, 100.0, 192_000.0, Scale::Log, 6_000.0)
             .modulatable()
             .smoothing(SMOOTH)
-            .intermediate("The held sample rate in downsample mode: lower is more metallic and aliased; at the engine's rate or above it does nothing. Other modes ignore it."),
+            .intermediate("The held sample rate in downsample mode: lower is more metallic and aliased; at the engine's rate or above it the input passes unchanged. Other modes ignore it."),
         Tone = ParamSpec::float("tone", "Tone", Unit::Hz, 100.0, 20_000.0, Scale::Log, 20_000.0)
             .modulatable()
             .smoothing(SMOOTH)
