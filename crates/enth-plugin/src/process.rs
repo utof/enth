@@ -12,6 +12,12 @@
 //!    ([`crate::Shared::rebaseline`]) the values the load restored ([`Restored`]) become "last sent" without being
 //!    sent: the loaded patch wins; a value the host set after the load, even in the same block, is still sent. At
 //!    activate the "last sent" values are the host's current ones, so nothing is echoed.
+//!    **The host's tempo** (S2a, lane TMP) goes in first, from nice-plug's `Transport::tempo`: when the tempo differs
+//!    from the one the engine last heard, one `EventKind::Tempo` at offset 0 (applied at the next segment boundary,
+//!    like every event), so the plugin's synced modules follow the host's tempo exactly as `enth render --bpm` and a
+//!    performance's `tempo_changes` do. The host gives one tempo per block, so a tempo ramp steps at block
+//!    boundaries. A host that gives none (or a non-finite or non-positive one) leaves the engine's tempo as it is:
+//!    140 BPM until the host gives one. No host parameter is involved; the 72 ids are untouched.
 //! 2. After a CLAP `reset` (which frees the engine's voices and empties its queue without a report), report every
 //!    live host note's `NOTE_END` at frame 0 ([`crate::ledger`]).
 //! 3. Translate the block's note events ([`crate::notes::engine_event`]) into the preallocated event list and render
@@ -47,6 +53,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering, fence};
 
+use enth_engine::tempo::{self, DEFAULT_TEMPO_BPM};
 use enth_engine::{Engine, Event, EventKind, MAX_VOICES, NoteKey};
 use enth_patch::catalogue::VoiceMode;
 use enth_patch::model::{MACROS, SLOTS};
@@ -61,9 +68,10 @@ use crate::{Enth, Task, notes};
 /// The shortest gap between two background pumps `process()` schedules, in seconds of audio.
 pub const PUMP_INTERVAL_S: f64 = 0.05;
 
-/// The event list's capacity: nice-plug's input capacity plus all 72 parameters. A block with more events is
-/// rendered in chunks (each chunk ends at the frame of the event that did not fit), so none is dropped.
-pub const EVENT_CAPACITY: usize = <Enth as Plugin>::INPUT_EVENT_CAPACITY + HOST_PARAMS;
+/// The event list's capacity: nice-plug's input capacity plus all 72 parameters and the tempo event. A block with
+/// more events is rendered in chunks (each chunk ends at the frame of the event that did not fit), so none is
+/// dropped.
+pub const EVENT_CAPACITY: usize = <Enth as Plugin>::INPUT_EVENT_CAPACITY + HOST_PARAMS + 1;
 
 /// The host values nice-plug restored with a state, as the `patch` field's load saw them (host main thread), for the
 /// next block to take as its "last sent" values ([`crate::Shared::rebaseline`]). Only these are adopted silently: a
@@ -131,6 +139,8 @@ pub struct Audio {
     now: HostValues,
     /// This block's engine events.
     events: Vec<Event>,
+    /// The tempo the engine last heard, in BPM ([`DEFAULT_TEMPO_BPM`] for a new or reset engine).
+    tempo: f64,
     /// [`PUMP_INTERVAL_S`] in frames at the active sample rate.
     pump_interval: u64,
     /// Frames since the last background pump was scheduled.
@@ -160,6 +170,7 @@ impl Audio {
             last: HostValues::default(),
             now: HostValues::default(),
             events: Vec::with_capacity(EVENT_CAPACITY),
+            tempo: DEFAULT_TEMPO_BPM,
             pump_interval: 1,
             since_pump: 1,
             editor_open: false,
@@ -184,6 +195,7 @@ impl Audio {
         self.ledger.clear();
         self.reset_pending = false;
         self.voices = voices;
+        self.tempo = DEFAULT_TEMPO_BPM;
     }
 
     /// At a CLAP `reset` (audio thread), which frees the engine's voices and empties its queue without a report:
@@ -191,6 +203,21 @@ impl Audio {
     /// them forever).
     pub fn note_reset(&mut self) {
         self.reset_pending = true;
+        // `Engine::reset` returns the engine's tempo to the default: the next block tells it the host's again.
+        self.tempo = DEFAULT_TEMPO_BPM;
+    }
+
+    /// Step 1's tempo: the host's tempo from this block's transport as one `Tempo` event at offset 0 when it differs
+    /// from what the engine last heard (see [`wanted_tempo`]).
+    fn tempo_event(&mut self, host: Option<f64>) {
+        let want = wanted_tempo(host, self.tempo);
+        if want.to_bits() != self.tempo.to_bits() {
+            self.tempo = want;
+            self.events.push(Event {
+                offset: 0,
+                kind: EventKind::Tempo { bpm: want },
+            });
+        }
     }
 
     /// Step 1: the host values that changed since the last block as engine events. After a load, `restored` (the
@@ -293,7 +320,8 @@ impl Enth {
         let audio = &mut self.audio;
         audio.events.clear();
 
-        // 1. Host values.
+        // 1. The host's tempo, then its values.
+        audio.tempo_event(context.transport().tempo);
         self.params.read_modulated(&mut audio.now);
         if self.shared.rebaseline.swap(false, Ordering::AcqRel) {
             let mut restored = HostValues::default();
@@ -411,6 +439,16 @@ impl Enth {
     }
 }
 
+/// The tempo the engine should have for a block whose transport reports `host` (nice-plug's `Transport::tempo`),
+/// given the tempo `held` it last heard: a usable host tempo (finite and positive) clamped into the engine's range
+/// ([`tempo::MIN_TEMPO_BPM`] to [`tempo::MAX_TEMPO_BPM`]); a missing or unusable one keeps `held`.
+pub fn wanted_tempo(host: Option<f64>, held: f64) -> f64 {
+    match host {
+        Some(bpm) if bpm.is_finite() && bpm > 0.0 => tempo::sanitize(bpm).unwrap_or(held),
+        _ => held,
+    }
+}
+
 /// Render one chunk of a block (`out` starts at frame `start` of the host block; `events`' offsets count from
 /// there) and report its `NOTE_END`s at their frames in the host block: the engine's reports for live host notes,
 /// then the live notes the ledger's sweep finds ended without a report, at the chunk's last frame.
@@ -521,6 +559,55 @@ mod tests {
     fn the_event_list_fits_every_host_event_and_every_parameter() {
         let audio = Audio::new();
         assert!(audio.events.capacity() >= EVENT_CAPACITY);
-        assert_eq!(EVENT_CAPACITY, 1024 + 72);
+        assert_eq!(
+            EVENT_CAPACITY,
+            1024 + 72 + 1,
+            "input events, 72 parameters, the tempo"
+        );
+    }
+
+    #[test]
+    fn the_host_tempo_maps_to_the_engines_with_140_until_the_host_gives_one() {
+        // A usable host tempo is taken (clamped into 20..=999); nothing usable keeps what the engine has.
+        assert_eq!(wanted_tempo(Some(128.0), 140.0), 128.0);
+        assert_eq!(wanted_tempo(Some(19.0), 140.0), tempo::MIN_TEMPO_BPM);
+        assert_eq!(wanted_tempo(Some(5000.0), 140.0), tempo::MAX_TEMPO_BPM);
+        assert_eq!(wanted_tempo(None, 140.0), 140.0);
+        assert_eq!(
+            wanted_tempo(None, 90.0),
+            90.0,
+            "a host that stops saying keeps the last tempo"
+        );
+        for junk in [0.0, -120.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(wanted_tempo(Some(junk), 90.0), 90.0, "{junk}");
+        }
+    }
+
+    #[test]
+    fn a_tempo_event_goes_out_only_when_the_host_tempo_changed() {
+        let mut audio = Audio::new();
+        let tempo = |bpm: f64| Event {
+            offset: 0,
+            kind: EventKind::Tempo { bpm },
+        };
+        // A new engine runs at 140: no host tempo and a host at 140 send nothing.
+        audio.tempo_event(None);
+        audio.tempo_event(Some(140.0));
+        assert_eq!(audio.events(), []);
+        audio.tempo_event(Some(174.0));
+        assert_eq!(audio.events(), [tempo(174.0)]);
+        audio.tempo_event(Some(174.0));
+        audio.tempo_event(None);
+        audio.tempo_event(Some(f64::NAN));
+        assert_eq!(
+            audio.events().len(),
+            1,
+            "unchanged or unusable sends nothing"
+        );
+        // A CLAP reset puts the engine back at 140, so the host's tempo is sent again (a new activation does the same).
+        audio.events.clear();
+        audio.note_reset();
+        audio.tempo_event(Some(174.0));
+        assert_eq!(audio.events(), [tempo(174.0)]);
     }
 }
