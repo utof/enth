@@ -15,7 +15,9 @@
 //!   route's depth (`value + depth`). Dragging it vertically is one gesture of `SetDepth`s on that route (one undo
 //!   step), which the session sends as depth events: the engine ramps each over 10 ms, and nothing recompiles unless
 //!   the depth goes to or from 0. Other routes into the knob are edited in the overview; any route is removed from the
-//!   control's right-click menu ("Remove … modulation").
+//!   control's right-click menu ("Remove … modulation"). An audio input (S2a: `wt`'s `pm` and `am`) takes a generator's
+//!   output through an audio route, not a modulation source: it refuses a drop with that reason and has no handle (lane
+//!   SKS); its routes' depths are edited in the overview and removed from the same menu ("Remove … audio route").
 
 use egui::{CursorIcon, Id, LayerId, Order, Pos2, Rect, Response, Sense, Ui, Vec2, WidgetInfo};
 use enth_params::{DEPTH, ParamSpec};
@@ -69,6 +71,13 @@ pub fn check(patch: &Patch, src: &ModSource, addr: &ParamAddr, spec: &ParamSpec)
         .find(|r| &r.src == src && &r.dst == addr)
     {
         return DropCheck::Routed(r.depth);
+    }
+    if spec.flags.audio {
+        // An audio input takes a generator's output through an audio route (S2a); making one by drag is lane EDS's.
+        return DropCheck::Refused(format!(
+            "{} takes the audio of a generator, not a modulation source",
+            spec.name
+        ));
     }
     if !spec.flags.modulatable {
         return DropCheck::Refused(format!("{} cannot be modulated", spec.name));
@@ -185,6 +194,11 @@ pub(crate) fn depth_handle(
     out: &mut Intents,
 ) {
     let Some(route) = p.routes.last() else { return };
+    // An audio route's depth is a share of its source's output, not a distance along the knob's range: its handle
+    // would sit at a meaningless place on the ring, so an audio input has none (the overview edits the depth).
+    if p.spec.flags.audio {
+        return;
+    }
     let m = &t.size.modulation;
     let at = (p.norm() + route.depth / 100.0).clamp(0.0, 1.0);
     let center = Knob::ring_point(t, ui, knob.rect, inline, at);

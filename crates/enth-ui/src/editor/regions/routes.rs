@@ -193,21 +193,39 @@ fn route_row(ui: &Ui, t: &Theme, v: &MatrixView, cell: usize, rect: Rect, out: &
             out.push(Intent::End(Grip::Route(route.clone())));
         }
     }
+    // An audio route (S2a: a generator's output into `wt`'s `pm` or `am`) says so: its depth is a share of the source's
+    // output, not a distance along the target's range (lane SKS).
+    let audio = v.audio[row];
     hit.context_menu(|ui| {
-        if ui.button(format!("Remove {source} modulation")).clicked() {
+        let what = if audio { "audio route" } else { "modulation" };
+        if ui.button(format!("Remove {source} {what}")).clicked() {
             out.push(Intent::Unroute(route.clone()));
             ui.close();
         }
     });
     if hit.hovered() || hit.dragged() {
-        out.hovered = Some(Hovered {
-            path: format!(
-                "Modulation {} {source} {} {target}",
-                glyph::PATH,
-                glyph::SEND
-            ),
-            value: signed_percent(depth),
-            modulation: "drag to set the depth, double-click to remove".to_owned(),
+        out.hovered = Some(if audio {
+            Hovered {
+                path: format!(
+                    "Audio route {} {source} {} {target}",
+                    glyph::PATH,
+                    glyph::SEND
+                ),
+                value: signed_percent(depth),
+                modulation: format!(
+                    "the share of {source}'s output that reaches it; drag to set the depth, double-click to remove"
+                ),
+            }
+        } else {
+            Hovered {
+                path: format!(
+                    "Modulation {} {source} {} {target}",
+                    glyph::PATH,
+                    glyph::SEND
+                ),
+                value: signed_percent(depth),
+                modulation: "drag to set the depth, double-click to remove".to_owned(),
+            }
         });
     }
 

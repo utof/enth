@@ -78,14 +78,21 @@ pub(super) fn attach(
     });
 }
 
-/// One "Remove … modulation" item per route into the parameter, newest last (lane ED2).
+/// One "Remove … modulation" item per route into the parameter, newest last (lane ED2); "Remove … audio route" for an
+/// audio input (lane SKS).
 fn unroute(ui: &mut Ui, p: &ParamView, out: &mut Intents) {
     if p.routes.is_empty() {
         return;
     }
     ui.separator();
     for r in &p.routes {
-        let text = format!("Remove {} modulation ({})", r.name, signed_percent(r.depth));
+        // An audio input (S2a) is fed by a generator's output, not modulated (lane SKS).
+        let what = if p.spec.flags.audio {
+            "audio route"
+        } else {
+            "modulation"
+        };
+        let text = format!("Remove {} {what} ({})", r.name, signed_percent(r.depth));
         if ui.button(text).clicked() {
             out.push(Intent::Unroute(RouteAddr {
                 src: r.src.clone(),

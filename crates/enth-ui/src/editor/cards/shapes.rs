@@ -5,7 +5,7 @@
 
 use std::f32::consts::{PI, TAU};
 
-use enth_patch::catalogue::{FilterMode, LfoShape, NoiseColor, Wave, Wavetable};
+use enth_patch::catalogue::{FilterMode, LfoShape, NoiseColor, Warp, Wave, Wavetable, WtTable};
 
 /// Samples in a drawn cycle.
 pub const WAVE_SAMPLES: usize = 128;
@@ -24,6 +24,103 @@ pub fn osc(wave: Option<Wave>, pw: f32, table: Option<Wavetable>, position: f32)
         Some(Wave::Pulse) => pulse(x, pw),
         Some(Wave::Table) => wavetable(x, table, position),
     })
+}
+
+/// One cycle of a `wt` (lane SKS), `WAVE_SAMPLES` long, in −1..1: the frame of its table at `position` (0..1), read
+/// through its phase warp (`amount` −1..1), after the formulas of `docs/dsp/wt.md`. A picture of the cycle the
+/// oscillator reads, from the table's recipe with a few harmonics; phase modulation and feedback are not in it.
+pub fn wt(table: Option<WtTable>, position: f32, warp: Option<Warp>, amount: f32) -> Vec<f32> {
+    let p = position.clamp(0.0, 1.0);
+    let raw = cycle(|x| table_frame(table, p, warped(warp, amount, x)));
+    // The recipes differ in level (the generator normalises each frame's peak): so does the picture.
+    let peak = raw.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+    if peak > 1.0 {
+        raw.into_iter().map(|s| s * PEAK / peak).collect()
+    } else {
+        raw
+    }
+}
+
+/// The harmonics a drawn `wt` frame sums (the generator's tables hold 256).
+const WT_HARMONICS: usize = 24;
+
+/// A `wt` table's frame at `p` (0..1), read at phase `x` (0..1), after `docs/dsp/wt.md`'s table recipes.
+fn table_frame(table: Option<WtTable>, p: f32, x: f32) -> f32 {
+    match table {
+        Some(WtTable::Basic) | None => wavetable(x, Some(Wavetable::Basic), p),
+        // Chowning's two-operator FM at 1:1 and with the modulator an octave up; the index rises to 10.
+        Some(WtTable::Fm) => PEAK * (TAU * x + 10.0 * p * (TAU * x).sin()).sin(),
+        Some(WtTable::FmOctave) => PEAK * (TAU * x + 10.0 * p * (2.0 * TAU * x).sin()).sin(),
+        // A saw through one resonant peak that sweeps up the harmonics (32^p, so 1 to 32).
+        Some(WtTable::Formant) => {
+            let centre = 32.0_f32.powf(p);
+            let width = (0.15 * centre).max(0.75);
+            (1..=WT_HARMONICS)
+                .map(|k| {
+                    let k = k as f32;
+                    let peak = 1.0 + 5.0 / (1.0 + ((k - centre) / width).powi(2));
+                    -peak / k * (TAU * k * x).sin()
+                })
+                .sum::<f32>()
+                * PEAK
+                * 0.3
+        }
+        // A few strong, widely spaced partials; position brings more of the 24 in (the last one fading).
+        Some(WtTable::Metal) => {
+            const PARTIALS: [f32; 24] = [
+                1.0, 3.0, 5.0, 8.0, 11.0, 14.0, 18.0, 23.0, 29.0, 35.0, 42.0, 50.0, 59.0, 69.0,
+                80.0, 92.0, 105.0, 119.0, 134.0, 150.0, 167.0, 185.0, 204.0, 224.0,
+            ];
+            let sounding = 3.0 + 21.0 * p;
+            PARTIALS
+                .iter()
+                .enumerate()
+                .map(|(j, &h)| {
+                    let fade = (sounding - j as f32).clamp(0.0, 1.0);
+                    let phase = (0.618_034 * (j * j) as f32).fract();
+                    fade / (1.0 + j as f32).sqrt() * (TAU * (h * x + phase)).sin()
+                })
+                .sum::<f32>()
+                * PEAK
+                * 0.35
+        }
+    }
+}
+
+/// The phase a warp reads instead of `x`, after `docs/dsp/wt.md`'s maps; the identity at amount 0.
+fn warped(warp: Option<Warp>, amount: f32, x: f32) -> f32 {
+    let a = amount.clamp(-1.0, 1.0);
+    if a == 0.0 {
+        return x;
+    }
+    match warp {
+        Some(Warp::Bend) => {
+            let k = 8.0_f32.powf(-a);
+            x / (x + k * (1.0 - x))
+        }
+        Some(Warp::Asymmetric) => {
+            let knee = 0.5 - 0.45 * a;
+            if x < 0.5 {
+                x * 2.0 * knee
+            } else {
+                knee + (x - 0.5) * 2.0 * (1.0 - knee)
+            }
+        }
+        Some(Warp::Squeeze) => {
+            let w = 1.0 - 0.9 * a.abs();
+            if a > 0.0 {
+                (x / w).min(1.0)
+            } else {
+                ((x - (1.0 - w)) / w).max(0.0)
+            }
+        }
+        Some(Warp::Sync) => (x * (1.0 + 7.0 * a.abs())).fract(),
+        Some(Warp::Quantize) => {
+            let steps = (256.0 * (-7.0 * a.abs()).exp2()).round().max(2.0);
+            (x * steps).floor() / steps
+        }
+        Some(Warp::Off) | None => x,
+    }
 }
 
 /// A short stretch of noise, in −1..1: the same samples every frame, pink smoothed from white.
@@ -316,5 +413,30 @@ mod tests {
             }
         }
         assert!(noise(Some(NoiseColor::Pink)).iter().all(|s| s.abs() <= 1.0));
+        for table in WtTable::ALL {
+            for warp in Warp::ALL {
+                for position in [0.0, 0.3, 1.0] {
+                    for amount in [-1.0, -0.4, 0.0, 0.4, 1.0] {
+                        let samples = wt(Some(*table), position, Some(*warp), amount);
+                        assert_eq!(samples.len(), WAVE_SAMPLES);
+                        assert!(
+                            samples.iter().all(|s| s.abs() <= 1.0),
+                            "{table:?} {warp:?} {position} {amount}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_wt_at_position_0_and_no_warp_is_a_sine_and_a_warp_at_amount_0_changes_nothing() {
+        let sine = osc(Some(Wave::Sine), 0.5, None, 0.0);
+        let plain = wt(Some(WtTable::Basic), 0.0, Some(Warp::Off), 0.0);
+        assert_eq!(plain, sine);
+        for warp in Warp::ALL {
+            assert_eq!(wt(Some(WtTable::Basic), 0.0, Some(*warp), 0.0), plain);
+        }
+        assert_ne!(wt(Some(WtTable::Basic), 0.0, Some(Warp::Bend), 0.6), plain);
     }
 }
