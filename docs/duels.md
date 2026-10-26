@@ -295,7 +295,7 @@ QR result cards (encoders and the `rqrr` decoder were checked; QR is useless bet
 | **Old builds say "bad length"** and can't be fixed | Every kind keeps code v1's GF(32) symbol, so short codes read "update enth"; the friend sheet |
 | **Scorer drift** after GR1's `sound/2` | The scorer set in every code; old ids kept |
 | **Format sprawl** (two result kinds, an ear result, the parameter table, the daily formula) | One judge at F1e; fixtures with pinned SHAs |
-| **Real answers longer than measured** | Measured at F1e on dragged, touched and solver answers (up to about 270 symbols at level 5); SKD measured passing answers at F2d (up to about 290); the widening of 2026-10-26 added about 15–20 symbols at level 5 (up to about 310); a whole-patch layout if ever needed |
+| **Real answers longer than measured** | Measured at F1e on dragged, touched and solver answers (up to about 270 symbols at level 5); SKD measured passing answers at F2d (up to about 290); the widening of 2026-10-26 added about 15–21 symbols at level 5 (up to about 310); a whole-patch layout if ever needed |
 | **Paste mangling** in chat apps and phones | Paste-anything, a corpus test, your duel check |
 
 ## Decisions (provisional)
