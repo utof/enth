@@ -12,7 +12,7 @@ use common::{SEED, engine, events, every_kind_patch, note, saw_patch};
 use enth_engine::segment::EVENT_CAPACITY;
 use enth_engine::{Engine, Event, EventKind, NoteKey, ParamId};
 use enth_patch::Patch;
-use enth_patch::catalogue::VoiceParam;
+use enth_patch::catalogue::{Beats, LfoParam, VoiceParam};
 
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
@@ -123,6 +123,50 @@ fn a_full_event_queue_drops_without_allocating() {
         })
         .collect();
     guarded(&mut e, &ev, 4096, 4096);
+    assert_eq!(e.stats().dropped_events, 500);
+}
+
+/// Tempo events (S2a, lane TMP) are ordinary events: a stream of valid, clamped and NaN tempos into synced and
+/// one-shot LFOs, and a flood past the queue's capacity, never allocate.
+#[test]
+fn tempo_events_and_synced_lfos_do_not_allocate() {
+    let mut patch = every_kind_patch(400.0);
+    for m in &mut patch.modulators {
+        if m.kind == enth_patch::ModuleKind::Lfo {
+            m.values[LfoParam::Sync.index()] = 1.0;
+            m.values[LfoParam::Beats.index()] = Beats::EighthTriplet.index() as f32;
+        }
+    }
+    patch.modulators[2].values[LfoParam::OneShot.index()] = 1.0;
+    let notes = [note(60, 0, 9000), note(64, 100, 9000)];
+    let mut ev = events(&notes);
+    let bpms = [90.0, 174.0, f64::NAN, 5000.0, 1.0, 140.0];
+    ev.extend((0..60u64).map(|i| {
+        (
+            i * 500 + 3,
+            EventKind::Tempo {
+                bpm: bpms[i as usize % bpms.len()],
+            },
+        )
+    }));
+    ev.sort_by_key(|(f, _)| *f);
+    for block in [1, 64, 100, 4096] {
+        let mut e = engine(&patch, SEED);
+        let out = guarded(&mut e, &ev, 30_000, block);
+        assert!(out.iter().any(|x| *x != 0.0), "not silent");
+    }
+    let mut e = engine(&patch, SEED);
+    let flood: Vec<_> = (0..EVENT_CAPACITY + 500)
+        .map(|i| {
+            (
+                0u64,
+                EventKind::Tempo {
+                    bpm: 60.0 + (i % 100) as f64,
+                },
+            )
+        })
+        .collect();
+    guarded(&mut e, &flood, 4096, 4096);
     assert_eq!(e.stats().dropped_events, 500);
 }
 
