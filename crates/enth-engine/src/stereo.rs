@@ -13,7 +13,9 @@
 //!
 //! - **[`StereoMode::Auto`]** (what [`compile`](crate::plan::compile) uses): the flag is [`patch_needs_stereo`],
 //!   which is `false` for every patch today, because no module yet makes a per-voice stereo signal. Lane UNI turns
-//!   it on for a `wt` whose unison spread is above 0. While the flag is clear, **today's mono path runs untouched
+//!   it on for an enabled `wt` with `unison` ≥ 2: `patch_needs_stereo` reads only structural parameters and enabled
+//!   flags (`wt.spread` is modulatable and changing it never recompiles the plan, so a flag keyed to it would go
+//!   stale). While the flag is clear, **today's mono path runs untouched
 //!   and bit for bit**: no right-channel instance exists, no bus is copied, and the engine takes one branch per
 //!   active voice and segment to learn that.
 //! - **[`StereoMode::Forced`]** sets it for any patch. It is the test and bench hook (no catalogue change, no
@@ -24,9 +26,11 @@
 //! # What runs when it is set
 //!
 //! 1. **The generators** sum into the left voice bus exactly as before. [`StereoPath::split`] then copies it to the
-//!    right bus for every active voice: a mono source is "the same signal on both channels". When a stereo
-//!    generator exists (lane UNI), it writes its right channel to that bus, and `split` is the only function that
-//!    changes.
+//!    right bus for every active voice: a mono source is "the same signal on both channels". **The seam for a stereo
+//!    generator (lane UNI) is wider than `split`:** `split` copies the whole summed left bus once, after all the
+//!    generators, so an `osc` beside a stereo `wt` needs a right output per generator (summed in patch order into the
+//!    right bus), and a right `post` buffer in [`crate::routing`]'s `AudioRoutes` when that `wt` is also a route
+//!    source (docs/dsp/engine.md, "Stereo voice path").
 //! 2. **Every `voice_fx` module is instantiated twice.** The left instance is the plan's own, running on the left
 //!    bus exactly as in the mono path. The right instance ([`StereoPath::process`]) is built in `compile` from the
 //!    same patch values, reads **the same parameter span** (so one set of knobs, one set of smoothers, one set of
@@ -55,7 +59,10 @@
 //!   gains and the products must be formed the same way (the same ramps, in the same order; see [`mix_voice`]).
 //!   That is also why the centre is −3 dB per channel and not unity as in a console's balance knob: a unity centre
 //!   would make a stereo voice 3 dB louder than the same voice with the flag clear, and the flag would change the
-//!   level of a patch.
+//!   level of a patch. **This fixes only the part the two channels share** (equal channels, a mono source); for two
+//!   different channels the law is a chosen, standard constant-power balance (each side keeps its own gain, the far
+//!   channel is dropped at a hard pan), picked because it never mixes the channels. Lane UNI confirms it with its
+//!   spread golden.
 //! - **Hard left (−100 %) passes the left channel at unity and silences the right; hard right the opposite.** This
 //!   is a balance, not a pan: a wide voice is narrowed by pushing it to a side, and its far channel is dropped.
 //! - **For two uncorrelated channels of equal power the total power is constant over the pan range**
@@ -135,8 +142,9 @@ pub enum StereoMode {
 /// Whether `patch` has a module that makes a per-voice stereo signal, so its plan needs the stereo voice path.
 ///
 /// **Always `false` today**: no generator or voice effect produces a stereo voice signal, so every existing patch
-/// takes the mono path unchanged. Lane UNI replaces the body: a `wt` whose unison spread is above 0 (a function of
-/// the patch's values only, never of a running plan).
+/// takes the mono path unchanged. Lane UNI replaces the body: an enabled `wt` with `unison` ≥ 2. It reads only
+/// structural parameters and enabled flags, a function of the patch alone and never of a running plan: a
+/// non-structural value such as the modulatable `wt.spread` never recompiles, so a flag keyed to it would go stale.
 #[must_use]
 pub fn patch_needs_stereo(_patch: &Patch) -> bool {
     false
