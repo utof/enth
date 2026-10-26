@@ -131,7 +131,7 @@ Lane CAT wrote the final tables of S2a's eleven reserved kinds on 2026-10-26 ([p
 | `ott` | fx | 12 | gentle useful: `depth` 30 % |
 | `comb` | voice_fx | 5 | gentle useful: a soft resonance on the note (feedback 50 %) |
 | `formant` | voice_fx | 5 | gentle useful: the vowel "a" (a vowel filter is never transparent) |
-| `mseg` | modulators | 59 (16 points) | a 1-bar synced triangle, looping; nothing until routed |
+| `mseg` | modulators | 59 (16 points) | a 1-bar synced triangle, looping; nothing until routed (implemented by lane MSEG: [mseg.md](mseg.md)) |
 | `chorus` | fx | 9 | gentle useful: a slow, wide chorus |
 | `phaser` | fx | 9 | gentle useful: a slow six-stage sweep |
 | `eq` | fx | 13 | near-transparent: every gain 0 dB, both cuts at the ends of their ranges (in the path, out of the way) |
