@@ -1006,6 +1006,39 @@ mod tests {
     }
 
     #[test]
+    fn a_source_that_writes_nothing_is_silent_to_its_routes_not_stale() {
+        let p = patch(&["osc1", "wt1"], &[route("osc1", "wt1.pm", 50.0)]);
+        let (mut plan, _) = compile(&p, &PrepareCfg::new(48_000.0)).unwrap();
+        let mut voice: VoiceBus = [[0.0; SEG]; MAX_VOICES];
+        let mut sync: SyncBus = [[NO_SYNC; SEG]; MAX_VOICES];
+        let mut heard = Vec::new();
+        for writes in [true, false] {
+            plan.audio
+                .render(&[0], None, &mut voice, &mut sync, |g, ports| {
+                    if let Some(pre) = ports.pre_level
+                        && writes
+                    {
+                        pre[0] = [1.0; SEG];
+                    }
+                    if let Some(input) = &ports.audio_in {
+                        let mut block = [f32::NAN; SEG];
+                        assert!(input.read(PM, 0, &mut block));
+                        assert_eq!(g, 1, "the carrier");
+                        heard.push(block);
+                    }
+                });
+        }
+        assert_eq!(
+            heard[0], [0.5; SEG],
+            "what the source wrote, times the depth"
+        );
+        assert_eq!(
+            heard[1], [0.0; SEG],
+            "nothing left over from the segment before"
+        );
+    }
+
+    #[test]
     fn audio_in_ramps_the_depth_and_sums() {
         let mut a: VoiceBus = [[0.0; SEG]; MAX_VOICES];
         let mut b: VoiceBus = [[0.0; SEG]; MAX_VOICES];
