@@ -35,11 +35,23 @@
 //!
 //! # The sum
 //!
-//! A channel is `Σ_k y_k · c_k(t)` with `c_k(t) = c0_k + (c1_k − c0_k)·RAMP[i]`, added in lane order from lane 0:
-//! `((t0 + t1) + t2) + …`, over the `n` copies only. The horizontal sum never uses `reduce_add` (its order depends on
-//! the target): the products go through `to_array()` and are added one by one.
+//! A channel is `Σ_k y_k · c_k(t)` with `c_k(t) = c0_k + (c1_k − c0_k)·RAMP[i]`, added in lane order from lane 0,
+//! starting from `+0.0`: `((((0 + t0) + t1) + t2) + …`, over the `n` copies. The horizontal sum never uses
+//! `reduce_add` (its order depends on the target): the products go through `to_array()` and are added one by one.
+//! The lanes beyond the `n` copies hold a gain of exactly 0 and a value of exactly `+0.0`, so their products are
+//! `+0.0` and adding them changes nothing: the sum runs over all eight lanes without a loop on the count, and equals
+//! the sum over the `n` copies bit for bit (the leading `+0.0` is what makes that true even when every product is
+//! `−0.0`: the sum is `+0.0` either way).
+//!
+//! # The `wide` subset
+//!
+//! `f32x8` (and `f32x4` for the tap transposes) with `+ − × ÷`, `min`, `floor`, the compares, `select` and the bit
+//! operations, `splat` and the array conversions, `trunc_int` (an exact truncation; the positions are never negative
+//! or NaN) with `i32x8`'s `+` and `&`, `i32x8::round_float` (an exact conversion of integers below 2^24) and
+//! `f32x4::transpose` (a permutation). All of them are exact on every target, so the six-target golden
+//! (`wt-unison-*`) sees the same bits. Nothing from `clippy.toml`'s ban list is used.
 
-use wide::f32x8;
+use wide::{f32x4, f32x8, i32x8};
 
 use super::{BELOW_ONE, NO_LEVEL, Prep, Prologue, Ramp, Segment, TRACK_DECAY, Warp, prologue};
 use crate::osc::{MAX_DT_PHASED, clamp_dt};
@@ -293,6 +305,7 @@ impl UnisonVoice {
             warp,
             x,
             off: &off,
+            pm: seg.pm.is_some(),
             new: Rows::new(&level),
             old: Rows::new(&old),
             fade: mask_of(fade),
@@ -360,6 +373,9 @@ impl UnisonVoice {
         let (b0, db) = (c.feedback[0], c.feedback[1] - c.feedback[0]);
         let feedback_on = c.feedback[0] != 0.0 || c.feedback[1] != 0.0;
         let warp_on = c.warp != Warp::Off;
+        // Without phase modulation or feedback the read phase is the accumulator itself, which is always in `[0, 1)`
+        // (the fold below keeps it there; `wrap01` of such a value is the value), so the add and the wrap are skipped.
+        let direct = !c.pm && !feedback_on;
         // Quantize steps change by whole steps, so the end value holds for the segment; the others ramp.
         let warp_moves = c.x[0].to_bits() != c.x[1].to_bits() && c.warp != Warp::Quantize;
         let (x0, dx) = if c.warp == Warp::Quantize {
@@ -384,12 +400,15 @@ impl UnisonVoice {
         for i in 0..N {
             let w = Ramp::<N>::W[i];
             let wv = f32x8::splat(w);
-            let mut p = phase + f32x8::splat(c.off[i]);
-            if feedback_on {
-                let mean = half * (y1 + y2);
-                p += f32x8::splat(b0 + db * w) * mean;
+            let mut p = phase;
+            if !direct {
+                p += f32x8::splat(c.off[i]);
+                if feedback_on {
+                    let mean = half * (y1 + y2);
+                    p += f32x8::splat(b0 + db * w) * mean;
+                }
+                p = wrap01_lanes(p);
             }
-            p = wrap01_lanes(p);
             if warp_on {
                 p = if warp_moves {
                     warp_lanes(c.warp, &c.warp.prep(x0 + dx * w), p)
@@ -403,11 +422,11 @@ impl UnisonVoice {
                 y = c.fade.select(o + (y - o) * wv, y);
             }
             if M {
-                mid[i] = hsum(y * (gm0 + dgm * wv), c.count);
+                mid[i] = hsum(y * (gm0 + dgm * wv));
             }
             if S {
-                left[i] = hsum(y * (gl0 + dgl * wv), c.count);
-                right[i] = hsum(y * (gr0 + dgr * wv), c.count);
+                left[i] = hsum(y * (gl0 + dgl * wv));
+                right[i] = hsum(y * (gr0 + dgr * wv));
             }
             y2 = y1;
             y1 = y;
@@ -427,6 +446,8 @@ struct Ctx<'a, const N: usize> {
     warp: Warp,
     x: [f32; 2],
     off: &'a [f32; N],
+    /// Phase modulation is routed in this segment (else `off` is all zero).
+    pm: bool,
     new: Rows,
     old: Rows,
     /// All ones in the lanes that cross-fade from an old mip level.
@@ -452,15 +473,12 @@ fn mask_of(on: [bool; LANES]) -> f32x8 {
 // The sum
 // ---------------------------------------------------------------------------------------------------------------
 
-/// The first `count` lanes of `products` added in lane order, from lane 0: the fixed horizontal sum.
+/// The lanes of `products` added in lane order from lane 0, starting from `+0.0`: the fixed horizontal sum. The lanes
+/// beyond the copies are `+0.0` and add nothing (see the module docs).
 #[inline(always)]
-fn hsum(products: f32x8, count: usize) -> f32 {
+fn hsum(products: f32x8) -> f32 {
     let a = products.to_array();
-    let mut s = a[0];
-    for &t in &a[1..count.clamp(1, LANES)] {
-        s += t;
-    }
-    s
+    (((((((0.0 + a[0]) + a[1]) + a[2]) + a[3]) + a[4]) + a[5]) + a[6]) + a[7]
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -517,41 +535,39 @@ fn warp_lanes(warp: Warp, c: &Prep, p: f32x8) -> f32x8 {
 /// Where the copies read, per lane: the row of the lane's mip level inside a frame, its length and index mask.
 #[derive(Clone, Copy)]
 struct Rows {
-    off: [usize; LANES],
-    mask: [usize; LANES],
+    /// The offset of each lane's row inside a frame.
+    off: i32x8,
+    mask: i32x8,
     len: f32x8,
 }
 
 impl Rows {
     fn new(levels: &[usize; LANES]) -> Self {
-        let mut off = [0usize; LANES];
-        let mut mask = [0usize; LANES];
+        let mut off = [0i32; LANES];
+        let mut mask = [0i32; LANES];
         let mut len = [0.0f32; LANES];
         for k in 0..LANES {
             let l = levels[k].min(LEVELS - 1);
-            off[k] = OFFSET[l];
-            mask[k] = LEN[l] - 1;
+            off[k] = OFFSET[l] as i32;
+            mask[k] = (LEN[l] - 1) as i32;
             len[k] = LEN[l] as f32;
         }
         Self {
-            off,
-            mask,
+            off: i32x8::from(off),
+            mask: i32x8::from(mask),
             len: f32x8::from(len),
         }
     }
 
-    /// The Hermite index and fraction of every lane's phase (`Cursor::locate`), for the first `count` lanes.
+    /// Where every lane reads, as an index inside a frame, and the fraction between taps (`Cursor::locate`): the
+    /// truncated position in the lane's row (`trunc_int` is exact and the position is never negative or NaN, so it is
+    /// the scalar `p as usize`), masked to the row and moved to the row's place in the frame, and what is left of
+    /// the position.
     #[inline(always)]
-    fn locate(&self, phase: f32x8, count: usize) -> ([usize; LANES], f32x8) {
-        let p = (phase * self.len).to_array();
-        let mut idx = [0usize; LANES];
-        let mut fr = [0.0f32; LANES];
-        for k in 0..count {
-            let i = (p[k] as usize) & self.mask[k];
-            idx[k] = i;
-            fr[k] = p[k] - i as f32;
-        }
-        (idx, f32x8::from(fr))
+    fn locate(&self, phase: f32x8) -> (i32x8, f32x8) {
+        let p = phase * self.len;
+        let i = p.trunc_int() & self.mask;
+        (i + self.off, p - i.round_float())
     }
 }
 
@@ -593,50 +609,57 @@ fn frame_of(frame_pos: f32) -> (usize, f32) {
 /// Every lane's value at `phase` (`Reader::read`).
 #[inline(always)]
 fn read(data: &[f32], rows: &Rows, count: usize, frames: Frames, w: f32, phase: f32x8) -> f32x8 {
-    let (idx, fr) = rows.locate(phase, count);
-    let between = |fi: usize, weight: f32| {
-        let a = gather(data, rows, fi, &idx, fr, count);
-        let b = gather(data, rows, (fi + 1).min(FRAMES - 1), &idx, fr, count);
-        a + (b - a) * f32x8::splat(weight)
-    };
+    let (at, fr) = rows.locate(phase);
     match frames {
-        Frames::Frame(fi) => gather(data, rows, fi, &idx, fr, count),
-        Frames::Between(fi, weight) => between(fi, weight),
+        Frames::Frame(fi) => gather(data, fi, at, fr, count),
+        Frames::Between(fi, weight) => between(data, at, fr, count, fi, weight),
         Frames::Moving { p0, dp } => {
             let (fi, weight) = frame_of(p0 + dp * w);
-            between(fi, weight)
+            between(data, at, fr, count, fi, weight)
         }
     }
 }
 
-/// The Hermite read of `frame` at every lane's index and fraction.
+/// The cross-fade of frame `fi` and the next at `weight`: `a + (b − a)·weight`.
 #[inline(always)]
-fn gather(
-    data: &[f32],
-    rows: &Rows,
-    frame: usize,
-    idx: &[usize; LANES],
-    fr: f32x8,
-    count: usize,
-) -> f32x8 {
-    let start = frame * FRAME_STRIDE;
-    let mut t = [[0.0f32; LANES]; 4];
+fn between(data: &[f32], at: i32x8, fr: f32x8, count: usize, fi: usize, weight: f32) -> f32x8 {
+    let a = gather(data, fi, at, fr, count);
+    let b = gather(data, (fi + 1).min(FRAMES - 1), at, fr, count);
+    a + (b - a) * f32x8::splat(weight)
+}
+
+/// The Hermite read of `frame` at every lane's index (`at`, inside a frame) and fraction.
+#[inline(always)]
+fn gather(data: &[f32], frame: usize, at: i32x8, fr: f32x8, count: usize) -> f32x8 {
+    let at = (at + i32x8::splat((frame * FRAME_STRIDE) as i32)).to_array();
+    // Each copy's four taps are contiguous: one 16-byte copy per lane, then two 4x4 transposes (pure data movement)
+    // turn the eight rows of taps into the four vectors of taps `xm1, x0, x1, x2` that the arithmetic wants.
+    let mut taps = [[0.0f32; 4]; LANES];
     for k in 0..count {
-        let at = start + rows.off[k] + idx[k];
-        if let Some(&[a, b, c, d]) = data.get(at..at + 4) {
-            t[0][k] = a;
-            t[1][k] = b;
-            t[2][k] = c;
-            t[3][k] = d;
+        if let Some(&chunk) = data
+            .get(at[k] as u32 as usize..)
+            .and_then(<[f32]>::first_chunk::<4>)
+        {
+            taps[k] = chunk;
         }
     }
-    hermite_lanes(
-        f32x8::from(t[0]),
-        f32x8::from(t[1]),
-        f32x8::from(t[2]),
-        f32x8::from(t[3]),
-        fr,
-    )
+    let lo = f32x4::transpose([
+        f32x4::from(taps[0]),
+        f32x4::from(taps[1]),
+        f32x4::from(taps[2]),
+        f32x4::from(taps[3]),
+    ]);
+    let hi = f32x4::transpose([
+        f32x4::from(taps[4]),
+        f32x4::from(taps[5]),
+        f32x4::from(taps[6]),
+        f32x4::from(taps[7]),
+    ]);
+    let join = |j: usize| {
+        let (l, h) = (lo[j].to_array(), hi[j].to_array());
+        f32x8::from([l[0], l[1], l[2], l[3], h[0], h[1], h[2], h[3]])
+    };
+    hermite_lanes(join(0), join(1), join(2), join(3), fr)
 }
 
 /// `wavetable::hermite` on every lane, the same operations in the same order.
@@ -689,12 +712,7 @@ mod tests {
                 let w = Ramp::<N>::W[i];
                 let mut acc = 0.0f32;
                 for k in 0..count {
-                    let t = y[k][i] * (g0[k] + (g1[k] - g0[k]) * w);
-                    if k == 0 {
-                        acc = t;
-                    } else {
-                        acc += t;
-                    }
+                    acc += y[k][i] * (g0[k] + (g1[k] - g0[k]) * w);
                 }
                 *o = acc;
             }
@@ -1107,18 +1125,28 @@ mod tests {
     }
 
     #[test]
-    fn the_horizontal_sum_adds_in_lane_order_from_lane_zero() {
-        let v = f32x8::from([1.0e8, 1.0, -1.0e8, 1.0, 0.5, 0.25, 8.0, 3.0]);
+    fn the_horizontal_sum_adds_in_lane_order_from_lane_zero_over_the_copies() {
+        let all = [1.0e8, 1.0, -1.0e8, 1.0, 0.5, 0.25, 8.0, 3.0];
         for count in 2..=LANES {
-            let a = v.to_array();
-            let mut want = a[0];
-            for &t in &a[1..count] {
+            // The lanes beyond the copies are +0.0, as the mix leaves them.
+            let mut lanes = [0.0f32; LANES];
+            lanes[..count].copy_from_slice(&all[..count]);
+            let mut want = 0.0f32;
+            for &t in &lanes[..count] {
                 want += t;
             }
-            assert_eq!(hsum(v, count).to_bits(), want.to_bits(), "count {count}");
+            assert_eq!(
+                hsum(f32x8::from(lanes)).to_bits(),
+                want.to_bits(),
+                "count {count}"
+            );
         }
         // Order matters in f32: 1e8 + 1 - 1e8 is 0, not 1 -- the sum is the left fold, never a tree.
-        assert_eq!(hsum(v, 3), 0.0);
+        let mut three = [0.0f32; LANES];
+        three[..3].copy_from_slice(&all[..3]);
+        assert_eq!(hsum(f32x8::from(three)), 0.0);
+        // Every product -0.0: the sum is +0.0 whether or not the unused lanes are added.
+        assert_eq!(hsum(f32x8::splat(-0.0)).to_bits(), 0.0f32.to_bits());
     }
 
     #[test]
