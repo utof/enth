@@ -196,7 +196,15 @@ pub struct VoiceCx<'a> {
     pub audio_in: Option<AudioIn<'a>>,
     /// Generators that are a source: `Some` when an audio route leaves this module (lane RTE), zeroed for the active
     /// voices. Copy the output *before* the `level` ramp into `pre[v]` for every active voice. `None` otherwise.
+    ///
+    /// What a route carries from a **stereo** generator (lane UNI) is its one mono signal: the mix of its copies
+    /// before the spread, which is also what a plan without the stereo voice path would render, whatever `spread` is.
     pub pre_level: Option<&'a mut VoiceBus>,
+    /// A stereo generator's right channel (lane UNI): `Some` only for a generator whose `is_stereo` is true, in a plan
+    /// with the stereo voice path. Overwrite `io_r[v]` for every active voice, beside `io[v]` which is then the left
+    /// channel. `None` for every other module, and for a stereo generator in a mono plan: it writes its mono mix to
+    /// `io` alone. A generator that is not stereo never sees it; the engine adds its `io` to both channels.
+    pub io_r: Option<&'a mut VoiceBus>,
 }
 
 /// The context of a voice modulator's `tick`.

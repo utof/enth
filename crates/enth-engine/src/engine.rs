@@ -71,6 +71,8 @@ struct Buses {
     /// The right channel of the voice bus, used only while a plan's stereo flag is set (lane SVP).
     voice_r: VoiceBus,
     scratch: VoiceBus,
+    /// A stereo generator's right channel while the plain loop sums it (lane UNI).
+    scratch_r: VoiceBus,
     sync: SyncBus,
     left: Block,
     right: Block,
@@ -197,6 +199,7 @@ impl Engine {
                 voice: [[0.0; SEG]; MAX_VOICES],
                 voice_r: [[0.0; SEG]; MAX_VOICES],
                 scratch: [[0.0; SEG]; MAX_VOICES],
+                scratch_r: [[0.0; SEG]; MAX_VOICES],
                 sync: [[NO_SYNC; SEG]; MAX_VOICES],
                 left: [0.0; SEG],
                 right: [0.0; SEG],
@@ -538,6 +541,7 @@ impl Engine {
             voice: &mut buses.voice,
             voice_r: &mut buses.voice_r,
             scratch: &mut buses.scratch,
+            scratch_r: &mut buses.scratch_r,
             sync: &mut buses.sync,
             left: &mut buses.left,
             right: &mut buses.right,
@@ -1125,6 +1129,7 @@ struct Out<'a> {
     voice: &'a mut VoiceBus,
     voice_r: &'a mut VoiceBus,
     scratch: &'a mut VoiceBus,
+    scratch_r: &'a mut VoiceBus,
     sync: &'a mut SyncBus,
     left: &'a mut Block,
     right: &'a mut Block,
@@ -1227,25 +1232,40 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
 
     // 7. Voices.
     let stereo_on = stereo.is_on();
+    // A stereo generator (lane UNI: a `wt` with unison) makes a right channel of its own; with one in a stereo plan
+    // the generators are summed per channel (below), else the right bus is a copy of the left once they are summed
+    // (`StereoPath::split`), so a plan without one runs what it always ran.
+    let wide_any = stereo_on && generators.iter().any(|s| s.module.is_stereo());
     for &v in active {
         buses.voice[v] = [0.0; SEG];
+        if wide_any {
+            buses.voice_r[v] = [0.0; SEG];
+        }
     }
     // With audio routes (lane RTE) the generators run in route order, each into its own buffer, and sum in patch
     // order (`routing`); the plain loop below then has nothing left to run. Without, it is the only path.
     if !audio.is_empty() {
-        audio.render(active, *sync_master, buses.voice, buses.sync, |g, ports| {
-            let slot = &mut generators[g];
-            slot.module.process(&mut VoiceCx {
-                voices: active,
-                notes,
-                params: voice_table.view(slot.params),
-                io: ports.io,
-                sync_out: ports.sync_out,
-                sync_in: ports.sync_in,
-                audio_in: ports.audio_in,
-                pre_level: ports.pre_level,
-            });
-        });
+        audio.render(
+            active,
+            *sync_master,
+            buses.voice,
+            wide_any.then_some(&mut *buses.voice_r),
+            buses.sync,
+            |g, ports| {
+                let slot = &mut generators[g];
+                slot.module.process(&mut VoiceCx {
+                    voices: active,
+                    notes,
+                    params: voice_table.view(slot.params),
+                    io: ports.io,
+                    sync_out: ports.sync_out,
+                    sync_in: ports.sync_in,
+                    audio_in: ports.audio_in,
+                    pre_level: ports.pre_level,
+                    io_r: ports.io_r,
+                });
+            },
+        );
     }
     let plain = if audio.is_empty() {
         generators.len()
@@ -1263,6 +1283,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             Some(m) if g > m => (None, Some(&*buses.sync)),
             _ => (None, None),
         };
+        let wide = wide_any && slot.module.is_stereo();
         slot.module.process(&mut VoiceCx {
             voices: active,
             notes,
@@ -1272,14 +1293,25 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             sync_in,
             audio_in: None,
             pre_level: None,
+            io_r: wide.then_some(&mut *buses.scratch_r),
         });
         for &v in active {
             for (acc, x) in buses.voice[v].iter_mut().zip(&buses.scratch[v]) {
                 *acc += *x;
             }
+            if wide_any {
+                let right = if wide {
+                    &buses.scratch_r[v]
+                } else {
+                    &buses.scratch[v]
+                };
+                for (acc, x) in buses.voice_r[v].iter_mut().zip(right) {
+                    *acc += *x;
+                }
+            }
         }
     }
-    if stereo_on {
+    if stereo_on && !wide_any {
         StereoPath::split(active, buses.voice, buses.voice_r);
     }
     for slot in voice_fx.iter_mut() {
@@ -1292,6 +1324,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             sync_in: None,
             audio_in: None,
             pre_level: None,
+            io_r: None,
         });
     }
     if stereo_on {

@@ -87,6 +87,7 @@ impl<M: VoiceProcessor> Rig<M> {
             sync_in,
             audio_in: None,
             pre_level: None,
+            io_r: None,
         });
         for &v in voices {
             self.notes.fresh[v] = false;

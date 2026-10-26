@@ -1072,8 +1072,8 @@ mod tests {
             }
             // The outermost copies sit at ±detune and, at 100 % spread, hard left and hard right.
             let m = Mix::new(count, 100.0, 1.0, 1.0);
-            assert!((m.ratio[count - 1] - 2.0f32.powf(100.0 / 1200.0)).abs() < 2e-7);
-            assert!((m.ratio[0] - 2.0f32.powf(-100.0 / 1200.0)).abs() < 2e-7);
+            assert!((m.ratio[count - 1] - (math::exp2(100.0f64 / 1200.0) as f32)).abs() < 2e-7);
+            assert!((m.ratio[0] - (math::exp2(-100.0f64 / 1200.0) as f32)).abs() < 2e-7);
             assert_eq!(m.right[0], 0.0);
             assert_eq!(m.left[count - 1], 0.0);
         }

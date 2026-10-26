@@ -487,6 +487,8 @@ impl Plan {
             .1
             || pair(&self.fx, &old.fx, GlobalProcessorImpl::kind).1
             || self.stereo.is_on() != old.stereo.is_on()
+            // A generator whose copies changed (a `wt`'s unison, lane UNI) is a structural edit too.
+            || copies_changed(&self.generators, &old.generators)
             // An audio route the new plan lacks cannot ramp down in it: the old plan fades out with the route (F1m S3).
             || self
                 .audio
@@ -640,6 +642,14 @@ pub(crate) fn pair<M>(
         changed = true;
     }
     (pairs, changed)
+}
+
+/// Whether a generator in both lists renders a different number of copies in the two (lane UNI: a `wt`'s `unison`).
+fn copies_changed(new: &[Slot<VoiceProcessorImpl>], old: &[Slot<VoiceProcessorImpl>]) -> bool {
+    let (pairs, _) = pair(new, old, VoiceProcessorImpl::kind);
+    new.iter()
+        .zip(pairs)
+        .any(|(s, j)| j.is_some_and(|j| s.module.copies() != old[j].module.copies()))
 }
 
 fn voice_start<'a, M>(

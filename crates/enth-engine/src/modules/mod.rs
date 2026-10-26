@@ -296,6 +296,32 @@ impl ModuleImpl {
 }
 
 impl VoiceProcessorImpl {
+    /// Whether this generator makes a stereo signal per voice (lane UNI: a `wt` with `unison` ≥ 2). In a plan with the
+    /// stereo voice path it is given a right channel (`VoiceCx::io_r`); every other module is mono.
+    #[must_use]
+    pub fn is_stereo(&self) -> bool {
+        match self {
+            VoiceProcessorImpl::Wt(wt) => wt.is_stereo(),
+            VoiceProcessorImpl::Osc(_)
+            | VoiceProcessorImpl::Noise(_)
+            | VoiceProcessorImpl::Svf(_)
+            | VoiceProcessorImpl::Dist(_)
+            | VoiceProcessorImpl::Comb(_)
+            | VoiceProcessorImpl::Formant(_)
+            | VoiceProcessorImpl::Ladder(_) => false,
+        }
+    }
+
+    /// How many copies of its signal this generator renders per voice: a `wt`'s `unison`, 1 for every other module.
+    /// A change of it between two plans is a structural edit that the swap crossfades.
+    #[must_use]
+    pub fn copies(&self) -> usize {
+        match self {
+            VoiceProcessorImpl::Wt(wt) => wt.copies(),
+            _ => 1,
+        }
+    }
+
     /// The catalogue kind.
     #[must_use]
     pub fn kind(&self) -> ModuleKind {
