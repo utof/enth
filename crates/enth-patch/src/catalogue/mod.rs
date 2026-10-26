@@ -30,24 +30,55 @@
 //! a persisted discriminant. Each is **hidden** ([`ModuleSpec::hidden`]): the Add menu, `enth modules`, the
 //! generator and `lesson-coverage` never list it ([`ModuleKind::listed`]), while patches, the engine and the CLI
 //! accept it by key, so the module lanes can build and test it. Lane INT-S2a clears the flag per kind once the kind
-//! has its lesson. Until F1m each table is S0d's placeholder, which lane CAT replaces. The order follows the plan's
-//! (D1), with the cut list's kinds last, so that if the answer code is not widened (D3) the two kinds past its
-//! 16-kind cap are the first two cut (`ladder`, `delay`). **No reserved kind adds an item to an enum that generator
-//! v1 or R3b's layout 1 pins** (S2 rule 1).
+//! has its lesson. The order follows the plan's (D1), with the cut list's kinds last (`delay`, `ladder`). **Their
+//! parameter tables are lane CAT's (freeze F1m)**: after F1m a key, unit, range, scale, default, section or flag changes
+//! only through the coordinator, and a module lane implements its table as written (each kind's file states the signal
+//! path its meanings assume). The decisions behind them are in `docs/dsp/catalogue.md`, "S2a decisions".
 //!
-//! | Discriminant | Kind | Section | Id prefix | Rate | Lane |
-//! | --- | --- | --- | --- | --- | --- |
-//! | 7 | `dist` | `voice_fx` | `dist` | voice | DST |
-//! | 8 | `wt` | `generators` | `wt` | voice | WT |
-//! | 9 | `ott` | `fx` | `ott` | global | OTT |
-//! | 10 | `comb` | `voice_fx` | `comb` | voice | FLT |
-//! | 11 | `formant` | `voice_fx` | `formant` | voice | FLT |
-//! | 12 | `mseg` | `modulators` | `mseg` | voice | MSEG |
-//! | 13 | `chorus` | `fx` | `chorus` | global | MOD |
-//! | 14 | `phaser` | `fx` | `phaser` | global | MOD |
-//! | 15 | `eq` | `fx` | `eq` | global | EQ |
-//! | 16 | `delay` | `fx` | `delay` | global | DLY |
-//! | 17 | `ladder` | `voice_fx` | `ladder` | voice | FLT |
+//! | Discriminant | Kind | Section | Id prefix | Rate | Lane | Parameters, in spec order |
+//! | --- | --- | --- | --- | --- | --- | --- |
+//! | 7 | `dist` | `voice_fx` | `dist` | voice | DST | `mode`, `drive`, `bias`, `bits`, `rate`, `tone`, `keep_lows`, `oversample`, `mix` |
+//! | 8 | `wt` | `generators` | `wt` | voice | WT, UNI | `table`, `position`, `warp`, `warp_amount`, `semi`, `fine`, `level`, `pm`, `pm_index`, `am`, `feedback`, `unison`, `detune`, `blend`, `spread`, `phase_mode`, `phase`, `seed` |
+//! | 9 | `ott` | `fx` | `ott` | global | OTT | `depth`, `time`, `upward`, `downward`, `input`, `output`, `low_split`, `high_split`, `low_gain`, `mid_gain`, `high_gain`, `mix` |
+//! | 10 | `comb` | `voice_fx` | `comb` | voice | FLT | `semi`, `keytrack`, `feedback`, `damping`, `mix` |
+//! | 11 | `formant` | `voice_fx` | `formant` | voice | FLT | `f1`, `f2`, `shift`, `resonance`, `mix` |
+//! | 12 | `mseg` | `modulators` | `mseg` | voice (global with `scope`, once MSEG wires it) | MSEG | `mode`, `sync`, `length`, `beats`, `polarity`, `scope`, `phase`, `velocity`, `points`, `loop_start`, `loop_end`, then `time1`, `level1`, `curve1` … `time16`, `level16`, `curve16` |
+//! | 13 | `chorus` | `fx` | `chorus` | global | MOD | `mode`, `rate`, `sync`, `beats`, `depth`, `delay`, `feedback`, `width`, `mix` |
+//! | 14 | `phaser` | `fx` | `phaser` | global | MOD | `stages`, `rate`, `sync`, `beats`, `depth`, `center`, `feedback`, `width`, `mix` |
+//! | 15 | `eq` | `fx` | `eq` | global | EQ | `low_cut`, `low_freq`, `low_gain`, `bell1_freq`, `bell1_gain`, `bell1_q`, `bell2_freq`, `bell2_gain`, `bell2_q`, `high_freq`, `high_gain`, `high_cut`, `mix` |
+//! | 16 | `delay` | `fx` | `delay` | global | DLY | `sync`, `time`, `beats`, `feedback`, `ping_pong`, `low_cut`, `high_cut`, `mix` |
+//! | 17 | `ladder` | `voice_fx` | `ladder` | voice | FLT | `mode`, `cutoff`, `resonance`, `keytrack`, `drive`, `mix` |
+//!
+//! # Rules for new kinds and parameters (S2 rules 1–4; lane CAT, F1m)
+//!
+//! 1. **Never add an item to a pinned enum.** Generator v1 (`random/catalogue-v1.txt`) and R3b's layout 1 pin the
+//!    items of `osc.wave`, `lfo.shape`, `svf.mode`, `noise.color` and `voice.mode`; one more item moves the v1 golden
+//!    and the layout hash. A new response is a new kind (a ladder filter is `ladder`, not `svf.mode = ladder`; an MSEG
+//!    is `mseg`, not an LFO shape). Nothing may change a field layout 1 reads (a range, scale, unit, item list or
+//!    template-0 value of one of its 102 entries).
+//! 2. **Prefer a new kind to a parameter on an existing kind.** A parameter on an existing kind rehashes every patch
+//!    of that kind (render caches, `enth sound`'s `patch_hash`), so it goes in once, at a freeze, with a default that
+//!    renders the old sound bit for bit (S2a: `lfo`'s `sync`, `beats` and `one_shot`, lane TMP). Envelope times above
+//!    10 s are an `mseg`, not a new `adsr` parameter.
+//! 3. **Neutral defaults.** A freshly added module is harmless: a generator plays a plain tone, a modulator does
+//!    nothing until it is routed, and an effect is either near-transparent or a gentle useful setting (each kind's
+//!    file says which). Where a parameter's minimum or maximum means "off" (`eq.low_cut`, `dist.keep_lows`), the
+//!    module skips that stage there.
+//! 4. **Every effect has `mix`** (0–100 %, default 100 %, the table's last parameter): at 0 % it returns its input bit
+//!    for bit. An effect whose sound contains the dry signal (`comb`, `chorus`, `phaser`, `delay`) defines its 100 %
+//!    with the dry signal in it, so the default is the full effect and never a dry-less wet signal. Two instances of a
+//!    kind keep separate state, so chains repeat a kind ("resampling" as serial chains with `mix` blends).
+//! 5. **A kind lives in one section.** A per-voice and a global version are two kinds, or one kind with a structural
+//!    `scope` parameter that sets its rate within the section (`lfo`, `mseg`).
+//! 6. **Effects in `fx` are global:** only global sources (a global `lfo` or `mseg`, macros, the mod wheel) modulate
+//!    them, so a rhythm-critical effect belongs in `voice_fx`.
+//! 7. **New enums are persisted, though not pinned:** order their items deliberately (as they read on the card, or by
+//!    size), append only after the freeze, and keep room for one more item in the answer code's `item` field. Synced
+//!    lengths use the shared [`BEATS`] (sorted by length), never a list of their own.
+//! 8. **Counts:** at most 63 parameters per kind (the answer code's parameter field, D3), and a `result-params-v1`
+//!    row per kind in `enth-challenge`'s `answer.rs`, whose compile-time asserts fail the build past either.
+//! 9. **Real units:** values are plain numbers in Hz, ms, dB, cents, semitones, percent or degrees; a parameter is
+//!    named for what it does, not its unit (`cutoff`, never `cutoff_hz`).
 //!
 //! # Checked at compile time
 //!
@@ -114,25 +145,28 @@ pub use builtin::{
     Builtin, GLIDE_MODES, GlideMode, MACRO_VALUE, MASTER_PARAMS, MasterParam, VOICE_MODES,
     VOICE_PARAMS, VoiceMode, VoiceParam,
 };
-pub use chorus::{CHORUS_PARAMS, ChorusParam};
+pub use chorus::{CHORUS_MODES, CHORUS_PARAMS, ChorusMode, ChorusParam};
 pub use comb::{COMB_PARAMS, CombParam};
 pub use comp::{COMP_PARAMS, CompParam};
-pub use delay::{DELAY_PARAMS, DelayParam};
-pub use dist::{DIST_PARAMS, DistParam};
+pub use delay::{DELAY_BEATS, DELAY_PARAMS, DelayParam};
+pub use dist::{DIST_MODES, DIST_PARAMS, DistMode, DistParam, OVERSAMPLES, Oversample};
 pub use eq::{EQ_PARAMS, EqParam};
 pub use formant::{FORMANT_PARAMS, FormantParam};
-pub use ladder::{LADDER_PARAMS, LadderParam};
+pub use ladder::{LADDER_MODES, LADDER_PARAMS, LadderMode, LadderParam};
 pub use lfo::{
     LFO_PARAMS, LFO_SCOPES, LFO_SHAPES, LfoParam, LfoScope, LfoShape, POLARITIES, Polarity,
 };
-pub use mseg::{MSEG_PARAMS, MsegParam};
+pub use mseg::{
+    MSEG_MODES, MSEG_PARAMS, MSEG_POINT_BASE, MSEG_POINTS, MSEG_SCOPES, MsegMode, MsegParam,
+    MsegScope,
+};
 pub use noise::{NOISE_COLORS, NOISE_PARAMS, NoiseColor, NoiseParam};
 pub use osc::{OSC_PARAMS, OscParam, WAVES, WAVETABLES, Wave, Wavetable};
 pub use ott::{OTT_PARAMS, OttParam};
 pub use phaser::{PHASER_PARAMS, PhaserParam};
 pub use reverb::{REVERB_PARAMS, ReverbParam};
 pub use svf::{FILTER_MODES, FilterMode, SVF_PARAMS, SvfParam};
-pub use wt::{WT_PARAMS, WtParam};
+pub use wt::{WARPS, WT_PARAMS, WT_TABLES, Warp, WtParam, WtTable};
 
 /// Smoothing for gains, mixes and other continuous controls on the audio path.
 pub(crate) const SMOOTH: Smoothing = Smoothing::Linear { ms: 10.0 };

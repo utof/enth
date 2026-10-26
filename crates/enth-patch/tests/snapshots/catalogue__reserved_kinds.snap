@@ -11,9 +11,257 @@ expression: reserved
     "name": "Distortion",
     "params": [
       {
+        "default": 0.0,
+        "default_text": "soft",
+        "desc": "The distortion curve: soft or hard clipping, asymmetric, sine or triangle folding, bitcrush or downsample.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mode",
+        "kind": {
+          "items": [
+            {
+              "desc": "Rounds off the peaks smoothly: warm saturation that grows with drive.",
+              "key": "soft",
+              "name": "Soft clip"
+            },
+            {
+              "desc": "Cuts the peaks flat: bright, buzzy and aggressive.",
+              "key": "hard",
+              "name": "Hard clip"
+            },
+            {
+              "desc": "Clips the top and bottom differently, like a tube or a diode: thicker, with even harmonics.",
+              "key": "asym",
+              "name": "Asymmetric"
+            },
+            {
+              "desc": "Folds the wave back on itself in smooth curves: rich, metallic and vocal as drive rises.",
+              "key": "sine_fold",
+              "name": "Sine fold"
+            },
+            {
+              "desc": "Folds the wave back at sharp corners: brighter and buzzier than the sine fold.",
+              "key": "tri_fold",
+              "name": "Triangle fold"
+            },
+            {
+              "desc": "Fewer volume steps, set by bits: gritty digital noise that follows the signal.",
+              "key": "bitcrush",
+              "name": "Bitcrush"
+            },
+            {
+              "desc": "Holds each sample for longer, set by rate: metallic, aliased tones and robotic vowels.",
+              "key": "downsample",
+              "name": "Downsample"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Mode",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 6.0,
+        "default_text": "6dB",
+        "desc": "Gain into the curve: more drive is more distortion; route an LFO or MSEG here for rhythmic grit.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "drive",
+        "kind": {
+          "k": null,
+          "max": 48.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Drive",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "db"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "An offset added before the curve, so the top and bottom distort differently: adds even harmonics and a thicker, rasping tone.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bias",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Bias",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 8.0,
+        "default_text": "8",
+        "desc": "Bit depth in bitcrush mode, fractions allowed: 16 is clean, 8 is gritty, 2 is a buzz. Other modes ignore it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bits",
+        "kind": {
+          "k": null,
+          "max": 16.0,
+          "min": 1.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Bits",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 6000.0,
+        "default_text": "6kHz",
+        "desc": "The held sample rate in downsample mode: lower is more metallic and aliased; at the engine's rate or above it does nothing. Other modes ignore it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "rate",
+        "kind": {
+          "k": null,
+          "max": 48000.0,
+          "min": 100.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Rate",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 20000.0,
+        "default_text": "20kHz",
+        "desc": "A low-pass after the curve that tames fizz: lower is darker; 20 kHz leaves it open.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "tone",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 100.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Tone",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 20.0,
+        "default_text": "20Hz",
+        "desc": "Frequencies below this bypass the distortion, so the sub stays clean and only the mids distort; at 20 Hz everything is distorted.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "keep_lows",
+        "kind": {
+          "k": null,
+          "max": 1000.0,
+          "min": 20.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Keep lows",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 1.0,
+        "default_text": "x2",
+        "desc": "How much the clipping and folding curves are oversampled to cut aliasing: off, 2x or 4x (no latency either way); changing it rebuilds the plan.",
+        "flags": {
+          "automatable": false,
+          "modulatable": false,
+          "periodic": false,
+          "structural": true
+        },
+        "key": "oversample",
+        "kind": {
+          "items": [
+            {
+              "desc": "No oversampling, the lightest on the CPU; anti-derivative anti-aliasing still applies.",
+              "key": "off",
+              "name": "Off"
+            },
+            {
+              "desc": "Runs the curve at twice the sample rate: much less aliasing on high notes, for a little CPU.",
+              "key": "x2",
+              "name": "2x"
+            },
+            {
+              "desc": "Runs the curve at four times the sample rate: the cleanest, at about twice the cost of 2x.",
+              "key": "x4",
+              "name": "4x"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Oversampling",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "none"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged; lower values blend in the clean signal (parallel distortion).",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -49,9 +297,212 @@ expression: reserved
     "name": "Wavetable",
     "params": [
       {
+        "default": 0.0,
+        "default_text": "basic",
+        "desc": "Which generated wavetable to play: basic shapes, FM sweeps, a formant sweep or sparse metal; changing it rebuilds the voice plan.",
+        "flags": {
+          "automatable": false,
+          "modulatable": false,
+          "periodic": false,
+          "structural": true
+        },
+        "key": "table",
+        "kind": {
+          "items": [
+            {
+              "desc": "Morphs sine, triangle, saw and square; at position 0 it is a pure sine, the classic FM operator.",
+              "key": "basic",
+              "name": "Basic"
+            },
+            {
+              "desc": "Two-operator FM at a 1:1 ratio, the index rising with position: a growl you scan instead of route.",
+              "key": "fm",
+              "name": "FM sweep"
+            },
+            {
+              "desc": "Two-operator FM with the modulator an octave up, the index rising with position: hollow, reedy tones.",
+              "key": "fm_octave",
+              "name": "FM sweep, octave"
+            },
+            {
+              "desc": "A saw with one vocal resonance that rises with position: scanning it says 'wow' and 'yoi'.",
+              "key": "formant",
+              "name": "Formant sweep"
+            },
+            {
+              "desc": "A few strong, widely spaced harmonics: clangy, robotic tones that grow denser with position.",
+              "key": "metal",
+              "name": "Sparse metal"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Wavetable",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Where in the wavetable to play, from its first frame to its last; route an LFO or MSEG here for moving timbres.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "position",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Position",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "off",
+        "desc": "How the wave's cycle is bent before it is read: bend, asymmetric bend, squeeze, sync or quantize.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "warp",
+        "kind": {
+          "items": [
+            {
+              "desc": "The table is read straight.",
+              "key": "off",
+              "name": "Off"
+            },
+            {
+              "desc": "Bends the cycle so the wave's detail bunches up at the start (positive) or the end (negative): brighter, nasal tones.",
+              "key": "bend",
+              "name": "Bend"
+            },
+            {
+              "desc": "Bends the two halves of the cycle in opposite directions: a pulse-width-like change for any wave.",
+              "key": "asym",
+              "name": "Asymmetric bend"
+            },
+            {
+              "desc": "Plays the whole cycle in a shorter part of the period and holds the rest: a thinner, pulse-like buzz.",
+              "key": "squeeze",
+              "name": "Squeeze"
+            },
+            {
+              "desc": "Reads the cycle several times per period and restarts it, like hard sync: tearing, vocal sweeps.",
+              "key": "sync",
+              "name": "Sync"
+            },
+            {
+              "desc": "Reads the cycle in steps: stepped, lo-fi versions of the wave.",
+              "key": "quantize",
+              "name": "Quantize"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Warp",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "How strongly the warp bends the cycle: 0 % leaves it straight; the sign flips the direction where the warp has one.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "warp_amount",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Warp amount",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0st",
+        "desc": "Transposition in semitones from the played note; as an FM modulator, +12st is a 1:2 ratio and +19.02st a 1:3.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "semi",
+        "kind": {
+          "k": null,
+          "max": 48.0,
+          "min": -48.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Semitones",
+        "perceptual": "pitch.f0_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "semitones"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0ct",
+        "desc": "Fine tuning in cents; a few cents off a 1:1 FM ratio makes the timbre slowly churn.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "fine",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Fine",
+        "perceptual": "detune.beating_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "cents"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "Output level of this oscillator into the voice, as a linear percentage.",
+        "desc": "Output level into the voice, as a linear percentage; at 0 % an FM modulator is silent but still modulates.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -67,7 +518,7 @@ expression: reserved
           "type": "float"
         },
         "name": "Level",
-        "perceptual": null,
+        "perceptual": "loudness.lufs_i",
         "smoothing": {
           "linear_ms": 10.0
         },
@@ -75,9 +526,9 @@ expression: reserved
         "unit": "percent"
       },
       {
-        "default": 0.0,
-        "default_text": "0%",
-        "desc": "Phase-modulation input: an audio route from another generator lands here, and its depth sets the index.",
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where audio routes from other generators land for phase modulation (FM); its value trims everything routed in: 100 % passes the route depths as set, 0 % turns PM off.",
         "flags": {
           "audio": true,
           "automatable": true,
@@ -93,16 +544,42 @@ expression: reserved
           "scale": "linear",
           "type": "float"
         },
-        "name": "PM",
+        "name": "PM input",
         "perceptual": null,
         "smoothing": null,
         "tier": "advanced",
         "unit": "percent"
       },
       {
-        "default": 0.0,
-        "default_text": "0%",
-        "desc": "Amplitude-modulation input (bipolar is ring modulation): an audio route from another generator lands here.",
+        "default": 1.0,
+        "default_text": "1",
+        "desc": "How far a full-scale input into pm bends the phase, in radians: 1 is gentle, 5 a growl, 10 a harsh clang; route an envelope or MSEG here to make it talk.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "pm_index",
+        "kind": {
+          "k": null,
+          "max": 10.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "PM index",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where audio routes from other generators land for amplitude modulation; its value is the gain they swing around: 100 % is AM, 0 % is ring modulation (without a route it scales the output).",
         "flags": {
           "audio": true,
           "automatable": true,
@@ -118,11 +595,220 @@ expression: reserved
           "scale": "linear",
           "type": "float"
         },
-        "name": "AM",
+        "name": "AM input",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Phase modulation of the oscillator by its own output: a sine turns towards a saw, then a rough, noisy edge.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "feedback",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Feedback",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 1.0,
+        "default_text": "1",
+        "desc": "Copies of the oscillator per voice (1 is off), detuned against each other for width and thickness; changing it rebuilds the plan.",
+        "flags": {
+          "automatable": false,
+          "modulatable": false,
+          "periodic": false,
+          "structural": true
+        },
+        "key": "unison",
+        "kind": {
+          "max": 8,
+          "min": 1,
+          "type": "int"
+        },
+        "name": "Unison",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 20.0,
+        "default_text": "+20ct",
+        "desc": "How far the outermost unison copies sit from the centre, in cents (±): small values thicken, large ones sound like a detuned chord.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "detune",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Detune",
+        "perceptual": "detune.beating_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "cents"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Level of the side unison copies against the centre one: 0 % is the centre alone, 100 % every copy equal.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "blend",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Blend",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "How widely the unison copies are spread across the stereo field: 0 % is mono, 100 % fully left and right.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "spread",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Spread",
+        "perceptual": "stereo.width",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 1.0,
+        "default_text": "reset",
+        "desc": "How each note's start phase is chosen: reset (the phase knob, the same every note, as FM and warps want), free (random per render seed) or seeded (from seed).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "phase_mode",
+        "kind": {
+          "items": [
+            {
+              "desc": "Each note starts at a random phase that changes with the render seed, like a free-running analog oscillator.",
+              "key": "free",
+              "name": "Free"
+            },
+            {
+              "desc": "Every note starts at the phase knob, so attacks are identical and phase relationships are fixed.",
+              "key": "reset",
+              "name": "Reset"
+            },
+            {
+              "desc": "Each note starts at a random phase drawn from this module's seed, so the patch itself fixes it.",
+              "key": "seeded",
+              "name": "Seeded"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Phase mode",
         "perceptual": null,
         "smoothing": null,
         "tier": "advanced",
-        "unit": "percent"
+        "unit": "none"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0deg",
+        "desc": "The start phase in reset mode; between a carrier and its modulator it changes the FM timbre.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": true,
+          "structural": false
+        },
+        "key": "phase",
+        "kind": {
+          "k": null,
+          "max": 360.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Start phase",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "degrees"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0",
+        "desc": "The random seed used in seeded phase mode, for the start phase and the unison copies; part of the patch, unlike the render seed.",
+        "flags": {
+          "automatable": false,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "seed",
+        "kind": {
+          "max": 65535,
+          "min": 0,
+          "type": "int"
+        },
+        "name": "Seed",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "none"
       }
     ],
     "section": "generators",
@@ -137,9 +823,289 @@ expression: reserved
     "name": "OTT",
     "params": [
       {
+        "default": 30.0,
+        "default_text": "30%",
+        "desc": "How hard all three bands are squashed up and down: 0 % leaves the levels alone, 100 % is the full, dense OTT sound.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "depth",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Depth",
+        "perceptual": "loudness.lufs_i",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "Scales every band's attack and release: 100 % is the reference OTT timing, lower is faster and grittier, higher is smoother.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time",
+        "kind": {
+          "k": null,
+          "max": 1000.0,
+          "min": 10.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much quiet parts of each band are lifted (upward compression): brings out tails, noise and detail.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "upward",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Upward",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much loud parts of each band are pushed down (downward compression): evens out peaks.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "downward",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Downward",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Gain before the bands: more input drives more of the signal above the thresholds.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "input",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Input",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "db"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Gain after the bands, to match the level before and after.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "output",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Output",
+        "perceptual": "loudness.lufs_i",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "db"
+      },
+      {
+        "default": 88.30000305175781,
+        "default_text": "88.3Hz",
+        "desc": "The crossover between the low and mid bands.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "low_split",
+        "kind": {
+          "k": null,
+          "max": 500.0,
+          "min": 40.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Low split",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "hz"
+      },
+      {
+        "default": 2500.0,
+        "default_text": "2.5kHz",
+        "desc": "The crossover between the mid and high bands.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "high_split",
+        "kind": {
+          "k": null,
+          "max": 10000.0,
+          "min": 500.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "High split",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Output level of the low band after compression.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "low_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Low gain",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "db"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Output level of the mid band after compression.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mid_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Mid gain",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "db"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Output level of the high band after compression.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "high_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "High gain",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "db"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged. Prefer depth for a lighter OTT: a dry blend notches the crossovers.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -175,9 +1141,111 @@ expression: reserved
     "name": "Comb filter",
     "params": [
       {
+        "default": 0.0,
+        "default_text": "0st",
+        "desc": "The comb's pitch in semitones from the played note (from middle C when keytrack is 0 %): +12st puts the teeth an octave up; an LFO here flanges.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "semi",
+        "kind": {
+          "k": null,
+          "max": 48.0,
+          "min": -48.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Tune",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "semitones"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How much the comb's pitch follows the played note: 100 % keeps the teeth on the note's harmonics, 0 % holds a fixed pitch.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "keytrack",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Key tracking",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "How strongly the comb rings: higher is more metallic and longer; negative puts the resonances between the harmonics, hollow and an octave down.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "feedback",
+        "kind": {
+          "k": null,
+          "max": 99.0,
+          "min": -99.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Feedback",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 10000.0,
+        "default_text": "10kHz",
+        "desc": "A low-pass inside the feedback loop: lower makes the high teeth die faster, for a softer, plucked ring; 20 kHz leaves it bright.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "damping",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 500.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Damping",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged; around 50 % the dry signal adds notches between the teeth.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -213,9 +1281,113 @@ expression: reserved
     "name": "Formant filter",
     "params": [
       {
+        "default": 850.0,
+        "default_text": "850Hz",
+        "desc": "The first formant: how open the vowel is, from 'ee' and 'oo' (about 250 Hz) to 'ah' (about 850 Hz).",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "f1",
+        "kind": {
+          "k": null,
+          "max": 1000.0,
+          "min": 100.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Formant 1",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
+      {
+        "default": 1610.0,
+        "default_text": "1.61kHz",
+        "desc": "The second formant: how far forward the vowel is, from 'oo' (about 600 Hz) through 'ah' (1.6 kHz) to 'ee' (2.4 kHz); sweep it for 'yoi' and 'wow'.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "f2",
+        "kind": {
+          "k": null,
+          "max": 4000.0,
+          "min": 400.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Formant 2",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0st",
+        "desc": "Moves every formant up or down together, keeping the vowel: a smaller, brighter voice or a bigger, darker one.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "shift",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Shift",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "semitones"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "How narrow and strong the formant peaks are: low is a soft, breathy vowel, high a sharp, whistling one.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "resonance",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Resonance",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged; lower values keep some of the unfiltered body.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -251,12 +1423,69 @@ expression: reserved
     "name": "MSEG",
     "params": [
       {
-        "default": 1000.0,
-        "default_text": "1s",
-        "desc": "How long one pass through the drawn shape takes.",
+        "default": 0.0,
+        "default_text": "loop",
+        "desc": "How the shape plays: loop (a drawn LFO), one-shot (an envelope) or sustain loop (loops while the note is held).",
         "flags": {
           "automatable": true,
           "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mode",
+        "kind": {
+          "items": [
+            {
+              "desc": "Repeats the shape for as long as the note lasts: a drawn LFO for wobbles and rhythms.",
+              "key": "loop",
+              "name": "Loop"
+            },
+            {
+              "desc": "Plays the shape once from the note's start, then holds the last level: an envelope of any length.",
+              "key": "one_shot",
+              "name": "One-shot"
+            },
+            {
+              "desc": "Plays to the loop end, loops between loop start and loop end while the note is held, then plays the rest after release.",
+              "key": "sustain_loop",
+              "name": "Sustain loop"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Mode",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 1.0,
+        "default_text": "on",
+        "desc": "On: the shape's length is beats of the song's tempo. Off: it is length, in milliseconds.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "sync",
+        "kind": {
+          "type": "toggle"
+        },
+        "name": "Tempo sync",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 1000.0,
+        "default_text": "1s",
+        "desc": "How long one pass through the shape takes when tempo sync is off, up to a minute (long risers and swells).",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
           "periodic": false,
           "structural": false
         },
@@ -264,15 +1493,1492 @@ expression: reserved
         "kind": {
           "k": null,
           "max": 60000.0,
-          "min": 1.0,
+          "min": 10.0,
           "scale": "log",
           "type": "float"
         },
         "name": "Length",
-        "perceptual": null,
+        "perceptual": "envelope.decay_ms",
         "smoothing": null,
         "tier": "intermediate",
         "unit": "ms"
+      },
+      {
+        "default": 17.0,
+        "default_text": "bar",
+        "desc": "How long one pass through the shape takes when tempo sync is on, as a note division: 1/16 to 16 bars.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "beats",
+        "kind": {
+          "items": [
+            {
+              "desc": "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate.",
+              "key": "sixty_fourth",
+              "name": "1/64"
+            },
+            {
+              "desc": "A thirty-second-note triplet: a twelfth of a beat.",
+              "key": "thirty_second_triplet",
+              "name": "1/32T"
+            },
+            {
+              "desc": "A thirty-second note: an eighth of a beat.",
+              "key": "thirty_second",
+              "name": "1/32"
+            },
+            {
+              "desc": "A sixteenth-note triplet: a sixth of a beat.",
+              "key": "sixteenth_triplet",
+              "name": "1/16T"
+            },
+            {
+              "desc": "A dotted thirty-second note: three sixteenths of a beat.",
+              "key": "thirty_second_dotted",
+              "name": "1/32D"
+            },
+            {
+              "desc": "A sixteenth note: a quarter of a beat.",
+              "key": "sixteenth",
+              "name": "1/16"
+            },
+            {
+              "desc": "An eighth-note triplet: a third of a beat.",
+              "key": "eighth_triplet",
+              "name": "1/8T"
+            },
+            {
+              "desc": "A dotted sixteenth note: three eighths of a beat.",
+              "key": "sixteenth_dotted",
+              "name": "1/16D"
+            },
+            {
+              "desc": "An eighth note: half a beat.",
+              "key": "eighth",
+              "name": "1/8"
+            },
+            {
+              "desc": "A quarter-note triplet: two thirds of a beat.",
+              "key": "quarter_triplet",
+              "name": "1/4T"
+            },
+            {
+              "desc": "A dotted eighth note: three quarters of a beat, a syncopated bounce.",
+              "key": "eighth_dotted",
+              "name": "1/8D"
+            },
+            {
+              "desc": "A quarter note: one beat.",
+              "key": "quarter",
+              "name": "1/4"
+            },
+            {
+              "desc": "A half-note triplet: four thirds of a beat.",
+              "key": "half_triplet",
+              "name": "1/2T"
+            },
+            {
+              "desc": "A dotted quarter note: a beat and a half.",
+              "key": "quarter_dotted",
+              "name": "1/4D"
+            },
+            {
+              "desc": "A half note: two beats.",
+              "key": "half",
+              "name": "1/2"
+            },
+            {
+              "desc": "A whole-note triplet: two thirds of a bar.",
+              "key": "bar_triplet",
+              "name": "1 bar T"
+            },
+            {
+              "desc": "A dotted half note: three beats.",
+              "key": "half_dotted",
+              "name": "1/2D"
+            },
+            {
+              "desc": "A whole note: one bar of four beats.",
+              "key": "bar",
+              "name": "1 bar"
+            },
+            {
+              "desc": "A two-bar triplet: four thirds of a bar.",
+              "key": "two_bars_triplet",
+              "name": "2 bars T"
+            },
+            {
+              "desc": "A dotted whole note: a bar and a half.",
+              "key": "bar_dotted",
+              "name": "1 bar D"
+            },
+            {
+              "desc": "Two bars: a slow swell.",
+              "key": "two_bars",
+              "name": "2 bars"
+            },
+            {
+              "desc": "Three bars.",
+              "key": "two_bars_dotted",
+              "name": "2 bars D"
+            },
+            {
+              "desc": "Four bars: a whole phrase.",
+              "key": "four_bars",
+              "name": "4 bars"
+            },
+            {
+              "desc": "Eight bars: a riser or a long build.",
+              "key": "eight_bars",
+              "name": "8 bars"
+            },
+            {
+              "desc": "Sixteen bars: the longest build.",
+              "key": "sixteen_bars",
+              "name": "16 bars"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Beats",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 1.0,
+        "default_text": "unipolar",
+        "desc": "Unipolar outputs the levels as drawn (0 to 1); bipolar maps them to -1 to +1, swinging around the destination's value.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "polarity",
+        "kind": {
+          "items": [
+            {
+              "desc": "Swings both above and below the destination's value.",
+              "key": "bipolar",
+              "name": "Bipolar"
+            },
+            {
+              "desc": "Moves the destination one way only, from its value up by the route depth.",
+              "key": "unipolar",
+              "name": "Unipolar"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Polarity",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 0.0,
+        "default_text": "voice",
+        "desc": "One MSEG per voice or one global MSEG; only a global MSEG can modulate effects. Changing it rebuilds the plan.",
+        "flags": {
+          "automatable": false,
+          "modulatable": false,
+          "periodic": false,
+          "structural": true
+        },
+        "key": "scope",
+        "kind": {
+          "items": [
+            {
+              "desc": "Each note gets its own MSEG, started at note-on.",
+              "key": "voice",
+              "name": "Per voice"
+            },
+            {
+              "desc": "One MSEG shared by every note, running from the start; the only kind that may modulate effects.",
+              "key": "global",
+              "name": "Global"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Scope",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0deg",
+        "desc": "Where in the shape each note starts, as a share of the length (180deg starts halfway).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": true,
+          "structural": false
+        },
+        "key": "phase",
+        "kind": {
+          "k": null,
+          "max": 360.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Start",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "degrees"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "How much note velocity scales the output: 0 % ignores velocity, 100 % follows it fully.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "velocity",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Velocity",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 3.0,
+        "default_text": "3",
+        "desc": "How many of the 16 points make the shape; the rest are ignored.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "points",
+        "kind": {
+          "max": 16,
+          "min": 2,
+          "type": "int"
+        },
+        "name": "Points",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 2.0,
+        "default_text": "2",
+        "desc": "The point the sustain loop jumps back to while the note is held.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "loop_start",
+        "kind": {
+          "max": 16,
+          "min": 1,
+          "type": "int"
+        },
+        "name": "Loop start",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "none"
+      },
+      {
+        "default": 2.0,
+        "default_text": "2",
+        "desc": "The point where the sustain loop turns back while the note is held; equal to loop start, the level is held (a sustain).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "loop_end",
+        "kind": {
+          "max": 16,
+          "min": 1,
+          "type": "int"
+        },
+        "name": "Loop end",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "none"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Where point 1 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time1",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 1 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 1's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level1",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 1 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 1 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve1",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 1 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "Where point 2 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time2",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 2 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Point 2's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level2",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 2 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 2 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve2",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 2 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 3 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time3",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 3 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 3's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level3",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 3 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 3 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve3",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 3 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 4 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time4",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 4 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 4's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level4",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 4 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 4 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve4",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 4 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 5 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time5",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 5 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 5's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level5",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 5 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 5 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve5",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 5 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 6 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time6",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 6 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 6's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level6",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 6 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 6 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve6",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 6 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 7 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time7",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 7 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 7's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level7",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 7 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 7 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve7",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 7 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 8 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time8",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 8 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 8's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level8",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 8 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 8 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve8",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 8 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 9 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time9",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 9 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 9's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level9",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 9 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 9 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve9",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 9 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 10 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time10",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 10 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 10's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level10",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 10 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 10 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve10",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 10 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 11 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time11",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 11 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 11's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level11",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 11 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 11 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve11",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 11 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 12 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time12",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 12 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 12's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level12",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 12 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 12 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve12",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 12 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 13 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time13",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 13 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 13's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level13",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 13 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 13 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve13",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 13 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 14 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time14",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 14 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 14's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level14",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 14 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 14 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve14",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 14 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 15 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time15",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 15 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 15's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level15",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 15 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 15 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve15",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 15 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "Where point 16 sits, as a share of the length; a point never sits before the one before it.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time16",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 16 time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Point 16's level: 0 % is the bottom and 100 % the top (-1 and +1 when bipolar).",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "level16",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 16 level",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "The bend of the segment from point 16 to the next: 0 % is straight, positive moves early, negative late; +100 % jumps at once and -100 % holds, then jumps.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "curve16",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": -100.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Point 16 curve",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "advanced",
+        "unit": "percent"
       }
     ],
     "section": "modulators",
@@ -287,9 +2993,341 @@ expression: reserved
     "name": "Chorus",
     "params": [
       {
+        "default": 0.0,
+        "default_text": "chorus",
+        "desc": "The algorithm: chorus, ensemble or flanger.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mode",
+        "kind": {
+          "items": [
+            {
+              "desc": "A few slightly delayed, slowly wobbling copies beside the dry sound: width and shimmer.",
+              "key": "chorus",
+              "name": "Chorus"
+            },
+            {
+              "desc": "A string-machine ensemble: three wobbling copies per side, lush and wide, for pads and big basses.",
+              "key": "ensemble",
+              "name": "Ensemble"
+            },
+            {
+              "desc": "A very short delay swept against the dry sound: the jet-plane whoosh of moving comb notches.",
+              "key": "flanger",
+              "name": "Flanger"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Mode",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 0.5,
+        "default_text": "0.5Hz",
+        "desc": "How fast the delay sweeps, in cycles per second, when tempo sync is off: slow is a gentle shimmer, fast a warble.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "rate",
+        "kind": {
+          "k": null,
+          "max": 20.0,
+          "min": 0.009999999776482582,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Rate",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "off",
+        "desc": "On: one sweep lasts beats of the song's tempo, and rate is ignored.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "sync",
+        "kind": {
+          "type": "toggle"
+        },
+        "name": "Tempo sync",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 17.0,
+        "default_text": "bar",
+        "desc": "How long one sweep lasts when tempo sync is on, as a note division.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "beats",
+        "kind": {
+          "items": [
+            {
+              "desc": "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate.",
+              "key": "sixty_fourth",
+              "name": "1/64"
+            },
+            {
+              "desc": "A thirty-second-note triplet: a twelfth of a beat.",
+              "key": "thirty_second_triplet",
+              "name": "1/32T"
+            },
+            {
+              "desc": "A thirty-second note: an eighth of a beat.",
+              "key": "thirty_second",
+              "name": "1/32"
+            },
+            {
+              "desc": "A sixteenth-note triplet: a sixth of a beat.",
+              "key": "sixteenth_triplet",
+              "name": "1/16T"
+            },
+            {
+              "desc": "A dotted thirty-second note: three sixteenths of a beat.",
+              "key": "thirty_second_dotted",
+              "name": "1/32D"
+            },
+            {
+              "desc": "A sixteenth note: a quarter of a beat.",
+              "key": "sixteenth",
+              "name": "1/16"
+            },
+            {
+              "desc": "An eighth-note triplet: a third of a beat.",
+              "key": "eighth_triplet",
+              "name": "1/8T"
+            },
+            {
+              "desc": "A dotted sixteenth note: three eighths of a beat.",
+              "key": "sixteenth_dotted",
+              "name": "1/16D"
+            },
+            {
+              "desc": "An eighth note: half a beat.",
+              "key": "eighth",
+              "name": "1/8"
+            },
+            {
+              "desc": "A quarter-note triplet: two thirds of a beat.",
+              "key": "quarter_triplet",
+              "name": "1/4T"
+            },
+            {
+              "desc": "A dotted eighth note: three quarters of a beat, a syncopated bounce.",
+              "key": "eighth_dotted",
+              "name": "1/8D"
+            },
+            {
+              "desc": "A quarter note: one beat.",
+              "key": "quarter",
+              "name": "1/4"
+            },
+            {
+              "desc": "A half-note triplet: four thirds of a beat.",
+              "key": "half_triplet",
+              "name": "1/2T"
+            },
+            {
+              "desc": "A dotted quarter note: a beat and a half.",
+              "key": "quarter_dotted",
+              "name": "1/4D"
+            },
+            {
+              "desc": "A half note: two beats.",
+              "key": "half",
+              "name": "1/2"
+            },
+            {
+              "desc": "A whole-note triplet: two thirds of a bar.",
+              "key": "bar_triplet",
+              "name": "1 bar T"
+            },
+            {
+              "desc": "A dotted half note: three beats.",
+              "key": "half_dotted",
+              "name": "1/2D"
+            },
+            {
+              "desc": "A whole note: one bar of four beats.",
+              "key": "bar",
+              "name": "1 bar"
+            },
+            {
+              "desc": "A two-bar triplet: four thirds of a bar.",
+              "key": "two_bars_triplet",
+              "name": "2 bars T"
+            },
+            {
+              "desc": "A dotted whole note: a bar and a half.",
+              "key": "bar_dotted",
+              "name": "1 bar D"
+            },
+            {
+              "desc": "Two bars: a slow swell.",
+              "key": "two_bars",
+              "name": "2 bars"
+            },
+            {
+              "desc": "Three bars.",
+              "key": "two_bars_dotted",
+              "name": "2 bars D"
+            },
+            {
+              "desc": "Four bars: a whole phrase.",
+              "key": "four_bars",
+              "name": "4 bars"
+            },
+            {
+              "desc": "Eight bars: a riser or a long build.",
+              "key": "eight_bars",
+              "name": "8 bars"
+            },
+            {
+              "desc": "Sixteen bars: the longest build.",
+              "key": "sixteen_bars",
+              "name": "16 bars"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Beats",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "How far the delay sweeps: more is a deeper wobble in pitch (chorus) or a wider sweep of the notches (flanger).",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "depth",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Depth",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 7.0,
+        "default_text": "7ms",
+        "desc": "The delay the sweep moves around: about 5-20 ms for a chorus, 0.5-5 ms for a flanger; an LFO here is a manual flange.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "delay",
+        "kind": {
+          "k": null,
+          "max": 30.0,
+          "min": 0.10000000149011612,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Delay",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "ms"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "Sends the delayed sound back into the delay: a ringing, metallic flange; negative gives hollower notches.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "feedback",
+        "kind": {
+          "k": null,
+          "max": 99.0,
+          "min": -99.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Feedback",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How far apart the left and right sweeps run: 0 % is mono, 100 % opposite, the widest.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "width",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Width",
+        "perceptual": "stereo.width",
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100%",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged, at 100 % the full chorus (the dry sound plus the wobbling copies).",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -325,9 +3363,326 @@ expression: reserved
     "name": "Phaser",
     "params": [
       {
+        "default": 6.0,
+        "default_text": "6",
+        "desc": "How many all-pass filters are chained: every two make one notch, so more stages give more notches and a stronger sweep.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "stages",
+        "kind": {
+          "max": 12,
+          "min": 2,
+          "type": "int"
+        },
+        "name": "Stages",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 0.30000001192092896,
+        "default_text": "0.3Hz",
+        "desc": "How fast the notches sweep, in cycles per second, when tempo sync is off.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "rate",
+        "kind": {
+          "k": null,
+          "max": 20.0,
+          "min": 0.009999999776482582,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Rate",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "off",
+        "desc": "On: one sweep lasts beats of the song's tempo, and rate is ignored.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "sync",
+        "kind": {
+          "type": "toggle"
+        },
+        "name": "Tempo sync",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 17.0,
+        "default_text": "bar",
+        "desc": "How long one sweep lasts when tempo sync is on, as a note division.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "beats",
+        "kind": {
+          "items": [
+            {
+              "desc": "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate.",
+              "key": "sixty_fourth",
+              "name": "1/64"
+            },
+            {
+              "desc": "A thirty-second-note triplet: a twelfth of a beat.",
+              "key": "thirty_second_triplet",
+              "name": "1/32T"
+            },
+            {
+              "desc": "A thirty-second note: an eighth of a beat.",
+              "key": "thirty_second",
+              "name": "1/32"
+            },
+            {
+              "desc": "A sixteenth-note triplet: a sixth of a beat.",
+              "key": "sixteenth_triplet",
+              "name": "1/16T"
+            },
+            {
+              "desc": "A dotted thirty-second note: three sixteenths of a beat.",
+              "key": "thirty_second_dotted",
+              "name": "1/32D"
+            },
+            {
+              "desc": "A sixteenth note: a quarter of a beat.",
+              "key": "sixteenth",
+              "name": "1/16"
+            },
+            {
+              "desc": "An eighth-note triplet: a third of a beat.",
+              "key": "eighth_triplet",
+              "name": "1/8T"
+            },
+            {
+              "desc": "A dotted sixteenth note: three eighths of a beat.",
+              "key": "sixteenth_dotted",
+              "name": "1/16D"
+            },
+            {
+              "desc": "An eighth note: half a beat.",
+              "key": "eighth",
+              "name": "1/8"
+            },
+            {
+              "desc": "A quarter-note triplet: two thirds of a beat.",
+              "key": "quarter_triplet",
+              "name": "1/4T"
+            },
+            {
+              "desc": "A dotted eighth note: three quarters of a beat, a syncopated bounce.",
+              "key": "eighth_dotted",
+              "name": "1/8D"
+            },
+            {
+              "desc": "A quarter note: one beat.",
+              "key": "quarter",
+              "name": "1/4"
+            },
+            {
+              "desc": "A half-note triplet: four thirds of a beat.",
+              "key": "half_triplet",
+              "name": "1/2T"
+            },
+            {
+              "desc": "A dotted quarter note: a beat and a half.",
+              "key": "quarter_dotted",
+              "name": "1/4D"
+            },
+            {
+              "desc": "A half note: two beats.",
+              "key": "half",
+              "name": "1/2"
+            },
+            {
+              "desc": "A whole-note triplet: two thirds of a bar.",
+              "key": "bar_triplet",
+              "name": "1 bar T"
+            },
+            {
+              "desc": "A dotted half note: three beats.",
+              "key": "half_dotted",
+              "name": "1/2D"
+            },
+            {
+              "desc": "A whole note: one bar of four beats.",
+              "key": "bar",
+              "name": "1 bar"
+            },
+            {
+              "desc": "A two-bar triplet: four thirds of a bar.",
+              "key": "two_bars_triplet",
+              "name": "2 bars T"
+            },
+            {
+              "desc": "A dotted whole note: a bar and a half.",
+              "key": "bar_dotted",
+              "name": "1 bar D"
+            },
+            {
+              "desc": "Two bars: a slow swell.",
+              "key": "two_bars",
+              "name": "2 bars"
+            },
+            {
+              "desc": "Three bars.",
+              "key": "two_bars_dotted",
+              "name": "2 bars D"
+            },
+            {
+              "desc": "Four bars: a whole phrase.",
+              "key": "four_bars",
+              "name": "4 bars"
+            },
+            {
+              "desc": "Eight bars: a riser or a long build.",
+              "key": "eight_bars",
+              "name": "8 bars"
+            },
+            {
+              "desc": "Sixteen bars: the longest build.",
+              "key": "sixteen_bars",
+              "name": "16 bars"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Beats",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "How far the notches sweep around the centre: 100 % is three octaves either way.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "depth",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Depth",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 1000.0,
+        "default_text": "1kHz",
+        "desc": "The frequency the notches sweep around; with depth at 0 % a static, comb-like colour here.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "center",
+        "kind": {
+          "k": null,
+          "max": 10000.0,
+          "min": 50.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Centre",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 30.0,
+        "default_text": "30%",
+        "desc": "Sends the output back into the chain: sharper, ringing notches; negative moves the peaks between them.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "feedback",
+        "kind": {
+          "k": null,
+          "max": 99.0,
+          "min": -99.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Feedback",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 50.0,
+        "default_text": "50%",
+        "desc": "How far apart the left and right sweeps run: 0 % is mono, 100 % opposite.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "width",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Width",
+        "perceptual": "stereo.width",
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged, at 100 % the full phaser (the dry sound plus the swept all-passes).",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -362,6 +3717,318 @@ expression: reserved
     "key": "eq",
     "name": "EQ",
     "params": [
+      {
+        "default": 10.0,
+        "default_text": "10Hz",
+        "desc": "Removes everything below this frequency (12 dB/octave), clearing mud or the sub from effects; at 10 Hz it is off.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "low_cut",
+        "kind": {
+          "k": null,
+          "max": 1000.0,
+          "min": 10.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Low cut",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
+      {
+        "default": 100.0,
+        "default_text": "100Hz",
+        "desc": "The corner of the low shelf.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "low_freq",
+        "kind": {
+          "k": null,
+          "max": 1000.0,
+          "min": 20.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Low shelf",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Boosts or cuts everything below the low shelf's corner: weight and warmth.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "low_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Low gain",
+        "perceptual": "spectrum.tilt_db_oct",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "db"
+      },
+      {
+        "default": 400.0,
+        "default_text": "400Hz",
+        "desc": "The centre of the first bell.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bell1_freq",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 20.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Bell 1",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Boosts or cuts a band around the first bell's centre: a cut near 300-500 Hz cleans boxiness.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bell1_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Bell 1 gain",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "db"
+      },
+      {
+        "default": 1.0,
+        "default_text": "1",
+        "desc": "How narrow the first bell is: 0.7 is broad, 10 a narrow notch or peak.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bell1_q",
+        "kind": {
+          "k": null,
+          "max": 20.0,
+          "min": 0.10000000149011612,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Bell 1 Q",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 2500.0,
+        "default_text": "2.5kHz",
+        "desc": "The centre of the second bell.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bell2_freq",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 20.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Bell 2",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Boosts or cuts a band around the second bell's centre: presence and bite around 2-5 kHz.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bell2_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Bell 2 gain",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "db"
+      },
+      {
+        "default": 1.0,
+        "default_text": "1",
+        "desc": "How narrow the second bell is: 0.7 is broad, 10 a narrow notch or peak.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "bell2_q",
+        "kind": {
+          "k": null,
+          "max": 20.0,
+          "min": 0.10000000149011612,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Bell 2 Q",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 8000.0,
+        "default_text": "8kHz",
+        "desc": "The corner of the high shelf.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "high_freq",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 1000.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "High shelf",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Boosts or cuts everything above the high shelf's corner: air and sparkle, or a darker top.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "high_gain",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": -24.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "High gain",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "db"
+      },
+      {
+        "default": 20000.0,
+        "default_text": "20kHz",
+        "desc": "Removes everything above this frequency (12 dB/octave); at 20 kHz it is off.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "high_cut",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 1000.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "High cut",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
       {
         "default": 100.0,
         "default_text": "100%",
@@ -401,9 +4068,263 @@ expression: reserved
     "name": "Delay",
     "params": [
       {
+        "default": 1.0,
+        "default_text": "on",
+        "desc": "On: the delay time is beats of the song's tempo. Off: it is time, in milliseconds.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "sync",
+        "kind": {
+          "type": "toggle"
+        },
+        "name": "Tempo sync",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 300.0,
+        "default_text": "300ms",
+        "desc": "The delay time when tempo sync is off: under 30 ms thickens, 80-150 ms is a slapback, longer is an echo.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "time",
+        "kind": {
+          "k": null,
+          "max": 2000.0,
+          "min": 1.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Time",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "ms"
+      },
+      {
+        "default": 10.0,
+        "default_text": "eighth_dotted",
+        "desc": "The delay time when tempo sync is on, as a note division up to a bar: 1/8D is the classic bouncing echo.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "beats",
+        "kind": {
+          "items": [
+            {
+              "desc": "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate.",
+              "key": "sixty_fourth",
+              "name": "1/64"
+            },
+            {
+              "desc": "A thirty-second-note triplet: a twelfth of a beat.",
+              "key": "thirty_second_triplet",
+              "name": "1/32T"
+            },
+            {
+              "desc": "A thirty-second note: an eighth of a beat.",
+              "key": "thirty_second",
+              "name": "1/32"
+            },
+            {
+              "desc": "A sixteenth-note triplet: a sixth of a beat.",
+              "key": "sixteenth_triplet",
+              "name": "1/16T"
+            },
+            {
+              "desc": "A dotted thirty-second note: three sixteenths of a beat.",
+              "key": "thirty_second_dotted",
+              "name": "1/32D"
+            },
+            {
+              "desc": "A sixteenth note: a quarter of a beat.",
+              "key": "sixteenth",
+              "name": "1/16"
+            },
+            {
+              "desc": "An eighth-note triplet: a third of a beat.",
+              "key": "eighth_triplet",
+              "name": "1/8T"
+            },
+            {
+              "desc": "A dotted sixteenth note: three eighths of a beat.",
+              "key": "sixteenth_dotted",
+              "name": "1/16D"
+            },
+            {
+              "desc": "An eighth note: half a beat.",
+              "key": "eighth",
+              "name": "1/8"
+            },
+            {
+              "desc": "A quarter-note triplet: two thirds of a beat.",
+              "key": "quarter_triplet",
+              "name": "1/4T"
+            },
+            {
+              "desc": "A dotted eighth note: three quarters of a beat, a syncopated bounce.",
+              "key": "eighth_dotted",
+              "name": "1/8D"
+            },
+            {
+              "desc": "A quarter note: one beat.",
+              "key": "quarter",
+              "name": "1/4"
+            },
+            {
+              "desc": "A half-note triplet: four thirds of a beat.",
+              "key": "half_triplet",
+              "name": "1/2T"
+            },
+            {
+              "desc": "A dotted quarter note: a beat and a half.",
+              "key": "quarter_dotted",
+              "name": "1/4D"
+            },
+            {
+              "desc": "A half note: two beats.",
+              "key": "half",
+              "name": "1/2"
+            },
+            {
+              "desc": "A whole-note triplet: two thirds of a bar.",
+              "key": "bar_triplet",
+              "name": "1 bar T"
+            },
+            {
+              "desc": "A dotted half note: three beats.",
+              "key": "half_dotted",
+              "name": "1/2D"
+            },
+            {
+              "desc": "A whole note: one bar of four beats.",
+              "key": "bar",
+              "name": "1 bar"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Beats",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 35.0,
+        "default_text": "35%",
+        "desc": "How much of each echo returns for another: more is more repeats; 100 % repeats for ever.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "feedback",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Feedback",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "off",
+        "desc": "Bounces the echoes between the left and right channels.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "ping_pong",
+        "kind": {
+          "type": "toggle"
+        },
+        "name": "Ping-pong",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "none"
+      },
+      {
+        "default": 150.0,
+        "default_text": "150Hz",
+        "desc": "Removes lows from every repeat, so echoes stay off the bass; each repeat gets thinner.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "low_cut",
+        "kind": {
+          "k": null,
+          "max": 2000.0,
+          "min": 20.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Low cut",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
+        "default": 6000.0,
+        "default_text": "6kHz",
+        "desc": "Removes highs from every repeat: each echo gets darker, like tape.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "high_cut",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 1000.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "High cut",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "hz"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How loud the echoes are against the dry sound, which always passes unchanged: 100 % makes the first echo as loud as the dry; 0 % is no echo at all.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -439,9 +4360,153 @@ expression: reserved
     "name": "Ladder filter",
     "params": [
       {
+        "default": 0.0,
+        "default_text": "lp24",
+        "desc": "The response: 24 or 12 dB/octave low-pass, band-pass or high-pass.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "mode",
+        "kind": {
+          "items": [
+            {
+              "desc": "The classic ladder: a steep 24 dB/octave low-pass, fat and round.",
+              "key": "lp24",
+              "name": "Low-pass 24"
+            },
+            {
+              "desc": "A gentler 12 dB/octave low-pass with the ladder's character.",
+              "key": "lp12",
+              "name": "Low-pass 12"
+            },
+            {
+              "desc": "Keeps a band around the cutoff, with the ladder's resonance: vocal and nasal.",
+              "key": "bp",
+              "name": "Band-pass"
+            },
+            {
+              "desc": "Removes the lows below the cutoff, with the ladder's resonance.",
+              "key": "hp",
+              "name": "High-pass"
+            }
+          ],
+          "type": "enum"
+        },
+        "name": "Mode",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": null,
+        "tier": "basic",
+        "unit": "none"
+      },
+      {
+        "default": 2000.0,
+        "default_text": "2kHz",
+        "desc": "The corner frequency: lower is darker for a low-pass; route an envelope or LFO here for sweeps and wobbles.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "cutoff",
+        "kind": {
+          "k": null,
+          "max": 20000.0,
+          "min": 20.0,
+          "scale": "log",
+          "type": "float"
+        },
+        "name": "Cutoff",
+        "perceptual": "spectrum.centroid_hz",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "hz"
+      },
+      {
+        "default": 10.0,
+        "default_text": "10%",
+        "desc": "Emphasis at the cutoff; near the top the ladder rings on its own (self-oscillation) and the lows thin out, as on a Moog.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "resonance",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Resonance",
+        "perceptual": null,
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "basic",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0%",
+        "desc": "How much the cutoff follows the played note: 100 % moves it an octave per octave played.",
+        "flags": {
+          "automatable": true,
+          "modulatable": false,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "keytrack",
+        "kind": {
+          "k": null,
+          "max": 100.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Key tracking",
+        "perceptual": null,
+        "smoothing": null,
+        "tier": "intermediate",
+        "unit": "percent"
+      },
+      {
+        "default": 0.0,
+        "default_text": "0dB",
+        "desc": "Gain into the ladder's saturator, normalised back after: grit and a thicker, compressed tone.",
+        "flags": {
+          "automatable": true,
+          "modulatable": true,
+          "periodic": false,
+          "structural": false
+        },
+        "key": "drive",
+        "kind": {
+          "k": null,
+          "max": 24.0,
+          "min": 0.0,
+          "scale": "linear",
+          "type": "float"
+        },
+        "name": "Drive",
+        "perceptual": "spectrum.harmonics_db",
+        "smoothing": {
+          "linear_ms": 10.0
+        },
+        "tier": "intermediate",
+        "unit": "db"
+      },
+      {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged.",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged; lower values blend the dry signal back in.",
         "flags": {
           "automatable": true,
           "modulatable": true,

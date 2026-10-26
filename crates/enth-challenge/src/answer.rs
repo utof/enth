@@ -412,11 +412,213 @@ const COMP_V1: &[ResultParam] = &[
     f("mix", 100.0),
 ];
 
-/// **`result-params-v1`**: the frozen parameter table of layout 1, one list per owner. Module kinds by their
-/// discriminant (`osc`, `noise`, `svf`, `adsr`, `lfo`, `reverb`, `comp`), then `voice` and `master`. Append-only: a
-/// new parameter or kind is appended (a kind past the 63rd parameter, index 62, needs a new layout: 63 ends a run),
-/// and a released entry never changes. A test pins the table's bytes and checks it against the live catalogue.
-pub const RESULT_PARAMS_V1: [(&str, &[ResultParam]); 9] = [
+// S2a's reserved kinds (lane CAT, freeze F1m), appended after `voice` and `master`: rows 9-19 of the table. The
+// defaults are the F1m catalogue's (the coverage test checks them), frozen here once a friend build carries them.
+
+/// `dist`.
+const DIST_V1: &[ResultParam] = &[
+    item("mode", 3, 0.0),
+    f("drive", 6.0),
+    f("bias", 0.0),
+    f("bits", 8.0),
+    f("rate", 6000.0),
+    f("tone", 20000.0),
+    f("keep_lows", 20.0),
+    item("oversample", 2, 1.0),
+    f("mix", 100.0),
+];
+
+/// `wt`.
+const WT_V1: &[ResultParam] = &[
+    item("table", 3, 0.0),
+    f("position", 0.0),
+    item("warp", 3, 0.0),
+    f("warp_amount", 0.0),
+    f("semi", 0.0),
+    f("fine", 0.0),
+    f("level", 100.0),
+    f("pm", 100.0),
+    f("pm_index", 1.0),
+    f("am", 100.0),
+    f("feedback", 0.0),
+    int("unison", 1, 3, 1.0),
+    f("detune", 20.0),
+    f("blend", 100.0),
+    f("spread", 50.0),
+    item("phase_mode", 2, 1.0),
+    f("phase", 0.0),
+    int("seed", 0, 16, 0.0),
+];
+
+/// `ott`.
+const OTT_V1: &[ResultParam] = &[
+    f("depth", 30.0),
+    f("time", 100.0),
+    f("upward", 100.0),
+    f("downward", 100.0),
+    f("input", 0.0),
+    f("output", 0.0),
+    f("low_split", 88.3),
+    f("high_split", 2500.0),
+    f("low_gain", 0.0),
+    f("mid_gain", 0.0),
+    f("high_gain", 0.0),
+    f("mix", 100.0),
+];
+
+/// `comb`.
+const COMB_V1: &[ResultParam] = &[
+    f("semi", 0.0),
+    f("keytrack", 100.0),
+    f("feedback", 50.0),
+    f("damping", 10000.0),
+    f("mix", 100.0),
+];
+
+/// `formant`.
+const FORMANT_V1: &[ResultParam] = &[
+    f("f1", 850.0),
+    f("f2", 1610.0),
+    f("shift", 0.0),
+    f("resonance", 50.0),
+    f("mix", 100.0),
+];
+
+/// `mseg`: 11 parameters, then the 16 points (time, level, curve each).
+const MSEG_V1: &[ResultParam] = &[
+    item("mode", 2, 0.0),
+    toggle("sync", 1.0),
+    f("length", 1000.0),
+    item("beats", 5, 17.0),
+    item("polarity", 2, 1.0),
+    item("scope", 2, 0.0),
+    f("phase", 0.0),
+    f("velocity", 0.0),
+    int("points", 2, 4, 3.0),
+    int("loop_start", 1, 4, 2.0),
+    int("loop_end", 1, 4, 2.0),
+    f("time1", 0.0),
+    f("level1", 0.0),
+    f("curve1", 0.0),
+    f("time2", 50.0),
+    f("level2", 100.0),
+    f("curve2", 0.0),
+    f("time3", 100.0),
+    f("level3", 0.0),
+    f("curve3", 0.0),
+    f("time4", 100.0),
+    f("level4", 0.0),
+    f("curve4", 0.0),
+    f("time5", 100.0),
+    f("level5", 0.0),
+    f("curve5", 0.0),
+    f("time6", 100.0),
+    f("level6", 0.0),
+    f("curve6", 0.0),
+    f("time7", 100.0),
+    f("level7", 0.0),
+    f("curve7", 0.0),
+    f("time8", 100.0),
+    f("level8", 0.0),
+    f("curve8", 0.0),
+    f("time9", 100.0),
+    f("level9", 0.0),
+    f("curve9", 0.0),
+    f("time10", 100.0),
+    f("level10", 0.0),
+    f("curve10", 0.0),
+    f("time11", 100.0),
+    f("level11", 0.0),
+    f("curve11", 0.0),
+    f("time12", 100.0),
+    f("level12", 0.0),
+    f("curve12", 0.0),
+    f("time13", 100.0),
+    f("level13", 0.0),
+    f("curve13", 0.0),
+    f("time14", 100.0),
+    f("level14", 0.0),
+    f("curve14", 0.0),
+    f("time15", 100.0),
+    f("level15", 0.0),
+    f("curve15", 0.0),
+    f("time16", 100.0),
+    f("level16", 0.0),
+    f("curve16", 0.0),
+];
+
+/// `chorus`.
+const CHORUS_V1: &[ResultParam] = &[
+    item("mode", 2, 0.0),
+    f("rate", 0.5),
+    toggle("sync", 0.0),
+    item("beats", 5, 17.0),
+    f("depth", 50.0),
+    f("delay", 7.0),
+    f("feedback", 0.0),
+    f("width", 100.0),
+    f("mix", 100.0),
+];
+
+/// `phaser`.
+const PHASER_V1: &[ResultParam] = &[
+    int("stages", 2, 4, 6.0),
+    f("rate", 0.3),
+    toggle("sync", 0.0),
+    item("beats", 5, 17.0),
+    f("depth", 50.0),
+    f("center", 1000.0),
+    f("feedback", 30.0),
+    f("width", 50.0),
+    f("mix", 100.0),
+];
+
+/// `eq`.
+const EQ_V1: &[ResultParam] = &[
+    f("low_cut", 10.0),
+    f("low_freq", 100.0),
+    f("low_gain", 0.0),
+    f("bell1_freq", 400.0),
+    f("bell1_gain", 0.0),
+    f("bell1_q", 1.0),
+    f("bell2_freq", 2500.0),
+    f("bell2_gain", 0.0),
+    f("bell2_q", 1.0),
+    f("high_freq", 8000.0),
+    f("high_gain", 0.0),
+    f("high_cut", 20000.0),
+    f("mix", 100.0),
+];
+
+/// `delay` (`beats` holds the shared list up to a bar, 18 items).
+const DELAY_V1: &[ResultParam] = &[
+    toggle("sync", 1.0),
+    f("time", 300.0),
+    item("beats", 5, 10.0),
+    f("feedback", 35.0),
+    toggle("ping_pong", 0.0),
+    f("low_cut", 150.0),
+    f("high_cut", 6000.0),
+    f("mix", 100.0),
+];
+
+/// `ladder`.
+const LADDER_V1: &[ResultParam] = &[
+    item("mode", 3, 0.0),
+    f("cutoff", 2000.0),
+    f("resonance", 10.0),
+    f("keytrack", 0.0),
+    f("drive", 0.0),
+    f("mix", 100.0),
+];
+
+/// **`result-params-v1`**: the frozen parameter table of layout 1, one list per owner: the seven P1 module kinds by
+/// their discriminant (`osc`, `noise`, `svf`, `adsr`, `lfo`, `reverb`, `comp`), then `voice` and `master` (where F1e's
+/// table ended), then S2a's kinds 7–17 by discriminant (`dist` … `ladder`, lane CAT at F1m), and any later kind after
+/// them. [`kind_row`] maps a kind to its row. Append-only: a new parameter or kind is appended (a kind past the 63rd
+/// parameter, index 62, needs a new layout: 63 ends a run), and a released entry never changes. A test pins the
+/// table's bytes, pins F1e's entries on their own, and checks the table against the live catalogue.
+pub const RESULT_PARAMS_V1: [(&str, &[ResultParam]); 20] = [
     ("osc", OSC_V1),
     ("noise", NOISE_V1),
     ("svf", SVF_V1),
@@ -426,10 +628,63 @@ pub const RESULT_PARAMS_V1: [(&str, &[ResultParam]); 9] = [
     ("comp", COMP_V1),
     ("voice", VOICE_V1),
     ("master", MASTER_V1),
+    ("dist", DIST_V1),
+    ("wt", WT_V1),
+    ("ott", OTT_V1),
+    ("comb", COMB_V1),
+    ("formant", FORMANT_V1),
+    ("mseg", MSEG_V1),
+    ("chorus", CHORUS_V1),
+    ("phaser", PHASER_V1),
+    ("eq", EQ_V1),
+    ("delay", DELAY_V1),
+    ("ladder", LADDER_V1),
 ];
 
-/// Module kinds layout 1 knows, by discriminant.
-const KINDS_V1: usize = 7;
+/// The module kinds F1e's table held (discriminants 0–6), before the `voice` and `master` rows.
+const KINDS_F1E: usize = 7;
+/// The rows between kind 6 and kind 7: `voice` and `master`.
+const BUILTIN_ROWS: usize = 2;
+
+/// The row of [`RESULT_PARAMS_V1`] that holds a module kind's parameters, or `None` for a kind layout 1 does not know
+/// yet (its row would lie past the table's end). Kinds 0–6 are rows 0–6; `voice` and `master` are rows 7 and 8; kind
+/// `k` ≥ 7 is row `k + 2`. The asserts below check that every row in the table names the kind this map gives it.
+const fn kind_row(kind: ModuleKind) -> Option<usize> {
+    let k = kind as usize;
+    let row = if k < KINDS_F1E { k } else { k + BUILTIN_ROWS };
+    if row < RESULT_PARAMS_V1.len() {
+        Some(row)
+    } else {
+        None
+    }
+}
+
+// The table's layout against the catalogue: rows 7 and 8 are `voice` and `master`, no row lies past the last kind, and
+// every row names the kind `kind_row` sends there. (Every kind 0–17 has its row; a later kind may join without one,
+// which the encoder refuses and the decoder reads as `answer_too_new`, until its row is appended. The coverage test
+// requires a row for every listed kind.)
+const _: () = {
+    assert!(
+        enth_params::spec::str_eq(RESULT_PARAMS_V1[KINDS_F1E].0, "voice")
+            && enth_params::spec::str_eq(RESULT_PARAMS_V1[KINDS_F1E + 1].0, "master"),
+        "RESULT_PARAMS_V1: rows 7 and 8 are voice and master"
+    );
+    assert!(
+        RESULT_PARAMS_V1.len() <= ModuleKind::ALL.len() + BUILTIN_ROWS,
+        "RESULT_PARAMS_V1 has a row past the last catalogue kind"
+    );
+    let mut k = 0;
+    while k < ModuleKind::ALL.len() {
+        let kind = ModuleKind::ALL[k];
+        if let Some(row) = kind_row(kind) {
+            assert!(
+                enth_params::spec::str_eq(RESULT_PARAMS_V1[row].0, kind.key()),
+                "a RESULT_PARAMS_V1 row does not name the kind kind_row sends there"
+            );
+        }
+        k += 1;
+    }
+};
 
 /// Whose parameters a target has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -445,10 +700,7 @@ impl Owner {
         match self {
             Owner::Voice => Some(VOICE_V1),
             Owner::Master => Some(MASTER_V1),
-            Owner::Module(kind) => RESULT_PARAMS_V1
-                .get(kind as usize)
-                .filter(|_| (kind as usize) < KINDS_V1)
-                .map(|(_, row)| *row),
+            Owner::Module(kind) => kind_row(kind).map(|row| RESULT_PARAMS_V1[row].1),
         }
     }
 }
@@ -1185,7 +1437,7 @@ fn decode_ops(r: &mut Reader<'_>, start: &Patch) -> Result<(Patch, usize), Resul
                 let kind = ModuleKind::ALL
                     .get(k as usize)
                     .copied()
-                    .filter(|_| (k as usize) < KINDS_V1)
+                    .filter(|kind| kind_row(*kind).is_some())
                     .ok_or(ResultError::AnswerTooNew {
                         what: "module kind",
                         value: k,
