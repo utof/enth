@@ -570,8 +570,14 @@ mod tests {
     fn the_host_tempo_maps_to_the_engines_with_140_until_the_host_gives_one() {
         // A usable host tempo is taken (clamped into 20..=999); nothing usable keeps what the engine has.
         assert_eq!(wanted_tempo(Some(128.0), 140.0), 128.0);
-        assert_eq!(wanted_tempo(Some(19.0), 140.0), tempo::MIN_TEMPO_BPM);
-        assert_eq!(wanted_tempo(Some(5000.0), 140.0), tempo::MAX_TEMPO_BPM);
+        assert_eq!(
+            wanted_tempo(Some(19.0), 140.0).to_bits(),
+            tempo::MIN_TEMPO_BPM.to_bits()
+        );
+        assert_eq!(
+            wanted_tempo(Some(5000.0), 140.0).to_bits(),
+            tempo::MAX_TEMPO_BPM.to_bits()
+        );
         assert_eq!(wanted_tempo(None, 140.0), 140.0);
         assert_eq!(
             wanted_tempo(None, 90.0),
