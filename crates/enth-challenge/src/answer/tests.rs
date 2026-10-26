@@ -166,7 +166,7 @@ fn the_widths_cover_the_patch_model_and_the_catalogue() {
         room(TARGET_BITS)
     );
     assert!(
-        total <= room(ID_BITS) - 1,
+        total < room(ID_BITS),
         "{total} modules against id numbers 1..{} (ID_BITS {ID_BITS})",
         room(ID_BITS) - 1
     );
@@ -275,7 +275,7 @@ fn the_wider_fields_round_trip_at_the_bit_level() {
 }
 
 /// S2a's reserved kinds (7 to 17, `delay` and `ladder` among them) have no table row until the catalogue lane adds
-/// them (lane CAT owns that): a code that names one is `answer_too_new`, kinds 16 and 17 included (KIND_BITS 4 stopped
+/// them (lane CAT owns that): a code that names one is `answer_too_new`, kinds 16 and 17 included (`KIND_BITS` 4 stopped
 /// at 15), and the encoder refuses an answer that holds one (`unencodable`, "not in layout 1").
 #[test]
 fn a_reserved_kind_has_no_row_yet() {
