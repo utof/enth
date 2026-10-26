@@ -15,6 +15,6 @@ modules:
   noise   generators  noise      2       Unpitched hiss, white or pink, for breath, attack transients and texture.                                       Noise       intermediate
   svf     voice_fx    filter     5       A resonant multimode filter per voice: shapes brightness, usually swept by an envelope.                         Filter      basic
   adsr    modulators  env        5       An attack-decay-sustain-release envelope per note, 0 to 1; one of them is the voice's amplitude envelope.       Envelope    basic
-  lfo     modulators  lfo        7       A slow repeating modulator for vibrato, tremolo and sweeps, per voice or shared by all voices.                  LFO         intermediate
+  lfo     modulators  lfo        10      A slow repeating modulator for vibrato, tremolo and sweeps, per voice or shared by all voices.                  LFO         intermediate
   reverb  fx          reverb     10      A stereo room or hall after the voices: adds space, width and a tail.                                           Reverb      intermediate
   comp    fx          comp       7       Evens out loudness after the voices: turns loud parts down above a threshold, then makes up the gain.           Compressor  advanced
