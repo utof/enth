@@ -263,18 +263,30 @@ impl Aspect {
         }
     }
 
-    /// Whether a module of this kind can change the aspect.
+    /// Whether a module of this kind can change the aspect. S2a's kinds (lane MTC) are listed where they change what
+    /// the descriptor reads: a `wt` is a pitched, bright, beating oscillator; the filters, `dist`, `eq`, `ott` and
+    /// `phaser` reshape the spectrum; an `mseg` is an envelope or an LFO; a `delay` lengthens the tail; a `chorus`
+    /// beats a delayed, detuned copy against the dry sound. The compressor, v1's, is named by none of the ten.
     fn involves(self, kind: ModuleKind) -> bool {
+        use ModuleKind::{
+            Adsr, Chorus, Comb, Delay, Dist, Eq, Formant, Ladder, Lfo, Mseg, Noise, Osc, Ott,
+            Phaser, Reverb, Svf, Wt,
+        };
         match self {
-            Aspect::Pitch | Aspect::Beating => kind == ModuleKind::Osc,
-            Aspect::Brightness => {
-                matches!(kind, ModuleKind::Osc | ModuleKind::Svf | ModuleKind::Noise)
-            }
-            Aspect::Attack | Aspect::Decay | Aspect::Sustain => kind == ModuleKind::Adsr,
-            Aspect::Release => matches!(kind, ModuleKind::Adsr | ModuleKind::Reverb),
-            Aspect::Noisiness => matches!(kind, ModuleKind::Noise | ModuleKind::Osc),
-            Aspect::Tremolo => kind == ModuleKind::Lfo,
-            Aspect::Sweep => matches!(kind, ModuleKind::Svf | ModuleKind::Lfo | ModuleKind::Adsr),
+            Aspect::Pitch => matches!(kind, Osc | Wt),
+            Aspect::Beating => matches!(kind, Osc | Wt | Chorus),
+            Aspect::Brightness => matches!(
+                kind,
+                Osc | Svf | Noise | Wt | Ladder | Formant | Comb | Dist | Eq | Ott | Phaser
+            ),
+            Aspect::Attack | Aspect::Decay | Aspect::Sustain => matches!(kind, Adsr | Mseg),
+            Aspect::Release => matches!(kind, Adsr | Mseg | Reverb | Delay),
+            Aspect::Noisiness => matches!(kind, Noise | Osc | Wt | Dist),
+            Aspect::Tremolo => matches!(kind, Lfo | Mseg),
+            Aspect::Sweep => matches!(
+                kind,
+                Svf | Lfo | Adsr | Mseg | Ladder | Formant | Comb | Phaser
+            ),
         }
     }
 }
@@ -779,19 +791,57 @@ enum Categorical {
     Route {
         src: ModSource,
         src_kind: Option<ModuleKind>,
+        dst_kind: Option<ModuleKind>,
         dst: ParamAddr,
         change: RouteChange,
     },
 }
 
-/// Whether a route from a source of `src` kind to the parameter `dst` can change the aspect.
-fn route_involves(aspect: Aspect, src: Option<ModuleKind>, dst: &str) -> bool {
-    let moving = matches!(src, Some(ModuleKind::Lfo | ModuleKind::Adsr));
+/// Whether a route from a source of `src` kind to the parameter `dst` of a module of `dst_kind` can change the
+/// aspect. A modulator source that moves (an LFO, an envelope, an MSEG) sweeps or wobbles; a generator source is an
+/// audio route (S2a: into a `wt`'s `pm` or `am`), which adds sidebands. S2a's destinations are told apart by their
+/// kind (`semi` is a pitch on an oscillator and a tuning on a comb); the v1 kinds and an unknown one keep the
+/// rules they always had.
+fn route_involves(
+    aspect: Aspect,
+    src: Option<ModuleKind>,
+    dst_kind: Option<ModuleKind>,
+    dst: &str,
+) -> bool {
+    use ModuleKind::{
+        Adsr, Comb, Dist, Eq, Formant, Ladder, Lfo, Mseg, Noise, Osc, Ott, Phaser, Wt,
+    };
+    let moving = matches!(src, Some(Lfo | Adsr | Mseg));
+    let audio = matches!(src, Some(Osc | Noise | Wt)) && matches!(dst, "pm" | "am");
+    let new_kind = matches!(
+        dst_kind,
+        Some(Dist | Wt | Ott | Comb | Formant | Ladder | Phaser | Eq)
+    );
+    // The parameters of S2a's kinds that move the spectrum.
+    let spectral = |key: &str| match dst_kind {
+        Some(Formant) => matches!(key, "f1" | "f2" | "shift" | "resonance"),
+        Some(Comb) => matches!(key, "semi" | "feedback" | "damping"),
+        Some(Phaser) => matches!(key, "center" | "feedback" | "depth"),
+        Some(Dist) => matches!(key, "drive" | "tone" | "bias"),
+        Some(Ladder) => matches!(key, "cutoff" | "resonance" | "drive"),
+        Some(Wt) => matches!(key, "position" | "warp_amount" | "pm_index" | "feedback"),
+        Some(Ott) => matches!(
+            key,
+            "depth" | "upward" | "downward" | "low_gain" | "mid_gain" | "high_gain"
+        ),
+        Some(Eq) => key != "mix",
+        _ => false,
+    };
     match aspect {
-        Aspect::Tremolo => src == Some(ModuleKind::Lfo) && dst == "level",
+        Aspect::Tremolo => matches!(src, Some(Lfo | Mseg)) && dst == "level",
+        Aspect::Sweep if new_kind => moving && spectral(dst),
         Aspect::Sweep => moving && matches!(dst, "cutoff" | "resonance" | "drive"),
+        Aspect::Brightness if new_kind => audio || spectral(dst),
         Aspect::Brightness => matches!(dst, "cutoff" | "resonance" | "drive" | "pw" | "position"),
-        Aspect::Pitch => matches!(dst, "fine" | "semi"),
+        Aspect::Noisiness => audio && dst == "pm",
+        Aspect::Pitch => {
+            matches!(dst, "fine" | "semi") && matches!(dst_kind, None | Some(Osc | Wt))
+        }
         _ => false,
     }
 }
@@ -803,9 +853,12 @@ impl Categorical {
         match self {
             Categorical::Param { kind, .. } => !existence && aspect.involves(*kind),
             Categorical::Enabled { kind, .. } => aspect.involves(*kind),
-            Categorical::Route { src_kind, dst, .. } => {
-                route_involves(aspect, *src_kind, dst.param())
-            }
+            Categorical::Route {
+                src_kind,
+                dst_kind,
+                dst,
+                ..
+            } => route_involves(aspect, *src_kind, *dst_kind, dst.param()),
         }
     }
 }
@@ -885,6 +938,11 @@ fn categorical_differences(patch: &Patch, target: &Patch, diff: &[Op]) -> Vec<Ca
             .map(|(_, m)| m.kind),
         _ => None,
     };
+    let dst_kind_of = |dst: &ParamAddr| {
+        dst.module_id()
+            .and_then(|id| target.find(id).or_else(|| patch.find(id)))
+            .map(|(_, m)| m.kind)
+    };
     let mut out = Vec::new();
     for op in diff {
         match op {
@@ -922,18 +980,21 @@ fn categorical_differences(patch: &Patch, target: &Patch, diff: &[Op]) -> Vec<Ca
             Op::InsertRoute { route, .. } => out.push(Categorical::Route {
                 src: route.src.clone(),
                 src_kind: kind_of(&route.src),
+                dst_kind: dst_kind_of(&route.dst),
                 dst: route.dst.clone(),
                 change: RouteChange::Add { depth: route.depth },
             }),
             Op::RemoveRoute { route } => out.push(Categorical::Route {
                 src: route.src.clone(),
                 src_kind: kind_of(&route.src),
+                dst_kind: dst_kind_of(&route.dst),
                 dst: route.dst.clone(),
                 change: RouteChange::Remove,
             }),
             Op::SetDepth { route, depth } => out.push(Categorical::Route {
                 src: route.src.clone(),
                 src_kind: kind_of(&route.src),
+                dst_kind: dst_kind_of(&route.dst),
                 dst: route.dst.clone(),
                 change: RouteChange::Depth { depth: *depth },
             }),
@@ -1402,5 +1463,116 @@ mod tests {
             crate::sensitivity::tolerance_bounds(Feature::Sustain),
             (3.0, 12.0)
         );
+    }
+
+    /// Lane MTC: S2a's kinds are named by the aspects they change, and v1's rows are as they were.
+    #[test]
+    fn s2a_kinds_are_involved_where_they_change_the_sound() {
+        use ModuleKind::*;
+        let involved = |kind: ModuleKind| -> Vec<Aspect> {
+            Aspect::ALL
+                .into_iter()
+                .filter(|a| a.involves(kind))
+                .collect()
+        };
+        assert_eq!(
+            involved(Wt),
+            [
+                Aspect::Pitch,
+                Aspect::Brightness,
+                Aspect::Noisiness,
+                Aspect::Beating
+            ]
+        );
+        assert_eq!(involved(Ladder), [Aspect::Brightness, Aspect::Sweep]);
+        assert_eq!(
+            involved(Mseg),
+            [
+                Aspect::Attack,
+                Aspect::Decay,
+                Aspect::Sustain,
+                Aspect::Release,
+                Aspect::Tremolo,
+                Aspect::Sweep
+            ]
+        );
+        assert_eq!(involved(Delay), [Aspect::Release]);
+        assert!(
+            involved(Dist).contains(&Aspect::Brightness)
+                && involved(Dist).contains(&Aspect::Noisiness)
+        );
+        for kind in [Formant, Comb, Phaser] {
+            assert!(involved(kind).contains(&Aspect::Sweep), "{kind}");
+        }
+        for kind in [Eq, Ott] {
+            assert_eq!(involved(kind), [Aspect::Brightness], "{kind}");
+        }
+        // Every kind that makes or shapes a sound is named by at least one aspect; the rest are listed here.
+        let silent: Vec<ModuleKind> = ModuleKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| involved(*k).is_empty())
+            .collect();
+        assert_eq!(silent, [Comp], "{silent:?}");
+        assert_eq!(involved(Chorus), [Aspect::Beating]);
+        // v1's rows are unchanged.
+        assert_eq!(
+            involved(Osc),
+            [
+                Aspect::Pitch,
+                Aspect::Brightness,
+                Aspect::Noisiness,
+                Aspect::Beating
+            ]
+        );
+        assert_eq!(involved(Svf), [Aspect::Brightness, Aspect::Sweep]);
+        assert_eq!(involved(Lfo), [Aspect::Tremolo, Aspect::Sweep]);
+        assert_eq!(
+            involved(Adsr),
+            [
+                Aspect::Attack,
+                Aspect::Decay,
+                Aspect::Sustain,
+                Aspect::Release,
+                Aspect::Sweep
+            ]
+        );
+        assert_eq!(involved(Reverb), [Aspect::Release]);
+    }
+
+    #[test]
+    fn routes_are_told_apart_by_their_destination_kind() {
+        use ModuleKind::*;
+        let r = route_involves;
+        // An MSEG moves like an LFO or an envelope.
+        assert!(r(Aspect::Sweep, Some(Mseg), Some(Ladder), "cutoff"));
+        assert!(r(Aspect::Sweep, Some(Mseg), Some(Svf), "cutoff"));
+        assert!(r(Aspect::Sweep, Some(Lfo), Some(Formant), "shift"));
+        assert!(r(Aspect::Sweep, Some(Adsr), Some(Phaser), "center"));
+        assert!(!r(Aspect::Sweep, Some(Mseg), Some(Chorus), "rate"));
+        assert!(
+            !r(Aspect::Sweep, Some(Osc), Some(Ladder), "cutoff"),
+            "a generator is not a mover"
+        );
+        assert!(r(Aspect::Tremolo, Some(Mseg), Some(Osc), "level"));
+        assert!(r(Aspect::Tremolo, Some(Lfo), Some(Wt), "level"));
+        assert!(!r(Aspect::Tremolo, Some(Adsr), Some(Osc), "level"));
+        // `semi` is a pitch on a generator and a tuning on a comb.
+        assert!(r(Aspect::Pitch, Some(Lfo), Some(Osc), "semi"));
+        assert!(r(Aspect::Pitch, Some(Lfo), Some(Wt), "fine"));
+        assert!(!r(Aspect::Pitch, Some(Lfo), Some(Comb), "semi"));
+        assert!(r(Aspect::Sweep, Some(Lfo), Some(Comb), "semi"));
+        // An audio route into a wt adds sidebands.
+        assert!(r(Aspect::Brightness, Some(Osc), Some(Wt), "pm"));
+        assert!(r(Aspect::Brightness, Some(Wt), Some(Wt), "am"));
+        assert!(r(Aspect::Noisiness, Some(Osc), Some(Wt), "pm"));
+        assert!(!r(Aspect::Noisiness, Some(Lfo), Some(Wt), "pm_index"));
+        assert!(r(Aspect::Brightness, Some(Lfo), Some(Dist), "tone"));
+        assert!(!r(Aspect::Brightness, Some(Lfo), Some(Dist), "mix"));
+        // v1: the keys it matched, whatever the kind (and an unknown destination).
+        assert!(r(Aspect::Brightness, Some(Adsr), Some(Svf), "cutoff"));
+        assert!(r(Aspect::Brightness, None, None, "pw"));
+        assert!(r(Aspect::Pitch, Some(Lfo), None, "semi"));
+        assert!(r(Aspect::Sweep, Some(Lfo), Some(Svf), "drive"));
     }
 }
