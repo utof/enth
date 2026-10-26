@@ -210,7 +210,7 @@ pub struct Performance {
     pub tempo_changes: Vec<TempoChange>,
 }
 
-pub use tempo::{DEFAULT_TEMPO_BPM, MAX_TEMPO_BPM, MIN_TEMPO_BPM};
+pub use tempo::{DEFAULT_TEMPO_BPM, MAX_TEMPO_BPM, MIN_TEMPO_BPM, is_valid as tempo_is_valid};
 
 impl Default for Performance {
     fn default() -> Self {

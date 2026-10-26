@@ -64,12 +64,13 @@ pub fn render(
     out: Option<&Path>,
     bits: Bits,
     seed: Option<u64>,
+    bpm: &str,
     stdin: &str,
 ) -> Res {
     let (patch, notes) = patchio::load(path)?;
     let perf = Perf::from_args(perf, stdin)?.unwrap_or_else(Perf::default_perf);
     let seed = seed.unwrap_or(DEFAULT_SEED);
-    let ev = Evaluator::new(&perf, seed, Want::CORE);
+    let ev = Evaluator::new(&perf, seed, Want::CORE).with_tempo(crate::perf::parse_bpm(bpm)?);
     let r = ev.render(&patch, seed)?;
     let wav_path = out.map_or_else(|| patchio::with_wav_extension(path), Path::to_path_buf);
     write_wav(

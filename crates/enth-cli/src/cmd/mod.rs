@@ -139,7 +139,8 @@ fn run(cmd: Cmd, stdin: &str) -> Res {
             out,
             bits,
             seed,
-        } => sound::render(&patch, &perf, out.as_deref(), bits, seed, stdin),
+            bpm,
+        } => sound::render(&patch, &perf, out.as_deref(), bits, seed, &bpm, stdin),
         Cmd::Describe { input, perf, seed } => sound::describe(&input, &perf, seed, stdin),
         Cmd::Check {
             input,

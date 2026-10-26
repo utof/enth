@@ -39,6 +39,13 @@ impl Evaluator {
         }
     }
 
+    /// This evaluator with the tempo `bpm` (already checked by [`crate::perf::parse_bpm`]) for tempo-synced modules.
+    #[must_use]
+    pub fn with_tempo(mut self, bpm: f64) -> Self {
+        self.perf.tempo_bpm = bpm;
+        self
+    }
+
     /// The judged render seed.
     pub fn seed(&self) -> u64 {
         self.seed
