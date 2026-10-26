@@ -37,8 +37,9 @@
 //!   wakes it with the delay, filters and ping-pong set straight to that block's values, so skipping equals running.
 //!
 //! Real-time and determinism: the rings are allocated in [`Delay::new`] (sized from the sample rate alone, 2 s per
-//! channel) and nothing else ever allocates; transcendentals only through the pinned `libm` (one `tan` per filter
-//! per block); no fused operations; every write into the loop is flushed, so a tail never reaches subnormals.
+//! channel, and written once per 4 KB page there so the audio thread's first copy into them meets no page fault)
+//! and nothing else ever allocates; transcendentals only through the pinned `libm` (one `tan` per filter per
+//! block); no fused operations; every write into the loop is flushed, so a tail never reaches subnormals.
 
 use crate::util::flush::flush;
 use crate::util::math;
@@ -260,12 +261,20 @@ impl Delay {
     #[must_use]
     pub fn new(sample_rate: f32) -> Self {
         let len = ring_frames(sample_rate);
+        let mut ring = vec![0.0f32; 2 * len].into_boxed_slice();
+        // `vec![0.0; n]` asks the allocator for zeroed memory, which for 768 KB is fresh pages the kernel has not
+        // mapped yet: the first write to each would be a page fault, and the first write is the audio thread's copy
+        // in a crossfading plan swap. Write one zero to every 4 KB page here, on the thread that compiles the plan.
+        // (`black_box` keeps the store: the compiler knows the memory is already zero.)
+        for page in ring.chunks_mut(1_024) {
+            page[0] = core::hint::black_box(0.0);
+        }
         Self {
             sample_rate,
             len,
             fade_len: ((FADE_S * f64::from(sample_rate)).round() as u32).max(2),
             pp_step: (BLOCK as f64 / (PING_PONG_S * f64::from(sample_rate))).min(1.0) as f32,
-            ring: vec![0.0; 2 * len].into_boxed_slice(),
+            ring,
             s: State::FRESH,
         }
     }
