@@ -2,7 +2,8 @@
 # lane PL, `mod-controls` is in too: the test host plays a case's `controls` (macros as the host parameters
 # "Macro N", the mod wheel as MIDI CC 1) and the plugin takes MIDI CCs (`MidiConfig::MidiCCs`).
 # The cases the test host skips itself (seeds other than the default, the stand-in sine, engine-address automation)
-# are listed too: they are reported as skipped, never compared. Run with --min-compared 60.
+# are listed too: they are reported as skipped, never compared (`wt-automation` is one). Since lane SKS (S2a) the 14
+# `wt-*` cases are in, audio routes included. Run with --min-compared 60.
 cases = [
     "adsr-long-release",
     "adsr-pad",
@@ -77,4 +78,18 @@ cases = [
     "voice-mono",
     "voice-poly-glide-legato",
     "voice-poly-steal",
+    "wt-am",
+    "wt-automation",
+    "wt-feedback",
+    "wt-fm-chain",
+    "wt-phase-modes",
+    "wt-pm-fm",
+    "wt-position",
+    "wt-ring-mod",
+    "wt-tables-fm",
+    "wt-tables-fm-octave",
+    "wt-tables-formant",
+    "wt-tables-metal",
+    "wt-warps-jump",
+    "wt-warps-smooth",
 ]

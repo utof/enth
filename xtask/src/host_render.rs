@@ -179,7 +179,7 @@ pub fn host_render(args: &[String]) -> Result<(), String> {
 }
 
 /// The engine's golden cases through the plugin must give the engine's hashes, at every host block size, with at least
-/// 60 cases compared (the test host skips the ones a plugin cannot play; 63 are compared today).
+/// 60 cases compared (the test host skips the ones a plugin cannot play; 76 are compared today, with lane SKS's `wt-*`).
 const CLI_EQUAL_MIN_COMPARED: &str = "60";
 
 fn cli_equal(host: &Path, clap: &Path, root: &Path, profile: &Path) -> Result<(), String> {
