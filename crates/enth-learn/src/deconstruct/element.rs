@@ -199,7 +199,42 @@ fn base_value(preset: &Patch, addr: &ParamAddr) -> Option<f32> {
 fn voice_fx_groups(kind: ModuleKind) -> &'static [&'static [&'static str]] {
     match kind {
         ModuleKind::Svf => &[&["mode", "cutoff", "resonance"], &["keytrack"], &["drive"]],
+        // The ladder filter has the filter's controls (its `mix` goes with the tone): taught the same way (lane MTC).
+        ModuleKind::Ladder => &[
+            &["mode", "cutoff", "resonance", "mix"],
+            &["keytrack"],
+            &["drive"],
+        ],
         _ => &[],
+    }
+}
+
+/// A module kind in an element's label: "the reverb", "the comb filter", "the OTT compressor", "the EQ" (a name that is
+/// an acronym keeps its capitals).
+fn kind_label(kind: ModuleKind) -> String {
+    match kind {
+        ModuleKind::Ott => "the OTT compressor".to_owned(),
+        ModuleKind::Eq => "the EQ".to_owned(),
+        _ => format!("the {}", kind.spec().name.to_lowercase()),
+    }
+}
+
+/// What a filter module is called in an element's label: the state-variable filter is "the filter".
+fn filter_noun(kind: ModuleKind) -> &'static str {
+    match kind {
+        ModuleKind::Ladder => "ladder filter",
+        _ => "filter",
+    }
+}
+
+/// Whether a modulator plays its shape once per note, like an envelope: an `adsr`; an `mseg` that is not looping;
+/// an `lfo` with `one_shot` on. A route from it is an envelope's ("the filter envelope"), not an LFO's.
+pub(crate) fn acts_as_envelope(m: &enth_patch::ModuleInstance) -> bool {
+    match m.kind {
+        ModuleKind::Adsr => true,
+        ModuleKind::Mseg => m.get("mode") != Some(0.0),
+        ModuleKind::Lfo => m.get("one_shot") == Some(1.0),
+        _ => false,
     }
 }
 
@@ -248,7 +283,12 @@ pub fn elements(preset: &Patch) -> Vec<Element> {
         if parts.is_empty() {
             continue;
         }
-        let main = ["wave", "color", "semi", "fine", "level"]
+        // A wavetable oscillator is named by its table where an oscillator is by its wave.
+        let keys: &[&str] = match m.kind {
+            ModuleKind::Wt => &["table", "semi", "fine", "level"],
+            _ => &["wave", "color", "semi", "fine", "level"],
+        };
+        let main = keys
             .iter()
             .filter_map(|k| ParamAddr::module(m.id.clone(), k).ok())
             .find(|a| parts.contains(&Part::Param(a.clone())))
@@ -279,7 +319,7 @@ pub fn elements(preset: &Patch) -> Vec<Element> {
                     id: m.id.to_string(),
                     flow: Flow::Filter,
                     main: first_param(&parts),
-                    label: format!("the {}", m.kind.spec().name.to_lowercase()),
+                    label: kind_label(m.kind),
                     parts,
                 });
             }
@@ -290,23 +330,22 @@ pub fn elements(preset: &Patch) -> Vec<Element> {
             if parts.is_empty() {
                 continue;
             }
+            let noun = filter_noun(m.kind);
             let (id, label, main_key) = match (m.kind, g) {
-                (ModuleKind::Svf, 0) => (m.id.to_string(), "the filter".to_owned(), "cutoff"),
-                (ModuleKind::Svf, 1) => (
+                (ModuleKind::Svf | ModuleKind::Ladder, 0) => {
+                    (m.id.to_string(), format!("the {noun}"), "cutoff")
+                }
+                (ModuleKind::Svf | ModuleKind::Ladder, 1) => (
                     format!("{}.keytrack", m.id),
-                    "the filter's key tracking".to_owned(),
+                    format!("the {noun}'s key tracking"),
                     "keytrack",
                 ),
-                (ModuleKind::Svf, _) => (
+                (ModuleKind::Svf | ModuleKind::Ladder, _) => (
                     format!("{}.drive", m.id),
-                    "the filter's drive".to_owned(),
+                    format!("the {noun}'s drive"),
                     "drive",
                 ),
-                _ => (
-                    format!("{}.{}", m.id, keys[0]),
-                    format!("the {}", m.kind.spec().name.to_lowercase()),
-                    keys[0],
-                ),
+                _ => (format!("{}.{}", m.id, keys[0]), kind_label(m.kind), keys[0]),
             };
             let main = ParamAddr::module(m.id.clone(), main_key)
                 .ok()
@@ -343,6 +382,15 @@ pub fn elements(preset: &Patch) -> Vec<Element> {
         let mut parts = vec![Part::Route(addr.clone())];
         if let ModSource::Module(src) = &r.src {
             parts.extend(modulator_parts(preset, src));
+            // An audio route (S2a) leaves a generator: the base switches every generator but the sounding one off,
+            // so the route carries its source's switch, or a step would route from a generator that is off.
+            if let Some((pos, g)) = preset.find(src)
+                && pos.section == Section::Generators
+                && g.enabled
+                && !base_enabled(preset, Section::Generators, src, g.enabled)
+            {
+                parts.push(Part::Enable(src.clone()));
+            }
         }
         let flow = if matches!(r.src, ModSource::Macro(_)) {
             Flow::Macros
@@ -400,7 +448,7 @@ pub fn elements(preset: &Patch) -> Vec<Element> {
             id: m.id.to_string(),
             flow: Flow::Effects,
             main: first_param(&parts),
-            label: format!("the {}", m.kind.spec().name.to_lowercase()),
+            label: kind_label(m.kind),
             parts,
         });
     }
@@ -435,7 +483,10 @@ fn generator_label(preset: &Patch, id: &ModuleId, kind: ModuleKind) -> String {
         .filter(|m| m.kind == kind)
         .position(|m| &m.id == id)
         .unwrap_or(0);
-    format!("the {} oscillator", ordinal(n))
+    match kind {
+        ModuleKind::Wt => format!("the {} wavetable oscillator", ordinal(n)),
+        _ => format!("the {} oscillator", ordinal(n)),
+    }
 }
 
 fn voice_label(preset: &Patch) -> String {
@@ -470,23 +521,49 @@ fn route_label(preset: &Patch, r: &RouteAddr) -> String {
         ModSource::Velocity => format!("velocity on {}", r.dst),
         ModSource::ModWheel => format!("the mod wheel on {}", r.dst),
         ModSource::Module(src) => {
-            let src_kind = preset.find(src).map(|(_, m)| m.kind);
-            let is_env = src_kind == Some(ModuleKind::Adsr);
-            if dst_is(ModuleKind::Svf, &["cutoff"]) {
+            let src_inst = preset.find(src).map(|(_, m)| m);
+            let src_kind = src_inst.map(|m| m.kind);
+            let is_env = src_inst.is_some_and(acts_as_envelope);
+            let is_generator = src_kind.is_some_and(|k| k.section() == Section::Generators);
+            if is_generator {
+                // An audio route (S2a): a generator's output moves a wavetable oscillator's phase or amplitude.
+                let from =
+                    src_inst.map_or_else(String::new, |m| generator_label(preset, src, m.kind));
+                let into = r
+                    .dst
+                    .module_id()
+                    .and_then(|id| {
+                        preset
+                            .find(id)
+                            .map(|(_, m)| generator_label(preset, id, m.kind))
+                    })
+                    .unwrap_or_else(|| r.dst.to_string());
+                return match param {
+                    "pm" => format!("phase modulation of {into} by {from}"),
+                    "am" => format!("amplitude modulation of {into} by {from}"),
+                    _ => format!("{src} on {}", r.dst),
+                };
+            }
+            if dst_kind.is_some_and(|k| matches!(k, ModuleKind::Svf | ModuleKind::Ladder))
+                && param == "cutoff"
+            {
                 if is_env {
                     "the filter envelope"
                 } else {
                     "the filter LFO"
                 }
                 .to_owned()
-            } else if dst_is(ModuleKind::Osc, &["semi", "fine"]) {
+            } else if dst_is(ModuleKind::Osc, &["semi", "fine"])
+                || dst_is(ModuleKind::Wt, &["semi", "fine"])
+            {
                 if is_env {
                     "the pitch envelope"
                 } else {
                     "vibrato"
                 }
                 .to_owned()
-            } else if dst_kind.is_some_and(|k| matches!(k, ModuleKind::Osc | ModuleKind::Noise))
+            } else if dst_kind
+                .is_some_and(|k| matches!(k, ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Wt))
                 && param == "level"
             {
                 let what = generator_label(
@@ -499,6 +576,36 @@ fn route_label(preset: &Patch, r: &RouteAddr) -> String {
                 } else {
                     format!("tremolo on {what}")
                 }
+            } else if dst_is(ModuleKind::Wt, &["position", "warp_amount"]) {
+                if is_env {
+                    "a wavetable envelope"
+                } else {
+                    "a wavetable sweep"
+                }
+                .to_owned()
+            } else if dst_is(ModuleKind::Formant, &["f1", "f2", "shift"]) {
+                if is_env {
+                    "a vowel envelope"
+                } else {
+                    "a vowel sweep"
+                }
+                .to_owned()
+            } else if dst_is(ModuleKind::Phaser, &["center"]) {
+                "a phaser sweep".to_owned()
+            } else if dst_is(ModuleKind::Comb, &["semi"]) {
+                if is_env {
+                    "a comb envelope"
+                } else {
+                    "a comb sweep"
+                }
+                .to_owned()
+            } else if dst_is(ModuleKind::Dist, &["drive"]) {
+                if is_env {
+                    "a drive envelope"
+                } else {
+                    "a pulsing drive"
+                }
+                .to_owned()
             } else if r.dst.target() == &Target::Voice && param == "pan" {
                 if is_env { "a pan envelope" } else { "auto-pan" }.to_owned()
             } else {
@@ -555,7 +662,11 @@ pub(crate) mod tests {
     use super::*;
 
     fn patch(ops: &[&str]) -> Patch {
-        let mut p = starter();
+        patch_on(starter(), ops)
+    }
+
+    /// `base` with the lines applied: `id.param=value`, `id.enabled=on`, `src -> dst=depth`.
+    pub(crate) fn patch_on(mut p: Patch, ops: &[&str]) -> Patch {
         for line in ops {
             let (lhs, value) = line.split_once('=').unwrap();
             let lhs = lhs.trim();
@@ -718,5 +829,207 @@ pub(crate) mod tests {
             crate::pack::StepId::new(&format!("build-{}", slug("macro4 -> comp1.makeup", 26)))
                 .is_ok()
         );
+    }
+
+    /// The starter with S2a modules added (and some removed to make room): `adds` are (kind, id), in order.
+    pub(crate) fn with_s2a(adds: &[(ModuleKind, &str)], removes: &[&str]) -> Patch {
+        let mut p = starter();
+        for id in removes {
+            apply(
+                &mut p,
+                Op::RemoveModule {
+                    id: ModuleId::new(id).unwrap(),
+                },
+            )
+            .unwrap();
+        }
+        for (kind, id) in adds {
+            let at = enth_patch::addr::Position {
+                section: kind.section(),
+                index: p.section(kind.section()).len(),
+            };
+            apply(
+                &mut p,
+                Op::AddModule {
+                    at,
+                    module: enth_patch::ModuleInstance::new(ModuleId::new(id).unwrap(), *kind),
+                },
+            )
+            .unwrap();
+        }
+        p
+    }
+
+    fn ids(els: &[Element]) -> Vec<&str> {
+        els.iter().map(|e| e.id.as_str()).collect()
+    }
+
+    fn element<'a>(els: &'a [Element], id: &str) -> &'a Element {
+        els.iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("no element {id} in {:?}", ids(els)))
+    }
+
+    /// Lane MTC: S2a's kinds are elements of a preset, with names a player reads, and the audio route carries its
+    /// source's switch.
+    #[test]
+    fn s2a_kinds_are_elements_with_their_own_labels() {
+        let p = patch_on(
+            with_s2a(
+                &[
+                    (ModuleKind::Wt, "wt1"),
+                    (ModuleKind::Ladder, "ladder1"),
+                    (ModuleKind::Dist, "dist1"),
+                    (ModuleKind::Comb, "comb1"),
+                    (ModuleKind::Chorus, "chorus1"),
+                    (ModuleKind::Phaser, "phaser1"),
+                    (ModuleKind::Ott, "ott1"),
+                    (ModuleKind::Eq, "eq1"),
+                ],
+                &["comp1", "reverb1"],
+            ),
+            &[
+                "osc2.enabled=on",
+                "osc2.level=0",
+                "osc2.semi=7",
+                "wt1.table=formant",
+                "wt1.semi=-12",
+                "osc2 -> wt1.pm=40",
+                "ladder1.cutoff=900",
+                "ladder1.keytrack=40",
+                "ladder1.drive=12",
+                "dist1.mode=hard",
+                "dist1.drive=18",
+                "comb1.semi=7",
+                "chorus1.depth=70",
+                "phaser1.rate=0.4",
+                "ott1.depth=60",
+                "eq1.high_gain=4",
+            ],
+        );
+        let els = elements(&p);
+        assert_eq!(
+            ids(&els),
+            [
+                "osc2",
+                "wt1",
+                "ladder1",
+                "ladder1.keytrack",
+                "ladder1.drive",
+                "dist1",
+                "comb1",
+                "osc2 -> wt1.pm",
+                "chorus1",
+                "phaser1",
+                "ott1",
+                "eq1",
+            ]
+        );
+        let label = |id: &str| element(&els, id).label.clone();
+        assert_eq!(label("osc2"), "the second oscillator");
+        assert_eq!(label("wt1"), "the first wavetable oscillator");
+        assert_eq!(label("ladder1"), "the ladder filter");
+        assert_eq!(
+            label("ladder1.keytrack"),
+            "the ladder filter's key tracking"
+        );
+        assert_eq!(label("ladder1.drive"), "the ladder filter's drive");
+        assert_eq!(label("dist1"), "the distortion");
+        assert_eq!(label("comb1"), "the comb filter");
+        assert_eq!(label("ott1"), "the OTT compressor");
+        assert_eq!(label("eq1"), "the EQ");
+        assert_eq!(
+            label("osc2 -> wt1.pm"),
+            "phase modulation of the first wavetable oscillator by the second oscillator"
+        );
+        assert_eq!(
+            element(&els, "wt1").main,
+            Some("wt1.table".parse().unwrap()),
+            "a wavetable oscillator is named by its table"
+        );
+        assert_eq!(
+            element(&els, "ladder1").main,
+            Some("ladder1.cutoff".parse().unwrap())
+        );
+        assert_eq!(element(&els, "ladder1").flow, Flow::Filter);
+        assert_eq!(element(&els, "chorus1").flow, Flow::Effects);
+        // The partition: everything back is the preset, and the base adds nothing.
+        let all: BTreeSet<usize> = (0..els.len()).collect();
+        assert_eq!(project(&p, &els, &all), p);
+        let b = base(&p);
+        assert_eq!(elements(&b), Vec::new());
+        let enabled = |q: &Patch, id: &str| q.find(&ModuleId::new(id).unwrap()).unwrap().1.enabled;
+        assert!(
+            enabled(&b, "ladder1"),
+            "the per-voice effects stay as the preset has them"
+        );
+        assert!(!enabled(&b, "chorus1") && !enabled(&b, "wt1") && !enabled(&b, "osc2"));
+        // The audio route carries the operator's switch: the step that adds it routes from a generator that is on.
+        let route = els.iter().position(|e| e.id == "osc2 -> wt1.pm").unwrap();
+        assert!(
+            els[route]
+                .parts
+                .contains(&Part::Enable(ModuleId::new("osc2").unwrap()))
+        );
+        let one = project(&p, &els, &BTreeSet::from([route]));
+        assert!(enabled(&one, "osc2"));
+        assert_eq!(one.routes.len(), 1);
+        assert!(
+            !enabled(&one, "wt1"),
+            "the carrier waits for its own element"
+        );
+    }
+
+    #[test]
+    fn routes_from_an_mseg_or_a_one_shot_lfo_are_envelopes() {
+        let route = |mseg_mode: &str, lfo_one_shot: &str| {
+            let p = patch_on(
+                with_s2a(&[(ModuleKind::Mseg, "mseg1")], &[]),
+                &[
+                    &format!("mseg1.mode={mseg_mode}"),
+                    &format!("lfo1.one_shot={lfo_one_shot}"),
+                    "mseg1 -> filter1.cutoff=40",
+                    "lfo1 -> filter1.cutoff=30",
+                ],
+            );
+            let els = elements(&p);
+            (
+                element(&els, "mseg1 -> filter1.cutoff").label.clone(),
+                element(&els, "lfo1 -> filter1.cutoff").label.clone(),
+            )
+        };
+        assert_eq!(
+            route("loop", "off"),
+            ("the filter LFO".into(), "the filter LFO".into())
+        );
+        assert_eq!(
+            route("one_shot", "on"),
+            ("the filter envelope".into(), "the filter envelope".into())
+        );
+        assert_eq!(route("sustain_loop", "off").0, "the filter envelope");
+        // Where S2a's kinds are the destination.
+        let p = patch_on(
+            with_s2a(
+                &[
+                    (ModuleKind::Ladder, "ladder1"),
+                    (ModuleKind::Dist, "dist1"),
+                    (ModuleKind::Wt, "wt1"),
+                ],
+                &[],
+            ),
+            &[
+                "wt1.level=0",
+                "env2 -> ladder1.cutoff=40",
+                "lfo1 -> dist1.drive=30",
+                "lfo2 -> wt1.semi=5",
+                "env2 -> wt1.position=20",
+            ],
+        );
+        let els = elements(&p);
+        let label = |id: &str| element(&els, id).label.clone();
+        assert_eq!(label("env2 -> ladder1.cutoff"), "the filter envelope");
+        assert_eq!(label("lfo1 -> dist1.drive"), "a pulsing drive");
+        assert_eq!(label("lfo2 -> wt1.semi"), "vibrato");
+        assert_eq!(label("env2 -> wt1.position"), "a wavetable envelope");
     }
 }

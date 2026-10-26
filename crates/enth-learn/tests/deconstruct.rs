@@ -124,3 +124,66 @@ fn a_small_preset_becomes_a_one_lesson_pack_that_reads_back() {
         );
     }
 }
+
+/// Lane MTC: a preset that uses S2a's kinds (a ladder filter, a chorus) deconstructs like any other: every element
+/// is taught, the last step is the preset, and the texts read.
+#[test]
+fn a_preset_with_s2a_kinds_deconstructs_too() {
+    use enth_patch::addr::Position;
+    use enth_patch::{ModuleInstance, ModuleKind};
+    let mut p = preset();
+    for (kind, id) in [
+        (ModuleKind::Ladder, "ladder1"),
+        (ModuleKind::Chorus, "chorus1"),
+    ] {
+        let at = Position {
+            section: kind.section(),
+            index: p.section(kind.section()).len(),
+        };
+        apply(
+            &mut p,
+            Op::AddModule {
+                at,
+                module: ModuleInstance::new(id.parse().unwrap(), kind),
+            },
+        )
+        .unwrap();
+    }
+    for (addr, value) in [
+        ("ladder1.cutoff", 700.0),
+        ("ladder1.resonance", 50.0),
+        ("chorus1.depth", 80.0),
+        ("chorus1.mix", 60.0),
+    ] {
+        apply(
+            &mut p,
+            Op::SetParam {
+                addr: addr.parse::<ParamAddr>().unwrap(),
+                value,
+            },
+        )
+        .unwrap();
+    }
+    let els = elements(&p);
+    let ids: Vec<&str> = els.iter().map(|e| e.id.as_str()).collect();
+    assert!(
+        ids.contains(&"ladder1") && ids.contains(&"chorus1"),
+        "{ids:?}"
+    );
+    let mut opts = Options::for_preset(&p);
+    opts.choice = false;
+    opts.variation = false;
+    let g = generate(&p, &opts).unwrap_or_else(|e| panic!("{e} ({})", e.code()));
+    let last = g.plan.steps.len() - 1;
+    assert_eq!(g.plan.step_target(last), p);
+    assert_eq!(g.report.steps.len(), g.plan.steps.len());
+    for text in g.texts.values() {
+        assert!(
+            enth_learn::markdown::lint(text, enth_learn::markdown::STEP_WORD_BUDGET).is_empty(),
+            "{text}"
+        );
+    }
+    let toml = lesson_toml(&g.lesson, &["a header".to_owned()], &BTreeMap::new());
+    let value: serde_json::Value = toml::from_str(&toml).unwrap();
+    assert_eq!(Lesson::from_json(&value.to_string()).unwrap(), g.lesson);
+}
