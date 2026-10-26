@@ -79,7 +79,7 @@ params! {
         Seed = ParamSpec::int("seed", "Seed", Unit::None, 0, 65_535, 0)
             .not_automatable()
             .advanced("The random seed used in seeded phase mode, including the random shapes."),
-        Sync = ParamSpec::toggle("sync", "Tempo sync", false)
+        Sync = ParamSpec::toggle("sync", "Sync", false)
             .advanced("Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored."),
         Beats = ParamSpec::enumeration("beats", "Beats", &BEATS, Beats::Quarter.index())
             .modulatable()

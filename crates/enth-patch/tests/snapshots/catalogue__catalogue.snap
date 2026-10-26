@@ -1168,7 +1168,7 @@ expression: catalogue_json()
           "kind": {
             "type": "toggle"
           },
-          "name": "Tempo sync",
+          "name": "Sync",
           "perceptual": null,
           "smoothing": null,
           "tier": "advanced",
