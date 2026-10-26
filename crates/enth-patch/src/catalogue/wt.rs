@@ -7,7 +7,7 @@
 //! persisted; it is hidden ([`ModuleSpec::hidden`](super::ModuleSpec::hidden)) from the Add menu, `enth modules` and
 //! the generator until lane INT-S2a clears the flag. **The parameter table below is lane CAT's F1m table**: after F1m
 //! its keys, units, ranges, scales, defaults and flags change only through the coordinator (docs/dsp/catalogue.md,
-//! "S2a decisions"). The unison parameters are in it from F1m and do nothing until lane UNI builds them.
+//! "S2a decisions"). The unison parameters are in it from F1m; lane UNI built them (`modules/wt.rs`, `docs/dsp/wt.md`).
 //!
 //! # The audio inputs (`pm`, `am`) and what their values mean
 //!
@@ -34,8 +34,8 @@
 //!
 //! `unison` copies of the oscillator per voice, detuned evenly across ±`detune`, the side copies at `blend` against the
 //! centre, panned across `spread` through lane SVP's stereo voice path. `unison` is **structural**, so a plan knows
-//! whether it needs the stereo voice path from the patch alone (the recommendation to UNI: stereo when an enabled
-//! `wt` has `unison` ≥ 2; then `spread` can be modulated, and `spread` 0 equals mono on both channels). A copy's start
+//! whether it needs the stereo voice path from the patch alone (as built: stereo when an enabled `wt` has `unison` ≥ 2;
+//! then `spread` can be modulated, and `spread` 0 equals mono on both channels). A copy's start
 //! phase comes from `derive(voice_seed, k)` in `free` mode, from the module id and `k` (the same every note) in `reset`
 //! mode, and from `seed` and `k` in `seeded` mode, never from a parameter value.
 //!

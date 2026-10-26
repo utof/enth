@@ -253,8 +253,8 @@ pub struct RenderStats {
     pub dropped_events: u64,
     /// Voices still sounding at the end.
     pub voices_at_end: usize,
-    /// The plan ran the stereo voice path (its stereo flag; lane SVP). `false` for every patch until unison spread
-    /// (lane UNI), unless the render forced it ([`render_with_stereo`]).
+    /// The plan ran the stereo voice path (its stereo flag; lane SVP). Set by the patch alone when an enabled `wt`
+    /// has `unison` of 2 or more (lane UNI), or by forcing it ([`render_with_stereo`]); `false` for every other patch.
     pub stereo: bool,
 }
 
@@ -387,7 +387,8 @@ pub fn render_with_block(
 
 /// [`render_with_block`] with a say in the engine's stereo voice path (lane SVP): [`StereoMode::Forced`] runs the
 /// patch through the stereo path with mono content, which must give the same bits as [`render`] (the golden harness
-/// checks every case). [`StereoMode::Auto`] is `render_with_block`.
+/// checks every case without a unison `wt`). [`StereoMode::Off`] runs the mono path whatever the patch has: a unison
+/// `wt` then renders the mono mix of its copies (lane UNI). [`StereoMode::Auto`] is `render_with_block`.
 ///
 /// # Errors
 /// As [`render`].

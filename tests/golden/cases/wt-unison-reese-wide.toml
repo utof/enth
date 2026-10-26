@@ -1,0 +1,22 @@
+description = "WT unison: the same reese as wt-unison-reese with spread 100 % (the two copies hard left and right): the channels differ, and a spread automated from 100 % to 0 % at 0.4 s (smoothed over 10 ms) closes them to mono; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 40, velocity = 1.0, on_s = 0.0, off_s = 0.7 },
+]
+automation = [
+    { time_s = 0.4, addr = "wt1.detune", value = 30.0 },
+    { time_s = 0.5, addr = "wt1.spread", value = 0.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "wt1", kind = "wt", params = { position = 66.67, unison = 2, detune = 6, blend = 100, spread = 100, level = 70 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

@@ -1,0 +1,21 @@
+description = "WT unison: a chord of four notes with five copies each, free phase mode (each voice and copy its own start phase from the render seed), detune 18 cents, spread 60 %, the voice pan 30 % (the stereo balance law) and a 40 ms release, so the tails of the stereo copies fade out; polyphony 3, so the fourth note steals a voice; the amplitude envelope is not a gate: attack 5 ms, decay 0, sustain 100 %."
+sample_rate = 48000
+seconds = 1.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+    { key = 55, velocity = 0.8, on_s = 0.0, off_s = 0.5 },
+    { key = 60, velocity = 0.9, on_s = 0.1, off_s = 0.5 },
+    { key = 64, velocity = 0.7, on_s = 0.2, off_s = 0.5 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 3, pan = 30 }
+generators = [
+    { id = "wt1", kind = "wt", params = { position = 66.67, unison = 5, detune = 18, blend = 100, spread = 60, phase_mode = "free", level = 40 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 5, decay = 0, sustain = 100, release = 40 } }]
