@@ -19,6 +19,8 @@
 
 The same bits on six targets; FTZ-independent; zero subnormals after a 40 s tail; latency 0; a budget of the measured count plus 10 %; two instances keep separate state; `mix` at 0 passes the input bit for bit (effects); **aliasing measured spectrally** with the shared harness ([aliasing.md](aliasing.md)): render the generator at a pitch sweep (and with PM from another generator, at a high index), measured against its fundamental, the bound recorded here and in the test. A `THIRD_PARTY_NOTICES.md` entry and a provenance section here for every port.
 
+**WT's own row** ([phase-s2.md](../phase-s2.md#acceptance-per-lane)): the audio-route golden, an index and feedback sweep inside the aliasing bound, and closed-form spectral checks of what PM, AM and ring mod are: PM sidebands at carrier ± n × modulator with amplitudes |J_n(β)| within 0.5 dB (n ≤ 4, two indices); unipolar AM's sidebands at m/2 within 0.1 dB; ring mod's carrier below −60 dB; feedback moving toward a saw's 1/n slope.
+
 ## Aliasing
 
 Bound: not yet measured (lane WT).
