@@ -418,3 +418,268 @@ impl VoiceProcessor for Wt {
             + self.lanes.iter().filter(|v| v.has_subnormal()).count()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::module::NoteState;
+    use crate::plan::{Plan, compile};
+    use crate::seed::{module_key, voice_seed};
+    use enth_patch::catalogue::PhaseMode as Phase;
+    use enth_patch::{ModuleId, ModuleInstance, ModuleKind, Patch};
+
+    const SEED: u64 = 0x0E17_5EED;
+
+    /// A patch with one `wt1`, `set` applied.
+    fn patch(set: &[(WtParam, f32)]) -> Patch {
+        let mut p = Patch::init();
+        p.generators.clear();
+        let mut m = ModuleInstance::new(ModuleId::new("wt1").unwrap(), ModuleKind::Wt);
+        for &(param, value) in set {
+            m.values[param.index()] = value;
+        }
+        p.generators.push(m);
+        p
+    }
+
+    fn plan(set: &[(WtParam, f32)]) -> Plan {
+        compile(&patch(set), &PrepareCfg::new(48_000.0)).unwrap().0
+    }
+
+    fn notes(pitch: f32) -> NoteState {
+        let mut n = NoteState::new();
+        n.pitch_prev = [pitch; MAX_VOICES];
+        n.pitch_cur = [pitch; MAX_VOICES];
+        n.velocity = [0.8; MAX_VOICES];
+        n.gate = [true; MAX_VOICES];
+        n.fresh[0] = true;
+        n
+    }
+
+    /// Start voice 0 of `plan`'s `wt1` as note `note_index` of a render with `render_seed`; the copies' start phases.
+    fn phases(plan: &mut Plan, render_seed: u64, note_index: u64) -> [f32; LANES] {
+        let mut n = notes(60.0);
+        n.note_index[0] = note_index;
+        let Plan {
+            generators,
+            voice_table,
+            ..
+        } = plan;
+        let slot = &mut generators[0];
+        let start = VoiceStart {
+            voice: 0,
+            seed: voice_seed(render_seed, slot.key, note_index),
+            module_key: slot.key,
+            note_index,
+            notes: &n,
+            params: voice_table.view(slot.params),
+        };
+        slot.module.start_voice(&start);
+        let crate::modules::VoiceProcessorImpl::Wt(wt) = &slot.module else {
+            panic!("a wt");
+        };
+        core::array::from_fn(|k| wt.lanes[0].phase(k))
+    }
+
+    fn mode(m: Phase) -> (WtParam, f32) {
+        (WtParam::PhaseMode, m.index() as f32)
+    }
+
+    /// Every parameter that is not a seed rule's input, moved to a different value from the reference's: the count,
+    /// detune, blend, spread, level, position, pitch, warp, pm, am, feedback.
+    fn variants() -> Vec<Vec<(WtParam, f32)>> {
+        vec![
+            vec![(WtParam::Unison, 2.0)],
+            vec![(WtParam::Unison, 8.0), (WtParam::Detune, 100.0)],
+            vec![
+                (WtParam::Unison, 5.0),
+                (WtParam::Detune, 0.0),
+                (WtParam::Blend, 0.0),
+            ],
+            vec![
+                (WtParam::Unison, 7.0),
+                (WtParam::Spread, 100.0),
+                (WtParam::Level, 10.0),
+            ],
+            vec![
+                (WtParam::Unison, 3.0),
+                (WtParam::Detune, 63.0),
+                (WtParam::Position, 80.0),
+                (WtParam::Semi, 7.0),
+                (WtParam::Fine, -20.0),
+                (WtParam::Feedback, 50.0),
+                (WtParam::PmIndex, 5.0),
+                (WtParam::Am, 30.0),
+            ],
+        ]
+    }
+
+    #[test]
+    fn a_copys_start_phase_never_depends_on_a_parameter_value() {
+        for m in [Phase::Reset, Phase::Free, Phase::Seeded] {
+            let mut reference_plan =
+                plan(&[mode(m), (WtParam::Seed, 77.0), (WtParam::Unison, 4.0)]);
+            let reference = phases(&mut reference_plan, SEED, 3);
+            for set in variants() {
+                let mut set = set;
+                set.push(mode(m));
+                set.push((WtParam::Seed, 77.0));
+                let mut p = plan(&set);
+                assert_eq!(phases(&mut p, SEED, 3), reference, "{m:?} with {set:?}");
+            }
+            // The eight draws are all different and inside [0, 1).
+            for (i, a) in reference.iter().enumerate() {
+                assert!((0.0..1.0).contains(a), "{m:?}: copy {i} starts at {a}");
+                for b in &reference[i + 1..] {
+                    assert_ne!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "{m:?}: two copies share a start phase"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_start_phases_follow_the_seed_rules_and_nothing_else() {
+        let id_key = module_key(&ModuleId::new("wt1").unwrap());
+        // Reset: from the module id and the copy, so the same every note and every render seed.
+        let mut p = plan(&[mode(Phase::Reset), (WtParam::Unison, 4.0)]);
+        let a = phases(&mut p, SEED, 0);
+        assert_eq!(phases(&mut p, SEED, 9), a, "the same every note");
+        assert_eq!(phases(&mut p, 1, 0), a, "the same at every render seed");
+        for (k, &x) in a.iter().enumerate() {
+            let want = Rng::new(derive(id_key, k as u64)).unit_f32();
+            assert_eq!(
+                x.to_bits(),
+                want.to_bits(),
+                "copy {k} is derive(module key, k)"
+            );
+        }
+        // ... and the phase knob turns them together, exactly.
+        let mut q = plan(&[
+            mode(Phase::Reset),
+            (WtParam::Unison, 4.0),
+            (WtParam::Phase, 90.0),
+        ]);
+        let b = phases(&mut q, SEED, 0);
+        for k in 0..LANES {
+            let mut want = a[k] + 0.25;
+            if want >= 1.0 {
+                want -= 1.0;
+            }
+            assert_eq!(
+                b[k].to_bits(),
+                want.to_bits(),
+                "copy {k} rotated by the knob"
+            );
+        }
+
+        // Free: derive(voice seed, k): a new note or a new render seed draws again.
+        let mut f = plan(&[mode(Phase::Free), (WtParam::Unison, 4.0)]);
+        let a = phases(&mut f, SEED, 2);
+        for (k, &x) in a.iter().enumerate() {
+            let want = Rng::new(derive(voice_seed(SEED, id_key, 2), k as u64)).unit_f32();
+            assert_eq!(
+                x.to_bits(),
+                want.to_bits(),
+                "copy {k} is derive(voice seed, k)"
+            );
+        }
+        assert_ne!(phases(&mut f, SEED, 3), a, "another note");
+        assert_ne!(phases(&mut f, SEED + 1, 2), a, "another render seed");
+
+        // Seeded: from the patch's own seed, so the render seed does not move it; another `seed` does.
+        let mut s = plan(&[
+            mode(Phase::Seeded),
+            (WtParam::Seed, 5.0),
+            (WtParam::Unison, 4.0),
+        ]);
+        let a = phases(&mut s, SEED, 2);
+        assert_eq!(
+            phases(&mut s, 1234, 2),
+            a,
+            "the render seed does not matter"
+        );
+        let mut t = plan(&[
+            mode(Phase::Seeded),
+            (WtParam::Seed, 6.0),
+            (WtParam::Unison, 4.0),
+        ]);
+        assert_ne!(phases(&mut t, SEED, 2), a, "another seed");
+        for (k, &x) in a.iter().enumerate() {
+            let want = Rng::new(derive(seeded_voice_seed(5, id_key, 2), k as u64)).unit_f32();
+            assert_eq!(
+                x.to_bits(),
+                want.to_bits(),
+                "copy {k} is derive(seeded voice seed, k)"
+            );
+        }
+    }
+
+    #[test]
+    fn a_unison_wt_starts_its_first_sample_at_the_table_with_no_latency() {
+        // The sine frame, the copies' start phases from the module id: the first sample is the mix of the sines at
+        // those phases, to the table's interpolation error.
+        let mut p = plan(&[
+            mode(Phase::Reset),
+            (WtParam::Unison, 3.0),
+            (WtParam::Detune, 25.0),
+            (WtParam::Blend, 60.0),
+        ]);
+        let start = phases(&mut p, SEED, 0);
+        let mix = Mix::new(3, 25.0, 0.6, 0.5);
+        let Plan {
+            generators,
+            voice_table,
+            ..
+        } = &mut p;
+        let slot = &mut generators[0];
+        let n = notes(48.0);
+        let mut io = Box::new([[0.0f32; SEG]; MAX_VOICES]);
+        slot.module.process(&mut VoiceCx {
+            voices: &[0],
+            notes: &n,
+            params: voice_table.view(slot.params),
+            io: &mut io,
+            sync_out: None,
+            sync_in: None,
+            audio_in: None,
+            pre_level: None,
+            io_r: None,
+        });
+        let want: f32 = (0..3)
+            .map(|k| {
+                mix.mono[k]
+                    * enth_dsp::util::math::sin(core::f64::consts::TAU * f64::from(start[k])) as f32
+            })
+            .sum();
+        assert!(
+            (io[0][0] - want).abs() < 2e-4,
+            "first sample {} against {want}",
+            io[0][0]
+        );
+        assert!(
+            want.abs() > 0.05,
+            "the start phases make the check meaningful"
+        );
+    }
+
+    #[test]
+    fn the_count_is_read_from_the_structural_value_and_clamped() {
+        assert_eq!(unison_count(&[]), 1);
+        let mut v = patch(&[]).generators[0].values.clone();
+        for (value, want) in [
+            (1.0, 1),
+            (2.0, 2),
+            (8.0, 8),
+            (9.0, 8),
+            (0.0, 1),
+            (f32::NAN, 1),
+        ] {
+            v[WtParam::Unison.index()] = value;
+            assert_eq!(unison_count(&v), want, "unison {value}");
+        }
+    }
+}
