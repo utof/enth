@@ -285,11 +285,11 @@ fn swaps_that_add_and_remove_routes_and_modules_allocate_nothing() {
     );
     let reordered = with_routes(
         gens(&["wt1", "osc1", "osc2"]),
-        &[route("osc2", "wt1.pm", 40.0)],
+        &[route("osc2", "wt1.pm", 40.0), route("osc1", "wt1.pm", 10.0)],
     );
     let (mut e, mut link) = Engine::with_link(plan(&base).0, SEED, LinkCapacity::default());
-    // A module and routes added (a crossfade), the module moved in the patch and its routes with it (the same modules:
-    // none), then everything removed again (a crossfade).
+    // A module and routes added (a crossfade), the module moved in the patch and its routes with it (the same modules
+    // and routes, found by id: none), then everything removed again (a crossfade).
     let mut queue = vec![plan(&with_wt).0, plan(&reordered).0, plan(&base).0];
     let mut sent = 0;
     run(&mut e, &mut link, 1_400, |k, link| {
@@ -299,6 +299,215 @@ fn swaps_that_add_and_remove_routes_and_modules_allocate_nothing() {
     });
     assert_eq!(e.stats().swaps, 3);
     assert_eq!(e.stats().crossfades, 2);
+}
+
+/// The segments an audio depth ramp takes (`DEPTH_SMOOTHING_MS` at the test rate).
+fn ramp_segments() -> usize {
+    (f64::from(DEPTH_SMOOTHING_MS) * f64::from(SR) / 1000.0 / SEG as f64).round() as usize
+}
+
+/// Run an engine one segment at a time with nothing playing, sending `next` (and nothing else) before segment
+/// `send_at`; after every segment `watch` reads the engine. Allocation-guarded like [`run`].
+fn step_through<T>(
+    e: &mut Engine,
+    link: &mut Link,
+    segments: usize,
+    send_at: usize,
+    mut next: Option<Plan>,
+    mut watch: impl FnMut(&Engine) -> T,
+) -> Vec<T> {
+    let mut seen = Vec::new();
+    for k in 0..segments {
+        if k == send_at {
+            link.send_plan(next.take().unwrap()).unwrap();
+        }
+        let (mut l, mut r) = ([0.0; SEG], [0.0; SEG]);
+        assert_no_alloc(|| e.process(&mut l, &mut r, &[]));
+        link.collect();
+        seen.push(watch(e));
+    }
+    seen
+}
+
+#[test]
+fn a_route_added_by_a_swap_ramps_in_from_zero() {
+    let base = gens(&["osc1", "wt1"]);
+    let routed = with_routes(base.clone(), &[route("osc1", "wt1.pm", 80.0)]);
+    let (new_plan, map) = plan(&routed);
+    let id = map.depth(&raddr("osc1", "wt1.pm")).expect("an audio route");
+    let (mut e, mut link) = Engine::with_link(plan(&base).0, SEED, LinkCapacity::default());
+    let n = ramp_segments();
+    let seen = step_through(&mut e, &mut link, 10 + n + 4, 10, Some(new_plan), |e| {
+        e.plan().route_depth(id)
+    });
+    assert_eq!(seen[9], None, "no route before the swap");
+    let target = 80.0f32 / 100.0 * 100.0;
+    let ramp: Vec<f32> = seen[10..10 + n].iter().map(|d| d.unwrap()).collect();
+    assert!(
+        ramp[0] > 0.0 && ramp[0] < target / 4.0,
+        "starts near 0, not at {target}: {}",
+        ramp[0]
+    );
+    assert!(
+        ramp.windows(2).all(|w| w[0] < w[1]),
+        "rises every segment: {ramp:?}"
+    );
+    assert_eq!(
+        ramp[n - 1].to_bits(),
+        target.to_bits(),
+        "lands on the depth"
+    );
+    assert!(
+        seen[10 + n..]
+            .iter()
+            .all(|d| d.unwrap().to_bits() == target.to_bits())
+    );
+    assert_eq!(e.stats().swaps, 1);
+    assert_eq!(e.stats().crossfades, 0, "a route added needs no crossfade");
+}
+
+#[test]
+fn a_depth_that_moves_from_zero_ramps_in_and_one_that_changes_goes_on_from_where_it_was() {
+    // Depth 0 is left out of the plan, so 0 -> 40 is a route that appears; 40 -> 90 is a route that stays.
+    let base = gens(&["osc1", "wt1"]);
+    let (zero, _) = plan(&with_routes(base.clone(), &[route("osc1", "wt1.pm", 0.0)]));
+    let (forty, map) = plan(&with_routes(base.clone(), &[route("osc1", "wt1.pm", 40.0)]));
+    let (ninety, _) = plan(&with_routes(base, &[route("osc1", "wt1.pm", 90.0)]));
+    let id = map.depth(&raddr("osc1", "wt1.pm")).unwrap();
+    let n = ramp_segments();
+    let (mut e, mut link) = Engine::with_link(zero, SEED, LinkCapacity::default());
+    let up = step_through(&mut e, &mut link, n + 3, 0, Some(forty), |e| {
+        e.plan().route_depth(id)
+    });
+    let target = 40.0f32 / 100.0 * 100.0;
+    assert!(up[0].unwrap() > 0.0 && up[0].unwrap() < target / 4.0);
+    assert_eq!(up[n - 1].unwrap().to_bits(), target.to_bits());
+    // Now 40 -> 90 across a swap: the first segment is a step up from 40, not a jump to 90.
+    let down = step_through(&mut e, &mut link, n + 3, 0, Some(ninety), |e| {
+        e.plan().route_depth(id)
+    });
+    let first = down[0].unwrap();
+    assert!(
+        first > target && first < 90.0 / 2.0,
+        "went on from 40: {first}"
+    );
+    assert_eq!(
+        down[n - 1].unwrap().to_bits(),
+        (90.0f32 / 100.0 * 100.0).to_bits()
+    );
+    assert_eq!(e.stats().swaps, 2);
+    assert_eq!(e.stats().crossfades, 0, "no module and no route went away");
+}
+
+#[test]
+fn a_swap_that_changes_nothing_about_the_routes_leaves_their_depths_alone() {
+    let base = with_routes(gens(&["osc1", "wt1"]), &[route("osc1", "wt1.pm", 55.0)]);
+    let (first, map) = plan(&base);
+    let id = map.depth(&raddr("osc1", "wt1.pm")).unwrap();
+    let (mut e, mut link) = Engine::with_link(first, SEED, LinkCapacity::default());
+    let same = step_through(&mut e, &mut link, 6, 2, Some(plan(&base).0), |e| {
+        e.plan().route_depth(id).unwrap().to_bits()
+    });
+    assert!(same.iter().all(|b| *b == same[0]), "no ramp: {same:?}");
+    assert_eq!(e.stats().crossfades, 0);
+}
+
+#[test]
+fn a_depth_event_in_flight_goes_on_across_a_swap_to_the_same_depth() {
+    let base = with_routes(gens(&["osc1", "wt1"]), &[route("osc1", "wt1.pm", 80.0)]);
+    let landing = with_routes(gens(&["osc1", "wt1"]), &[route("osc1", "wt1.pm", 20.0)]);
+    let (first, map) = plan(&base);
+    let id = map.depth(&raddr("osc1", "wt1.pm")).unwrap();
+    let n = ramp_segments();
+    let (mut e, mut link) = Engine::with_link(first, SEED, LinkCapacity::default());
+    link.send_depth(0, id, 20.0).unwrap();
+    // The event ramps 80 -> 20; three segments in, the patch is swapped for one that says 20.
+    let seen = step_through(&mut e, &mut link, n + 2, 3, Some(plan(&landing).0), |e| {
+        e.plan().route_depth(id).unwrap()
+    });
+    assert!(
+        seen.windows(2).all(|w| w[0] >= w[1]),
+        "falls all the way: {seen:?}"
+    );
+    assert!(seen[2] > 20.0 && seen[2] < 80.0);
+    assert_eq!(
+        seen[n - 1].to_bits(),
+        20.0f32.to_bits(),
+        "lands when the event's ramp would have"
+    );
+}
+
+#[test]
+fn a_route_removed_by_a_swap_crossfades_and_a_silent_one_does_not() {
+    let base = gens(&["osc1", "wt1"]);
+    let routed = with_routes(base.clone(), &[route("osc1", "wt1.pm", 80.0)]);
+    // Removed while audible: the old plan fades out with its route.
+    let (mut e, mut link) = Engine::with_link(plan(&routed).0, SEED, LinkCapacity::default());
+    step_through(&mut e, &mut link, 20, 5, Some(plan(&base).0), |_| ());
+    assert_eq!(e.stats().swaps, 1);
+    assert_eq!(e.stats().crossfades, 1);
+    assert!(!e.is_crossfading(), "the crossfade is over");
+    // A depth moved to 0 across a recompile is the same swap.
+    let zero = with_routes(base.clone(), &[route("osc1", "wt1.pm", 0.0)]);
+    let (mut e, mut link) = Engine::with_link(plan(&routed).0, SEED, LinkCapacity::default());
+    step_through(&mut e, &mut link, 20, 5, Some(plan(&zero).0), |_| ());
+    assert_eq!(e.stats().crossfades, 1);
+    // A route a depth event has already brought to 0 has nothing left to fade.
+    let (first, map) = plan(&routed);
+    let id = map.depth(&raddr("osc1", "wt1.pm")).unwrap();
+    let (mut e, mut link) = Engine::with_link(first, SEED, LinkCapacity::default());
+    link.send_depth(0, id, 0.0).unwrap();
+    step_through(
+        &mut e,
+        &mut link,
+        ramp_segments() + 5,
+        ramp_segments() + 2,
+        Some(plan(&base).0),
+        |_| (),
+    );
+    assert_eq!(e.plan().route_depth(id), None, "the route is gone");
+    assert_eq!(e.stats().swaps, 1);
+    assert_eq!(e.stats().crossfades, 0, "silent already: no crossfade");
+}
+
+#[test]
+fn routes_found_by_id_survive_a_reorder_and_a_swap_without_routes_is_what_it_was() {
+    // The same routes with the generators in another patch order: the routes are the same routes.
+    let a = with_routes(
+        gens(&["wt1", "osc1", "osc2"]),
+        &[route("osc2", "wt1.pm", 40.0), route("osc1", "wt1.am", 25.0)],
+    );
+    let b = with_routes(
+        gens(&["osc2", "osc1", "wt1"]),
+        &[route("osc1", "wt1.am", 25.0), route("osc2", "wt1.pm", 40.0)],
+    );
+    let (first, _) = plan(&a);
+    let (second, map_b) = plan(&b);
+    let (pm_b, am_b) = (
+        map_b.depth(&raddr("osc2", "wt1.pm")).unwrap(),
+        map_b.depth(&raddr("osc1", "wt1.am")).unwrap(),
+    );
+    let (mut e, mut link) = Engine::with_link(first, SEED, LinkCapacity::default());
+    step_through(&mut e, &mut link, 6, 2, Some(second), |_| ());
+    assert_eq!(e.stats().crossfades, 0);
+    // Four segments after the swap an unmatched route would still be ramping in (15 segments); these are on target.
+    assert_eq!(e.plan().route_depth(pm_b), Some(40.0f32 / 100.0 * 100.0));
+    assert_eq!(e.plan().route_depth(am_b), Some(25.0f32 / 100.0 * 100.0));
+    // A swap between patches without audio routes: the bits of a render that swaps equal the bits of one that does
+    // not (the audio code is not entered).
+    let plain = gens(&["osc1", "osc2"]);
+    let (mut s, mut slink) = Engine::with_link(plan(&plain).0, SEED, LinkCapacity::default());
+    let (l1, r1) = run(&mut s, &mut slink, 120, |k, link| {
+        if k == 40 {
+            link.send_plan(plan(&plain).0).unwrap();
+        }
+    });
+    let (mut t, mut tlink) = Engine::with_link(plan(&plain).0, SEED, LinkCapacity::default());
+    let (l0, r0) = run(&mut t, &mut tlink, 120, |_, _| {});
+    assert_eq!(s.stats().swaps, 1);
+    assert_eq!(s.stats().crossfades, 0);
+    assert_eq!(bits(&l1), bits(&l0));
+    assert_eq!(bits(&r1), bits(&r0));
 }
 
 #[test]

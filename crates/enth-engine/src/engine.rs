@@ -5,8 +5,8 @@
 //! fixed steps in the same order, which is where the determinism lives (design.md §3):
 //!
 //! 1. poll the command ring ([`crate::swap`]): plan swaps (state carried, a 256-frame crossfade when modules were
-//!    added or removed; remembered host slot values re-applied), epoch-tagged value and depth events (stale ones
-//!    dropped), macros, events sent from the main thread (audition notes);
+//!    added or removed, or an audible audio route removed; remembered host slot values re-applied), epoch-tagged
+//!    value and depth events (stale ones dropped), macros, events sent from the main thread (audition notes);
 //! 2. apply the events due at this boundary, in arrival order (notes through the voice manager, parameter values,
 //!    slot values, macros and their per-voice offsets, the mod wheel, chokes, the tempo), then advance glides one
 //!    segment;
@@ -56,7 +56,7 @@ use crate::tap::{Tap, store_f32};
 use crate::tempo::{self, DEFAULT_TEMPO_BPM};
 use crate::voice::{Glide, NoteEnd, NoteOn, VoiceManager, VoiceState, glide_segments};
 
-/// Frames a plan-swap crossfade lasts (only when modules were added or removed).
+/// Frames a plan-swap crossfade lasts (only when modules were added or removed, or an audible audio route removed).
 pub const CROSSFADE_FRAMES: usize = 256;
 
 const CROSSFADE_SEGMENTS: usize = CROSSFADE_FRAMES / SEG;
@@ -108,7 +108,7 @@ pub struct EngineStats {
     pub stale_events: u64,
     /// Plans swapped in.
     pub swaps: u64,
-    /// Swaps that crossfaded (a module was added or removed).
+    /// Swaps that crossfaded (a module was added or removed, or an audible audio route removed).
     pub crossfades: u64,
     /// Voice ends that did not fit one `process` call's report.
     pub dropped_note_ends: u64,
@@ -724,7 +724,8 @@ impl Engine {
     }
 
     /// Swap `new` in at this boundary: carry the running state, re-apply the remembered host slot values, adopt its
-    /// voice mode, and either crossfade (a module was added or removed) or hand the old plan back at once.
+    /// voice mode, and either crossfade (a module was added or removed, or an audible audio route removed) or hand
+    /// the old plan back at once.
     fn swap(&mut self, mut new: Box<Plan>, link: &mut AudioLink) {
         let changed = new.carry_from(
             &mut self.plan,
