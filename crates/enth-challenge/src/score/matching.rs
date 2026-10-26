@@ -24,12 +24,24 @@
 //! The rules of `enth_patch::canon` (disabled ≡ absent, depth 0 ≡ no route, generators and modulators commute),
 //! applied to the patches as they are, so the pairing keeps the player's real ids (where the rings go):
 //!
-//! - **A module takes part only when it is present:** enabled, and for a generator not silent (level 0 with no
-//!   route on its level), for a modulator live (the amplitude envelope, or the source of a route of non-zero depth
-//!   onto something heard: the observability mask's module visibility). A disabled module, a silent generator, an
-//!   unrouted LFO and a route of depth 0 are absent: they cost nothing and pair with nothing.
+//! - **A module takes part only when it is present:** enabled, and for a generator not silent, for a modulator live
+//!   (the amplitude envelope, or the source of a route of non-zero depth onto something heard: the observability
+//!   mask's module visibility). A disabled module, a silent generator, an unrouted LFO and a route of depth 0 are
+//!   absent: they cost nothing and pair with nothing.
+//! - **Silent generators** (lane MTC, from RTE's contract and the F1m judge's S14): a generator is silent when it
+//!   makes no sound in the voice, *unless an audio route leaves it*, because the route carries its pre-level output.
+//!   A generator makes sound when it is enabled, emits, and either its `level` is above 0 (or a route moves the
+//!   level) or an audio route of non-zero depth leaves it into a generator that makes sound. So a level-0 FM
+//!   modulator with a route into an audible `wt` still counts, and one without a route is absent as it always was
+//!   (v1 patches have no audio routes, so nothing there changes). A `wt` also emits nothing at `am` 0 % with no
+//!   audio route into `am` (the carrier gain is `am/100 + the routed input`: at 0 % with a route it is ring
+//!   modulation, without one it is silence), so such a `wt` is silent, and a route into its `pm` does not make a
+//!   source audible. Its parameters stay visible to the pairing while a route leaves it (the mask, frozen with
+//!   generator v1, calls a level-0 `osc`'s other parameters `Dead::Silent`).
 //! - **Modules pair per kind**, oscillators with oscillators, so a permutation of interchangeable modules (osc 1 and
-//!   osc 2 swapped, re-added under another id, reordered) pairs by content, not by id.
+//!   osc 2 swapped, re-added under another id, reordered) pairs by content, not by id. Every kind of the catalogue
+//!   has its pass ([`families::GENERATORS`], [`families::EFFECTS`], [`families::MODULATORS`]); S2a's kinds paired
+//!   with nothing before lane MTC, not even with themselves.
 //! - **The amplitude envelopes pair with each other**, whatever their values: the role, not the shape, decides.
 //!
 //! # The pairing: the most favourable reading
@@ -51,14 +63,34 @@
 //! earliest answer module that keeps the optimum), so equal costs keep ids and order. Kinds are paired in a fixed
 //! order: generators twice (levels count as ratios to the target's first generator, whose partner the first round
 //! finds), then the effects, then the modulators twice (a route's destination maps through the pairs found so far).
+//!
+//! # Kind families: substitutes (lane MTC, S2a)
+//!
+//! After the passes of each section, what is left over fills gaps by **family**: a target module nobody of its kind
+//! paired with takes a free answer module of a linked kind (a `wt` for an `osc`, a `ladder` for an `svf`, an
+//! `mseg` for an `lfo`), so a substitute is not a missing module and an extra one that both score 0. The table of
+//! links, its credits and its reasons are in [`families`]; the rules in short:
+//!
+//! - **Same kind first**, exactly as above; a substitute only fills a gap. No v1 kind links to another v1 kind, so
+//!   a pair of v1-only patches pairs, and scores, as it always did.
+//! - Each link is an exact assignment between two kinds, tried closest tier first ([`families::ranked`]; the
+//!   table's order within a tier), with the same cost (the
+//!   structure loss on the target's parameters, read through the **corresponding** parameter of the substitute:
+//!   the same key, where the link lists it as meaning the same; any other parameter is lost).
+//! - A substituted pair is listed ([`ModuleMatching::substitutions`]) and is one more item of the structure score,
+//!   worth the link's credit (0.25 loose, 0.5 related, 0.75 close): structure is "which modules exist".
+//! - `dist`, `eq`, `noise` and `reverb` have no substitute: a missing one is missing.
+
+pub mod families;
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-use enth_params::ParamSpec;
+use enth_params::{EnumItem, Kind, ParamSpec};
 use enth_patch::addr::Target;
 use enth_patch::canon::identical;
 use enth_patch::catalogue::{ModuleKind, OscParam};
+use enth_patch::validate::is_audio_dest;
 use enth_patch::{
     ModSource, ModuleId, ModuleInstance, ParamAddr, Patch, Route, RouteAddr, Section,
 };
@@ -68,7 +100,7 @@ use super::structure::item_score;
 use crate::model::Phrase;
 use crate::phrases;
 use crate::priors::{self, Jnd, ROUTE_JND};
-use crate::random::{self, Drawn, Mask, Visibility, observable};
+use crate::random::{self, Dead, Drawn, Mask, Visibility, observable};
 
 /// How the answer's modules pair with the target's.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -79,6 +111,28 @@ pub struct ModuleMatching {
     missing: Vec<ModuleId>,
     /// Answer modules with no partner, in the answer's order.
     extra: Vec<ModuleId>,
+    /// The pairs whose two modules are of different kinds (a family substitute), in the target's module order.
+    substitutes: Vec<Substitution>,
+}
+
+/// A pair of modules of different kinds: the answer's module stands in for the target's (see [`families`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Substitution {
+    /// The target's module.
+    pub target: ModuleId,
+    /// The answer's module that stands in for it.
+    pub answer: ModuleId,
+    /// The target module's kind.
+    pub target_kind: ModuleKind,
+    /// The answer module's kind.
+    pub answer_kind: ModuleKind,
+}
+
+impl Substitution {
+    /// The item score the pair earns in the structure score: its link's [`families::Tier::credit`].
+    pub fn credit(&self) -> f64 {
+        families::link(self.target_kind, self.answer_kind).map_or(0.0, |l| l.tier.credit())
+    }
 }
 
 impl ModuleMatching {
@@ -107,17 +161,36 @@ impl ModuleMatching {
         &self.extra
     }
 
-    /// Whether every present module pairs with the module of the same id on the other side, and none is left over.
+    /// The pairs whose modules are of different kinds: the answer's module stands in for the target's (a `wt` for an
+    /// `osc`, a `ladder` for an `svf`; [`families`]). Empty for any two patches of v1 kinds. Each earns its link's
+    /// credit as an item of the structure score.
+    pub fn substitutions(&self) -> &[Substitution] {
+        &self.substitutes
+    }
+
+    /// Whether every present module pairs with the module of the same id on the other side (and of the same kind),
+    /// and none is left over.
     pub fn is_identity(&self) -> bool {
-        self.missing.is_empty() && self.extra.is_empty() && self.pairs.iter().all(|(t, a)| t == a)
+        self.missing.is_empty()
+            && self.extra.is_empty()
+            && self.substitutes.is_empty()
+            && self.pairs.iter().all(|(t, a)| t == a)
     }
 
     /// The answer's address for a target address: the same parameter on the paired module (voice and master
-    /// addresses map to themselves); `None` when the module has no partner.
+    /// addresses map to themselves), or for a family substitute the corresponding parameter
+    /// ([`families::counterpart_key`]); `None` when the module has no partner or the substitute has no
+    /// corresponding parameter.
     pub fn answer_addr(&self, target: &ParamAddr) -> Option<ParamAddr> {
         match target.target() {
             Target::Module(id) => {
-                ParamAddr::module(self.answer_of(id)?.clone(), target.param()).ok()
+                let key = match self.substitutes.iter().find(|s| &s.target == id) {
+                    Some(s) => {
+                        families::counterpart_key(s.target_kind, target.param(), s.answer_kind)?
+                    }
+                    None => target.param(),
+                };
+                ParamAddr::module(self.answer_of(id)?.clone(), key).ok()
             }
             _ => Some(target.clone()),
         }
@@ -127,7 +200,13 @@ impl ModuleMatching {
     pub fn target_addr(&self, answer: &ParamAddr) -> Option<ParamAddr> {
         match answer.target() {
             Target::Module(id) => {
-                ParamAddr::module(self.target_of(id)?.clone(), answer.param()).ok()
+                let key = match self.substitutes.iter().find(|s| &s.answer == id) {
+                    Some(s) => {
+                        families::counterpart_key(s.answer_kind, answer.param(), s.target_kind)?
+                    }
+                    None => answer.param(),
+                };
+                ParamAddr::module(self.target_of(id)?.clone(), key).ok()
             }
             _ => Some(answer.clone()),
         }
@@ -174,8 +253,11 @@ impl ModuleMatching {
     pub fn relabel(&self, answer: &Patch) -> Patch {
         let mut new_id: BTreeMap<ModuleId, ModuleId> = BTreeMap::new();
         let mut taken: BTreeSet<ModuleId> = BTreeSet::new();
+        // A family substitute keeps its own id (a `wt` under an `osc`'s id would not be a valid patch, and the
+        // seed rule gains nothing from it); it only takes its partner's place in the order below.
+        let stands_in = |a: &ModuleId| self.substitutes.iter().any(|s| &s.answer == a);
         for (t, a) in &self.pairs {
-            if answer.find(a).is_some() {
+            if answer.find(a).is_some() && !stands_in(a) {
                 new_id.insert(a.clone(), t.clone());
                 taken.insert(t.clone());
             }
@@ -206,7 +288,7 @@ impl ModuleMatching {
             .pairs
             .iter()
             .enumerate()
-            .map(|(i, (t, _))| (t, i))
+            .map(|(i, (t, a))| (if stands_in(a) { a } else { t }, i))
             .collect();
         let sync = uses_sync(answer);
         let mut out = answer.clone();
@@ -492,25 +574,44 @@ impl Matcher {
         let t_ref = level_ref_of(target);
         let mut a_ref = level_ref_of(answer);
         for round in 0..2 {
-            for kind in [ModuleKind::Osc, ModuleKind::Noise] {
+            job.drop_substitutes(Section::Generators, &mut pairs);
+            for &kind in families::GENERATORS {
                 job.assign(kind, t_ref, a_ref, &mut pairs);
             }
+            job.substitute(Section::Generators, t_ref, a_ref, &mut pairs);
             if round == 0 {
                 a_ref = partner_ref(t_ref, &pairs, answer);
             }
         }
-        for kind in [ModuleKind::Svf, ModuleKind::Reverb, ModuleKind::Comp] {
+        for &kind in families::EFFECTS {
             job.assign(kind, t_ref, a_ref, &mut pairs);
         }
+        for section in [Section::VoiceFx, Section::Fx] {
+            job.substitute(section, t_ref, a_ref, &mut pairs);
+        }
         for _ in 0..2 {
-            for kind in [ModuleKind::Adsr, ModuleKind::Lfo] {
+            job.drop_substitutes(Section::Modulators, &mut pairs);
+            for &kind in families::MODULATORS {
                 job.assign(kind, t_ref, a_ref, &mut pairs);
             }
+            job.substitute(Section::Modulators, t_ref, a_ref, &mut pairs);
         }
         let mut out = ModuleMatching::default();
         for m in &t_present {
             match pairs.get(&m.id) {
-                Some(a) => out.pairs.push((m.id.clone(), a.clone())),
+                Some(a) => {
+                    out.pairs.push((m.id.clone(), a.clone()));
+                    if let Some(partner) = a_present.iter().find(|x| &x.id == a)
+                        && partner.kind != m.kind
+                    {
+                        out.substitutes.push(Substitution {
+                            target: m.id.clone(),
+                            answer: a.clone(),
+                            target_kind: m.kind,
+                            answer_kind: partner.kind,
+                        });
+                    }
+                }
                 None => out.missing.push(m.id.clone()),
             }
         }
@@ -536,6 +637,12 @@ struct Job<'a> {
 }
 
 impl Job<'_> {
+    /// Whether `id` is the forced pair's module on `side` (0: the target's, 1: the answer's).
+    fn is_forced(&self, id: &ModuleId, side: usize) -> bool {
+        self.forced
+            .is_some_and(|f| if side == 0 { &f.0 == id } else { &f.1 == id })
+    }
+
     /// (Re)pair the modules of one kind, with the other kinds' pairs as they stand.
     fn assign(
         &self,
@@ -544,21 +651,17 @@ impl Job<'_> {
         a_ref: LevelRef<'_>,
         pairs: &mut BTreeMap<ModuleId, ModuleId>,
     ) {
-        let is_forced = |id: &ModuleId, side: usize| {
-            self.forced
-                .is_some_and(|f| if side == 0 { &f.0 == id } else { &f.1 == id })
-        };
         let ts: Vec<&ModuleInstance> = self
             .t_present
             .iter()
             .copied()
-            .filter(|m| m.kind == kind && !is_forced(&m.id, 0))
+            .filter(|m| m.kind == kind && !self.is_forced(&m.id, 0))
             .collect();
         let answers: Vec<&ModuleInstance> = self
             .a_present
             .iter()
             .copied()
-            .filter(|m| m.kind == kind && !is_forced(&m.id, 1))
+            .filter(|m| m.kind == kind && !self.is_forced(&m.id, 1))
             .collect();
         if ts.is_empty() {
             return;
@@ -595,6 +698,84 @@ impl Job<'_> {
         }
     }
 
+    /// Forget the pairs of two kinds that `section` holds (a new round redoes them from what the passes of one kind
+    /// leave over).
+    fn drop_substitutes(&self, section: Section, pairs: &mut BTreeMap<ModuleId, ModuleId>) {
+        pairs.retain(
+            |t, a| match (self.matcher.target.find(t), self.answer.find(a)) {
+                (Some((pos, tm)), Some((_, am))) => !(pos.section == section && tm.kind != am.kind),
+                _ => true,
+            },
+        );
+    }
+
+    /// Fill the gaps of one section by family (see [`families`]): the target modules nobody of their own kind paired
+    /// with take free answer modules of a linked kind, link by link, the closest tier first, each an exact
+    /// assignment between two kinds with the pairing's cost.
+    fn substitute(
+        &self,
+        section: Section,
+        t_ref: LevelRef<'_>,
+        a_ref: LevelRef<'_>,
+        pairs: &mut BTreeMap<ModuleId, ModuleId>,
+    ) {
+        let target = &self.matcher.target;
+        let t_side = Side {
+            patch: target,
+            level_ref: t_ref,
+        };
+        let a_side = Side {
+            patch: self.answer,
+            level_ref: a_ref,
+        };
+        for link in families::ranked() {
+            if link.a.section() != section {
+                continue;
+            }
+            for (t_kind, a_kind) in [(link.a, link.b), (link.b, link.a)] {
+                let taken: BTreeSet<&ModuleId> = pairs.values().collect();
+                let ts: Vec<&ModuleInstance> = self
+                    .t_present
+                    .iter()
+                    .copied()
+                    .filter(|m| {
+                        m.kind == t_kind && !self.is_forced(&m.id, 0) && !pairs.contains_key(&m.id)
+                    })
+                    .collect();
+                let answers: Vec<&ModuleInstance> = self
+                    .a_present
+                    .iter()
+                    .copied()
+                    .filter(|m| {
+                        m.kind == a_kind && !self.is_forced(&m.id, 1) && !taken.contains(&m.id)
+                    })
+                    .collect();
+                if ts.is_empty() || answers.is_empty() {
+                    continue;
+                }
+                let snapshot = pairs.clone();
+                let reverse: BTreeMap<&ModuleId, &ModuleId> =
+                    snapshot.iter().map(|(t, a)| (a, t)).collect();
+                let costs: Vec<Vec<Cost>> = ts
+                    .iter()
+                    .map(|t| {
+                        answers
+                            .iter()
+                            .map(|a| self.pair_cost(&t_side, t, &a_side, a, &snapshot, &reverse))
+                            .collect()
+                    })
+                    .collect();
+                let skips: Vec<Cost> = ts.iter().map(|t| self.skip_cost(t)).collect();
+                let chosen: Vec<(ModuleId, ModuleId)> = ts
+                    .iter()
+                    .zip(assign(&costs, &skips, answers.len()))
+                    .filter_map(|(t, choice)| choice.map(|j| (t.id.clone(), answers[j].id.clone())))
+                    .collect();
+                pairs.extend(chosen);
+            }
+        }
+    }
+
     /// The cost of pairing `t` with `a` (see the [module docs](self)).
     fn pair_cost(
         &self,
@@ -610,19 +791,37 @@ impl Job<'_> {
             renamed: u32::from(t.id != a.id),
             ..Cost::ZERO
         };
+        let same_kind = t.kind == a.kind;
         for (i, spec) in t.kind.params().iter().enumerate() {
-            let (Ok(t_addr), Ok(a_addr)) = (
-                ParamAddr::module(t.id.clone(), spec.key),
-                ParamAddr::module(a.id.clone(), spec.key),
-            ) else {
+            let Ok(t_addr) = ParamAddr::module(t.id.clone(), spec.key) else {
                 continue;
             };
+            // The answer's parameter that means the same (a family substitute may have none).
+            let a_index = if same_kind {
+                Some(i)
+            } else {
+                families::counterpart_key(t.kind, spec.key, a.kind)
+                    .and_then(|key| a.kind.param_index(key))
+            };
+            let a_addr =
+                a_index.and_then(|j| ParamAddr::module(a.id.clone(), a.kind.params()[j].key).ok());
             let focus = m.params.contains(&t_addr);
-            if !focus && !m.mask.is_observable(&t_addr) && !self.a_mask.is_observable(&a_addr) {
+            if !focus
+                && !sees(&m.target, &m.mask, &t_addr)
+                && !a_addr
+                    .as_ref()
+                    .is_some_and(|x| sees(self.answer, self.a_mask, x))
+            {
                 continue;
             }
-            let (steps, _) = module_steps(t_side, t, a_side, a, i);
-            let loss = 1.0 - item_score(steps);
+            let loss = match a_index {
+                Some(j) => {
+                    let (steps, _) = module_steps_across(t_side, t, i, a_side, a, j);
+                    1.0 - item_score(steps)
+                }
+                // Nothing on the substitute means this: lost, as with a missing module.
+                None => 1.0,
+            };
             if focus {
                 cost.primary += loss;
             } else {
@@ -661,7 +860,7 @@ impl Job<'_> {
                 if !focus && !m.mask.route(&addr).is_some_and(Visibility::is_observable) {
                     continue;
                 }
-                let a_depth = map_dst(&r.dst, pairs)
+                let a_depth = map_dst(&r.dst, pairs, &m.target, self.answer)
                     .and_then(|dst| depth_of(self.answer, &a_src, &dst))
                     .unwrap_or(0.0);
                 let loss = 1.0 - item_score(ROUTE_JND.steps(r.depth, a_depth));
@@ -688,7 +887,7 @@ impl Job<'_> {
                 {
                     continue;
                 }
-                let counted = unmap_dst(&r.dst, reverse)
+                let counted = unmap_dst(&r.dst, reverse, &m.target, self.answer)
                     .is_some_and(|dst| depth_of(&m.target, &t_src, &dst).is_some());
                 if !counted {
                     cost.secondary += 1.0 - item_score(ROUTE_JND.steps(0.0, r.depth));
@@ -708,7 +907,7 @@ impl Job<'_> {
             };
             if m.params.contains(&addr) {
                 cost.primary += 1.0;
-            } else if m.mask.is_observable(&addr) {
+            } else if sees(&m.target, &m.mask, &addr) {
                 cost.secondary += 1.0;
             }
         }
@@ -810,16 +1009,47 @@ fn signature_loss(t: &[Incoming<'_>], a: &[Incoming<'_>]) -> (f64, f64) {
     (focus, rest)
 }
 
-fn map_dst(dst: &ParamAddr, pairs: &BTreeMap<ModuleId, ModuleId>) -> Option<ParamAddr> {
+/// A target route's destination on the answer's side, through the pairs found so far: the partner module, and for a
+/// family substitute the corresponding parameter (`None` when it has none).
+fn map_dst(
+    dst: &ParamAddr,
+    pairs: &BTreeMap<ModuleId, ModuleId>,
+    target: &Patch,
+    answer: &Patch,
+) -> Option<ParamAddr> {
     match dst.target() {
-        Target::Module(id) => ParamAddr::module(pairs.get(id)?.clone(), dst.param()).ok(),
+        Target::Module(id) => {
+            let partner = pairs.get(id)?;
+            let key = match (target.find(id), answer.find(partner)) {
+                (Some((_, tm)), Some((_, am))) if tm.kind != am.kind => {
+                    families::counterpart_key(tm.kind, dst.param(), am.kind)?
+                }
+                _ => dst.param(),
+            };
+            ParamAddr::module(partner.clone(), key).ok()
+        }
         _ => Some(dst.clone()),
     }
 }
 
-fn unmap_dst(dst: &ParamAddr, reverse: &BTreeMap<&ModuleId, &ModuleId>) -> Option<ParamAddr> {
+/// The reverse of [`map_dst`]: an answer route's destination on the target's side.
+fn unmap_dst(
+    dst: &ParamAddr,
+    reverse: &BTreeMap<&ModuleId, &ModuleId>,
+    target: &Patch,
+    answer: &Patch,
+) -> Option<ParamAddr> {
     match dst.target() {
-        Target::Module(id) => ParamAddr::module((*reverse.get(id)?).clone(), dst.param()).ok(),
+        Target::Module(id) => {
+            let partner = *reverse.get(id)?;
+            let key = match (answer.find(id), target.find(partner)) {
+                (Some((_, am)), Some((_, tm))) if tm.kind != am.kind => {
+                    families::counterpart_key(am.kind, dst.param(), tm.kind)?
+                }
+                _ => dst.param(),
+            };
+            ParamAddr::module(partner.clone(), key).ok()
+        }
         _ => Some(dst.clone()),
     }
 }
@@ -848,13 +1078,93 @@ pub(crate) fn present(patch: &Patch, mask: &Mask, m: &ModuleInstance) -> bool {
         }
 }
 
-/// A generator at level 0 with no route of non-zero depth on its level.
+/// A generator that makes no sound in the voice and carries nothing: see [`audible`].
 fn silent(patch: &Patch, m: &ModuleInstance) -> bool {
-    m.get("level") == Some(0.0)
-        && !patch
-            .routes
-            .iter()
-            .any(|r| r.depth != 0.0 && r.dst.module_id() == Some(&m.id) && r.dst.param() == "level")
+    !audible(patch, m, &mut Vec::new())
+}
+
+/// Whether generator `m` makes sound in the voice. It must emit ([`emits`]), and then either its `level` is above 0
+/// or a route of non-zero depth moves the level, or an audio route of non-zero depth leaves it into a generator
+/// that is itself audible (the route carries the pre-level output, so a level-0 FM modulator still counts). For a
+/// patch without audio routes, which is every v1 patch, it is `level > 0` or a route onto the level, as it always was.
+fn audible(patch: &Patch, m: &ModuleInstance, seen: &mut Vec<ModuleId>) -> bool {
+    if !m.enabled || !emits(patch, m, &mut Vec::new()) {
+        return false;
+    }
+    if m.get("level") != Some(0.0) || level_routed(patch, m) {
+        return true;
+    }
+    if seen.contains(&m.id) {
+        return false;
+    }
+    seen.push(m.id.clone());
+    let carried = audio_out(patch, m).any(|r| {
+        r.dst
+            .module_id()
+            .and_then(|id| patch.find(id))
+            .is_some_and(|(pos, dst)| {
+                pos.section == Section::Generators && audible(patch, dst, seen)
+            })
+    });
+    seen.pop();
+    carried
+}
+
+/// A route of non-zero depth onto generator `m`'s level.
+fn level_routed(patch: &Patch, m: &ModuleInstance) -> bool {
+    patch
+        .routes
+        .iter()
+        .any(|r| r.depth != 0.0 && r.dst.module_id() == Some(&m.id) && r.dst.param() == "level")
+}
+
+/// The audio routes of non-zero depth that leave generator `m`.
+fn audio_out<'p>(patch: &'p Patch, m: &ModuleInstance) -> impl Iterator<Item = &'p Route> {
+    let id = m.id.clone();
+    patch.routes.iter().filter(move |r| {
+        r.depth != 0.0
+            && matches!(&r.src, ModSource::Module(s) if *s == id)
+            && is_audio_dest(patch, &r.dst)
+    })
+}
+
+/// Whether generator `m` produces a signal at all, before its level: `osc` and `noise` always do; a `wt` is its
+/// table times `am/100` plus whatever audio routes into `am` bring (docs/dsp/wt.md), so at `am` 0 % it makes none
+/// unless an enabled generator that itself emits routes into `am` with non-zero depth.
+fn emits(patch: &Patch, m: &ModuleInstance, seen: &mut Vec<ModuleId>) -> bool {
+    if m.kind != ModuleKind::Wt || m.get("am") != Some(0.0) {
+        return true;
+    }
+    if seen.contains(&m.id) {
+        return false;
+    }
+    seen.push(m.id.clone());
+    let fed = patch.routes.iter().any(|r| {
+        r.depth != 0.0
+            && r.dst.module_id() == Some(&m.id)
+            && r.dst.param() == "am"
+            && match &r.src {
+                ModSource::Module(s) => patch.find(s).is_some_and(|(pos, src)| {
+                    pos.section == Section::Generators && src.enabled && emits(patch, src, seen)
+                }),
+                _ => false,
+            }
+    });
+    seen.pop();
+    fed
+}
+
+/// Whether the pairing sees parameter `addr` of `patch` under `mask`: the mask calls it observable, or it belongs
+/// to a generator that is silent only because its level is 0 while an audio route leaves it (the mask, frozen with
+/// generator v1, calls those `Dead::Silent`; the matcher keeps them visible, docs/dsp/engine.md "Masks and the
+/// matcher"). Only modules that are present reach the pairing, so a `Dead::Silent` parameter there is that case.
+fn sees(patch: &Patch, mask: &Mask, addr: &ParamAddr) -> bool {
+    mask.is_observable(addr)
+        || (mask.param(addr) == Some(Visibility::Dead(Dead::Silent))
+            && addr
+                .module_id()
+                .and_then(|id| patch.find(id))
+                .is_some_and(|(_, m)| audio_out(patch, m).next().is_some()))
 }
 
 /// Whether any enabled oscillator has hard sync on (the first enabled oscillator is then the sync master).
@@ -933,8 +1243,9 @@ pub(crate) struct Side<'a> {
 }
 
 /// How far the answer's value at `a_addr` is from the target's at `t_addr`, in just-noticeable steps
-/// ([`priors::jnd`]), and where the answer lies (`Greater`: higher). `None` when either side lacks the address or the
-/// modules differ in kind. The folds of the [structure score](super::structure) apply.
+/// ([`priors::jnd`]), and where the answer lies (`Greater`: higher). `None` when either side lacks the address, or
+/// the modules differ in kind and `a_addr` is not the parameter that corresponds to `t_addr`
+/// ([`families::counterpart_key`]). The folds of the [structure score](super::structure) apply.
 pub(crate) fn steps(
     t: &Side<'_>,
     t_addr: &ParamAddr,
@@ -944,11 +1255,16 @@ pub(crate) fn steps(
     if let (Target::Module(ti), Target::Module(ai)) = (t_addr.target(), a_addr.target()) {
         let tm = t.patch.find(ti)?.1;
         let am = a.patch.find(ai)?.1;
-        if tm.kind != am.kind {
+        let index = tm.kind.param_index(t_addr.param())?;
+        if tm.kind == am.kind {
+            return Some(module_steps(t, tm, a, am, index));
+        }
+        let key = families::counterpart_key(tm.kind, t_addr.param(), am.kind)?;
+        if key != a_addr.param() {
             return None;
         }
-        let index = tm.kind.param_index(t_addr.param())?;
-        Some(module_steps(t, tm, a, am, index))
+        let a_index = am.kind.param_index(key)?;
+        Some(module_steps_across(t, tm, index, a, am, a_index))
     } else {
         let spec = t.patch.spec(t_addr)?;
         Some(plain_steps(
@@ -961,10 +1277,10 @@ pub(crate) fn steps(
 
 /// [`steps`] for parameter `index` of two modules of the same kind, with the folds:
 ///
-/// - an oscillator's `semi` and `fine` read as one pitch, 100·semi + fine cents (semi in semitone steps, fine in
-///   cent steps), so enharmonic tunings (+12 st against +11 st and +100 ct) are equal;
+/// - a pitched generator's (`osc`, `wt`) `semi` and `fine` read as one pitch, 100·semi + fine cents (semi in
+///   semitone steps, fine in cent steps), so enharmonic tunings (+12 st against +11 st and +100 ct) are equal;
 /// - a generator's `level` reads in dB relative to its patch's reference generator (levels vary only as ratios);
-/// - the reverb's `wet` reads relative to its `dry` (wet varies only against dry).
+/// - the reverb's `wet` reads relative to its `dry`.
 pub(crate) fn module_steps(
     t: &Side<'_>,
     tm: &ModuleInstance,
@@ -972,18 +1288,44 @@ pub(crate) fn module_steps(
     am: &ModuleInstance,
     index: usize,
 ) -> (f64, Ordering) {
+    module_steps_across(t, tm, index, a, am, index)
+}
+
+/// [`module_steps`] for the target's parameter `index` read against the answer module's parameter `a_index`: the
+/// same parameter of the same kind, or the corresponding one of a family substitute ([`families`]). The folds
+/// follow the target's kind and key; an enumeration compares by item name (the filters' `lp` is the ladder's
+/// `lp12`), so two lists that order their items differently still line up.
+pub(crate) fn module_steps_across(
+    t: &Side<'_>,
+    tm: &ModuleInstance,
+    index: usize,
+    a: &Side<'_>,
+    am: &ModuleInstance,
+    a_index: usize,
+) -> (f64, Ordering) {
     let spec = &tm.kind.params()[index];
-    let plain = || plain_steps(spec, tm.values[index], am.values[index]);
+    let plain = || {
+        if tm.kind == am.kind {
+            plain_steps(spec, tm.values[index], am.values[a_index])
+        } else {
+            across_steps(
+                spec,
+                tm.values[index],
+                &am.kind.params()[a_index],
+                am.values[a_index],
+            )
+        }
+    };
     match (tm.kind, spec.key, priors::jnd(spec)) {
-        (ModuleKind::Osc, "semi" | "fine", Jnd::Abs(step)) => {
+        (ModuleKind::Osc | ModuleKind::Wt, "semi" | "fine", Jnd::Abs(step)) => {
             let cents = |m: &ModuleInstance| {
-                100.0 * f64::from(m.values[OscParam::Semi.index()])
-                    + f64::from(m.values[OscParam::Fine.index()])
+                100.0 * f64::from(m.get("semi").unwrap_or(0.0))
+                    + f64::from(m.get("fine").unwrap_or(0.0))
             };
             let per = if spec.key == "semi" { 100.0 } else { 1.0 };
             linear(cents(am) - cents(tm), per * f64::from(step))
         }
-        (ModuleKind::Osc | ModuleKind::Noise, "level", Jnd::Db { db, floor }) => {
+        (ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Wt, "level", Jnd::Db { db, floor }) => {
             let rel = |side: &Side<'_>, m: &ModuleInstance| {
                 if side.level_ref.id == Some(&m.id) {
                     0.0
@@ -1003,6 +1345,28 @@ pub(crate) fn module_steps(
         }
         _ => plain(),
     }
+}
+
+/// Two values of corresponding parameters of two kinds, in the target parameter's steps: enumerations by item name,
+/// anything else as [`plain_steps`] (a shared key has one unit on both kinds, which the family tests pin).
+fn across_steps(spec: &ParamSpec, t: f32, a_spec: &ParamSpec, a: f32) -> (f64, Ordering) {
+    if let (Kind::Enum(t_items), Kind::Enum(a_items)) = (spec.kind, a_spec.kind) {
+        let item = |items: &'static [EnumItem], v: f32| items.get(v as usize).map(|i| i.key);
+        let same = matches!(
+            (item(t_items, t), item(a_items, a)),
+            (Some(x), Some(y)) if families::same_item(x, y)
+        );
+        // An item with no twin reads as "somewhere else": above the target's, unless it is the last one.
+        let order = if same {
+            Ordering::Equal
+        } else if (a as usize) < (t as usize) {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        };
+        return (if same { 0.0 } else { f64::INFINITY }, order);
+    }
+    plain_steps(spec, t, a)
 }
 
 /// A difference `d` in a unit whose step is `step`.
@@ -1399,5 +1763,532 @@ mod tests {
         set(&mut a3, "reverb1.dry", -6.0);
         let wet: ParamAddr = "reverb1.wet".parse().unwrap();
         assert_eq!(steps(&side(&t3), &wet, &side(&a3), &wet).unwrap().0, 0.0);
+    }
+
+    // -----------------------------------------------------------------------------------------------------------
+    // Lane MTC (S2a): every kind pairs, families, the silent-generator clauses
+    // -----------------------------------------------------------------------------------------------------------
+
+    use crate::score::structure::Prepared;
+    use crate::score::{ModuleStatus, StructureScore};
+    use enth_patch::addr::Position;
+
+    /// Add a module of `kind` under `name`, with every parameter at its default.
+    fn add(p: &mut Patch, kind: ModuleKind, name: &str) {
+        let at = Position {
+            section: kind.section(),
+            index: p.section(kind.section()).len(),
+        };
+        enth_patch::apply(
+            p,
+            &Op::AddModule {
+                at,
+                module: ModuleInstance::new(id(name), kind),
+            },
+        )
+        .unwrap();
+    }
+
+    /// A module of `kind` that is heard: a modulator drives `osc1.fine`.
+    fn with(p: &mut Patch, kind: ModuleKind, name: &str) {
+        add(p, kind, name);
+        if kind.section() == Section::Modulators {
+            route(p, name, "osc1.fine", 40.0);
+        }
+    }
+
+    /// `Patch::init()` with a module of `kind` heard, and no other generator when `kind` is one (the starter's
+    /// `osc1` is switched off, so that a family substitute has nobody of its own kind to compete with).
+    fn lone(kind: ModuleKind, name: &str) -> Patch {
+        let mut p = Patch::init();
+        if kind.section() == Section::Generators {
+            enable(&mut p, "osc1", false);
+        }
+        with(&mut p, kind, name);
+        p
+    }
+
+    fn name_of(kind: ModuleKind, n: u32) -> String {
+        format!("{}{n}", kind.spec().id_prefix)
+    }
+
+    fn held() -> &'static Phrase {
+        phrases::phrase(phrases::HELD).expect("the held phrase is in the table")
+    }
+
+    /// The structure score of `answer` against `target`, `randomized` being what the round drew.
+    fn score(target: &Patch, answer: &Patch, randomized: &[ParamAddr]) -> StructureScore {
+        let draws = Draws {
+            params: randomized.to_vec(),
+            ..Draws::default()
+        };
+        Prepared::new(target, held(), &draws).score(answer)
+    }
+
+    fn is_present(p: &Patch, name: &str) -> bool {
+        let mask = observable(p, held());
+        p.find(&id(name)).is_some_and(|(_, m)| present(p, &mask, m))
+    }
+
+    #[test]
+    fn every_kind_pairs_with_itself_and_scores_100() {
+        for &kind in ModuleKind::ALL {
+            let name = name_of(kind, 2);
+            let mut p = Patch::init();
+            with(&mut p, kind, &name);
+            let m = match_modules(&p, &p);
+            assert!(m.is_identity(), "{kind}: {m:?}");
+            assert!(
+                m.pairs().iter().any(|(t, _)| t.as_str() == name),
+                "{kind} is not paired"
+            );
+            let all: Vec<ParamAddr> = kind
+                .params()
+                .iter()
+                .map(|s| ParamAddr::module(id(&name), s.key).unwrap())
+                .collect();
+            let s = score(&p, &p, &all);
+            assert_eq!(s.percent, 100.0, "{kind}");
+            assert!(s.modules.is_empty(), "{kind}");
+            assert_eq!(s.params.len(), all.len(), "{kind}");
+        }
+    }
+
+    #[test]
+    fn every_kind_pairs_by_content_under_another_id() {
+        for &kind in ModuleKind::ALL {
+            let (t_name, a_name) = (name_of(kind, 2), name_of(kind, 3));
+            let mut target = Patch::init();
+            with(&mut target, kind, &t_name);
+            let mut answer = Patch::init();
+            with(&mut answer, kind, &a_name);
+            let m = match_modules(&target, &answer);
+            assert_eq!(
+                (m.missing().len(), m.extra().len(), m.substitutions().len()),
+                (0, 0, 0),
+                "{kind}"
+            );
+            assert_eq!(m.answer_of(&id(&t_name)), Some(&id(&a_name)), "{kind}");
+            let all: Vec<ParamAddr> = kind
+                .params()
+                .iter()
+                .map(|s| ParamAddr::module(id(&t_name), s.key).unwrap())
+                .collect();
+            assert_eq!(score(&target, &answer, &all).percent, 100.0, "{kind}");
+        }
+    }
+
+    #[test]
+    fn twins_of_the_new_kinds_pair_by_content_not_by_id() {
+        let mut target = Patch::init();
+        add(&mut target, ModuleKind::Dist, "dist1");
+        add(&mut target, ModuleKind::Dist, "dist2");
+        set(&mut target, "dist1.drive", 3.0);
+        set(&mut target, "dist2.drive", 24.0);
+        let mut answer = target.clone();
+        set(&mut answer, "dist1.drive", 24.0);
+        set(&mut answer, "dist2.drive", 3.0);
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("dist1")), Some(&id("dist2")));
+        assert_eq!(m.answer_of(&id("dist2")), Some(&id("dist1")));
+        let drive: ParamAddr = "dist1.drive".parse().unwrap();
+        assert_eq!(score(&target, &answer, &[drive]).percent, 100.0);
+    }
+
+    /// The first numeric shared parameter of a link, if it has one.
+    fn float_key(link: &families::Link) -> Option<&'static str> {
+        link.shared.iter().copied().find(|k| {
+            matches!(
+                link.a.param(k).map(|s| s.kind),
+                Some(enth_params::Kind::Float { .. })
+            )
+        })
+    }
+
+    #[test]
+    fn a_substitute_of_a_linked_kind_scores_above_0_and_below_100() {
+        for link in families::LINKS {
+            for (t_kind, a_kind) in [(link.a, link.b), (link.b, link.a)] {
+                let who = format!("{t_kind} answered by {a_kind}");
+                let (t_name, a_name) = (name_of(t_kind, 2), name_of(a_kind, 3));
+                let (target, answer) = (lone(t_kind, &t_name), lone(a_kind, &a_name));
+                let m = match_modules(&target, &answer);
+                assert_eq!((m.missing().len(), m.extra().len()), (0, 0), "{who}");
+                assert_eq!(m.substitutions().len(), 1, "{who}");
+                let sub = m.substitutions()[0].clone();
+                assert_eq!((sub.target_kind, sub.answer_kind), (t_kind, a_kind));
+                assert_eq!(sub.answer, id(&a_name), "{who}");
+                assert_eq!(sub.target, id(&t_name), "{who}");
+                let t_id = t_name.clone();
+                assert!(!m.is_identity(), "{who}");
+                // Nothing randomized: the pair is the one item, worth the link's credit.
+                let s = score(&target, &answer, &[]);
+                assert_eq!(s.percent, 100.0 * link.tier.credit(), "{who}");
+                assert!(s.percent > 0.0 && s.percent < 100.0, "{who}");
+                assert_eq!(s.modules.len(), 1, "{who}");
+                assert_eq!(s.modules[0].status, ModuleStatus::Substituted, "{who}");
+                assert_eq!(s.modules[0].id, t_id, "{who}");
+                // A shared numeric parameter, set alike, is read through its counterpart and scores 1.
+                if let Some(key) = float_key(link) {
+                    let value = target.find(&sub.target).unwrap().1.get(key).unwrap();
+                    let mut same = answer.clone();
+                    set(&mut same, &format!("{a_name}.{key}"), value);
+                    let addr = ParamAddr::module(sub.target.clone(), key).unwrap();
+                    let s = score(&target, &same, std::slice::from_ref(&addr));
+                    let expected = 100.0 * (1.0 + link.tier.credit()) / 2.0;
+                    assert!(
+                        (s.percent - expected).abs() < 1e-9,
+                        "{who} {key}: {}",
+                        s.percent
+                    );
+                    assert_eq!(
+                        s.params[0].answer_addr.as_deref(),
+                        Some(format!("{a_name}.{key}").as_str()),
+                        "{who}"
+                    );
+                }
+                // A parameter nothing corresponds to is lost.
+                if let Some(spec) = t_kind
+                    .params()
+                    .iter()
+                    .find(|s| families::counterpart_key(t_kind, s.key, a_kind).is_none())
+                {
+                    let addr = ParamAddr::module(sub.target.clone(), spec.key).unwrap();
+                    assert_eq!(m.answer_addr(&addr), None, "{who} {}", spec.key);
+                    let s = score(&target, &answer, std::slice::from_ref(&addr));
+                    assert_eq!(s.params[0].score, 0.0, "{who} {}", spec.key);
+                    assert_eq!(s.params[0].answer_addr, None, "{who} {}", spec.key);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_wt_stands_in_for_an_osc_and_keeps_its_own_id() {
+        let mut target = Patch::init();
+        add(&mut target, ModuleKind::Osc, "osc2");
+        set(&mut target, "osc2.semi", 7.0);
+        let mut answer = Patch::init();
+        add(&mut answer, ModuleKind::Wt, "wt1");
+        set(&mut answer, "wt1.semi", 7.0);
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("osc2")), Some(&id("wt1")));
+        assert_eq!(m.target_of(&id("wt1")), Some(&id("osc2")));
+        let semi: ParamAddr = "osc2.semi".parse().unwrap();
+        assert_eq!(m.answer_addr(&semi), Some("wt1.semi".parse().unwrap()));
+        assert_eq!(
+            m.target_addr(&"wt1.semi".parse().unwrap()),
+            Some(semi.clone())
+        );
+        assert_eq!(m.answer_addr(&"osc2.wave".parse().unwrap()), None);
+        assert_eq!(m.target_addr(&"wt1.table".parse().unwrap()), None);
+        assert_eq!(
+            m.answer_addr(&"osc1.semi".parse().unwrap()),
+            Some("osc1.semi".parse().unwrap())
+        );
+        // Routes onto the substitute follow the corresponding parameter.
+        let r = RouteAddr {
+            src: ModSource::Module(id("env1")),
+            dst: semi.clone(),
+        };
+        assert_eq!(
+            m.answer_route(&r).unwrap().dst,
+            "wt1.semi".parse::<ParamAddr>().unwrap()
+        );
+        let lost = RouteAddr {
+            src: ModSource::Module(id("env1")),
+            dst: "osc2.pw".parse().unwrap(),
+        };
+        assert_eq!(m.answer_route(&lost), None);
+        // The renamed copy the scored render plays is a valid patch, and the wt is not renamed to an osc.
+        let matcher = Matcher::new(&target, held(), &Draws::default());
+        let rendered = matcher.relabel(&matcher.pair(&answer), &answer);
+        assert!(enth_patch::validate::validate(&rendered).is_ok());
+        assert!(rendered.find(&id("wt1")).is_some());
+        assert!(rendered.find(&id("osc2")).is_none());
+        // The same-kind pass comes first: with an osc in the answer too, nobody stands in.
+        let mut both = answer.clone();
+        add(&mut both, ModuleKind::Osc, "osc3");
+        let m = match_modules(&target, &both);
+        assert_eq!(m.answer_of(&id("osc2")), Some(&id("osc3")));
+        assert_eq!(m.substitutions(), []);
+        assert_eq!(m.extra(), &[id("wt1")]);
+    }
+
+    #[test]
+    fn filters_line_up_by_name_and_the_closer_substitute_wins() {
+        let mut target = Patch::init();
+        add(&mut target, ModuleKind::Svf, "filter1");
+        set(&mut target, "filter1.cutoff", 900.0);
+        let mut answer = Patch::init();
+        add(&mut answer, ModuleKind::Comb, "comb1");
+        add(&mut answer, ModuleKind::Ladder, "ladder1");
+        add(&mut answer, ModuleKind::Formant, "formant1");
+        set(&mut answer, "ladder1.cutoff", 900.0);
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("filter1")), Some(&id("ladder1")));
+        assert_eq!(m.extra().len(), 2);
+        // `lp` is the ladder's `lp12`, whatever the order of the items.
+        let mut twelve = answer.clone();
+        set(&mut twelve, "ladder1.mode", 1.0);
+        let mode: ParamAddr = "filter1.mode".parse().unwrap();
+        let ts = Side {
+            patch: &target,
+            level_ref: level_ref_of(&target),
+        };
+        let a_mode: ParamAddr = "ladder1.mode".parse().unwrap();
+        let (steps_lp12, _) = steps(&ts, &mode, &side(&twelve), &a_mode).unwrap();
+        assert_eq!(steps_lp12, 0.0);
+        let (steps_lp24, _) = steps(&ts, &mode, &side(&answer), &a_mode).unwrap();
+        assert!(steps_lp24.is_infinite());
+        // Reading the wrong parameter across kinds is no reading.
+        assert!(
+            steps(
+                &ts,
+                &mode,
+                &side(&answer),
+                &"ladder1.cutoff".parse().unwrap()
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn dist_eq_noise_and_reverb_have_no_substitute() {
+        for alone in [
+            ModuleKind::Dist,
+            ModuleKind::Eq,
+            ModuleKind::Noise,
+            ModuleKind::Reverb,
+        ] {
+            for &other in ModuleKind::ALL {
+                if other == alone || other.section() != alone.section() {
+                    continue;
+                }
+                let (t_name, a_name) = (name_of(alone, 2), name_of(other, 3));
+                let mut target = Patch::init();
+                with(&mut target, alone, &t_name);
+                let mut answer = Patch::init();
+                with(&mut answer, other, &a_name);
+                let m = match_modules(&target, &answer);
+                assert!(m.substitutions().is_empty(), "{alone} / {other}");
+                assert_eq!(m.missing(), &[id(&t_name)], "{alone} / {other}");
+                assert_eq!(m.extra(), &[id(&a_name)], "{alone} / {other}");
+                assert_eq!(
+                    score(&target, &answer, &[]).percent,
+                    0.0,
+                    "{alone} / {other}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_family_pair_never_crosses_a_section_or_takes_a_taken_partner() {
+        // A chorus and a delay are linked, a chorus and a filter are not (another section).
+        let mut target = Patch::init();
+        add(&mut target, ModuleKind::Chorus, "chorus1");
+        let mut answer = Patch::init();
+        add(&mut answer, ModuleKind::Svf, "filter1");
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.substitutions(), []);
+        assert_eq!((m.missing().len(), m.extra().len()), (1, 1));
+        // Two targets, one free substitute: the closer link (chorus ~ phaser) takes the phaser, the delay misses.
+        let mut target = Patch::init();
+        add(&mut target, ModuleKind::Chorus, "chorus1");
+        add(&mut target, ModuleKind::Delay, "delay1");
+        let mut answer = Patch::init();
+        add(&mut answer, ModuleKind::Phaser, "phaser1");
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("chorus1")), Some(&id("phaser1")));
+        assert_eq!(m.missing(), &[id("delay1")]);
+        // Reversed roles: the answer has two substitutes for one target; the target takes the closer one.
+        let mut target = Patch::init();
+        add(&mut target, ModuleKind::Phaser, "phaser1");
+        let mut answer = Patch::init();
+        add(&mut answer, ModuleKind::Delay, "delay1");
+        add(&mut answer, ModuleKind::Chorus, "chorus1");
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("phaser1")), Some(&id("chorus1")));
+        assert_eq!(m.extra(), &[id("delay1")]);
+    }
+
+    #[test]
+    fn an_mseg_stands_in_for_an_lfo_and_for_a_second_envelope() {
+        let mut target = Patch::init();
+        with(&mut target, ModuleKind::Lfo, "lfo1");
+        with(&mut target, ModuleKind::Adsr, "env2");
+        let mut answer = Patch::init();
+        with(&mut answer, ModuleKind::Mseg, "mseg1");
+        let m = match_modules(&target, &answer);
+        // The lfo is the closer link, so it takes the only mseg; the second envelope is missing.
+        assert_eq!(m.answer_of(&id("lfo1")), Some(&id("mseg1")));
+        assert_eq!(m.missing(), &[id("env2")]);
+        // The amplitude envelopes pair with each other, whatever else is there.
+        assert_eq!(m.answer_of(&id("env1")), Some(&id("env1")));
+        // With the lfo absent the envelope is answered.
+        let mut target = Patch::init();
+        with(&mut target, ModuleKind::Adsr, "env2");
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("env2")), Some(&id("mseg1")));
+        assert_eq!(m.substitutions()[0].credit(), 0.5);
+    }
+
+    /// Generator v1's targets hold v1 kinds only, and no v1 kind is linked to another, so no pairing of a v1 target
+    /// with a v1 answer ever substitutes: `structure/1` scores for v1 are the ones they were.
+    #[test]
+    fn v1_patches_never_meet_a_substitute() {
+        use crate::spec::{Category, RandomSpec};
+        let start = starter();
+        for seed in 0..40u64 {
+            let spec = RandomSpec {
+                generator: random::GENERATOR_V1,
+                seed,
+                difficulty: [0, 25, 50, 75, 100][seed as usize % 5],
+                amounts: [None; Category::COUNT],
+                musical: [100, 0][seed as usize % 2],
+                template: random::TEMPLATE_STARTER,
+            };
+            let target = random::target(&spec).unwrap().patch;
+            let mut other = start.clone();
+            enable(&mut other, "osc2", true);
+            enable(&mut other, "noise1", true);
+            enable(&mut other, "reverb1", true);
+            for (t, a) in [
+                (&target, &start),
+                (&start, &target),
+                (&target, &other),
+                (&other, &target),
+            ] {
+                assert!(
+                    match_modules(t, a).substitutions().is_empty(),
+                    "seed {seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_audio_route_out_keeps_a_level_0_generator_present() {
+        let mut p = Patch::init();
+        add(&mut p, ModuleKind::Wt, "wt1");
+        add(&mut p, ModuleKind::Osc, "osc2");
+        set(&mut p, "osc2.level", 0.0);
+        assert!(is_present(&p, "wt1") && is_present(&p, "osc1"));
+        assert!(
+            !is_present(&p, "osc2"),
+            "a level-0 generator with no route is absent, as it always was"
+        );
+        route(&mut p, "osc2", "wt1.pm", 50.0);
+        assert!(
+            is_present(&p, "osc2"),
+            "the route carries its pre-level output"
+        );
+        // A control route onto the level keeps it present too, as before.
+        let mut moved = p.clone();
+        moved.routes.clear();
+        add(&mut moved, ModuleKind::Lfo, "lfo1");
+        route(&mut moved, "lfo1", "osc2.level", 30.0);
+        assert!(is_present(&moved, "osc2"));
+        // Depth 0 is no route.
+        let mut zero = p.clone();
+        zero.routes[0].depth = 0.0;
+        assert!(!is_present(&zero, "osc2"));
+        // Into a disabled carrier, or one that is itself silent, the route carries nothing audible.
+        let mut off = p.clone();
+        enable(&mut off, "wt1", false);
+        assert!(!is_present(&off, "osc2"));
+        let mut quiet = p.clone();
+        set(&mut quiet, "wt1.level", 0.0);
+        assert!(!is_present(&quiet, "wt1") && !is_present(&quiet, "osc2"));
+        // A chain of silent operators ends in a generator that is heard.
+        let mut chain = Patch::init();
+        add(&mut chain, ModuleKind::Wt, "wt1");
+        add(&mut chain, ModuleKind::Wt, "wt2");
+        add(&mut chain, ModuleKind::Osc, "osc2");
+        set(&mut chain, "wt1.level", 0.0);
+        set(&mut chain, "osc2.level", 0.0);
+        route(&mut chain, "osc2", "wt1.pm", 50.0);
+        assert!(!is_present(&chain, "wt1") && !is_present(&chain, "osc2"));
+        route(&mut chain, "wt1", "wt2.pm", 50.0);
+        assert!(is_present(&chain, "wt1") && is_present(&chain, "osc2"));
+        // The pairing matches it with itself, operators included.
+        let m = match_modules(&chain, &chain);
+        assert!(m.is_identity());
+        let paired: Vec<&str> = m.pairs().iter().map(|(t, _)| t.as_str()).collect();
+        assert!(
+            paired.contains(&"osc2") && paired.contains(&"wt1"),
+            "{paired:?}"
+        );
+    }
+
+    #[test]
+    fn a_wt_at_am_0_with_no_audio_route_into_am_is_silent() {
+        let mut p = Patch::init();
+        add(&mut p, ModuleKind::Wt, "wt1");
+        add(&mut p, ModuleKind::Osc, "osc2");
+        set(&mut p, "osc2.level", 0.0);
+        assert!(is_present(&p, "wt1"));
+        set(&mut p, "wt1.am", 0.0);
+        assert!(
+            !is_present(&p, "wt1"),
+            "no carrier gain and nothing feeds it"
+        );
+        // A route into pm is not a route into am: nothing is audible, and the operator is absent too.
+        route(&mut p, "osc2", "wt1.pm", 50.0);
+        assert!(!is_present(&p, "wt1") && !is_present(&p, "osc2"));
+        // A route into am makes it ring modulation: both are present.
+        route(&mut p, "osc2", "wt1.am", 50.0);
+        assert!(is_present(&p, "wt1") && is_present(&p, "osc2"));
+        // At depth 0 it is no route.
+        let mut zero = p.clone();
+        zero.routes[1].depth = 0.0;
+        assert!(!is_present(&zero, "wt1") && !is_present(&zero, "osc2"));
+        // A source that is itself disabled, or emits nothing, feeds nothing.
+        let mut off = p.clone();
+        enable(&mut off, "osc2", false);
+        assert!(!is_present(&off, "wt1"));
+        let mut dead = p.clone();
+        add(&mut dead, ModuleKind::Wt, "wt2");
+        set(&mut dead, "wt2.am", 0.0);
+        dead.routes[1].src = ModSource::Module(id("wt2"));
+        assert!(!is_present(&dead, "wt1") && !is_present(&dead, "wt2"));
+        // Above 0 % the carrier is heard without a route.
+        let mut some = Patch::init();
+        add(&mut some, ModuleKind::Wt, "wt1");
+        set(&mut some, "wt1.am", 5.0);
+        assert!(is_present(&some, "wt1"));
+        // And the silent wt is absent from the pairing, whatever its other parameters say.
+        let mut with_silent = some.clone();
+        set(&mut with_silent, "wt1.am", 0.0);
+        let m = match_modules(&with_silent, &Patch::init());
+        assert!(m.missing().is_empty() && m.extra().is_empty());
+    }
+
+    #[test]
+    fn a_level_0_operators_parameters_still_tell_twins_apart() {
+        let build = |semis: [f32; 2]| {
+            let mut p = Patch::init();
+            add(&mut p, ModuleKind::Wt, "wt1");
+            add(&mut p, ModuleKind::Osc, "osc2");
+            add(&mut p, ModuleKind::Osc, "osc3");
+            for (name, semi) in ["osc2", "osc3"].into_iter().zip(semis) {
+                set(&mut p, &format!("{name}.level"), 0.0);
+                set(&mut p, &format!("{name}.semi"), semi);
+                route(&mut p, name, "wt1.pm", 50.0);
+            }
+            p
+        };
+        let target = build([7.0, -5.0]);
+        let answer = build([-5.0, 7.0]);
+        let m = match_modules(&target, &answer);
+        assert_eq!(m.answer_of(&id("osc2")), Some(&id("osc3")), "{m:?}");
+        assert_eq!(m.answer_of(&id("osc3")), Some(&id("osc2")));
+        let semi: ParamAddr = "osc2.semi".parse().unwrap();
+        assert_eq!(score(&target, &answer, &[semi]).percent, 100.0);
+        // Without the route the same two are absent, and nothing pairs.
+        let mut cut = target.clone();
+        cut.routes.clear();
+        assert!(!is_present(&cut, "osc2") && !is_present(&cut, "osc3"));
     }
 }

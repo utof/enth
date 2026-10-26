@@ -490,14 +490,14 @@ pub enum Verdict {
     Unknown,
 }
 
-/// A module the structure matching could not pair.
+/// A module the structure matching could not pair, or paired with one of another kind.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModuleTerm {
     /// The module's id: the target's for a missing module, the player's for an extra one.
     pub id: String,
     /// Its kind (`osc`, `svf`).
     pub kind: String,
-    /// Missing or extra.
+    /// Missing, extra or substituted.
     pub status: ModuleStatus,
 }
 
@@ -509,6 +509,9 @@ pub enum ModuleStatus {
     Missing,
     /// The answer has it and the target does not.
     Extra,
+    /// The target's module is answered by a module of another kind of its family (a `wt` for an `osc`; lane MTC,
+    /// S2a). The `id` and `kind` are the target's; the stand-in is in the matching.
+    Substituted,
     /// A status from a newer build (read tolerantly; never written by this one).
     #[serde(other)]
     Unknown,

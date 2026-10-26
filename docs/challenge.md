@@ -688,7 +688,7 @@ pub struct TargetContext<'a> {
 | `ComponentKind` | `pitch` (cents re A4), `brightness` (centroid, Hz), `harmonics` (harmonic content, the waveform: odd-to-all harmonic energy, 0–1), `attack` (ms), `envelope` (decay to sustain, ms), `sustain` (sustain level, dB re the peak), `release` (ms), `noisiness` (noise ratio), `movement` (rate of beating, tremolo or sweep, Hz). Level 1 is waveform plus octave, so harmonics and the sustain level have rows of their own (F1r review S6) |
 | `StructureScore` | `scorer`, `percent` (over the randomized parameters), `params` (one `ParamScore` per randomized parameter, then one per parameter the player moved that the target did not randomize, each part in address order), `modules` (`ModuleTerm`s the matching left over) |
 | `ParamScore` | `addr` (the target's, text, so an old report reads after a catalogue change; `param_addr()` parses it), `answer_addr` (the matched address in the player's patch, where the ring goes once modules are added and removed; `None` when the player has no match), `score` (0–1), `verdict` (`good`, `near`, `bad`: the ring), `direction` (`same`, `higher`, `lower`, `missing`), `randomized` (false for a "moved but not randomized" row, never counted in structure %) |
-| `ModuleTerm` | `id`, `kind`, `status` (`missing` or `extra`) |
+| `ModuleTerm` | `id`, `kind`, `status` (`missing`, `extra`, or `substituted`: the target's module answered by one of another kind of its family, lane MTC; `id` and `kind` are the target's) |
 | `Combined` | `scorer`, `percent`, `sound_weight` |
 | `ScoreReport` | `sound`, `structure`, `combined`, `pass_mark`, `passed`, `engine` (the engine that rendered the scored audio: an engine change can move a sound score); `margin()` = sound % − pass mark; `verdicts()` for the rings (randomized rows); `check_against(&scoring)` (the ids, the pass mark, the percentages and the pass recomputed: what the session checks before it records a worker's report) |
 | `ScoreError` | `render_failed`, `analysis_failed`, `unscorable`, `unknown_scorer` |
@@ -1018,14 +1018,16 @@ Lane ST, 2026-10-20: `score/matching.rs`, `score/structure.rs` and `score/combin
 | `match_modules(target, answer) -> ModuleMatching` | The context-free pairing of two patches: heard through the held phrase, nothing randomized (`enth compare` on two patches). F1R's signature, unchanged |
 | `Matcher::for_round(ctx)`, `matcher.pair(answer)` | The round's pairing: built once in a scorer's `prepare`, then used on every submit. It weighs what the round randomized first. **SS and ST both use it** |
 | `Draws::of(ctx)` | What the generator drew: the parameters, the routes and the enable flags. `TargetContext` carries only the parameters, so the generator runs again on the start (pure, about 0.3 ms) and must give `ctx.target` exactly. A hand-made context falls back to what the target changed from the start |
-| `ModuleMatching` | `pairs`, `missing` and `extra` (present modules only), `answer_of`, `target_of`, `answer_addr`, `target_addr`, `answer_route`, `target_route`, `is_identity` |
+| `ModuleMatching` | `pairs`, `missing` and `extra` (present modules only), `substitutions` (the pairs of two kinds), `answer_of`, `target_of`, `answer_addr`, `target_addr` (through the corresponding parameter for a substitute), `answer_route`, `target_route`, `is_identity` |
 | `matcher.relabel(&m, answer)` | **What SS renders.** The answer with every paired module renamed to its partner's id (seeds follow ids), with generators, modulators and routes in the target's order. Clashing unpaired modules get the lowest free `<prefix><n>`. Generators keep their order when the answer uses hard sync, and `voice_fx` and `fx` are chains, never reordered. A valid answer gives a valid patch. **Guarantee:** an answer that equals the target up to ids and order renders the target's samples bit for bit (`relabelled_equivalents_render_the_target_bit_for_bit`). `ModuleMatching::relabel` does the same but keeps the answer's route order |
 
 **Present** is what takes part in the pairing:
 
 - an enabled module;
-- for a generator, not silent: a level above 0, or a route of non-zero depth on its level;
+- for a generator, not silent: a level above 0, a route of non-zero depth on its level, or an audio route of non-zero depth out of it into a generator that is itself heard (below);
 - for a modulator, live under the mask: the amplitude envelope, or the source of a non-zero route onto something heard.
+
+**Silent generators** (lane MTC, from RTE's contract and the F1m judge's S14). A generator makes sound when it is enabled, *emits*, and either has a level above 0 (or a route moves the level) or an audio route of non-zero depth leaves it into a generator that makes sound: the route carries the pre-level output, so a level-0 FM operator with a route into an audible `wt` stays present, and one without a route is absent as it always was. v1 patches have no audio routes, so nothing there changes. A `osc` or `noise` always emits; a `wt` emits `am/100 + the routed input` times its table, so **at `am` 0 % with no audio route into `am` it is silent** (a route into its `pm` does not help: it makes nothing audible), and with a route into `am` from an enabled generator that emits it is ring modulation and present. The recursion follows the chain (osc → wt1 → wt2 makes a level-0 wt1 present when wt2 is heard). The observability mask (`random/mask.rs`, frozen with generator v1) calls the other parameters of a level-0 generator `dead:silent`; the matcher keeps them visible while an audio route leaves the generator, as `docs/dsp/engine.md` asks of it. S2b's mask rules replace that override.
 
 So a disabled module, a silent generator, an unrouted LFO and a depth-0 route are absent: they pair with nothing and cost nothing. These are `canon`'s equivalences (disabled ≡ absent, depth 0 ≡ no route), applied to the patches as they are, so the player's real ids survive for the rings. Canonicalising first would relabel them.
 
@@ -1035,11 +1037,31 @@ So a disabled module, a silent generator, an unrouted LFO and a depth-0 route ar
 2. The same loss over the other parameters and routes that either side's mask calls observable. A hard-sync master paired with a non-master counts 1.
 3. The number of renamed pairs.
 
-Remaining ties go to the lexicographically first assignment: the target's modules in patch order, each taking the earliest answer module that keeps the optimum. Equal costs therefore keep ids and order. The kinds are paired in a fixed order:
+Remaining ties go to the lexicographically first assignment: the target's modules in patch order, each taking the earliest answer module that keeps the optimum. Equal costs therefore keep ids and order. **Every kind of the catalogue has its pass** (`score::matching::families::{GENERATORS, EFFECTS, MODULATORS}`; a test fails if a kind is added without one; before lane MTC the S2a kinds paired with nothing, so even an identical patch with a `dist` scored below 100). The kinds are paired in a fixed order:
 
-1. the generators, twice: first against each patch's own first generator, then against the partner of the target's first generator (levels are ratios to it);
-2. the effects;
-3. the modulators, twice: route destinations map through the pairs found so far.
+1. the generators (`osc`, `noise`, `wt`), twice: first against each patch's own first generator, then against the partner of the target's first generator (levels are ratios to it);
+2. the effects (`svf`, `reverb`, `comp`, then S2a's `dist`, `ladder`, `comb`, `formant`, `ott`, `chorus`, `phaser`, `delay`, `eq`);
+3. the modulators (`adsr`, `lfo`, `mseg`), twice: route destinations map through the pairs found so far.
+
+**Kind families** (lane MTC). The pairing above is per kind. What it leaves over fills gaps by *family*: a target module nobody of its own kind paired with takes a free answer module of a linked kind, so a `wt` where the target has an `osc` is a *substitute*, not a missing module plus an extra one that both score 0. Same kind always pairs first, exactly as before, and no v1 kind is linked to another v1 kind, so every v1 pairing and `structure/1` score is bit-identical (`tests/golden/tests/st_structure.rs`, `st_properties.rs`). The relation is not a partition (`mseg` links to both `lfo` and `adsr`), so it is a table of links, each between two kinds of one section, tried closest tier first (ties in the table's order), each an exact assignment with the pairing's cost:
+
+| Link | Credit | Parameters that correspond (the same key) |
+| --- | --- | --- |
+| `svf` ~ `ladder` | close, 0.75 | `mode` (by item name: `lp` is `lp12`; `lp24`, `notch` have no twin), `cutoff`, `resonance`, `keytrack`, `drive` |
+| `chorus` ~ `phaser` | close, 0.75 | `rate`, `sync`, `beats`, `depth`, `feedback`, `width`, `mix` |
+| `lfo` ~ `mseg` | close, 0.75 | `polarity`, `scope`, `phase`, `sync`, `beats` |
+| `osc` ~ `wt` | related, 0.5 | `semi`, `fine`, `level`, `position`, `phase_mode`, `phase`, `seed` (`wave` and `table` are different lists: the sound's choice is not credited) |
+| `comp` ~ `ott` | related, 0.5 | `mix` |
+| `adsr` ~ `mseg` | related, 0.5 | `velocity` (the amplitude envelope stays an `adsr`: it is forced to pair with the answer's) |
+| `svf` ~ `formant`, `ladder` ~ `formant`, `svf` ~ `comb`, `ladder` ~ `comb`, `comb` ~ `formant` | loose, 0.25 | `resonance` and/or `mix` only (a comb's `keytrack` tunes the comb, a filter's moves a cutoff: not shared) |
+| `chorus` ~ `delay`, `phaser` ~ `delay` | loose, 0.25 | `sync`, `beats`, `feedback`, `mix` |
+
+`noise`, `reverb`, `dist` and `eq` are linked to nothing: a missing one is missing. The credits are ordered, not measured (beta, like the tolerances: GR1's disputes tune them): a close link keeps the role and most controls, a related one the role, a loose one only the slot. The rules for a substitute:
+
+- **Its parameters are read through the corresponding ones.** A target parameter with no counterpart on the substitute has no partner (infinitely far: score 0, a missing ring). The row's `answer_addr` is the player's control that corresponds, so the ring lands there. An enumeration compares by item name, not index. `wt` gets the oscillator's pitch fold (`semi` and `fine` in cents) and level fold.
+- **The pair is one more item** of the structure score, worth the link's credit, listed in `modules` with status `substituted` (the target's id and kind). `ModuleMatching::substitutions()` has the pairs. So a perfect `ladder` for a `svf` scores below 100, and above a `ladder` that is missing.
+- **A substitute keeps its own id** when the answer is relabelled for the render (a `wt` cannot be an `osc1`); it takes its partner's place in the order.
+- A module the target has and nobody can stand in for, or two kinds of different sections, are missing and extra as before.
 
 ### `structure/1`
 
@@ -1051,6 +1073,7 @@ Remaining ties go to the lexicographically first assignment: the target's module
 | A randomized route | Depth difference in route steps (5 points); an absent route is depth 0. Infinite when an end's module has no partner | `lfo1 -> filter1.cutoff` (`RouteAddr`'s text) | The player's route, when it exists |
 | A randomized enable flag | 0 when the player's patch has the module exactly when the target does, else infinite. A target module that is on is matched by its partner; one that is off by the absence of an extra module of its kind | `osc2.enabled` | The player's module of that row, `<id>.enabled` |
 | A left-over module (`modules`) | Infinite, unless an enable-flag row already counts it | — | — |
+| A module paired with another kind of its family (`modules`, status `substituted`) | Its link's credit, 0.25, 0.5 or 0.75 ([Module matching](#module-matching), kind families) | — | — |
 
 **The folds** (the equivalences beyond matching):
 
@@ -1086,7 +1109,7 @@ They are "beta", like the levels: GR1's disputes tune them.
 - **Structure %** = 100 × the mean item score over the counted items: every randomized parameter, route and enable flag, plus every left-over module not already counted by an enable-flag row. It is 100 when there is nothing to compare. Every item weighs the same in v1; weights from measured sensitivity would be `structure/2`.
 - **Direction:** `same` under one step, otherwise `higher` or `lower`. For an enumeration it compares item indices. It is `missing` without a partner or route, and `extra` for an enable flag or route the target lacks.
 - **Rows the player moved that the target did not randomize** (`randomized: false`) are shown when they are a step or more off, and never counted. They cover the target's other observable parameters, the target's other heard routes, and the player's heard routes between paired modules.
-- **Row order:** randomized parameters (address order), randomized routes, enable flags (id order), then the moved parameters and moved routes. `modules` lists the missing ones (target order), then the extra ones (player order).
+- **Row order:** randomized parameters (address order), randomized routes, enable flags (id order), then the moved parameters and moved routes. `modules` lists the missing ones (target order), then the extra ones (player order), then the substituted ones (target order).
 
 **What the editor and the CLI need to know:**
 

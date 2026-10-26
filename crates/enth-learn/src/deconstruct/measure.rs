@@ -45,7 +45,8 @@ use crate::player::Audition;
 pub const PREPARE_RENDERS: u32 = 19;
 
 /// An LFO slower than this is measured through the long hold first: a sweep is found only after two or more cycles
-/// (agent-evals finding 8), and the held note holds 1.5 s.
+/// (agent-evals finding 8), and the held note holds 1.5 s. A tempo-synced LFO and a looping MSEG count by their cycle
+/// at the render's tempo ([`slow_source`]).
 pub const SLOW_LFO_HZ: f32 = 2.0;
 
 /// The phrases tried, in order, for an element that is not an LFO route.
@@ -74,14 +75,37 @@ impl Renders {
     }
 }
 
-/// The first phrase that reveals `element` in `preset`, or `None` when none does. A route from an LFO slower than
-/// [`SLOW_LFO_HZ`] tries the long hold first.
+/// Whether a modulator source cycles slower than [`SLOW_LFO_HZ`]: an LFO by its `rate`, or by its `beats` at the
+/// render's tempo when it is synced; a looping MSEG by its `length`, or by its `beats` when synced (lane MTC: S2a's
+/// sources). A one-shot MSEG and the envelopes do not cycle.
+pub fn slow_source(m: &enth_patch::ModuleInstance) -> bool {
+    use enth_patch::catalogue::Beats;
+    let synced = m.get("sync") == Some(1.0);
+    // The seconds one cycle takes at the default tempo.
+    let beats_secs = || {
+        let (n, d) = Beats::from_value(m.get("beats")?)?.length();
+        Some(f64::from(n) / f64::from(d) * 60.0 / enth_render::DEFAULT_TEMPO_BPM)
+    };
+    let slowest = f64::from(1.0 / SLOW_LFO_HZ);
+    match m.kind {
+        ModuleKind::Lfo if synced => beats_secs().is_some_and(|secs| secs > slowest),
+        ModuleKind::Lfo => m.get("rate").is_some_and(|hz| hz < SLOW_LFO_HZ),
+        ModuleKind::Mseg if m.get("mode") == Some(0.0) && synced => {
+            beats_secs().is_some_and(|secs| secs > slowest)
+        }
+        ModuleKind::Mseg if m.get("mode") == Some(0.0) => m
+            .get("length")
+            .is_some_and(|ms| f64::from(ms) / 1000.0 > slowest),
+        _ => false,
+    }
+}
+
+/// The first phrase that reveals `element` in `preset`, or `None` when none does. A route from an LFO (or a looping
+/// MSEG) slower than [`SLOW_LFO_HZ`] tries the long hold first.
 pub fn reveal_phrase(preset: &Patch, element: &Element) -> Option<PhraseId> {
     let slow_lfo = element.parts.iter().any(|p| match p {
         Part::Route(r) => match &r.src {
-            ModSource::Module(id) => preset.find(id).is_some_and(|(_, m)| {
-                m.kind == ModuleKind::Lfo && m.get("rate").is_some_and(|hz| hz < SLOW_LFO_HZ)
-            }),
+            ModSource::Module(id) => preset.find(id).is_some_and(|(_, m)| slow_source(m)),
             _ => false,
         },
         _ => false,
@@ -593,4 +617,85 @@ pub fn pick_options(
         .map(|(i, j)| dist(i, j))
         .fold(f64::INFINITY, f64::min);
     Ok((chosen, closest, renders))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::deconstruct::element::tests::{patch_on, with_s2a};
+
+    fn slow(p: &Patch, id: &str) -> bool {
+        slow_source(
+            &p.find(&enth_patch::ModuleId::new(id).unwrap())
+                .unwrap()
+                .1
+                .clone(),
+        )
+    }
+
+    /// Lane MTC: a synced LFO and a looping MSEG are slow by their cycle at the render's tempo, the way an LFO is by
+    /// its rate; a one-shot MSEG and an envelope do not cycle.
+    #[test]
+    fn slow_sources_are_found_by_their_cycle_at_the_render_tempo() {
+        let p = patch_on(
+            with_s2a(&[(ModuleKind::Mseg, "mseg1")], &[]),
+            &[
+                "lfo1.rate=1.5",
+                "lfo2.rate=6",
+                "mseg1.mode=loop",
+                "mseg1.sync=off",
+                "mseg1.length=3000",
+            ],
+        );
+        // v1: an unsynced LFO is slow below 2 Hz.
+        assert!(slow(&p, "lfo1") && !slow(&p, "lfo2"));
+        assert!(!slow(&p, "env1"));
+        // A looping MSEG by its length: 3 s is slow, 400 ms is not; one-shot never cycles.
+        assert!(slow(&p, "mseg1"));
+        let q = patch_on(p.clone(), &["mseg1.length=400"]);
+        assert!(!slow(&q, "mseg1"));
+        let q = patch_on(p.clone(), &["mseg1.mode=one_shot"]);
+        assert!(!slow(&q, "mseg1"));
+        // Synced: at 140 BPM a beat is 0.43 s, so a quarter is 2.3 Hz (not slow), a bar is 0.58 Hz (slow).
+        for (beats, expected) in [
+            ("quarter", false),
+            ("half", true),
+            ("bar", true),
+            ("eighth", false),
+        ] {
+            let q = patch_on(
+                p.clone(),
+                &[
+                    "lfo1.sync=on",
+                    &format!("lfo1.beats={beats}"),
+                    "mseg1.sync=on",
+                    &format!("mseg1.beats={beats}"),
+                ],
+            );
+            assert_eq!(slow(&q, "lfo1"), expected, "lfo {beats}");
+            assert_eq!(slow(&q, "mseg1"), expected, "mseg {beats}");
+        }
+    }
+
+    #[test]
+    fn a_slow_synced_route_is_revealed_by_the_long_hold_first() {
+        let route = |beats: &str| {
+            let p = patch_on(
+                with_s2a(&[], &[]),
+                &[
+                    "lfo1.sync=on",
+                    &format!("lfo1.beats={beats}"),
+                    "lfo1 -> filter1.cutoff=40",
+                ],
+            );
+            let els = crate::deconstruct::element::elements(&p);
+            let e = els
+                .iter()
+                .find(|e| e.id == "lfo1 -> filter1.cutoff")
+                .unwrap();
+            reveal_phrase(&p, e)
+        };
+        assert_eq!(route("bar"), Some(LONG_HOLD));
+        assert_eq!(route("sixteenth"), Some(HELD));
+    }
 }

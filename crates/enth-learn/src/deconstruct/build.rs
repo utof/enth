@@ -466,6 +466,39 @@ fn involves(patch: &Patch, e: &Element, aspect: Aspect) -> bool {
             matches!(aspect, A::Attack | A::Decay | A::Sustain | A::Release)
         }
         (_, Some(ModuleKind::Reverb)) => matches!(aspect, A::Release | A::Sustain | A::Decay),
+        // S2a's kinds (lane MTC), by what each changes (the coach's rule, `Aspect::involves`).
+        (_, Some(ModuleKind::Wt)) if param == "semi" || param == "fine" => matches!(
+            aspect,
+            A::Pitch | A::Beating | A::Sweep | A::Brightness | A::Movement
+        ),
+        (_, Some(ModuleKind::Wt)) => matches!(
+            aspect,
+            A::Brightness | A::Harmonics | A::Beating | A::Noisiness | A::Pitch | A::Movement
+        ),
+        (_, Some(ModuleKind::Ladder | ModuleKind::Formant | ModuleKind::Comb)) => matches!(
+            aspect,
+            A::Brightness | A::Harmonics | A::Sweep | A::Movement
+        ),
+        (_, Some(ModuleKind::Dist)) => matches!(
+            aspect,
+            A::Brightness | A::Harmonics | A::Noisiness | A::Movement
+        ),
+        (_, Some(ModuleKind::Eq)) => matches!(aspect, A::Brightness | A::Harmonics),
+        (_, Some(ModuleKind::Ott)) => {
+            matches!(aspect, A::Brightness | A::Sustain | A::Decay | A::Release)
+        }
+        (_, Some(ModuleKind::Chorus)) => matches!(aspect, A::Beating | A::Movement),
+        (_, Some(ModuleKind::Phaser)) => matches!(
+            aspect,
+            A::Brightness | A::Harmonics | A::Sweep | A::Movement
+        ),
+        (_, Some(ModuleKind::Delay)) => {
+            matches!(aspect, A::Release | A::Sustain | A::Decay | A::Movement)
+        }
+        (_, Some(ModuleKind::Mseg)) => matches!(
+            aspect,
+            A::Attack | A::Decay | A::Sustain | A::Release | A::Sweep | A::Movement
+        ),
         _ => true,
     }
 }
@@ -484,6 +517,28 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
             .map(|m| format!("{m}.{p}"))
             .unwrap_or_default()
     };
+    // Whether a toggle of the element's module is on, and the module's kind.
+    let flag = |p: &str| {
+        id(p)
+            .parse::<ParamAddr>()
+            .ok()
+            .and_then(|a| patch.value(&a))
+            == Some(1.0)
+    };
+    let own_kind =
+        e.id.split('.')
+            .next()
+            .and_then(|m| enth_patch::ModuleId::new(m).ok())
+            .and_then(|m| patch.find(&m).map(|(_, x)| x.kind));
+    // A time-based module's speed as a player reads it: the note division when synced, else the rate.
+    let speed = |rate: &str| {
+        if flag("sync") {
+            v(&id("beats")).map(|b| format!("synced to {b}"))
+        } else {
+            v(&id(rate)).map(|r| format!("at {r}"))
+        }
+        .unwrap_or_default()
+    };
     match e.flow {
         super::element::Flow::Source => {
             let module = e.id.as_str();
@@ -496,6 +551,37 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
                     v(&id("color")).unwrap_or_default(),
                     v(&id("level")).unwrap_or_default()
                 )
+            } else if kind == Some(ModuleKind::Wt) {
+                let table = v(&id("table")).unwrap_or_default();
+                let mut bits = vec![format!("a {} wavetable", humanize(&table))];
+                bits.extend(v(&id("warp")).filter(|w| w != "off").map(|w| {
+                    format!(
+                        "bent by a {} warp ({})",
+                        humanize(&w),
+                        v(&id("warp_amount")).unwrap_or_default()
+                    )
+                }));
+                bits.extend(
+                    v(&id("unison"))
+                        .filter(|u| u != "1")
+                        .map(|u| format!("{u} unison voices")),
+                );
+                bits.extend(
+                    v(&id("semi"))
+                        .filter(|s| s != "0 st" && s != "+0 st")
+                        .map(|s| format!("tuned {s}")),
+                );
+                bits.extend(
+                    v(&id("fine"))
+                        .filter(|s| s != "0 ct" && s != "+0 ct")
+                        .map(|s| format!("detuned {s}")),
+                );
+                bits.extend(
+                    v(&id("level"))
+                        .filter(|l| l != "100 %")
+                        .map(|l| format!("at {l}")),
+                );
+                format!("{}.", cap(&bits.join(", ")))
             } else {
                 {
                     let wave = v(&id("wave")).unwrap_or_default();
@@ -523,18 +609,61 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
                 v(&id("drive")).unwrap_or_default()
             )
         }
-        super::element::Flow::Filter => format!(
-            "A {} filter at {} with {} resonance.",
-            match v(&id("mode")).as_deref() {
-                Some("lp") => "low-pass",
-                Some("hp") => "high-pass",
-                Some("bp") => "band-pass",
-                Some("notch") => "notch",
-                _ => "",
-            },
-            v(&id("cutoff")).unwrap_or_default(),
-            v(&id("resonance")).unwrap_or_default()
-        ),
+        super::element::Flow::Filter => match own_kind {
+            Some(ModuleKind::Dist) => {
+                let mix = v(&id("mix")).filter(|m| m != "100 %");
+                let mix = mix.map(|m| format!(", {m} wet")).unwrap_or_default();
+                match v(&id("mode")).as_deref() {
+                    Some("bitcrush") => format!(
+                        "A bitcrusher at {} bits{mix}.",
+                        v(&id("bits")).unwrap_or_default()
+                    ),
+                    Some("downsample") => format!(
+                        "A downsampler holding the signal at {}{mix}.",
+                        v(&id("rate")).unwrap_or_default()
+                    ),
+                    mode => format!(
+                        "A {} distortion with {} of drive{mix}.",
+                        humanize(mode.unwrap_or_default()),
+                        v(&id("drive")).unwrap_or_default()
+                    ),
+                }
+            }
+            Some(ModuleKind::Comb) => format!(
+                "A comb filter tuned {} from the note, with {} feedback and {} damping.",
+                v(&id("semi")).unwrap_or_default(),
+                v(&id("feedback")).unwrap_or_default(),
+                v(&id("damping")).unwrap_or_default()
+            ),
+            Some(ModuleKind::Formant) => format!(
+                "A formant filter: vowel peaks at {} and {}, shifted {}, with {} resonance.",
+                v(&id("f1")).unwrap_or_default(),
+                v(&id("f2")).unwrap_or_default(),
+                v(&id("shift")).unwrap_or_default(),
+                v(&id("resonance")).unwrap_or_default()
+            ),
+            kind => format!(
+                "A {}{} filter at {} with {} resonance.",
+                if kind == Some(ModuleKind::Ladder) {
+                    "ladder "
+                } else {
+                    ""
+                },
+                match v(&id("mode")).as_deref() {
+                    Some("lp" | "lp12") if kind == Some(ModuleKind::Ladder) => {
+                        "12 dB/octave low-pass"
+                    }
+                    Some("lp24") => "24 dB/octave low-pass",
+                    Some("lp" | "lp12") => "low-pass",
+                    Some("hp") => "high-pass",
+                    Some("bp") => "band-pass",
+                    Some("notch") => "notch",
+                    _ => "",
+                },
+                v(&id("cutoff")).unwrap_or_default(),
+                v(&id("resonance")).unwrap_or_default()
+            ),
+        },
         super::element::Flow::Amp => format!(
             "Attack {}, decay {}, sustain {}, release {}.",
             v(&id("attack")).unwrap_or_default(),
@@ -563,7 +692,69 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
                     v(&id("wet")).unwrap_or_default(),
                     v(&id("decay")).unwrap_or_default()
                 ),
-                _ => format!("{}.", cap(&e.label)),
+                _ => match own_kind {
+                    Some(ModuleKind::Chorus) => {
+                        let mode = v(&id("mode")).unwrap_or_default();
+                        format!(
+                            "{}: {}, {} deep, {} wet.",
+                            cap(&with_article(&humanize(&mode))),
+                            speed("rate"),
+                            v(&id("depth")).unwrap_or_default(),
+                            v(&id("mix")).unwrap_or_default()
+                        )
+                    }
+                    Some(ModuleKind::Phaser) => format!(
+                        "A phaser: {} stages sweeping around {} {}, {} deep, {} feedback, {} wet.",
+                        v(&id("stages")).unwrap_or_default(),
+                        v(&id("center")).unwrap_or_default(),
+                        speed("rate"),
+                        v(&id("depth")).unwrap_or_default(),
+                        v(&id("feedback")).unwrap_or_default(),
+                        v(&id("mix")).unwrap_or_default()
+                    ),
+                    Some(ModuleKind::Ott) => format!(
+                        "OTT compression across three bands at {} depth (upward {}, downward {}), {} wet.",
+                        v(&id("depth")).unwrap_or_default(),
+                        v(&id("upward")).unwrap_or_default(),
+                        v(&id("downward")).unwrap_or_default(),
+                        v(&id("mix")).unwrap_or_default()
+                    ),
+                    Some(ModuleKind::Eq) => {
+                        let bands: Vec<String> = [
+                            ("low_gain", "low shelf"),
+                            ("bell1_gain", "first bell"),
+                            ("bell2_gain", "second bell"),
+                            ("high_gain", "high shelf"),
+                        ]
+                        .into_iter()
+                        .filter_map(|(key, name)| {
+                            let gain = v(&id(key))?;
+                            (!gain.trim_start_matches('+').starts_with("0 "))
+                                .then(|| format!("{name} {gain}"))
+                        })
+                        .collect();
+                        if bands.is_empty() {
+                            "An EQ that shapes the tone with its cuts.".to_owned()
+                        } else {
+                            format!("An EQ: {}.", and_list(&bands))
+                        }
+                    }
+                    Some(ModuleKind::Delay) => {
+                        let time = if flag("sync") {
+                            v(&id("beats"))
+                        } else {
+                            v(&id("time"))
+                        }
+                        .unwrap_or_default();
+                        format!(
+                            "A {}delay of {time}: {} feedback, {} wet.",
+                            if flag("ping_pong") { "ping-pong " } else { "" },
+                            v(&id("feedback")).unwrap_or_default(),
+                            v(&id("mix")).unwrap_or_default()
+                        )
+                    }
+                    _ => format!("{}.", cap(&e.label)),
+                },
             }
         }
         super::element::Flow::Modulation | super::element::Flow::Macros => {
@@ -579,16 +770,52 @@ fn what_it_is(patch: &Patch, e: &Element) -> String {
                 ModSource::ModWheel => "The mod wheel".to_owned(),
                 ModSource::Macro(i) => format!("Macro {}", i.one_based()),
             };
-            let is_env = matches!(&r.src, ModSource::Module(m) if patch.find(m).is_some_and(|(_, x)| x.kind == ModuleKind::Adsr));
-            let rate = match &r.src {
-                ModSource::Module(m) => patch.find(m).and_then(|(_, x)| {
-                    let spec = x.kind.param("rate")?;
-                    Some(value_text(spec, x.get("rate")?))
-                }),
+            let src_inst = match &r.src {
+                ModSource::Module(m) => patch.find(m).map(|(_, x)| x),
                 _ => None,
             };
-            let at = rate.map(|r| format!(" at {r}")).unwrap_or_default();
+            let is_env = src_inst.is_some_and(super::element::acts_as_envelope);
+            let at = src_inst.map_or_else(String::new, cycle_text);
+            let dst_kind = r
+                .dst
+                .module_id()
+                .and_then(|m| patch.find(m))
+                .map(|(_, x)| x.kind);
             match (r.dst.param(), is_env) {
+                _ if src_inst
+                    .is_some_and(|x| x.kind.section() == enth_patch::Section::Generators) =>
+                {
+                    // An audio route (S2a): a generator's output moves a wavetable oscillator.
+                    let verb = match r.dst.param() {
+                        "pm" => "phase-modulates",
+                        "am" if patch.value(&r.dst) == Some(0.0) => "ring-modulates",
+                        "am" => "amplitude-modulates",
+                        _ => "modulates",
+                    };
+                    let target = r.dst.module_id().and_then(|m| patch.find(m)).map_or_else(
+                        || r.dst.to_string(),
+                        |(_, x)| format!("the {}", module_name(patch, x)),
+                    );
+                    format!("{src} {verb} {target} with its output: {}.", e.label)
+                }
+                ("position" | "warp_amount", false) if dst_kind == Some(ModuleKind::Wt) => {
+                    format!("{src} sweeps the wavetable{at}: {}.", e.label)
+                }
+                ("position" | "warp_amount", true) if dst_kind == Some(ModuleKind::Wt) => {
+                    format!("{src} moves the wavetable through each note: {}.", e.label)
+                }
+                ("f1" | "f2" | "shift", _) if dst_kind == Some(ModuleKind::Formant) => {
+                    format!("{src} moves the vowel{at}: {}.", e.label)
+                }
+                ("center", _) if dst_kind == Some(ModuleKind::Phaser) => {
+                    format!("{src} sweeps the phaser{at}: {}.", e.label)
+                }
+                ("semi", _) if dst_kind == Some(ModuleKind::Comb) => {
+                    format!("{src} sweeps the comb's pitch{at}: {}.", e.label)
+                }
+                ("drive", _) if dst_kind == Some(ModuleKind::Dist) => {
+                    format!("{src} moves the distortion's drive{at}: {}.", e.label)
+                }
                 ("cutoff", true) => format!(
                     "{src} opens the cutoff at the start of each note, then closes it: {}.",
                     e.label
@@ -637,17 +864,73 @@ fn module_name(patch: &Patch, m: &enth_patch::ModuleInstance) -> String {
         ModuleKind::Reverb => "reverb".to_owned(),
         ModuleKind::Comp => "compressor".to_owned(),
         // S2a's reserved kinds (lane MTC refines deconstruct's wording when they are listed).
-        ModuleKind::Dist => "distortion".to_owned(),
-        ModuleKind::Wt => format!("wavetable oscillator {n}"),
-        ModuleKind::Ott => "OTT compressor".to_owned(),
-        ModuleKind::Comb => "comb filter".to_owned(),
-        ModuleKind::Formant => "formant filter".to_owned(),
+        ModuleKind::Wt => {
+            let i = patch
+                .generators
+                .iter()
+                .filter(|g| g.kind == ModuleKind::Wt)
+                .position(|g| g.id == m.id);
+            match i {
+                Some(0) => "first wavetable oscillator".to_owned(),
+                Some(1) => "second wavetable oscillator".to_owned(),
+                _ => format!("wavetable oscillator {n}"),
+            }
+        }
         ModuleKind::Mseg => format!("MSEG {n}"),
-        ModuleKind::Chorus => "chorus".to_owned(),
-        ModuleKind::Phaser => "phaser".to_owned(),
-        ModuleKind::Eq => "EQ".to_owned(),
-        ModuleKind::Delay => "delay".to_owned(),
-        ModuleKind::Ladder => "ladder filter".to_owned(),
+        // The rest are named by what they are, with their number when the patch has several of the kind.
+        ModuleKind::Dist => numbered(patch, m, "distortion", n),
+        ModuleKind::Ott => numbered(patch, m, "OTT compressor", n),
+        ModuleKind::Comb => numbered(patch, m, "comb filter", n),
+        ModuleKind::Formant => numbered(patch, m, "formant filter", n),
+        ModuleKind::Chorus => numbered(patch, m, "chorus", n),
+        ModuleKind::Phaser => numbered(patch, m, "phaser", n),
+        ModuleKind::Eq => numbered(patch, m, "EQ", n),
+        ModuleKind::Delay => numbered(patch, m, "delay", n),
+        ModuleKind::Ladder => numbered(patch, m, "ladder filter", n),
+    }
+}
+
+/// `base`, followed by the module's number when the patch has more than one module of its kind.
+fn numbered(patch: &Patch, m: &enth_patch::ModuleInstance, base: &str, n: &str) -> String {
+    let same = patch.modules().filter(|(_, x)| x.kind == m.kind).count();
+    if same > 1 {
+        format!("{base} {n}")
+    } else {
+        base.to_owned()
+    }
+}
+
+/// An item key as words: `sine_fold` is "sine fold".
+fn humanize(key: &str) -> String {
+    key.replace('_', " ")
+}
+
+/// "a chorus", "an ensemble".
+fn with_article(word: &str) -> String {
+    let an = word.starts_with(['a', 'e', 'i', 'o', 'u']);
+    format!("{} {word}", if an { "an" } else { "a" })
+}
+
+/// How fast a modulator source cycles, for a route's sentence: " at 5 Hz", " in time with the tempo (1/4)", " every
+/// 1/1" or " over 4 s"; nothing for an envelope-like source.
+fn cycle_text(x: &enth_patch::ModuleInstance) -> String {
+    let get = |key: &str| {
+        let spec = x.kind.param(key)?;
+        Some(value_text(spec, x.get(key)?))
+    };
+    let synced = x.get("sync") == Some(1.0);
+    match x.kind {
+        ModuleKind::Lfo if synced => get("beats")
+            .map(|b| format!(" in time with the tempo ({b})"))
+            .unwrap_or_default(),
+        ModuleKind::Lfo => get("rate").map(|r| format!(" at {r}")).unwrap_or_default(),
+        ModuleKind::Mseg if x.get("mode") == Some(0.0) && synced => get("beats")
+            .map(|b| format!(" every {b}"))
+            .unwrap_or_default(),
+        ModuleKind::Mseg if x.get("mode") == Some(0.0) => get("length")
+            .map(|l| format!(" over {l}"))
+            .unwrap_or_default(),
+        _ => String::new(),
     }
 }
 
@@ -1136,7 +1419,7 @@ fn variation(preset: &Patch) -> Result<Option<Variation>, DeconstructError> {
     let Some(f) = preset
         .voice_fx
         .iter()
-        .find(|m| m.enabled && m.kind == ModuleKind::Svf)
+        .find(|m| m.enabled && matches!(m.kind, ModuleKind::Svf | ModuleKind::Ladder))
     else {
         return Ok(None);
     };
@@ -1732,7 +2015,7 @@ fn assemble(
         let cutoff_link = preset
             .voice_fx
             .iter()
-            .find(|m| m.enabled && m.kind == ModuleKind::Svf)
+            .find(|m| m.enabled && matches!(m.kind, ModuleKind::Svf | ModuleKind::Ladder))
             .map(|m| format!("[cutoff](enth:{}.cutoff)", m.id));
         texts.insert(
             "vary.md".into(),
@@ -1942,5 +2225,165 @@ fn example(label: &str, path: &str, phrase: PhraseId) -> Example {
         level_match: true,
         seed: None,
         curve: None,
+    }
+}
+
+#[cfg(test)]
+mod s2a_tests {
+    use super::*;
+    use crate::deconstruct::element::tests::{patch_on, with_s2a};
+    use crate::deconstruct::element::{Element, elements};
+
+    fn element<'a>(els: &'a [Element], id: &str) -> &'a Element {
+        els.iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("no element {id}"))
+    }
+
+    /// Lane MTC: each S2a kind says what it is in a sentence of sound and values, with no hole in it.
+    #[test]
+    fn s2a_kinds_say_what_they_are() {
+        let p = patch_on(
+            with_s2a(
+                &[
+                    (ModuleKind::Wt, "wt1"),
+                    (ModuleKind::Ladder, "ladder1"),
+                    (ModuleKind::Dist, "dist1"),
+                    (ModuleKind::Comb, "comb1"),
+                    (ModuleKind::Chorus, "chorus1"),
+                    (ModuleKind::Phaser, "phaser1"),
+                    (ModuleKind::Ott, "ott1"),
+                    (ModuleKind::Eq, "eq1"),
+                ],
+                &["comp1", "reverb1"],
+            ),
+            &[
+                "osc2.enabled=on",
+                "osc2.level=0",
+                "wt1.table=formant",
+                "wt1.semi=-12",
+                "wt1.unison=3",
+                "osc2 -> wt1.pm=40",
+                "ladder1.mode=lp12",
+                "ladder1.cutoff=900",
+                "ladder1.keytrack=40",
+                "ladder1.drive=12",
+                "dist1.mode=hard",
+                "dist1.drive=18",
+                "comb1.semi=7",
+                "comb1.feedback=60",
+                "chorus1.depth=70",
+                "phaser1.sync=on",
+                "phaser1.depth=80",
+                "ott1.depth=60",
+                "eq1.high_gain=4",
+                "eq1.low_gain=0",
+                "lfo1 -> dist1.drive=20",
+            ],
+        );
+        let els = elements(&p);
+        let says = |id: &str| what_it_is(&p, element(&els, id));
+        assert_eq!(
+            says("wt1"),
+            "A formant wavetable, 3 unison voices, tuned -12 st."
+        );
+        assert_eq!(
+            says("ladder1"),
+            "A ladder 12 dB/octave low-pass filter at 900 Hz with 10 % resonance."
+        );
+        assert_eq!(
+            says("ladder1.drive"),
+            "12 dB of drive into the filter: a little grit and weight."
+        );
+        assert_eq!(says("dist1"), "A hard distortion with 18 dB of drive.");
+        assert!(
+            says("comb1").starts_with("A comb filter tuned +7 st from the note"),
+            "{}",
+            says("comb1")
+        );
+        assert!(
+            says("chorus1").starts_with("A chorus: at "),
+            "{}",
+            says("chorus1")
+        );
+        assert!(says("phaser1").contains("synced to"), "{}", says("phaser1"));
+        assert!(
+            says("ott1").starts_with("OTT compression across three bands at 60 %"),
+            "{}",
+            says("ott1")
+        );
+        assert_eq!(says("eq1"), "An EQ: high shelf 4 dB.");
+        let fm = says("osc2 -> wt1.pm");
+        assert!(
+            fm.contains("phase-modulates the first wavetable oscillator"),
+            "{fm}"
+        );
+        for e in &els {
+            let text = what_it_is(&p, e);
+            for hole in ["  ", " .", "()", " ,", "with  ", "at ."] {
+                assert!(!text.contains(hole), "{}: {text:?}", e.id);
+            }
+            assert!(text.ends_with('.'), "{}: {text:?}", e.id);
+        }
+    }
+
+    #[test]
+    fn s2a_kinds_are_named_and_told_apart() {
+        let p = with_s2a(
+            &[
+                (ModuleKind::Wt, "wt1"),
+                (ModuleKind::Wt, "wt2"),
+                (ModuleKind::Ladder, "ladder1"),
+                (ModuleKind::Dist, "dist1"),
+                (ModuleKind::Mseg, "mseg1"),
+                (ModuleKind::Delay, "delay1"),
+                (ModuleKind::Delay, "delay2"),
+            ],
+            &["comp1", "noise1"],
+        );
+        let name = |id: &str| {
+            let (_, m) = p.find(&enth_patch::ModuleId::new(id).unwrap()).unwrap();
+            module_name(&p, m)
+        };
+        assert_eq!(name("wt1"), "first wavetable oscillator");
+        assert_eq!(name("wt2"), "second wavetable oscillator");
+        assert_eq!(name("ladder1"), "ladder filter");
+        assert_eq!(name("dist1"), "distortion");
+        assert_eq!(name("mseg1"), "MSEG 1");
+        assert_eq!(name("delay1"), "delay 1", "two of a kind are numbered");
+        assert_eq!(name("delay2"), "delay 2");
+        assert_eq!(name("reverb1"), "reverb", "v1's names are as they were");
+        assert_eq!(name("filter1"), "filter");
+    }
+
+    /// An element is heard in the aspects its module changes: a wavetable oscillator like an oscillator, the
+    /// filters like the filter, and an effect only in what it does.
+    #[test]
+    fn s2a_elements_are_involved_in_what_they_change() {
+        let p = patch_on(
+            with_s2a(
+                &[
+                    (ModuleKind::Wt, "wt1"),
+                    (ModuleKind::Ladder, "ladder1"),
+                    (ModuleKind::Delay, "delay1"),
+                    (ModuleKind::Chorus, "chorus1"),
+                ],
+                &["comp1"],
+            ),
+            &[
+                "wt1.semi=5",
+                "ladder1.cutoff=900",
+                "delay1.mix=30",
+                "chorus1.mix=40",
+            ],
+        );
+        let els = elements(&p);
+        let hears = |id: &str, a: Aspect| involves(&p, element(&els, id), a);
+        assert!(hears("wt1", Aspect::Pitch) && hears("wt1", Aspect::Beating));
+        assert!(!hears("wt1", Aspect::Release));
+        assert!(hears("ladder1", Aspect::Sweep) && hears("ladder1", Aspect::Brightness));
+        assert!(!hears("ladder1", Aspect::Attack));
+        assert!(hears("delay1", Aspect::Release) && !hears("delay1", Aspect::Pitch));
+        assert!(hears("chorus1", Aspect::Beating) && !hears("chorus1", Aspect::Attack));
     }
 }
