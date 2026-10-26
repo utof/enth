@@ -20,15 +20,15 @@
 //! Silence in gives silence out for any setting, and NaN or infinite input never poisons the state.
 
 /// Floor of the detector level before the logarithm: -200 dBFS. Keeps `log2(0)` out of the audio path.
-const MIN_LEVEL: f32 = 1.0e-10;
+pub(crate) const MIN_LEVEL: f32 = 1.0e-10;
 /// Detector inputs are clamped to this (+120 dBFS) so an infinite sample cannot turn the state into NaN.
-const MAX_LEVEL: f32 = 1.0e6;
+pub(crate) const MAX_LEVEL: f32 = 1.0e6;
 /// Follower and smoother states below this magnitude are set to zero (about -300 dBFS), long before subnormals.
 const FLUSH_BELOW: f32 = 1.0e-15;
 /// `20·log10(2)`: dB per octave of amplitude. `20·log10(x) = DB_PER_LOG2·log2(x)`.
-const DB_PER_LOG2: f32 = 6.020_6;
+pub(crate) const DB_PER_LOG2: f32 = 6.020_6;
 /// `log2(10)/20`: octaves of amplitude per dB. `10^(x/20) = 2^(x·LOG2_PER_DB)`.
-const LOG2_PER_DB: f32 = 0.166_096_4;
+pub(crate) const LOG2_PER_DB: f32 = 0.166_096_4;
 
 /// Sample rate used before `prepare` is called.
 const DEFAULT_SAMPLE_RATE: f32 = 48_000.0;
@@ -43,7 +43,7 @@ fn flush(x: f32) -> f32 {
 ///
 /// Computed in `f64` with `expm1`, so a 10 s release at 192 kHz (`k` about 5e-7) keeps its full relative precision
 /// instead of being quantised by `1 − p` in `f32`. A zero (or negative) time gives `k = 1`, an instant response.
-fn one_pole_gain(time_ms: f32, sample_rate: f32) -> f32 {
+pub(crate) fn one_pole_gain(time_ms: f32, sample_rate: f32) -> f32 {
     let samples = f64::from(time_ms) * 0.001 * f64::from(sample_rate);
     if samples <= 0.0 {
         1.0
@@ -53,7 +53,7 @@ fn one_pole_gain(time_ms: f32, sample_rate: f32) -> f32 {
 }
 
 /// Replace a non-finite value by `fallback` and clamp the rest into `lo..=hi`.
-fn sane(value: f32, lo: f32, hi: f32, fallback: f32) -> f32 {
+pub(crate) fn sane(value: f32, lo: f32, hi: f32, fallback: f32) -> f32 {
     if value.is_finite() {
         value.clamp(lo, hi)
     } else {
