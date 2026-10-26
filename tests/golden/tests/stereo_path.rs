@@ -1,13 +1,20 @@
-//! Lane SVP (S2a): the stereo voice path against the goldens.
+//! Lane SVP (S2a): the stereo voice path against the goldens; lane UNI added the cases that run it.
 //!
-//! Every patch case in `cases/` (73 files, the harness's own sine aside) renders twice through `enth_render`: as
-//! `cargo xtask golden` does, and with the engine's stereo flag forced on. The first must run the mono path (the flag
-//! is clear for every golden patch), the second the stereo one, and **both channels of the second must equal the
-//! first's bit for bit**: stereo with zero spread is mono. The hashes in `expected/` are the mono path's, so this
-//! also ties the stereo path to them on all six targets, without a second set of files.
+//! Every patch case in `cases/` (the harness's own sine aside) renders through `enth_render` as `cargo xtask golden`
+//! does, and with the engine's stereo flag forced on.
+//!
+//! - **A case without a stereo generator** (every case but `wt-unison-*`) runs the mono path under `Auto` (the flag is
+//!   clear), and **both channels of the forced render must equal it bit for bit**: stereo with zero spread is mono.
+//!   The hashes in `expected/` are the mono path's, so this also ties the stereo path to them on all six targets,
+//!   without a second set of files.
+//! - **A case with a unison `wt`** (flag set by the patch alone) runs the stereo path under `Auto`: forcing the flag
+//!   changes nothing, and `StereoMode::Off` (the mono reference: the copies' mono mix) must give two equal channels
+//!   (when the voice pan is centred). `wt-unison-reese` has spread 0 throughout, so its stereo render equals the mono
+//!   reference on both channels bit for bit; the cases with a spread differ between the channels.
 
 use enth_golden::patch::patch_from_file;
 use enth_golden::{Case, Source, root};
+use enth_patch::catalogue::VoiceParam;
 use enth_render::{
     Automation, Control, Controller, DEFAULT_BLOCK, Note, Performance, RenderSpec, StereoMode,
     render_with_stereo,
@@ -18,7 +25,7 @@ fn bits(x: &[f32]) -> Vec<u32> {
 }
 
 #[test]
-fn every_golden_patch_runs_mono_and_equals_the_stereo_path_on_both_channels() {
+fn every_golden_patch_runs_mono_or_the_unison_stereo_path_and_forcing_the_flag_changes_no_bit() {
     let dir = root().join("cases");
     let mut names: Vec<_> = std::fs::read_dir(&dir)
         .expect("cases/")
@@ -26,7 +33,7 @@ fn every_golden_patch_runs_mono_and_equals_the_stereo_path_on_both_channels() {
         .filter(|p| p.extension().is_some_and(|e| e == "toml"))
         .collect();
     names.sort();
-    let (mut patches, mut cases) = (0, 0);
+    let (mut patches, mut cases, mut flagged) = (0, 0, 0);
     for path in names {
         cases += 1;
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
@@ -69,19 +76,46 @@ fn every_golden_patch_runs_mono_and_equals_the_stereo_path_on_both_channels() {
             ..Performance::default()
         };
         let spec = RenderSpec::new(case.sample_rate, seed.unwrap_or(enth_render::DEFAULT_SEED));
-        let mono = render_with_stereo(&patch, &perf, &spec, DEFAULT_BLOCK, StereoMode::Auto)
+        let auto = render_with_stereo(&patch, &perf, &spec, DEFAULT_BLOCK, StereoMode::Auto)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
-        let stereo = render_with_stereo(&patch, &perf, &spec, DEFAULT_BLOCK, StereoMode::Forced)
+        let forced = render_with_stereo(&patch, &perf, &spec, DEFAULT_BLOCK, StereoMode::Forced)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert!(
-            !mono.stats.stereo,
-            "{name}: the flag is clear for a golden patch"
+        assert!(forced.stats.stereo, "{name}: the flag was forced on");
+        assert_eq!(auto.frames(), case.frames(), "{name}");
+        assert_eq!(
+            auto.stats.stereo,
+            name.starts_with("wt-unison-"),
+            "{name}: the flag comes from the patch (a unison wt) and from nothing else"
         );
-        assert!(stereo.stats.stereo, "{name}: the flag was forced on");
-        assert_eq!(mono.frames(), case.frames(), "{name}");
-        assert_eq!(bits(&stereo.left), bits(&mono.left), "{name}: left");
-        assert_eq!(bits(&stereo.right), bits(&mono.right), "{name}: right");
+        if auto.stats.stereo {
+            flagged += 1;
+            // The flag was already set: forcing it changes nothing.
+            assert_eq!(bits(&forced.left), bits(&auto.left), "{name}: left");
+            assert_eq!(bits(&forced.right), bits(&auto.right), "{name}: right");
+            // The mono reference: the same patch on the mono path. Its channels are one signal.
+            let off = render_with_stereo(&patch, &perf, &spec, DEFAULT_BLOCK, StereoMode::Off)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(!off.stats.stereo, "{name}: Off runs the mono path");
+            if patch.voice.values[VoiceParam::Pan.index()] == 0.0 {
+                assert_eq!(bits(&off.left), bits(&off.right), "{name}: mono reference");
+            }
+            if name == "wt-unison-reese" {
+                // Spread 0 throughout: stereo equals mono on both channels.
+                assert_eq!(bits(&auto.left), bits(&off.left), "{name}: left = mono");
+                assert_eq!(bits(&auto.right), bits(&off.left), "{name}: right = mono");
+            } else {
+                assert_ne!(
+                    bits(&auto.left),
+                    bits(&auto.right),
+                    "{name}: a spread widens"
+                );
+            }
+        } else {
+            assert_eq!(bits(&forced.left), bits(&auto.left), "{name}: left");
+            assert_eq!(bits(&forced.right), bits(&auto.right), "{name}: right");
+        }
     }
     assert!(cases >= 73, "{cases} case files");
     assert!(patches >= 70, "{patches} patch cases");
+    assert_eq!(flagged, 7, "the wt-unison-* cases");
 }

@@ -170,6 +170,12 @@ pub(crate) struct AudioRoutes {
     pre: Vec<VoiceBus>,
     /// Per generator: the output that goes to the voice sum.
     post: Vec<VoiceBus>,
+    /// Per generator: it is stereo (a `wt` with unison, in a plan with the stereo voice path), so it writes a right
+    /// channel too (lane UNI).
+    wide: Vec<bool>,
+    /// Per generator: the right channel of the output that goes to the voice sum. Empty unless some generator is
+    /// `wide`; a generator that is not has its `post` added to both channels.
+    post_r: Vec<VoiceBus>,
     ramp_segments: u32,
 }
 
@@ -314,6 +320,16 @@ impl AudioRoutes {
         for s in &specs {
             is_source[s.src] = true;
         }
+        let wide: Vec<bool> = plan
+            .generators
+            .iter()
+            .map(|g| plan.stereo.is_on() && g.module.is_stereo())
+            .collect();
+        let post_r = if wide.contains(&true) {
+            vec![[[0.0; SEG]; MAX_VOICES]; n]
+        } else {
+            Vec::new()
+        };
         let frames = f64::from(DEPTH_SMOOTHING_MS) * f64::from(plan.cfg.sample_rate) / 1000.0;
         Ok(Self {
             terms: specs
@@ -339,6 +355,8 @@ impl AudioRoutes {
             order,
             pre: vec![[[0.0; SEG]; MAX_VOICES]; n],
             post: vec![[[0.0; SEG]; MAX_VOICES]; n],
+            wide,
+            post_r,
             ramp_segments: (frames / SEG as f64)
                 .round()
                 .clamp(1.0, f64::from(u32::MAX)) as u32,
@@ -484,11 +502,17 @@ impl AudioRoutes {
     /// the buffers into `voice` in patch order. `process(g, ports)` renders generator `g` (an index into
     /// `Plan::generators`, which are in patch order) with the buffers in `ports`. `voice` must be zeroed for the
     /// active voices; `sync` is the hard-sync bus, handled here as the plain loop handles it.
+    ///
+    /// With `voice_r` (the plan has the stereo voice path and a stereo generator, lane UNI), a stereo generator also
+    /// gets a right buffer (`Ports::io_r`) and the sum is made per channel: the buffers are added in patch order into
+    /// `voice` (left) and into `voice_r`, where a mono generator's buffer is added to both channels. `voice_r` must
+    /// be zeroed for the active voices too.
     pub(crate) fn render(
         &mut self,
         active: &[VoiceIdx],
         sync_master: Option<usize>,
         voice: &mut VoiceBus,
+        voice_r: Option<&mut VoiceBus>,
         sync: &mut SyncBus,
         mut process: impl FnMut(usize, Ports<'_>),
     ) {
@@ -499,12 +523,20 @@ impl AudioRoutes {
             order,
             pre,
             post,
+            wide,
+            post_r,
             ..
         } = self;
+        let stereo = voice_r.is_some() && !post_r.is_empty();
         for &g in order.iter() {
             let (lo, rest) = pre.split_at_mut(g);
             let (Some((mine, hi)), Some(io)) = (rest.split_first_mut(), post.get_mut(g)) else {
                 continue;
+            };
+            let io_r = if stereo && wide[g] {
+                post_r.get_mut(g)
+            } else {
+                None
             };
             let pre_level = if is_source[g] {
                 for &v in active {
@@ -537,6 +569,7 @@ impl AudioRoutes {
                 g,
                 Ports {
                     io,
+                    io_r,
                     sync_out,
                     sync_in,
                     audio_in: (!audio_in.is_empty()).then_some(audio_in),
@@ -551,6 +584,17 @@ impl AudioRoutes {
                 }
             }
         }
+        // The right channel is a sum of its own, in the same patch order (the two never mix).
+        if let Some(right) = voice_r {
+            for (g, bus) in post.iter().enumerate() {
+                let bus_r = if stereo && wide[g] { &post_r[g] } else { bus };
+                for &v in active {
+                    for (acc, x) in right[v].iter_mut().zip(&bus_r[v]) {
+                        *acc += *x;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -558,6 +602,9 @@ impl AudioRoutes {
 /// [`VoiceCx`](crate::module::VoiceCx) the routes decide.
 pub(crate) struct Ports<'a> {
     pub io: &'a mut VoiceBus,
+    /// The right channel of a stereo generator ([`VoiceCx::io_r`](crate::module::VoiceCx::io_r)); `None` for a mono
+    /// one.
+    pub io_r: Option<&'a mut VoiceBus>,
     pub sync_out: Option<&'a mut SyncBus>,
     pub sync_in: Option<&'a SyncBus>,
     pub audio_in: Option<AudioIn<'a>>,
@@ -991,26 +1038,34 @@ mod tests {
                 voice: [0.0; SEG],
                 pre1: [0.0; SEG],
             };
-            audio.render(&active, *sync_master, &mut voice, &mut sync, |g, ports| {
-                seen.order.push(g);
-                if let Some(input) = &ports.audio_in {
-                    let mut block = [f32::NAN; SEG];
-                    if input.read(PM, 0, &mut block) {
-                        seen.pm.push((g, block));
+            audio.render(
+                &active,
+                *sync_master,
+                &mut voice,
+                None,
+                &mut sync,
+                |g, ports| {
+                    seen.order.push(g);
+                    if let Some(input) = &ports.audio_in {
+                        let mut block = [f32::NAN; SEG];
+                        if input.read(PM, 0, &mut block) {
+                            seen.pm.push((g, block));
+                        }
                     }
-                }
-                let slot = &mut generators[g];
-                slot.module.process(&mut VoiceCx {
-                    voices: &active,
-                    notes: &notes,
-                    params: voice_table.view(slot.params),
-                    io: ports.io,
-                    sync_out: ports.sync_out,
-                    sync_in: ports.sync_in,
-                    audio_in: ports.audio_in,
-                    pre_level: ports.pre_level,
-                });
-            });
+                    let slot = &mut generators[g];
+                    slot.module.process(&mut VoiceCx {
+                        voices: &active,
+                        notes: &notes,
+                        params: voice_table.view(slot.params),
+                        io: ports.io,
+                        sync_out: ports.sync_out,
+                        sync_in: ports.sync_in,
+                        audio_in: ports.audio_in,
+                        pre_level: ports.pre_level,
+                        io_r: ports.io_r,
+                    });
+                },
+            );
             seen.voice = voice[0];
             seen.pre1 = audio.pre.get(1).map_or([0.0; SEG], |b| b[0]);
             out.push(seen);
@@ -1146,6 +1201,7 @@ mod tests {
                     sync_in: None,
                     audio_in: None,
                     pre_level: None,
+                    io_r: None,
                 });
                 for (acc, x) in voice[0].iter_mut().zip(&scratch[0]) {
                     *acc += *x;
@@ -1171,7 +1227,7 @@ mod tests {
         let mut sync: SyncBus = [[NO_SYNC; SEG]; MAX_VOICES];
         let mut ran = Vec::new();
         plan.audio
-            .render(&[0], None, &mut voice, &mut sync, |g, ports| {
+            .render(&[0], None, &mut voice, None, &mut sync, |g, ports| {
                 ran.push(g);
                 ports.io[0] = [values[g]; SEG];
             });
@@ -1190,7 +1246,7 @@ mod tests {
         let mut heard = Vec::new();
         for writes in [true, false] {
             plan.audio
-                .render(&[0], None, &mut voice, &mut sync, |g, ports| {
+                .render(&[0], None, &mut voice, None, &mut sync, |g, ports| {
                     if let Some(pre) = ports.pre_level
                         && writes
                     {

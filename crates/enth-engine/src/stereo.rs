@@ -11,26 +11,29 @@
 //!
 //! A plan carries one `stereo` flag, set when it is compiled ([`compile_with`](crate::plan::compile_with)):
 //!
-//! - **[`StereoMode::Auto`]** (what [`compile`](crate::plan::compile) uses): the flag is [`patch_needs_stereo`],
-//!   which is `false` for every patch today, because no module yet makes a per-voice stereo signal. Lane UNI turns
-//!   it on for an enabled `wt` with `unison` ≥ 2: `patch_needs_stereo` reads only structural parameters and enabled
-//!   flags (`wt.spread` is modulatable and changing it never recompiles the plan, so a flag keyed to it would go
-//!   stale). While the flag is clear, **today's mono path runs untouched
-//!   and bit for bit**: no right-channel instance exists, no bus is copied, and the engine takes one branch per
-//!   active voice and segment to learn that.
+//! - **[`StereoMode::Auto`]** (what [`compile`](crate::plan::compile) uses): the flag is [`patch_needs_stereo`]: an
+//!   enabled `wt` with `unison` ≥ 2 (lane UNI). It reads only structural parameters and enabled flags (`wt.spread` is
+//!   modulatable and changing it never recompiles the plan, so a flag keyed to it would go stale). While the flag is
+//!   clear, **today's mono path runs untouched and bit for bit**: no right-channel instance exists, no bus is copied,
+//!   and the engine takes one branch per active voice and segment to learn that.
 //! - **[`StereoMode::Forced`]** sets it for any patch. It is the test and bench hook (no catalogue change, no
-//!   parameter): the 73 goldens render through it in `tests/golden/tests/stereo_path.rs`.
+//!   parameter): the goldens without unison render through it in `tests/golden/tests/stereo_path.rs`.
+//! - **[`StereoMode::Off`]** clears it for any patch: a `wt` with unison then renders its mono mix. It is the mono
+//!   reference "`spread` 0 equals mono on both channels" is measured against.
 //!
 //! Flipping the flag is a recompile (a new plan), never an edit of a running one.
 //!
 //! # What runs when it is set
 //!
-//! 1. **The generators** sum into the left voice bus exactly as before. [`StereoPath::split`] then copies it to the
-//!    right bus for every active voice: a mono source is "the same signal on both channels". **The seam for a stereo
-//!    generator (lane UNI) is wider than `split`:** `split` copies the whole summed left bus once, after all the
-//!    generators, so an `osc` beside a stereo `wt` needs a right output per generator (summed in patch order into the
-//!    right bus), and a right `post` buffer in [`crate::routing`]'s `AudioRoutes` when that `wt` is also a route
-//!    source (docs/dsp/engine.md, "Stereo voice path").
+//! 1. **The generators** sum into the left voice bus exactly as before. A mono generator is "the same signal on both
+//!    channels"; a **stereo generator** (a `wt` with `unison` ≥ 2, [`VoiceProcessorImpl::is_stereo`]) is given a
+//!    right bus too ([`VoiceCx::io_r`]) and makes a different signal there. When the plan has none,
+//!    [`StereoPath::split`] copies the summed left bus to the right once, after all the generators. When it has one,
+//!    the engine sums per channel, in patch order: each generator's left output into the left bus, its right output
+//!    (a mono generator's left output again) into the right bus, so an `osc` beside a stereo `wt` lands on both
+//!    channels as it does in the mono plan. With audio routes, `routing`'s `AudioRoutes` keeps a right `post` buffer
+//!    per stereo generator and sums the same way; **what a route leaving a stereo generator carries is its mono mix**
+//!    (docs/dsp/engine.md, "Stereo voice path").
 //! 2. **Every `voice_fx` module is instantiated twice.** The left instance is the plan's own, running on the left
 //!    bus exactly as in the mono path. The right instance ([`StereoPath::process`]) is built in `compile` from the
 //!    same patch values, reads **the same parameter span** (so one set of knobs, one set of smoothers, one set of
@@ -97,9 +100,10 @@
 //! each of them renders the same bits with the flag forced on. `benches/stereo.rs`: the cost.
 
 use enth_dsp::util::rng::derive;
-use enth_patch::{ModuleInstance, Patch};
+use enth_patch::{ModuleInstance, ModuleKind, Patch};
 
 use crate::module::{Block, NoteState, PrepareCfg, RAMP, VoiceBus, VoiceCx, VoiceIdx, VoiceStart};
+use crate::modules::wt::unison_count;
 use crate::modules::{ModuleImpl, VoiceProcessorImpl};
 use crate::params::VoiceTable;
 use crate::plan::{Slot, pair};
@@ -132,22 +136,29 @@ pub const fn channel_key(module_key: u64, channel: Channel) -> u64 {
 /// How [`compile_with`](crate::plan::compile_with) decides a plan's stereo flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StereoMode {
-    /// The flag is [`patch_needs_stereo`]: clear for every patch until lane UNI.
+    /// The flag is [`patch_needs_stereo`]: set for a patch with an enabled `wt` whose `unison` is 2 or more.
     #[default]
     Auto,
     /// The flag is set whatever the patch holds (tests and benches: the stereo path with mono content).
     Forced,
+    /// The flag is clear whatever the patch holds (tests and benches): a `wt` with unison renders its mono mix.
+    /// It is the mono reference that "`spread` 0 equals mono on both channels" is measured against.
+    Off,
 }
 
-/// Whether `patch` has a module that makes a per-voice stereo signal, so its plan needs the stereo voice path.
+/// Whether `patch` has a module that makes a per-voice stereo signal, so its plan needs the stereo voice path: an
+/// enabled `wt` with `unison` of 2 or more (lane UNI).
 ///
-/// **Always `false` today**: no generator or voice effect produces a stereo voice signal, so every existing patch
-/// takes the mono path unchanged. Lane UNI replaces the body: an enabled `wt` with `unison` ≥ 2. It reads only
-/// structural parameters and enabled flags, a function of the patch alone and never of a running plan: a
-/// non-structural value such as the modulatable `wt.spread` never recompiles, so a flag keyed to it would go stale.
+/// It reads only structural parameters and enabled flags, a function of the patch alone and never of a running plan:
+/// a non-structural value such as the modulatable `wt.spread` never recompiles, so a flag keyed to it would go
+/// stale. A `wt` with `spread` at 0 still sets it: the plan renders both channels, equal bit for bit to the mono
+/// mix.
 #[must_use]
-pub fn patch_needs_stereo(_patch: &Patch) -> bool {
-    false
+pub fn patch_needs_stereo(patch: &Patch) -> bool {
+    patch
+        .generators
+        .iter()
+        .any(|m| m.enabled && m.kind == ModuleKind::Wt && unison_count(&m.values) >= 2)
 }
 
 /// A plan's stereo half: the flag and the right-channel instances of its `voice_fx` chain.
@@ -165,6 +176,7 @@ impl StereoPath {
         let on = match mode {
             StereoMode::Auto => patch_needs_stereo(patch),
             StereoMode::Forced => true,
+            StereoMode::Off => false,
         };
         Self {
             on,
@@ -227,6 +239,7 @@ impl StereoPath {
                 sync_in: None,
                 audio_in: None,
                 pre_level: None,
+                io_r: None,
             });
         }
     }
@@ -443,6 +456,7 @@ mod tests {
                 sync_in: None,
                 audio_in: None,
                 pre_level: None,
+                io_r: None,
             });
         }
     }

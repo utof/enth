@@ -1,6 +1,6 @@
 # Wavetable (`wt`; `enth-dsp::wt`, `enth-engine::modules::wt`)
 
-- **Status: implemented (S2a lane WT, 2026-10-26)**, to lane CAT's F1m table below; unison (`unison`, `detune`, `blend`, `spread`) is lane UNI's and is inert here ([Unison](#unison-lane-uni)).
+- **Status: implemented (S2a lane WT, 2026-10-26)**, to lane CAT's F1m table below; **unison (`unison`, `detune`, `blend`, `spread`) implemented by lane UNI (2026-10-26)** on `wide` lanes through lane SVP's stereo voice path ([Unison](#unison-lane-uni)).
 - Kind `wt`, discriminant 8, section `generators`, id prefix `wt` (wt1, wt2…), rate voice. Fixed and persisted from F0m; **still hidden** from the Add menu, `enth modules` and the generator until lane INT-S2a clears its flag (`ModuleSpec::hidden` is untouched).
 - A wavetable oscillator on phase-read waves: five generated band-limited tables, a frame `position`, five phase `warp`s, phase modulation (`pm`, `pm_index`) and amplitude or ring modulation (`am`) from other generators through lane RTE's audio routes, self-`feedback`, and `semi`, `fine`, `level` and three phase modes. It also feeds audio routes itself (a silent `level` 0 `wt` is an FM operator).
 - Sources: Chowning, "The synthesis of complex audio spectra by means of frequency modulation", JAES 21(7), 1973 (the Bessel sidebands); Tomisawa's self-feedback FM (US patent 4,249,447, 1981, expired) and Schottstaedt's FM notes (the two-sample average); research report 05 §1 (PM, AM, ring modulation, feedback) and report 06 §3.1 (the audio-route contract) (`_local/sessions/2026-10-25-s2-depth-and-fast-training/`); Kleimola et al., "Phaseshaping oscillator algorithms for musical sound synthesis", SMC 2010 (phase warps). No code is ported; the table layout and the 4-point Hermite read are `osc`'s ([osc.md](osc.md#wavetables); stmlib's `InterpolateHermite` is already in `THIRD_PARTY_NOTICES.md`), shared through `enth-dsp::wavetable`.
@@ -175,11 +175,94 @@ For reference `osc`'s table wave costs 88.8 per sample on a frame and 107.9 betw
 
 ### Goldens
 
-Fourteen cases in `tests/golden/cases/wt-*.toml`: `wt-pm-fm`, `wt-am`, `wt-ring-mod` and `wt-fm-chain` (the audio routes: osc → `wt.pm`, osc → `wt.am`, an operator that is itself a `wt` with `level` 0), `wt-position` (**its hash equals `osc-table-basic`'s**: a plain `wt` reads the osc table wave bit for bit), `wt-tables-fm`, `wt-tables-fm-octave`, `wt-tables-formant`, `wt-tables-metal`, `wt-warps-smooth`, `wt-warps-jump`, `wt-feedback`, `wt-phase-modes` and `wt-automation` (smoothed parameters ramping). The 73 existing cases do not move.
+Fourteen cases in `tests/golden/cases/wt-*.toml`: `wt-pm-fm`, `wt-am`, `wt-ring-mod` and `wt-fm-chain` (the audio routes: osc → `wt.pm`, osc → `wt.am`, an operator that is itself a `wt` with `level` 0), `wt-position` (**its hash equals `osc-table-basic`'s**: a plain `wt` reads the osc table wave bit for bit), `wt-tables-fm`, `wt-tables-fm-octave`, `wt-tables-formant`, `wt-tables-metal`, `wt-warps-smooth`, `wt-warps-jump`, `wt-feedback`, `wt-phase-modes` and `wt-automation` (smoothed parameters ramping). The 73 existing cases do not move. The seven `wt-unison-*` cases are lane UNI's ([Unison](#goldens-and-the-taste-check)).
 
 ## Unison (lane UNI)
 
-`unison`, `detune`, `blend` and `spread` are read by nothing: any `unison` renders as 1 (a test, `unison_is_inert_until_lane_uni`, pins that two patches differing only in these render the same bits). Lane UNI inherits the per-voice `[Voice; MAX_VOICES]` state in `modules/wt.rs`, the `pre_level` copy (mono, per voice) and the start-phase function, and replaces them with its `f32x8` copies.
+`unison` (1–8) copies of the oscillator per voice, detuned evenly across ±`detune` cents, the side copies at `blend` against the centre, panned across `spread`. The copies run on `wide`'s `f32x8` lanes, summed in a fixed order; with `unison` ≥ 2 the patch runs lane SVP's stereo voice path and the `wt` writes both channels. `unison` 1 is the plain oscillator (the plain `Voice` path, exactly the render above). Code: `crates/enth-dsp/src/wt/unison.rs` (the kernel, with its own module docs), `crates/enth-engine/src/modules/wt.rs` (the module), the engine seam in `docs/dsp/engine.md` ("Stereo voice path", "Audio routes between generators"). Sources: research report 05 §7 (the supersaw, the reese) and report 06 §3.2 (the stereo voice path, `_local/sessions/2026-10-25-s2-depth-and-fast-training/`); no code is ported (the detune law, the power normalisation and the constant-power spread are textbook).
+
+### What a copy is
+
+Lane `k` of a `UnisonVoice` is **exactly a plain `Voice`**: the same phase accumulator, feedback history, mip-level tracker and cross-fade, and the same table read through the same warp, with its own phase increment (the centre's times the detune ratio of the copy, clamped to 0.45 of the sample rate as for one oscillator) and its own start phase. What the copies share: the phase-modulation block (one routed audio input drives all of them), the warp, the position (so the frame pair), the feedback amount and the table. The lanes' operations are the IEEE `f32` `+ − × ÷`, `min`/`max`, `floor`, compares and selects, in the order `Voice::render` does them, so **a lane equals a plain `Voice` bit for bit** (unit tests in `unison.rs`: six warps × 2…8 copies × {PM, feedback, a moving position} × random pitches and mixes, including the mip-level cross-fades; the table read is a gather done lane by lane, `wide` has none). The start phase of copy `k` does not depend on how many copies there are (the detune position and the weight do, by the law below).
+
+### The mix
+
+| Law | Definition |
+| --- | --- |
+| Detune | copy `k` of `n` sits at `pos_k = (2k − (n − 1)) / (n − 1)` in [−1, 1], `pos_k · detune` cents from the centre (two copies at ±`detune`, seven at 0, ±⅓, ±⅔, ±1 of it); ratio `2^(cents/1200)` through the pinned `libm` |
+| Blend | the copies nearest the centre (the middle one for odd `n`, the middle two for even `n`) have weight 1, the others `blend`/100; with two copies there is no side copy and `blend` does nothing |
+| Level | every gain divided by `sqrt(Σ weight²)`: the copies are uncorrelated, so their powers add and the loudness is the same for any count and blend |
+| Spread | copy `k` is panned to `spread · pos_k` with a constant-power law scaled to **1 at the centre**: `(√2·cos θ, √2·sin θ)`, `θ = (pan + 1)·π/4`. At `spread` 0 both gains are exactly 1.0; at 100 % the outermost copies are exactly `(√2, 0)` and `(0, √2)`; the right half is the exact mirror of the left half, so a symmetric voice is symmetric to the last bit |
+
+`detune`, `blend` and `spread` are smoothed over 10 ms like the other modulatable parameters: the module takes each copy's phase increment and gain pair at the two ends of the 32-sample segment and ramps them linearly across it (the increment like the pitch). A mix that has not moved comes from a one-entry cache per voice (a key of the count and the three values' bits), so a steady state does no `exp2` per segment.
+
+**The sum.** A channel is `Σ_k y_k · c_k(t)` added in lane order from lane 0, starting from `+0.0`: `((((0 + t0) + t1) + t2) + …`. The horizontal sum never uses `reduce_add` (its order depends on the target): the products go through `to_array()` and are added one by one. The unused lanes hold a gain of exactly 0 and a value of exactly `+0.0`, so adding them changes nothing: one loop-free sum over all eight lanes equals the sum over the `n` copies bit for bit (`the_horizontal_sum_adds_in_lane_order_from_lane_zero_over_the_copies`). The `wide` subset is listed in the module docs of `unison.rs`; nothing from `clippy.toml`'s ban list (fused operations, `recip`, the polynomial transcendentals, `reduce_add`, `round_int`) is used, so the six-target golden sees the same bits.
+
+### Stereo: the flag, spread 0, the voice pan
+
+- **The flag** (lane SVP's): an enabled `wt` with `unison` ≥ 2, read from structural parameters only (`stereo::patch_needs_stereo`, `modules::wt::unison_count`). `spread` is modulatable, so it is not in the flag; **`spread` 0 on a stereo plan equals mono on both channels, bit for bit** (`spread_zero_equals_mono_on_both_channels_for_every_count_and_phase_mode`, and with neighbours, routes, effects, pans and steals): the two gains are exactly 1.0 at 0, so each channel is the mono sum. `StereoMode::Off` runs any patch on the mono path (a unison `wt` writes its mono mix to its one output), the reference those tests compare with.
+- **The voice `pan`** is lane SVP's constant-power balance of the two channels (engine.md): a wide voice at pan −100 keeps only its left channel, at +100 only its right (`a_wide_voice_is_balanced_by_the_pan_and_a_hard_pan_keeps_only_one_side`).
+- **Widening is symmetric.** A centred voice (key 48, seven copies across ±30 cents, one second) widens with `spread` without leaning: the correlation of the two channels falls strictly with the spread and the two sides carry the same power within beating noise (the sign of the small imbalance changes with key and count: noise, not bias).
+
+| `spread` | 0 % | 10 % | 25 % | 50 % | 75 % | 100 % |
+| --- | --- | --- | --- | --- | --- | --- |
+| Correlation of L and R | 1.0000 | 0.9947 | 0.9672 | 0.8724 | 0.7261 | 0.5445 |
+| Power L/R | 0.000 dB | +0.014 | +0.035 | +0.073 | +0.114 | +0.160 |
+
+Two copies at 100 % are hard left and right, two unrelated signals: correlation −0.008, +0.011 dB (`spread_widens_a_centred_voice_symmetrically` holds the bounds: strictly falling, imbalance under 0.35 dB, correlation under 0.6 at 100 % with seven copies, under 0.15 in magnitude with two).
+
+### Start phases and seeds
+
+Copy `k` draws its start phase from a stream that is a function of the seed rules only, **never of a parameter value** (a drawn phase for copy `k` does not depend on `unison`, `detune`, `blend` or `spread`; the lanes beyond the count are drawn too):
+
+| `phase_mode` | Start phase of copy `k` | Same every note? |
+| --- | --- | --- |
+| `free` | `derive(voice_seed, k)`: the render seed, the module id and the note index, as one oscillator's `free` | no |
+| `seeded` | `derive(seeded_voice_seed(seed, module_key, note_index), k)`: the patch's own `seed` and the note | no (per note), the same every render |
+| `reset` | `derive(module_key, k)`: the module id and the index, then the `phase` knob turns **all copies together** (adds `phase`/360 and wraps) | yes |
+
+In `reset` mode the copies do not start at one phase (that would be a thump of seven aligned waves at every note on): they start at a fixed, repeatable spread of phases. **Decision, to record against the catalogue text** ("the start phase in reset mode"): `phase` keeps its meaning as the rotation of the whole cluster, which is what an FM carrier and its modulator want from it; the copies' relative phases are the module id's. No mode starts the copies aligned (see Limitations).
+
+### What an audio route carries
+
+**The mono mix of the copies** — `Σ_k y_k · g_k`, the same sum that is the left channel at `spread` 0 — taken after the AM gain and before the `level` ramp (the pre-level point of one oscillator), for every active voice, whatever the spread, the voice pan and the stereo flag are. Consequences, each a test (`a_route_leaving_a_stereo_wt_carries_the_mono_mix_whatever_the_spread`, `the_route_signal_is_the_mono_mix_after_am_and_before_level`): a modulator's route is the same whether the plan runs the stereo path or not and whether the spread is 0 or 100; `level` 0 makes a silent unison operator that still modulates; the carrier of such a route (a plain `wt` with `pm`) is the same on both channels. **Why not the left channel or the mean of the two:** the pan is a placement, not part of the wave, and PM/AM want the wave; the left channel would make a modulator's sound change when the spread moves. A *carrier* `wt` with unison gets one `pm` block (and one `am` block) for all its copies.
+
+An `osc` (or any mono generator) beside a stereo `wt` lands on both channels as it does in mono (`an_osc_beside_a_stereo_wt_lands_on_both_channels_as_it_does_in_mono`: the plain loop and the audio-route path, in either patch order), and a filter after a stereo `wt` runs once per channel (lane SVP's twin instances).
+
+### Plan swaps, real time, tails
+
+- A change of the copy count is a structural edit (the plan crossfades over 256 frames; the state is carried: one oscillator → copies starts every copy at the oscillator's phase, copies → one continues from the centre copy); an edit of `detune`, `blend` or `spread` is not (instant, the copies keep going; `tests/wt_unison_swap.rs`). A swap to an equal plan changes no bit.
+- **No allocation:** `process` and the swaps under `assert_no_alloc`, with every voice stolen and a stereo `wt` in audio routes; 30 count flips with a return ring of one. The per-voice state is a fixed array of `UnisonVoice` (the lanes) next to the plain `Voice`s.
+- **Subnormals:** none after a 40 s release tail (`wt_unison_tail.rs`: the lanes' phase accumulators and feedback histories are inspected as well as the output), the render is identical under every FTZ mode, **latency 0** (the first sample is every copy's table at its start phase).
+
+### Aliasing, measured
+
+The standard measure (report 02: the power outside the harmonics over the power on them; `enth_dsp::alias`) needs one fundamental, and a detuned unison has none, so two measurements (`tests/wt_unison_alias.rs`; `cargo test --release -p enth-engine --test wt_unison_alias -- --nocapture` prints the tables; dB, 32,768 samples after the attack):
+
+- **Detune 0:** every copy plays the key's pitch (only the start phases differ), the sum is periodic and the measure applies to the whole render. Unison 2 and 7 against a single `wt`, every table at the saw-like and square frames, keys 24, 48, 72, 84, 96 and 105: worst single −93.4 dB, worst unison **−91.4 dB** (`metal`, key 72, seven copies; the measure's own floor is about −94 dB), inside the bound −90 dB recorded for one `wt` above; cell by cell the unison is within ±2 dB of the single, the sign of the difference is mixed (the aliasing powers of the copies add and so do their signal powers).
+- **Detune 100 cents:** the outermost copies are the worst case for the mip-level choice (the highest copy has the fewest partials under the limit). Each copy is a plain voice at its own pitch to the last bit (the lanes' tests), so its aliasing is a single `wt`'s at that pitch; a single `wt` at the key −100/0/+100 cents is measured across the same grid: worst **−93.0 dB** (`metal`, key 72, −100 cents). The sum of copies at different frequencies has its aliasing and its signal powers add, so its ratio lies between the copies' ratios and cannot exceed the worst of them.
+
+So copies alias no worse than a single `wt`: the worst cell of any measurement is −91.4 dB against the −90 dB bound, and the phase-modulated, warped and fed-back paths are the single `wt`'s (the same code per lane).
+
+### Unison cost, measured
+
+Callgrind instructions (`cargo xtask bench --bench wt`, `benches/wt.rs`; 1 s at 48 kHz, 16 voices, held chord of `common::prepare`; detune 20 cents, blend 100 %, spread 50 %; the `wt` is `wt2`, so `osc1` and the envelopes are in every number), over the `engine` bench's 37,326,575 for the same 16 voices (this branch; main's is 37,290,522):
+
+| Case | Instructions | Budget (+10 %) | Per frame | Per sample and voice over `engine` |
+| --- | --- | --- | --- | --- |
+| 2 copies (the reese) | 260,666,680 | 286,734,000 | 5,431 | 290.8 |
+| **7 copies (the supersaw)** | **314,516,960** | 345,969,000 | **6,552** | 360.9 (51.6 per copy) |
+| 7 copies, PM from `osc1` | 427,763,006 | 470,540,000 | 8,912 | 508.4 |
+| 7 copies, every optional path (formant table moving, bend warp, PM, AM, 50 % feedback) | 615,324,682 | 676,858,000 | 12,819 | 752.6 |
+| 8 copies, every optional path | 635,368,406 | 698,906,000 | 13,237 | 778.7 |
+
+**16 voices × 7 copies, the brief's number: 6,552 instructions per frame with the engine skeleton and an `osc` in it (5,775 for the `wt` alone) against G1's 12,000 per frame** — 55 % of it. Seven plain `wt`s cost 7 × 97.9 = 685 per sample and voice, so the lanes are 1.9× cheaper (the plain `wt` is 112,494,140 for 16 voices on this branch); the stereo path adds the right channel's mix and balance. The cost is nearly flat in the count: the lanes compute eight copies whatever `unison` is, so 2 copies cost 290.8, more than two plain `wt`s (196) — **the reese is the one case where a scalar path would win**, and it is not built (the lanes equal plain `Voice`s bit for bit, so adding it later changes no sound). The worst case, eight copies with every optional path on 16 voices, is 13,237 per frame: above G1's bound by itself, and G2's reference patch (lane G2B) would not use it.
+
+The engine seam costs the existing paths almost nothing against main (`wt` plain 16 voices 112,494,140 vs 112,263,005: +0.2 %; with PM 121,792,982 vs 121,614,216: +0.15 %; everything on 170,783,237 vs 170,628,380: +0.1 %; one voice 8,626,495 vs 8,552,995: +0.9 %, a fixed ~24 instructions per segment; the `engine` bench 16 voices +0.1 %). The first version of the lanes was no faster than scalar copies (94.5 instructions per copy-sample); the index math on `i32x8`, 16-byte tap loads with two `f32x4` transposes, a loop-free sum and skipping the wrap without modulation brought it to 51.6.
+
+### Goldens and the taste check
+
+Seven cases in `tests/golden/cases/wt-unison-*.toml`: `wt-unison-supersaw` (7 copies, the saw frame, a two-voice chord), `wt-unison-reese` (2 copies, detune automated, spread 0: **equals the mono reference on both channels**, checked in `tests/golden/tests/stereo_path.rs`), `wt-unison-reese-wide` (the same at spread 100 % and automated to 0), `wt-unison-phase-modes` (4 copies in `reset`, `free` and `seeded`), `wt-unison-routes` (a stereo `wt` beside an `osc`, a PM carrier of the `osc` and the PM source of a plain `wt`), `wt-unison-full` (8 copies with the formant table, bend warp, feedback, PM, AM, moving position and spread) and `wt-unison-chord` (5 copies, `free`, voice pan, polyphony 3, a release tail). The 87 earlier cases do not move. WAVs (7-copy supersaw on a three-note chord, a 2-copy reese with its detune slowly swept by an LFO, the same reese with spread 100 %), rendered with `enth render`, never played: `~/code/enth-scratch/s2/uni/wav/` (patches in `../patches/`); the reese pair is mono (correlation 1.0000) and wide (0.08).
 
 ## Notes for lane INT-S2a, S2b and the coordinator
 
@@ -195,7 +278,12 @@ Fourteen cases in `tests/golden/cases/wt-*.toml`: `wt-pm-fm`, `wt-am`, `wt-ring-
 - Feedback above about 50 % and PM at an index above 2.5 alias on notes above C5 or so (the tables above); warps with jumps (`quantize`, `sync` at a non-integer ratio) and corners (`asymmetric`, `squeeze`) alias like a naive wave. None of them is band-limited by a BLEP.
 - Feedback 100 % is 2 radians (not π): the sine never rings, a brighter table does.
 - The mip level steps cross-fade over one 32-sample segment; a modulator whose slope grows faster than that can be heard as a brief brightness change.
-- Unison is inert (lane UNI).
+- **Unison costs the same for 2 copies as for 8** (the lanes compute eight): the reese is 2.7× the price of a plain `wt` and more than two plain `wt`s would cost ([Unison cost](#unison-cost-measured)). A scalar path for 2–3 copies would be bit-identical (the lanes equal plain `Voice`s) and cheaper; it is not built.
+- **No `phase_mode` starts the copies aligned**: `reset` starts them at a repeatable spread of phases (rotated together by `phase`), `free` and `seeded` at random ones. A thump of aligned copies at the attack, as some synths have, is not available.
+- **Unison shares one phase-modulation block, one warp, one position and one feedback amount** among the copies; per-copy feedback *state* is separate (each copy is its own feedback loop), but a modulator cannot treat the copies differently (no per-copy PM, no "random position per copy").
+- **`blend` does nothing with 2 copies** (no side copy beside two centre ones) and the stereo spread of 2 copies is hard left/right at 100 %, whatever the detune.
+- **A route leaving a unison `wt` is mono** (the mix before the spread); a stereo route would need a stereo `AudioRoutes` (not asked for).
+- **Spread is a pan of the copies; the voice effects after it run twice** (lane SVP's twin instances), so a heavy `voice_fx` chain doubles in cost on a unison patch.
 
 ## Files
 
@@ -203,13 +291,16 @@ Fourteen cases in `tests/golden/cases/wt-*.toml`: `wt-pm-fm`, `wt-am`, `wt-ring-
 | --- | --- |
 | Parameter table | `crates/enth-patch/src/catalogue/wt.rs` (lane CAT's F1m table, [above](#parameters-lane-cat-f1m)) |
 | DSP core | `crates/enth-dsp/src/wt.rs` (the tables, the warps, the voice); the shared generator is `crates/enth-dsp/src/wavetable.rs` |
+| Unison kernel | `crates/enth-dsp/src/wt/unison.rs` (the lanes, the mix; its module docs and unit tests) |
 | Engine module | `crates/enth-engine/src/modules/wt.rs` |
-| Tests | `crates/enth-engine/tests/wt.rs` (closed forms, aliasing, the contract), the unit tests in `crates/enth-dsp/src/wt.rs` |
+| Tests | `crates/enth-engine/tests/wt.rs` (closed forms, aliasing, the contract), the unit tests in `crates/enth-dsp/src/wt.rs`; lane UNI's: `tests/wt_unison.rs` (the flag, spread 0 = mono, widening, routes, neighbours), `wt_unison_swap.rs` (swaps, allocation), `wt_unison_tail.rs` (40 s tail, FTZ), `wt_unison_alias.rs` (aliasing tables), the unit tests in `unison.rs` and in `modules/wt.rs` (seeds), `tests/golden/tests/stereo_path.rs` |
 | Instruction budget | `crates/enth-engine/benches/wt.rs` |
-| Golden cases | `tests/golden/cases/wt-*.toml` |
+| Golden cases | `tests/golden/cases/wt-*.toml` (the seven `wt-unison-*` are lane UNI's) |
 
 ## Acceptance (from phase-s2.md, every module lane)
 
 The same bits on six targets (CI's golden workflow checks them after merge; locally `cargo xtask golden`: 87 cases ok on x86-64 Linux, the 73 existing unchanged); FTZ-independent (`the_render_is_the_same_under_every_ftz_mode`); zero subnormals after a 40 s tail (`a_40_s_release_tail_has_no_subnormals_and_every_voice_ends`); latency 0; a budget of the measured count plus 10 % (above); two instances keep separate state (`a_wt_as_a_source_feeds_another_wt_and_the_two_keep_separate_state`), a self-route is refused (`a_wt_routed_to_itself_is_refused`, RTE's `audio_cycle`); `mix` does not apply (a generator); aliasing measured spectrally (above), the bound recorded in the test and here. No port, so no `THIRD_PARTY_NOTICES.md` entry.
 
 **WT's own row** ([phase-s2.md](../phase-s2.md#acceptance-per-lane)): the audio-route goldens (`wt-pm-fm`, `wt-am`, `wt-fm-chain`, `wt-ring-mod`), the index and feedback sweeps inside the recorded bound ([Aliasing](#aliasing-measured-and-bound)), and the closed-form spectral checks ([Measured](#closed-form-spectral-checks-cratesenth-enginetestswtrs)).
+
+**UNI's own row** ([phase-s2.md](../phase-s2.md#acceptance-per-lane)): *lanes equal a scalar reference bit for bit* (`the_lanes_equal_plain_voices_bit_for_bit_for_every_warp_count_and_modulation` in `unison.rs`: plain `Voice`s, a scalar mix and the same fixed-order sum, six warps and every count; the six-target hash is the `wt-unison-*` goldens, which use only `wide`'s exact subset, and `cargo xtask wasm-check` renders them on `wasm32-wasip1`); *a sub-voice's seed never depends on a parameter value* (`a_copys_start_phase_never_depends_on_a_parameter_value` and `the_start_phases_follow_the_seed_rules_and_nothing_else` in `modules/wt.rs`, over every other knob and all three phase modes); *16 voices × 7 inside G2's budget* (6,552 instructions per frame including the skeleton against G1's 12,000, [Unison cost](#unison-cost-measured)); *spread 0 equals mono* (both channels, bit for bit, every count and phase mode, with neighbours, routes, effects and steals). Also: `unison` 1 renders exactly as `wt` without unison (`with_unison_off_detune_blend_and_spread_do_nothing`), copies alias no worse than a single `wt` ([Aliasing](#aliasing-measured)), and `ENGINE_VERSION` is not bumped (the coordinator's, as for the rest of S2a).

@@ -1,0 +1,21 @@
+description = "WT unison: the reese: two copies of the basic table at position 66.67 % (the saw frame), detune from 6 to 30 cents at 0.4 s (smoothed over 10 ms: the beating speeds up), spread 0 % (both channels carry the same samples), on E1, level 70 %; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 40, velocity = 1.0, on_s = 0.0, off_s = 0.7 },
+]
+automation = [
+    { time_s = 0.4, addr = "wt1.detune", value = 30.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "wt1", kind = "wt", params = { position = 66.67, unison = 2, detune = 6, blend = 100, spread = 0, level = 70 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

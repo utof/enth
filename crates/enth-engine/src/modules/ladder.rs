@@ -230,6 +230,7 @@ mod tests {
                 sync_in: None,
                 audio_in: None,
                 pre_level: None,
+                io_r: None,
             });
             self.settle();
             self.io[0]

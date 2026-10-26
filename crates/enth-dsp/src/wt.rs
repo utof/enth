@@ -64,6 +64,9 @@ use crate::wavetable::{
     level_for, row_in,
 };
 
+mod unison;
+pub use unison::{LANES, Mix, Out, UnisonSegment, UnisonVoice};
+
 /// The largest `f32` below 1.
 const BELOW_ONE: f32 = 0.999_999_94;
 /// The index of the last frame of the `fm` tables, in radians.
@@ -520,6 +523,63 @@ impl<'a> Reader<'a> {
                 dp,
             } => table.cursor(*level, *p0 + *dp * w).read(phase),
         }
+    }
+}
+
+/// What a segment works out before its sample loop, for each copy of a unison voice ([`unison`]): the phase
+/// modulation in cycles and its steepest step, the warp (the identity at amount 0) with its primary parameter at the
+/// two ends, and the warp's steepest read-rate gain. [`Voice::render`] works the same out inline, step for step (kept
+/// apart: calling this from it costs about 1 % of the plain oscillator's instructions); the unison tests hold the
+/// two to the same bits.
+struct Prologue<const N: usize> {
+    off: [f32; N],
+    pm_slope: f32,
+    warp: Warp,
+    x: [f32; 2],
+    steepest: f32,
+}
+
+/// The [`Prologue`] of `s`; `last_off` is the voice's last phase-modulation offset (read, then replaced).
+#[inline(always)]
+fn prologue<const N: usize>(s: &Segment<'_, N>, last_off: &mut f32) -> Prologue<N> {
+    // 1. The phase modulation in cycles, and its steepest step across the segment.
+    let mut off = [0.0f32; N];
+    let mut pm_slope = 0.0f32;
+    if let Some(pm) = s.pm {
+        let (g0, dg) = (s.pm_gain[0], s.pm_gain[1] - s.pm_gain[0]);
+        let mut last = *last_off;
+        for i in 0..N {
+            let o = (g0 + dg * Ramp::<N>::W[i]) * pm[i];
+            off[i] = o;
+            pm_slope = pm_slope.max((o - last).abs());
+            last = o;
+        }
+        *last_off = flush(last);
+    } else {
+        *last_off = 0.0;
+    }
+
+    // 2. The warp's constants at the two ends.
+    let warp = if s.warp_amount[0] == 0.0 && s.warp_amount[1] == 0.0 {
+        Warp::Off
+    } else {
+        s.warp
+    };
+    let x = [
+        warp.primary(s.warp_amount[0]),
+        warp.primary(s.warp_amount[1]),
+    ];
+    let steepest = if warp == Warp::Off {
+        1.0
+    } else {
+        warp.slope(x[0]).max(warp.slope(x[1]))
+    };
+    Prologue {
+        off,
+        pm_slope,
+        warp,
+        x,
+        steepest,
     }
 }
 

@@ -1,0 +1,27 @@
+description = "WT unison: every optional path with eight copies on the formant table: position 40 % moving to 80 % at 0.25 s, a bend warp at 60 %, feedback 40 %, phase modulation from osc1 (sine at +12 st, level 0) at depth 50 % and amplitude modulation from it at depth 40 % (am 100 %), detune 35 cents, blend 70 %, spread 100 % moving to 20 % at 0.35 s, on A4; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.6
+
+[source]
+kind = "patch"
+notes = [
+    { key = 69, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+]
+automation = [
+    { time_s = 0.25, addr = "wt1.position", value = 80.0 },
+    { time_s = 0.35, addr = "wt1.spread", value = 20.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "sine", semi = 12, level = 0, phase_mode = "reset", phase = 0 } },
+    { id = "wt1", kind = "wt", params = { table = "formant", position = 40, warp = "bend", warp_amount = 60, feedback = 40, pm_index = 1, am = 100, unison = 8, detune = 35, blend = 70, spread = 100, level = 50 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+routes = [
+    { src = "osc1", dst = "wt1.pm", depth = 50 },
+    { src = "osc1", dst = "wt1.am", depth = 40 },
+]

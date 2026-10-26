@@ -2,7 +2,7 @@
 //! and feedback *are*, measured against closed forms, not against a previous render (a golden proves "same as
 //! before", not "correct"); the aliasing sweeps with the bounds `docs/dsp/wt.md` records; and the module contract
 //! (separate state, host-block independence, a self-route refused, a 40 s tail with no subnormals, FTZ-independent
-//! bits, unison inert).
+//! bits, the unison knobs inert while `unison` is 1).
 //!
 //! The rig: a modulator `osc1` (a sine at `level` 0, so it is only heard through the route) and a carrier `wt1`, under
 //! a gate envelope, so the amplitude is constant. Both play the same key; the modulator's `semi` sets the frequency
@@ -651,17 +651,19 @@ fn a_wt_routed_to_itself_is_refused() {
 }
 
 #[test]
-fn unison_is_inert_until_lane_uni() {
-    let one = lone(&[(WtParam::Feedback, 30.0)]);
-    let eight = lone(&[
+fn with_unison_off_detune_blend_and_spread_do_nothing() {
+    // `unison` 1 is the single oscillator whatever the other unison knobs say (lane UNI's tests do the copies).
+    let plain = lone(&[(WtParam::Feedback, 30.0)]);
+    let knobs = lone(&[
         (WtParam::Feedback, 30.0),
-        (WtParam::Unison, 8.0),
+        (WtParam::Unison, 1.0),
         (WtParam::Detune, 80.0),
         (WtParam::Blend, 40.0),
         (WtParam::Spread, 100.0),
     ]);
-    let (l1, r1, _) = render(&one, &[note(55, 0, 6_000)], 8_000, 512, SEED);
-    let (l8, r8, _) = render(&eight, &[note(55, 0, 6_000)], 8_000, 512, SEED);
+    let (l1, r1, _) = render(&plain, &[note(55, 0, 6_000)], 8_000, 512, SEED);
+    let (l8, r8, _) = render(&knobs, &[note(55, 0, 6_000)], 8_000, 512, SEED);
+    assert!(l1.iter().any(|x| x.abs() > 0.1));
     assert_eq!(bits(&l1), bits(&l8));
     assert_eq!(bits(&r1), bits(&r8));
 }
