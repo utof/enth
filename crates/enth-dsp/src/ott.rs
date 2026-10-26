@@ -68,7 +68,7 @@ pub const LIFT_CEILING_ABOVE_THRESHOLD_DB: f32 = 20.0;
 const DEFAULT_SAMPLE_RATE: f32 = 48_000.0;
 
 /// One band's constants at `time` 100 %: lane OTT's, since no public source gives the preset's numbers
-/// (`docs/dsp/ott.md`, "Constants and evidence").
+/// (`docs/dsp/ott.md`, "The bands' constants, and where they came from").
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BandSpec {
     /// Downward threshold, dBFS of the band's detector level.

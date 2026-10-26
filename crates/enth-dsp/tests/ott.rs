@@ -1059,6 +1059,9 @@ fn a_note_after_a_gap_is_not_thrown_far_over_its_input() {
                 });
                 let peak = db(step_peak(&p, hz, from_db, to_db));
                 let allowed = flat.max(ceiling_db) + 0.5;
+                eprintln!(
+                    "band {band} {hz} Hz depth {depth}: {from_db} -> {to_db} dBFS: peak {peak:+.2}, depth 0 {flat:+.2}, ceiling {ceiling_db:+.1}"
+                );
                 assert!(
                     peak <= allowed,
                     "band {band} {hz} Hz depth {depth}: {from_db} -> {to_db} dBFS peaks at {peak:+.2} dBFS, over {allowed:+.2} (flat split {flat:+.2})"
