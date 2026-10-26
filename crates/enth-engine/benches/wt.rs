@@ -98,22 +98,23 @@ fn unison_full(count: u32) -> common::Prepared {
 // avoids `floor` (a library call on baseline x86-64) when the read phase is within a cycle of [0, 1): 135,134,973 ->
 // 112,263,005 for plain_16v.
 //
-// The unison cases (lane UNI, same date and setup; 16 voices, so 768,000 voice-samples) measured 260,023,164
-// (unison2_plain_16v), 313,873,444 (unison7_plain_16v), 430,804,990 (unison7_pm_16v), 618,366,666 (unison7_full_16v)
-// and 638,410,390 (unison8_full_16v). The supersaw, 16 voices x 7 copies, is 6,539 instructions per frame with the
-// engine skeleton and `osc1` in it (5,759 for the `wt` alone, over the `engine` bench's 37,451,059 with the lane
-// changes) against G1's 12,000 per frame: 359.9 per sample and voice, 51.4 per copy. The lanes always compute eight
-// copies, so most of the cost is fixed: the reese (2 copies) is 289.8 per sample and voice.
+// The unison cases (lane UNI, same date and setup; 16 voices, so 768,000 voice-samples) measured 260,666,680
+// (unison2_plain_16v), 314,516,960 (unison7_plain_16v), 427,763,006 (unison7_pm_16v), 615,324,682 (unison7_full_16v)
+// and 635,368,406 (unison8_full_16v), over the `engine` bench's 37,326,575. The supersaw, 16 voices x 7 copies, is
+// 6,552 instructions per frame with the engine skeleton and `osc1` in it (5,775 for the `wt` alone) against G1's
+// 12,000 per frame: 360.9 per sample and voice, 51.6 per copy. The lanes always compute eight copies, so most of the
+// cost is fixed: the reese (2 copies) is 290.8 per sample and voice. The unison seam in the engine cost the plain
+// cases +0.9 % (plain_1v) and +0.1-0.2 % (the 16-voice cases) over the numbers above, which were measured on main.
 #[library_benchmark]
 #[bench::plain_1v(args = (1,), setup = plain, config = common::budget(9_409_000))]
 #[bench::plain_16v(args = (16,), setup = plain, config = common::budget(123_490_000))]
 #[bench::pm_16v(args = (16,), setup = pm, config = common::budget(133_776_000))]
 #[bench::full_16v(args = (16,), setup = full, config = common::budget(187_692_000))]
-#[bench::unison2_plain_16v(args = (2,), setup = unison_plain, config = common::budget(286_026_000))]
-#[bench::unison7_plain_16v(args = (7,), setup = unison_plain, config = common::budget(345_261_000))]
-#[bench::unison7_pm_16v(args = (7,), setup = unison_pm, config = common::budget(473_886_000))]
-#[bench::unison7_full_16v(args = (7,), setup = unison_full, config = common::budget(680_204_000))]
-#[bench::unison8_full_16v(args = (8,), setup = unison_full, config = common::budget(702_252_000))]
+#[bench::unison2_plain_16v(args = (2,), setup = unison_plain, config = common::budget(286_734_000))]
+#[bench::unison7_plain_16v(args = (7,), setup = unison_plain, config = common::budget(345_969_000))]
+#[bench::unison7_pm_16v(args = (7,), setup = unison_pm, config = common::budget(470_540_000))]
+#[bench::unison7_full_16v(args = (7,), setup = unison_full, config = common::budget(676_858_000))]
+#[bench::unison8_full_16v(args = (8,), setup = unison_full, config = common::budget(698_906_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }

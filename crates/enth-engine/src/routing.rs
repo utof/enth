@@ -512,7 +512,7 @@ impl AudioRoutes {
         active: &[VoiceIdx],
         sync_master: Option<usize>,
         voice: &mut VoiceBus,
-        mut voice_r: Option<&mut VoiceBus>,
+        voice_r: Option<&mut VoiceBus>,
         sync: &mut SyncBus,
         mut process: impl FnMut(usize, Ports<'_>),
     ) {
@@ -577,13 +577,16 @@ impl AudioRoutes {
                 },
             );
         }
-        for (g, bus) in post.iter().enumerate() {
+        for bus in post.iter() {
             for &v in active {
                 for (acc, x) in voice[v].iter_mut().zip(&bus[v]) {
                     *acc += *x;
                 }
             }
-            if let Some(right) = voice_r.as_deref_mut() {
+        }
+        // The right channel is a sum of its own, in the same patch order (the two never mix).
+        if let Some(right) = voice_r {
+            for (g, bus) in post.iter().enumerate() {
                 let bus_r = if stereo && wide[g] { &post_r[g] } else { bus };
                 for &v in active {
                     for (acc, x) in right[v].iter_mut().zip(&bus_r[v]) {

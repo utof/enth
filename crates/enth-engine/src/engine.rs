@@ -1238,7 +1238,9 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     let wide_any = stereo_on && generators.iter().any(|s| s.module.is_stereo());
     for &v in active {
         buses.voice[v] = [0.0; SEG];
-        if wide_any {
+    }
+    if wide_any {
+        for &v in active {
             buses.voice_r[v] = [0.0; SEG];
         }
     }
@@ -1299,13 +1301,16 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             for (acc, x) in buses.voice[v].iter_mut().zip(&buses.scratch[v]) {
                 *acc += *x;
             }
-            if wide_any {
-                let right = if wide {
-                    &buses.scratch_r[v]
-                } else {
-                    &buses.scratch[v]
-                };
-                for (acc, x) in buses.voice_r[v].iter_mut().zip(right) {
+        }
+        if wide_any {
+            // The right channel: a stereo generator's own, else the (mono) left one again.
+            let right = if wide {
+                &*buses.scratch_r
+            } else {
+                &*buses.scratch
+            };
+            for &v in active {
+                for (acc, x) in buses.voice_r[v].iter_mut().zip(&right[v]) {
                     *acc += *x;
                 }
             }
