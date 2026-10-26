@@ -600,11 +600,11 @@ mod tests {
     use super::*;
     use crate::module::{NoteState, PrepareCfg, VoiceCx};
     use crate::plan::compile;
-    use enth_patch::catalogue::{NoiseParam, OscParam, Wave};
+    use enth_patch::catalogue::{NoiseParam, OscParam, Wave, WtParam};
     use enth_patch::{ModuleId, ModuleInstance, ModuleKind, RouteAddr};
 
     const SEED: u64 = 0x5EED;
-    const PM: usize = 1; // WtParam::Pm, in spec order
+    const PM: usize = WtParam::Pm.index();
 
     fn id(s: &str) -> ModuleId {
         ModuleId::new(s).unwrap()
