@@ -420,7 +420,9 @@ mod tests {
         // Acceptance: peaks within 3 % of the vowel table for at least five vowels, set through f1 and f2. At the
         // default resonance (50 %, Q 10) and above all six are within 1.5 %; at 25 % (Q 4.5) five are within 3 % and
         // ɑ (F1 and F2 a quarter apart) merges toward its middle.
-        for res in [25.0f32, 50.0, 75.0, 100.0] {
+        // (Resonance 0 % is printed for the docs and not asserted: at Q 2 the sections are half their centre wide
+        // and the peaks are humps pulled toward each other.)
+        for res in [0.0f32, 25.0, 50.0, 75.0, 100.0] {
             let mut within = 0;
             for &(name, f1, f2) in &VOWELS {
                 let t = Tuning::new(f1, f2, 0.0, res, SR);
@@ -437,7 +439,7 @@ mod tests {
                 within += usize::from(ok);
             }
             assert!(
-                within >= 5,
+                res < 25.0 || within >= 5,
                 "resonance {res}: only {within} vowels within 3 %"
             );
         }
@@ -560,6 +562,21 @@ mod tests {
             }
         }
         eprintln!("noise power gain over the grid: {lo:+.1} … {hi:+.1} dB");
+    }
+
+    #[test]
+    fn the_filter_has_no_latency() {
+        // The first output sample already depends on the first input sample: h[0] = Σ weight_i · a2_i (the band
+        // output of a fresh section is a2·x), nonzero for every vowel. No delay line, no look-ahead.
+        for &(name, f1, f2) in &VOWELS {
+            let seg = static_segment(f1, f2, 0.0, 50.0, 1.0);
+            let ir = impulse_response(&seg, 32);
+            let want: f32 = (0..SECTIONS)
+                .map(|i| seg.to.out[i] * seg.to.coeffs[i].a2)
+                .sum();
+            assert!(ir[0].abs() > 1e-4, "{name}: h[0] = {}", ir[0]);
+            assert!((ir[0] - want).abs() <= 1e-6 * want.abs().max(1.0), "{name}");
+        }
     }
 
     #[test]
