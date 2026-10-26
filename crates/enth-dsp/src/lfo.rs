@@ -542,7 +542,7 @@ mod tests {
                 for fs in [44_100u128, 48_000, 96_000] {
                     let got = synced_increment(bpm as f64, (num, den), fs as f32, 32);
                     let want = exact_synced(bpm, u128::from(num), u128::from(den), fs, 32);
-                    let off = (got as i128 - want as i128).unsigned_abs();
+                    let off = (i128::from(got) - want as i128).unsigned_abs();
                     // Half a count of rounding to an integer, plus a few units of f64's 53-bit precision.
                     assert!(
                         off as f64 <= 1.0 + 4e-16 * want as f64,

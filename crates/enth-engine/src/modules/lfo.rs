@@ -174,13 +174,13 @@ impl GlobalModulator for Lfo {
         let shape = shape_of(p.base(LfoParam::Shape));
         let unipolar = is_unipolar(p.base(LfoParam::Polarity));
         self.global.set_one_shot(p.base(LfoParam::OneShot) != 0.0);
-        if p.base(LfoParam::Sync) != 0.0 {
+        if p.base(LfoParam::Sync) == 0.0 {
+            self.global
+                .set_rate(p.cur(LfoParam::Rate), self.sample_rate, SEG);
+        } else {
             let beats = cycle_beats(p.cur(LfoParam::Beats));
             self.global
                 .set_synced(cx.tempo_bpm, beats, self.sample_rate, SEG);
-        } else {
-            self.global
-                .set_rate(p.cur(LfoParam::Rate), self.sample_rate, SEG);
         }
         output(self.global.tick(shape), unipolar)
     }

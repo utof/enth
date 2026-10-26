@@ -1165,7 +1165,7 @@ fn the_lfo_tempo_parameters_round_trip_in_an_answer() {
         };
         let id = lfo.id.clone();
         apply(&mut answer, &Op::AddModule { at, module: lfo }).unwrap();
-        let code = AnswerCode::new(challenge.clone(), 1, &answer).unwrap();
+        let code = AnswerCode::new(challenge, 1, &answer).unwrap();
         let back = AnswerCode::decode(&code.encode()).unwrap();
         assert_eq!(back, code);
         assert_eq!(

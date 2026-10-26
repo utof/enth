@@ -88,7 +88,7 @@ fn cycles_per_segment(bpm: f64, beats: Beats) -> f64 {
 }
 
 fn sine(cycles: f64) -> f64 {
-    (std::f64::consts::TAU * cycles.fract()).sin()
+    enth_dsp::util::math::sin(std::f64::consts::TAU * cycles.fract())
 }
 
 fn assert_close(got: f64, want: f64, tol: f64, what: &str) {
@@ -189,7 +189,7 @@ fn a_tempo_event_applies_at_the_first_segment_boundary_at_or_after_its_frame() {
 #[test]
 fn the_engine_clamps_a_tempo_ignores_nan_and_a_reset_restores_the_default() {
     let mut e = engine(&reset_saw_patch(), SEED);
-    assert_eq!(e.tempo_bpm(), DEFAULT_TEMPO_BPM);
+    assert_eq!(e.tempo_bpm().to_bits(), DEFAULT_TEMPO_BPM.to_bits());
     let set = |e: &mut Engine, bpm: f64| {
         let (mut l, mut r) = ([0.0f32; SEG], [0.0f32; SEG]);
         e.process(
@@ -203,16 +203,22 @@ fn the_engine_clamps_a_tempo_ignores_nan_and_a_reset_restores_the_default() {
         e.tempo_bpm()
     };
     assert_eq!(set(&mut e, 128.0), 128.0);
-    assert_eq!(set(&mut e, 5.0), MIN_TEMPO_BPM);
-    assert_eq!(set(&mut e, 0.0), MIN_TEMPO_BPM);
-    assert_eq!(set(&mut e, -90.0), MIN_TEMPO_BPM);
-    assert_eq!(set(&mut e, 5000.0), MAX_TEMPO_BPM);
-    assert_eq!(set(&mut e, f64::INFINITY), MAX_TEMPO_BPM);
+    assert_eq!(set(&mut e, 5.0).to_bits(), MIN_TEMPO_BPM.to_bits());
+    assert_eq!(set(&mut e, 0.0).to_bits(), MIN_TEMPO_BPM.to_bits());
+    assert_eq!(set(&mut e, -90.0).to_bits(), MIN_TEMPO_BPM.to_bits());
+    assert_eq!(set(&mut e, 5000.0).to_bits(), MAX_TEMPO_BPM.to_bits());
+    assert_eq!(
+        set(&mut e, f64::INFINITY).to_bits(),
+        MAX_TEMPO_BPM.to_bits()
+    );
     assert_eq!(set(&mut e, 100.0), 100.0);
     assert_eq!(set(&mut e, f64::NAN), 100.0, "NaN is ignored");
-    assert_eq!(set(&mut e, f64::NEG_INFINITY), MIN_TEMPO_BPM);
+    assert_eq!(
+        set(&mut e, f64::NEG_INFINITY).to_bits(),
+        MIN_TEMPO_BPM.to_bits()
+    );
     e.reset();
-    assert_eq!(e.tempo_bpm(), DEFAULT_TEMPO_BPM);
+    assert_eq!(e.tempo_bpm().to_bits(), DEFAULT_TEMPO_BPM.to_bits());
 }
 
 #[test]

@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn the_default_is_inside_the_range_and_the_range_is_documented() {
         assert!(is_valid(DEFAULT_TEMPO_BPM));
-        assert_eq!(DEFAULT_TEMPO_BPM, 140.0);
+        assert_eq!(DEFAULT_TEMPO_BPM.to_bits(), 140.0f64.to_bits());
         assert_eq!((MIN_TEMPO_BPM, MAX_TEMPO_BPM), (20.0, 999.0));
         assert!(is_valid(20.0) && is_valid(999.0));
         assert!(!is_valid(19.999) && !is_valid(999.001));

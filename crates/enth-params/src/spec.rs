@@ -910,10 +910,10 @@ mod tests {
         .modulatable()
         .intermediate("x");
     const _: () = check_spec("test", &STEPPED);
+    const _: () = assert!(STEPPED.flags.modulatable && STEPPED.flags.automatable);
 
     #[test]
     fn a_modulated_enum_steps_through_its_items_in_order() {
-        assert!(STEPPED.flags.modulatable && STEPPED.flags.automatable);
         // The matrix takes `from_norm` of the summed route: a sweep of the normalised value visits every item once,
         // in order, with exact integers and no value in between.
         let mut last = -1.0f32;
