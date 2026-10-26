@@ -984,6 +984,28 @@ mod tests {
     }
 
     #[test]
+    fn the_voice_sum_is_added_in_patch_order_whatever_the_run_order() {
+        // Values chosen so that f32 addition is not associative: in patch order ((1e8 + 3) + 3) stays 1e8, while
+        // adding the two 3s first (the run order below) gives 1e8 + 8.
+        let p = patch(&["wt1", "osc1", "osc2"], &[route("osc2", "wt1.pm", 40.0)]);
+        let (mut plan, _) = compile(&p, &PrepareCfg::new(48_000.0)).unwrap();
+        assert_eq!(plan.audio.order(), [1, 2, 0]);
+        let values = [1.0e8f32, 3.0, 3.0];
+        let mut voice: VoiceBus = [[0.0; SEG]; MAX_VOICES];
+        let mut sync: SyncBus = [[NO_SYNC; SEG]; MAX_VOICES];
+        let mut ran = Vec::new();
+        plan.audio
+            .render(&[0], None, &mut voice, &mut sync, |g, ports| {
+                ran.push(g);
+                ports.io[0] = [values[g]; SEG];
+            });
+        assert_eq!(ran, [1, 2, 0]);
+        let want = ((0.0f32 + values[0]) + values[1]) + values[2];
+        assert_eq!(want, 1.0e8, "patch order loses both 3s");
+        assert!(voice[0].iter().all(|x| x.to_bits() == want.to_bits()));
+    }
+
+    #[test]
     fn audio_in_ramps_the_depth_and_sums() {
         let mut a: VoiceBus = [[0.0; SEG]; MAX_VOICES];
         let mut b: VoiceBus = [[0.0; SEG]; MAX_VOICES];
