@@ -348,10 +348,8 @@ fn follower_level_db(f: f64, amp: f64, attack_ms: f64, release_ms: f64) -> f64 {
     let mut env = 0.0;
     let (mut sum, mut cnt) = (0.0, 0);
     // Average over the last whole number of cycles (at most one second).
-    let tail = (FSD / f).max(1.0);
-    let cycles = libm::floor(1.0 / (1.0 / f)).max(1.0);
+    let cycles = libm::floor(f).max(1.0);
     let len = (cycles * FSD / f) as usize;
-    let _ = tail;
     for i in 0..n {
         let e = (amp * libm::sin(TAU * f * i as f64 / FSD)).abs();
         env += (if e > env { ka } else { kr }) * (e - env);
@@ -1067,5 +1065,63 @@ fn a_note_after_a_gap_is_not_thrown_far_over_its_input() {
                 );
             }
         }
+    }
+}
+
+/// The worst deviation (dB, signed) of a tone's settled output gain from its own band's curve over a rising level sweep
+/// of -100 to 0 dBFS, and the level it occurs at.
+fn worst_deviation(probe: &Probe, p: &OttParams) -> (f64, f64) {
+    let spec = &BAND_SPECS[probe.band];
+    let mut o = ott_with(p);
+    let mut worst = (0.0_f64, 0.0_f64);
+    for i in 0..=25 {
+        let lvl = -100.0 + 4.0 * f64::from(i);
+        let out = settled_out_db(&mut o, probe, lvl, 72_000, 24_000);
+        let seen = follower_level_db(
+            probe.hz,
+            undb(lvl),
+            f64::from(spec.attack_ms),
+            f64::from(spec.release_ms),
+        );
+        let err = (out - lvl) - curve_db(spec, seen, 1.0, 1.0);
+        if err.abs() > worst.0.abs() {
+            worst = (err, lvl);
+        }
+    }
+    worst
+}
+
+/// The band split is not a brick wall, so a tone near a crossover also lands in the neighbouring band, which lifts it
+/// (upward compression is its job) and adds it back. At the default crossovers the output of a tone then deviates from
+/// its own band's curve, by up to 6 dB in the upward region and by the most within an octave or two of a crossover;
+/// with isolating splits (the test above) it does not. This records the deviation, so the page's table is checked.
+#[test]
+fn at_the_default_splits_the_neighbours_lift_the_leakage_and_the_deviation_is_the_recorded_one() {
+    // (band, tone Hz, deviation dB, at dBFS) measured 2026-10-26; the tolerance is a quarter of a dB.
+    let recorded: [(usize, f64, f64, f64); 6] = [
+        (0, 40.0, 5.35, -40.0),
+        (0, 60.0, 5.84, -48.0),
+        (1, 200.0, 5.01, -40.0),
+        (1, 1_000.0, 2.23, -44.0),
+        (1, 500.0, 0.63, -8.0),
+        (2, 6_000.0, 4.88, -36.0),
+    ];
+    let p = params(|p| p.depth = 100.0);
+    for (band, hz, dev, at) in recorded {
+        let probe = Probe {
+            band,
+            name: "default splits",
+            hz,
+            low_split: 88.3,
+            high_split: 2_500.0,
+        };
+        let (got, level) = worst_deviation(&probe, &p);
+        eprintln!(
+            "band {band}, {hz} Hz, default splits: worst deviation {got:+.2} dB at {level} dBFS"
+        );
+        assert!(
+            (got - dev).abs() < 0.25 && (level - at).abs() < 0.5,
+            "band {band}, {hz} Hz: {got:+.2} dB at {level} dBFS, recorded {dev:+.2} at {at}"
+        );
     }
 }
