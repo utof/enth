@@ -951,6 +951,7 @@ mod tests {
                 }
                 worst = worst.max((y - mode.transfer(u)).abs());
             }
+            eprintln!("{mode:?} x{K}: static curve error {worst:.1e}");
             assert!(worst < 1e-6, "{mode:?} x{K}: {worst}");
         }
         sweep::<SoftCurve, 1>(Mode::Soft);
@@ -1048,8 +1049,9 @@ mod tests {
 
     /// The open decision of the design: ADAA stays on at 2x and 4x. A sine at 16x drive into each curve, aliasing
     /// measured with the harness, with and without the antiderivative quotient inside the oversampler (the plain
-    /// curve at the high rate): the quotient lowers aliasing by 10 to 23 dB for the clips and folds at every factor
-    /// (`docs/dsp/dist.md` has the table).
+    /// curve at the high rate): the quotient lowers aliasing by 6 to 23 dB at 1x and 2x for every curve, and by
+    /// 11 to 23 dB at 4x for the curves with corners; where the half-bands' stopband is the floor (soft and sine
+    /// fold at 4x) it gains up to 2 dB and costs nothing in alias terms (`docs/dsp/dist.md` has the table).
     #[test]
     fn adaa_lowers_aliasing_inside_the_oversampler_too() {
         use crate::alias::{Measure, alias_db};
@@ -1079,7 +1081,7 @@ mod tests {
                     "soft",
                     gain_db::<SoftCurve, 1>(hz),
                     gain_db::<SoftCurve, 2>(hz),
-                    99.0,
+                    gain_db::<SoftCurve, 4>(hz),
                 ),
                 (
                     "hard",
@@ -1088,15 +1090,35 @@ mod tests {
                     gain_db::<HardCurve, 4>(hz),
                 ),
                 (
+                    "asym",
+                    gain_db::<AsymCurve, 1>(hz),
+                    gain_db::<AsymCurve, 2>(hz),
+                    gain_db::<AsymCurve, 4>(hz),
+                ),
+                (
+                    "sine",
+                    gain_db::<SineCurve, 1>(hz),
+                    gain_db::<SineCurve, 2>(hz),
+                    gain_db::<SineCurve, 4>(hz),
+                ),
+                (
                     "tri",
                     gain_db::<TriCurve, 1>(hz),
                     gain_db::<TriCurve, 2>(hz),
                     gain_db::<TriCurve, 4>(hz),
                 ),
             ] {
-                for (k, g) in [(1, g1), (2, g2), (4, g4)] {
-                    assert!(g > 8.0, "{name} {hz} Hz x{k}: ADAA gains only {g:.1} dB");
-                }
+                eprintln!(
+                    "{name:5} {hz:6.0} Hz: ADAA lowers aliasing by {g1:5.1} (x1) {g2:5.1} (x2) {g4:5.1} (x4) dB"
+                );
+                assert!(g1 > 5.0 && g2 > 9.0, "{name} {hz} Hz: {g1:.1}, {g2:.1} dB");
+                // At 4x the half-bands' stopband is the floor of the soft and sine curves (ADAA gains 2 dB at best),
+                // while the curves with corners are still limited by the curve.
+                let floor_bound = matches!(name, "soft" | "sine");
+                assert!(
+                    g4 > if floor_bound { 0.0 } else { 10.0 },
+                    "{name} {hz} Hz x4: {g4:.1} dB"
+                );
             }
         }
     }
@@ -1340,6 +1362,11 @@ mod tests {
             let (h1, _) = tone_of(&y, hz, 24_000);
             let (h2, _) = tone_of(&y, 2.0 * hz, 24_000);
             let (h3, _) = tone_of(&y, 3.0 * hz, 24_000);
+            eprintln!(
+                "bias {bias}: second {:.1} dB, third {:.1} dB below the fundamental",
+                db(h2 / h1),
+                db(h3 / h1)
+            );
             assert!(h3 > 1e-3 * h1, "odd harmonics are there");
             if even_present {
                 assert!(h2 > 0.01 * h1, "bias {bias}: second {} dB", db(h2 / h1));

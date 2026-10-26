@@ -64,13 +64,24 @@ fn full(voices: usize) -> common::Prepared {
     common::prepare(&p, voices, 1.0)
 }
 
+// Budgets: measured on x86_64 Linux with the pinned toolchain (2026-10-26), plus 10 %, rounded up to 1,000. 1 s at
+// 48 kHz per case. Measured instructions (budget in the attribute) and the module's own cost, with the `engine` bench's
+// 3,628,657 (1 voice) and 37,286,072 (16 voices) subtracted, per voice-frame:
+//   default_1v   26,625,007   479
+//   default_16v 402,316,281   475
+//   x4_16v      707,592,768   873
+//   off_16v     210,444,421   225
+//   mix0_16v     40,482,383     4
+//   full_16v    617,058,010   755
+// Every patch holds an `osc` and an `adsr`, so a lane that changes either (or the engine skeleton) re-measures these
+// budgets with the `engine` ones; a change to `enth-dsp::dist` or `resample` re-measures all six in the same commit.
 #[library_benchmark]
-#[bench::default_1v(args = (1,), setup = default, config = common::budget(u64::MAX))]
-#[bench::default_16v(args = (16,), setup = default, config = common::budget(u64::MAX))]
-#[bench::x4_16v(args = (16,), setup = x4, config = common::budget(u64::MAX))]
-#[bench::off_16v(args = (16,), setup = off, config = common::budget(u64::MAX))]
-#[bench::mix0_16v(args = (16,), setup = mixzero, config = common::budget(u64::MAX))]
-#[bench::full_16v(args = (16,), setup = full, config = common::budget(u64::MAX))]
+#[bench::default_1v(args = (1,), setup = default, config = common::budget(29_288_000))]
+#[bench::default_16v(args = (16,), setup = default, config = common::budget(442_548_000))]
+#[bench::x4_16v(args = (16,), setup = x4, config = common::budget(778_353_000))]
+#[bench::off_16v(args = (16,), setup = off, config = common::budget(231_489_000))]
+#[bench::mix0_16v(args = (16,), setup = mixzero, config = common::budget(44_531_000))]
+#[bench::full_16v(args = (16,), setup = full, config = common::budget(678_764_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }
