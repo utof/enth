@@ -403,9 +403,10 @@ const FROZEN_BOUND_DB: f64 = -91.1;
 /// A sweep at the slowest rate, 0.01 Hz, and the full depth: the delay's own sidebands stay inside the measure's guard
 /// bins (the Doppler shift of a 7 ms delay at 100 % is 4.4e-4 of the frequency), and what lies outside it is the
 /// four-point Lagrange read's: the error of the interpolator depends on the fraction, the fraction cycles at the
-/// Doppler rate, so a tone gets sidebands at ± that rate down by the interpolation error at its frequency (about
-/// `(ω/2)^4`: −66 dB at 3.5 kHz, −49 dB at 7 kHz, −34 dB at 10.5 kHz). Measured on 2026-10-26 over the chorus, the
-/// ensemble and a flanger with feedback; each bound is the worst plus 1.5 dB.
+/// Doppler rate, so a tone gets sidebands at ± that rate down by the interpolation error at its frequency (which grows
+/// as the fourth power of the frequency: −66 dB at 3.5 kHz, −48 dB at 7 kHz, −34 dB at 10.5 kHz in the bounds below).
+/// Measured on 2026-10-26 over the chorus, the ensemble and a flanger with feedback; each bound is the worst plus
+/// 1.5 dB.
 const MOVING_BOUNDS_DB: [f64; 8] = [-101.9, -95.0, -91.9, -91.0, -89.0, -65.8, -48.4, -33.6];
 
 #[test]
@@ -865,4 +866,78 @@ fn the_plan_swap_carries_the_delay_lines() {
     assert_eq!(bits(&l3[..swap]), bits(&l0[..swap]));
     assert_ne!(bits(&l3[swap..]), bits(&l0[swap..]));
     assert!(l3.iter().all(|x| x.is_finite()));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The cost of the copy a crossfading swap makes (information, not a gate)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Times `Chorus::copy_state_from`, the memcpy of a crossfading plan swap, at the sample rates the lines are sized for,
+/// against the reverb's 1.6 MB of lines, warm and with the caches flushed in between (the state after a sleep: research
+/// 03 found a paced copy 2 to 4 times slower than a back-to-back one). Run with
+/// `flock -x /tmp/enth-quiet.lock cargo test -p enth-engine --release --test chorus swap_copy -- --ignored --nocapture`.
+/// Wall-clock time is information only (docs/benchmarks.md, "Measurement hygiene"); `docs/dsp/chorus.md` quotes it.
+#[test]
+#[ignore = "timing, information only: run it by hand under the exclusive lock"]
+fn swap_copy_cost_is_microseconds() {
+    use enth_dsp::chorus::Chorus;
+    use std::time::Instant;
+
+    fn quantiles(mut us: Vec<f64>) -> (f64, f64, f64) {
+        us.sort_by(f64::total_cmp);
+        let at = |q: f64| us[((us.len() - 1) as f64 * q) as usize];
+        (at(0.5), at(0.99), us[us.len() - 1])
+    }
+    // 32 MiB read between the cold copies, enough to evict an L2 and most of an L3 slice.
+    let mut flush = vec![1u8; 32 << 20];
+    let mut evict = |k: usize| {
+        for v in flush.iter_mut().step_by(64) {
+            *v = v.wrapping_add(k as u8);
+        }
+        std::hint::black_box(&flush);
+    };
+    for (label, sr) in [
+        ("chorus 48 kHz (32 KiB)", 48_000.0f32),
+        ("chorus 96 kHz (64 KiB)", 96_000.0),
+        ("chorus 192 kHz (128 KiB)", 192_000.0),
+    ] {
+        let src = Chorus::new(sr);
+        let mut dst = Chorus::new(sr);
+        for cold in [false, true] {
+            let mut us = Vec::new();
+            for k in 0..2_000 {
+                if cold {
+                    evict(k);
+                }
+                let t = Instant::now();
+                assert!(dst.copy_state_from(std::hint::black_box(&src)));
+                us.push(t.elapsed().as_secs_f64() * 1e6);
+            }
+            let (p50, p99, max) = quantiles(us);
+            eprintln!(
+                "{label}, {}: p50 {p50:.1} us, p99 {p99:.1} us, max {max:.1} us",
+                if cold { "cold" } else { "warm" }
+            );
+        }
+    }
+    // The reverb's six delay rings, 1.6 MB: the baseline the swap harness measured (research 03: 148 to 249 us alone).
+    let src = vec![0.5f32; 400_000];
+    let mut dst = vec![0.0f32; 400_000];
+    for cold in [false, true] {
+        let mut us = Vec::new();
+        for k in 0..400 {
+            if cold {
+                evict(k);
+            }
+            let t = Instant::now();
+            dst.copy_from_slice(std::hint::black_box(&src));
+            std::hint::black_box(&dst);
+            us.push(t.elapsed().as_secs_f64() * 1e6);
+        }
+        let (p50, p99, max) = quantiles(us);
+        eprintln!(
+            "reverb 1.6 MB, {}: p50 {p50:.1} us, p99 {p99:.1} us, max {max:.1} us",
+            if cold { "cold" } else { "warm" }
+        );
+    }
 }
