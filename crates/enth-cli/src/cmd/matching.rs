@@ -27,7 +27,7 @@ use std::time::Instant;
 
 use enth_challenge::random::{self, Mask, unlock_level};
 use enth_challenge::{Category, Phrase, PreparedRound, score_round};
-use enth_patch::catalogue::{Builtin, ModuleKind};
+use enth_patch::catalogue::Builtin;
 use enth_patch::{Op, ParamAddr, Patch, PatchError, Target, wire};
 use enth_render::{DEFAULT_SAMPLE_RATE, DEFAULT_SEED, RenderSpec};
 use enth_solver::heuristic::Heuristic;
@@ -385,29 +385,10 @@ fn wav_target(bytes: &[u8], name: &str, flag: Option<Perf>) -> Result<Loaded, Cl
 fn level_of(start: &Patch, addr: &ParamAddr) -> u8 {
     let category = match addr.target() {
         Target::Voice | Target::Master => Category::Structure,
-        Target::Module(id) => match start.find(id).map(|(_, m)| m.kind) {
-            // S2a's reserved kinds sit with their section's P1 kinds (lane MTC may refine this when they are listed).
-            Some(ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Wt) => Category::Oscillators,
-            Some(
-                ModuleKind::Svf
-                | ModuleKind::Dist
-                | ModuleKind::Comb
-                | ModuleKind::Formant
-                | ModuleKind::Ladder,
-            ) => Category::Filter,
-            Some(ModuleKind::Adsr) => Category::Envelopes,
-            Some(ModuleKind::Lfo | ModuleKind::Mseg) => Category::Modulation,
-            Some(
-                ModuleKind::Reverb
-                | ModuleKind::Comp
-                | ModuleKind::Ott
-                | ModuleKind::Chorus
-                | ModuleKind::Phaser
-                | ModuleKind::Eq
-                | ModuleKind::Delay,
-            )
-            | None => Category::Effects,
-        },
+        // (A module the start lacks reads as structure, which unlocks with the effects, level 5, as it always did.)
+        Target::Module(id) => {
+            enth_challenge::v2::category_of_kind(start.find(id).map(|(_, m)| m.kind))
+        }
     };
     unlock_level(category)
 }

@@ -1491,23 +1491,30 @@ fn playable(
 // Prepared rounds on patch and draw targets
 // ---------------------------------------------------------------------------------------------------------------
 
-/// The category of a module kind, as generator v1 orders them (for a hand-made round's [`Randomized`] list).
-fn category_of_kind(kind: Option<ModuleKind>) -> Category {
+/// The category of a module kind, as generator v1 orders them (for a hand-made round's [`Randomized`] list, and the
+/// CLI's free sets by Recreate level). Generator v1 never draws an S2a kind; they sit where a player meets them
+/// (lane MTC, replacing S0d's placeholders):
+///
+/// - the oscillators: `osc`, `noise`, `wt` (a wavetable oscillator is an oscillator);
+/// - the filter: `svf`, and the S2a filters `ladder`, `comb` and `formant` (the controls a player first learns on
+///   the filter: cutoff, resonance, a resonant colour);
+/// - the envelopes: `adsr`;
+/// - the modulation: `lfo` and `mseg` (an MSEG is an LFO or an envelope by its mode, but is met as the shape a
+///   player draws, with the LFOs);
+/// - the effects: `reverb`, `comp`, and `dist`, `ott`, `chorus`, `phaser`, `eq`, `delay`. A distortion is a per-voice
+///   effect but not a filter, so it unlocks with the effects.
+pub fn category_of_kind(kind: Option<ModuleKind>) -> Category {
     match kind {
-        // S2a's reserved kinds sit with their section's P1 kinds (generator v1 never draws one).
         Some(ModuleKind::Osc | ModuleKind::Noise | ModuleKind::Wt) => Category::Oscillators,
-        Some(
-            ModuleKind::Svf
-            | ModuleKind::Dist
-            | ModuleKind::Comb
-            | ModuleKind::Formant
-            | ModuleKind::Ladder,
-        ) => Category::Filter,
+        Some(ModuleKind::Svf | ModuleKind::Ladder | ModuleKind::Comb | ModuleKind::Formant) => {
+            Category::Filter
+        }
         Some(ModuleKind::Adsr) => Category::Envelopes,
         Some(ModuleKind::Lfo | ModuleKind::Mseg) => Category::Modulation,
         Some(
             ModuleKind::Reverb
             | ModuleKind::Comp
+            | ModuleKind::Dist
             | ModuleKind::Ott
             | ModuleKind::Chorus
             | ModuleKind::Phaser
@@ -1529,7 +1536,10 @@ pub(crate) fn category_of(patch: &Patch, drawn: &Drawn) -> Category {
         },
         Drawn::Route(r) => match &r.src {
             ModSource::Module(id) => match kind(id) {
-                Some(k @ (ModuleKind::Adsr | ModuleKind::Lfo)) => category_of_kind(Some(k)),
+                // A modulator's route is its kind's; a generator's (an audio route, S2a) is structure.
+                Some(k @ (ModuleKind::Adsr | ModuleKind::Lfo | ModuleKind::Mseg)) => {
+                    category_of_kind(Some(k))
+                }
                 _ => Category::Structure,
             },
             _ => Category::Structure,
@@ -3109,5 +3119,82 @@ mod tests {
             "a patch target has no seed"
         );
         assert_eq!(patch.version(), 2);
+    }
+
+    /// Lane MTC: every kind has a category, S2a's sit with their section's P1 kinds, and the levels they unlock at are
+    /// the ones a player meets them at.
+    #[test]
+    fn every_kind_has_a_category_and_a_level() {
+        use crate::random::unlock_level;
+        let level = |k: ModuleKind| unlock_level(category_of_kind(Some(k)));
+        for (kind, category) in [
+            (ModuleKind::Osc, Category::Oscillators),
+            (ModuleKind::Noise, Category::Oscillators),
+            (ModuleKind::Wt, Category::Oscillators),
+            (ModuleKind::Svf, Category::Filter),
+            (ModuleKind::Ladder, Category::Filter),
+            (ModuleKind::Comb, Category::Filter),
+            (ModuleKind::Formant, Category::Filter),
+            (ModuleKind::Adsr, Category::Envelopes),
+            (ModuleKind::Lfo, Category::Modulation),
+            (ModuleKind::Mseg, Category::Modulation),
+            (ModuleKind::Reverb, Category::Effects),
+            (ModuleKind::Comp, Category::Effects),
+            (ModuleKind::Dist, Category::Effects),
+            (ModuleKind::Ott, Category::Effects),
+            (ModuleKind::Chorus, Category::Effects),
+            (ModuleKind::Phaser, Category::Effects),
+            (ModuleKind::Eq, Category::Effects),
+            (ModuleKind::Delay, Category::Effects),
+        ] {
+            assert_eq!(category_of_kind(Some(kind)), category, "{kind}");
+        }
+        assert_eq!(
+            ModuleKind::ALL.len(),
+            18,
+            "a new kind needs a category above"
+        );
+        assert_eq!(
+            [
+                level(ModuleKind::Wt),
+                level(ModuleKind::Ladder),
+                level(ModuleKind::Mseg),
+                level(ModuleKind::Dist)
+            ],
+            [1, 2, 4, 5]
+        );
+        // A route is its modulator's category; a generator's audio route and the built-ins are structure.
+        let mut p = starter();
+        for (kind, id) in [(ModuleKind::Mseg, "mseg1"), (ModuleKind::Wt, "wt1")] {
+            let at = enth_patch::addr::Position {
+                section: kind.section(),
+                index: p.section(kind.section()).len(),
+            };
+            enth_patch::apply(
+                &mut p,
+                &enth_patch::Op::AddModule {
+                    at,
+                    module: enth_patch::ModuleInstance::new(ModuleId::new(id).unwrap(), kind),
+                },
+            )
+            .unwrap();
+        }
+        for (r, expected) in [
+            ("mseg1 -> filter1.cutoff", Category::Modulation),
+            ("lfo1 -> filter1.cutoff", Category::Modulation),
+            ("env2 -> filter1.cutoff", Category::Envelopes),
+            ("osc2 -> wt1.pm", Category::Structure),
+            ("velocity -> filter1.cutoff", Category::Structure),
+        ] {
+            assert_eq!(category_of(&p, &Drawn::Route(route(r))), expected, "{r}");
+        }
+        assert_eq!(
+            category_of(&p, &Drawn::Param(addr("wt1.semi"))),
+            Category::Oscillators
+        );
+        assert_eq!(
+            category_of(&p, &Drawn::Enable(ModuleId::new("mseg1").unwrap())),
+            Category::Modulation
+        );
     }
 }
