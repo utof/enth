@@ -493,6 +493,7 @@ impl Engine {
             let (queue, mut cx) = self.note_cx(frame);
             queue.drain_due(frame, |kind| cx.apply(kind));
         }
+        self.notes.keys_held = self.voices.any_held();
         let mut active_buf = [0; MAX_VOICES];
         let n_active = {
             let a = self.voices.active();
@@ -781,6 +782,7 @@ impl Engine {
         n.trigger = [false; MAX_VOICES];
         n.fresh = [false; MAX_VOICES];
         n.release = [false; MAX_VOICES];
+        n.phrase_start = false;
         n.pitch_prev = n.pitch_cur;
     }
 
@@ -1025,7 +1027,10 @@ impl NoteCx<'_> {
     }
 
     fn note_on(&mut self, key: NoteKey, velocity: f32) {
+        // The first key of a phrase (no key was down): a global one-shot or sustain-loop MSEG restarts (lane MSEG).
+        let first_key = !self.voices.any_held();
         let (note_index, action) = self.voices.note_on(key, self.frame);
+        self.notes.phrase_start |= first_key;
         let v = action.voice();
         let pitch = f32::from(key.key.clamp(0, 127));
         let velocity = if velocity.is_nan() {
@@ -1183,6 +1188,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             matrix.eval_global_mod(i, global_table, &src);
         }
         gmod_prev[i] = gmod_cur[i];
+        slot.module.keys(notes.keys_held, notes.phrase_start);
         gmod_cur[i] = slot.module.tick(&mut GlobalModCx {
             params: global_table.view(slot.params),
             tempo_bpm: cx.tempo_bpm,
