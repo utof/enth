@@ -188,6 +188,7 @@ Fourteen cases in `tests/golden/cases/wt-*.toml`: `wt-pm-fm`, `wt-am`, `wt-ring-
 - **A matcher must read `am` and `level` together:** `am` at 100 % with a route is the carrier plus sidebands, at 0 % ring modulation; without a route `am` is a second level. `tests/common`'s `every_kind_patch` does not include the S2a kinds.
 - **`enth-dsp::wavetable`** now exposes `build`, `row_in`, `cursor_in` and `fingerprint_of` (`pub(crate)`) so that `wt`'s tables share the osc generator; the osc fingerprints are unchanged (the existing pinned test guards them).
 - **Taste check:** `~/code/enth-scratch/s2/wt/wav/` holds an FM bass (two sines 1:1 with an index envelope), a ring-mod bell (a sine and a sine at +18 st, `am` 0 %) and a formant table sweep (an envelope on `position`); the patches that made them are in `patches/` there. Rendered with `enth render`, never played.
+- **Through the plugin and a host (lane SKS, F2m):** a `wt` fed by an audio route renders bit for bit the same in the plugin as in the CLI at host blocks 1, 64, 100 and 4096 (`cli-equal` takes the 14 `wt-*` cases, the plugin golden has `wt-audio-route`), and REAPER's offline render of a formant `wt` phase-modulated by a sine matches `enth render` to four digits in level and brightness on CLAP and VST3 ([plugin.md](../plugin.md#a-wt-and-an-audio-route-lane-sks-f2m)). A lowered PM depth leaves the mip tracker above its settled value for a few thousand frames (above), so a plugin test of depth edits uses a raised depth for bit equality with a patch loaded at that depth.
 
 ## Limitations
 

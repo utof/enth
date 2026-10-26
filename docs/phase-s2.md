@@ -109,7 +109,7 @@ Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are mar
 
 | Lane | Owns | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
-| **SKS** (→ F2m) | `wt` and an audio route through the plugin and the editor; `host-render`, `cli-equal`; the REAPER scenario | WT | 1.5–2.5 | **H** |
+| **SKS** (→ F2m) | `wt` and an audio route through the plugin and the editor; `host-render`, `cli-equal`; the REAPER scenario. **Done 2026-10-26** (branch `s2/sks`; results in the F2m row) | WT | 1.5–2.5 | **H** |
 | **MTC** Matcher holes | The `structure/1` matcher's kind families (`score/matching.rs`, so a new kind pairs instead of scoring 0), the coach, deconstruct and the CLI aliases | F1m | 1–1.5 | L |
 | **G2B** G2 patch | The G2 reference patch, its budget (default 8 voices), the real-time row and the swap blocks | WT, UNI, DST, OTT | 1–1.5 | L |
 | **EDS** Editor density | Dense cards (a focus region or a second layout), audio-route drag; kittest, the overflow report, `leak-test` | F2m; G2B's patch | 2–4 | **H** |
@@ -231,8 +231,8 @@ Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod ar
   | `answer.rs`, `result-params-v1` | Not S2a's: ANS, RC or the coordinator, with CAT's rows |
   | `random/` (generator v1), `layout-v1.txt` | Nobody; frozen |
   | `score/matching.rs`, `coach.rs`, `deconstruct/`, `aliases.rs` | MTC |
-  | `enth-ui`'s editor, `sizes/` | SKS (the minimum), then EDS, tokens only in its own file |
-  | `enth-plugin`, `enth-cli` | SKS; no module is a host parameter (the 72 ids stay) |
+  | `enth-ui`'s editor, `sizes/` | SKS (the minimum), then EDS, tokens only in its own file. SKS touched `editor/cards/{present,view,shapes,card,menu}.rs` (`wt`'s visible tier, `STRIP_ROW_CELLS`, its display, audio texts), `editor/modulate.rs` and `editor/regions/{matrix,routes}.rs` ([editor.md](editor.md#the-wt-card-and-audio-routes-lane-sks-f2m)); EDS may replace the first two |
+  | `enth-plugin`, `enth-cli` | SKS; no module is a host parameter (the 72 ids stay). SKS changed `enth-plugin`'s tests only (`tests_host.rs`, `tests/cli-equal.profile.toml`) and, in `enth-cli`, `route_means`, `explain`, `info` and the `audio` flag of `params` (`schema/{types,game}.rs`, two schema snapshots) |
   | `content/lessons`, `lessons.yml` | LS2; `content/agent-evals` EV5; create templates TPL |
   | REAPER and timing | INT-S2a and G2B take `flock -x` |
 
