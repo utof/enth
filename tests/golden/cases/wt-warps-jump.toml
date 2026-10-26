@@ -1,0 +1,19 @@
+description = "WT: the two warps with jumps, on the formant table at position 50 %, one wt module each at level 30 %: sync +40 % (a read rate of 3.8, A3) and quantize +60 % (about 28 steps, A3 - 12); reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "wt1", kind = "wt", params = { table = "formant", position = 50, warp = "sync", warp_amount = 40, level = 30 } },
+    { id = "wt2", kind = "wt", params = { table = "formant", position = 50, warp = "quantize", warp_amount = 60, semi = -12, level = 30 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

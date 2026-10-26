@@ -1,0 +1,28 @@
+description = "WT: automation of the smoothed parameters of a PM pair, osc1 (sine at +12 st, level 0) into wt1.pm at depth 100 %, wt1 on the formant table: pm_index 0 to 6 at 0.15 s, position 20 to 80 % at 0.25 s, warp_amount 0 to 50 % (bend) at 0.3 s and feedback 0 to 40 % at 0.35 s, each ramping over its 10 ms smoothing; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.6
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+]
+automation = [
+    { time_s = 0.15, addr = "wt1.pm_index", value = 6.0 },
+    { time_s = 0.25, addr = "wt1.position", value = 80.0 },
+    { time_s = 0.3, addr = "wt1.warp_amount", value = 50.0 },
+    { time_s = 0.35, addr = "wt1.feedback", value = 40.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "sine", semi = 12, level = 0, phase_mode = "reset", phase = 0 } },
+    { id = "wt1", kind = "wt", params = { table = "formant", position = 20, warp = "bend", pm_index = 0 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+routes = [
+    { src = "osc1", dst = "wt1.pm", depth = 100 },
+]

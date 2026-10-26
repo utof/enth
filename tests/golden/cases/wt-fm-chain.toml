@@ -1,0 +1,24 @@
+description = "WT: a wt as an FM operator and as a carrier: osc1 (sine, level 0) into wt2.pm at depth 70 % with wt2 at level 0 and pm_index 2, wt2 at +12 st into wt1.pm at depth 80 % with pm_index 3 (a three-operator chain, pre-level routes through a silent operator), wt1 the carrier at level 60 %; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "sine", semi = 7, level = 0, phase_mode = "reset", phase = 0 } },
+    { id = "wt2", kind = "wt", params = { semi = 12, level = 0, pm_index = 2 } },
+    { id = "wt1", kind = "wt", params = { level = 60, pm_index = 3 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+routes = [
+    { src = "osc1", dst = "wt2.pm", depth = 70 },
+    { src = "wt2", dst = "wt1.pm", depth = 80 },
+]

@@ -1,0 +1,23 @@
+description = "WT: phase modulation, the closed form the engine tests measure against Bessel sidebands: a sine osc1 at +12 st and level 0 (heard only through its route, 2:1 of the carrier) into wt1.pm at depth 60 %, pm_index 3, the carrier a sine at A3; a second note a fifth up joins at 0.1 s; reset phases, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 0.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 57, velocity = 1.0, on_s = 0.0, off_s = 0.4 },
+    { key = 64, velocity = 0.8, on_s = 0.1, off_s = 0.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "sine", semi = 12, level = 0, phase_mode = "reset", phase = 0 } },
+    { id = "wt1", kind = "wt", params = { pm_index = 3, pm = 100, phase_mode = "reset" } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+routes = [
+    { src = "osc1", dst = "wt1.pm", depth = 60 },
+]
