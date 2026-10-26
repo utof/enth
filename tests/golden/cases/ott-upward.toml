@@ -1,0 +1,21 @@
+description = "OTT: upward compression only (downward 0 %) at depth 100 % on a pluck (decay 400 ms to silence, release 200 ms): the decaying tail is lifted until the 30 dB cap and the -84/-96 dB fade stop it. Guards the upward curve, the cap and the floor."
+sample_rate = 48000
+seconds = 2.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 33, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+    { key = 40, velocity = 0.8, on_s = 1.0, off_s = 1.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 70 } },
+    { id = "osc2", kind = "osc", params = { wave = "sine", semi = -12, phase_mode = "reset", level = 80 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 400, sustain = 0, release = 200 } }]
+fx = [{ id = "ott1", kind = "ott", params = { depth = 100, downward = 0 } }]

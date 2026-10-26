@@ -1,0 +1,18 @@
+description = "OTT: a quiet note (velocity 0.02) then a loud one (velocity 1) at 0.6 s on a saw, depth 100 %: with no look-ahead the upward gain held from the quiet passage meets the loud onset, and the onset guard (a lift never carries a band sample over its upward threshold plus 20 dB) keeps it from throwing the note 20 dB over its input. Through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope curves change."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+notes = [
+    { key = 33, velocity = 0.02, on_s = 0.0, off_s = 0.55 },
+    { key = 45, velocity = 1.0, on_s = 0.6, off_s = 1.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 80 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "ott1", kind = "ott", params = { depth = 100 } }]

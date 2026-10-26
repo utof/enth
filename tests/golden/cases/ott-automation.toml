@@ -1,0 +1,26 @@
+description = "OTT: automation of the smoothed parameters on a chord through a gate envelope: depth 20 to 100 % at 0.15 s, input 0 to +9 dB at 0.25 s, low_gain 0 to -6 dB at 0.3 s, upward 100 to 30 % at 0.35 s and mix 100 to 60 % at 0.4 s, each ramping over its 10 ms smoothing (time, low_split and high_split are not smoothed and not modulatable). Guards the per-segment ramps of the module."
+sample_rate = 48000
+seconds = 0.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.7 },
+    { key = 57, velocity = 1.0, on_s = 0.0171, off_s = 0.7 },
+    { key = 64, velocity = 1.0, on_s = 0.1, off_s = 0.7 },
+]
+automation = [
+    { time_s = 0.15, addr = "ott1.depth", value = 100.0 },
+    { time_s = 0.25, addr = "ott1.input", value = 9.0 },
+    { time_s = 0.3, addr = "ott1.low_gain", value = -6.0 },
+    { time_s = 0.35, addr = "ott1.upward", value = 30.0 },
+    { time_s = 0.4, addr = "ott1.mix", value = 60.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 80 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "ott1", kind = "ott", params = { depth = 20 } }]
