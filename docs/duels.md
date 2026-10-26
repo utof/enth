@@ -12,6 +12,7 @@ R5 lets two friends play the same challenge and compare, with no server, no acco
 | Duel jobs, the clipboard; `enth duel result\|verify`; the REAPER `duel` scenario | `enth-plugin/src/duel/mod.rs` (was `duel.rs`), `enth-cli/src/cmd/duel.rs` (L8) | SKD | Built (F2d): [below](#the-shell-lane-skd) |
 | The duel card: share, paste, verify, side by side, the sealed answer, the history | `enth-ui/src/editor/duel/` (L7, feature `duel`) | SKD (the minimal card), then DUI | Built (lane DUI): [below](#the-card-and-the-history-lane-dui), [editor.md](editor.md#the-duel-card-lane-dui) |
 | The duel history file: the salt and your codes, their codes, the checks | `enth-plugin/src/duel/history.rs` (L8) | DUI | Built: [The duel history](#the-duel-history) |
+| The answer code's target, parameter, place and kind fields widened in place (owner decision D3, 2026-10-26) | `enth-challenge/src/answer.rs` (L4) | ANS | Built: [below](#lane-ans-the-answer-codes-fields-widened-d3) |
 | GR5, the friend duel sheet, the friend build | `docs/r5-gates.md`, `docs/r5-owner.md`, `docs/duel-friends.md` (all planned) | INT5 | Planned |
 
 ## What makes serverless duels last
@@ -50,11 +51,11 @@ Both take code v1's reserved version-15 escape. **Lane RC built them (2026-10-22
 | Carries | The challenge, the engine version, the scorer set, sound % and combined % in tenths, passed, submits, the time (to pass, or the round's active time without a pass), the assists, a 60-bit salted commitment to the answer | A 64-bit salt, the challenge, the patch as a diff from the round's start |
 | Sent | On finishing | After both have played |
 | Spoils | Nothing | The answer (so it stays sealed until you've played) |
-| Size | **51 symbols, always** (72–81 with custom settings) | Targets as answers: medians 46, 92 and 152 symbols at levels 1, 3 and 5; solver answers about 48–176 ([below](#sizes)) |
+| Size | **51 symbols, always** (72–81 with custom settings) | Targets as answers: medians 47, 100 and 168 symbols at levels 1, 3 and 5 (46, 92 and 152 before the widening of 2026-10-26); solver answers about 48–176 at F1e ([below](#sizes)) |
 | Checks | Its fixed length and 30 check bits, then code v1's GF(32) symbol | A 40-bit tail over the rebuilt answer, then code v1's GF(32) symbol |
 
 - **Which submit a duel compares** (question 4): the **first passing submit** (its patch, the time to pass and the submit count); otherwise the best submit, marked "not passed". The session keeps only the latest submitted patch today, so lane SE adds the patch at the first pass (additive, within the round's saved budget: a named F1e check). `Scorecard::new` takes that submit's `ScoreReport`, the round's `ScoringSpec`, the submits, the time in milliseconds, the `AssistsUsed` and the answer code's commitment; a reveal before a pass gives no scorecard.
-- **The answer** is `ops_between(start, answer)` in binary, in its order: a run of `SetParam`s per target (5 bits for the target, then 4 bits per parameter and its value), the other ops behind a 5-bit code. Targets are places in the patch, never ids; parameters are indices into **`result-params-v1`**, a frozen, append-only table of keys, value codings and defaults, as generator v1 freezes its catalogue snapshot. A float is 16 bits when it has three significant digits (a typed or quantized value) and its exact 33 bits otherwise. No deflated whole patch is needed: an added module carries only its values off the table's defaults.
+- **The answer** is `ops_between(start, answer)` in binary, in its order: a run of `SetParam`s per target (6 bits for the target, then 6 bits per parameter and its value), the other ops behind a 5-bit code. Targets are places in the patch, never ids; parameters are indices into **`result-params-v1`**, a frozen, append-only table of keys, value codings and defaults, as generator v1 freezes its catalogue snapshot. A float is 16 bits when it has three significant digits (a typed or quantized value) and its exact 33 bits otherwise. No deflated whole patch is needed: an added module carries only its values off the table's defaults.
 - **Stripped before encoding:** `SetMeta` (`PatchMeta` has `author`, which can hold a real name), labels, macro names and slots; an added module keeps an id number the app gave (`osc3`, 6 bits; should-fix S1, so the receiver renders the phases the player heard) and any id the player typed becomes the lowest free `<prefix><n>`, so no typed name survives either. A test gives a patch with all of them set and the same patch without them, and gets the same symbols.
 - **The salt** (the F1e review's M6): 64 bits of **OS randomness**, drawn by the shell once per duel and kept with the result; **never derived from a clock or a seed**, because the code carries it in the clear ([Privacy](#privacy)).
 - **Decoding rebuilds the answer:** it regenerates the target, applies the ops to the start and checks the 40-bit tail, which hashes the salt, the target's fingerprint and the rebuilt answer. A damaged code or a build that regenerates another start or target is refused there (`answer_mismatch`), before anything is scored.
@@ -64,27 +65,29 @@ Both take code v1's reserved version-15 escape. **Lane RC built them (2026-10-22
 
 Symbols, code v1's included (40 seeds per level, 8 for the solver; reports 02 and 03 measured targets as stand-ins). "Dragged" moves every changed value off three significant digits, "touched" adds three more knobs, and the solver searched 1,500 renders over the drawn or every observable parameter, like `enth match`. Lane SKD measured real passing answers at F2d ([below the table](#passing-answers-lane-skd-f2d)).
 
+**The first three columns were measured again on 2026-10-26, after the answer code's fields were widened (D3, [lane ANS](#lane-ans-the-answer-codes-fields-widened-d3)).** The F1e figures before it are in that section's table. The solver and report columns are F1e's, before the widening, and were not repeated (the widening adds about 2 bits per moved knob and 3 per run of knobs on one target).
+
 | Level | Target (median, max) | Dragged | Touched | Solver, drawn | Solver, observable | Report 02 | Report 03 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 46, 50 | 49, 56 | 74, 75 | 48, 56 | 107, 107 | 51, 62 | 49 |
-| 3 | 92, 98 | 123, 132 | 144, 147 | 113, 117 | 100, 109 | 141, 154 | 133 |
-| 5 | 152, 188 | 212, 263 | 230, 271 | 176, 181 | 110, 125 | 254, 309 | 259 |
+| 1 | 47, 51 | 50, 58 | 77, 79 | 48, 56 | 107, 107 | 51, 62 | 49 |
+| 3 | 100, 106 | 130, 140 | 152, 155 | 113, 117 | 100, 109 | 141, 154 | 133 |
+| 5 | 168, 208 | 227, 283 | 246, 290 | 176, 181 | 110, 125 | 254, 309 | 259 |
 
 #### Passing answers (lane SKD, F2d)
 
-Measured on 2026-10-22 with answers that **pass** `sound/1` (`enth-cli`'s `measure_passing_answer_sizes`, 20 seeds per level, every answer passed): "played" drags every randomized float off the target by up to 2 % of its knob's travel (closer until it passes), as a player who matched it by ear and mouse leaves it; "touched" also leaves three other knobs nudged by up to 0.5 %, kept only while the answer passes. The REAPER `duel` scenario's real round (level 2, seed 77, the target rebuilt by edits, then shared from the plugin) gave an answer of **52 symbols** and a scorecard of 51.
+Measured on 2026-10-22, and again on 2026-10-26 after the answer code's fields were widened (D3; the table holds the second run, [lane ANS](#lane-ans-the-answer-codes-fields-widened-d3) the first) with answers that **pass** `sound/1` (`enth-cli`'s `measure_passing_answer_sizes`, 20 seeds per level, every answer passed): "played" drags every randomized float off the target by up to 2 % of its knob's travel (closer until it passes), as a player who matched it by ear and mouse leaves it; "touched" also leaves three other knobs nudged by up to 0.5 %, kept only while the answer passes. The REAPER `duel` scenario's real round (level 2, seed 77, the target rebuilt by edits, then shared from the plugin) gave an answer of **52 symbols** and a scorecard of 51.
 
 | Level | Target (median, max) | Played, passing | Played and touched, passing |
 | --- | --- | --- | --- |
-| 1 | 46, 50 | 49, 56 | 68, 85 |
-| 2 | 56, 60 | 66, 75 | 86, 99 |
-| 3 | 92, 96 | 123, 132 | 139, 151 |
-| 4 | 109, 123 | 144, 168 | 157, 183 |
-| 5 | 152, 190 | 212, 269 | 228, 291 |
+| 1 | 47, 51 | 50, 58 | 71, 89 |
+| 2 | 58, 63 | 69, 78 | 91, 105 |
+| 3 | 100, 104 | 130, 140 | 148, 161 |
+| 4 | 118, 135 | 154, 180 | 168, 195 |
+| 5 | 168, 209 | 228, 288 | 245, 312 |
 
-So real passing answers are about 1.1–1.4 times the target's size, at most about 290 symbols at level 5: inside Discord's 2,000 characters, not inside one SMS above level 1. **A level-1 answer with touched knobs is usually above 64 symbols**, so an R1–R3 build reads it "bad length", not "update enth" (the friend sheet should say both). The solver's answers were not measured again.
+So real passing answers are about 1.1–1.4 times the target's size, at most about 310 symbols at level 5 (about 290 before the widening): inside Discord's 2,000 characters, not inside one SMS above level 1. **A level-1 answer with touched knobs is usually above 64 symbols**, so an R1–R3 build reads it "bad length", not "update enth" (the friend sheet should say both). The solver's answers were not measured again.
 
-Each extra knob left off three significant digits costs about 8 symbols. The solver moves values only, so at levels 4 and 5 it rarely passes; over every observable parameter it moves about eleven knobs to exact values, about 105 symbols at any level, the likeliest shape of an agent's answer. Every answer of 64 symbols or fewer reads "update enth" on an R1–R3 build, a longer one "bad length".
+Each extra knob left off three significant digits costs about 8 symbols (39 bits: a 6-bit parameter index and the exact 33-bit `f32`; 37 before the widening). The solver moves values only, so at levels 4 and 5 it rarely passes; over every observable parameter it moves about eleven knobs to exact values, about 105 symbols at any level, the likeliest shape of an agent's answer. Every answer of 64 symbols or fewer reads "update enth" on an R1–R3 build, a longer one "bad length".
 
 ## Verification
 
@@ -202,7 +205,9 @@ Built on lane SKD's shell ([editor.md](editor.md#the-duel-card-lane-dui) has the
 
 ### "Bad length" on touched level-1 answers (found by the coordinator; measured by lane DUI)
 
-**The cause is the old builds' length limit, not the encoding.** An R1–R3 build's code v1 decoder refuses more than 64 symbols as `bad_length` before it reads anything else (`code.rs`'s `MAX_SYMBOLS`). An answer code's frame is 189 bits whatever the answer (header 14, salt 64, a short challenge 61, END 5, tail 40, code v1's symbol 5: 38 symbols), and each knob a drag leaves off three significant digits costs 37 bits (its 4-bit parameter and its exact 33-bit `f32`), plus 10 per module touched. So a level-1 answer (about 46 symbols) with three touched knobs passes 64. The float coding is already as tight as the frozen rule allows (16 bits for a three-significant-digit value, else the exact bits), so no change inside the frozen layout shortens it. **Nothing was changed** (F1e: persisted forms change only additively); the card says so when your answer is over 64 symbols ("an enth from before duels calls it "bad length". Your friend needs to update enth."), and INT5's friend sheet should say both lines.
+**Decided 2026-10-26: neither A nor B.** The owner widened the answer code's fields (D3, [lane ANS](#lane-ans-the-answer-codes-fields-widened-d3)) and chose no multi-part answers and no quantised answers. So "bad length" stays: the card's note and the friend sheet's line (both "bad length" and "code too new" mean "update enth") stay as written below. The widening makes answers a little longer (a touched level-1 answer is 71 symbols at the median now, 68 before), so slightly more of them read "bad length" on an old build. The text below is DUI's finding and the options as sized on 2026-10-25, before the widening.
+
+**The cause is the old builds' length limit, not the encoding.** An R1–R3 build's code v1 decoder refuses more than 64 symbols as `bad_length` before it reads anything else (`code.rs`'s `MAX_SYMBOLS`). An answer code's frame is 189 bits whatever the answer (header 14, salt 64, a short challenge 61, END 5, tail 40, code v1's symbol 5: 38 symbols), and each knob a drag leaves off three significant digits costs 37 bits (its 4-bit parameter and its exact 33-bit `f32`; 39 bits since the widening, with a 6-bit parameter), plus 10 per module touched (13 since: the flag, a 6-bit target and a 6-bit run end). So a level-1 answer (about 46 symbols; 47 since) with three touched knobs passes 64. The float coding is already as tight as the frozen rule allows (16 bits for a three-significant-digit value, else the exact bits), so no change inside the frozen layout shortens it. **Nothing was changed** (F1e: persisted forms change only additively); the card says so when your answer is over 64 symbols ("an enth from before duels calls it "bad length". Your friend needs to update enth."), and INT5's friend sheet should say both lines.
 
 Two ways out, sized for the R5a release step (touched passing answers, lane SKD's method, 20 seeds per level, measured 2026-10-25):
 
@@ -217,6 +222,45 @@ Two ways out, sized for the R5a release step (touched passing answers, lane SKD'
 - **A. Multi-part answers** (a new version-15 kind or answer layout, additive): the answer's bits split into parts of at most 64 symbols, each with the version-15 header, a part index and count (3 bits each) and code v1's symbol, so **every part reads "update enth" on an R1–R3 build, at every level**. About 27 bits (5–6 symbols) per part; 2 parts at levels 1–2, up to 5 at level 5. Paste-anything gathers the parts of one answer (it already reads several codes per paste) and refuses a missing part plainly. Work: RC's `result.rs`/`answer.rs`/`paste.rs` additions with frozen fixtures, the corpus test, a judge's look (it is a persisted form), the card's Copy giving the parts on separate lines: about 1.5–2.5 agent-hours. It only changes what old builds print; it makes nothing shorter.
 - **B. Quantized answers** (no format change: the 16-bit float coding exists): the shell rounds each changed value to the coding's three significant digits before `AnswerCode::new`, so the canonical answer the scorecard claims is the rounded patch. It shortens every answer by about a quarter, but **only fixes most of level 1** (3 of 20 still over 64) and not level 2 and above; and it changes the patch you share (sound up to 3.2 points lower here, and **2 of 20 level-3 answers stopped passing**), so it needs a guard (share the rounded patch only when it still passes, else the exact one) and a product decision against duels.md's "exact `f32` bits". Work: about 0.5–1 agent-hour in the shell plus the guard's tests.
 - **Neither** (today): codes stay as they are; an R1–R3 friend reads "bad length" for most answers and "update enth" for the rest, and the friend sheet says both mean "update enth". Old builds are a shrinking set once the friend build ships.
+
+### Lane ANS: the answer code's fields widened (D3)
+
+**Decided and built 2026-10-26** (the owner's call, D3 of [phase-s2.md](phase-s2.md#the-answer-code-r5a-d3)): the answer code's kind, parameter, place and target fields are wider, in place. Answer layout 1 was frozen at F1e but has never been in a friend build, so it stays layout 1; after the friend build ships, the same change would be a layout 2. **No multi-part answers and no quantised answers** (neither option of ["Bad length"](#bad-length-on-touched-level-1-answers-found-by-the-coordinator-measured-by-lane-dui)): S2a needed the room, not a shorter code.
+
+| Field (`answer.rs`) | Was | Now | Holds |
+| --- | --- | --- | --- |
+| `TARGET_BITS` | 5 | **6** | `voice`, `master` and 62 modules (every module reference: `SetEnabled`, `RemoveModule`, `Move`, `SetAmpEnv`, a route's destination and module source) |
+| `PARAM_BITS`, `RUN_END` | 4, 15 | **6, 63** | parameters 0–62 per owner; 63 ends a run |
+| `PLACE_BITS` | 3 | **4** | 16 modules per section |
+| `KIND_BITS` | 4 | **6** | 64 kinds (S2a's `delay` 16 and `ladder` 17 can be written once lane CAT adds their table rows) |
+
+Unchanged, bit for bit: the op, route, macro, id-number and source fields, the float coding, the header, salt, challenge payload, tail, check symbol and both preimages, `result-params-v1`'s entries, and every other code kind with its fixtures. **A commitment hashes the patch, not the code's bits**, so a scorecard made before the widening still matches the same answer (a test pins the four fixture answers' commitments from the F1e build; the CLI's `duel_result` snapshot keeps its scorecard line). Old builds are unaffected: an answer of 64 symbols or fewer still reads "update enth" and a longer one "bad length". A code made before the widening does not read on this build. The card's over-64-symbols note and the friend sheet's line stay.
+
+**Guards**, so the next catalogue change cannot outgrow the code silently: compile-time asserts in `answer.rs` (with tests that name the section, kind or row): `ModuleKind::ALL.len()` (the hidden reserved kinds counted) fits the kind field; each section cap (`MAX_GENERATORS`, `MAX_VOICE_FX`, `MAX_FX`, `MAX_MODULATORS`) fits the place field; 2 + their sum fits the target field; `MAX_ROUTES` fits the route field; the id numbers 1–63 cover the module cap; every `result-params-v1` row, every catalogue kind (reserved ones too) and `voice` and `master` have fewer than 63 parameters, so a lane that adds a 63rd fails there and not on a friend's machine. The new widths are also round-tripped at the bit level (a kind of 17, a parameter of 40, a place of 12, a target of 40), which the old widths could not carry.
+
+**What it cost.** Each moved knob costs 2 bits more (its parameter index), each run of knobs on one target 3 more (the target and the run's end), each added module a few. Before and after, symbols (median, max; code v1's symbol included):
+
+*The size-budget test (`the_size_budget_per_level`, 40 seeds); its budgets rose by exactly these growths:*
+
+| Level | Target | Dragged | Touched |
+| --- | --- | --- | --- |
+| 1 | 46, 50 → 47, 51 | 49, 56 → 50, 58 | 74, 75 → 77, 79 |
+| 2 | 56, 61 → 58, 65 | 66, 75 → 69, 78 | 89, 91 → 93, 96 |
+| 3 | 92, 98 → 100, 106 | 123, 132 → 130, 140 | 144, 147 → 152, 155 |
+| 4 | 110, 130 → 120, 143 | 144, 171 → 154, 183 | 165, 186 → 175, 199 |
+| 5 | 152, 188 → 168, 208 | 212, 263 → 227, 283 | 230, 271 → 246, 290 |
+
+*Passing answers (lane SKD's and DUI's method, `measure_passing_answer_sizes`, 20 seeds per level, every answer passed):*
+
+| Level | Target | Played, passing | Played and touched, passing |
+| --- | --- | --- | --- |
+| 1 | 46, 50 → 47, 51 | 49, 56 → 50, 58 | 68, 85 → 71, 89 |
+| 2 | 56, 60 → 58, 63 | 66, 75 → 69, 78 | 86, 99 → 91, 105 |
+| 3 | 92, 96 → 100, 104 | 123, 132 → 130, 140 | 139, 151 → 148, 161 |
+| 4 | 109, 123 → 118, 135 | 144, 168 → 154, 180 | 157, 183 → 168, 195 |
+| 5 | 152, 190 → 168, 209 | 212, 269 → 228, 288 | 228, 291 → 245, 312 |
+
+A level-1 answer grows by 1 to 4 symbols, a level-5 answer by 15 to 21 (the same 2 and 3 bits, over more knobs and more runs). The frame is still 38 symbols (189 bits). A touched level-1 answer is now 71 symbols at the median (68 before), so slightly more old builds read it "bad length" than before.
 
 ## GR5
 
@@ -251,7 +295,7 @@ QR result cards (encoders and the `rqrr` decoder were checked; QR is useless bet
 | **Old builds say "bad length"** and can't be fixed | Every kind keeps code v1's GF(32) symbol, so short codes read "update enth"; the friend sheet |
 | **Scorer drift** after GR1's `sound/2` | The scorer set in every code; old ids kept |
 | **Format sprawl** (two result kinds, an ear result, the parameter table, the daily formula) | One judge at F1e; fixtures with pinned SHAs |
-| **Real answers longer than measured** | Measured at F1e on dragged, touched and solver answers (up to about 270 symbols at level 5); SKD measures passing answers at F2d; a whole-patch layout if ever needed |
+| **Real answers longer than measured** | Measured at F1e on dragged, touched and solver answers (up to about 270 symbols at level 5); SKD measured passing answers at F2d (up to about 290); the widening of 2026-10-26 added about 15–20 symbols at level 5 (up to about 310); a whole-patch layout if ever needed |
 | **Paste mangling** in chat apps and phones | Paste-anything, a corpus test, your duel check |
 
 ## Decisions (provisional)
@@ -260,6 +304,7 @@ QR result cards (encoders and the `rqrr` decoder were checked; QR is useless bet
 | --- | --- | --- | --- |
 | Result codes | A scorecard (about 51 symbols) and an answer code (the patch as a diff) on the version-15 escape | Reports 03 §2.4, 02 §5 | Needs you (Q3) |
 | Answer form | `ops_between` with exact `f32` bits through the frozen `result-params-v1` table; `meta`, labels, names, slots and typed ids stripped | Reports 02 §5, 03 §2.4 | Built (RC), for the F1e judge |
+| Answer fields (D3) | Widened in place on 2026-10-26: target 6 bits, parameter 6, place 4, kind 6; layout 1 stays layout 1; no multi-part and no quantised answers | The owner's call; lane DUI's sizing; [below](#lane-ans-the-answer-codes-fields-widened-d3) | Built (ANS) |
 | Code checks | Scorecard: a fixed length, 30 check bits; answer: a 40-bit tail over the rebuilt answer; every kind ends with code v1's GF(32) symbol | Report 03 §2.3, the summary, [challenge.md](challenge.md#what-older-builds-print) | Built (RC), for the F1e judge |
 | Compared submit | The first passing submit; otherwise the best, marked "not passed" | Report 03 §7 | Needs you (Q4) |
 | Verification | The receiver re-scores both answers; an engine mismatch shows both numbers; refuse only on a generator or hash mismatch | Reports 02 §5, 03 §3 | Proposed |

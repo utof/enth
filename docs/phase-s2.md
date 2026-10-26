@@ -21,7 +21,7 @@ Lanes should read these before the tables.
 
 **What it costs**
 
-- A new `ModuleKind` changes no existing hash, golden, code or model, and a missing implementation is a compile error. The narrow spots are generator v1's pin and R3b's layout-1 hash (both pin five enums, below) and R5's answer code (16 kinds, 15 parameters per kind, 8 modules per section).
+- A new `ModuleKind` changes no existing hash, golden, code or model, and a missing implementation is a compile error. The narrow spots are generator v1's pin and R3b's layout-1 hash (both pin five enums, below). R5's answer code was one too (16 kinds, 15 parameters per kind, 8 modules per section) until D3 widened it on 2026-10-26 to 64 kinds, 63 parameters per owner (indices 0–62) and 16 modules per section, with compile-time asserts in `answer.rs` that fail the build when the catalogue or the patch model outgrows them.
 - **CPU is the wall.** 16 voices × 7-voice unison is about 4,700 instructions per frame on saws and about 12,100 on wavetables, against G1's 6,154–6,274 of 12,000. So unison uses `wide` lanes from its first line, and S2a gets a G2 reference patch with its own budget.
 - **Latency stays zero** (D10): no lookahead limiter, IIR oversampling instead of FIR, a through-zero flanger with a fixed dry delay.
 - **Every effect has a verified permissive source** (Mutable Instruments, Signalsmith, DaisySP, Faust per function, Dexed's MSFA files per file); Vital, Surge XT and chowdsp's GPL modules are study only ([research.md](research.md), [ADR-0004](adr/0004-licensing.md)).
@@ -61,7 +61,7 @@ The summary's corrections stand ([summary](../_local/sessions/2026-10-25-s2-dept
 | Report 06's waves run MOD before OTT and have no MSEG or UNI lane of their own | D1's order: DST and WT, then OTT, FLT and MSEG, then UNI, MOD, EQ and DLY | The summary; this plan |
 | 04's coverage percentages | Judgment; TPL and GS2a replace them with a count of the ten sketches matched | The summary |
 | phase-4.md already has an **F2d** (R5a's duel skeleton) and a lane **G2** (the chord and rhythm ladders) | S2's freezes take an **m** (modules): F0m, F1m, F2m, F3m, and the judge-fix lane is F1M, so no freeze name means two things. "G2" here is the reference patch (after G1's); the ladder lane keeps its name in phase-4.md | This plan |
-| The answer code has 9 free kinds and S2a reserves 11 | D3, [below](#the-answer-code-r5a-d3) | This plan |
+| The answer code has 9 free kinds and S2a reserves 11 | D3, [below](#the-answer-code-r5a-d3): decided 2026-10-26, widened | This plan |
 
 ## Freezes
 
@@ -124,10 +124,11 @@ Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are mar
 
 ### The answer code (R5a, D3)
 
-Not an S2a lane: it is **R5a's change**, because `answer.rs` is R5's and phase-4.md's F1e freezes it. Answer layout 1 allows 16 kinds (`KIND_BITS` 4; 7 used), 15 parameters per kind (`PARAM_BITS` 4, where 15 ends a run) and 8 modules per section (`PLACE_BITS` 3). **S2a reserves 11 kinds against 9 free**, so two could not be named in an answer, and an MSEG of 8–16 points exceeds 15 parameters (report 06: 5 points × 3 values already reach it). Layout 1 is frozen at F1e but unreleased (SKD is merged and no R5a friend build exists), so widening it now is free and later it is a version.
+Not an S2a lane: it is **R5a's change**, because `answer.rs` is R5's and phase-4.md's F1e freezes it. Answer layout 1 allowed 16 kinds (`KIND_BITS` 4; 7 used), 15 parameters per kind (`PARAM_BITS` 4, where 15 ended a run) and 8 modules per section (`PLACE_BITS` 3). **S2a reserves 11 kinds against 9 free**, so two could not be named in an answer, and an MSEG of 8–16 points exceeded 15 parameters (report 06: 5 points × 3 values already reach it). Layout 1 was frozen at F1e but unreleased (SKD is merged and no R5a friend build exists), so widening it was free and later it would be a version.
 
-- **D3 (the owner's call; default: widen now, before R5a's friend build):** more bits for kind, parameter and place, and the same change fixes `bad_length` (code v1's decoder refuses a code over 64 symbols before it reads a field, and answers run to about 50, 135 and 255 symbols at levels 1, 3 and 5). The fix is a format change: answers split into parts of at most 64 symbols, or quantised answers (a product rule change). **Lane DUI sizes both**; INT5 or a small light ANS lane in R5a's plan then makes the change (about 1–2 agent-hours, this plan's guess, not in S2a's total). CAT hands it the parameter table rows and counts.
-- **If you decline:** S2a goes on, a patch that uses a kind or parameter past the cap cannot be sent as an answer (what the duel card says then is DUI's call), and CAT caps the MSEG at what 15 parameters hold.
+- **D3 (decided 2026-10-26: widen only):** more bits for kind, parameter, place and target. The owner chose **no multi-part answers and no quantised answers**, so `bad_length` stays as [duels.md](duels.md#bad-length-on-touched-level-1-answers-found-by-the-coordinator-measured-by-lane-dui) describes (code v1's decoder refuses a code over 64 symbols before it reads a field; the card's note and the friend sheet's line stay). **Lane ANS built it** (one light lane, in `answer.rs`; layout 1 stays layout 1): `TARGET_BITS` 5→6 (62 modules), `PARAM_BITS` 4→6 (parameters 0–62 per owner, 63 ends a run), `PLACE_BITS` 3→4 (16 modules per section), `KIND_BITS` 4→6 (64 kinds, so `delay` 16 and `ladder` 17 can be written). Answers grew by 1–4 symbols at level 1 and 15–21 at level 5 ([duels.md](duels.md#lane-ans-the-answer-codes-fields-widened-d3) has the before and after). A commitment hashes the patch, so scorecards still match.
+- **What CAT must keep, and the guards that check it** (compile-time asserts in `answer.rs`, with tests that name the offender): at most 64 kinds counting the hidden ones (18 today); at most 62 parameters per kind, with a `result-params-v1` row for each listed kind; each section at most 16 modules; voice, master and the module caps within 62 modules; `MAX_ROUTES` within 64. **CAT still adds the table rows for kinds 7–17** (until then, a code naming one is `answer_too_new` and the encoder refuses an answer that holds one). A change past a guard needs a new layout, so tell the judge.
+- **If the owner had declined** (not taken): a patch using a kind or parameter past the old caps could not be sent as an answer, and CAT would have capped the MSEG at 15 parameters.
 - Cross-referenced from [phase-4.md](phase-4.md#open-checks).
 
 ## Waves
@@ -193,7 +194,7 @@ The table of record will be `docs/s2a-gates.md` (INT-S2a), planned. Proposed; yo
 | --- | --- | --- |
 | **D1** S2a starts now, re-aimed at bass music, in this page's order | Yes | Now |
 | **D2** The S2 rules above | Yes | Now |
-| **D3** Widen the answer code before R5a's friend build and fix `bad_length` in the same change: **your call** | Widen now | Before INT5 |
+| **D3** Widen the answer code before R5a's friend build and fix `bad_length` in the same change: **decided 2026-10-26: widen only**; no multi-part and no quantised answers, so `bad_length` stays | Widen now (done: lane ANS) | Done |
 | **D4** No arpeggiator or sequencer in S2; a synced step gate or volume MSEG | Yes | Now |
 | **D5** BPM is a deterministic render input, default 140 | Yes | Now |
 | **D6** No full training run until layout 2; the fast loop first (lane FTL); calibrate T1 when a GPU is idle | Yes | Now |
@@ -204,7 +205,7 @@ The table of record will be `docs/s2a-gates.md` (INT-S2a), planned. Proposed; yo
 
 Sittings, this plan's estimate (about 1.5–2 h): read the summary and answer D3, 15–20 min; an optional taste check of the exported WAVs of DST and WT (agents export them and never play them), 15 min in wave 4; owner build 7 and the four sounds, 60–90 min after INT-S2a. Friends get the friend build; no friend round is planned for S2a.
 
-Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod arrive through `wt`, unison follows PM, no kind appends an item to a pinned enum, every effect has `mix`, latency stays zero, the answer code is widened now, and S2b waits for F2m.**
+Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod arrive through `wt`, unison follows PM, no kind appends an item to a pinned enum, every effect has `mix`, latency stays zero, the answer code is widened (done 2026-10-26), and S2b waits for F2m.**
 
 ## Rules for every lane
 
@@ -240,7 +241,7 @@ Until you say otherwise: **tempo and distortion come first, FM/PM/AM/ring mod ar
   1. CPU blow-up (SIMD unison, the G2 budget, a voice-count rule);
   2. aliasing at high FM index (PM on phase-read waves only; spectral tests);
   3. determinism of new DSP (`libm` or polynomial shapers, a fixed sum order, six-target goldens);
-  4. the answer code out of room (D3);
+  4. the answer code out of room (D3: widened on 2026-10-26, and guarded at compile time);
   5. a "harmless" enum item tripping v1 and layout 1 (rule 1);
   6. silent scoring holes (MTC in wave 3);
   7. no editor space (EDS);
@@ -262,11 +263,11 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 
 | Check | Owner | When |
 | --- | --- | --- |
-| The answer code's design: bits per kind, parameter and place; multi-part against quantised answers | DUI's report; INT5 or an ANS lane; your D3 | Before R5a's friend build |
-| The MSEG's point count (8–16, against the 15 parameters per kind in force) and envelope times above 10 s (a parameter or a kind) | CAT | F1m |
+| The answer code's design: bits per kind, parameter and place; multi-part against quantised answers | DUI's report; lane ANS; your D3 | Done (2026-10-26: widened; neither multi-part nor quantised) |
+| The MSEG's point count (8–16, against the 62 parameters per kind the answer code holds since D3; 16 points × time, level and curve is 48) and envelope times above 10 s (a parameter or a kind) | CAT | F1m |
 | Whether `wt`'s unison parameters are in F1m's catalogue (inert until UNI, hidden with the kind) or UNI appends them to the still-unreleased kind | CAT | F1m |
 | Where tempo lives in a challenge's render spec, since code v1 cannot grow | TMP, CAT; the F1m judge | F1m |
-| Chain depth: `MAX_VOICE_FX` and `MAX_FX` are 4; 8 is the most `PLACE_BITS` allows and older builds refuse more than 4 | TPL, from the ten sketches | Wave 5 |
+| Chain depth: `MAX_VOICE_FX` and `MAX_FX` are 4; 16 is the most `PLACE_BITS` allows (8 before D3) and older builds refuse more than 4 | TPL, from the ten sketches | Wave 5 |
 | G2's voice count and budget (default 8 voices, at most 12,000 instructions per frame as G1) | G2B | Wave 5 |
 | How module lanes measure aliasing (a hash cannot see it): the sweep and the bound | S0d's harness, each module lane | F0m; each merge |
 | `wide`'s determinism: the bans and a six-target golden, and an arm runner's hash run before SIMD lands | S0d, UNI | F0m; UNI |
