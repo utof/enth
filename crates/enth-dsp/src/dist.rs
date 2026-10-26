@@ -1020,6 +1020,61 @@ mod tests {
         20.0 * log10(x)
     }
 
+    /// The open decision of the design: ADAA stays on at 2x and 4x. A sine at 16x drive into each curve, aliasing
+    /// measured with the harness, with and without the antiderivative quotient inside the oversampler (the plain
+    /// curve at the high rate): the quotient lowers aliasing by 10 to 23 dB for the clips and folds at every factor
+    /// (`docs/dsp/dist.md` has the table).
+    #[test]
+    fn adaa_lowers_aliasing_inside_the_oversampler_too() {
+        use crate::alias::{Measure, alias_db};
+        fn run<C: Curve, const K: usize>(adaa: bool, hz: f64, gain: f64) -> f64 {
+            let w = 2.0 * PI * hz / f64::from(SR);
+            let mut sh = Shaper::ZERO;
+            let n: usize = 32_768 + 4_096;
+            let y: Vec<f32> = (0..n)
+                .map(|i| {
+                    let u = gain * sin(w * i as f64);
+                    let o = if adaa {
+                        sh.step::<C, K>(u)
+                    } else {
+                        sh.os.process::<K>(u, &mut |s| C::f(s))
+                    };
+                    o as f32
+                })
+                .collect();
+            alias_db(&y[4_096..], hz, f64::from(SR), &Measure::REPORT_02)
+        }
+        fn gain_db<C: Curve, const K: usize>(hz: f64) -> f64 {
+            run::<C, K>(false, hz, 16.0) - run::<C, K>(true, hz, 16.0)
+        }
+        for hz in [1_760.0, 3_520.0] {
+            for (name, g1, g2, g4) in [
+                (
+                    "soft",
+                    gain_db::<SoftCurve, 1>(hz),
+                    gain_db::<SoftCurve, 2>(hz),
+                    99.0,
+                ),
+                (
+                    "hard",
+                    gain_db::<HardCurve, 1>(hz),
+                    gain_db::<HardCurve, 2>(hz),
+                    gain_db::<HardCurve, 4>(hz),
+                ),
+                (
+                    "tri",
+                    gain_db::<TriCurve, 1>(hz),
+                    gain_db::<TriCurve, 2>(hz),
+                    gain_db::<TriCurve, 4>(hz),
+                ),
+            ] {
+                for (k, g) in [(1, g1), (2, g2), (4, g4)] {
+                    assert!(g > 8.0, "{name} {hz} Hz x{k}: ADAA gains only {g:.1} dB");
+                }
+            }
+        }
+    }
+
     #[test]
     fn mix_zero_is_the_input_bit_for_bit_and_costs_nothing() {
         for mode in [Mode::Soft, Mode::Bitcrush, Mode::TriangleFold] {
