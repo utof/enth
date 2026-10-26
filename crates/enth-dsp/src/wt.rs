@@ -389,10 +389,20 @@ impl Warp {
     }
 }
 
-/// `p` folded into `[0, 1)`; NaN and the rounding case `p − ⌊p⌋ = 1` map to 0 (the same point of the cycle).
+/// `p` folded into `[0, 1)`; NaN and the rounding case `p − ⌊p⌋ = 1` map to 0 (the same point of the cycle). The
+/// three neighbouring cycles are one add (what `p − ⌊p⌋` is there, bit for bit), because `⌊·⌋` is a library call on
+/// the baseline x86-64 target and a read without modulation never leaves `[0, 1)`.
 #[inline(always)]
 fn wrap01(p: f32) -> f32 {
-    let r = p - p.floor();
+    let r = if (0.0..1.0).contains(&p) {
+        return p;
+    } else if (1.0..2.0).contains(&p) {
+        p - 1.0
+    } else if (-1.0..0.0).contains(&p) {
+        p + 1.0
+    } else {
+        p - p.floor()
+    };
     if (0.0..1.0).contains(&r) { r } else { 0.0 }
 }
 
