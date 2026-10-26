@@ -390,47 +390,65 @@ pub fn magnitude_db(controls: &Controls, freq_hz: f64, sample_rate: f64) -> f64 
         .sum()
 }
 
-/// The two integrator voltages of one channel of one band.
+/// The two integrator voltages of both channels of one band: lane 0 is the left channel and lane 1 the right. The
+/// two channels run in lock step through the same arithmetic, written lane by lane so the compiler can put the pair
+/// in one vector register; every operation is a plain IEEE `+ − ×`, so the bits are the same as the scalar form on
+/// every target.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct State {
-    ic1: f64,
-    ic2: f64,
+    ic1: [f64; 2],
+    ic2: [f64; 2],
 }
 
 impl State {
-    /// One sample through the section with coefficients `(a1, a2, a3)` and output mix `m`.
+    /// One frame (left, right) through the section with coefficients `(a1, a2, a3)` and output mix `m`.
     #[inline(always)]
-    fn tick(&mut self, x: f32, a: (f64, f64, f64), m: &[f64; 3]) -> f32 {
-        let v0 = f64::from(x);
-        let v3 = v0 - self.ic2;
-        let v1 = a.0 * self.ic1 + a.1 * v3;
-        let v2 = self.ic2 + a.1 * self.ic1 + a.2 * v3;
-        self.ic1 = 2.0 * v1 - self.ic1;
-        self.ic2 = 2.0 * v2 - self.ic2;
-        let y = (m[0] * v0 + m[1] * v1) + m[2] * v2;
-        flush64(y) as f32
+    fn tick(&mut self, x: [f32; 2], a: (f64, f64, f64), m: &[f64; 3]) -> [f32; 2] {
+        let v0 = [f64::from(x[0]), f64::from(x[1])];
+        let v3 = [v0[0] - self.ic2[0], v0[1] - self.ic2[1]];
+        let v1 = [
+            a.0 * self.ic1[0] + a.1 * v3[0],
+            a.0 * self.ic1[1] + a.1 * v3[1],
+        ];
+        let v2 = [
+            self.ic2[0] + a.1 * self.ic1[0] + a.2 * v3[0],
+            self.ic2[1] + a.1 * self.ic1[1] + a.2 * v3[1],
+        ];
+        self.ic1 = [2.0 * v1[0] - self.ic1[0], 2.0 * v1[1] - self.ic1[1]];
+        self.ic2 = [2.0 * v2[0] - self.ic2[0], 2.0 * v2[1] - self.ic2[1]];
+        let y0 = (m[0] * v0[0] + m[1] * v1[0]) + m[2] * v2[0];
+        let y1 = (m[0] * v0[1] + m[1] * v1[1]) + m[2] * v2[1];
+        [flush64(y0) as f32, flush64(y1) as f32]
     }
 
     fn at_rest(&self) -> bool {
-        self.ic1 == 0.0 && self.ic2 == 0.0
+        self.ic1 == [0.0; 2] && self.ic2 == [0.0; 2]
     }
 
-    /// Flush the voltages; clear them if they are not finite.
+    /// Flush the voltages; clear a channel's if they are not finite.
     fn settle(&mut self) {
-        if self.ic1.is_finite() && self.ic2.is_finite() {
-            self.ic1 = flush64(self.ic1);
-            self.ic2 = flush64(self.ic2);
-        } else {
-            *self = Self::default();
+        for c in 0..2 {
+            if self.ic1[c].is_finite() && self.ic2[c].is_finite() {
+                self.ic1[c] = flush64(self.ic1[c]);
+                self.ic2[c] = flush64(self.ic2[c]);
+            } else {
+                self.ic1[c] = 0.0;
+                self.ic2[c] = 0.0;
+            }
         }
+    }
+
+    /// The number of subnormal voltages (test support).
+    fn subnormals(&self) -> usize {
+        let sub = |x: f64| usize::from(x != 0.0 && x.abs() < f64::MIN_POSITIVE);
+        self.ic1.iter().chain(&self.ic2).map(|&x| sub(x)).sum()
     }
 }
 
 /// One band: the two channels' states and the last design (cached by its inputs).
 #[derive(Clone, Debug)]
 struct Section {
-    left: State,
-    right: State,
+    state: State,
     /// The inputs of the cached design. NaN until the first design, so the first lookup always misses.
     key: Key,
     params: Params,
@@ -439,8 +457,10 @@ struct Section {
 impl Section {
     const fn new() -> Self {
         Self {
-            left: State { ic1: 0.0, ic2: 0.0 },
-            right: State { ic1: 0.0, ic2: 0.0 },
+            state: State {
+                ic1: [0.0; 2],
+                ic2: [0.0; 2],
+            },
             key: [f32::NAN; 3],
             params: Params::IDENTITY,
         }
@@ -472,8 +492,7 @@ impl Section {
         if p0 == p1 {
             let a = p1.coefficients();
             for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-                *l = self.left.tick(*l, a, &p1.m);
-                *r = self.right.tick(*r, a, &p1.m);
+                [*l, *r] = self.state.tick([*l, *r], a, &p1.m);
             }
         } else {
             // 1 / SEGMENT is a power of two, so the scaling is exact.
@@ -501,12 +520,10 @@ impl Section {
                     p.m[2] += step.m[2];
                 }
                 let a = p.coefficients();
-                *l = self.left.tick(*l, a, &p.m);
-                *r = self.right.tick(*r, a, &p.m);
+                [*l, *r] = self.state.tick([*l, *r], a, &p.m);
             }
         }
-        self.left.settle();
-        self.right.settle();
+        self.state.settle();
     }
 }
 
@@ -531,8 +548,7 @@ impl Eq {
     /// Clear every state (a restart). The design cache stays: it is a function of its inputs.
     pub fn reset(&mut self) {
         for s in &mut self.sections {
-            s.left = State::default();
-            s.right = State::default();
+            s.state = State::default();
         }
     }
 
@@ -581,20 +597,13 @@ impl Eq {
     /// `true` when every state is exactly zero: a segment of silence would then give silence and change nothing.
     #[must_use]
     pub fn is_idle(&self) -> bool {
-        self.sections
-            .iter()
-            .all(|s| s.left.at_rest() && s.right.at_rest())
+        self.sections.iter().all(|s| s.state.at_rest())
     }
 
     /// The number of subnormal values in the state (test support: the flushes keep it at 0).
     #[must_use]
     pub fn count_subnormals(&self) -> usize {
-        let sub = |x: f64| usize::from(x != 0.0 && x.abs() < f64::MIN_POSITIVE);
-        self.sections
-            .iter()
-            .flat_map(|s| [s.left, s.right])
-            .map(|s| sub(s.ic1) + sub(s.ic2))
-            .sum()
+        self.sections.iter().map(|s| s.state.subnormals()).sum()
     }
 }
 
@@ -1110,7 +1119,7 @@ mod tests {
             assert_eq!(bits(&r), bits(&input));
         }
         assert!(
-            !section.left.at_rest(),
+            !section.state.at_rest(),
             "a zero-gain band still tracks the signal"
         );
         // Raised to +6 dB on the next segment it ramps from the identity with its state already warm.
