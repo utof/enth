@@ -16,7 +16,9 @@ use common::{Note, SEED, SR, bits, drive, engine, events, id, note, render};
 use enth_dsp::alias::{FFT_LEN, Measure, Sweep};
 use enth_dsp::util::math::{log2, log10, pow};
 use enth_engine::module::count_subnormals;
-use enth_patch::catalogue::{AdsrParam, CombParam, FormantParam, LfoParam, OscParam, Wave};
+use enth_patch::catalogue::{
+    AdsrParam, CombParam, FormantParam, LadderMode, LadderParam, LfoParam, OscParam, Wave,
+};
 use enth_patch::{ModuleInstance, ModuleKind, Patch, Route};
 
 #[cfg(debug_assertions)]
@@ -829,3 +831,168 @@ fn a_formant_never_allocates_in_process() {
     let out = guarded(&p, &phrase(), 48_000);
     assert!(out.iter().all(|x| x.is_finite()) && out.iter().any(|&x| x != 0.0));
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// ladder
+// ---------------------------------------------------------------------------------------------------------------
+
+fn ladder(set: &[(LadderParam, f32)]) -> ModuleInstance {
+    let set: Vec<(usize, f32)> = set.iter().map(|&(p, v)| (p.index(), v)).collect();
+    module("ladder1", ModuleKind::Ladder, &set)
+}
+
+fn mode(m: LadderMode) -> (LadderParam, f32) {
+    (LadderParam::Mode, m.index() as f32)
+}
+
+/// Middle C, the key-tracking reference (`cutoff` is the cutoff at key 60).
+const C4_HZ: f32 = 261.625_56;
+
+/// A ladder whose cutoff follows the played key at `ratio` times the key's frequency (key tracking 100 %).
+fn ladder_at_ratio(ratio: f32, set: &[(LadderParam, f32)]) -> ModuleInstance {
+    let mut all = vec![
+        (LadderParam::Cutoff, ratio * C4_HZ),
+        (LadderParam::Keytrack, 100.0),
+    ];
+    all.extend_from_slice(set);
+    ladder(&all)
+}
+
+/// The ladder has one nonlinearity at the base rate that a filter at rest does not: the loop's limiter (`u /
+/// sqrt(1 + u^2/16)`), a smooth odd curve that is a 3 % gain change at `u` = 1 and makes a third harmonic of about
+/// -60 dB at that level, plus the input saturator when `drive` is up. The sine is the engine's, so the measure reads
+/// its -93 dB floor through the filter and the limiter's harmonics folding back. Each sweep tunes the cutoff to a
+/// fixed ratio of the key (`ladder_at_ratio`), so the sine is always on the same part of the response: a quarter and
+/// four times its frequency, in all four modes, and the self-oscillating ring on the sine and an octave above it (an
+/// exact harmonic of the sine, so the ring is signal to the measure, as the comb's teeth are). A ring above a sixth
+/// of the sample rate folds its limiter's third harmonic: `a_ring_above_a_sixth_of_the_rate_folds_its_limiter`.
+#[test]
+fn a_ladder_adds_almost_no_aliasing_without_drive() {
+    let keys = [33u8, 45, 57, 69, 81, 93, 105];
+    let sweeps: Vec<(&str, f32, usize, Vec<(LadderParam, f32)>)> = vec![
+        (
+            "lp24, cutoff 4x the key, resonance 30 %",
+            4.0,
+            24_000,
+            vec![mode(LadderMode::Lp24), (LadderParam::Resonance, 30.0)],
+        ),
+        (
+            "lp24, cutoff 4x the key, resonance 90 %",
+            4.0,
+            48_000,
+            vec![mode(LadderMode::Lp24), (LadderParam::Resonance, 90.0)],
+        ),
+        (
+            "lp12, cutoff 4x the key, resonance 60 %",
+            4.0,
+            24_000,
+            vec![mode(LadderMode::Lp12), (LadderParam::Resonance, 60.0)],
+        ),
+        (
+            "bp, cutoff on the key, resonance 60 %",
+            1.0,
+            24_000,
+            vec![mode(LadderMode::Bp), (LadderParam::Resonance, 60.0)],
+        ),
+        (
+            "hp, cutoff a quarter of the key, resonance 60 %",
+            0.25,
+            24_000,
+            vec![mode(LadderMode::Hp), (LadderParam::Resonance, 60.0)],
+        ),
+        (
+            "lp24, self-oscillating ring on the sine",
+            1.0,
+            120_000,
+            vec![mode(LadderMode::Lp24), (LadderParam::Resonance, 100.0)],
+        ),
+        (
+            "lp24, self-oscillating ring an octave above the sine",
+            2.0,
+            120_000,
+            vec![mode(LadderMode::Lp24), (LadderParam::Resonance, 100.0)],
+        ),
+    ];
+    for (what, ratio, preroll, set) in sweeps {
+        let p = with(sine_patch(), ladder_at_ratio(ratio, &set));
+        let sweep = Sweep::run_keys(&keys, f64::from(SR), &Measure::REPORT_02, |key| {
+            held_after(&p, key, preroll)
+        });
+        eprintln!("ladder, {what}:\n{}", sweep.table());
+        sweep.assert_below(BOUND_LADDER_DB, what);
+    }
+}
+
+/// Measured 2026-10-26 (`docs/dsp/ladder.md`): the worst point of the sweeps above (-88.3 dB, the ring an octave above
+/// the sine at 3.5 kHz) plus 1.5 dB.
+const BOUND_LADDER_DB: f64 = -86.8;
+
+/// The ring of a self-oscillating ladder passes through the loop's limiter once per sample, a smooth odd curve, so it
+/// has a third harmonic of about -33 dB (before the filter's own slope); a ring above a sixth of the sample rate (8 kHz)
+/// has that harmonic above Nyquist, where it folds. Key 105 (3,520 Hz) with the cutoff at one to six times the key puts
+/// the ring at 3.5, 7.0, 10.6, 14.1, 17.6 and 21.1 kHz, every one an exact harmonic of the sine (so the ring itself is
+/// signal), and the measure reads what the limiter folds from it.
+#[test]
+fn a_ring_above_a_sixth_of_the_rate_folds_its_limiter() {
+    let mut worst = f64::NEG_INFINITY;
+    for ratio in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        let p = with(
+            sine_patch(),
+            ladder_at_ratio(
+                ratio,
+                &[mode(LadderMode::Lp24), (LadderParam::Resonance, 100.0)],
+            ),
+        );
+        let sweep = Sweep::run_keys(&[105], f64::from(SR), &Measure::REPORT_02, |key| {
+            held_after(&p, key, 120_000)
+        });
+        let (_, db) = sweep.worst();
+        eprintln!(
+            "ladder ring at {:.1} kHz (key 105, ratio {ratio}): {db:.1} dB",
+            3.520 * ratio
+        );
+        if ratio > 2.5 {
+            worst = worst.max(db);
+        }
+    }
+    assert!(worst < BOUND_LADDER_RING_DB, "{worst} dB");
+}
+
+/// Measured 2026-10-26 (`docs/dsp/ladder.md`): the worst of the rings above 8 kHz (-34.2 dB at 17.6 kHz) plus 1.5 dB.
+const BOUND_LADDER_RING_DB: f64 = -32.7;
+
+/// The input saturator is the `svf`'s (`enth_dsp::svf::Drive`, one soft curve at the base rate, no oversampling), so
+/// its aliasing is the `svf`'s: the tests/alias.rs sweep at 24 dB of drive with the cutoff open, and the cutoff
+/// tracking the key at four times its frequency (where the ladder's own steep slope removes part of what folds back).
+#[test]
+fn a_driven_ladder_aliases_like_the_svf_drive() {
+    let open = with(
+        sine_patch(),
+        ladder(&[(LadderParam::Drive, 24.0), (LadderParam::Cutoff, 20_000.0)]),
+    );
+    let keys = [45u8, 57, 69, 81, 93];
+    let sweep = Sweep::run_keys(&keys, f64::from(SR), &Measure::REPORT_02, |key| {
+        held_after(&open, key, 8_192)
+    });
+    let what = "ladder, 24 dB drive, cutoff open, sine in";
+    eprintln!("{what}:\n{}", sweep.table());
+    sweep.assert_below(BOUND_LADDER_DRIVE_OPEN_DB, what);
+
+    let tracking = with(
+        sine_patch(),
+        ladder_at_ratio(4.0, &[(LadderParam::Drive, 24.0)]),
+    );
+    let sweep = Sweep::run_keys(&keys, f64::from(SR), &Measure::REPORT_02, |key| {
+        held_after(&tracking, key, 24_000)
+    });
+    let what = "ladder, 24 dB drive, cutoff 4x the key, sine in";
+    eprintln!("{what}:\n{}", sweep.table());
+    sweep.assert_below(BOUND_LADDER_DRIVE_TRACKED_DB, what);
+}
+
+/// Measured 2026-10-26 (`docs/dsp/ladder.md`): -100.5, -94.6, -59.2, -37.9 and -25.6 dB at 110, 220, 440, 880 and
+/// 1,760 Hz (the `svf`'s own saturator measures -100.5, -93.9, -58.2, -37.3 and -25.2); the worst plus 1.5 dB.
+const BOUND_LADDER_DRIVE_OPEN_DB: f64 = -24.1;
+/// Measured 2026-10-26 (`docs/dsp/ladder.md`): -102.2, -97.3, -83.9, -51.3 and -32.6 dB at the same keys; the worst
+/// plus 1.5 dB.
+const BOUND_LADDER_DRIVE_TRACKED_DB: f64 = -31.1;
