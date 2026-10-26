@@ -1,12 +1,17 @@
-//! Instruction budget for the `comb` module (S2a lane FLT), via gungraun (callgrind).
+//! Instruction budgets for the `comb` module (S2a lane FLT), via gungraun (callgrind).
 //!
-//! Placeholder written by lane S0d (freeze F0m, docs/phase-s2.md) so that `cargo xtask bench` runs it from the start
-//! and `enth-engine/Cargo.toml` is not a merge hotspot. Lane FLT replaces `placeholder` with renders of its module
-//! through `common::prepare(&common::patch_with(ModuleKind::Comb), voices, 1.0)` (setup outside the measured function;
-//! see `benches/svf.rs`), subtracts the matching `engine` bench to read the module's own cost, records both in
-//! `docs/dsp/comb.md`, and sets the budget to the measured count plus 10 %. Instruction counts are exact and
-//! independent of runner load; they under-report subnormal penalties, so the subnormal tests stay mandatory. Needs
-//! valgrind and a `gungraun-runner` of the same version as the gungraun crate.
+//! Setup (building the patch, preparing the engine, queueing the chord) is outside the measured function. Each case
+//! renders 1 s at 48 kHz (1,500 segments). The engine skeleton's own cost (segment loop, FIFO, voice sum, pan, the
+//! default `adsr` and `osc`) is in the number too: subtract the `engine` bench with the same voices to read the
+//! comb's own cost (`docs/dsp/comb.md` records both). Budgets are the measured count plus 10 %.
+//!
+//! - `static_*`: the default comb (keytrack 100 %, feedback 50 %, damping 8 kHz), static parameters: the tuning
+//!   (one `tan`, one `atan`) is cached, so the cost is the delay line and the interpolator.
+//! - `moving_*`: `semi` changes at every segment (a new tuning, one `tan` and one `atan`, and a delay ramp every 32
+//!   frames per voice): the cost of an envelope or LFO routed to the comb's pitch.
+//!
+//! Instruction counts are exact and independent of runner load; they under-report subnormal penalties, so the
+//! subnormal tests stay mandatory. Needs valgrind and a `gungraun-runner` of the same version as the gungraun crate.
 #![allow(missing_docs, reason = "benchmark harness")]
 
 #[path = "common/mod.rs"]
@@ -14,13 +19,100 @@ mod common;
 
 use std::hint::black_box;
 
+use enth_engine::{Engine, Event, EventKind, NoteKey, PrepareCfg, SEG, compile};
+use enth_patch::{ModuleKind, ParamAddr};
 use gungraun::{library_benchmark, library_benchmark_group, main};
 
-#[library_benchmark]
-#[bench::placeholder(args = (1_u32,), config = common::budget(10_000))]
-fn placeholder(x: u32) -> u32 {
-    black_box(x).wrapping_add(1)
+fn statics(voices: usize) -> common::Prepared {
+    common::prepare(&common::patch_with(ModuleKind::Comb), voices, 1.0)
 }
 
-library_benchmark_group!(name = comb, benchmarks = [placeholder]);
+/// An engine whose comb pitch is set to a new value at every segment boundary.
+struct Moving {
+    engine: Engine,
+    left: Vec<f32>,
+    right: Vec<f32>,
+    /// Block 0: the chord and the first pitch; then one pitch per segment.
+    first: Vec<Event>,
+    pitches: Vec<Event>,
+}
+
+fn moving(voices: usize) -> Moving {
+    let patch = common::patch_with(ModuleKind::Comb);
+    let (plan, map) = compile(&patch, &PrepareCfg::new(common::SR)).expect("bench patch compiles");
+    let addr = format!("{}2.semi", ModuleKind::Comb.spec().id_prefix);
+    let id = map
+        .get(&addr.parse::<ParamAddr>().expect("address"))
+        .expect("the comb is in the plan");
+    let frames = common::SR as usize;
+    let segments = frames / SEG;
+    let pitches = (0..segments)
+        .map(|i| Event {
+            offset: (i * SEG) as u32,
+            kind: EventKind::Param {
+                id,
+                // -24 ... +24 semitones, a different value every segment (a fixed pseudo-random walk).
+                value: -24.0 + ((i * 17) % 49) as f32,
+            },
+        })
+        .collect();
+    let first = (0..voices)
+        .map(|i| Event {
+            offset: 0,
+            kind: EventKind::NoteOn {
+                key: NoteKey::new(36 + (i as u8 * 5) % 60, i as i32),
+                velocity: 0.8,
+            },
+        })
+        .collect();
+    Moving {
+        engine: Engine::new(plan, 0x0E17_5EED),
+        left: vec![0.0; frames],
+        right: vec![0.0; frames],
+        first,
+        pitches,
+    }
+}
+
+fn render_moving(mut m: Moving) -> f32 {
+    for (i, (l, r)) in m
+        .left
+        .chunks_mut(SEG)
+        .zip(m.right.chunks_mut(SEG))
+        .enumerate()
+    {
+        if i == 0 {
+            let mut ev = m.first.clone();
+            ev.push(m.pitches[0]);
+            m.engine.process(black_box(l), black_box(r), &ev);
+        } else {
+            m.engine.process(
+                black_box(l),
+                black_box(r),
+                std::slice::from_ref(&m.pitches[i]),
+            );
+        }
+    }
+    black_box(m.left[m.left.len() / 2] + m.right[m.right.len() / 3])
+}
+
+// Budgets: measured on x86_64 Linux with the pinned toolchain (2026-10-26, 1 s at 48 kHz), plus 10 %, rounded up to
+// 1,000. Measured: 6,361,238 (static_1v), 78,791,448 (static_16v) and 134,965,117 (moving_16v, a `semi` event every
+// segment); over the `engine` bench's 3,621,181 and 37,278,521 (same build) that is 54.1 instructions per sample per
+// voice for a static comb and 127 with the pitch moving: the extra 73 are the per-sample delay ramp and
+// interpolation weights plus, every segment, a new tuning (a `tan` and an `atan`) (docs/dsp/comb.md).
+#[library_benchmark]
+#[bench::static_1v(args = (1,), setup = statics, config = common::budget(6_998_000))]
+#[bench::static_16v(args = (16,), setup = statics, config = common::budget(86_671_000))]
+fn render(p: common::Prepared) -> f32 {
+    common::render(p)
+}
+
+#[library_benchmark]
+#[bench::moving_16v(args = (16,), setup = moving, config = common::budget(148_462_000))]
+fn render_pitch_moving(m: Moving) -> f32 {
+    render_moving(m)
+}
+
+library_benchmark_group!(name = comb, benchmarks = [render, render_pitch_moving]);
 main!(library_benchmark_groups = comb);
