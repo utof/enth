@@ -350,7 +350,7 @@ mod tests {
         let _ = rig.run(&[0.0; SEG]);
         let d = rig.comb.tuning[0].delay;
         assert!(d <= 2_400.0 && d > 2_390.0, "{d}");
-        assert!(rig.comb.lines.len() == MAX_VOICES * 4_096);
+        assert_eq!(rig.comb.lines.len(), MAX_VOICES * 4_096);
     }
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
             let _ = b.run(&y);
             assert_eq!(alone.run(&x).map(f32::to_bits), a.run(&x).map(f32::to_bits));
         }
-        assert!(b.comb.state[0] != a.comb.state[0]);
+        assert_ne!(b.comb.state[0], a.comb.state[0]);
     }
 
     #[test]

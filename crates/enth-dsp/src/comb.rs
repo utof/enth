@@ -394,9 +394,9 @@ mod tests {
     }
 
     /// |H| at angular frequency `w` (rad/sample): the module's closed form.
-    fn analytic(t: &Tuning, fb: f64, w: f64) -> f64 {
+    fn analytic(t: Tuning, fb: f64, w: f64) -> f64 {
         response(
-            t,
+            &t,
             fb,
             w * f64::from(SR) / (2.0 * core::f64::consts::PI),
             f64::from(SR),
@@ -455,10 +455,19 @@ mod tests {
         assert!((frequency_hz(12.0, 0.0, SR) - 523.26).abs() < 1e-2);
         assert!((frequency_hz(0.0, 12.0, SR) - 523.26).abs() < 1e-2);
         // The floor: semi -48 at key 0 (tracked -60) would be 0.5 Hz.
-        assert_eq!(frequency_hz(-48.0, -60.0, SR), MIN_FREQ_HZ);
-        assert_eq!(frequency_hz(f32::NAN, 0.0, SR), MIN_FREQ_HZ);
+        assert_eq!(
+            frequency_hz(-48.0, -60.0, SR).to_bits(),
+            MIN_FREQ_HZ.to_bits()
+        );
+        assert_eq!(
+            frequency_hz(f32::NAN, 0.0, SR).to_bits(),
+            MIN_FREQ_HZ.to_bits()
+        );
         // The ceiling: 0.45·fs.
-        assert_eq!(frequency_hz(48.0, 67.0, SR), 0.45 * SR);
+        assert_eq!(
+            frequency_hz(48.0, 67.0, SR).to_bits(),
+            (0.45 * SR).to_bits()
+        );
     }
 
     #[test]
@@ -472,7 +481,7 @@ mod tests {
         assert!((dark.delay - want).abs() < 0.05, "{} vs {want}", dark.delay);
         // The clamp at 2 samples for a comb near Nyquist.
         let top = Tuning::new(40_000.0, 500.0, SR);
-        assert_eq!(top.delay, MIN_DELAY);
+        assert_eq!(top.delay.to_bits(), MIN_DELAY.to_bits());
     }
 
     #[test]
@@ -511,7 +520,7 @@ mod tests {
             for k in 0..9 {
                 let f = f64::from(freq) * (0.5 + 0.25 * f64::from(k));
                 let w = 2.0 * core::f64::consts::PI * f / f64::from(SR);
-                let want = analytic(&seg.to, f64::from(fb), w);
+                let want = analytic(seg.to, f64::from(fb), w);
                 let got = measured(&seg, f);
                 assert!(
                     (db(got) - db(want)).abs() < 0.03,
@@ -538,7 +547,7 @@ mod tests {
                 let mut peak = 0.0f64;
                 let mut probe = |hz: f64| {
                     let w = 2.0 * core::f64::consts::PI * hz / f64::from(SR);
-                    peak = peak.max(analytic(&seg.to, f64::from(fb), w));
+                    peak = peak.max(analytic(seg.to, f64::from(fb), w));
                 };
                 for k in 1..1_000 {
                     probe(24_000.0 * f64::from(k) / 1_000.0);
@@ -561,7 +570,7 @@ mod tests {
         for fb in [0.5f32, 0.9, 0.99] {
             let seg = static_segment(110.0, 20_000.0, fb, 1.0);
             let w = 2.0 * core::f64::consts::PI * 110.0 * 1.5 / f64::from(SR);
-            let valley = analytic(&seg.to, f64::from(fb), w);
+            let valley = analytic(seg.to, f64::from(fb), w);
             let want = (1.0 - f64::from(fb)) / (1.0 + f64::from(fb));
             assert!(
                 (db(valley) - db(want)).abs() < 0.2,
