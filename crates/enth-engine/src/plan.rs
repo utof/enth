@@ -253,8 +253,8 @@ impl Plan {
     }
 
     /// Whether the plan runs the stereo voice path ([`crate::stereo`]): the voice bus is left and right, and each
-    /// `voice_fx` module has a second, right-channel instance. `false` for every patch until lane UNI, unless
-    /// [`compile_with`] forced it.
+    /// `voice_fx` module has a second, right-channel instance. Set by the patch alone when an enabled `wt` has `unison` of
+    /// 2 or more (lane UNI), or by [`compile_with`] forcing it; cleared by `StereoMode::Off`.
     #[must_use]
     pub fn is_stereo(&self) -> bool {
         self.stereo.is_on()
