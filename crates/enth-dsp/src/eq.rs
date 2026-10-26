@@ -10,13 +10,14 @@
 //! catalogue gives them a corner and a gain and no shape; the cuts are `Q = 1/√2` (Butterworth). **The cuts are
 //! always in the path**: nothing switches them in or out at the ends of their ranges, because both are modulatable
 //! and a stage that appeared at a range end would click as a source crossed it. A band at 0 dB is the identity
-//! (`out = in`, bit for bit) but keeps tracking the signal, so it can be raised without a swell.
+//! (`out = in`, bit for bit, but for a sample under 1e-15, which the flush takes to zero) and keeps tracking the
+//! signal, so it can be raised without a swell.
 //!
 //! **Why a state-variable section and not [`biquad::Biquad`](crate::biquad::Biquad).** The two realise the same
 //! transfer function when the controls are still (a test compares them), but they behave differently while the
 //! controls move. The biquad's transposed direct form II holds sums of past inputs and outputs, so changing its
-//! coefficients re-reads that state with different numbers: a high-Q bell hopping between 20 Hz and 20 kHz every
-//! segment pumps energy into it and blows up to infinity in a few seconds (measured: lane EQ's first version,
+//! coefficients re-reads that state with different numbers: a high-Q bell that picks 20 Hz or 20 kHz at random every
+//! segment pumps energy into it and overflows within a few seconds (`the_same_ramp_through_a_biquad_pumps_where_the_tpt_section_does_not`,
 //! `docs/dsp/eq.md`, "Why not the biquad"). The TPT section keeps the two integrator voltages of an analog
 //! state-variable filter. Its state update is `[[2a1−1, −2a2], [2a2, 1−2a3]]` with `a1 = 1/(1 + g(g + k))`, `a2 =
 //! g·a1`, `a3 = g·a2`, whose largest singular value is exactly 1 for every `g > 0` and `k ≥ 0`: a rotation by `2
@@ -1048,7 +1049,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------------------------------------------
-    // The wrap: nothing of the biquad changed, the core is the biquad plus ramps
+    // Against BQ's biquad: the same transfer function by another structure, and what the other structure does
     // -----------------------------------------------------------------------------------------------------------
 
     #[test]
@@ -1742,25 +1743,14 @@ mod tests {
 
     #[test]
     fn a_sine_through_a_swept_band_has_no_zipper_that_a_ramp_does_not_remove() {
-        // A bell swept by an 80 Hz sine in the log domain between 300 Hz and 6 kHz at +18 dB, Q 8, on a 1 kHz sine
-        // (the controls change every 32 frames, as in the engine). Stepped (previous = current, so each segment
-        // jumps) the output carries a skirt of edges at the segment rate; ramped it is much cleaner. The skirt is
-        // the strongest bin 1.2 to 14 kHz above the carrier, in dB re the carrier's strongest bin.
+        // A bell swept sinusoidally in the log domain over a band, +18 dB, Q 8, on a 1 kHz sine (the controls change
+        // every 32 frames, as in the engine). Stepped (previous = current, so each segment jumps) the output carries
+        // a skirt of edges at the segment rate; ramped it is far cleaner. The skirt is the strongest bin in 3 to
+        // 5, 5 to 9 and 9 to 17 kHz, in dB re the carrier's strongest bin. The second row is a sweep so fast (80 Hz,
+        // through the carrier 160 times a second) that the modulation itself, not the stepping, sets the first band.
         let sr = 48_000.0f32;
         let frames = 4 * crate::alias::FFT_LEN;
         let input: Vec<f32> = crate::alias::sine(1_000.0, 0.5, f64::from(sr), frames);
-        let bell = |k: usize| {
-            let t = k as f64 * SEGMENT as f64 / f64::from(sr);
-            let f = 1_350.0 * libm::pow(20.0, 0.5 * libm::sin(TAU * 80.0 * t) - 0.0)
-                / libm::sqrt(20.0)
-                * 1.0;
-            Controls {
-                bell1_freq_hz: (f * 1.0).clamp(300.0, 6_000.0) as f32,
-                bell1_gain_db: 18.0,
-                bell1_q: 8.0,
-                ..Controls::DEFAULT
-            }
-        };
         let skirt = |out: &[f32]| {
             let p = crate::alias::power_spectrum(&out[out.len() - crate::alias::FFT_LEN..]);
             let bin = f64::from(sr) / crate::alias::FFT_LEN as f64;
@@ -1768,25 +1758,131 @@ mod tests {
             let peak = p[at(1_000.0) - 8..=at(1_000.0) + 8]
                 .iter()
                 .fold(0.0f64, |m, &x| m.max(x));
-            let worst = p[at(2_200.0)..=at(15_000.0)]
-                .iter()
-                .fold(0.0f64, |m, &x| m.max(x));
-            10.0 * libm::log10(worst / peak)
+            [(3_000.0, 5_000.0), (5_000.0, 9_000.0), (9_000.0, 17_000.0)].map(|(lo, hi)| {
+                let worst = p[at(lo)..=at(hi)].iter().fold(0.0f64, |m, &x| m.max(x));
+                10.0 * libm::log10(worst / peak)
+            })
         };
-        let ramped = run_moving(&mut Eq::new(sr), &input, bell);
-        // Stepped: each segment is processed with previous = current, so the coefficients jump at its first frame.
-        let mut stepped_eq = Eq::new(sr);
-        let mut stepped = Vec::with_capacity(frames);
-        for (k, chunk) in input.as_chunks::<SEGMENT>().0.iter().enumerate() {
-            let c = bell(k + 1);
-            let mut l: Segment = *chunk;
-            let mut r = l;
-            stepped_eq.process(&c, &c, &mut l, &mut r);
-            stepped.extend_from_slice(&l);
+        for (rate_hz, lo, hi, needs_db) in
+            [(10.0, 500.0, 2_000.0, 30.0), (80.0, 700.0, 1_400.0, 20.0)]
+        {
+            let (mid, span) = (libm::sqrt(lo * hi), libm::sqrt(hi / lo));
+            let bell = |k: usize| {
+                let t = k as f64 * SEGMENT as f64 / f64::from(sr);
+                Controls {
+                    bell1_freq_hz: (mid * libm::pow(span, libm::sin(TAU * rate_hz * t))) as f32,
+                    bell1_gain_db: 18.0,
+                    bell1_q: 8.0,
+                    ..Controls::DEFAULT
+                }
+            };
+            let ramped = run_moving(&mut Eq::new(sr), &input, bell);
+            // Stepped: each segment is processed with previous = current, so the coefficients jump at its first
+            // frame.
+            let mut stepped_eq = Eq::new(sr);
+            let mut stepped = Vec::with_capacity(frames);
+            for (k, chunk) in input.as_chunks::<SEGMENT>().0.iter().enumerate() {
+                let c = bell(k + 1);
+                let mut l: Segment = *chunk;
+                let mut r = l;
+                stepped_eq.process(&c, &c, &mut l, &mut r);
+                stepped.extend_from_slice(&l);
+            }
+            let (a, b) = (skirt(&ramped), skirt(&stepped));
+            println!(
+                "zipper skirt, {rate_hz} Hz sweep {lo}..{hi} Hz: ramped {:.1} / {:.1} / {:.1} dB, stepped {:.1} / {:.1} / {:.1} dB re the carrier",
+                a[0], a[1], a[2], b[0], b[1], b[2]
+            );
+            for (a, b) in a.iter().zip(b) {
+                assert!(
+                    *a < b - needs_db,
+                    "ramped {a} vs stepped {b} at {rate_hz} Hz"
+                );
+            }
         }
-        let (a, b) = (skirt(&ramped), skirt(&stepped));
-        println!("zipper skirt: ramped {a:.1} dB, stepped {b:.1} dB re the carrier");
-        assert!(a < b - 15.0, "ramped {a} vs stepped {b}");
+    }
+
+    /// A transposed direct form II biquad in `f64` with its coefficients replaced one sample at a time: the
+    /// structure the first version of this module used (`docs/dsp/eq.md`, "Why not the biquad").
+    #[derive(Default)]
+    struct Tdf2 {
+        s1: f64,
+        s2: f64,
+    }
+
+    impl Tdf2 {
+        fn tick(&mut self, x: f64, c: &Coeffs) -> f64 {
+            let y = c.b0 * x + self.s1;
+            self.s1 = c.b1 * x - c.a1 * y + self.s2;
+            self.s2 = c.b2 * x - c.a2 * y;
+            y
+        }
+    }
+
+    #[test]
+    fn the_same_ramp_through_a_biquad_pumps_where_the_tpt_section_does_not() {
+        // A bell that picks one of two frequencies at random for every segment (a jump over most of the range,
+        // 1500 a second), with its coefficients (the cookbook's, from BQ's `Coeffs::design`) walked linearly across
+        // the segment, under full-scale noise for 4 s. In transposed direct form the state holds sums of past inputs
+        // and outputs, and re-reading them with different numbers every 32 samples pumps energy in until the
+        // output overflows (`inf`, 1e237, 1e7 below); a steady alternation does not show it, a random order does.
+        // The TPT section under the identical control sequence stays within a few times what the frozen ends give.
+        // This is the measurement behind "Why not the biquad" in `docs/dsp/eq.md`.
+        let sr = 48_000.0;
+        let segments = 4 * 1500;
+        let input = noise(segments * SEGMENT, 171, 1.0);
+        for (lo, hi, gain, q) in [
+            (20.0f32, 20_000.0f32, 24.0f32, 20.0f32),
+            (100.0, 5_000.0, 24.0, 20.0),
+            (50.0, 2_000.0, 24.0, 10.0),
+        ] {
+            let mut rng = Rng::new(0xE0E0_5000);
+            let picks: Vec<f32> = (0..=segments)
+                .map(|_| if rng.bipolar_f32() < 0.0 { lo } else { hi })
+                .collect();
+            let design = |f: f32| {
+                Coeffs::design(Kind::Peak, f64::from(f), f64::from(gain), f64::from(q), sr)
+            };
+            let (mut state, mut tdf2_peak, mut prev) = (Tdf2::default(), 0.0f64, design(picks[0]));
+            for k in 0..segments {
+                let next = design(picks[k + 1]);
+                for i in 0..SEGMENT {
+                    let w = (i + 1) as f64 / SEGMENT as f64;
+                    let lerp = |a: f64, b: f64| a + (b - a) * w;
+                    let c = Coeffs {
+                        b0: lerp(prev.b0, next.b0),
+                        b1: lerp(prev.b1, next.b1),
+                        b2: lerp(prev.b2, next.b2),
+                        a1: lerp(prev.a1, next.a1),
+                        a2: lerp(prev.a2, next.a2),
+                    };
+                    let y = state.tick(f64::from(input[k * SEGMENT + i]), &c);
+                    tdf2_peak = tdf2_peak.max(y.abs());
+                }
+                prev = next;
+            }
+            let controls = |f: f32| Controls {
+                bell1_freq_hz: f,
+                bell1_gain_db: gain,
+                bell1_q: q,
+                ..Controls::DEFAULT
+            };
+            let tpt = run_moving(&mut Eq::new(48_000.0), &input, |k| controls(picks[k]));
+            let frozen = [lo, hi].into_iter().fold(0.0f32, |m, f| {
+                m.max(peak_of(
+                    &run_static(&mut Eq::new(48_000.0), &controls(f), &input)[2_000..],
+                ))
+            });
+            let tpt_peak = peak_of(&tpt[2_000..]);
+            println!(
+                "bell {lo}..{hi} Hz, {gain} dB, Q {q}, random every segment, 4 s: TDF2 peak {tdf2_peak:.3e}, TPT peak {tpt_peak:.1}, frozen ends {frozen:.1}"
+            );
+            assert!(tpt_peak < 4.0 * frozen, "{tpt_peak} against {frozen}");
+            assert!(
+                !tdf2_peak.is_finite() || tdf2_peak > 1_000.0 * f64::from(frozen),
+                "the biquad did not pump ({tdf2_peak}): the reason for the TPT section is gone"
+            );
+        }
     }
 
     #[test]
