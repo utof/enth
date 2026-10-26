@@ -17,7 +17,11 @@
 //!    like every event), so the plugin's synced modules follow the host's tempo exactly as `enth render --bpm` and a
 //!    performance's `tempo_changes` do. The host gives one tempo per block, so a tempo ramp steps at block
 //!    boundaries. A host that gives none (or a non-finite or non-positive one) leaves the engine's tempo as it is:
-//!    140 BPM until the host gives one. No host parameter is involved; the 72 ids are untouched.
+//!    140 BPM until the host gives one. No host parameter is involved; the 72 ids are untouched. **While a Recreate
+//!    round plays Target ▶ or Mine ▶** (the A/B switch is not off) the tempo sent is [`DEFAULT_TEMPO_BPM`] instead,
+//!    whatever the host says: the round's score, Target ▶ and Mine's loudness render offline at 140, and Mine ▶ plays
+//!    the phrase live through this engine, so it must run at the tempo it is judged at. With the switch off, the
+//!    host's tempo is sent again.
 //! 2. After a CLAP `reset` (which frees the engine's voices and empties its queue without a report), report every
 //!    live host note's `NOTE_END` at frame 0 ([`crate::ledger`]).
 //! 3. Translate the block's note events ([`crate::notes::engine_event`]) into the preallocated event list and render
@@ -59,6 +63,7 @@ use enth_patch::catalogue::VoiceMode;
 use enth_patch::model::{MACROS, SLOTS};
 use enth_session::HostValues;
 use enth_session::bridge::HOST_PARAMS;
+use enth_session::game::Listen;
 use nice_plug::prelude::*;
 
 use crate::ledger::Ledger;
@@ -320,8 +325,16 @@ impl Enth {
         let audio = &mut self.audio;
         audio.events.clear();
 
-        // 1. The host's tempo, then its values.
-        audio.tempo_event(context.transport().tempo);
+        // 1. The host's tempo, then its values. While a Recreate round plays Target ▶ or Mine ▶ the tempo is the
+        //    default one, not the host's: the round's score and Target ▶ render offline at `DEFAULT_TEMPO_BPM`, and
+        //    Mine ▶ plays the phrase live through this engine, so a synced LFO must run at the tempo it is judged at
+        //    (F1m judge, M2). Off, the host's tempo again.
+        let ab = self.shared.game.ab.load();
+        audio.tempo_event(if ab.listen == Listen::Off {
+            context.transport().tempo
+        } else {
+            Some(DEFAULT_TEMPO_BPM)
+        });
         self.params.read_modulated(&mut audio.now);
         if self.shared.rebaseline.swap(false, Ordering::AcqRel) {
             let mut restored = HostValues::default();
@@ -337,8 +350,7 @@ impl Enth {
 
         // 1b. A Recreate round (lane SKR): the A/B switch, a new target loop, and Mine ▶'s phrase notes for this block
         //     (on their own port, so the ledger never reports them). Nothing at all while no round plays.
-        self.player
-            .begin(self.shared.game.ab.load(), frames, &mut audio.events);
+        self.player.begin(ab, frames, &mut audio.events);
 
         // 2. The notes a CLAP `reset` dropped end at frame 0, before anything this block reports.
         if audio.reset_pending {
