@@ -315,6 +315,10 @@ fn md_flags(p: &ParamSpec) -> String {
 }
 
 /// Prints one markdown table: a title, then a row per parameter.
+#[allow(
+    clippy::print_stdout,
+    reason = "the two ignored markdown printers below call it; printing is their job"
+)]
 fn md_table(title: &str, params: &[ParamSpec]) {
     println!("### {title}\n");
     println!("| Key | Unit | Range | Scale | Default | Flags | Tier | What it does |");
