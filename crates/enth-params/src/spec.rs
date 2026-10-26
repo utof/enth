@@ -63,7 +63,10 @@ impl EnumItem {
 pub struct Flags {
     /// Modulation routes may target it. `Float` parameters, and `Enum` ones (S2a, lane TMP: `lfo.beats`; the engine
     /// takes `from_norm` of the summed route, which rounds a discrete value, so a modulated enum steps through its
-    /// items in order and never interpolates); never structural ones.
+    /// items in order and never interpolates); never structural ones. **A modulatable enum is frozen once it is
+    /// released** (not append-only): `from_norm` spreads its range over `COUNT − 1` steps, so one more item anywhere
+    /// would move the step every stored route and automation lane lands on. Its items are ordered so that
+    /// neighbouring items are neighbours in effect (`lfo.beats` is sorted by length).
     pub modulatable: bool,
     /// An automation slot may expose it to the host. Never structural ones (each change would recompile the plan).
     pub automatable: bool,

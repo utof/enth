@@ -125,8 +125,9 @@ enum Shot {
     /// One cycle from `start`: `left` is the phase still to travel, or a whole cycle (2⁶⁴, which a `u64` cannot
     /// hold) while `fresh`.
     Run { start: u64, left: u64, fresh: bool },
-    /// The cycle is over: the phase is parked just before `start` and the value is held.
-    Hold,
+    /// The cycle is over: the phase is parked just before `start` and the value is held. `start` is kept so that
+    /// [`Lfo::restart_one_shot`] can begin the cycle again.
+    Hold { start: u64 },
 }
 
 /// One LFO.
@@ -204,15 +205,31 @@ impl Lfo {
                     fresh: true,
                 };
             }
-            (false, Shot::Run { .. } | Shot::Hold) => self.shot = Shot::Off,
+            (false, Shot::Run { .. } | Shot::Hold { .. }) => self.shot = Shot::Off,
             _ => {}
+        }
+    }
+
+    /// Begin the one-shot cycle again from its start phase, whether it is running or held (a mono retrigger: the
+    /// note-on restarts the cycle the way it restarts an envelope). Free-running, there is no cycle to restart and
+    /// nothing changes. The random stream is left alone: a sample & hold or smooth random LFO keeps the values it
+    /// has drawn and goes on drawing from the same stream.
+    #[inline]
+    pub fn restart_one_shot(&mut self) {
+        if let Shot::Run { start, .. } | Shot::Hold { start } = self.shot {
+            self.phase = start;
+            self.shot = Shot::Run {
+                start,
+                left: 0,
+                fresh: true,
+            };
         }
     }
 
     /// Whether a one-shot cycle has run its course and the value is held.
     #[must_use]
     pub fn is_held(&self) -> bool {
-        self.shot == Shot::Hold
+        matches!(self.shot, Shot::Hold { .. })
     }
 
     /// The raw 64-bit phase (test support): the cycle position is `phase / 2⁶⁴`.
@@ -241,7 +258,7 @@ impl Lfo {
                 }
             }
             Shot::Run { start, left, fresh } => self.step_one_shot(start, left, fresh),
-            Shot::Hold => {}
+            Shot::Hold { .. } => {}
         }
         self.value(shape)
     }
@@ -260,7 +277,7 @@ impl Lfo {
                 self.b = self.rng.bipolar_f32();
             }
             self.phase = start.wrapping_sub(1);
-            self.shot = Shot::Hold;
+            self.shot = Shot::Hold { start };
             return;
         }
         let (p, wrapped) = self.phase.overflowing_add(inc);
@@ -787,6 +804,67 @@ mod tests {
             let _ = stopped.tick(Shape::Sine);
         }
         assert!(stopped.is_held(), "a whole cycle after it starts moving");
+    }
+
+    #[test]
+    fn restarting_a_one_shot_runs_the_cycle_again_from_its_start() {
+        // From a start phase of a quarter turn, so a restart that wrongly used phase 0 would show.
+        let fresh = || {
+            let mut l = Lfo::new(1, StartPhase::Cycles(0.25));
+            l.set_rate(23.4375, SR, 32);
+            l.set_one_shot(true);
+            l
+        };
+        let mut reference = fresh();
+        let cycle: Vec<u32> = (0..70)
+            .map(|_| reference.tick(Shape::SawUp).to_bits())
+            .collect();
+        // Held: restart, and the next 70 steps are the first cycle again, bit for bit.
+        let mut held = fresh();
+        for _ in 0..70 {
+            let _ = held.tick(Shape::SawUp);
+        }
+        assert!(held.is_held());
+        held.restart_one_shot();
+        assert!(!held.is_held());
+        let again: Vec<u32> = (0..70).map(|_| held.tick(Shape::SawUp).to_bits()).collect();
+        assert_eq!(again, cycle, "a held cycle restarts from its start phase");
+        assert!(held.is_held(), "and ends again");
+        // Running: restart half-way through, and the cycle begins again.
+        let mut running = fresh();
+        for _ in 0..30 {
+            let _ = running.tick(Shape::SawUp);
+        }
+        assert!(!running.is_held());
+        running.restart_one_shot();
+        let again: Vec<u32> = (0..70)
+            .map(|_| running.tick(Shape::SawUp).to_bits())
+            .collect();
+        assert_eq!(
+            again, cycle,
+            "a running cycle restarts from its start phase"
+        );
+        // A restart in the same step it was armed changes nothing, and a free-running LFO has no cycle to restart.
+        let mut armed = fresh();
+        armed.restart_one_shot();
+        assert_eq!(armed, fresh());
+        let mut free = lfo_64();
+        let untouched = free;
+        free.restart_one_shot();
+        assert_eq!(free, untouched);
+    }
+
+    #[test]
+    fn restarting_a_one_shot_leaves_the_random_stream_alone() {
+        let mut l = Lfo::new(7, StartPhase::Cycles(0.0));
+        l.set_rate(23.4375, SR, 32);
+        l.set_one_shot(true);
+        let first: Vec<f32> = (0..70).map(|_| l.tick(Shape::SampleHold)).collect();
+        assert!(l.is_held());
+        l.restart_one_shot();
+        let second: Vec<f32> = (0..70).map(|_| l.tick(Shape::SampleHold)).collect();
+        // A cycle from phase 0 holds its own value and never draws the next cycle's: the restart repeats it.
+        assert_eq!(first, second);
     }
 
     #[test]

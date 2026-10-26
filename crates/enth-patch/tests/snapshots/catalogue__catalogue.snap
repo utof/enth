@@ -1324,7 +1324,7 @@ expression: catalogue_json()
         {
           "default": 0.0,
           "default_text": "off",
-          "desc": "On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value.",
+          "desc": "On: run one cycle from the start phase at each note-on that restarts the envelopes (not a legato note; the render start for a global LFO), then hold the last value.",
           "flags": {
             "automatable": true,
             "modulatable": false,

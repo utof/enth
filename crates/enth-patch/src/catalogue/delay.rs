@@ -37,7 +37,7 @@ pub const DELAY_BEATS: &[EnumItem] = BEATS.as_slice().split_at(Beats::Bar.index(
 params! {
     /// Parameters of the `delay` module, in spec order.
     pub enum DelayParam in DELAY_PARAMS {
-        Sync = ParamSpec::toggle("sync", "Tempo sync", true)
+        Sync = ParamSpec::toggle("sync", "Sync", true)
             .basic("On: the delay time is beats of the song's tempo. Off: it is time, in milliseconds."),
         Time = ParamSpec::float("time", "Time", Unit::Ms, 1.0, 2_000.0, Scale::Log, 300.0)
             .intermediate("The delay time when tempo sync is off: under 30 ms thickens, 80-150 ms is a slapback, longer is an echo."),

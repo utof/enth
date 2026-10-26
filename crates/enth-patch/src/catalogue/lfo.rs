@@ -85,7 +85,7 @@ params! {
             .modulatable()
             .advanced("The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first."),
         OneShot = ParamSpec::toggle("one_shot", "One shot", false)
-            .advanced("On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value."),
+            .advanced("On: run one cycle from the start phase at each note-on that restarts the envelopes (not a legato note; the render start for a global LFO), then hold the last value."),
     }
 }
 

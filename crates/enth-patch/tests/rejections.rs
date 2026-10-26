@@ -209,12 +209,33 @@ impl Checks {
 
     fn done(self) {
         assert!(self.failures.is_empty(), "\n{}\n", self.failures.join("\n"));
-        let missing: Vec<&&str> = CODES.iter().filter(|c| !self.seen.contains(**c)).collect();
+        let missing: Vec<&&str> = CODES
+            .iter()
+            .filter(|c| !self.seen.contains(**c) && !unreachable_for_now(c))
+            .collect();
         assert!(
             missing.is_empty(),
             "no case produces these codes: {missing:?}"
         );
     }
+}
+
+/// Codes no patch can produce yet, with the reason; `unreachable_codes_are_still_unreachable` fails the day one can,
+/// and that day the code needs a case here and its entry goes.
+fn unreachable_for_now(code: &str) -> bool {
+    // `audio_into_sync_master` needs an audio route into the hard-sync master, an `osc`, and no `osc` parameter is an
+    // `audio` input. Its logic is tested in `validate.rs` (with a kind that has one) and in `enth-engine`'s
+    // `routing.rs` (against the run order).
+    code == "audio_into_sync_master"
+}
+
+#[test]
+fn unreachable_codes_are_still_unreachable() {
+    assert!(
+        ModuleKind::Osc.params().iter().all(|p| !p.flags.audio),
+        "an osc has an audio input now: give audio_into_sync_master a rejection case and drop it from \
+         unreachable_for_now"
+    );
 }
 
 fn m(id: &str) -> ModuleId {

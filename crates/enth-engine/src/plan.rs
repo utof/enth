@@ -25,7 +25,9 @@
 //! copies the old module's state (`copy_state_from`), its modulator outputs and its parameters' running values and
 //! smoothers; so do `voice.*`, `master.*`, the macros and the output ramps. Fresh voice modules start every active
 //! voice (`start_voice` with the voice's own note index, so the seeds are the ones the note would have had), fresh
-//! global modules `reset`. Whether any module was added or removed decides the crossfade.
+//! global modules `reset`. Whether any module was added or removed, or an audible audio route removed, decides the
+//! crossfade; an audio route that is new ramps in from 0 and one that stays goes on from its depth
+//! ([`crate::routing`], *Swaps*).
 //!
 //! Disabled modules are left out (a disabled generator is silent, a disabled effect is bypassed); enabling one is a
 //! structural edit. The amplitude envelope always runs, even if disabled (whether disabling it is valid is S1b's
@@ -460,7 +462,8 @@ impl Plan {
     }
 
     /// Carry the running state of `old` (the plan being replaced) into this one (see the module docs). Called on the
-    /// audio thread; never allocates. Returns whether a module was added or removed (the swap then crossfades).
+    /// audio thread; never allocates. Returns whether a module was added or removed, or an audible audio route was
+    /// removed (the swap then crossfades).
     ///
     /// Whether the swap crossfades is decided first (pairing the five role lists is cheap). Without a crossfade the
     /// old plan never runs again, so each surviving effect *takes* its state ([`GlobalProcessorImpl::take_state`]:
@@ -483,8 +486,15 @@ impl Plan {
             )
             .1
             || pair(&self.fx, &old.fx, GlobalProcessorImpl::kind).1
-            || self.stereo.is_on() != old.stereo.is_on();
+            || self.stereo.is_on() != old.stereo.is_on()
+            // An audio route the new plan lacks cannot ramp down in it: the old plan fades out with the route (F1m S3).
+            || self
+                .audio
+                .drops_a_route_of(&self.generators, &old.audio, &old.generators);
         let move_fx = !changed;
+        // An audio route the old plan lacked ramps in from 0, a route it had goes on from its depth (F1m S3).
+        self.audio
+            .carry_from(&self.generators, &old.audio, &old.generators);
         let Plan {
             generators,
             voice_fx,

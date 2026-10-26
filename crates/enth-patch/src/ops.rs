@@ -52,10 +52,14 @@
 //!   `scope` is checked against its routes the same way, so the rule survives structural edits.
 //! - There is no cycle rule for control routes: a modulator may modulate an earlier one, or itself, and reads that
 //!   source's previous-segment value (docs/design.md §2).
-//! - **Audio routes** (S2a lane RTE): a generator may drive only an `audio` parameter (`not_audio_dest`), an `audio`
-//!   parameter takes only a generator (`not_audio_source`), and audio routes never form a loop, a generator driving
-//!   itself included (`audio_cycle`): audio runs in one direction, and feedback is a parameter inside a module. The
-//!   rules are `validate::check_route_ends` and `validate::closes_audio_cycle`, shared with the file layer.
+//! - **Audio routes** (S2a lane RTE): a generator may drive only an `audio` parameter of a generator
+//!   (`not_audio_dest`), an `audio` parameter takes only a generator (`not_audio_source`), audio routes never form a
+//!   loop, a generator driving itself included (`audio_cycle`): audio runs in one direction, and feedback is a
+//!   parameter inside a module, and none makes a generator after the hard-sync master feed it
+//!   (`audio_into_sync_master`, F1m S4). The rules are `validate::check_route_ends`, `validate::closes_audio_cycle`
+//!   and `validate::audio_into_sync_master`, shared with the file layer. The last can only be broken by an `osc`
+//!   that takes an audio input, which no kind has; the ops that move or enable generators therefore do not re-check
+//!   it, and `validate` (at every boundary: a file, a compile) is where it would show.
 
 use core::borrow::Borrow;
 
@@ -67,7 +71,7 @@ use crate::addr::{
 use crate::catalogue::{Builtin, MACRO_VALUE, MASTER_PARAMS, ModuleKind, Rate, VOICE_PARAMS};
 use crate::error::{OpError, PatchError};
 use crate::model::{MAX_ROUTES, ModuleInstance, Patch, PatchMeta, Route};
-use crate::validate::{check_route_ends, closes_audio_cycle};
+use crate::validate::{audio_into_sync_master, check_route_ends, closes_audio_cycle};
 
 /// One edit to a patch. See the [module docs](self) for what each does and its inverse.
 ///
@@ -633,6 +637,11 @@ fn check_route(p: &Patch, route: &Route) -> Result<f32, PatchError> {
     }
     if closes_audio_cycle(p, route) {
         return Err(PatchError::AudioCycle {
+            route: route_text(&route.src, &route.dst),
+        });
+    }
+    if audio_into_sync_master(p, route) {
+        return Err(PatchError::AudioIntoSyncMaster {
             route: route_text(&route.src, &route.dst),
         });
     }

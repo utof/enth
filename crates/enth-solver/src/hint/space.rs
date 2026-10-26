@@ -20,13 +20,17 @@
 //!   non-zero depth;
 //! - `osc.pw` unless the wave is `pulse`, and `osc.position` unless it is `table` (only when the performance
 //!   automates nothing, since automation could switch the wave);
+//! - an `lfo`'s `rate` when `sync` is on (the speed then comes from `beats` and the tempo, and `rate` is ignored) and
+//!   its `beats` when `sync` is off (F1m S8; only when the performance automates nothing, since automation could
+//!   switch `sync`). `beats` is an enum, so it is never moved in P1 anyway; the rule keeps it out of the space when
+//!   categorical moves arrive, and generator v2's mask draws the same rule;
 //! - `voice.glide` when the performance has at most one note;
 //! - an `adsr`'s `velocity` when every note has full velocity;
 //! - an `adsr`'s `release` when no note-off happens inside the clip.
 
 use enth_analysis::descriptors::Feature;
 use enth_params::{Kind, ParamSpec, Unit};
-use enth_patch::catalogue::{AdsrParam, OscParam, VoiceParam, Wave};
+use enth_patch::catalogue::{AdsrParam, LfoParam, OscParam, VoiceParam, Wave};
 use enth_patch::{Builtin, ModSource, ModuleKind, ParamAddr, Patch, Target};
 use enth_render::Performance;
 
@@ -48,6 +52,12 @@ pub(crate) fn movable(spec: &ParamSpec, transpose: bool) -> bool {
         && !spec.flags.periodic
         && (spec.flags.modulatable || spec.flags.automatable)
         && (transpose || spec.unit != Unit::Semitones)
+}
+
+/// Whether the `lfo` parameter at index `i` cannot change the render when `sync` is `synced` (F1m S8): `rate` is
+/// ignored with sync on, and `beats` is read only with sync on.
+pub(crate) fn lfo_param_inert(i: usize, synced: bool) -> bool {
+    (i == LfoParam::Rate.index() && synced) || (i == LfoParam::Beats.index() && !synced)
 }
 
 /// Every free parameter of `patch` for `perf`, in patch order (modules by section and position, parameters in
@@ -90,6 +100,10 @@ pub(crate) fn free_params(
                 continue;
             }
         }
+        let synced = (m.kind == ModuleKind::Lfo)
+            .then(|| m.values.get(LfoParam::Sync.index()).copied())
+            .flatten()
+            .is_some_and(|v| v >= 0.5);
         let wave = (m.kind == ModuleKind::Osc)
             .then(|| m.values.get(OscParam::Wave.index()).copied())
             .flatten()
@@ -100,6 +114,7 @@ pub(crate) fn free_params(
                     (i == OscParam::Pw.index() && wave != Some(Wave::Pulse))
                         || (i == OscParam::Position.index() && wave != Some(Wave::Table))
                 }
+                ModuleKind::Lfo if !automated => lfo_param_inert(i, synced),
                 ModuleKind::Adsr => {
                     (i == AdsrParam::Velocity.index() && full_velocity)
                         || (i == AdsrParam::Release.index() && no_note_off)
@@ -271,6 +286,66 @@ mod tests {
         assert!(
             f.iter()
                 .all(|n| !n.starts_with("env2.") && !n.starts_with("osc2."))
+        );
+    }
+
+    #[test]
+    fn an_lfos_rate_is_inert_with_sync_on_and_its_beats_with_sync_off() {
+        // The rule itself, for every parameter of the lfo.
+        for (i, spec) in ModuleKind::Lfo.params().iter().enumerate() {
+            let rate = spec.key == "rate";
+            let beats = spec.key == "beats";
+            assert_eq!(lfo_param_inert(i, true), rate, "{} with sync on", spec.key);
+            assert_eq!(
+                lfo_param_inert(i, false),
+                beats,
+                "{} with sync off",
+                spec.key
+            );
+        }
+        // In the space: a routed lfo offers its rate when free-running and not when synced; `beats` is an enum and
+        // never free; and automation (which could flip `sync`) keeps the rate in either case.
+        let mut p = Patch::init();
+        let lfo = ModuleInstance::new(ModuleId::new("lfo1").unwrap(), ModuleKind::Lfo);
+        let at = Position {
+            section: Section::Modulators,
+            index: 1,
+        };
+        apply(&mut p, &Op::AddModule { at, module: lfo }).unwrap();
+        apply(
+            &mut p,
+            &Op::InsertRoute {
+                index: 0,
+                route: enth_patch::Route {
+                    src: "lfo1".parse().unwrap(),
+                    dst: "osc1.level".parse().unwrap(),
+                    depth: 30.0,
+                },
+            },
+        )
+        .unwrap();
+        let perf = Performance::note(60, 0.8, 1.0, 2.0);
+        let free = |p: &Patch, perf: &Performance| names(&free_params(p, perf, None, &[], false));
+        assert!(free(&p, &perf).contains(&"lfo1.rate".to_string()));
+        assert!(!free(&p, &perf).contains(&"lfo1.beats".to_string()));
+        p.modulators[1].values[LfoParam::Sync.index()] = 1.0;
+        assert!(
+            !free(&p, &perf).contains(&"lfo1.rate".to_string()),
+            "sync on"
+        );
+        assert!(
+            free(&p, &perf).iter().all(|n| !n.starts_with("lfo1.")),
+            "nothing else of a synced lfo is a float the solver moves"
+        );
+        let mut automated = perf.clone();
+        automated.automation.push(enth_render::Automation {
+            time_s: 0.5,
+            addr: "master.level".parse().unwrap(),
+            value: -6.0,
+        });
+        assert!(
+            free(&p, &automated).contains(&"lfo1.rate".to_string()),
+            "automation could switch sync off, so the rate stays"
         );
     }
 

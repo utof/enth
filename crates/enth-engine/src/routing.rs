@@ -9,16 +9,17 @@
 //! The contract (research report 06 §3.1; the F1m judge checks its six points):
 //!
 //! 1. **Destinations.** An `audio` parameter ([`enth_params::Flags::audio`]; so far `wt.pm` and `wt.am`) accepts only
-//!    generator sources, and a generator source targets only `audio` parameters; `enth-patch`'s `validate` and the
-//!    `InsertRoute` op enforce it with their own codes, and [`classify`] repeats it for a patch that skipped
-//!    `validate` (`not_audio_dest`, `not_audio_source`). Audio routes never enter the control-rate matrix
-//!    ([`crate::modulation`]).
+//!    generator sources, and a generator source targets only `audio` parameters **of a generator**; `enth-patch`'s
+//!    `validate` and the `InsertRoute` op enforce it with their own codes, and [`classify`] repeats it for a patch
+//!    that skipped `validate` (`not_audio_dest`, `not_audio_source`; the destination test is `validate`'s
+//!    `is_generator_dest`, F1m S4). Audio routes never enter the control-rate matrix ([`crate::modulation`]).
 //! 2. **Order.** [`AudioRoutes`] sorts the generators topologically by their audio routes (Kahn's algorithm, always
 //!    taking the lowest patch index among those ready, so ties keep patch order and a patch without audio routes runs
 //!    exactly as before: the engine then never enters [`AudioRoutes::render`]). A cycle, including a route from a
 //!    generator to itself, is refused by `compile` as [`CompileError::AudioCycle`] (`audio_cycle`). Hard sync keeps
 //!    its rule: the master is the first enabled `osc` in *patch* order and runs before every later generator
-//!    ([`AudioRoutes::build`] checks it).
+//!    ([`AudioRoutes::build`] checks it, and `validate` and the `InsertRoute` op check it with the same
+//!    `sync_master_blocked`, F1m S4).
 //! 3. **Buffers.** Each generator writes its **pre-level** output (before its `level` ramp) into its own segment
 //!    buffer, allocated in `compile`: up to 4 generators × 32 voices × 32 frames × 4 B = 16 KB, plus the same again
 //!    for the post-level outputs the voice sum waits on. A carrier reads the buffers of its sources per frame, scaled
@@ -41,6 +42,24 @@
 //! depth change from or to 0 is a recompile. Its [`DepthId`] is `0x8000 +` the route's index among the plan's audio
 //! routes ([`AUDIO_DEPTH_BASE`]); control routes count from 0.
 //!
+//! # Swaps: no click when a route appears or goes (F1m S3)
+//!
+//! At audio rate a route that switches on between two samples is a click, so [`AudioRoutes::carry_from`] (called by
+//! `Plan::carry_from` at a swap, on the audio thread, allocating nothing) pairs the new plan's routes with the old
+//! plan's by (source id, carrier id, parameter) and:
+//!
+//! - a route the old plan lacked (a route added, or its depth moved from 0) **ramps in from 0** over
+//!   [`DEPTH_SMOOTHING_MS`], as a depth event does;
+//! - a route in both plans **continues from the old plan's current depth** and ramps to the new plan's (a ramp already
+//!   heading there goes on as it was); a route whose depth did not change is untouched, bit for bit;
+//! - a route the new plan lacks (a route removed, or its depth moved to 0) cannot ramp in a plan that no longer holds
+//!   it, so the swap **crossfades** ([`AudioRoutes::drops_a_route_of`] tells `Plan::carry_from`, which ORs it into the
+//!   flag that already means "a module was added or removed"): the old plan, route included, fades out over
+//!   [`CROSSFADE_FRAMES`](crate::CROSSFADE_FRAMES) frames while the new one fades in. A route already at depth 0 (a
+//!   depth event settled it there) has nothing to fade and does not force one.
+//!
+//! A patch without audio routes has no terms, so none of this runs and its swaps are what they were.
+//!
 //! # The module side
 //!
 //! A generator that can be a source writes `cx.io[v]` as always, and, when `cx.pre_level` is `Some`, also copies
@@ -49,13 +68,15 @@
 //! the routes reaching the parameter, in patch route order. The engine zeroes `pre` first, so a source that ignores
 //! `pre_level` is silent to its routes rather than stale.
 
-use enth_patch::validate::{is_audio_dest, is_generator_source};
+use enth_patch::validate::{
+    is_audio_dest, is_generator_dest, is_generator_source, sync_master_blocked,
+};
 use enth_patch::{ModSource, Patch, Route, Section, Target};
 
 use crate::modulation::DEPTH_SMOOTHING_MS;
 use crate::module::{Block, MAX_VOICES, NO_SYNC, RAMP, SEG, SyncBus, VoiceBus, VoiceIdx};
 use crate::params::{ParamId, ParamIndex};
-use crate::plan::{CompileError, DepthId, Plan, PlanMap};
+use crate::plan::{CompileError, DepthId, Plan, PlanMap, Slot};
 
 /// The first [`DepthId`] of an audio route: control routes are numbered from 0 (their terms in the matrix), audio
 /// routes from here.
@@ -88,7 +109,7 @@ pub(crate) fn classify(patch: &Patch, r: &Route) -> RouteClass {
         if patch.spec(&r.dst).is_none() {
             return RouteClass::Reject("unknown_destination");
         }
-        return if to_audio && dst_is_generator(patch, &r.dst) {
+        return if to_audio && is_generator_dest(patch, &r.dst) {
             RouteClass::Audio
         } else {
             RouteClass::Reject("not_audio_dest")
@@ -105,11 +126,6 @@ pub(crate) fn classify(patch: &Patch, r: &Route) -> RouteClass {
     } else {
         RouteClass::Control
     }
-}
-
-fn dst_is_generator(patch: &Patch, dst: &enth_patch::ParamAddr) -> bool {
-    matches!(dst.target(), Target::Module(id)
-        if patch.find(id).is_some_and(|(pos, _)| pos.section == Section::Generators))
 }
 
 /// One audio route as the plan holds it.
@@ -277,12 +293,13 @@ impl AudioRoutes {
                 route: format!("{} -> {}", r.src, r.dst),
             }
         })?;
-        if let Some(m) = plan.sync_master {
-            let at = |g: usize| order.iter().position(|&o| o == g);
-            if (m + 1..n).any(|g| at(g) < at(m)) {
-                let route = specs.iter().find(|s| s.dst == m).map_or(0, |s| s.route);
-                return Err(bad(route, "audio_into_sync_master"));
-            }
+        // The hard-sync rule, decided by the function `validate` uses (F1m S4): a generator after the master that
+        // reaches it would run first.
+        if let Some(m) = plan.sync_master
+            && sync_master_blocked(n, m, &edges)
+        {
+            let route = specs.iter().find(|s| s.dst == m).map_or(0, |s| s.route);
+            return Err(bad(route, "audio_into_sync_master"));
         }
 
         // Stable: one carrier's routes stay in patch route order, which is the order they sum in.
@@ -326,6 +343,70 @@ impl AudioRoutes {
                 .round()
                 .clamp(1.0, f64::from(u32::MAX)) as u32,
         })
+    }
+
+    /// Whether term `t` of this plan (with generators `gens`) is the same route as term `o` of the old plan (with
+    /// generators `old_gens`): the same source, the same carrier and the same carrier parameter.
+    fn same_route<M>(t: &Term, gens: &[Slot<M>], o: &Term, old_gens: &[Slot<M>]) -> bool {
+        t.param == o.param
+            && gens[t.src].id == old_gens[o.src].id
+            && gens[t.dst].id == old_gens[o.dst].id
+    }
+
+    /// Whether `old` (the plan being replaced, with generators `old_gens`) has a route that can still be heard and
+    /// that this plan (generators `gens`) does not have: the swap must crossfade, because this plan has no term to
+    /// ramp down. Never allocates.
+    pub(crate) fn drops_a_route_of<M>(
+        &self,
+        gens: &[Slot<M>],
+        old: &Self,
+        old_gens: &[Slot<M>],
+    ) -> bool {
+        old.terms.iter().zip(&old.ramps).any(|(o, r)| {
+            let audible = o.cur.abs() > 0.0 || (r.left > 0 && r.target.abs() > 0.0);
+            audible
+                && !self
+                    .terms
+                    .iter()
+                    .any(|t| Self::same_route(t, gens, o, old_gens))
+        })
+    }
+
+    /// Carry the depths of `old` into this plan at a swap (see the module docs, *Swaps*): a route the old plan lacked
+    /// starts at 0 and ramps to its compiled depth over [`DEPTH_SMOOTHING_MS`]; a route it had continues from the old
+    /// current depth. Never allocates; a plan without audio routes has nothing to do.
+    pub(crate) fn carry_from<M>(&mut self, gens: &[Slot<M>], old: &Self, old_gens: &[Slot<M>]) {
+        let segments = self.ramp_segments;
+        for (t, r) in self.terms.iter_mut().zip(&mut self.ramps) {
+            let target = t.cur;
+            let partner = old
+                .terms
+                .iter()
+                .zip(&old.ramps)
+                .find(|(o, _)| Self::same_route(t, gens, o, old_gens));
+            let from = match partner {
+                None => 0.0,
+                Some((o, or)) => {
+                    if or.left > 0 && or.target.to_bits() == target.to_bits() {
+                        // Already on its way to this depth: go on as it was.
+                        t.cur = o.cur;
+                        t.prev = o.cur;
+                        *r = *or;
+                        continue;
+                    }
+                    o.cur
+                }
+            };
+            if from.to_bits() != target.to_bits() {
+                t.cur = from;
+                t.prev = from;
+                *r = Ramp {
+                    target,
+                    step: (target - from) / segments as f32,
+                    left: segments,
+                };
+            }
+        }
     }
 
     /// Whether the plan has no audio routes: the engine then runs its plain generator loop.
@@ -718,6 +799,84 @@ mod tests {
     }
 
     #[test]
+    fn the_shared_sync_master_rule_matches_kahns_order_for_every_acyclic_graph_of_four() {
+        // `validate` and `compile` decide with `sync_master_blocked`; this is the proof that it says what the run order
+        // would: some generator after the master runs before it.
+        let pairs: Vec<(usize, usize)> = (0..4)
+            .flat_map(|s| (0..4).filter(move |&d| d != s).map(move |d| (s, d)))
+            .collect();
+        let mut blocked = 0;
+        for mask in 0u32..(1 << pairs.len()) {
+            let edges: Vec<(usize, usize)> = pairs
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask >> i & 1 == 1)
+                .map(|(_, e)| *e)
+                .collect();
+            let Ok(order) = run_order(4, &edges) else {
+                continue;
+            };
+            for m in 0..4 {
+                let at = |g: usize| order.iter().position(|&o| o == g);
+                let kahn = (m + 1..4).any(|g| at(g) < at(m));
+                blocked += usize::from(kahn);
+                assert_eq!(
+                    sync_master_blocked(4, m, &edges),
+                    kahn,
+                    "edges {edges:?}, master {m}"
+                );
+            }
+        }
+        assert!(
+            blocked > 100,
+            "the cases that matter were reached: {blocked}"
+        );
+    }
+
+    #[test]
+    fn compile_classifies_routes_as_validate_does() {
+        // The file layer and the compiler share the destination test; this keeps the whole verdict aligned for the
+        // routes the catalogue allows.
+        let mut p = patch(&["wt1", "osc1"], &[]);
+        p.voice_fx
+            .push(ModuleInstance::new(id("filter1"), ModuleKind::Svf));
+        p.modulators
+            .push(ModuleInstance::new(id("lfo1"), ModuleKind::Lfo));
+        let table = [
+            ("osc1", "wt1.pm", "audio"),
+            ("wt1", "wt1.am", "audio"),
+            ("osc1", "wt1.level", "not_audio_dest"),
+            ("osc1", "osc1.level", "not_audio_dest"),
+            ("osc1", "filter1.cutoff", "not_audio_dest"),
+            ("osc1", "voice.glide", "not_audio_dest"),
+            ("lfo1", "wt1.pm", "not_audio_source"),
+            ("velocity", "wt1.am", "not_audio_source"),
+            ("lfo1", "osc1.level", "control"),
+            ("velocity", "osc1.level", "control"),
+            ("lfo1", "filter1.cutoff", "control"),
+        ];
+        for (src, dst, want) in table {
+            let r = route(src, dst, 10.0);
+            let compile_says = match classify(&p, &r) {
+                RouteClass::Audio => "audio",
+                RouteClass::Control => "control",
+                RouteClass::Reject(code) => code,
+            };
+            let ends = enth_patch::validate::check_route_ends(&p, &r);
+            let validate_says = match ends.kind {
+                Some(enth_patch::validate::RouteKind::Audio) => "audio",
+                Some(enth_patch::validate::RouteKind::Control) => "control",
+                None => ends
+                    .src_error
+                    .or(ends.dst_error)
+                    .map_or("none", |e| e.code()),
+            };
+            assert_eq!(compile_says, want, "compile: {src} -> {dst}");
+            assert_eq!(validate_says, want, "validate: {src} -> {dst}");
+        }
+    }
+
+    #[test]
     fn loops_and_self_routes_are_audio_cycles() {
         for routes in [
             vec![route("wt1", "wt1.pm", 10.0)],
@@ -796,11 +955,23 @@ mod tests {
         order: Vec<usize>,
         pm: Vec<(usize, Block)>,
         voice: Block,
+        /// Generator 1's pre-level block for voice 0 (the source in the two-generator patches below).
+        pre1: Block,
     }
 
     fn run(plan: &mut Plan, segments: usize) -> Vec<Seen> {
+        run_from(plan, segments, true)
+    }
+
+    /// [`run`], starting the voice first or (a plan that took over a running one at a swap) not.
+    fn run_from(plan: &mut Plan, segments: usize, start: bool) -> Vec<Seen> {
         let (mut notes, active) = one_voice();
-        plan.start_voice(0, &notes, SEED);
+        if start {
+            plan.start_voice(0, &notes, SEED);
+        } else {
+            notes.trigger[0] = false;
+            notes.fresh[0] = false;
+        }
         let mut out = Vec::new();
         for _ in 0..segments {
             let Plan {
@@ -818,6 +989,7 @@ mod tests {
                 order: Vec::new(),
                 pm: Vec::new(),
                 voice: [0.0; SEG],
+                pre1: [0.0; SEG],
             };
             audio.render(&active, *sync_master, &mut voice, &mut sync, |g, ports| {
                 seen.order.push(g);
@@ -840,6 +1012,7 @@ mod tests {
                 });
             });
             seen.voice = voice[0];
+            seen.pre1 = audio.pre.get(1).map_or([0.0; SEG], |b| b[0]);
             out.push(seen);
             notes.trigger[0] = false;
             notes.fresh[0] = false;
@@ -1067,6 +1240,133 @@ mod tests {
             assert!(full.push_route(PM, &a, 1.0, 1.0));
         }
         assert!(!full.push_route(PM, &a, 1.0, 1.0));
+    }
+
+    #[test]
+    fn a_route_added_at_a_swap_reaches_the_carrier_as_a_ramp_from_silence() {
+        let mut plain = patch(&["wt1", "osc1"], &[]);
+        plain.generators[1].values[OscParam::Wave.index()] = Wave::Sine.index() as f32;
+        let mut routed = plain.clone();
+        routed.routes = vec![route("osc1", "wt1.pm", 100.0)];
+        let cfg = PrepareCfg::new(48_000.0);
+        let (mut old, _) = compile(&plain, &cfg).unwrap();
+        let (mut new, _) = compile(&routed, &cfg).unwrap();
+        run(&mut old, 3);
+        let (mut notes, active) = one_voice();
+        notes.trigger[0] = false;
+        notes.fresh[0] = false;
+        let changed = new.carry_from(&mut old, &active, &notes, SEED);
+        assert!(!changed, "a route added is not a reason to crossfade");
+        // 10 ms at 48 kHz is 15 segments; the first one's scale never passes the first step (1/15).
+        let seen = run_from(&mut new, 17, false);
+        let first = &seen[0];
+        let [(_, pm)] = first.pm.as_slice() else {
+            panic!("the carrier saw the route")
+        };
+        assert!(
+            first.pre1.iter().any(|x| x.abs() > 0.1),
+            "the source sounds"
+        );
+        for (i, (got, src)) in pm.iter().zip(&first.pre1).enumerate() {
+            assert!(
+                got.abs() <= src.abs() / 15.0 + 1e-6,
+                "frame {i}: {got} against {src}"
+            );
+        }
+        // The scale rises segment by segment and ends on exactly the depth.
+        let strength = |s: &Seen| {
+            let [(_, pm)] = s.pm.as_slice() else { panic!() };
+            pm.iter()
+                .zip(&s.pre1)
+                .map(|(a, b)| (a * b).abs())
+                .sum::<f32>()
+        };
+        assert!(strength(&seen[8]) > strength(&seen[0]) * 2.0);
+        let settled = &seen[16];
+        let [(_, pm)] = settled.pm.as_slice() else {
+            panic!()
+        };
+        for (i, (got, src)) in pm.iter().zip(&settled.pre1).enumerate() {
+            assert_eq!(got.to_bits(), (src * 1.0).to_bits(), "frame {i}");
+        }
+    }
+
+    #[test]
+    fn carrying_audio_routes_pairs_them_by_id_and_parameter_not_by_position() {
+        let old = patch(
+            &["osc1", "osc2", "wt1"],
+            &[route("osc1", "wt1.pm", 30.0), route("osc2", "wt1.pm", 60.0)],
+        );
+        // The same routes, listed the other way round, in a patch whose generators are reordered, with osc2's depth
+        // changed and a third route (osc1 -> wt1.am) added.
+        let new = patch(
+            &["wt1", "osc2", "osc1"],
+            &[
+                route("osc2", "wt1.pm", 10.0),
+                route("osc1", "wt1.pm", 30.0),
+                route("osc1", "wt1.am", 50.0),
+            ],
+        );
+        let cfg = PrepareCfg::new(48_000.0);
+        let (mut a, _) = compile(&old, &cfg).unwrap();
+        let (mut b, _) = compile(&new, &cfg).unwrap();
+        let (notes, active) = one_voice();
+        assert!(!b.carry_from(&mut a, &active, &notes, SEED), "nothing left");
+        let term = |plan: &Plan, src: &str, dst: &str, param: usize| {
+            let (g, c) = (
+                plan.generators
+                    .iter()
+                    .position(|s| s.id == id(src))
+                    .unwrap(),
+                plan.generators
+                    .iter()
+                    .position(|s| s.id == id(dst))
+                    .unwrap(),
+            );
+            let k = plan
+                .audio
+                .terms
+                .iter()
+                .position(|t| t.src == g && t.dst == c && t.param == param)
+                .unwrap();
+            (plan.audio.terms[k], plan.audio.ramps[k])
+        };
+        let am = WtParam::Am.index();
+        // Unchanged: left exactly as compiled, no ramp.
+        let (t, r) = term(&b, "osc1", "wt1", PM);
+        assert_eq!(t.cur.to_bits(), (30.0f32 / 100.0).to_bits());
+        assert_eq!(r.left, 0);
+        // Changed from 60 to 10: starts at the old depth, ramps to the new.
+        let (t, r) = term(&b, "osc2", "wt1", PM);
+        assert_eq!(t.cur.to_bits(), (60.0f32 / 100.0).to_bits());
+        assert_eq!(
+            (r.left, r.target.to_bits()),
+            (b.audio.ramp_segments, (10.0f32 / 100.0).to_bits())
+        );
+        // New: from 0 to the depth.
+        let (t, r) = term(&b, "osc1", "wt1", am);
+        assert_eq!(t.cur.to_bits(), 0.0f32.to_bits());
+        assert_eq!(
+            (r.left, r.target.to_bits()),
+            (b.audio.ramp_segments, (50.0f32 / 100.0).to_bits())
+        );
+        // And the other way: the second plan back to the first drops the am route and is told so, but not for a route
+        // that was already at 0.
+        let (back, _) = compile(&old, &cfg).unwrap();
+        assert!(
+            back.audio
+                .drops_a_route_of(&back.generators, &b.audio, &b.generators)
+        );
+        let (mut quiet, _) = compile(&new, &cfg).unwrap();
+        for k in 0..quiet.audio.terms.len() {
+            quiet.audio.set_depth(k, 0.0);
+        }
+        quiet.audio.settle_depths();
+        assert!(
+            !back
+                .audio
+                .drops_a_route_of(&back.generators, &quiet.audio, &quiet.generators)
+        );
     }
 
     #[test]

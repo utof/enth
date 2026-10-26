@@ -389,6 +389,57 @@ fn at_44_1_khz_target_plays_a_loop_rendered_at_the_hosts_rate() {
     assert_eq!(&l[fade + 1..], &heard[..]);
 }
 
+/// F1m judge M2: a round's score and Target ▶ render at the default tempo (140), and Mine ▶ plays the phrase live
+/// through the plugin's own engine, so while either plays the engine's tempo is 140 and not the host's; with the
+/// switch off the host's tempo is sent again.
+#[test]
+fn mine_plays_at_the_rounds_tempo_not_the_hosts() {
+    let mut host = Host::new(SR);
+    host.ctx.transport.as_mut().expect("a transport").tempo = Some(128.0);
+    // The engine's tempo, as bits (a clippy-clean exact comparison: the tempos here are set, never computed).
+    let tempo = |host: &Host| {
+        host.plugin
+            .engine
+            .as_ref()
+            .expect("an engine")
+            .tempo_bpm()
+            .to_bits()
+    };
+    let (default, hosts, moved) = (
+        enth_engine::DEFAULT_TEMPO_BPM.to_bits(),
+        128.0_f64.to_bits(),
+        90.0_f64.to_bits(),
+    );
+    let _ = host.render(256, 64);
+    assert_eq!(tempo(&host), hosts, "no round: the host's tempo");
+
+    let spec = SpecPreset::by_id(1).unwrap().spec(LATEST_GENERATOR, 42);
+    host.frame(|s| s.game_start(RoundSource::Settings(spec)).unwrap());
+    host.until("the prepared target", |s| s.game_ab().target_ready);
+    let _ = host.render(256, 64);
+    assert_eq!(
+        tempo(&host),
+        hosts,
+        "a round that plays nothing: the host's"
+    );
+
+    host.frame(|s| s.game_listen(Listen::Mine).unwrap());
+    let _ = host.render(256, 64);
+    assert_eq!(tempo(&host), default, "Mine ▶: 140");
+    // The host moves its tempo while Mine plays: the engine does not follow.
+    host.ctx.transport.as_mut().expect("a transport").tempo = Some(90.0);
+    let _ = host.render(256, 64);
+    assert_eq!(tempo(&host), default, "Mine ▶: 140");
+
+    host.frame(|s| s.game_listen(Listen::Target).unwrap());
+    let _ = host.render(256, 64);
+    assert_eq!(tempo(&host), default, "Target ▶: 140");
+
+    host.frame(|s| s.game_listen(Listen::Off).unwrap());
+    let _ = host.render(256, 64);
+    assert_eq!(tempo(&host), moved, "Off: the host's tempo again");
+}
+
 #[test]
 fn no_round_no_worker_and_no_change_to_the_block() {
     let mut host = Host::new(SR);

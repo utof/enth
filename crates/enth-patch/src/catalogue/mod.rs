@@ -60,10 +60,22 @@
 //!    of that kind (render caches, `enth sound`'s `patch_hash`), so it goes in once, at a freeze, with a default that
 //!    renders the old sound bit for bit (S2a: `lfo`'s `sync`, `beats` and `one_shot`, lane TMP). Envelope times above
 //!    10 s are an `mseg`, not a new `adsr` parameter.
-//! 3. **Neutral defaults.** A freshly added module is harmless: a generator plays a plain tone, a modulator does
-//!    nothing until it is routed, and an effect is either near-transparent or a gentle useful setting (each kind's
-//!    file says which). Where a parameter's minimum or maximum means "off" (`eq.low_cut`, `dist.keep_lows`), the
-//!    module skips that stage there.
+//! 3. **Neutral defaults, and a bounded level.** A freshly added module is harmless: a generator plays a plain tone, a
+//!    modulator does nothing until it is routed, and an effect is either near-transparent or a gentle useful setting
+//!    (each kind's file says which).
+//!    - **A feedback path is normalised so its peak gain stays at or below 0 dB at every `feedback`**, for example by
+//!      scaling the loop's input by `1 − |feedback|` (`comb`, `phaser` and `chorus` do): a bare `x + feedback · loop`
+//!      peaks at `1 / (1 − |feedback|)`, +6 dB at 50 % and +40 dB at 99 %.
+//!    - **Where 100 % sums the dry signal with the wet path, the sum is level-matched**, for example `(x + wet) / 2`
+//!      (`phaser`, `chorus`), so a freshly added effect at its defaults changes a full-scale saw's level by at most
+//!      about 3 dB. Lanes FLT and MOD measure it.
+//!    - **`delay` is the one documented exception**: its repeats are separate events in time that fall away with
+//!      `feedback`, its dry signal passes unchanged and a soft clip bounds 100 % (the table's own text); it is not a
+//!      resonance, so nothing is normalised.
+//!    - **A range end that means "out of the way" keeps its stage in the signal path** (`eq.low_cut` at 10 Hz,
+//!      `eq.high_cut` at 20 kHz): a modulated parameter must never switch a filter in and out at the end of its range,
+//!      which would click. Only a parameter no source can modulate may skip its stage at a range end
+//!      (`dist.keep_lows` at 20 Hz).
 //! 4. **Every effect has `mix`** (0–100 %, default 100 %, the table's last parameter): at 0 % it returns its input bit
 //!    for bit. An effect whose sound contains the dry signal (`comb`, `chorus`, `phaser`, `delay`) defines its 100 %
 //!    with the dry signal in it, so the default is the full effect and never a dry-less wet signal. Two instances of a
@@ -74,7 +86,10 @@
 //!    them, so a rhythm-critical effect belongs in `voice_fx`.
 //! 7. **New enums are persisted, though not pinned:** order their items deliberately (as they read on the card, or by
 //!    size), append only after the freeze, and keep room for one more item in the answer code's `item` field. Synced
-//!    lengths use the shared [`BEATS`] (sorted by length), never a list of their own.
+//!    lengths use the shared [`BEATS`] (sorted by length), never a list of their own. **A modulatable enum is frozen
+//!    once released, not append-only** (`lfo.beats` is the only one): `from_norm` spreads its range over `COUNT − 1`
+//!    steps, so one more item anywhere would move the step every stored route and automation lane lands on. Its items
+//!    are ordered so that neighbouring items are neighbours in effect.
 //! 8. **Counts:** at most 63 parameters per kind (the answer code's parameter field, D3), and a `result-params-v1`
 //!    row per kind in `enth-challenge`'s `answer.rs`, whose compile-time asserts fail the build past either.
 //! 9. **Real units:** values are plain numbers in Hz, ms, dB, cents, semitones, percent or degrees; a parameter is
@@ -192,8 +207,11 @@ enum_items! {
     /// A tempo-synced length as a note division (T triplet, D dotted), **sorted by length**, so a rising modulation
     /// always lengthens it. A bar is four beats (a quarter note is one beat), whatever the host's time signature.
     /// Shared by every synced parameter (S2a: `lfo.beats` from lane TMP, `mseg` and `delay` from lane CAT), so friends
-    /// see one list. Not a pinned enum, but persisted: append-only after freeze F1m. [`Beats::length`] gives each
-    /// item as an exact rational number of beats.
+    /// see one list. Not a pinned enum, but persisted, and `lfo.beats` is modulatable and automatable: **frozen at F1m**
+    /// (`from_norm` spreads the range over `COUNT − 1` steps, so a new item, even an appended one, would move the
+    /// step every stored route and automation lane lands on; the sorted-by-length test also forbids appending
+    /// anything shorter than 16 bars).
+    /// [`Beats::length`] gives each item as an exact rational number of beats.
     pub enum Beats in BEATS {
         /// 1/16 of a beat.
         SixtyFourth = ("sixty_fourth", "1/64", "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate."),
@@ -895,6 +913,40 @@ mod tests {
         }
         assert_eq!(Beats::Quarter.length(), (1, 1));
         assert_eq!(BEATS.len(), 25);
+        // Frozen at F1m (not append-only): `lfo.beats` is modulatable, so `from_norm` spreads its range over
+        // `COUNT − 1` steps and one more item anywhere moves the step every stored route and automation lane lands
+        // on. If this fails, put the list back; a change goes through the coordinator.
+        let keys: Vec<&str> = all.iter().map(|b| b.key()).collect();
+        assert_eq!(
+            keys,
+            [
+                "sixty_fourth",
+                "thirty_second_triplet",
+                "thirty_second",
+                "sixteenth_triplet",
+                "thirty_second_dotted",
+                "sixteenth",
+                "eighth_triplet",
+                "sixteenth_dotted",
+                "eighth",
+                "quarter_triplet",
+                "eighth_dotted",
+                "quarter",
+                "half_triplet",
+                "quarter_dotted",
+                "half",
+                "bar_triplet",
+                "half_dotted",
+                "bar",
+                "two_bars_triplet",
+                "bar_dotted",
+                "two_bars",
+                "two_bars_dotted",
+                "four_bars",
+                "eight_bars",
+                "sixteen_bars",
+            ]
+        );
     }
 
     /// F0m (lane S0d): every S2a kind's discriminant, key, section and id prefix are persisted from the freeze on.

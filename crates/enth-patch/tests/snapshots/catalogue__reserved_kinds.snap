@@ -35,7 +35,7 @@ expression: reserved
             },
             {
               "desc": "Clips the top and bottom differently, like a tube or a diode: thicker, with even harmonics.",
-              "key": "asym",
+              "key": "asymmetric",
               "name": "Asymmetric"
             },
             {
@@ -45,7 +45,7 @@ expression: reserved
             },
             {
               "desc": "Folds the wave back at sharp corners: brighter and buzzier than the sine fold.",
-              "key": "tri_fold",
+              "key": "triangle_fold",
               "name": "Triangle fold"
             },
             {
@@ -148,7 +148,7 @@ expression: reserved
       {
         "default": 6000.0,
         "default_text": "6kHz",
-        "desc": "The held sample rate in downsample mode: lower is more metallic and aliased; at the engine's rate or above it does nothing. Other modes ignore it.",
+        "desc": "The held sample rate in downsample mode: lower is more metallic and aliased; at the engine's rate or above it the input passes unchanged. Other modes ignore it.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -158,7 +158,7 @@ expression: reserved
         "key": "rate",
         "kind": {
           "k": null,
-          "max": 48000.0,
+          "max": 192000.0,
           "min": 100.0,
           "scale": "log",
           "type": "float"
@@ -394,7 +394,7 @@ expression: reserved
             },
             {
               "desc": "Bends the two halves of the cycle in opposite directions: a pulse-width-like change for any wave.",
-              "key": "asym",
+              "key": "asymmetric",
               "name": "Asymmetric bend"
             },
             {
@@ -652,7 +652,7 @@ expression: reserved
       {
         "default": 20.0,
         "default_text": "+20ct",
-        "desc": "How far the outermost unison copies sit from the centre, in cents (±): small values thicken, large ones sound like a detuned chord.",
+        "desc": "How far the outermost unison copies sit from the center, in cents (±): small values thicken, large ones sound like a detuned chord.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -678,7 +678,7 @@ expression: reserved
       {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "Level of the side unison copies against the centre one: 0 % is the centre alone, 100 % every copy equal.",
+        "desc": "Level of the side unison copies against the center one: 0 % is the center alone, 100 % every copy equal.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -1158,7 +1158,7 @@ expression: reserved
           "scale": "linear",
           "type": "float"
         },
-        "name": "Tune",
+        "name": "Semitones",
         "perceptual": "spectrum.harmonics_db",
         "smoothing": {
           "linear_ms": 10.0
@@ -1443,7 +1443,7 @@ expression: reserved
             {
               "desc": "Plays the shape once from the note's start, then holds the last level: an envelope of any length.",
               "key": "one_shot",
-              "name": "One-shot"
+              "name": "One shot"
             },
             {
               "desc": "Plays to the loop end, loops between loop start and loop end while the note is held, then plays the rest after release.",
@@ -1473,7 +1473,7 @@ expression: reserved
         "kind": {
           "type": "toggle"
         },
-        "name": "Tempo sync",
+        "name": "Sync",
         "perceptual": null,
         "smoothing": null,
         "tier": "basic",
@@ -1717,7 +1717,7 @@ expression: reserved
       {
         "default": 0.0,
         "default_text": "0deg",
-        "desc": "Where in the shape each note starts, as a share of the length (180deg starts halfway).",
+        "desc": "Where in the shape each note starts, as a share of the length (180° starts halfway).",
         "flags": {
           "automatable": true,
           "modulatable": false,
@@ -1732,7 +1732,7 @@ expression: reserved
           "scale": "linear",
           "type": "float"
         },
-        "name": "Start",
+        "name": "Start phase",
         "perceptual": null,
         "smoothing": null,
         "tier": "advanced",
@@ -3069,7 +3069,7 @@ expression: reserved
         "kind": {
           "type": "toggle"
         },
-        "name": "Tempo sync",
+        "name": "Sync",
         "perceptual": null,
         "smoothing": null,
         "tier": "intermediate",
@@ -3225,7 +3225,7 @@ expression: reserved
       {
         "default": 50.0,
         "default_text": "50%",
-        "desc": "How far the delay sweeps: more is a deeper wobble in pitch (chorus) or a wider sweep of the notches (flanger).",
+        "desc": "How far the delay sweeps either side of the delay time, as a share of it: 50 % of 7 ms is plus or minus 3.5 ms, and 100 % sweeps between none and double. More is a deeper wobble in pitch (chorus) or a wider sweep of the notches (flanger).",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3424,7 +3424,7 @@ expression: reserved
         "kind": {
           "type": "toggle"
         },
-        "name": "Tempo sync",
+        "name": "Sync",
         "perceptual": null,
         "smoothing": null,
         "tier": "intermediate",
@@ -3580,7 +3580,7 @@ expression: reserved
       {
         "default": 50.0,
         "default_text": "50%",
-        "desc": "How far the notches sweep around the centre: 100 % is three octaves either way.",
+        "desc": "How far the notches sweep around the center: 100 % is three octaves either way.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3606,7 +3606,7 @@ expression: reserved
       {
         "default": 1000.0,
         "default_text": "1kHz",
-        "desc": "The frequency the notches sweep around; with depth at 0 % a static, comb-like colour here.",
+        "desc": "The frequency the notches sweep around; with depth at 0 % a static, comb-like color here.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3621,7 +3621,7 @@ expression: reserved
           "scale": "log",
           "type": "float"
         },
-        "name": "Centre",
+        "name": "Center",
         "perceptual": "spectrum.centroid_hz",
         "smoothing": {
           "linear_ms": 10.0
@@ -3720,7 +3720,7 @@ expression: reserved
       {
         "default": 10.0,
         "default_text": "10Hz",
-        "desc": "Removes everything below this frequency (12 dB/octave), clearing mud or the sub from effects; at 10 Hz it is off.",
+        "desc": "Removes everything below this frequency (12 dB/octave), clearing mud or the sub from effects; at 10 Hz it is out of the way.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3798,7 +3798,7 @@ expression: reserved
       {
         "default": 400.0,
         "default_text": "400Hz",
-        "desc": "The centre of the first bell.",
+        "desc": "The center of the first bell.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3824,7 +3824,7 @@ expression: reserved
       {
         "default": 0.0,
         "default_text": "0dB",
-        "desc": "Boosts or cuts a band around the first bell's centre: a cut near 300-500 Hz cleans boxiness.",
+        "desc": "Boosts or cuts a band around the first bell's center: a cut near 300-500 Hz cleans boxiness.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3876,7 +3876,7 @@ expression: reserved
       {
         "default": 2500.0,
         "default_text": "2.5kHz",
-        "desc": "The centre of the second bell.",
+        "desc": "The center of the second bell.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -3902,7 +3902,7 @@ expression: reserved
       {
         "default": 0.0,
         "default_text": "0dB",
-        "desc": "Boosts or cuts a band around the second bell's centre: presence and bite around 2-5 kHz.",
+        "desc": "Boosts or cuts a band around the second bell's center: presence and bite around 2-5 kHz.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -4006,7 +4006,7 @@ expression: reserved
       {
         "default": 20000.0,
         "default_text": "20kHz",
-        "desc": "Removes everything above this frequency (12 dB/octave); at 20 kHz it is off.",
+        "desc": "Removes everything above this frequency (12 dB/octave); at 20 kHz it is out of the way.",
         "flags": {
           "automatable": true,
           "modulatable": true,
@@ -4081,7 +4081,7 @@ expression: reserved
         "kind": {
           "type": "toggle"
         },
-        "name": "Tempo sync",
+        "name": "Sync",
         "perceptual": null,
         "smoothing": null,
         "tier": "basic",
