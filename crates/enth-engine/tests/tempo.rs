@@ -10,7 +10,9 @@ use enth_engine::{
     DEFAULT_TEMPO_BPM, Engine, Event, EventKind, LinkCapacity, MAX_TEMPO_BPM, MIN_TEMPO_BPM,
     NoteKey, ParamId, PrepareCfg, SEG, compile,
 };
-use enth_patch::catalogue::{Beats, CompParam, LfoParam, LfoScope, LfoShape};
+use enth_patch::catalogue::{
+    Beats, CompParam, LfoParam, LfoScope, LfoShape, VoiceMode, VoiceParam,
+};
 use enth_patch::{ModuleInstance, ModuleKind, Patch, Route};
 
 fn route(p: &mut Patch, src: &str, dst: &str, depth: f32) {
@@ -496,6 +498,85 @@ fn a_one_shot_runs_one_cycle_then_holds_and_a_voice_lfo_restarts_at_each_note() 
             assert_close(f64::from(second), want, 1e-2, "the second note's ramp");
         }
     }
+}
+
+/// A voice `lfo1` (one shot, saw up, a quarter note) drives `osc1.fine` (100 cents at value 1). Note 1 is held; note 2
+/// lands on top of it (note 1 is never released) after the first cycle has ended. Returns, per segment, the value of
+/// `osc1.fine` on the one voice that plays.
+fn overlapping_notes_in(mode: VoiceMode, second_note_at: usize, segments: usize) -> Vec<f32> {
+    let mut p = reset_saw_patch();
+    p.voice.values[VoiceParam::Mode.index()] = mode.index() as f32;
+    let mut one = lfo("lfo1", LfoScope::Voice, LfoShape::SawUp, Beats::Quarter);
+    one.values[LfoParam::OneShot.index()] = 1.0;
+    p.modulators.push(one);
+    route(&mut p, "lfo1", "osc1.fine", 50.0);
+    let (plan, map) = compile(&p, &PrepareCfg::new(SR)).unwrap();
+    let fine = map.get(&"osc1.fine".parse().unwrap()).unwrap();
+    let mut e = Engine::new(plan, SEED);
+    let (mut l, mut r) = ([0.0f32; SEG], [0.0f32; SEG]);
+    let on = |id: i32| EventKind::NoteOn {
+        key: NoteKey::new(60 + id as u8, id),
+        velocity: 0.8,
+    };
+    (0..segments)
+        .map(|k| {
+            let ev: Vec<Event> = if k == 0 {
+                vec![
+                    Event {
+                        offset: 0,
+                        kind: tempo(120.0),
+                    },
+                    Event {
+                        offset: 0,
+                        kind: on(1),
+                    },
+                ]
+            } else if k == second_note_at {
+                vec![Event {
+                    offset: 0,
+                    kind: on(2),
+                }]
+            } else {
+                Vec::new()
+            };
+            e.process(&mut l, &mut r, &ev);
+            assert_eq!(e.active_voices().len(), 1, "one voice in {mode:?}");
+            e.value(fine, e.active_voices()[0]).expect("a value")
+        })
+        .collect()
+}
+
+#[test]
+fn a_one_shot_voice_lfo_restarts_on_a_mono_retrigger_and_not_on_a_legato_note() {
+    // Quarter note at 120 BPM: a cycle is 750 segments. The second note lands at segment 1150, 400 after the first
+    // cycle ended, while the first note is still held.
+    let cps = cycles_per_segment(120.0, Beats::Quarter);
+    let (cycle, second) = (750, 1150);
+    let mono = overlapping_notes_in(VoiceMode::Mono, second, second + 300);
+    let top = mono[cycle - 1];
+    assert!(top > 99.9, "the first note's ramp ends at the top: {top}");
+    assert!(
+        mono[cycle..second].iter().all(|v| *v == top),
+        "the finished cycle holds until the retrigger"
+    );
+    for (n, v) in mono[second..].iter().enumerate() {
+        // The retrigger restarts the cycle from the start phase: the ramp rises again from the bottom.
+        let want = 100.0 * (2.0 * ((n as f64 + 1.0) * cps) - 1.0);
+        assert_close(f64::from(*v), want, 1e-2, "the retriggered ramp");
+    }
+    // The same two notes in legato: the second is not a note-on for the envelopes, so the finished cycle keeps holding.
+    let legato = overlapping_notes_in(VoiceMode::Legato, second, second + 300);
+    assert_eq!(legato[cycle - 1], top);
+    assert!(
+        legato[cycle..].iter().all(|v| *v == top),
+        "a legato note does not restart a one-shot"
+    );
+    // Before the second note the two modes are the same render.
+    assert_eq!(bits_f32(&mono[..second]), bits_f32(&legato[..second]));
+}
+
+fn bits_f32(xs: &[f32]) -> Vec<u32> {
+    xs.iter().map(|x| x.to_bits()).collect()
 }
 
 #[test]

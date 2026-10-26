@@ -68,7 +68,7 @@ How to read it:
 | `seed` | none | 0 … 65535 | int | 0 |  | advanced | The random seed used in seeded phase mode, including the random shapes. |
 | `sync` | none | off, on | toggle | off | auto | advanced | Off: rate sets the speed in Hz. On: the speed comes from beats and the tempo (140 BPM unless the host or the render says otherwise), and rate is ignored. |
 | `beats` | none | 25 note divisions, `sixty_fourth` … `sixteen_bars` (the shared `Beats` list; default `quarter`) | enum | quarter | mod, auto | advanced | The cycle length when sync is on, as a note division (T triplet, D dotted). Modulating it steps through the divisions in order, shortest first. |
-| `one_shot` | none | off, on | toggle | off | auto | advanced | On: run one cycle from the start phase at each note-on (the render start for a global LFO), then hold the last value. |
+| `one_shot` | none | off, on | toggle | off | auto | advanced | On: run one cycle from the start phase at each note-on that restarts the envelopes (not a legato note; the render start for a global LFO), then hold the last value. |
 
 ### `reverb` — Reverb (fx, ids `reverb1`, `reverb2`…)
 

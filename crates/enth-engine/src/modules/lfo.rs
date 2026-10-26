@@ -139,6 +139,11 @@ impl VoiceModulator for Lfo {
         for &v in cx.voices {
             let core = &mut self.voices[v];
             core.set_one_shot(one_shot);
+            // A mono retrigger (a note-on on a voice that is still held or releasing) is a `trigger` without a fresh
+            // voice: restart the cycle there, as an envelope restarts.
+            if one_shot && cx.notes.trigger[v] && !cx.notes.fresh[v] {
+                core.restart_one_shot();
+            }
             if synced {
                 let beats = cycle_beats(p.cur(LfoParam::Beats, v));
                 core.set_synced(cx.tempo_bpm, beats, self.sample_rate, SEG);
