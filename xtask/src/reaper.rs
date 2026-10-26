@@ -15,6 +15,7 @@
 //! | `slot-automation` | automation on slots 1 and 64 makes the rendered sound brighter and louder, as the patch maps them |
 //! | `macro-automation` | automation on macros 1 and 8 makes it louder and brighter, and a second offline render of the project is the same audio |
 //! | `mod-wheel` | the mod wheel (MIDI CC 1 in a MIDI item) reaches the patch: VST3 through the one CC parameter the plugin maps |
+//! | `wt` | (lane SKS, F2m) a patch with a wavetable oscillator phase-modulated through an audio route, loaded as state: saved byte for byte, played by short notes whose level and brightness are the engine's own (the route is heard), reloaded in a new process, saved and rendered again |
 //! | `undo-state-load` | REAPER's undo and redo across plugin state loads restore the patch and the parameters |
 //! | `two-instances` | two instances keep their own patch and values, through a reload and a deleted neighbour |
 //! | `editor-smoke` | the editor opens, draws and closes five times, under Xvfb |
@@ -94,6 +95,7 @@ enum Scenario {
     SlotAutomation,
     MacroAutomation,
     ModWheel,
+    Wt,
     UndoStateLoad,
     TwoInstances,
     EditorSmoke,
@@ -107,12 +109,13 @@ enum Scenario {
 }
 
 impl Scenario {
-    const PRODUCT: [Scenario; 14] = [
+    const PRODUCT: [Scenario; 15] = [
         Scenario::State,
         Scenario::PatchRoundtrip,
         Scenario::SlotAutomation,
         Scenario::MacroAutomation,
         Scenario::ModWheel,
+        Scenario::Wt,
         Scenario::UndoStateLoad,
         Scenario::TwoInstances,
         Scenario::EditorSmoke,
@@ -130,6 +133,7 @@ impl Scenario {
             Scenario::SlotAutomation => "slot-automation",
             Scenario::MacroAutomation => "macro-automation",
             Scenario::ModWheel => "mod-wheel",
+            Scenario::Wt => "wt",
             Scenario::UndoStateLoad => "undo-state-load",
             Scenario::TwoInstances => "two-instances",
             Scenario::EditorSmoke => "editor-smoke",
@@ -323,6 +327,7 @@ struct Chunks {
     slot: Option<String>,
     macros: Option<String>,
     wheel: Option<String>,
+    wt: Option<String>,
     dirty_control: Option<String>,
 }
 
@@ -338,6 +343,9 @@ const PRODUCT_SLOT_PATCH: &str = include_str!("../reaper/enth-slot-automation.pa
 const PRODUCT_MACRO_PATCH: &str = include_str!("../reaper/enth-macro-automation.patch.json");
 /// `mod-wheel`: the mod wheel turns osc1's level down by 100 %.
 const PRODUCT_WHEEL_PATCH: &str = include_str!("../reaper/enth-mod-wheel.patch.json");
+/// `wt` (lane SKS, F2m): a wavetable oscillator phase-modulated by a sine operator through an audio route, with two
+/// slots on its parameters, in the plugin's own serialisation.
+const PRODUCT_WT_PATCH: &str = include_str!("../reaper/enth-wt.patch.json");
 /// `dirty-flag` control: every knob of the first card is bound to a host slot.
 const PRODUCT_DIRTY_CONTROL_PATCH: &str = include_str!("../reaper/enth-dirty-control.patch.json");
 /// `duel` (lane SKD): instance 1's state, the nice-plug fields `patch` and `enth` of a round whose patch is its target.
@@ -354,6 +362,7 @@ impl Chunks {
             slot: make("slot", PRODUCT_SLOT_PATCH)?,
             macros: make("macro", PRODUCT_MACRO_PATCH)?,
             wheel: make("wheel", PRODUCT_WHEEL_PATCH)?,
+            wt: make("wt", PRODUCT_WT_PATCH)?,
             dirty_control: make("dirty-control", PRODUCT_DIRTY_CONTROL_PATCH)?,
         })
     }
@@ -469,6 +478,7 @@ pub fn reaper_test(args: &[String]) -> Result<(), String> {
             Scenario::PatchRoundtrip,
             Scenario::SlotAutomation,
             Scenario::MacroAutomation,
+            Scenario::Wt,
         ]);
         scenarios.sort();
         scenarios.dedup();
@@ -658,6 +668,19 @@ fn run_scenario(
                 &format!("wheel-automation-{tag}.rpp"),
             )?;
             checks::mod_wheel(&sb.out, report, format);
+        }
+        Scenario::Wt => {
+            // Build and render the project, then reload it in a new process, save it again and render that too.
+            for (phase, project) in [("create", "a"), ("reload", "b")] {
+                let extra = if phase == "create" {
+                    chunk_env(chunks.wt.as_ref(), None)
+                } else {
+                    Vec::new()
+                };
+                run_script(sb, report, format, "wt", "wt", phase, &extra);
+                render_project(sb, report, format, "wt", &format!("wt-{tag}-{project}.rpp"))?;
+            }
+            checks::wt(&sb.out, report, format, PRODUCT_WT_PATCH);
         }
         Scenario::UndoStateLoad => {
             let extra = chunk_env(chunks.state.as_ref(), chunks.roundtrip.as_ref());
@@ -1217,7 +1240,7 @@ fn cross_format(sb: &Sandbox, report: &mut Report, shared: &Shared, formats: &[F
             && shared.patch_text.get(first) == shared.patch_text.get(second),
         "the same patch loaded as state is saved as the same text by CLAP and VST3",
     );
-    for kind in ["slot", "macro"] {
+    for kind in ["slot", "macro", "wt"] {
         checks::renders_agree(&sb.out, report, kind, *first, *second);
     }
 }
