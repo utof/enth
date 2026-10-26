@@ -238,4 +238,4 @@ The skirt falls about 12 dB per octave: a step falls 6 dB per octave and the 0.6
 
 ## Acceptance (from phase-s2.md, every module lane)
 
-The same bits on six targets (the goldens); FTZ-independent (`the_render_is_the_same_under_every_ftz_mode`); zero subnormals after a 40 s tail; latency 0; a budget of the measured count plus 10 % (above); two instances keep separate state; aliasing: not an audio path, so the zipper skirt of a stepped pattern is recorded above and asserted in the test; no `THIRD_PARTY_NOTICES.md` entry (no port).
+The same bits on six targets (the goldens, checked native and under `wasm32-wasip1` with `cargo xtask golden --wasm`: 100 of 100 cases, the 13 new included); FTZ-independent (`the_render_is_the_same_under_every_ftz_mode`); zero subnormals after a 40 s tail; latency 0; a budget of the measured count plus 10 % (above); two instances keep separate state; aliasing: not an audio path, so the zipper skirt of a stepped pattern is recorded above and asserted in the test; no `THIRD_PARTY_NOTICES.md` entry (no port).
