@@ -504,7 +504,7 @@ The property tests check the first two exhaustively for every position of 256 ra
 | Kind | What it carries | Size (symbols, hyphens not counted) | Lane |
 | --- | --- | --- | --- |
 | 1 **scorecard** | the challenge, the engine, the scorer set, sound % and combined % (tenths), passed, submits, the time, the assists, a 60-bit salted commitment to the answer. No patch: it spoils nothing | **51** with a short challenge, always; 72–81 with custom settings | RC |
-| 2 **answer** | a 64-bit salt, the challenge, the patch as `ops_between(start, answer)` through `result-params-v1`, a 40-bit tail | level 1–5 targets as answers: median 46, 56, 92, 110, 152 (max 50, 61, 98, 130, 188); solver answers in the table below | RC |
+| 2 **answer** | a 64-bit salt, the challenge, the patch as `ops_between(start, answer)` through `result-params-v1`, a 40-bit tail | level 1–5 targets as answers: median 47, 58, 100, 120, 168 (max 51, 65, 106, 143, 208); solver answers in the table below | RC |
 | 3 **ear challenge** | an `EarSpec`: game 8, ear generator 8, level 8, seed 40, count 8 | 19 | CV3 |
 | 4 **ear result** | kind 3's payload, the ear rules (should-fix S5), one answer per question (taps stored from the first tap), the time, the assists | 50 for 16 choice answers (about 29 fit 64) | RC |
 | 5 lesson sibling | reserved: (pack, lesson, step, seed); nothing plays it yet | — | — |
@@ -529,24 +529,26 @@ The property tests check the first two exhaustively for every position of 256 ra
 
 **Layout 1** (`result-params-v1`): the header, a 64-bit salt, the challenge as in the scorecard, the ops until END, zero bits to the end of a symbol, the 40-bit tail and code v1's symbol. The salt keeps the commitment from being brute-forced over a small answer space, and is kept with the round, so the code can be made again later.
 
+**Widened in place on 2026-10-26 (owner decision D3, lane ANS).** Layout 1 had never been in a friend build, so its target, parameter, place and kind fields grew and it stayed layout 1: 6 bits name `voice`, `master` and 62 modules (were 5), 6 bits name parameters 0–62 per owner with 63 ending a run (were 4 and 15), 4 bits place a module among 16 in its section (were 3), 6 bits name 64 kinds (were 4, 16 kinds, which could not write S2a's `delay` 16 and `ladder` 17). Nothing else moved: the op code, route, macro, id-number and source fields, the float coding, the header, salt, challenge, tail, check symbol, `result-params-v1`'s entries and both preimages are as frozen, so **a commitment hashes the same answer to the same bits** and a scorecard still matches (a test pins four). An answer code made before the widening does not read now (it was never sent to a friend), and the other kinds' fixtures are byte for byte as they were. The widths are guarded: compile-time asserts in `answer.rs` (and tests that name the offender) require `ModuleKind::ALL` (the hidden reserved kinds counted) within the kind field, each section cap within the place field, 2 + the section caps within the target field, `MAX_ROUTES` within the route field, and every `result-params-v1` row and catalogue kind within 63 parameters (a 64th would collide with the run's end); a catalogue or model change that outgrows one fails the build and needs a new layout.
+
 **The salt rule (privacy; the F1e review's M6).** The salt is **64 bits of OS randomness** (std's `RandomState` keys, or `getrandom`), drawn by the shell **once per duel** (core crates have no RNG) and kept with the result in the duel history. It is **never derived from a clock or a seed.** The answer code carries the salt in the clear, and the shell's obvious source, `fresh_seed` (`enth-plugin/src/game.rs`), is a bijection of wall-clock nanoseconds that only a 40-bit mask hides: an unmasked salt from it would put the absolute time, to the nanosecond, into every answer code. No test in `enth-challenge` can catch this, so the rule lives here, in [duels.md](duels.md#privacy) and on `AnswerCode::new`.
 
 Each op, in `ops_between`'s order (so every patch between the start and the answer is valid):
 
 | Bits | Op | Then |
 | --- | --- | --- |
-| `0` | a run of `SetParam`s on one target | target 5, then (parameter 4, value) pairs, then parameter 15 |
+| `0` | a run of `SetParam`s on one target | target 6, then (parameter 6, value) pairs, then parameter 63 |
 | `1 0000` | END | — |
-| `1 0001` | `SetEnabled` | module 5, enabled 1 |
-| `1 0010` | `InsertRoute` | index 6, source, destination (target 5, parameter 4), depth |
+| `1 0001` | `SetEnabled` | module 6, enabled 1 |
+| `1 0010` | `InsertRoute` | index 6, source, destination (target 6, parameter 6), depth |
 | `1 0011`, `1 0100` | `RemoveRoute`, `SetDepth` | route index 6 (and the depth) |
-| `1 0101` | `AddModule` | kind 4, place in its section 3, enabled 1, id number 6, then (parameter, value) pairs for the values off `result-params-v1`'s defaults, then 15 |
-| `1 0110`, `1 0111`, `1 1000` | `RemoveModule`, `Move`, `SetAmpEnv` | module 5 (and the place 3 for `Move`) |
+| `1 0101` | `AddModule` | kind 6, place in its section 4, enabled 1, id number 6, then (parameter 6, value) pairs for the values off `result-params-v1`'s defaults, then 63 |
+| `1 0110`, `1 0111`, `1 1000` | `RemoveModule`, `Move`, `SetAmpEnv` | module 6 (and the place 4 for `Move`) |
 | `1 1001` | `SetMacro` | macro 3, value |
 | `1 1010`–`1 1111` | reserved | `answer_too_new` |
 
-- **Targets are places, never ids:** 0 is `voice`, 1 `master`, 2 + i the i-th module in file order, in the patch as it is at that op. A source is 3 bits (a module, velocity, key, the mod wheel, a macro; 5–7 are `answer_too_new`).
-- **`result-params-v1`** is the frozen, append-only table of each owner's parameters (the seven module kinds by discriminant, then `voice` and `master`): the key, the value coding and the default an added module starts from, so no catalogue change moves an old code. An index this build's table lacks, or a module kind it lacks, is `answer_too_new`. A test pins the table's bytes and checks it against the live catalogue (a catalogue change that breaks it needs a new layout).
+- **Targets are places, never ids:** 0 is `voice`, 1 `master`, 2 + i the i-th module in file order, in the patch as it is at that op (62 modules fit). A source is 3 bits (a module, velocity, key, the mod wheel, a macro; 5–7 are `answer_too_new`).
+- **`result-params-v1`** is the frozen, append-only table of each owner's parameters (the seven module kinds by discriminant, then `voice` and `master`): the key, the value coding and the default an added module starts from, so no catalogue change moves an old code. An index this build's table lacks, or a module kind it lacks (S2a's reserved kinds 7–17 until lane CAT adds their rows; kinds 16 and 17 fit the kind field since the widening), is `answer_too_new`. A test pins the table's bytes and checks it against the live catalogue (a catalogue change that breaks it needs a new layout; a kind past 63 parameters, index 62, needs one too).
 - **Values:** an `f32` in the **float coding**: `0`, a sign, a 10-bit mantissa and a 4-bit exponent (±m·10^e, e from −8 to 7) when that gives the same bits, which every three-significant-digit value does (16 bits); otherwise `1` and the exact 32 bits (33). An integer in its range's bits, an enum index in a field with room for one more item, a toggle in one bit. Route depths and macro values are `f32`s.
 - **Stripped before encoding:** `SetMeta` (`PatchMeta::author` can hold a real name), labels, macro names and slots; none changes the sound. The test proves it by giving a patch with every personal field set and the same patch without them, and getting the same symbols.
 - **An added module's id** (should-fix S1, lane F1E): the engine seeds a module from its id (`fnv1a64(id)`) and `osc`'s default phase mode is `free`, so a renumbered module renders other phases (measured at F1e: the audio differed by 0.05–1.9 at most, and no `sound/1` or `structure/1` score in 600 rows moved). An id the app gave (`<prefix><n>`, `n` 1–63) keeps its number in 6 bits; **the lowest free id and any id the player typed write 0**, and decoding gives the lowest free `<prefix><n>`, so **no typed name survives** and the canonical answer renders what the player heard. Insurance against a phase-sensitive `sound/2`.
@@ -562,19 +564,19 @@ Each op, in `ops_between`'s order (so every patch between the start and the answ
   ```
 
 - **Decoding rebuilds:** `AnswerCode::decode` regenerates the target from the challenge (a long challenge's prefix checked: `target_mismatch`), applies the ops to the start and checks the tail (`answer_mismatch`: damaged, or this build regenerates another start or target). So a decoded answer is one this build rebuilt exactly, and a generator or hash mismatch never reaches a score. Decoding, the regeneration included, takes a median of about 0.4 ms at level 1 and 2 ms at level 5 (release build).
-- **No deflated whole patch.** An added module carries only the values off the table's defaults, so the op form is never much longer than a whole patch (report 03 measured 952–1,096 symbols for one): an answer that moves every value of the starter and every macro to non-round values and switches every module on is 547 symbols. A whole-patch form would be a new layout, and `miniz_oxide` is not needed.
+- **No deflated whole patch.** An added module carries only the values off the table's defaults, so the op form is never much longer than a whole patch (report 03 measured 952–1,096 symbols for one): an answer that moves every value of the starter and every macro to non-round values and switches every module on is 583 symbols (547 before the widening). A whole-patch form would be a new layout, and `miniz_oxide` is not needed.
 
-**Measured sizes** (symbols, code v1's included; 40 seeds per level for the first three columns, 8 for the solver's; lane SKD measures real passing answers at F2d). "Dragged" moves every changed value off three significant digits, the float coding's worst case; "touched" adds three more knobs; the solver searched 1,500 renders from the start over the drawn or every observable parameter, like `enth match --free drawn|observable`:
+**Measured sizes** (symbols, code v1's included; 40 seeds per level for the first three columns, 8 for the solver's; lane SKD measured real passing answers at F2d, [duels.md](duels.md#passing-answers-lane-skd-f2d)). The first three columns were measured again on 2026-10-26, after the answer code's widening (D3; F1e's figures, before it, are in [duels.md](duels.md#lane-ans-the-answer-codes-fields-widened-d3)); the solver and report columns are F1e's and were not repeated. "Dragged" moves every changed value off three significant digits, the float coding's worst case; "touched" adds three more knobs; the solver searched 1,500 renders from the start over the drawn or every observable parameter, like `enth match --free drawn|observable`:
 
 | Level | Target (median, max) | Dragged | Touched | Solver, drawn | Solver, observable | Report 02 (targets) |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 46, 50 | 49, 56 | 74, 75 | 48, 56 (8 of 8 passed) | 107, 107 (8 of 8) | 51, 62 |
-| 2 | 56, 61 | 66, 75 | 89, 91 | 66, 73 (8 of 8) | 103, 107 (8 of 8) | 72, 81 |
-| 3 | 92, 98 | 123, 132 | 144, 147 | 113, 117 (8 of 8) | 100, 109 (8 of 8) | 141, 154 |
-| 4 | 110, 130 | 144, 171 | 165, 186 | 133, 134 (6 of 8) | 101, 107 (6 of 8) | 165, 186 |
-| 5 | 152, 188 | 212, 263 | 230, 271 | 176, 181 (1 of 8) | 110, 125 (1 of 8) | 254, 309 |
+| 1 | 47, 51 | 50, 58 | 77, 79 | 48, 56 (8 of 8 passed) | 107, 107 (8 of 8) | 51, 62 |
+| 2 | 58, 65 | 69, 78 | 93, 96 | 66, 73 (8 of 8) | 103, 107 (8 of 8) | 72, 81 |
+| 3 | 100, 106 | 130, 140 | 152, 155 | 113, 117 (8 of 8) | 100, 109 (8 of 8) | 141, 154 |
+| 4 | 120, 143 | 154, 183 | 175, 199 | 133, 134 (6 of 8) | 101, 107 (6 of 8) | 165, 186 |
+| 5 | 168, 208 | 227, 283 | 246, 290 | 176, 181 (1 of 8) | 110, 125 (1 of 8) | 254, 309 |
 
-The solver searches values only (modules and routes stay as the start has them), so at levels 4 and 5 it rarely passes and its codes carry no structural op; over every observable parameter it moves about eleven knobs to exact, non-round values, which is why that column sits near 105 at every level and is the likeliest shape of an agent's answer. Each extra knob a player leaves off three significant digits costs about 8 symbols. The size budget test holds the first three columns at about 10 % above these.
+The solver searches values only (modules and routes stay as the start has them), so at levels 4 and 5 it rarely passes and its codes carry no structural op; over every observable parameter it moves about eleven knobs to exact, non-round values, which is why that column sits near 105 at every level (F1e, before the widening; about 8 more since) and is the likeliest shape of an agent's answer. Each extra knob a player leaves off three significant digits costs about 8 symbols (a 6-bit parameter index and the exact 33 bits: 39). The size budget test holds the first three columns at about 10 % above these.
 
 **Checks and what they catch:** code v1's symbol, every single substitution and adjacent swap (the property tests run every position of 256 random codes of each kind); the scorecard's fixed length and its 30-bit check, a truncation and other random damage (1 in 2³⁰ slips through); the answer's 40-bit tail, a truncation, any damage and any decoding drift (1 in 2⁴⁰). The commitment is 60 bits, so a sender who prepares two answers in advance could find a pair with one commitment in about 2³⁰ hashes and choose between them later: out of scope for friends.
 
@@ -583,7 +585,7 @@ The solver searches values only (modules and routes stay as the start has them),
 | Refusal | When |
 | --- | --- |
 | `code_too_new` | an unknown kind, layout or form; a challenge with a generator, preset or template this build lacks; an ear challenge's game, generator or level this build lacks |
-| `answer_too_new` | an op, module kind, parameter or source this build lacks |
+| `answer_too_new` | an op, module kind, parameter or source this build lacks; a module added to a section already at its cap, or placed at or past it (what a build with longer sections writes) |
 | `answer_mismatch` | the answer does not rebuild to its tail, or an op does not apply |
 | `target_mismatch` | a long challenge whose target this build regenerates differently |
 | `wrong_kind` | another kind than the one asked for (`found: None` for a challenge code) |

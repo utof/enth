@@ -9,6 +9,11 @@
 //!
 //! # Layout 1 (`result-params-v1`)
 //!
+//! **Widened in place on 2026-10-26** (owner decision D3, lane ANS): layout 1 had never been in a friend build, so its
+//! target, parameter, place and kind fields grew to make room for S2a's catalogue (up to 62 modules, 63 parameters
+//! per owner, 16 modules per section, 64 kinds) and stayed layout 1. [The guards](#widths) keep the next catalogue or
+//! patch-model change from outgrowing them silently. A code made before the widening does not read on this build.
+//!
 //! ```text
 //! header                     14   'F', kind 2, layout 1
 //! salt                       64   64 bits of OS randomness, drawn by the shell once per duel (core crates have no
@@ -25,21 +30,21 @@
 //!
 //! | Bits | Op | Then |
 //! | --- | --- | --- |
-//! | `0` | a run of `SetParam`s on one target | target 5, then (parameter 4, value) pairs, then parameter 15 |
+//! | `0` | a run of `SetParam`s on one target | target 6, then (parameter 6, value) pairs, then parameter 63 |
 //! | `1 0000` | END | — |
-//! | `1 0001` | `SetEnabled` | module 5, enabled 1 |
-//! | `1 0010` | `InsertRoute` | index 6, source, destination (target 5, parameter 4), depth (an `f32`) |
+//! | `1 0001` | `SetEnabled` | module 6, enabled 1 |
+//! | `1 0010` | `InsertRoute` | index 6, source, destination (target 6, parameter 6), depth (an `f32`) |
 //! | `1 0011` | `RemoveRoute` | route index 6 |
 //! | `1 0100` | `SetDepth` | route index 6, depth |
-//! | `1 0101` | `AddModule` | kind 4, index in its section 3, enabled 1, id number 6, then (parameter 4, value) pairs for the values that differ from the table's defaults, then 15 |
-//! | `1 0110` | `RemoveModule` | module 5 |
-//! | `1 0111` | `Move` | module 5, index 3 |
-//! | `1 1000` | `SetAmpEnv` | module 5 |
+//! | `1 0101` | `AddModule` | kind 6, index in its section 4, enabled 1, id number 6, then (parameter 6, value) pairs for the values that differ from the table's defaults, then 63 |
+//! | `1 0110` | `RemoveModule` | module 6 |
+//! | `1 0111` | `Move` | module 6, index 4 |
+//! | `1 1000` | `SetAmpEnv` | module 6 |
 //! | `1 1001` | `SetMacro` | macro 3, value (an `f32`) |
 //! | `1 1010`–`1 1111` | reserved | refused as `answer_too_new` |
 //!
 //! - **Targets** are places in the patch as it is at that op, never ids: 0 is `voice`, 1 `master`, 2 + i the i-th
-//!   module in file order (sections in order).
+//!   module in file order (sections in order), so 6 bits name 62 modules.
 //! - **An added module's id** (should-fix S1): the engine seeds a module's random streams from its id
 //!   (`fnv1a64(id)`), and `osc`'s default phase mode is `free`, so a renumbered module renders other phases. An id the
 //!   app gave (`<prefix><n>`, `n` from 1 to 63) keeps its number in 6 bits; **an id the player typed (`wobble`,
@@ -54,6 +59,9 @@
 //!   float coding (16 bits for a value with three significant digits, else the exact 33), an integer in its range's
 //!   bits, an enum index in a field with room for one more item, a toggle in one bit. An index this build's table
 //!   lacks is `answer_too_new`, as is a module kind it lacks.
+//! - **Places:** a module added to a section already at its cap, or placed at or past it, is what a build with longer
+//!   sections writes (a higher `MAX_FX`), so a decoder says `answer_too_new` ("update enth"), not `answer_mismatch`
+//!   ("damaged"). A place within the cap but past the section's length is no build's, and is `answer_mismatch`.
 //! - **Stripped before encoding:** `SetMeta` (`PatchMeta::author` can hold a real name), labels, macro names and
 //!   automation slots, so no name, label, `meta` or slot survives; none of them changes the sound.
 //! - **The salt** (the F1e review's M6, a privacy rule no test here can catch): 64 bits of **OS randomness** (std's
@@ -79,12 +87,28 @@
 //! prefix is checked first (`target_mismatch`). No deflated whole-patch form: an added module carries only the values
 //! that differ from the table's defaults, so the op form is never much longer than a whole patch; a whole-patch form
 //! would be a new layout.
+//!
+//! # Widths
+//!
+//! | Field | Bits | Names | Must cover |
+//! | --- | --- | --- | --- |
+//! | target | 6 | `voice`, `master` and 62 modules | 2 + the section caps (`MAX_GENERATORS` + `MAX_VOICE_FX` + `MAX_FX` + `MAX_MODULATORS`) |
+//! | parameter | 6 | 63 parameters per owner (indices 0–62); 63 ends a run | every [`RESULT_PARAMS_V1`] row and every catalogue kind, reserved ones too: at most 63 parameters |
+//! | place | 4 | 16 modules per section | each section cap |
+//! | kind | 6 | 64 kinds, by discriminant | [`ModuleKind::ALL`], the hidden reserved kinds counted |
+//! | route | 6 | 64 routes | `MAX_ROUTES` |
+//! | id number | 6 | `<prefix>1`–`<prefix>63` | the module cap |
+//!
+//! These relations are compile-time asserts below the constants, and tests name the kind or section that breaks them.
+//! A catalogue or model change that outgrows a width fails the build here, not on a friend's machine; the fix is a new
+//! layout, never an edit of layout 1 (which is how the widening was allowed: layout 1 had no friend build yet).
 
 use core::fmt;
 
 use enth_patch::addr::{MacroIndex, ModSource, ModuleId, ParamAddr, Position, RouteAddr, Target};
-use enth_patch::catalogue::ModuleKind;
-use enth_patch::{ModuleInstance, Op, Patch, Route, ops_between};
+use enth_patch::catalogue::{Builtin, ModuleKind};
+use enth_patch::model::{MACROS, MAX_FX, MAX_GENERATORS, MAX_MODULATORS, MAX_ROUTES, MAX_VOICE_FX};
+use enth_patch::{ModuleInstance, Op, Patch, Route, Section, ops_between};
 use sha2::{Digest, Sha256};
 
 use crate::code::{ChallengeCode, CodeError, EngineVersion};
@@ -107,20 +131,20 @@ const TAIL_MAGIC: &[u8] = b"enth-answer-v1";
 /// The commitment's preimage magic (frozen with layout 1).
 const COMMIT_MAGIC: &[u8] = b"enth-commit-v1";
 
-/// Bits of a target (0 voice, 1 master, 2 + i a module).
-const TARGET_BITS: u32 = 5;
-/// Bits of a parameter index; [`RUN_END`] ends a run.
-const PARAM_BITS: u32 = 4;
-/// The parameter index that ends a run of values.
-const RUN_END: u64 = 15;
+/// Bits of a target (0 voice, 1 master, 2 + i a module): 62 modules.
+const TARGET_BITS: u32 = 6;
+/// Bits of a parameter index (0–62 per owner); [`RUN_END`] ends a run.
+const PARAM_BITS: u32 = 6;
+/// The parameter index that ends a run of values (the last one [`PARAM_BITS`] holds).
+const RUN_END: u64 = 63;
 /// Bits of an op code after its `1`.
 const OP_BITS: u32 = 4;
 /// Bits of a route index.
 const ROUTE_BITS: u32 = 6;
-/// Bits of an index within a section.
-const PLACE_BITS: u32 = 3;
-/// Bits of a module kind.
-const KIND_BITS: u32 = 4;
+/// Bits of an index within a section: 16 modules.
+const PLACE_BITS: u32 = 4;
+/// Bits of a module kind (the discriminant): 64 kinds.
+const KIND_BITS: u32 = 6;
 /// Bits of a macro index.
 const MACRO_BITS: u32 = 3;
 /// Bits of an added module's id number (`n` of `<prefix><n>`; 0 is the lowest free id).
@@ -138,6 +162,103 @@ const OP_REMOVE_MODULE: u64 = 6;
 const OP_MOVE: u64 = 7;
 const OP_SET_AMP_ENV: u64 = 8;
 const OP_SET_MACRO: u64 = 9;
+
+/// The most modules a patch holds: the section caps summed (what the target and id-number fields must name).
+const MODULE_CAP: usize = MAX_GENERATORS + MAX_VOICE_FX + MAX_FX + MAX_MODULATORS;
+
+/// Whether `kinds` kinds (the hidden reserved ones counted) fit [`KIND_BITS`].
+const fn kinds_fit(kinds: usize) -> bool {
+    kinds <= 1 << KIND_BITS
+}
+
+/// Whether a section of up to `modules` modules fits [`PLACE_BITS`] (its places are 0 to `modules - 1`).
+const fn places_fit(modules: usize) -> bool {
+    modules <= 1 << PLACE_BITS
+}
+
+/// Whether `voice`, `master` and `modules` modules fit [`TARGET_BITS`] (targets 0, 1 and 2 + i).
+const fn targets_fit(modules: usize) -> bool {
+    2 + modules <= 1 << TARGET_BITS
+}
+
+/// Whether `routes` routes fit [`ROUTE_BITS`] (route indices 0 to `routes - 1`).
+const fn routes_fit(routes: usize) -> bool {
+    routes <= 1 << ROUTE_BITS
+}
+
+/// Whether an owner with `count` parameters fits [`PARAM_BITS`]: its indices are 0 to `count - 1`, and [`RUN_END`] ends
+/// a run, so the last index must stay below it (63 parameters fit, 64 do not).
+const fn params_fit(count: usize) -> bool {
+    count <= RUN_END as usize
+}
+
+/// Whether `modules` modules can all hold an id number from 1 to `2^ID_BITS - 1` (0 is the lowest free id).
+const fn ids_fit(modules: usize) -> bool {
+    modules < 1 << ID_BITS
+}
+
+// The widths above against the patch model and the catalogue (D3, lane ANS; docs/phase-s2.md, "The answer code"). A
+// change that outgrows one fails the build of this crate, so it is found when the catalogue or the model changes
+// and not on a friend's machine; the answer code is the codec that cannot grow in place after a friend build. The tests
+// check each relation's boundary and name the section, kind or row that breaks it. Fix by a new layout, never by
+// loosening an assert.
+const _: () = {
+    assert!(
+        kinds_fit(ModuleKind::ALL.len()),
+        "KIND_BITS cannot name every ModuleKind (the hidden reserved kinds count)"
+    );
+    assert!(
+        places_fit(MAX_GENERATORS)
+            && places_fit(MAX_VOICE_FX)
+            && places_fit(MAX_FX)
+            && places_fit(MAX_MODULATORS),
+        "PLACE_BITS cannot index a full section"
+    );
+    assert!(
+        targets_fit(MODULE_CAP),
+        "TARGET_BITS cannot name voice, master and every module of a full patch"
+    );
+    assert!(
+        routes_fit(MAX_ROUTES),
+        "ROUTE_BITS cannot index every route"
+    );
+    assert!(
+        MACROS <= 1 << MACRO_BITS,
+        "MACRO_BITS cannot name every macro"
+    );
+    assert!(
+        ids_fit(MODULE_CAP),
+        "ID_BITS cannot number every module (numbers run from 1; 0 is the lowest free id)"
+    );
+    assert!(
+        RUN_END == (1 << PARAM_BITS) - 1,
+        "RUN_END is the last value PARAM_BITS holds"
+    );
+    let mut i = 0;
+    while i < RESULT_PARAMS_V1.len() {
+        assert!(
+            params_fit(RESULT_PARAMS_V1[i].1.len()),
+            "a RESULT_PARAMS_V1 row has more parameters than PARAM_BITS holds (63)"
+        );
+        i += 1;
+    }
+    let mut k = 0;
+    while k < ModuleKind::ALL.len() {
+        assert!(
+            params_fit(ModuleKind::ALL[k].params().len()),
+            "a catalogue kind (a reserved one too) has more parameters than PARAM_BITS holds (63)"
+        );
+        k += 1;
+    }
+    let mut b = 0;
+    while b < Builtin::ALL.len() {
+        assert!(
+            params_fit(Builtin::ALL[b].params().len()),
+            "voice or master has more parameters than PARAM_BITS holds (63)"
+        );
+        b += 1;
+    }
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // result-params-v1
@@ -293,8 +414,8 @@ const COMP_V1: &[ResultParam] = &[
 
 /// **`result-params-v1`**: the frozen parameter table of layout 1, one list per owner. Module kinds by their
 /// discriminant (`osc`, `noise`, `svf`, `adsr`, `lfo`, `reverb`, `comp`), then `voice` and `master`. Append-only: a
-/// new parameter or kind is appended (a kind past the 16th parameter needs a new layout), and a released entry never
-/// changes. A test pins the table's bytes and checks it against the live catalogue.
+/// new parameter or kind is appended (a kind past the 63rd parameter, index 62, needs a new layout: 63 ends a run),
+/// and a released entry never changes. A test pins the table's bytes and checks it against the live catalogue.
 pub const RESULT_PARAMS_V1: [(&str, &[ResultParam]); 9] = [
     ("osc", OSC_V1),
     ("noise", NOISE_V1),
@@ -416,8 +537,9 @@ impl AnswerCode {
     /// Read an answer code and rebuild its answer. Checks, in order: the frame (symbols, length bounds, code v1's
     /// symbol, version, form, kind, layout), the challenge (as code v1 checks it), the target (a long challenge's
     /// prefix: `target_mismatch`), each op (`answer_too_new` for an op, module kind, parameter or source this build
-    /// lacks; `bad_field` for a field no encoder writes; `answer_mismatch` for an op that does not apply), the padding,
-    /// then the tail (`answer_mismatch`). Never panics.
+    /// lacks, and for a module added to a section already at its cap or placed at or past it, which only a build with
+    /// longer sections writes; `bad_field` for a field no encoder writes; `answer_mismatch` for an op that does not
+    /// apply), the padding, then the tail (`answer_mismatch`). Never panics.
     pub fn decode(text: &str) -> Result<AnswerCode, ResultError> {
         let f = unframe(text, KIND_ANSWER, LAYOUT_V1)?;
         let data = f.data;
@@ -926,6 +1048,33 @@ fn take_param(
         })
 }
 
+/// A place in `section` (`PLACE_BITS` bits). What a build with longer sections writes (a higher `MAX_FX`) is not a
+/// damaged code but one this build is too old to hold, so it is `answer_too_new` ("update enth"): an add to a section
+/// already at its cap (`module count`, the count the add would reach), and a place at or past the cap (`module place`).
+/// A place this build's section could hold but does not reach yet (past its length) is `answer_mismatch`, from `apply`.
+fn take_place(
+    r: &mut Reader<'_>,
+    p: &Patch,
+    section: Section,
+    adding: bool,
+) -> Result<usize, ResultError> {
+    let index = r.take(PLACE_BITS as usize)?;
+    let len = p.section(section).len();
+    if adding && len >= section.max_len() {
+        return Err(ResultError::AnswerTooNew {
+            what: "module count",
+            value: len as u64 + 1,
+        });
+    }
+    if index as usize >= section.max_len() {
+        return Err(ResultError::AnswerTooNew {
+            what: "module place",
+            value: index,
+        });
+    }
+    Ok(index as usize)
+}
+
 fn take_value(r: &mut Reader<'_>, coding: Coding) -> Result<f32, ResultError> {
     Ok(match coding {
         Coding::F32 => take_f32(r)?,
@@ -1041,7 +1190,7 @@ fn decode_ops(r: &mut Reader<'_>, start: &Patch) -> Result<(Patch, usize), Resul
                         what: "module kind",
                         value: k,
                     })?;
-                let index = r.take(PLACE_BITS as usize)? as usize;
+                let index = take_place(r, &p, kind.section(), true)?;
                 let enabled = r.bool()?;
                 let n = r.take(ID_BITS as usize)?;
                 let id = if n == 0 {
@@ -1090,7 +1239,7 @@ fn decode_ops(r: &mut Reader<'_>, start: &Patch) -> Result<(Patch, usize), Resul
                     id,
                     to: Position {
                         section,
-                        index: r.take(PLACE_BITS as usize)? as usize,
+                        index: take_place(r, &p, section, false)?,
                     },
                 }
             }
