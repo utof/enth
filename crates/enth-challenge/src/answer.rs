@@ -90,7 +90,7 @@
 //! | Field | Bits | Names | Must cover |
 //! | --- | --- | --- | --- |
 //! | target | 6 | `voice`, `master` and 62 modules | 2 + the section caps (`MAX_GENERATORS` + `MAX_VOICE_FX` + `MAX_FX` + `MAX_MODULATORS`) |
-//! | parameter | 6 | indices 0–62 per owner; 63 ends a run | every [`RESULT_PARAMS_V1`] row and every catalogue kind, reserved ones too |
+//! | parameter | 6 | 63 parameters per owner (indices 0–62); 63 ends a run | every [`RESULT_PARAMS_V1`] row and every catalogue kind, reserved ones too: at most 63 parameters |
 //! | place | 4 | 16 modules per section | each section cap |
 //! | kind | 6 | 64 kinds, by discriminant | [`ModuleKind::ALL`], the hidden reserved kinds counted |
 //! | route | 6 | 64 routes | `MAX_ROUTES` |
@@ -163,28 +163,60 @@ const OP_SET_MACRO: u64 = 9;
 /// The most modules a patch holds: the section caps summed (what the target and id-number fields must name).
 const MODULE_CAP: usize = MAX_GENERATORS + MAX_VOICE_FX + MAX_FX + MAX_MODULATORS;
 
+/// Whether `kinds` kinds (the hidden reserved ones counted) fit [`KIND_BITS`].
+const fn kinds_fit(kinds: usize) -> bool {
+    kinds <= 1 << KIND_BITS
+}
+
+/// Whether a section of up to `modules` modules fits [`PLACE_BITS`] (its places are 0 to `modules - 1`).
+const fn places_fit(modules: usize) -> bool {
+    modules <= 1 << PLACE_BITS
+}
+
+/// Whether `voice`, `master` and `modules` modules fit [`TARGET_BITS`] (targets 0, 1 and 2 + i).
+const fn targets_fit(modules: usize) -> bool {
+    2 + modules <= 1 << TARGET_BITS
+}
+
+/// Whether `routes` routes fit [`ROUTE_BITS`] (route indices 0 to `routes - 1`).
+const fn routes_fit(routes: usize) -> bool {
+    routes <= 1 << ROUTE_BITS
+}
+
+/// Whether an owner with `count` parameters fits [`PARAM_BITS`]: its indices are 0 to `count - 1`, and [`RUN_END`] ends
+/// a run, so the last index must stay below it (63 parameters fit, 64 do not).
+const fn params_fit(count: usize) -> bool {
+    count <= RUN_END as usize
+}
+
+/// Whether `modules` modules can all hold an id number from 1 to `2^ID_BITS - 1` (0 is the lowest free id).
+const fn ids_fit(modules: usize) -> bool {
+    modules < 1 << ID_BITS
+}
+
 // The widths above against the patch model and the catalogue (D3, lane ANS; docs/phase-s2.md, "The answer code"). A
 // change that outgrows one fails the build of this crate, so it is found when the catalogue or the model changes
 // and not on a friend's machine; the answer code is the codec that cannot grow in place after a friend build. The tests
-// name the section or kind that breaks a relation. Fix by a new layout, never by loosening an assert.
+// check each relation's boundary and name the section, kind or row that breaks it. Fix by a new layout, never by
+// loosening an assert.
 const _: () = {
     assert!(
-        ModuleKind::ALL.len() <= 1 << KIND_BITS,
+        kinds_fit(ModuleKind::ALL.len()),
         "KIND_BITS cannot name every ModuleKind (the hidden reserved kinds count)"
     );
     assert!(
-        MAX_GENERATORS <= 1 << PLACE_BITS
-            && MAX_VOICE_FX <= 1 << PLACE_BITS
-            && MAX_FX <= 1 << PLACE_BITS
-            && MAX_MODULATORS <= 1 << PLACE_BITS,
+        places_fit(MAX_GENERATORS)
+            && places_fit(MAX_VOICE_FX)
+            && places_fit(MAX_FX)
+            && places_fit(MAX_MODULATORS),
         "PLACE_BITS cannot index a full section"
     );
     assert!(
-        2 + MODULE_CAP <= 1 << TARGET_BITS,
+        targets_fit(MODULE_CAP),
         "TARGET_BITS cannot name voice, master and every module of a full patch"
     );
     assert!(
-        MAX_ROUTES <= 1 << ROUTE_BITS,
+        routes_fit(MAX_ROUTES),
         "ROUTE_BITS cannot index every route"
     );
     assert!(
@@ -192,38 +224,37 @@ const _: () = {
         "MACRO_BITS cannot name every macro"
     );
     assert!(
-        MODULE_CAP < 1 << ID_BITS,
+        ids_fit(MODULE_CAP),
         "ID_BITS cannot number every module (numbers run from 1; 0 is the lowest free id)"
     );
-    // A parameter index is below RUN_END, which ends a run: every row must have room for its last index.
+    assert!(
+        RUN_END == (1 << PARAM_BITS) - 1,
+        "RUN_END is the last value PARAM_BITS holds"
+    );
     let mut i = 0;
     while i < RESULT_PARAMS_V1.len() {
         assert!(
-            RESULT_PARAMS_V1[i].1.len() < RUN_END as usize,
-            "a RESULT_PARAMS_V1 row has more parameters than PARAM_BITS holds"
+            params_fit(RESULT_PARAMS_V1[i].1.len()),
+            "a RESULT_PARAMS_V1 row has more parameters than PARAM_BITS holds (63)"
         );
         i += 1;
     }
     let mut k = 0;
     while k < ModuleKind::ALL.len() {
         assert!(
-            ModuleKind::ALL[k].params().len() < RUN_END as usize,
-            "a catalogue kind (a reserved one too) has more parameters than PARAM_BITS holds"
+            params_fit(ModuleKind::ALL[k].params().len()),
+            "a catalogue kind (a reserved one too) has more parameters than PARAM_BITS holds (63)"
         );
         k += 1;
     }
     let mut b = 0;
     while b < Builtin::ALL.len() {
         assert!(
-            Builtin::ALL[b].params().len() < RUN_END as usize,
-            "voice or master has more parameters than PARAM_BITS holds"
+            params_fit(Builtin::ALL[b].params().len()),
+            "voice or master has more parameters than PARAM_BITS holds (63)"
         );
         b += 1;
     }
-    assert!(
-        RUN_END == (1 << PARAM_BITS) - 1,
-        "RUN_END is PARAM_BITS' last value"
-    );
 };
 
 // ---------------------------------------------------------------------------------------------------------------

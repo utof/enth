@@ -77,8 +77,9 @@ fn result_params_v1_covers_the_catalogue() {
             "{owner}: a parameter is missing from the table"
         );
         assert!(
-            row.len() < RUN_END as usize,
-            "{owner}: index {RUN_END} ends a run"
+            params_fit(row.len()),
+            "{owner}: index {RUN_END} ends a run, so {} parameters do not fit",
+            row.len()
         );
         for (e, s) in row.iter().zip(specs) {
             assert_eq!(e.key, s.key, "{owner}: order");
@@ -129,14 +130,14 @@ fn result_params_v1_covers_the_catalogue() {
 // ---------------------------------------------------------------------------------------------------------------
 
 /// The same relations as the compile-time asserts below the constants, with the failing section, kind or row named, so
-/// a catalogue lane that adds the 63rd parameter, the 65th kind or the 17th module of a section sees which one and by
+/// a catalogue lane that adds the 64th parameter, the 65th kind or the 17th module of a section sees which one and by
 /// how much. (The asserts stop the build first; this keeps the headroom written where a lane looks.)
 #[test]
 fn the_widths_cover_the_patch_model_and_the_catalogue() {
     let room = |bits: u32| 1usize << bits;
     // Kinds: every ModuleKind, the hidden reserved ones counted.
     assert!(
-        ModuleKind::ALL.len() <= room(KIND_BITS),
+        kinds_fit(ModuleKind::ALL.len()),
         "{} kinds against {} (KIND_BITS {KIND_BITS})",
         ModuleKind::ALL.len(),
         room(KIND_BITS)
@@ -151,7 +152,7 @@ fn the_widths_cover_the_patch_model_and_the_catalogue() {
     // Places: every section cap.
     for section in enth_patch::Section::ALL {
         assert!(
-            section.max_len() <= room(PLACE_BITS),
+            places_fit(section.max_len()),
             "{section}: {} modules against {} (PLACE_BITS {PLACE_BITS})",
             section.max_len(),
             room(PLACE_BITS)
@@ -161,46 +162,96 @@ fn the_widths_cover_the_patch_model_and_the_catalogue() {
     let total: usize = enth_patch::Section::ALL.iter().map(|s| s.max_len()).sum();
     assert_eq!(total, MODULE_CAP, "the section caps sum to the module cap");
     assert!(
-        2 + total <= room(TARGET_BITS),
+        targets_fit(total),
         "voice, master and {total} modules against {} (TARGET_BITS {TARGET_BITS})",
         room(TARGET_BITS)
     );
     assert!(
-        total < room(ID_BITS),
+        ids_fit(total),
         "{total} modules against id numbers 1..{} (ID_BITS {ID_BITS})",
         room(ID_BITS) - 1
     );
     // Routes and macros.
     assert!(
-        enth_patch::model::MAX_ROUTES <= room(ROUTE_BITS),
+        routes_fit(enth_patch::model::MAX_ROUTES),
         "routes against ROUTE_BITS {ROUTE_BITS}"
     );
     assert!(
         enth_patch::model::MACROS <= room(MACRO_BITS),
         "macros against MACRO_BITS {MACRO_BITS}"
     );
-    // Parameters: an index below RUN_END, which ends a run.
+    // Parameters: the last index stays below RUN_END, which ends a run.
     assert_eq!(RUN_END as usize, room(PARAM_BITS) - 1);
     for (owner, row) in RESULT_PARAMS_V1 {
         assert!(
-            row.len() < RUN_END as usize,
+            params_fit(row.len()),
             "{owner}: {} parameters against indices 0..{RUN_END}",
             row.len()
         );
     }
     for kind in ModuleKind::ALL {
         assert!(
-            kind.params().len() < RUN_END as usize,
+            params_fit(kind.params().len()),
             "{kind}: {} catalogue parameters against indices 0..{RUN_END} (PARAM_BITS {PARAM_BITS})",
             kind.params().len()
         );
     }
     for builtin in Builtin::ALL {
         assert!(
-            builtin.params().len() < RUN_END as usize,
+            params_fit(builtin.params().len()),
             "{}: {} parameters",
             builtin.key(),
             builtin.params().len()
+        );
+    }
+}
+
+/// The guards' arithmetic at their edges, so an off-by-one cannot hide: each fits the largest value its field holds and
+/// refuses the next one. A lane that raised `MAX_FX` to 17, added a 65th kind or gave a kind a 64th parameter would
+/// fail the compile-time asserts (and the test above) through exactly these functions.
+#[test]
+fn each_guard_holds_the_last_value_and_refuses_the_next() {
+    // Kinds 0 to 63.
+    assert!(kinds_fit(64) && !kinds_fit(65));
+    // Places 0 to 15: a section of 16, not 17 (MAX_FX 17 would fail).
+    assert!(places_fit(16) && !places_fit(17));
+    // Targets: 0 voice, 1 master, 2 + i for i up to 61, so 62 modules, not 63.
+    assert!(targets_fit(62) && !targets_fit(63));
+    // Route indices 0 to 63.
+    assert!(routes_fit(64) && !routes_fit(65));
+    // Parameter indices 0 to 62, 63 ending a run: 63 parameters, not 64 (an MSEG of 63 parameters still fits).
+    assert!(params_fit(63) && !params_fit(64));
+    assert!(params_fit(RUN_END as usize) && !params_fit(RUN_END as usize + 1));
+    // Id numbers 1 to 63 cover 63 modules, not 64.
+    assert!(ids_fit(63) && !ids_fit(64));
+}
+
+/// An answer code made on the F1e build, before the widening (D3), is not this build's: it has the right header and
+/// check symbol, but its fields are narrower, so it must be refused cleanly (never read as another answer, never a
+/// panic). Layout 1 had not reached a friend build, which is why it was widened in place. The four F1e fixture answers.
+#[test]
+fn a_code_made_before_the_widening_is_refused() {
+    let before = [
+        "F23G-7ZXR-014D-2PF0-0802-0000-002M-20RG-F1T1-B1ZR-0CK7-304S-TY",
+        "F23G-7ZXR-014D-2PF0-0R02-0000-002M-20RG-F1T1-B1ZH-824J-BG8A-DFWG-0Z8E-4YXG-8TPE-CB9H-WJ4Y-6E83-MDY8-0298-GJSW-0G39-6N7G-7K",
+        "F23G-7ZXR-014D-2PF0-1802-0000-002M-20RG-F1T1-B1ZG-S0NX-SJED-ZRHR-G243-AFY4-J508-J9E1-19NS-HYHZ-HRMG-SS0H-61H0-2FRK-S01Y-GW9X-V0HN-CWRP-K10M-JZS4-9WCW-G78V-S88H-6VR4-2Z8V-WG0J-H7T3-9089-522B-7J10-M4CC-GF0Z-DJD3-JSG6",
+        "F220-0000-0000-0004-0R02-0000-000F-C9AJ-8092-CVY2-5RR2-1M8J-RP3V-W9P8-02S0-HBSW-G646-93XF-JHEW-P0VD-9JV1-B1C",
+    ];
+    for old in before {
+        // The header and the check symbol still pass, so the refusal comes from the fields: the narrower ones read as
+        // another op, kind or parameter (`answer_too_new`, `bad_field`) or fail the tail (`answer_mismatch`).
+        let e = AnswerCode::decode(old).unwrap_err();
+        assert!(
+            [
+                "answer_too_new",
+                "bad_field",
+                "answer_mismatch",
+                "bad_length"
+            ]
+            .contains(&e.code()),
+            "{} symbols: {}",
+            symbols_of(old).len(),
+            e.code()
         );
     }
 }
