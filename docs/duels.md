@@ -75,7 +75,7 @@ Symbols, code v1's included (40 seeds per level, 8 for the solver; reports 02 an
 
 #### Passing answers (lane SKD, F2d)
 
-Measured on 2026-10-22, and again on 2026-10-26 after the answer code's fields were widened (D3; the table holds the second run, [lane ANS](#lane-ans-the-answer-codes-fields-widened-d3) the first) with answers that **pass** `sound/1` (`enth-cli`'s `measure_passing_answer_sizes`, 20 seeds per level, every answer passed): "played" drags every randomized float off the target by up to 2 % of its knob's travel (closer until it passes), as a player who matched it by ear and mouse leaves it; "touched" also leaves three other knobs nudged by up to 0.5 %, kept only while the answer passes. The REAPER `duel` scenario's real round (level 2, seed 77, the target rebuilt by edits, then shared from the plugin) gave an answer of **52 symbols** and a scorecard of 51.
+Measured on 2026-10-22, and again on 2026-10-26 after the answer code's fields were widened (D3; the table holds the second run, [lane ANS](#lane-ans-the-answer-codes-fields-widened-d3) the first) with answers that **pass** `sound/1` (`enth-cli`'s `measure_passing_answer_sizes`, 20 seeds per level, every answer passed): "played" drags every randomized float off the target by up to 2 % of its knob's travel (closer until it passes), as a player who matched it by ear and mouse leaves it; "touched" also leaves three other knobs nudged by up to 0.5 %, kept only while the answer passes. The REAPER `duel` scenario's real round (level 2, seed 77, the target rebuilt by edits, then shared from the plugin) gave an answer of **52 symbols** and a scorecard of 51 (2026-10-22, before the widening; not re-run).
 
 | Level | Target (median, max) | Played, passing | Played and touched, passing |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@ Measured on 2026-10-22, and again on 2026-10-26 after the answer code's fields w
 
 So real passing answers are about 1.1–1.4 times the target's size, at most about 310 symbols at level 5 (about 290 before the widening): inside Discord's 2,000 characters, not inside one SMS above level 1. **A level-1 answer with touched knobs is usually above 64 symbols**, so an R1–R3 build reads it "bad length", not "update enth" (the friend sheet should say both). The solver's answers were not measured again.
 
-Each extra knob left off three significant digits costs about 8 symbols (39 bits: a 6-bit parameter index and the exact 33-bit `f32`; 37 before the widening). The solver moves values only, so at levels 4 and 5 it rarely passes; over every observable parameter it moves about eleven knobs to exact values, about 105 symbols at any level, the likeliest shape of an agent's answer. Every answer of 64 symbols or fewer reads "update enth" on an R1–R3 build, a longer one "bad length".
+Each extra knob left off three significant digits costs about 8 symbols (39 bits: a 6-bit parameter index and the exact 33-bit `f32`; 37 before the widening). The solver moves values only, so at levels 4 and 5 it rarely passes; over every observable parameter it moves about eleven knobs to exact values, about 105 symbols at any level (F1e, before the widening; about 8 more since), the likeliest shape of an agent's answer. Every answer of 64 symbols or fewer reads "update enth" on an R1–R3 build, a longer one "bad length".
 
 ## Verification
 
@@ -108,7 +108,7 @@ One prepare plus one scored render takes under about 1 s. A duel prepares once (
 | Another engine version | Re-score and **show both numbers** ("claimed 93.4 on 0.3.0, 92.9 here"): `ClaimCheck::engine_differs` |
 | An unknown kind, layout or form, or a generator, preset or template this build lacks | `code_too_new` |
 | An unknown scorer set (a newer build's, GR1's `sound/2` say) | **Read and shown as reported** (the F1e review's M4); re-scored with this build's current set and **both numbers shown**: `ClaimCheck::scorers_differ`. Both sides then score on the older set, since every build keeps its old sets, so a duel across the update works both ways |
-| An answer op, module kind, parameter or source this build lacks | `answer_too_new` |
+| An answer op, module kind, parameter or source this build lacks, or a module added to a full section (a build with longer sections) | `answer_too_new` |
 | A generator or hash mismatch | **Refused** at decode (`target_mismatch` for a long challenge's prefix, `answer_mismatch` for the tail): the round is never judged against a different target or a damaged answer |
 | An answer that is not the committed one | Scored, and flagged: it is not the answer the scorecard fixed |
 | An R1–R3 build | It cannot read either code: "code too new" for a code of 64 symbols or fewer (every scorecard with a short challenge, most level-1 answers), "bad length" above ([challenge.md](challenge.md#what-older-builds-print)); the friend sheet says "update enth" |

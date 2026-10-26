@@ -59,6 +59,9 @@
 //!   float coding (16 bits for a value with three significant digits, else the exact 33), an integer in its range's
 //!   bits, an enum index in a field with room for one more item, a toggle in one bit. An index this build's table
 //!   lacks is `answer_too_new`, as is a module kind it lacks.
+//! - **Places:** a module added to a section already at its cap, or placed at or past it, is what a build with longer
+//!   sections writes (a higher `MAX_FX`), so a decoder says `answer_too_new` ("update enth"), not `answer_mismatch`
+//!   ("damaged"). A place within the cap but past the section's length is no build's, and is `answer_mismatch`.
 //! - **Stripped before encoding:** `SetMeta` (`PatchMeta::author` can hold a real name), labels, macro names and
 //!   automation slots, so no name, label, `meta` or slot survives; none of them changes the sound.
 //! - **The salt** (the F1e review's M6, a privacy rule no test here can catch): 64 bits of **OS randomness** (std's
@@ -105,7 +108,7 @@ use core::fmt;
 use enth_patch::addr::{MacroIndex, ModSource, ModuleId, ParamAddr, Position, RouteAddr, Target};
 use enth_patch::catalogue::{Builtin, ModuleKind};
 use enth_patch::model::{MACROS, MAX_FX, MAX_GENERATORS, MAX_MODULATORS, MAX_ROUTES, MAX_VOICE_FX};
-use enth_patch::{ModuleInstance, Op, Patch, Route, ops_between};
+use enth_patch::{ModuleInstance, Op, Patch, Route, Section, ops_between};
 use sha2::{Digest, Sha256};
 
 use crate::code::{ChallengeCode, CodeError, EngineVersion};
@@ -534,8 +537,9 @@ impl AnswerCode {
     /// Read an answer code and rebuild its answer. Checks, in order: the frame (symbols, length bounds, code v1's
     /// symbol, version, form, kind, layout), the challenge (as code v1 checks it), the target (a long challenge's
     /// prefix: `target_mismatch`), each op (`answer_too_new` for an op, module kind, parameter or source this build
-    /// lacks; `bad_field` for a field no encoder writes; `answer_mismatch` for an op that does not apply), the padding,
-    /// then the tail (`answer_mismatch`). Never panics.
+    /// lacks, and for a module added to a section already at its cap or placed at or past it, which only a build with
+    /// longer sections writes; `bad_field` for a field no encoder writes; `answer_mismatch` for an op that does not
+    /// apply), the padding, then the tail (`answer_mismatch`). Never panics.
     pub fn decode(text: &str) -> Result<AnswerCode, ResultError> {
         let f = unframe(text, KIND_ANSWER, LAYOUT_V1)?;
         let data = f.data;
@@ -1044,6 +1048,33 @@ fn take_param(
         })
 }
 
+/// A place in `section` (`PLACE_BITS` bits). What a build with longer sections writes (a higher `MAX_FX`) is not a
+/// damaged code but one this build is too old to hold, so it is `answer_too_new` ("update enth"): an add to a section
+/// already at its cap (`module count`, the count the add would reach), and a place at or past the cap (`module place`).
+/// A place this build's section could hold but does not reach yet (past its length) is `answer_mismatch`, from `apply`.
+fn take_place(
+    r: &mut Reader<'_>,
+    p: &Patch,
+    section: Section,
+    adding: bool,
+) -> Result<usize, ResultError> {
+    let index = r.take(PLACE_BITS as usize)?;
+    let len = p.section(section).len();
+    if adding && len >= section.max_len() {
+        return Err(ResultError::AnswerTooNew {
+            what: "module count",
+            value: len as u64 + 1,
+        });
+    }
+    if index as usize >= section.max_len() {
+        return Err(ResultError::AnswerTooNew {
+            what: "module place",
+            value: index,
+        });
+    }
+    Ok(index as usize)
+}
+
 fn take_value(r: &mut Reader<'_>, coding: Coding) -> Result<f32, ResultError> {
     Ok(match coding {
         Coding::F32 => take_f32(r)?,
@@ -1159,7 +1190,7 @@ fn decode_ops(r: &mut Reader<'_>, start: &Patch) -> Result<(Patch, usize), Resul
                         what: "module kind",
                         value: k,
                     })?;
-                let index = r.take(PLACE_BITS as usize)? as usize;
+                let index = take_place(r, &p, kind.section(), true)?;
                 let enabled = r.bool()?;
                 let n = r.take(ID_BITS as usize)?;
                 let id = if n == 0 {
@@ -1208,7 +1239,7 @@ fn decode_ops(r: &mut Reader<'_>, start: &Patch) -> Result<(Patch, usize), Resul
                     id,
                     to: Position {
                         section,
-                        index: r.take(PLACE_BITS as usize)? as usize,
+                        index: take_place(r, &p, section, false)?,
                     },
                 }
             }

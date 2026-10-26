@@ -576,7 +576,7 @@ Each op, in `ops_between`'s order (so every patch between the start and the answ
 | 4 | 120, 143 | 154, 183 | 175, 199 | 133, 134 (6 of 8) | 101, 107 (6 of 8) | 165, 186 |
 | 5 | 168, 208 | 227, 283 | 246, 290 | 176, 181 (1 of 8) | 110, 125 (1 of 8) | 254, 309 |
 
-The solver searches values only (modules and routes stay as the start has them), so at levels 4 and 5 it rarely passes and its codes carry no structural op; over every observable parameter it moves about eleven knobs to exact, non-round values, which is why that column sits near 105 at every level and is the likeliest shape of an agent's answer. Each extra knob a player leaves off three significant digits costs about 8 symbols (a 6-bit parameter index and the exact 33 bits: 39). The size budget test holds the first three columns at about 10 % above these.
+The solver searches values only (modules and routes stay as the start has them), so at levels 4 and 5 it rarely passes and its codes carry no structural op; over every observable parameter it moves about eleven knobs to exact, non-round values, which is why that column sits near 105 at every level (F1e, before the widening; about 8 more since) and is the likeliest shape of an agent's answer. Each extra knob a player leaves off three significant digits costs about 8 symbols (a 6-bit parameter index and the exact 33 bits: 39). The size budget test holds the first three columns at about 10 % above these.
 
 **Checks and what they catch:** code v1's symbol, every single substitution and adjacent swap (the property tests run every position of 256 random codes of each kind); the scorecard's fixed length and its 30-bit check, a truncation and other random damage (1 in 2³⁰ slips through); the answer's 40-bit tail, a truncation, any damage and any decoding drift (1 in 2⁴⁰). The commitment is 60 bits, so a sender who prepares two answers in advance could find a pair with one commitment in about 2³⁰ hashes and choose between them later: out of scope for friends.
 
@@ -585,7 +585,7 @@ The solver searches values only (modules and routes stay as the start has them),
 | Refusal | When |
 | --- | --- |
 | `code_too_new` | an unknown kind, layout or form; a challenge with a generator, preset or template this build lacks; an ear challenge's game, generator or level this build lacks |
-| `answer_too_new` | an op, module kind, parameter or source this build lacks |
+| `answer_too_new` | an op, module kind, parameter or source this build lacks; a module added to a section already at its cap, or placed at or past it (what a build with longer sections writes) |
 | `answer_mismatch` | the answer does not rebuild to its tail, or an op does not apply |
 | `target_mismatch` | a long challenge whose target this build regenerates differently |
 | `wrong_kind` | another kind than the one asked for (`found: None` for a challenge code) |

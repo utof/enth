@@ -216,7 +216,8 @@ pub enum ResultError {
     Ear(EarError),
     /// The answer holds an op, a module kind, a parameter or a source this build does not have (`answer_too_new`).
     AnswerTooNew {
-        /// What is unknown: `op`, `module kind`, `parameter` or `source`.
+        /// What is unknown: `op`, `module kind`, `parameter`, `source`, or a section longer than this build's (`module
+        /// count`, `module place`).
         what: &'static str,
         /// Its value.
         value: u64,

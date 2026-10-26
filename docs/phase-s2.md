@@ -96,7 +96,7 @@ Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are mar
 | Lane | Kind (section) | Depends on | Size | H/L |
 | --- | --- | --- | --- | --- |
 | **DST** | `dist` (voice_fx): soft, hard, sine and triangle fold, asymmetric, bitcrush, downsample; ADAA-1 per voice; zero-latency 2× or 4× IIR oversampling (`enth-dsp::resample`, coefficients designed from the paper); drive, bias, tone, `mix`. A global twin is a second kind | F1m | 1.5–2.5 | L |
-| **WT** (→ F2m) | `wt` (generators): generated tables (FM-index sweeps, formant-swept saws, sparse metal spectra), phase warps (bend and the like), `pm`, `am` (bipolar is ring mod) and `feedback`, on phase-read waves only, so PM never meets a polyBLEP shape; at most 15 parameters | F1m | 2–3.5 (this plan, from 3–5) | L |
+| **WT** (→ F2m) | `wt` (generators): generated tables (FM-index sweeps, formant-swept saws, sparse metal spectra), phase warps (bend and the like), `pm`, `am` (bipolar is ring mod) and `feedback`, on phase-read waves only, so PM never meets a polyBLEP shape; at most 63 parameters (the answer code's cap since D3; UNI's unison parameters count) | F1m | 2–3.5 (this plan, from 3–5) | L |
 | **FLT** | `comb` (keytracked), `formant` (a continuous vowel path) and last `ladder` (TPT Moog) (voice_fx) | F1m | 2–4 | L |
 | **OTT** | `ott` (fx): three bands, upward and downward per band, on the compressor's detector | F1m | 2–3 | L |
 | **MSEG** | `mseg` (modulators): a fixed point count, a curve per segment, a length synced or in ms, loop, one-shot and sustain-loop; and **envelope times above 10 s** in CAT's form (a parameter or a kind) | F1m, TMP | 1.5–2.5 (this plan) | L |

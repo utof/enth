@@ -228,31 +228,32 @@ fn each_guard_holds_the_last_value_and_refuses_the_next() {
 
 /// An answer code made on the F1e build, before the widening (D3), is not this build's: it has the right header and
 /// check symbol, but its fields are narrower, so it must be refused cleanly (never read as another answer, never a
-/// panic). Layout 1 had not reached a friend build, which is why it was widened in place. The four F1e fixture answers.
+/// panic). Layout 1 had not reached a friend build, which is why it was widened in place. The four F1e fixture answers,
+/// each pinned to the code this build gives it: the narrower fields read as an op, kind or parameter this build lacks
+/// (`answer_too_new`) or as a field no encoder writes (`bad_field`).
 #[test]
 fn a_code_made_before_the_widening_is_refused() {
     let before = [
-        "F23G-7ZXR-014D-2PF0-0802-0000-002M-20RG-F1T1-B1ZR-0CK7-304S-TY",
-        "F23G-7ZXR-014D-2PF0-0R02-0000-002M-20RG-F1T1-B1ZH-824J-BG8A-DFWG-0Z8E-4YXG-8TPE-CB9H-WJ4Y-6E83-MDY8-0298-GJSW-0G39-6N7G-7K",
-        "F23G-7ZXR-014D-2PF0-1802-0000-002M-20RG-F1T1-B1ZG-S0NX-SJED-ZRHR-G243-AFY4-J508-J9E1-19NS-HYHZ-HRMG-SS0H-61H0-2FRK-S01Y-GW9X-V0HN-CWRP-K10M-JZS4-9WCW-G78V-S88H-6VR4-2Z8V-WG0J-H7T3-9089-522B-7J10-M4CC-GF0Z-DJD3-JSG6",
-        "F220-0000-0000-0004-0R02-0000-000F-C9AJ-8092-CVY2-5RR2-1M8J-RP3V-W9P8-02S0-HBSW-G646-93XF-JHEW-P0VD-9JV1-B1C",
+        (
+            "F23G-7ZXR-014D-2PF0-0802-0000-002M-20RG-F1T1-B1ZR-0CK7-304S-TY",
+            "answer_too_new",
+        ),
+        (
+            "F23G-7ZXR-014D-2PF0-0R02-0000-002M-20RG-F1T1-B1ZH-824J-BG8A-DFWG-0Z8E-4YXG-8TPE-CB9H-WJ4Y-6E83-MDY8-0298-GJSW-0G39-6N7G-7K",
+            "answer_too_new",
+        ),
+        (
+            "F23G-7ZXR-014D-2PF0-1802-0000-002M-20RG-F1T1-B1ZG-S0NX-SJED-ZRHR-G243-AFY4-J508-J9E1-19NS-HYHZ-HRMG-SS0H-61H0-2FRK-S01Y-GW9X-V0HN-CWRP-K10M-JZS4-9WCW-G78V-S88H-6VR4-2Z8V-WG0J-H7T3-9089-522B-7J10-M4CC-GF0Z-DJD3-JSG6",
+            "answer_too_new",
+        ),
+        (
+            "F220-0000-0000-0004-0R02-0000-000F-C9AJ-8092-CVY2-5RR2-1M8J-RP3V-W9P8-02S0-HBSW-G646-93XF-JHEW-P0VD-9JV1-B1C",
+            "bad_field",
+        ),
     ];
-    for old in before {
-        // The header and the check symbol still pass, so the refusal comes from the fields: the narrower ones read as
-        // another op, kind or parameter (`answer_too_new`, `bad_field`) or fail the tail (`answer_mismatch`).
+    for (old, code) in before {
         let e = AnswerCode::decode(old).unwrap_err();
-        assert!(
-            [
-                "answer_too_new",
-                "bad_field",
-                "answer_mismatch",
-                "bad_length"
-            ]
-            .contains(&e.code()),
-            "{} symbols: {}",
-            symbols_of(old).len(),
-            e.code()
-        );
+        assert_eq!(e.code(), code, "{} symbols: {e}", symbols_of(old).len());
     }
 }
 
@@ -841,6 +842,24 @@ fn end(w: &mut Bits) {
     put_op_code(w, OP_END);
 }
 
+/// An `AddModule` of `kind` (default values, the lowest free id) at `place`.
+fn add_module(w: &mut Bits, kind: ModuleKind, place: u64) {
+    put_op_code(w, OP_ADD_MODULE);
+    w.put(kind as u64, KIND_BITS);
+    w.put(place, PLACE_BITS);
+    w.put_bool(true);
+    w.put(0, ID_BITS);
+    w.put(RUN_END, PARAM_BITS);
+}
+
+/// Valid `AddModule`s that fill the starter's effects section to its cap.
+fn fill_fx(w: &mut Bits) {
+    let len = start().fx.len();
+    for place in len..Section::Fx.max_len() {
+        add_module(w, ModuleKind::Comp, place as u64);
+    }
+}
+
 #[test]
 fn answer_refusals() {
     let c = code(1, 5);
@@ -902,6 +921,19 @@ fn answer_refusals() {
                 w.put(1, TARGET_BITS);
                 w.put(RUN_END - 1, PARAM_BITS);
             }),
+            "answer_too_new",
+        ),
+        // A module added to a full section (a fifth effect: a build with a higher `MAX_FX` writes it), and a place at
+        // or past a section's cap (12): a newer enth, not damage.
+        (
+            craft(&c, |w| {
+                fill_fx(w);
+                add_module(w, ModuleKind::Comp, Section::Fx.max_len() as u64);
+            }),
+            "answer_too_new",
+        ),
+        (
+            craft(&c, |w| add_module(w, ModuleKind::Reverb, 12)),
             "answer_too_new",
         ),
         // A source tag this build lacks.
@@ -1007,6 +1039,63 @@ fn answer_refusals() {
             expected: KIND_ANSWER
         }
     );
+}
+
+/// A code from a build with longer sections (a higher `MAX_FX`, say) says "update enth", not "damaged": an add to a
+/// section already at its cap, and a place at or past the cap, are `answer_too_new` (with what and how much), while the
+/// cap's own adds apply and a place inside the cap but past the section's length is no build's (`answer_mismatch`).
+#[test]
+fn a_full_section_or_a_place_past_its_cap_reads_update_enth() {
+    let c = code(1, 5);
+    let s = start();
+    let (cap, len) = (Section::Fx.max_len(), s.fx.len());
+    assert!(len + 2 <= cap, "the starter leaves room in its effects");
+    let refused = |ops: &dyn Fn(&mut Bits)| AnswerCode::decode(&craft(&c, |w| ops(w))).unwrap_err();
+    // A fifth effect: the section is full, so the count it would reach is the cap + 1.
+    assert_eq!(
+        refused(&|w| {
+            fill_fx(w);
+            add_module(w, ModuleKind::Reverb, cap as u64);
+        }),
+        ResultError::AnswerTooNew {
+            what: "module count",
+            value: cap as u64 + 1
+        }
+    );
+    // The same adds up to the cap are fine: the code only fails at its (dummy) tail.
+    assert_eq!(
+        refused(&|w| {
+            fill_fx(w);
+            end(w);
+        }),
+        ResultError::AnswerMismatch
+    );
+    // A place of 12, on an add to a section with room and on a move.
+    let too_new_place = ResultError::AnswerTooNew {
+        what: "module place",
+        value: 12,
+    };
+    assert_eq!(
+        refused(&|w| add_module(w, ModuleKind::Reverb, 12)),
+        too_new_place
+    );
+    let fx0 = target_number(&s, &Target::Module(s.fx[0].id.clone())).unwrap();
+    assert_eq!(
+        refused(&|w| {
+            put_op_code(w, OP_MOVE);
+            w.put(fx0, TARGET_BITS);
+            w.put(12, PLACE_BITS);
+        }),
+        too_new_place
+    );
+    // Inside the cap but past the section's length: no build writes it, so it is damage.
+    assert_eq!(
+        refused(&|w| add_module(w, ModuleKind::Reverb, len as u64 + 1)),
+        ResultError::AnswerMismatch
+    );
+    // And the hint says update.
+    let e = refused(&|w| add_module(w, ModuleKind::Reverb, 12));
+    assert!(e.hint().contains("update enth"), "{}", e.hint());
 }
 
 #[test]
