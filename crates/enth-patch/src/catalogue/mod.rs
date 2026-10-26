@@ -154,6 +154,101 @@ enum_items! {
     }
 }
 
+enum_items! {
+    /// A tempo-synced length as a note division (T triplet, D dotted), **sorted by length**, so a rising modulation
+    /// always lengthens it. A bar is four beats (a quarter note is one beat), whatever the host's time signature.
+    /// Shared by every synced parameter (S2a: `lfo.beats` from lane TMP, `mseg` and `delay` from lane CAT), so friends
+    /// see one list. Not a pinned enum, but persisted: append-only after freeze F1m. [`Beats::length`] gives each
+    /// item as an exact rational number of beats.
+    pub enum Beats in BEATS {
+        /// 1/16 of a beat.
+        SixtyFourth = ("sixty_fourth", "1/64", "A sixty-fourth note: a sixteenth of a beat, at the edge of audio rate."),
+        /// 1/12 of a beat.
+        ThirtySecondTriplet = ("thirty_second_triplet", "1/32T", "A thirty-second-note triplet: a twelfth of a beat."),
+        /// 1/8 of a beat.
+        ThirtySecond = ("thirty_second", "1/32", "A thirty-second note: an eighth of a beat."),
+        /// 1/6 of a beat.
+        SixteenthTriplet = ("sixteenth_triplet", "1/16T", "A sixteenth-note triplet: a sixth of a beat."),
+        /// 3/16 of a beat.
+        ThirtySecondDotted = ("thirty_second_dotted", "1/32D", "A dotted thirty-second note: three sixteenths of a beat."),
+        /// 1/4 of a beat.
+        Sixteenth = ("sixteenth", "1/16", "A sixteenth note: a quarter of a beat."),
+        /// 1/3 of a beat.
+        EighthTriplet = ("eighth_triplet", "1/8T", "An eighth-note triplet: a third of a beat."),
+        /// 3/8 of a beat.
+        SixteenthDotted = ("sixteenth_dotted", "1/16D", "A dotted sixteenth note: three eighths of a beat."),
+        /// 1/2 of a beat.
+        Eighth = ("eighth", "1/8", "An eighth note: half a beat."),
+        /// 2/3 of a beat.
+        QuarterTriplet = ("quarter_triplet", "1/4T", "A quarter-note triplet: two thirds of a beat."),
+        /// 3/4 of a beat.
+        EighthDotted = ("eighth_dotted", "1/8D", "A dotted eighth note: three quarters of a beat, a syncopated bounce."),
+        /// 1 beat.
+        Quarter = ("quarter", "1/4", "A quarter note: one beat."),
+        /// 4/3 of a beat.
+        HalfTriplet = ("half_triplet", "1/2T", "A half-note triplet: four thirds of a beat."),
+        /// 3/2 of a beat.
+        QuarterDotted = ("quarter_dotted", "1/4D", "A dotted quarter note: a beat and a half."),
+        /// 2 beats.
+        Half = ("half", "1/2", "A half note: two beats."),
+        /// 8/3 of a beat.
+        BarTriplet = ("bar_triplet", "1 bar T", "A whole-note triplet: two thirds of a bar."),
+        /// 3 beats.
+        HalfDotted = ("half_dotted", "1/2D", "A dotted half note: three beats."),
+        /// 4 beats.
+        Bar = ("bar", "1 bar", "A whole note: one bar of four beats."),
+        /// 16/3 of a beat.
+        TwoBarsTriplet = ("two_bars_triplet", "2 bars T", "A two-bar triplet: four thirds of a bar."),
+        /// 6 beats.
+        BarDotted = ("bar_dotted", "1 bar D", "A dotted whole note: a bar and a half."),
+        /// 8 beats.
+        TwoBars = ("two_bars", "2 bars", "Two bars: a slow swell."),
+        /// 12 beats.
+        TwoBarsDotted = ("two_bars_dotted", "2 bars D", "Three bars."),
+        /// 16 beats.
+        FourBars = ("four_bars", "4 bars", "Four bars: a whole phrase."),
+        /// 32 beats.
+        EightBars = ("eight_bars", "8 bars", "Eight bars: a riser or a long build."),
+        /// 64 beats.
+        SixteenBars = ("sixteen_bars", "16 bars", "Sixteen bars: the longest build."),
+    }
+}
+
+impl Beats {
+    /// The length as a rational number of beats, `(numerator, denominator)` in lowest terms: `(1, 1)` is a quarter
+    /// note, `(3, 4)` a dotted eighth, `(2, 3)` a quarter-note triplet. Strictly increasing in the item order.
+    #[must_use]
+    pub const fn length(self) -> (u32, u32) {
+        match self {
+            Beats::SixtyFourth => (1, 16),
+            Beats::ThirtySecondTriplet => (1, 12),
+            Beats::ThirtySecond => (1, 8),
+            Beats::SixteenthTriplet => (1, 6),
+            Beats::ThirtySecondDotted => (3, 16),
+            Beats::Sixteenth => (1, 4),
+            Beats::EighthTriplet => (1, 3),
+            Beats::SixteenthDotted => (3, 8),
+            Beats::Eighth => (1, 2),
+            Beats::QuarterTriplet => (2, 3),
+            Beats::EighthDotted => (3, 4),
+            Beats::Quarter => (1, 1),
+            Beats::HalfTriplet => (4, 3),
+            Beats::QuarterDotted => (3, 2),
+            Beats::Half => (2, 1),
+            Beats::BarTriplet => (8, 3),
+            Beats::HalfDotted => (3, 1),
+            Beats::Bar => (4, 1),
+            Beats::TwoBarsTriplet => (16, 3),
+            Beats::BarDotted => (6, 1),
+            Beats::TwoBars => (8, 1),
+            Beats::TwoBarsDotted => (12, 1),
+            Beats::FourBars => (16, 1),
+            Beats::EightBars => (32, 1),
+            Beats::SixteenBars => (64, 1),
+        }
+    }
+}
+
 /// Whether a module, source or destination runs once per voice or once for the whole engine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Rate {
@@ -741,6 +836,31 @@ mod tests {
             ModuleKind::Reverb.rate(&ModuleKind::Reverb.defaults()),
             Rate::Global
         );
+    }
+
+    /// The shared `Beats` list: lengths strictly increase in item order (a rising modulation always lengthens) and each
+    /// is in lowest terms, so two items never mean the same length.
+    #[test]
+    fn beats_are_sorted_by_length_in_lowest_terms() {
+        const fn gcd(a: u32, b: u32) -> u32 {
+            if b == 0 { a } else { gcd(b, a % b) }
+        }
+        let all = Beats::ALL;
+        for b in all {
+            let (n, d) = b.length();
+            assert_eq!(gcd(n, d), 1, "{} is not in lowest terms", b.key());
+        }
+        for w in all.windows(2) {
+            let ((n0, d0), (n1, d1)) = (w[0].length(), w[1].length());
+            assert!(
+                u64::from(n0) * u64::from(d1) < u64::from(n1) * u64::from(d0),
+                "{} is not shorter than {}",
+                w[0].key(),
+                w[1].key()
+            );
+        }
+        assert_eq!(Beats::Quarter.length(), (1, 1));
+        assert_eq!(BEATS.len(), 25);
     }
 
     /// F0m (lane S0d): every S2a kind's discriminant, key, section and id prefix are persisted from the freeze on.

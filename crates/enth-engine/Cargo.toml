@@ -67,6 +67,10 @@ harness = false
 name = "swap"  # P1b lane RT: the plan swap's spiky blocks on the G1 patch (instant swap, crossfading swap, crossfade)
 harness = false
 
+[[bench]]
+name = "stereo"  # S2a lane SVP: the G1 patch with the stereo voice path forced on (what a stereo plan costs on mono content)
+harness = false
+
 # S2a (docs/phase-s2.md): one placeholder per reserved kind, declared up front by lane S0d (freeze F0m) for the same reason.
 [[bench]]
 name = "dist"  # S2a lane DST
