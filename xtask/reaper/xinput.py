@@ -16,14 +16,18 @@ anywhere else. Uses only the standard library (ctypes) with libX11 and libXtst, 
     xinput.py up <x> <y>                     move there and release button 1
     xinput.py stats <title-substring>        raise the window, then print "<distinct colours> <non-background fraction>"
                                              of the client window's pixels (sampled)
+    xinput.py shot <png-path> [<title>]      write a PNG of the whole display, or of the client window of the window
+                                             whose title has <title-substring> (a diagnostic: the pixels a click met)
 
 Exit status 0 on success, 2 when the window is missing, 3 when it is not (yet) drawable, 1 on any other error.
 """
 import ctypes
 import ctypes.util
 import os
+import struct
 import sys
 import time
+import zlib
 
 DISPLAY = os.environ.get("DISPLAY", "")
 # xvfb-run's displays are :99 and up ("-a" picks a free one); the real display is :0 or :1 on this machine.
@@ -148,6 +152,42 @@ def button(down):
     pause()
 
 
+def write_png(path, width, height, rows):
+    """A truecolour PNG from `rows`, each `width` RGB triples as bytes (standard library only)."""
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+    raw = b"".join(b"\x00" + row for row in rows)
+    with open(path, "wb") as out:
+        out.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                  + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+def shot(path, window):
+    """Writes `window`'s pixels as a PNG (a ZPixmap of 32 bits per pixel, blue first: what Xvfb serves)."""
+    x, y, w, h, viewable = geometry(window)
+    if not viewable or w < 1 or h < 1:
+        sys.exit(3)
+    img = x11.XGetImage(dpy, window, 0, 0, w, h, 0xFFFFFFFF, 2)
+    x11.XSync(dpy, 0)
+    if not img or X_ERRORS:
+        sys.exit(3)
+    im = img.contents
+    stride, bpp = im.bytes_per_line, im.bits_per_pixel // 8
+    if bpp not in (3, 4):
+        sys.exit("xinput: shot needs 24 or 32 bits per pixel, got %d" % (bpp * 8))
+    raw = ctypes.string_at(im.data, stride * h)
+    rows = []
+    for row in range(h):
+        line = raw[row * stride:row * stride + w * bpp]
+        rgb = bytearray(w * 3)
+        rgb[0::3] = line[2::bpp]
+        rgb[1::3] = line[1::bpp]
+        rgb[2::3] = line[0::bpp]
+        rows.append(bytes(rgb))
+    write_png(path, w, h, rows)
+
+
 def main():
     args = sys.argv[1:]
     cmd = args[0] if args else ""
@@ -223,6 +263,14 @@ def main():
                 counts += 1
         background = max(colours.values())
         print(len(colours), "%.4f" % (1.0 - background / counts))
+    elif cmd == "shot":
+        if len(args) > 2:
+            top = find(args[2])
+            x11.XRaiseWindow(dpy, top)
+            pause(0.1)
+            shot(args[1], leaf(top))
+        else:
+            shot(args[1], root)
     else:
         sys.exit(__doc__)
     x11.XSync(dpy, 0)
