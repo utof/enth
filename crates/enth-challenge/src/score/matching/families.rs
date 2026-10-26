@@ -4,20 +4,21 @@
 //!
 //! # Why families
 //!
-//! The matcher pairs modules *per kind*. Before S2a every kind of the catalogue had its own pass, so a kind that
-//! nobody listed was never paired at all: an S2a `dist` in both patches was a missing module and an extra one, and
-//! the identical patch scored below 100. [`PASSES`] closes that hole (every kind has its pass; a test checks the
-//! list against `ModuleKind::ALL`, so a kind added later cannot be forgotten silently). Families are the second
-//! half: a *substitute* of a close kind should earn part of the credit instead of scoring 0 twice (once as a
-//! missing module, once as an extra one).
+//! The matcher pairs modules *per kind*. Every kind of the v1 catalogue had its own pass, but a kind added later was
+//! in none, so it was never paired at all: an S2a `dist` in both patches was a missing module and an extra one, and
+//! the identical patch scored below 100. [`GENERATORS`], [`EFFECTS`] and [`MODULATORS`] close that hole (every kind
+//! has its pass; a test checks the lists against `ModuleKind::ALL`, so a kind added later cannot be forgotten
+//! silently). Families are the second half: a *substitute* of a close kind should earn part of the credit instead of
+//! scoring 0 twice (once as a missing module, once as an extra one).
 //!
 //! # The rule
 //!
 //! 1. **A module pairs with one of its own kind first**, exactly as before (the exact minimum-cost assignment of
 //!    [`super`]'s module docs). Nothing in this file changes a pair of the same kind.
 //! 2. **What is left over fills gaps by family**: a target module nobody of its kind paired with can take an
-//!    answer module of a linked kind that nobody paired with. The passes run in a fixed order ([`links`]'s
-//!    preference), each an exact assignment between two kinds, so the result is deterministic.
+//!    answer module of a linked kind that nobody paired with. The links run in a fixed order ([`ranked`]: the
+//!    closest tier first, the table's order within a tier), each an exact assignment between two kinds, so the
+//!    result is deterministic.
 //! 3. **A substitute scores in two ways.** (a) Every parameter of the target module is read against the answer
 //!    module's *corresponding* parameter ([`counterpart_key`]): the same key, only where the link lists it as
 //!    meaning the same on both kinds. A parameter with no counterpart is infinitely far, like a missing module's.
@@ -155,9 +156,7 @@ pub const LINKS: &[Link] = &[
         a: Chorus,
         b: Phaser,
         tier: Tier::Close,
-        shared: &[
-            "rate", "sync", "beats", "depth", "feedback", "width", "mix",
-        ],
+        shared: &["rate", "sync", "beats", "depth", "feedback", "width", "mix"],
     },
     Link {
         a: Chorus,
@@ -306,8 +305,10 @@ mod tests {
         for l in LINKS {
             for key in l.shared {
                 let (x, y) = (
-                    l.a.param(key).unwrap_or_else(|| panic!("{} lacks {key}", l.a)),
-                    l.b.param(key).unwrap_or_else(|| panic!("{} lacks {key}", l.b)),
+                    l.a.param(key)
+                        .unwrap_or_else(|| panic!("{} lacks {key}", l.a)),
+                    l.b.param(key)
+                        .unwrap_or_else(|| panic!("{} lacks {key}", l.b)),
                 );
                 assert_eq!(x.unit, y.unit, "{}~{} {key}: unit", l.a, l.b);
                 assert_eq!(
