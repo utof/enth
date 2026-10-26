@@ -1,9 +1,11 @@
 //! Audio routes between generators (lane RTE): what the engine does with a patch that has them, end to end.
 //!
-//! `wt` is still a silent stub (lane WT builds it), so a route into `wt.pm` or `wt.am` cannot change a sample. That
-//! is what makes these tests exact: the render with the routes must equal, bit for bit, the render of the same patch
-//! without them, whatever order the routes put the generators in. The observable delivery (the pre-level samples,
-//! scaled by depth, reaching `audio_in`) is tested with a probe in `routing.rs`'s own tests.
+//! The carriers here are `wt` modules held silent (`level` 0, which lane WT's module honours exactly), so a route
+//! into `wt.pm` or `wt.am` cannot change a sample of the output. That is what makes these tests exact: the render
+//! with the routes must equal, bit for bit, the render of the same patch without them, whatever order the routes put
+//! the generators in. The observable delivery (the pre-level samples, scaled by depth, reaching `audio_in`) is
+//! tested with a probe in `routing.rs`'s own tests, and what a sounding `wt` does with its inputs (PM, AM, ring
+//! modulation) in `tests/wt.rs`.
 #![cfg(debug_assertions)]
 
 mod common;
@@ -14,7 +16,7 @@ use enth_engine::{
     DEPTH_SMOOTHING_MS, Engine, Event, EventKind, Link, LinkCapacity, NoteKey, Plan, PlanMap,
     PrepareCfg, SEG, StereoMode, compile, compile_with,
 };
-use enth_patch::catalogue::{LfoParam, OscParam, Wave};
+use enth_patch::catalogue::{LfoParam, OscParam, Wave, WtParam};
 use enth_patch::{ModuleInstance, ModuleKind, Patch, Route, RouteAddr};
 use proptest::prelude::*;
 
@@ -55,6 +57,10 @@ fn gens(names: &[&str]) -> Patch {
         if kind == ModuleKind::Osc {
             m.values[OscParam::Fine.index()] = 5.0 * i as f32;
             m.values[OscParam::Level.index()] = 60.0 + 10.0 * i as f32;
+        }
+        if kind == ModuleKind::Wt {
+            // A silent carrier: the routes still arrive, and cannot change a bit of the sum.
+            m.values[WtParam::Level.index()] = 0.0;
         }
         p.generators.push(m);
     }
