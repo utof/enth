@@ -1,0 +1,15 @@
+description = "S2a FLT, comb at the bottom of its range: a saw at 220 Hz (key 57) through a comb with semi -48 and key tracking 0 %, i.e. 16.4 Hz clamped to 20 Hz (a 2,400-sample delay, the longest the line holds), feedback 60 %. Guards the 20 Hz clamp and the longest read."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 57, velocity = 0.8, on_s = 0.0, off_s = 0.6 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "comb1", kind = "comb", params = { feedback = 60, semi = -48, keytrack = 0 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

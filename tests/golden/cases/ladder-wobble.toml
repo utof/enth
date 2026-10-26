@@ -1,0 +1,24 @@
+description = "S2a FLT, fast modulation: a 110 Hz saw through the ladder at 900 Hz and resonance 85 % while a 6 Hz sine LFO sweeps the cutoff by +-45 % of its log range and a 37 Hz sine LFO moves the resonance by +-6 % of its range. Master -9 dB. Guards the coefficient ramps and the stability under audio-rate-ish modulation."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.8, on_s = 0.0, off_s = 1.4 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -9 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "ladder1", kind = "ladder", params = { cutoff = 900, resonance = 85 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "lfo1", kind = "lfo", params = { shape = "sine", rate = 6.0 } },
+    { id = "lfo2", kind = "lfo", params = { shape = "sine", rate = 37.0 } },
+]
+routes = [
+    { src = "lfo1", dst = "ladder1.cutoff", depth = 45 },
+    { src = "lfo2", dst = "ladder1.resonance", depth = 6 },
+]

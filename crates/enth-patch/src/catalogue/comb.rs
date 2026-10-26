@@ -53,6 +53,6 @@ params! {
         Mix = ParamSpec::float("mix", "Mix", Unit::Percent, 0.0, 100.0, Scale::Linear, 100.0)
             .modulatable()
             .smoothing(SMOOTH)
-            .intermediate("How much of the effect is heard: at 0 % the input passes unchanged; around 50 % the dry signal adds notches between the teeth."),
+            .intermediate("How much of the effect is heard: at 0 % the input passes unchanged; lower values blend the dry signal back in and soften the teeth."),
     }
 }

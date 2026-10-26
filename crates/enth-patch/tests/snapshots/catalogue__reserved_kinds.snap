@@ -1245,7 +1245,7 @@ expression: reserved
       {
         "default": 100.0,
         "default_text": "100%",
-        "desc": "How much of the effect is heard: at 0 % the input passes unchanged; around 50 % the dry signal adds notches between the teeth.",
+        "desc": "How much of the effect is heard: at 0 % the input passes unchanged; lower values blend the dry signal back in and soften the teeth.",
         "flags": {
           "automatable": true,
           "modulatable": true,

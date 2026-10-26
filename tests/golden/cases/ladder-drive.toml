@@ -1,0 +1,16 @@
+description = "S2a FLT, drive: a loud 110 Hz saw (velocity 1.0) into 18 dB of drive and the ladder at 1.5 kHz, resonance 30 %. Guards the input saturator and the loop limiter working together."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.6 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "ladder1", kind = "ladder", params = { cutoff = 1500, resonance = 30, drive = 18 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

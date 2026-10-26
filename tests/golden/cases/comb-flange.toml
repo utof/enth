@@ -1,0 +1,22 @@
+description = "S2a FLT, comb as a flanger: a saw at 110 Hz (key 45) through a comb (feedback 70 %, key tracking 100 %) whose pitch a 0.7 Hz sine LFO moves by about +-4 semitones (8 % of the 96-semitone range). The delay read ramps every segment, so this guards the per-sample delay ramp, the interpolator under modulation and the tuning cache with a changing key."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.8, on_s = 0.0, off_s = 1.4 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "comb1", kind = "comb", params = { feedback = 70 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "lfo1", kind = "lfo", params = { shape = "sine", rate = 0.7 } },
+]
+routes = [
+    { src = "lfo1", dst = "comb1.semi", depth = 8.0 },
+]

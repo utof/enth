@@ -1,0 +1,22 @@
+description = "S2a FLT, the default mode: a 110 Hz saw (key 45) through the 24 dB/octave ladder at 600 Hz, resonance 40 %, with a one-shot envelope (700 ms decay) opening the cutoff by 35 % of its log range (to about 6 kHz) and falling back. Guards the four-stage solve, the per-sample coefficient ramps along a sweep and the log-scale route depth."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.8, on_s = 0.0, off_s = 1.1 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "ladder1", kind = "ladder", params = { mode = "lp24", cutoff = 600, resonance = 40 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "env2", kind = "adsr", params = { attack = 0, decay = 700, sustain = 0, release = 0 } },
+]
+routes = [
+    { src = "env2", dst = "ladder1.cutoff", depth = 35 },
+]

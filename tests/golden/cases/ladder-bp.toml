@@ -1,0 +1,22 @@
+description = "S2a FLT, the band-pass tap: a 110 Hz saw through bp at 1.2 kHz, resonance 60 %, with a one-shot envelope (600 ms decay) closing the cutoff from about 4.5 kHz down (-30 % of its log range). Guards the 2nd/3rd/4th stage combination along a sweep."
+sample_rate = 48000
+seconds = 1.0
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.8, on_s = 0.0, off_s = 0.9 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "ladder1", kind = "ladder", params = { mode = "bp", cutoff = 1200, resonance = 60 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "env2", kind = "adsr", params = { attack = 0, decay = 600, sustain = 0, release = 0 } },
+]
+routes = [
+    { src = "env2", dst = "ladder1.cutoff", depth = 30 },
+]
