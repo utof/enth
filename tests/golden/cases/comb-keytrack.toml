@@ -1,0 +1,20 @@
+description = "S2a FLT, comb key tracking: three saw notes (keys 36, 48, 72) through a comb at 100 % key tracking, feedback 80 %, so the teeth follow 65 Hz, 130 Hz and 523 Hz. Master level -6 dB. Guards the per-voice pitch read (pitch_cur), the cached tuning and the fresh-voice start."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 36, velocity = 0.8, on_s = 0.0, off_s = 0.4 },
+    { key = 48, velocity = 0.8, on_s = 0.5, off_s = 0.9 },
+    { key = 72, velocity = 0.8, on_s = 1.0, off_s = 1.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "comb1", kind = "comb", params = { feedback = 80, keytrack = 100 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]

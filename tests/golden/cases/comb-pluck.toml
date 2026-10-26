@@ -1,0 +1,22 @@
+description = "S2a FLT, comb as a Karplus-Strong string: an 8 ms burst of white noise (a decay envelope on the noise level) into a comb at 220 Hz (key 57, key tracking 100 %), feedback 98 %, damping 4 kHz. The string rings for the whole render; the burst is scaled by 1 - |feedback|, so it is a quiet pluck. Master level +12 dB. Guards the high-feedback ring, the damping low-pass and the noise-burst start."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [{ key = 57, velocity = 1.0, on_s = 0.0, off_s = 1.4 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = 12 }
+generators = [{ id = "noise1", kind = "noise", params = { color = "white", level = 0 } }]
+voice_fx = [{ id = "comb1", kind = "comb", params = { feedback = 98, damping = "4kHz" } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "env2", kind = "adsr", params = { attack = 0, decay = 8, sustain = 0, release = 0 } },
+]
+routes = [
+    { src = "env2", dst = "noise1.level", depth = 100.0 },
+]
