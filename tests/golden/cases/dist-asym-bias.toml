@@ -1,0 +1,19 @@
+description = "S2a DST: the asymmetric curve at 12 dB drive with 35 % bias and the tone filter at 6 kHz, saw at 110 Hz. Guards the two-sided curve, the bias offset and the DC blocker that removes what it adds, and the tone low-pass."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 45, velocity = 0.9, on_s = 0.0, off_s = 0.60 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [
+    { id = "dist1", kind = "dist", params = { mode = "asymmetric", drive = 12, bias = 35, tone = "6kHz" } },
+]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+]

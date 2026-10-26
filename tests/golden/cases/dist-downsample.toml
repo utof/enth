@@ -1,0 +1,19 @@
+description = "S2a DST: downsample to 7 kHz (the sample-and-hold phase accumulator) on a saw at 440 Hz (key 69), drive 0 dB. Guards the hold timing and the converter clamp."
+sample_rate = 48000
+seconds = 0.75
+
+[source]
+kind = "patch"
+notes = [{ key = 69, velocity = 0.9, on_s = 0.0, off_s = 0.60 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [
+    { id = "dist1", kind = "dist", params = { mode = "downsample", drive = 0, rate = "7kHz" } },
+]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+]
