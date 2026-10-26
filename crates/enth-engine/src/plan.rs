@@ -13,7 +13,9 @@
 //! **Routes** compile into one list of destinations per evaluation stage (see [`crate::modulation`]). The compiler
 //! checks what the audio thread relies on (a subset of S1b's `validate`): a module source names a modulator in the
 //! patch, the destination exists and is `modulatable`, `|depth| ≤ 100`, and a voice-rate source (velocity, key, a
-//! voice-scope modulator) never targets a global destination ([`CompileError::BadRoute`]). A route from or to a
+//! voice-scope modulator) never targets a global destination ([`CompileError::BadRoute`]). A route from a generator
+//! to an `audio` parameter is not a modulation route at all: [`crate::routing`] compiles it (the generators' order,
+//! their buffers and its depth), and a loop between generators is [`CompileError::AudioCycle`]. A route from or to a
 //! disabled module, or with depth 0, contributes nothing and is left out.
 //!
 //! **Macros and the mod wheel** are nine global-table parameters after `master.*` (spec `MACRO_VALUE`, smoothed over
@@ -726,7 +728,8 @@ pub enum CompileError {
         /// The route, as text (`velocity -> osc1.level`).
         route: String,
         /// Why (stable wording: `unknown_source`, `not_a_modulator`, `unknown_destination`, `not_modulatable`,
-        /// `depth_out_of_range`, `route_rate_mismatch`).
+        /// `depth_out_of_range`, `route_rate_mismatch`; audio routes, lane RTE: `not_audio_dest`, `not_audio_source`,
+        /// `too_many_audio_routes`, `audio_into_sync_master`).
         reason: &'static str,
     },
     /// The audio routes between the enabled generators loop, or a generator feeds itself (lane RTE): there is no
