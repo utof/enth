@@ -1,0 +1,25 @@
+description = "MSEG: the start phase, a looping 500 ms ramp (0 to 100 %) with phase 270 degrees on filter1.cutoff at 60 %: each of two notes (0 and 0.55 s) starts three quarters of the way through the shape; saw at key 40, resonance 30, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+notes = [
+    { key = 40, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+    { key = 47, velocity = 1.0, on_s = 0.55, off_s = 1.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "400Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "loop", sync = "off", length = 500, phase = 270, points = 2, time1 = 0, level1 = 0, curve1 = 0, time2 = 100, level2 = 100, curve2 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "filter1.cutoff", depth = 60.0 },
+]

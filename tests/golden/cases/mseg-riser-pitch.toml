@@ -1,0 +1,23 @@
+description = "MSEG: a riser on pitch, a one-shot from 0 to 100 % over 2000 ms with a -30 % (late) curve, routed to osc1.semi at 25 % of its range (24 semitones at the top) on a saw at key 48, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 2.4
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 1.0, on_s = 0.0, off_s = 2.2 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "one_shot", sync = "off", length = 2000, points = 2, time1 = 0, level1 = 0, curve1 = -30, time2 = 100, level2 = 100, curve2 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "osc1.semi", depth = 25.0 },
+]

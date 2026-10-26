@@ -1,0 +1,26 @@
+description = "MSEG: a global one-shot (a 600 ms rise, 0 to 100 %) on filter1.cutoff at 70 %: it restarts at the first key of a phrase (0.1 s and 0.7 s) and not at a key played while another is down (0.75 s), and from the render start it has already run and holds its end; saw at key 40, resonance 30, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.4
+
+[source]
+kind = "patch"
+notes = [
+    { key = 40, velocity = 1.0, on_s = 0.1, off_s = 0.35 },
+    { key = 47, velocity = 1.0, on_s = 0.7, off_s = 0.8 },
+    { key = 52, velocity = 1.0, on_s = 0.75, off_s = 1.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "400Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "one_shot", sync = "off", length = 600, scope = "global", points = 2, time1 = 0, level1 = 0, curve1 = 0, time2 = 100, level2 = 100, curve2 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "filter1.cutoff", depth = 70.0 },
+]

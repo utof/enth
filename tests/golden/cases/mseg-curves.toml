@@ -1,0 +1,24 @@
+description = "MSEG: the curves, a looping 1000 ms shape of eight points leaving each with a different bend (+100 % step, -100 % hold-then-step, +60, -60, +25, -25, 0 and +100 %), routed to filter1.cutoff at 50 % around 500 Hz on a saw at key 38, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 38, velocity = 1.0, on_s = 0.0, off_s = 1.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "500Hz", resonance = 20 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "loop", sync = "off", length = 1000, points = 8, time1 = 0, level1 = 10, curve1 = 100, time2 = 12, level2 = 90, curve2 = -100, time3 = 25, level3 = 20, curve3 = 60, time4 = 37, level4 = 100, curve4 = -60, time5 = 50, level5 = 30, curve5 = 25, time6 = 62, level6 = 80, curve6 = -25, time7 = 75, level7 = 10, curve7 = 0, time8 = 87, level8 = 70, curve8 = 100 } },
+]
+routes = [
+    { src = "mseg1", dst = "filter1.cutoff", depth = 50.0 },
+]

@@ -1,0 +1,23 @@
+description = "MSEG: a 16-step gate pattern, sixteen points 6.25 % apart with -100 % curves (each a hold then a step), looping once per bar (1.714 s at the render's 140 BPM), routed to osc1.level (base 0, depth 100 %) on a saw at key 45, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.9
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 1.8 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 0 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "loop", sync = "on", beats = "bar", points = 16, time1 = 0, level1 = 100, curve1 = -100, time2 = 6.25, level2 = 0, curve2 = -100, time3 = 12.5, level3 = 100, curve3 = -100, time4 = 18.75, level4 = 100, curve4 = -100, time5 = 25, level5 = 0, curve5 = -100, time6 = 31.25, level6 = 100, curve6 = -100, time7 = 37.5, level7 = 0, curve7 = -100, time8 = 43.75, level8 = 0, curve8 = -100, time9 = 50, level9 = 100, curve9 = -100, time10 = 56.25, level10 = 0, curve10 = -100, time11 = 62.5, level11 = 100, curve11 = -100, time12 = 68.75, level12 = 100, curve12 = -100, time13 = 75, level13 = 0, curve13 = -100, time14 = 81.25, level14 = 0, curve14 = -100, time15 = 87.5, level15 = 100, curve15 = -100, time16 = 93.75, level16 = 0, curve16 = -100 } },
+]
+routes = [
+    { src = "mseg1", dst = "osc1.level", depth = 100.0 },
+]
