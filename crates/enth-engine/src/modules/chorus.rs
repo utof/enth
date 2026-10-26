@@ -458,6 +458,36 @@ mod tests {
     }
 
     #[test]
+    fn take_moves_the_state_and_copy_copies_it() {
+        let vals = defaults();
+        let cfg = PrepareCfg::new(SR);
+        let excite = |c: &mut Chorus| {
+            let (mut l, mut r) = ([0.5; SEG], [0.5; SEG]);
+            step(c, &vals, &mut l, &mut r);
+        };
+        // Instant swap: the new plan's chorus takes the lines and is left holding the old plan's fresh ones.
+        let (mut old, mut new) = (Chorus::new(&vals, &cfg), Chorus::new(&vals, &cfg));
+        excite(&mut old);
+        let lines = old.core().line_ptrs();
+        new.take_state_from(&mut old);
+        assert!(!new.is_silent() && !new.core().is_state_zero());
+        assert_eq!(
+            new.core().line_ptrs(),
+            lines,
+            "the allocation moved, nothing was copied"
+        );
+        assert!(old.core().is_state_zero(), "moved, not copied");
+        // Crossfading swap: both plans run, so the state is copied and the old one keeps its own.
+        let (mut old, mut new) = (Chorus::new(&vals, &cfg), Chorus::new(&vals, &cfg));
+        excite(&mut old);
+        let lines = old.core().line_ptrs();
+        new.copy_state_from(&old);
+        assert!(!new.core().is_state_zero() && !old.core().is_state_zero());
+        assert_eq!(old.core().line_ptrs(), lines);
+        assert_ne!(new.core().line_ptrs(), lines);
+    }
+
+    #[test]
     fn reset_clears_and_idles() {
         let vals = defaults();
         let mut c = Chorus::new(&vals, &PrepareCfg::new(SR));
