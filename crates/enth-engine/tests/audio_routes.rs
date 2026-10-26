@@ -12,7 +12,7 @@ use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use common::{SEED, SR, bits, id, note, render};
 use enth_engine::{
     DEPTH_SMOOTHING_MS, Engine, Event, EventKind, Link, LinkCapacity, NoteKey, Plan, PlanMap,
-    PrepareCfg, SEG, compile,
+    PrepareCfg, SEG, StereoMode, compile, compile_with,
 };
 use enth_patch::catalogue::{LfoParam, OscParam, Wave};
 use enth_patch::{ModuleInstance, ModuleKind, Patch, Route, RouteAddr};
@@ -368,4 +368,30 @@ fn a_patch_without_audio_routes_has_no_audio_depth_ids() {
     // Depth 0 is left out like a control route at depth 0: a depth change from or to 0 is a recompile.
     let (_, map) = plan(&with_routes(p, &[route("osc1", "wt1.pm", 0.0)]));
     assert_eq!(map.depth(&raddr("osc1", "wt1.pm")), None);
+}
+
+#[test]
+fn audio_routes_and_the_stereo_voice_path_compose() {
+    // The stereo path with mono content equals the mono path (lane SVP); an audio route into a silent carrier changes
+    // nothing on either. So routed + forced stereo equals unrouted + mono, on both channels.
+    let base = gens(&["wt1", "osc1", "osc2"]);
+    let routed = with_routes(
+        base.clone(),
+        &[
+            route("osc2", "wt1.pm", 40.0),
+            route("osc1", "wt1.am", -25.0),
+        ],
+    );
+    let frames = 8_000;
+    let cfg = PrepareCfg::new(SR);
+    let mut mono = Engine::new(compile(&base, &cfg).unwrap().0, SEED);
+    let (stereo_plan, _) = compile_with(&routed, &cfg, StereoMode::Forced).unwrap();
+    assert!(stereo_plan.is_stereo());
+    let mut both = Engine::new(stereo_plan, SEED);
+    let events = common::events(&chord());
+    let (ml, mr) = common::drive(&mut mono, &events, frames, 480, |_, _, _| {});
+    let (sl, sr) = common::drive(&mut both, &events, frames, 480, |_, _, _| {});
+    assert!(ml.iter().any(|x| x.abs() > 0.05));
+    assert_eq!(bits(&ml), bits(&sl));
+    assert_eq!(bits(&mr), bits(&sr));
 }
