@@ -266,75 +266,83 @@ proptest! {
     }
 }
 
+/// A parameter's range for the markdown tables.
+fn md_range(p: &ParamSpec) -> String {
+    match p.kind {
+        Kind::Enum(items) => items
+            .iter()
+            .map(|i| format!("`{}`", i.key))
+            .collect::<Vec<_>>()
+            .join(", "),
+        Kind::Toggle => "off, on".to_owned(),
+        _ => format!("{} … {}", p.display(p.min()), p.display(p.max())),
+    }
+}
+
+/// A parameter's scale for the markdown tables.
+fn md_scale(p: &ParamSpec) -> String {
+    match p.kind {
+        Kind::Float {
+            scale: Scale::Power(k),
+            ..
+        } => format!("power {k}"),
+        Kind::Float { scale, .. } => scale.name().to_owned(),
+        Kind::Int { .. } => "int".to_owned(),
+        Kind::Enum(_) => "enum".to_owned(),
+        Kind::Toggle => "toggle".to_owned(),
+    }
+}
+
+/// A parameter's flags for the markdown tables.
+fn md_flags(p: &ParamSpec) -> String {
+    let mut f = Vec::new();
+    if p.flags.modulatable {
+        f.push("mod");
+    }
+    if p.flags.automatable {
+        f.push("auto");
+    }
+    if p.flags.structural {
+        f.push("structural");
+    }
+    if p.flags.periodic {
+        f.push("periodic");
+    }
+    if p.flags.audio {
+        f.push("audio");
+    }
+    f.join(", ")
+}
+
+/// Prints one markdown table: a title, then a row per parameter.
+fn md_table(title: &str, params: &[ParamSpec]) {
+    println!("### {title}\n");
+    println!("| Key | Unit | Range | Scale | Default | Flags | Tier | What it does |");
+    println!("| --- | --- | --- | --- | --- | --- | --- | --- |");
+    for p in params {
+        println!(
+            "| `{}` | {} | {} | {} | {} | {} | {} | {} |",
+            p.key,
+            p.unit.name(),
+            md_range(p),
+            md_scale(p),
+            p.display(p.default),
+            md_flags(p),
+            p.learn.tier.name(),
+            p.learn.desc
+        );
+    }
+    println!();
+}
+
 /// Prints the catalogue as the markdown table in `docs/dsp/catalogue.md`. Regenerate with
 /// `cargo test -p enth-patch --test catalogue -- --ignored --nocapture print_markdown`.
 #[test]
 #[ignore = "prints docs/dsp/catalogue.md's tables; run by hand"]
 fn print_markdown() {
-    fn range(p: &ParamSpec) -> String {
-        match p.kind {
-            Kind::Enum(items) => items
-                .iter()
-                .map(|i| format!("`{}`", i.key))
-                .collect::<Vec<_>>()
-                .join(", "),
-            Kind::Toggle => "off, on".to_owned(),
-            _ => format!("{} … {}", p.display(p.min()), p.display(p.max())),
-        }
-    }
-    fn scale(p: &ParamSpec) -> String {
-        match p.kind {
-            Kind::Float {
-                scale: Scale::Power(k),
-                ..
-            } => format!("power {k}"),
-            Kind::Float { scale, .. } => scale.name().to_owned(),
-            Kind::Int { .. } => "int".to_owned(),
-            Kind::Enum(_) => "enum".to_owned(),
-            Kind::Toggle => "toggle".to_owned(),
-        }
-    }
-    fn flags(p: &ParamSpec) -> String {
-        let mut f = Vec::new();
-        if p.flags.modulatable {
-            f.push("mod");
-        }
-        if p.flags.automatable {
-            f.push("auto");
-        }
-        if p.flags.structural {
-            f.push("structural");
-        }
-        if p.flags.periodic {
-            f.push("periodic");
-        }
-        if p.flags.audio {
-            f.push("audio");
-        }
-        f.join(", ")
-    }
-    fn table(title: &str, params: &[ParamSpec]) {
-        println!("### {title}\n");
-        println!("| Key | Unit | Range | Scale | Default | Flags | Tier | What it does |");
-        println!("| --- | --- | --- | --- | --- | --- | --- | --- |");
-        for p in params {
-            println!(
-                "| `{}` | {} | {} | {} | {} | {} | {} | {} |",
-                p.key,
-                p.unit.name(),
-                range(p),
-                scale(p),
-                p.display(p.default),
-                flags(p),
-                p.learn.tier.name(),
-                p.learn.desc
-            );
-        }
-        println!();
-    }
     // Reserved S2a kinds stay out of docs/dsp/catalogue.md until INT-S2a lists them (lane CAT regenerates it).
     for m in CATALOGUE.iter().filter(|m| !m.hidden) {
-        table(
+        md_table(
             &format!(
                 "`{}` — {} ({}, ids `{}1`, `{}2`…)",
                 m.key,
@@ -346,10 +354,32 @@ fn print_markdown() {
             m.params,
         );
     }
-    table("`voice` (built-in)", Builtin::Voice.params());
-    table("`master` (built-in)", Builtin::Master.params());
-    table(
+    md_table("`voice` (built-in)", Builtin::Voice.params());
+    md_table("`master` (built-in)", Builtin::Master.params());
+    md_table(
         "Macro knob and route depth",
         &[MACRO_VALUE, enth_params::DEPTH],
     );
+}
+
+/// Prints the reserved S2a kinds' tables, one per kind, for the "Parameters" section of each `docs/dsp/<kind>.md`
+/// (lane CAT, F1m). Regenerate with `cargo test -p enth-patch --test catalogue -- --ignored --nocapture
+/// print_reserved_markdown`.
+#[test]
+#[ignore = "prints the reserved kinds' tables for docs/dsp/<kind>.md; run by hand"]
+fn print_reserved_markdown() {
+    for m in CATALOGUE.iter().filter(|m| m.hidden) {
+        md_table(
+            &format!(
+                "`{}` — {} ({}, ids `{}1`, `{}2`…; {} parameters)",
+                m.key,
+                m.name,
+                m.section.key(),
+                m.id_prefix,
+                m.id_prefix,
+                m.params.len()
+            ),
+            m.params,
+        );
+    }
 }
