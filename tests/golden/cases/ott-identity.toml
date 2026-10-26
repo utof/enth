@@ -1,0 +1,19 @@
+description = "OTT: depth 0 on a three-note chord: the three bands are not compressed, so the module is the flat Linkwitz-Riley band split (an allpass: the level is unchanged, the phase is not). Guards the split and the sum, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope curves change."
+sample_rate = 48000
+seconds = 1.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.7 },
+    { key = 57, velocity = 1.0, on_s = 0.0171, off_s = 0.7 },
+    { key = 64, velocity = 1.0, on_s = 0.3, off_s = 0.9 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 80 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "ott1", kind = "ott", params = { depth = 0 } }]

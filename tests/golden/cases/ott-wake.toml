@@ -1,0 +1,21 @@
+description = "OTT: two 0.3 s notes 1.5 s apart at time 10 % and depth 100 %: the module goes idle in the gap (its filters, followers and smoothers reach exact zero, and the engine skips it) and wakes on the second note. Guards the idle and skip path, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope curves change."
+sample_rate = 48000
+seconds = 2.4
+
+[source]
+kind = "patch"
+notes = [
+    { key = 36, velocity = 1.0, on_s = 0.0, off_s = 0.3 },
+    { key = 43, velocity = 1.0, on_s = 1.8, off_s = 2.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [
+    { id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 70 } },
+    { id = "osc2", kind = "osc", params = { wave = "sine", semi = -12, phase_mode = "reset", level = 80 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "ott1", kind = "ott", params = { depth = 100, time = 10 } }]

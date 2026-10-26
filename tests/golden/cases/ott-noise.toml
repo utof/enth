@@ -1,0 +1,22 @@
+description = "OTT: white and pink noise (levels 40 and 80 %) under three overlapping notes at depth 100 %: a dense, non-tonal input that keeps all three bands working, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope curves change."
+sample_rate = 48000
+seconds = 0.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+    { key = 60, velocity = 1.0, on_s = 0.1, off_s = 0.6 },
+    { key = 67, velocity = 1.0, on_s = 0.3, off_s = 0.7 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 4 }
+generators = [
+    { id = "noise1", kind = "noise", params = { color = "white", level = 40 } },
+    { id = "noise2", kind = "noise", params = { color = "pink", level = 80 } },
+]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "ott1", kind = "ott", params = { depth = 100 } }]
