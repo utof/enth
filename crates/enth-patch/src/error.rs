@@ -40,6 +40,7 @@ pub const CODES: &[&str] = &[
     "not_audio_dest",
     "not_audio_source",
     "audio_cycle",
+    "audio_into_sync_master",
     "too_many",
     "wrong_value_count",
     "no_such_route",
@@ -120,7 +121,8 @@ pub enum PatchError {
         /// Its kind.
         kind: ModuleKind,
     },
-    /// A generator driving a parameter that is not an audio input (S2a lane RTE). Code `not_audio_dest`.
+    /// A generator driving a parameter that is not an audio input of a generator (S2a lane RTE; F1m S4: the module
+    /// must be a generator too). Code `not_audio_dest`.
     NotAudioDest {
         /// The generator.
         src: String,
@@ -139,6 +141,14 @@ pub enum PatchError {
     /// RTE). Code `audio_cycle`.
     AudioCycle {
         /// The route that closes the loop, `src -> dst`.
+        route: String,
+    },
+    /// An audio route that would make a generator after the hard-sync master run before it (F1m S4): the master, the
+    /// first enabled `osc` in patch order, must run before every later generator, which take its sync. Unreachable
+    /// while no `osc` parameter is an audio input; `validate` and the `InsertRoute` op refuse it with the rule
+    /// `plan::compile` applies. Code `audio_into_sync_master`.
+    AudioIntoSyncMaster {
+        /// The route that makes the later generator feed the master (directly or through others), `src -> dst`.
         route: String,
     },
     /// An index past the end of what it indexes (a position in a section, a route index). Code `bad_index`.
@@ -302,6 +312,7 @@ impl PatchError {
             PatchError::NotAudioDest { .. } => "not_audio_dest",
             PatchError::NotAudioSource { .. } => "not_audio_source",
             PatchError::AudioCycle { .. } => "audio_cycle",
+            PatchError::AudioIntoSyncMaster { .. } => "audio_into_sync_master",
             PatchError::BadIndex { .. } => "bad_index",
             PatchError::TooMany { .. } => "too_many",
             PatchError::WrongValueCount { .. } => "wrong_value_count",
@@ -351,13 +362,16 @@ impl PatchError {
                 format!("'{id}' is an {kind}; only modulators and generators can be route sources")
             }
             PatchError::NotAudioDest { src, addr } => format!(
-                "{addr} is not an audio input, and the generator '{src}' can only drive an audio input"
+                "{addr} is not an audio input of a generator, and the generator '{src}' can only drive an audio input of a generator"
             ),
             PatchError::NotAudioSource { src, addr } => format!(
                 "{addr} is an audio input, and '{src}' is not a generator: only a generator can drive it"
             ),
             PatchError::AudioCycle { route } => format!(
                 "the route {route} would make generators feed each other in a loop (or one drive itself)"
+            ),
+            PatchError::AudioIntoSyncMaster { route } => format!(
+                "the route {route} would make a generator after the hard-sync master feed the master, which has to run first"
             ),
             PatchError::BadIndex { what, index, max } => {
                 format!("{what} {index} is out of range (the largest is {max})")
@@ -442,7 +456,7 @@ impl PatchError {
                     .to_owned()
             }
             PatchError::NotAudioDest { .. } => {
-                "a generator's output goes only to an audio input: a parameter flagged `audio` in `enth params <kind>` (such as wt.pm); use a modulator to move any other parameter"
+                "a generator's output goes only to an audio input of a generator: a parameter flagged `audio` in `enth params <kind>` (such as wt.pm); use a modulator to move any other parameter"
                     .to_owned()
             }
             PatchError::NotAudioSource { .. } => {
@@ -451,6 +465,10 @@ impl PatchError {
             }
             PatchError::AudioCycle { .. } => {
                 "audio flows one way: a generator can feed a later one, never itself or something that feeds it; feedback is a parameter inside a module, not a route"
+                    .to_owned()
+            }
+            PatchError::AudioIntoSyncMaster { .. } => {
+                "the hard-sync master is the first enabled osc; it runs before every generator after it, so none of those may feed it, directly or through others"
                     .to_owned()
             }
             PatchError::BadIndex { .. } => "leave the index out to append".to_owned(),

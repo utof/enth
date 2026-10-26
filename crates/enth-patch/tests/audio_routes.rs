@@ -12,7 +12,9 @@ use enth_patch::catalogue::{CATALOGUE, ModuleKind};
 use enth_patch::file::load;
 use enth_patch::model::{ModuleInstance, Patch, Route, Section};
 use enth_patch::ops::{Op, apply, apply_all};
-use enth_patch::validate::{RouteKind, check_route_ends, closes_audio_cycle, validate, violations};
+use enth_patch::validate::{
+    RouteKind, audio_into_sync_master, check_route_ends, closes_audio_cycle, validate, violations,
+};
 use proptest::prelude::*;
 
 fn id(s: &str) -> ModuleId {
@@ -192,6 +194,56 @@ fn chains_and_diamonds_are_valid_and_loops_are_not() {
             depth: 5.0
         }
     ));
+}
+
+#[test]
+fn the_hard_sync_rule_never_fires_on_todays_catalogue() {
+    // The master is the first enabled osc; with no osc input an audio route can never reach it, so every wiring the
+    // other rules accept passes the sync rule too (F1m S4; `validate.rs` tests the rule itself with a kind that has
+    // an audio input). The patch is `osc1` first, then three `wt`; also with osc1 moved last and with it disabled.
+    for variant in 0..3 {
+        let mut p = four();
+        match variant {
+            1 => {
+                apply(
+                    &mut p,
+                    &Op::Move {
+                        id: id("osc1"),
+                        to: Position {
+                            section: Section::Generators,
+                            index: 3,
+                        },
+                    },
+                )
+                .unwrap();
+            }
+            2 => {
+                apply(
+                    &mut p,
+                    &Op::SetEnabled {
+                        id: id("osc1"),
+                        enabled: false,
+                    },
+                )
+                .unwrap();
+            }
+            _ => {}
+        }
+        for src in ["osc1", "wt1", "wt2", "wt3"] {
+            for dst in ["wt1.pm", "wt2.am", "wt3.pm", "osc1.level"] {
+                let r = route(src, dst, 20.0);
+                assert!(!audio_into_sync_master(&p, &r), "{src} -> {dst}");
+                if let Err(e) = insert(&mut p, src, dst, 20.0) {
+                    assert_ne!(e.code(), "audio_into_sync_master", "{src} -> {dst}");
+                }
+            }
+        }
+        assert!(
+            violations(&p)
+                .iter()
+                .all(|v| v.error.code() != "audio_into_sync_master")
+        );
+    }
 }
 
 #[test]

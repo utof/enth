@@ -9,16 +9,17 @@
 //! The contract (research report 06 §3.1; the F1m judge checks its six points):
 //!
 //! 1. **Destinations.** An `audio` parameter ([`enth_params::Flags::audio`]; so far `wt.pm` and `wt.am`) accepts only
-//!    generator sources, and a generator source targets only `audio` parameters; `enth-patch`'s `validate` and the
-//!    `InsertRoute` op enforce it with their own codes, and [`classify`] repeats it for a patch that skipped
-//!    `validate` (`not_audio_dest`, `not_audio_source`). Audio routes never enter the control-rate matrix
-//!    ([`crate::modulation`]).
+//!    generator sources, and a generator source targets only `audio` parameters **of a generator**; `enth-patch`'s
+//!    `validate` and the `InsertRoute` op enforce it with their own codes, and [`classify`] repeats it for a patch
+//!    that skipped `validate` (`not_audio_dest`, `not_audio_source`; the destination test is `validate`'s
+//!    `is_generator_dest`, F1m S4). Audio routes never enter the control-rate matrix ([`crate::modulation`]).
 //! 2. **Order.** [`AudioRoutes`] sorts the generators topologically by their audio routes (Kahn's algorithm, always
 //!    taking the lowest patch index among those ready, so ties keep patch order and a patch without audio routes runs
 //!    exactly as before: the engine then never enters [`AudioRoutes::render`]). A cycle, including a route from a
 //!    generator to itself, is refused by `compile` as [`CompileError::AudioCycle`] (`audio_cycle`). Hard sync keeps
 //!    its rule: the master is the first enabled `osc` in *patch* order and runs before every later generator
-//!    ([`AudioRoutes::build`] checks it).
+//!    ([`AudioRoutes::build`] checks it, and `validate` and the `InsertRoute` op check it with the same
+//!    `sync_master_blocked`, F1m S4).
 //! 3. **Buffers.** Each generator writes its **pre-level** output (before its `level` ramp) into its own segment
 //!    buffer, allocated in `compile`: up to 4 generators × 32 voices × 32 frames × 4 B = 16 KB, plus the same again
 //!    for the post-level outputs the voice sum waits on. A carrier reads the buffers of its sources per frame, scaled
@@ -67,7 +68,9 @@
 //! the routes reaching the parameter, in patch route order. The engine zeroes `pre` first, so a source that ignores
 //! `pre_level` is silent to its routes rather than stale.
 
-use enth_patch::validate::{is_audio_dest, is_generator_source};
+use enth_patch::validate::{
+    is_audio_dest, is_generator_dest, is_generator_source, sync_master_blocked,
+};
 use enth_patch::{ModSource, Patch, Route, Section, Target};
 
 use crate::modulation::DEPTH_SMOOTHING_MS;
@@ -106,7 +109,7 @@ pub(crate) fn classify(patch: &Patch, r: &Route) -> RouteClass {
         if patch.spec(&r.dst).is_none() {
             return RouteClass::Reject("unknown_destination");
         }
-        return if to_audio && dst_is_generator(patch, &r.dst) {
+        return if to_audio && is_generator_dest(patch, &r.dst) {
             RouteClass::Audio
         } else {
             RouteClass::Reject("not_audio_dest")
@@ -123,11 +126,6 @@ pub(crate) fn classify(patch: &Patch, r: &Route) -> RouteClass {
     } else {
         RouteClass::Control
     }
-}
-
-fn dst_is_generator(patch: &Patch, dst: &enth_patch::ParamAddr) -> bool {
-    matches!(dst.target(), Target::Module(id)
-        if patch.find(id).is_some_and(|(pos, _)| pos.section == Section::Generators))
 }
 
 /// One audio route as the plan holds it.
@@ -295,12 +293,13 @@ impl AudioRoutes {
                 route: format!("{} -> {}", r.src, r.dst),
             }
         })?;
-        if let Some(m) = plan.sync_master {
-            let at = |g: usize| order.iter().position(|&o| o == g);
-            if (m + 1..n).any(|g| at(g) < at(m)) {
-                let route = specs.iter().find(|s| s.dst == m).map_or(0, |s| s.route);
-                return Err(bad(route, "audio_into_sync_master"));
-            }
+        // The hard-sync rule, decided by the function `validate` uses (F1m S4): a generator after the master that
+        // reaches it would run first.
+        if let Some(m) = plan.sync_master
+            && sync_master_blocked(n, m, &edges)
+        {
+            let route = specs.iter().find(|s| s.dst == m).map_or(0, |s| s.route);
+            return Err(bad(route, "audio_into_sync_master"));
         }
 
         // Stable: one carrier's routes stay in patch route order, which is the order they sum in.
@@ -797,6 +796,84 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn the_shared_sync_master_rule_matches_kahns_order_for_every_acyclic_graph_of_four() {
+        // `validate` and `compile` decide with `sync_master_blocked`; this is the proof that it says what the run order
+        // would: some generator after the master runs before it.
+        let pairs: Vec<(usize, usize)> = (0..4)
+            .flat_map(|s| (0..4).filter(move |&d| d != s).map(move |d| (s, d)))
+            .collect();
+        let mut blocked = 0;
+        for mask in 0u32..(1 << pairs.len()) {
+            let edges: Vec<(usize, usize)> = pairs
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask >> i & 1 == 1)
+                .map(|(_, e)| *e)
+                .collect();
+            let Ok(order) = run_order(4, &edges) else {
+                continue;
+            };
+            for m in 0..4 {
+                let at = |g: usize| order.iter().position(|&o| o == g);
+                let kahn = (m + 1..4).any(|g| at(g) < at(m));
+                blocked += usize::from(kahn);
+                assert_eq!(
+                    sync_master_blocked(4, m, &edges),
+                    kahn,
+                    "edges {edges:?}, master {m}"
+                );
+            }
+        }
+        assert!(
+            blocked > 100,
+            "the cases that matter were reached: {blocked}"
+        );
+    }
+
+    #[test]
+    fn compile_classifies_routes_as_validate_does() {
+        // The file layer and the compiler share the destination test; this keeps the whole verdict aligned for the
+        // routes the catalogue allows.
+        let mut p = patch(&["wt1", "osc1"], &[]);
+        p.voice_fx
+            .push(ModuleInstance::new(id("filter1"), ModuleKind::Svf));
+        p.modulators
+            .push(ModuleInstance::new(id("lfo1"), ModuleKind::Lfo));
+        let table = [
+            ("osc1", "wt1.pm", "audio"),
+            ("wt1", "wt1.am", "audio"),
+            ("osc1", "wt1.level", "not_audio_dest"),
+            ("osc1", "osc1.level", "not_audio_dest"),
+            ("osc1", "filter1.cutoff", "not_audio_dest"),
+            ("osc1", "voice.glide", "not_audio_dest"),
+            ("lfo1", "wt1.pm", "not_audio_source"),
+            ("velocity", "wt1.am", "not_audio_source"),
+            ("lfo1", "osc1.level", "control"),
+            ("velocity", "osc1.level", "control"),
+            ("lfo1", "filter1.cutoff", "control"),
+        ];
+        for (src, dst, want) in table {
+            let r = route(src, dst, 10.0);
+            let compile_says = match classify(&p, &r) {
+                RouteClass::Audio => "audio",
+                RouteClass::Control => "control",
+                RouteClass::Reject(code) => code,
+            };
+            let ends = enth_patch::validate::check_route_ends(&p, &r);
+            let validate_says = match ends.kind {
+                Some(enth_patch::validate::RouteKind::Audio) => "audio",
+                Some(enth_patch::validate::RouteKind::Control) => "control",
+                None => ends
+                    .src_error
+                    .or(ends.dst_error)
+                    .map_or("none", |e| e.code()),
+            };
+            assert_eq!(compile_says, want, "compile: {src} -> {dst}");
+            assert_eq!(validate_says, want, "validate: {src} -> {dst}");
+        }
     }
 
     #[test]
