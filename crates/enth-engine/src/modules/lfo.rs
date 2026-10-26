@@ -18,7 +18,7 @@
 //! Nothing here depends on the patch hash: moving any knob never reseeds the random shapes.
 //!
 //! **Tempo sync and one-shot (S2a, lane TMP).** With `sync` on, the speed comes from `beats` (one cycle as a note
-//! division, [`LfoBeats::cycle_beats`]) and the engine's tempo (`cx.tempo_bpm`, read at each segment), and `rate` is
+//! division, [`Beats::length`]) and the engine's tempo (`cx.tempo_bpm`, read at each segment), and `rate` is
 //! ignored; the core's phase is exact in beats and continuous across a tempo change. `beats` is read per voice at its
 //! current (modulated) value: a modulated enum steps through its items in order, so the speed jumps from one division
 //! to the next and never passes through a length between them. With `one_shot` on, the LFO runs one cycle from its
@@ -26,7 +26,7 @@
 //! live at every segment; with `sync` and `one_shot` off the module is what it was.
 
 use enth_dsp::lfo::{self, Lfo as Core, Shape, StartPhase};
-use enth_patch::catalogue::{LfoBeats, LfoParam, LfoShape, PhaseMode, Polarity};
+use enth_patch::catalogue::{Beats, LfoParam, LfoShape, PhaseMode, Polarity};
 
 use crate::module::{
     GlobalModCx, GlobalModulator, GlobalParams, GlobalStart, MAX_VOICES, PrepareCfg, SEG, VoiceIdx,
@@ -71,9 +71,7 @@ fn shape_of(value: f32) -> Shape {
 
 /// One cycle in beats for a stored `beats` value (a quarter note for a value that is no item, which cannot happen).
 fn cycle_beats(value: f32) -> (u32, u32) {
-    LfoBeats::from_value(value)
-        .unwrap_or(LfoBeats::Quarter)
-        .cycle_beats()
+    Beats::from_value(value).unwrap_or(Beats::Quarter).length()
 }
 
 fn is_unipolar(value: f32) -> bool {

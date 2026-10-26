@@ -123,8 +123,7 @@ pub use eq::{EQ_PARAMS, EqParam};
 pub use formant::{FORMANT_PARAMS, FormantParam};
 pub use ladder::{LADDER_PARAMS, LadderParam};
 pub use lfo::{
-    LFO_BEATS, LFO_PARAMS, LFO_SCOPES, LFO_SHAPES, LfoBeats, LfoParam, LfoScope, LfoShape,
-    POLARITIES, Polarity,
+    LFO_PARAMS, LFO_SCOPES, LFO_SHAPES, LfoParam, LfoScope, LfoShape, POLARITIES, Polarity,
 };
 pub use mseg::{MSEG_PARAMS, MsegParam};
 pub use noise::{NOISE_COLORS, NOISE_PARAMS, NoiseColor, NoiseParam};
