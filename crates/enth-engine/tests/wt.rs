@@ -515,8 +515,8 @@ fn the_pm_index_sweep_stays_inside_its_recorded_bound() {
 }
 
 /// The feedback sweep's bound by region: any feedback up to key 48 (131 Hz); up to 25 % anywhere; up to 50 % to key
-/// 84; and above that the aliasing of a near-saw's edge (a naive saw's is -35 dB at 33 Hz, polyBLEP's -29 dB at key
-/// 105, osc.md), here -22 dB at most.
+/// 84; and above that the aliasing of a near-saw's edge (osc.md's polyBLEP saw: -40.6 dB at 440 Hz, -28.8 dB at
+/// 3,520 Hz), here -22 dB at most.
 fn feedback_bound(key: u8, feedback: f32) -> f64 {
     if key <= 48 || feedback <= 25.0 || (feedback <= 50.0 && key <= 84) {
         -90.0
