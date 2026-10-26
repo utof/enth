@@ -22,7 +22,7 @@ use enth_solver::sensitivity::{
     Change, ParamSensitivity, Sensitivity, SensitivityCfg, is_log, sensitivity, tolerance_bounds,
 };
 
-use super::common::show;
+use super::common::{route_means, show};
 use super::{Reply, Res};
 use crate::error::{self, CliError, Ctx, nearest};
 use crate::eval::Parallel;
@@ -125,7 +125,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
         (Some(patch), Some(path)) => measure(&subject, patch, path, &args.perf, stdin)?,
         _ => None,
     };
-    let out = explain_out(&subject, measured, args.patch.is_some());
+    let out = explain_out(&subject, measured, loaded.as_ref());
     let mut reply = Reply::new(&out).text(format!("{}\n", out.text));
     for n in notes.drain(..) {
         reply = reply.note(&n);
@@ -308,6 +308,7 @@ fn facts(owner: Owner, s: &ParamSpec) -> ParamFactsOut {
         },
         tier: s.learn.tier.name().to_owned(),
         modulatable: s.flags.modulatable,
+        audio: s.flags.audio,
         automatable: s.flags.automatable,
         moves: moves_of(s),
         reads_as: knobs::reads_as(owner.key(), s.key).map(str::to_owned),
@@ -620,6 +621,10 @@ fn param_text(owner: Owner, target: &str, s: &ParamSpec) -> String {
         let _ = writeln!(t, "{r}.");
     }
     let who = match (s.flags.modulatable, s.flags.automatable) {
+        // S2a (lane SKS): an audio input takes generators' audio through audio routes, whatever it says about modulation.
+        _ if s.flags.audio => {
+            "Audio routes from generators land here (a route's depth is a share of the source's output, not of this range); envelopes, LFOs and the other control sources cannot, and host automation can drive its value."
+        }
         (true, true) => {
             "Routes can modulate it (an LFO or envelope into this address), and host automation can drive it."
         }
@@ -629,6 +634,58 @@ fn param_text(owner: Owner, target: &str, s: &ParamSpec) -> String {
     };
     t.push_str(who);
     t.push('\n');
+    t
+}
+
+/// The audio routes of the patch that touch what is explained (S2a, lane SKS): the routes landing in an audio
+/// input, or those into and out of a module, each with what its depth does. Empty when there are none (no module
+/// had one before S2a), so every other explanation reads as it did.
+fn audio_routes_paragraph(subject: &Subject, patch: &Patch) -> String {
+    let audio = |r: &enth_patch::Route| patch.spec(&r.dst).is_some_and(|s| s.flags.audio);
+    let (routes, lead): (Vec<&enth_patch::Route>, &str) = match subject {
+        Subject::Param {
+            spec,
+            addr: Some(addr),
+            ..
+        } if spec.flags.audio => {
+            let routes: Vec<_> = patch.routes.iter().filter(|r| &r.dst == addr).collect();
+            if routes.is_empty() {
+                return format!(
+                    "\nNo audio route lands in {addr} in this patch: route a generator's output to it, e.g. `enth apply <patch> --ops '[{{\"route\":\"osc1 -> {addr}\",\"depth\":\"50%\"}}]'`.\n"
+                );
+            }
+            (routes, "Audio routes into it in this patch:")
+        }
+        Subject::Whole {
+            module: Some(id), ..
+        } => {
+            let routes: Vec<_> = patch
+                .routes
+                .iter()
+                .filter(|r| {
+                    audio(r)
+                        && (r.dst.module_id() == Some(id)
+                            || matches!(&r.src, enth_patch::addr::ModSource::Module(s) if s == id))
+                })
+                .collect();
+            if routes.is_empty() {
+                return String::new();
+            }
+            (routes, "Audio routes of this module in this patch:")
+        }
+        _ => return String::new(),
+    };
+    let mut t = format!("\n{lead}\n");
+    for r in routes {
+        let means = route_means(patch, &r.src, &r.dst, r.depth).unwrap_or_default();
+        let _ = writeln!(
+            t,
+            "  {} -> {} at {}%: {means}",
+            r.src,
+            r.dst,
+            crate::out::round4(f64::from(r.depth))
+        );
+    }
     t
 }
 
@@ -664,7 +721,12 @@ fn whole_text(owner: Owner, target: &str, module: Option<&ModuleId>) -> String {
     t
 }
 
-fn explain_out(subject: &Subject, measured: Option<MeasuredOut>, asked_patch: bool) -> ExplainOut {
+fn explain_out(
+    subject: &Subject,
+    measured: Option<MeasuredOut>,
+    patch: Option<&Patch>,
+) -> ExplainOut {
+    let asked_patch = patch.is_some();
     let (what, subject_text, owner, name, param, params, mut text) = match subject {
         Subject::Param {
             owner,
@@ -706,6 +768,9 @@ fn explain_out(subject: &Subject, measured: Option<MeasuredOut>, asked_patch: bo
         ),
     };
     let whole = param.is_none();
+    if let Some(patch) = patch {
+        text.push_str(&audio_routes_paragraph(subject, patch));
+    }
     if let Some(m) = &measured {
         text.push_str(&measured_paragraph(m, whole));
     }

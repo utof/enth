@@ -240,6 +240,10 @@ expression: v
           },
           "type": "array"
         },
+        "audio": {
+          "description": "An audio input (S2a: `wt`'s `pm` and `am`): a generator's output routes here, never a modulator, and the\nroute's depth is a share of that output. Absent unless true.",
+          "type": "boolean"
+        },
         "automatable": {
           "description": "Host automation may drive it.",
           "type": "boolean"

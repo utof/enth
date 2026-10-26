@@ -217,6 +217,7 @@ fn param_out(kind: &str, s: &ParamSpec) -> ParamOut {
             .unwrap_or_default(),
         accepts,
         modulatable: s.flags.modulatable,
+        audio: s.flags.audio,
         automatable: s.flags.automatable,
         structural: s.flags.structural,
         tier: s.learn.tier.name().to_owned(),

@@ -148,7 +148,7 @@ fn card_header(h: &Rig, title: &str) -> Rect {
 }
 
 /// The nodes labelled `label` that sit in the card titled `title` (below its header, between its edges).
-fn in_card<'a>(h: &'a Rig, title: &str, label: &str) -> Vec<Rect> {
+fn in_card(h: &Rig, title: &str, label: &str) -> Vec<Rect> {
     let header = card_header(h, title);
     h.query_all_by_label(label)
         .map(|n| n.rect())
@@ -161,7 +161,7 @@ fn in_card<'a>(h: &'a Rig, title: &str, label: &str) -> Vec<Rect> {
 fn center_in(h: &Rig, title: &str, label: &str) -> Pos2 {
     in_card(h, title, label)
         .first()
-        .map_or_else(|| panic!("no {label:?} in card {title:?}"), |r| r.center())
+        .map_or_else(|| panic!("no {label:?} in card {title:?}"), Rect::center)
 }
 
 /// The "More" button of the card titled `title` (the one on its header row).
@@ -526,7 +526,10 @@ fn an_audio_route_is_removed_by_double_click_and_from_the_inputs_menu_and_comes_
         None,
         "double-click removes it"
     );
-    assert!(h.state().session.patch().routes.is_empty());
+    assert!(
+        h.state().session.patch().routes.is_empty(),
+        "the only route is gone"
+    );
     h.get_by_label("Undo").click();
     h.run_steps(2);
     assert_eq!(h.state().depth("osc1", "wt1.pm"), Some(60.0));
@@ -563,7 +566,8 @@ fn a_route_from_a_generator_never_makes_a_source_tile_or_breaks_the_other_region
     let matrix = MatrixView::of(h.state().session.patch());
     let names: Vec<&str> = matrix.sources.iter().map(|(_, n)| n.as_str()).collect();
     assert_eq!(names, ["Osc 1", "WT 2"], "generators in patch order");
-    assert!(h.state().editor.report().overflow.is_empty());
+    let overflow = h.state().editor.report().overflow.clone();
+    assert!(overflow.is_empty(), "{overflow:?}");
 }
 
 // ---------------------------------------------------------------------------------------------------------------
