@@ -43,6 +43,7 @@ pub mod segment;
 pub mod stereo;
 pub mod swap;
 pub mod tap;
+pub mod tempo;
 pub mod voice;
 
 pub use engine::{CROSSFADE_FRAMES, Engine, EngineStats, MONITOR_BYPASS_FADE_MS};
@@ -53,6 +54,7 @@ pub use params::ParamId;
 pub use plan::{CompileError, DepthId, Plan, PlanMap, compile};
 pub use swap::{Link, LinkCapacity, MAX_PLANS_IN_FLIGHT, SendError};
 pub use tap::{Tap, TapCapacity, TapFrame};
+pub use tempo::{DEFAULT_TEMPO_BPM, MAX_TEMPO_BPM, MIN_TEMPO_BPM};
 pub use voice::{NoteEnd, VoiceState};
 
 /// The engine version stamped into patches authored on this build (`Patch::engine`) and into golden files. Bump it

@@ -552,6 +552,7 @@ fn step(m: &mut ModuleImpl, values: &[f32], k: usize, notes: &NoteState) -> Vec<
         ModuleImpl::VoiceModulator(p) => {
             let mut out = [0.0; MAX_VOICES];
             p.tick(&mut VoiceModCx {
+                tempo_bpm: enth_engine::tempo::DEFAULT_TEMPO_BPM,
                 voices: &VOICES,
                 notes,
                 params: vp,
@@ -559,11 +560,15 @@ fn step(m: &mut ModuleImpl, values: &[f32], k: usize, notes: &NoteState) -> Vec<
             });
             vec![out[0], out[5]]
         }
-        ModuleImpl::GlobalModulator(p) => vec![p.tick(&mut GlobalModCx { params: gp })],
+        ModuleImpl::GlobalModulator(p) => vec![p.tick(&mut GlobalModCx {
+            params: gp,
+            tempo_bpm: enth_engine::tempo::DEFAULT_TEMPO_BPM,
+        })],
         ModuleImpl::GlobalProcessor(p) => {
             let mut left: [f32; SEG] = core::array::from_fn(|i| signal(k, i, 1));
             let mut right: [f32; SEG] = core::array::from_fn(|i| signal(k, i, 2));
             p.process(&mut GlobalCx {
+                tempo_bpm: enth_engine::tempo::DEFAULT_TEMPO_BPM,
                 params: gp,
                 left: &mut left,
                 right: &mut right,

@@ -16,9 +16,17 @@
 //! | `seeded` | a draw from the module's own `seed` parameter (`seed::seeded_voice_seed` / `seeded_global_seed`) | that stream |
 //!
 //! Nothing here depends on the patch hash: moving any knob never reseeds the random shapes.
+//!
+//! **Tempo sync and one-shot (S2a, lane TMP).** With `sync` on, the speed comes from `beats` (one cycle as a note
+//! division, [`LfoBeats::cycle_beats`]) and the engine's tempo (`cx.tempo_bpm`, read at each segment), and `rate` is
+//! ignored; the core's phase is exact in beats and continuous across a tempo change. `beats` is read per voice at its
+//! current (modulated) value: a modulated enum steps through its items in order, so the speed jumps from one division
+//! to the next and never passes through a length between them. With `one_shot` on, the LFO runs one cycle from its
+//! start phase (the note's, or the render start for a global LFO) and then holds the value it reached. Both are read
+//! live at every segment; with `sync` and `one_shot` off the module is what it was.
 
 use enth_dsp::lfo::{self, Lfo as Core, Shape, StartPhase};
-use enth_patch::catalogue::{LfoParam, LfoShape, PhaseMode, Polarity};
+use enth_patch::catalogue::{LfoBeats, LfoParam, LfoShape, PhaseMode, Polarity};
 
 use crate::module::{
     GlobalModCx, GlobalModulator, GlobalParams, GlobalStart, MAX_VOICES, PrepareCfg, SEG, VoiceIdx,
@@ -59,6 +67,13 @@ fn shape_of(value: f32) -> Shape {
         Some(LfoShape::SmoothRandom) => Shape::SmoothRandom,
         Some(LfoShape::Sine) | None => Shape::Sine,
     }
+}
+
+/// One cycle in beats for a stored `beats` value (a quarter note for a value that is no item, which cannot happen).
+fn cycle_beats(value: f32) -> (u32, u32) {
+    LfoBeats::from_value(value)
+        .unwrap_or(LfoBeats::Quarter)
+        .cycle_beats()
 }
 
 fn is_unipolar(value: f32) -> bool {
@@ -121,9 +136,17 @@ impl VoiceModulator for Lfo {
         let p: VoiceParams<'_> = cx.params;
         let shape = shape_of(p.base(LfoParam::Shape));
         let unipolar = is_unipolar(p.base(LfoParam::Polarity));
+        let synced = p.base(LfoParam::Sync) != 0.0;
+        let one_shot = p.base(LfoParam::OneShot) != 0.0;
         for &v in cx.voices {
             let core = &mut self.voices[v];
-            core.set_rate(p.cur(LfoParam::Rate, v), self.sample_rate, SEG);
+            core.set_one_shot(one_shot);
+            if synced {
+                let beats = cycle_beats(p.cur(LfoParam::Beats, v));
+                core.set_synced(cx.tempo_bpm, beats, self.sample_rate, SEG);
+            } else {
+                core.set_rate(p.cur(LfoParam::Rate, v), self.sample_rate, SEG);
+            }
             cx.out[v] = output(core.tick(shape), unipolar);
         }
     }
@@ -152,8 +175,15 @@ impl GlobalModulator for Lfo {
         let p: GlobalParams<'_> = cx.params;
         let shape = shape_of(p.base(LfoParam::Shape));
         let unipolar = is_unipolar(p.base(LfoParam::Polarity));
-        self.global
-            .set_rate(p.cur(LfoParam::Rate), self.sample_rate, SEG);
+        self.global.set_one_shot(p.base(LfoParam::OneShot) != 0.0);
+        if p.base(LfoParam::Sync) != 0.0 {
+            let beats = cycle_beats(p.cur(LfoParam::Beats));
+            self.global
+                .set_synced(cx.tempo_bpm, beats, self.sample_rate, SEG);
+        } else {
+            self.global
+                .set_rate(p.cur(LfoParam::Rate), self.sample_rate, SEG);
+        }
         output(self.global.tick(shape), unipolar)
     }
 
@@ -182,6 +212,7 @@ mod tests {
         gcur: Vec<f32>,
         notes: NoteState,
         lfo: Lfo,
+        tempo: f64,
     }
 
     impl Rig {
@@ -196,6 +227,7 @@ mod tests {
                 lfo: Lfo::new(&values, &PrepareCfg::new(SR)),
                 values,
                 notes: NoteState::new(),
+                tempo: crate::tempo::DEFAULT_TEMPO_BPM,
             }
         }
 
@@ -220,6 +252,7 @@ mod tests {
                     voices: &[voice],
                     notes: &self.notes,
                     params,
+                    tempo_bpm: self.tempo,
                     out: &mut out,
                 },
             );
@@ -237,7 +270,13 @@ mod tests {
 
         fn tick_global(&mut self) -> f32 {
             let params = GlobalParams::from_slices(&self.values, &self.gcur, &self.gcur);
-            GlobalModulator::tick(&mut self.lfo, &mut GlobalModCx { params })
+            GlobalModulator::tick(
+                &mut self.lfo,
+                &mut GlobalModCx {
+                    params,
+                    tempo_bpm: self.tempo,
+                },
+            )
         }
     }
 

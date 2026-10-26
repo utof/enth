@@ -1425,6 +1425,7 @@ mod tests {
             }
             let span = fx[i].params;
             fx[i].module.process(&mut crate::module::GlobalCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 params: global_table.view(span),
                 left: &mut left,
                 right: &mut right,

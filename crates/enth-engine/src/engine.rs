@@ -8,7 +8,8 @@
 //!    added or removed; remembered host slot values re-applied), epoch-tagged value and depth events (stale ones
 //!    dropped), macros, events sent from the main thread (audition notes);
 //! 2. apply the events due at this boundary, in arrival order (notes through the voice manager, parameter values,
-//!    slot values, macros and their per-voice offsets, the mod wheel, chokes), then advance glides one segment;
+//!    slot values, macros and their per-voice offsets, the mod wheel, chokes, the tempo), then advance glides one
+//!    segment;
 //! 3. advance the smoothers (normalised domain; settled parameters deliver the exact plain value) and the route
 //!    depth ramps;
 //! 4. global modulators, in patch order, each after its own modulated parameters;
@@ -51,6 +52,7 @@ use crate::plan::Plan;
 use crate::segment::{EVENT_CAPACITY, EventQueue, Fifo};
 use crate::swap::{AudioLink, Cmd, Link, LinkCapacity, rings};
 use crate::tap::{Tap, store_f32};
+use crate::tempo::{self, DEFAULT_TEMPO_BPM};
 use crate::voice::{Glide, NoteEnd, NoteOn, VoiceManager, VoiceState, glide_segments};
 
 /// Frames a plan-swap crossfade lasts (only when modules were added or removed).
@@ -149,6 +151,9 @@ pub struct Engine {
     bypass_segments: u32,
     /// The last host value of each automation slot (NaN: none), re-applied after a plan swap.
     host_slots: [f32; SLOTS],
+    /// The tempo in beats per minute ([`crate::tempo`]): set by `EventKind::Tempo` at a segment boundary, read by the
+    /// modules that sync to it. Not plan state, so a swap and a crossfade keep it.
+    tempo_bpm: f64,
     /// Some per-voice macro offset is non-zero, and whether that needs recomputing.
     poly_active: bool,
     poly_dirty: bool,
@@ -207,6 +212,7 @@ impl Engine {
             bypass_level: bypass_segments,
             bypass_segments,
             host_slots: [f32::NAN; SLOTS],
+            tempo_bpm: DEFAULT_TEMPO_BPM,
             poly_active: false,
             poly_dirty: false,
             tap: None,
@@ -279,7 +285,7 @@ impl Engine {
     /// (host and editor values), the remembered slot values, the commands queued in the ring, the monitor bypass
     /// (snapped, no fade), the tap, and the link counters (stale events, swaps, crossfades) and dropped events. A
     /// crossfade in progress ends: the replaced plan goes back on the return ring, or waits in the pending slot, never
-    /// freed here. Never allocates.
+    /// freed here. The tempo returns to [`DEFAULT_TEMPO_BPM`] (the host sends its tempo again). Never allocates.
     pub fn reset(&mut self) {
         if self.old.is_some() {
             self.xfade_seg = CROSSFADE_SEGMENTS;
@@ -297,6 +303,7 @@ impl Engine {
         self.buses.poly = [[0.0; MAX_VOICES]; POLY_MACROS];
         self.poly_active = false;
         self.poly_dirty = false;
+        self.tempo_bpm = DEFAULT_TEMPO_BPM;
         self.bypass_level = if self.monitor_bypass {
             0
         } else {
@@ -349,6 +356,13 @@ impl Engine {
     #[must_use]
     pub fn position(&self) -> u64 {
         self.position
+    }
+
+    /// The tempo the engine is rendering at, in beats per minute: the last `EventKind::Tempo` applied at a segment
+    /// boundary, [`DEFAULT_TEMPO_BPM`] before one ([`crate::tempo`]).
+    #[must_use]
+    pub fn tempo_bpm(&self) -> f64 {
+        self.tempo_bpm
     }
 
     /// The voice manager (slot states and keys).
@@ -514,6 +528,7 @@ impl Engine {
             voices: &self.voices,
             bypass,
             poly: self.poly_active.then_some(&buses.poly),
+            tempo_bpm: self.tempo_bpm,
         };
         let mut out = Out {
             voice: &mut buses.voice,
@@ -619,6 +634,7 @@ impl Engine {
             render_seed,
             buses,
             host_slots,
+            tempo_bpm,
             poly_dirty,
             stale_events,
             ..
@@ -634,6 +650,7 @@ impl Engine {
                 render_seed: *render_seed,
                 frame,
                 host_slots,
+                tempo_bpm,
                 poly: &mut buses.poly,
                 poly_dirty,
                 stale_events,
@@ -920,6 +937,7 @@ struct NoteCx<'a> {
     render_seed: u64,
     frame: u64,
     host_slots: &'a mut [f32; SLOTS],
+    tempo_bpm: &'a mut f64,
     poly: &'a mut PolyOffsets,
     poly_dirty: &'a mut bool,
     stale_events: &'a mut u64,
@@ -948,6 +966,11 @@ impl NoteCx<'_> {
             }
             EventKind::MacroVoice { key, index, offset } => {
                 self.set_macro_offset(key, usize::from(index), offset);
+            }
+            EventKind::Tempo { bpm } => {
+                if let Some(bpm) = tempo::sanitize(bpm) {
+                    *self.tempo_bpm = bpm;
+                }
             }
         }
     }
@@ -1087,6 +1110,8 @@ struct SegmentCx<'a> {
     bypass: Bypass,
     /// Per-voice macro offsets, when any is non-zero.
     poly: Option<&'a PolyOffsets>,
+    /// The tempo of this segment, for the modules that sync to it.
+    tempo_bpm: f64,
 }
 
 /// The buses steps 3–8 write.
@@ -1150,6 +1175,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
         gmod_prev[i] = gmod_cur[i];
         gmod_cur[i] = slot.module.tick(&mut GlobalModCx {
             params: global_table.view(slot.params),
+            tempo_bpm: cx.tempo_bpm,
         });
     }
 
@@ -1172,6 +1198,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
             voices: active,
             notes,
             params: voice_table.view(slot.params),
+            tempo_bpm: cx.tempo_bpm,
             out: &mut vmod_cur[i],
         });
     }
@@ -1292,6 +1319,7 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
         }
         slot.module.process(&mut GlobalCx {
             params: global_table.view(slot.params),
+            tempo_bpm: cx.tempo_bpm,
             left: buses.left,
             right: buses.right,
         });

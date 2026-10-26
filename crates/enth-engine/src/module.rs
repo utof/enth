@@ -199,6 +199,8 @@ pub struct VoiceModCx<'a> {
     pub notes: &'a NoteState,
     /// This module's parameters.
     pub params: VoiceParams<'a>,
+    /// The tempo in beats per minute, as of this segment ([`crate::tempo`]).
+    pub tempo_bpm: f64,
     /// Write this segment's output for every active voice: the value at the *end* of the segment (envelopes 0–1,
     /// a bipolar LFO −1..1). The engine keeps the previous value for ramps.
     pub out: &'a mut [f32; MAX_VOICES],
@@ -208,12 +210,16 @@ pub struct VoiceModCx<'a> {
 pub struct GlobalModCx<'a> {
     /// This module's parameters.
     pub params: GlobalParams<'a>,
+    /// The tempo in beats per minute, as of this segment ([`crate::tempo`]).
+    pub tempo_bpm: f64,
 }
 
 /// The context of a global processor's `process`: the stereo bus after the voice sum (and earlier effects).
 pub struct GlobalCx<'a> {
     /// This module's parameters.
     pub params: GlobalParams<'a>,
+    /// The tempo in beats per minute, as of this segment ([`crate::tempo`]).
+    pub tempo_bpm: f64,
     /// Left channel, in place.
     pub left: &'a mut Block,
     /// Right channel, in place.

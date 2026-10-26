@@ -157,6 +157,7 @@ mod tests {
             let v = self.voice;
             let params = VoiceParams::from_slices(&self.values, &self.cur, &self.cur);
             self.env.tick(&mut VoiceModCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 voices: &[v],
                 notes: &self.notes,
                 params,
@@ -415,12 +416,14 @@ mod tests {
         let mut ob = [0.0; MAX_VOICES];
         for _ in 0..20 {
             both.tick(&mut VoiceModCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 voices: &[2, 9],
                 notes: &notes,
                 params,
                 out: &mut oa,
             });
             only.tick(&mut VoiceModCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 voices: &[9],
                 notes: &notes,
                 params,

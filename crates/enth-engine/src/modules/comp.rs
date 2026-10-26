@@ -195,6 +195,7 @@ mod tests {
         for _ in 0..30 {
             let (mut l, mut r) = ([0.5; SEG], [0.5; SEG]);
             c.process(&mut GlobalCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 params,
                 left: &mut l,
                 right: &mut r,
@@ -206,6 +207,7 @@ mod tests {
         let (mut l, mut r) = ([0.0; SEG], [0.0; SEG]);
         for _ in 0..(48_000 * 10 / SEG) {
             c.process(&mut GlobalCx {
+                tempo_bpm: crate::tempo::DEFAULT_TEMPO_BPM,
                 params,
                 left: &mut l,
                 right: &mut r,

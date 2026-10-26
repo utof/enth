@@ -153,6 +153,15 @@ pub enum EventKind {
         /// Normalised offset, −1..1.
         offset: f32,
     },
+    /// Set the tempo, in beats per minute (a quarter note is a beat), for the modules that sync to it (S2a, lane TMP;
+    /// [`crate::tempo`]). It takes effect at the first segment boundary at or after its frame, like every event, so a
+    /// tempo that changes inside a host block changes at the same boundary whatever the block size. Clamped to
+    /// 20–999; NaN is ignored. The engine starts at 140 BPM and [`Engine::reset`](crate::Engine::reset) returns to
+    /// it.
+    Tempo {
+        /// Beats per minute.
+        bpm: f64,
+    },
 }
 
 #[cfg(test)]
