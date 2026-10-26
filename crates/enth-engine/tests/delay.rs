@@ -826,6 +826,43 @@ mod guarded {
             assert!(left.iter().any(|x| *x != 0.0), "{name}");
         }
     }
+
+    /// The swap blocks never allocate either: an instant swap (the rings are exchanged) and a crossfading one (the
+    /// rings are copied, 768,000 bytes) run inside `process()` under the guard, at the default 140 BPM just before the
+    /// first echo starts (segment 674), so the copy has a ring holding the burst to move.
+    #[test]
+    fn plan_swaps_do_not_allocate() {
+        for crossfade in [false, true] {
+            let base = swap_patch(false);
+            let edit = swap_patch(crossfade);
+            let plan = |p: &Patch| compile(p, &PrepareCfg::new(SR)).expect("compiles").0;
+            let (mut e, mut link): (Engine, Link) =
+                Engine::with_link(plan(&base), SEED, LinkCapacity::default());
+            let ev = events(&one_note(1_000));
+            let mut next = 0;
+            for k in 0..1_000usize {
+                if k == 660 {
+                    link.send_plan(plan(&edit)).expect("room for a plan");
+                }
+                link.collect();
+                let mut chunk = Vec::with_capacity(2);
+                while let Some(&(f, kind)) = ev.get(next) {
+                    if f >= ((k + 1) * SEG) as u64 {
+                        break;
+                    }
+                    chunk.push(Event {
+                        offset: (f - (k * SEG) as u64) as u32,
+                        kind,
+                    });
+                    next += 1;
+                }
+                let (mut l, mut r) = ([0.0f32; SEG], [0.0f32; SEG]);
+                assert_no_alloc(|| e.process(&mut l, &mut r, &chunk));
+            }
+            assert_eq!(e.stats().swaps, 1);
+            assert_eq!(e.stats().crossfades, u64::from(crossfade));
+        }
+    }
 }
 
 /// Render `script` (notes and tempo only) one segment at a time through `base`, swapping `edit` in at segment
