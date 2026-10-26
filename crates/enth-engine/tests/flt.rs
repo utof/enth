@@ -858,6 +858,9 @@ fn ladder_at_ratio(ratio: f32, set: &[(LadderParam, f32)]) -> ModuleInstance {
     ladder(&all)
 }
 
+/// One sweep: its name, the cutoff as a ratio of the key, the pre-roll and the module's values.
+type LadderSweep = (&'static str, f32, usize, Vec<(LadderParam, f32)>);
+
 /// The ladder has one nonlinearity at the base rate that a filter at rest does not: the loop's limiter (`u /
 /// sqrt(1 + u^2/16)`), a smooth odd curve that is a 3 % gain change at `u` = 1 and makes a third harmonic of about
 /// -60 dB at that level, plus the input saturator when `drive` is up. The sine is the engine's, so the measure reads
@@ -869,7 +872,7 @@ fn ladder_at_ratio(ratio: f32, set: &[(LadderParam, f32)]) -> ModuleInstance {
 #[test]
 fn a_ladder_adds_almost_no_aliasing_without_drive() {
     let keys = [33u8, 45, 57, 69, 81, 93, 105];
-    let sweeps: Vec<(&str, f32, usize, Vec<(LadderParam, f32)>)> = vec![
+    let sweeps: Vec<LadderSweep> = vec![
         (
             "lp24, cutoff 4x the key, resonance 30 %",
             4.0,
@@ -996,3 +999,288 @@ const BOUND_LADDER_DRIVE_OPEN_DB: f64 = -24.1;
 /// Measured 2026-10-26 (`docs/dsp/ladder.md`): -102.2, -97.3, -83.9, -51.3 and -32.6 dB at the same keys; the worst
 /// plus 1.5 dB.
 const BOUND_LADDER_DRIVE_TRACKED_DB: f64 = -31.1;
+
+/// The osc level for the gain checks: the loop's limiter is a 0.03 % gain change at `u` = 0.1, so a quiet sine keeps
+/// the engine's gain on the closed form's small-signal response, 18 dB of resonant peak included.
+const QUIET_PERCENT: f32 = 5.0;
+
+/// The amplitude of a sine at `key` (`osc` on a sine at `QUIET_PERCENT`, steady level) through `m`, over the last
+/// 32,768 of 240,000 frames; the sine is `440 · 2^((key − 69)/12)` Hz.
+fn quiet_sine_amplitude(m: Option<ModuleInstance>, key: u8) -> f64 {
+    let hz = 440.0 * pow(2.0, (f64::from(key) - 69.0) / 12.0);
+    let mut patch = sine_patch();
+    patch.modulators[0].values[AdsrParam::Sustain.index()] = 100.0;
+    patch.generators[0].values[OscParam::Level.index()] = QUIET_PERCENT;
+    let patch = match m {
+        Some(m) => with(patch, m),
+        None => patch,
+    };
+    let (l, _, _) = render(&patch, &[note(key, 0, 400_000)], 240_000, 512, SEED);
+    amplitude_at(&l, hz, 32_768)
+}
+
+/// The defining response, end to end: a quiet sine at six keys through the four modes at a cutoff of 1 kHz and at
+/// 100 and 200 Hz (so 2 and 4 octaves of the slope are in range), resonance 0 to 80 %, gains the engine gives are the
+/// closed form's (`enth_dsp::ladder::response`) within 0.05 dB wherever the closed form is above -75 dB (below that the
+/// float32 cancellation in the high-pass taps and the engine's sine floor are in the measurement).
+#[test]
+fn the_ladder_gain_is_the_closed_form() {
+    use enth_dsp::ladder::{Coeffs, Mode, k_from_resonance, response};
+    let keys = [45u8, 57, 69, 81, 93, 105];
+    let dry: Vec<f64> = keys
+        .iter()
+        .map(|&k| quiet_sine_amplitude(None, k))
+        .collect();
+    let cases: [(LadderMode, Mode, &[f32], &[f32]); 4] = [
+        (
+            LadderMode::Lp24,
+            Mode::Lp24,
+            &[1_000.0, 200.0, 100.0],
+            &[0.0, 50.0, 80.0],
+        ),
+        (LadderMode::Lp12, Mode::Lp12, &[1_000.0], &[0.0, 60.0]),
+        (LadderMode::Bp, Mode::Bp, &[1_000.0], &[0.0, 60.0]),
+        (LadderMode::Hp, Mode::Hp, &[1_000.0], &[0.0, 60.0]),
+    ];
+    let mut checked = 0;
+    let mut worst = 0.0f64;
+    for (item, dsp_mode, cutoffs, resonances) in cases {
+        for &cutoff in cutoffs {
+            for &res in resonances {
+                let c = Coeffs::new(cutoff, k_from_resonance(res), SR);
+                for (&key, &dry) in keys.iter().zip(&dry) {
+                    let hz = 440.0 * pow(2.0, (f64::from(key) - 69.0) / 12.0);
+                    let closed = 20.0 * log10(response(dsp_mode, &c, hz, f64::from(SR)));
+                    if closed < -75.0 {
+                        continue;
+                    }
+                    let m = ladder(&[
+                        mode(item),
+                        (LadderParam::Cutoff, cutoff),
+                        (LadderParam::Resonance, res),
+                    ]);
+                    let measured = 20.0 * log10(quiet_sine_amplitude(Some(m), key) / dry);
+                    worst = worst.max((measured - closed).abs());
+                    assert!(
+                        (measured - closed).abs() < 0.05,
+                        "{item:?} cutoff {cutoff} res {res}, key {key}: engine {measured:.3} dB, closed form {closed:.3} dB"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    eprintln!("ladder closed-form gain: {checked} points, worst {worst:.4} dB");
+    assert!(checked > 60, "{checked}");
+}
+
+/// Four poles at the cutoff slope into -24 dB/octave only well above it. The drop per octave of the engine's sines
+/// (keys 67 and 79, 392 and 784 Hz, exactly an octave apart) is the closed form's: at a cutoff of 100 Hz they are 3.9
+/// and 7.8 times it and the drop is 23.3 dB (within 1 dB of 24); at 200 Hz they are 2 and 3.9 times it and the drop
+/// is 21.2 dB (the first octave, from 1 to 2 times the cutoff, drops 15.9: `docs/dsp/ladder.md`, "The slope").
+#[test]
+fn the_ladder_slope_through_the_engine_is_the_closed_forms() {
+    let gain = |cutoff: f32, key: u8| {
+        let m = ladder(&[(LadderParam::Cutoff, cutoff), (LadderParam::Resonance, 0.0)]);
+        20.0 * log10(quiet_sine_amplitude(Some(m), key) / quiet_sine_amplitude(None, key))
+    };
+    // 100 Hz: 392 and 784 Hz are 3.9 and 7.8 times the cutoff.
+    let drop_4_8 = gain(100.0, 67) - gain(100.0, 79);
+    eprintln!("ladder lp24, res 0: {drop_4_8:.2} dB from 3.9 to 7.8 times the cutoff");
+    assert!((23.0..=25.0).contains(&drop_4_8), "{drop_4_8}");
+    // 200 Hz: 392 and 784 are 1.96 and 3.92 times the cutoff.
+    let drop_2_4 = gain(200.0, 67) - gain(200.0, 79);
+    eprintln!("ladder lp24, res 0: {drop_2_4:.2} dB from 2 to 3.9 times the cutoff");
+    assert!((20.5..=22.0).contains(&drop_2_4), "{drop_2_4}");
+}
+
+/// The ring of the ladder at resonance 100 %, through the engine: a 55 Hz sine in and the cutoff at four frequencies
+/// from 250 Hz to 12 kHz; the strongest component above 150 Hz is within 2 % of the cutoff, and the ring is there
+/// (not a decayed filter), at every cutoff.
+#[test]
+fn a_ladder_at_resonance_100_rings_at_its_cutoff() {
+    use enth_dsp::alias::fft;
+    use enth_dsp::util::math::sin;
+    for cutoff in [250.0f32, 1_000.0, 4_000.0, 12_000.0] {
+        let mut p = with(
+            sine_patch(),
+            ladder(&[
+                (LadderParam::Cutoff, cutoff),
+                (LadderParam::Resonance, 100.0),
+            ]),
+        );
+        p.modulators[0].values[AdsrParam::Sustain.index()] = 100.0;
+        let (l, _, _) = render(&p, &[note(33, 0, 400_000)], 240_000, 512, SEED);
+        let n = 32_768usize;
+        let tail = &l[l.len() - n..];
+        let mut re: Vec<f64> = tail
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| {
+                let w = sin(core::f64::consts::PI * i as f64 / n as f64);
+                f64::from(v) * w * w
+            })
+            .collect();
+        let mut im = vec![0.0; n];
+        fft(&mut re, &mut im);
+        let bin_hz = f64::from(SR) / n as f64;
+        let first = (150.0 / bin_hz) as usize;
+        let best = (first..n / 2)
+            .max_by(|&a, &b| {
+                (re[a] * re[a] + im[a] * im[a]).total_cmp(&(re[b] * re[b] + im[b] * im[b]))
+            })
+            .expect("bins");
+        let f = best as f64 * bin_hz;
+        let rms = (tail
+            .iter()
+            .map(|&v| f64::from(v) * f64::from(v))
+            .sum::<f64>()
+            / n as f64)
+            .sqrt();
+        eprintln!("ladder res 100 %, cutoff {cutoff} Hz: rings at {f:.1} Hz, rms {rms:.4}");
+        assert!((f / f64::from(cutoff) - 1.0).abs() < 0.02, "{cutoff}: {f}");
+        assert!(rms > 0.01, "{cutoff}: the ring died (rms {rms})");
+    }
+}
+
+/// `mix` 0 is the identity, bit for bit, however hard the ladder is set.
+#[test]
+fn ladder_mix_zero_renders_the_same_bits_as_no_ladder() {
+    let bare = Patch::init();
+    let (bl, br) = phrase_bits(&bare);
+    assert!(bl.iter().any(|&b| b != 0));
+    for (name, m) in [
+        ("defaults", ladder(&[(LadderParam::Mix, 0.0)])),
+        (
+            "resonance 100, drive 24, cutoff 20",
+            ladder(&[
+                (LadderParam::Mix, 0.0),
+                (LadderParam::Resonance, 100.0),
+                (LadderParam::Drive, 24.0),
+                (LadderParam::Cutoff, 20.0),
+            ]),
+        ),
+        (
+            "hp, keytrack 100",
+            ladder(&[
+                (LadderParam::Mix, 0.0),
+                mode(LadderMode::Hp),
+                (LadderParam::Keytrack, 100.0),
+            ]),
+        ),
+    ] {
+        let (l, r) = phrase_bits(&with(Patch::init(), m));
+        assert_eq!(l, bl, "{name}: left");
+        assert_eq!(r, br, "{name}: right");
+    }
+}
+
+/// Two ladders in a chain keep separate state: the second at `mix` 0 changes nothing about the first's render, and
+/// swapping them changes the output.
+#[test]
+fn two_ladders_keep_separate_state() {
+    let a = [(LadderParam::Resonance, 85.0), (LadderParam::Cutoff, 700.0)];
+    let b = [mode(LadderMode::Hp), (LadderParam::Cutoff, 300.0)];
+    let inst = |name: &str, set: &[(LadderParam, f32)]| {
+        let set: Vec<(usize, f32)> = set.iter().map(|&(p, v)| (p.index(), v)).collect();
+        module(name, ModuleKind::Ladder, &set)
+    };
+    let one = phrase_bits(&with(Patch::init(), inst("ladder1", &a)));
+    let silent_second = with(
+        with(Patch::init(), inst("ladder1", &a)),
+        module(
+            "ladder2",
+            ModuleKind::Ladder,
+            &[
+                (LadderParam::Mix.index(), 0.0),
+                (LadderParam::Resonance.index(), 99.0),
+            ],
+        ),
+    );
+    assert_eq!(phrase_bits(&silent_second), one);
+    let ab = with(
+        with(Patch::init(), inst("ladder1", &a)),
+        inst("ladder2", &b),
+    );
+    let ba = with(
+        with(Patch::init(), inst("ladder1", &b)),
+        inst("ladder2", &a),
+    );
+    let (xab, xba) = (phrase_bits(&ab), phrase_bits(&ba));
+    assert_ne!(xab, one);
+    assert_ne!(xab, xba);
+    assert_eq!(phrase_bits(&ab), xab);
+}
+
+/// LFOs at 50, 37, 43 and 29 Hz sweeping `cutoff`, `resonance`, `drive` and `mix` over their ranges, base resonance
+/// at 90 % (the ladder's ring is just below): finite and bounded for 10 s of overlapping notes.
+#[test]
+fn a_ladder_survives_audio_rate_modulation_of_everything() {
+    let mut p = Patch::init();
+    p = with(p, ladder(&[(LadderParam::Resonance, 90.0)]));
+    for (i, rate) in [50.0f32, 37.0, 43.0, 29.0].into_iter().enumerate() {
+        let mut lfo = ModuleInstance::new(id(&format!("lfo{}", i + 1)), ModuleKind::Lfo);
+        lfo.values[LfoParam::Rate.index()] = rate;
+        p.modulators.push(lfo);
+    }
+    p.routes = vec![
+        route("lfo1", "ladder1.cutoff", 100.0),
+        route("lfo2", "ladder1.resonance", 100.0),
+        route("lfo3", "ladder1.drive", 100.0),
+        route("lfo4", "ladder1.mix", 100.0),
+    ];
+    let peak = stress_peak(&p, 10);
+    let dry = stress_peak(&Patch::init(), 10);
+    eprintln!("ladder under audio-rate modulation: peak {peak}, dry {dry}");
+    assert!(peak < 3.0 * dry, "peak {peak}, dry {dry}");
+}
+
+#[test]
+fn a_40_s_tail_through_ladders_holds_no_subnormals() {
+    let ringing = ladder(&[
+        (LadderParam::Resonance, 100.0),
+        (LadderParam::Cutoff, 100.0),
+        (LadderParam::Drive, 24.0),
+    ]);
+    let mut highpass = ladder(&[
+        mode(LadderMode::Hp),
+        (LadderParam::Cutoff, 8_000.0),
+        (LadderParam::Resonance, 97.0),
+    ]);
+    highpass.id = id("ladder2");
+    assert_clean_tail(
+        "ladder x2, 3 s release",
+        &tail_patch(3_000.0, vec![ringing.clone(), highpass.clone()]),
+    );
+    assert_clean_tail(
+        "ladder x2, 20 s release",
+        &tail_patch(20_000.0, vec![ringing, highpass]),
+    );
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[test]
+fn a_ladder_renders_the_same_bits_under_every_ftz_mode() {
+    let p = tail_patch(
+        3_000.0,
+        vec![ladder(&[
+            (LadderParam::Resonance, 95.0),
+            (LadderParam::Cutoff, 300.0),
+            (LadderParam::Drive, 12.0),
+        ])],
+    );
+    ftz::assert_same_in_every_mode("ladder, 20 s", &p, 20);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn a_ladder_never_allocates_in_process() {
+    let mut p = Patch::init();
+    p = with(p, ladder(&[(LadderParam::Resonance, 95.0)]));
+    let mut lfo = ModuleInstance::new(id("lfo1"), ModuleKind::Lfo);
+    lfo.values[LfoParam::Rate.index()] = 30.0;
+    p.modulators.push(lfo);
+    p.routes = vec![route("lfo1", "ladder1.cutoff", 80.0)];
+    let out = guarded(&p, &phrase(), 48_000);
+    assert!(out.iter().all(|x| x.is_finite()) && out.iter().any(|&x| x != 0.0));
+}
