@@ -1,0 +1,24 @@
+description = "MSEG: a bipolar sine-like loop (five points, 125 ms) on osc1.fine at 20 % with velocity scaling at 100 %: a note at velocity 1.0 swings the full range and one at 0.3 only 30 % of it (key 45 against key 52, both held), through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+    { key = 52, velocity = 0.3, on_s = 0.0, off_s = 0.9 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "loop", sync = "off", length = 125, polarity = "bipolar", velocity = 100, points = 5, time1 = 0, level1 = 50, curve1 = 30, time2 = 25, level2 = 100, curve2 = -30, time3 = 50, level3 = 50, curve3 = 30, time4 = 75, level4 = 0, curve4 = -30, time5 = 100, level5 = 50, curve5 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "osc1.fine", depth = 20.0 },
+]

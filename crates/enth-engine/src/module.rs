@@ -119,6 +119,11 @@ pub struct NoteState {
     pub release: [bool; MAX_VOICES],
     /// The note index of the voice's note: note-ons counted from engine reset, starting at 0.
     pub note_index: [u64; MAX_VOICES],
+    /// Some key is down, after this segment's events (the gate of a *global* envelope: S2a, lane MSEG).
+    pub keys_held: bool,
+    /// A note-on landed at this segment's start while no key was down before it: the first key of a phrase (the
+    /// restart of a global one-shot or sustain-loop MSEG).
+    pub phrase_start: bool,
 }
 
 impl NoteState {
@@ -134,6 +139,8 @@ impl NoteState {
             fresh: [false; MAX_VOICES],
             release: [false; MAX_VOICES],
             note_index: [0; MAX_VOICES],
+            keys_held: false,
+            phrase_start: false,
         }
     }
 }
@@ -269,6 +276,10 @@ pub trait GlobalModulator {
     fn reset(&mut self, start: &GlobalStart<'_>);
     /// Advance one segment and return the value at its end.
     fn tick(&mut self, cx: &mut GlobalModCx<'_>) -> f32;
+    /// What the keys did at this segment's start, called just before `tick` (S2a, lane MSEG): `held` is "some key is
+    /// down", `phrase_start` "a note-on landed with no key down before it". A global envelope uses it as its gate and
+    /// restart; the default ignores it.
+    fn keys(&mut self, _held: bool, _phrase_start: bool) {}
     /// See [`VoiceProcessor::copy_state_from`].
     fn copy_state_from(&mut self, other: &Self);
     /// See [`VoiceProcessor::subnormals`].

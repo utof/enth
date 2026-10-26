@@ -25,7 +25,7 @@
 //! | `ott` | `ott.rs` | global processor | pass-through | OTT |
 //! | `comb` | `comb.rs` | voice processor (per-voice effect) | pass-through | FLT |
 //! | `formant` | `formant.rs` | voice processor (per-voice effect) | pass-through | FLT |
-//! | `mseg` | `mseg.rs` | voice modulator | outputs 0 | MSEG |
+//! | `mseg` | `mseg.rs` | voice or global modulator (`scope`) | outputs 0 (S2a: built) | MSEG |
 //! | `chorus` | `chorus.rs` | global processor | pass-through | MOD |
 //! | `phaser` | `phaser.rs` | global processor | pass-through | MOD |
 //! | `eq` | `eq.rs` | global processor | pass-through | EQ |
@@ -132,7 +132,7 @@ pub enum VoiceModulatorImpl {
     Adsr(Adsr),
     /// `lfo` with `scope = voice`.
     Lfo(Lfo),
-    /// `mseg` (S2a, reserved).
+    /// `mseg` with `scope = voice`.
     Mseg(Mseg),
 }
 
@@ -144,6 +144,8 @@ pub enum VoiceModulatorImpl {
 pub enum GlobalModulatorImpl {
     /// `lfo` with `scope = global`.
     Lfo(Lfo),
+    /// `mseg` with `scope = global`.
+    Mseg(Mseg),
 }
 
 /// The global processors.
@@ -218,9 +220,14 @@ impl ModuleImpl {
             ModuleKind::Ladder => {
                 ModuleImpl::VoiceProcessor(VoiceProcessorImpl::Ladder(Ladder::new(values, cfg)))
             }
-            ModuleKind::Mseg => {
-                ModuleImpl::VoiceModulator(VoiceModulatorImpl::Mseg(Mseg::new(values, cfg)))
-            }
+            ModuleKind::Mseg => match kind.rate(values) {
+                Rate::Voice => {
+                    ModuleImpl::VoiceModulator(VoiceModulatorImpl::Mseg(Mseg::new(values, cfg)))
+                }
+                Rate::Global => {
+                    ModuleImpl::GlobalModulator(GlobalModulatorImpl::Mseg(Mseg::new(values, cfg)))
+                }
+            },
             ModuleKind::Ott => {
                 ModuleImpl::GlobalProcessor(GlobalProcessorImpl::Ott(Ott::new(values, cfg)))
             }
@@ -446,6 +453,7 @@ impl GlobalModulatorImpl {
     pub fn kind(&self) -> ModuleKind {
         match self {
             GlobalModulatorImpl::Lfo(_) => ModuleKind::Lfo,
+            GlobalModulatorImpl::Mseg(_) => ModuleKind::Mseg,
         }
     }
 
@@ -455,6 +463,10 @@ impl GlobalModulatorImpl {
             (GlobalModulatorImpl::Lfo(a), GlobalModulatorImpl::Lfo(b)) => {
                 GlobalModulator::copy_state_from(a, b);
             }
+            (GlobalModulatorImpl::Mseg(a), GlobalModulatorImpl::Mseg(b)) => {
+                GlobalModulator::copy_state_from(a, b);
+            }
+            _ => return false,
         }
         true
     }
@@ -463,6 +475,15 @@ impl GlobalModulatorImpl {
     pub fn reset(&mut self, start: &GlobalStart<'_>) {
         match self {
             GlobalModulatorImpl::Lfo(m) => GlobalModulator::reset(m, start),
+            GlobalModulatorImpl::Mseg(m) => GlobalModulator::reset(m, start),
+        }
+    }
+
+    /// See [`GlobalModulator::keys`].
+    pub fn keys(&mut self, held: bool, phrase_start: bool) {
+        match self {
+            GlobalModulatorImpl::Lfo(m) => GlobalModulator::keys(m, held, phrase_start),
+            GlobalModulatorImpl::Mseg(m) => GlobalModulator::keys(m, held, phrase_start),
         }
     }
 
@@ -470,6 +491,7 @@ impl GlobalModulatorImpl {
     pub fn tick(&mut self, cx: &mut GlobalModCx<'_>) -> f32 {
         match self {
             GlobalModulatorImpl::Lfo(m) => GlobalModulator::tick(m, cx),
+            GlobalModulatorImpl::Mseg(m) => GlobalModulator::tick(m, cx),
         }
     }
 
@@ -478,6 +500,7 @@ impl GlobalModulatorImpl {
     pub fn subnormals(&self) -> usize {
         match self {
             GlobalModulatorImpl::Lfo(m) => GlobalModulator::subnormals(m),
+            GlobalModulatorImpl::Mseg(m) => GlobalModulator::subnormals(m),
         }
     }
 }
@@ -599,7 +622,7 @@ impl GlobalProcessorImpl {
 mod tests {
     use super::*;
     use enth_patch::Section;
-    use enth_patch::catalogue::{LfoParam, LfoScope};
+    use enth_patch::catalogue::{LfoParam, LfoScope, MsegParam, MsegScope};
 
     /// Every value of every structural parameter that changes the role: for P1a, only `lfo.scope`.
     fn variants(kind: ModuleKind) -> Vec<Vec<f32>> {
@@ -607,6 +630,11 @@ mod tests {
         if kind == ModuleKind::Lfo {
             let mut global = kind.defaults();
             global[LfoParam::Scope.index()] = LfoScope::Global.index() as f32;
+            out.push(global);
+        }
+        if kind == ModuleKind::Mseg {
+            let mut global = kind.defaults();
+            global[MsegParam::Scope.index()] = MsegScope::Global.index() as f32;
             out.push(global);
         }
         out
@@ -637,7 +665,7 @@ mod tests {
             }
         }
         // Each (role, kind) pair below is one variant of a role enum: 3 + 2 + 1 + 2, plus S2a's reserved kinds
-        // (5 + 1 + 5).
+        // (5 + 2 + 5).
         let expected: std::collections::BTreeSet<_> = [
             (Role::VoiceProcessor, ModuleKind::Osc),
             (Role::VoiceProcessor, ModuleKind::Noise),
@@ -653,6 +681,7 @@ mod tests {
             (Role::VoiceProcessor, ModuleKind::Formant),
             (Role::VoiceProcessor, ModuleKind::Ladder),
             (Role::VoiceModulator, ModuleKind::Mseg),
+            (Role::GlobalModulator, ModuleKind::Mseg),
             (Role::GlobalProcessor, ModuleKind::Ott),
             (Role::GlobalProcessor, ModuleKind::Chorus),
             (Role::GlobalProcessor, ModuleKind::Phaser),

@@ -1,0 +1,26 @@
+description = "MSEG: voice mode mono, a one-shot rise (500 ms, 0 to 100 %) on filter1.cutoff at 70 %: each of three overlapping notes (0, 0.3 and 0.6 s) restarts it, as an envelope restarts; saw, resonance 30, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.2
+
+[source]
+kind = "patch"
+notes = [
+    { key = 40, velocity = 1.0, on_s = 0.0, off_s = 0.5 },
+    { key = 43, velocity = 1.0, on_s = 0.3, off_s = 0.9 },
+    { key = 47, velocity = 1.0, on_s = 0.6, off_s = 1.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", mode = "mono" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "400Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "one_shot", sync = "off", length = 500, points = 2, time1 = 0, level1 = 0, curve1 = 0, time2 = 100, level2 = 100, curve2 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "filter1.cutoff", depth = 70.0 },
+]

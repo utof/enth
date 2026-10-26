@@ -9,7 +9,7 @@
 //! its keys, units, ranges, scales, defaults and flags change only through the coordinator (docs/dsp/catalogue.md,
 //! "S2a decisions": why 16 points, why the MSEG covers long envelopes).
 //!
-//! # The shape, as the table's meanings assume it (lane MSEG implements it)
+//! # The shape, as the table's meanings assume it (lane MSEG implemented it; docs/dsp/mseg.md has the details)
 //!
 //! - **Length:** `beats` of the render's tempo when `sync` is on, `length` in ms when it is off. Point times are shares
 //!   of it, so a 1-bar shape on a 1/16 grid has its points at multiples of 6.25 %.
@@ -27,14 +27,14 @@
 //!   sustain), and at note-off goes on from where it is to the end. `loop_start` and `loop_end` above `points` count as
 //!   the last point; `loop_start` above `loop_end` counts as `loop_end`.
 //! - **Start:** each note-on that restarts the voice's envelopes (the voice mode decides, as for `adsr`) restarts the
-//!   shape at `phase` (a share of the length). A **global** MSEG (`scope`) starts at the render start and never sees a
-//!   note-off, so `sustain_loop` loops for ever; only a global MSEG may modulate effects.
+//!   shape at `phase` (a share of the length). A **global** MSEG (`scope`) starts at the render start; a `loop` free-runs
+//!   from there, and a `one_shot` or `sustain_loop` restarts at the first key of a phrase and sustains while any key is
+//!   held (lane MSEG's rule for F1m S7: docs/dsp/mseg.md). Only a global MSEG may modulate effects.
 //! - **Output:** unipolar 0..1 (the levels as drawn) or bipolar −1..1 (`2·level − 1`), scaled by note velocity as
 //!   `velocity` says (like `adsr`'s). Evaluated once per 32-frame segment, like every modulator.
 //!
-//! `scope` needs lane MSEG to give `ModuleKind::rate` an `mseg` arm (as `lfo` has) and the engine a global modulator
-//! arm; until then an MSEG runs per voice whatever `scope` says, and validation treats it as a voice source, so no
-//! global route can reach a stub.
+//! `scope` picks the role through `ModuleKind::rate` (as `lfo` does): `voice` is a voice modulator, `global` a global
+//! one, and validation treats a global MSEG as a global source.
 //!
 //! At its defaults it is a 1-bar synced triangle (0 → 100 % → 0), looping, unipolar, per voice: harmless until routed,
 //! and an attack-hold-release envelope when switched to `sustain_loop` (it holds at point 2).

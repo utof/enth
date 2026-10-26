@@ -13,7 +13,7 @@
 //! disabled module have no term in the engine's plan, so they contribute nothing here either.
 
 use crate::addr::{ModSource, ParamAddr, Target};
-use crate::catalogue::{LfoParam, ModuleKind, Polarity};
+use crate::catalogue::{LfoParam, ModuleKind, MsegParam, Polarity};
 use crate::model::Patch;
 
 /// The depth a route made without one starts at, in percent of the destination's range: the editor's drag-to-modulate
@@ -54,6 +54,16 @@ pub fn source_span(patch: &Patch, src: &ModSource) -> Option<(f32, f32)> {
                 ModuleKind::Lfo => match m
                     .values
                     .get(LfoParam::Polarity.index())
+                    .copied()
+                    .and_then(Polarity::from_value)
+                {
+                    Some(Polarity::Unipolar) => Some((0.0, 1.0)),
+                    _ => Some((-1.0, 1.0)),
+                },
+                // Lane MSEG: 0..1 as drawn, or -1..1 bipolar; velocity only scales it down.
+                ModuleKind::Mseg => match m
+                    .values
+                    .get(MsegParam::Polarity.index())
                     .copied()
                     .and_then(Polarity::from_value)
                 {

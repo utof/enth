@@ -1,0 +1,23 @@
+description = "MSEG: a sustain loop on osc1.level (base 0, depth 100 %), 800 ms, five points (0, 100 % at 10 %, 60 % at 30 %, 80 % at 50 %, 0 at the end) looping between points 3 and 4 while the key is down (note off at 0.9 s, then it plays on to the end), through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.8
+
+[source]
+kind = "patch"
+notes = [
+    { key = 50, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset", level = 0 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "sustain_loop", sync = "off", length = 800, loop_start = 3, loop_end = 4, points = 5, time1 = 0, level1 = 0, curve1 = 0, time2 = 10, level2 = 100, curve2 = 0, time3 = 30, level3 = 60, curve3 = 0, time4 = 50, level4 = 80, curve4 = 0, time5 = 100, level5 = 0, curve5 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "osc1.level", depth = 100.0 },
+]

@@ -1,0 +1,25 @@
+description = "MSEG: a global sustain loop on filter1.cutoff at 70 % (600 ms; rise to 100 % at 20 %, flat to 40 %, back to 0 at the end; loop points 2 and 3): the gate is any key down, so the first key (0.1 s) starts it, a second (0.3 s) changes nothing, the first leaves at 0.6 s with the second still down (still looping) and the last at 0.9 s lets it play out; saw, resonance 30, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.6
+
+[source]
+kind = "patch"
+notes = [
+    { key = 40, velocity = 1.0, on_s = 0.1, off_s = 0.6 },
+    { key = 47, velocity = 1.0, on_s = 0.3, off_s = 0.9 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "400Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "sustain_loop", sync = "off", length = 600, scope = "global", loop_start = 2, loop_end = 3, points = 4, time1 = 0, level1 = 0, curve1 = 0, time2 = 20, level2 = 100, curve2 = 0, time3 = 40, level3 = 100, curve3 = 0, time4 = 100, level4 = 0, curve4 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "filter1.cutoff", depth = 70.0 },
+]

@@ -1,0 +1,27 @@
+description = "MSEG: a global loop (scope global, the only scope that may modulate effects), a three-point triangle every 667 ms, routed to comp1.mix at 40 % around 60 %, on a loud chord into the compressor (threshold -30 dB, ratio 8, attack 3 ms, release 80 ms, make-up 4 dB); the filter stays open at 4 kHz, through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 1.3 },
+    { key = 57, velocity = 1.0, on_s = 0.0171, off_s = 1.3 },
+    { key = 64, velocity = 1.0, on_s = 0.3, off_s = 1.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "4kHz", resonance = 10 } }]
+fx = [{ id = "comp1", kind = "comp", params = { threshold = -30, ratio = 8, knee = 6, attack = 3, release = 80, makeup = 4, mix = 60 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "loop", sync = "off", length = 667, scope = "global", points = 3, time1 = 0, level1 = 0, curve1 = 0, time2 = 50, level2 = 100, curve2 = 0, time3 = 100, level3 = 0, curve3 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "comp1.mix", depth = 40.0 },
+]

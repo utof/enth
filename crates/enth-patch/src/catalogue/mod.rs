@@ -719,12 +719,11 @@ impl ModuleKind {
     }
 
     /// Whether a module of this kind with these `values` runs per voice or globally: generators, `voice_fx` and
-    /// envelopes are per voice, effects are global, and an LFO follows its `scope` parameter (which is
+    /// envelopes are per voice, effects are global, and an LFO or an MSEG follows its `scope` parameter (which is
     /// structural, so the rate of a module only changes through a recompile).
     pub fn rate(self, values: &[f32]) -> Rate {
         match self {
-            // S2a's reserved kinds run at their sections' rate (an MSEG per voice: a global twin would be another
-            // kind, S2 rule 4).
+            // S2a's reserved kinds run at their sections' rate.
             ModuleKind::Osc
             | ModuleKind::Noise
             | ModuleKind::Svf
@@ -733,7 +732,6 @@ impl ModuleKind {
             | ModuleKind::Wt
             | ModuleKind::Comb
             | ModuleKind::Formant
-            | ModuleKind::Mseg
             | ModuleKind::Ladder => Rate::Voice,
             ModuleKind::Reverb
             | ModuleKind::Comp
@@ -748,6 +746,15 @@ impl ModuleKind {
                 .and_then(LfoScope::from_value)
             {
                 Some(LfoScope::Global) => Rate::Global,
+                _ => Rate::Voice,
+            },
+            // Lane MSEG: the same rule as the LFO's.
+            ModuleKind::Mseg => match values
+                .get(MsegParam::Scope.index())
+                .copied()
+                .and_then(MsegScope::from_value)
+            {
+                Some(MsegScope::Global) => Rate::Global,
                 _ => Rate::Voice,
             },
         }
@@ -888,6 +895,19 @@ mod tests {
             ModuleKind::Reverb.rate(&ModuleKind::Reverb.defaults()),
             Rate::Global
         );
+    }
+
+    /// Lane MSEG: an MSEG's role follows its `scope` like the LFO's, and nothing else moves a kind's rate.
+    #[test]
+    fn mseg_rate_follows_scope() {
+        let mut v = ModuleKind::Mseg.defaults();
+        assert_eq!(ModuleKind::Mseg.rate(&v), Rate::Voice);
+        v[MsegParam::Scope.index()] = MsegScope::Global.index() as f32;
+        assert_eq!(ModuleKind::Mseg.rate(&v), Rate::Global);
+        // A value table that is too short, or whose scope is no item, is per voice.
+        assert_eq!(ModuleKind::Mseg.rate(&[]), Rate::Voice);
+        v[MsegParam::Scope.index()] = 7.0;
+        assert_eq!(ModuleKind::Mseg.rate(&v), Rate::Voice);
     }
 
     /// The shared `Beats` list: lengths strictly increase in item order (a rising modulation always lengthens) and each

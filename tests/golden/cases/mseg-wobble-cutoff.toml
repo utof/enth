@@ -1,0 +1,24 @@
+description = "MSEG: a drawn wobble, five points with curves, looping once per eighth note (tempo sync at the render's 140 BPM, 0.214 s a loop), unipolar, routed to filter1.cutoff at 60 % around 300 Hz on a saw at key 36 (resonance 30), through a gate envelope (attack 0, decay 0, sustain 100 %, release 0), so the case does not move when the envelope changes."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 36, velocity = 1.0, on_s = 0.0, off_s = 1.3 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+voice_fx = [{ id = "filter1", kind = "svf", params = { mode = "lp", cutoff = "300Hz", resonance = 30 } }]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "mseg1", kind = "mseg", params = { mode = "loop", sync = "on", beats = "eighth", points = 5, time1 = 0, level1 = 5, curve1 = 40, time2 = 25, level2 = 100, curve2 = -50, time3 = 50, level3 = 30, curve3 = 50, time4 = 75, level4 = 80, curve4 = -30, time5 = 100, level5 = 5, curve5 = 0 } },
+]
+routes = [
+    { src = "mseg1", dst = "filter1.cutoff", depth = 60.0 },
+]
