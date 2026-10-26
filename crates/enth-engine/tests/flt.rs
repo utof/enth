@@ -863,7 +863,7 @@ type LadderSweep = (&'static str, f32, usize, Vec<(LadderParam, f32)>);
 
 /// The ladder has one nonlinearity at the base rate that a filter at rest does not: the loop's limiter (`u /
 /// sqrt(1 + u^2/16)`), a smooth odd curve that is a 3 % gain change at `u` = 1 and makes a third harmonic of about
-/// -60 dB at that level, plus the input saturator when `drive` is up. The sine is the engine's, so the measure reads
+/// -42 dB at that level, plus the input saturator when `drive` is up. The sine is the engine's, so the measure reads
 /// its -93 dB floor through the filter and the limiter's harmonics folding back. Each sweep tunes the cutoff to a
 /// fixed ratio of the key (`ladder_at_ratio`), so the sine is always on the same part of the response: a quarter and
 /// four times its frequency, in all four modes, and the self-oscillating ring on the sine and an octave above it (an
@@ -931,7 +931,7 @@ fn a_ladder_adds_almost_no_aliasing_without_drive() {
 const BOUND_LADDER_DB: f64 = -86.8;
 
 /// The ring of a self-oscillating ladder passes through the loop's limiter once per sample, a smooth odd curve, so it
-/// has a third harmonic of about -33 dB (before the filter's own slope); a ring above a sixth of the sample rate (8 kHz)
+/// has a third harmonic of about -37 dB (before the filter's own slope); a ring above a sixth of the sample rate (8 kHz)
 /// has that harmonic above Nyquist, where it folds. Key 105 (3,520 Hz) with the cutoff at one to six times the key puts
 /// the ring at 3.5, 7.0, 10.6, 14.1, 17.6 and 21.1 kHz, every one an exact harmonic of the sine (so the ring itself is
 /// signal), and the measure reads what the limiter folds from it.
