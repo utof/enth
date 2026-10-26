@@ -42,4 +42,4 @@ A lane measures its sweep, records the table in its `docs/dsp/<kind>.md` ("Alias
 | Engine sine, keys 33, 57, 81, 105 | −93.3, −97.8, −95.5, −119.8 dB | −90 dB |
 | Sine into the filter's drive (24 dB, cutoff 20 kHz), keys 45–93 | −100.5, −93.9, −58.2, −37.3, −25.2 dB (110 Hz – 1.76 kHz) | −23.7 dB |
 
-The driven filter is the pattern an S2a effect follows: its saturator runs at the base rate, so the folded harmonics rise with pitch. `dist`'s ADAA and oversampling exist to push that curve down.
+The driven filter is the pattern an S2a effect follows: its saturator runs at the base rate, so the folded harmonics rise with pitch. `dist`'s ADAA and oversampling exist to push that curve down. `dist` is that pattern pushed down (measured 2026-10-26, a sine at 24 dB of drive, keys 45–105, the worst point of the sweep): the soft clip is −27.3 dB with oversampling off, −48.4 dB at 2× and −70.4 dB at 4×, the hard clip −26.5, −44.9 and −69.4 dB; the tables for all five shapes, the recorded bounds and what ADAA contributes are in [dist.md](dist.md#aliasing).
