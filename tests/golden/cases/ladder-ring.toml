@@ -1,0 +1,16 @@
+description = "S2a FLT, the ladder as an oscillator: a short saw note (key 40) into the ladder at 700 Hz and resonance 100 %, which rings on its own at the cutoff (about -9 dBFS, a clean sine) until the 300 ms release; master -9 dB. Guards the self-oscillation level, the limiter and the exact ring frequency."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [{ key = 40, velocity = 0.8, on_s = 0.0, off_s = 1.0 }]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+master = { level = -9 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw" } }]
+voice_fx = [{ id = "ladder1", kind = "ladder", params = { cutoff = 700, resonance = 100 } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 300 } }]
