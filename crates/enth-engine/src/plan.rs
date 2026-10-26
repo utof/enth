@@ -13,7 +13,9 @@
 //! **Routes** compile into one list of destinations per evaluation stage (see [`crate::modulation`]). The compiler
 //! checks what the audio thread relies on (a subset of S1b's `validate`): a module source names a modulator in the
 //! patch, the destination exists and is `modulatable`, `|depth| ≤ 100`, and a voice-rate source (velocity, key, a
-//! voice-scope modulator) never targets a global destination ([`CompileError::BadRoute`]). A route from or to a
+//! voice-scope modulator) never targets a global destination ([`CompileError::BadRoute`]). A route from a generator
+//! to an `audio` parameter is not a modulation route at all: [`crate::routing`] compiles it (the generators' order,
+//! their buffers and its depth), and a loop between generators is [`CompileError::AudioCycle`]. A route from or to a
 //! disabled module, or with depth 0, contributes nothing and is left out.
 //!
 //! **Macros and the mod wheel** are nine global-table parameters after `master.*` (spec `MACRO_VALUE`, smoothed over
@@ -48,6 +50,7 @@ use crate::modules::{
     GlobalModulatorImpl, GlobalProcessorImpl, ModuleImpl, VoiceModulatorImpl, VoiceProcessorImpl,
 };
 use crate::params::{GlobalTable, ParamId, Span, VoiceTable};
+use crate::routing::{AUDIO_DEPTH_BASE, AudioRoutes, RouteClass, classify};
 use crate::seed::{global_seed, module_key, voice_seed};
 use crate::stereo::{StartCx, StereoMode, StereoPath};
 
@@ -169,6 +172,8 @@ pub struct Plan {
     pub(crate) mode: VoiceMode,
     pub(crate) polyphony: usize,
     pub(crate) matrix: Matrix,
+    /// The audio routes between generators, with their run order and buffers (lane RTE); empty for a patch without.
+    pub(crate) audio: AudioRoutes,
     /// Voice modulator outputs, per modulator and voice: this segment's and the previous one's.
     pub(crate) vmod_cur: Vec<[f32; MAX_VOICES]>,
     pub(crate) vmod_prev: Vec<[f32; MAX_VOICES]>,
@@ -313,7 +318,20 @@ impl Plan {
     /// A route's current depth, as a percentage (a depth event ramps it).
     #[must_use]
     pub fn route_depth(&self, id: DepthId) -> Option<f32> {
-        self.matrix.depth(usize::from(id.0)).map(|d| d * 100.0)
+        match id.0.checked_sub(AUDIO_DEPTH_BASE) {
+            Some(k) => self.audio.depth(usize::from(k)),
+            None => self.matrix.depth(usize::from(id.0)),
+        }
+        .map(|d| d * 100.0)
+    }
+
+    /// A depth event (from the command ring): route `id` ramps to `depth_pct`, in the matrix or among the audio
+    /// routes.
+    pub(crate) fn set_route_depth(&mut self, id: DepthId, depth_pct: f32) {
+        match id.0.checked_sub(AUDIO_DEPTH_BASE) {
+            Some(k) => self.audio.set_depth(usize::from(k), depth_pct),
+            None => self.matrix.set_depth(usize::from(id.0), depth_pct),
+        }
     }
 
     /// The number of subnormal values in every module's state, the modulator outputs and the output ramps (test
@@ -372,6 +390,7 @@ impl Plan {
         self.voice_table.settle();
         self.global_table.settle();
         self.matrix.settle_depths();
+        self.audio.settle_depths();
         for out in self.vmod_cur.iter_mut().chain(self.vmod_prev.iter_mut()) {
             *out = [0.0; MAX_VOICES];
         }
@@ -736,8 +755,15 @@ pub enum CompileError {
         /// The route, as text (`velocity -> osc1.level`).
         route: String,
         /// Why (stable wording: `unknown_source`, `not_a_modulator`, `unknown_destination`, `not_modulatable`,
-        /// `depth_out_of_range`, `route_rate_mismatch`).
+        /// `depth_out_of_range`, `route_rate_mismatch`; audio routes, lane RTE: `not_audio_dest`, `not_audio_source`,
+        /// `too_many_audio_routes`, `audio_into_sync_master`).
         reason: &'static str,
+    },
+    /// The audio routes between the enabled generators loop, or a generator feeds itself (lane RTE): there is no
+    /// order to run them in. `validate` refuses the same patch as `audio_cycle`.
+    AudioCycle {
+        /// A route on the loop, as text (`wt1 -> wt2.pm`).
+        route: String,
     },
 }
 
@@ -755,6 +781,7 @@ impl CompileError {
             CompileError::BadAmpEnv(_) => "bad_amp_env",
             CompileError::NotYet { .. } => "not_yet",
             CompileError::BadRoute { .. } => "bad_route",
+            CompileError::AudioCycle { .. } => "audio_cycle",
         }
     }
 }
@@ -796,6 +823,10 @@ impl fmt::Display for CompileError {
             CompileError::BadRoute { route, reason } => {
                 write!(f, "route '{route}' cannot run: {reason}")
             }
+            CompileError::AudioCycle { route } => write!(
+                f,
+                "route '{route}' closes a loop between generators; audio routes cannot loop (feedback is a parameter inside a module)"
+            ),
         }
     }
 }
@@ -935,6 +966,7 @@ pub fn compile_with(
         mode,
         polyphony: patch.voice.get(VoiceParam::Polyphony) as usize,
         matrix: Matrix::default(),
+        audio: AudioRoutes::default(),
         vmod_cur: Vec::new(),
         vmod_prev: Vec::new(),
         gmod_cur: Vec::new(),
@@ -975,6 +1007,18 @@ pub fn compile_with(
         .map(|s| s.module.kind().spec().time_based)
         .collect();
     plan.matrix = compile_routes(patch, &plan, &map, &mut voice_table, &mut global_table)?;
+    let audio: Vec<usize> = (0..patch.routes.len())
+        .filter(|&i| classify(patch, &patch.routes[i]) == RouteClass::Audio)
+        .collect();
+    plan.audio = AudioRoutes::build(patch, &plan, &map, &audio)?;
+    for (id, route) in plan.audio.tags() {
+        let r = &patch.routes[route];
+        let addr = RouteAddr {
+            src: r.src.clone(),
+            dst: r.dst.clone(),
+        };
+        map.routes.insert(addr, id);
+    }
     for (term, route) in plan.matrix.tags() {
         let r = &patch.routes[route];
         let addr = RouteAddr {
@@ -1057,6 +1101,11 @@ fn compile_routes(
         };
         if !r.depth.is_finite() || r.depth.abs() > 100.0 {
             return Err(bad("depth_out_of_range"));
+        }
+        match classify(patch, r) {
+            RouteClass::Audio => continue, // `AudioRoutes::build`
+            RouteClass::Reject(reason) => return Err(bad(reason)),
+            RouteClass::Control => {}
         }
         let src = match &r.src {
             ModSource::Velocity => Some(Src::Velocity),
@@ -1361,7 +1410,9 @@ mod tests {
         check(route("lfo2", "filter9.cutoff", 10.0), "unknown_destination");
         check(route("env1", "comp1.mix", 10.0), "route_rate_mismatch");
         check(route("lfo9", "osc1.level", 10.0), "unknown_source");
-        check(route("osc1", "osc1.level", 10.0), "not_a_modulator");
+        // A generator is an audio source (lane RTE), so it is refused for what it targets, not for what it is.
+        check(route("osc1", "osc1.level", 10.0), "not_audio_dest");
+        check(route("filter1", "osc1.level", 10.0), "not_a_modulator");
         check(route("lfo1", "osc1.wave", 10.0), "not_modulatable");
         check(route("lfo1", "osc1.level", 101.0), "depth_out_of_range");
         check(route("lfo1", "osc1.level", f32::NAN), "depth_out_of_range");

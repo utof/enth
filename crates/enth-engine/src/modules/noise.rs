@@ -60,6 +60,10 @@ impl VoiceProcessor for Noise {
             } else {
                 self.voices[v].white(out);
             }
+            // An audio route leaves this generator (lane RTE): what travels is the output before the level ramp.
+            if let Some(pre) = cx.pre_level.as_deref_mut() {
+                pre[v] = *out;
+            }
             apply_level(
                 out,
                 p.prev(NoiseParam::Level, v) * 0.01,

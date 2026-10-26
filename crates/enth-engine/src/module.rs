@@ -30,6 +30,7 @@
 use enth_patch::Rate;
 
 pub use crate::params::{GlobalParams, ParamIndex, VoiceParams};
+pub use crate::routing::AudioIn;
 
 /// Frames per segment: the processing quantum. Events take effect at segment boundaries, modulation runs once per
 /// segment, and the host adapter re-chunks any host block onto this free-running grid (design.md §3, §5).
@@ -189,6 +190,13 @@ pub struct VoiceCx<'a> {
     /// `Some` for the generators after the sync master (when there is one): the master's wraps for this segment, for
     /// an `osc` with `sync` on. `None` for the master itself, for per-voice effects, and when no `osc` is enabled.
     pub sync_in: Option<&'a SyncBus>,
+    /// Generators that are a carrier: `Some` when an audio route reaches this module (lane RTE): the pre-level
+    /// outputs of the generators that feed it, scaled by the route depths. Read an `audio` parameter's input with
+    /// [`AudioIn::read`]. `None` for a module no audio route reaches, and for per-voice effects.
+    pub audio_in: Option<AudioIn<'a>>,
+    /// Generators that are a source: `Some` when an audio route leaves this module (lane RTE), zeroed for the active
+    /// voices. Copy the output *before* the `level` ramp into `pre[v]` for every active voice. `None` otherwise.
+    pub pre_level: Option<&'a mut VoiceBus>,
 }
 
 /// The context of a voice modulator's `tick`.
