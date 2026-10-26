@@ -8,6 +8,12 @@
 //! number in the answer code; S5: the ear rules in the ear result; the F1e review's M3: taps stored from the first
 //! tap) and with an ear challenge (kind 3) added, so every version-15 kind has a frozen code here. From F1e on, the
 //! file never changes: a new layout adds `result/v2/` beside it.
+//!
+//! **One exception, 2026-10-26** (owner decision D3, lane ANS): the answer code's target, parameter, place and kind
+//! fields were widened in place, because no friend build had carried layout 1 yet. The four answer entries were
+//! regenerated (the file was removed and the step above wrote it again) and [`CODES_SHA256`] re-pinned; every other
+//! entry is byte for byte what F1e froze, which [`OTHER_KINDS_SHA256`] pins on its own (its value was computed from the
+//! F1e file and from the new one: the same). The answers' commitments did not move ([`COMMITMENTS`]).
 
 #![allow(
     clippy::disallowed_methods,
@@ -36,7 +42,24 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// The SHA-256 of `result/v1/codes.json`.
-const CODES_SHA256: &str = "82dc0247779d9bf1cca228976be67b48941ce3505cc9e44e16b37bcb18c5e19d";
+const CODES_SHA256: &str = "e8d15567733b8ce0ce1c34f97a5a2261909e5b9349b2e74afc598a01cbbaf344";
+
+/// The SHA-256 of every entry that is not an answer, as `<kind>|<code>\n` lines in file order. It is the same value on
+/// the F1e file and on the file after the answer code's widening (D3): scorecards and ear codes did not change.
+const OTHER_KINDS_SHA256: &str = "1be486d65aa75fa75c7b7110fd13870565a370a471e53f32c56ab7b5a53070db";
+
+/// The commitments of the four answers of the fixture, measured on the F1e build (9188409, before the widening): a
+/// commitment hashes the patch (with the salt and the target), never the code's bits, so a scorecard made before the
+/// widening still matches the same answer after it. (name, commitment bits)
+const COMMITMENTS: [(&str, u64); 4] = [
+    ("answer, level 1, the target", 0x0376_5119_dbcd_d38d),
+    ("answer, level 3, the target", 0x0247_d850_d573_9197),
+    ("answer, level 5, the target", 0x074b_1d6d_8504_b2b9),
+    (
+        "answer, level 3, every op kind and personal fields",
+        0x06e7_beb3_8097_93ab,
+    ),
+];
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Fixture {
@@ -364,4 +387,72 @@ fn the_fixture_is_frozen() {
             s
         });
     assert_eq!(hex, CODES_SHA256, "result/v1/codes.json is frozen");
+}
+
+#[test]
+fn the_other_kinds_are_what_f1e_froze() {
+    let file: Fixture = serde_json::from_str(&read()).unwrap();
+    let mut sha = Sha256::new();
+    for e in file.codes.iter().filter(|e| e.kind != "answer") {
+        sha.update(format!("{}|{}\n", e.kind, e.code).as_bytes());
+    }
+    let hex = sha.finalize().iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    });
+    assert_eq!(hex, OTHER_KINDS_SHA256, "a scorecard or ear code changed");
+}
+
+/// The four answers of the fixture, by name, made by this build.
+fn fixture_answers() -> Vec<(&'static str, AnswerCode)> {
+    let level = |name, level, seed| {
+        let c = short(level, seed);
+        (
+            name,
+            AnswerCode::new(c, 0xC0FF_EE00_1234_5678, &target(&c)).unwrap(),
+        )
+    };
+    vec![
+        level("answer, level 1, the target", 1, 42),
+        level("answer, level 3, the target", 3, 42),
+        level("answer, level 5, the target", 5, 42),
+        (
+            "answer, level 3, every op kind and personal fields",
+            AnswerCode::new(short(3, 7), 1, &structural()).unwrap(),
+        ),
+    ]
+}
+
+/// The answer code was widened in place (D3), and a commitment hashes the patch, not the code's bits: the same answer
+/// (salt, challenge, patch) gives the commitment the F1e build gave, so a scorecard made then still matches it.
+#[test]
+fn the_commitments_did_not_move_with_the_widening() {
+    let file: Fixture = serde_json::from_str(&read()).unwrap();
+    let answers = fixture_answers();
+    assert_eq!(answers.len(), COMMITMENTS.len());
+    for ((name, bits), (n, made)) in COMMITMENTS.iter().zip(&answers) {
+        assert_eq!(name, n);
+        assert_eq!(made.commitment().bits(), *bits, "{name}");
+        // The frozen code decodes to the same answer, and so to the same commitment.
+        let entry = file.codes.iter().find(|e| e.name == *name).unwrap();
+        let Ok(Found::Answer(back)) = paste::decode(&entry.code) else {
+            panic!("{name} decodes");
+        };
+        assert_eq!(back.commitment(), made.commitment(), "{name}");
+    }
+}
+
+/// A scorecard that carries an F1e-era commitment accepts the widened code's answer: `verify` says the commitment
+/// matches (the claim's other fields are the fixture's made-up numbers, and are not what is asked here).
+#[test]
+fn a_scorecard_made_before_the_widening_still_matches_its_answer() {
+    let (name, bits) = COMMITMENTS[0];
+    let file: Fixture = serde_json::from_str(&read()).unwrap();
+    let entry = file.codes.iter().find(|e| e.name == name).unwrap();
+    let Ok(Found::Answer(answer)) = paste::decode(&entry.code) else {
+        panic!("{name} decodes");
+    };
+    let card = card(*answer.challenge(), true, CardAssists::default(), bits);
+    let verified = enth_challenge::verify::verify(&answer, Some(&card)).unwrap();
+    assert!(verified.claim.unwrap().commitment_matches);
 }

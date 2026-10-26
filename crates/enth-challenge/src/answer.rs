@@ -9,6 +9,11 @@
 //!
 //! # Layout 1 (`result-params-v1`)
 //!
+//! **Widened in place on 2026-10-26** (owner decision D3, lane ANS): layout 1 had never been in a friend build, so its
+//! target, parameter, place and kind fields grew to make room for S2a's catalogue (up to 62 modules, 63 parameters
+//! per owner, 16 modules per section, 64 kinds) and stayed layout 1. [The guards](#widths) keep the next catalogue or
+//! patch-model change from outgrowing them silently. A code made before the widening does not read on this build.
+//!
 //! ```text
 //! header                     14   'F', kind 2, layout 1
 //! salt                       64   64 bits of OS randomness, drawn by the shell once per duel (core crates have no
@@ -25,21 +30,21 @@
 //!
 //! | Bits | Op | Then |
 //! | --- | --- | --- |
-//! | `0` | a run of `SetParam`s on one target | target 5, then (parameter 4, value) pairs, then parameter 15 |
+//! | `0` | a run of `SetParam`s on one target | target 6, then (parameter 6, value) pairs, then parameter 63 |
 //! | `1 0000` | END | — |
-//! | `1 0001` | `SetEnabled` | module 5, enabled 1 |
-//! | `1 0010` | `InsertRoute` | index 6, source, destination (target 5, parameter 4), depth (an `f32`) |
+//! | `1 0001` | `SetEnabled` | module 6, enabled 1 |
+//! | `1 0010` | `InsertRoute` | index 6, source, destination (target 6, parameter 6), depth (an `f32`) |
 //! | `1 0011` | `RemoveRoute` | route index 6 |
 //! | `1 0100` | `SetDepth` | route index 6, depth |
-//! | `1 0101` | `AddModule` | kind 4, index in its section 3, enabled 1, id number 6, then (parameter 4, value) pairs for the values that differ from the table's defaults, then 15 |
-//! | `1 0110` | `RemoveModule` | module 5 |
-//! | `1 0111` | `Move` | module 5, index 3 |
-//! | `1 1000` | `SetAmpEnv` | module 5 |
+//! | `1 0101` | `AddModule` | kind 6, index in its section 4, enabled 1, id number 6, then (parameter 6, value) pairs for the values that differ from the table's defaults, then 63 |
+//! | `1 0110` | `RemoveModule` | module 6 |
+//! | `1 0111` | `Move` | module 6, index 4 |
+//! | `1 1000` | `SetAmpEnv` | module 6 |
 //! | `1 1001` | `SetMacro` | macro 3, value (an `f32`) |
 //! | `1 1010`–`1 1111` | reserved | refused as `answer_too_new` |
 //!
 //! - **Targets** are places in the patch as it is at that op, never ids: 0 is `voice`, 1 `master`, 2 + i the i-th
-//!   module in file order (sections in order).
+//!   module in file order (sections in order), so 6 bits name 62 modules.
 //! - **An added module's id** (should-fix S1): the engine seeds a module's random streams from its id
 //!   (`fnv1a64(id)`), and `osc`'s default phase mode is `free`, so a renumbered module renders other phases. An id the
 //!   app gave (`<prefix><n>`, `n` from 1 to 63) keeps its number in 6 bits; **an id the player typed (`wobble`,
@@ -79,11 +84,27 @@
 //! prefix is checked first (`target_mismatch`). No deflated whole-patch form: an added module carries only the values
 //! that differ from the table's defaults, so the op form is never much longer than a whole patch; a whole-patch form
 //! would be a new layout.
+//!
+//! # Widths
+//!
+//! | Field | Bits | Names | Must cover |
+//! | --- | --- | --- | --- |
+//! | target | 6 | `voice`, `master` and 62 modules | 2 + the section caps (`MAX_GENERATORS` + `MAX_VOICE_FX` + `MAX_FX` + `MAX_MODULATORS`) |
+//! | parameter | 6 | indices 0–62 per owner; 63 ends a run | every [`RESULT_PARAMS_V1`] row and every catalogue kind, reserved ones too |
+//! | place | 4 | 16 modules per section | each section cap |
+//! | kind | 6 | 64 kinds, by discriminant | [`ModuleKind::ALL`], the hidden reserved kinds counted |
+//! | route | 6 | 64 routes | `MAX_ROUTES` |
+//! | id number | 6 | `<prefix>1`–`<prefix>63` | the module cap |
+//!
+//! These relations are compile-time asserts below the constants, and tests name the kind or section that breaks them.
+//! A catalogue or model change that outgrows a width fails the build here, not on a friend's machine; the fix is a new
+//! layout, never an edit of layout 1 (which is how the widening was allowed: layout 1 had no friend build yet).
 
 use core::fmt;
 
 use enth_patch::addr::{MacroIndex, ModSource, ModuleId, ParamAddr, Position, RouteAddr, Target};
-use enth_patch::catalogue::ModuleKind;
+use enth_patch::catalogue::{Builtin, ModuleKind};
+use enth_patch::model::{MACROS, MAX_FX, MAX_GENERATORS, MAX_MODULATORS, MAX_ROUTES, MAX_VOICE_FX};
 use enth_patch::{ModuleInstance, Op, Patch, Route, ops_between};
 use sha2::{Digest, Sha256};
 
@@ -107,20 +128,20 @@ const TAIL_MAGIC: &[u8] = b"enth-answer-v1";
 /// The commitment's preimage magic (frozen with layout 1).
 const COMMIT_MAGIC: &[u8] = b"enth-commit-v1";
 
-/// Bits of a target (0 voice, 1 master, 2 + i a module).
-const TARGET_BITS: u32 = 5;
-/// Bits of a parameter index; [`RUN_END`] ends a run.
-const PARAM_BITS: u32 = 4;
-/// The parameter index that ends a run of values.
-const RUN_END: u64 = 15;
+/// Bits of a target (0 voice, 1 master, 2 + i a module): 62 modules.
+const TARGET_BITS: u32 = 6;
+/// Bits of a parameter index (0–62 per owner); [`RUN_END`] ends a run.
+const PARAM_BITS: u32 = 6;
+/// The parameter index that ends a run of values (the last one [`PARAM_BITS`] holds).
+const RUN_END: u64 = 63;
 /// Bits of an op code after its `1`.
 const OP_BITS: u32 = 4;
 /// Bits of a route index.
 const ROUTE_BITS: u32 = 6;
-/// Bits of an index within a section.
-const PLACE_BITS: u32 = 3;
-/// Bits of a module kind.
-const KIND_BITS: u32 = 4;
+/// Bits of an index within a section: 16 modules.
+const PLACE_BITS: u32 = 4;
+/// Bits of a module kind (the discriminant): 64 kinds.
+const KIND_BITS: u32 = 6;
 /// Bits of a macro index.
 const MACRO_BITS: u32 = 3;
 /// Bits of an added module's id number (`n` of `<prefix><n>`; 0 is the lowest free id).
@@ -138,6 +159,72 @@ const OP_REMOVE_MODULE: u64 = 6;
 const OP_MOVE: u64 = 7;
 const OP_SET_AMP_ENV: u64 = 8;
 const OP_SET_MACRO: u64 = 9;
+
+/// The most modules a patch holds: the section caps summed (what the target and id-number fields must name).
+const MODULE_CAP: usize = MAX_GENERATORS + MAX_VOICE_FX + MAX_FX + MAX_MODULATORS;
+
+// The widths above against the patch model and the catalogue (D3, lane ANS; docs/phase-s2.md, "The answer code"). A
+// change that outgrows one fails the build of this crate, so it is found when the catalogue or the model changes
+// and not on a friend's machine; the answer code is the codec that cannot grow in place after a friend build. The tests
+// name the section or kind that breaks a relation. Fix by a new layout, never by loosening an assert.
+const _: () = {
+    assert!(
+        ModuleKind::ALL.len() <= 1 << KIND_BITS,
+        "KIND_BITS cannot name every ModuleKind (the hidden reserved kinds count)"
+    );
+    assert!(
+        MAX_GENERATORS <= 1 << PLACE_BITS
+            && MAX_VOICE_FX <= 1 << PLACE_BITS
+            && MAX_FX <= 1 << PLACE_BITS
+            && MAX_MODULATORS <= 1 << PLACE_BITS,
+        "PLACE_BITS cannot index a full section"
+    );
+    assert!(
+        2 + MODULE_CAP <= 1 << TARGET_BITS,
+        "TARGET_BITS cannot name voice, master and every module of a full patch"
+    );
+    assert!(
+        MAX_ROUTES <= 1 << ROUTE_BITS,
+        "ROUTE_BITS cannot index every route"
+    );
+    assert!(
+        MACROS <= 1 << MACRO_BITS,
+        "MACRO_BITS cannot name every macro"
+    );
+    assert!(
+        MODULE_CAP < 1 << ID_BITS,
+        "ID_BITS cannot number every module (numbers run from 1; 0 is the lowest free id)"
+    );
+    // A parameter index is below RUN_END, which ends a run: every row must have room for its last index.
+    let mut i = 0;
+    while i < RESULT_PARAMS_V1.len() {
+        assert!(
+            RESULT_PARAMS_V1[i].1.len() < RUN_END as usize,
+            "a RESULT_PARAMS_V1 row has more parameters than PARAM_BITS holds"
+        );
+        i += 1;
+    }
+    let mut k = 0;
+    while k < ModuleKind::ALL.len() {
+        assert!(
+            ModuleKind::ALL[k].params().len() < RUN_END as usize,
+            "a catalogue kind (a reserved one too) has more parameters than PARAM_BITS holds"
+        );
+        k += 1;
+    }
+    let mut b = 0;
+    while b < Builtin::ALL.len() {
+        assert!(
+            Builtin::ALL[b].params().len() < RUN_END as usize,
+            "voice or master has more parameters than PARAM_BITS holds"
+        );
+        b += 1;
+    }
+    assert!(
+        RUN_END == (1 << PARAM_BITS) - 1,
+        "RUN_END is PARAM_BITS' last value"
+    );
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // result-params-v1
@@ -293,8 +380,8 @@ const COMP_V1: &[ResultParam] = &[
 
 /// **`result-params-v1`**: the frozen parameter table of layout 1, one list per owner. Module kinds by their
 /// discriminant (`osc`, `noise`, `svf`, `adsr`, `lfo`, `reverb`, `comp`), then `voice` and `master`. Append-only: a
-/// new parameter or kind is appended (a kind past the 16th parameter needs a new layout), and a released entry never
-/// changes. A test pins the table's bytes and checks it against the live catalogue.
+/// new parameter or kind is appended (a kind past the 63rd parameter, index 62, needs a new layout: 63 ends a run),
+/// and a released entry never changes. A test pins the table's bytes and checks it against the live catalogue.
 pub const RESULT_PARAMS_V1: [(&str, &[ResultParam]); 9] = [
     ("osc", OSC_V1),
     ("noise", NOISE_V1),

@@ -76,7 +76,10 @@ fn result_params_v1_covers_the_catalogue() {
             specs.len(),
             "{owner}: a parameter is missing from the table"
         );
-        assert!(row.len() <= 15, "{owner}: index 15 ends a run");
+        assert!(
+            row.len() < RUN_END as usize,
+            "{owner}: index {RUN_END} ends a run"
+        );
         for (e, s) in row.iter().zip(specs) {
             assert_eq!(e.key, s.key, "{owner}: order");
             assert_eq!(
@@ -119,6 +122,196 @@ fn result_params_v1_covers_the_catalogue() {
     );
     check("voice", VOICE_V1, Builtin::Voice.params());
     check("master", MASTER_V1, Builtin::Master.params());
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Widths (D3, lane ANS): the fields against the patch model and the catalogue
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The same relations as the compile-time asserts below the constants, with the failing section, kind or row named, so
+/// a catalogue lane that adds the 63rd parameter, the 65th kind or the 17th module of a section sees which one and by
+/// how much. (The asserts stop the build first; this keeps the headroom written where a lane looks.)
+#[test]
+fn the_widths_cover_the_patch_model_and_the_catalogue() {
+    let room = |bits: u32| 1usize << bits;
+    // Kinds: every ModuleKind, the hidden reserved ones counted.
+    assert!(
+        ModuleKind::ALL.len() <= room(KIND_BITS),
+        "{} kinds against {} (KIND_BITS {KIND_BITS})",
+        ModuleKind::ALL.len(),
+        room(KIND_BITS)
+    );
+    assert!(ModuleKind::ALL.iter().any(|k| k.is_hidden()));
+    for (i, kind) in ModuleKind::ALL.iter().enumerate() {
+        assert_eq!(
+            *kind as usize, i,
+            "{kind}: the kind field is the discriminant"
+        );
+    }
+    // Places: every section cap.
+    for section in enth_patch::Section::ALL {
+        assert!(
+            section.max_len() <= room(PLACE_BITS),
+            "{section}: {} modules against {} (PLACE_BITS {PLACE_BITS})",
+            section.max_len(),
+            room(PLACE_BITS)
+        );
+    }
+    // Targets and id numbers: voice, master and a full patch.
+    let total: usize = enth_patch::Section::ALL.iter().map(|s| s.max_len()).sum();
+    assert_eq!(total, MODULE_CAP, "the section caps sum to the module cap");
+    assert!(
+        2 + total <= room(TARGET_BITS),
+        "voice, master and {total} modules against {} (TARGET_BITS {TARGET_BITS})",
+        room(TARGET_BITS)
+    );
+    assert!(
+        total <= room(ID_BITS) - 1,
+        "{total} modules against id numbers 1..{} (ID_BITS {ID_BITS})",
+        room(ID_BITS) - 1
+    );
+    // Routes and macros.
+    assert!(
+        enth_patch::model::MAX_ROUTES <= room(ROUTE_BITS),
+        "routes against ROUTE_BITS {ROUTE_BITS}"
+    );
+    assert!(
+        enth_patch::model::MACROS <= room(MACRO_BITS),
+        "macros against MACRO_BITS {MACRO_BITS}"
+    );
+    // Parameters: an index below RUN_END, which ends a run.
+    assert_eq!(RUN_END as usize, room(PARAM_BITS) - 1);
+    for (owner, row) in RESULT_PARAMS_V1 {
+        assert!(
+            row.len() < RUN_END as usize,
+            "{owner}: {} parameters against indices 0..{RUN_END}",
+            row.len()
+        );
+    }
+    for kind in ModuleKind::ALL {
+        assert!(
+            kind.params().len() < RUN_END as usize,
+            "{kind}: {} catalogue parameters against indices 0..{RUN_END} (PARAM_BITS {PARAM_BITS})",
+            kind.params().len()
+        );
+    }
+    for builtin in Builtin::ALL {
+        assert!(
+            builtin.params().len() < RUN_END as usize,
+            "{}: {} parameters",
+            builtin.key(),
+            builtin.params().len()
+        );
+    }
+}
+
+/// The widths the task needed: 62 modules, 63 parameters per owner (indices 0 to 62), 16 per section and 64 kinds,
+/// where layout 1 at F1e held 30, 15, 8 and 16.
+#[test]
+fn the_widths_are_the_widened_ones() {
+    assert_eq!(
+        (TARGET_BITS, PARAM_BITS, RUN_END, PLACE_BITS, KIND_BITS),
+        (6, 6, 63, 4, 6)
+    );
+    // Unchanged.
+    assert_eq!(
+        (OP_BITS, ROUTE_BITS, MACRO_BITS, ID_BITS, SOURCE_BITS),
+        (4, 6, 3, 6, 3)
+    );
+}
+
+/// The new fields at the bit level, with the writer and the reader the codec uses and no table row: a kind of 17
+/// (`ladder`; 4 bits stop at 15), a parameter index of 40 (4 bits stop at 14, 15 ending a run), a place of 12 (3 bits
+/// stop at 7) and a target of 40 (5 bits stop at 31). Each value would not fit the width layout 1 had at F1e.
+#[test]
+fn the_wider_fields_round_trip_at_the_bit_level() {
+    const OLD: (u32, u32, u32, u32) = (5, 4, 3, 4); // target, parameter, place, kind
+    let fields = [
+        ("kind", 17u64, KIND_BITS, OLD.3),
+        ("parameter", 40, PARAM_BITS, OLD.1),
+        ("place", 12, PLACE_BITS, OLD.2),
+        ("target", 40, TARGET_BITS, OLD.0),
+    ];
+    for (name, value, bits, old) in fields {
+        assert!(
+            value >= 1 << old,
+            "{name}: {value} fits the old {old} bits, so it proves nothing"
+        );
+        assert!(value < 1 << bits, "{name}: {value} must fit {bits} bits");
+    }
+    // The AddModule order (kind, place), a run's (target, parameter), and the run's end, back to back, at odd offsets.
+    for pad in 0..5 {
+        let mut w = Bits::default();
+        w.put(0, pad);
+        w.put(17, KIND_BITS);
+        w.put(12, PLACE_BITS);
+        w.put(40, TARGET_BITS);
+        w.put(40, PARAM_BITS);
+        w.put(RUN_END, PARAM_BITS);
+        assert_eq!(
+            w.len(),
+            (pad + KIND_BITS + PLACE_BITS + TARGET_BITS + 2 * PARAM_BITS) as usize
+        );
+        let syms = w.into_symbols();
+        let mut r = Reader::at(&syms, pad as usize);
+        assert_eq!(r.take(KIND_BITS as usize).unwrap(), 17);
+        assert_eq!(r.take(PLACE_BITS as usize).unwrap(), 12);
+        assert_eq!(r.take(TARGET_BITS as usize).unwrap(), 40);
+        assert_eq!(r.take(PARAM_BITS as usize).unwrap(), 40);
+        assert_eq!(r.take(PARAM_BITS as usize).unwrap(), RUN_END);
+    }
+    // The largest values each field holds, and the one a run reserves.
+    let mut w = Bits::default();
+    w.put((1 << KIND_BITS) - 1, KIND_BITS);
+    w.put((1 << PLACE_BITS) - 1, PLACE_BITS);
+    w.put((1 << TARGET_BITS) - 1, TARGET_BITS);
+    w.put(RUN_END - 1, PARAM_BITS);
+    let syms = w.into_symbols();
+    let mut r = Reader::at(&syms, 0);
+    assert_eq!(r.take(KIND_BITS as usize).unwrap(), 63);
+    assert_eq!(r.take(PLACE_BITS as usize).unwrap(), 15);
+    assert_eq!(r.take(TARGET_BITS as usize).unwrap(), 63);
+    assert_eq!(r.take(PARAM_BITS as usize).unwrap(), 62);
+}
+
+/// S2a's reserved kinds (7 to 17, `delay` and `ladder` among them) have no table row until the catalogue lane adds
+/// them (lane CAT owns that): a code that names one is `answer_too_new`, kinds 16 and 17 included (KIND_BITS 4 stopped
+/// at 15), and the encoder refuses an answer that holds one (`unencodable`, "not in layout 1").
+#[test]
+fn a_reserved_kind_has_no_row_yet() {
+    let c = code(1, 5);
+    for kind in KINDS_V1 as u64..ModuleKind::ALL.len() as u64 {
+        let text = craft(&c, |w| {
+            put_op_code(w, OP_ADD_MODULE);
+            w.put(kind, KIND_BITS);
+        });
+        assert_eq!(
+            AnswerCode::decode(&text).unwrap_err(),
+            ResultError::AnswerTooNew {
+                what: "module kind",
+                value: kind
+            },
+            "kind {kind}"
+        );
+    }
+    let target = target_of(&c);
+    let reserved: Vec<&ModuleKind> = ModuleKind::ALL
+        .iter()
+        .filter(|k| **k as usize >= KINDS_V1)
+        .collect();
+    assert_eq!(reserved.len(), ModuleKind::ALL.len() - KINDS_V1);
+    for kind in reserved {
+        let mut with = target.clone();
+        let at = Position {
+            section: kind.section(),
+            index: with.section(kind.section()).len(),
+        };
+        let module = ModuleInstance::new(with.free_id(*kind), *kind);
+        apply(&mut with, &Op::AddModule { at, module }).unwrap();
+        let e = AnswerCode::new(c, 1, &with).unwrap_err();
+        assert_eq!(e.code(), "unencodable", "{kind}: {e}");
+        assert!(e.to_string().contains("not in layout 1"), "{kind}: {e}");
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -604,7 +797,7 @@ fn answer_refusals() {
         // Reserved op codes.
         (craft(&c, |w| put_op_code(w, 10)), "answer_too_new"),
         (craft(&c, |w| put_op_code(w, 15)), "answer_too_new"),
-        // A module kind this build lacks.
+        // A module kind this build lacks: the first reserved one, `ladder` (17), and the last the field holds (63).
         (
             craft(&c, |w| {
                 put_op_code(w, OP_ADD_MODULE);
@@ -612,12 +805,51 @@ fn answer_refusals() {
             }),
             "answer_too_new",
         ),
-        // A parameter index past master's row.
+        (
+            craft(&c, |w| {
+                put_op_code(w, OP_ADD_MODULE);
+                w.put(17, KIND_BITS);
+            }),
+            "answer_too_new",
+        ),
+        (
+            craft(&c, |w| {
+                put_op_code(w, OP_ADD_MODULE);
+                w.put((1 << KIND_BITS) - 1, KIND_BITS);
+            }),
+            "answer_too_new",
+        ),
+        // A parameter index past master's row: the next one, 15 (which ended a run before the widening), 40 and the
+        // last the field holds below the run's end (62).
         (
             craft(&c, |w| {
                 w.put(0, 1);
                 w.put(1, TARGET_BITS);
                 w.put(3, PARAM_BITS);
+            }),
+            "answer_too_new",
+        ),
+        (
+            craft(&c, |w| {
+                w.put(0, 1);
+                w.put(1, TARGET_BITS);
+                w.put(15, PARAM_BITS);
+            }),
+            "answer_too_new",
+        ),
+        (
+            craft(&c, |w| {
+                w.put(0, 1);
+                w.put(1, TARGET_BITS);
+                w.put(40, PARAM_BITS);
+            }),
+            "answer_too_new",
+        ),
+        (
+            craft(&c, |w| {
+                w.put(0, 1);
+                w.put(1, TARGET_BITS);
+                w.put(RUN_END - 1, PARAM_BITS);
             }),
             "answer_too_new",
         ),
@@ -630,11 +862,19 @@ fn answer_refusals() {
             }),
             "answer_too_new",
         ),
-        // A target past the patch's modules; an empty run; voice where a module is needed.
+        // A target past the patch's modules (31 and 63, the last the field holds); an empty run; voice where a module
+        // is needed.
         (
             craft(&c, |w| {
                 w.put(0, 1);
                 w.put(31, TARGET_BITS);
+            }),
+            "bad_field",
+        ),
+        (
+            craft(&c, |w| {
+                w.put(0, 1);
+                w.put((1 << TARGET_BITS) - 1, TARGET_BITS);
             }),
             "bad_field",
         ),
@@ -823,18 +1063,37 @@ fn touched(t: &Patch, seed: u64) -> Patch {
 /// | 4 | 110, 130 | 144, 171 | 165, 186 | 165, 186 |
 /// | 5 | 152, 188 | 212, 263 | 230, 271 | 254, 309 |
 ///
-/// The budgets below are those with about 10 % of margin; a change that grows a code past them is a format change for
+/// The budgets below were those with about 10 % of margin; a change that grows a code past them is a format change for
 /// the F1e judge, not a budget bump. Lane SKD measures real passing answers at F2d.
+///
+/// **Widened on 2026-10-26** (owner decision D3, lane ANS: target 5 to 6 bits, parameter 4 to 6, place 3 to 4, kind 4
+/// to 6; layout 1 stays layout 1, since no friend build has carried it). That is a format change the owner approved, so
+/// each budget below grew by exactly its cell's measured growth, median and max each, and keeps its F1e margin.
+/// Measured after, same 40 seeds (median and max symbols, code v1's symbol included; the F1e figures above are the
+/// before):
+///
+/// | Level | Target | Dragged | Touched |
+/// | --- | --- | --- | --- |
+/// | 1 | 47, 51 | 50, 58 | 77, 79 |
+/// | 2 | 58, 65 | 69, 78 | 93, 96 |
+/// | 3 | 100, 106 | 130, 140 | 152, 155 |
+/// | 4 | 120, 143 | 154, 183 | 175, 199 |
+/// | 5 | 168, 208 | 227, 283 | 246, 290 |
+///
+/// Each moved knob costs 2 bits more (its parameter index), each run of knobs on one target 3 more (the target and the
+/// run's end), each added module a few: about 1 to 4 symbols at level 1, about 16 to 20 at level 5.
 #[test]
 fn the_size_budget_per_level() {
     // (level, [(median, max) for target, dragged, touched])
     const BUDGET: [(u8, [(usize, usize); 3]); 5] = [
-        (1, [(50, 56), (56, 64), (80, 84)]),
-        (2, [(62, 68), (72, 84), (96, 100)]),
-        (3, [(100, 108), (135, 145), (155, 162)]),
-        (4, [(120, 145), (158, 188), (180, 205)]),
-        (5, [(168, 207), (233, 290), (253, 298)]),
+        (1, [(51, 57), (57, 66), (83, 88)]),
+        (2, [(64, 72), (75, 87), (100, 105)]),
+        (3, [(108, 116), (142, 153), (163, 170)]),
+        (4, [(130, 158), (168, 200), (190, 218)]),
+        (5, [(184, 227), (248, 310), (269, 317)]),
     ];
+    // Every cell is measured and printed before any is asserted, so a format change shows its whole growth at once.
+    let mut over = Vec::new();
     for (level, budget) in BUDGET {
         let rows = [
             sizes(level, 0..40, |t, _| t.clone()),
@@ -850,12 +1109,14 @@ fn the_size_budget_per_level() {
                 "level {level} {name}: median {m}, max {x}, min {}",
                 sizes[0]
             );
-            assert!(
-                m <= median && x <= max,
-                "level {level} {name}: median {m} (budget {median}), max {x} (budget {max})"
-            );
+            if m > median || x > max {
+                over.push(format!(
+                    "level {level} {name}: median {m} (budget {median}), max {x} (budget {max})"
+                ));
+            }
         }
     }
+    assert!(over.is_empty(), "{}", over.join("\n"));
 }
 
 /// A level-1 answer fits code v1's 64 symbols, so an old build says "update enth"; a level-5 answer does not, so it
