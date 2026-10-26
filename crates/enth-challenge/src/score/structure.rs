@@ -17,6 +17,7 @@
 //! | a randomized route | depth difference in route steps ([`ROUTE_JND`], 5 points), an absent route at depth 0; infinite when an end's module has no partner | the route, `lfo1 -> filter1.cutoff` |
 //! | a randomized enable flag | 0 when the player's patch has the module exactly when the target does, else infinite | `osc2.enabled` |
 //! | a module the matching left over | infinite (it scores 0), unless an enable-flag row already says so | `modules` |
+//! | a module of another kind of the same family standing in for the target's (lane MTC, S2a: a `wt` for an `osc`, a `ladder` for an `svf`) | its link's credit, 0.25, 0.5 or 0.75 ([`super::matching::families`]); the parameters of the target module are read through the corresponding ones of the substitute and score 0 where it has none | `modules` (status `substituted`) |
 //!
 //! The folds (equivalences): an oscillator's `semi` and `fine` read as one pitch in cents (+12 st ≡ +11 st and
 //! +100 ct); a generator's level reads in dB against the target's first generator's partner (levels count only as
@@ -208,6 +209,15 @@ impl Prepared {
                     status,
                 });
             }
+        }
+        // A family substitute is a module that exists but is not the target's kind: one more item, its link's credit.
+        for sub in matching.substitutions() {
+            counted.push(sub.credit());
+            modules.push(ModuleTerm {
+                id: sub.target.to_string(),
+                kind: sub.target_kind.key().to_owned(),
+                status: ModuleStatus::Substituted,
+            });
         }
         let percent = if counted.is_empty() {
             100.0
