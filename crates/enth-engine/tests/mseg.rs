@@ -16,12 +16,13 @@
 
 mod common;
 
-use common::{SEED, SR, bits, drive, events, id, note, reset_saw_patch};
+use common::{SEED, SR, bits, drive, events, id, note, render, reset_saw_patch};
+use enth_dsp::alias::{FFT_LEN, midi_hz, power_spectrum};
 use enth_engine::module::count_subnormals;
 use enth_engine::{Engine, Event, EventKind, NoteKey, ParamId, PlanMap, PrepareCfg, SEG, compile};
 use enth_patch::catalogue::{
     AdsrParam, Beats, CompParam, MSEG_POINT_BASE, MsegMode, MsegParam, MsegScope, OscParam,
-    Polarity, SvfParam, VoiceMode, VoiceParam,
+    Polarity, SvfParam, VoiceMode, VoiceParam, Wave,
 };
 use enth_patch::{ModuleInstance, ModuleKind, Patch, Route};
 
@@ -1066,6 +1067,97 @@ fn a_run_of_edits_never_steps_more_than_an_eighth_of_the_edit_plus_the_slope() {
         "the biggest step between two segments is {worst}"
     );
     assert!(trace.iter().all(|y| (-1e-6..=1.000001).contains(y)));
+}
+
+// ---- the zipper skirt of a stepped pattern (the aliasing page for a modulator) ----
+
+/// The sidebands a modulator puts on a sine, far from the carrier. An MSEG is not an audio path, so it cannot alias;
+/// what it can do is put an edge in a parameter, and the engine ramps every modulator over one 32-frame segment, so a
+/// hard step arrives as a 0.67 ms ramp whose skirt falls away from the carrier. This measures it with the shared
+/// harness' spectrum: a sine voice (key 69 or 93) whose level a full-depth 16-step pattern gates, or a drawn wobble
+/// for comparison, the strongest bin in each band above the carrier over the carrier's strongest bin, in dB.
+fn skirt_db(patch: &Patch, key: u8) -> [f64; 3] {
+    let frames = 4 * FFT_LEN;
+    let (l, _, _) = render(patch, &[note(key, 0, frames as u64)], frames, 512, SEED);
+    let p = power_spectrum(&l[frames - FFT_LEN..]);
+    let bin = f64::from(SR) / FFT_LEN as f64;
+    let f0 = midi_hz(f64::from(key));
+    let at = |hz: f64| (hz / bin).round() as usize;
+    let peak = p[at(f0) - 8..=at(f0) + 8]
+        .iter()
+        .fold(0.0f64, |m, &x| m.max(x));
+    // Bands above the carrier: 2 to 4 kHz, 4 to 8 kHz and 8 to 16 kHz away from it.
+    [(2_000.0, 4_000.0), (4_000.0, 8_000.0), (8_000.0, 16_000.0)].map(|(lo, hi)| {
+        let worst = p[at(f0 + lo)..=at(f0 + hi)]
+            .iter()
+            .fold(0.0f64, |m, &x| m.max(x));
+        10.0 * enth_dsp::util::math::log10(worst / peak)
+    })
+}
+
+fn gated_sine(points: &[Pt], length_ms: f32) -> Patch {
+    let mut p = reset_saw_patch();
+    p.generators[0].values[OscParam::Wave.index()] = Wave::Sine.index() as f32;
+    p.generators[0].values[OscParam::Level.index()] = 0.0;
+    p.modulators[0].values[AdsrParam::Attack.index()] = 0.0;
+    p.modulators[0].values[AdsrParam::Decay.index()] = 0.0;
+    p.modulators[0].values[AdsrParam::Sustain.index()] = 100.0;
+    p.modulators[0].values[AdsrParam::Release.index()] = 0.0;
+    p.modulators.push(mseg(
+        "mseg1",
+        MsegScope::Voice,
+        MsegMode::Loop,
+        Beats::Bar,
+        points,
+        &[(MsegParam::Sync, 0.0), (MsegParam::Length, length_ms)],
+    ));
+    route(&mut p, "mseg1", "osc1.level", 100.0);
+    p
+}
+
+#[test]
+#[allow(
+    clippy::print_stderr,
+    reason = "the table docs/dsp/mseg.md records (cargo test -p enth-engine --test mseg -- --nocapture)"
+)]
+fn the_zipper_skirt_of_a_stepped_pattern_stays_inside_its_recorded_bound() {
+    let steps = [
+        100.0f32, 0.0, 100.0, 100.0, 0.0, 100.0, 0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 0.0,
+        100.0, 0.0,
+    ];
+    let gate: Vec<Pt> = steps
+        .iter()
+        .enumerate()
+        .map(|(i, &l)| (i as f32 * 6.25, l, -100.0))
+        .collect();
+    let wobble: [Pt; 5] = [
+        (0.0, 5.0, 40.0),
+        (25.0, 100.0, -50.0),
+        (50.0, 30.0, 50.0),
+        (75.0, 80.0, -30.0),
+        (100.0, 5.0, 0.0),
+    ];
+    // 16 steps of 2048 frames: 682.667 ms. The wobble loops 8 times as fast.
+    let rows = [
+        ("16-step gate (hard steps)", gated_sine(&gate, 682.6667)),
+        ("drawn wobble (curves)", gated_sine(&wobble, 85.0)),
+    ];
+    // Recorded 2026-10-26: the gate -65.9 / -77.3 / -88.1 dB (key 69) and -65.6 / -77.6 / -88.1 (key 93), the wobble
+    // -90.4 / -100.0 / -111.6 and -89.9 / -98.8 / -109.8; the bound is the worst of each band plus 2 dB.
+    let bounds = [[-63.5, -75.0, -86.0], [-87.5, -96.5, -107.5]];
+    eprintln!("MSEG skirt re the carrier (dB), bins 2-4, 4-8, 8-16 kHz above it:");
+    for ((name, patch), bound) in rows.iter().zip(bounds) {
+        for key in [69u8, 93] {
+            let got = skirt_db(patch, key);
+            eprintln!(
+                "  {name}, key {key}: {:.1} / {:.1} / {:.1}",
+                got[0], got[1], got[2]
+            );
+            for (g, b) in got.iter().zip(bound) {
+                assert!(*g <= b, "{name}, key {key}: {got:?} against {bound:?}");
+            }
+        }
+    }
 }
 
 // ---- the module contract ----
