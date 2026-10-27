@@ -15,7 +15,7 @@
     "amp_env": "env1"
   },
   "master": {
-    "level": -0.9
+    "level": -0.2
   },
   "generators": [
     {
@@ -34,7 +34,7 @@
       "kind": "dist",
       "params": {
         "mode": "asymmetric",
-        "drive": 8,
+        "drive": 2,
         "bias": 60
       }
     },
