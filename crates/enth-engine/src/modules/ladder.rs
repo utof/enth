@@ -22,7 +22,9 @@ use enth_dsp::svf::Drive;
 use enth_dsp::util::math::exp2f;
 use enth_patch::catalogue::{LadderMode, LadderParam};
 
-use crate::module::{MAX_VOICES, PrepareCfg, VoiceCx, VoiceProcessor, VoiceStart};
+use crate::module::{
+    MAX_VOICES, NoteState, PrepareCfg, VoiceCx, VoiceParams, VoiceProcessor, VoiceStart,
+};
 
 /// The inputs a voice's coefficients were computed from: cutoff, resonance, drive and the key-tracking term in
 /// octaves. Equal inputs give equal coefficients, so the cache is exact.
@@ -68,6 +70,61 @@ fn mode_of(value: f32) -> Mode {
     }
 }
 
+impl Ladder {
+    /// The segment of voice `v`: where its coefficients were and where they go. Remembers the end for the next one.
+    fn segment(&mut self, p: &VoiceParams<'_>, notes: &NoteState, v: usize, mode: Mode) -> Segment {
+        let (cutoff_i, res_i, key_i, drive_i, mix_i) = (
+            LadderParam::Cutoff.index(),
+            LadderParam::Resonance.index(),
+            LadderParam::Keytrack.index(),
+            LadderParam::Drive.index(),
+            LadderParam::Mix.index(),
+        );
+        let cutoff = p.cur(cutoff_i, v);
+        let resonance = p.cur(res_i, v);
+        let drive_db = p.cur(drive_i, v);
+        let keytrack = p.cur(key_i, v);
+        // Octaves of key tracking: 100 % is one octave per octave played, relative to middle C (as the svf).
+        let tracked = if keytrack == 0.0 {
+            0.0
+        } else {
+            (notes.pitch_cur[v] - 60.0) * keytrack * (1.0 / 1200.0)
+        };
+        let key: Key = [cutoff, resonance, drive_db, tracked];
+        let first = !self.valid[v];
+        let (to, drive_to) = if first || key != self.key[v] {
+            let fc = if tracked == 0.0 {
+                cutoff
+            } else {
+                cutoff * exp2f(tracked)
+            };
+            self.key[v] = key;
+            (
+                Coeffs::new(fc, ladder::k_from_resonance(resonance), self.sample_rate),
+                Drive::from_db(drive_db),
+            )
+        } else {
+            (self.coeffs[v], self.drive[v])
+        };
+        let (from, drive_from) = if first {
+            (to, drive_to)
+        } else {
+            (self.coeffs[v], self.drive[v])
+        };
+        self.coeffs[v] = to;
+        self.drive[v] = drive_to;
+        self.valid[v] = true;
+        Segment {
+            mode,
+            from,
+            to,
+            drive_from,
+            drive_to,
+            mix: [p.prev(mix_i, v) * 0.01, p.cur(mix_i, v) * 0.01],
+        }
+    }
+}
+
 impl VoiceProcessor for Ladder {
     fn start_voice(&mut self, start: &VoiceStart<'_>) {
         let v = start.voice;
@@ -77,59 +134,60 @@ impl VoiceProcessor for Ladder {
 
     fn process(&mut self, cx: &mut VoiceCx<'_>) {
         let p = cx.params;
-        let (mode_i, cutoff_i, res_i, key_i, drive_i, mix_i) = (
-            LadderParam::Mode.index(),
-            LadderParam::Cutoff.index(),
-            LadderParam::Resonance.index(),
-            LadderParam::Keytrack.index(),
-            LadderParam::Drive.index(),
-            LadderParam::Mix.index(),
-        );
-        let mode = mode_of(p.base(mode_i));
+        let mode = mode_of(p.base(LadderParam::Mode.index()));
         for &v in cx.voices {
-            let cutoff = p.cur(cutoff_i, v);
-            let resonance = p.cur(res_i, v);
-            let drive_db = p.cur(drive_i, v);
-            let keytrack = p.cur(key_i, v);
-            // Octaves of key tracking: 100 % is one octave per octave played, relative to middle C (as the svf).
-            let tracked = if keytrack == 0.0 {
-                0.0
-            } else {
-                (cx.notes.pitch_cur[v] - 60.0) * keytrack * (1.0 / 1200.0)
-            };
-            let key: Key = [cutoff, resonance, drive_db, tracked];
-            let first = !self.valid[v];
-            let (to, drive_to) = if first || key != self.key[v] {
-                let fc = if tracked == 0.0 {
-                    cutoff
-                } else {
-                    cutoff * exp2f(tracked)
-                };
-                self.key[v] = key;
-                (
-                    Coeffs::new(fc, ladder::k_from_resonance(resonance), self.sample_rate),
-                    Drive::from_db(drive_db),
-                )
-            } else {
-                (self.coeffs[v], self.drive[v])
-            };
-            let (from, drive_from) = if first {
-                (to, drive_to)
-            } else {
-                (self.coeffs[v], self.drive[v])
-            };
-            let seg = Segment {
-                mode,
-                from,
-                to,
-                drive_from,
-                drive_to,
-                mix: [p.prev(mix_i, v) * 0.01, p.cur(mix_i, v) * 0.01],
-            };
+            let seg = self.segment(&p, cx.notes, v, mode);
             ladder::process_block(&mut self.state[v], &seg, &mut cx.io[v]);
-            self.coeffs[v] = to;
-            self.drive[v] = drive_to;
-            self.valid[v] = true;
+        }
+    }
+
+    /// The voices of this module and of its right twin, two voices (four instances) at a time through
+    /// `ladder::process_lanes`: each instance gets the bits `process` gives it alone.
+    fn process_pair(
+        &mut self,
+        right: &mut Self,
+        left_cx: &mut VoiceCx<'_>,
+        right_cx: &mut VoiceCx<'_>,
+    ) {
+        if left_cx.voices != right_cx.voices {
+            self.process(left_cx);
+            right.process(right_cx);
+            return;
+        }
+        let (pl, pr) = (left_cx.params, right_cx.params);
+        let mode_i = LadderParam::Mode.index();
+        let (ml, mr) = (mode_of(pl.base(mode_i)), mode_of(pr.base(mode_i)));
+        for group in left_cx.voices.chunks(2) {
+            let &[a, ..] = group else { continue };
+            let seg_la = self.segment(&pl, left_cx.notes, a, ml);
+            let seg_ra = right.segment(&pr, right_cx.notes, a, mr);
+            if let &[_, b] = group {
+                let seg_lb = self.segment(&pl, left_cx.notes, b, ml);
+                let seg_rb = right.segment(&pr, right_cx.notes, b, mr);
+                if let (Ok([sla, slb]), Ok([sra, srb]), Ok([ila, ilb]), Ok([ira, irb])) = (
+                    self.state.get_disjoint_mut([a, b]),
+                    right.state.get_disjoint_mut([a, b]),
+                    left_cx.io.get_disjoint_mut([a, b]),
+                    right_cx.io.get_disjoint_mut([a, b]),
+                ) {
+                    ladder::process_lanes(
+                        [sla, sra, slb, srb],
+                        [&seg_la, &seg_ra, &seg_lb, &seg_rb],
+                        [ila, ira, ilb, irb],
+                    );
+                } else {
+                    ladder::process_block(&mut self.state[a], &seg_la, &mut left_cx.io[a]);
+                    ladder::process_block(&mut right.state[a], &seg_ra, &mut right_cx.io[a]);
+                    ladder::process_block(&mut self.state[b], &seg_lb, &mut left_cx.io[b]);
+                    ladder::process_block(&mut right.state[b], &seg_rb, &mut right_cx.io[b]);
+                }
+            } else {
+                ladder::process_lanes(
+                    [&mut self.state[a], &mut right.state[a]],
+                    [&seg_la, &seg_ra],
+                    [&mut left_cx.io[a], &mut right_cx.io[a]],
+                );
+            }
         }
     }
 
@@ -509,6 +567,86 @@ mod tests {
                 assert_eq!(rig.filter.subnormals(), 0);
             }
             assert_eq!(rig.filter.state[0], State::ZERO);
+        }
+    }
+
+    /// `process_pair` on a ladder and its twin gives, bit for bit, what `process` on each gives: through every
+    /// response, a cutoff that moves and rests, a self-oscillating resonance, a saturator on some voices only, mixes
+    /// that switch between off, blended and full, a restarted voice, odd and even counts of voices, and a twin on
+    /// other settings than the left (a stereo plan never does that).
+    #[test]
+    fn process_pair_is_two_process_calls_bit_for_bit() {
+        use crate::modules::pair_test::check;
+        let cfg = PrepareCfg::new(SR);
+        for mode in [
+            LadderMode::Lp24,
+            LadderMode::Lp12,
+            LadderMode::Bp,
+            LadderMode::Hp,
+        ] {
+            for voices in [vec![0usize, 3, 4], vec![0, 1, 2, 5], vec![7], vec![2, 9]] {
+                for twin_differs in [false, true] {
+                    check(
+                        ModuleKind::Ladder,
+                        |values| Ladder::new(values, &cfg),
+                        &voices,
+                        96,
+                        |seg, right, t| {
+                            let ix = |p: LadderParam| p.index();
+                            t.all(ix(LadderParam::Mode), mode.index() as f32);
+                            let moving = (10..30).contains(&seg);
+                            t.set(ix(LadderParam::Cutoff), |v| {
+                                let base = 300.0 + 90.0 * v as f32;
+                                if moving {
+                                    base + 55.0 * (seg - 10) as f32 * (1 + v % 3) as f32
+                                } else if seg >= 30 {
+                                    base + 1_000.0
+                                } else {
+                                    base
+                                }
+                            });
+                            let res = if seg >= 40 { 97.0 } else { 35.0 };
+                            t.all(
+                                ix(LadderParam::Resonance),
+                                if twin_differs && right {
+                                    res - 20.0
+                                } else {
+                                    res
+                                },
+                            );
+                            t.set(ix(LadderParam::Drive), |v| {
+                                if (60..75).contains(&seg) && v % 2 == 1 {
+                                    12.0
+                                } else if (70..80).contains(&seg) && twin_differs && right {
+                                    6.0
+                                } else {
+                                    0.0
+                                }
+                            });
+                            t.set(ix(LadderParam::Keytrack), |v| {
+                                if seg % 7 < 3 {
+                                    0.0
+                                } else {
+                                    20.0 * (v % 3) as f32
+                                }
+                            });
+                            let mix = match seg {
+                                80..=85 => 0.0,
+                                86..=90 => 50.0,
+                                _ => 100.0,
+                            };
+                            t.all(ix(LadderParam::Mix), mix);
+                        },
+                        |seg| {
+                            if seg == 50 {
+                                vec![(voices[voices.len() - 1], true)]
+                            } else {
+                                Vec::new()
+                            }
+                        },
+                    );
+                }
+            }
         }
     }
 }

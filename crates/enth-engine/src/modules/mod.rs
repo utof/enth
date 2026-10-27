@@ -55,6 +55,9 @@ pub mod reverb;
 pub mod svf;
 pub mod wt;
 
+#[cfg(test)]
+pub(crate) mod pair_test;
+
 use enth_patch::{ModuleKind, Rate};
 
 pub use adsr::Adsr;
@@ -391,6 +394,9 @@ impl VoiceProcessorImpl {
     ) {
         match (self, right_twin) {
             (VoiceProcessorImpl::Dist(l), VoiceProcessorImpl::Dist(r)) => {
+                VoiceProcessor::process_pair(l, r, left, right);
+            }
+            (VoiceProcessorImpl::Ladder(l), VoiceProcessorImpl::Ladder(r)) => {
                 VoiceProcessor::process_pair(l, r, left, right);
             }
             (l, r) => {
