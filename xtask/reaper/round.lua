@@ -151,12 +151,19 @@ safe(function()
                   click("end_hinted")
                   sleep(0.4)
                   click("restore")
-                  wait_until(function() return not has_round(track, fx) end, 10, 0.2, function(ended)
+                  -- The state loses the round under the session's lock, and the plugin appends the log line only after
+                  -- it unlocks (20 to 140 ms later in ten VST3 runs at load 20), so a poll that reads the state first can
+                  -- see the round gone before the line exists ("gone: true; 0 line(s)" in the coordinator's full run).
+                  -- Wait for both.
+                  wait_until(function() return not has_round(track, fx) and log_lines() >= 1 end, 10, 0.2, function(done)
+                    local ended = not has_round(track, fx)
                     local n, text = log_lines()
                     data("log-lines", n)
                     check("round-ended", ended and n >= 1 and contains(text, '"enth.round-log/1"') and contains(text, '"event":"end"'),
                       string.format("round gone from the state: %s; %d line(s) in %s", tostring(ended), n, LOG))
                     check("hint-in-log", contains(text, '"hints":1'), "the end line's assists count the hint")
+                    -- What a click met (a stray window over the editor, the End menu not open) is in the picture.
+                    if not done then shot("round-end-failed", true) end
                     hide_editor(track, fx)
                     wait(0.5, finish)
                   end)
