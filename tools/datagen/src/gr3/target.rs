@@ -207,8 +207,10 @@ impl Gr3Target {
     }
 }
 
-/// `patch` with every enabled oscillator's `semi` moved by `semis` (clamped, through ops): the rule
-/// `enth_solver::nearest` transposes a neighbour by. The kit uses it to judge a candidate **as played at the note
+/// `patch` with every enabled oscillator's and wavetable oscillator's `semi` moved by `semis` (clamped, through ops):
+/// the rule `enth_solver::nearest` transposes a neighbour by, plus `wt` (S2a lane TPL: a created patch with a `wt`
+/// carrier was otherwise judged an octave or more off whenever the register shift was not 0; no target or bank entry
+/// of the existing sets has a `wt`, so their scores do not move). The kit uses it to judge a candidate **as played at the note
 /// create inferred**: a candidate searched at key `k_inferred` and scored through the target's performance (which
 /// starts on `k_true`) is first moved by `k_inferred − k_true`, because one note cannot tell the key from the
 /// oscillators' tuning (a target whose oscillators sit an octave down sounds like the key an octave lower, and the
@@ -221,7 +223,7 @@ pub fn transpose(patch: &Patch, semis: i32) -> Patch {
     let addrs: Vec<ParamAddr> = p
         .generators
         .iter()
-        .filter(|m| m.enabled && m.kind == ModuleKind::Osc)
+        .filter(|m| m.enabled && matches!(m.kind, ModuleKind::Osc | ModuleKind::Wt))
         .filter_map(|m| ParamAddr::module(m.id.clone(), "semi").ok())
         .collect();
     for addr in addrs {

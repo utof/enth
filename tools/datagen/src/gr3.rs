@@ -122,6 +122,56 @@ pub fn templates() -> Result<(enth_patch::Patch, Vec<Template>), String> {
     Ok((init, templates))
 }
 
+/// The S2a templates plus today's, by name: what a job's `templates` list can name.
+fn named_template(name: &str) -> Result<Template, String> {
+    let (_, today) = templates()?;
+    if let Some(t) = today.into_iter().find(|t| t.name == name) {
+        return Ok(t);
+    }
+    if let Some(t) = enth_solver::create::s2a::s2a_template(name) {
+        return Ok(t);
+    }
+    if name.contains('/') || name.ends_with(".json") {
+        let path = Path::new(name);
+        let text = fs::read_to_string(path)
+            .map_err(|e| format!("cannot read the template file {name}: {e}"))?;
+        let patch = enth_patch::file::load(&text)
+            .map_err(|e| format!("the template file {name} does not load: {e}"))?
+            .patch;
+        let stem = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .map_or("template", |f| {
+                f.strip_suffix(".patch.json")
+                    .or_else(|| f.strip_suffix(".json"))
+                    .unwrap_or(f)
+            });
+        return Ok(Template {
+            name: stem.to_owned(),
+            patch,
+        });
+    }
+    Err(format!(
+        "the job names an unknown template {name} (known: pluck_1osc, pad_2osc, bass_sub, {}; or a path to a patch file)",
+        enth_solver::create::s2a::s2a_names().join(", ")
+    ))
+}
+
+/// The start patch and the templates a job's create gets (`Job::templates`).
+pub fn job_templates(job: &Job) -> Result<(enth_patch::Patch, Vec<Template>), String> {
+    let (init, mut list) = templates()?;
+    match &job.templates {
+        None => list.extend(enth_solver::create::s2a::enabled_s2a_templates()),
+        Some(names) => {
+            list = names
+                .iter()
+                .map(|n| named_template(n))
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+    }
+    Ok((init, list))
+}
+
 /// Load the job's bank, cut to its first `entries` when asked (the builder takes candidates in order, so the first
 /// N entries of a bank are the bank `--entries N` builds).
 pub fn load_bank(path: &Path, entries: Option<usize>) -> Result<Bank, String> {
@@ -160,7 +210,7 @@ pub fn append(path: &Path, line: &impl serde::Serialize) -> Result<(), String> {
 /// Run every target of `job`, appending as it goes.
 pub fn run_job(job: &Job) -> Result<(), String> {
     job.check()?;
-    let (init, templates) = templates()?;
+    let (init, templates) = job_templates(job)?;
     let bank = match &job.bank {
         Some(p) => Some(load_bank(p, job.bank_entries)?),
         None => None,
@@ -289,6 +339,7 @@ mod tests {
             bank: None,
             bank_entries: None,
             proposals: None,
+            templates: None,
             split: "dev".into(),
             header: serde_json::Value::Null,
             targets: vec![dev_target()],
@@ -440,6 +491,17 @@ mod tests {
             Some(t.patch.spec(&semi).unwrap().clamp(before + 12.0))
         );
         assert_eq!(transpose(&t.patch, 0), t.patch);
+        // A wavetable oscillator moves with the oscillators (S2a lane TPL).
+        let wt = enth_patch::file::load(include_str!(
+            "../../../content/templates/s2a/growl.patch.json"
+        ))
+        .unwrap()
+        .patch;
+        let (wsemi, osemi): (enth_patch::ParamAddr, enth_patch::ParamAddr) =
+            ("wt1.semi".parse().unwrap(), "osc2.semi".parse().unwrap());
+        let down = transpose(&wt, -7);
+        assert_eq!(down.value(&wsemi), Some(-7.0));
+        assert_eq!(down.value(&osemi), Some(-7.0));
         // The marks: the grid below the cap, then the cap.
         let j = job(Arm::A, 300, vec![], 1);
         assert_eq!(j.marks_of(&j.targets[0]), vec![100.0, 250.0, 300.0]);

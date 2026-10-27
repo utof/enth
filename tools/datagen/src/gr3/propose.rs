@@ -195,6 +195,7 @@ mod tests {
             bank: None,
             bank_entries: None,
             proposals,
+            templates: None,
             split: "dev".into(),
             header: Value::Null,
             // `gen-d-l1-01` of content/gr3/synth.toml (dev), as in the kit's own tests.
