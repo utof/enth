@@ -173,7 +173,10 @@ pub fn templates() -> (Patch, Vec<Template>) {
         })
     });
     let init = all.next().map_or_else(Patch::init, |t| t.patch);
-    (init, all.collect())
+    let mut rest: Vec<Template> = all.collect();
+    // The S2a templates (lane TPL): none while their kinds are hidden, so today's starts are unchanged.
+    rest.extend(enth_solver::create::s2a::enabled_s2a_templates());
+    (init, rest)
 }
 
 /// The workers of a job's pool: half the logical CPUs (about the physical cores, so the host's audio, GUI and main

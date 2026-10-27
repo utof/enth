@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "Reese",
+    "description": "Two saws 28 cents apart (a slow beat) over a sine an octave down, a low-pass swept an octave either way over one bar, soft distortion that leaves the lows alone, and a six-stage phaser. Mono, legato, a 200 ms glide. The sustained, phasey reese of report 04 (S3).",
+    "tags": ["bass", "reese"]
+  },
+  "voice": { "mode": "legato", "polyphony": 1, "glide": 200, "amp_env": "env1" },
+  "master": { "level": -3 },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw", "fine": -14 } },
+    { "id": "osc2", "kind": "osc", "params": { "wave": "saw", "fine": 14 } },
+    { "id": "osc3", "kind": "osc", "params": { "wave": "sine", "semi": -12, "level": 50 } }
+  ],
+  "voice_fx": [
+    { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": 700, "resonance": 18, "drive": 6 } },
+    { "id": "dist1", "kind": "dist", "params": { "mode": "soft", "drive": 8, "keep_lows": 120 } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr", "params": { "attack": 5, "decay": 0, "sustain": 100, "release": 150 } },
+    { "id": "lfo1", "kind": "lfo", "params": { "shape": "triangle", "sync": true, "beats": "bar" } }
+  ],
+  "fx": [
+    { "id": "phaser1", "kind": "phaser", "params": { "stages": 6, "rate": 0.2, "feedback": 50, "mix": 40 } }
+  ],
+  "routes": [
+    { "src": "lfo1", "dst": "filter1.cutoff", "depth": 10 }
+  ]
+}
