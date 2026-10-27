@@ -1,6 +1,6 @@
 //! Component tokens: per-widget dimensions, in logical px at 100 % UI scale. One file per UI area, so a lane adds
 //! the dimensions of its own area in its own file: `bar`, `card`, `cards` (UI-C), `display`, `editor` (ED1), `handle`,
-//! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
+//! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`, `dense` (EDS: the sizes of the dense layout's cards). A brand-new area is a new file plus its field here.
 //! R1/S1 (lane S0r) pre-declared three empty areas: `recreate` (RUI), `browser` (PBU) and `add_module` (AM); R2 (lane S0l) one:
 //! `learn` (LUI); R3 (lane S0s) one: `create` (PUI); R4 and R5 (lane S0e) two: `ear` (EUI) and `duel` (DUI).
 

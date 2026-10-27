@@ -7,7 +7,7 @@
 | File | Holds |
 | --- | --- |
 | `editor/frame.rs` | `Editor`: the frame (regions → read models → components), `apply` (intents → session calls), the editor's view state, `FrameReport` |
-| `editor/layout.rs`, `editor/layout/<name>.json` | `LayoutSpec`, `Layout`, `Region`, `Part`, `Size`; the built-in layouts (`BUILTIN`; layout 1 is `lanes.json`) |
+| `editor/layout.rs`, `editor/layout/<name>.json` | `LayoutSpec`, `Layout`, `Region`, `Part`, `Size`, `Density`; the built-in layouts (`BUILTIN`; layout 1 is `lanes.json`; `dense.json` is lane EDS's, for S2a patches) |
 | `editor/regions/` | the region components: `Header`, `Macros`, `CardRegion`, `Overview` (tiles beside the matrix), `SourceTiles`, `Matrix`, `RouteList` (ED2: the overview when the grid does not fit), `Output` (ED2: scope or spectrum, and meters), `Status` |
 | `editor/modulate.rs` | drag-to-modulate (ED2): the `SourceDrag` payload, the drop check, drop targets, the depth handle |
 | `editor/live.rs` | live feedback (ED2): the telemetry reader per open, the frame's fingerprint of visible live values, repaint gating |
@@ -18,6 +18,7 @@
 | `editor/reserved.rs` | the lesson, challenge-bar and results regions behind the `learn` and `recreate` features |
 | `editor/add_module.rs` | (lane AM) adding and removing modules: the card's "…" menu, the region menu, the dashed "+ Add" slot, the header's Add hook, the "Rename…" field, the status line's notes ([below](#adding-and-removing-modules-lane-am)) |
 | `theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs` | the editor's size tokens (below; the middle two are ED2's, the last AM's) |
+| `theme/sizes/dense.rs` | (lane EDS) `size.dense.*` and `Theme::dense()`: the sizes a dense layout draws its cards with ([below](#the-dense-layout-lane-eds-s2a-wave-5)) |
 | `examples/dev_window.rs` | the dev window (feature `dev-window`) |
 | `examples/frame_bench.rs` | instructions per editor frame, headless (ED2 added the live cases) |
 | `crates/enth-plugin/src/editor.rs` | the plugin window: `EditorApp` and `Glue`, the plugin's handle on `Editor` |
@@ -123,7 +124,7 @@ Components never touch the session. They push `Intent`s; `apply` runs them in or
 
 **Stable ids.** Every control interacts under an id made from what it controls (`cards::ids`: a module id and a parameter address, a macro index, a source), never from where it is, so a re-layout keeps drags, hovers, the "Type value…" field and egui's memory. Tested: 59 of 59 controls of the P1 default keep their ids (and their AccessKit node ids) across two layouts, most of them in another place, and a knob drag continues through a layout switch in the middle of it, as one undo step.
 
-**Choosing a layout.** The plugin, at every open of the window: `ENTH_LAYOUT` (a built-in's name or a file) if set and valid, else the built-in named in the `enth` field (`ui.layout`, `"lanes"` by default), else layout 1. A refused file is named on the status line. The dev window: `--layout NAME|FILE` or `ENTH_LAYOUT`, F2 for the next built-in, F5 to reload the file.
+**Choosing a layout.** The plugin, at every open of the window: `ENTH_LAYOUT` (a built-in's name or a file) if set and valid, else the built-in named in the `enth` field (`ui.layout`, `"lanes"` by default), else layout 1. A refused file is named on the status line. **Layout 1 gives way to `dense` for a patch of S2a kinds** (lane EDS; [below](#the-dense-layout-lane-eds-s2a-wave-5)): only while the editor's own layout is layout 1, `ENTH_LAYOUT` is not set and the shell turned `Editor::set_auto_dense` on (the plugin does at every open; `Editor::new` leaves it off, so a test or a layout file draws exactly the layout it is given). The dev window: `--layout NAME|FILE` or `ENTH_LAYOUT`, F2 for the next built-in (`dense` is one), F5 to reload the file; it does not switch by itself.
 
 ### Layout 1, "lanes"
 
@@ -148,6 +149,53 @@ Hypotheses 4 (focal point), 5 (the effects lane) and 8 (the macro bar's weight) 
 - The output region takes `size.output.width` (208) px of the header row, so the header's master knob sits 216 px further left than in ED1's layout 1; osc 1's Level knob (REAPER's `dirty-flag` scenario point, 366, 178) does not move.
 
 Snapshots: `crates/enth-ui/tests/snapshots/editor_lanes_p1.png` and `editor_lanes_max.png` (`tests/editor_snapshots.rs`, lavapipe, kittest's default threshold).
+
+### The dense layout (lane EDS, S2a wave 5)
+
+**Layout 1 does not fit an S2a patch, so S2a patches get a second layout, `dense`, through this seam.** Measured at 1200 × 800 with "More" closed (`Editor::report().overflow`, px a region scrolls by; layout 1 as it is after this lane dropped the empty 40 px display slot of the kinds that draw no picture, which saved 144 px in the growl reference's voice lane):
+
+| Patch (file) | modules | Layout 1 overflow | `dense` overflow |
+| --- | --- | --- | --- |
+| G2 growl reference (`tools/test-host/golden/enth-plugin.g2.patch.json`) | 11 | voice_fx +335.9, modulators +34.7, effects +380.3 | **none** |
+| report 04 s03 reese (`content/templates/s2a/sketches/`) | 8 | voice_fx +201.2 | **none** |
+| s02 wobble, eighth notes | 8 | voice_fx +201.2 | **none** |
+| s04 FM growl | 10 | voice_fx +638.4, modulators +34.7, effects +241.4 | voice_fx +122.0 |
+| s05 riddim | 11 | voice_fx +383.9 | modulators 176 sideways, overview.tiles +3.3 |
+| s08 neuro | 12 | voice_fx +459.9, effects +197.6 | sources +125.2, modulators 176 sideways, overview.tiles +3.3 |
+| s09 foghorn | 12 | voice_fx +459.9, modulators +34.7, effects +376.4 | sources +62.6, effects +16.0 |
+
+The brief asked for the growl reference, a reese and a wobble: all three fit and nothing scrolls. The other four sketches do not (twelve modules, a second wavetable strip, a third lane of effects); they are reported, not hidden. A *focus region* (one card enlarged, the rest as headers) would take them; see "For the next lanes".
+
+**Why a second layout and not a focus region.** The growl reference overflows layout 1 in three regions, each by more than its own height, so it needs smaller cards everywhere, not a bigger place for one. A focus region would also add a `Region` variant, a second way to show a card and a click before a control can be moved; a dense layout draws the *same* cards, widgets and ids with smaller tokens, so drag-to-modulate, depth handles and rings, the right-click menu, "Type value…", overlays and every test by label work in it as they do in layout 1. The cost is that a dense card has nothing left over for pictures (the strips' displays shrink, the envelope's picture is the same editable widget at 28 px).
+
+**What `dense` is** (`layout/dense.json`, `theme/sizes/dense.rs`):
+
+- `LayoutSpec.density` (`"dense"`, written to a file only when dense; a file without it reads as normal). `Editor::frame` hands a dense layout's card regions and macro bar `Theme::dense()`: the same theme with `size.knob.diameter` 28 (layout 1: 36), `size.knob.cell_width` 48 (56), the title row 20 (24), generator strips 84 (96) with 96 × 28 displays (128 × 40), the macro bar 44 (56), `size.control_height` 20 (24), and `text.value` one step smaller so a value fits the cell. All of it is `size.dense.*` tokens (the table below); nothing in a layout file is a pixel.
+- The body is three columns: the left share holds the generator strips (`size.dense.strip_height` × 3), the modulator band (`size.dense.band_height`, 224: unchanged, the tallest modulator at dense sizes is the MSEG with its points) and the overview; then two lanes, `voice_fx` (the voice filters and the voice card) and `effects`, each `size.card.lane_width` (220) wide and the whole body tall. Layout 1's one lane of filters next to the strips cannot take a distortion, a ladder, a formant and the voice card.
+- A dense card shows **every basic and intermediate control** and the PM and AM inputs, with no click (`CardView.visible` is at least `VISIBLE_TIER`, `audio_shown`): a `wt` that layout 1 folds behind "More" (18 parameters, 5 basic) shows 13 here, in two rows of strip cells (`Card::fit_rows`: a dense strip wraps its cells by the width it is given, layout 1 by the constant `STRIP_ROW_CELLS`). "More" still opens the advanced rest (the MSEG's 51 point parameters), and a region then scrolls by itself as in layout 1.
+- **Short labels** for the 48 px cells: `present::DENSE_LABELS` and `DENSE_ITEMS` (`Feedbk`, `Key trk`, `Semi`, `Reso`, `Hi gain`, `Asym`, `Decim`, …), used only when a card is dense so layout 1's snapshots keep their text; the segmented rows of `ladder`, `chorus` and `mseg` use shorter items in both layouts (`LP 24`, `Ens`, `Once`, `Sustain`), because their rows were cut at 220 px in layout 1 as well. `tests/s2a_density.rs` measures every label, every enum item and the default, minimum and maximum value of every parameter of every card kind against the cell, and every segmented row of the growl reference against its card.
+- **Known limits.** A float in a log range with three significant digits at its low end ("0.108 Hz", "0.143 ms" on a chorus or phaser) is up to 8 px wider than the cell and ends in an ellipsis; the status line reads it in full. With "More" open a region scrolls. The growl reference has about 8 px of vertical slack in the voice lane at 800 px (nothing scrolls down to 790; at 780 the voice lane scrolls by 8.4 and the overview's grid by 3.3), so the minimum window stays 1200 × 800.
+- **Selection.** `Editor::set_auto_dense(true)` draws `dense` in layout 1's place while the patch holds a module of one of `holds_s2a`'s eleven kinds (`dist`, `wt`, `ott`, `comb`, `formant`, `mseg`, `chorus`, `phaser`, `eq`, `delay`, `ladder`: a list, not `ModuleSpec::hidden`, which INT-S2a clears per kind). A P1 patch is drawn by layout 1 whatever the policy: same regions to the pixel, no idle frame more, every existing snapshot unchanged (two changed for the ⊕ handle below). `FrameReport::density` says which was drawn.
+
+Snapshots: `editor_dense_g2.png` (the growl reference at 1200 × 800 in `dense`; `tests/s2a_density.rs`).
+
+### Audio-route drag (lane EDS)
+
+**A generator's output is dragged onto `wt`'s PM or AM input to make an audio route.** A generator card (an oscillator or a `wt`) holds a **⊕ handle** left of its "More" button, only while another generator in the patch has an audio input (so a P1 patch's cards are what they were; `CardView.audio_source`). It is the same `SourceDrag` payload as a modulator tile's handle, so every control checks itself against it with `modulate::check`:
+
+| Drop | Result |
+| --- | --- |
+| a generator on `wt`'s `pm` or `am` | one `InsertRoute` at **100 %** (`modulate::AUDIO_ROUTE_DEPTH`: every S2a template routes its audio at 100 %; `pm_index` and `am` set how much is heard), one undo step, no gesture; the status line reads "Drop to feed it the audio of Osc 1 at +100 %" |
+| the same pair again | "Osc 1 already feeds it (+100 %)": nothing changes |
+| a modulator on `pm` or `am` | refused, with SKS's reason: "… takes the audio of a generator, not a modulation source" |
+| a generator on any other parameter | refused: "Osc 1 is a generator: its audio can drive only an audio input (a wavetable's PM or AM), not …" |
+| a generator on itself or on its own driver | refused: "… cannot drive itself: a loop inside … is its Feedback control" and "… already drives …: audio flows one way, never in a loop" |
+| a generator that runs after a hard-sync master, on the master's audio input | refused: "… comes after the hard-sync master, which has to run first: it cannot feed it" |
+| past `MAX_ROUTES` | refused: "A patch holds at most … routes; remove one first" |
+
+**Visible drop-target feedback** is ED2's, unchanged: while a handle is dragged the inputs that take it carry a thin outline in the modulation colour, the one under the pointer a thick outline and a wash, a refused control is dimmed with the not-allowed cursor, and a wire follows the pointer from the handle (`editor_audio_drag.png`). An audio input still has no depth handle on its ring (SKS: a share of the output has no place on the knob); the route's depth is edited in the overview. The handle's accessible name is "Osc 1 audio"; hovering it says "drag ⊕ onto a PM or AM input to modulate it with this audio".
+
+Tests: `tests/s2a_density.rs` (a real `Session`, by label): the drop makes one route at 100 %, one insert and one undo step, undo and redo, the repeat drop changes nothing; the AM input too; a modulator and a non-audio target are refused with their reasons and nothing is routed; the drop check against the patch's rules including a self-drive and a loop; a P1 patch has no handle. Snapshot: `editor_audio_drag.png` (a handle dragged over a `wt`'s PM input).
 
 ## Live feedback and repaint gating (lane ED2)
 
@@ -255,12 +303,12 @@ So layout 1 needs all of 1200 × 800: the band of lane cards needs 1,148 px of w
 
 A loaded patch with a `wt` and an audio route draws, edits and saves like any other. `wt` stays hidden from the Add menu (`ModuleSpec::hidden`; making it addable is INT-S2a's), so only a loaded patch, an undo or a preset puts one in the editor. The catalogue drove almost all of it; the exceptions are the ones below.
 
-- **The card.** `wt` has 18 parameters, 5 of them basic (table, position, semi, fine, level). `present::visible_tier(kind)` shows the basic ones for `wt` and keeps the other 13 behind "More" (the other kinds keep `VISIBLE_TIER`, basic and intermediate: `wt`'s intermediate set alone would not fit a strip). A card's controls are laid in rows of at most `STRIP_ROW_CELLS` (8) cells (`card::strip_rows`), so "More" opens two short rows instead of one wide one. The number is a constant on purpose: a first version wrapped by the available width and moved the Create panel's cards, so every existing snapshot stayed bit-identical only with the constant. Lane EDS's dense cards may replace both. The display above the controls is `shapes::wt`: one cycle of the table's frame at the current position, read through the warp (a picture from the table recipes in docs/dsp/wt.md with 24 harmonics; phase modulation and feedback are not in it). The catalogue's names are used except where a cell is too short (`present::LABELS`, `ITEMS`: `Amount` for the warp amount, `Start` and `Phase` as for `osc`, `FM oct`, `Asym`).
+- **The card.** `wt` has 18 parameters, 5 of them basic (table, position, semi, fine, level). `present::visible_tier(kind)` shows the basic ones for `wt` and keeps the other 13 behind "More" (the other kinds keep `VISIBLE_TIER`, basic and intermediate: `wt`'s intermediate set alone would not fit a strip). A card's controls are laid in rows of at most `STRIP_ROW_CELLS` (8) cells (`card::strip_rows`), so "More" opens two short rows instead of one wide one. The number is a constant on purpose: a first version wrapped by the available width and moved the Create panel's cards, so every existing snapshot stayed bit-identical only with the constant. Lane EDS's dense layout wraps by width instead (`Card::fit_rows`) and shows every intermediate control and the audio inputs. The display above the controls is `shapes::wt`: one cycle of the table's frame at the current position, read through the warp (a picture from the table recipes in docs/dsp/wt.md with 24 harmonics; phase modulation and feedback are not in it). The catalogue's names are used except where a cell is too short (`present::LABELS`, `ITEMS`: `Amount` for the warp amount, `Start` and `Phase` as for `osc`, `FM oct`, `Asym`).
 - **An audio route is a route whose target is an `audio` parameter** (`wt.pm`, `wt.am`; `ParamFlags::audio`) **from a generator.** Its depth is a share of the source's output, not of the target's range (docs/dsp/engine.md), so the editor does not treat it as modulation: the knob has **no depth handle** (it would sit at a meaningless place on the ring), a modulation source dropped on `pm` or `am` is refused with the reason on the status line (`modulate.rs`), the hover text and the right-click menu say "osc1 audio +60 %" and "Remove osc1 audio route (+60 %)", and the route list's row reads "Audio route" with its depth. The overview's grid puts generators first as the audio sources, a generator makes no source tile, and a depth set in the overview or the list is a depth value event (the engine ramps it over 10 ms), never a plan swap; removing the route is one structural op and one undo step.
 - **The grid has no hover and no menu** (as for modulation, before this lane): a cell takes a click or a double-click (remove), the route list (which takes the grid's place when the grid does not fit) takes the hover and the menu.
-- **Creating a route by drag is lane EDS's.** SKS edits loaded routes only.
+- **Creating a route by drag is lane EDS's** ([above](#audio-route-drag-lane-eds)): SKS edits loaded routes only.
 
-Tests: `tests/wt.rs` (11 tests, a real `Session`, by label): the basic controls and "More" with the other 13, the minimum window's overflow report, `wt` absent from the Add menu, one undo step and one value event per parameter edit, the audio route in the overview and its texts, the missing depth handle and the refused drop, the depth set as depth events, removal by double-click and by menu with undo, the route list's hover and menu on the P1 default with a `wt`, and four new snapshots: `card_wt.png`, `card_wt_more.png`, `editor_wt_fm.png` (an operator into a `wt`) and `editor_wt_p1.png` (the P1 default with a `wt`). No existing snapshot changed.
+Tests: `tests/wt.rs` (11 tests, a real `Session`, by label): the basic controls and "More" with the other 13, the minimum window's overflow report, `wt` absent from the Add menu, one undo step and one value event per parameter edit, the audio route in the overview and its texts, the missing depth handle and the refused drop, the depth set as depth events, removal by double-click and by menu with undo, the route list's hover and menu on the P1 default with a `wt`, and four new snapshots: `card_wt.png`, `card_wt_more.png`, `editor_wt_fm.png` (an operator into a `wt`) and `editor_wt_p1.png` (the P1 default with a `wt`). No existing snapshot changed. (Lane EDS then added the ⊕ handle to the oscillator cards of a patch with a `wt`: 26 and 52 pixels changed in `editor_wt_fm.png` and `editor_wt_p1.png`, the handles and nothing else; every other snapshot is unchanged.)
 
 ## The preset browser (lane PBU)
 
@@ -608,7 +656,7 @@ Glyphs (existing): `CLOSE` ×, `PLAY` ▶, `STOP` ■, `BAD` ✗.
 - The history has no "forget this duel" control; the file is the user's to edit or delete.
 - An answer code over 64 symbols reads "bad length" on an enth from before duels: a code-format question for the R5a release step ([duels.md](duels.md#the-card-and-the-history-lane-dui)), not the card's.
 
-## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`)
+## Tokens (`theme/sizes/editor.rs`, `modulation.rs`, `output.rs`, `add_module.rs`, `dense.rs`)
 
 | Token | Value | For |
 | --- | --- | --- |
@@ -630,6 +678,14 @@ Glyphs (existing): `CLOSE` ×, `PLAY` ▶, `STOP` ■, `BAD` ✗.
 | `size.add_module.slot_width` | 40 | the dashed "+ Add" slot after a band's cards |
 | `size.add_module.dash`, `dash_gap` | 4, 4 | the slot outline's dashes and the space between them |
 | `size.window.min` | 1200 × 800 | the smallest logical window (lane AM raised it from 1000 × 680; [above](#the-minimum-window)) |
+| `size.dense.knob_diameter` | 28 | a dense card's knob (layout 1: `size.knob.diameter`, 36); lane EDS |
+| `size.dense.cell_width` | 48 | a dense knob cell (layout 1: 56) |
+| `size.dense.header_height` | 20 | a dense card's title row (layout 1: 24) |
+| `size.dense.strip_height` | 84 | a dense generator strip with one row of cells (layout 1: 96) |
+| `size.dense.display_width`, `display_height` | 96, 28 | the display in a dense strip, in a dense lane card (layout 1: 128, 40) |
+| `size.dense.band_height` | 224 | the dense layout's modulator band |
+| `size.dense.macro_height` | 44 | the dense layout's macro bar (layout 1: 56) |
+| `size.dense.control_height` | 20 | a dense segmented control or button (layout 1: 24) |
 
 The depth arcs and the wire use the existing strokes and the modulation accent (`accent.modulation`, `accent.modulation_wash`); the editor asks for live frames at `motion.scope_hz` (lane AM). The "+ Add" slot is a `stroke.thin` outline in `line.grid` (`text.label` while hovered), no fill; its glyphs are `glyph::ADD` and `glyph::MENU`.
 
@@ -691,9 +747,20 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 | (PBU) The plugin's browser over a folder store (a load, its undo step, no host writes, a save with a confirm, exactly `to_json()`), the crash folder offered once | `crates/enth-plugin/src/editor.rs` |
 | (SK3M) The lesson pane and the Create panel together over a real `Session`, by label, at 1200 × 800: neither, Learn only, both and Create only, where each pane goes (the Create column under the header row, the lesson pane left of it, nothing else in the column) and the overflow report for Init and the P1 default; a file dropped beside the lesson pane goes to Create; the snapshot of both open | `crates/enth-ui/tests/learn_create.rs` (`learn_create_open.png`) |
 | (PUI) The Create view over a real `Session`, by label, the test playing the shell: the flow from a drop (the intake's findings, K = 8 tiles through the rungs, select, ▶ candidate and start, the A/B against the upload, Use this as one undo step, the header's Undo), the flow from the folder browser (a short clip kept whole), cancel and a failure, the overflow report at 1200 × 800, no idle frames; snapshots | `crates/enth-ui/tests/create_view.rs` (`create_empty.png`, `create_browser.png`, `create_running.png`, `create_done.png`) |
+| (EDS) S2a patches loaded from files (the growl reference, report 04's reese and wobble) through a real `Session`, by label: nothing scrolls at 1200 × 800 in the dense layout and layout 1 scrolls three regions for the growl reference; a P1 patch is drawn by layout 1 whatever the policy, to the pixel; a layout asked for by name is never replaced; every basic and intermediate control is on screen; every label, enum item and value fits the 48 px cell and every segmented row fits its card; the audio-route drag (one route at 100 %, one undo step, undo and redo, AM too, refusals with their reasons, self-drive and loops, no handle on a P1 patch); two snapshots | `crates/enth-ui/tests/s2a_density.rs` (`editor_dense_g2.png`, `editor_audio_drag.png`) |
+| (EDS) The dense editor for the growl reference asks for a frame every 1/60 s while a note runs and for none when nothing is new | `crates/enth-ui/tests/repaint.rs` |
+| (EDS) The plugin draws S2a patches densely at an open with no `ENTH_LAYOUT`, and layout 1 when a layout was asked for and for a P1 patch; the dense tokens, the density field and the old-file reads | `crates/enth-plugin/src/editor.rs`, unit tests in `theme/sizes/dense.rs` and `layout.rs` |
 | (SKS) A `wt` and an audio route through a real `Session`, by label ([above](#the-wt-card-and-audio-routes-lane-sks-f2m)): the basic controls and "More", the minimum window's overflow report, `wt` out of the Add menu, one undo step per edit, the route's texts, no depth handle and a refused drop, depth as depth events, removal with undo; four snapshots | `crates/enth-ui/tests/wt.rs` (`card_wt.png`, `card_wt_more.png`, `editor_wt_fm.png`, `editor_wt_p1.png`) |
 
 ## For the next lanes
+
+**After EDS (the dense layout and the audio drag).**
+
+- Four of report 04's sketches (s04, s05, s08, s09) do not fit the dense layout (table above). A focus region (a `Region` variant that draws one card large and the others as title rows, chosen by a click on a header) would take them, and could take "More" too; the dense layout is the base it would sit on.
+- The S2a kinds draw no picture (`has_picture`): a `dist` transfer curve, a `ladder` response, an MSEG shape (a card's display slot is dropped for them now), an EQ curve and an OTT band view are display work, not layout work.
+- A wavetable that takes audio shows its source in the overview and the route list only; a small "← Osc 1" on the input's cell would say it where the drop happened.
+- The audio depth is 100 % at a drop; a depth handle for audio inputs needs a place on the knob that means "share of the source", which a ring does not have.
+- The frame cost of the dense layout is not in `frame_bench` yet (its cases are layout 1).
 
 **ED2 (modulation and feedback)** is done (above). Left for later lanes:
 

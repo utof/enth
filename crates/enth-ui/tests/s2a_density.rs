@@ -468,7 +468,7 @@ fn dropping_a_generators_handle_on_a_wt_input_makes_one_audio_route_at_the_defau
 
     // Dropped again where it exists, nothing changes.
     let again = drag_drop(&mut h, from, to);
-    assert!(again.contains("already"), "{again}");
+    assert!(again.contains("Osc 1 already feeds it (+100 %)"), "{again}");
     assert_eq!(h.state().session.patch().routes.len(), 1);
 }
 

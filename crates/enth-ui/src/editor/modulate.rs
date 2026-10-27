@@ -221,6 +221,9 @@ pub(crate) fn target(
                 "Drop to modulate it from {name} by {}",
                 signed_percent(NEW_ROUTE_DEPTH)
             ),
+            DropCheck::Routed(depth) if p.spec.flags.audio => {
+                format!("{name} already feeds it ({})", signed_percent(*depth))
+            }
             DropCheck::Routed(depth) => {
                 format!("{name} already modulates it ({})", signed_percent(*depth))
             }
