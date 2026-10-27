@@ -389,8 +389,15 @@ impl VoiceProcessorImpl {
         left: &mut VoiceCx<'_>,
         right: &mut VoiceCx<'_>,
     ) {
-        self.process(left);
-        right_twin.process(right);
+        match (self, right_twin) {
+            (VoiceProcessorImpl::Dist(l), VoiceProcessorImpl::Dist(r)) => {
+                VoiceProcessor::process_pair(l, r, left, right);
+            }
+            (l, r) => {
+                l.process(left);
+                r.process(right);
+            }
+        }
     }
 
     /// See [`VoiceProcessor::subnormals`].
