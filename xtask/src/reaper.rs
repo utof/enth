@@ -1374,16 +1374,30 @@ fn write_reaper_ini(sb: &Sandbox, bundled: &Path) -> Result<(), String> {
     ] {
         let _ = std::fs::remove_file(sb.home.join(stale));
     }
-    let ini = format!(
+    std::fs::write(sb.home.join("reaper.ini"), reaper_ini_text(bundled))
+        .map_err(|e| format!("reaper.ini: {e}"))
+}
+
+/// The sandbox's `reaper.ini`: the plugin paths, Dummy Audio at 48 kHz, and no update check.
+///
+/// `verchk=0` is the "check for new versions on startup" preference (lane RHX, 2026-10-27). The ini is rewritten once
+/// per run, so the first REAPER launch of a run has no `[verchk] lastt` and checks; REAPER 7.83 had just come out, and
+/// about 7 s into that launch a modal "REAPER New Version Notification" (725 x 380 at 598, 209 on the Xvfb screen, with
+/// no window manager to keep it behind) opened over the plugin window. It covered the `round` scenario's End menu item,
+/// so a single-scenario run never ended its round, and it blocked File > Quit until `timeout` killed REAPER after 90 s.
+/// A full run only escaped because its first launch (`state`) is shorter than 7 s and writes `lastt` on the way out,
+/// which spares every later launch. The test must not phone home and a new REAPER release must not fail it.
+fn reaper_ini_text(bundled: &Path) -> String {
+    format!(
         "[REAPER]\n\
          clap_path_linux-x86_64={dir}\n\
          vstpath={dir}\n\
          linux_audio_mode=2\n\
          linux_audio_srate=48000\n\
-         renderclosewhendone=4\n",
+         renderclosewhendone=4\n\
+         verchk=0\n",
         dir = bundled.display()
-    );
-    std::fs::write(sb.home.join("reaper.ini"), ini).map_err(|e| format!("reaper.ini: {e}"))
+    )
 }
 
 /// Runs the sandbox copy of REAPER under `xvfb-run` and waits for it. Never uses the real display.
@@ -1492,4 +1506,26 @@ fn run_script(
         );
     }
     Log { data }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_sandbox_ini_points_at_the_bundles_and_never_checks_for_a_new_reaper() {
+        let ini = reaper_ini_text(Path::new("/b/bundled"));
+        let lines: Vec<&str> = ini.lines().collect();
+        assert_eq!(lines[0], "[REAPER]");
+        for want in [
+            "clap_path_linux-x86_64=/b/bundled",
+            "vstpath=/b/bundled",
+            "linux_audio_mode=2",
+            // The update check opens a modal dialog over the plugin window about 7 s into the first launch of a run.
+            "verchk=0",
+        ] {
+            assert!(lines.contains(&want), "{want} is missing from {ini:?}");
+        }
+        assert_eq!(lines.iter().filter(|l| l.starts_with('[')).count(), 1);
+    }
 }
