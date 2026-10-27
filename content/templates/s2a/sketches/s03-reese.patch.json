@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S3 reese",
+    "description": "Report 04 S3: two saws 28 ct apart (beat about 0.016 x f0), a low-pass swept plus minus an octave over one bar, soft 8 dB distortion that leaves the lows alone, a six-stage phaser, a sine sub. Gap: no pitch bend, no true sub lane (the sub passes the filter and the effects).",
+    "tags": [
+      "bass",
+      "reese"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 260,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -6.2
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "semi": -7,
+        "fine": -14
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "semi": -7,
+        "fine": 14
+      }
+    },
+    {
+      "id": "osc3",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": -19,
+        "level": 50
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 700,
+        "resonance": 17.7,
+        "drive": 6
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "soft",
+        "drive": 8,
+        "keep_lows": 120
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 5,
+        "decay": 0,
+        "sustain": 100,
+        "release": 150
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "triangle",
+        "sync": true,
+        "beats": "bar",
+        "phase_mode": "reset"
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "phaser1",
+      "kind": "phaser",
+      "params": {
+        "stages": 6,
+        "rate": 0.2,
+        "feedback": 50,
+        "mix": 40
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "lfo1",
+      "dst": "filter1.cutoff",
+      "depth": 10.034
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S1 clean sub",
+    "description": "Report 04 S1: a sine through a 120 Hz low-pass, legato glide 40 ms, a quarter-note pump from a synced saw-down LFO on the level.",
+    "tags": [
+      "bass",
+      "sub"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 40,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -0.9
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "phase_mode": "reset",
+        "semi": -19
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 120,
+        "resonance": 8.9,
+        "drive": 4
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 40
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "saw_down",
+        "polarity": "unipolar",
+        "sync": true,
+        "beats": "quarter"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "lfo1",
+      "dst": "osc1.level",
+      "depth": -40
+    }
+  ]
+}

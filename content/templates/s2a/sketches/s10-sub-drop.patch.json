@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S10 sub drop",
+    "description": "Report 04 S10 (sub drop): a sine whose pitch falls two octaves over 1.5 s (261.6 to 65.4 Hz), a 120 ms noise burst, soft 6 dB distortion, a 2.5 s reverb.",
+    "tags": [
+      "fx",
+      "sub-drop"
+    ]
+  },
+  "voice": {
+    "mode": "poly",
+    "polyphony": 1,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -7.9
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": -12
+      }
+    },
+    {
+      "id": "noise1",
+      "kind": "noise",
+      "params": {
+        "color": "white",
+        "level": 0
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "soft",
+        "drive": 6
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 0,
+        "sustain": 100,
+        "release": 300
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 1500,
+        "sustain": 0,
+        "release": 0
+      }
+    },
+    {
+      "id": "env3",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 120,
+        "sustain": 0,
+        "release": 0
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "reverb1",
+      "kind": "reverb",
+      "params": {
+        "wet": -6,
+        "decay": 2500
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "env2",
+      "dst": "osc1.semi",
+      "depth": 25.0
+    },
+    {
+      "src": "env3",
+      "dst": "noise1.level",
+      "depth": 60
+    }
+  ]
+}

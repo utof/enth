@@ -1,0 +1,175 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S9 foghorn",
+    "description": "Report 04 S9: a three-voice wavetable phase-modulated by a sine two octaves up, two 200 Hz low-passes in series opened 3 octaves by a 23 ms / 4.2 s envelope, hard 18 dB clipping that spares the lows, a compressor, a reverb. The 17 s decay is a one-shot MSEG on the level (adsr stops at 10 s). Gaps: no noisy detune, no true sub lane (the EQ bell +3 dB at 4.85 kHz and high shelf -6 dB are in).",
+    "tags": [
+      "bass",
+      "foghorn",
+      "fm"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -3.0
+  },
+  "generators": [
+    {
+      "id": "wt1",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 50,
+        "semi": -19,
+        "pm_index": 2.0,
+        "unison": 3,
+        "detune": 30
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": 5,
+        "level": 0
+      }
+    },
+    {
+      "id": "osc3",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": -19,
+        "level": 60
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 200,
+        "resonance": 23
+      }
+    },
+    {
+      "id": "filter2",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 200,
+        "resonance": 23
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "hard",
+        "drive": 18,
+        "keep_lows": 200
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 0,
+        "sustain": 100,
+        "release": 850
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 23,
+        "decay": 4200,
+        "sustain": 0,
+        "release": 100
+      }
+    },
+    {
+      "id": "mseg1",
+      "kind": "mseg",
+      "params": {
+        "mode": "one_shot",
+        "sync": false,
+        "length": 17000,
+        "polarity": "unipolar",
+        "points": 2,
+        "time1": 0,
+        "level1": 0,
+        "curve1": -30,
+        "time2": 100,
+        "level2": 100,
+        "curve2": 0
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "comp1",
+      "kind": "comp",
+      "params": {
+        "threshold": -28.6,
+        "ratio": 4.85
+      }
+    },
+    {
+      "id": "eq1",
+      "kind": "eq",
+      "params": {
+        "bell2_freq": 4850,
+        "bell2_gain": 3,
+        "high_freq": 8000,
+        "high_gain": -6
+      }
+    },
+    {
+      "id": "reverb1",
+      "kind": "reverb",
+      "params": {
+        "wet": -12,
+        "low_cut": 300
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "osc2",
+      "dst": "wt1.pm",
+      "depth": 100
+    },
+    {
+      "src": "env2",
+      "dst": "filter1.cutoff",
+      "depth": 30.103
+    },
+    {
+      "src": "env2",
+      "dst": "filter2.cutoff",
+      "depth": 30.103
+    },
+    {
+      "src": "env2",
+      "dst": "wt1.position",
+      "depth": 15
+    },
+    {
+      "src": "mseg1",
+      "dst": "wt1.level",
+      "depth": -100
+    }
+  ]
+}

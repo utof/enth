@@ -2,34 +2,160 @@
   "schema": 1,
   "meta": {
     "name": "Growl (FM)",
-    "description": "A wavetable phase-modulated by a silent sine at 1:1, with a looping quarter-note MSEG moving the PM index, the wavetable position, the modulator's pitch, a band-pass and a formant (a towards o), then asymmetric distortion, a band-pass, a formant and a sine fold, and OTT. The mid-range vowel-like growl of report 04 (S4).",
-    "tags": ["bass", "growl", "fm"]
+    "description": "A wavetable phase-modulated by a silent sine at 1:1, with a looping quarter-note MSEG moving the PM index, the wavetable position, the modulator's pitch, a band-pass and a formant (a towards o), then asymmetric distortion, a band-pass, a formant and a sine fold, OTT and an EQ (low cut 150 Hz, a bell at 400 Hz). The mid-range vowel-like growl of report 04 (S4).",
+    "tags": [
+      "bass",
+      "growl",
+      "fm"
+    ]
   },
-  "voice": { "mode": "legato", "polyphony": 1, "glide": 25, "amp_env": "env1" },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 25,
+    "amp_env": "env1"
+  },
   "generators": [
-    { "id": "wt1", "kind": "wt", "params": { "table": "basic", "position": 50, "pm_index": 2 } },
-    { "id": "osc2", "kind": "osc", "params": { "wave": "sine", "level": 0 } }
+    {
+      "id": "wt1",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 50,
+        "pm_index": 2
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "level": 0
+      }
+    }
   ],
   "voice_fx": [
-    { "id": "dist1", "kind": "dist", "params": { "mode": "asymmetric", "drive": 18 } },
-    { "id": "filter1", "kind": "svf", "params": { "mode": "bp", "cutoff": 1000, "resonance": 30 } },
-    { "id": "formant1", "kind": "formant", "params": { "mix": 40 } },
-    { "id": "dist2", "kind": "dist", "params": { "mode": "sine_fold", "drive": 8, "mix": 40 } }
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "asymmetric",
+        "drive": 18
+      }
+    },
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "bp",
+        "cutoff": 1000,
+        "resonance": 30
+      }
+    },
+    {
+      "id": "formant1",
+      "kind": "formant",
+      "params": {
+        "mix": 40
+      }
+    },
+    {
+      "id": "dist2",
+      "kind": "dist",
+      "params": {
+        "mode": "sine_fold",
+        "drive": 8,
+        "mix": 40
+      }
+    }
   ],
   "modulators": [
-    { "id": "env1", "kind": "adsr", "params": { "attack": 2, "decay": 0, "sustain": 100, "release": 60 } },
-    { "id": "mseg1", "kind": "mseg", "params": { "mode": "loop", "sync": true, "beats": "quarter", "points": 4, "time1": 0, "level1": 10, "curve1": 40, "time2": 35, "level2": 100, "curve2": 0, "time3": 70, "level3": 30, "curve3": 0, "time4": 100, "level4": 70, "curve4": 0 } }
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 60
+      }
+    },
+    {
+      "id": "mseg1",
+      "kind": "mseg",
+      "params": {
+        "mode": "loop",
+        "sync": true,
+        "beats": "quarter",
+        "points": 4,
+        "time1": 0,
+        "level1": 10,
+        "curve1": 40,
+        "time2": 35,
+        "level2": 100,
+        "curve2": 0,
+        "time3": 70,
+        "level3": 30,
+        "curve3": 0,
+        "time4": 100,
+        "level4": 70,
+        "curve4": 0
+      }
+    }
   ],
   "fx": [
-    { "id": "ott1", "kind": "ott", "params": { "depth": 50 } }
+    {
+      "id": "ott1",
+      "kind": "ott",
+      "params": {
+        "depth": 50
+      }
+    },
+    {
+      "id": "eq1",
+      "kind": "eq",
+      "params": {
+        "low_cut": 150,
+        "bell1_freq": 400,
+        "bell1_gain": -6
+      }
+    }
   ],
   "routes": [
-    { "src": "osc2", "dst": "wt1.pm", "depth": 100 },
-    { "src": "mseg1", "dst": "wt1.pm_index", "depth": 40 },
-    { "src": "mseg1", "dst": "wt1.position", "depth": 25 },
-    { "src": "mseg1", "dst": "osc2.semi", "depth": 5 },
-    { "src": "mseg1", "dst": "filter1.cutoff", "depth": 15 },
-    { "src": "mseg1", "dst": "formant1.f1", "depth": -30 },
-    { "src": "mseg1", "dst": "formant1.f2", "depth": -30 }
+    {
+      "src": "osc2",
+      "dst": "wt1.pm",
+      "depth": 100
+    },
+    {
+      "src": "mseg1",
+      "dst": "wt1.pm_index",
+      "depth": 40
+    },
+    {
+      "src": "mseg1",
+      "dst": "wt1.position",
+      "depth": 25
+    },
+    {
+      "src": "mseg1",
+      "dst": "osc2.semi",
+      "depth": 5
+    },
+    {
+      "src": "mseg1",
+      "dst": "filter1.cutoff",
+      "depth": 15
+    },
+    {
+      "src": "mseg1",
+      "dst": "formant1.f1",
+      "depth": -30
+    },
+    {
+      "src": "mseg1",
+      "dst": "formant1.f2",
+      "depth": -30
+    }
   ]
 }

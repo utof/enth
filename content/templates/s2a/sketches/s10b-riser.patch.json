@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S10b riser",
+    "description": "Report 04 S10 (riser, 4 bars = 6.86 s): noise and a seven-voice saw, a high-pass opened from 200 Hz to 6.4 kHz and pitch raised an octave by a one-shot MSEG, a quarter LFO on a band-pass. Needs a longer performance than the default three seconds.",
+    "tags": [
+      "fx",
+      "riser"
+    ]
+  },
+  "voice": {
+    "mode": "poly",
+    "polyphony": 1,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -5.3
+  },
+  "generators": [
+    {
+      "id": "wt1",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 0,
+        "semi": 0,
+        "unison": 7,
+        "detune": 25
+      }
+    },
+    {
+      "id": "noise1",
+      "kind": "noise",
+      "params": {
+        "color": "white",
+        "level": 70
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "hp",
+        "cutoff": 200
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 0,
+        "sustain": 100,
+        "release": 300
+      }
+    },
+    {
+      "id": "mseg1",
+      "kind": "mseg",
+      "params": {
+        "mode": "one_shot",
+        "sync": true,
+        "beats": "four_bars",
+        "polarity": "unipolar",
+        "points": 2,
+        "time1": 0,
+        "level1": 0,
+        "curve1": 0,
+        "time2": 100,
+        "level2": 100,
+        "curve2": 0
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "sync": true,
+        "beats": "quarter"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "mseg1",
+      "dst": "filter1.cutoff",
+      "depth": 50
+    },
+    {
+      "src": "mseg1",
+      "dst": "wt1.semi",
+      "depth": 12.5
+    }
+  ]
+}

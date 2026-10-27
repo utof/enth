@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S7b laser",
+    "description": "Report 04 S7 (laser): a wavetable sine whose pitch falls three octaves in 80 ms, phase-modulated by a sine at ratio 2 with a 60 ms index envelope.",
+    "tags": [
+      "fx",
+      "laser"
+    ]
+  },
+  "voice": {
+    "mode": "poly",
+    "polyphony": 1,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -2.9
+  },
+  "generators": [
+    {
+      "id": "wt1",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 0,
+        "semi": 0,
+        "pm_index": 3.0
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": 12,
+        "level": 0
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 400,
+        "sustain": 0,
+        "release": 100
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 80,
+        "sustain": 0,
+        "release": 0
+      }
+    },
+    {
+      "id": "env3",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 60,
+        "sustain": 0,
+        "release": 0
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "env2",
+      "dst": "wt1.semi",
+      "depth": 37.5
+    },
+    {
+      "src": "env2",
+      "dst": "osc2.semi",
+      "depth": 37.5
+    },
+    {
+      "src": "osc2",
+      "dst": "wt1.pm",
+      "depth": 100
+    },
+    {
+      "src": "env3",
+      "dst": "wt1.pm_index",
+      "depth": 60
+    }
+  ]
+}
