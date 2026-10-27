@@ -131,8 +131,12 @@ fn named_template(name: &str) -> Result<Template, String> {
     if let Some(t) = enth_solver::create::s2a::s2a_template(name) {
         return Ok(t);
     }
-    if name.contains('/') || name.ends_with(".json") {
-        let path = Path::new(name);
+    let path = Path::new(name);
+    if name.contains('/')
+        || path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+    {
         let text = fs::read_to_string(path)
             .map_err(|e| format!("cannot read the template file {name}: {e}"))?;
         let patch = enth_patch::file::load(&text)
