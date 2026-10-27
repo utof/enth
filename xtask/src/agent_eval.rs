@@ -497,6 +497,16 @@ changelog = ["1 (2026-10-19, P1a lane E): ten goals", "2 (2026-10-20, P1b lane E
             for name in ["given", "self"] {
                 let text = run::render_prompt(&set.prompt(name).unwrap(), g);
                 let announced = text.contains("how the patch is built");
+                if announced {
+                    assert!(
+                        text.contains(&format!(
+                            ". {}",
+                            "The check looks at how the patch is built"
+                        )),
+                        "{} {name}: the note is a sentence of its own, after the brief",
+                        g.id
+                    );
+                }
                 assert_eq!(
                     announced,
                     !g.requires.is_empty(),

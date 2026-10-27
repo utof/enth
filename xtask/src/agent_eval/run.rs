@@ -183,7 +183,7 @@ pub struct TrialResult {
 /// What the prompt says after the brief of a goal that has a structure check (`requires`), so the agent is not
 /// surprised by a judge that looks at how the patch is built. Goals without `requires` get nothing, and their
 /// prompts are the ones eval versions 1 to 3 rendered.
-const BUILD_NOTE: &str = " The check looks at how the patch is built as well as how it sounds: build it the way the goal says.";
+const BUILD_NOTE: &str = "The check looks at how the patch is built as well as how it sounds: build it the way the goal says.";
 
 /// Replace the placeholders of a prompt template.
 pub fn render_prompt(template: &str, goal: &Goal) -> String {
@@ -192,7 +192,14 @@ pub fn render_prompt(template: &str, goal: &Goal) -> String {
     let brief = if goal.requires.is_empty() {
         goal.brief.clone()
     } else {
-        format!("{}{BUILD_NOTE}", goal.brief)
+        // A brief is a phrase without a full stop; the note is a sentence of its own.
+        let brief = goal.brief.trim_end();
+        let stop = if brief.ends_with(['.', '!', '?']) {
+            ""
+        } else {
+            "."
+        };
+        format!("{brief}{stop} {BUILD_NOTE}")
     };
     fill(
         template,
