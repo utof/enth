@@ -707,7 +707,7 @@ mod tests {
         // ENTH_LAYOUT naming layout 1 is a layout asked for: the author sees what layout 1 does with it.
         let (density, overflow) = run(Some(Ok(LayoutSpec::lanes())), "lanes", &growl);
         assert_eq!(density, enth_ui::editor::layout::Density::Normal);
-        assert!(!overflow.is_empty());
+        assert_ne!(overflow.len(), 0, "layout 1 scrolls the growl reference");
         // The P1 patch is layout 1 either way.
         let (density, _) = run(None, "lanes", &Patch::init());
         assert_eq!(density, enth_ui::editor::layout::Density::Normal);
