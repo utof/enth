@@ -88,7 +88,9 @@ fn budget(ir: u64) -> LibraryBenchmarkConfig {
 #[library_benchmark]
 #[bench::g1_stereo_16v(args = (16,), setup = g1_stereo, config = budget(STEREO_BUDGET_IR))]
 fn render(p: Prepared) -> f32 {
-    render_stereo(p)
+    // Not a tail call: callgrind collects from the entry of the benchmark function to its return, and a function
+    // that ends in a jump to `render_stereo` is left at once, which counted 0 instructions (lane PRF, 2026-10-27).
+    black_box(render_stereo(p))
 }
 
 library_benchmark_group!(name = stereo, benchmarks = [render]);
