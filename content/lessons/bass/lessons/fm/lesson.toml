@@ -1,0 +1,312 @@
+# Lesson 12.2, FM bass [bass · intermediate] (content/lessons/PLAN.md §10, U12). After the basic `wt` (the plan's
+# order), and the lesson that teaches audio routes: a generator routed into another's `pm`.
+#
+# Hear (index 1 to 8, then ratios 1:1, 1:2, 1:3), a "which has more FM?" item → Name → Try (the audio route, checked
+# by brightness) → a growl (index, brightness) → churn (the modulator's fine, a patch goal) → talk in time (a synced
+# LFO on the index, beating) → two ear questions.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): osc2 and noise1 removed (four generators at most), osc1 off, wt1
+# the carrier, wt2 the modulator at level 0 %, wt2 -> wt1.pm at 100 %. The centroid with the index (1:1): no route
+# 131.8 Hz, 1 209, 2 320, 2.5 307, 3 314, 3.5 338, 4 384, 5 555, 8 801. sound/1 is nearly deaf to the index (about
+# 0.9 JND per step), so there is no round; the ear question passes on the centroid. The ratio at index 2: 1:1 320 Hz,
+# 1:2 393, 1:3 610 (1:1/1:2 3.88 JND, 1:2/1:3 3.53). wt2.fine +30 ct at index 3 reads a filter sweep (and tremolo) at
+# 4.57 Hz, +50 ct 7.66 Hz. lfo1 at 1/8 on the index (30 %) reads as beating at 4.67 Hz.
+
+schema = "enth.lesson/1"
+id = "fm"
+title = "FM bass"
+tier = "intermediate"
+objective = "Route one oscillator into another's phase, set how hard it bends and at what ratio, and make it talk in time."
+teaches = ["wt.pm", "wt.pm_index", "wt.fine", "wt.level"]
+
+# Hear: the carrier alone, then wt2 routed into its PM at index 1, 3, 5 and 8; index 5 an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/fm-off.patch.json"
+hide = ["osc1.*", "filter1.*", "env1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No FM"
+patch = "patches/fm-off.patch.json"
+
+[[steps.examples]]
+label = "Index 1"
+patch = "patches/fm-i1.patch.json"
+
+[[steps.examples]]
+label = "Index 3"
+patch = "patches/fm-i3.patch.json"
+
+[[steps.examples]]
+label = "Index 5"
+patch = "patches/fm-i5.patch.json"
+
+[[steps.examples]]
+label = "Index 8"
+patch = "patches/fm-i8.patch.json"
+
+[[steps.examples]]
+label = "Index 5, low"
+patch = "patches/fm-i5.patch.json"
+transpose = -12
+
+# Hear: the modulator at 1:1, 1:2 and 1:3 (index 2).
+[[steps]]
+id = "hear-ratio"
+kind = "listen"
+text = "hear-ratio.md"
+
+[steps.view]
+hide = ["osc1.*", "filter1.*", "env1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "1:1"
+patch = "patches/fm-r1.patch.json"
+
+[[steps.examples]]
+label = "1:2"
+patch = "patches/fm-r2.patch.json"
+
+[[steps.examples]]
+label = "1:3"
+patch = "patches/fm-r3.patch.json"
+
+# Hear's ear question: which has more FM? (index 1 against 5: sound/1 under 2 JND, but the centroid reads 209 against
+# 555 Hz, far more than two steps.)
+[[steps]]
+id = "which-more"
+kind = "choose"
+text = "which-more.md"
+hints = ["More FM is brighter and more metallic: listen to the top."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/fm-i1.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fm-i5.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/fm-i3.patch.json"
+highlight = ["wt1.pm", "wt1.pm_index", "wt2.level", "wt2.semi"]
+hide = ["osc1.*", "filter1.*", "env1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: make the audio route. Start: the carrier and the silent modulator, not routed (131.8 Hz: fails `brightness >
+# 250Hz`). Witness: wt2 -> wt1.pm at 100 % (index 2: 320 Hz). A route is structure (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on wt2's card onto wt1's PM: a generator dropped on PM makes an audio route.",
+  "Give the route its full depth.",
+]
+witness = "patches/fm-r1.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/fm-off.patch.json"
+highlight = ["wt1.pm"]
+editable = ["wt2.*", "wt1.pm"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt2.table",
+  "wt2.position",
+  "wt2.semi",
+  "wt2.fine",
+  "wt2.level",
+  "wt2.pm_index",
+  "wt2.feedback",
+  "wt1.pm_index",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt2 -> wt1.pm > 50%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 250Hz"]
+
+# Do: make it growl. Start: index 3 (314 Hz: fails `brightness > 650Hz`). Witness: index 8 (801 Hz). Index 2 reads
+# 320 Hz and 3 314, so the start sits at 3, where the measured hint's first probe (index 4: 384 Hz) already helps.
+[[steps]]
+id = "growl"
+kind = "do"
+text = "growl.md"
+hints = [
+  "Turn wt1's PM index up: the route bends the phase further.",
+  "Around 8 the sine has turned into a bright, clangy growl.",
+]
+witness = "patches/fm-i8.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/fm-i3.patch.json"
+highlight = ["wt1.pm_index"]
+editable = ["wt1.pm_index"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt2.table",
+  "wt2.position",
+  "wt2.semi",
+  "wt2.fine",
+  "wt2.level",
+  "wt2.pm_index",
+  "wt2.feedback",
+  "wt1.pm",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.pm_index > 6"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 650Hz"]
+
+# Do: churn. Start: index 3 at 1:1 (no sweep). Witness: wt2.fine +30 ct: the spectrum turns over at the difference,
+# read as a filter sweep at 4.57 Hz. A patch goal: from 0 ct (the middle of fine's range) the measured hint has no
+# direction to probe, and a few cents off is too slow to read on the held note; the ear question after it checks the
+# churn by its sweep.
+[[steps]]
+id = "churn"
+kind = "do"
+text = "churn.md"
+hints = [
+  "Turn wt2's Fine up a few tens of cents.",
+  "About 30 cents: the timbre churns a few times a second.",
+]
+witness = "patches/fm-i3-fine30.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/fm-i3.patch.json"
+highlight = ["wt2.fine"]
+editable = ["wt2.fine"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt1.pm",
+  "wt1.pm_index",
+  "wt2.semi",
+  "wt2.level",
+]
+
+[steps.check]
+kind = "patch"
+predicates = ["wt2.fine > 15ct"]
+
+# Do: make it talk in time. Start: index 3 with lfo1 synced to 1/8, routed nowhere. Witness: lfo1 -> wt1.pm_index at
+# 30 %: the index swings with the beat, read as beating at 4.67 Hz (1/8 at 140 BPM; inside [4.2 Hz, 5.2 Hz]). A route
+# is structure (noted).
+[[steps]]
+id = "talk"
+kind = "do"
+text = "talk.md"
+hints = ["Drag the ⊕ on lfo1's tile onto wt1's PM index knob.", "About a third of the depth."]
+witness = "patches/fm-i3-lfo.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/fm-i3-lfo-ready.patch.json"
+highlight = ["lfo1 -> wt1.pm_index", "wt1.pm_index"]
+editable = ["lfo1 -> wt1.pm_index", "wt1.pm_index"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt2.table",
+  "wt2.position",
+  "wt2.semi",
+  "wt2.fine",
+  "wt2.level",
+  "wt2.pm_index",
+  "wt2.feedback",
+  "wt1.pm",
+  "lfo1.sync",
+  "lfo1.beats",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> wt1.pm_index > 15%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["beating in [4.2Hz, 5.2Hz]"]
+
+# Check: which churns? (index 3 at 1:1 against 30 cents off: the sweep reads 4.57 Hz in one and nothing in the
+# other.)
+[[steps]]
+id = "check-churn"
+kind = "choose"
+text = "check-churn.md"
+hints = ["One is steady; in the other the timbre turns over a few times a second."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/fm-i3.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fm-i3-fine30.patch.json"
+
+# Check: 1:1 or 1:2? (index 2: sound/1 3.88 JND.)
+[[steps]]
+id = "check-ratio"
+kind = "choose"
+text = "check-ratio.md"
+hints = ["With the modulator an octave up the sound is hollower and brighter."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/fm-r2.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fm-r1.patch.json"

@@ -1,0 +1,346 @@
+# Lesson 12.3, Bend and feedback [bass · intermediate] (content/lessons/PLAN.md §10, U12).
+#
+# Hear (feedback 0 to 100 %; three warps), a "which has more feedback?" item → Name → Try (feedback, checked by
+# brightness) → two rounds on the feedback → the bend warp (brightness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): wt1 alone, a sine (basic at 0 %), the filter open. Feedback: 0 %
+# 131.8 Hz, 10 147, 20 173, 30 221, 40 325, 50 517, 60 786, 75 1323, 100 2672 (sound/1 0/40 % 1.52 JND, 20/60 4.03,
+# 40/100 6.40), so the rounds draw from {40, 60, 100} % out of 0 %. Bend: ±20 % 248 Hz, 40 % 348, 60 % 461, 100 %
+# 801; squeeze 60 % 532; sync 60 % reads its pitch at 662 Hz (115 JND from the sine); quantize 60 % 3570 Hz
+# (bend/quantize 4.76 JND).
+
+schema = "enth.lesson/1"
+id = "warp-and-feedback"
+title = "Bend and feedback"
+tier = "intermediate"
+objective = "Grow harmonics from one oscillator with feedback and warps, and judge how rough by ear."
+teaches = ["wt.feedback", "wt.warp", "wt.warp_amount"]
+
+# Hear: a sine feeding 0, 20, 40, 60 and 100 % of itself back; then a sine bent by the bend, sync and quantize warps
+# at 60 %.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/fb-0.patch.json"
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[[steps.examples]]
+label = "Feedback 0 %"
+patch = "patches/fb-0.patch.json"
+
+[[steps.examples]]
+label = "20 %"
+patch = "patches/fb-20.patch.json"
+
+[[steps.examples]]
+label = "40 %"
+patch = "patches/fb-40.patch.json"
+
+[[steps.examples]]
+label = "60 %"
+patch = "patches/fb-60.patch.json"
+
+[[steps.examples]]
+label = "100 %"
+patch = "patches/fb-100.patch.json"
+
+[[steps.examples]]
+label = "Bend"
+patch = "patches/warp-bend-60.patch.json"
+
+[[steps.examples]]
+label = "Sync"
+patch = "patches/warp-sync-60.patch.json"
+
+[[steps.examples]]
+label = "Quantize"
+patch = "patches/warp-quantize-60.patch.json"
+
+# Hear's ear question: which has more feedback? (20 against 60 %: sound/1 4.03 JND.)
+[[steps]]
+id = "which-rougher"
+kind = "choose"
+text = "which-rougher.md"
+hints = ["Feedback turns the sine into a saw, then a rough edge."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/fb-60.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/fb-20.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/fb-20.patch.json"
+highlight = ["wt1.feedback", "wt1.warp", "wt1.warp_amount"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+# Try: feed it back. Start: 20 % (173 Hz: fails `brightness > 600Hz`). Witness: 60 % (786 Hz).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Turn wt1's Feedback up.", "Past halfway the sine is a buzzing saw."]
+witness = "patches/fb-60.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/fb-20.patch.json"
+highlight = ["wt1.feedback"]
+editable = ["wt1.feedback"]
+locked = ["wt1.table", "wt1.position", "wt1.warp", "wt1.warp_amount"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.feedback > 50%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 600Hz"]
+
+# Do, round 1: a hidden feedback from {40, 60, 100} %, out of the sine (seed 1).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = ["Is the target rougher or smoother than yours? Turn the feedback that way."]
+
+[steps.view]
+highlight = ["wt1.feedback"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "wt1.feedback", set = [40.0, 60.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Feedback 0 %", description = "wt1 alone, a sine (basic at 0 %), with no feedback." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", enabled = false },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+  { id = "wt1", kind = "wt", params = {  } },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 20000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["wt1.feedback"]
+locked = ["wt1.table", "wt1.position", "wt1.warp", "wt1.warp_amount"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Feedback, round 1"
+tags = ["bass", "feedback"]
+
+# Do, round 2: a hidden feedback from {40, 60, 100} %, out of the sine (seed 2).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = ["Is the target rougher or smoother than yours? Turn the feedback that way."]
+
+[steps.view]
+highlight = ["wt1.feedback"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "wt1.feedback", set = [40.0, 60.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Feedback 0 %", description = "wt1 alone, a sine (basic at 0 %), with no feedback." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", enabled = false },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+  { id = "wt1", kind = "wt", params = {  } },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 20000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["wt1.feedback"]
+locked = ["wt1.table", "wt1.position", "wt1.warp", "wt1.warp_amount"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Feedback, round 2"
+tags = ["bass", "feedback"]
+
+# Do: bend the cycle. Start: the bend warp at 0 %, the identity (131.8 Hz: fails `brightness > 350Hz`). Witness: 60 %
+# (461 Hz). Bend is symmetric in its sign here (±20 % both read 248 Hz), so a probe either way helps.
+[[steps]]
+id = "bend"
+kind = "do"
+text = "bend.md"
+hints = ["Turn wt1's Warp amount away from the middle."]
+witness = "patches/warp-bend-60.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/warp-bend-0.patch.json"
+highlight = ["wt1.warp_amount"]
+editable = ["wt1.warp_amount"]
+locked = ["wt1.table", "wt1.position", "wt1.warp", "wt1.feedback"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.warp_amount > 40%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 350Hz"]
+
+# Check: bend or quantize? (both at 60 %: sound/1 4.76 JND.)
+[[steps]]
+id = "check-warp"
+kind = "choose"
+text = "check-warp.md"
+hints = ["Quantize steps the wave into stairs: a hard, digital fizz."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/warp-bend-60.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/warp-quantize-60.patch.json"

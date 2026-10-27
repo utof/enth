@@ -1,0 +1,239 @@
+# Lesson 12.5, Unison [bass · intermediate] (content/lessons/PLAN.md §10, U12). The spread is taught by ear only
+# (headphones): the descriptors read the mid signal, where seven copies sound the same mono or wide.
+#
+# Hear (1, 3 and 7 copies; ±50 cents; mono and wide), a "which has seven?" item → Name → Try (seven copies, checked
+# by pitch steadiness) → wider detune and blend 0 % (both by pitch steadiness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): wt1 alone on the basic table at 100 %, the filter open. Pitch
+# steadiness (`pitch.stability`) and centroid: 1 copy 1.000 and 2726 Hz; 3 at ±20 ct 0.934 and 3480 (beating 1.51
+# Hz); 7 at ±20 0.948 and 3744; 7 at ±50 0.781 and 3605 (beating 1.26 Hz); 7 at ±50 with blend 0 % 1.000 and 2726
+# (the center copy alone). Spread 0 and 100 % read alike (0.943 and 0.959). sound/1 is deaf to unison (1 against 7
+# copies 0.49 JND, ±20 against ±50 0.50), so there is no round; the ear questions pass on the descriptors.
+
+schema = "enth.lesson/1"
+id = "unison"
+title = "Unison"
+tier = "intermediate"
+objective = "Stack detuned copies of an oscillator, set how far apart they sit, and hear the center alone."
+teaches = ["wt.unison", "wt.detune", "wt.blend", "wt.spread"]
+
+# Hear: one copy, three, seven at ±20 cents; seven at ±50 cents; seven mono and wide (headphones); seven at ±20 cents
+# an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/uni-1-20.patch.json"
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[[steps.examples]]
+label = "1 copy"
+patch = "patches/uni-1-20.patch.json"
+
+[[steps.examples]]
+label = "3 copies"
+patch = "patches/uni-3-20.patch.json"
+
+[[steps.examples]]
+label = "7 copies"
+patch = "patches/uni-7-20.patch.json"
+
+[[steps.examples]]
+label = "7, ±50 ct"
+patch = "patches/uni-7-50.patch.json"
+
+[[steps.examples]]
+label = "7, mono"
+patch = "patches/uni-7-20-spread0.patch.json"
+
+[[steps.examples]]
+label = "7, wide"
+patch = "patches/uni-7-20-spread100.patch.json"
+
+[[steps.examples]]
+label = "7, low"
+patch = "patches/uni-7-20.patch.json"
+transpose = -12
+
+# Hear's ear question: which has seven copies? (1 against 7: sound/1 0.49 JND, but the centroid reads 2726 against
+# 3744 Hz, and the pitch steadiness 1.00 against 0.95.)
+[[steps]]
+id = "which-thicker"
+kind = "choose"
+text = "which-thicker.md"
+hints = ["Seven copies shimmer and smear; one stays still."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/uni-1-20.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/uni-7-20.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/uni-7-20.patch.json"
+highlight = ["wt1.unison", "wt1.detune", "wt1.blend", "wt1.spread"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+# Try: thicken it. Start: one copy (pitch steadiness 1.00: fails `stability < 0.97`). Witness: seven copies at ±20
+# cents (0.948). Unison is a structural count, so the step teaches structure (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Raise wt1's Unison to 7."]
+witness = "patches/uni-7-20.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/uni-1-20.patch.json"
+highlight = ["wt1.unison"]
+editable = ["wt1.unison"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt1.detune",
+  "wt1.blend",
+  "wt1.spread",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.unison >= 5"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability < 0.97"]
+
+# Do: wider. Start: seven copies at ±20 cents (0.948: fails `stability < 0.85`). Witness: ±50 cents (0.781).
+[[steps]]
+id = "detune"
+kind = "do"
+text = "detune.md"
+hints = ["Turn wt1's Detune up.", "Around 50 cents the copies sound like a smeared, detuned chord."]
+witness = "patches/uni-7-50.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/uni-7-20.patch.json"
+highlight = ["wt1.detune"]
+editable = ["wt1.detune"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt1.unison",
+  "wt1.blend",
+  "wt1.spread",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.detune > 40ct"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability < 0.85"]
+
+# Do: the center alone. Start: seven copies at ±50 cents (0.781: fails `stability > 0.99`). Witness: blend 0 %
+# (1.00): only the center copy is left. Blend 50 % reads 0.959, 40 % 0.981, 30 % 0.987, 20 % 0.992, so the
+# predicate's 30 % holds wherever the sound passes.
+[[steps]]
+id = "blend"
+kind = "do"
+text = "blend.md"
+hints = ["Turn wt1's Blend all the way down."]
+witness = "patches/uni-7-50-blend0.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/uni-7-50.patch.json"
+highlight = ["wt1.blend"]
+editable = ["wt1.blend"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt1.unison",
+  "wt1.detune",
+  "wt1.spread",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.blend < 30%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["stability > 0.99"]
+
+# Check: which is detuned wider? (seven copies at ±20 against ±50 cents: sound/1 0.50 JND; the pitch steadiness 0.948
+# against 0.781, and beating found only at ±50.)
+[[steps]]
+id = "check-wider"
+kind = "choose"
+text = "check-wider.md"
+hints = ["Wider detune smears the pitch and beats slowly."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/uni-7-50.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/uni-7-20.patch.json"
