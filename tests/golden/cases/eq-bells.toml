@@ -1,0 +1,23 @@
+description = "S2a EQ: both bells in play: bell 1 at 220 Hz, +9 dB, Q 3 and bell 2 at 2.5 kHz, -12 dB, Q 6. Guards the peaking sections, their gains of both signs and their Q. The reference voice goes through a gate envelope (attack 0, decay 0, sustain 100 %, release 0) so lane D2's envelope curves do not move it, on a saw (lane D1's) chord of three notes with off-grid times."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+    { key = 57, velocity = 0.9, on_s = 0.0171, off_s = 0.9 },
+    { key = 64, velocity = 0.8, on_s = 0.3, off_s = 1.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+fx = [
+    { id = "eq1", kind = "eq", params = { bell1_freq = 220, bell1_gain = 9, bell1_q = 3, bell2_freq = "2.5kHz", bell2_gain = -12, bell2_q = 6 } },
+]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+]

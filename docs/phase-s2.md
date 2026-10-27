@@ -102,7 +102,7 @@ Sizes are agent-hours (report 06 §5's; sizes this plan changed or added are mar
 | **MSEG** | `mseg` (modulators): a fixed point count, a curve per segment, a length synced or in ms, loop, one-shot and sustain-loop; and **envelope times above 10 s** in CAT's form (a parameter or a kind) | F1m, TMP | 1.5–2.5 (this plan) | L |
 | **UNI** | Unison inside `wt`: mono first on `wide` f32x8 lanes with a fixed horizontal sum, detune and blend, then stereo spread through SVP's bus; the six-target golden for `wide`'s exact subset | WT, SVP, S0d's `wide` | 1.5–2.5 (this plan) | L |
 | **MOD** | `chorus` (with a flanger mode) and `phaser` on one modulated-delay core (fx) | F1m | 2–3 | L |
-| **EQ** | `eq` (fx) wrapping [`enth-dsp/src/biquad.rs`](dsp/biquad.md) (lane BQ owns it; per-segment coefficient ramps are EQ's to add) | F1m | 1–1.5 | L |
+| **EQ** | `eq` (fx): six TPT state-variable sections designed from RBJ's cookbook, with [`enth-dsp/src/biquad.rs`](dsp/biquad.md) as the test's independent reference (built 2026-10-27; ramped biquad coefficients blew up under fast modulation, so lane EQ did not wrap it) | F1m | 1–1.5 | L |
 | **DLY** | `delay` (fx), synced in beats | F1m, TMP | 1–2 | L |
 
 **Integration**

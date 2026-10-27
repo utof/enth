@@ -12,7 +12,7 @@
 //! path at every value**: nothing switches them in or out at the ends of their ranges (`low_cut` 10 Hz, `high_cut`
 //! 20 kHz), because both are modulatable and a stage that appears at a range end would click as a source crosses it.
 //! At the end they are out of the way, not bypassed: `low_cut` at 10 Hz is −0.3 dB at 20 Hz and under 0.01 dB from
-//! 50 Hz up, and `high_cut` at 20 kHz is −0.3 dB at 10 kHz and −3 dB at 20 kHz itself; `mix` is the bypass. Shelves and
+//! 50 Hz up, and `high_cut` at 20 kHz is −3 dB at 20 kHz itself and, digitally, at most 0.24 dB down at 10 kHz (−0.008 dB at 48 kHz, lane EQ's measurement); `mix` is the bypass. Shelves and
 //! bells are the cookbook's (EQ's acceptance: within 0.1 dB of it), a band at 0 dB does nothing. Bells at a high Q and
 //! −24 dB are notches. A global effect: only global sources modulate it.
 //!

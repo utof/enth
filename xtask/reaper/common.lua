@@ -168,6 +168,13 @@ function show_editor(track, fx, fn, title)
   end, 15, 0.25, function(ok) fn(ok, reaper.time_precise() - t0) end)
 end
 
+-- Writes a PNG of the plugin's window (or, with `whole`, of the whole Xvfb display) as <label>.png beside the log, for
+-- reading a failure afterwards: the pixels a click met. Best effort; a failure to capture is not a check.
+function shot(label, whole)
+  local path = string.format("%s/%s-%s.png", OUT, os.getenv("ENTH_LOG"):gsub("%.log$", ""), label)
+  xinput(string.format("shot '%s'%s", path, whole and "" or (" " .. string.format("%q", editor_title()))))
+end
+
 function hide_editor(track, fx) reaper.TrackFX_Show(track, fx, 2) end
 
 -- Blocks REAPER's script thread for `sec` seconds (for the few places that must act in sequence; the plugin's own
