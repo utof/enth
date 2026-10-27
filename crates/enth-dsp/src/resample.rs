@@ -36,23 +36,98 @@
 //! two halves are in phase to within 6e-4 rad, so `A0` applied twice reproduces its phase with unit magnitude
 //! ([`PhaseChain`]).
 
-use crate::util::flush::flush64;
+use core::fmt::Debug;
+use core::ops::{Add, Mul, Sub};
+
+use wide::f64x2;
+
+use crate::util::flush::{FLUSH_THRESHOLD, flush64};
+
+/// What the filters of this module run on: one `f64` (the default, and what every scalar caller uses), or the two
+/// channels of a stereo voice side by side in an `f64x2` (lane PRF: `dist`'s paired kernel, `dist::pair`).
+///
+/// Every operation a lane type offers is an IEEE `f64` `+ − ×` or a compare and a select on each lane alone, so a
+/// filter written once over `Lane` gives each lane exactly the bits the scalar filter gives the same input. The
+/// coefficients stay `f64`; a filter splats them at the point of use, which is the identity for the scalar type.
+pub trait Lane:
+    Copy + Debug + Default + PartialEq + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self>
+{
+    /// All lanes `0.0`.
+    const ZERO: Self;
+    /// All lanes `0.5`.
+    const HALF: Self;
+    /// `x` in every lane.
+    fn splat(x: f64) -> Self;
+    /// [`flush64`] on every lane.
+    #[must_use]
+    fn flush(self) -> Self;
+    /// How many lanes are subnormal (test support).
+    fn subnormal_lanes(self) -> usize;
+}
+
+impl Lane for f64 {
+    const ZERO: Self = 0.0;
+    const HALF: Self = 0.5;
+
+    #[inline(always)]
+    fn splat(x: f64) -> Self {
+        x
+    }
+
+    #[inline(always)]
+    fn flush(self) -> Self {
+        flush64(self)
+    }
+
+    #[inline(always)]
+    fn subnormal_lanes(self) -> usize {
+        usize::from(self.is_subnormal())
+    }
+}
+
+impl Lane for f64x2 {
+    const ZERO: Self = f64x2::new([0.0; 2]);
+    const HALF: Self = f64x2::new([0.5; 2]);
+
+    #[inline(always)]
+    fn splat(x: f64) -> Self {
+        f64x2::splat(x)
+    }
+
+    /// `|x| < 1e-15` becomes `+0.0`, on each lane (NaN and infinities pass, as in [`flush64`]).
+    #[inline(always)]
+    fn flush(self) -> Self {
+        let tiny = self.abs().simd_lt(f64x2::splat(f64::from(FLUSH_THRESHOLD)));
+        tiny.select(Self::ZERO, self)
+    }
+
+    #[inline(always)]
+    fn subnormal_lanes(self) -> usize {
+        self.to_array()
+            .iter()
+            .map(|x| usize::from(x.is_subnormal()))
+            .sum()
+    }
+}
 
 /// One first-order all-pass section `(a + z⁻¹)/(1 + a·z⁻¹)`: `y[n] = a·(x[n] − y[n−1]) + x[n−1]`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Allpass {
-    x1: f64,
-    y1: f64,
+pub struct Allpass<L: Lane = f64> {
+    x1: L,
+    y1: L,
 }
 
-impl Allpass {
+impl<L: Lane> Allpass<L> {
     /// A section at rest.
-    pub const ZERO: Allpass = Allpass { x1: 0.0, y1: 0.0 };
+    pub const ZERO: Self = Self {
+        x1: L::ZERO,
+        y1: L::ZERO,
+    };
 
     /// Run one sample through the section with coefficient `a`.
     #[inline(always)]
-    pub fn step(&mut self, a: f64, x: f64) -> f64 {
-        let y = a * (x - self.y1) + self.x1;
+    pub fn step(&mut self, a: f64, x: L) -> L {
+        let y = L::splat(a) * (x - self.y1) + self.x1;
         self.x1 = x;
         self.y1 = y;
         y
@@ -61,7 +136,7 @@ impl Allpass {
     /// Put the section in the steady state of a constant input `x` (an all-pass has unity gain at DC, so the output
     /// is `x` too).
     #[inline(always)]
-    pub fn prime(&mut self, x: f64) {
+    pub fn prime(&mut self, x: L) {
         self.x1 = x;
         self.y1 = x;
     }
@@ -69,14 +144,33 @@ impl Allpass {
     /// Flush tiny state values to zero (`util::flush`).
     #[inline(always)]
     pub fn flush(&mut self) {
-        self.x1 = flush64(self.x1);
-        self.y1 = flush64(self.y1);
+        self.x1 = self.x1.flush();
+        self.y1 = self.y1.flush();
     }
 
     /// How many state values are subnormal (test support).
     #[must_use]
     pub fn subnormals(&self) -> usize {
-        usize::from(self.x1.is_subnormal()) + usize::from(self.y1.is_subnormal())
+        self.x1.subnormal_lanes() + self.y1.subnormal_lanes()
+    }
+}
+
+impl Allpass<f64x2> {
+    /// The sections `l` and `r` side by side: lane 0 is `l`, lane 1 is `r`.
+    #[inline(always)]
+    pub fn pack(l: &Allpass, r: &Allpass) -> Self {
+        Self {
+            x1: f64x2::new([l.x1, r.x1]),
+            y1: f64x2::new([l.y1, r.y1]),
+        }
+    }
+
+    /// Write the lanes back to the sections they were packed from.
+    #[inline(always)]
+    pub fn unpack(&self, l: &mut Allpass, r: &mut Allpass) {
+        let (x, y) = (self.x1.to_array(), self.y1.to_array());
+        (l.x1, r.x1) = (x[0], x[1]);
+        (l.y1, r.y1) = (y[0], y[1]);
     }
 }
 
@@ -107,18 +201,18 @@ pub const HB_STAGE2: Coefs<2, 1> = Coefs {
 
 /// The interpolating half of a stage: one input sample in, two samples at twice the rate out, in time order.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Up<const N0: usize, const N1: usize> {
-    a0: [Allpass; N0],
-    a1: [Allpass; N1],
+pub struct Up<const N0: usize, const N1: usize, L: Lane = f64> {
+    a0: [Allpass<L>; N0],
+    a1: [Allpass<L>; N1],
 }
 
-impl<const N0: usize, const N1: usize> Default for Up<N0, N1> {
+impl<const N0: usize, const N1: usize, L: Lane> Default for Up<N0, N1, L> {
     fn default() -> Self {
         Self::ZERO
     }
 }
 
-impl<const N0: usize, const N1: usize> Up<N0, N1> {
+impl<const N0: usize, const N1: usize, L: Lane> Up<N0, N1, L> {
     /// A stage at rest.
     pub const ZERO: Self = Self {
         a0: [Allpass::ZERO; N0],
@@ -128,7 +222,7 @@ impl<const N0: usize, const N1: usize> Up<N0, N1> {
     /// Interpolate: `[y[2n], y[2n+1]] = [A0·x, A1·x]` (unity gain: the polyphase form of `2·H(z)` on the
     /// zero-stuffed input).
     #[inline(always)]
-    pub fn process(&mut self, c: &Coefs<N0, N1>, x: f64) -> [f64; 2] {
+    pub fn process(&mut self, c: &Coefs<N0, N1>, x: L) -> [L; 2] {
         let mut e = x;
         for (s, &a) in self.a0.iter_mut().zip(&c.a0) {
             e = s.step(a, e);
@@ -142,7 +236,7 @@ impl<const N0: usize, const N1: usize> Up<N0, N1> {
 
     /// Steady state for a constant input `x`.
     #[inline(always)]
-    pub fn prime(&mut self, x: f64) {
+    pub fn prime(&mut self, x: L) {
         for s in &mut self.a0 {
             s.prime(x);
         }
@@ -173,32 +267,54 @@ impl<const N0: usize, const N1: usize> Up<N0, N1> {
     }
 }
 
-/// The decimating half of a stage: two samples in (time order), one out.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Down<const N0: usize, const N1: usize> {
-    a0: [Allpass; N0],
-    a1: [Allpass; N1],
-    /// The odd branch's output of the previous pair (the `z⁻¹` between the branches).
-    odd: f64,
+impl<const N0: usize, const N1: usize> Up<N0, N1, f64x2> {
+    /// The stages `l` and `r` side by side (lane 0 is `l`, lane 1 is `r`).
+    #[inline(always)]
+    pub fn pack(l: &Up<N0, N1>, r: &Up<N0, N1>) -> Self {
+        Self {
+            a0: core::array::from_fn(|i| Allpass::pack(&l.a0[i], &r.a0[i])),
+            a1: core::array::from_fn(|i| Allpass::pack(&l.a1[i], &r.a1[i])),
+        }
+    }
+
+    /// Write the lanes back to the stages they were packed from.
+    #[inline(always)]
+    pub fn unpack(&self, l: &mut Up<N0, N1>, r: &mut Up<N0, N1>) {
+        for i in 0..N0 {
+            self.a0[i].unpack(&mut l.a0[i], &mut r.a0[i]);
+        }
+        for i in 0..N1 {
+            self.a1[i].unpack(&mut l.a1[i], &mut r.a1[i]);
+        }
+    }
 }
 
-impl<const N0: usize, const N1: usize> Default for Down<N0, N1> {
+/// The decimating half of a stage: two samples in (time order), one out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Down<const N0: usize, const N1: usize, L: Lane = f64> {
+    a0: [Allpass<L>; N0],
+    a1: [Allpass<L>; N1],
+    /// The odd branch's output of the previous pair (the `z⁻¹` between the branches).
+    odd: L,
+}
+
+impl<const N0: usize, const N1: usize, L: Lane> Default for Down<N0, N1, L> {
     fn default() -> Self {
         Self::ZERO
     }
 }
 
-impl<const N0: usize, const N1: usize> Down<N0, N1> {
+impl<const N0: usize, const N1: usize, L: Lane> Down<N0, N1, L> {
     /// A stage at rest.
     pub const ZERO: Self = Self {
         a0: [Allpass::ZERO; N0],
         a1: [Allpass::ZERO; N1],
-        odd: 0.0,
+        odd: L::ZERO,
     };
 
     /// Decimate the pair `(even, odd)`: `y[n] = ½·(A0·v[2n] + A1·v[2n−1])`.
     #[inline(always)]
-    pub fn process(&mut self, c: &Coefs<N0, N1>, even: f64, odd: f64) -> f64 {
+    pub fn process(&mut self, c: &Coefs<N0, N1>, even: L, odd: L) -> L {
         let mut e = even;
         for (s, &a) in self.a0.iter_mut().zip(&c.a0) {
             e = s.step(a, e);
@@ -207,14 +323,14 @@ impl<const N0: usize, const N1: usize> Down<N0, N1> {
         for (s, &a) in self.a1.iter_mut().zip(&c.a1) {
             o = s.step(a, o);
         }
-        let y = 0.5 * e + 0.5 * self.odd;
+        let y = L::HALF * e + L::HALF * self.odd;
         self.odd = o;
         y
     }
 
     /// Steady state for a constant input `x` (every sample of every pair equal to `x`).
     #[inline(always)]
-    pub fn prime(&mut self, x: f64) {
+    pub fn prime(&mut self, x: L) {
         for s in &mut self.a0 {
             s.prime(x);
         }
@@ -233,7 +349,7 @@ impl<const N0: usize, const N1: usize> Down<N0, N1> {
         for s in &mut self.a1 {
             s.flush();
         }
-        self.odd = flush64(self.odd);
+        self.odd = self.odd.flush();
     }
 
     /// Subnormal state values (test support).
@@ -244,21 +360,46 @@ impl<const N0: usize, const N1: usize> Down<N0, N1> {
             .chain(&self.a1)
             .map(Allpass::subnormals)
             .sum::<usize>()
-            + usize::from(self.odd.is_subnormal())
+            + self.odd.subnormal_lanes()
+    }
+}
+
+impl<const N0: usize, const N1: usize> Down<N0, N1, f64x2> {
+    /// The stages `l` and `r` side by side (lane 0 is `l`, lane 1 is `r`).
+    #[inline(always)]
+    pub fn pack(l: &Down<N0, N1>, r: &Down<N0, N1>) -> Self {
+        Self {
+            a0: core::array::from_fn(|i| Allpass::pack(&l.a0[i], &r.a0[i])),
+            a1: core::array::from_fn(|i| Allpass::pack(&l.a1[i], &r.a1[i])),
+            odd: f64x2::new([l.odd, r.odd]),
+        }
+    }
+
+    /// Write the lanes back to the stages they were packed from.
+    #[inline(always)]
+    pub fn unpack(&self, l: &mut Down<N0, N1>, r: &mut Down<N0, N1>) {
+        for i in 0..N0 {
+            self.a0[i].unpack(&mut l.a0[i], &mut r.a0[i]);
+        }
+        for i in 0..N1 {
+            self.a1[i].unpack(&mut l.a1[i], &mut r.a1[i]);
+        }
+        let odd = self.odd.to_array();
+        (l.odd, r.odd) = (odd[0], odd[1]);
     }
 }
 
 /// An oversampler by 1, 2 or 4 around a memoryless or stateful per-sample function: up, the function at the high
 /// rate, down. The factor is a const generic of [`Oversampler::process`], so each factor compiles to straight code.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Oversampler {
-    up1: Up<2, 2>,
-    down1: Down<2, 2>,
-    up2: Up<2, 1>,
-    down2: Down<2, 1>,
+pub struct Oversampler<L: Lane = f64> {
+    up1: Up<2, 2, L>,
+    down1: Down<2, 2, L>,
+    up2: Up<2, 1, L>,
+    down2: Down<2, 1, L>,
 }
 
-impl Oversampler {
+impl<L: Lane> Oversampler<L> {
     /// An oversampler at rest.
     pub const ZERO: Self = Self {
         up1: Up::ZERO,
@@ -270,7 +411,7 @@ impl Oversampler {
     /// One base-rate sample through `f` at `K` times the rate (`K` is 1, 2 or 4): `f` is called `K` times, in time
     /// order, on the interpolated samples, and the results are decimated. `K` = 1 is `f(x)`.
     #[inline(always)]
-    pub fn process<const K: usize>(&mut self, x: f64, f: &mut impl FnMut(f64) -> f64) -> f64 {
+    pub fn process<const K: usize>(&mut self, x: L, f: &mut impl FnMut(L) -> L) -> L {
         match K {
             1 => f(x),
             2 => {
@@ -297,7 +438,7 @@ impl Oversampler {
     /// Steady state for a constant input `x` whose image through the function is the constant `fx`: the up stages hold
     /// `x`, the down stages `fx`.
     #[inline]
-    pub fn prime(&mut self, x: f64, fx: f64) {
+    pub fn prime(&mut self, x: L, fx: L) {
         self.up1.prime(x);
         self.up2.prime(x);
         self.down1.prime(fx);
@@ -323,6 +464,28 @@ impl Oversampler {
     }
 }
 
+impl Oversampler<f64x2> {
+    /// The oversamplers `l` and `r` side by side (lane 0 is `l`, lane 1 is `r`).
+    #[inline(always)]
+    pub fn pack(l: &Oversampler, r: &Oversampler) -> Self {
+        Self {
+            up1: Up::pack(&l.up1, &r.up1),
+            down1: Down::pack(&l.down1, &r.down1),
+            up2: Up::pack(&l.up2, &r.up2),
+            down2: Down::pack(&l.down2, &r.down2),
+        }
+    }
+
+    /// Write the lanes back to the oversamplers they were packed from.
+    #[inline(always)]
+    pub fn unpack(&self, l: &mut Oversampler, r: &mut Oversampler) {
+        self.up1.unpack(&mut l.up1, &mut r.up1);
+        self.down1.unpack(&mut l.down1, &mut r.down1);
+        self.up2.unpack(&mut l.up2, &mut r.up2);
+        self.down2.unpack(&mut l.down2, &mut r.down2);
+    }
+}
+
 /// The most sections a [`PhaseChain`] has.
 pub const PHASE_SECTIONS: usize = 5;
 
@@ -332,8 +495,8 @@ pub const PHASE_SECTIONS: usize = 5;
 /// stage. The trailing coefficient is a least-squares fit of the phase over 50 Hz to 12 kHz (maximum error 1.3° at
 /// 2×, 2.1° at 1×, 2.6° at 4×, `phase_chains_follow_the_linear_wet_path` in the tests). The magnitude is exactly 1.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct PhaseChain {
-    s: [Allpass; PHASE_SECTIONS],
+pub struct PhaseChain<L: Lane = f64> {
+    s: [Allpass<L>; PHASE_SECTIONS],
 }
 
 /// The phase chain's coefficients for oversampling by `factor` (1, 2 or 4; anything else gives 4's), and how many
@@ -356,7 +519,7 @@ pub const PHASE_ADAA_2: f64 = 0.6521487138786072;
 /// The last section for 4×.
 pub const PHASE_ADAA_4: f64 = -0.10712356954513495;
 
-impl PhaseChain {
+impl<L: Lane> PhaseChain<L> {
     /// A chain at rest.
     pub const ZERO: Self = Self {
         s: [Allpass::ZERO; PHASE_SECTIONS],
@@ -364,7 +527,7 @@ impl PhaseChain {
 
     /// One sample through the first `n` sections with coefficients `c` (from [`phase_chain_coefs`]).
     #[inline(always)]
-    pub fn step(&mut self, c: &[f64; PHASE_SECTIONS], n: usize, x: f64) -> f64 {
+    pub fn step(&mut self, c: &[f64; PHASE_SECTIONS], n: usize, x: L) -> L {
         let mut y = x;
         for (s, &a) in self.s.iter_mut().zip(c).take(n) {
             y = s.step(a, y);
@@ -374,7 +537,7 @@ impl PhaseChain {
 
     /// Steady state for a constant input `x`.
     #[inline(always)]
-    pub fn prime(&mut self, x: f64) {
+    pub fn prime(&mut self, x: L) {
         for s in &mut self.s {
             s.prime(x);
         }
@@ -392,6 +555,24 @@ impl PhaseChain {
     #[must_use]
     pub fn subnormals(&self) -> usize {
         self.s.iter().map(Allpass::subnormals).sum()
+    }
+}
+
+impl PhaseChain<f64x2> {
+    /// The chains `l` and `r` side by side (lane 0 is `l`, lane 1 is `r`).
+    #[inline(always)]
+    pub fn pack(l: &PhaseChain, r: &PhaseChain) -> Self {
+        Self {
+            s: core::array::from_fn(|i| Allpass::pack(&l.s[i], &r.s[i])),
+        }
+    }
+
+    /// Write the lanes back to the chains they were packed from.
+    #[inline(always)]
+    pub fn unpack(&self, l: &mut PhaseChain, r: &mut PhaseChain) {
+        for i in 0..PHASE_SECTIONS {
+            self.s[i].unpack(&mut l.s[i], &mut r.s[i]);
+        }
     }
 }
 
