@@ -29,6 +29,11 @@ fn statics(voices: usize) -> common::Prepared {
     common::prepare(&common::patch_with(ModuleKind::Ladder), voices, 1.0)
 }
 
+/// The same filter in a plan with the stereo voice path forced on: each voice runs it for both channels (lane PRF).
+fn statics_stereo(voices: usize) -> common::Prepared {
+    common::prepare_stereo(&common::patch_with(ModuleKind::Ladder), voices, 1.0)
+}
+
 fn drive_patch() -> Patch {
     let mut p = common::patch_with(ModuleKind::Ladder);
     p.voice_fx[0].values[LadderParam::Drive.index()] = 12.0;
@@ -114,10 +119,15 @@ fn render_moving(mut m: Moving) -> f32 {
 // 54.0 instructions per sample per voice for a static filter, 64.3 with the saturator and 83.1 with the cutoff moving:
 // the extra 29 are the ramp of the coefficients and, every segment, a new `tan` and the reciprocal that solves the
 // loop (docs/dsp/ladder.md).
+//
+// `stereo_lp24_16v` (lane PRF, 2026-10-27) is the static filter in a plan with the stereo voice path forced on, so each
+// voice runs the ladder for the left and right channel, four instances to a loop: 72,342,863 (121,422,871 on a38ee3e,
+// before the lanes). The mono cases did not move (-0.3 %).
 #[library_benchmark]
 #[bench::lp24_1v(args = (1,), setup = statics, config = common::budget(7_070_000))]
 #[bench::lp24_16v(args = (16,), setup = statics, config = common::budget(86_593_000))]
 #[bench::drive_16v(args = (16,), setup = drive, config = common::budget(95_334_000))]
+#[bench::stereo_lp24_16v(args = (16,), setup = statics_stereo, config = common::budget(79_578_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }

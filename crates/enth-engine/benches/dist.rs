@@ -36,6 +36,21 @@ fn default(voices: usize) -> common::Prepared {
     common::prepare(&patch(&[]), voices, 1.0)
 }
 
+/// The catalogue defaults in a plan with the stereo voice path forced on: each voice runs `dist` for both channels
+/// (the paired kernel, lane PRF).
+fn stereo_default(voices: usize) -> common::Prepared {
+    common::prepare_stereo(&patch(&[]), voices, 1.0)
+}
+
+/// G2's setting (the asymmetric curve, 18 dB, 2x) in the same stereo plan.
+fn stereo_asym(voices: usize) -> common::Prepared {
+    let p = patch(&[
+        (DistParam::Mode, DistMode::Asymmetric.index() as f32),
+        (DistParam::Drive, 18.0),
+    ]);
+    common::prepare_stereo(&p, voices, 1.0)
+}
+
 fn x4(voices: usize) -> common::Prepared {
     let p = patch(&[(DistParam::Oversample, Oversample::X4.index() as f32)]);
     common::prepare(&p, voices, 1.0)
@@ -75,10 +90,18 @@ fn full(voices: usize) -> common::Prepared {
 //   full_16v    617,058,010   755
 // Every patch holds an `osc` and an `adsr`, so a lane that changes either (or the engine skeleton) re-measures these
 // budgets with the `engine` ones; a change to `enth-dsp::dist` or `resample` re-measures all six in the same commit.
+//
+// The `stereo_*` cases (lane PRF, 2026-10-27) are the same module in a plan with the stereo voice path forced on, so
+// every voice runs `dist` for the left and the right channel through the paired kernel: stereo_default_16v 453,472,706
+// (768,574,246 on a38ee3e, before the kernel) and stereo_asym_16v (G2's asymmetric curve at 18 dB) 473,435,348
+// (796,235,196). The mono cases above did not gain (+0.1-0.3 %, the block's setup now splits into a few calls), their
+// budgets stay.
 #[library_benchmark]
 #[bench::default_1v(args = (1,), setup = default, config = common::budget(29_288_000))]
 #[bench::default_16v(args = (16,), setup = default, config = common::budget(442_548_000))]
 #[bench::x4_16v(args = (16,), setup = x4, config = common::budget(778_353_000))]
+#[bench::stereo_default_16v(args = (16,), setup = stereo_default, config = common::budget(498_820_000))]
+#[bench::stereo_asym_16v(args = (16,), setup = stereo_asym, config = common::budget(520_779_000))]
 #[bench::off_16v(args = (16,), setup = off, config = common::budget(231_489_000))]
 #[bench::mix0_16v(args = (16,), setup = mixzero, config = common::budget(44_531_000))]
 #[bench::full_16v(args = (16,), setup = full, config = common::budget(678_764_000))]
