@@ -60,8 +60,12 @@ pub struct G2 {
     pub voices: u32,
     /// The `wt`'s unison copies (1 turns the unison and the stereo voice path off).
     pub copies: u32,
+    /// The `dist`'s curve (the reference is the asymmetric one, report 04's "soft/tube").
+    pub dist_mode: DistMode,
     /// The `dist`'s oversampling.
     pub oversample: Oversample,
+    /// Whether the MSEG moves the table position (the reference does; PM and the filters stay modulated).
+    pub position_mod: bool,
     /// Whether the `ladder` is in the voice-FX chain.
     pub ladder: bool,
     /// Whether the `formant` is in the voice-FX chain.
@@ -76,7 +80,9 @@ impl Default for G2 {
         Self {
             voices: 8,
             copies: 7,
+            dist_mode: DistMode::Asymmetric,
             oversample: Oversample::X2,
+            position_mod: true,
             ladder: true,
             formant: true,
             delay: false,
@@ -121,7 +127,7 @@ impl G2 {
             "dist1",
             ModuleKind::Dist,
             &[
-                (DistParam::Mode.index(), DistMode::Asymmetric.index() as f32),
+                (DistParam::Mode.index(), self.dist_mode.index() as f32),
                 (DistParam::Drive.index(), 18.0),
                 (
                     DistParam::Oversample.index(),
@@ -220,10 +226,12 @@ impl G2 {
             ("osc1", "wt1.pm", 100.0),
             // The growl: the MSEG moves the PM index (+4 rad of 0-10) and the table position (+25 %) once per eighth.
             ("mseg1", "wt1.pm_index", 40.0),
-            ("mseg1", "wt1.position", 25.0),
             // Harder notes are more distorted.
             ("velocity", "dist1.drive", 8.0),
         ];
+        if self.position_mod {
+            routes.insert(2, ("mseg1", "wt1.position", 25.0));
+        }
         if self.ladder {
             routes.push(("mseg1", "ladder1.cutoff", 15.0));
         }

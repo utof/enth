@@ -9,7 +9,8 @@
 //! reference does not fit the cap.
 //!
 //! - `reference_8v`: the reference patch.
-//! - the variants show what each choice costs: `dist_off` (ADAA-1 without oversampling), `dist_x4`, `no_ladder`,
+//! - the variants show what each choice costs: `dist_off` (ADAA-1 without oversampling), `dist_x4`, `dist_soft` and
+//!   `dist_hard` (other curves), `static_position` (the MSEG not on the table position), `no_ladder`,
 //!   `no_formant`, `copies_3` (3 unison copies), `mono_1_copy` (no unison, so no stereo voice path), `voices_6`,
 //!   `voices_4`.
 //! - the swap blocks (64 frames, the G1 real-time condition), as in `swap.rs` on the G2 patch: `normal`, `instant`
@@ -31,7 +32,7 @@ use std::hint::black_box;
 
 use enth_engine::{Engine, Event, EventKind, Link, LinkCapacity, NoteKey, PrepareCfg, compile};
 use enth_patch::Patch;
-use enth_patch::catalogue::Oversample;
+use enth_patch::catalogue::{DistMode, Oversample};
 use g2_patch::{G2, KEYS, module_added, value_edit};
 use gungraun::{library_benchmark, library_benchmark_group, main};
 
@@ -116,6 +117,27 @@ fn dist_x4(_: ()) -> Steady {
     })
 }
 
+fn dist_soft(_: ()) -> Steady {
+    variant(G2 {
+        dist_mode: DistMode::Soft,
+        ..G2::default()
+    })
+}
+
+fn dist_hard(_: ()) -> Steady {
+    variant(G2 {
+        dist_mode: DistMode::Hard,
+        ..G2::default()
+    })
+}
+
+fn static_position(_: ()) -> Steady {
+    variant(G2 {
+        position_mod: false,
+        ..G2::default()
+    })
+}
+
 fn no_ladder(_: ()) -> Steady {
     variant(G2 {
         ladder: false,
@@ -165,6 +187,9 @@ fn voices_4(_: ()) -> Steady {
 #[bench::reference_8v(args = ((),), setup = reference, config = common::budget(REFERENCE_IR))]
 #[bench::dist_off(args = ((),), setup = dist_off, config = common::budget(DIST_OFF_IR))]
 #[bench::dist_x4(args = ((),), setup = dist_x4, config = common::budget(DIST_X4_IR))]
+#[bench::dist_soft(args = ((),), setup = dist_soft, config = common::budget(DIST_SOFT_IR))]
+#[bench::dist_hard(args = ((),), setup = dist_hard, config = common::budget(DIST_HARD_IR))]
+#[bench::static_position(args = ((),), setup = static_position, config = common::budget(STATIC_POSITION_IR))]
 #[bench::no_ladder(args = ((),), setup = no_ladder, config = common::budget(NO_LADDER_IR))]
 #[bench::no_formant(args = ((),), setup = no_formant, config = common::budget(NO_FORMANT_IR))]
 #[bench::copies_3(args = ((),), setup = copies_3, config = common::budget(COPIES_3_IR))]
@@ -256,6 +281,7 @@ fn crossfade_blocks(mut p: Playing) -> Playing {
 // Measured 2026-10-27 on main 6c3fc20 plus this lane, before `delay` merged (x86_64 Linux, Intel i7-9750H,
 // callgrind via gungraun 0.20.0): instructions of the 2 s render, per frame (/96,000) in brackets.
 // - reference_8v 1,872,632,942 (19,507); dist_off 1,481,519,510 (15,433); dist_x4 2,497,974,592 (26,021);
+// - dist_soft 1,866,840,693 (19,446); dist_hard 1,435,691,370 (14,955); static_position 1,845,584,281 (19,225);
 // - no_ladder 1,751,600,820 (18,246); no_formant 1,729,506,000 (18,016); copies_3 1,789,366,250 (18,639);
 // - mono_1_copy 909,539,748 (9,474); voices_6 1,439,213,212 (14,992); voices_4 1,003,498,461 (10,453);
 // - the 64-frame blocks: normal 1,247,086; instant 1,339,469; crossfade_swap 2,614,925; crossfade (three blocks)
@@ -263,6 +289,9 @@ fn crossfade_blocks(mut p: Playing) -> Playing {
 const REFERENCE_IR: u64 = 2_059_897_000;
 const DIST_OFF_IR: u64 = 1_629_672_000;
 const DIST_X4_IR: u64 = 2_747_773_000;
+const DIST_SOFT_IR: u64 = 2_053_525_000;
+const DIST_HARD_IR: u64 = 1_579_261_000;
+const STATIC_POSITION_IR: u64 = 2_030_143_000;
 const NO_LADDER_IR: u64 = 1_926_761_000;
 const NO_FORMANT_IR: u64 = 1_902_457_000;
 const COPIES_3_IR: u64 = 1_968_303_000;
