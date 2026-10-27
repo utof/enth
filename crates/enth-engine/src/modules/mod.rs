@@ -381,6 +381,18 @@ impl VoiceProcessorImpl {
         }
     }
 
+    /// See [`VoiceProcessor::process_pair`]: this module and its right-channel twin `right_twin` (the same kind: a
+    /// stereo plan builds it from the same patch values; any other pairing runs the two as plain `process` calls).
+    pub fn process_pair(
+        &mut self,
+        right_twin: &mut VoiceProcessorImpl,
+        left: &mut VoiceCx<'_>,
+        right: &mut VoiceCx<'_>,
+    ) {
+        self.process(left);
+        right_twin.process(right);
+    }
+
     /// See [`VoiceProcessor::subnormals`].
     #[must_use]
     pub fn subnormals(&self) -> usize {
