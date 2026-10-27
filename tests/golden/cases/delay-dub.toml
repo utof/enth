@@ -1,0 +1,20 @@
+description = "S2a DLY: a dub delay on a two-note saw chord, a quarter (0.4286 s at 140 BPM), feedback 80 %, low cut 300 Hz, high cut 2.5 kHz, mix 70 %: the repeats thin out and darken as they circulate."
+sample_rate = 48000
+seconds = 5.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 48, velocity = 0.9, on_s = 0.0, off_s = 0.15 },
+    { key = 55, velocity = 0.9, on_s = 0.0, off_s = 0.15 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 60, sustain = 0, release = 0 } }]
+fx = [
+    { id = "delay1", kind = "delay", params = { beats = "quarter", feedback = 80, low_cut = 300, high_cut = 2500, mix = 70 } },
+]
