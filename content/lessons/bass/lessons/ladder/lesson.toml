@@ -1,0 +1,187 @@
+# Lesson 13.1, The ladder filter [bass · basic] (content/lessons/PLAN.md §10, U13). On the cut list (phase-s2.md): if
+# the ladder moves to S2b, this lesson moves with it.
+#
+# Hear (svf against ladder; three cutoffs; ringing), a "which is the ladder?" item → Name → Try (cutoff, checked by
+# brightness) → the slope (mode, brightness) → resonance (brightness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): ladder1 in place of filter1 on the starter's saw. Centroid: 2 kHz
+# 607 Hz, 1 kHz 377, 500 Hz 243, 250 Hz 168; lp12 at 500 Hz 378; the svf at 500 Hz 367. Resonance at 500 Hz: 10 %
+# 243, 60 % 328, 90 % 388, 95 % 401. sound/1 is nearly deaf to the ladder (500 Hz against 1 kHz 0.93 JND, lp24
+# against lp12 0.88, resonance 10 against 95 % 0.22), so there is no round; the ear questions pass on the centroid.
+
+schema = "enth.lesson/1"
+id = "ladder"
+title = "The ladder filter"
+tier = "basic"
+objective = "Hear the ladder's steeper, rounder low-pass, set its cutoff, slope and resonance by ear."
+teaches = ["ladder.cutoff", "ladder.mode", "ladder.resonance"]
+
+# Hear: the svf low-pass at 500 Hz against the ladder at 500 Hz; the ladder at 2 kHz, 500 Hz and 250 Hz; at 500 Hz
+# with resonance 95 %; the ladder at 500 Hz an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/lad-500.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "SVF, 500 Hz"
+patch = "patches/svf-500.patch.json"
+
+[[steps.examples]]
+label = "Ladder, 500 Hz"
+patch = "patches/lad-500.patch.json"
+
+[[steps.examples]]
+label = "Ladder, 2 kHz"
+patch = "patches/lad-2k.patch.json"
+
+[[steps.examples]]
+label = "Ladder, 250 Hz"
+patch = "patches/lad-250.patch.json"
+
+[[steps.examples]]
+label = "Ladder, ringing"
+patch = "patches/lad-500-r95.patch.json"
+
+[[steps.examples]]
+label = "Ladder 500 Hz, low"
+patch = "patches/lad-500.patch.json"
+transpose = -12
+
+# Hear's ear question: which is the ladder? (svf against ladder, both at 500 Hz: sound/1 0.91 JND, but the centroid
+# reads 367 against 243 Hz, over four steps.)
+[[steps]]
+id = "which-ladder"
+kind = "choose"
+text = "which-ladder.md"
+hints = ["The ladder cuts twice as steeply: at the same cutoff it is darker and rounder."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/lad-500.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/svf-500.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/lad-500.patch.json"
+highlight = ["ladder1.cutoff", "ladder1.resonance", "ladder1.mode"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: darker. Start: the ladder at 2 kHz (607 Hz: fails `brightness < 300Hz`). Witness: 500 Hz (243 Hz). 1 kHz reads
+# 377 Hz.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Turn ladder1's Cutoff down.", "Around 500 Hz the saw is a deep, round bass."]
+witness = "patches/lad-500.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/lad-2k.patch.json"
+highlight = ["ladder1.cutoff"]
+editable = ["ladder1.cutoff"]
+locked = ["osc1.*", "ladder1.mode", "ladder1.resonance"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["ladder1.cutoff < 800Hz"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 300Hz"]
+
+# Do: a gentler slope. Start: 24 dB/octave at 500 Hz (243 Hz: fails `brightness > 330Hz`). Witness: 12 dB/octave (378
+# Hz). The mode is a list: the step teaches structure.
+[[steps]]
+id = "slope"
+kind = "do"
+text = "slope.md"
+hints = ["Set ladder1's Mode to lp12."]
+witness = "patches/lad-500-lp12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/lad-500.patch.json"
+highlight = ["ladder1.mode"]
+editable = ["ladder1.mode"]
+locked = ["osc1.*", "ladder1.cutoff", "ladder1.resonance"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["ladder1.mode == lp12"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 330Hz"]
+
+# Do: make it ring. Start: resonance 10 % (243 Hz: fails `brightness > 392Hz`). Witness: 95 % (401 Hz); 60 % reads
+# 328 Hz and 90 % 388, so the hint stops past 90 %, inside the predicate.
+[[steps]]
+id = "ring"
+kind = "do"
+text = "ring.md"
+hints = ["Turn ladder1's Resonance up.", "Near the top the ladder starts to sing on its own."]
+witness = "patches/lad-500-r95.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/lad-500.patch.json"
+highlight = ["ladder1.resonance"]
+editable = ["ladder1.resonance"]
+locked = ["osc1.*", "ladder1.cutoff", "ladder1.mode"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["ladder1.resonance > 85%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 392Hz"]
+
+# Check: 12 or 24 dB? (500 Hz: the centroid 378 against 243 Hz.)
+[[steps]]
+id = "check-slope"
+kind = "choose"
+text = "check-slope.md"
+hints = ["The 24 dB slope is darker and rounder at the same cutoff."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/lad-500.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/lad-500-lp12.patch.json"

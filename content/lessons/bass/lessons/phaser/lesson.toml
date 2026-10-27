@@ -1,0 +1,186 @@
+# Lesson 14.2, Phaser [bass · intermediate] (content/lessons/PLAN.md §10, U14). Intermediate because it teaches
+# phaser.sync and phaser.beats; rate and depth are basic. On the cut list (phase-s2.md).
+#
+# Hear (dry, slow, 1/4, 1/8; shallow and deep), a "which one sweeps?" item → Name → Try (sync at 1/4, checked by the
+# sweep) → 1/8 (checked by beating) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD, the mid signal): phaser1 on the starter's saw through a 6 kHz low-
+# pass. The sweep is found between about 1.5 and 3 Hz: 0.3 Hz and 1 Hz none on the held note, 2 Hz 1.966 Hz (0.55
+# octave), 3 Hz 3.008; synced 1/4 2.344 Hz; 1/8 reads as beating at 4.66 Hz, 5 Hz free as beating at 5.0. Depth at 2
+# Hz: 25 % 0.35 octave, 50 % 0.55, 100 % 0.62. sound/1: 0.3 against 2 Hz 1.35 JND, 1/4 against 1/8 1.21, so there is
+# no round.
+
+schema = "enth.lesson/1"
+id = "phaser"
+title = "Phaser"
+tier = "intermediate"
+objective = "Hear a phaser's sweep, lock it to the beat and set how fast and how deep it sweeps."
+teaches = ["phaser.rate", "phaser.depth", "phaser.sync", "phaser.beats"]
+
+# Hear: the saw dry, then through phaser1 at 0.3 Hz (its default), synced to 1/4 and 1/8; at 2 Hz shallow and deep;
+# the 1/4 an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/phaser-slow.patch.json"
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Dry"
+patch = "patches/phaser-off.patch.json"
+
+[[steps.examples]]
+label = "0.3 Hz"
+patch = "patches/phaser-slow.patch.json"
+
+[[steps.examples]]
+label = "1/4"
+patch = "patches/phaser-quarter.patch.json"
+
+[[steps.examples]]
+label = "1/8"
+patch = "patches/phaser-eighth.patch.json"
+
+[[steps.examples]]
+label = "2 Hz, shallow"
+patch = "patches/phaser-2hz-25.patch.json"
+
+[[steps.examples]]
+label = "2 Hz, deep"
+patch = "patches/phaser-2hz-100.patch.json"
+
+[[steps.examples]]
+label = "1/4, low"
+patch = "patches/phaser-quarter.patch.json"
+transpose = -12
+
+# Hear's ear question: which one sweeps? (dry against 1/4: sound/1 about 1.4 JND; a sweep at 2.34 Hz is found in one
+# only.)
+[[steps]]
+id = "which-phaser"
+kind = "choose"
+text = "which-phaser.md"
+hints = ["A phaser sweeps notches through the sound: a hollow whoosh that moves."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/phaser-quarter.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/phaser-off.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/phaser-quarter.patch.json"
+highlight = ["phaser1.rate", "phaser1.sync", "phaser1.beats", "phaser1.depth"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: lock it to the beat. Start: free at 1 Hz (no sweep found on the held note). Witness: sync on at 1/4 (2.344 Hz,
+# inside [2.1 Hz, 2.6 Hz]). A switch: the step teaches structure.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Switch phaser1's Sync on and set Beats to 1/4."]
+witness = "patches/phaser-quarter.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/phaser-1hz.patch.json"
+highlight = ["phaser1.sync", "phaser1.beats"]
+editable = ["phaser1.sync", "phaser1.beats"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "phaser1.stages",
+  "phaser1.depth",
+  "phaser1.center",
+  "phaser1.feedback",
+  "phaser1.width",
+  "phaser1.mix",
+  "phaser1.rate",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["phaser1.sync == on"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [2.1Hz, 2.6Hz]"]
+
+# Do: twice as fast. Start: 1/4 (no beating). Witness: 1/8: the sweep is too fast to read as one and reads as beating
+# at 4.66 Hz (inside [4.2 Hz, 5.1 Hz]).
+[[steps]]
+id = "eighth"
+kind = "do"
+text = "eighth.md"
+hints = ["Set phaser1's Beats to 1/8."]
+witness = "patches/phaser-eighth.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/phaser-quarter.patch.json"
+highlight = ["phaser1.beats"]
+editable = ["phaser1.beats"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "phaser1.stages",
+  "phaser1.depth",
+  "phaser1.center",
+  "phaser1.feedback",
+  "phaser1.width",
+  "phaser1.mix",
+  "phaser1.rate",
+  "phaser1.sync",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["phaser1.beats == eighth"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["beating in [4.2Hz, 5.1Hz]"]
+
+# Check: which sweeps deeper? (2 Hz at depth 25 against 100 %: sound/1 2.00 JND; the sweep reads 0.35 against 0.62
+# octave.)
+[[steps]]
+id = "check-deeper"
+kind = "choose"
+text = "check-deeper.md"
+hints = ["The deeper one swings the notches further: a bigger whoosh."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/phaser-2hz-25.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/phaser-2hz-100.patch.json"

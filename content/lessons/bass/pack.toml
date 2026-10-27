@@ -26,7 +26,7 @@ id = "bass"
 version = "0.1.0"
 title = "Bass music"
 authors = ["enth contributors"]
-covers = ["dist", "lfo", "mseg", "ott", "wt"]
+covers = ["chorus", "comb", "dist", "eq", "formant", "ladder", "lfo", "mseg", "ott", "phaser", "wt"]
 # The order the app offers them in (the curriculum's order). Lesson ids are append-only.
 lessons = [
   "tempo-sync",
@@ -38,6 +38,12 @@ lessons = [
   "warp-and-feedback",
   "am-and-ring",
   "unison",
+  "ladder",
+  "comb",
+  "formant",
+  "chorus",
+  "phaser",
+  "eq",
 ]
 
 [license]

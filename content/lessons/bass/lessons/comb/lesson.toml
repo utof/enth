@@ -1,0 +1,211 @@
+# Lesson 13.2, The comb filter [bass · basic] (content/lessons/PLAN.md §10, U13).
+#
+# Hear (noise through more and more feedback; tuned; a saw at 0, 90 and -90 %), a "which one sings?" item → Name →
+# Try (feedback on a saw, checked by brightness) → tune the noise comb (checked by pitch) → negative feedback
+# (brightness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): comb1 after the open filter, keytracked (100 %). White noise
+# keeps a noise ratio of 1.00 up to about 60 % feedback, then 0.91 at 80, 0.49 at 90, 0.30 at 95, 0.22 at 97 (and a
+# pitch is found, 130.8 Hz), 0.13 at 99; at 97 % semi +7 reads 196.0 Hz and +12 261.8 Hz. sound/1 hears the pitch (0
+# against +12 st 48.1 JND) but not the feedback on noise (0.19 at 90 %). On the saw the loop's damping darkens each
+# pass: centroid -90 % 3656 Hz, -50 % 3509, 0 3176, 30 2892, 50 2637, 70 2279, 90 1643, 97 1162 (sound/1 0/90 % 0.69
+# JND, so no round).
+
+schema = "enth.lesson/1"
+id = "comb"
+title = "The comb filter"
+tier = "basic"
+objective = "Make a comb filter ring, tune the note it rings at, and hear negative feedback turn it hollow."
+teaches = ["comb.feedback", "comb.semi"]
+
+# Hear: white noise, then the noise through comb1 at feedback 90 and 97 %; at 97 % pitched a fifth and an octave up.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/comb-noise-97-0.patch.json"
+hide = ["osc1.*", "osc2.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Noise"
+patch = "patches/comb-noise.patch.json"
+
+[[steps.examples]]
+label = "Comb 90 %"
+patch = "patches/comb-noise-90-0.patch.json"
+
+[[steps.examples]]
+label = "Comb 97 %"
+patch = "patches/comb-noise-97-0.patch.json"
+
+[[steps.examples]]
+label = "97 %, a fifth up"
+patch = "patches/comb-noise-97-7.patch.json"
+
+[[steps.examples]]
+label = "97 %, an octave up"
+patch = "patches/comb-noise-97-12.patch.json"
+
+# Hear: the saw through comb1 at feedback 0, 90 and -90 %.
+[[steps]]
+id = "hear-saw"
+kind = "listen"
+text = "hear-saw.md"
+
+[steps.view]
+start = "patches/comb-saw-0.patch.json"
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Saw, 0 %"
+patch = "patches/comb-saw-0.patch.json"
+
+[[steps.examples]]
+label = "Saw, 90 %"
+patch = "patches/comb-saw-90.patch.json"
+
+[[steps.examples]]
+label = "Saw, -90 %"
+patch = "patches/comb-saw-n90.patch.json"
+
+[[steps.examples]]
+label = "Saw 90 %, low"
+patch = "patches/comb-saw-90.patch.json"
+transpose = -12
+
+# Hear's ear question: which noise sings a note? (noise against the comb at 97 %: the noise ratio reads 1.00 against
+# 0.22, and a pitch of 130.8 Hz is found in one only.)
+[[steps]]
+id = "which-sings"
+kind = "choose"
+text = "which-sings.md"
+hints = ["One is plain hiss; the other hums a note inside the hiss."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/comb-noise.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/comb-noise-97-0.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/comb-noise-97-0.patch.json"
+highlight = ["comb1.feedback", "comb1.semi"]
+hide = ["osc1.*", "osc2.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: make it ring. Start: the saw through comb1 at 30 % (2892 Hz: fails `brightness < 2000Hz`). Witness: 90 % (1643
+# Hz). On a saw the teeth sit on its harmonics and the loop's damping darkens each pass, so ringing reads darker.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Turn comb1's Feedback up.", "Near 90 % the saw rings like a metal tube."]
+witness = "patches/comb-saw-90.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/comb-saw-30.patch.json"
+highlight = ["comb1.feedback"]
+editable = ["comb1.feedback"]
+locked = ["osc1.*", "comb1.semi", "comb1.keytrack", "comb1.damping", "comb1.mix"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comb1.feedback > 75%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 2000Hz"]
+
+# Do: tune it. Start: the noise through the comb at 99 %, on the played note (130.8 Hz). Witness: semi +12 st (C4).
+# At 97 % the pitch item was thin at the nuisance seeds (the noise differs), so the step rings harder. A
+# transposition is structure (noted).
+[[steps]]
+id = "tune"
+kind = "do"
+text = "tune.md"
+hints = ["Turn comb1's Semi up 12 semitones: the note the noise sings goes up an octave."]
+witness = "patches/comb-noise-99-12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/comb-noise-99-0.patch.json"
+highlight = ["comb1.semi"]
+editable = ["comb1.semi"]
+locked = ["noise1.*", "comb1.feedback", "comb1.keytrack", "comb1.damping", "comb1.mix"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comb1.semi > 6st"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["pitch = C4 ± 50ct"]
+
+# Do: hollow. Start: the saw at 90 % (1643 Hz: fails `brightness > 3600Hz`). Witness: -90 % (3656 Hz): the teeth move
+# between the harmonics. -50 % reads 3509 Hz, so the hint stops below -60 %.
+[[steps]]
+id = "hollow"
+kind = "do"
+text = "hollow.md"
+hints = ["Turn comb1's Feedback through zero to the negative side.", "All the way, near -90 %."]
+witness = "patches/comb-saw-n90.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/comb-saw-90.patch.json"
+highlight = ["comb1.feedback"]
+editable = ["comb1.feedback"]
+locked = ["osc1.*", "comb1.semi", "comb1.keytrack", "comb1.damping", "comb1.mix"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["comb1.feedback < -60%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 3600Hz"]
+
+# Check: which rings higher? (the comb at 97 % on the note and an octave up: sound/1 48 JND.)
+[[steps]]
+id = "check-higher"
+kind = "choose"
+text = "check-higher.md"
+hints = ["Listen to the note inside the hiss."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/comb-noise-97-12.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/comb-noise-97-0.patch.json"

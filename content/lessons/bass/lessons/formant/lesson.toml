@@ -1,0 +1,191 @@
+# Lesson 13.3, The formant filter [bass · basic] (content/lessons/PLAN.md §10, U13).
+#
+# Hear ('a', 'o', 'ee', 'oo'; a yoi), a "which says 'o'?" item → Name → Try ('a' to 'o', checked by brightness) →
+# 'ee' (a patch goal) → yoi (a synced LFO on F2, checked by the sweep) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): formant1 after the open filter on the starter's saw, report 04's
+# vowel table as the settings. Centroid: 'a' 1540 Hz, 'o' 1116, 'ee' 1184, 'oo' 909; F1 at a fixed F2 of 1.2 kHz
+# moves it (250 Hz 978, 450 Hz 1272, 850 Hz 1550), F2 at F1 400 Hz barely (640 Hz 1050, 2.4 kHz 1136). sound/1 hears
+# the vowels: 'a'/'o' 3.52 JND, 'o'/'ee' 4.84, 'o'/'oo' 4.41; F1 250/450 Hz 3.71 but 450/850 1.51, so there is no
+# round. lfo1 at 1/4 on F2 (30 %) reads a filter sweep at 2.344 Hz, 0.29 octave deep.
+
+schema = "enth.lesson/1"
+id = "formant"
+title = "The formant filter"
+tier = "basic"
+objective = "Make a bass say vowels with two formants, and swing the vowel in time for a yoi."
+teaches = ["formant.f1", "formant.f2"]
+
+# Hear: the saw through formant1 set to 'a', 'o', 'ee' and 'oo'; then a yoi: lfo1, synced to 1/4, swinging the second
+# formant; the yoi an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/vowel-a.patch.json"
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "a"
+patch = "patches/vowel-a.patch.json"
+
+[[steps.examples]]
+label = "o"
+patch = "patches/vowel-o.patch.json"
+
+[[steps.examples]]
+label = "ee"
+patch = "patches/vowel-i.patch.json"
+
+[[steps.examples]]
+label = "oo"
+patch = "patches/vowel-u.patch.json"
+
+[[steps.examples]]
+label = "Yoi"
+patch = "patches/vowel-yoi.patch.json"
+
+[[steps.examples]]
+label = "Yoi, low"
+patch = "patches/vowel-yoi.patch.json"
+transpose = -12
+
+# Hear's ear question: which says 'o'? ('a' against 'o': sound/1 3.52 JND.)
+[[steps]]
+id = "which-o"
+kind = "choose"
+text = "which-o.md"
+hints = ["'o' is rounder and darker; 'a' is open and bright."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/vowel-a.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/vowel-o.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/vowel-a.patch.json"
+highlight = ["formant1.f1", "formant1.f2"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: say 'o'. Start: 'a', F1 850 Hz and F2 1610 Hz (1540 Hz: fails `brightness < 1250Hz`). Witness: 'o', 360 and
+# 640 Hz (1116 Hz). On the way: 600/1100 reads 1356 Hz, 500/900 1213, 400/800 1046.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Turn both formants down: F1 to about 360 Hz, F2 to about 640 Hz.",
+  "Lower F1 closes the vowel; lower F2 moves it back, towards 'o' and 'oo'.",
+]
+witness = "patches/vowel-o.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/vowel-a.patch.json"
+highlight = ["formant1.f1", "formant1.f2"]
+editable = ["formant1.f1", "formant1.f2"]
+locked = ["osc1.*", "formant1.shift", "formant1.resonance", "formant1.mix"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["formant1.f1 < 600Hz"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 1250Hz"]
+
+# Do: say 'ee'. Start: 'o'. Witness: 'ee', F1 240 Hz and F2 2400 Hz. The centroid cannot tell 'o' (1116 Hz) from 'ee'
+# (1184 Hz), so this is a patch goal; the ear question after it checks it (sound/1 4.84 JND).
+[[steps]]
+id = "ee"
+kind = "do"
+text = "ee.md"
+hints = ["Push F2 far up, to about 2.4 kHz, and F1 a little down."]
+witness = "patches/vowel-i.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/vowel-o.patch.json"
+highlight = ["formant1.f2"]
+editable = ["formant1.f1", "formant1.f2"]
+locked = ["osc1.*", "formant1.shift", "formant1.resonance", "formant1.mix"]
+
+[steps.check]
+kind = "patch"
+predicates = ["formant1.f2 > 2000Hz", "formant1.f1 < 300Hz"]
+
+# Do: make it say yoi. Start: F1 300 Hz, F2 1.2 kHz, with lfo1 synced to 1/4 routed nowhere (no sweep). Witness: lfo1
+# -> formant1.f2 at 30 %: read as a filter sweep at 2.34 Hz (1/4 at 140 BPM, inside [2 Hz, 2.7 Hz]). A route is
+# structure (noted).
+[[steps]]
+id = "yoi"
+kind = "do"
+text = "yoi.md"
+hints = ["Drag the ⊕ on lfo1's tile onto formant1's F2 knob.", "About a third of the depth."]
+witness = "patches/vowel-yoi.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/vowel-yoi-ready.patch.json"
+highlight = ["lfo1 -> formant1.f2", "formant1.f2"]
+editable = ["lfo1 -> formant1.f2", "formant1.f2"]
+locked = [
+  "osc1.*",
+  "formant1.shift",
+  "formant1.resonance",
+  "formant1.mix",
+  "formant1.f1",
+  "lfo1.sync",
+  "lfo1.beats",
+  "lfo1.shape",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1 -> formant1.f2 > 15%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [2Hz, 2.7Hz]"]
+
+# Check: 'oo' or 'ee'? ('o' against 'ee': sound/1 4.84 JND.)
+[[steps]]
+id = "check-ee"
+kind = "choose"
+text = "check-ee.md"
+hints = ["'ee' has a high, bright second formant; 'o' is dark and round."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/vowel-i.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/vowel-o.patch.json"

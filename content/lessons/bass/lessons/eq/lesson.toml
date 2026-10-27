@@ -1,0 +1,421 @@
+# Lesson 14.3, EQ [bass · basic] (content/lessons/PLAN.md §10, U14). eq is global (fx). On the cut list
+# (phase-s2.md).
+#
+# Hear (a flat EQ, then one band at a time), a "which has the low cut?" item → Name → Try (high cut, checked by
+# brightness) → a round on the low cut and a round on the first bell → the high shelf and the second bell
+# (brightness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): eq1 on the starter's saw through a 6 kHz low-pass. Centroid: flat
+# 1747 Hz; high cut 1.5 kHz 704, 3 kHz 1044, 8 kHz 1546; low cut 100 Hz 1799, 300 Hz 2230, 900 Hz 3009; bell 1 (400
+# Hz) -12 dB 2163, +12 dB 1276; bell 2 at 4 kHz -12 dB 1298, +12 dB 2404; low shelf +12 dB at 100 Hz 1589, at 300 Hz
+# 1050 (4.75 JND from flat); high shelf -12 dB 1453. sound/1: low cut 10/100 Hz 0.39 JND, 100/300 3.12, 300/900 2.84,
+# so round 1 draws {300, 900} Hz out of 10 Hz; bell 1 -12/+12 dB 4.54, so round 2 draws {-12, +12} dB out of 0; high
+# cut 1.5/3 kHz 1.42, 3/8 kHz 1.97.
+
+schema = "enth.lesson/1"
+id = "eq"
+title = "EQ"
+tier = "basic"
+objective = "Hear each band of an EQ, take the fizz off, clear the low end and add bite by ear."
+teaches = [
+  "eq.high_cut",
+  "eq.low_cut",
+  "eq.bell1_gain",
+  "eq.high_gain",
+  "eq.bell2_gain",
+  "eq.low_gain",
+]
+
+# Hear: the saw through a flat EQ; a low cut at 300 Hz; a high cut at 1.5 kHz; the first bell cutting 12 dB at 400
+# Hz; the second boosting 12 dB at 4 kHz; the low shelf up 12 dB; the high shelf down 12 dB.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/eq-flat.patch.json"
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Flat"
+patch = "patches/eq-flat.patch.json"
+
+[[steps.examples]]
+label = "Low cut"
+patch = "patches/eq-lowcut-300.patch.json"
+
+[[steps.examples]]
+label = "High cut"
+patch = "patches/eq-highcut-1500.patch.json"
+
+[[steps.examples]]
+label = "Bell 1 cut"
+patch = "patches/eq-bell1-m12.patch.json"
+
+[[steps.examples]]
+label = "Bell 2 boost"
+patch = "patches/eq-bell2-p12.patch.json"
+
+[[steps.examples]]
+label = "Low shelf up"
+patch = "patches/eq-low-p12.patch.json"
+
+[[steps.examples]]
+label = "High shelf down"
+patch = "patches/eq-high-m12.patch.json"
+
+# Hear's ear question: which has the low cut? (flat against a 300 Hz low cut: sound/1 about 3.5 JND.)
+[[steps]]
+id = "which-cut"
+kind = "choose"
+text = "which-cut.md"
+hints = ["A low cut takes the weight away: thinner, as if through a phone."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/eq-lowcut-300.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/eq-flat.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/eq-flat.patch.json"
+highlight = [
+  "eq1.low_cut",
+  "eq1.low_gain",
+  "eq1.bell1_gain",
+  "eq1.bell2_gain",
+  "eq1.high_gain",
+  "eq1.high_cut",
+]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: take the fizz off. Start: the high cut at 20 kHz, out of the way (1747 Hz: fails `brightness < 1200Hz`).
+# Witness: 3 kHz (1044 Hz); 8 kHz reads 1546.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Turn eq1's High cut down.", "Around 3 kHz the fizz is gone and the body stays."]
+witness = "patches/eq-highcut-3k.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/eq-flat.patch.json"
+highlight = ["eq1.high_cut"]
+editable = ["eq1.high_cut"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "eq1.low_cut",
+  "eq1.low_freq",
+  "eq1.low_gain",
+  "eq1.bell1_freq",
+  "eq1.bell1_gain",
+  "eq1.bell1_q",
+  "eq1.bell2_freq",
+  "eq1.bell2_gain",
+  "eq1.bell2_q",
+  "eq1.high_freq",
+  "eq1.high_gain",
+  "eq1.mix",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["eq1.high_cut < 5kHz"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 1200Hz"]
+
+# Do, round 1: a hidden eq1.low_cut from [300.0, 900.0], out of the flat EQ (seed 1).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round-1.md"
+hints = ["Is the target thinner than yours? Raise the low cut until the weight matches."]
+
+[steps.view]
+highlight = ["eq1.low_cut"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "eq1.low_cut", set = [300.0, 900.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, EQ flat", description = "The saw (a 6 kHz low-pass) into eq1 at its defaults." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 6000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+  { id = "eq1", kind = "eq" },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["eq1.low_cut"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "eq1.low_freq",
+  "eq1.low_gain",
+  "eq1.bell1_freq",
+  "eq1.bell1_gain",
+  "eq1.bell1_q",
+  "eq1.bell2_freq",
+  "eq1.bell2_gain",
+  "eq1.bell2_q",
+  "eq1.high_freq",
+  "eq1.high_gain",
+  "eq1.high_cut",
+  "eq1.mix",
+]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "EQ, round 1"
+tags = ["bass", "eq"]
+
+# Do, round 2: a hidden eq1.bell1_gain from [-12.0, 12.0], out of the flat EQ (seed 1).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round-2.md"
+hints = [
+  "Listen around the low mids: is the target boxier or emptier? Boost or cut the first bell.",
+]
+
+[steps.view]
+highlight = ["eq1.bell1_gain"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "eq1.bell1_gain", set = [-12.0, 12.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Saw, EQ flat", description = "The saw (a 6 kHz low-pass) into eq1 at its defaults." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 6000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+  { id = "eq1", kind = "eq" },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["eq1.bell1_gain"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "eq1.low_cut",
+  "eq1.low_freq",
+  "eq1.low_gain",
+  "eq1.bell1_freq",
+  "eq1.bell1_q",
+  "eq1.bell2_freq",
+  "eq1.bell2_gain",
+  "eq1.bell2_q",
+  "eq1.high_freq",
+  "eq1.high_gain",
+  "eq1.high_cut",
+  "eq1.mix",
+]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "EQ, round 2"
+tags = ["bass", "eq"]
+
+# Do: darken the top. Start: the high shelf at 0 dB (1747 Hz: fails `brightness < 1550Hz`). Witness: -12 dB (1453
+# Hz).
+[[steps]]
+id = "shelf"
+kind = "do"
+text = "shelf.md"
+hints = ["Turn eq1's High gain down: everything above 8 kHz gets quieter."]
+witness = "patches/eq-high-m12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/eq-flat.patch.json"
+highlight = ["eq1.high_gain"]
+editable = ["eq1.high_gain"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "eq1.low_cut",
+  "eq1.low_freq",
+  "eq1.low_gain",
+  "eq1.bell1_freq",
+  "eq1.bell1_gain",
+  "eq1.bell1_q",
+  "eq1.bell2_freq",
+  "eq1.bell2_gain",
+  "eq1.bell2_q",
+  "eq1.high_freq",
+  "eq1.high_cut",
+  "eq1.mix",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["eq1.high_gain < -6dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 1550Hz"]
+
+# Do: add bite. Start: flat (1747 Hz: fails `brightness > 2150Hz`). Witness: the second bell at 4 kHz, +12 dB (2404
+# Hz). The start's bell sits at 2.5 kHz; the witness moves it to 4 kHz and raises it.
+[[steps]]
+id = "presence"
+kind = "do"
+text = "presence.md"
+hints = ["Raise eq1's Bell 2 gain.", "Move its frequency up to about 4 kHz for bite."]
+witness = "patches/eq-bell2-p12.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/eq-flat.patch.json"
+highlight = ["eq1.bell2_gain", "eq1.bell2_freq"]
+editable = ["eq1.bell2_gain", "eq1.bell2_freq"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "eq1.low_cut",
+  "eq1.low_freq",
+  "eq1.low_gain",
+  "eq1.bell1_freq",
+  "eq1.bell1_gain",
+  "eq1.bell1_q",
+  "eq1.bell2_q",
+  "eq1.high_freq",
+  "eq1.high_gain",
+  "eq1.high_cut",
+  "eq1.mix",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["eq1.bell2_gain > 6dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 2150Hz"]
+
+# Check: which has the low shelf up? (flat against +12 dB below 300 Hz: sound/1 4.75 JND; the centroid 1747 against
+# 1050 Hz.)
+[[steps]]
+id = "check-weight"
+kind = "choose"
+text = "check-weight.md"
+hints = ["The low shelf adds weight underneath; the top stays."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/eq-flat.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/eq-low-p12.patch.json"
