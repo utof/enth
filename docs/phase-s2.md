@@ -268,7 +268,7 @@ Not settled by the research; each is owned by a lane, by you or by a later miles
 | Whether `wt`'s unison parameters are in F1m's catalogue (inert until UNI, hidden with the kind) or UNI appends them to the still-unreleased kind | CAT | F1m |
 | Where tempo lives in a challenge's render spec, since code v1 cannot grow | TMP, CAT; the F1m judge | F1m |
 | Chain depth: `MAX_VOICE_FX` and `MAX_FX` are 4; 16 is the most `PLACE_BITS` allows (8 before D3) and older builds refuse more than 4 | TPL, from the ten sketches | Wave 5 |
-| G2's voice count and budget (default 8 voices, at most 12,000 instructions per frame as G1) | G2B | Wave 5 |
+| G2's voice count and budget: **decided 2026-10-27, 4 voices** (bass is played mono or with little polyphony; 4 covers release overlaps). The 4-voice reference costs 10,617 instructions per frame (0.88× G1's 12,000) and about 18–19 % p99 by estimate; 8 voices (the planned default) costs 19,672 (1.64×) and stays as a recorded stress case. Lane PRF follows, for the stereo voice-FX doubling (26 %) and `dist` (39 %) | G2B; PRF | Done; PRF next |
 | How module lanes measure aliasing (a hash cannot see it): the sweep and the bound | S0d's harness, each module lane | F0m; each merge |
 | `wide`'s determinism: the bans and a six-target golden, and an arm runner's hash run before SIMD lands | S0d, UNI | F0m; UNI |
 | OTT's defaults come from one or two blogs: read Ableton's preset or measure Xfer's | OTT, CAT | F1m |

@@ -132,8 +132,8 @@ The measured column is the Phase 0 engine spike (`spikes/spike-engine`, [spikes/
 | Offline render speed | `enth bench`, `hyperfine` | G0 floor ≥ 100× realtime per core (met). From P1: ≥ 1,000× for the 1-voice template and ≥ 100× for an 8-voice P1-like patch, on the scalar path; G1 adds the 16-voice budget ([roadmap](roadmap.md#p1--minimal-synth--cli-v0-46-weeks)). Report min and median with the load average | 1 voice: 1,993× best, 1,783× median (wasmtime 1,357×). 16 voices: 129× / 122× scalar, 245× / 213× f32x8. 8-voice P1-like with reverb: 152× / 149× scalar, 231× / 217× f32x8 |
 | CPU per voice at 48 kHz | **Instruction counts** (callgrind, gungraun), per module | Regression gate: an absolute `hard_limits` budget per benchmark (measured + 10 %) that fails the run when exceeded; it needs no stored baseline, so it works in CI. Re-measure budgets with the golden hashes after a toolchain, `libm` or `wide` bump. Criterion and wall-clock time are information only: with no code change Criterion reported two false "improvements" (−13%, −36%) under load | Per 2 s render (budget in brackets): 1 voice 8.15 M (9.0 M); 16 voices scalar 122.4 M (135 M), f32x4 65.1 M (72 M), f32x8 62.9 M (69.5 M); P1-like 8 voices scalar 112.4 M (124 M), f32x8 62.3 M (69 M). That is 80–85 instructions per sample and voice for the simple voice, 146 for the P1-like one. Passes locally and on GitHub's ubuntu-24.04 runner |
 | Subnormals | A deterministic test: render a 40 s release tail and count subnormal values | 0. Instruction counts under-report the denormal penalty (4.1× more instructions against 33.5× more wall time in the spike), so this test is half of the gate | 0 subnormal output samples and state values over 40 s tails (scalar and lanes, 12 random patches). Negative control without flushing: 203,962 subnormal samples, voices never end |
-| p99 and p99.9 `process()` time at 64 samples | test host `process-stats`, under rtkit `SCHED_RR` | p99 and p99.9 < 25% of the block deadline (333 µs of 1.33 ms at 48 kHz); max is information | Engine only, 2026-10-19 ([details](#real-time-measurement-p1b)): p99 125–146 µs, p99.9 166–186 µs (12–14 %). Plugin, release bundle, 2026-10-20 ([lane RT](#lane-rt-the-plugin-measured-2026-10-20)): p99 112–123 µs, p99.9 125–134 µs (8–10 %), at load 2–6 |
-| Plan swap time | test host `process-stats` | Swap-block p99 < 25% of the deadline with a structural edit every 250 ms; compile off the audio thread | Engine only, 2026-10-19: with the state copy, instant-swap block p99 797 µs (max 997 µs, 75 %); with the move, p99 139 µs (max 149 µs). A crossfading swap still copies (p99 1,052 µs). Compiling the G1 patch takes about 0.9 ms on the main thread. Plugin, 2026-10-20 ([lane RT](#lane-rt-the-plugin-measured-2026-10-20)): instant-swap block p99 107–148 µs, crossfade blocks p99 180 µs, the crossfading swap block p99 337–339 µs (max 521 µs, reported); gungraun budgets in `benches/swap.rs` |
+| p99 and p99.9 `process()` time at 64 samples | test host `process-stats`, under rtkit `SCHED_RR` | p99 and p99.9 < 25% of the block deadline (333 µs of 1.33 ms at 48 kHz); max is information | Engine only, 2026-10-19 ([details](#real-time-measurement-p1b)): p99 125–146 µs, p99.9 166–186 µs (12–14 %). Plugin, release bundle, 2026-10-20 ([lane RT](#lane-rt-the-plugin-measured-2026-10-20)): p99 112–123 µs, p99.9 125–134 µs (8–10 %), at load 2–6. G2, S2a's reference patch (4 voices), 2026-10-27 ([the G2 row](#the-g2-row-s2a-lane-g2b-2026-10-27)): p99 308–387 µs (23–29 %) at load 4–21, 2.1–2.2× G1's in the same passes (148–176 µs), about 18–19 % scaled to a quiet machine; the 8-voice stress case 468–642 µs (35–48 %) |
+| Plan swap time | test host `process-stats` | Swap-block p99 < 25% of the deadline with a structural edit every 250 ms; compile off the audio thread | Engine only, 2026-10-19: with the state copy, instant-swap block p99 797 µs (max 997 µs, 75 %); with the move, p99 139 µs (max 149 µs). A crossfading swap still copies (p99 1,052 µs). Compiling the G1 patch takes about 0.9 ms on the main thread. Plugin, 2026-10-20 ([lane RT](#lane-rt-the-plugin-measured-2026-10-20)): instant-swap block p99 107–148 µs, crossfade blocks p99 180 µs, the crossfading swap block p99 337–339 µs (max 521 µs, reported); gungraun budgets in `benches/swap.rs`. G2 reference ([the G2 row](#the-g2-row-s2a-lane-g2b-2026-10-27)), at load 4–21: instant-swap block p99 387–699 µs, crossfading swap block p99 727–1,472 µs (G1 579–979 µs in the same passes; the 8-voice stress case 1,273–1,423 µs, 95–107 % of the deadline); gungraun budgets in `benches/g2.rs` |
 | Allocations on the audio thread | `assert_no_alloc` in engine tests (debug builds only); nice-plug's `assert_process_allocs` in plugin debug builds | 0 | 0: `assert_no_alloc` around every `process()` block (scalar, x4, x8; 16 random patches), negative control caught; clap-validator's process tests pass with `assert_process_allocs` on |
 | Real-time safety | RTSan, one nightly run (nightly Rust; the runtime ships in rust-std) | No findings. It catches `malloc` but misses an uncontended `std::sync::Mutex`, so `enth-engine` also has no `Mutex` or `RwLock` | One manual run (rustc 1.101.0-nightly 2026-10-17): no findings; an injected allocation is reported, an uncontended `Mutex` is not |
 | Determinism | golden tests in CI | Hashes identical across platforms, wasm engines and build flags (Linux, wasm32 under wasmtime and node, Windows; aarch64 if runners exist); a feature summary with tolerances is only the diagnostic when a hash differs | 1,010 hashes identical on Linux x86-64, Windows x86-64 (CI) and `wasm32-wasip1` under wasmtime (with and without simd128), across debug, release, `target-cpu=native`, FMA, LTO, lanes and FTZ/DAZ. aarch64: manual CI job only. node/V8 not re-run (research 03 ran it on an earlier engine) |
@@ -305,6 +305,159 @@ GUNGRAUN_RUNNER=… flock -x /tmp/enth-quiet.lock cargo xtask bench --bench swap
 ```
 
 **Not done: the private PipeWire xrun harness.** The agent tier has no JACK host for the plugin without a new dependency. The candidate is `carla-single` (VST3) over `pw-jack -r` on the private daemon (research 03's `pw/`). It needs three things: the G1 state injected through a Carla project, a MIDI source on the private graph, and a check that the client sits on the private daemon before any note plays, so nothing can reach the owner's speakers.
+
+### The G2 row (S2a lane G2B, 2026-10-27)
+
+G2 is the reference patch for S2a, the way G1 is for P1a: a dubstep growl voice that uses what S2a added, with its own instruction budget and its own real-time row. It lives in `crates/enth-engine/benches/common/g2.rs` (the builder), `benches/g2.rs` (the gungraun benches and their budgets), `crates/enth-engine/tests/g2.rs` (the patch plays, is block-independent, swaps without allocating), `tests/golden/cases/g2-growl.toml` (the golden case) and `tools/test-host/golden/enth-plugin.g2*.patch.json` (the test host's states; `tests/golden/tests/g2.rs` checks that all of them are this patch).
+
+**Decision (coordinator, 2026-10-27): the reference has 4 voices; 8 voices stays as the recorded stress case.** Bass is played mono or with low polyphony, and 4 voices cover the overlap of releases. The first measurements, at 8 voices, are why the choice mattered: 19,672 instructions per frame (1.64× G1's cap of 12,000) and 35–49 % of the deadline at p99 ([the stress case](#the-stress-case-8-voices-not-the-budget)). The stress case keeps its own bench and hard limit (`stress_8v`) so the price of the stereo voice path at 8 voices stays visible, and it is **not the budget**. A performance lane should follow for the two things that make 8 voices dear, the stereo doubling of the voice-FX chain (26 % of the stress case) and `dist`'s cost (39 %): [the follow-up](#follow-up-a-performance-lane).
+
+**The patch** is report 04's S4 "FM growl", built from the modules that exist:
+
+- **Source:** a `wt` on the `basic` table at 60 % with 7-copy unison (22 cents, 80 % blend, 60 % spread), phase-modulated by a sine `osc` (level 0, heard only through the audio route), with an MSEG (one pass per eighth note, five bent points) moving `pm_index` by 4 radians and the table position by 25 %.
+- **Voice FX:** `dist` (asymmetric, 18 dB, 2× oversampling, velocity on its drive) into a `ladder` band-pass (the MSEG on its cutoff) into a `formant` (a dotted-eighth synced LFO on F2).
+- **FX:** `ott` (60 %), `chorus` (30 % mix) and a synced `delay` (dotted eighth, ping-pong, 30 % feedback, 25 % mix); master −9 dB.
+- **Voices:** `polyphony` **4**, and the bass chord E1 B1 E2 G2 held for the whole run, so no voice is stolen. The stress case is the same patch with `polyphony` 8 and E1 B1 E2 G2 B2 E3 G3 B3.
+
+#### The reference: 4 voices
+
+**Instruction budget.** One 2 s render at 48 kHz (96,000 frames, 512-frame host blocks, the held chord), callgrind through gungraun, the pinned toolchain, main `f59fb60` plus this lane. A hard limit is the measured count plus 10 %, rounded up to 1,000, and needs no stored baseline. Counts are exact: a second run of every bench matched the first to within 2 instructions.
+
+| | Instructions | Per frame | Against G1's 12,000 | Hard limit |
+| --- | --- | --- | --- | --- |
+| G1, 16 voices (`benches/g1.rs`, unchanged) | 603,331,584 | 6,285 | 0.52× | 650,000,000 |
+| **G2 reference, 4 voices** (`reference_4v`) | **1,019,252,374** | **10,617** | **0.88×** | **1,121,178,000** (11,679 per frame) |
+
+The reference is inside G1's cap with 12 % to spare, and its own hard limit is the budget.
+
+**Swap blocks, in instructions** (`benches/g2.rs`, the way `benches/swap.rs` does it for G1: 64-frame blocks of the held chord after 0.5 s, the engine and its plan link, one block each):
+
+| Case | G2 reference | Against a normal block | Hard limit | G1 (`benches/swap.rs`) |
+| --- | --- | --- | --- | --- |
+| `normal` | 692,721 (10,824 per frame) | 1× | 763,000 | 408,776 |
+| `instant` (the block an instant swap lands in) | 773,338 | 1.12× | 851,000 | 449,504 (1.10×) |
+| `crossfade_swap` (the block a crossfading swap lands in) | 2,259,803 | 3.26× | 2,486,000 | 2,495,571 (6.10×) |
+| `crossfade` (the 3 blocks after it, together) | 4,160,489 (1,386,830 each) | 2.00× per block | 4,577,000 | 2,411,695 (1.97× per block) |
+
+The swap block's extra over a crossfade block is 872,973 instructions for G2 (the delay's and the chorus's state) against 1,691,673 for G1 (the reverb's). Instruction counts under-state a memory copy, so the wall clock below is the guard for the copy, not these budgets. `crates/enth-engine/tests/g2.rs` runs both swaps under `assert_no_alloc`, at 4 and at 8 voices.
+
+**Real-time rows (wall clock).** The release bundle of main `f59fb60` plus this lane (the G2 patch with `delay` in the chain), `enth-test-host process-stats --require-rt`: rtkit `SCHED_RR` 10, `RLIMIT_RTTIME` 200 ms, not pinned, 64 frames at 48 kHz, one instance, 120 s after a 10 s warm-up; G1 beside G2 in the same session, in three passes, each group under `flock -x /tmp/enth-quiet.lock` (obtained at once every time, 08:46–09:45). Passes 1 and 2 ran back to back at load 8.4–21.5; pass 3 ran later at load 4.0–14.8 with G1, the reference and the 8-voice stress case in turn. The raw reports, with the environment snapshot and the load at the start and end of each run, are in `~/code/enth-scratch/s2/g2b/rt/out2/` (passes 1 and 2) and `out4/` (pass 3).
+
+**Measured on a loaded machine.** The exclusive lock kept the other lanes off, but the owner's own long-running jobs did not stop, so the machine was never idle: 12 threads (i7-9750H, kernel 7.0.0-38 `PREEMPT_DYNAMIC`, governor `powersave`, EPP `balance_performance`, 11 GB of swap in use) at a load average of 4–21. Every number below carries that caveat and **the comparison that counts is G2 against G1 in the same pass**. The runs are noisy: G1's own steady p99 read 175, 176 and 148 µs against 112.5–123.3 µs on a quiet machine (lane RT, 2026-10-20, median 116 µs), and in pass 3 G1's p99 doubled between its steady run and its instant-swap run (148 and 302 µs) with the load average unchanged, so some interference does not show in it. Read pass 3's swap rows by their ratio to G1 more than by their size.
+
+Steady, no edits (p99 as a share of the 1,333 µs deadline in brackets; the gate is 25 % = 333 µs). Three passes, written 1 / 2 / 3:
+
+| Patch | Instructions per frame | p50 | p99 | p99.9 | Max | Deadline misses (of 90,000) |
+| --- | --- | --- | --- | --- | --- | --- |
+| G1 (16 voices) | 6,285 | 138 / 139 / 85 µs | 175 / 176 / 148 µs (13.1 / 13.2 / 11.1 %) | 207 / 196 / 203 µs | 434 / 1,115 / 1,422 µs | 0 / 6 / 1 |
+| **G2 reference (4 voices)** | **10,617** | **317 / 286 / 186 µs** | **387 / 365 / 308 µs (29.1 / 27.4 / 23.1 %)** | **435 / 407 / 363 µs** | 601 / 1,210 / 549 µs | 3 / 4 / 0 |
+| G2 reference against G1 | 1.69× | 2.3 / 2.1 / 2.2× | 2.21 / 2.07 / 2.08× | | | |
+
+With an edit every 250 ms (480 swaps a run): `--swap-state`, G1 and G2 each against a variant of themselves (`*-value`: one generator's level changed, an instant swap; `*-lfo3`: an unrouted voice LFO added, a crossfading swap). The host cannot see the swap, so the swap block is the largest block of each load's window, as in lane RT. Passes 1 / 2 / 3:
+
+| Patch | Instant swap: all blocks p99 | Instant swap block p99 | Crossfade: swap block p99 (max) | Crossfade blocks p99 (the 3 after the swap) | Misses (of 90,000), instant / crossfade |
+| --- | --- | --- | --- | --- | --- |
+| G1 | 171 / 212 / 302 µs (12.8 / 15.9 / 22.6 %) | 214 / 253 / 365 µs | 742 / 579 / 979 µs (827 / 670 / 1,036) | 316 / 306 / 491 µs | 3 / 1 / 0 and 3 / 5 / 0 |
+| **G2 reference** | **341 / 442 / 611 µs (25.6 / 33.1 / 45.8 %)** | **387 / 478 / 699 µs** | **807 / 727 / 1,472 µs (999 / 853 / 1,508)** | **631 / 571 / 1,230 µs** | 2 / 0 / 0 and 6 / 0 / 11 |
+| G2 against G1 | 2.0 / 2.1 / 2.0× | 1.8 / 1.9 / 1.9× | 1.09 / 1.26 / 1.50× | 2.0 / 1.9 / 2.5× | |
+
+**Reading them.**
+
+- **Steady, the reference is at the line loaded and under it scaled.** p99 is 23.1–29.1 % of the deadline here, 2.1–2.2× G1's in the same pass (the instruction ratio is 1.69×: the wall clock per instruction is about 1.25× G1's). Scaling by G1's quiet-machine p99 (116 µs) gives about 240–255 µs (18–19 %). That is an estimate, not a measurement: it needs an idle machine and `flock -x`, re-run, before a number is quoted outside this page.
+- **Instant swaps track the steady blocks**: the swap block is 1.8–1.9× G1's, an instant-swap block is 1.12× a normal block in instructions, and the move works with the delay's rings in the plan. Scaled by G1's quiet instant-swap block (107–148 µs) that is about 195–285 µs (15–21 %).
+- **The crossfade is where the reference is near or over the line.** The three blocks after a crossfading swap run both plans, so they cost 2× a normal block (instructions 2.00×; crossfade-block p50 479–550 µs against a normal block's 248–285 µs in passes 1 and 2). They read 571–1,230 µs here and 1.9–2.5× G1's; scaled by G1's quiet 180 µs (13.5 %) that is about 340–450 µs, and by the reference's own scaled steady p99 times its loaded crossfade-to-normal ratio (1.9) about 470 µs: 25–35 % in all. That is at or over the line by construction: a patch whose normal block is over about 12 % of the deadline cannot keep two plans' worth of blocks under 25 %, and G1's normal block is 9 %.
+- **The crossfading swap block p99 is 727–1,472 µs here** (55–110 % of the deadline; pass 3 had 11 deadline misses), 1.09–1.50× G1's block in the same pass, and scaled by G1's quiet 337–339 µs about 370–510 µs (28–38 %); G1's own block sits at 25.2–25.4 % quiet, "reported, not gated" in lane RT. It is not a gated row, but pass 3 shows that on a disturbed machine this block reaches the deadline.
+- **The delay's and the chorus's state copy** is the swap block's p50 less the crossfade blocks' p50: **69–132 µs** over the three passes for the 768,000-byte rings plus the chorus's 32 KiB, against 193–258 µs for G1's 1.6 MB reverb in the same runs: 5–10 % of the deadline, about half of G1's or less for half the bytes. OTT's state is small and shows nothing. The lane RT trigger for reopening the pre-effects crossfade ("a second large-state effect lands") is met by the delay, but the copy is 69–132 µs of a 727–1,472 µs block, and the doubled voice chains are the rest.
+
+**Verdict, reference.**
+
+| Check | Result |
+| --- | --- |
+| G2 within G1's 12,000 per frame | **Yes:** 10,617 per frame (0.88×); the hard limit is 1,121,178,000 per 2 s render |
+| p99 under 25 % of the deadline with an edit every 250 ms | Loaded: steady 23.1–29.1 %; instant-swap runs 25.6–45.8 % (pass 3's G1 was itself at 22.6 %). Scaled by G1's load factor: steady about 18–19 %, instant-swap blocks 15–21 %. **At the line, not shown on an idle machine yet** |
+| Crossfading swap block p99 against the 1,333 µs deadline | 727–1,472 µs loaded (55–110 %), about 370–510 µs scaled (28–38 %); crossfade blocks 571–1,230 µs loaded, about 340–470 µs scaled (25–35 %) |
+| G1 unchanged | Yes: 603,331,584 instructions against 603,331,580 measured on this branch before the merges (+4); `benches/g1.rs` and G1's fixtures are untouched |
+
+#### The stress case: 8 voices (not the budget)
+
+The same patch with `polyphony` 8 and E1 B1 E2 G2 B2 E3 G3 B3 held (`stress_8v`, fixtures `enth-plugin.g2-stress*.patch.json`). It is kept so the price of the stereo voice path at eight voices stays visible and so a performance lane has a number to move; it has its own hard limit and **does not meet G1's cap**.
+
+| | Instructions | Per frame | Against G1's 12,000 | Hard limit |
+| --- | --- | --- | --- | --- |
+| **G2 stress, 8 voices** (`stress_8v`) | 1,888,530,829 | 19,672 | 1.64× | 2,077,384,000 (21,640 per frame) |
+
+Its swap blocks (`stress_normal`, `stress_instant`, `stress_crossfade_swap`, `stress_crossfade`): 1,257,740 (19,652 per frame); 1,351,210 (1.07×); 3,405,197 (2.71×, 884,738 over a crossfade block); 7,561,377 (2.00× each), with hard limits 1,384,000, 1,487,000, 3,746,000 and 8,318,000.
+
+**Where the instructions go** (callgrind, inclusive; the reference beside it):
+
+| Part | Stress, 8 voices | Reference, 4 voices | Notes |
+| --- | --- | --- | --- |
+| `dist` | 39.4 % | 36.5 % | the asymmetric curve calls libm `exp` (10.0 % / 9.2 % of the whole run); 2× oversampling doubles the curve evaluations |
+| `wt` (unison and PM) | 35.0 % | 32.4 % | `UnisonVoice::render` 33.9 % / 31.4 %; the `floorf` calls take 4.7 % / 4.3 % of the run |
+| the right-channel twin of the voice-FX chain | 26.3 % | 24.4 % | already counted in the `dist`, `formant` and `ladder` shares, which cover both channels |
+| `formant` | 7.2 % | 6.7 % | |
+| `ladder` | 6.0 % | 5.6 % | |
+| `ott` | 4.9 % | 9.2 % | independent of the voice count (about 93.5 M either way) |
+| `osc` (the PM source) | 2.1 % | 2.0 % | |
+| `chorus` | 1.5 % | 2.9 % | 29.1 M either way |
+| `delay` | 0.8 % | 1.5 % | about 150 instructions per frame either way |
+
+The cause is S2a's stereo voice path ([dsp/engine.md](dsp/engine.md#stereo-voice-path)): a `wt` with `unison` ≥ 2 makes the plan stereo, so every voice-FX module is instantiated twice (a right-channel twin) and each voice runs `dist`, `ladder` and `formant` twice. The chain is 52.7 % of the stress case and 48.8 % of the reference, and half of it is the twin. The unison lanes always compute 8 copies, so 7 copies cost almost what 8 do: going to 3 copies saves 4.4 %, and only 1 copy (which turns the stereo path off) halves the run.
+
+**What each choice costs** (the bench measures every row on the stress case; per frame, same chord):
+
+| Variant | Per frame | Against the stress case | Against 12,000 |
+| --- | --- | --- | --- |
+| Stress (8 voices, 7 copies, dist asymmetric ×2) | 19,672 | | 1.64× |
+| `dist` oversampling ×4 | 26,186 | +33 % | 2.18× |
+| `dist` soft curve | 19,612 | −0.3 % | 1.63× |
+| `dist` hard clip | 15,121 | −23 % | 1.26× |
+| `dist` oversampling off | 15,598 | −21 % | 1.30× |
+| MSEG not on the table position | 19,390 | −1.4 % | 1.62× |
+| no `ladder` | 18,411 | −6.4 % | 1.53× |
+| no `formant` | 18,181 | −7.6 % | 1.52× |
+| 3 unison copies | 18,805 | −4.4 % | 1.57× |
+| 1 copy (mono plan) | 9,637 | −51 % | 0.80× |
+| 6 voices | 15,157 | −23 % | 1.26× |
+| 6 voices, `dist` hard clip | 11,745 | −40 % | 0.98× |
+| **4 voices (the reference)** | 10,617 | −46 % | 0.88× |
+
+Between 4, 6 and 8 voices the patch costs about 2,260 instructions per voice and frame plus about 1,560 fixed (the effects, the skeleton); with the hard clip it is about 1,690 per voice.
+
+**Real-time rows, stress case.** The same method as the reference's, 120 s runs, each group under `flock -x`. Three sets: the first campaign, on the loaded machine (load 19.7–32.8, G1 beside it: steady p99 162 / 171 µs, crossfading swap block 691 / 656 µs); two passes at load 4–11 without G1; and one pass with G1 beside at load 4–15 (the same pass 3 as the reference's, G1: steady p99 148 µs, crossfading swap block 979 µs). p99 as a share of the deadline in brackets:
+
+| Run | Steady p99 | Instant: all blocks p99 (swap block p99) | Crossfade: swap block p99 (max) | Crossfade blocks p99 | Misses, crossfade runs (of 90,000) |
+| --- | --- | --- | --- | --- | --- |
+| load 20–33, pass 1 / 2 | 642 / 628 µs (48.1 / 47.1 %) | 654 / 620 µs (49.0 / 46.5 %) (713 / 672) | 1,423 / 1,420 µs (1,495 / 1,434) | 1,232 / 1,209 µs | 115 / 55 |
+| load 4–11, pass 1 / 2 | 498 / 468 µs (37.3 / 35.1 %) | 514 / 583 µs (38.5 / 43.8 %) (551 / 658) | 1,290 / 1,295 µs (1,348 / 1,426) | 1,119 / 1,121 µs | 2 / 4 |
+| load 4–15, pass 3 (G1 beside) | 596 µs (44.7 %) | 553 µs (41.5 %) (593) | 1,273 µs (2,406) | 1,248 µs | 37 |
+
+At 8 voices the steady p99 is 35–48 % of the deadline, 4.0× G1's in pass 3 (p50 3.7×), and **the crossfading swap block p99 is 1,273–1,423 µs, 95–107 % of the 1,333 µs deadline**, with 2–115 deadline misses in a 120 s run. The swap block less the crossfade blocks (the state copy) is 115–155 µs, as at 4 voices. This is the measurement behind the decision above: it is the full cost of S2a's stereo voice path at eight voices of a growl patch, and why the reference is 4.
+
+#### Follow-up: a performance lane
+
+The stress case is the yardstick for a lane that makes the two big costs cheaper, outside G2B's scope:
+
+- **The stereo doubling of the voice-FX chain** (24–26 % of the run): the right channel's `dist`, `ladder` and `formant` run the same code on a second buffer, so a SIMD pair (left and right in one pass) could remove up to half of it.
+- **`dist`'s cost** (36–39 %, of which libm `exp` is 9–10 %): the asymmetric curve evaluates `exp` for every oversampled sample; a cheaper form, or a polynomial, is the candidate. `floorf` in the unison (4–5 %) likewise.
+
+Together these are worth up to about 27 % of either case (an estimate, not a measurement): about 7,800 per frame at 4 voices and 14,400 at 8, so 8 voices would still be over G1's cap. When the lane lands, re-measure `stress_8v` and the reference, and re-set their hard limits to the new counts plus 10 %.
+
+**Reproduce:**
+
+```bash
+export GUNGRAUN_RUNNER=~/code/enth-scratch/lane-b/tools/bin/gungraun-runner
+flock -s /tmp/enth-quiet.lock cargo bench -p enth-engine --bench g2      # the budgets (exit 0 = all hold)
+B=target/bundled/enth-plugin.clap; G=tools/test-host/golden               # cargo xtask bundle enth-plugin --release
+N4="E1@0+3600:0.8, B1@0+3600:0.8, E2@0+3600:0.8, G2@0+3600:0.8"           # the reference's chord (NOTES in benches/common/g2.rs)
+N8="$N4, B2@0+3600:0.8, E3@0+3600:0.8, G3@0+3600:0.8, B3@0+3600:0.8"      # the stress case's chord (STRESS_NOTES)
+flock -x /tmp/enth-quiet.lock enth-test-host process-stats $B --state $G/enth-plugin.g2.patch.json --notes "$N4" --require-rt --rt 10 --secs 120 --warmup 10
+flock -x /tmp/enth-quiet.lock enth-test-host process-stats $B --state $G/enth-plugin.g2.patch.json --notes "$N4" --require-rt --rt 10 --secs 120 --warmup 10 \
+  --swap-state $G/enth-plugin.g2-lfo3.patch.json --swap-kind crossfade     # or g2-value.patch.json --swap-kind instant
+# the stress case: enth-plugin.g2-stress.patch.json, -stress-lfo3 / -stress-value, and --notes "$N8"
+# G1 beside it: enth-plugin.g1.patch.json (no --notes), g1-lfo3 / g1-value
+cargo test -p enth-golden --test g2 -- --ignored write_the_fixtures      # regenerate the fixtures after changing benches/common/g2.rs
+```
 
 ## Measurement hygiene
 
