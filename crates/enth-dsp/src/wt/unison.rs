@@ -665,8 +665,9 @@ fn gather(data: &[f32], frame: usize, at: i32x8, fr: f32x8) -> f32x8 {
     // eight lanes are loaded, in straight code; a lane beyond the copies has its index (`Rows::new`) outside the
     // table, so it reads zeros, as a skipped lane's taps always were.
     let tap = |k: usize| {
-        data.get(at[k] as u32 as usize..)
-            .and_then(<[f32]>::first_chunk::<4>)
+        let i = at[k] as u32 as usize;
+        data.get(i..i + 4)
+            .and_then(|taps| <&[f32; 4]>::try_from(taps).ok())
             .map_or(f32x4::ZERO, |&chunk| f32x4::from(chunk))
     };
     let lo = f32x4::transpose([tap(0), tap(1), tap(2), tap(3)]);
