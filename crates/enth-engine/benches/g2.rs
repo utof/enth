@@ -287,31 +287,35 @@ fn crossfade_blocks(mut p: Playing) -> Playing {
     p
 }
 
-// Measured 2026-10-27 on main 6c3fc20 plus this lane, before `delay` merged (x86_64 Linux, Intel i7-9750H,
-// callgrind via gungraun 0.20.0): instructions of the 2 s render, per frame (/96,000) in brackets.
-// - reference_8v 1,872,632,942 (19,507); dist_off 1,481,519,510 (15,433); dist_x4 2,497,974,592 (26,021);
-// - dist_soft 1,866,840,693 (19,446); dist_hard 1,435,691,370 (14,955); static_position 1,845,584,281 (19,225);
-// - no_ladder 1,751,600,820 (18,246); no_formant 1,729,506,000 (18,016); copies_3 1,789,366,250 (18,639);
-// - mono_1_copy 909,539,748 (9,474); voices_6 1,439,213,212 (14,992); voices_4 1,003,498,461 (10,453);
-// - the 64-frame blocks: normal 1,247,086; instant 1,339,469; crossfade_swap 2,614,925; crossfade (three blocks)
-//   7,497,733.
-const REFERENCE_IR: u64 = 2_059_897_000;
-const DIST_OFF_IR: u64 = 1_629_672_000;
-const DIST_X4_IR: u64 = 2_747_773_000;
-const DIST_SOFT_IR: u64 = 2_053_525_000;
-const DIST_HARD_IR: u64 = 1_579_261_000;
-const STATIC_POSITION_IR: u64 = 2_030_143_000;
-const NO_LADDER_IR: u64 = 1_926_761_000;
-const NO_FORMANT_IR: u64 = 1_902_457_000;
-const COPIES_3_IR: u64 = 1_968_303_000;
-const MONO_IR: u64 = 1_000_494_000;
-const VOICES_6_IR: u64 = 1_583_135_000;
-const VOICES_6_HARD_IR: u64 = 4_000_000_000;
-const VOICES_4_IR: u64 = 1_103_849_000;
-const NORMAL_IR: u64 = 1_372_000;
-const INSTANT_IR: u64 = 1_474_000;
-const CROSSFADE_SWAP_IR: u64 = 2_877_000;
-const CROSSFADE_IR: u64 = 8_248_000;
+// Measured 2026-10-27 on main f59fb60 plus this lane (`delay` in the reference chain; x86_64 Linux, Intel i7-9750H,
+// callgrind via gungraun 0.20.0, the pinned toolchain): instructions of the 2 s render, per frame (/96,000) in
+// brackets; the budget is that plus 10 %, rounded up to 1,000.
+// - reference_8v 1,888,530,827 (19,672); dist_off 1,497,417,395 (15,598); dist_x4 2,513,872,477 (26,186);
+// - dist_soft 1,882,738,578 (19,612); dist_hard 1,451,589,255 (15,121); static_position 1,861,482,068 (19,390);
+// - no_ladder 1,767,498,392 (18,411); no_formant 1,745,403,498 (18,181); copies_3 1,805,264,135 (18,805);
+// - mono_1_copy 925,149,459 (9,637); voices_6 1,455,039,085 (15,157); voices_6_hard 1,127,536,761 (11,745);
+//   voices_4 1,019,252,376 (10,617);
+// - the 64-frame blocks: normal 1,257,684 (19,651 per frame); instant 1,351,210; crossfade_swap
+//   3,405,141 (2.7x a normal block: both plans run two segments, and the delay's 768,000-byte rings and the
+//   chorus's 32 KiB are copied, about 0.79 M instructions of memory traffic; the wall clock of that copy is in
+//   docs/benchmarks.md); crossfade (three blocks) 7,561,321 (2.0x a normal block each: both plans run).
+const REFERENCE_IR: u64 = 2_077_384_000;
+const DIST_OFF_IR: u64 = 1_647_160_000;
+const DIST_X4_IR: u64 = 2_765_260_000;
+const DIST_SOFT_IR: u64 = 2_071_013_000;
+const DIST_HARD_IR: u64 = 1_596_749_000;
+const STATIC_POSITION_IR: u64 = 2_047_631_000;
+const NO_LADDER_IR: u64 = 1_944_249_000;
+const NO_FORMANT_IR: u64 = 1_919_944_000;
+const COPIES_3_IR: u64 = 1_985_791_000;
+const MONO_IR: u64 = 1_017_665_000;
+const VOICES_6_IR: u64 = 1_600_543_000;
+const VOICES_6_HARD_IR: u64 = 1_240_291_000;
+const VOICES_4_IR: u64 = 1_121_178_000;
+const NORMAL_IR: u64 = 1_384_000;
+const INSTANT_IR: u64 = 1_487_000;
+const CROSSFADE_SWAP_IR: u64 = 3_746_000;
+const CROSSFADE_IR: u64 = 8_318_000;
 
 library_benchmark_group!(name = g2_render, benchmarks = [render_2s]);
 library_benchmark_group!(name = g2_swap, benchmarks = [one_block, crossfade_blocks]);
