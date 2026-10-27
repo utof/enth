@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-fm-growl"
+added = "2026-10-27"
+difficulty = 4
+tags = ["fm-growl", "bass", "fm", "growl", "wt", "audio-route", "s2a"]
+brief = "a growling bass made with FM: one oscillator's audio modulates the phase of another, hardest at the start of every note and settling as it holds"
+template = "init"
+expect = "pitch.note ~ A1, attack < 40ms, brightness in [380Hz, 900Hz], filter_sweep > 1oct, sweep_ms in [100ms, 600ms], sustain > -6dB, release < 400ms, noisiness < 0.1, peak < -1dB"
+requires = ["wt x2", "wt -> wt.pm"]
+rationale = "The first FM goal, through the audio routes S2a added: a second `wt` (level 0, so heard only through the modulation) feeds the phase input of the first (`route wt2 -> wt1.pm`), and an envelope on `pm_index` makes the tone hardest at the start of the note and settle as it holds. The list reads that shape: `filter_sweep` is the movement of the centroid (the witness sweeps 1.7 octaves over 245 ms; the list asks for more than 1 octave lasting 100 to 600 ms), the held tone sits at 501 Hz (window 380 Hz to 900 Hz), and FM of two clean oscillators stays clean (noisiness 4e-5, under 0.1), which keeps a noisy fake out. Attack (20 ms, under 40), sustain (-1.7 dB, over -6), release and peak keep it a held bass on A1. The descriptors cannot see the technique: a low-pass filter swept five octaves by a fast envelope passes the whole sound list (negative control), so `requires` asks for two `wt` and an audio route into a `wt`'s `pm` input. The blank template fails 4 of 9 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

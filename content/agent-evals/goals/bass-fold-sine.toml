@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-fold-sine"
+added = "2026-10-27"
+difficulty = 3
+tags = ["dist-ott", "bass", "distortion", "wavefold", "dist", "s2a"]
+brief = "a sine bass folded into a buzzy tone by a sine wavefolder, still sitting on its note"
+template = "init"
+expect = "pitch.note ~ A1, brightness in [600Hz, 1.8kHz], noisiness < 0.05, sustain > -6dB, release < 400ms, peak < -1dB, clipping = false"
+requires = ["dist.mode = sine_fold"]
+rationale = "Distortion by wavefolding. A sine alone has its centroid at its own pitch (55 Hz); the sine folder (`dist.mode = sine_fold`, 30 dB of drive, `keep_lows` at its 20 Hz floor so all of it is folded) creates harmonics, so the centroid climbs to 1117 Hz (window 600 Hz to 1.8 kHz) while the pitch stays on A1 and the noise ratio stays at 3e-5 (a fold is harmonic: the list asks for under 0.05). The fold does not clip (`clipping = false`, peak -11 dB). Release 201 ms and sustain -0.2 dB keep it a held bass. A saw into a low-pass at 1.6 kHz passes this list (negative control, the template's oscillator is already a saw), so `requires` asks for the folder by mode. The easy end of the distortion family: one effect and one mode. The blank template fails 1 of 7 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 1.5 }], dur_s = 2.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

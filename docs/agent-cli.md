@@ -626,6 +626,8 @@ expect = "envelope.attack_ms < 10, spectrum.centroid_hz > 2kHz, envelope.sustain
 budget = { renders = 20, turns = 60, usd = 1.0 }
 ```
 
+From eval version 4 (S2a, lane EV5) a goal may be schema `enth.agent-eval/2`, which is `/1` plus an optional `requires = ["wt x2", "wt -> wt.pm", "lfo.sync = on", ...]`: what the final patch must be made of (kinds, routes, parameter values), because the descriptors cannot tell an FM growl from a filtered saw. The judge applies it beside `enth check` ([agent-evals.md](agent-evals.md#requires-the-judge-checks-how-the-patch-is-built)); `/1` goals load unchanged.
+
 The prompt templates (`prompts/given.md`, `prompts/self.md`) are versioned; changing one is an eval-version change. Committed results are summaries only (`results/<date>-<model>.json`); transcripts, patches and WAVs go to `target/agent-eval/` and stay out of git.
 
 `cargo xtask agent-eval [--track given|self|both] [--goals …] [--trials 3] [--model …] [--runner claude-code] [--max-usd 20] [--jobs 1]` runs each trial in an empty temp dir whose only tool is a wrapper named `enth`. The wrapper logs every call and refuses the 21st render. It drives headless Claude Code:
@@ -636,7 +638,7 @@ claude --bare -p "$(render prompt)" --output-format stream-json --verbose --mode
   --permission-mode dontAsk --no-session-persistence
 ```
 
-The judge is `enth check <the agent's patch> --perf <goal perf> --expect <goal list>` (exit 0 is solved), and it also records whether the patch came from `enth` rather than hand-written JSON. `--bare` needs an API key; on a subscription, drop it and set the `CLAUDE_CODE_DISABLE_*` variables and a clean `CLAUDE_CONFIG_DIR`, so personal Claude Code instructions stay out of the agent's context. Claude Code has no seed or temperature flag, so runs are not reproducible: that is why there are 3 trials.
+The judge is `enth check <the agent's patch> --perf <goal perf> --expect <goal list>` (exit 0 is solved; a `/2` goal also needs its `requires` to hold, read with `enth get`), and it also records whether the patch came from `enth` rather than hand-written JSON. `--bare` needs an API key; on a subscription, drop it and set the `CLAUDE_CODE_DISABLE_*` variables and a clean `CLAUDE_CONFIG_DIR`, so personal Claude Code instructions stay out of the agent's context. Claude Code has no seed or temperature flag, so runs are not reproducible: that is why there are 3 trials.
 
 Per goal and track it records the solve rate over 3 trials (pass@3 and pass^3), median and maximum renders, tokens and cost (`total_cost_usd` is a client-side estimate), the invalid-command rate (exit 2 or 3 calls over all calls), wall time and the final margins, with the model id, Claude Code version, enth git hash and eval version in the header. For the blind listen it picks one passing trial per goal (a seeded choice, median renders), loudness-matches the 10 WAVs to −23 LUFS, shuffles the names and shows only the brief; `agent-eval listen` is run by the owner. Estimated cost: about $0.14 per trial on Sonnet 5.5, so about $9 for 10 goals × 3 trials × 2 tracks (an estimate; the first run measures it).
 

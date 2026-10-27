@@ -8,7 +8,7 @@
 //!
 //! Layout: `goal` (the set on disk), `wrap` (the wrapper), `stream` (Claude Code transcripts), `fake` (the dry-run
 //! agents), `run` (trials), `report` (summaries), `blind` (the owner's blind check), `audit` (the set's honesty
-//! checks), `util`.
+//! checks), `structure` (what a goal's final patch must be made of, eval version 4), `util`.
 
 mod audit;
 mod blind;
@@ -19,6 +19,7 @@ mod lesson_track;
 mod report;
 mod run;
 mod stream;
+mod structure;
 mod util;
 mod wrap;
 
@@ -44,9 +45,11 @@ const USAGE: &str = "usage: cargo xtask agent-eval [run] [options]
   agent-eval goals          list the goals and check their witnesses exist
   agent-eval lesson [--dry-run] [--agent witness|follower] [...]
                             the agent lesson track (lane EV3): whole lessons of the basics pack; `lesson --help`
-  agent-eval audit [--goals id,...] [--cross] [--enth PATH]
-                            honesty checks, no model: each witness passes both lists with no thin item, and the
-                            untouched starting template fails the designer list (--cross: lists on other witnesses)";
+  agent-eval audit [--goals id,...] [--cross] [--require-discoverable] [--enth PATH]
+                            honesty checks, no model: each witness passes both lists (and the goal's `requires`, its
+                            structure) with no thin item, and the untouched starting template fails the designer list
+                            (--cross: lists on other witnesses; --require-discoverable: every kind the goals require
+                            must be in `enth modules`, which a reserved S2a kind is not until INT-S2a)";
 
 /// The eval set under the workspace root.
 pub fn load_set(root: &Path) -> Result<goal::EvalSet, String> {
@@ -224,11 +227,140 @@ mod tests {
         a.iter().map(|&s| s.to_owned()).collect()
     }
 
+    /// The 30 goals of eval versions 1 to 3: they keep their ids, their schema and their meaning.
+    const OLDER_GOALS: [&str; 30] = [
+        "bass-808-boom",
+        "bass-acid-squelch",
+        "bass-buzzy",
+        "bass-detuned-fat",
+        "bass-sub-sine",
+        "bell-soft",
+        "brass-ish",
+        "filter-wobble",
+        "fx-laser-zap",
+        "fx-noise-riser",
+        "fx-reverse-swell",
+        "hat-closed-noise",
+        "hat-open",
+        "keys-organ",
+        "keys-tremolo",
+        "kick-thump",
+        "lead-chip-pulse",
+        "lead-flute-breathy",
+        "lead-supersaw",
+        "lead-vibrato",
+        "pad-moving-bright",
+        "pad-slow-dark",
+        "pad-trance-gate",
+        "perc-woodblock",
+        "pluck-bright-short",
+        "pluck-hall",
+        "pluck-marimba",
+        "snare-crack",
+        "texture-wind",
+        "tom-low",
+    ];
+
+    /// The 11 goals of eval version 4 (S2a lane EV5), by family.
+    const S2A_GOALS: [&str; 11] = [
+        "bass-fm-growl",
+        "bass-fm-growl-wobble",
+        "bass-reese-unison",
+        "bass-reese-moving",
+        "bass-wobble-eighth",
+        "bass-wobble-dotted-mseg",
+        "bass-fold-sine",
+        "bass-dist-ott",
+        "bass-formant-talk",
+        "pluck-comb-string",
+        "bass-chain-ladder-phaser-eq",
+    ];
+
     #[test]
-    fn the_shipped_set_has_thirty_goals_covering_the_brief() {
-        // Eval version 3 (R1/S1 lane EV2): 30 goals, from P1a's 10, across the sound families.
+    fn version_four_adds_eleven_s2a_goals_and_keeps_the_thirty_older_ones() {
         let set = set();
-        assert_eq!(set.goals.len(), 30);
+        assert_eq!(set.meta.eval_version, 4);
+        assert_eq!(set.goals.len(), OLDER_GOALS.len() + S2A_GOALS.len());
+        // the older goals are all there, still on schema 1, still judged on their sound alone
+        for id in OLDER_GOALS {
+            let g = set
+                .goals
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap_or_else(|| panic!("{id} is gone"));
+            assert_eq!(g.schema, goal::GOAL_SCHEMA, "{id}");
+            assert!(
+                g.requires.is_empty(),
+                "{id}: older goals have no structure check"
+            );
+            assert!(!g.tags.iter().any(|t| t == "s2a"), "{id}");
+        }
+        // the new ones: schema 2, a structure check naming S2a kinds, an `s2a` tag
+        for id in S2A_GOALS {
+            let g = set
+                .goals
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap_or_else(|| panic!("{id} is missing"));
+            assert_eq!(g.schema, goal::GOAL_SCHEMA_V2, "{id}");
+            assert!(g.tags.iter().any(|t| t == "s2a"), "{id}");
+            assert!(
+                !g.requires.is_empty(),
+                "{id}: a technique is named, so it is checked"
+            );
+            assert_eq!(g.requirements().len(), g.requires.len(), "{id}");
+            assert!(
+                g.engine_min.as_str() >= "0.3.0",
+                "{id}: S2a kinds need the engine that has them"
+            );
+        }
+        // five families, each tagged with its name: FM growl, unison reese, synced wobble, distortion into OTT, chains
+        for (family, goals) in [
+            ("fm-growl", 2),
+            ("unison-reese", 2),
+            ("synced-wobble", 2),
+            ("dist-ott", 2),
+            ("chain", 3),
+        ] {
+            let n = set
+                .goals
+                .iter()
+                .filter(|g| g.tags.iter().any(|t| t == family))
+                .count();
+            assert_eq!(n, goals, "the {family} family");
+        }
+    }
+
+    #[test]
+    fn the_changelog_tells_every_version_in_order() {
+        let set = set();
+        assert_eq!(set.meta.changelog.len(), 4);
+        for (i, line) in set.meta.changelog.iter().enumerate() {
+            assert!(
+                line.starts_with(&format!("{} (", i + 1)),
+                "changelog line {}",
+                i + 1
+            );
+        }
+        // the paid run is not made: the changelog must not claim a model, a cost or a pass rate
+        let four = &set.meta.changelog[3];
+        assert!(four.contains("No paid run has been made"), "{four}");
+    }
+
+    #[test]
+    fn an_eval_version_three_file_still_loads() {
+        // eval.toml as version 3 left it (three changelog lines, schema `enth.agent-eval-set/1`)
+        let v3 = r#"schema = "enth.agent-eval-set/1"
+eval_version = 3
+changelog = ["1 (2026-10-19, P1a lane E): ten goals", "2 (2026-10-20, P1b lane EV): findings", "3 (2026-10-20, R1/S1 lane EV2): 30 goals"]"#;
+        let meta: goal::SetMeta = toml::from_str(v3).expect("version 3's eval.toml parses");
+        assert_eq!((meta.eval_version, meta.changelog.len()), (3, 3));
+    }
+
+    #[test]
+    fn the_shipped_set_covers_the_brief() {
+        // Eval version 3 (R1/S1 lane EV2): 30 goals, from P1a's 10, across the sound families; version 4 adds S2a's.
+        let set = set();
         let tags: Vec<&str> = set
             .goals
             .iter()
@@ -355,6 +487,37 @@ mod tests {
                 g.id
             );
             assert!(!own.contains(&g.rationale));
+        }
+    }
+
+    #[test]
+    fn a_structure_check_is_announced_after_the_brief_and_never_spelled_out() {
+        let set = set();
+        for g in &set.goals {
+            for name in ["given", "self"] {
+                let text = run::render_prompt(&set.prompt(name).unwrap(), g);
+                let announced = text.contains("how the patch is built");
+                if announced {
+                    assert!(
+                        text.contains(&format!(
+                            ". {}",
+                            "The check looks at how the patch is built"
+                        )),
+                        "{} {name}: the note is a sentence of its own, after the brief",
+                        g.id
+                    );
+                }
+                assert_eq!(
+                    announced,
+                    !g.requires.is_empty(),
+                    "{} {name}: only a goal with `requires` says the check looks at the build",
+                    g.id
+                );
+                // A bare kind key ("dist") is a word the brief may use; a route or a setting must never be quoted.
+                for r in g.requires.iter().filter(|r| r.contains(' ')) {
+                    assert!(!text.contains(r.as_str()), "{} {name}: leaks `{r}`", g.id);
+                }
+            }
         }
     }
 

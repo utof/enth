@@ -6,8 +6,13 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::json;
 
-/// The schema string every goal file carries.
+use super::structure;
+
+/// The schema string of a goal file whose sound is the whole check (eval versions 1 to 3, and the older goals since).
 pub const GOAL_SCHEMA: &str = "enth.agent-eval/1";
+/// The schema string of a goal file that also lists `requires` (eval version 4): additive over `/1`, which still
+/// loads and means the same.
+pub const GOAL_SCHEMA_V2: &str = "enth.agent-eval/2";
 /// The schema string every witness file carries.
 pub const WITNESS_SCHEMA: &str = "enth.agent-eval-witness/1";
 /// The schema string of `eval.toml`.
@@ -91,6 +96,20 @@ pub struct Goal {
     pub engine_min: String,
     pub perf: Perf,
     pub budget: Budget,
+    /// What the final patch must be made of, beside passing `expect` (`enth.agent-eval/2` only; see
+    /// [`super::structure`]): `["wt x2", "wt -> wt.pm"]`. Never shown to the agent.
+    #[serde(default)]
+    pub requires: Vec<String>,
+}
+
+impl Goal {
+    /// The parsed `requires`; [`load`] has already checked that they parse.
+    pub fn requirements(&self) -> Vec<structure::Requirement> {
+        self.requires
+            .iter()
+            .filter_map(|r| structure::parse(r).ok())
+            .collect()
+    }
 }
 
 /// One scripted `enth` call of a witness.
@@ -197,8 +216,18 @@ fn validate(goal: &Goal, stem: &str) -> Result<(), String> {
             goal.id
         ));
     }
-    if goal.schema != GOAL_SCHEMA {
-        return Err(format!("{stem}: schema must be {GOAL_SCHEMA}"));
+    if goal.schema != GOAL_SCHEMA && goal.schema != GOAL_SCHEMA_V2 {
+        return Err(format!(
+            "{stem}: schema must be {GOAL_SCHEMA} or {GOAL_SCHEMA_V2}"
+        ));
+    }
+    if goal.schema == GOAL_SCHEMA && !goal.requires.is_empty() {
+        return Err(format!(
+            "{stem}: `requires` needs schema {GOAL_SCHEMA_V2}, the version that added it"
+        ));
+    }
+    for r in &goal.requires {
+        structure::parse(r).map_err(|e| format!("{stem}: {e}"))?;
     }
     if goal.id != stem {
         return Err(format!(
@@ -338,6 +367,36 @@ budget = { renders = 20, turns = 60, usd = 1.0 }
 id = "x"
 extra = 1"#;
         assert!(toml::from_str::<Goal>(bad).is_err());
+    }
+
+    #[test]
+    fn a_version_one_goal_still_loads_and_needs_nothing_built() {
+        // eval versions 1 to 3 wrote `enth.agent-eval/1` and no `requires`; they mean what they meant.
+        let g = sample();
+        assert_eq!(g.schema, GOAL_SCHEMA);
+        assert!(g.requires.is_empty() && g.requirements().is_empty());
+        assert!(validate(&g, "pluck-bright-short").is_ok());
+    }
+
+    #[test]
+    fn requires_belongs_to_schema_two() {
+        let mut g = sample();
+        g.requires = vec!["wt x2".to_owned(), "wt -> wt.pm".to_owned()];
+        assert!(
+            validate(&g, "pluck-bright-short").is_err(),
+            "schema 1 predates requires"
+        );
+        g.schema = GOAL_SCHEMA_V2.to_owned();
+        assert!(validate(&g, "pluck-bright-short").is_ok());
+        assert_eq!(g.requirements().len(), 2);
+        g.requires.push("wt ->".to_owned());
+        assert!(
+            validate(&g, "pluck-bright-short").is_err(),
+            "a requirement that does not parse is refused at load, not at judging"
+        );
+        g.requires.clear();
+        g.schema = "enth.agent-eval/3".to_owned();
+        assert!(validate(&g, "pluck-bright-short").is_err());
     }
 
     #[test]

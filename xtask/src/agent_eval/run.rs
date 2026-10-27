@@ -16,7 +16,7 @@ use super::goal::{EvalSet, Goal, fill};
 use super::stream::{self, StreamSummary};
 use super::util;
 use super::wrap::{self, WrapCfg};
-use super::{blind, fake, report};
+use super::{blind, fake, report, structure};
 
 /// The trial result schema.
 pub const TRIAL_SCHEMA: &str = "enth.agent-eval.trial/1";
@@ -180,14 +180,31 @@ pub struct TrialResult {
     pub warnings: Vec<String>,
 }
 
+/// What the prompt says after the brief of a goal that has a structure check (`requires`), so the agent is not
+/// surprised by a judge that looks at how the patch is built. Goals without `requires` get nothing, and their
+/// prompts are the ones eval versions 1 to 3 rendered.
+const BUILD_NOTE: &str = "The check looks at how the patch is built as well as how it sounds: build it the way the goal says.";
+
 /// Replace the placeholders of a prompt template.
 pub fn render_prompt(template: &str, goal: &Goal) -> String {
     let perf_json = goal.perf.json();
     let perf_short = goal.perf.short().unwrap_or_else(|| perf_json.clone());
+    let brief = if goal.requires.is_empty() {
+        goal.brief.clone()
+    } else {
+        // A brief is a phrase without a full stop; the note is a sentence of its own.
+        let brief = goal.brief.trim_end();
+        let stop = if brief.ends_with(['.', '!', '?']) {
+            ""
+        } else {
+            "."
+        };
+        format!("{brief}{stop} {BUILD_NOTE}")
+    };
     fill(
         template,
         &[
-            ("brief", &goal.brief),
+            ("brief", &brief),
             ("perf_json", &perf_json),
             ("perf_short", &perf_short),
             ("expect", &goal.expect),
@@ -647,6 +664,25 @@ pub fn run_trial(
                 judged.code,
                 judged.stderr.trim()
             )),
+        }
+        // The structure check (`requires`, eval version 4): the sound passes only if the patch is also built so.
+        match structure::check(
+            &env.enth,
+            &dir,
+            Path::new("final.patch.json"),
+            &goal.requirements(),
+        ) {
+            Ok(unmet) if unmet.is_empty() => {}
+            Ok(unmet) => {
+                result.pass = false;
+                result
+                    .failed
+                    .extend(unmet.into_iter().map(|u| format!("requires {u}")));
+            }
+            Err(e) => {
+                result.pass = false;
+                warnings.push(format!("the structure check failed: {e}"));
+            }
         }
         let wav = dir.join("final.wav");
         let rendered = Command::new(&env.enth)

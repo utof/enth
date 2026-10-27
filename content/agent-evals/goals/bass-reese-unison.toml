@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-reese-unison"
+added = "2026-10-27"
+difficulty = 3
+tags = ["unison-reese", "bass", "reese", "unison", "detune", "wt", "s2a"]
+brief = "a reese bass: one oscillator thickened by several detuned unison copies of itself, darkened by a low-pass filter"
+template = "init"
+expect = "tonal_pitch ~ E1, brightness in [220Hz, 600Hz], noisiness in [0.04, 0.4], beating == null, sustain > -12dB, release < 500ms, peak < -1dB"
+requires = ["wt.unison >= 3", "svf"]
+rationale = "A reese is a saw thickened by detuned copies of itself. In S2a the `wt` does that inside one oscillator (`unison` voices, `detune` in cents), and a low-pass darkens it; the witness is five voices at 25 ct, low-passed at 700 Hz. The list reads what a unison stack does: a dark centroid (328 Hz, window 220 Hz to 600 Hz), a noise ratio far above a single saw's (0.09 against 3e-7, window 0.04 to 0.4), and no single beat rate (`beating == null`: a stack of five voices is a chorus, where the two-oscillator detune of bass-detuned-fat reads one beat). Sustain is -10.6 dB against a window of -12, because a stack that beats is not steady. Four detuned saws on the old oscillator, with the same filter, pass this list too (negative control; three did not, they beat at 0.5 to 1 Hz), so `requires` asks for a `wt` with `unison >= 3` and a filter. The blank template fails 2 of 7 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "E1", vel = 100, on_s = 0.0, off_s = 3.0 }], dur_s = 4.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

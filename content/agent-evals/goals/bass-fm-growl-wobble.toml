@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-fm-growl-wobble"
+added = "2026-10-27"
+difficulty = 5
+tags = ["fm-growl", "bass", "fm", "growl", "wobble", "wt", "audio-route", "lfo", "s2a"]
+brief = "a fast FM growl: one oscillator's audio modulates the phase of another, and the depth of that modulation swings about six times a second"
+template = "init"
+expect = "pitch.note ~ A1, filter_lfo in [5Hz, 7Hz], filter_sweep > 1.5oct, brightness in [350Hz, 900Hz], noisiness > 0.1, sustain > -6dB, release < 400ms, peak < -1dB"
+requires = ["wt x2", "wt -> wt.pm", "lfo -> wt.pm_index"]
+rationale = "The FM pair again, with the modulation depth swung by an LFO instead of an envelope (`lfo -> wt1.pm_index`), so the growl opens and closes about six times a second. The sweep rate reads the LFO exactly (6.001 Hz, window 5 Hz to 7 Hz) and its size is large (3.2 octaves, over 1.5); the centroid sits at 551 Hz (350 Hz to 900 Hz). `noisiness > 0.1` (0.36 on the witness) is the item that tells it from the clean one-shot growl: FM at index 4 with a moving index is dense and inharmonic, and the noise ratio reads that. A low-pass filter swept by a 6 Hz LFO passes the sound list (negative control), so `requires` adds the audio route into `wt.pm` and the LFO on `pm_index`. The note is held 3.5 s, about 21 cycles. The blank template fails 4 of 8 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 3.5 }], dur_s = 4.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
