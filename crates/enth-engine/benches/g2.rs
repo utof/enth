@@ -12,7 +12,7 @@
 //! - the variants show what each choice costs: `dist_off` (ADAA-1 without oversampling), `dist_x4`, `dist_soft` and
 //!   `dist_hard` (other curves), `static_position` (the MSEG not on the table position), `no_ladder`,
 //!   `no_formant`, `copies_3` (3 unison copies), `mono_1_copy` (no unison, so no stereo voice path), `voices_6`,
-//!   `voices_4`.
+//!   `voices_6_hard`, `voices_4`.
 //! - the swap blocks (64 frames, the G1 real-time condition), as in `swap.rs` on the G2 patch: `normal`, `instant`
 //!   (a value edit), `crossfade_swap` (an unrouted LFO added: both plans run from that segment and the surviving
 //!   modules' state is copied) and `crossfade` (the next three blocks).
@@ -173,6 +173,14 @@ fn voices_6(_: ()) -> Steady {
     })
 }
 
+fn voices_6_hard(_: ()) -> Steady {
+    variant(G2 {
+        voices: 6,
+        dist_mode: DistMode::Hard,
+        ..G2::default()
+    })
+}
+
 fn voices_4(_: ()) -> Steady {
     variant(G2 {
         voices: 4,
@@ -195,6 +203,7 @@ fn voices_4(_: ()) -> Steady {
 #[bench::copies_3(args = ((),), setup = copies_3, config = common::budget(COPIES_3_IR))]
 #[bench::mono_1_copy(args = ((),), setup = mono_1_copy, config = common::budget(MONO_IR))]
 #[bench::voices_6(args = ((),), setup = voices_6, config = common::budget(VOICES_6_IR))]
+#[bench::voices_6_hard(args = ((),), setup = voices_6_hard, config = common::budget(VOICES_6_HARD_IR))]
 #[bench::voices_4(args = ((),), setup = voices_4, config = common::budget(VOICES_4_IR))]
 fn render_2s(p: Steady) -> f32 {
     render(p)
@@ -297,6 +306,7 @@ const NO_FORMANT_IR: u64 = 1_902_457_000;
 const COPIES_3_IR: u64 = 1_968_303_000;
 const MONO_IR: u64 = 1_000_494_000;
 const VOICES_6_IR: u64 = 1_583_135_000;
+const VOICES_6_HARD_IR: u64 = 4_000_000_000;
 const VOICES_4_IR: u64 = 1_103_849_000;
 const NORMAL_IR: u64 = 1_372_000;
 const INSTANT_IR: u64 = 1_474_000;
