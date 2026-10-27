@@ -17,6 +17,7 @@
 | Parameters with a lesson | 54 of 54. Modules with no non-patch check: none |
 | Weak spots | 29 parameters have the ear question as their only reliable non-patch check, 7 of them Basic-tier (§7.5); 10 lessons are carried by ear questions alone |
 | Waiting on another lane | Drive (2.5 and the 6 studies) on DRV; new phrases on CV2; route draws, macro pin and Listen options on the schema lanes (§8) |
+| S2a (lane LS2, 2026-10-27) | A fifth pack, `bass`: 17 lessons (16 core lessons in units U10 to U14 and one study) for S2a's kinds, aimed at dubstep; hidden until INT-S2a (§10) |
 
 ## 1. How to read this plan
 
@@ -720,3 +721,71 @@ The plan proceeds on the defaults. None blocks the packs' first drafts.
 | Q8 | **The phrase table's invariants** forbid short holds and pin the ids (§8.1) | CV2 splits the table into generator phrases and lesson-only phrases |
 | Q9 | **Hard-to-hear parameters.** If no ear question is answerable for a control (early reflections, detune, damping, knee, phase), what then? | The audibility gate decides per control; failures are "taught, not checked" and listed in `lesson-coverage` for the owner to accept at GR2 |
 | Q10 | **No lesson on adding or removing a module** (G5). Add a lesson 1.8 or leave it? | Leave it; mention it in 1.4 and 1.5 as the way the `osc2` and `noise1` switches work |
+
+## 10. S2a: the `bass` pack (lane LS2)
+
+**Built (2026-10-27, lane LS2, S2a wave 5).** A lesson for every user-facing S2a kind ([phase-s2.md](../../docs/phase-s2.md), rule 6 and LS2's row), aimed at a learner making dubstep: wobble, growl, reese, FM bass. The pack is `content/lessons/bass/`; its `lesson.toml` headers hold what was measured for each step (`enth describe` on the phrase each check plays, `enth compare --phrase` for sound/1's JND), as the other packs' do. `cargo xtask lesson-check --cross --solve bass` passes: 17 lessons, 139 steps, 0 failures (the notes are structure steps: a switch, a list, a route or a transposition, which the measured hints cannot move).
+
+### 10.1 Order
+
+The S2a plan's order, which is also the genre's: tempo first, then grit, then the new oscillator, then the filters and the effects. Three rules from the S2a brief hold: **distortion before OTT** (11.1, 11.2), **FM after the basic `wt`** (12.1, then 12.2), and **the synced LFO and the MSEG before the wobble study** (10.1, 10.2, then 15.1). Every start patch uses only controls taught in an earlier pack or an earlier lesson of this one, plus the lesson's own kind.
+
+| Unit | Lesson | Id | Tier | Teaches | Non-patch checks |
+| --- | --- | --- | --- | --- | --- |
+| U10 Tempo | 10.1 Tempo sync | `tempo-sync` | A | `lfo.sync`, `lfo.beats`, `lfo.one_shot` | S (the sweep's rate; one-shot: no repeating sweep), E |
+| | 10.2 Drawn shapes | `mseg` | A | `mseg.mode`, `mseg.sync`, `mseg.beats`, `mseg.curve1` | S (sweep rate, brightness, one-shot), E |
+| U11 Grit | 11.1 Distortion | `distortion` | I | `dist.drive`, `dist.mode`, `dist.mix` | S (brightness), R (two rounds on the drive), E |
+| | 11.2 OTT | `ott` | I | `ott.depth`, `ott.upward`, `ott.downward` | S (brightness), E |
+| U12 The wavetable oscillator | 12.1 The wavetable oscillator | `wavetable-oscillator` | B | `wt.table`, `wt.position`, `wt.semi`, `wt.level` | S (brightness, pitch), R (two rounds on the position), E |
+| | 12.2 FM bass | `fm` | I | `wt.pm`, `wt.pm_index`, `wt.fine`, `wt.level`; **audio routes** | S (brightness; a synced LFO on the index read as beating), E |
+| | 12.3 Bend and feedback | `warp-and-feedback` | I | `wt.feedback`, `wt.warp`, `wt.warp_amount` | S (brightness), R (two rounds on the feedback), E |
+| | 12.4 AM and ring mod | `am-and-ring` | I | `wt.am` (an audio route into it) | S (beating), E (ring mod by its tremolo) |
+| | 12.5 Unison | `unison` | I | `wt.unison`, `wt.detune`, `wt.blend`, `wt.spread` | S (pitch steadiness), E |
+| U13 Filters with character | 13.1 The ladder filter | `ladder` | B | `ladder.cutoff`, `ladder.mode`, `ladder.resonance` | S (brightness), E |
+| | 13.2 The comb filter | `comb` | B | `comb.feedback`, `comb.semi` | S (brightness, pitch), E |
+| | 13.3 The formant filter | `formant` | B | `formant.f1`, `formant.f2` | S (brightness; a yoi read as a sweep), E |
+| U14 Movement and space | 14.1 Chorus and flanger | `chorus` | I | `chorus.mix`, `chorus.rate`, `chorus.mode`, `chorus.depth` | S (brightness, the copies' beating), E |
+| | 14.2 Phaser | `phaser` | I | `phaser.rate`, `phaser.depth`, `phaser.sync`, `phaser.beats` | S (sweep, beating), E |
+| | 14.3 EQ | `eq` | B | `eq.high_cut`, `eq.low_cut`, `eq.bell1_gain`, `eq.high_gain`, `eq.bell2_gain`, `eq.low_gain` | S (brightness), R (rounds on the low cut and the first bell), E |
+| | 14.4 Delay | `delay` | I | `delay.mix`, `delay.feedback`, `delay.sync`, `delay.beats` | S (the sound's length, staccato), R (a round on the feedback), E |
+| U15 Studies | 15.1 Study: a riddim wobble | `wobble-study` | I | combines `dist`, `svf`, the synced `lfo`, `ott` | R, S, E (generated by `lesson-gen deconstruct`, texts edited by hand) |
+
+The tier is the highest learn tier among the parameters a lesson teaches (§5's rule), so 10.1 is Advanced (TMP put `sync`, `beats` and `one_shot` there) although it is this pack's first lesson; the tier only sets the coach's hint levels in rounds, and 10.1 has none.
+
+### 10.2 What the measurements decided
+
+- **sound/1 hears some S2a controls well and is deaf to others**, as C2 found for the P1 modulators. It hears the drive (3 to 4 JND per 12 dB), the wavetable position, the feedback, the formant vowels, the EQ's cuts and bells, the delay's feedback and division, and now the synced divisions (1/8 against 1/16 4.9 JND). It is nearly deaf to the FM index (about 0.9 JND per step), unison (0.5), the ladder's cutoff and slope (0.9), the comb's feedback on noise (0.2), the chorus (0.7), AM against ring mod at a slow rate (0.1) and OTT's default against none (1.0). **Rounds appear only where it hears the control**: the drive, the position, the feedback, the EQ's low cut and first bell, the delay's feedback. Elsewhere the Do steps check a descriptor that reads the control, and the ear questions pass the audibility gate on the descriptors.
+- **Descriptors that read S2a controls:** the filter sweep reads a synced LFO's or MSEG's division to the hundredth of a hertz; a one-shot reads as no repeating sweep; brightness reads drive, OTT's lift, the position, the index, feedback, warps, the ladder, the comb on a saw, the vowels' F1, the chorus's mix and the EQ; pitch reads the comb's tuning on noise; pitch steadiness reads unison; beating reads slow AM, a synced LFO on the FM index and a fast chorus; tremolo reads ring mod; the sound's length on the staccato phrase reads the delay.
+- **The measured hint probes a tenth of a control's range toward the middle**, so a continuous goal starts where that probe already moves the sound the right way (OTT's upward at 40 %, not 0 %; the FM index at 3, where 2 and 3 read alike; the chorus's rate above its goal).
+- **Checks play the table phrases untransposed (C3)**, so every ear question stays measurable by sound/1 and counts in `lesson-coverage`; a bass an octave down is heard in Hear only.
+
+### 10.3 A limit of the lesson model: audio routes have no selector
+
+A step's `highlight`, `editable` and `locked`, and an `enth:` link, cannot name an audio route such as `wt2 -> wt1.pm`: `enth_challenge::v2`'s `check_route` asks that a route's destination be modulatable, and `wt.pm` and `wt.am` are audio parameters (lane RTE's contract), which are not. Route **predicates** (`wt2 -> wt1.pm > 50%`) work, and so does the playthrough. The FM and AM lessons work around it: the step makes `wt2.*` editable (a module selector covers the routes from that module), locks wt2's parameters one by one, and highlights `wt1.pm` or `wt1.am`. A one-line change in `check_route` (accept an `audio` destination when the source is a generator, as `validate.rs` does) would let a lesson name the route itself; it is not this lane's file, so it is left to the owner of `v2.rs`.
+
+### 10.4 Coverage
+
+`lesson-coverage` counts listed kinds only (`Group::all` is `ModuleKind::listed()`), so the hidden kinds are not in its tables yet and the pack changes nothing there but `lfo` (10.1 teaches its three S2a parameters) and `svf` (the study). With the hide flags cleared in a scratch build (every `hidden: true` in `catalogue/mod.rs` set to false, not committed), `lesson-coverage` over every pack reports **no hole**: every S2a kind has a lesson and a non-patch check, and every Basic-tier parameter of each is taught.
+
+| Kind | Lessons | Checks | Taught (Basic) |
+| --- | --- | --- | --- |
+| `wt` | 5 | P S R E | 15/18 (5/5) |
+| `dist` | 2 | P S R E | 3/9 (2/2) |
+| `ott` | 2 | P S E | 3/12 (1/1) |
+| `comb` | 1 | P S E | 2/5 (2/2) |
+| `formant` | 1 | P S E | 2/5 (2/2) |
+| `ladder` | 1 | P S E | 3/6 (3/3) |
+| `mseg` | 1 | P S E | 4/59 (3/3) |
+| `chorus` | 1 | P S E | 4/9 (3/3) |
+| `phaser` | 1 | P S E | 4/9 (2/2) |
+| `eq` | 1 | P S R E | 6/13 (6/6) |
+| `delay` | 1 | P S R E | 4/8 (3/3) |
+
+Listed apart for the owner at GR2 (Q6, Q9): **E only**, `wt.table`, `wt.warp`, `wt.fine`, `chorus.mode`, `phaser.rate`, `phaser.depth`, `eq.low_gain` and `delay.sync` among the taught ones; **taught, not checked**, `wt.level` (a gauge `sound/1` cannot hear, as `osc.level` alone), `wt.spread` (the descriptors read the mid signal, so stereo width is heard on headphones only), `mseg.sync` and `chorus.depth`. Not taught: 103 Intermediate and Advanced parameters of the S2a kinds, none Basic; 55 of them are the MSEG's (its point values beyond the first curve, its free length, scope, polarity and loop points: a drawn shape is one idea, taught through its first segment), and the rest are secondary controls such as `dist.bias`, `ott.time`, `formant.shift`, `eq`'s frequencies and Qs and `delay.ping_pong`, candidates for a second pass.
+
+### 10.5 What INT-S2a flips
+
+- **`ModuleSpec::hidden`** for each kind, in `crates/enth-patch/src/catalogue/mod.rs`: the pack's lessons then join `lesson-coverage`'s tables with no hole (§10.4).
+- **Shipping the pack:** add `bass` to the three `cargo xtask pack --out … shaping space-and-dynamics studies` lines of `.github/workflows/release.yml` (the Linux, Windows and macOS legs) and to `docs/distribution.md`'s list of the friend zip's packs. The plugin bundles only `basics`; bundling `bass` too would be `cargo xtask pack --out crates/enth-plugin/packs bass` and a `BUNDLED` entry in `enth-plugin/src/learn.rs` (not proposed: the friend zip carries the other packs).
+- **A track** (optional): a bass track across packs (for example 10.1, 11.1, 12.1, 12.2, 15.1) is a `tracks` entry in `pack.toml`.
+- **Nothing else**: the lessons read hidden kinds through the same patch, `teaches`, `covers` and check code as listed ones, so `lesson-check` needs no option and none of its code changed.

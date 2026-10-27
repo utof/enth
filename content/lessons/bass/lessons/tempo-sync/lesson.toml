@@ -1,0 +1,259 @@
+# Lesson 10.1, Tempo sync [bass · advanced] (content/lessons/PLAN.md §10, U10). Advanced because the catalogue puts
+# lfo.sync, lfo.beats and lfo.one_shot in that tier; for a bass-music learner it is the first lesson.
+#
+# Hear (a free wobble, then 1/4, 1/8 and 1/16 at 140 BPM), a "which is 1/16?" item → Name → Try (sync on at 1/8,
+# checked by the sweep's rate) → 1/16, the 1/8 triplet and one-shot (each checked by the sweep) → two ear questions.
+#
+# Measured on engine 0.3.0 at the default tempo, 140 BPM (`enth describe`, the HELD phrase): a saw through a 1.2 kHz
+# low-pass (resonance 40 %) with lfo1 on the cutoff at 25 %. The filter sweep reads the division exactly: free 3 Hz
+# 3.017 Hz; 1/4 2.346 (2.333 expected), 1/8 4.678 (4.667), 1/8T 7.008 (7.0), 1/16 9.338 (9.333). One-shot 1/4: no
+# repeating sweep (null), one sweep of 213 ms. sound/1 hears the divisions now: 1/8 against 1/16 4.92 JND, 1/8
+# against 1/8T 2.79, the 1/4 loop against its one-shot 5.30. Sync and beats are a switch and a list, so the Do steps
+# are sound goals with a patch predicate and no round (closest moves continuous values).
+
+schema = "enth.lesson/1"
+id = "tempo-sync"
+title = "Tempo sync"
+tier = "advanced"
+objective = "Lock an LFO to the tempo, pick its division by ear, and make a movement that hits once."
+teaches = ["lfo.sync", "lfo.beats", "lfo.one_shot"]
+
+# Hear: the same wobble free at 3 Hz, then locked to the tempo at 1/4, 1/8 and 1/16 (140 BPM); the 1/8 an octave
+# down, where a bass plays.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/sync-free-3hz.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Free, 3 Hz"
+patch = "patches/sync-free-3hz.patch.json"
+
+[[steps.examples]]
+label = "1/4"
+patch = "patches/sync-quarter.patch.json"
+
+[[steps.examples]]
+label = "1/8"
+patch = "patches/sync-eighth.patch.json"
+
+[[steps.examples]]
+label = "1/16"
+patch = "patches/sync-sixteenth.patch.json"
+
+[[steps.examples]]
+label = "1/8, low"
+patch = "patches/sync-eighth.patch.json"
+transpose = -12
+
+# Hear's ear question: which is 1/16? (1/8 against 1/16: the sweep reads 4.68 against 9.34 Hz; sound/1 4.92 JND.)
+[[steps]]
+id = "which-faster"
+kind = "choose"
+text = "which-faster.md"
+hints = ["1/16 is twice as many wobbles as 1/8: count the wah-wahs in one beat."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/sync-eighth.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sync-sixteenth.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/sync-eighth.patch.json"
+highlight = ["lfo1.sync", "lfo1.beats", "lfo1.one_shot"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: lock it to the tempo. Start: lfo1 free at 3 Hz (the sweep reads 3.02 Hz: fails [4.3 Hz, 5.1 Hz]). Witness:
+# sync on at 1/8 (4.68 Hz). Sync is a switch and beats a list, so the hint follower cannot move them: the step
+# teaches structure.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Switch lfo1's Sync on: Rate stops counting, Beats takes over.",
+  "Set Beats to 1/8: two wobbles to a beat.",
+]
+witness = "patches/sync-eighth.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sync-free-3hz.patch.json"
+highlight = ["lfo1.sync", "lfo1.beats"]
+editable = ["lfo1.sync", "lfo1.beats"]
+locked = ["osc1.*", "filter1.*", "lfo1.shape", "lfo1.rate", "lfo1 -> filter1.cutoff"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.sync == on"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [4.3Hz, 5.1Hz]"]
+
+# Do: twice as fast. Start: 1/8 (4.68 Hz: fails [8.6 Hz, 10.1 Hz]). Witness: 1/16 (9.34 Hz).
+[[steps]]
+id = "sixteenth"
+kind = "do"
+text = "sixteenth.md"
+hints = ["Set lfo1's Beats one notch shorter, to 1/16."]
+witness = "patches/sync-sixteenth.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sync-eighth.patch.json"
+highlight = ["lfo1.beats"]
+editable = ["lfo1.beats"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "lfo1.shape",
+  "lfo1.rate",
+  "lfo1 -> filter1.cutoff",
+  "lfo1.sync",
+  "lfo1.one_shot",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.beats == sixteenth"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [8.6Hz, 10.1Hz]"]
+
+# Do: wonky. Start: 1/8 (4.68 Hz: fails [6.5 Hz, 7.5 Hz]). Witness: 1/8 triplet (7.01 Hz: three wobbles in the time
+# of two eighths).
+[[steps]]
+id = "triplet"
+kind = "do"
+text = "triplet.md"
+hints = ["Pick 1/8T in lfo1's Beats: the T is a triplet."]
+witness = "patches/sync-eighth_triplet.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sync-eighth.patch.json"
+highlight = ["lfo1.beats"]
+editable = ["lfo1.beats"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "lfo1.shape",
+  "lfo1.rate",
+  "lfo1 -> filter1.cutoff",
+  "lfo1.sync",
+  "lfo1.one_shot",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.beats == eighth_triplet"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [6.5Hz, 7.5Hz]"]
+
+# Do: hit once. Start: the 1/4 wobble, looping (the sweep reads 2.35 Hz). Witness: one-shot on: one cycle at the
+# note's start, then the LFO holds, so no repeating sweep is found (`filter_lfo == null`; a single sweep of 213 ms
+# reads instead).
+[[steps]]
+id = "once"
+kind = "do"
+text = "once.md"
+hints = ["Switch lfo1's One-shot on."]
+witness = "patches/sync-quarter-once.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/sync-quarter.patch.json"
+highlight = ["lfo1.one_shot"]
+editable = ["lfo1.one_shot"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "lfo1.shape",
+  "lfo1.rate",
+  "lfo1 -> filter1.cutoff",
+  "lfo1.sync",
+  "lfo1.beats",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["lfo1.one_shot == on"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo == null"]
+
+# Check: which is the triplet? (1/8 against 1/8T: 4.68 against 7.01 Hz; sound/1 2.79 JND.)
+[[steps]]
+id = "check-triplet"
+kind = "choose"
+text = "check-triplet.md"
+hints = ["The triplet is faster and rolls against the beat."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/sync-eighth_triplet.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sync-eighth.patch.json"
+
+# Check: which hits once? (the 1/4 loop against the one-shot: sound/1 5.30 JND.)
+[[steps]]
+id = "check-once"
+kind = "choose"
+text = "check-once.md"
+hints = ["One keeps wobbling for as long as the note is held; the other moves once."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/sync-quarter.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/sync-quarter-once.patch.json"

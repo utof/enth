@@ -1,0 +1,355 @@
+# Lesson 11.1, Distortion [bass · intermediate] (content/lessons/PLAN.md §10, U11).
+#
+# Hear (a clean sine driven harder and harder; four curves at the same drive), a "which is driven harder?" item →
+# Name → Try (add grit, checked by brightness) → two rounds on the drive → a fold (patch goal: a curve is structure)
+# → parallel distortion (mix, checked by brightness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, the HELD phrase; sound/1 JND by `enth compare --phrase held`): dist1
+# after the filter on a sine at C3. Drive raises the spectral centroid steadily: 0 dB 150.6 Hz, 6 dB 191, 12 dB 282,
+# 18 dB 453, 24 dB 757, 30 dB 1295, 36 dB 2158. sound/1 hears it: 0/12 dB 3.21 JND, 12/24 4.31, 24/36 3.05, so the
+# rounds draw from {12, 24, 36} dB out of a 0 dB start. The curves at 12 dB: soft 282 Hz, hard 539, asymmetric 393,
+# sine fold 434 (and the pitch reads 385 Hz: a fold puts its energy on upper partials), triangle fold 1284, bitcrush
+# (8 bits) 664, downsample 2577; soft against sine fold is 77 JND. Mix at 24 dB: 100 % 757 Hz, 75 % 688, 50 % 588, 40
+# % about 533, 25 % 427 (100/50 % 0.91 JND, so the mix is a sound goal, not a round).
+
+schema = "enth.lesson/1"
+id = "distortion"
+title = "Distortion"
+tier = "intermediate"
+objective = "Hear what drive and the curve do to a clean tone, and dial in grit by ear."
+teaches = ["dist.drive", "dist.mode", "dist.mix"]
+
+# Hear: the sine, then 12, 24 and 36 dB of drive into the soft curve; the clean and the 24 dB sine an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/dist-0db.patch.json"
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Clean"
+patch = "patches/dist-0db.patch.json"
+
+[[steps.examples]]
+label = "12 dB"
+patch = "patches/dist-12db.patch.json"
+
+[[steps.examples]]
+label = "24 dB"
+patch = "patches/dist-24db.patch.json"
+
+[[steps.examples]]
+label = "36 dB"
+patch = "patches/dist-36db.patch.json"
+
+[[steps.examples]]
+label = "Clean, low"
+patch = "patches/dist-0db.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "24 dB, low"
+patch = "patches/dist-24db.patch.json"
+transpose = -12
+
+# Hear: four curves at 12 dB.
+[[steps]]
+id = "hear-curves"
+kind = "listen"
+text = "hear-curves.md"
+
+[steps.view]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Soft"
+patch = "patches/dist-12db.patch.json"
+
+[[steps.examples]]
+label = "Hard"
+patch = "patches/dist-hard.patch.json"
+
+[[steps.examples]]
+label = "Sine fold"
+patch = "patches/dist-sine_fold.patch.json"
+
+[[steps.examples]]
+label = "Bitcrush"
+patch = "patches/dist-bitcrush.patch.json"
+
+# Hear's ear question: which is driven harder? (12 against 24 dB: 4.31 JND.)
+[[steps]]
+id = "which-harder"
+kind = "choose"
+text = "which-harder.md"
+hints = ["More drive adds buzz on top of the note: listen for the brighter, rougher one."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/dist-12db.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/dist-24db.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/dist-6db.patch.json"
+highlight = ["dist1.drive", "dist1.mode", "dist1.mix"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: add grit. Start: dist1 at 0 dB (150.6 Hz: fails `brightness > 400Hz`). Witness: 24 dB (757 Hz).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Turn dist1's Drive up and listen to the top of the note.",
+  "Past about 20 dB the sine turns into a buzzing growl.",
+]
+witness = "patches/dist-24db.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/dist-0db.patch.json"
+highlight = ["dist1.drive"]
+editable = ["dist1.drive"]
+locked = ["osc1.*", "dist1.mode", "dist1.mix"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["dist1.drive > 15dB"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 400Hz"]
+
+# Do, round 1: a hidden drive from {12, 24, 36} dB, out of the clean 0 dB start (seed 1).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target buzzier or cleaner than yours? Turn the drive that way.",
+  "Sweep the drive slowly and stop where the buzz on top matches.",
+]
+
+[steps.view]
+highlight = ["dist1.drive"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "dist1.drive", set = [12.0, 24.0, 36.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sine, drive 0 dB", description = "The sine into dist1, soft curve, drive 0 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "sine" } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf" },
+  { id = "dist1", kind = "dist", params = { drive = 0.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["dist1.drive"]
+locked = ["osc1.*", "dist1.mode", "dist1.mix"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Distortion, round 1"
+tags = ["bass", "distortion"]
+
+# Do, round 2: a hidden drive from {12, 24, 36} dB, out of the clean 0 dB start (seed 2).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target buzzier or cleaner than yours? Turn the drive that way.",
+  "Sweep the drive slowly and stop where the buzz on top matches.",
+]
+
+[steps.view]
+highlight = ["dist1.drive"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 2
+items = [{ param = "dist1.drive", set = [12.0, 24.0, 36.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Sine, drive 0 dB", description = "The sine into dist1, soft curve, drive 0 dB." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", params = { wave = "sine" } },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf" },
+  { id = "dist1", kind = "dist", params = { drive = 0.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["dist1.drive"]
+locked = ["osc1.*", "dist1.mode", "dist1.mix"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Distortion, round 2"
+tags = ["bass", "distortion"]
+
+# Do: fold it. Start: the soft curve at 24 dB. Witness: sine fold at 24 dB. A curve is an enum: the hint follower
+# cannot move it, so this is a patch goal (the step teaches structure).
+[[steps]]
+id = "fold"
+kind = "do"
+text = "fold.md"
+hints = ["Open dist1's Mode and pick Sine fold."]
+witness = "patches/dist-24db-fold.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/dist-24db.patch.json"
+highlight = ["dist1.mode"]
+editable = ["dist1.mode"]
+locked = ["osc1.*", "dist1.drive", "dist1.mix"]
+
+[steps.check]
+kind = "patch"
+predicates = ["dist1.mode == sine_fold"]
+
+# Do: parallel. Start: 24 dB at mix 100 % (757 Hz: fails `brightness < 650Hz`). Witness: mix 40 % (about 533 Hz). The
+# patch band keeps it about the mix.
+[[steps]]
+id = "parallel"
+kind = "do"
+text = "parallel.md"
+hints = [
+  "Turn dist1's Mix down: the clean sine comes back under the grit.",
+  "About halfway or a little less keeps both.",
+]
+witness = "patches/dist-24db-mix40.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/dist-24db.patch.json"
+highlight = ["dist1.mix"]
+editable = ["dist1.mix"]
+locked = ["osc1.*", "dist1.drive", "dist1.mode"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["dist1.mix in [25%, 60%]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness < 650Hz"]
+
+# Check: soft or folded? (soft against sine fold at 12 dB: 77 JND.)
+[[steps]]
+id = "check-fold"
+kind = "choose"
+text = "check-fold.md"
+hints = ["A fold throws the sound up into a hollow, ringing tone; soft clipping only roughens it."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/dist-12db.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/dist-sine_fold.patch.json"

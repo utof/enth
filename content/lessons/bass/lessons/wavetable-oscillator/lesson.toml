@@ -1,0 +1,354 @@
+# Lesson 12.1, The wavetable oscillator [bass · basic] (content/lessons/PLAN.md §10, U12).
+#
+# Hear (the basic table scanned; three other tables), a "which is further along?" item → Name → Try (scan it, checked
+# by brightness) → two rounds on the position → an octave down (checked by pitch) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): wt1 alone, osc1 off, the filter open (20 kHz). The basic table
+# runs from a sine: centroid 131.8 Hz at 0 %, 206 at 10, 283 at 20, 683 at 35, 2754 at 50, 3035 at 70, 2871 at 85,
+# 2726 at 100. sound/1: 0/35 % 2.40 JND, 35/70 4.73, 70/100 3.07, so the rounds draw from {35, 70, 100} % out of 0 %.
+# At 50 %: fm 555 Hz, formant 2338, metal 2364 (fm/metal 2.99 JND, formant/metal 2.23). Semi -12 st reads 65.4 Hz.
+
+schema = "enth.lesson/1"
+id = "wavetable-oscillator"
+title = "The wavetable oscillator"
+tier = "basic"
+objective = "Hear what a wavetable's position does, scan it by ear, and move the oscillator down to bass range."
+teaches = ["wt.table", "wt.position", "wt.semi", "wt.level"]
+
+# Hear: wt1 on its basic table at 0, 35, 70 and 100 %; then the fm, formant and metal tables at 50 %, and the basic
+# table at 70 % an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/wt-basic-0.patch.json"
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[[steps.examples]]
+label = "Basic, 0 %"
+patch = "patches/wt-basic-0.patch.json"
+
+[[steps.examples]]
+label = "Basic, 35 %"
+patch = "patches/wt-basic-35.patch.json"
+
+[[steps.examples]]
+label = "Basic, 70 %"
+patch = "patches/wt-basic-70.patch.json"
+
+[[steps.examples]]
+label = "Basic, 100 %"
+patch = "patches/wt-basic-100.patch.json"
+
+[[steps.examples]]
+label = "FM, 50 %"
+patch = "patches/wt-fm-50.patch.json"
+
+[[steps.examples]]
+label = "Formant, 50 %"
+patch = "patches/wt-formant-50.patch.json"
+
+[[steps.examples]]
+label = "Metal, 50 %"
+patch = "patches/wt-metal-50.patch.json"
+
+[[steps.examples]]
+label = "Basic 70 %, low"
+patch = "patches/wt-basic-70.patch.json"
+transpose = -12
+
+# Hear's ear question: which is further along the scan? (basic 35 against 70 %: sound/1 4.73 JND.)
+[[steps]]
+id = "which-further"
+kind = "choose"
+text = "which-further.md"
+hints = ["Further along the basic table is buzzier."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/wt-basic-70.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/wt-basic-35.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/wt-basic-35.patch.json"
+highlight = ["wt1.table", "wt1.position", "wt1.semi", "wt1.level"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+# Try: scan it. Start: position 0 %, a sine (131.8 Hz: fails `brightness > 1500Hz`). Witness: 70 % (3035 Hz).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Turn wt1's Position up and listen to the sine grow a buzz.",
+  "Past halfway the basic table is as bright as a saw.",
+]
+witness = "patches/wt-basic-70.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/wt-basic-0.patch.json"
+highlight = ["wt1.position"]
+editable = ["wt1.position"]
+locked = ["wt1.table", "wt1.semi", "wt1.level"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.position > 40%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 1500Hz"]
+
+# Do, round 1: a hidden position on the basic table from {35, 70, 100} %, out of the sine at 0 % (seed 1).
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target brighter or rounder than yours? Scan that way.",
+  "Sweep the position slowly and stop where the buzz matches.",
+]
+
+[steps.view]
+highlight = ["wt1.position"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "wt1.position", set = [35.0, 70.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Wavetable, basic 0 %", description = "wt1 alone (osc1 off, the filter open) on the basic table at position 0 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", enabled = false },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+  { id = "wt1", kind = "wt", params = {  } },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 20000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["wt1.position"]
+locked = ["wt1.table", "wt1.semi", "wt1.level"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Wavetable position, round 1"
+tags = ["bass", "wavetable"]
+
+# Do, round 2: a hidden position on the basic table from {35, 70, 100} %, out of the sine at 0 % (seed 3).
+[[steps]]
+id = "round-2"
+kind = "recreate"
+text = "round.md"
+hints = [
+  "Is the target brighter or rounder than yours? Scan that way.",
+  "Sweep the position slowly and stop where the buzz matches.",
+]
+
+[steps.view]
+highlight = ["wt1.position"]
+hide = [
+  "osc1.*",
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 1
+
+[steps.challenge.target]
+kind = "draw"
+seed = 3
+items = [{ param = "wt1.position", set = [35.0, 70.0, 100.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Wavetable, basic 0 %", description = "wt1 alone (osc1 off, the filter open) on the basic table at position 0 %." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc", enabled = false },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+  { id = "wt1", kind = "wt", params = {  } },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 20000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+]
+modulators = [
+  { id = "env1", kind = "adsr" },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["wt1.position"]
+locked = ["wt1.table", "wt1.semi", "wt1.level"]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Wavetable position, round 2"
+tags = ["bass", "wavetable"]
+
+# Do: an octave down. Start: basic 70 % at C3 (130.8 Hz). Witness: wt1.semi -12 st (65.4 Hz, C2).
+[[steps]]
+id = "octave"
+kind = "do"
+text = "octave.md"
+hints = ["Turn wt1's Semi down 12 semitones: the same note an octave lower."]
+witness = "patches/wt-basic-70-low.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/wt-basic-70.patch.json"
+highlight = ["wt1.semi"]
+editable = ["wt1.semi"]
+locked = ["wt1.table", "wt1.position", "wt1.level"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt1.semi < -6st"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["pitch = C2 ± 50ct"]
+
+# Check: which table? (fm against metal at 50 %: sound/1 2.99 JND.)
+[[steps]]
+id = "check-table"
+kind = "choose"
+text = "check-table.md"
+hints = ["Metal rings with high, clangy partials; the fm table is rounder."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/wt-fm-50.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/wt-metal-50.patch.json"

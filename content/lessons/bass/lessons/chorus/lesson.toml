@@ -1,0 +1,233 @@
+# Lesson 14.1, Chorus and flanger [bass · intermediate] (content/lessons/PLAN.md §10, U14). chorus is global (fx):
+# the lesson's sources are the voice, never a voice LFO.
+#
+# Hear (dry, chorus, ensemble, flanger; faster), a "which has chorus?" item → Name → Try (mix, checked by brightness)
+# → slower (rate, checked by the copies' beating) → flanger (a patch goal) → two ear questions.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD, the mid signal): chorus1 on the starter's saw through a 6 kHz low-
+# pass. Mix: 0 % 1750 Hz (bit for bit), 25 % 1782, 50 % 1840, 100 % 1999 (and a slow sweep at 1.92 Hz, 0.28 octave).
+# Rate at depth 50 %: 0.5 Hz no beating, 1 Hz none, 2 Hz beating at 4.09 Hz, 3 Hz 5.98, 5 Hz 10.01, 8 Hz 15.99: the
+# copies beat at twice the rate. sound/1 is nearly deaf to the chorus (dry against chorus 0.66 JND, 0.5 against 5 Hz
+# 0.51) and the flanger mode at 2 ms reads like the chorus mode there (0.08), so there is no round; the ear questions
+# pass on the descriptors.
+
+schema = "enth.lesson/1"
+id = "chorus"
+title = "Chorus and flanger"
+tier = "intermediate"
+objective = "Hear what a chorus adds, bring it in, set its speed by ear, and find the flanger."
+teaches = ["chorus.mix", "chorus.rate", "chorus.mode", "chorus.depth"]
+
+# Hear: the saw dry, then through chorus1 as a chorus, an ensemble and a flanger; the chorus at 3 and 8 Hz; the
+# chorus an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/chorus-on.patch.json"
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "Dry"
+patch = "patches/chorus-off.patch.json"
+
+[[steps.examples]]
+label = "Chorus"
+patch = "patches/chorus-on.patch.json"
+
+[[steps.examples]]
+label = "Ensemble"
+patch = "patches/chorus-ensemble.patch.json"
+
+[[steps.examples]]
+label = "Flanger"
+patch = "patches/chorus-flanger.patch.json"
+
+[[steps.examples]]
+label = "Chorus, 3 Hz"
+patch = "patches/chorus-3hz.patch.json"
+
+[[steps.examples]]
+label = "Chorus, 8 Hz"
+patch = "patches/chorus-8hz.patch.json"
+
+[[steps.examples]]
+label = "Chorus, low"
+patch = "patches/chorus-on.patch.json"
+transpose = -12
+
+# Hear's ear question: which has chorus? (dry against the default chorus: sound/1 0.66 JND; the chorus reads a slow
+# sweep, 1.92 Hz, and the dry saw none.)
+[[steps]]
+id = "which-chorus"
+kind = "choose"
+text = "which-chorus.md"
+hints = ["Chorus makes the saw shimmer and swim; dry stays still."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/chorus-off.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/chorus-on.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/chorus-on.patch.json"
+highlight = ["chorus1.mode", "chorus1.rate", "chorus1.depth", "chorus1.mix"]
+hide = ["osc2.*", "noise1.*", "filter1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: bring it in. Start: mix 30 % (1792 Hz: fails `brightness > 1950Hz`). Witness: mix 100 % (1999 Hz). Mix 0 %
+# reads 1750 Hz (bit for bit), 50 % 1840, 85 % 1952. The chorus adds detuned copies whose combing lifts the centroid
+# a little. The start is not 0 %, where the measured hint's first probe moves the centroid too little to aim; the
+# threshold sits above the next step's witness (3 Hz at full mix, 1922 Hz), so --cross tells them apart.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Turn chorus1's Mix up.", "All the way: the full chorus."]
+witness = "patches/chorus-on.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/chorus-30.patch.json"
+highlight = ["chorus1.mix"]
+editable = ["chorus1.mix"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "chorus1.mode",
+  "chorus1.rate",
+  "chorus1.depth",
+  "chorus1.delay",
+  "chorus1.feedback",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["chorus1.mix > 70%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 1950Hz"]
+
+# Do: from warble to shimmer. Start: 8 Hz (its copies beat at 15.99 Hz: fails [4.5 Hz, 7.5 Hz]). Witness: 3 Hz
+# (beating 5.98 Hz: twice the rate). The start sits above the goal, where the measured hint's probe (toward the
+# middle of the range) moves the right way.
+[[steps]]
+id = "slower"
+kind = "do"
+text = "slower.md"
+hints = ["Turn chorus1's Rate down.", "About three sweeps a second."]
+witness = "patches/chorus-3hz.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/chorus-8hz.patch.json"
+highlight = ["chorus1.rate"]
+editable = ["chorus1.rate"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "chorus1.mode",
+  "chorus1.mix",
+  "chorus1.depth",
+  "chorus1.delay",
+  "chorus1.feedback",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["chorus1.rate in [2.2Hz, 3.8Hz]"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["beating in [4.5Hz, 7.5Hz]"]
+
+# Do: flanger. Start: the chorus set short (2 ms) with feedback 70 % at 2 Hz. Witness: the flanger mode with the same
+# settings. A mode is a list, and at 2 ms the two read alike (0.08 JND), so this is a patch goal: the step names the
+# mode bass music uses for jet sweeps.
+[[steps]]
+id = "flanger"
+kind = "do"
+text = "flanger.md"
+hints = ["Set chorus1's Mode to flanger."]
+witness = "patches/chorus-flanger.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/chorus-flanger-ready.patch.json"
+highlight = ["chorus1.mode"]
+editable = ["chorus1.mode"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "chorus1.rate",
+  "chorus1.mix",
+  "chorus1.depth",
+  "chorus1.delay",
+  "chorus1.feedback",
+]
+
+[steps.check]
+kind = "patch"
+predicates = ["chorus1.mode == flanger"]
+
+# Check: chorus or ensemble? (sound/1 0.65 JND; the chorus reads a slow sweep at 1.92 Hz that the ensemble's three
+# copies a side smooth away.)
+[[steps]]
+id = "check-ensemble"
+kind = "choose"
+text = "check-ensemble.md"
+hints = ["The ensemble is smoother and wider; the chorus swims in one slow sweep."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/chorus-on.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/chorus-ensemble.patch.json"
+
+# Check: which warbles faster? (3 against 8 Hz: beating at 5.98 against 15.99 Hz.)
+[[steps]]
+id = "check-faster"
+kind = "choose"
+text = "check-faster.md"
+hints = ["The faster one wobbles in pitch, like a worn tape."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/chorus-8hz.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/chorus-3hz.patch.json"

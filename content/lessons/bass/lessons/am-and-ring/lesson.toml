@@ -1,0 +1,177 @@
+# Lesson 12.4, AM and ring mod [bass · intermediate] (content/lessons/PLAN.md §10, U12).
+#
+# Hear (slow AM and ring mod; a fifth up both ways; ring at 1:1), a "which is ring mod?" item → Name → Try (the audio
+# route to AM, checked by its beating) → ring mod (AM at 0 %, a patch goal) → an ear question (checked by the
+# tremolo).
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): osc2 and noise1 removed, osc1 off, wt1 the carrier, wt2 silent.
+# wt2 at -48 st (8.2 Hz) into wt1.am at 100 %: AM reads beating at 8.19 Hz, 25.9 dB deep; with wt1.am at 0 % (ring)
+# it reads tremolo at 16.36 Hz, 13.9 dB, and no beating. sound/1 cannot tell the two apart (0.12 JND); the
+# descriptors can. A fifth up (+7 st): no AM against AM at 50 % 48.2 JND (the pitch reads 65.4 Hz: the sidebands make
+# a lower fundamental), AM against ring 3.95. Ring at 1:1 reads an octave up (261.6 Hz).
+
+schema = "enth.lesson/1"
+id = "am-and-ring"
+title = "AM and ring mod"
+tier = "intermediate"
+objective = "Swing one oscillator's level with another through an audio route, and hear AM turn into ring mod."
+teaches = ["wt.am"]
+
+# Hear: a slow modulator (8 Hz) into wt1's AM, then the same as ring mod; then a modulator a fifth up, as AM and as
+# ring mod; ring mod at 1:1.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/am-ready.patch.json"
+hide = ["osc1.*", "filter1.*", "env1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No AM"
+patch = "patches/am-ready.patch.json"
+
+[[steps.examples]]
+label = "AM, 8 Hz"
+patch = "patches/am-slow.patch.json"
+
+[[steps.examples]]
+label = "Ring, 8 Hz"
+patch = "patches/ring-slow.patch.json"
+
+[[steps.examples]]
+label = "AM, a fifth"
+patch = "patches/am-fifth.patch.json"
+
+[[steps.examples]]
+label = "Ring, a fifth"
+patch = "patches/ring-fifth.patch.json"
+
+[[steps.examples]]
+label = "Ring, 1:1"
+patch = "patches/ring-unison.patch.json"
+
+# Hear's ear question: which is ring mod? (a fifth up, AM against ring: sound/1 3.95 JND.)
+[[steps]]
+id = "which-ring"
+kind = "choose"
+text = "which-ring.md"
+hints = ["Ring mod removes the original note: what is left is harsher and less like the sine."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/am-fifth.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/ring-fifth.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/am-slow.patch.json"
+highlight = ["wt1.am", "wt2.semi"]
+hide = ["osc1.*", "filter1.*", "env1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: route the modulator to AM. Start: no route (no beating). Witness: wt2 -> wt1.am at 100 % with wt2 at 8 Hz: the
+# level swings, read as beating at 8.19 Hz (inside [7 Hz, 9.5 Hz]). A route is structure (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Drag the ⊕ on wt2's card onto wt1's AM.", "Give the route its full depth."]
+witness = "patches/am-slow.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/am-ready.patch.json"
+highlight = ["wt1.am"]
+editable = ["wt2.*", "wt1.am"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt2.table",
+  "wt2.position",
+  "wt2.semi",
+  "wt2.fine",
+  "wt2.level",
+  "wt2.pm_index",
+  "wt2.feedback",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["wt2 -> wt1.am > 50%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["beating in [7Hz, 9.5Hz]"]
+
+# Do: ring it. Start: AM at 100 % (beating at 8.19 Hz, no tremolo found). Witness: wt1.am at 0 %: ring modulation,
+# the level swings through zero twice a cycle, read as tremolo at 16.36 Hz, 13.9 dB deep. A patch goal: the measured
+# hint has no continuous measure to aim at (the tremolo appears only near 0 %), so the ear question after it checks
+# ring mod by its tremolo.
+[[steps]]
+id = "ring"
+kind = "do"
+text = "ring.md"
+hints = ["Turn wt1's AM all the way down: with a route in, 0 % is ring modulation."]
+witness = "patches/ring-slow.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/am-slow.patch.json"
+highlight = ["wt1.am"]
+editable = ["wt1.am"]
+locked = [
+  "wt1.table",
+  "wt1.position",
+  "wt1.semi",
+  "wt1.level",
+  "wt2.table",
+  "wt2.position",
+  "wt2.semi",
+  "wt2.fine",
+  "wt2.level",
+  "wt2.pm_index",
+  "wt2.feedback",
+]
+
+[steps.check]
+kind = "patch"
+predicates = ["wt1.am < 10%"]
+
+# Check: AM or ring mod, slow? (8 Hz, AM against ring: sound/1 0.12 JND, but the AM reads beating at 8.19 Hz and the
+# ring mod tremolo at 16.36 Hz, each absent from the other.)
+[[steps]]
+id = "check-ring"
+kind = "choose"
+text = "check-ring.md"
+hints = ["Ring mod flutters twice as fast and dips to silence."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/ring-slow.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/am-slow.patch.json"
