@@ -496,10 +496,33 @@ fn wrap01_lanes(p: f32x8) -> f32x8 {
     }
     let above = p.simd_ge(one) & p.simd_lt(f32x8::splat(2.0));
     let below = p.simd_ge(f32x8::splat(-1.0)) & p.simd_lt(zero);
-    let r = below.select(p + one, p - p.floor());
+    // `⌊p⌋` is only wanted by a lane outside `[-1, 2)`, whose `p − ⌊p⌋` the selects below keep; when every lane is
+    // inside, the floor (a library call per lane on the baseline x86-64 target) is not computed at all, and the
+    // lanes that need it get an exact floor made of a truncation (see `floor_lanes`).
+    let r = if (in01 | above | below).all() {
+        below.select(p + one, p)
+    } else {
+        below.select(p + one, p - floor_lanes(p))
+    };
     let r = above.select(p - one, r);
     let r = in01.select(p, r);
     (r.simd_ge(zero) & r.simd_lt(one)).select(r, zero)
+}
+
+/// `⌊p⌋` on every lane, exactly: `p.floor()` is a library call per lane on the baseline x86-64 target, so lanes
+/// within `i32` range take the truncation (`trunc_int`, exact there) converted back (exact, as an integer of that
+/// size that came from a float is representable) and lowered by one where it rounded up (a negative non-integer).
+/// Beyond that range, or for NaN, the plain `floor`. The one difference is the sign of a zero (`⌊−0.0⌋` is `−0.0`
+/// here, `+0.0` by the truncation); the caller only keeps `p − ⌊p⌋` for lanes outside `[-1, 2)`, which are never zero.
+#[inline(always)]
+fn floor_lanes(p: f32x8) -> f32x8 {
+    let limit = f32x8::splat((1u32 << 30) as f32);
+    if p.abs().simd_lt(limit).all() {
+        let t = p.trunc_int().round_float();
+        t - (t.simd_gt(p) & f32x8::ONE)
+    } else {
+        p.floor()
+    }
 }
 
 /// `Warp::apply` on every lane (`p` is in `[0, 1)`; the result never reaches 1).
