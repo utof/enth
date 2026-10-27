@@ -1,0 +1,19 @@
+description = "S2a DLY: the catalogue defaults on a saw pluck at 110 Hz (sync on, a dotted eighth at the harness tempo of 140 BPM = 15,429 samples, feedback 35 %, low cut 150 Hz, high cut 6 kHz, mix 100 %). Guards the echo times, the loop filters and the feedback decay."
+sample_rate = 48000
+seconds = 2.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 0.9, on_s = 0.0, off_s = 0.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 60, sustain = 0, release = 0 } }]
+fx = [
+    { id = "delay1", kind = "delay", params = {  } },
+]

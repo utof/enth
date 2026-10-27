@@ -1,0 +1,19 @@
+description = "S2a DLY: feedback 100 % with the filters wide open (20 Hz, 20 kHz), 120 ms, on a held saw at 110 Hz for 0.5 s: the soft clip bounds the loop that repeats for ever. Guards the clip curve and the level bound."
+sample_rate = 48000
+seconds = 3.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 0.9, on_s = 0.0, off_s = 0.5 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [
+    { id = "delay1", kind = "delay", params = { sync = false, time = 120, feedback = 100, low_cut = 20, high_cut = 20000 } },
+]

@@ -1,0 +1,19 @@
+description = "S2a DLY: ping-pong on, an eighth (0.2143 s at 140 BPM), feedback 55 % on a saw pluck at 165 Hz: the echoes alternate left and right, the first on the left."
+sample_rate = 48000
+seconds = 3.0
+
+[source]
+kind = "patch"
+notes = [
+    { key = 52, velocity = 0.9, on_s = 0.0, off_s = 0.1 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 60, sustain = 0, release = 0 } }]
+fx = [
+    { id = "delay1", kind = "delay", params = { ping_pong = true, beats = "eighth", feedback = 55 } },
+]
