@@ -1,0 +1,245 @@
+# Lesson 10.2, Drawn shapes [bass · advanced] (content/lessons/PLAN.md §10, U10). Advanced because it teaches a
+# point's curve (mseg.curve1); the kind's own controls (mode, sync, beats) are basic.
+#
+# Hear (mseg1 on the cutoff: 1 bar, 1/4, 1/8, a snap, once), a "which snaps?" item → Name → Try (route it, checked by
+# the sweep) → 1/8 (sweep), the snap (brightness), one-shot (no repeating sweep) → an ear question.
+#
+# Measured on engine 0.3.0 at 140 BPM (`enth describe`, HELD; the 1-bar shape over LONG_HOLD): a saw through a 300 Hz
+# low-pass (resonance 30 %) with mseg1 on the cutoff at 50 %. The sweep reads the length: 1 bar 0.585 Hz (0.583
+# expected), 1/4 2.325 Hz, 1/8 4.651 Hz. curve1 +100 % (a jump up, then a straight fall) moves the centroid from 1349
+# to 2261 Hz at the same rate (2.351 Hz). One-shot 1/4: no repeating sweep, one sweep of 437 ms. sound/1: 1/4 against
+# 1/8 3.85 JND, against the snap 1.81, against the one-shot 6.09.
+
+schema = "enth.lesson/1"
+id = "mseg"
+title = "Drawn shapes"
+tier = "advanced"
+objective = "Draw a movement with an MSEG: route it, set its length in beats, bend its shape and play it once."
+teaches = ["mseg.mode", "mseg.sync", "mseg.beats", "mseg.curve1"]
+
+# Hear: mseg1 on the cutoff as its default 1-bar triangle over a long note, then at 1/4 and 1/8; the 1/4 shape with a
+# snap; the 1/4 shape played once.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/mseg-quarter.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "1 bar"
+patch = "patches/mseg-bar.patch.json"
+phrase = 5
+
+[[steps.examples]]
+label = "1/4"
+patch = "patches/mseg-quarter.patch.json"
+
+[[steps.examples]]
+label = "1/8"
+patch = "patches/mseg-eighth.patch.json"
+
+[[steps.examples]]
+label = "1/4, snap"
+patch = "patches/mseg-quarter-snap.patch.json"
+
+[[steps.examples]]
+label = "1/4, once"
+patch = "patches/mseg-quarter-once.patch.json"
+
+# Hear's ear question: which shape snaps open? (the 1/4 triangle against its snap: sound/1 1.81 JND; the spectral
+# centroid 1349 against 2261 Hz, far more than two steps.)
+[[steps]]
+id = "which-snap"
+kind = "choose"
+text = "which-snap.md"
+hints = ["The snap jumps open at the start of each cycle instead of sliding up."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/mseg-quarter-snap.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/mseg-quarter.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/mseg-quarter.patch.json"
+highlight = ["mseg1.mode", "mseg1.sync", "mseg1.beats", "mseg1.curve1"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: route the MSEG. Start: mseg1 at 1/4, routed nowhere (no sweep: fails). Witness: the route at 50 % (the sweep
+# reads 2.33 Hz, inside [2 Hz, 2.7 Hz]). A route is structure (noted).
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Drag the ⊕ on mseg1's tile onto the Cutoff knob of the filter card.",
+  "Then drag the route's depth up to about half.",
+]
+witness = "patches/mseg-quarter.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/mseg-ready.patch.json"
+highlight = ["mseg1 -> filter1.cutoff"]
+editable = ["mseg1 -> filter1.cutoff", "filter1.cutoff"]
+locked = [
+  "osc1.*",
+  "filter1.mode",
+  "filter1.resonance",
+  "mseg1.mode",
+  "mseg1.sync",
+  "mseg1.beats",
+  "mseg1.curve1",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["mseg1 -> filter1.cutoff > 20%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [2Hz, 2.7Hz]"]
+
+# Do: twice as fast. Start: 1/4 (2.33 Hz: fails [4.2 Hz, 5.1 Hz]). Witness: 1/8 (4.65 Hz).
+[[steps]]
+id = "faster"
+kind = "do"
+text = "faster.md"
+hints = ["Set mseg1's Beats to 1/8."]
+witness = "patches/mseg-eighth.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/mseg-quarter.patch.json"
+highlight = ["mseg1.beats"]
+editable = ["mseg1.beats"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "mseg1 -> filter1.cutoff",
+  "mseg1.mode",
+  "mseg1.sync",
+  "mseg1.curve1",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["mseg1.beats == eighth"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo in [4.2Hz, 5.1Hz]"]
+
+# Do: snap it open. Start: the straight 1/4 triangle (centroid 1349 Hz: fails `brightness > 1800Hz`). Witness: curve1
+# +100 %, a jump (2261 Hz). The curve is continuous, so the measured hint can follow it.
+[[steps]]
+id = "snap"
+kind = "do"
+text = "snap.md"
+hints = [
+  "Bend the first segment of mseg1 all the way up: Curve 1 at the top makes it jump at once.",
+]
+witness = "patches/mseg-quarter-snap.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/mseg-quarter.patch.json"
+highlight = ["mseg1.curve1"]
+editable = ["mseg1.curve1"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "mseg1 -> filter1.cutoff",
+  "mseg1.mode",
+  "mseg1.sync",
+  "mseg1.beats",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["mseg1.curve1 > 80%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 1800Hz"]
+
+# Do: play it once. Start: the 1/4 loop (2.33 Hz). Witness: mode one-shot, an envelope: no repeating sweep (null),
+# one sweep of 437 ms.
+[[steps]]
+id = "envelope"
+kind = "do"
+text = "envelope.md"
+hints = ["Set mseg1's Mode to one-shot."]
+witness = "patches/mseg-quarter-once.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/mseg-quarter.patch.json"
+highlight = ["mseg1.mode"]
+editable = ["mseg1.mode"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "mseg1 -> filter1.cutoff",
+  "mseg1.sync",
+  "mseg1.beats",
+  "mseg1.curve1",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["mseg1.mode == one_shot"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["filter_lfo == null"]
+
+# Check: which plays once? (the 1/4 loop against the one-shot: sound/1 6.09 JND.)
+[[steps]]
+id = "check-once"
+kind = "choose"
+text = "check-once.md"
+hints = ["A loop keeps moving while the note is held; an envelope moves once."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/mseg-quarter.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/mseg-quarter-once.patch.json"

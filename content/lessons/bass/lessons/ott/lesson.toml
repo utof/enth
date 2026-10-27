@@ -1,0 +1,166 @@
+# Lesson 11.2, OTT [bass · basic] (content/lessons/PLAN.md §10, U11). After distortion (the plan's order: OTT is what
+# bass music puts after it).
+#
+# Hear (a dark saw at depth 0, 30 and 100 %; a gritty bass without and with), a "which has OTT?" item → Name → Try
+# (depth up, checked by brightness) → the upward lift alone (checked by brightness) → an ear question.
+#
+# Measured on engine 0.3.0 (`enth describe`, HELD): a saw through a 300 Hz low-pass into ott1. OTT lifts the quiet
+# upper harmonics: the centroid reads 272 Hz at depth 0, 282 at 30 %, 301 at 60 %, 353 at 100 %; mix 0 % gives the
+# input back (272 Hz), but the blend is not monotonic (75 % reads 363 Hz, above 100 %), so the mix is named, not
+# drilled. Time at depth 100 %: 10 % 426 Hz, 30 % 369, 100 % 353, 1000 % 364. Upward alone 326 Hz, downward alone
+# 273: the lift is what brightens. sound/1: 0 against 100 % 3.87 JND, 30 against 100 % 3.01, 0 against 30 % 1.04, so
+# no round (the default is too close to the dry sound). After dist1 (12 dB, a 400 Hz low-pass) the centroid moves
+# less, 534 to 587 Hz (0.93 JND), so the checks use the plain dark saw and the gritty bass is heard in Hear only. On
+# a pluck that decays to silence OTT changes no descriptor (its floor keeps silence down).
+
+schema = "enth.lesson/1"
+id = "ott"
+title = "OTT"
+tier = "basic"
+objective = "Hear what OTT does to a dull bass, set how hard it squashes, and hear that the lift makes the sound."
+teaches = ["ott.depth", "ott.upward", "ott.downward"]
+
+# Hear: a dark saw without OTT, at the default 30 % and at 100 %; then a gritty bass (dist1 at 12 dB) without and
+# with OTT at 100 %, an octave down.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/ott-0.patch.json"
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+[[steps.examples]]
+label = "No OTT"
+patch = "patches/ott-0.patch.json"
+
+[[steps.examples]]
+label = "OTT 30 %"
+patch = "patches/ott-30.patch.json"
+
+[[steps.examples]]
+label = "OTT 100 %"
+patch = "patches/ott-100.patch.json"
+
+[[steps.examples]]
+label = "Gritty, no OTT"
+patch = "patches/ott-grit-0.patch.json"
+transpose = -12
+
+[[steps.examples]]
+label = "Gritty, OTT 100 %"
+patch = "patches/ott-grit-100.patch.json"
+transpose = -12
+
+# Hear's ear question: which one has OTT? (depth 0 against 100 %: sound/1 3.87 JND.)
+[[steps]]
+id = "which-ott"
+kind = "choose"
+text = "which-ott.md"
+hints = ["OTT pulls the quiet fizz on top up to the level of the body: listen to the top."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/ott-0.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/ott-100.patch.json"
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/ott-30.patch.json"
+highlight = ["ott1.depth", "ott1.mix"]
+hide = ["osc2.*", "noise1.*", "env2.*", "lfo1.*", "lfo2.*", "comp1.*", "reverb1.*"]
+
+# Try: squash it. Start: depth 30 %, the default (282 Hz: fails `brightness > 335Hz`). Witness: 100 % (353 Hz). The
+# threshold sits above the next step's upward-only witness (326 Hz), so --cross tells the two goals apart.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = [
+  "Turn ott1's Depth up and listen to the top of the bass come forward.",
+  "All the way up is the full OTT sound.",
+]
+witness = "patches/ott-100.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/ott-30.patch.json"
+highlight = ["ott1.depth"]
+editable = ["ott1.depth"]
+locked = ["osc1.*", "filter1.*", "ott1.mix"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["ott1.depth > 70%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 335Hz"]
+
+# Do: the lift. Start: depth 100 %, downward 0 %, upward 40 % (285 Hz: fails `brightness > 300Hz`). Witness: upward
+# 100 % (326 Hz). Upward 0 % reads 272 Hz and downward alone 273: lifting the quiet parts is what brightens. The
+# start is not at 0 %, where the measured hint's first probe (a tenth of the range) moves the centroid by only 2 Hz.
+[[steps]]
+id = "lift"
+kind = "do"
+text = "lift.md"
+hints = [
+  "Turn ott1's Upward up: the quiet parts of each band are lifted.",
+  "All the way up, as OTT comes.",
+]
+witness = "patches/ott-100-up.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/ott-100-up40.patch.json"
+highlight = ["ott1.upward"]
+editable = ["ott1.upward"]
+locked = ["osc1.*", "filter1.*", "ott1.depth", "ott1.downward"]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["ott1.upward > 70%", "ott1.downward < 30%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 1
+expect = ["brightness > 300Hz"]
+
+# Check: which has more OTT? (depth 30 against 100 %: sound/1 3.01 JND.)
+[[steps]]
+id = "check-more"
+kind = "choose"
+text = "check-more.md"
+hints = ["More OTT: a brighter, flatter, more in-your-face top."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/ott-100.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/ott-30.patch.json"

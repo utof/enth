@@ -1,0 +1,48 @@
+# The bass pack (lane LS2, S2a): lessons for the S2a modules, aimed at a learner making dubstep (wobble, growl, reese,
+# FM bass), units U10 to U14 of the lesson plan (content/lessons/PLAN.md §10), in the authoring layout of
+# docs/learn.md ("The lesson model (lane LM)"). `cargo xtask pack` turns it into canonical JSON and a reproducible
+# .enthpack.
+#
+# **Hidden until INT-S2a.** Most of these lessons use S2a's reserved kinds (`wt`, `dist`, `ott`, `comb`, `formant`,
+# `ladder`, `mseg`, `chorus`, `phaser`, `eq`, `delay`), which stay hidden (`ModuleSpec::hidden`) until INT-S2a clears
+# the flag per kind. The lesson tools read hidden kinds as they read any other (the patch format, `teaches`, `covers`
+# and every check take them), so `cargo xtask lesson-check --cross --solve bass` runs now; `lesson-coverage` counts
+# only listed kinds, so the hidden kinds join its tables when their flag clears. The plugin does not bundle this pack
+# and the release workflow does not ship it: INT-S2a adds it to `.github/workflows/release.yml`'s pack lists (PLAN.md
+# §10.5 says what it flips).
+#
+# Conventions (lanes C1 to C3's, kept):
+#   - every patch is the starter (Init) with a few values, modules and routes changed, at master -12 dB for headroom;
+#     `patches/` is shared by the lessons;
+#   - a lesson is Hear (listen steps, one ear question), Name (a read step of about 80 words), Try (a do step: a goal
+#     checked live), Do (do steps and, where sound/1 hears the control, recreate steps on a drawn target) and Check
+#     (ear questions);
+#   - a recreate step's start is inline, written sparse: every parameter not named is the catalogue default;
+#   - checks and ear questions play the table phrases untransposed (C3); a bass an octave or two down is heard in
+#     Hear only, so every ear question stays measurable by sound/1 (coverage counts it).
+
+schema = "enth.pack/1"
+id = "bass"
+version = "0.1.0"
+title = "Bass music"
+authors = ["enth contributors"]
+covers = ["dist", "lfo", "mseg", "ott"]
+# The order the app offers them in (the curriculum's order). Lesson ids are append-only.
+lessons = [
+  "tempo-sync",
+  "mseg",
+  "distortion",
+  "ott",
+]
+
+[license]
+text = "CC-BY-4.0"
+patches = "CC0-1.0"
+
+# Recreate steps embed `enth.challenge/2` draws (an inline start, a drawn target, constraints), scored by the
+# Recreate scorers. No generated (seed) target, so no `generator`.
+[requires]
+lesson = 1
+challenge = 2
+patch = 1
+scorers = ["combined/1", "sound/1", "structure/1", "time/1"]
