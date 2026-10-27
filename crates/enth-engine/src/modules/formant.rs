@@ -57,6 +57,9 @@ impl Formant {
 
 impl Formant {
     /// The segment of voice `v`: where its tuning was and where it goes. Remembers the end for the next one.
+    // Inlined into `process`, as the code it replaced was; as a call its by-value result cost every voice and
+    // segment of the mono path some instructions (lane PRF).
+    #[inline(always)]
     fn segment(&mut self, p: &VoiceParams<'_>, v: usize) -> Segment {
         let (f1_i, f2_i, shift_i, res_i, mix_i) = (
             FormantParam::F1.index(),
@@ -96,6 +99,9 @@ impl VoiceProcessor for Formant {
         self.valid[v] = false;
     }
 
+    // Kept out of `VoiceProcessorImpl::process`'s match: inlined there, it made every module's dispatch pay its
+    // frame (G1 +0.03 %, lane PRF). The mono path then runs exactly as before.
+    #[inline(never)]
     fn process(&mut self, cx: &mut VoiceCx<'_>) {
         let p = cx.params;
         for &v in cx.voices {

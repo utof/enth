@@ -72,6 +72,9 @@ fn mode_of(value: f32) -> Mode {
 
 impl Ladder {
     /// The segment of voice `v`: where its coefficients were and where they go. Remembers the end for the next one.
+    // Inlined into `process`, as the code it replaced was; as a call its by-value result cost every voice and
+    // segment of the mono path some instructions (lane PRF).
+    #[inline(always)]
     fn segment(&mut self, p: &VoiceParams<'_>, notes: &NoteState, v: usize, mode: Mode) -> Segment {
         let (cutoff_i, res_i, key_i, drive_i, mix_i) = (
             LadderParam::Cutoff.index(),
@@ -132,6 +135,9 @@ impl VoiceProcessor for Ladder {
         self.valid[v] = false;
     }
 
+    // Kept out of `VoiceProcessorImpl::process`'s match: inlined there, it made every module's dispatch pay its
+    // frame (G1 +0.03 %, lane PRF). The mono path then runs exactly as before.
+    #[inline(never)]
     fn process(&mut self, cx: &mut VoiceCx<'_>) {
         let p = cx.params;
         let mode = mode_of(p.base(LadderParam::Mode.index()));

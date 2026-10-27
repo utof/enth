@@ -107,6 +107,9 @@ impl Dist {
 
     /// The controls of voice `v` for this segment: where the ramp starts (the previous segment's, or this one's for
     /// a voice that has not run) and where it ends. Remembers the end for the next segment.
+    // Inlined into `process`, as the code it replaced was; as a call its by-value result cost every voice and
+    // segment of the mono path some instructions (lane PRF).
+    #[inline(always)]
     fn controls(&mut self, p: &VoiceParams<'_>, v: usize) -> (Ctl, Ctl) {
         let key: CtlKey = [
             p.cur(DistParam::Drive, v),
@@ -145,6 +148,9 @@ impl VoiceProcessor for Dist {
         self.valid[v] = false;
     }
 
+    // Kept out of `VoiceProcessorImpl::process`'s match: inlined there, it made every module's dispatch pay its
+    // frame (G1 +0.03 %, lane PRF). The mono path then runs exactly as before.
+    #[inline(never)]
     fn process(&mut self, cx: &mut VoiceCx<'_>) {
         let p = cx.params;
         self.refresh_setup(&p);
