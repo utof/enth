@@ -142,7 +142,9 @@ fn hard_sync_keeps_its_rule_under_reordering() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 24, ..ProptestConfig::default() })]
+    // The nightly runs 10,000 cases; a wiring with no route into a `wt` is rejected, so the limit on rejects is raised
+    // and at least one generator is always a `wt` (the nightly hit the default 1,024 rejects at 525 successes).
+    #![proptest_config(ProptestConfig { cases: 24, max_global_rejects: 1 << 16, ..ProptestConfig::default() })]
 
     /// Any acyclic wiring of up to four generators into silent carriers leaves the render alone; any wiring with a
     /// loop is refused with its own code.
@@ -152,8 +154,11 @@ proptest! {
         rank in proptest::collection::vec(0u32..1000, 4),
         wiring in proptest::collection::vec((0usize..4, 0usize..4, 0u8..2, 1u32..100), 1..6),
     ) {
+        let has_wt = kinds.contains(&0);
         let names: Vec<String> = kinds
             .iter()
+            .enumerate()
+            .map(|(i, &k)| if !has_wt && i + 1 == kinds.len() { 0 } else { k })
             .enumerate()
             .map(|(i, k)| match k {
                 0 => format!("wt{}", i + 1),

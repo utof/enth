@@ -59,6 +59,10 @@ fn bench_patches() -> Vec<Patch> {
 }
 
 #[test]
+#[cfg_attr(
+    target_family = "wasm",
+    ignore = "reads tools/test-host/golden, outside the WASI sandbox's preopened directory"
+)]
 fn the_test_host_fixtures_are_the_bench_patches() {
     for (name, patch) in FIXTURES.into_iter().zip(bench_patches()) {
         assert!(
