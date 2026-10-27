@@ -2,7 +2,7 @@
   "schema": 1,
   "meta": {
     "name": "S10b riser",
-    "description": "Report 04 S10 (riser, 4 bars = 6.86 s): noise and a seven-voice saw, a high-pass opened from 200 Hz to 6.4 kHz and pitch raised an octave by a one-shot MSEG, a quarter LFO on a band-pass. Needs a longer performance than the default three seconds.",
+    "description": "Report 04 S10 (riser, 4 bars = 6.86 s): noise and a seven-voice saw, a high-pass opened from 200 Hz to 6.4 kHz and pitch raised an octave by a one-shot MSEG, a quarter LFO on a band-pass that the MSEG speeds up from 1/4 to 1/32 (the modulatable beats). Needs a longer performance than the default three seconds.",
     "tags": [
       "fx",
       "riser"
@@ -14,7 +14,7 @@
     "amp_env": "env1"
   },
   "master": {
-    "level": -5.3
+    "level": 1.9
   },
   "generators": [
     {
@@ -44,6 +44,15 @@
       "params": {
         "mode": "hp",
         "cutoff": 200
+      }
+    },
+    {
+      "id": "filter2",
+      "kind": "svf",
+      "params": {
+        "mode": "bp",
+        "cutoff": 1500,
+        "resonance": 20
       }
     }
   ],
@@ -95,6 +104,16 @@
       "src": "mseg1",
       "dst": "wt1.semi",
       "depth": 12.5
+    },
+    {
+      "src": "lfo1",
+      "dst": "filter2.cutoff",
+      "depth": 10.034
+    },
+    {
+      "src": "mseg1",
+      "dst": "lfo1.beats",
+      "depth": -37.5
     }
   ]
 }

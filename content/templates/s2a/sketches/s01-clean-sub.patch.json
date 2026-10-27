@@ -2,7 +2,7 @@
   "schema": 1,
   "meta": {
     "name": "S1 clean sub",
-    "description": "Report 04 S1: a sine through a 120 Hz low-pass, legato glide 40 ms, a quarter-note pump from a synced saw-down LFO on the level.",
+    "description": "Report 04 S1: a sine through a touch of asymmetric distortion (the second harmonic the target asks for) and a 120 Hz low-pass, legato glide 40 ms, a quarter-note pump from a synced saw-down LFO on the level.",
     "tags": [
       "bass",
       "sub"
@@ -29,6 +29,15 @@
     }
   ],
   "voice_fx": [
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "asymmetric",
+        "drive": 8,
+        "bias": 60
+      }
+    },
     {
       "id": "filter1",
       "kind": "svf",
