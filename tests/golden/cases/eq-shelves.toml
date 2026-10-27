@@ -1,0 +1,23 @@
+description = "S2a EQ: both shelves: a low shelf at 160 Hz, +8 dB, and a high shelf at 5 kHz, -9 dB (a warm, dark tilt). Guards the cookbook's shelf with slope 1. The reference voice goes through a gate envelope (attack 0, decay 0, sustain 100 %, release 0) so lane D2's envelope curves do not move it, on a saw (lane D1's) chord of three notes with off-grid times."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+    { key = 57, velocity = 0.9, on_s = 0.0171, off_s = 0.9 },
+    { key = 64, velocity = 0.8, on_s = 0.3, off_s = 1.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+fx = [
+    { id = "eq1", kind = "eq", params = { low_freq = 160, low_gain = 8, high_freq = "5kHz", high_gain = -9 } },
+]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+]
