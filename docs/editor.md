@@ -760,7 +760,8 @@ Research 02 measured 4.55 M (idle) and 4.90 M (animating) for a generated editor
 - The S2a kinds draw no picture (`has_picture`): a `dist` transfer curve, a `ladder` response, an MSEG shape (a card's display slot is dropped for them now), an EQ curve and an OTT band view are display work, not layout work.
 - A wavetable that takes audio shows its source in the overview and the route list only; a small "← Osc 1" on the input's cell would say it where the drop happened.
 - The audio depth is 100 % at a drop; a depth handle for audio inputs needs a place on the knob that means "share of the source", which a ring does not have.
-- The frame cost of the dense layout is not in `frame_bench` yet (its cases are layout 1).
+- The frame cost of the dense layout is not in `frame_bench` yet (its cases are layout 1), and the leak gate opens the Init patch, which layout 1 draws.
+- While the lesson pane shows, the built-in `learn` layout places the editor (as for any patch), so an S2a patch opened under a lesson is drawn with normal-size cards and scrolls; the Create and duel columns take their width from whichever layout is drawing (`beside`), dense included, which this lane did not test with an S2a patch.
 
 **ED2 (modulation and feedback)** is done (above). Left for later lanes:
 
