@@ -55,6 +55,9 @@ pub mod reverb;
 pub mod svf;
 pub mod wt;
 
+#[cfg(test)]
+pub(crate) mod pair_test;
+
 use enth_patch::{ModuleKind, Rate};
 
 pub use adsr::Adsr;
@@ -378,6 +381,31 @@ impl VoiceProcessorImpl {
             VoiceProcessorImpl::Comb(m) => m.process(cx),
             VoiceProcessorImpl::Formant(m) => m.process(cx),
             VoiceProcessorImpl::Ladder(m) => m.process(cx),
+        }
+    }
+
+    /// See [`VoiceProcessor::process_pair`]: this module and its right-channel twin `right_twin` (the same kind: a
+    /// stereo plan builds it from the same patch values; any other pairing runs the two as plain `process` calls).
+    pub fn process_pair(
+        &mut self,
+        right_twin: &mut VoiceProcessorImpl,
+        left: &mut VoiceCx<'_>,
+        right: &mut VoiceCx<'_>,
+    ) {
+        match (self, right_twin) {
+            (VoiceProcessorImpl::Dist(l), VoiceProcessorImpl::Dist(r)) => {
+                VoiceProcessor::process_pair(l, r, left, right);
+            }
+            (VoiceProcessorImpl::Ladder(l), VoiceProcessorImpl::Ladder(r)) => {
+                VoiceProcessor::process_pair(l, r, left, right);
+            }
+            (VoiceProcessorImpl::Formant(l), VoiceProcessorImpl::Formant(r)) => {
+                VoiceProcessor::process_pair(l, r, left, right);
+            }
+            (l, r) => {
+                l.process(left);
+                r.process(right);
+            }
         }
     }
 

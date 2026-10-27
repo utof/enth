@@ -17,7 +17,9 @@
 
 use std::hint::black_box;
 
-use enth_engine::{Engine, Event, EventKind, NoteKey, PrepareCfg, compile};
+use enth_engine::{
+    Engine, Event, EventKind, NoteKey, Plan, PrepareCfg, StereoMode, compile, compile_with,
+};
 use enth_patch::catalogue::{AdsrParam, VoiceParam};
 use enth_patch::{ModuleId, ModuleInstance, ModuleKind, Patch};
 use gungraun::{Callgrind, EventKind as Ir, LibraryBenchmarkConfig};
@@ -66,6 +68,20 @@ pub struct Prepared {
 /// render of `seconds`. Allocates; call it from a gungraun `setup`.
 pub fn prepare(patch: &Patch, voices: usize, seconds: f32) -> Prepared {
     let (plan, _) = compile(patch, &PrepareCfg::new(SR)).expect("bench patch compiles");
+    prepared(plan, voices, seconds)
+}
+
+/// [`prepare`] with the stereo voice path forced on: every per-voice module runs for the left bus and again, as its
+/// right-channel twin, for the right one (lane PRF's paired kernels). The patch is the same, so the difference to
+/// [`prepare`] is what a stereo plan costs on it.
+pub fn prepare_stereo(patch: &Patch, voices: usize, seconds: f32) -> Prepared {
+    let (plan, _) = compile_with(patch, &PrepareCfg::new(SR), StereoMode::Forced)
+        .expect("bench patch compiles");
+    assert!(plan.is_stereo());
+    prepared(plan, voices, seconds)
+}
+
+fn prepared(plan: Plan, voices: usize, seconds: f32) -> Prepared {
     let events = (0..voices)
         .map(|i| Event {
             offset: 0,

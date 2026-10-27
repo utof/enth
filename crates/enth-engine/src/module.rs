@@ -255,6 +255,23 @@ pub trait VoiceProcessor {
     fn start_voice(&mut self, start: &VoiceStart<'_>);
     /// Render one segment for every active voice.
     fn process(&mut self, cx: &mut VoiceCx<'_>);
+    /// Render one segment for this module and for its right-channel twin `right` together (a plan with the stereo
+    /// voice path runs every per-voice effect twice, `crate::stereo`; lane PRF). `left` is this module's context
+    /// and `right` the twin's: the same voices, notes and parameter span, the right bus.
+    ///
+    /// **The contract is bit for bit what two `process` calls give**, this one on `left` and then `right_twin` on
+    /// `right`: each instance keeps its own state and sees only its own bus, so a module may share work the two
+    /// channels have in common (parameter reads, coefficients) or run them side by side in SIMD lanes. The default
+    /// is the two calls.
+    fn process_pair(
+        &mut self,
+        right_twin: &mut Self,
+        left: &mut VoiceCx<'_>,
+        right: &mut VoiceCx<'_>,
+    ) {
+        self.process(left);
+        right_twin.process(right);
+    }
     /// Copy all state from `other` (the same kind, prepared with the same `PrepareCfg`), for the plan swap (lane
     /// S2b): afterwards both produce identical output for identical input. No allocation.
     fn copy_state_from(&mut self, other: &Self);

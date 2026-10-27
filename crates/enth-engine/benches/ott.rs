@@ -40,21 +40,25 @@ fn mix_zero(voices: usize) -> common::Prepared {
 // depth and 82,746,537 at `mix` 0, each plus 10 %, rounded up to 1,000. Minus the `engine` bench measured in the same
 // tree (3,610,682 and 37,290,522) that is 977 and 969 instructions per frame for the module (947 at `mix` 0: the
 // branch skips the blend), the same at any depth.
+//
+// Lane PRF (2026-10-27, main a38ee3e plus that lane): the left and right crossover filters run in the two lanes of an
+// `f64x2`, bit for bit, which saves 4.37 M instructions of the second: 46,171,195 (ott_1v), 79,436,543 (ott_16v),
+// 79,443,740 (full depth) and 78,380,543 (mix 0), each plus 10 %, rounded up to 1,000.
 #[library_benchmark]
-#[bench::ott_1v(args = (1,), setup = chord, config = common::budget(55_542_000))]
-#[bench::ott_16v(args = (16,), setup = chord, config = common::budget(92_183_000))]
+#[bench::ott_1v(args = (1,), setup = chord, config = common::budget(50_789_000))]
+#[bench::ott_16v(args = (16,), setup = chord, config = common::budget(87_381_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }
 
 #[library_benchmark]
-#[bench::ott_full_depth_16v(args = (16,), setup = full_depth, config = common::budget(92_191_000))]
+#[bench::ott_full_depth_16v(args = (16,), setup = full_depth, config = common::budget(87_389_000))]
 fn render_full_depth(p: common::Prepared) -> f32 {
     common::render(p)
 }
 
 #[library_benchmark]
-#[bench::ott_mix_zero_16v(args = (16,), setup = mix_zero, config = common::budget(91_022_000))]
+#[bench::ott_mix_zero_16v(args = (16,), setup = mix_zero, config = common::budget(86_219_000))]
 fn render_mix_zero(p: common::Prepared) -> f32 {
     common::render(p)
 }

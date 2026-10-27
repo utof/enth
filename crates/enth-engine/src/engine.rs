@@ -1325,21 +1325,30 @@ fn render_plan(plan: &mut Plan, cx: &SegmentCx<'_>, buses: &mut Out<'_>) {
     if stereo_on && !wide_any {
         StereoPath::split(active, buses.voice, buses.voice_r);
     }
-    for slot in voice_fx.iter_mut() {
-        slot.module.process(&mut VoiceCx {
-            voices: active,
-            notes,
-            params: voice_table.view(slot.params),
-            io: buses.voice,
-            sync_out: None,
-            sync_in: None,
-            audio_in: None,
-            pre_level: None,
-            io_r: None,
-        });
-    }
     if stereo_on {
-        stereo.process(active, notes, voice_table, buses.voice_r);
+        // Both channels' chains, slot by slot: a module may run a channel and its twin together (lane PRF).
+        stereo.process_chain(
+            voice_fx,
+            active,
+            notes,
+            voice_table,
+            buses.voice,
+            buses.voice_r,
+        );
+    } else {
+        for slot in voice_fx.iter_mut() {
+            slot.module.process(&mut VoiceCx {
+                voices: active,
+                notes,
+                params: voice_table.view(slot.params),
+                io: buses.voice,
+                sync_out: None,
+                sync_in: None,
+                audio_in: None,
+                pre_level: None,
+                io_r: None,
+            });
+        }
     }
     *buses.left = [0.0; SEG];
     *buses.right = [0.0; SEG];

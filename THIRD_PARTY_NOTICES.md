@@ -272,6 +272,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+### FreeBSD msun `e_exp.c` and `e_log.c`, as carried by the `libm` crate (`exp` and `log` on two lanes)
+
+- Upstream: FreeBSD `lib/msun/src/e_exp.c` and `e_log.c`, in the form of rust-lang/libm 0.2.16 (`src/math/exp.rs` and `src/math/log.rs`; crates.io checksum `b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981`, the version the workspace pins with `=`)
+- Licence: the Sun Microsystems permission notice below, which libm's own MIT licence carries
+- Copyright: Copyright (C) 2004 by Sun Microsystems, Inc. (`e_exp.c`); Copyright (C) 1993 by Sun Microsystems, Inc. (`e_log.c`)
+- Derived enth files: `crates/enth-dsp/src/dist/lane_math.rs`
+- Changes from upstream: the algorithms and constants are libm's, written for two `f64` lanes (`wide::f64x2`) and restricted to the arguments `dist`'s `ln cosh` gives them (`exp` on `[-100, 0]`, `log` on `[1, 2]`): each branch of the scalar code becomes a compare and a select, the scaling by a power of two a multiplication by the exact power, and every lane performs the scalar function's IEEE operations in the same order, so a lane is bit for bit what `libm::exp` or `libm::log` returns for its argument (tests compare over millions of arguments and at every threshold); arguments outside the restricted range and NaN go to the scalar function. This is not an approximation: the hash of a render is the one the scalar code gives. Provenance and the argument for exactness: `docs/dsp/dist.md`.
+
+```text
+====================================================
+Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+(e_log.c: Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+Developed at SunSoft, a Sun Microsystems, Inc. business.)
+
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+====================================================
+```
+
 ## Bundled assets
 
 ### Inter (fonts)

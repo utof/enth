@@ -27,6 +27,11 @@ fn statics(voices: usize) -> common::Prepared {
     common::prepare(&common::patch_with(ModuleKind::Formant), voices, 1.0)
 }
 
+/// The same formant in a plan with the stereo voice path forced on: each voice runs it for both channels (lane PRF).
+fn statics_stereo(voices: usize) -> common::Prepared {
+    common::prepare_stereo(&common::patch_with(ModuleKind::Formant), voices, 1.0)
+}
+
 /// An engine whose second formant is set to a new value at every segment boundary.
 struct Moving {
     engine: Engine,
@@ -101,9 +106,13 @@ fn render_moving(mut m: Moving) -> f32 {
 // segment); over the `engine` bench's 3,621,181 and 37,278,521 (same build) that is 48.0 instructions per sample per
 // voice for a static vowel and 94.8 with `f2` moving: the extra 47 are the ramp of fifteen coefficients and, every
 // segment, a new tuning (three `tan`, two `exp2`) (docs/dsp/formant.md).
+// `stereo_static_16v` (lane PRF, 2026-10-27) is the static formant in a plan with the stereo voice path forced on, so
+// each voice runs it for the left and right channel, four instances to a loop: 88,690,335 (112,252,367 on a38ee3e,
+// before the lanes). The mono cases did not gain (+0.2 %).
 #[library_benchmark]
 #[bench::static_1v(args = (1,), setup = statics, config = common::budget(6_676_000))]
 #[bench::static_16v(args = (16,), setup = statics, config = common::budget(81_549_000))]
+#[bench::stereo_static_16v(args = (16,), setup = statics_stereo, config = common::budget(97_560_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }

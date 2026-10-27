@@ -56,7 +56,12 @@
 
 use core::f64::consts::{LN_2, PI, SQRT_2};
 
-use crate::resample::{Oversampler, PHASE_SECTIONS, PhaseChain, phase_chain_coefs};
+use wide::f64x2;
+
+mod lane_math;
+mod pair;
+
+use crate::resample::{Lane, Oversampler, PHASE_SECTIONS, PhaseChain, phase_chain_coefs};
 use crate::util::flush::flush64;
 use crate::util::math::{DB_TO_LOG2, cos, exp, exp2, log, sin, tan, tanh};
 
@@ -129,11 +134,26 @@ pub trait Curve {
     fn f(u: f64) -> f64;
     /// An antiderivative of [`Curve::f`] (constants are irrelevant to ADAA).
     fn anti(u: f64) -> f64;
+
+    /// [`Curve::f`] on the two lanes of a stereo pair (`pair`): each lane is exactly the scalar function's result.
+    #[inline(always)]
+    fn f2(u: f64x2) -> f64x2 {
+        let [l, r] = u.to_array();
+        f64x2::new([Self::f(l), Self::f(r)])
+    }
+
+    /// [`Curve::anti`] on the two lanes of a stereo pair: each lane is exactly the scalar function's result.
+    #[inline(always)]
+    fn anti2(u: f64x2) -> f64x2 {
+        let [l, r] = u.to_array();
+        f64x2::new([Self::anti(l), Self::anti(r)])
+    }
 }
 
 /// `ln cosh(u)`, stable for any `u`: `|u| + ln(1 + e^(−2|u|)) − ln 2`, and just `|u| − ln 2` beyond 20 where the second
 /// term is below 1e-17. (A hand-rolled exponential and logarithm, polynomial on a reduced range, measured no
-/// cheaper than `libm`'s in instructions, so this stays on `libm`.)
+/// cheaper than `libm`'s in instructions, so this stays on `libm`. The paired kernel computes the same values for two
+/// voices at once with `libm`'s own algorithm on two lanes, `lane_math::ln_cosh_x2`, bit for bit this function.)
 #[inline(always)]
 fn ln_cosh(u: f64) -> f64 {
     let a = u.abs();
@@ -154,6 +174,10 @@ impl Curve for SoftCurve {
     #[inline(always)]
     fn anti(u: f64) -> f64 {
         ln_cosh(u)
+    }
+    #[inline(always)]
+    fn anti2(u: f64x2) -> f64x2 {
+        lane_math::ln_cosh_x2(u)
     }
 }
 
@@ -189,6 +213,14 @@ impl Curve for AsymCurve {
         } else {
             0.25 * ln_cosh(2.0 * u)
         }
+    }
+    #[inline(always)]
+    fn anti2(u: f64x2) -> f64x2 {
+        // Both branches on their own lanes: `ln_cosh` of `u` or of `2u`, and the quarter of it below 0 (NaN takes the
+        // second branch, as `u >= 0.0` is false for it).
+        let pos = u.simd_ge(f64x2::ZERO);
+        let l = lane_math::ln_cosh_x2(pos.select(u, f64x2::splat(2.0) * u));
+        pos.select(l, f64x2::splat(0.25) * l)
     }
 }
 
@@ -369,11 +401,12 @@ fn clip<C: Curve, const K: usize>(sh: &mut Shaper, u: f64, _d: &Dig) -> f64 {
 }
 
 /// One second-order trapezoidal state-variable filter with `Q = 1/√2` (Simper's form): the building block of the
-/// crossover.
+/// crossover. Generic over the [`Lane`] it runs on: one `f64`, or the two channels of a stereo voice side by side
+/// (`pair`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Svf2 {
-    ic1: f64,
-    ic2: f64,
+struct Svf2<L: Lane = f64> {
+    ic1: L,
+    ic2: L,
 }
 
 /// Coefficients of [`Svf2`] for one corner.
@@ -393,26 +426,31 @@ impl SvfCoefs {
     }
 }
 
-impl Svf2 {
+impl<L: Lane> Svf2<L> {
     /// `(low-pass, high-pass)` of one sample.
     #[inline(always)]
-    fn step(&mut self, c: &SvfCoefs, x: f64) -> (f64, f64) {
+    fn step(&mut self, c: &SvfCoefs, x: L) -> (L, L) {
+        let (a1, a2, a3) = (L::splat(c.a1), L::splat(c.a2), L::splat(c.a3));
+        let two = L::splat(2.0);
         let v3 = x - self.ic2;
-        let v1 = c.a1 * self.ic1 + c.a2 * v3;
-        let v2 = self.ic2 + c.a2 * self.ic1 + c.a3 * v3;
-        self.ic1 = 2.0 * v1 - self.ic1;
-        self.ic2 = 2.0 * v2 - self.ic2;
-        (v2, x - SQRT_2 * v1 - v2)
+        let v1 = a1 * self.ic1 + a2 * v3;
+        let v2 = self.ic2 + a2 * self.ic1 + a3 * v3;
+        self.ic1 = two * v1 - self.ic1;
+        self.ic2 = two * v2 - self.ic2;
+        (v2, x - L::splat(SQRT_2) * v1 - v2)
     }
 
+    #[inline(always)]
+    fn flush(&mut self) {
+        self.ic1 = self.ic1.flush();
+        self.ic2 = self.ic2.flush();
+    }
+}
+
+impl Svf2 {
     fn prime(&mut self, x: f64) {
         self.ic1 = 0.0;
         self.ic2 = x;
-    }
-
-    fn flush(&mut self) {
-        self.ic1 = flush64(self.ic1);
-        self.ic2 = flush64(self.ic2);
     }
 
     fn subnormals(&self) -> usize {
@@ -422,32 +460,35 @@ impl Svf2 {
 
 /// A fourth-order Linkwitz-Riley split: `lo + hi` is the second-order Butterworth all-pass of the input.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Crossover {
-    first: Svf2,
-    low: Svf2,
-    high: Svf2,
+struct Crossover<L: Lane = f64> {
+    first: Svf2<L>,
+    low: Svf2<L>,
+    high: Svf2<L>,
 }
 
-impl Crossover {
+impl<L: Lane> Crossover<L> {
     #[inline(always)]
-    fn step(&mut self, c: &SvfCoefs, x: f64) -> (f64, f64) {
+    fn step(&mut self, c: &SvfCoefs, x: L) -> (L, L) {
         let (lp1, hp1) = self.first.step(c, x);
         let (lo, _) = self.low.step(c, lp1);
         let (_, hi) = self.high.step(c, hp1);
         (lo, hi)
     }
 
+    #[inline(always)]
+    fn flush(&mut self) {
+        self.first.flush();
+        self.low.flush();
+        self.high.flush();
+    }
+}
+
+impl Crossover {
     /// Steady state of a constant input: all of it in the low band.
     fn prime(&mut self, x: f64) {
         self.first.prime(x);
         self.low.prime(x);
         self.high.prime(0.0);
-    }
-
-    fn flush(&mut self) {
-        self.first.flush();
-        self.low.flush();
-        self.high.flush();
     }
 
     fn subnormals(&self) -> usize {
@@ -457,25 +498,28 @@ impl Crossover {
 
 /// A one-pole high-pass: `y[n] = x[n] − x[n−1] + R·y[n−1]`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct DcBlock {
-    x1: f64,
-    y1: f64,
+struct DcBlock<L: Lane = f64> {
+    x1: L,
+    y1: L,
 }
 
-impl DcBlock {
+impl<L: Lane> DcBlock<L> {
     #[inline(always)]
-    fn step(&mut self, r: f64, x: f64) -> f64 {
-        let y = x - self.x1 + r * self.y1;
+    fn step(&mut self, r: f64, x: L) -> L {
+        let y = x - self.x1 + L::splat(r) * self.y1;
         self.x1 = x;
         self.y1 = y;
         y
     }
 
+    #[inline(always)]
     fn flush(&mut self) {
-        self.x1 = flush64(self.x1);
-        self.y1 = flush64(self.y1);
+        self.x1 = self.x1.flush();
+        self.y1 = self.y1.flush();
     }
+}
 
+impl DcBlock {
     fn subnormals(&self) -> usize {
         usize::from(self.x1.is_subnormal()) + usize::from(self.y1.is_subnormal())
     }
@@ -483,23 +527,26 @@ impl DcBlock {
 
 /// A one-pole trapezoidal low-pass; `g` is `G = tan/(1 + tan)` of the corner.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct OnePole {
-    s: f64,
+struct OnePole<L: Lane = f64> {
+    s: L,
 }
 
-impl OnePole {
+impl<L: Lane> OnePole<L> {
     #[inline(always)]
-    fn lp(&mut self, g: f64, x: f64) -> f64 {
-        let v = g * (x - self.s);
+    fn lp(&mut self, g: f64, x: L) -> L {
+        let v = L::splat(g) * (x - self.s);
         let y = v + self.s;
         self.s = y + v;
         y
     }
 
+    #[inline(always)]
     fn flush(&mut self) {
-        self.s = flush64(self.s);
+        self.s = self.s.flush();
     }
+}
 
+impl OnePole {
     fn subnormals(self) -> usize {
         usize::from(self.s.is_subnormal())
     }
@@ -701,18 +748,72 @@ impl Voice {
         self.sh.prime(su.mode, u0, a.level, a.inv_level)
     }
 
+    /// Whether a block with controls `a` to `b` leaves the voice (and the bus) alone: `mix` is 0 throughout and the
+    /// fade has finished.
+    #[inline(always)]
+    fn idle(&self, a: &Ctl, b: &Ctl) -> bool {
+        a.mix == 0.0 && b.mix == 0.0 && self.fade == 0.0
+    }
+
     /// Render one block in place. `a` holds the controls at the end of the previous block (the same as `b` for a
     /// fresh voice), `b` at the end of this one.
     pub fn process(&mut self, su: &Setup, a: &Ctl, b: &Ctl, io: &mut [f32]) {
         if io.is_empty() {
             return;
         }
-        if a.mix == 0.0 && b.mix == 0.0 && self.fade == 0.0 {
+        if self.idle(a, b) {
             self.cold = true;
             self.fresh = false;
             return;
         }
-        let x0 = f64::from(io[0]);
+        let fade = self.begin(su, a, b, f64::from(io[0]));
+        self.render(su, a, b, fade, io);
+        self.flush();
+    }
+
+    /// Render one block for this voice and for its right-channel twin `right` together: the same bits as
+    /// `self.process(su, a, b, io_l)` and `right.process(su, a, b, io_r)` (lane PRF; the stereo voice path of
+    /// `enth-engine` runs every per-voice effect twice and calls this for the pair). The two voices keep their own
+    /// states and their own signal; the controls and the setup are the ones they share. The filters run on both at
+    /// once in `f64x2` lanes (`pair`); whatever that cannot take (the digital modes, voices that are not in the
+    /// same fade, blocks of different lengths or nothing to render) runs as the two plain calls.
+    pub fn process_pair(
+        &mut self,
+        right: &mut Voice,
+        su: &Setup,
+        a: &Ctl,
+        b: &Ctl,
+        io_l: &mut [f32],
+        io_r: &mut [f32],
+    ) {
+        if io_l.is_empty() || io_l.len() != io_r.len() || self.idle(a, b) || right.idle(a, b) {
+            self.process(su, a, b, io_l);
+            right.process(su, a, b, io_r);
+            return;
+        }
+        let fade = self.begin(su, a, b, f64::from(io_l[0]));
+        let fade_r = right.begin(su, a, b, f64::from(io_r[0]));
+        if fade == fade_r {
+            pair::render(self, right, su, a, b, fade, io_l, io_r);
+        } else {
+            // One of the two is a voice that just started (its fade begins at 1): they cannot share a ramp.
+            self.render_alone(su, a, b, fade, io_l);
+            right.render_alone(su, a, b, fade_r, io_r);
+        }
+    }
+
+    /// [`Voice::render`] and the flush, as a function of its own (the rare path of [`Voice::process_pair`]).
+    #[cold]
+    #[inline(never)]
+    fn render_alone(&mut self, su: &Setup, a: &Ctl, b: &Ctl, fade: (f64, f64), io: &mut [f32]) {
+        self.render(su, a, b, fade, io);
+        self.flush();
+    }
+
+    /// The start of a block that renders: prime a cold voice or one whose structure changed, then step the mix
+    /// fade. Returns the fade at the start and end of the block.
+    #[inline]
+    fn begin(&mut self, su: &Setup, a: &Ctl, b: &Ctl, x0: f64) -> (f64, f64) {
         if self.cold {
             let w0 = self.prime_structure(su, a, x0);
             let lo0 = if su.split { x0 } else { 0.0 };
@@ -734,14 +835,20 @@ impl Voice {
             (c0 - FADE_STEP).max(0.0)
         };
         self.fade = c1;
+        (c0, c1)
+    }
+
+    /// The samples of a block, after [`Voice::begin`].
+    #[inline(always)]
+    fn render(&mut self, su: &Setup, a: &Ctl, b: &Ctl, fade: (f64, f64), io: &mut [f32]) {
         // Static controls (the usual case) skip the per-sample interpolation altogether.
         let st = a == b;
         macro_rules! go {
             ($shape:expr) => {
                 if st {
-                    run::<_, true>(self, su, a, b, (c0, c1), io, $shape);
+                    run::<_, true>(self, su, a, b, fade, io, $shape);
                 } else {
-                    run::<_, false>(self, su, a, b, (c0, c1), io, $shape);
+                    run::<_, false>(self, su, a, b, fade, io, $shape);
                 }
             };
         }
@@ -764,7 +871,6 @@ impl Voice {
             (Mode::Bitcrush, _) => go!(crush),
             (Mode::Downsample, _) => go!(hold),
         }
-        self.flush();
     }
 
     fn flush(&mut self) {

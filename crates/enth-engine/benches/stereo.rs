@@ -85,10 +85,14 @@ fn budget(ir: u64) -> LibraryBenchmarkConfig {
 //   on G1 costs +44.5 M (+7.4 %, +464 per frame): the second `svf` per voice, the bus copy and the two-channel
 //   balance; the reverb and the compressor run once. The mono path moved +246,505 instructions (+0.04 %, 2.6 per
 //   frame: one flag test per active voice and segment).
+// - PRF, 2026-10-27 (main a38ee3e plus lane PRF, whose paired kernels do not take this patch: its voice FX is one `svf`,
+//   which runs as two plain calls): 647,893,366, against 647,812,216 on a38ee3e (+0.01 %); the budget stays.
 #[library_benchmark]
 #[bench::g1_stereo_16v(args = (16,), setup = g1_stereo, config = budget(STEREO_BUDGET_IR))]
 fn render(p: Prepared) -> f32 {
-    render_stereo(p)
+    // Not a tail call: callgrind collects from the entry of the benchmark function to its return, and a function
+    // that ends in a jump to `render_stereo` is left at once, which counted 0 instructions (lane PRF, 2026-10-27).
+    black_box(render_stereo(p))
 }
 
 library_benchmark_group!(name = stereo, benchmarks = [render]);

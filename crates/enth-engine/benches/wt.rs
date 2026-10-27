@@ -105,16 +105,24 @@ fn unison_full(count: u32) -> common::Prepared {
 // 12,000 per frame: 360.9 per sample and voice, 51.6 per copy. The lanes always compute eight copies, so most of the
 // cost is fixed: the reese (2 copies) is 290.8 per sample and voice. The unison seam in the engine cost the plain
 // cases +0.9 % (plain_1v) and +0.1-0.2 % (the 16-voice cases) over the numbers above, which were measured on main.
+//
+// Lane PRF (2026-10-27, main a38ee3e plus that lane; the phase wrap that skips `floor` when no lane needs it, the
+// Hermite read on the two halves of the lanes, eight taps loaded in straight code with one bounds check each): the
+// unison cases with seven and eight copies fell, unison7_plain_16v to 273,127,982 (from 314,206,966), unison7_pm_16v to
+// 327,528,176 (from 427,460,512), unison7_full_16v to 468,155,724 (from 615,022,188) and unison8_full_16v to 470,775,531
+// (from 635,065,912), and their budgets are those counts plus 10 %. unison2_plain_16v is 265,885,702 (from 260,356,686,
+// +2.1 %: with every lane loaded there is no skipping of the lanes beyond a short count) and keeps its budget; the
+// plain cases are within 0.1 %.
 #[library_benchmark]
 #[bench::plain_1v(args = (1,), setup = plain, config = common::budget(9_409_000))]
 #[bench::plain_16v(args = (16,), setup = plain, config = common::budget(123_490_000))]
 #[bench::pm_16v(args = (16,), setup = pm, config = common::budget(133_776_000))]
 #[bench::full_16v(args = (16,), setup = full, config = common::budget(187_692_000))]
 #[bench::unison2_plain_16v(args = (2,), setup = unison_plain, config = common::budget(286_734_000))]
-#[bench::unison7_plain_16v(args = (7,), setup = unison_plain, config = common::budget(345_969_000))]
-#[bench::unison7_pm_16v(args = (7,), setup = unison_pm, config = common::budget(470_540_000))]
-#[bench::unison7_full_16v(args = (7,), setup = unison_full, config = common::budget(676_858_000))]
-#[bench::unison8_full_16v(args = (8,), setup = unison_full, config = common::budget(698_906_000))]
+#[bench::unison7_plain_16v(args = (7,), setup = unison_plain, config = common::budget(300_441_000))]
+#[bench::unison7_pm_16v(args = (7,), setup = unison_pm, config = common::budget(360_281_000))]
+#[bench::unison7_full_16v(args = (7,), setup = unison_full, config = common::budget(514_972_000))]
+#[bench::unison8_full_16v(args = (8,), setup = unison_full, config = common::budget(517_854_000))]
 fn render(p: common::Prepared) -> f32 {
     common::render(p)
 }

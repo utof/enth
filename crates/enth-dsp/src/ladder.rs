@@ -34,6 +34,8 @@
 //! `util::math`; the per-sample code is `+ − × ÷` and `sqrt`, all correctly rounded. No `mul_add`. The states are
 //! flushed once per block.
 
+use wide::f32x4;
+
 use crate::svf::{Drive, MAX_CUTOFF_FRACTION, MIN_CUTOFF_HZ};
 use crate::util::flush::flush;
 use crate::util::math;
@@ -345,6 +347,225 @@ fn run<const MODE: u8, const RAMP: bool, const DRIVE: bool, const WET: u8, const
         }
     }
     state.s = [s1, s2, s3, s4];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Several instances at once (lane PRF)
+// ---------------------------------------------------------------------------------------------------------------
+
+type V = f32x4;
+
+/// What instances must share to run in lanes of one loop: the response, whether the coefficients ramp, whether the
+/// saturator runs and how the wet signal is written (the choices `process_block` turns into const generics).
+fn lane_class(seg: &Segment) -> (Mode, bool, bool, u8) {
+    let mix = [sane_mix(seg.mix[0]), sane_mix(seg.mix[1])];
+    let wet = if mix == [0.0, 0.0] {
+        OFF
+    } else if mix == [1.0, 1.0] {
+        FULL
+    } else {
+        BLEND
+    };
+    (
+        seg.mode,
+        seg.from != seg.to,
+        !(seg.drive_from.is_off() && seg.drive_to.is_off()),
+        wet,
+    )
+}
+
+/// [`process_block`] for `L` (at most 4) instances at once, one per lane of an `f32x4`: `states[l]` filters `ios[l]`
+/// with `segs[l]`. **Each instance gets exactly the bits `process_block` gives it alone**: a lane performs the scalar
+/// loop's `+ − × ÷` and `sqrt` on its own values in the same order, and the instances share nothing but the loop
+/// (the stereo voice path runs a voice's left and right instances, and several voices, side by side this way).
+/// Instances whose segments differ in response, in whether they ramp or saturate or in how the wet signal is written
+/// run one after the other as plain `process_block` calls.
+pub fn process_lanes<const N: usize, const L: usize>(
+    states: [&mut State; L],
+    segs: [&Segment; L],
+    ios: [&mut [f32; N]; L],
+) {
+    const { assert!(L >= 1 && L <= 4) };
+    let class = lane_class(segs[0]);
+    if segs.iter().any(|s| lane_class(s) != class) {
+        for ((state, seg), io) in states.into_iter().zip(segs).zip(ios) {
+            process_block(state, seg, io);
+        }
+        return;
+    }
+    let (mode, ramp, drive, wet) = class;
+    let mix: [[f32; 2]; L] =
+        core::array::from_fn(|l| [sane_mix(segs[l].mix[0]), sane_mix(segs[l].mix[1])]);
+    let (mut states, mut ios) = (states, ios);
+    macro_rules! by_mode {
+        ($ramp:literal, $drive:literal, $wet:ident) => {
+            match mode {
+                Mode::Lp24 => {
+                    run_lanes::<LP24, $ramp, $drive, $wet, N, L>(&mut states, &segs, &mix, &mut ios)
+                }
+                Mode::Lp12 => {
+                    run_lanes::<LP12, $ramp, $drive, $wet, N, L>(&mut states, &segs, &mix, &mut ios)
+                }
+                Mode::Bp => {
+                    run_lanes::<BP, $ramp, $drive, $wet, N, L>(&mut states, &segs, &mix, &mut ios)
+                }
+                Mode::Hp => {
+                    run_lanes::<HP, $ramp, $drive, $wet, N, L>(&mut states, &segs, &mix, &mut ios)
+                }
+            }
+        };
+    }
+    macro_rules! by_wet {
+        ($ramp:literal, $drive:literal) => {
+            match wet {
+                OFF => by_mode!($ramp, $drive, OFF),
+                FULL => by_mode!($ramp, $drive, FULL),
+                _ => by_mode!($ramp, $drive, BLEND),
+            }
+        };
+    }
+    match (ramp, drive) {
+        (false, false) => by_wet!(false, false),
+        (true, false) => by_wet!(true, false),
+        (false, true) => by_wet!(false, true),
+        (true, true) => by_wet!(true, true),
+    }
+    for state in states {
+        state.flush();
+    }
+}
+
+/// The lanes `0..L` from `f(lane)`, the rest zero.
+#[inline(always)]
+fn lanes<const L: usize>(f: impl Fn(usize) -> f32) -> V {
+    V::new(core::array::from_fn(|l| if l < L { f(l) } else { 0.0 }))
+}
+
+/// [`Powers`] on four lanes.
+#[derive(Clone, Copy)]
+struct Powers4 {
+    g2: V,
+    g3: V,
+    one_minus_g: V,
+    inv: V,
+}
+
+#[inline(always)]
+fn powers4(g: V, k: V) -> Powers4 {
+    let g2 = g * g;
+    let g4 = g2 * g2;
+    Powers4 {
+        g2,
+        g3: g2 * g,
+        one_minus_g: V::ONE - g,
+        inv: V::ONE / (V::ONE + k * g4),
+    }
+}
+
+/// [`run`] with one instance per lane.
+#[inline(always)]
+#[allow(
+    clippy::needless_range_loop,
+    reason = "the sample index is shared by the blocks of all the lanes"
+)]
+fn run_lanes<
+    const MODE: u8,
+    const RAMP: bool,
+    const DRIVE: bool,
+    const WET: u8,
+    const N: usize,
+    const L: usize,
+>(
+    states: &mut [&mut State; L],
+    segs: &[&Segment; L],
+    mix: &[[f32; 2]; L],
+    ios: &mut [&mut [f32; N]; L],
+) {
+    let n = V::splat(N as f32);
+    let at = |l: usize| if RAMP { &segs[l].from } else { &segs[l].to };
+    let mut g = lanes::<L>(|l| at(l).g);
+    let mut k = lanes::<L>(|l| at(l).k);
+    let (dg, dk) = if RAMP {
+        (
+            (lanes::<L>(|l| segs[l].to.g) - g) / n,
+            (lanes::<L>(|l| segs[l].to.k) - k) / n,
+        )
+    } else {
+        (V::ZERO, V::ZERO)
+    };
+    let mut b = lanes::<L>(|l| segs[l].drive_from.b());
+    let mut c = lanes::<L>(|l| segs[l].drive_from.c());
+    let (db, dc) = if DRIVE {
+        (
+            (lanes::<L>(|l| segs[l].drive_to.b()) - b) / n,
+            (lanes::<L>(|l| segs[l].drive_to.c()) - c) / n,
+        )
+    } else {
+        (V::ZERO, V::ZERO)
+    };
+    let mut m = lanes::<L>(|l| mix[l][0]);
+    let dm = (lanes::<L>(|l| mix[l][1]) - m) / n;
+    let steady = powers4(g, k);
+    let limit = V::splat(LIMIT_SQ);
+    let mut s1 = lanes::<L>(|l| states[l].s[0]);
+    let mut s2 = lanes::<L>(|l| states[l].s[1]);
+    let mut s3 = lanes::<L>(|l| states[l].s[2]);
+    let mut s4 = lanes::<L>(|l| states[l].s[3]);
+    for i in 0..N {
+        let dry = lanes::<L>(|l| ios[l][i]);
+        let p = if RAMP {
+            g += dg;
+            k += dk;
+            powers4(g, k)
+        } else {
+            steady
+        };
+        let mut v0 = dry;
+        if DRIVE {
+            b += db;
+            c += dc;
+            v0 = v0 / (b + c.max(V::ZERO) * v0 * v0).sqrt();
+        }
+        let sigma = p.one_minus_g * (p.g3 * s1 + p.g2 * s2 + g * s3 + s4);
+        let u = (v0 - k * sigma) * p.inv;
+        let u = u / (V::ONE + u * u * limit).sqrt();
+        let v = (u - s1) * g;
+        let y1 = v + s1;
+        s1 = y1 + v;
+        let v = (y1 - s2) * g;
+        let y2 = v + s2;
+        s2 = y2 + v;
+        let v = (y2 - s3) * g;
+        let y3 = v + s3;
+        s3 = y3 + v;
+        let v = (y3 - s4) * g;
+        let y4 = v + s4;
+        s4 = y4 + v;
+        let y = match MODE {
+            LP24 => y4,
+            LP12 => y2,
+            BP => y2 - V::splat(2.0) * y3 + y4,
+            _ => u - V::splat(4.0) * y1 + V::splat(6.0) * y2 - V::splat(4.0) * y3 + y4,
+        };
+        let out = match WET {
+            OFF => None,
+            FULL => Some(y),
+            _ => {
+                m += dm;
+                Some((V::ONE - m) * dry + m * y)
+            }
+        };
+        if let Some(out) = out {
+            let a = out.to_array();
+            for l in 0..L {
+                ios[l][i] = a[l];
+            }
+        }
+    }
+    let (a1, a2, a3, a4) = (s1.to_array(), s2.to_array(), s3.to_array(), s4.to_array());
+    for l in 0..L {
+        states[l].s = [a1[l], a2[l], a3[l], a4[l]];
+    }
 }
 
 #[cfg(test)]
@@ -757,5 +978,115 @@ mod tests {
             assert!(!st.has_subnormal());
         }
         assert_eq!(st, State::ZERO);
+    }
+
+    /// A random segment of the given class: `ramp` makes the end coefficients differ from the start's, `drive` turns
+    /// the saturator on, `wet` is how the mix is written (0 off, 1 full, 2 blend).
+    fn random_segment(rng: &mut Rng, mode: Mode, ramp: bool, drive: bool, wet: u8) -> Segment {
+        let k = |rng: &mut Rng| k_from_resonance(rng.range_f32(0.0, 100.0));
+        let fc = |rng: &mut Rng| rng.range_f32(80.0, 12_000.0);
+        let from = Coeffs::new(fc(rng), k(rng), SR);
+        let to = if ramp {
+            Coeffs::new(fc(rng), k(rng), SR)
+        } else {
+            from
+        };
+        let (d0, d1) = if drive {
+            let d = Drive::from_db(rng.range_f32(2.0, 24.0));
+            let e = if ramp {
+                Drive::from_db(rng.range_f32(0.0, 24.0))
+            } else {
+                d
+            };
+            (d, e)
+        } else {
+            (Drive::OFF, Drive::OFF)
+        };
+        let mix = match wet {
+            0 => [0.0, 0.0],
+            1 => [1.0, 1.0],
+            _ => [rng.range_f32(0.05, 0.95), rng.range_f32(0.05, 0.95)],
+        };
+        Segment {
+            mode,
+            from,
+            to,
+            drive_from: d0,
+            drive_to: d1,
+            mix,
+        }
+    }
+
+    /// `process_lanes` on `L` instances against `process_block` on each, over several blocks: the outputs and the
+    /// states, bit for bit.
+    fn lanes_match_scalar<const L: usize>(rng: &mut Rng, classes: [(Mode, bool, bool, u8); L]) {
+        let mut scalar = [State::ZERO; L];
+        let mut laned = [State::ZERO; L];
+        for block in 0..12 {
+            let segs: [Segment; L] = core::array::from_fn(|l| {
+                random_segment(rng, classes[l].0, classes[l].1, classes[l].2, classes[l].3)
+            });
+            let amp = [0.3f32, 2.0, 9.0][block % 3];
+            let mut want: [[f32; 32]; L] = core::array::from_fn(|l| {
+                core::array::from_fn(|i| {
+                    amp * math::sinf(0.05 * (1 + l) as f32 * (block * 32 + i) as f32)
+                        + 0.3 * rng.bipolar_f32()
+                })
+            });
+            let mut got = want;
+            for l in 0..L {
+                process_block(&mut scalar[l], &segs[l], &mut want[l]);
+            }
+            process_lanes(laned.each_mut(), segs.each_ref(), got.each_mut());
+            for l in 0..L {
+                let (w, g) = (want[l].map(f32::to_bits), got[l].map(f32::to_bits));
+                assert_eq!(
+                    w, g,
+                    "output, lane {l} of {L}, block {block}, {:?}",
+                    classes[l]
+                );
+                assert_eq!(
+                    format!("{:?}", scalar[l]),
+                    format!("{:?}", laned[l]),
+                    "state, lane {l} of {L}, block {block}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn instances_in_lanes_are_process_block_bit_for_bit() {
+        let mut rng = Rng::new(0x1ADD_0001);
+        for mode in MODES {
+            for ramp in [false, true] {
+                for drive in [false, true] {
+                    for wet in 0..3u8 {
+                        let class = (mode, ramp, drive, wet);
+                        lanes_match_scalar::<1>(&mut rng, [class]);
+                        lanes_match_scalar::<2>(&mut rng, [class; 2]);
+                        lanes_match_scalar::<3>(&mut rng, [class; 3]);
+                        lanes_match_scalar::<4>(&mut rng, [class; 4]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn instances_of_different_classes_run_one_after_the_other() {
+        let mut rng = Rng::new(0x1ADD_0002);
+        lanes_match_scalar::<4>(
+            &mut rng,
+            [
+                (Mode::Lp24, true, false, 2),
+                (Mode::Lp24, false, false, 2),
+                (Mode::Lp24, true, true, 1),
+                (Mode::Bp, true, false, 0),
+            ],
+        );
+        lanes_match_scalar::<2>(
+            &mut rng,
+            [(Mode::Hp, false, false, 1), (Mode::Hp, false, false, 2)],
+        );
     }
 }

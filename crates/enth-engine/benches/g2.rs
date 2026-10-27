@@ -312,43 +312,48 @@ fn crossfade_blocks(mut p: Playing) -> Playing {
     p
 }
 
-// Measured 2026-10-27 on main f59fb60 plus this lane (`delay` in the chain; x86_64 Linux, Intel i7-9750H, callgrind
-// via gungraun 0.20.0, the pinned toolchain): instructions of the 2 s render, per frame (/96,000) in brackets; the
-// budget is that plus 10 %, rounded up to 1,000.
-// - reference_4v 1,019,252,374 (10,617), inside G1's 12,000 per frame: the budget. stress_8v 1,888,530,829 (19,672):
-//   the stress case, 1.64x the cap, not the budget.
-// - the variants, all on the 8-voice stress case: dist_off 1,497,417,397 (15,598); dist_x4 2,513,872,479 (26,186);
-//   dist_soft 1,882,738,580 (19,612); dist_hard 1,451,589,257 (15,121); static_position 1,861,482,070 (19,390);
-//   no_ladder 1,767,498,394 (18,411); no_formant 1,745,403,500 (18,181); copies_3 1,805,264,137 (18,805);
-//   mono_1_copy 925,149,459 (9,637); voices_6 1,455,039,085 (15,157); voices_6_hard 1,127,536,761 (11,745).
-// - the 64-frame blocks, reference (4 voices): normal 692,721; instant 773,338 (1.12x); crossfade_swap 2,259,803
-//   (3.26x a normal block: both plans run, and the delay's 768,000-byte rings and the chorus's 32 KiB are copied,
-//   which is the 0.87 M instructions it has over a crossfade block); crossfade (three blocks) 4,160,489 (2.00x a
-//   normal block each: both plans run).
-// - the same blocks, stress case (8 voices): normal 1,257,740; instant 1,351,210; crossfade_swap 3,405,197 (2.71x;
-//   0.88 M over a crossfade block); crossfade 7,561,377 (2.00x each). The wall clock of the copy is in
-//   docs/benchmarks.md.
-const REFERENCE_IR: u64 = 1_121_178_000;
-const STRESS_IR: u64 = 2_077_384_000;
-const DIST_OFF_IR: u64 = 1_647_160_000;
-const DIST_X4_IR: u64 = 2_765_260_000;
-const DIST_SOFT_IR: u64 = 2_071_013_000;
-const DIST_HARD_IR: u64 = 1_596_749_000;
-const STATIC_POSITION_IR: u64 = 2_047_631_000;
-const NO_LADDER_IR: u64 = 1_944_249_000;
-const NO_FORMANT_IR: u64 = 1_919_944_000;
-const COPIES_3_IR: u64 = 1_985_791_000;
-const MONO_IR: u64 = 1_017_665_000;
-const VOICES_6_IR: u64 = 1_600_543_000;
-const VOICES_6_HARD_IR: u64 = 1_240_291_000;
-const NORMAL_IR: u64 = 763_000;
-const INSTANT_IR: u64 = 851_000;
-const CROSSFADE_SWAP_IR: u64 = 2_486_000;
-const CROSSFADE_IR: u64 = 4_577_000;
-const STRESS_NORMAL_IR: u64 = 1_384_000;
-const STRESS_INSTANT_IR: u64 = 1_487_000;
-const STRESS_CROSSFADE_SWAP_IR: u64 = 3_746_000;
-const STRESS_CROSSFADE_IR: u64 = 8_318_000;
+// Measured 2026-10-27 (x86_64 Linux, Intel i7-9750H, callgrind via gungraun 0.20.0, the pinned toolchain): instructions
+// of the 2 s render, per frame (/96,000) in brackets; the budget is that plus 10 %, rounded up to 1,000.
+//
+// Lane PRF (the stereo pair kernels, lane exp/log, the unison read), main a38ee3e plus that lane; before it (lane G2B,
+// main f59fb60) in the second brackets:
+// - reference_4v 683,668,671 (7,122; was 1,019,252,374, 10,617): the budget, 0.59x G1's 12,000 per frame. stress_8v
+//   1,224,954,808 (12,760; was 1,888,530,829, 19,672): the stress case, 1.06x the cap, not the budget.
+// - the variants, all on the 8-voice stress case: dist_off 1,009,584,236 (10,516; was 1,497,417,397); dist_x4
+//   1,570,924,322 (16,364; was 2,513,872,479); dist_soft 1,204,512,641 (12,547; was 1,882,738,580); dist_hard
+//   995,683,659 (10,372; was 1,451,589,257); static_position 1,194,815,779 (12,446; was 1,861,482,070); no_ladder
+//   1,173,403,805 (12,223; was 1,767,498,394); no_formant 1,136,497,197 (11,838; was 1,745,403,500); copies_3
+//   1,216,797,648 (12,675; was 1,805,264,137); mono_1_copy 916,956,574 (9,552; was 925,149,459: the mono plan has no
+//   pairs; -8.2 M, of which `ott` is -4.4 M); voices_6 954,553,500 (9,943; was 1,455,039,085); voices_6_hard
+//   782,808,982 (8,154; was 1,127,536,761).
+// - the 64-frame blocks, reference (4 voices): normal 466,265 (was 692,721); instant 546,879 (was 773,338); crossfade_swap
+//   1,806,888 (was 2,259,803; both plans run, and the delay's 768,000-byte rings and the chorus's 32 KiB are copied,
+//   which is the 0.87 M instructions it has over a crossfade block, as before); crossfade (three blocks) 2,755,007 (was
+//   4,160,489; 2.00x a normal block each: both plans run).
+// - the same blocks, stress case (8 voices): normal 827,329 (was 1,257,740); instant 920,921 (was 1,351,210);
+//   crossfade_swap 2,544,372 (was 3,405,197; 0.88 M over a crossfade block); crossfade 4,916,325 (was 7,561,377;
+//   2.00x each). The wall clock of the copy is in docs/benchmarks.md.
+const REFERENCE_IR: u64 = 752_036_000;
+const STRESS_IR: u64 = 1_347_451_000;
+const DIST_OFF_IR: u64 = 1_110_543_000;
+const DIST_X4_IR: u64 = 1_728_017_000;
+const DIST_SOFT_IR: u64 = 1_324_964_000;
+const DIST_HARD_IR: u64 = 1_095_253_000;
+const STATIC_POSITION_IR: u64 = 1_314_298_000;
+const NO_LADDER_IR: u64 = 1_290_745_000;
+const NO_FORMANT_IR: u64 = 1_250_147_000;
+const COPIES_3_IR: u64 = 1_338_478_000;
+const MONO_IR: u64 = 1_008_653_000;
+const VOICES_6_IR: u64 = 1_050_009_000;
+const VOICES_6_HARD_IR: u64 = 861_090_000;
+const NORMAL_IR: u64 = 513_000;
+const INSTANT_IR: u64 = 602_000;
+const CROSSFADE_SWAP_IR: u64 = 1_988_000;
+const CROSSFADE_IR: u64 = 3_031_000;
+const STRESS_NORMAL_IR: u64 = 911_000;
+const STRESS_INSTANT_IR: u64 = 1_014_000;
+const STRESS_CROSSFADE_SWAP_IR: u64 = 2_799_000;
+const STRESS_CROSSFADE_IR: u64 = 5_408_000;
 
 library_benchmark_group!(name = g2_render, benchmarks = [render_2s]);
 library_benchmark_group!(name = g2_swap, benchmarks = [one_block, crossfade_blocks]);

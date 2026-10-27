@@ -94,8 +94,10 @@ disallowed-methods = [
   { path = "f64::algebraic_div", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
   { path = "f64::algebraic_rem", reason = "allows reassociation and contraction: hashes differ between platforms and build flags" },
   # wide (pinned in [workspace.dependencies]; lane S0d listed its methods from wide 1.7.1's source, 2026-10-25,
-  # docs/phase-s2.md rule 5). Only f32x4 and f32x8 may be used (disallowed-types bans the other float widths); on them,
-  # by that source, these are bit-exact on every target (lane UNI's six-target golden checks the subset it uses):
+  # docs/phase-s2.md rule 5). Only f32x4, f32x8 and f64x2 may be used (disallowed-types bans the other float widths;
+  # f64x2 was added by lane PRF, 2026-10-27, with the same bans as f32x4: it carries the left and right channels of
+  # `dist`'s f64 maths side by side); on them, by that source, these are bit-exact on every target (lane UNI's
+  # six-target golden checks the subset it uses):
   # + - * / %, sqrt, abs, min, max, clamp, floor, ceil, trunc, trunc_int, round,
   # fract, the compares, select, blend and bit operations, splat, from/to arrays. min, max and clamp follow f32::max's
   # rules, including its unspecified sign when the two inputs are zeros of opposite sign. Everything below is not:
@@ -176,6 +178,44 @@ disallowed-methods = [
   { path = "wide::f32x8::fast_min", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
   { path = "wide::f32x8::fast_clamp", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
   { path = "wide::f32x8::fast_trunc_int", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
+  { path = "wide::f64x2::mul_add", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f64x2::mul_sub", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f64x2::mul_neg_add", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f64x2::mul_neg_sub", reason = "fused on x86 with FMA and on aarch64, unfused elsewhere: hashes differ with -C target-cpu=native" },
+  { path = "wide::f64x2::recip", reason = "an SSE/AVX approximation (rcpps/rsqrtps, about 12 bits) on x86, exact division on aarch64 and wasm: hashes differ between targets; write 1.0 / x (and x.sqrt())" },
+  { path = "wide::f64x2::recip_sqrt", reason = "an SSE/AVX approximation (rcpps/rsqrtps, about 12 bits) on x86, exact division on aarch64 and wasm: hashes differ between targets; write 1.0 / x (and x.sqrt())" },
+  { path = "wide::f64x2::exp", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::exp2", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::exp_m1", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::ln", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::ln_1p", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::log2", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::log10", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::powf_simd", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::powf", reason = "deprecated, powf_simd with a splat: a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::pow_f64x2", reason = "deprecated alias of powf_simd: a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::sin", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::cos", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::tan", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::sin_cos", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::asin", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::acos", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::asin_acos", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::atan", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::atan2", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::sinh", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::cosh", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::tanh", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::cbrt", reason = "a polynomial built on mul_add (fused only where the target has FMA): hashes differ between targets and build flags; use the pinned `libm` per lane (enth_dsp::util::math) or a polynomial in + - * /" },
+  { path = "wide::f64x2::reduce_add", reason = "the horizontal order differs between targets (a pairwise tree under AVX, lane order otherwise): hashes differ with +avx; sum to_array() in a fixed order" },
+  { path = "wide::f64x2::reduce_mul", reason = "the horizontal order differs between targets (a pairwise tree under AVX, lane order otherwise): hashes differ with +avx; sum to_array() in a fixed order" },
+  { path = "wide::f64x2::round_int", reason = "ties or the sign of zero differ between targets (cvtps2dq rounds ties to even under SSE2, the scalar fallback of wasm32 without simd128 rounds them away; round_ties_even(-0.3) is +0.0 under SSE2 alone): use round(), floor() or trunc_int()" },
+  { path = "wide::f64x2::fast_round_int", reason = "ties or the sign of zero differ between targets (cvtps2dq rounds ties to even under SSE2, the scalar fallback of wasm32 without simd128 rounds them away; round_ties_even(-0.3) is +0.0 under SSE2 alone): use round(), floor() or trunc_int()" },
+  { path = "wide::f64x2::round_ties_even", reason = "ties or the sign of zero differ between targets (cvtps2dq rounds ties to even under SSE2, the scalar fallback of wasm32 without simd128 rounds them away; round_ties_even(-0.3) is +0.0 under SSE2 alone): use round(), floor() or trunc_int()" },
+  { path = "wide::f64x2::fast_max", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
+  { path = "wide::f64x2::fast_min", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
+  { path = "wide::f64x2::fast_clamp", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
+  { path = "wide::f64x2::fast_trunc_int", reason = "NaN and out-of-range results are defined per platform: use max, min, clamp, trunc_int" },
   # --- Real time (docs/architecture.md, rule 3): no channels in core crates ---
   # std's mpsc allocates a block as senders outrun the receiver and blocks in recv; sync_channel blocks in send. Use
   # an `rtrb` ring. Core crates spawn no threads, so they have no use for channels; shells opt out at the crate root.
@@ -186,10 +226,9 @@ disallowed-methods = [
   { path = "flume::unbounded", reason = "unbounded: it allocates on send; use an `rtrb` ring" },
 ]
 disallowed-types = [
-  { path = "wide::f32x16", reason = "only f32x4 and f32x8 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
-  { path = "wide::f64x2", reason = "only f32x4 and f32x8 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
-  { path = "wide::f64x4", reason = "only f32x4 and f32x8 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
-  { path = "wide::f64x8", reason = "only f32x4 and f32x8 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
+  { path = "wide::f32x16", reason = "only f32x4, f32x8 and f64x2 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
+  { path = "wide::f64x4", reason = "only f32x4, f32x8 and f64x2 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
+  { path = "wide::f64x8", reason = "only f32x4, f32x8 and f64x2 are allowed: clippy.toml bans their non-deterministic methods; add this width's bans before using it" },
   { path = "std::sync::Mutex", reason = "no locks in core crates; the audio path is lock-free" },
   { path = "std::sync::RwLock", reason = "no locks in core crates; the audio path is lock-free" },
   { path = "std::collections::HashMap", reason = "RandomState iteration order changes per process; use BTreeMap or Vec for deterministic output" },

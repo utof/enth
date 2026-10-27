@@ -221,7 +221,9 @@ impl StereoPath {
         }
     }
 
-    /// Step 7, after the left `voice_fx` chain: the right chain, in the same order, on the right bus.
+    /// The right `voice_fx` chain alone, in the same order, on the right bus: the plain reference that
+    /// [`StereoPath::process_chain`] must equal bit for bit after the left chain (test support).
+    #[cfg(test)]
     pub(crate) fn process(
         &mut self,
         active: &[VoiceIdx],
@@ -241,6 +243,47 @@ impl StereoPath {
                 pre_level: None,
                 io_r: None,
             });
+        }
+    }
+
+    /// Step 7, the whole `voice_fx` chain of a stereo plan: slot by slot, each `left` module with its right twin
+    /// (`VoiceProcessorImpl::process_pair`), `io_l` and `io_r` being the two buses. The result is what the left
+    /// chain over `io_l` followed by the right chain over `io_r` gives ([`StereoPath::process`]): no module reads
+    /// or writes the other channel's bus or state, so only the order of independent work changes.
+    pub(crate) fn process_chain(
+        &mut self,
+        left: &mut [Slot<VoiceProcessorImpl>],
+        active: &[VoiceIdx],
+        notes: &NoteState,
+        table: &VoiceTable,
+        io_l: &mut VoiceBus,
+        io_r: &mut VoiceBus,
+    ) {
+        debug_assert_eq!(left.len(), self.fx_r.len());
+        for (l, r) in left.iter_mut().zip(&mut self.fx_r) {
+            let mut lcx = VoiceCx {
+                voices: active,
+                notes,
+                params: table.view(l.params),
+                io: &mut *io_l,
+                sync_out: None,
+                sync_in: None,
+                audio_in: None,
+                pre_level: None,
+                io_r: None,
+            };
+            let mut rcx = VoiceCx {
+                voices: active,
+                notes,
+                params: table.view(r.params),
+                io: &mut *io_r,
+                sync_out: None,
+                sync_in: None,
+                audio_in: None,
+                pre_level: None,
+                io_r: None,
+            };
+            l.module.process_pair(&mut r.module, &mut lcx, &mut rcx);
         }
     }
 
@@ -566,6 +609,55 @@ mod tests {
                 bits(&br[0]),
                 "different inputs, different outputs"
             );
+        }
+    }
+
+    /// The whole chain of a stereo plan through `process_chain` (voice 0): the two buses `bl` and `br`.
+    fn run_chain(p: &mut Plan, n: &NoteState, bl: &mut VoiceBus, br: &mut VoiceBus) {
+        let Plan {
+            voice_fx,
+            voice_table,
+            stereo,
+            ..
+        } = p;
+        stereo.process_chain(voice_fx, &[0], n, voice_table, bl, br);
+    }
+
+    /// A chain of every kind that has a paired kernel (lane PRF), then a plain one.
+    fn every_kind() -> Patch {
+        use enth_patch::catalogue::{DistParam, FormantParam, LadderParam};
+        let mut p = Patch::init();
+        let mut d = ModuleInstance::new(id("dist1"), ModuleKind::Dist);
+        d.values[DistParam::Drive.index()] = 14.0;
+        d.values[DistParam::Bias.index()] = 10.0;
+        let mut l = ModuleInstance::new(id("ladder1"), ModuleKind::Ladder);
+        l.values[LadderParam::Cutoff.index()] = 1_200.0;
+        l.values[LadderParam::Resonance.index()] = 50.0;
+        let mut f = ModuleInstance::new(id("formant1"), ModuleKind::Formant);
+        f.values[FormantParam::Mix.index()] = 70.0;
+        let s = ModuleInstance::new(id("filter1"), ModuleKind::Svf);
+        p.voice_fx = vec![d, l, f, s];
+        p
+    }
+
+    #[test]
+    fn the_paired_chain_is_the_left_chain_then_the_right_chain_bit_for_bit() {
+        for patch in [two_filters(), every_kind()] {
+            let n = notes();
+            let (mut paired, _) = compile_with(&patch, &cfg(), StereoMode::Forced).unwrap();
+            let (mut plain, _) = compile_with(&patch, &cfg(), StereoMode::Forced).unwrap();
+            paired.start_voice(0, &n, SEED);
+            plain.start_voice(0, &n, SEED);
+            for k in 0..80 {
+                let (xl, xr) = (signal(k, 1), signal(k, 2));
+                let (mut pl, mut pr) = (bus(xl), bus(xr));
+                run_chain(&mut paired, &n, &mut pl, &mut pr);
+                let (mut ql, mut qr) = (bus(xl), bus(xr));
+                run_left(&mut plain, &n, &mut ql);
+                run_right(&mut plain, &n, &mut qr);
+                assert_eq!(bits(&pl[0]), bits(&ql[0]), "left, segment {k}");
+                assert_eq!(bits(&pr[0]), bits(&qr[0]), "right, segment {k}");
+            }
         }
     }
 

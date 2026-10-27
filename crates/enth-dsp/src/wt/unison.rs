@@ -301,13 +301,12 @@ impl UnisonVoice {
 
         let ctx = Ctx {
             data: &seg.table.data,
-            count,
             warp,
             x,
             off: &off,
             pm: seg.pm.is_some(),
-            new: Rows::new(&level),
-            old: Rows::new(&old),
+            new: Rows::new(&level, count),
+            old: Rows::new(&old, count),
             fade: mask_of(fade),
             frames: Frames::new(seg.frame_pos),
             dt,
@@ -416,9 +415,9 @@ impl UnisonVoice {
                     warp_lanes(c.warp, &held, p)
                 };
             }
-            let mut y = read(c.data, &c.new, c.count, c.frames, w, p);
+            let mut y = read(c.data, &c.new, c.frames, w, p);
             if FADE {
-                let o = read(c.data, &c.old, c.count, c.frames, w, p);
+                let o = read(c.data, &c.old, c.frames, w, p);
                 y = c.fade.select(o + (y - o) * wv, y);
             }
             if M {
@@ -442,7 +441,6 @@ impl UnisonVoice {
 /// What the sample loop reads, worked out once per segment.
 struct Ctx<'a, const N: usize> {
     data: &'a [f32],
-    count: usize,
     warp: Warp,
     x: [f32; 2],
     off: &'a [f32; N],
@@ -496,10 +494,33 @@ fn wrap01_lanes(p: f32x8) -> f32x8 {
     }
     let above = p.simd_ge(one) & p.simd_lt(f32x8::splat(2.0));
     let below = p.simd_ge(f32x8::splat(-1.0)) & p.simd_lt(zero);
-    let r = below.select(p + one, p - p.floor());
+    // `⌊p⌋` is only wanted by a lane outside `[-1, 2)`, whose `p − ⌊p⌋` the selects below keep; when every lane is
+    // inside, the floor (a library call per lane on the baseline x86-64 target) is not computed at all, and the
+    // lanes that need it get an exact floor made of a truncation (see `floor_lanes`).
+    let r = if (in01 | above | below).all() {
+        below.select(p + one, p)
+    } else {
+        below.select(p + one, p - floor_lanes(p))
+    };
     let r = above.select(p - one, r);
     let r = in01.select(p, r);
     (r.simd_ge(zero) & r.simd_lt(one)).select(r, zero)
+}
+
+/// `⌊p⌋` on every lane, exactly: `p.floor()` is a library call per lane on the baseline x86-64 target, so lanes
+/// within `i32` range take the truncation (`trunc_int`, exact there) converted back (exact, as an integer of that
+/// size that came from a float is representable) and lowered by one where it rounded up (a negative non-integer).
+/// Beyond that range, or for NaN, the plain `floor`. The one difference is the sign of a zero (`⌊−0.0⌋` is `−0.0`
+/// here, `+0.0` by the truncation); the caller only keeps `p − ⌊p⌋` for lanes outside `[-1, 2)`, which are never zero.
+#[inline(always)]
+fn floor_lanes(p: f32x8) -> f32x8 {
+    let limit = f32x8::splat((1u32 << 30) as f32);
+    if p.abs().simd_lt(limit).all() {
+        let t = p.trunc_int().round_float();
+        t - (t.simd_gt(p) & f32x8::ONE)
+    } else {
+        p.floor()
+    }
 }
 
 /// `Warp::apply` on every lane (`p` is in `[0, 1)`; the result never reaches 1).
@@ -541,14 +562,21 @@ struct Rows {
     len: f32x8,
 }
 
+/// The row offset of a lane beyond the copies: far outside any table, so a read there finds nothing and gives zeros.
+const DEAD_OFFSET: i32 = 1 << 30;
+
 impl Rows {
-    fn new(levels: &[usize; LANES]) -> Self {
+    fn new(levels: &[usize; LANES], count: usize) -> Self {
         let mut off = [0i32; LANES];
         let mut mask = [0i32; LANES];
         let mut len = [0.0f32; LANES];
         for k in 0..LANES {
             let l = levels[k].min(LEVELS - 1);
-            off[k] = OFFSET[l] as i32;
+            off[k] = if k < count {
+                OFFSET[l] as i32
+            } else {
+                DEAD_OFFSET
+            };
             mask[k] = (LEN[l] - 1) as i32;
             len[k] = LEN[l] as f32;
         }
@@ -608,64 +636,88 @@ fn frame_of(frame_pos: f32) -> (usize, f32) {
 
 /// Every lane's value at `phase` (`Reader::read`).
 #[inline(always)]
-fn read(data: &[f32], rows: &Rows, count: usize, frames: Frames, w: f32, phase: f32x8) -> f32x8 {
+fn read(data: &[f32], rows: &Rows, frames: Frames, w: f32, phase: f32x8) -> f32x8 {
     let (at, fr) = rows.locate(phase);
     match frames {
-        Frames::Frame(fi) => gather(data, fi, at, fr, count),
-        Frames::Between(fi, weight) => between(data, at, fr, count, fi, weight),
+        Frames::Frame(fi) => gather(data, fi, at, fr),
+        Frames::Between(fi, weight) => between(data, at, fr, fi, weight),
         Frames::Moving { p0, dp } => {
             let (fi, weight) = frame_of(p0 + dp * w);
-            between(data, at, fr, count, fi, weight)
+            between(data, at, fr, fi, weight)
         }
     }
 }
 
 /// The cross-fade of frame `fi` and the next at `weight`: `a + (b − a)·weight`.
 #[inline(always)]
-fn between(data: &[f32], at: i32x8, fr: f32x8, count: usize, fi: usize, weight: f32) -> f32x8 {
-    let a = gather(data, fi, at, fr, count);
-    let b = gather(data, (fi + 1).min(FRAMES - 1), at, fr, count);
+fn between(data: &[f32], at: i32x8, fr: f32x8, fi: usize, weight: f32) -> f32x8 {
+    let a = gather(data, fi, at, fr);
+    let b = gather(data, (fi + 1).min(FRAMES - 1), at, fr);
     a + (b - a) * f32x8::splat(weight)
 }
 
 /// The Hermite read of `frame` at every lane's index (`at`, inside a frame) and fraction.
 #[inline(always)]
-fn gather(data: &[f32], frame: usize, at: i32x8, fr: f32x8, count: usize) -> f32x8 {
+fn gather(data: &[f32], frame: usize, at: i32x8, fr: f32x8) -> f32x8 {
     let at = (at + i32x8::splat((frame * FRAME_STRIDE) as i32)).to_array();
-    // Each copy's four taps are contiguous: one 16-byte copy per lane, then two 4x4 transposes (pure data movement)
-    // turn the eight rows of taps into the four vectors of taps `xm1, x0, x1, x2` that the arithmetic wants.
-    let mut taps = [[0.0f32; 4]; LANES];
-    for k in 0..count {
-        if let Some(&chunk) = data
-            .get(at[k] as u32 as usize..)
-            .and_then(<[f32]>::first_chunk::<4>)
-        {
-            taps[k] = chunk;
-        }
-    }
-    let lo = f32x4::transpose([
-        f32x4::from(taps[0]),
-        f32x4::from(taps[1]),
-        f32x4::from(taps[2]),
-        f32x4::from(taps[3]),
-    ]);
-    let hi = f32x4::transpose([
-        f32x4::from(taps[4]),
-        f32x4::from(taps[5]),
-        f32x4::from(taps[6]),
-        f32x4::from(taps[7]),
-    ]);
-    let join = |j: usize| {
-        let (l, h) = (lo[j].to_array(), hi[j].to_array());
-        f32x8::from([l[0], l[1], l[2], l[3], h[0], h[1], h[2], h[3]])
+    // Each copy's four taps are contiguous: one 16-byte load per lane, then two 4x4 transposes (pure data movement)
+    // turn the eight rows of taps into the four vectors of taps `xm1, x0, x1, x2` that the arithmetic wants. All
+    // eight lanes are loaded, in straight code; a lane beyond the copies has its index (`Rows::new`) outside the
+    // table, so it reads zeros, as a skipped lane's taps always were.
+    let tap = |k: usize| {
+        let i = at[k] as u32 as usize;
+        data.get(i..i + 4)
+            .and_then(|taps| <&[f32; 4]>::try_from(taps).ok())
+            .map_or(f32x4::ZERO, |&chunk| f32x4::from(chunk))
     };
-    hermite_lanes(join(0), join(1), join(2), join(3), fr)
+    let lo = f32x4::transpose([tap(0), tap(1), tap(2), tap(3)]);
+    let hi = f32x4::transpose([tap(4), tap(5), tap(6), tap(7)]);
+    // The arithmetic runs on the two halves as the transposes leave them (an `f32x8` is two `f32x4` on the baseline
+    // target, so this is the same instructions), and the halves are joined once, at the end.
+    let f = fr.to_array();
+    let y_lo = hermite_lanes(
+        lo[0],
+        lo[1],
+        lo[2],
+        lo[3],
+        f32x4::from([f[0], f[1], f[2], f[3]]),
+    );
+    let y_hi = hermite_lanes(
+        hi[0],
+        hi[1],
+        hi[2],
+        hi[3],
+        f32x4::from([f[4], f[5], f[6], f[7]]),
+    );
+    let (l, h) = (y_lo.to_array(), y_hi.to_array());
+    f32x8::from([l[0], l[1], l[2], l[3], h[0], h[1], h[2], h[3]])
+}
+
+/// What [`hermite_lanes`] needs of a vector type.
+trait Lanes32:
+    Copy + core::ops::Add<Output = Self> + core::ops::Sub<Output = Self> + core::ops::Mul<Output = Self>
+{
+    fn splat(x: f32) -> Self;
+}
+
+impl Lanes32 for f32x4 {
+    #[inline(always)]
+    fn splat(x: f32) -> Self {
+        f32x4::splat(x)
+    }
+}
+
+impl Lanes32 for f32x8 {
+    #[inline(always)]
+    fn splat(x: f32) -> Self {
+        f32x8::splat(x)
+    }
 }
 
 /// `wavetable::hermite` on every lane, the same operations in the same order.
 #[inline(always)]
-fn hermite_lanes(xm1: f32x8, x0: f32x8, x1: f32x8, x2: f32x8, fr: f32x8) -> f32x8 {
-    let half = f32x8::splat(0.5);
+fn hermite_lanes<T: Lanes32>(xm1: T, x0: T, x1: T, x2: T, fr: T) -> T {
+    let half = T::splat(0.5);
     let c = (x1 - xm1) * half;
     let v = x0 - x1;
     let w = c + v;

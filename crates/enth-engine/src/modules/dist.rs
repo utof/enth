@@ -19,7 +19,7 @@
 use enth_dsp::dist::{Ctl, Mode, Setup, Voice};
 use enth_patch::catalogue::{DistMode, DistParam, Oversample};
 
-use crate::module::{MAX_VOICES, PrepareCfg, VoiceCx, VoiceProcessor, VoiceStart};
+use crate::module::{MAX_VOICES, PrepareCfg, VoiceCx, VoiceParams, VoiceProcessor, VoiceStart};
 
 /// What the structure was built from: `mode`, `oversample`, `keep_lows`.
 type SetupKey = [f32; 3];
@@ -90,15 +90,9 @@ impl Dist {
     }
 }
 
-impl VoiceProcessor for Dist {
-    fn start_voice(&mut self, start: &VoiceStart<'_>) {
-        let v = start.voice;
-        self.voice[v].reset();
-        self.valid[v] = false;
-    }
-
-    fn process(&mut self, cx: &mut VoiceCx<'_>) {
-        let p = cx.params;
+impl Dist {
+    /// Rebuild the structure if one of its three base values changed.
+    fn refresh_setup(&mut self, p: &VoiceParams<'_>) {
         let skey = setup_key(|q| p.base(q));
         if skey != self.setup_key {
             self.setup = Setup::new(
@@ -109,34 +103,103 @@ impl VoiceProcessor for Dist {
             );
             self.setup_key = skey;
         }
+    }
+
+    /// The controls of voice `v` for this segment: where the ramp starts (the previous segment's, or this one's for
+    /// a voice that has not run) and where it ends. Remembers the end for the next segment.
+    // Inlined into `process`, as the code it replaced was; as a call its by-value result cost every voice and
+    // segment of the mono path some instructions (lane PRF).
+    #[inline(always)]
+    fn controls(&mut self, p: &VoiceParams<'_>, v: usize) -> (Ctl, Ctl) {
+        let key: CtlKey = [
+            p.cur(DistParam::Drive, v),
+            p.cur(DistParam::Bias, v),
+            p.cur(DistParam::Bits, v),
+            p.cur(DistParam::Rate, v),
+            p.cur(DistParam::Tone, v),
+            p.cur(DistParam::Mix, v),
+        ];
+        let first = !self.valid[v];
+        let to = if first || key != self.key[v] {
+            self.key[v] = key;
+            Ctl::new(
+                key[0],
+                key[1],
+                key[2],
+                key[3],
+                key[4],
+                key[5],
+                self.sample_rate,
+            )
+        } else {
+            self.ctl[v]
+        };
+        let from = if first { to } else { self.ctl[v] };
+        self.ctl[v] = to;
+        self.valid[v] = true;
+        (from, to)
+    }
+}
+
+impl VoiceProcessor for Dist {
+    fn start_voice(&mut self, start: &VoiceStart<'_>) {
+        let v = start.voice;
+        self.voice[v].reset();
+        self.valid[v] = false;
+    }
+
+    // Kept out of `VoiceProcessorImpl::process`'s match: inlined there, it made every module's dispatch pay its
+    // frame (G1 +0.03 %, lane PRF). The mono path then runs exactly as before.
+    #[inline(never)]
+    fn process(&mut self, cx: &mut VoiceCx<'_>) {
+        let p = cx.params;
+        self.refresh_setup(&p);
         for &v in cx.voices {
-            let key: CtlKey = [
-                p.cur(DistParam::Drive, v),
-                p.cur(DistParam::Bias, v),
-                p.cur(DistParam::Bits, v),
-                p.cur(DistParam::Rate, v),
-                p.cur(DistParam::Tone, v),
-                p.cur(DistParam::Mix, v),
-            ];
-            let first = !self.valid[v];
-            let to = if first || key != self.key[v] {
-                self.key[v] = key;
-                Ctl::new(
-                    key[0],
-                    key[1],
-                    key[2],
-                    key[3],
-                    key[4],
-                    key[5],
-                    self.sample_rate,
-                )
-            } else {
-                self.ctl[v]
-            };
-            let from = if first { to } else { self.ctl[v] };
+            let (from, to) = self.controls(&p, v);
             self.voice[v].process(&self.setup, &from, &to, &mut cx.io[v]);
-            self.ctl[v] = to;
-            self.valid[v] = true;
+        }
+    }
+
+    /// The two channels' voices through `enth_dsp::dist::Voice::process_pair` wherever they share their controls
+    /// (always, in a stereo plan: the twin has the left instance's parameter span and the same notes), else as two
+    /// plain calls.
+    fn process_pair(
+        &mut self,
+        right: &mut Self,
+        left_cx: &mut VoiceCx<'_>,
+        right_cx: &mut VoiceCx<'_>,
+    ) {
+        let (pl, pr) = (left_cx.params, right_cx.params);
+        self.refresh_setup(&pl);
+        right.refresh_setup(&pr);
+        let shared = self.setup == right.setup && left_cx.voices == right_cx.voices;
+        for &v in left_cx.voices {
+            let (from, to) = self.controls(&pl, v);
+            if shared {
+                let (from_r, to_r) = right.controls(&pr, v);
+                if from == from_r && to == to_r {
+                    self.voice[v].process_pair(
+                        &mut right.voice[v],
+                        &self.setup,
+                        &from,
+                        &to,
+                        &mut left_cx.io[v],
+                        &mut right_cx.io[v],
+                    );
+                } else {
+                    self.voice[v].process(&self.setup, &from, &to, &mut left_cx.io[v]);
+                    right.voice[v].process(&right.setup, &from_r, &to_r, &mut right_cx.io[v]);
+                }
+            } else {
+                self.voice[v].process(&self.setup, &from, &to, &mut left_cx.io[v]);
+            }
+        }
+        if !shared {
+            // Different structure or voice lists: the right instance on its own.
+            for &v in right_cx.voices {
+                let (from, to) = right.controls(&pr, v);
+                right.voice[v].process(&right.setup, &from, &to, &mut right_cx.io[v]);
+            }
         }
     }
 
@@ -443,5 +506,161 @@ mod tests {
         // 40 s of silence: the DC from bias has been blocked and nothing rings (the rounding residue of the
         // oversampler's settling is far below -300 dB, which is where the states are flushed).
         assert!(rig.run(&silent).iter().all(|&s| s.abs() < 1.0e-12));
+    }
+
+    /// One channel's side of a pair test: a module, its parameter tables and its bus.
+    struct Chan {
+        values: Vec<f32>,
+        cur: Vec<[f32; MAX_VOICES]>,
+        io: Box<VoiceBus>,
+        dist: Dist,
+        /// Added to the drive of this channel's modulation (the twin on other settings).
+        drive_offset: f32,
+    }
+
+    impl Chan {
+        fn new(set: &[(DistParam, f32)]) -> Self {
+            let mut values = ModuleKind::Dist.defaults();
+            for &(p, v) in set {
+                values[p.index()] = v;
+            }
+            let cur = values.iter().map(|&v| [v; MAX_VOICES]).collect();
+            let dist = Dist::new(&values, &PrepareCfg::new(SR));
+            Self {
+                values,
+                cur,
+                io: Box::new([[0.0; SEG]; MAX_VOICES]),
+                dist,
+                drive_offset: 0.0,
+            }
+        }
+
+        fn start(&mut self, voice: usize, notes: &NoteState) {
+            let params = VoiceParams::from_slices(&self.values, &self.cur, &self.cur);
+            self.dist.start_voice(&VoiceStart {
+                voice,
+                seed: 0,
+                module_key: 0,
+                note_index: 0,
+                notes,
+                params,
+            });
+        }
+    }
+
+    /// `VoiceProcessor::process_pair` on a module and its twin gives, bit for bit, what `process` on each gives
+    /// (outputs and the whole state), through ramps, a voice restarting on one channel only, a mix that drops to 0 and
+    /// back, a structure change, and with the twin on other settings (which a stereo plan never does: it falls back).
+    #[test]
+    fn process_pair_is_two_process_calls_bit_for_bit() {
+        let notes = NoteState::new();
+        let base = [
+            (DistParam::Drive, 18.0),
+            (DistParam::Bias, 8.0),
+            (DistParam::KeepLows, 150.0),
+            (DistParam::Tone, 4_000.0),
+            (DistParam::Mix, 85.0),
+        ];
+        for twin_differs in [false, true] {
+            let mut twin_set = base.to_vec();
+            if twin_differs {
+                twin_set[0].1 = 27.0;
+            }
+            // paired: (pl, pr); reference: (rl, rr).
+            let (mut pl, mut pr) = (Chan::new(&base), Chan::new(&twin_set));
+            let (mut rl, mut rr) = (Chan::new(&base), Chan::new(&twin_set));
+            if twin_differs {
+                pr.drive_offset = 9.0;
+                rr.drive_offset = 9.0;
+            }
+            let voices = [0usize, 1, 3];
+            for chan in [&mut pl, &mut pr, &mut rl, &mut rr] {
+                for &v in &voices {
+                    chan.start(v, &notes);
+                }
+            }
+            let mut paired_blocks = 0;
+            for seg in 0..90 {
+                if seg == 40 {
+                    for chan in [&mut pr, &mut rr] {
+                        chan.start(1, &notes);
+                    }
+                }
+                for chan in [&mut pl, &mut pr, &mut rl, &mut rr] {
+                    // A drive that moves on voice 1 from segment 20, a mix gate between 55 and 65, a mode change
+                    // at 75.
+                    if seg >= 20 {
+                        let (drive, off) = (DistParam::Drive.index(), chan.drive_offset);
+                        for v in 0..MAX_VOICES {
+                            chan.cur[drive][v] =
+                                18.0 + off + if v == 1 { (seg - 20) as f32 * 0.4 } else { 0.0 };
+                        }
+                    }
+                    let mix = if (55..65).contains(&seg) { 0.0 } else { 85.0 };
+                    chan.cur[DistParam::Mix.index()] = [mix; MAX_VOICES];
+                    if seg == 75 {
+                        chan.values[DistParam::Mode.index()] = DistMode::Asymmetric.index() as f32;
+                    }
+                }
+                for (k, &v) in voices.iter().enumerate() {
+                    let l = wave(seg + k, 0.7, 0.19 + 0.02 * k as f32);
+                    let r = wave(seg + 3 * k, 0.5 + 0.1 * k as f32, 0.23);
+                    pl.io[v] = l;
+                    rl.io[v] = l;
+                    pr.io[v] = r;
+                    rr.io[v] = r;
+                }
+                let (params_pl, params_pr) = (
+                    VoiceParams::from_slices(&pl.values, &pl.cur, &pl.cur),
+                    VoiceParams::from_slices(&pr.values, &pr.cur, &pr.cur),
+                );
+                let cx = |params, io| VoiceCx {
+                    voices: &voices,
+                    notes: &notes,
+                    params,
+                    io,
+                    sync_out: None,
+                    sync_in: None,
+                    audio_in: None,
+                    pre_level: None,
+                    io_r: None,
+                };
+                let mut lcx = cx(params_pl, &mut pl.io);
+                let mut rcx = cx(params_pr, &mut pr.io);
+                pl.dist.process_pair(&mut pr.dist, &mut lcx, &mut rcx);
+                paired_blocks += 1;
+                let params_rl = VoiceParams::from_slices(&rl.values, &rl.cur, &rl.cur);
+                let params_rr = VoiceParams::from_slices(&rr.values, &rr.cur, &rr.cur);
+                rl.dist.process(&mut cx(params_rl, &mut rl.io));
+                rr.dist.process(&mut cx(params_rr, &mut rr.io));
+                for &v in &voices {
+                    assert_eq!(
+                        bits(&pl.io[v]),
+                        bits(&rl.io[v]),
+                        "left voice {v} segment {seg} (twin differs: {twin_differs})"
+                    );
+                    assert_eq!(
+                        bits(&pr.io[v]),
+                        bits(&rr.io[v]),
+                        "right voice {v} segment {seg} (twin differs: {twin_differs})"
+                    );
+                }
+                assert_eq!(
+                    format!("{:?}", pl.dist),
+                    format!("{:?}", rl.dist),
+                    "left state, segment {seg}"
+                );
+                assert_eq!(
+                    format!("{:?}", pr.dist),
+                    format!("{:?}", rr.dist),
+                    "right state, segment {seg}"
+                );
+            }
+            assert_eq!(paired_blocks, 90);
+        }
+    }
+
+    fn bits(x: &[f32; SEG]) -> Vec<u32> {
+        x.iter().map(|s| s.to_bits()).collect()
     }
 }

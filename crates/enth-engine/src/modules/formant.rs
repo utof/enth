@@ -22,7 +22,7 @@
 use enth_dsp::formant::{self, Segment, State, Tuning};
 use enth_patch::catalogue::FormantParam;
 
-use crate::module::{MAX_VOICES, PrepareCfg, VoiceCx, VoiceProcessor, VoiceStart};
+use crate::module::{MAX_VOICES, PrepareCfg, VoiceCx, VoiceParams, VoiceProcessor, VoiceStart};
 
 /// The inputs a voice's tuning was computed from: `f1`, `f2`, `shift` and `resonance`. Equal inputs give equal
 /// tunings, so the cache is exact.
@@ -55,15 +55,12 @@ impl Formant {
     }
 }
 
-impl VoiceProcessor for Formant {
-    fn start_voice(&mut self, start: &VoiceStart<'_>) {
-        let v = start.voice;
-        self.state[v] = State::ZERO;
-        self.valid[v] = false;
-    }
-
-    fn process(&mut self, cx: &mut VoiceCx<'_>) {
-        let p = cx.params;
+impl Formant {
+    /// The segment of voice `v`: where its tuning was and where it goes. Remembers the end for the next one.
+    // Inlined into `process`, as the code it replaced was; as a call its by-value result cost every voice and
+    // segment of the mono path some instructions (lane PRF).
+    #[inline(always)]
+    fn segment(&mut self, p: &VoiceParams<'_>, v: usize) -> Segment {
         let (f1_i, f2_i, shift_i, res_i, mix_i) = (
             FormantParam::F1.index(),
             FormantParam::F2.index(),
@@ -71,29 +68,93 @@ impl VoiceProcessor for Formant {
             FormantParam::Resonance.index(),
             FormantParam::Mix.index(),
         );
+        let key: Key = [
+            p.cur(f1_i, v),
+            p.cur(f2_i, v),
+            p.cur(shift_i, v),
+            p.cur(res_i, v),
+        ];
+        let first = !self.valid[v];
+        let to = if first || key != self.key[v] {
+            self.key[v] = key;
+            Tuning::new(key[0], key[1], key[2], key[3], self.sample_rate)
+        } else {
+            self.tuning[v]
+        };
+        let from = if first { to } else { self.tuning[v] };
+        self.tuning[v] = to;
+        self.valid[v] = true;
+        Segment {
+            from,
+            to,
+            mix: [p.prev(mix_i, v) * 0.01, p.cur(mix_i, v) * 0.01],
+        }
+    }
+}
+
+impl VoiceProcessor for Formant {
+    fn start_voice(&mut self, start: &VoiceStart<'_>) {
+        let v = start.voice;
+        self.state[v] = State::ZERO;
+        self.valid[v] = false;
+    }
+
+    // Kept out of `VoiceProcessorImpl::process`'s match: inlined there, it made every module's dispatch pay its
+    // frame (G1 +0.03 %, lane PRF). The mono path then runs exactly as before.
+    #[inline(never)]
+    fn process(&mut self, cx: &mut VoiceCx<'_>) {
+        let p = cx.params;
         for &v in cx.voices {
-            let key: Key = [
-                p.cur(f1_i, v),
-                p.cur(f2_i, v),
-                p.cur(shift_i, v),
-                p.cur(res_i, v),
-            ];
-            let first = !self.valid[v];
-            let to = if first || key != self.key[v] {
-                self.key[v] = key;
-                Tuning::new(key[0], key[1], key[2], key[3], self.sample_rate)
-            } else {
-                self.tuning[v]
-            };
-            let from = if first { to } else { self.tuning[v] };
-            let seg = Segment {
-                from,
-                to,
-                mix: [p.prev(mix_i, v) * 0.01, p.cur(mix_i, v) * 0.01],
-            };
+            let seg = self.segment(&p, v);
             formant::process_block(&mut self.state[v], &seg, &mut cx.io[v]);
-            self.tuning[v] = to;
-            self.valid[v] = true;
+        }
+    }
+
+    /// The voices of this module and of its right twin, two voices (four instances) at a time through
+    /// `formant::process_lanes`: each instance gets the bits `process` gives it alone.
+    fn process_pair(
+        &mut self,
+        right: &mut Self,
+        left_cx: &mut VoiceCx<'_>,
+        right_cx: &mut VoiceCx<'_>,
+    ) {
+        if left_cx.voices != right_cx.voices {
+            self.process(left_cx);
+            right.process(right_cx);
+            return;
+        }
+        let (pl, pr) = (left_cx.params, right_cx.params);
+        for group in left_cx.voices.chunks(2) {
+            let &[a, ..] = group else { continue };
+            let seg_la = self.segment(&pl, a);
+            let seg_ra = right.segment(&pr, a);
+            if let &[_, b] = group {
+                let seg_lb = self.segment(&pl, b);
+                let seg_rb = right.segment(&pr, b);
+                if let (Ok([sla, slb]), Ok([sra, srb]), Ok([ila, ilb]), Ok([ira, irb])) = (
+                    self.state.get_disjoint_mut([a, b]),
+                    right.state.get_disjoint_mut([a, b]),
+                    left_cx.io.get_disjoint_mut([a, b]),
+                    right_cx.io.get_disjoint_mut([a, b]),
+                ) {
+                    formant::process_lanes(
+                        [sla, sra, slb, srb],
+                        [&seg_la, &seg_ra, &seg_lb, &seg_rb],
+                        [ila, ira, ilb, irb],
+                    );
+                } else {
+                    formant::process_block(&mut self.state[a], &seg_la, &mut left_cx.io[a]);
+                    formant::process_block(&mut right.state[a], &seg_ra, &mut right_cx.io[a]);
+                    formant::process_block(&mut self.state[b], &seg_lb, &mut left_cx.io[b]);
+                    formant::process_block(&mut right.state[b], &seg_rb, &mut right_cx.io[b]);
+                }
+            } else {
+                formant::process_lanes(
+                    [&mut self.state[a], &mut right.state[a]],
+                    [&seg_la, &seg_ra],
+                    [&mut left_cx.io[a], &mut right_cx.io[a]],
+                );
+            }
         }
     }
 
@@ -419,5 +480,68 @@ mod tests {
             assert_eq!(rig.filter.subnormals(), 0);
         }
         assert_eq!(rig.filter.state[0], State::ZERO);
+    }
+
+    /// `process_pair` on a formant filter and its twin gives, bit for bit, what `process` on each gives: through
+    /// vowels that sweep and rest, shifts, resonances, mixes that switch between off, blended and full, a restarted
+    /// voice, odd and even counts of voices, and a twin on other settings than the left (a stereo plan never does
+    /// that).
+    #[test]
+    fn process_pair_is_two_process_calls_bit_for_bit() {
+        use crate::modules::pair_test::check;
+        let cfg = PrepareCfg::new(SR);
+        for voices in [vec![0usize, 3, 4], vec![0, 1, 2, 5], vec![7], vec![2, 9]] {
+            for twin_differs in [false, true] {
+                check(
+                    ModuleKind::Formant,
+                    |values| Formant::new(values, &cfg),
+                    &voices,
+                    96,
+                    |seg, right, t| {
+                        let ix = |p: FormantParam| p.index();
+                        let moving = (10..30).contains(&seg);
+                        t.set(ix(FormantParam::F2), |v| {
+                            let base = 900.0 + 120.0 * v as f32;
+                            if moving {
+                                base + 35.0 * (seg - 10) as f32 * (1 + v % 3) as f32
+                            } else if seg >= 30 {
+                                base + 500.0
+                            } else {
+                                base
+                            }
+                        });
+                        t.all(ix(FormantParam::Shift), if seg >= 45 { 7.0 } else { 0.0 });
+                        let res = if seg >= 40 { 90.0 } else { 40.0 };
+                        t.all(
+                            ix(FormantParam::Resonance),
+                            if twin_differs && right {
+                                res - 25.0
+                            } else {
+                                res
+                            },
+                        );
+                        let mix = match seg {
+                            80..=85 => 0.0,
+                            86..=90 => 50.0,
+                            _ => 100.0,
+                        };
+                        t.set(ix(FormantParam::Mix), |v| {
+                            if twin_differs && right && v % 2 == 0 {
+                                mix * 0.5
+                            } else {
+                                mix
+                            }
+                        });
+                    },
+                    |seg| {
+                        if seg == 50 {
+                            vec![(voices[voices.len() - 1], true)]
+                        } else {
+                            Vec::new()
+                        }
+                    },
+                );
+            }
+        }
     }
 }
