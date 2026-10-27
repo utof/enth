@@ -1,5 +1,5 @@
-# Lesson 11.2, OTT [bass · basic] (content/lessons/PLAN.md §10, U11). After distortion (the plan's order: OTT is what
-# bass music puts after it).
+# Lesson 11.2, OTT [bass · intermediate] (content/lessons/PLAN.md §10, U11). After distortion (the plan's order: OTT
+# is what bass music puts after it).
 #
 # Hear (a dark saw at depth 0, 30 and 100 %; a gritty bass without and with), a "which has OTT?" item → Name → Try
 # (depth up, checked by brightness) → the upward lift alone (checked by brightness) → an ear question.
@@ -16,7 +16,7 @@
 schema = "enth.lesson/1"
 id = "ott"
 title = "OTT"
-tier = "basic"
+tier = "intermediate"
 objective = "Hear what OTT does to a dull bass, set how hard it squashes, and hear that the lift makes the sound."
 teaches = ["ott.depth", "ott.upward", "ott.downward"]
 

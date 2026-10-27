@@ -1,8 +1,8 @@
-# Lesson 14.1, Chorus and flanger [bass · basic] (content/lessons/PLAN.md §10, U14). chorus is global (fx): the
-# lesson's sources are the voice, never a voice LFO.
+# Lesson 14.1, Chorus and flanger [bass · intermediate] (content/lessons/PLAN.md §10, U14). chorus is global (fx):
+# the lesson's sources are the voice, never a voice LFO.
 #
 # Hear (dry, chorus, ensemble, flanger; faster), a "which has chorus?" item → Name → Try (mix, checked by brightness)
-# → slower (rate, checked by the copies' beating) → flanger (a patch goal) → an ear question.
+# → slower (rate, checked by the copies' beating) → flanger (a patch goal) → two ear questions.
 #
 # Measured on engine 0.3.0 (`enth describe`, HELD, the mid signal): chorus1 on the starter's saw through a 6 kHz low-
 # pass. Mix: 0 % 1750 Hz (bit for bit), 25 % 1782, 50 % 1840, 100 % 1999 (and a slow sweep at 1.92 Hz, 0.28 octave).
@@ -14,7 +14,7 @@
 schema = "enth.lesson/1"
 id = "chorus"
 title = "Chorus and flanger"
-tier = "basic"
+tier = "intermediate"
 objective = "Hear what a chorus adds, bring it in, set its speed by ear, and find the flanger."
 teaches = ["chorus.mix", "chorus.rate", "chorus.mode", "chorus.depth"]
 
@@ -192,6 +192,26 @@ locked = [
 [steps.check]
 kind = "patch"
 predicates = ["chorus1.mode == flanger"]
+
+# Check: chorus or ensemble? (sound/1 0.65 JND; the chorus reads a slow sweep at 1.92 Hz that the ensemble's three
+# copies a side smooth away.)
+[[steps]]
+id = "check-ensemble"
+kind = "choose"
+text = "check-ensemble.md"
+hints = ["The ensemble is smoother and wider; the chorus swims in one slow sweep."]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/chorus-on.patch.json"
+
+[[steps.options]]
+label = "B"
+patch = "patches/chorus-ensemble.patch.json"
 
 # Check: which warbles faster? (3 against 8 Hz: beating at 5.98 against 15.99 Hz.)
 [[steps]]

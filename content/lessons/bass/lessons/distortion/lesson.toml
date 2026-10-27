@@ -1,4 +1,4 @@
-# Lesson 11.1, Distortion [bass · basic] (content/lessons/PLAN.md §10, U11).
+# Lesson 11.1, Distortion [bass · intermediate] (content/lessons/PLAN.md §10, U11).
 #
 # Hear (a clean sine driven harder and harder; four curves at the same drive), a "which is driven harder?" item →
 # Name → Try (add grit, checked by brightness) → two rounds on the drive → a fold (patch goal: a curve is structure)
@@ -15,7 +15,7 @@
 schema = "enth.lesson/1"
 id = "distortion"
 title = "Distortion"
-tier = "basic"
+tier = "intermediate"
 objective = "Hear what drive and the curve do to a clean tone, and dial in grit by ear."
 teaches = ["dist.drive", "dist.mode", "dist.mix"]
 

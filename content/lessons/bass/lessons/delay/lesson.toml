@@ -1,0 +1,367 @@
+# Lesson 14.4, Delay [bass · intermediate] (content/lessons/PLAN.md §10, U14). delay is global (fx). On the cut list
+# (phase-s2.md). Written after lane DLY merged (main 2d850f7).
+#
+# Hear (dry, three divisions, one echo and many, a slapback), a "which one echoes?" item → Name → Try (mix, checked
+# by the sound's length) → more repeats (feedback) → on the beat (beats) → a round on the feedback → two ear
+# questions.
+#
+# Phrase: STACCATO (6: C3 held 150 ms in a 6 s render) everywhere, so the echoes fall after the note. Measured on
+# engine 0.3.0 at 140 BPM (`enth describe` with the staccato performance): a saw pluck (A 2, D 150, S 0, R 100 ms; a
+# 3 kHz low-pass) into delay1. The sound's length (`envelope.duration_ms`): mix 0 % 82 ms, 30 % 984, 100 % 1306 (1/8
+# dotted, feedback 35 %); 1/4 1735; feedback 0 % 402, 70 % 3227, 90 % 5815. sound/1 on staccato: dry against the
+# default 2.93 JND, 1/4 against 1/8 dotted 5.76, 1/16 against 1/8 dotted 4.56, feedback 0 against 35 % 2.54, 35
+# against 70 % 2.10, so the round draws {0, 70} % out of 35 %.
+
+schema = "enth.lesson/1"
+id = "delay"
+title = "Delay"
+tier = "intermediate"
+objective = "Bring in echoes locked to the tempo, set how many come back and where they land."
+teaches = ["delay.mix", "delay.feedback", "delay.sync", "delay.beats"]
+
+# Hear: a short pluck dry, then through delay1 at 1/8 dotted (its default), 1/4 and 1/16 at 140 BPM; one echo and
+# many; a slapback (sync off, 100 ms). Every example plays the staccato phrase.
+[[steps]]
+id = "hear"
+kind = "listen"
+text = "hear.md"
+
+[steps.view]
+start = "patches/delay-on.patch.json"
+hide = [
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[[steps.examples]]
+label = "Dry"
+patch = "patches/delay-dry.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "1/8 dotted"
+patch = "patches/delay-on.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "1/4"
+patch = "patches/delay-quarter.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "1/16"
+patch = "patches/delay-sixteenth.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "One echo"
+patch = "patches/delay-fb0.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Many echoes"
+patch = "patches/delay-fb70.patch.json"
+phrase = 6
+
+[[steps.examples]]
+label = "Slapback"
+patch = "patches/delay-slap.patch.json"
+phrase = 6
+
+# Hear's ear question: which one echoes? (dry against 1/8 dotted, staccato: sound/1 2.93 JND.)
+[[steps]]
+id = "which-echo"
+kind = "choose"
+text = "which-echo.md"
+hints = ["Listen after the note: does it come back?"]
+answer = 1
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/delay-dry.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/delay-on.patch.json"
+phrase = 6
+
+# Name.
+[[steps]]
+id = "name"
+kind = "read"
+text = "name.md"
+
+[steps.view]
+start = "patches/delay-on.patch.json"
+highlight = ["delay1.sync", "delay1.beats", "delay1.feedback", "delay1.mix"]
+hide = [
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+# Try: bring in the echoes. Start: mix 0 %, the input bit for bit (the sound lasts 82 ms: fails `duration > 1150ms`).
+# Witness: mix 100 % (1306 ms); 30 % reads 984 ms.
+[[steps]]
+id = "try"
+kind = "do"
+text = "try.md"
+hints = ["Turn delay1's Mix up.", "All the way: the first echo as loud as the note."]
+witness = "patches/delay-on.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/delay-dry.patch.json"
+highlight = ["delay1.mix"]
+editable = ["delay1.mix"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "env1.*",
+  "delay1.sync",
+  "delay1.time",
+  "delay1.beats",
+  "delay1.feedback",
+  "delay1.ping_pong",
+  "delay1.low_cut",
+  "delay1.high_cut",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["delay1.mix > 50%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["duration > 1150ms"]
+
+# Do: more repeats. Start: feedback 35 % (1306 ms: fails `duration > 2500ms`). Witness: 70 % (3227 ms).
+[[steps]]
+id = "longer"
+kind = "do"
+text = "longer.md"
+hints = ["Turn delay1's Feedback up: each echo returns for another.", "About 70 %."]
+witness = "patches/delay-fb70.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/delay-on.patch.json"
+highlight = ["delay1.feedback"]
+editable = ["delay1.feedback"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "env1.*",
+  "delay1.sync",
+  "delay1.time",
+  "delay1.beats",
+  "delay1.ping_pong",
+  "delay1.low_cut",
+  "delay1.high_cut",
+  "delay1.mix",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["delay1.feedback > 55%"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["duration > 2500ms"]
+
+# Do: on the beat. Start: 1/8 dotted (1306 ms: fails `duration > 1550ms`). Witness: 1/4 (1735 ms: the same repeats,
+# spaced further). The division is a list: the step teaches structure.
+[[steps]]
+id = "quarter"
+kind = "do"
+text = "quarter.md"
+hints = ["Set delay1's Beats to 1/4."]
+witness = "patches/delay-quarter.patch.json"
+
+[steps.view]
+layout = "focus"
+start = "patches/delay-on.patch.json"
+highlight = ["delay1.beats"]
+editable = ["delay1.beats"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "env1.*",
+  "delay1.sync",
+  "delay1.time",
+  "delay1.feedback",
+  "delay1.ping_pong",
+  "delay1.low_cut",
+  "delay1.high_cut",
+  "delay1.mix",
+]
+
+[steps.check]
+kind = "all"
+
+[[steps.check.checks]]
+kind = "patch"
+predicates = ["delay1.beats == quarter"]
+
+[[steps.check.checks]]
+kind = "sound"
+phrase = 6
+expect = ["duration > 1550ms"]
+
+# Do, round: a hidden feedback from {0, 70} %, out of the default 35 % (seed 1), on the staccato phrase.
+[[steps]]
+id = "round-1"
+kind = "recreate"
+text = "round.md"
+hints = ["Count the echoes after the note: more or fewer than yours?"]
+
+[steps.view]
+highlight = ["delay1.feedback"]
+hide = [
+  "osc2.*",
+  "noise1.*",
+  "filter1.*",
+  "env1.*",
+  "env2.*",
+  "lfo1.*",
+  "lfo2.*",
+  "comp1.*",
+  "reverb1.*",
+]
+
+[steps.challenge]
+schema = "enth.challenge/2"
+answer = "patch"
+phrase = 6
+
+[steps.challenge.target]
+kind = "draw"
+seed = 1
+items = [{ param = "delay1.feedback", set = [0.0, 70.0] }]
+
+[steps.challenge.start]
+kind = "patch"
+
+[steps.challenge.start.patch]
+schema = 1
+engine = "0.3.0"
+meta = { name = "Pluck, 1/8 dotted", description = "A short saw pluck into delay1 at its defaults." }
+master = { level = -12.0 }
+generators = [
+  { id = "osc1", kind = "osc" },
+  { id = "osc2", kind = "osc", enabled = false },
+  { id = "noise1", kind = "noise", enabled = false },
+]
+voice_fx = [
+  { id = "filter1", kind = "svf", params = { cutoff = 3000.0 } },
+]
+fx = [
+  { id = "comp1", kind = "comp", enabled = false },
+  { id = "reverb1", kind = "reverb", enabled = false },
+  { id = "delay1", kind = "delay" },
+]
+modulators = [
+  { id = "env1", kind = "adsr", params = { attack = 2.0, decay = 150.0, sustain = 0.0, release = 100.0 } },
+  { id = "env2", kind = "adsr" },
+  { id = "lfo1", kind = "lfo" },
+  { id = "lfo2", kind = "lfo" },
+]
+
+[steps.challenge.constraints]
+editable = ["delay1.feedback"]
+locked = [
+  "osc1.*",
+  "filter1.*",
+  "env1.*",
+  "delay1.sync",
+  "delay1.time",
+  "delay1.beats",
+  "delay1.ping_pong",
+  "delay1.low_cut",
+  "delay1.high_cut",
+  "delay1.mix",
+]
+
+[steps.challenge.assists]
+live_meter = false
+dim_unused = false
+
+[steps.challenge.scoring]
+sound = "sound/1"
+structure = "structure/1"
+combined = "combined/1"
+time = "time/1"
+sound_weight = 50
+pass_mark = 90
+
+[steps.challenge.meta]
+title = "Delay, round"
+tags = ["bass", "delay"]
+
+# Check: slapback or synced echo? (sync off at 100 ms with one echo, against 1/8 dotted with feedback 35 %: sound/1
+# 4.93 JND on staccato.)
+[[steps]]
+id = "check-slap"
+kind = "choose"
+text = "check-slap.md"
+hints = ["A slapback is one quick echo right behind the note; a synced echo bounces in time."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/delay-slap.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/delay-on.patch.json"
+phrase = 6
+
+# Check: 1/4 or 1/8 dotted? (staccato: sound/1 5.76 JND.)
+[[steps]]
+id = "check-beat"
+kind = "choose"
+text = "check-beat.md"
+hints = ["1/8 dotted bounces against the beat; 1/4 lands on it."]
+answer = 0
+
+[steps.view]
+layout = "focus"
+
+[[steps.options]]
+label = "A"
+patch = "patches/delay-quarter.patch.json"
+phrase = 6
+
+[[steps.options]]
+label = "B"
+patch = "patches/delay-on.patch.json"
+phrase = 6
