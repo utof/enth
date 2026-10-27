@@ -1,8 +1,9 @@
 //! The G2 reference patch (S2a lane G2B), shared by the `g2` bench and the `g2` tests
 //! (`#[path = "common/g2.rs"] mod g2_patch;`): a dubstep growl voice that exercises what S2a added, the way G1 does
 //! for P1a. The test host's fixtures `tools/test-host/golden/enth-plugin.g2*.patch.json` are `Patch::to_json()` of
-//! [`g2_patch`], [`value_edit`] and [`module_added`], and the golden case `tests/golden/cases/g2-growl.toml` embeds
-//! the same patch (a test in `crates/enth-engine/tests/g2.rs` compares the three); change them together.
+//! [`g2_patch`], [`value_edit`] and [`module_added`] (and, as `enth-plugin.g2-stress*.patch.json`, of the same three
+//! for [`G2::stress`]), and the golden case `tests/golden/cases/g2-growl.toml` embeds the reference patch (a test in
+//! `tests/golden/tests/g2.rs` compares them); change them together.
 //!
 //! The sound is report 04's S4 "FM growl" (`_local/sessions/2026-10-25-s2-depth-and-fast-training/`), built from the
 //! modules that exist:
@@ -16,8 +17,11 @@
 //!   eighth, sweeps F2). Four voice-FX slots are the most; three are used.
 //! - **FX:** `ott` (60 %, report 04's depth), `chorus` (default, 30 % mix) and a synced `delay` (dotted eighth, 30 %
 //!   feedback, ping-pong, 25 % mix).
-//! - **Voices:** `polyphony` 8, the default for G2 (docs/phase-s2.md, open check "G2's voice count and budget"), and
-//!   the bench holds an eight-note chord in the bass register ([`KEYS`]).
+//! - **Voices:** `polyphony` **4**, the reference (the coordinator's decision of 2026-10-27: bass is played mono or
+//!   with low polyphony, and four voices cover the overlap of releases). The bench holds the first four notes of the
+//!   bass chord [`KEYS`]. **8 voices is the stress case** ([`G2::stress`]): the same patch with `polyphony` 8 and all
+//!   eight notes held; it has its own bench, fixtures and hard limit and is not the budget (docs/benchmarks.md, "The
+//!   G2 row").
 //!
 //! Because a unison `wt` makes the voice stereo, the plan runs the whole voice-FX chain twice (a right-channel twin of
 //! every module): the chain's cost is doubled, which is the price of S2a's stereo voice path and the reason G2's
@@ -32,12 +36,17 @@ use enth_patch::catalogue::{
 use enth_patch::{ModuleId, ModuleInstance, ModuleKind, Patch, Route};
 
 /// The held chord of the benches and the real-time run: E1, B1, E2, G2, B2, E3, G3, B3 (an E minor stack across the
-/// bass register; eight voices, so none is stolen). `enth-test-host`'s `--notes` script for the same chord is
-/// [`NOTES`].
+/// bass register). A variant with `voices` voices holds the first `voices` of them, so no voice is stolen: the
+/// reference (4 voices) holds E1 B1 E2 G2, the stress case all eight. `enth-test-host`'s `--notes` scripts for the
+/// same chords are [`NOTES`] and [`STRESS_NOTES`].
 pub const KEYS: [u8; 8] = [28, 35, 40, 43, 47, 52, 55, 59];
 
-/// The same chord as a test-host notes script (`key@start+duration:velocity`, seconds): held for an hour.
-pub const NOTES: &str = "E1@0+3600:0.8, B1@0+3600:0.8, E2@0+3600:0.8, G2@0+3600:0.8, B2@0+3600:0.8, E3@0+3600:0.8, G3@0+3600:0.8, B3@0+3600:0.8";
+/// The reference's chord (the first four of [`KEYS`]) as a test-host notes script (`key@start+duration:velocity`,
+/// seconds): held for an hour.
+pub const NOTES: &str = "E1@0+3600:0.8, B1@0+3600:0.8, E2@0+3600:0.8, G2@0+3600:0.8";
+
+/// The stress case's chord (all of [`KEYS`]) as a test-host notes script.
+pub const STRESS_NOTES: &str = "E1@0+3600:0.8, B1@0+3600:0.8, E2@0+3600:0.8, G2@0+3600:0.8, B2@0+3600:0.8, E3@0+3600:0.8, G3@0+3600:0.8, B3@0+3600:0.8";
 
 fn id(s: &str) -> ModuleId {
     ModuleId::new(s).expect("valid id")
@@ -52,15 +61,16 @@ pub fn module(name: &str, kind: ModuleKind, set: &[(usize, f32)]) -> ModuleInsta
     m
 }
 
-/// The choices that make up a G2 variant. [`G2::default`] is the reference patch; the bench measures the others to
-/// show what each choice costs (docs/benchmarks.md, "The G2 row").
+/// The choices that make up a G2 variant. [`G2::default`] is the reference patch (4 voices); [`G2::stress`] is the
+/// 8-voice stress case; the bench measures variants of the stress case to show what each choice costs
+/// (docs/benchmarks.md, "The G2 row").
 #[derive(Clone, Copy, Debug)]
 #[allow(
     clippy::struct_excessive_bools,
     reason = "each flag is one independent choice of the variant, named in the bench"
 )]
 pub struct G2 {
-    /// `polyphony`.
+    /// `polyphony` (and how many notes of [`KEYS`] the bench holds).
     pub voices: u32,
     /// The `wt`'s unison copies (1 turns the unison and the stereo voice path off).
     pub copies: u32,
@@ -81,7 +91,7 @@ pub struct G2 {
 impl Default for G2 {
     fn default() -> Self {
         Self {
-            voices: 8,
+            voices: 4,
             copies: 7,
             dist_mode: DistMode::Asymmetric,
             oversample: Oversample::X2,
@@ -94,6 +104,14 @@ impl Default for G2 {
 }
 
 impl G2 {
+    /// The stress case: the reference with 8 voices (all of [`KEYS`] held). Not the budget.
+    pub fn stress() -> Self {
+        Self {
+            voices: 8,
+            ..Self::default()
+        }
+    }
+
     /// The variant's patch.
     pub fn patch(self) -> Patch {
         let mut p = Patch::init();
@@ -267,25 +285,42 @@ fn delay_module() -> ModuleInstance {
     )
 }
 
-/// The G2 reference patch.
+/// The G2 reference patch (4 voices).
 pub fn g2_patch() -> Patch {
     G2::default().patch()
 }
 
-/// G2 with `wt1`'s level at 90 %: the same modules, so the swap is instant.
-pub fn value_edit() -> Patch {
-    let mut p = g2_patch();
-    p.generators[1].values[WtParam::Level.index()] = 90.0;
-    p
+/// The stress case's patch (8 voices).
+pub fn stress_patch() -> Patch {
+    G2::stress().patch()
 }
 
-/// G2 with an unrouted voice LFO added: a module added, so the swap crossfades (G1's `module_added`).
+impl G2 {
+    /// The variant with `wt1`'s level at 90 %: the same modules, so the swap is instant.
+    pub fn value_edit(self) -> Patch {
+        let mut p = self.patch();
+        p.generators[1].values[WtParam::Level.index()] = 90.0;
+        p
+    }
+
+    /// The variant with an unrouted voice LFO added: a module added, so the swap crossfades (G1's `module_added`).
+    pub fn module_added(self) -> Patch {
+        let mut p = self.patch();
+        p.modulators.push(module(
+            "lfo2",
+            ModuleKind::Lfo,
+            &[(LfoParam::Rate.index(), 2.0)],
+        ));
+        p
+    }
+}
+
+/// The reference with `wt1`'s level at 90 %: the same modules, so the swap is instant.
+pub fn value_edit() -> Patch {
+    G2::default().value_edit()
+}
+
+/// The reference with an unrouted voice LFO added: a module added, so the swap crossfades.
 pub fn module_added() -> Patch {
-    let mut p = g2_patch();
-    p.modulators.push(module(
-        "lfo2",
-        ModuleKind::Lfo,
-        &[(LfoParam::Rate.index(), 2.0)],
-    ));
-    p
+    G2::default().module_added()
 }

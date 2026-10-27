@@ -1,4 +1,4 @@
-description = "S2a G2B, the G2 reference patch (benches/common/g2.rs, report 04's S4 FM growl): a wt on the basic table at 60 % with 7-copy unison (22 cents, blend 80 %, spread 60 %), phase-modulated by a sine osc1 at level 0 through an audio route, an MSEG (a loop of one eighth note at 140 BPM, five bent points) moving pm_index by 4 radians and the table position by 25 %; dist (asymmetric, 18 dB, x2) into a ladder band-pass (the MSEG on its cutoff) into a formant (a dotted-eighth synced LFO on F2); ott, chorus and a synced delay (a dotted eighth, ping-pong). Eight voices: the bass-register chord E1 B1 E2 G2 B2 E3 G3 B3 enters 50 ms apart and is held for a second. Master -9 dB. Guards the whole S2a voice path, the stereo plan (a unison wt runs the voice-FX chain twice) and the effects chain; the budget and the real-time rows are in docs/benchmarks.md."
+description = "S2a G2B, the G2 reference patch (benches/common/g2.rs, report 04's S4 FM growl): a wt on the basic table at 60 % with 7-copy unison (22 cents, blend 80 %, spread 60 %), phase-modulated by a sine osc1 at level 0 through an audio route, an MSEG (a loop of one eighth note at 140 BPM, five bent points) moving pm_index by 4 radians and the table position by 25 %; dist (asymmetric, 18 dB, x2) into a ladder band-pass (the MSEG on its cutoff) into a formant (a dotted-eighth synced LFO on F2); ott, chorus and a synced delay (a dotted eighth, ping-pong). Four voices (the reference, 2026-10-27: bass is played mono or with low polyphony; 8 voices is the stress case, in the bench only): the bass-register chord E1 B1 E2 G2 enters 50 ms apart and is held for a second. Master -9 dB. Guards the whole S2a voice path, the stereo plan (a unison wt runs the voice-FX chain twice) and the effects chain; the budget and the real-time rows are in docs/benchmarks.md."
 sample_rate = 48000
 seconds = 1.6
 
@@ -9,16 +9,12 @@ notes = [
     { key = 35, velocity = 0.8, on_s = 0.05, off_s = 1.2 },
     { key = 40, velocity = 0.8, on_s = 0.10, off_s = 1.2 },
     { key = 43, velocity = 0.8, on_s = 0.15, off_s = 1.2 },
-    { key = 47, velocity = 0.8, on_s = 0.20, off_s = 1.2 },
-    { key = 52, velocity = 0.8, on_s = 0.25, off_s = 1.2 },
-    { key = 55, velocity = 0.8, on_s = 0.30, off_s = 1.2 },
-    { key = 59, velocity = 0.8, on_s = 0.35, off_s = 1.2 },
 ]
 
 [source.patch]
 schema = 1
 engine = "0.1.0"
-voice = { amp_env = "env1", polyphony = 8 }
+voice = { amp_env = "env1", polyphony = 4 }
 master = { level = -9 }
 generators = [
     { id = "osc1", kind = "osc", params = { wave = "sine", level = 0 } },
