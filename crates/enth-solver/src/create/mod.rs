@@ -59,6 +59,7 @@
 pub mod candidate;
 pub mod portfolio;
 pub mod record;
+pub mod s2a;
 pub mod schedule;
 
 use core::fmt;

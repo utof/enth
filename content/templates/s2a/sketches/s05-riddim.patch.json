@@ -1,0 +1,153 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S5 riddim square",
+    "description": "Report 04 S5: two pulses an octave up gated by an eighth-triplet square (7.0 Hz), a low-pass, a comb an octave up wobbled by a quarter triangle, hard 9 dB clipping, OTT 100 %, a sine sub with a quarter pump. Gap: the sub shares the serial chain with the comb and the clipper.",
+    "tags": [
+      "bass",
+      "riddim"
+    ]
+  },
+  "voice": {
+    "mode": "mono",
+    "polyphony": 1,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -6.1
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "pulse",
+        "pw": 50,
+        "semi": -7
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "pulse",
+        "pw": 50,
+        "semi": -7,
+        "fine": 8
+      }
+    },
+    {
+      "id": "osc3",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": -19,
+        "level": 80
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 900,
+        "resonance": 28,
+        "drive": 6
+      }
+    },
+    {
+      "id": "comb1",
+      "kind": "comb",
+      "params": {
+        "semi": 12,
+        "feedback": 70,
+        "damping": 6000,
+        "mix": 50
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "hard",
+        "drive": 9,
+        "keep_lows": 100
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 30
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "square",
+        "polarity": "unipolar",
+        "sync": true,
+        "beats": "eighth_triplet"
+      }
+    },
+    {
+      "id": "lfo2",
+      "kind": "lfo",
+      "params": {
+        "shape": "triangle",
+        "sync": true,
+        "beats": "quarter"
+      }
+    },
+    {
+      "id": "lfo3",
+      "kind": "lfo",
+      "params": {
+        "shape": "saw_down",
+        "polarity": "unipolar",
+        "sync": true,
+        "beats": "quarter"
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "ott1",
+      "kind": "ott",
+      "params": {
+        "depth": 100,
+        "time": 30
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "lfo1",
+      "dst": "osc1.level",
+      "depth": -100
+    },
+    {
+      "src": "lfo1",
+      "dst": "osc2.level",
+      "depth": -100
+    },
+    {
+      "src": "lfo2",
+      "dst": "comb1.semi",
+      "depth": 3.125
+    },
+    {
+      "src": "lfo3",
+      "dst": "osc3.level",
+      "depth": -40
+    }
+  ]
+}

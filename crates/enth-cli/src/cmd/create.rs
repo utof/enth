@@ -630,7 +630,7 @@ pub fn run(args: &Args, stdin: &str) -> Res {
         notes.extend(mp.notes.iter().cloned());
     }
     let init = game::init_patch();
-    let tmpl: Vec<Template> = templates::TEMPLATES
+    let mut tmpl: Vec<Template> = templates::TEMPLATES
         .iter()
         .filter(|t| t.name != "init")
         .map(|t| Template {
@@ -638,6 +638,8 @@ pub fn run(args: &Args, stdin: &str) -> Res {
             patch: t.patch(),
         })
         .collect();
+    // The S2a templates (lane TPL): none while their kinds are hidden, so today's starts are unchanged.
+    tmpl.extend(enth_solver::create::s2a::enabled_s2a_templates());
     let inputs = Inputs {
         init: &init,
         templates: &tmpl,

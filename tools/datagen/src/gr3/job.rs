@@ -211,6 +211,14 @@ pub struct Job {
     /// A proposals file for arms B and C (a dry run until R3b's model exists).
     #[serde(default)]
     pub proposals: Option<PathBuf>,
+    /// Which templates create gets besides `init` (S2a lane TPL). Absent: create's own, `pluck_1osc`, `pad_2osc` and
+    /// `bass_sub` plus any S2a template that is enabled (none while the S2a kinds are hidden). Present: exactly
+    /// these, each a name (`pluck_1osc`, `pad_2osc`, `bass_sub`, `growl`, `reese`, `wobble`, `fm_bass`: the S2a
+    /// ones load whether their kinds are hidden or not, which is how the kit measures them before INT-S2a) or a path
+    /// to a patch file (a name containing `/` or ending in `.json`; the template is named after the file's stem). An
+    /// empty list is `init` alone.
+    #[serde(default)]
+    pub templates: Option<Vec<String>>,
     /// `test` or `dev`.
     pub split: String,
     /// What xtask knows and the tool copies into the run's first line: the build, the set's hashes, the command,

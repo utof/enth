@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "FM bass",
+    "description": "A three-voice wavetable phase-modulated by a silent sine two octaves up, a sine sub, a 24 dB low-pass that a slow envelope opens, hard clipping that spares the lows, a compressor, an EQ (a presence bell, a high shelf down) and a short reverb. Mono, legato. The FM and foghorn basses of report 04 (S9).",
+    "tags": [
+      "bass",
+      "fm"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 20,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -6
+  },
+  "generators": [
+    {
+      "id": "wt1",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 50,
+        "pm_index": 2,
+        "unison": 3,
+        "detune": 25
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "semi": 24,
+        "level": 0
+      }
+    },
+    {
+      "id": "osc3",
+      "kind": "osc",
+      "params": {
+        "wave": "sine",
+        "level": 50
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "ladder1",
+      "kind": "ladder",
+      "params": {
+        "mode": "lp24",
+        "cutoff": 300,
+        "resonance": 25
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "hard",
+        "drive": 18,
+        "keep_lows": 200
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 300,
+        "sustain": 100,
+        "release": 400
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 23,
+        "decay": 4200,
+        "sustain": 0,
+        "release": 300
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "comp1",
+      "kind": "comp",
+      "params": {
+        "threshold": -28,
+        "ratio": 4.85
+      }
+    },
+    {
+      "id": "eq1",
+      "kind": "eq",
+      "params": {
+        "bell2_freq": 4850,
+        "bell2_gain": 3,
+        "high_gain": -6
+      }
+    },
+    {
+      "id": "reverb1",
+      "kind": "reverb",
+      "params": {
+        "wet": -12,
+        "low_cut": 300
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "osc2",
+      "dst": "wt1.pm",
+      "depth": 100
+    },
+    {
+      "src": "env2",
+      "dst": "ladder1.cutoff",
+      "depth": 30
+    },
+    {
+      "src": "env2",
+      "dst": "wt1.position",
+      "depth": 15
+    },
+    {
+      "src": "env2",
+      "dst": "wt1.pm_index",
+      "depth": 20
+    }
+  ]
+}

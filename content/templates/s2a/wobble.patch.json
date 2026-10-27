@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "Wobble",
+    "description": "A saw and a pulse an octave down through a resonant low-pass that a tempo-synced eighth-note sine sweeps five octaves from its trough, then soft distortion and OTT. Mono, legato, a 30 ms glide. The classic synced wobble of report 04 (S2).",
+    "tags": ["bass", "wobble"]
+  },
+  "voice": { "mode": "legato", "polyphony": 1, "glide": 30, "amp_env": "env1" },
+  "master": { "level": -8 },
+  "generators": [
+    { "id": "osc1", "kind": "osc", "params": { "wave": "saw" } },
+    { "id": "osc2", "kind": "osc", "params": { "wave": "pulse", "semi": -12, "fine": 7 } }
+  ],
+  "voice_fx": [
+    { "id": "filter1", "kind": "svf", "params": { "mode": "lp", "cutoff": 150, "resonance": 45, "drive": 12 } },
+    { "id": "dist1", "kind": "dist", "params": { "mode": "soft", "drive": 12 } }
+  ],
+  "modulators": [
+    { "id": "env1", "kind": "adsr", "params": { "attack": 2, "decay": 0, "sustain": 100, "release": 60 } },
+    { "id": "lfo1", "kind": "lfo", "params": { "shape": "sine", "polarity": "unipolar", "sync": true, "beats": "eighth", "phase": 270 } }
+  ],
+  "fx": [
+    { "id": "ott1", "kind": "ott", "params": { "depth": 30 } }
+  ],
+  "routes": [
+    { "src": "lfo1", "dst": "filter1.cutoff", "depth": 50 }
+  ]
+}

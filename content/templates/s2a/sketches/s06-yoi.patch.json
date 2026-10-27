@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S6 yoi",
+    "description": "Report 04 S6: a saw and a formant-table oscillator through a vowel filter whose F2 swings 2400 to 640 Hz and back in 428 ms (i, o, i) from a one-shot quarter MSEG, a 2 st pitch kick, a downsampler whose rate follows the MSEG, OTT 70 %. Gap: no true sub lane; the report's route B low-pass at 300 Hz would remove the vowel, so it is left out.",
+    "tags": [
+      "bass",
+      "yoi",
+      "formant"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 40,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -2.7
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "semi": -19
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "table",
+        "table": "formant",
+        "position": 40,
+        "semi": -19
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "formant1",
+      "kind": "formant",
+      "params": {
+        "f1": 240,
+        "f2": 2400,
+        "resonance": 70
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "downsample",
+        "rate": 12000,
+        "mix": 50
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 60
+      }
+    },
+    {
+      "id": "mseg1",
+      "kind": "mseg",
+      "params": {
+        "mode": "one_shot",
+        "sync": true,
+        "beats": "quarter",
+        "polarity": "unipolar",
+        "points": 3,
+        "time1": 0,
+        "level1": 0,
+        "curve1": 0,
+        "time2": 45,
+        "level2": 100,
+        "curve2": 0,
+        "time3": 100,
+        "level3": 0,
+        "curve3": 0
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 90,
+        "sustain": 0,
+        "release": 0
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "ott1",
+      "kind": "ott",
+      "params": {
+        "depth": 70
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "mseg1",
+      "dst": "formant1.f2",
+      "depth": -57.4
+    },
+    {
+      "src": "mseg1",
+      "dst": "formant1.f1",
+      "depth": 17.6
+    },
+    {
+      "src": "mseg1",
+      "dst": "dist1.rate",
+      "depth": -40
+    },
+    {
+      "src": "env2",
+      "dst": "osc1.semi",
+      "depth": 2.083
+    }
+  ]
+}

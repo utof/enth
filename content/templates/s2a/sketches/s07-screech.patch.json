@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S7 screech",
+    "description": "Report 04 S7 (screech): a silent saw master and a hard-synced saw slave swept two octaves down over 250 ms, a 1/16 vibrato, a 300 Hz high-pass, hard 12 dB clipping, OTT 70 %, a short reverb.",
+    "tags": [
+      "lead",
+      "screech",
+      "sync"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 60,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -8.7
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "level": 0,
+        "semi": -7
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "sync": true,
+        "semi": 5
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "hp",
+        "cutoff": 300
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "hard",
+        "drive": 12
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 100
+      }
+    },
+    {
+      "id": "env2",
+      "kind": "adsr",
+      "params": {
+        "attack": 0,
+        "decay": 250,
+        "sustain": 30,
+        "release": 100
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "sync": true,
+        "beats": "sixteenth"
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "ott1",
+      "kind": "ott",
+      "params": {
+        "depth": 70
+      }
+    },
+    {
+      "id": "reverb1",
+      "kind": "reverb",
+      "params": {
+        "wet": -14,
+        "decay": 1200
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "env2",
+      "dst": "osc2.semi",
+      "depth": 25.0
+    },
+    {
+      "src": "lfo1",
+      "dst": "osc2.semi",
+      "depth": 1.6
+    }
+  ]
+}

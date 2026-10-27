@@ -1,0 +1,169 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S8 neuro",
+    "description": "Report 04 S8: two bent wavetables (-12 and -24 st) with a bar LFO moving their positions and a notch across a bar, a sample-and-hold band-pass on the eighth grid, noise, asymmetric 20 dB distortion at 60 %, a chorus at 33 %. Gaps: no pitch bend, no frequency shifter, no true sub lane (the EQ high shelf at 6 kHz moved 4 dB by a global 1/16 LFO is in).",
+    "tags": [
+      "bass",
+      "neuro"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 150,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -1.6
+  },
+  "generators": [
+    {
+      "id": "wt1",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 45,
+        "semi": -31,
+        "fine": 10,
+        "warp": "bend",
+        "warp_amount": 0,
+        "phase_mode": "reset"
+      }
+    },
+    {
+      "id": "wt2",
+      "kind": "wt",
+      "params": {
+        "table": "basic",
+        "position": 40,
+        "semi": -43,
+        "warp": "bend",
+        "warp_amount": 50,
+        "phase_mode": "reset"
+      }
+    },
+    {
+      "id": "noise1",
+      "kind": "noise",
+      "params": {
+        "color": "white",
+        "level": 33
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "notch",
+        "cutoff": 600,
+        "resonance": 45.8
+      }
+    },
+    {
+      "id": "filter2",
+      "kind": "svf",
+      "params": {
+        "mode": "bp",
+        "cutoff": 1000,
+        "resonance": 12
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "asymmetric",
+        "drive": 20,
+        "mix": 60
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 60
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "sync": true,
+        "beats": "bar",
+        "phase_mode": "reset"
+      }
+    },
+    {
+      "id": "lfo2",
+      "kind": "lfo",
+      "params": {
+        "shape": "sample_hold",
+        "sync": true,
+        "beats": "eighth",
+        "phase_mode": "reset"
+      }
+    },
+    {
+      "id": "lfo3",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "scope": "global",
+        "sync": true,
+        "beats": "sixteenth"
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "chorus1",
+      "kind": "chorus",
+      "params": {
+        "mix": 33
+      }
+    },
+    {
+      "id": "eq1",
+      "kind": "eq",
+      "params": {
+        "high_freq": 6000
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "lfo1",
+      "dst": "wt1.position",
+      "depth": 33
+    },
+    {
+      "src": "lfo1",
+      "dst": "wt2.position",
+      "depth": -33
+    },
+    {
+      "src": "lfo1",
+      "dst": "filter1.cutoff",
+      "depth": 25
+    },
+    {
+      "src": "lfo2",
+      "dst": "filter2.cutoff",
+      "depth": 30
+    },
+    {
+      "src": "lfo3",
+      "dst": "eq1.high_gain",
+      "depth": 8.333
+    }
+  ]
+}

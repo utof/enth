@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "meta": {
+    "name": "S2 classic 1/8 wobble",
+    "description": "Report 04 S2: saw plus a pulse an octave down, a low-pass swept five octaves by a synced eighth-note sine from its trough, soft 12 dB distortion after the filter, OTT 30 %.",
+    "tags": [
+      "bass",
+      "wobble"
+    ]
+  },
+  "voice": {
+    "mode": "legato",
+    "polyphony": 1,
+    "glide": 30,
+    "amp_env": "env1"
+  },
+  "master": {
+    "level": -10.9
+  },
+  "generators": [
+    {
+      "id": "osc1",
+      "kind": "osc",
+      "params": {
+        "wave": "saw",
+        "semi": -19
+      }
+    },
+    {
+      "id": "osc2",
+      "kind": "osc",
+      "params": {
+        "wave": "pulse",
+        "pw": 50,
+        "semi": -31,
+        "fine": 7
+      }
+    }
+  ],
+  "voice_fx": [
+    {
+      "id": "filter1",
+      "kind": "svf",
+      "params": {
+        "mode": "lp",
+        "cutoff": 212.1,
+        "resonance": 45.8,
+        "drive": 12,
+        "keytrack": 50
+      }
+    },
+    {
+      "id": "dist1",
+      "kind": "dist",
+      "params": {
+        "mode": "soft",
+        "drive": 12
+      }
+    }
+  ],
+  "modulators": [
+    {
+      "id": "env1",
+      "kind": "adsr",
+      "params": {
+        "attack": 2,
+        "decay": 0,
+        "sustain": 100,
+        "release": 60
+      }
+    },
+    {
+      "id": "lfo1",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "polarity": "unipolar",
+        "sync": true,
+        "beats": "eighth",
+        "phase_mode": "reset",
+        "phase": 270
+      }
+    },
+    {
+      "id": "lfo2",
+      "kind": "lfo",
+      "params": {
+        "shape": "sine",
+        "rate": 0.15,
+        "phase_mode": "free"
+      }
+    }
+  ],
+  "fx": [
+    {
+      "id": "ott1",
+      "kind": "ott",
+      "params": {
+        "depth": 30
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "lfo1",
+      "dst": "filter1.cutoff",
+      "depth": 50
+    },
+    {
+      "src": "lfo2",
+      "dst": "osc1.fine",
+      "depth": 3.0
+    }
+  ]
+}
