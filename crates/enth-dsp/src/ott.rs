@@ -43,10 +43,13 @@
 
 use core::f64::consts::{PI, SQRT_2};
 
+use wide::f64x2;
+
 use crate::compressor::{
     DB_PER_LOG2, LOG2_PER_DB, MAX_LEVEL, MIN_LEVEL, StaticCurve, one_pole_gain, sane,
 };
-use crate::util::flush::{flush, flush64};
+use crate::resample::Lane;
+use crate::util::flush::flush;
 
 /// The number of bands.
 pub const BANDS: usize = 3;
@@ -316,36 +319,44 @@ impl SvfCoef {
     }
 }
 
-/// The two integrator states of one state-variable filter.
+/// The two channels' values side by side: lane 0 is the left channel, lane 1 the right (lane PRF). The two channels
+/// never see each other's signal, and every operation below is an IEEE `+ − ×` on each lane alone, in the order the
+/// per-channel filter performs it, so each lane is bit for bit what that channel alone would give.
+type V = f64x2;
+
+/// The two integrator states of one state-variable filter, for both channels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Svf {
-    ic1: f64,
-    ic2: f64,
+    ic1: V,
+    ic2: V,
 }
 
 impl Svf {
-    /// One step: returns `(band, low)`; the high output is `x − √2·band − low`.
+    /// One step on both channels: returns `(band, low)`; the high output is `x − √2·band − low`.
     #[inline(always)]
-    fn step(&mut self, c: &SvfCoef, x: f64) -> (f64, f64) {
+    fn step(&mut self, c: &SvfCoef, x: V) -> (V, V) {
+        let (a1, a2, a3) = (V::splat(c.a1), V::splat(c.a2), V::splat(c.a3));
+        let two = V::splat(2.0);
         let v3 = x - self.ic2;
-        let v1 = c.a1 * self.ic1 + c.a2 * v3;
-        let v2 = self.ic2 + c.a2 * self.ic1 + c.a3 * v3;
-        self.ic1 = 2.0 * v1 - self.ic1;
-        self.ic2 = 2.0 * v2 - self.ic2;
+        let v1 = a1 * self.ic1 + a2 * v3;
+        let v2 = self.ic2 + a2 * self.ic1 + a3 * v3;
+        self.ic1 = two * v1 - self.ic1;
+        self.ic2 = two * v2 - self.ic2;
         (v1, v2)
     }
 
     fn flush(&mut self) {
-        self.ic1 = flush64(self.ic1);
-        self.ic2 = flush64(self.ic2);
+        self.ic1 = self.ic1.flush();
+        self.ic2 = self.ic2.flush();
     }
 
     fn is_zero(&self) -> bool {
-        self.ic1 == 0.0 && self.ic2 == 0.0
+        self.ic1.to_array().iter().all(|&x| x == 0.0)
+            && self.ic2.to_array().iter().all(|&x| x == 0.0)
     }
 }
 
-/// One channel's filters: the two crossovers and the allpass that aligns the low band with the second one.
+/// Both channels' filters: the two crossovers and the allpass that aligns the low band with the second one.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Channel {
     /// First crossover, low branch (`lp1` then `lp2`) and the stage that also gives the band output for the allpass.
@@ -359,10 +370,11 @@ struct Channel {
 }
 
 impl Channel {
-    /// Split one sample into `[low, mid, high]`, the low band already through the second crossover's allpass.
+    /// Split one sample of each channel into `[low, mid, high]`, the low band already through the second crossover's
+    /// allpass.
     #[inline(always)]
-    fn split(&mut self, c1: &SvfCoef, c2: &SvfCoef, x: f64) -> [f64; BANDS] {
-        let two_k = 2.0 * SQRT_2;
+    fn split(&mut self, c1: &SvfCoef, c2: &SvfCoef, x: V) -> [V; BANDS] {
+        let two_k = V::splat(2.0 * SQRT_2);
         // First crossover: LP4 = LP2(LP2(x)); HP4 = A(x) − LP4 with A(x) = x − 2k·BP(x).
         let (bp1, lp1) = self.s1a.step(c1, x);
         let (_, low) = self.s1b.step(c1, lp1);
@@ -397,9 +409,8 @@ impl Channel {
     fn count_subnormals(&self) -> usize {
         [self.s1a, self.s1b, self.s2a, self.s2b, self.ap]
             .iter()
-            .flat_map(|s| [s.ic1, s.ic2])
-            .filter(|x| x.is_subnormal())
-            .count()
+            .map(|s| s.ic1.subnormal_lanes() + s.ic2.subnormal_lanes())
+            .sum()
     }
 }
 
@@ -497,7 +508,8 @@ pub struct Ott {
     to: Gains,
     c1: SvfCoef,
     c2: SvfCoef,
-    chan: [Channel; 2],
+    /// The left (lane 0) and right (lane 1) channels' filters.
+    chan: Channel,
     band: [BandDyn; BANDS],
 }
 
@@ -520,7 +532,7 @@ impl Ott {
             to: g,
             c1: SvfCoef::new(params.low_split_hz, DEFAULT_SAMPLE_RATE),
             c2: SvfCoef::new(params.high_split_hz, DEFAULT_SAMPLE_RATE),
-            chan: [Channel::default(); 2],
+            chan: Channel::default(),
             band: BAND_SPECS.map(|s| BandDyn::new(&s)),
         };
         o.refresh_coefficients();
@@ -537,7 +549,7 @@ impl Ott {
 
     /// Clear the filters, the followers and the gain smoothers. The settings and the sample rate stay.
     pub fn reset(&mut self) {
-        self.chan = [Channel::default(); 2];
+        self.chan = Channel::default();
         for b in &mut self.band {
             b.env = 0.0;
             b.gs_down = 0.0;
@@ -609,7 +621,7 @@ impl Ott {
     /// uses it to skip an idle module. A tail reaches this on its own: all of it is flushed below −300 dBFS.
     #[must_use]
     pub fn is_idle(&self) -> bool {
-        self.chan.iter().all(Channel::is_zero)
+        self.chan.is_zero()
             && self
                 .band
                 .iter()
@@ -619,10 +631,7 @@ impl Ott {
     /// How many state values are subnormal; always 0 for a healthy processor. For the engine's tail test.
     #[must_use]
     pub fn count_subnormals(&self) -> usize {
-        self.chan
-            .iter()
-            .map(Channel::count_subnormals)
-            .sum::<usize>()
+        self.chan.count_subnormals()
             + self
                 .band
                 .iter()
@@ -635,9 +644,9 @@ impl Ott {
     /// Split one stereo frame into `[low, mid, high]` for each channel (`[band][channel]`), the way the module does
     /// before the dynamics, advancing the filters. For tests and tools; `x` is used as it is.
     pub fn split_frame(&mut self, l: f64, r: f64) -> [[f64; 2]; BANDS] {
-        let a = self.chan[0].split(&self.c1, &self.c2, l);
-        let b = self.chan[1].split(&self.c1, &self.c2, r);
-        [[a[0], b[0]], [a[1], b[1]], [a[2], b[2]]]
+        self.chan
+            .split(&self.c1, &self.c2, V::new([l, r]))
+            .map(V::to_array)
     }
 
     /// Process `min(len)` frames in place.
@@ -660,9 +669,7 @@ impl Ott {
             *s_r = y_r;
         }
         self.from = self.to;
-        for c in &mut self.chan {
-            c.flush();
-        }
+        self.chan.flush();
     }
 
     /// One stereo frame with the gains `g` for this frame.
@@ -677,12 +684,13 @@ impl Ott {
             }
         };
         let gin = f64::from(g.input);
-        let bands_l = self.chan[0].split(&self.c1, &self.c2, clean(l) * gin);
-        let bands_r = self.chan[1].split(&self.c1, &self.c2, clean(r) * gin);
+        let bands = self
+            .chan
+            .split(&self.c1, &self.c2, V::new([clean(l) * gin, clean(r) * gin]))
+            .map(V::to_array);
 
         let (mut wet_l, mut wet_r) = (0.0_f64, 0.0_f64);
-        for b in 0..BANDS {
-            let (xl, xr) = (bands_l[b], bands_r[b]);
+        for (b, &[xl, xr]) in bands.iter().enumerate() {
             // Stereo link: the louder channel drives both gains.
             let e = (xl.abs().max(xr.abs()) as f32).min(MAX_LEVEL);
             let gain = self.band[b].gain(e, g.a_down, g.a_up) * g.band[b];
