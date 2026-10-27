@@ -327,6 +327,7 @@ G2 is the reference patch for S2a, the way G1 is for P1a: a dubstep growl voice 
 | --- | --- | --- | --- | --- |
 | G1, 16 voices (`benches/g1.rs`, unchanged) | 603,331,584 | 6,285 | 0.52× | 650,000,000 |
 | **G2 reference, 4 voices** (`reference_4v`) | **1,019,252,374** | **10,617** | **0.88×** | **1,121,178,000** (11,679 per frame) |
+| ↳ after lane PRF, 2026-10-27 ([the performance lane](#the-performance-lane-prf-2026-10-27)) | 1,019,252,374 → **683,668,671** (−32.9 %) | 7,122 | 0.59× | **752,036,000** (7,834 per frame) |
 
 The reference is inside G1's cap with 12 % to spare, and its own hard limit is the budget.
 
@@ -385,6 +386,7 @@ The same patch with `polyphony` 8 and E1 B1 E2 G2 B2 E3 G3 B3 held (`stress_8v`,
 | | Instructions | Per frame | Against G1's 12,000 | Hard limit |
 | --- | --- | --- | --- | --- |
 | **G2 stress, 8 voices** (`stress_8v`) | 1,888,530,829 | 19,672 | 1.64× | 2,077,384,000 (21,640 per frame) |
+| ↳ after lane PRF, 2026-10-27 | 1,888,530,829 → 1,224,954,808 (−35.1 %) | 12,760 | 1.06× | 1,347,451,000 (14,036 per frame) |
 
 Its swap blocks (`stress_normal`, `stress_instant`, `stress_crossfade_swap`, `stress_crossfade`): 1,257,740 (19,652 per frame); 1,351,210 (1.07×); 3,405,197 (2.71×, 884,738 over a crossfade block); 7,561,377 (2.00× each), with hard limits 1,384,000, 1,487,000, 3,746,000 and 8,318,000.
 
@@ -436,12 +438,44 @@ At 8 voices the steady p99 is 35–48 % of the deadline, 4.0× G1's in pass 3 (p
 
 #### Follow-up: a performance lane
 
+*Done by lane PRF, 2026-10-27: [the next section](#the-performance-lane-prf-2026-10-27) has the measurements. What follows is the brief it started from.*
+
 The stress case is the yardstick for a lane that makes the two big costs cheaper, outside G2B's scope:
 
 - **The stereo doubling of the voice-FX chain** (24–26 % of the run): the right channel's `dist`, `ladder` and `formant` run the same code on a second buffer, so a SIMD pair (left and right in one pass) could remove up to half of it.
 - **`dist`'s cost** (36–39 %, of which libm `exp` is 9–10 %): the asymmetric curve evaluates `exp` for every oversampled sample; a cheaper form, or a polynomial, is the candidate. `floorf` in the unison (4–5 %) likewise.
 
 Together these are worth up to about 27 % of either case (an estimate, not a measurement): about 7,800 per frame at 4 voices and 14,400 at 8, so 8 voices would still be over G1's cap. When the lane lands, re-measure `stress_8v` and the reference, and re-set their hard limits to the new counts plus 10 %.
+
+#### The performance lane (PRF, 2026-10-27)
+
+Lane PRF (S2a, branch `s2/prf`, main `a38ee3e`) made the G2 patch cheaper with every output bit unchanged: the stereo twins of the voice-FX chain run in pairs, `dist` got a lane-wise `exp` and `log`, and the unison read and `ott` were tightened. **Every golden (native and `--wasm`), G1, `cli-equal`, the stereo-path tests and the unison scalar-reference tests are unchanged**; G1 is 603,310,623 against 603,331,584 before.
+
+Each step is measured alone on `reference_4v` (callgrind through gungraun, deterministic; the 8-voice stress case before and after only):
+
+| Step | What it does | `reference_4v` after | Saving |
+| --- | --- | --- | --- |
+| (start) | main `a38ee3e` | 1,019,252,374 | |
+| S1 | the unison phase wrap skips the `floorf` library call when no lane needs it | 956,610,419 | −62.6 M |
+| P1, P2 | the seam (`process_pair`), the half-band and phase filters generic over one `f64` or two lanes | (±0: −7,500 per bench) | |
+| P3 | `dist`: the two channels of a pair through one `f64x2` loop (`dist::pair`), the curves still the scalar functions per lane | 904,874,254 | −51.7 M |
+| P4 | `dist`: `exp` and `log` of the `ln cosh` on two lanes, libm 0.2.16's own algorithm, bit for bit | 803,285,817 | −101.6 M |
+| P5a | `ladder`: four instances (two voices × left and right) to an `f32x4` loop | 769,522,739 | −33.8 M |
+| P5b | `formant`: the same | 742,821,439 | −26.7 M |
+| U1 | unison: the Hermite on the two `f32x4` halves of the transposes, joined once | 727,284,501 | −15.5 M |
+| U2 | unison: all eight taps loaded in straight code (a lane beyond the copies reads zeros) | 719,712,444 | −7.6 M |
+| U3 | unison: the tap load checks one bound, not two | 695,224,702 | −24.5 M |
+| O1 | `ott`: the left and right crossover filters in the two lanes of an `f64x2` | 686,461,651 | −8.8 M |
+| INL | keep the mono path's code shape (`process` of the three modules not inlined into the dispatch, the segment helpers inlined) | **683,668,671** | −2.8 M |
+| **Total** | | **683,668,671** | **−335.6 M (−32.9 %)** |
+
+The 8-voice stress case went from 1,888,530,829 to 1,224,954,808 (−35.1 %, 12,760 per frame: 1.06× G1's cap, down from 1.64×) and its variants fell 31–38 % (`dist` ×4 −37.5 %, 6 voices −34.4 %; the table of choices above is now: `dist` hard clip 10,372 per frame, oversampling off 10,516, no `ladder` 12,223, no `formant` 11,838, 3 copies 12,675, 6 voices 9,943, the reference 7,122). The swap blocks fell by the same share (normal 692,721 → 466,265; crossfading swap 2,259,803 → 1,806,888). The mono plan (`mono_1_copy`) fell 0.9 % (`ott` alone): nothing pairs there.
+
+What a pair costs by itself (the stereo-forced benches, 16 voices, 1 s, `a38ee3e` → now): `dist` default 768,574,246 → 453,472,706 (−41.0 %), `dist` asymmetric 18 dB (G2's curve) 796,235,196 → 473,435,348 (−40.5 %), `ladder` 121,422,871 → 72,342,863 (−40.4 %), `formant` 112,252,367 → 88,690,335 (−21.0 %). The module-level benches `unison7_full_16v` 615,022,188 → 468,155,724 (−23.9 %) and `ott_16v` 83,807,601 → 79,436,543 (−5.2 %) show the other two.
+
+What did not pay or got dearer, in numbers: the mono `dist`, `ladder` and `formant` benches moved −0.3 … +1.2 % (`dist` default_16v +0.14 %, `formant` static_16v +0.25 %, `ladder` lp24_16v −0.25 %, `dist` `mix` 0 +1.2 %); `unison2_plain_16v` rose 2.1 % (260,356,686 → 265,885,702: all eight lanes are loaded whatever the count, which the seven- and eight-copy cases repay several times over). Where it stands now (G2 reference, callgrind, inclusive; the shares before are in the table above): `wt` 32.1 % (`UnisonVoice::render` 30.6 %), `dist` 31.9 % (the paired kernel, its lane `exp` and `log` included), `ott` 12.4 %, `formant` 6.0 %, `chorus` 4.3 %, `ladder` 3.3 %, `osc` 2.9 %, `delay` 2.3 %; the paired voice-FX chain in all is 41.3 % (it was about 49 %, both channels).
+
+The hard limits of every `g2` bench, the `ott` benches and the seven- and eight-copy `wt` benches were reset to the new count plus 10 % (rounded up to 1,000); the mono `dist`, `ladder`, `formant` and `stereo` benches did not gain and keep theirs. New benches: `dist` `stereo_default_16v` and `stereo_asym_16v`, `ladder` `stereo_lp24_16v`, `formant` `stereo_static_16v` (the stereo plan forced on). Method and the exactness arguments: [dsp/dist.md](dsp/dist.md#the-paired-kernel-and-lane-exp-and-log-lane-prf), [dsp/engine.md](dsp/engine.md#stereo-voice-path). A benchmark whose function ends in a tail call reads 0 instructions under callgrind (the stereo bench did once the engine grew); `benches/stereo.rs` now keeps the call.
 
 **Reproduce:**
 

@@ -142,6 +142,8 @@ Measured with callgrind (`cargo xtask bench -p enth-engine --bench formant`), 1 
 
 Three sections cost 48 instructions per sample per voice against the svf's 28 for one. A moving formant adds the ramp of fifteen values per sample and, per voice and segment, a new tuning (three `tanf`, one `exp2` for the Q and one for a nonzero shift): the extra 47 per sample together.
 
+**Stereo pairs (lane PRF, 2026-10-27).** As for the [ladder](ladder.md): `formant::process_lanes` runs up to four instances (two voices × left and right) in the lanes of an `f32x4`, each performing `process_block`'s operations in the same order on its own state, so every bit equals the instance alone (`instances_in_lanes_are_process_block_bit_for_bit`, `process_pair_is_two_process_calls_bit_for_bit`). Instances whose blocks differ in ramp or blend run one after the other. On the stereo-forced bench (16 voices, 1 s) the static formant went from 112,252,367 to 88,690,335 instructions (−21.0 %); in the G2 reference patch −26.7 M of 769 M. The mono path is unchanged within 0.3 %.
+
 ## Behaviour other lanes must know
 
 - **The peaks are `M` above the input** (+13.5 dB at the default), and a saw keeps roughly its loudness (previous section). A patch that stacks `formant` after a hot oscillator and a resonant filter can exceed 0 dBFS; the module has no limiter.
