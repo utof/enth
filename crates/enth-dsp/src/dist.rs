@@ -58,6 +58,7 @@ use core::f64::consts::{LN_2, PI, SQRT_2};
 
 use wide::f64x2;
 
+mod lane_math;
 mod pair;
 
 use crate::resample::{Lane, Oversampler, PHASE_SECTIONS, PhaseChain, phase_chain_coefs};
@@ -151,7 +152,8 @@ pub trait Curve {
 
 /// `ln cosh(u)`, stable for any `u`: `|u| + ln(1 + e^(−2|u|)) − ln 2`, and just `|u| − ln 2` beyond 20 where the second
 /// term is below 1e-17. (A hand-rolled exponential and logarithm, polynomial on a reduced range, measured no
-/// cheaper than `libm`'s in instructions, so this stays on `libm`.)
+/// cheaper than `libm`'s in instructions, so this stays on `libm`. The paired kernel computes the same values for two
+/// voices at once with `libm`'s own algorithm on two lanes, `lane_math::ln_cosh_x2`, bit for bit this function.)
 #[inline(always)]
 fn ln_cosh(u: f64) -> f64 {
     let a = u.abs();
@@ -172,6 +174,10 @@ impl Curve for SoftCurve {
     #[inline(always)]
     fn anti(u: f64) -> f64 {
         ln_cosh(u)
+    }
+    #[inline(always)]
+    fn anti2(u: f64x2) -> f64x2 {
+        lane_math::ln_cosh_x2(u)
     }
 }
 
@@ -207,6 +213,14 @@ impl Curve for AsymCurve {
         } else {
             0.25 * ln_cosh(2.0 * u)
         }
+    }
+    #[inline(always)]
+    fn anti2(u: f64x2) -> f64x2 {
+        // Both branches on their own lanes: `ln_cosh` of `u` or of `2u`, and the quarter of it below 0 (NaN takes the
+        // second branch, as `u >= 0.0` is false for it).
+        let pos = u.simd_ge(f64x2::ZERO);
+        let l = lane_math::ln_cosh_x2(pos.select(u, f64x2::splat(2.0) * u));
+        pos.select(l, f64x2::splat(0.25) * l)
     }
 }
 
