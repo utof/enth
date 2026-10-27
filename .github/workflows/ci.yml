@@ -54,7 +54,7 @@ jobs:
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             mesa-vulkan-drivers
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}   # PRs read the cache, only main writes it
 
@@ -86,7 +86,7 @@ jobs:
       - run: rustup toolchain install
       - name: Add the standard library for ${{ matrix.target }}
         run: rustup target add ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: cross-${{ matrix.target }}   # both legs share a job id; without a key they would overwrite each other's cache
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -117,7 +117,7 @@ jobs:
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             mesa-vulkan-drivers
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: >-
@@ -167,7 +167,7 @@ jobs:
             libasound2-dev libgl-dev libjack-jackd2-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Validate enth-plugin (debug and release bundles)
@@ -195,7 +195,7 @@ jobs:
             libasound2-dev libgl-dev libjack-jackd2-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # Debug bundle: nice-plug's assert_process_allocs is on, so an allocation in process() aborts the render.
