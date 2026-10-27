@@ -117,28 +117,81 @@ mod tests {
             let loaded = file::load(text).unwrap_or_else(|e| panic!("{}: {e}", t.name));
             assert!(loaded.notes.is_empty(), "{}: {:?}", t.name, loaded.notes);
             validate(&t.patch).unwrap_or_else(|e| panic!("{}: {e:?}", t.name));
-            assert!(!summary.is_empty());
+            assert_ne!(summary, "");
             assert!(s2a_template(&t.name).is_some_and(|x| x == *t));
         }
         assert!(s2a_template("pluck_1osc").is_none());
     }
 
+    /// Report 04's sketches (`content/templates/s2a/sketches/`), embedded: the solver crate does no file I/O.
+    const SKETCHES: [(&str, &str); 14] = [
+        (
+            "s01-clean-sub.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s01-clean-sub.patch.json"),
+        ),
+        (
+            "s02-wobble-eighth.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s02-wobble-eighth.patch.json"),
+        ),
+        (
+            "s03-reese.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s03-reese.patch.json"),
+        ),
+        (
+            "s04-fm-growl.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s04-fm-growl.patch.json"),
+        ),
+        (
+            "s04m-fm-growl-metallic-6fx.patch.json",
+            include_str!(
+                "../../../../content/templates/s2a/sketches/s04m-fm-growl-metallic-6fx.patch.json"
+            ),
+        ),
+        (
+            "s04m4-fm-growl-metallic-4fx.patch.json",
+            include_str!(
+                "../../../../content/templates/s2a/sketches/s04m4-fm-growl-metallic-4fx.patch.json"
+            ),
+        ),
+        (
+            "s05-riddim.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s05-riddim.patch.json"),
+        ),
+        (
+            "s06-yoi.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s06-yoi.patch.json"),
+        ),
+        (
+            "s07-screech.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s07-screech.patch.json"),
+        ),
+        (
+            "s07b-laser.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s07b-laser.patch.json"),
+        ),
+        (
+            "s08-neuro.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s08-neuro.patch.json"),
+        ),
+        (
+            "s09-foghorn.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s09-foghorn.patch.json"),
+        ),
+        (
+            "s10-sub-drop.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s10-sub-drop.patch.json"),
+        ),
+        (
+            "s10b-riser.patch.json",
+            include_str!("../../../../content/templates/s2a/sketches/s10b-riser.patch.json"),
+        ),
+    ];
+
     fn sketches() -> Vec<(String, String)> {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../content/templates/s2a/sketches");
-        let mut out: Vec<(String, String)> = std::fs::read_dir(&dir)
-            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
-            .map(|e| e.unwrap().path())
-            .filter(|p| p.extension().is_some_and(|x| x == "json"))
-            .map(|p| {
-                (
-                    p.file_name().unwrap().to_string_lossy().into_owned(),
-                    std::fs::read_to_string(&p).unwrap(),
-                )
-            })
-            .collect();
-        out.sort();
-        out
+        SKETCHES
+            .iter()
+            .map(|(n, t)| ((*n).to_owned(), (*t).to_owned()))
+            .collect()
     }
 
     /// One second of C3 at 24 kHz: finite, audible and not wild.
@@ -175,7 +228,7 @@ mod tests {
                     Err(e) => format!("{e:?}"),
                     Ok(l) => match validate(&l.patch) {
                         Err(e) => format!("{e:?}"),
-                        Ok(_) => panic!("{name} should be refused: it has six voice effects"),
+                        Ok(()) => panic!("{name} should be refused: it has six voice effects"),
                     },
                 };
                 assert!(
